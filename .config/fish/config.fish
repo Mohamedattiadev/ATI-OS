@@ -498,7 +498,8 @@ if not string match -q -- $PNPM_HOME $PATH
 end
 
 # fnm (nvm alter)
-fnm env | source
+# fnm env | source
+# status --is-interactive; and source (fnm env)
 
 # =============================================================================
 # FZF Configuration

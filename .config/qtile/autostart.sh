@@ -22,11 +22,12 @@ COLORSCHEME=DoomOne
 # Avoid slow apps here — keep this section lightweight.
 
 ~/.screenlayout/layout.sh & # Apply monitor setup
-lxsession &
-picom &     # Compositor (transparency, animations)
-dunst &     # Notification daemon
-nm-applet & # Network tray icon
-copyq &     # Clipboard manager
+# lxsession &
+blueman-applet & # Bluetooth tray icon
+picom &          # Compositor (transparency, animations)
+dunst &          # Notification daemon
+nm-applet &      # Network tray icon
+copyq &          # Clipboard manager
 
 # ---------------------------------------------------------
 # 2. Wallpaper setup

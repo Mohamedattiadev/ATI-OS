@@ -127,6 +127,6 @@ settings:
   logging.level.console:
     global: info
   statusbar.show:
-    global: never
+    global: always
   tabs.show:
-    global: never
+    global: always
