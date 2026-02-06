@@ -1,0 +1,28 @@
+2026/01/01-00:38:09.161 582a Creating DB /home/ati/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/https_monkeytype.com_0.indexeddb.leveldb since it was missing.
+2026/01/01-00:38:09.182 582a Reusing MANIFEST /home/ati/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/https_monkeytype.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/01/01-00:38:09.251 582a Level-0 table #5: started
+2026/01/01-00:38:09.262 582a Level-0 table #5: 1773 bytes OK
+2026/01/01-00:38:09.278 582a Delete type=0 #3
+2026/01/01-00:38:09.278 5828 Manual compaction at level-0 from '\x00\x02\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x03\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/01/01-00:39:50.789 5838 Level-0 table #7: started
+2026/01/01-00:39:50.794 5838 Level-0 table #7: 7952 bytes OK
+2026/01/01-00:39:50.804 5838 Delete type=0 #4
+2026/01/01-00:39:50.804 5828 Manual compaction at level-0 from '\x00\x05\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x06\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/01/01-00:41:09.196 582a Compacting 1@1 + 1@2 files
+2026/01/01-00:41:09.205 582a Generated table #8@1: 53 keys, 3822 bytes
+2026/01/01-00:41:09.206 582a Compacted 1@1 + 1@2 files => 3822 bytes
+2026/01/01-00:41:09.210 582a compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/01/01-00:41:09.210 582a Delete type=2 #7
+2026/01/01-00:41:09.210 582a Delete type=2 #5
+2026/01/01-00:44:17.455 5839 Level-0 table #10: started
+2026/01/01-00:44:17.459 5839 Level-0 table #10: 3437 bytes OK
+2026/01/01-00:44:17.464 5839 Delete type=0 #6
+2026/01/01-00:44:17.464 5839 Manual compaction at level-0 from (begin) .. (end); will stop at (end)
+2026/01/01-00:44:17.464 5839 Manual compaction at level-1 from (begin) .. (end); will stop at '\x00\x03\x01\x02\x01C\x00f\x00i\x00r\x00e\x00b\x00a\x00s\x00e\x00:\x00a\x00u\x00t\x00h\x00U\x00s\x00e\x00r\x00:\x00A\x00I\x00z\x00a\x00S\x00y\x00B\x005\x00m\x00_\x00A\x00n\x00O\x005\x007\x005\x00k\x00v\x00W\x00r\x00i\x00a\x00h\x00c\x00F\x001\x00S\x00F\x00I\x00W\x00p\x008\x00F\x00j\x003\x00g\x00Q\x00n\x00o\x00:\x00[\x00D\x00E\x00F\x00A\x00U\x00L\x00T\x00]' @ 243 : 1
+2026/01/01-00:44:17.465 5839 Compacting 1@1 + 1@2 files
+2026/01/01-00:44:17.469 5839 Generated table #11@1: 49 keys, 3537 bytes
+2026/01/01-00:44:17.469 5839 Compacted 1@1 + 1@2 files => 3537 bytes
+2026/01/01-00:44:17.475 5839 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/01/01-00:44:17.476 5839 Delete type=2 #10
+2026/01/01-00:44:17.476 5839 Delete type=2 #8
+2026/01/01-00:44:17.477 5839 Manual compaction at level-1 from '\x00\x03\x01\x02\x01C\x00f\x00i\x00r\x00e\x00b\x00a\x00s\x00e\x00:\x00a\x00u\x00t\x00h\x00U\x00s\x00e\x00r\x00:\x00A\x00I\x00z\x00a\x00S\x00y\x00B\x005\x00m\x00_\x00A\x00n\x00O\x005\x007\x005\x00k\x00v\x00W\x00r\x00i\x00a\x00h\x00c\x00F\x001\x00S\x00F\x00I\x00W\x00p\x008\x00F\x00j\x003\x00g\x00Q\x00n\x00o\x00:\x00[\x00D\x00E\x00F\x00A\x00U\x00L\x00T\x00]' @ 243 : 1 .. (end); will stop at (end)

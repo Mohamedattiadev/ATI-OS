@@ -1,0 +1,74 @@
+2026/01/13-17:52:38.071 a2a Reusing MANIFEST /home/ati/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/https_excalidraw.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/01/13-17:52:38.072 a2a Recovering log #34
+2026/01/13-17:52:38.072 a2a Reusing old log /home/ati/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/https_excalidraw.com_0.indexeddb.leveldb/000034.log 
+2026/01/13-17:52:39.296 a2c Level-0 table #46: started
+2026/01/13-17:52:39.315 a2a Current memtable full; waiting...
+2026/01/13-17:52:39.323 a2c Level-0 table #46: 4164319 bytes OK
+2026/01/13-17:52:39.327 a2c Delete type=0 #34
+2026/01/13-17:52:39.328 a2c Level-0 table #48: started
+2026/01/13-17:52:39.365 a2c Level-0 table #48: 4260419 bytes OK
+2026/01/13-17:52:39.381 a2c Delete type=0 #45
+2026/01/13-17:52:46.255 a2a Compacting 1@1 + 3@2 files
+2026/01/13-17:52:46.273 a2a Generated table #49@1: 304 keys, 2115303 bytes
+2026/01/13-17:52:46.289 a2a Generated table #50@1: 89 keys, 2112343 bytes
+2026/01/13-17:52:46.314 a2a Generated table #51@1: 88 keys, 2127752 bytes
+2026/01/13-17:52:46.326 a2a Generated table #52@1: 330 keys, 535617 bytes
+2026/01/13-17:52:46.326 a2a Compacted 1@1 + 3@2 files => 6891015 bytes
+2026/01/13-17:52:46.333 a2a compacted to: files[ 1 0 4 0 0 0 0 ]
+2026/01/13-17:53:49.952 a2c Level-0 table #54: started
+2026/01/13-17:53:49.977 a2c Level-0 table #54: 4117210 bytes OK
+2026/01/13-17:53:49.990 a2c Delete type=2 #43
+2026/01/13-17:53:49.990 a2c Delete type=0 #47
+2026/01/13-17:53:49.990 a2c Delete type=2 #46
+2026/01/13-17:53:49.990 a2c Delete type=2 #39
+2026/01/13-17:53:49.990 a2c Delete type=2 #41
+2026/01/13-17:53:50.190 a2c Compacting 2@0 + 0@1 files
+2026/01/13-17:53:50.214 a2c Generated table #55@0: 1172 keys, 2116680 bytes
+2026/01/13-17:53:50.237 a2c Generated table #56@0: 81 keys, 2144637 bytes
+2026/01/13-17:53:50.249 a2c Generated table #57@0: 288 keys, 657212 bytes
+2026/01/13-17:53:50.250 a2c Compacted 2@0 + 0@1 files => 4918529 bytes
+2026/01/13-17:53:50.264 a2c compacted to: files[ 0 3 4 0 0 0 0 ]
+2026/01/13-17:53:50.264 a2c Delete type=2 #48
+2026/01/13-17:53:50.264 a2c Delete type=2 #54
+2026/01/13-17:53:50.382 a3d Compacting 1@1 + 2@2 files
+2026/01/13-17:53:50.403 a3d Generated table #58@1: 90 keys, 2127581 bytes
+2026/01/13-17:53:50.416 a3d Generated table #59@1: 418 keys, 640758 bytes
+2026/01/13-17:53:50.416 a3d Compacted 1@1 + 2@2 files => 2768339 bytes
+2026/01/13-17:53:50.425 a3d compacted to: files[ 0 2 4 0 0 0 0 ]
+2026/01/13-17:53:50.425 a3d Delete type=2 #57
+2026/01/13-17:53:50.425 a3d Delete type=2 #51
+2026/01/13-17:53:50.426 a3d Delete type=2 #52
+2026/01/13-17:53:50.487 a3d Level-0 table #61: started
+2026/01/13-17:53:50.512 a3d Level-0 table #61: 4077438 bytes OK
+2026/01/13-17:53:50.523 a3d Delete type=0 #53
+2026/01/13-17:53:50.700 a2a Compacting 1@0 + 2@1 files
+2026/01/13-17:53:50.728 a2a Generated table #62@0: 2103 keys, 2119894 bytes
+2026/01/13-17:53:50.743 a2a Generated table #63@0: 88 keys, 2111420 bytes
+2026/01/13-17:53:50.763 a2a Generated table #64@0: 96 keys, 2131820 bytes
+2026/01/13-17:53:50.781 a2a Generated table #65@0: 332 keys, 1943309 bytes
+2026/01/13-17:53:50.781 a2a Compacted 1@0 + 2@1 files => 8306443 bytes
+2026/01/13-17:53:50.790 a2a compacted to: files[ 0 4 4 0 0 0 0 ]
+2026/01/13-17:53:50.791 a2a Delete type=2 #56
+2026/01/13-17:53:50.791 a2a Delete type=2 #61
+2026/01/13-17:53:50.791 a2a Delete type=2 #55
+2026/01/13-17:55:13.998 a40 Level-0 table #67: started
+2026/01/13-17:55:14.025 a40 Level-0 table #67: 3093092 bytes OK
+2026/01/13-17:55:14.030 a40 Delete type=0 #60
+2026/01/13-17:55:14.032 a3e Manual compaction at level-0 from '\x00\x06\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x07\x00\x00\x00' @ 0 : 0; will stop at '\x00\x06\x00\x00\x05' @ 16466 : 1
+2026/01/13-17:55:14.032 a3e Compacting 1@0 + 4@1 files
+2026/01/13-17:55:14.060 a3e Generated table #68@0: 2811 keys, 2118576 bytes
+2026/01/13-17:55:14.089 a3e Generated table #69@0: 95 keys, 2130838 bytes
+2026/01/13-17:55:14.111 a3e Generated table #70@0: 89 keys, 2107516 bytes
+2026/01/13-17:55:14.151 a3e Generated table #71@0: 107 keys, 2124281 bytes
+2026/01/13-17:55:14.179 a3e Generated table #72@0: 95 keys, 2117472 bytes
+2026/01/13-17:55:14.200 a3e Generated table #73@0: 458 keys, 776650 bytes
+2026/01/13-17:55:14.200 a3e Compacted 1@0 + 4@1 files => 11375333 bytes
+2026/01/13-17:55:14.214 a3e compacted to: files[ 0 6 4 0 0 0 0 ]
+2026/01/13-17:55:14.216 a3e Delete type=2 #67
+2026/01/13-17:55:14.220 a3e Compacting 1@1 + 2@2 files
+2026/01/13-17:55:14.257 a3e Generated table #74@1: 121 keys, 2112419 bytes
+2026/01/13-17:55:14.275 a3e Generated table #75@1: 62 keys, 1564143 bytes
+2026/01/13-17:55:14.275 a3e Compacted 1@1 + 2@2 files => 3676562 bytes
+2026/01/13-17:55:14.285 a3e compacted to: files[ 0 5 4 0 0 0 0 ]
+2026/01/13-17:55:14.286 a3e Delete type=2 #68
+2026/01/13-17:55:14.289 a3e Manual compaction at level-0 from '\x00\x06\x00\x00\x05' @ 16466 : 1 .. '\x00\x07\x00\x00\x00' @ 0 : 0; will stop at (end)

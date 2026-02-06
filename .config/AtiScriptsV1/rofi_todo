@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
-#!/usr/bin/env bash
 
 # CONFIGURATION
 # -----------------------------------------------------------------------------
-TODO_FILE="$HOME/ATITODOS/todos.md"
-SUBTASK_FILE="$HOME/ATITODOS/subtasks.md"
-WORKING_FILE="$HOME/ATITODOS/working_on.txt"
-mkdir -p "$(dirname "$TODO_FILE")"
+
+# Get username and uppercase it
+USER_NAME="$(whoami | tr '[:lower:]' '[:upper:]')"
+
+# Build TODOS directory name: ATITODOS, SUSUTODOS, etc.
+TODOS_DIR="$HOME/${USER_NAME}TODOS"
+
+TODO_FILE="$TODOS_DIR/todos.md"
+SUBTASK_FILE="$TODOS_DIR/subtasks.md"
+WORKING_FILE="$TODOS_DIR/working_on.txt"
+
+# Create directory & files if missing
+mkdir -p "$TODOS_DIR"
 touch "$TODO_FILE" "$SUBTASK_FILE" "$WORKING_FILE"
 
 # Ensure each task file ends with a newline (prevents merging lines)

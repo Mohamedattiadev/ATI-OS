@@ -1,11 +1,27 @@
 #!/bin/bash
 
-TODO_FILE="$HOME/ATITODOS/todos.md"
+# -----------------------------------------------------------------------------
+# CONFIGURATION (user-based ATITODOS directory)
+# -----------------------------------------------------------------------------
+
+# Username → uppercase (ati → ATI)
+USER_NAME="$(whoami | tr '[:lower:]' '[:upper:]')"
+
+# Folder → ATITODOS, SUSUTODOS, etc.
+TODOS_DIR="$HOME/${USER_NAME}TODOS"
+
+TODO_FILE="$TODOS_DIR/todos.md"
+
+# Create directory & file if missing
+mkdir -p "$TODOS_DIR"
+touch "$TODO_FILE"
+
+# -----------------------------------------------------------------------------
+# DATE INFO
+# -----------------------------------------------------------------------------
 
 today=$(date "+%Y-%m-%d")
 header=$(date "+%A, %d %B %Y")
-mkdir -p "$(dirname "$TODO_FILE")"
-touch "$TODO_FILE"
 
 process_tasks() {
   mode="$1"

@@ -1,0 +1,6 @@
+2025/12/28-23:30:30.252 46dc Creating DB /home/ati/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/https_gamma.app_0.indexeddb.leveldb since it was missing.
+2025/12/28-23:30:30.274 46dc Reusing MANIFEST /home/ati/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/https_gamma.app_0.indexeddb.leveldb/MANIFEST-000001
+2025/12/28-23:31:38.158 46c9 Level-0 table #5: started
+2025/12/28-23:31:38.161 46c9 Level-0 table #5: 833 bytes OK
+2025/12/28-23:31:38.165 46c9 Delete type=0 #3
+2025/12/28-23:31:38.166 46c9 Manual compaction at level-0 from (begin) .. (end); will stop at (end)

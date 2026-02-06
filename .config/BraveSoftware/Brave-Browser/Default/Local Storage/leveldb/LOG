@@ -1,0 +1,6 @@
+2026/02/02-20:36:33.951 5 Reusing MANIFEST /home/ati/.config/BraveSoftware/Brave-Browser/Default/Local Storage/leveldb/MANIFEST-000001
+2026/02/02-20:36:33.966 5 Recovering log #409
+2026/02/02-20:36:33.971 5 Reusing old log /home/ati/.config/BraveSoftware/Brave-Browser/Default/Local Storage/leveldb/000409.log 
+2026/02/02-21:35:26.419 7 Level-0 table #413: started
+2026/02/02-21:35:26.427 7 Level-0 table #413: 20387 bytes OK
+2026/02/02-21:35:26.435 7 Delete type=0 #409

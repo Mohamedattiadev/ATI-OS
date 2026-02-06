@@ -1,0 +1,27 @@
+END USER LICENSE AGREEMENT
+
+This End User License Agreement ("EULA") is between Unhook and you. Your use of Unhook (the "Software") is subject to this EULA. If you do not agree to these terms, do not install or use the Software.
+
+Restrictions
+You may not assign or transfer your rights in the Software. You have no ownership interest in the Software. You may not (i) modify, create derivative works from, distribute, publicly display, publicly perform, or sublicense the Software; (ii) allow third parties to use the Software; or (iii) reverse engineer, decompile, disassemble, or otherwise attempt to derive any of the Software's source code.
+
+Privacy
+No user information is collected, transmitted, or sold by the Software.
+
+Your Obligations
+Your use of the Software must comply with this EULA, all applicable laws and the terms of use of the sites with which it is used.
+
+No Warranties Given
+Unhook makes no warranties, either express or implied, including without limitation any implied warranties of merchantability or fitness for a particular purpose. Unhook does not warrant that the software will perform without error or that it will run without immaterial interruption.
+
+Limitation of liability
+Unhook's maximum liability to you for any claim under this EULA, in tort or otherwise, is limited to the amount you paid to license the software in the previous 12 months. In no event shall Unhook be liable for any damages (including, without limitation, lost profits, business interruption or lost information) resulting from the use of or inability to use the software, loss of data or any other claim, even if Unhook has been advised of the possibility of such damages.
+
+Termination
+Your right to use the Software will automatically terminate if you fail to comply with this EULA. Unhook may terminate your right to use the Software at any time.
+
+No Obligation to Develop or Offer Software
+Unhook has no obligation to continue to develop, improve or upgrade the Software. Unhook may discontinue offering the Software at any time. Unhook has no obligation to provide support for the Software. Any updates to the Software become part of the Software subject to this EULA.
+
+General
+This EULA is the entire agreement between you and Unhook with respect to the Software. Unhook may amend this EULA at any time and your continued subscription for the Software constitutes your acceptance of any changes. This EULA is governed by the laws of the state of New York in the United States of America.

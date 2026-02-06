@@ -1,0 +1,28 @@
+2025/12/27-18:58:33.667 a11 Reusing MANIFEST /home/ati/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/https_app.gptzero.me_0.indexeddb.leveldb/MANIFEST-000001
+2025/12/27-18:58:33.667 a11 Recovering log #11
+2025/12/27-18:58:33.667 a11 Reusing old log /home/ati/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/https_app.gptzero.me_0.indexeddb.leveldb/000011.log 
+2025/12/27-18:58:35.743 a28 Level-0 table #17: started
+2025/12/27-18:58:35.749 a28 Level-0 table #17: 484 bytes OK
+2025/12/27-18:58:35.758 a28 Delete type=0 #11
+2025/12/27-18:58:35.759 a28 Manual compaction at level-0 from '\x00\x06\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x07\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/12/27-18:58:36.312 a29 Level-0 table #19: started
+2025/12/27-18:58:36.317 a29 Level-0 table #19: 506 bytes OK
+2025/12/27-18:58:36.324 a29 Delete type=0 #16
+2025/12/27-18:58:36.325 a11 Manual compaction at level-0 from '\x00\x07\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x08\x00\x00\x00' @ 0 : 0; will stop at '\x00\x07\x00\x00\x05' @ 431 : 1
+2025/12/27-18:58:36.325 a11 Compacting 1@0 + 1@1 files
+2025/12/27-18:58:36.336 a11 Generated table #20@0: 11 keys, 468 bytes
+2025/12/27-18:58:36.337 a11 Compacted 1@0 + 1@1 files => 468 bytes
+2025/12/27-18:58:36.340 a11 compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/12/27-18:58:36.340 a11 Delete type=2 #19
+2025/12/27-18:58:36.341 a11 Manual compaction at level-0 from '\x00\x07\x00\x00\x05' @ 431 : 1 .. '\x00\x08\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/12/27-18:58:44.025 a13 Level-0 table #22: started
+2025/12/27-18:58:44.030 a13 Level-0 table #22: 523 bytes OK
+2025/12/27-18:58:44.035 a13 Delete type=0 #18
+2025/12/27-18:58:44.035 a13 Delete type=2 #17
+2025/12/27-18:58:44.036 a13 Manual compaction at level-0 from '\x00\x08\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x09\x00\x00\x00' @ 0 : 0; will stop at '\x00\x08\x00\x00\x05' @ 449 : 1
+2025/12/27-18:58:44.036 a13 Compacting 1@0 + 1@1 files
+2025/12/27-18:58:44.042 a13 Generated table #23@0: 15 keys, 503 bytes
+2025/12/27-18:58:44.043 a13 Compacted 1@0 + 1@1 files => 503 bytes
+2025/12/27-18:58:44.052 a13 compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/12/27-18:58:44.052 a13 Delete type=2 #22
+2025/12/27-18:58:44.053 a13 Manual compaction at level-0 from '\x00\x08\x00\x00\x05' @ 449 : 1 .. '\x00\x09\x00\x00\x00' @ 0 : 0; will stop at (end)

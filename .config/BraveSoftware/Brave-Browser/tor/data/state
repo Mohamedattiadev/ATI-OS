@@ -1,0 +1,49 @@
+# Tor state file last generated on 2026-01-21 15:06:07 local time
+# Other times below are in UTC
+# You *do not* need to edit this file.
+
+CircuitBuildTimeBin 245 1
+CircuitBuildTimeBin 255 1
+CircuitBuildTimeBin 345 1
+CircuitBuildTimeBin 385 1
+CircuitBuildTimeBin 405 1
+CircuitBuildTimeBin 455 1
+CircuitBuildTimeBin 465 1
+CircuitBuildTimeBin 555 2
+CircuitBuildTimeBin 585 1
+CircuitBuildTimeBin 685 2
+CircuitBuildTimeBin 705 1
+CircuitBuildTimeBin 765 1
+CircuitBuildTimeBin 775 1
+CircuitBuildTimeBin 885 1
+CircuitBuildTimeBin 1025 1
+CircuitBuildTimeBin 1115 1
+CircuitBuildTimeBin 1205 1
+CircuitBuildTimeBin 1235 1
+CircuitBuildTimeBin 1485 1
+CircuitBuildTimeBin 1675 1
+CircuitBuildTimeBin 2815 1
+Dormant 0
+Guard in=default rsa_id=916DC3199F639168CD20AEC4D45969268E807699 nickname=defcon777 sampled_on=2026-01-16T06:20:54 sampled_idx=0 sampled_by=0.4.8.19 listed=1 confirmed_on=2026-01-10T16:46:55 confirmed_idx=0 pb_circ_attempts=7.000000 pb_circ_successes=7.000000 pb_successful_circuits_closed=7.000000
+Guard in=default rsa_id=41C5E3A4A29E841DC3ED96B859B51077197AEA67 nickname=TheMadHacker sampled_on=2026-01-17T16:37:35 sampled_idx=1 sampled_by=0.4.8.19 listed=1 confirmed_on=2026-01-11T00:41:03 confirmed_idx=1 pb_use_attempts=2.000000 pb_use_successes=2.000000 pb_circ_attempts=9.000000 pb_circ_successes=9.000000 pb_successful_circuits_closed=9.000000
+Guard in=default rsa_id=AF37B951F76D2BB577366FA059D1B1913DD74D41 nickname=Medulla sampled_on=2026-01-14T23:14:38 sampled_idx=2 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=6899F50A7A9ED86FF640539254FF5D68061D168A nickname=gunnadrip sampled_on=2026-01-09T16:34:10 sampled_idx=3 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=56D878C942CD38F5287079974950668B18ECC4CD nickname=Quetzalcoatl sampled_on=2026-01-18T12:16:24 sampled_idx=4 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=58A2A0E849E9E3692F7B136223507E93CB099150 nickname=Unnamed sampled_on=2026-01-15T14:53:04 sampled_idx=5 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=6520532F204357136DE139A29459A27A498AC13D nickname=Starfleet sampled_on=2026-01-11T19:56:17 sampled_idx=6 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=1B5E78D7A1EB32074B3BE2E83CCCE50B699B782E nickname=torrelaymirror2 sampled_on=2026-01-20T19:14:42 sampled_idx=7 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=6F4C45A1D3EA0EA4B464DA37891460AEDA26ADDF nickname=GrindTilIDie sampled_on=2026-01-12T18:20:02 sampled_idx=8 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=DAE65AD32A074CECB30AD3FBB7504F0CDC616CD1 nickname=pablito sampled_on=2026-01-18T20:28:08 sampled_idx=9 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=049091E0582A6439D7AC7E157D32AB9319B8B78C nickname=Mlrage sampled_on=2026-01-19T07:47:46 sampled_idx=10 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=FD79B7F9230858B48E75F389661840C702511078 nickname=dezember sampled_on=2026-01-18T09:18:39 sampled_idx=11 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=C1F9375437CAA5C5BF1AA4C8E78107BF61883FD5 nickname=ThePlace sampled_on=2026-01-19T05:57:58 sampled_idx=12 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=17F56C1F7945505BFF419032D67956EEAF685919 nickname=onionsfrommartin sampled_on=2026-01-14T21:22:51 sampled_idx=13 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=8FD386BF70C5EBA82804A3FD2438BC07B45D0714 nickname=SomeTorinAS200462 sampled_on=2026-01-16T22:36:18 sampled_idx=14 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=E3FE92D92B011A41887983A89AB08DFE16046235 nickname=twista sampled_on=2026-01-13T10:26:37 sampled_idx=15 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=88C5273682DFC0E0788CD472543F6DCE9D879B4B nickname=GhostHopShield sampled_on=2026-01-18T01:03:22 sampled_idx=16 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=847B907EB35AFDEDD96ADC0E0D278302F451272B nickname=TorRelayFR01 sampled_on=2026-01-19T03:20:23 sampled_idx=17 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=05C32C5EE14454E0C4CD81DAE0F3DC32F729DA4B nickname=TORtuga sampled_on=2026-01-16T01:21:16 sampled_idx=18 sampled_by=0.4.8.19 listed=1
+Guard in=default rsa_id=EE9A86FD2F376E1A07C7585281FD165575186D99 nickname=rexOVH sampled_on=2026-01-17T03:33:52 sampled_idx=19 sampled_by=0.4.8.19 listed=1
+LastWritten 2026-01-21 12:06:07
+TorVersion Tor 0.4.8.19
+TotalBuildTimes 23
