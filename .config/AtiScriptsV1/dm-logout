@@ -38,7 +38,7 @@ main() {
   # An array of options to choose.
   declare -a options=(
     "Lock screen"
-    "Logout (terminate)"
+    "Logout (terminate session)"
     "Refresh the PC"
     "Reboot"
     "Shutdown"
