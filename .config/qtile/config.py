@@ -117,12 +117,8 @@ mod2 = "mod4"  # Sets mod key to WINDOWS
 myTerm = "kitty"  # My terminal of choice
 my2ndTerm = "alacritty"  # My terminal of choice
 myFullScreenTerm = "kitty --start-as=fullscreen"
-# sum_file = os.path.expanduser("~/ATITODOS/TODOS.md")
 home = os.path.expanduser("~")
-
-
 user = (os.environ.get("USER") or os.environ.get("LOGNAME") or "").upper()
-
 todos_dir = os.path.expanduser(f"~/{user}TODOS")
 sum_file = os.path.join(todos_dir, "TODOS.md")
 

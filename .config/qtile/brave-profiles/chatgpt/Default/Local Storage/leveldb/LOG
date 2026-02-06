@@ -1,0 +1,9 @@
+2026/02/06-23:27:33.760 5 Reusing MANIFEST /home/ati/.dotfiles/.config/qtile/brave-profiles/chatgpt/Default/Local Storage/leveldb/MANIFEST-000001
+2026/02/06-23:27:33.766 5 Recovering log #3
+2026/02/06-23:27:33.766 5 Reusing old log /home/ati/.dotfiles/.config/qtile/brave-profiles/chatgpt/Default/Local Storage/leveldb/000003.log 
+2026/02/06-23:31:36.977 7 Level-0 table #5: started
+2026/02/06-23:31:36.982 7 Level-0 table #5: 20542 bytes OK
+2026/02/06-23:31:36.986 7 Delete type=0 #3
+2026/02/06-23:50:36.976 7 Level-0 table #7: started
+2026/02/06-23:50:36.981 7 Level-0 table #7: 31995 bytes OK
+2026/02/06-23:50:36.986 7 Delete type=0 #4

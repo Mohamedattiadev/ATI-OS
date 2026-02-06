@@ -13,6 +13,7 @@ packages:
   - grub
   - gst-plugin-pipewire
   - gtk2
+  - gtk3
   - gtkmm
   - gvfs
   - gvfs-mtp
