@@ -1,7 +1,0 @@
-2026/01/30-21:22:26.054 81c24 Reusing MANIFEST /home/ati/.config/BraveSoftware/Brave-Browser/Default/WebStorage/98/IndexedDB/indexeddb.leveldb/MANIFEST-000001
-2026/01/30-21:22:26.054 81c24 Recovering log #3
-2026/01/30-21:22:26.056 81c24 Reusing old log /home/ati/.config/BraveSoftware/Brave-Browser/Default/WebStorage/98/IndexedDB/indexeddb.leveldb/000003.log 
-2026/01/30-21:22:26.371 81c21 Level-0 table #5: started
-2026/01/30-21:22:26.374 81c21 Level-0 table #5: 67818 bytes OK
-2026/01/30-21:22:26.378 81c21 Delete type=0 #3
-2026/01/30-21:22:26.378 81c21 Manual compaction at level-0 from '\x00\x02\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x03\x00\x00\x00' @ 0 : 0; will stop at (end)

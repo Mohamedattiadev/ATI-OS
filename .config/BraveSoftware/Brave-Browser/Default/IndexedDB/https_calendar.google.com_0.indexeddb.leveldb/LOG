@@ -1,6 +1,0 @@
-2025/12/21-10:18:23.531 cc2 Creating DB /home/ati/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/https_calendar.google.com_0.indexeddb.leveldb since it was missing.
-2025/12/21-10:18:23.543 cc2 Reusing MANIFEST /home/ati/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/https_calendar.google.com_0.indexeddb.leveldb/MANIFEST-000001
-2025/12/21-10:18:54.141 ca1 Level-0 table #5: started
-2025/12/21-10:18:54.144 ca1 Level-0 table #5: 1533 bytes OK
-2025/12/21-10:18:54.147 ca1 Delete type=0 #3
-2025/12/21-10:18:54.148 ca1 Manual compaction at level-0 from (begin) .. (end); will stop at (end)

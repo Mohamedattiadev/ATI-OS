@@ -1,6 +1,0 @@
-2026/01/01-03:38:32.547 582a Creating DB /home/ati/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/https_ai.google.dev_0.indexeddb.leveldb since it was missing.
-2026/01/01-03:38:32.565 582a Reusing MANIFEST /home/ati/.config/BraveSoftware/Brave-Browser/Default/IndexedDB/https_ai.google.dev_0.indexeddb.leveldb/MANIFEST-000001
-2026/01/01-03:49:14.862 582a Level-0 table #5: started
-2026/01/01-03:49:14.865 582a Level-0 table #5: 4258 bytes OK
-2026/01/01-03:49:14.868 582a Delete type=0 #3
-2026/01/01-03:49:14.869 582a Manual compaction at level-0 from (begin) .. (end); will stop at (end)
