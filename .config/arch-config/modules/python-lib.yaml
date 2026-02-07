@@ -1,0 +1,21 @@
+description: Python tooling and libraries
+
+packages:
+  - python-pip
+  - python-pipx
+  - python-setuptools
+  - python-wheel
+  - python-build
+  - python-installer
+  - python-packaging
+  - python-rich
+  - python-pillow
+  - python-beautifulsoup4
+  - python-gtts
+  - python-dbus-next
+  - python-dbus-fast
+  - python-pulsectl
+  - python-psutil
+
+exclude: []
+conflicts: []

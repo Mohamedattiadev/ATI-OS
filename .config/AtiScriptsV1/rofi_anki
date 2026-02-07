@@ -12,7 +12,7 @@ DECK_DE="German"
 # ## CRITICAL STEP: PATH TO PIPER ##
 # ####################################################################
 # Use the 'find ~ -type f -name piper' command to find the correct path
-PIPER_CMD="$HOME/.local/bin/piper" # <-- EDIT THIS PATH IF NEEDED
+PIPER_CMD="$(command -v piper)"
 
 # --- Voice Customization ---
 PIPER_SPEED="1.8"
@@ -30,23 +30,23 @@ trap cleanup EXIT
 # --- Read Gemini API Key ---
 GEMINI_API_KEY=""
 if [ -f /etc/environment ]; then
-	GEMINI_API_KEY=$(grep -E '^GEMINI_API_KEY=' /etc/environment | cut -d'=' -f2- | sed -e 's/^"//' -e 's/"$//')
+  GEMINI_API_KEY=$(grep -E '^GEMINI_API_KEY=' /etc/environment | cut -d'=' -f2- | sed -e 's/^"//' -e 's/"$//')
 fi
 if [[ -z "$GEMINI_API_KEY" ]]; then
-	echo "Error: GEMINI_API_KEY not found." >&2
-	exit 1
+  echo "Error: GEMINI_API_KEY not found." >&2
+  exit 1
 fi
 
 # --- Check required commands ---
 for cmd in rofi jq curl gtts-cli piper ffmpeg file python3; do
-	if ! command -v "$cmd" >/dev/null 2>&1; then
-		echo "Missing required command: $cmd" >&2
-		exit 1
-	fi
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "Missing required command: $cmd" >&2
+    exit 1
+  fi
 done
 if ! [ -x "$PIPER_CMD" ]; then
-	echo "Piper TTS command not found or not executable at: $PIPER_CMD" >&2
-	exit 1
+  echo "Piper TTS command not found or not executable at: $PIPER_CMD" >&2
+  exit 1
 fi
 
 # =================== Helper Functions ===================
@@ -54,62 +54,62 @@ html_escape() { python3 -c 'import html, sys; print(html.escape(sys.argv[1]))' "
 
 # --- MODIFIED: This function now uses gTTS for English and Piper for German ---
 generate_main_wav() {
-	local text="$1"
-	local lang="$2"
-	local output_wav="$3"
+  local text="$1"
+  local lang="$2"
+  local output_wav="$3"
 
-	if [[ "$lang" == "en" ]]; then
-		# Use gTTS for English, which requires an mp3->wav conversion
-		local temp_mp3="${output_wav%.wav}.mp3"
-		gtts-cli "$text" -l en -o "$temp_mp3"
-		ffmpeg -i "$temp_mp3" "$output_wav" -y >/dev/null 2>&1
-	else
-		# Use Piper for German
-		local voice_model="$PIPER_VOICE_DE"
-		if [[ ! -f "$voice_model" ]]; then
-			echo "Piper voice model not found: $voice_model" >&2
-			touch "$output_wav"
-			return
-		fi
-		echo "$text" | "$PIPER_CMD" --model "$voice_model" --length_scale "$PIPER_SPEED" --output_file "$output_wav" >/dev/null 2>&1
-	fi
+  if [[ "$lang" == "en" ]]; then
+    # Use gTTS for English, which requires an mp3->wav conversion
+    local temp_mp3="${output_wav%.wav}.mp3"
+    gtts-cli "$text" -l en -o "$temp_mp3"
+    ffmpeg -i "$temp_mp3" "$output_wav" -y >/dev/null 2>&1
+  else
+    # Use Piper for German
+    local voice_model="$PIPER_VOICE_DE"
+    if [[ ! -f "$voice_model" ]]; then
+      echo "Piper voice model not found: $voice_model" >&2
+      touch "$output_wav"
+      return
+    fi
+    echo "$text" | "$PIPER_CMD" --model "$voice_model" --length_scale "$PIPER_SPEED" --output_file "$output_wav" >/dev/null 2>&1
+  fi
 }
 
 get_gemini_data() {
-	local text="$1"
-	local source_lang_name="$2"
-	local target_lang_name="$3"
-	local payload
-	# Use a valid name for the fallback model
-	local models_to_try=(
-		"gemini-1.0-flash"
-		"gemini-1.5-flash"
-		"gemini-1.5-flash-latest"
-		"gemini-2.0-flash-exp"
-		"gemini-2.5-flash"
-		"gemini-2.5-flash-latest"
-	)
+  local text="$1"
+  local source_lang_name="$2"
+  local target_lang_name="$3"
+  local payload
+  # Use a valid name for the fallback model
+  local models_to_try=(
+    "gemini-1.0-flash"
+    "gemini-1.5-flash"
+    "gemini-1.5-flash-latest"
+    "gemini-2.0-flash-exp"
+    "gemini-2.5-flash"
+    "gemini-2.5-flash-latest"
+  )
 
-	payload=$(jq -n --arg user_text "$text" --arg source_lang "$source_lang_name" --arg target_lang "$target_lang_name" \
-		'{"contents": [{"parts": [{"text": "You are an API providing linguistic info. For the word \"\($user_text)\" in \($source_lang), generate a JSON object with three keys: \"translation\" (a string translated to \($target_lang)), \"synonyms\" (an array of 5 strings), and \"examples\" (an array of 3 diverse, natural example sentences). Do not include markdown."}]}]}')
+  payload=$(jq -n --arg user_text "$text" --arg source_lang "$source_lang_name" --arg target_lang "$target_lang_name" \
+    '{"contents": [{"parts": [{"text": "You are an API providing linguistic info. For the word \"\($user_text)\" in \($source_lang), generate a JSON object with three keys: \"translation\" (a string translated to \($target_lang)), \"synonyms\" (an array of 5 strings), and \"examples\" (an array of 3 diverse, natural example sentences). Do not include markdown."}]}]}')
 
-	for model in "${models_to_try[@]}"; do
-		local response
-		response=$(curl -sS -X POST "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}" -H "Content-Type: application/json" -d "$payload")
+  for model in "${models_to_try[@]}"; do
+    local response
+    response=$(curl -sS -X POST "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}" -H "Content-Type: application/json" -d "$payload")
 
-		# FIX #2: More robust check. The `jq -e` command will fail (return a non-zero exit code)
-		# if the path `.candidates[0]...` does not exist in the JSON response.
-		if echo "$response" | jq -e '.candidates[0].content.parts[0].text' >/dev/null 2>&1; then
-			local result
-			result=$(echo "$response" | jq -r '.candidates[0].content.parts[0].text' | sed 's/```json//g; s/```//g')
-			echo "$result"
-			# FIX #1: This line has been re-typed to ensure no invisible characters are present.
-			return 0 # Exit the function with success
-		fi
-		# If we're here, the request failed or the JSON was invalid; the loop will try the next model.
-	done
+    # FIX #2: More robust check. The `jq -e` command will fail (return a non-zero exit code)
+    # if the path `.candidates[0]...` does not exist in the JSON response.
+    if echo "$response" | jq -e '.candidates[0].content.parts[0].text' >/dev/null 2>&1; then
+      local result
+      result=$(echo "$response" | jq -r '.candidates[0].content.parts[0].text' | sed 's/```json//g; s/```//g')
+      echo "$result"
+      # FIX #1: This line has been re-typed to ensure no invisible characters are present.
+      return 0 # Exit the function with success
+    fi
+    # If we're here, the request failed or the JSON was invalid; the loop will try the next model.
+  done
 
-	return 1 # Return with failure if all models failed
+  return 1 # Return with failure if all models failed
 }
 
 #
@@ -119,41 +119,41 @@ get_gemini_data() {
 
 # --- Check if AnkiConnect is available ---
 if ! curl -sS "$ANKI_URL" >/dev/null 2>&1; then
-	notify-send "AnkiConnect" "Cannot reach AnkiConnect." || true
+  notify-send "AnkiConnect" "Cannot reach AnkiConnect." || true
 
-	if ! pgrep -x "anki" >/dev/null 2>&1 && ! pgrep -x "Anki" >/dev/null 2>&1; then
-		notify-send "AnkiConnect" "Anki not running. Starting Anki... just a moment..."
-		anki >/dev/null 2>&1 &
-		sleep 4
-		~/.config/rofi/rofi_anki.sh >/dev/null 2>&1 &
-	fi
+  if ! pgrep -x "anki" >/dev/null 2>&1 && ! pgrep -x "Anki" >/dev/null 2>&1; then
+    notify-send "AnkiConnect" "Anki not running. Starting Anki... just a moment..."
+    anki >/dev/null 2>&1 &
+    sleep 4
+    ~/.config/rofi/rofi_anki.sh >/dev/null 2>&1 &
+  fi
 
-	exit 1
+  exit 1
 fi
 
 # 1. Get user input for card content
 CHOICE=$(echo -e "en (front: English)\nde (front: German)" | rofi -dmenu -p "Choose front language")
 [ -z "$CHOICE" ] && exit 0
 if [[ "$CHOICE" == en* ]]; then
-	FRONT_LANG="en"
-	BACK_LANG="de"
-	DECK="$DECK_EN"
-	FRONT_LANG_NAME="English"
-	BACK_LANG_NAME="German"
+  FRONT_LANG="en"
+  BACK_LANG="de"
+  DECK="$DECK_EN"
+  FRONT_LANG_NAME="English"
+  BACK_LANG_NAME="German"
 else
-	FRONT_LANG="de"
-	BACK_LANG="en"
-	DECK="$DECK_DE"
-	FRONT_LANG_NAME="German"
-	BACK_LANG_NAME="English"
+  FRONT_LANG="de"
+  BACK_LANG="en"
+  DECK="$DECK_DE"
+  FRONT_LANG_NAME="German"
+  BACK_LANG_NAME="English"
 fi
 TEXT=$(rofi -dmenu -p "Enter word / sentence (front)")
 [ -z "$TEXT" ] && exit 0
 TAGS_INPUT=$(rofi -dmenu -p "Tags (space separated) — optional")
 TAGS_JSON="[]"
 if [[ -n "$TAGS_INPUT" ]]; then
-	read -r -a tagsarr <<<"$TAGS_INPUT"
-	TAGS_JSON=$(printf '%s\n' "${tagsarr[@]}" | jq -R . | jq -s .)
+  read -r -a tagsarr <<<"$TAGS_INPUT"
+  TAGS_JSON=$(printf '%s\n' "${tagsarr[@]}" | jq -R . | jq -s .)
 fi
 
 # 2. Ask for optional components
@@ -167,8 +167,8 @@ TS=$(date +%s)
 notify-send "Anki Rofi" "Asking Gemini for definitions and examples..." || true
 GEMINI_JSON=$(get_gemini_data "$TEXT" "$FRONT_LANG_NAME" "$BACK_LANG_NAME")
 if [[ -z "$GEMINI_JSON" ]] || ! jq -e . >/dev/null 2>&1 <<<"$GEMINI_JSON"; then
-	notify-send "Anki Rofi Error" "Gemini returned invalid data after trying all models." || true
-	exit 1
+  notify-send "Anki Rofi Error" "Gemini returned invalid data after trying all models." || true
+  exit 1
 fi
 SYN_LIST=$(echo "$GEMINI_JSON" | jq -r '.synonyms | join(", ")' 2>/dev/null || echo "N/A")
 TR=$(echo "$GEMINI_JSON" | jq -r '.translation' 2>/dev/null || echo "N/A")
@@ -183,78 +183,78 @@ AUDIO_NORMAL=""
 AUDIO_REPEAT=""
 AUDIO_SPELL=""
 if [[ "$WANT_VOICE_NORMAL" == "yes" || "$WANT_VOICE_REPEAT" == "yes" || "$WANT_VOICE_SPELL" == "yes" ]]; then
-	notify-send "Anki Rofi" "Generating audio..." || true
-	WAV_NORMAL="${TMP_DIR}/anki_tts_temp_normal_${TS}.wav"
-	generate_main_wav "$TEXT" "$FRONT_LANG" "$WAV_NORMAL"
+  notify-send "Anki Rofi" "Generating audio..." || true
+  WAV_NORMAL="${TMP_DIR}/anki_tts_temp_normal_${TS}.wav"
+  generate_main_wav "$TEXT" "$FRONT_LANG" "$WAV_NORMAL"
 fi
 
 if [[ "$WANT_VOICE_NORMAL" == "yes" ]]; then
-	AUDIO_NORMAL="${TMP_DIR}/anki_tts_temp_normal_${TS}.mp3"
-	ffmpeg -i "$WAV_NORMAL" -c:a libmp3lame -q:a 4 "$AUDIO_NORMAL" -y >/dev/null 2>&1
+  AUDIO_NORMAL="${TMP_DIR}/anki_tts_temp_normal_${TS}.mp3"
+  ffmpeg -i "$WAV_NORMAL" -c:a libmp3lame -q:a 4 "$AUDIO_NORMAL" -y >/dev/null 2>&1
 fi
 if [[ "$WANT_VOICE_REPEAT" == "yes" ]]; then
-	AUDIO_REPEAT="${TMP_DIR}/anki_tts_temp_repeat_${TS}.mp3"
-	REPEAT_LIST_FILE="${TMP_DIR}/anki_tts_temp_repeat_list_${TS}.txt"
-	: >"$REPEAT_LIST_FILE"
-	WAV_SILENCE_LONG="${TMP_DIR}/anki_tts_temp_silence_long_${TS}.wav"
-	ffmpeg -f lavfi -i anullsrc=r=22050:cl=mono -t 1.5 -acodec pcm_s16le "$WAV_SILENCE_LONG" >/dev/null 2>&1
-	echo "file '$WAV_NORMAL'" >>"$REPEAT_LIST_FILE"
-	echo "file '$WAV_SILENCE_LONG'" >>"$REPEAT_LIST_FILE"
-	echo "file '$WAV_NORMAL'" >>"$REPEAT_LIST_FILE"
-	echo "file '$WAV_SILENCE_LONG'" >>"$REPEAT_LIST_FILE"
-	echo "file '$WAV_NORMAL'" >>"$REPEAT_LIST_FILE"
-	ffmpeg -f concat -safe 0 -i "$REPEAT_LIST_FILE" -c:a libmp3lame -q:a 4 "$AUDIO_REPEAT" -y >/dev/null 2>&1
+  AUDIO_REPEAT="${TMP_DIR}/anki_tts_temp_repeat_${TS}.mp3"
+  REPEAT_LIST_FILE="${TMP_DIR}/anki_tts_temp_repeat_list_${TS}.txt"
+  : >"$REPEAT_LIST_FILE"
+  WAV_SILENCE_LONG="${TMP_DIR}/anki_tts_temp_silence_long_${TS}.wav"
+  ffmpeg -f lavfi -i anullsrc=r=22050:cl=mono -t 1.5 -acodec pcm_s16le "$WAV_SILENCE_LONG" >/dev/null 2>&1
+  echo "file '$WAV_NORMAL'" >>"$REPEAT_LIST_FILE"
+  echo "file '$WAV_SILENCE_LONG'" >>"$REPEAT_LIST_FILE"
+  echo "file '$WAV_NORMAL'" >>"$REPEAT_LIST_FILE"
+  echo "file '$WAV_SILENCE_LONG'" >>"$REPEAT_LIST_FILE"
+  echo "file '$WAV_NORMAL'" >>"$REPEAT_LIST_FILE"
+  ffmpeg -f concat -safe 0 -i "$REPEAT_LIST_FILE" -c:a libmp3lame -q:a 4 "$AUDIO_REPEAT" -y >/dev/null 2>&1
 fi
 if [[ "$WANT_VOICE_SPELL" == "yes" ]]; then
-	AUDIO_SPELL="${TMP_DIR}/anki_tts_temp_spell_${TS}.mp3"
-	SPELL_LIST_FILE="${TMP_DIR}/anki_tts_temp_spell_list_${TS}.txt"
-	: >"$SPELL_LIST_FILE"
-	WAV_SILENCE_SHORT="${TMP_DIR}/anki_tts_temp_silence_short_${TS}.wav"
-	WAV_SILENCE_SPACE="${TMP_DIR}/anki_tts_temp_silence_space_${TS}.wav"
-	ffmpeg -f lavfi -i anullsrc=r=22050:cl=mono -t 0.6 -acodec pcm_s16le "$WAV_SILENCE_SHORT" >/dev/null 2>&1
-	ffmpeg -f lavfi -i anullsrc=r=22050:cl=mono -t 0.8 -acodec pcm_s16le "$WAV_SILENCE_SPACE" >/dev/null 2>&1
-	for ((i = 0; i < ${#TEXT}; i++)); do
-		char="${TEXT:$i:1}"
-		if [[ "$char" == " " ]]; then echo "file '$WAV_SILENCE_SPACE'" >>"$SPELL_LIST_FILE"; else
-			char_audio_wav="${TMP_DIR}/anki_tts_temp_char_${i}_${TS}.wav"
+  AUDIO_SPELL="${TMP_DIR}/anki_tts_temp_spell_${TS}.mp3"
+  SPELL_LIST_FILE="${TMP_DIR}/anki_tts_temp_spell_list_${TS}.txt"
+  : >"$SPELL_LIST_FILE"
+  WAV_SILENCE_SHORT="${TMP_DIR}/anki_tts_temp_silence_short_${TS}.wav"
+  WAV_SILENCE_SPACE="${TMP_DIR}/anki_tts_temp_silence_space_${TS}.wav"
+  ffmpeg -f lavfi -i anullsrc=r=22050:cl=mono -t 0.6 -acodec pcm_s16le "$WAV_SILENCE_SHORT" >/dev/null 2>&1
+  ffmpeg -f lavfi -i anullsrc=r=22050:cl=mono -t 0.8 -acodec pcm_s16le "$WAV_SILENCE_SPACE" >/dev/null 2>&1
+  for ((i = 0; i < ${#TEXT}; i++)); do
+    char="${TEXT:$i:1}"
+    if [[ "$char" == " " ]]; then echo "file '$WAV_SILENCE_SPACE'" >>"$SPELL_LIST_FILE"; else
+      char_audio_wav="${TMP_DIR}/anki_tts_temp_char_${i}_${TS}.wav"
 
-			# MODIFIED LOGIC: Always use gTTS for English, Piper for German
-			if [[ "$FRONT_LANG" == "en" ]]; then
-				# Use gTTS for English spelling
-				char_audio_mp3="${TMP_DIR}/anki_tts_temp_char_${i}_${TS}.mp3"
-				gtts-cli "$char" -l en -o "$char_audio_mp3"
-				ffmpeg -i "$char_audio_mp3" "$char_audio_wav" -y >/dev/null 2>&1
-			else
-				# Use Piper for German spelling
-				echo "$char" | "$PIPER_CMD" --model "$PIPER_VOICE_DE" --output_file "$char_audio_wav" >/dev/null 2>&1
-			fi
+      # MODIFIED LOGIC: Always use gTTS for English, Piper for German
+      if [[ "$FRONT_LANG" == "en" ]]; then
+        # Use gTTS for English spelling
+        char_audio_mp3="${TMP_DIR}/anki_tts_temp_char_${i}_${TS}.mp3"
+        gtts-cli "$char" -l en -o "$char_audio_mp3"
+        ffmpeg -i "$char_audio_mp3" "$char_audio_wav" -y >/dev/null 2>&1
+      else
+        # Use Piper for German spelling
+        echo "$char" | "$PIPER_CMD" --model "$PIPER_VOICE_DE" --output_file "$char_audio_wav" >/dev/null 2>&1
+      fi
 
-			echo "file '$char_audio_wav'"
-			echo "file '$WAV_SILENCE_SHORT'"
-		fi
-	done >>"$SPELL_LIST_FILE"
-	echo "file '$WAV_SILENCE_SPACE'" >>"$SPELL_LIST_FILE"
-	echo "file '$WAV_NORMAL'" >>"$SPELL_LIST_FILE"
-	ffmpeg -f concat -safe 0 -i "$SPELL_LIST_FILE" -c:a libmp3lame -q:a 4 "$AUDIO_SPELL" -y >/dev/null 2>&1
+      echo "file '$char_audio_wav'"
+      echo "file '$WAV_SILENCE_SHORT'"
+    fi
+  done >>"$SPELL_LIST_FILE"
+  echo "file '$WAV_SILENCE_SPACE'" >>"$SPELL_LIST_FILE"
+  echo "file '$WAV_NORMAL'" >>"$SPELL_LIST_FILE"
+  ffmpeg -f concat -safe 0 -i "$SPELL_LIST_FILE" -c:a libmp3lame -q:a 4 "$AUDIO_SPELL" -y >/dev/null 2>&1
 fi
 
 # 5. Get image
 IMG_FILE=""
 if [[ "$WANT_IMAGE" == "yes" ]]; then
-	IMG_URL_INPUT=$(rofi -dmenu -p "Paste image URL (or leave blank)")
-	if [[ -n "$IMG_URL_INPUT" ]]; then
-		notify-send "Anki Rofi" "Downloading image..." || true
-		IMG_FILE_TMP="${TMP_DIR}/anki_tts_temp_img_${TS}"
-		if curl -sL --max-time 10 "$IMG_URL_INPUT" -o "$IMG_FILE_TMP"; then
-			if [[ -s "$IMG_FILE_TMP" && "$(file --mime-type -b "$IMG_FILE_TMP")" == image/* ]]; then
-				IMG_FILE="$IMG_FILE_TMP"
-			else
-				notify-send "Anki Rofi Error" "URL did not point to a valid image."
-			fi
-		else
-			notify-send "Anki Rofi Error" "Failed to download from URL."
-		fi
-	fi
+  IMG_URL_INPUT=$(rofi -dmenu -p "Paste image URL (or leave blank)")
+  if [[ -n "$IMG_URL_INPUT" ]]; then
+    notify-send "Anki Rofi" "Downloading image..." || true
+    IMG_FILE_TMP="${TMP_DIR}/anki_tts_temp_img_${TS}"
+    if curl -sL --max-time 10 "$IMG_URL_INPUT" -o "$IMG_FILE_TMP"; then
+      if [[ -s "$IMG_FILE_TMP" && "$(file --mime-type -b "$IMG_FILE_TMP")" == image/* ]]; then
+        IMG_FILE="$IMG_FILE_TMP"
+      else
+        notify-send "Anki Rofi Error" "URL did not point to a valid image."
+      fi
+    else
+      notify-send "Anki Rofi Error" "Failed to download from URL."
+    fi
+  fi
 fi
 
 # 6. Build card and send to Anki
@@ -271,34 +271,34 @@ BACK_FINAL_HTML+="$(html_escape "$EX3")<br>"
 
 audio_json_parts=()
 if [[ "$WANT_VOICE_NORMAL" == "yes" ]]; then
-	audio_json_parts+=("$(jq -n --arg filename "$(basename "$AUDIO_NORMAL")" --arg path "$AUDIO_NORMAL" '{filename: $filename, path: $path, fields: ["Back"]}')")
+  audio_json_parts+=("$(jq -n --arg filename "$(basename "$AUDIO_NORMAL")" --arg path "$AUDIO_NORMAL" '{filename: $filename, path: $path, fields: ["Back"]}')")
 fi
 if [[ "$WANT_VOICE_REPEAT" == "yes" ]]; then
-	audio_json_parts+=("$(jq -n --arg filename "$(basename "$AUDIO_REPEAT")" --arg path "$AUDIO_REPEAT" '{filename: $filename, path: $path, fields: ["Back"]}')")
+  audio_json_parts+=("$(jq -n --arg filename "$(basename "$AUDIO_REPEAT")" --arg path "$AUDIO_REPEAT" '{filename: $filename, path: $path, fields: ["Back"]}')")
 fi
 if [[ "$WANT_VOICE_SPELL" == "yes" ]]; then
-	audio_json_parts+=("$(jq -n --arg filename "$(basename "$AUDIO_SPELL")" --arg path "$AUDIO_SPELL" '{filename: $filename, path: $path, fields: ["Back"]}')")
+  audio_json_parts+=("$(jq -n --arg filename "$(basename "$AUDIO_SPELL")" --arg path "$AUDIO_SPELL" '{filename: $filename, path: $path, fields: ["Back"]}')")
 fi
 joined_parts=$(printf "%s," "${audio_json_parts[@]}")
 audio_json_array="[${joined_parts%,}]"
 
 notify-send "Anki Rofi" "Adding card to Anki..." || true
 if [[ -n "$IMG_FILE" ]]; then
-	IMG_BASE64=$(base64 -w 0 "$IMG_FILE")
-	curl -sS "$ANKI_URL" -d "$(jq -n --arg filename "$(basename "$IMG_FILE")" --arg data "$IMG_BASE64" '{action:"storeMediaFile",version:6,params:{filename:$filename,data:$data}}')" >/dev/null
+  IMG_BASE64=$(base64 -w 0 "$IMG_FILE")
+  curl -sS "$ANKI_URL" -d "$(jq -n --arg filename "$(basename "$IMG_FILE")" --arg data "$IMG_BASE64" '{action:"storeMediaFile",version:6,params:{filename:$filename,data:$data}}')" >/dev/null
 fi
 PAYLOAD=$(jq -n --arg deck "$DECK" --arg model "$MODEL_NAME" --arg front "$TEXT" --arg back "$BACK_FINAL_HTML" --argjson tags "$TAGS_JSON" --argjson audio "$audio_json_array" \
-	'{action:"addNote",version:6,params:{note:{deckName:$deck,modelName:$model,fields:{Front:$front,Back:$back},options:{allowDuplicate:false},tags:$tags,audio:$audio}}}')
+  '{action:"addNote",version:6,params:{note:{deckName:$deck,modelName:$model,fields:{Front:$front,Back:$back},options:{allowDuplicate:false},tags:$tags,audio:$audio}}}')
 
 RESP=$(curl -sS "$ANKI_URL" -d "$PAYLOAD")
 ERR=$(echo "$RESP" | jq -r '.error')
 if [[ "$ERR" != "null" ]]; then
-	notify-send "Anki error" "$ERR" || true
-	echo "Anki error: $ERR" >&2
-	exit 1
+  notify-send "Anki error" "$ERR" || true
+  echo "Anki error: $ERR" >&2
+  exit 1
 else
-	notify-send "Anki" "Added card to ${DECK}: ${TEXT}" || true
-	echo "Added note OK"
+  notify-send "Anki" "Added card to ${DECK}: ${TEXT}" || true
+  echo "Added note OK"
 fi
 
 exit 0

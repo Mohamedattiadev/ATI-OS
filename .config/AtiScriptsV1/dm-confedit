@@ -1,109 +1,119 @@
 #!/usr/bin/env bash
 #
 # Script name: dm-confedit
-# Description: Hierarchical config file browser/editor with invalid input notification
-# Dependencies: rofi, nvim, libnotify (for notify-send)
-# License: MIT
+# Description: Dual-branch config browser for ~/.config and ~/.dotfiles
+# Dependencies: rofi, nvim, libnotify, kitty
 
 set -euo pipefail
 
-# Configuration
+# --- Configuration ---
 RMENU="rofi -dmenu -i -p"
 DMEDITOR="alacritty -e nvim"
 CONFIG_DIR="$HOME/.config"
-SEPARATOR=""
+DOTFILES_DIR="$HOME/.dotfiles" # Ensure this matches your actual path
+SEPARATOR="➜"
 
 # File patterns to exclude (case insensitive)
 EXCLUDE_PATTERNS=(
-	"*.jpg" "*.jpeg" "*.png" "*.gif" "*.webp" # Images
-	"*.mp4" "*.avi" "*.mov" "*.mkv" "*.webm"  # Videos
-	"*.mp3" "*.wav" "*.ogg" "*.flac"          # Audio
-	"*.zip" "*.tar" "*.gz" "*.rar" "*.7z"     # Archives
-	"*.pdf" "*.doc" "*.docx" "*.odt"          # Documents
-	"*.iso" "*.img"                           # Disk images
-	"*.bak" "*.tmp" "*.swp" "*.swo"           # Temporary/backup
-	"*.log" "*.lock"                          # Logs and locks
-	"*.db" "*.sqlite" "*.ldb"                 # Databases
-	"*.cache" "*.old"                         # Cache and old files
-	"*.bin" "*.exe" "*.dll"                   # Binaries
-	"*.class" "*.pyc" "*.o" "*.so" "*.a"      # Compiled
-	".DS_Store" "Thumbs.db"                   # System metadata
-	"*.out" "*.obj"                           # Build artifacts
-	"*.crt" "*.pem" "*.key"                   # SSL files
+  "*.jpg" "*.jpeg" "*.png" "*.gif" "*.webp" "*.mp4" "*.avi" "*.mov" "*.mkv"
+  "*.mp3" "*.wav" "*.ogg" "*.flac" "*.zip" "*.tar" "*.gz" "*.rar" "*.7z"
+  "*.pdf" "*.doc" "*.docx" "*.iso" "*.bak" "*.tmp" "*.swp" "*.swo"
+  "*.log" "*.lock" "*.db" "*.sqlite" "*.cache" "*.old" "*.bin" "*.exe"
+  "*.class" "*.pyc" "*.so" ".DS_Store" "*.out" "*.crt" "*.pem" "*.key"
+  ".git" ".github" "node_modules"
 )
 
 main() {
-	local current_dir="$CONFIG_DIR"
-	local navigation_stack=()
+  local current_dir="ROOT" # Start at a virtual root
+  local navigation_stack=()
 
-	while true; do
-		# Get all directories and files in current directory
-		local items=()
-		local dirs=()
-		local files=()
+  while true; do
+    local items=()
+    local dirs=()
+    local files=()
 
-		# Find directories first
-		while IFS= read -r -d '' dir; do
-			local dir_name="${dir##*/}"
-			dirs+=("$dir_name/")
-		done < <(find "$current_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null | sort -z)
+    if [[ "$current_dir" == "ROOT" ]]; then
+      # Virtual Root Menu
+      items=("1. 📁 Config (~/.config)" "2. 📁 Dotfiles (~/.dotfiles)")
+      local relative_path="HOME"
+    else
+      # 1. Find directories (Follows symlinks with -L)
+      while IFS= read -r -d '' dir; do
+        [[ "$dir" == "$current_dir" ]] && continue
+        dirs+=("${dir##*/}/")
+      done < <(find -L "$current_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null | sort -z)
 
-		# Then find files (excluding non-config patterns)
-		while IFS= read -r -d '' file; do
-			local filename="${file##*/}"
-			local exclude_file=0
+      # 2. Find files (Follows symlinks with -L)
+      while IFS= read -r -d '' file; do
+        local filename="${file##*/}"
+        local exclude_file=0
+        for pattern in "${EXCLUDE_PATTERNS[@]}"; do
+          if [[ "${filename,,}" == ${pattern,,} ]]; then
+            exclude_file=1
+            break
+          fi
+        done
+        [[ $exclude_file -eq 0 ]] && files+=("$filename")
+      done < <(find -L "$current_dir" -mindepth 1 -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
 
-			# Check against exclude patterns
-			for pattern in "${EXCLUDE_PATTERNS[@]}"; do
-				if [[ "${filename,,}" == ${pattern,,} ]]; then
-					exclude_file=1
-					break
-				fi
-			done
+      items=("${dirs[@]}" "${files[@]}")
 
-			# Include if not excluded
-			if [[ $exclude_file -eq 0 ]]; then
-				files+=("$filename")
-			fi
-		done < <(find "$current_dir" -mindepth 1 -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
+      # Breadcrumb display
+      local relative_path="${current_dir#$HOME/}"
+      # Add "Back" option
+      items=("../" "${items[@]}")
+    fi
 
-		# Combine directories and files
-		items=("${dirs[@]}" "${files[@]}")
+    # Show Menu
+    local choice
+    choice=$(printf '%s\n' "${items[@]}" | $RMENU "Browse ${SEPARATOR} ${relative_path}:")
 
-		# Show current path in prompt
-		local relative_path="${current_dir#$CONFIG_DIR/}"
-		[[ -z "$relative_path" ]] && relative_path="ROOT"
+    # Handle ESC/Exit
+    if [[ -z "$choice" ]]; then
+      if [[ ${#navigation_stack[@]} -gt 0 ]]; then
+        current_dir="${navigation_stack[-1]}"
+        unset 'navigation_stack[-1]'
+        continue
+      else
+        exit 0
+      fi
+    fi
 
-		# Add back option if not in root
-		[[ "$current_dir" != "$CONFIG_DIR" ]] && items=("../" "${items[@]}")
+    case "$choice" in
+    "1. 📁 Config (~/.config)")
+      navigation_stack+=("ROOT")
+      current_dir="$CONFIG_DIR"
+      ;;
+    "2. 📁 Dotfiles (~/.dotfiles)")
+      navigation_stack+=("ROOT")
+      current_dir="$DOTFILES_DIR"
+      ;;
+    "../")
+      current_dir="${navigation_stack[-1]}"
+      unset 'navigation_stack[-1]'
+      ;;
+    */)
+      # Enter Directory
+      navigation_stack+=("$current_dir")
+      current_dir="${current_dir}/${choice%/}"
+      ;;
+    *)
+      # Open File
+      local target_file="${current_dir}/${choice}"
 
-		# Show menu
-		local choice
-		choice=$(printf '%s\n' "${items[@]}" | $RMENU "Config ${SEPARATOR} ${relative_path}:")
+      # Resolve real path to fix Neovim syntax highlighting
+      local real_path
+      real_path=$(readlink -f "$target_file")
 
-		# Handle selection
-		if [[ -z "$choice" ]]; then
-			# Exit if nothing selected
-			[[ ${#navigation_stack[@]} -eq 0 ]] && exit 0
-			# Go back in navigation stack
-			current_dir="${navigation_stack[-1]}"
-			unset 'navigation_stack[-1]'
-		elif [[ "$choice" == "../" ]]; then
-			# Go up one directory
-			current_dir="$(dirname "$current_dir")"
-		elif [[ "$choice" == */ ]]; then
-			# Enter directory
-			navigation_stack+=("$current_dir")
-			current_dir="${current_dir}/${choice%/}"
-		elif [[ " ${items[*]} " == *" $choice "* ]]; then
-			# Open file only if it exists in items
-			$DMEDITOR "${current_dir}/${choice}"
-			exit 0
-		else
-			# User typed something invalid
-			notify-send "Config Edit" "You tried to open '$choice', but it does not exist."
-		fi
-	done
+      if [[ -f "$real_path" ]]; then
+        $DMEDITOR "$real_path"
+        exit 0
+      else
+        notify-send "Error" "File '$choice' is no longer accessible."
+      fi
+      ;;
+    esac
+  done
 }
 
 [[ "${BASH_SOURCE[0]}" == "${0}" ]] && main "$@"

@@ -1,0 +1,14 @@
+#!/bin/sh
+
+key="$1"
+img="$3"
+
+case "$key" in
+A)
+  [ -z "$img" ] && exit 0
+
+  pkill xwallpaper 2>/dev/null
+  xwallpaper --stretch "$img" &
+  notify-send "Wallpaper applied" "$(basename "$img")"
+  ;;
+esac

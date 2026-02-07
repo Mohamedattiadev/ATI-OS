@@ -1,20 +1,16 @@
-# scripts/toggle_apps.py
-import os
+
 from libqtile.lazy import lazy
 from libqtile import hook
-from libqtile.backend.base import Window
+from libqtile.backend.base.window import Window
 
-sum_group = "S"
-sum_title = "nvimsum"
-sum_file = os.path.expanduser("~/.config/rofi/Todo_files/sum.md")
 obsidian_group = "S"
 obsidian_class = "obsidian"
 anki_group = "S"
-qute_group = "5"
+qute_group = "2"
 anki_class = "Anki"
 file_manager_class = "pcmanfm"
 qute_class = "qutebrowser"
-brave_group = "2"
+brave_group = "5"
 brave_class = "brave-browser"
 google_chrome_class = "google-chrome"
 terminal_class = "kitty"
@@ -33,11 +29,11 @@ def _focus_window_and_group(qtile, group_name, window: Window):
         qtile.current_group.focus(window, warp=True)
 
 
-def _find_window_by_name(qtile, name: str):
-    for w in qtile.windows_map.values():
-        if w.name == name:
-            return w
-    return None
+# def _find_window_by_name(qtile, name: str):
+#     for w in qtile.windows_map.values():
+#         if w.name == name:
+#             return w
+#     return None
 
 
 def _find_window_by_class(qtile, cls: str):
@@ -49,14 +45,14 @@ def _find_window_by_class(qtile, cls: str):
     return None
 
 
-def _find_window_by_class_sensitive(qtile, cls: str):
-    """Find a window by wm_class (case-insensitive)."""
-    for w in qtile.windows_map.values():
-        if isinstance(w, Window):
-            wm_class = w.get_wm_class()
-            if wm_class and any(cls.lower() in c.lower() for c in wm_class):
-                return w
-    return None
+# def _find_window_by_class_sensitive(qtile, cls: str):
+#     """Find a window by wm_class (case-insensitive)."""
+#     for w in qtile.windows_map.values():
+#         if isinstance(w, Window):
+#             wm_class = w.get_wm_class()
+#             if wm_class and any(cls.lower() in c.lower() for c in wm_class):
+#                 return w
+#     return None
 
 
 # --- toggle apps ---
@@ -291,38 +287,6 @@ def toggle_anki(qtile):
     qtile.cmd_spawn("anki")
 
 
-@lazy.function
-def toggle_sum(qtile):
-    current_group = qtile.current_group.name
-    current_win = qtile.current_window
-
-    target_win = _find_window_by_name(qtile, sum_title)
-
-    # Already in S and on sum → return back
-    if current_group == sum_group and current_win and current_win.name == sum_title:
-        if last_group[0]:
-            qtile.groups_map[last_group[0]].toscreen()
-        return
-
-    # Already in S but not on sum → switch inside S
-    if current_group == sum_group and target_win:
-        _focus_window_and_group(qtile, sum_group, target_win)
-        return
-
-    # Normal toggle: save last group
-    last_group[0] = current_group
-
-    if target_win:
-        _focus_window_and_group(qtile, sum_group, target_win)
-        return
-
-    # Not open → spawn it
-    if not os.path.exists(sum_file):
-        with open(sum_file, "w") as f:
-            f.write("")
-
-    qtile.groups_map[sum_group].toscreen()
-    qtile.cmd_spawn(f"kitty --title {sum_title} -e nvim {sum_file}")
 
 
 @lazy.function
@@ -420,7 +384,7 @@ def auto_return_after_obsidian_killed(window):
         window.qtile.groups_map[last_group[0]].toscreen()
 
 
-@hook.subscribe.client_killed
-def auto_return_after_sum_killed(window):
-    if window.name == sum_title and last_group[0]:
-        window.qtile.groups_map[last_group[0]].toscreen()
+# @hook.subscribe.client_killed
+# def auto_return_after_sum_killed(window):
+#     if window.name == sum_title and last_group[0]:
+#         window.qtile.groups_map[last_group[0]].toscreen()

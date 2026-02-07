@@ -1,0 +1,56 @@
+
+(defwindow onboarding-welcome
+  :monitor 0
+  :geometry (geometry
+              :x "0%"
+              :y "0%"
+              :width "400px"
+              :height "200px"
+              :anchor "center")
+  :stacking "fg"
+  :windowtype "dialog"
+  :wm-ignore false
+  :exclusive false
+  :focusable false
+
+ (revealer
+    :reveal true
+    :transition "fade"
+    :duration "250ms"
+
+  (box :class "onboarding"
+       :orientation "v"
+
+    (label
+      :class "onb-title"
+      :text "Welcome")
+
+    (label
+      :class "onb-text"
+      :wrap true
+      :text
+"This short tour will walk you through
+the essentials and get you ready to work..")
+
+    (box
+      :class "onb-footer"
+      :halign "end"
+      :spacing 10
+
+
+      (button
+        :class "onb-btn onb-btn-danger"
+        ;; :onclick "eww close onboarding-welcome; qtile cmd-obj -o widget tooltip_widgetbox -f close"
+        :timeout  "900ms"
+        :onclick "sh -c 'eww close onboarding-welcome; qtile cmd-obj -o widget tooltip_widgetbox -f close'"
+        "Cancel")
+
+      (button
+        :class "onb-btn onb-btn-Apply"
+        :onclick "eww close onboarding-welcome; eww open bar-tooltip"
+        :timeout  "900ms"
+        ;; :onclick "sh -c ' eww open bar-tooltip ; eww close onboarding-welcome'"
+        "Next")
+    )
+  ))
+)

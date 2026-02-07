@@ -1,0 +1,14 @@
+description: Xorg, input, and display utilities
+
+packages:
+  - xorg-xinit
+  - xorg-xinput
+  - xorg-xev
+  - xorg-fonts-encodings
+  - xorg-setxkbmap
+  - xorg-fonts-misc
+  - wmctrl
+  - xwallpaper
+
+exclude: []
+conflicts: []

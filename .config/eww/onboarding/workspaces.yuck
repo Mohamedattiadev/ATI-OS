@@ -1,0 +1,77 @@
+(defwindow onboarding-workspaces
+  :monitor 0
+  :geometry (geometry
+              :x "0%"
+              :y "0%"
+              :width "400px"
+              :height "220px"
+              :anchor "center")
+  :windowtype "dialog"
+  :stacking "fg"
+  :wm-ignore false
+  :exclusive false
+  :focusable false
+
+
+ (revealer
+    :reveal true
+    :transition "fade"
+    :duration "250ms"
+
+  (box
+    :class "onboarding"
+    :orientation "v"
+    :space-evenly false
+
+    ;; ----------------------------
+    ;; Title
+    ;; ----------------------------
+    (label
+      :class "onb-title"
+      :text "Workspaces")
+
+    ;; ----------------------------
+    ;; Description
+    ;; ----------------------------
+    (label
+      :class "onb-text"
+      :unindent true
+      :text
+"Workspaces help you organize your windows.
+• Alt + 1–9 — switch workspaces
+
+")
+
+(label
+:class "onb-text"
+:unindent true
+:markup "<b>Tip :</b>
+Workspaces ( 1,6,7,8 ) are  <b><span foreground=\"#98be65\">Free</span></b> , workspace 2 for <b><span foreground=\"#ff6c6b\">Video</span></b>,
+3 for <b><span foreground=\"#51afef\">File Manager</span></b> , 4 for <b><span foreground=\"#46d9ff\">Video</span></b> , 5 for <b><span foreground=\"#c678dd\">Browser</span></b>
+9 for <b><span foreground=\"#51afef\">Chat</span></b>, and the `S` <b><span foreground=\"#51afef\">Obsidain , anki </span></b>  "
+)
+
+    ;; ----------------------------
+    ;; Navigation
+    ;; ----------------------------
+    (box
+      :class "onb-footer"
+      :halign "end"
+      :spacing 10
+
+      (button
+        :class "onb-btn"
+        :onclick "eww close onboarding-workspaces; eww open bar-tooltip"
+        :timeout  "900ms"
+        ;; :onclick "sh -c 'eww close onboarding-workspaces; eww open bar-tooltip'"
+        "Back")
+
+      (button
+        :class "onb-btn onb-btn-Apply"
+        :timeout  "900ms"
+        :onclick "sh -c 'eww close onboarding-workspaces; eww open onboarding-keybindings; (sleep 5; xdotool key Super_L+Shift+k) &'"
+        "Next")
+    )
+  ))
+)
+

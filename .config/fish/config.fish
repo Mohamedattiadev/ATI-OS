@@ -4,6 +4,19 @@
 # | |_| || |    http://www.gitlab.com/dwt1/
 # |____/ |_|
 #
+#
+# to make the tty colored
+set -gx TCT_NO_RC_WARN 1
+if test "$TERM" = linux; and not set -q TTY_COLORS_APPLIED
+    set -gx TTY_COLORS_APPLIED 1
+    ~/.config/tty-colors/tty-color-tool set-soft ~/.config/tty-colors/doom-one.colors
+end
+
+function fish_exit --on-event fish_exit
+    reset
+end
+#
+#
 # My fish config. Not much to see here; just some pretty standard stuff.
 
 ### ADDING TO THE PATH
@@ -16,8 +29,9 @@ set -U fish_user_paths $HOME/.bin $HOME/.local/bin $HOME/.config/emacs/bin $HOME
 
 set fish_greeting # Supresses fish's intro message
 set TERM xterm-256color # Sets the terminal type
-set VISUAL nvim # $VISUAL use Emacs in GUI mode
-set EDITOR nvim # $EDITOR use Emacs in terminal
+set VISUAL nvim # $VISUAL use nvim in GUI mode
+set EDITOR nvim # $EDITOR use nvim in terminal
+set -Ux SUDO_EDITOR nvim
 
 ### SET MANPAGER
 ### Uncomment only one of these!
@@ -125,6 +139,15 @@ function take --argument number
     head -$number
 end
 
+#NOTE: used the rust tool pomodoro-tui
+function pomo
+    if test (count $argv) -eq 2
+        pomodoro-tui -w $argv[1] -b $argv[2]
+    else
+        echo "Usage: pomo <work_minutes> <break_minutes>"
+    end
+end
+
 # # Function for org-agenda
 # function org-search -d "send a search string to org-mode"
 #     set -l output (/usr/bin/emacsclient -a "" -e "(message \"%s\" (mapconcat #'substring-no-properties \
@@ -137,6 +160,10 @@ end
 #     \"))")
 #     printf $output
 # end
+
+function letsgo
+    exec dbus-run-session startx
+end
 
 ### END OF FUNCTIONS ###
 
@@ -197,12 +224,13 @@ end
 
 #img func
 function img
-    if not type -q feh
-        echo "feh not found. Installing with yay..."
-        yay -S --noconfirm feh
+    if not type -q imv
+        echo "imv not found. Installing..."
+        yay -S --noconfirm imv
     end
 
-    feh --title ImagePopup --zoom fill $argv
+    imv \
+        $argv
 end
 
 #pwd copy to cliboard func 
@@ -221,13 +249,26 @@ function pwd
     echo $display_path | xclip -selection clipboard
 end
 
-#NOTE: used the rust tool pomodoro-tui
-function pomo
-    if test (count $argv) -eq 2
-        pomodoro-tui -w $argv[1] -b $argv[2]
-    else
-        echo "Usage: pomo <work_minutes> <break_minutes>"
+function ppwd
+    set full_path (builtin pwd)
+
+    if test (count $argv) -ge 1
+        set full_path "$full_path/$argv[1]"
     end
+
+    # replace HOME with ~
+    set display_path (string replace --regex "^$HOME" "~" $full_path)
+
+    # 🔧 escape spaces ONLY (no quotes, no fish escaping)
+    set escaped_path (string replace -a " " "\ " -- $display_path)
+
+    if not type -q xclip
+        echo "xclip not found. Installing with yay..."
+        yay -S --noconfirm xclip
+    end
+
+    echo $escaped_path
+    echo $escaped_path | xclip -selection clipboard
 end
 
 #NOTE:  used to source all the config files (fish, bash, zsh, etc)
@@ -308,21 +349,19 @@ set -g NVIM_DAEMON_SOCKET /tmp/nvimsocket
 set -g NVIM_DAEMON_SESSION nvd
 
 function __nvd_ensure
-    # Ensure tmux session exists
-    if not tmux has-session -t $NVIM_DAEMON_SESSION 2>/dev/null
-        tmux new-session -d -s $NVIM_DAEMON_SESSION
-    end
-
-    # If socket exists → server alive, nothing to do
+    # If socket exists, daemon is alive
     if test -S $NVIM_DAEMON_SOCKET
         return
     end
 
-    # Kill broken / old session state safely
+    # Kill broken session
     tmux kill-session -t $NVIM_DAEMON_SESSION 2>/dev/null
-    tmux new-session -d -s $NVIM_DAEMON_SESSION "nvim --listen $NVIM_DAEMON_SOCKET"
 
-    # Block until socket exists (NO RACE CONDITION)
+    # IMPORTANT: bypass fish functions here
+    tmux new-session -d -s $NVIM_DAEMON_SESSION \
+        "command nvim --listen $NVIM_DAEMON_SOCKET"
+
+    # Wait for socket (no race)
     while not test -S $NVIM_DAEMON_SOCKET
         sleep 0.05
     end
@@ -331,16 +370,17 @@ end
 function __nvd_open
     __nvd_ensure
 
-    # Open files if provided
     if test (count $argv) -gt 0
         nvr --servername $NVIM_DAEMON_SOCKET --remote-tab $argv
     end
 
-    # Attach to daemon
-    tmux attach -t $NVIM_DAEMON_SESSION
+    # Attach only if not already in tmux
+    if not set -q TMUX
+        tmux attach -t $NVIM_DAEMON_SESSION
+    end
 end
 
-# Override vim/nvim
+# ONE behavior for EVERYTHING
 # function nvim
 #     __nvd_open $argv
 # end
@@ -349,16 +389,22 @@ function vim
     __nvd_open $argv
 end
 
+alias vi='vim'
+alias v='vim'
+alias n='nvim'
+alias nv='nvim'
+alias nvi='nvim'
 #showkeys
 alias showkeys="screenkey"
 
 # vim and emacs
 # alias vim='nvim'
-alias vi='nvim'
-alias n='nvim'
-alias nv='nvim'
-alias nvi='nvim'
-alias nvim='nvim'
+# alias vi='nvim'
+# alias v='vim'
+# alias n='nvim'
+# alias nv='nvim'
+# alias nvi='nvim'
+# alias nvim='nvim'
 
 # alias em='/usr/bin/emacs -nw'
 # alias emacs="emacsclient -c -a 'emacs'"

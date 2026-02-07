@@ -4,9 +4,14 @@
 import ast
 import os
 import subprocess
+import re
 
-# --- Configuration ---
-CONFIG_FILE = os.path.expanduser("~/.config/qtile/config.py")
+# --------------------------------------------------
+# CONFIG
+# --------------------------------------------------
+
+QTILE_CONFIG = os.path.expanduser("~/.config/qtile/config.py")
+FISH_CONFIG = os.path.expanduser("~/.config/fish/config.fish")
 
 MOD_SYMBOLS = {
     "mod": "MOD",
@@ -17,147 +22,252 @@ MOD_SYMBOLS = {
     "control": "CTRL",
 }
 
-# --- AST-based Parser ---
+DESC_COLOR = "#98c379"
+# DESC_COLOR = "#ffffff"
+RIGHT_COLOR = "#61afef"
+# --------------------------------------------------
+# HUMAN DESCRIPTIONS FOR FISH
+# --------------------------------------------------
+
+ALIAS_DESCRIPTIONS = {
+    "ls": "List directory contents",
+    "ll": "List files in long format",
+    "la": "List all files including hidden ones",
+    "lt": "Tree view of directories",
+    "l.": "List hidden files only",
+    "cl": "Clear the terminal",
+    "e": "Exit the shell",
+    "ex": "Exit the shell",
+    "exi": "Exit the shell",
+    "tmuxdev": "Attach or create tmux dev session",
+    "tmuxmedo": "Attach or create tmux medo session",
+    "df": "Show disk usage in a formatted table",
+    "dfh": "Show disk usage (human readable)",
+    "lst": "Pretty directory listing",
+    "pacsyu": "Update system packages",
+    "pacsyyu": "Force refresh package lists and update",
+    "cleanup": "Remove orphaned packages",
+    "cf": "Open ~/.config in Neovim",
+    "rr": "Terminal rickroll (fun)",
+    "jctl": "Show critical system logs",
+}
+
+FUNCTION_DESCRIPTIONS = {
+    "backup": "Create a .bak backup of a file",
+    "copy": "Copy files or directories intelligently",
+    # "coln": "Print a specific column from input",
+    # "rown": "Print a specific row from input",
+    # "skip": "Skip the first N lines of input",
+    # "take": "Take the first N lines of input",
+    "tmux": "Smart tmux wrapper for session handling",
+    "tmuxDel": "Kill all tmux sessions except dev/medo",
+    "img": "Open images using imv (auto-install if missing)",
+    "pwd": "Copy current directory path to clipboard",
+    "ppwd": "Copy escaped path to clipboard",
+    "src": "Reload shell configuration files",
+    "yay": "Interactive yay package installer",
+    "yayd": "Interactive yay package remover",
+    "nvim": "Open files using Neovim daemon",
+    "vim": "Alias to Neovim daemon",
+}
+
+IMPORTANT_FISH_FUNCTIONS = set(FUNCTION_DESCRIPTIONS.keys())
+IGNORE_FISH_FUNCTIONS = {"fish_user_key_bindings","coln", "rown", "skip", "take"}
+
+# --------------------------------------------------
+# QTILE AST PARSER
+# --------------------------------------------------
 
 class KeybindingVisitor(ast.NodeVisitor):
-    """
-    An AST visitor that intelligently finds and formats described keybindings.
-    """
     def __init__(self):
         self.keybindings = []
-        # This will now store the full prefix, e.g., ["MOD + p →"]
         self._prefix_stack = []
 
     def _format_mods(self, mods_list_node):
-        """Safely formats the modifiers from an AST list node."""
         mods = [m.id if isinstance(m, ast.Name) else m.value for m in mods_list_node.elts]
         return [MOD_SYMBOLS.get(m, m.upper()) for m in mods]
 
     def _format_desc(self, keywords):
-        """
-        Safely formats the description, returning None if not found.
-        Intelligently handles .format() calls.
-        """
         for keyword in keywords:
             if keyword.arg == 'desc':
                 if isinstance(keyword.value, ast.Constant):
-                    return keyword.value.value  # It's a simple string
-                # Check for "string".format()
-                if (isinstance(keyword.value, ast.Call) and
-                    isinstance(keyword.value.func, ast.Attribute) and
-                    keyword.value.func.attr == 'format' and
-                    isinstance(keyword.value.func.value, ast.Constant)):
-                    # Return the cleaner base string
+                    return keyword.value.value
+                if (
+                    isinstance(keyword.value, ast.Call)
+                    and isinstance(keyword.value.func, ast.Attribute)
+                    and keyword.value.func.attr == 'format'
+                    and isinstance(keyword.value.func.value, ast.Constant)
+                ):
                     return keyword.value.func.value.value
-                # Fallback for other complex descriptions
                 return ast.unparse(keyword.value)
-        return None # No description found
+        return None
 
     def visit_Call(self, node):
-        """
-        This method is called for every function call in the code.
-        We check if it's a Key or KeyChord.
-        """
         if not hasattr(node.func, 'id'):
             self.generic_visit(node)
             return
 
-        key_type = node.func.id
-        if key_type not in ('Key', 'KeyChord'):
+        if node.func.id not in ('Key', 'KeyChord'):
             self.generic_visit(node)
             return
 
         desc = self._format_desc(node.keywords)
-        
-        # --- MASTERPIECE RULE 1: If no description, ignore it completely. ---
-        if desc is None and key_type != 'KeyChord':
-             return # Skip this key
+        if desc is None and node.func.id != 'KeyChord':
+            return
 
         mods = self._format_mods(node.args[0])
         key = node.args[1].value
-        
-        # Build the full key combination string
+
         prefix = "".join(self._prefix_stack)
         mod_str = " + ".join(mods)
         combo = " + ".join(filter(None, [prefix, mod_str, key]))
 
-        if key_type == 'KeyChord':
-            # If the chord itself has a description, show it.
+        if node.func.id == 'KeyChord':
             if desc:
                 self.keybindings.append((combo, f"{desc} (CHORD)"))
-            
-            # --- MASTERPIECE RULE 2: Use a full, clear prefix for sub-keys. ---
             self._prefix_stack.append(f"{' + '.join(filter(None, [mod_str, key]))} → ")
-            # Visit the sub-keys defined in the chord's list
             if len(node.args) > 2 and isinstance(node.args[2], ast.List):
-                 self.generic_visit(node.args[2])
+                self.generic_visit(node.args[2])
             self._prefix_stack.pop()
-        else: # It's a regular Key
-             self.keybindings.append((combo, desc))
+        else:
+            self.keybindings.append((combo, desc))
 
 
-def parse_keys_ast(config_path):
-    """
-    Parses the Qtile config using AST to find all described keybindings.
-    """
+def parse_qtile_keys(path):
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
-    except Exception as e:
-        print(f"Error reading config file: {e}")
+        tree = ast.parse(open(path, encoding="utf-8").read())
+    except Exception:
         return []
-    
-    try:
-        tree = ast.parse(content)
-        # We only need to visit the `keys` list assignment and extensions
-        key_defs = []
-        for body_item in tree.body:
-            # Find `keys = [...]`
-            if (isinstance(body_item, ast.Assign) and
-                isinstance(body_item.targets[0], ast.Name) and
-                body_item.targets[0].id == 'keys'):
-                key_defs.append(body_item)
-            # Find `keys.extend([...])`
-            if (isinstance(body_item, ast.Expr) and
-                isinstance(body_item.value, ast.Call) and
-                hasattr(body_item.value.func, "value") and
-                isinstance(body_item.value.func.value, ast.Name) and
-                body_item.value.func.value.id == 'keys'):
-                key_defs.append(body_item)
 
-        visitor = KeybindingVisitor()
-        for node in key_defs:
+    visitor = KeybindingVisitor()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == "keys":
             visitor.visit(node)
-            
-        return visitor.keybindings
-    except SyntaxError as e:
-        print(f"Error parsing config file syntax: {e}")
-        return []
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call)
+            and getattr(node.value.func, "value", None)
+            and getattr(node.value.func.value, "id", None) == "keys"
+        ):
+            visitor.visit(node)
 
-def format_and_show(keybindings):
-    """
-    Formats the keybindings and displays them using Rofi.
-    """
-    if not keybindings:
-        subprocess.run(['notify-send', "Keymap Previewer", "No described keybindings found."])
-        return
+    return visitor.keybindings
 
-    # Sort keybindings for consistency, chords first
-    keybindings.sort(key=lambda k: (k[0].count('→'), k[0]))
 
-    formatted_lines = [f"{combo.ljust(40)}: {desc}" for combo, desc in keybindings]
-    
-    rofi_command = [
-        "rofi", "-dmenu", "-i", "-p", "Keybindings",
-        "-mesg", "Search your described Qtile keybindings",
-        "-theme-str", 'window {width: 50%;}',
-        "-theme-str", 'listview {lines: 10;}'
+# --------------------------------------------------
+# FISH PARSER (FILTERED)
+# --------------------------------------------------
+
+def parse_fish_overview(path):
+    results = []
+    last_comment = None
+
+    function_re = re.compile(r'^function\s+(\w+)')
+    alias_re = re.compile(r"""^alias\s+(\w+)=['"](.+)['"]""")
+
+    try:
+        lines = open(path, encoding="utf-8").read().splitlines()
+    except Exception:
+        return results
+
+    for line in lines:
+        line = line.strip()
+
+        if line.startswith("#"):
+            last_comment = line.lstrip("# ").strip()
+            continue
+
+        f = function_re.match(line)
+        if f:
+            name = f.group(1)
+
+            if (
+                name.startswith("_")
+                or name in IGNORE_FISH_FUNCTIONS
+                or name not in IMPORTANT_FISH_FUNCTIONS
+            ):
+                last_comment = None
+                continue
+
+            desc = last_comment or FUNCTION_DESCRIPTIONS.get(name)
+            results.append((name, desc))
+            last_comment = None
+            continue
+
+        a = alias_re.match(line)
+        if a:
+            name, cmd = a.groups()
+            desc = ALIAS_DESCRIPTIONS.get(name) or f"Alias for `{cmd}`"
+            results.append((name, desc))
+            last_comment = None
+            continue
+
+        last_comment = None
+
+    return results
+
+
+# --------------------------------------------------
+# ROFI UI
+# --------------------------------------------------
+
+def rofi_page(title, message, lines):
+    rofi_cmd = [
+        "rofi", "-dmenu", "-i",
+        "-markup-rows",
+        "-p", title,
+        "-mesg", message,
+        "-kb-custom-1", "Alt+l",
+        "-kb-custom-2", "Alt+h",
+        "-theme-str", "window {width: 55%;}",
+        "-theme-str", "listview {lines: 12;}"
     ]
 
-    rofi_process = subprocess.Popen(rofi_command, stdin=subprocess.PIPE, text=True, encoding="utf-8")
-    rofi_process.communicate("\n".join(formatted_lines))
+    proc = subprocess.run(rofi_cmd, input="\n".join(lines), text=True)
+    return proc.returncode
 
+
+def show_pages(qtile_keys, fish_items):
+    page = 0
+
+    while True:
+        if page == 0:
+            lines = [
+                f"<span foreground='{RIGHT_COLOR}'>{k.ljust(40)}</span> : "
+                f"<span foreground='{DESC_COLOR}'>{v}</span>"
+                for k, v in sorted(qtile_keys, key=lambda x: (x[0].count('→'), x[0]))
+            ]
+            code = rofi_page(
+                "QTILE",
+                "Alt+L → Fish | Alt+H → Fish",
+                lines
+            )
+        else:
+            lines = [
+                f"<span foreground='{RIGHT_COLOR}'>{name.ljust(20)}</span> : "
+                f"<span foreground='{DESC_COLOR}'>{desc}</span>"
+                for name, desc in fish_items
+            ]
+            code = rofi_page(
+                "FISH",
+                "Functions & Aliases | Alt+H → Qtile",
+                lines
+            )
+
+        if code == 10:
+            page = (page + 1) % 2
+        elif code == 11:
+            page = (page - 1) % 2
+        else:
+            break
+
+# --------------------------------------------------
+# MAIN
+# --------------------------------------------------
 
 if __name__ == "__main__":
-    bindings = parse_keys_ast(CONFIG_FILE)
-    format_and_show(bindings)
+    qtile = parse_qtile_keys(QTILE_CONFIG)
+    fish = parse_fish_overview(FISH_CONFIG)
+
+    show_pages(qtile, fish)
+

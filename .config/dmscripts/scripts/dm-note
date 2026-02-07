@@ -19,42 +19,42 @@ source ./_dm-helper.sh 2>/dev/null || source _dm-helper.sh 2>/dev/null
 source_dmscripts_configs
 
 if configs_are_different; then
-    echo "$(date): configs are different" >>"$DM_CONFIG_DIFF_LOGFILE"
-    sleep 1
+  echo "$(date): configs are different" >>"$DM_CONFIG_DIFF_LOGFILE"
+  sleep 1
 fi
 
 # TODO: Program is broken with FZF, fix later.
 main() {
-    # Picking our options.
-    choice=$(printf 'Copy note\nNew note\nDelete note\nQuit' | ${MENU} 'Notes:')
+  # Picking our options.
+  choice=$(printf 'Copy note\nNew note\nDelete note\nQuit' | ${MENU} 'Notes:')
 
-    # Choose what we should do with our choice.
-    case "$choice" in
-    'Copy note')
-        # shellcheck disable=SC2154
-        note_pick=$(${MENU} 'Copy:' <"${note_dir}")
-        [ -n "${note_pick}" ] && echo "${note_pick}" | cp2cb && notify-send -u normal "Note copied" "${note_pick}"
-        ;;
-    'New note')
-        note_new=$(echo "" | ${MENU} 'Enter new note:')
-        # Making sure the input is not empty and not already exist in note_dir.
-        # The sed command should prevent grep from taking certain characters as a regex input.
-        [ -n "$note_new" ] && ! grep -q "^$(echo "${note_new}" | sed -e 's/\[/\\[/g;s/\]/\\]/g')\$" "${note_dir}" \
-            && echo "${note_new}" >>"${note_dir}" && notify-send -u normal "Note created" "${note_new}"
-        ;;
-    'Delete note')
-        note_del=$(${MENU} 'Delete:' <"${note_dir}")
-        # grep should always returns 0 regardless what happens.
-        grep -v "^$(echo "${note_del}" | sed -e 's/\[/\\[/g;s/\]/\\]/g')\$" "${note_dir}" >"/tmp/dmnote" || true
-        [ -n "${note_del}" ] && cp -f "/tmp/dmnote" "${note_dir}" && notify-send -u normal "Note deleted" "${note_del}"
-        ;;
-    'Quit')
-        echo "Program terminated." && exit 0
-        ;;
-    *)
-        exit 0
-        ;;
-    esac
+  # Choose what we should do with our choice.
+  case "$choice" in
+  'Copy note')
+    # shellcheck disable=SC2154
+    note_pick=$(${MENU} 'Copy:' <"${note_dir}")
+    [ -n "${note_pick}" ] && echo "${note_pick}" | cp2cb && notify-send -u normal "Note copied" "${note_pick}"
+    ;;
+  'New note')
+    note_new=$(echo "" | ${MENU} 'Enter new note:')
+    # Making sure the input is not empty and not already exist in note_dir.
+    # The sed command should prevent grep from taking certain characters as a regex input.
+    [ -n "$note_new" ] && ! grep -q "^$(echo "${note_new}" | sed -e 's/\[/\\[/g;s/\]/\\]/g')\$" "${note_dir}" &&
+      echo "${note_new}" >>"${note_dir}" && notify-send -u normal "Note created" "${note_new}"
+    ;;
+  'Delete note')
+    note_del=$(${MENU} 'Delete:' <"${note_dir}")
+    # grep should always returns 0 regardless what happens.
+    grep -v "^$(echo "${note_del}" | sed -e 's/\[/\\[/g;s/\]/\\]/g')\$" "${note_dir}" >"/tmp/dmnote" || true
+    [ -n "${note_del}" ] && cp -f "/tmp/dmnote" "${note_dir}" && notify-send -u normal "Note deleted" "${note_del}"
+    ;;
+  'Quit')
+    echo "Program terminated." && exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+  esac
 }
 
 MENU="$(get_menu_program "$@")"

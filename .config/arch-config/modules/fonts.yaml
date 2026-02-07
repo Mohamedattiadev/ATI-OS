@@ -1,0 +1,12 @@
+description: Fonts
+
+packages:
+  - ttf-ubuntu-font-family
+  - otf-firamono-nerd
+  - otf-font-awesome
+  - ttf-material-icons
+  - ttf-material-symbols-variable
+  - ttf-firacode-nerd
+  - ttf-amiri
+  - ttf-cairo
+  - noto-fonts-cjk

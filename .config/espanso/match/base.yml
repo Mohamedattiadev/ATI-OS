@@ -1,0 +1,270 @@
+# espanso match file
+
+# For a complete introduction, visit the official docs at: https://espanso.org/docs/
+
+# You can use this file to define the base matches (aka snippets)
+# that will be available in every application when using espanso.
+
+# Matches are substitution rules: when you type the "trigger" string
+# it gets replaced by the "replace" string.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/espanso/espanso/dev/schemas/match.schema.json
+
+matches:
+  # Simple text replacement
+  - trigger: ":espanso"
+    replace: "Hi there!"
+
+  # NOTE: espanso uses YAML to define matches, so pay attention to the indentation!
+
+  # But matches can also be dynamic:
+
+  # Print the current date
+  - trigger: ":date"
+    replace: "{{mydate}}"
+    vars:
+      - name: mydate
+        type: date
+        params:
+          format: "%m/%d/%Y"
+
+  # Print the output of a shell command
+  - trigger: ":shell"
+    replace: "{{output}}"
+    vars:
+      - name: output
+        type: shell
+        params:
+          cmd: "echo 'Hello from your shell'"
+
+  # ------ Name ------
+  - trigger: ":tamisim"
+    replace: "{{full_name}}"
+    vars:
+      - name: full_name
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$MY_NAME $SUR_NAME"'
+
+  - trigger: ":isim"
+    replace: "{{first_name}}"
+    vars:
+      - name: first_name
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$MY_NAME"'
+
+  - trigger: ":soy"
+    replace: "{{last_name}}"
+    vars:
+      - name: last_name
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$SUR_NAME"'
+
+  # ------ Doğum ------
+  - trigger: ":tamdogum"
+    replace: "{{birth_full}}"
+    vars:
+      - name: birth_full
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$BIRTH_DATE - $BIRTH_PLACE"'
+
+  - trigger: ":dogtarih"
+    replace: "{{birth_date}}"
+    vars:
+      - name: birth_date
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$BIRTH_DATE"'
+
+  - trigger: ":dogyeri"
+    replace: "{{birth_place}}"
+    vars:
+      - name: birth_place
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$BIRTH_PLACE"'
+
+  # ------ Email ------
+  - trigger: ":email"
+    replace: "{{email}}"
+    vars:
+      - name: email
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$EMAIL"'
+
+  # ------ Aile ------
+  - trigger: ":aile"
+    replace: "{{family}}"
+    vars:
+      - name: family
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$FATHER - $FATHER_JOB\n$MOTHER - $MOTHER_JOB"'
+
+  - trigger: ":babais"
+    replace: "{{father_job}}"
+    vars:
+      - name: father_job
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$FATHER_JOB"'
+
+  - trigger: ":anneis"
+    replace: "{{mother_job}}"
+    vars:
+      - name: mother_job
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$MOTHER_JOB"'
+
+  # ------ Adres ------
+  - trigger: ":adres"
+    replace: "{{address}}"
+    vars:
+      - name: address
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$ADDRESS"'
+
+  # ------ Telefon ------
+  - trigger: ":tele"
+    replace: "{{phone}}"
+    vars:
+      - name: phone
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$PHONE"'
+
+  # ------ Kimlik ------
+  - trigger: ":kimlik"
+    replace: "{{id}}"
+    vars:
+      - name: id
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$ID"'
+
+  # ------ Öğrenci ------
+  - trigger: ":ogrenci"
+    replace: "{{student_no}}"
+    vars:
+      - name: student_no
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$STUDENT_NO"'
+
+  # ------ Lise ------
+  - trigger: ":lise"
+    replace: "{{high_school}}"
+    vars:
+      - name: high_school
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$HIGH_SCHOOL"'
+
+  - trigger: ":mezun"
+    replace: "{{grad_date}}"
+    vars:
+      - name: grad_date
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$GRAD_DATE"'
+
+  # ------ Üniversite ------
+  - trigger: ":uni"
+    replace: "{{university}}"
+    vars:
+      - name: university
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$UNIVERSITY"'
+
+  - trigger: ":fakulte"
+    replace: "{{faculty}}"
+    vars:
+      - name: faculty
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$FACULTY"'
+
+  - trigger: ":bolum"
+    replace: "{{department}}"
+    vars:
+      - name: department
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$DEPARTMENT"'
+
+  # ------ Hedeflerim ------
+  - trigger: ":hedef"
+    replace: "{{goals}}"
+    vars:
+      - name: goals
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$GOALS"'
+
+  # ------ Yeni burs message ------
+  - trigger: ":yeniburs"
+    replace: "{{new_burs}}"
+    vars:
+      - name: new_burs
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$NEW_BURS_MSG"'
+
+  # ------ Eski burs message ------
+  - trigger: ":eskiburs"
+    replace: "{{old_burs}}"
+    vars:
+      - name: old_burs
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$OLD_BURS_MSG"'
+
+  # ------ Kendini tanıt ------
+  - trigger: ":tanit"
+    replace: "{{self_intro}}"
+    vars:
+      - name: self_intro
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$SELF_INTRO"'
+
+  # ------ Kurum hakkında ------
+  - trigger: ":kurumhakkinda"
+    replace: "{{foundation}}"
+    vars:
+      - name: foundation
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$ABOUT_FOUNDATION"'
+
+  # ------ Referans ------
+  - trigger: ":referans"
+    replace: "{{reference}}"
+    vars:
+      - name: reference
+        type: shell
+        params:
+          cmd: 'source /etc/environment; echo "$REFERENCE"'
+
+  - trigger: "/gemini"
+    replace: "{{gemini_key}}"
+    vars:
+      - name: gemini_key
+        type: shell
+        params:
+          cmd: "source /etc/environment; echo $GEMINI_API_KEY"
+
+  - trigger: ":iban"
+    replace: "{{iban}}"
+    vars:
+      - name: iban
+        type: shell
+        params:
+          cmd: "source /etc/environment; echo $IBAN"

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROFI_CMD="${ROFI_CMD:-rofi}"
+ROFI_ARGS=""
+
+DB="$HOME/.local/share/qutebrowser/history.sqlite"
+
+TITLE_COLOR="#8BE9FD"
+ARROW_COLOR="#6272A4"
+URL_COLOR="#FFB86C"
+
+command -v sqlite3 >/dev/null || exit 1
+[[ -f "$DB" ]] || exit 1
+
+mapfile -t rows < <(
+  sqlite3 "$DB" "
+    SELECT title, url
+    FROM History
+    WHERE url IS NOT NULL
+    ORDER BY atime DESC
+    LIMIT 500;
+  "
+)
+
+[[ ${#rows[@]} -eq 0 ]] && exit 0
+
+lines=()
+urls=()
+
+for row in "${rows[@]}"; do
+  IFS='|' read -r title url <<< "$row"
+  title=${title:-"(no title)"}
+
+  lines+=(
+    "<span foreground=\"$TITLE_COLOR\">$title</span> \
+<span foreground=\"$ARROW_COLOR\">→</span> \
+<span foreground=\"$URL_COLOR\">$url</span>"
+  )
+  urls+=("$url")
+done
+
+choice=$(printf '%s\n' "${lines[@]}" \
+  | "$ROFI_CMD" -dmenu -markup-rows -p "🕘 History:") || exit 0
+
+for i in "${!lines[@]}"; do
+  [[ "${lines[$i]}" == "$choice" ]] && exec qutebrowser "${urls[$i]}"
+done
+

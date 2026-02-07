@@ -1,0 +1,16 @@
+;; (include "cheatsheet/cheatsheet.yuck")
+;; ============================
+;; Global variables
+;; ============================
+(defvar onb_open false)
+(defvar onb_step 0)
+
+;; ============================
+;; Onboarding windows
+;; ============================
+(include "onboarding/welcome.yuck")
+(include "onboarding/bar_tooltip.yuck")
+(include "onboarding/workspaces.yuck")
+(include "onboarding/keybindings.yuck")
+(include "onboarding/finish.yuck")
+

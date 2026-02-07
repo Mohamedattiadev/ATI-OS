@@ -6,6 +6,25 @@ return {
   event = "VeryLazy",
   cmd = "ConformInfo",
 
+  opts = {
+    -- IMPORTANT: always try LSP if no formatter
+    format_on_save = false,
+
+    formatters_by_ft = {
+      python = { "ruff_format", "black" }, -- try ruff first, then black
+      lua = { "stylua" },
+      sh = { "shfmt" },
+      json = { "prettier" },
+      yaml = { "prettier" },
+      html = { "prettier" },
+      css = { "prettier" },
+      javascript = { "prettier" },
+      typescript = { "prettier" },
+      markdown = { "prettier" },
+      toml = { "taplo" },
+    },
+  },
+
   keys = {
 
     --   those two  are the defual

@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2025 Rehpotsirhc
+# SPDX-License-Identifier: MIT
+
+#+title: Doom-One Theme for qutebrowser
+
+* Screenshots
+[[file:images/screenshot1.png]]
+
+[[file:images/screenshot2.png]]
+
+[[file:images/screenshot3.png]]
+
+* Installation
+Find your qutebrowser configuration directory (see ~:version~ in qutebrowser). This folder should be located at the "config" location listed on ~qute://version~, which is typically =~/.config/qutebrowser/= on Linux, =~/.qutebrowser/= on macOS, and =%APPDATA%/qutebrowser/config/= on Windows.
+
+Clone this repository into the configuration directory:
+
+#+begin_src sh
+# Replace with the correct path
+git clone https://github.com/Rehpotsirhc-z/qutebrowser-doom-one.git ~/.config/qutebrowser/doom_one/
+#+end_src
+
+In your [[https://www.qutebrowser.org/doc/help/configuring.html#configpy][qutebrowser configuration file]], include the following:
+
+#+begin_src python
+import doom_one
+
+doom_one.setup(c, {
+    "spacing": {
+        "vertical": 5,
+        "horizontal": 5
+    }
+})
+#+end_src
+
+* Credits
+- Theme file and instructions :: Modified from [[https://draculatheme.com/qutebrowser][Dracula Theme for Qutebrowser]]
+- Emacs doom-one theme :: [[https://github.com/doomemacs/themes][doomemacs/themes]]

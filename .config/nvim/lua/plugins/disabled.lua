@@ -56,14 +56,14 @@ return {
   { "folke/persistence.nvim", enabled = false },
   { "b0o/SchemaStore.nvim", enabled = false },
   { "nvimtools/none-ls.nvim", enabled = false },
-  { "MeanderingProgrammer/render-markdown.nvim", enabled = false },
+  -- { "MeanderingProgrammer/render-markdown.nvim", enabled = false },
 
   -- UI frameworks (Primeagen does NOT use)
   { "folke/noice.nvim", enabled = false },
   { " MunifTanjim/nui.nvim", enabled = false },
 
   -- Visual addons Prime does not use
-  { "folke/flash.nvim", enabled = false },
+  -- { "folke/flash.nvim", enabled = false },
   { "michaelb/sniprun", enabled = false },
 
   -- Optional extras (your choice)

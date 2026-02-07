@@ -1,0 +1,11 @@
+#!/bin/sh
+
+URL="$1"
+[ -z "$URL" ] && exit 1
+
+TMP="/tmp/qr_$(date +%s).png"
+
+# QR sized for a small floating window
+qrencode -s 9 -m 1 -o "$TMP" "$URL"
+
+feh -g 250x250 --scale-down --borderless "$TMP" &

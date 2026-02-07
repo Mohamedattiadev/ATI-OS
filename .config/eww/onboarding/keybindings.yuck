@@ -1,0 +1,65 @@
+
+(defwindow onboarding-keybindings
+  :monitor 0
+  :geometry (geometry
+              :x "0%"
+              :y "0%"
+              :width "400px"
+              :height "200px"
+              :anchor "center")
+  :stacking "fg"
+  :windowtype "dialog"
+  :wm-ignore false
+  :exclusive false
+  :focusable false
+
+ (revealer
+    :reveal true
+    :transition "fade"
+    :duration "250ms"
+
+  (box :class "onboarding"
+       :orientation "v"
+
+    (label
+      :class "onb-title"
+      :text "Keybindings")
+
+    (label
+      :class "onb-text"
+      :wrap true
+      :text
+"Keybindings are essential for an efficient workflow.
+Once they become muscle memory, everything starts to feel 
+effortless.")
+        (label
+        :class "onb-text"
+:markup "<b>Tip : </b>Press  <b><span foreground=\"#46d9ff\">Win + Shift + k</span></b>  to open the Cheatsheet .                       "
+)
+
+(label
+  :class "onb-text"
+  :markup "<b><span foreground=\"#e5c07b\">Warning : </span></b>  the Cheatsheet will open automatically in 5 seconds. 
+                     to close it, press <b><span foreground=\"#46d9ff\"> Esc </span></b> ."
+)
+    (box
+      :class "onb-footer"
+      :halign "end"
+      :spacing 10
+
+      (button
+        :class "onb-btn"
+        :onclick "eww close onboarding-keybindings; eww open onboarding-workspaces"
+        :timeout  "900ms"
+        ;; :onclick "sh -c 'eww close onboarding-keybindings; eww open onboarding-workspaces'"
+        "Back")
+
+      (button
+        :class "onb-btn onb-btn-Apply"
+        :onclick "eww close onboarding-keybindings; eww open onboarding-finish"
+        :timeout  "900ms"
+        ;; :onclick "sh -c 'eww close onboarding-keybindings; eww open onboarding-finish'"
+        "Done")
+    )
+  ))
+)

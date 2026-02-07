@@ -1,0 +1,30 @@
+description: Development tools and languages
+
+packages:
+  - git
+  - neovim
+  - neovim-remote
+  - tmux
+  - lazygit
+  - bat
+  - eza
+  - fd
+  - ripgrep
+  - dust
+  - htop
+  - btop
+  - starship
+  - zoxide
+  - fnm
+  - pyenv
+  - rustup
+  - code
+  - silicon
+  - zsh
+  - fish
+  # VMS if needed
+  # - qemu-base
+  # - i386-elf-binutils
+  # - i386-elf-gcc
+  - wine
+  - winetricks

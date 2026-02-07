@@ -1,0 +1,24 @@
+description: Base system packages
+
+packages:
+  # Core system (documented intent)
+  - base
+  - base-devel
+  # - linux
+  # - linux-firmware
+  # - intel-ucode
+  # - efibootmgr
+  # - zram-generator
+
+  # Documentation & basics
+
+  # dcli dependencies
+  - paru
+  - fzf
+  - timeshift
+
+exclude: []
+conflicts:
+  - linux-lts
+  - linux-zen
+  - linux-hardened

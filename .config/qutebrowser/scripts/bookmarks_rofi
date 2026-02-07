@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROFI_CMD="${ROFI_CMD:-rofi}"
+BOOKMARKS_FILE="$HOME/.config/qutebrowser/bookmarks/urls"
+
+TITLE_COLOR="#8BE9FD"
+ARROW_COLOR="#6272A4"
+URL_COLOR="#FFB86C"
+
+[[ -f "$BOOKMARKS_FILE" ]] || exit 0
+
+lines=()
+urls=()
+
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+
+  # Extract URL (first field, whitespace-separated)
+  url="$(printf '%s\n' "$line" | awk '{print $1}')"
+
+  # Extract title = rest of the line after URL, trim leading whitespace
+  title="$(printf '%s\n' "$line" | sed -E "s|^[^[:space:]]+[[:space:]]+||")"
+
+  # Fallback if title is still empty
+  [[ -z "$title" ]] && title="(no title)"
+
+  lines+=(
+    "<span foreground=\"$TITLE_COLOR\">$title</span> \
+<span foreground=\"$ARROW_COLOR\">→</span> \
+<span foreground=\"$URL_COLOR\">$url</span>"
+  )
+  urls+=("$url")
+done <"$BOOKMARKS_FILE"
+
+choice=$(printf '%s\n' "${lines[@]}" |
+  "$ROFI_CMD" -dmenu -markup-rows -p "🔖 Bookmarks:") || exit 0
+
+for i in "${!lines[@]}"; do
+  [[ "${lines[$i]}" == "$choice" ]] && exec qutebrowser "${urls[$i]}"
+done

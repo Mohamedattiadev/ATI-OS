@@ -1,0 +1,80 @@
+
+(defwindow onboarding-finish
+  :monitor 0
+  :geometry (geometry
+              :x "0%"
+              :y "0%"
+              :width "420px"
+              :height "220px"
+              :anchor "center")
+  :stacking "fg"
+  :windowtype "dialog"
+  :wm-ignore false
+  :exclusive false
+  :focusable false
+
+  (box
+    :class "onboarding"
+    :orientation "v"
+    :space-evenly false
+
+    ;; ----------------------------
+    ;; Title
+    ;; ----------------------------
+    (label
+      :class "onb-title"
+      :text "You're all set ✨")
+
+    ;; ----------------------------
+    ;; Message
+    ;; ----------------------------
+    (label
+      :class "onb-text"
+      :wrap true
+      :unindent true
+      :text
+"Your system is ready to use now.
+You’ve learned the basics:
+
+• The top bar
+• Workspaces
+• Keybindings
+
+From here on, everything is muscle memory.
+Take your time, explore, and make it yours.
+
+
+")
+
+    ;; ----------------------------
+    ;; Tip
+    ;; ----------------------------
+    (label
+      :class "onb-text"
+      :markup
+"<b>Tip:</b> Press <b><span foreground=\"#46d9ff\">Win + Shift + k</span></b> anytime to open the cheatsheet.")
+
+    ;; ----------------------------
+    ;; Actions
+    ;; ----------------------------
+    (box
+      :class "onb-footer"
+      :halign "end"
+      :spacing 10
+
+      (button
+        :class "onb-btn"
+        :onclick "eww close onboarding-finish; eww open onboarding-keybindings"
+        :timeout  "900ms"
+        ;; :onclick "sh -c 'eww close onboarding-finish; eww open onboarding-keybindings'"
+        "Back")
+
+      (button
+        :class "onb-btn onb-btn-Apply"
+        ;; :onclick "eww close onboarding-finish; qtile cmd-obj -o widget tooltip_widgetbox -f close"
+        :timeout  "900ms"
+        :onclick "sh -c 'eww close onboarding-finish; qtile cmd-obj -o widget tooltip_widgetbox -f close'"
+        "Enjoy 🚀")
+    )
+  )
+)

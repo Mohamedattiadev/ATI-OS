@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROFI_CMD="${ROFI_CMD:-rofi}"
+
+FILE="$HOME/.config/qutebrowser/quickmarks"
+
+NAME_COLOR="#50FA7B"
+ARROW_COLOR="#6272A4"
+URL_COLOR="#BD93F9"
+
+[[ -f "$FILE" ]] || exit 0
+
+lines=()
+urls=()
+
+while read -r name url; do
+  [[ -z "$name" || -z "$url" ]] && continue
+
+  lines+=(
+    "<span foreground=\"$NAME_COLOR\">$name</span> \
+<span foreground=\"$ARROW_COLOR\">→</span> \
+<span foreground=\"$URL_COLOR\">$url</span>"
+  )
+  urls+=("$url")
+done < "$FILE"
+
+choice=$(printf '%s\n' "${lines[@]}" \
+  | "$ROFI_CMD" -dmenu -markup-rows -p "⚡ Quick Access:") || exit 0
+
+for i in "${!lines[@]}"; do
+  [[ "${lines[$i]}" == "$choice" ]] && exec qutebrowser "${urls[$i]}"
+done

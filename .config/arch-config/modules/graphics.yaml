@@ -1,0 +1,24 @@
+description: Graphics drivers and acceleration (Intel only)
+
+packages:
+  # - vulkan-intel
+  # - intel-media-driver
+  # - intel-gpu-tools
+  # - libva-intel-driver
+  # - libva-utils
+
+exclude: []
+conflicts: []
+
+# description: Graphics drivers and acceleration (AMD)
+#
+# packages:
+#   - vulkan-radeon
+#   - mesa
+#   - libva
+#   - libva-mesa-driver
+#   - mesa-vdpau
+#   - radeontop
+#
+# exclude: []
+# conflicts: []

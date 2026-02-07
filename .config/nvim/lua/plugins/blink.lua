@@ -11,7 +11,10 @@ return {
 
     -- keep default keymaps for now (you can tune later)
     keymap = {
-      preset = "default",
+      preset = "enter",
+      -- extra navigation (like tmux / vim muscle memory)
+      ["<C-j>"] = { "select_next", "fallback" },
+      ["<C-k>"] = { "select_prev", "fallback" },
     },
 
     -- don't touch completion.accept at all to avoid "Unexpected field" errors

@@ -1,7 +1,5 @@
-
-# scripts/float_windows.py
 from libqtile import hook
-from libqtile.lazy import lazy
+
 @hook.subscribe.client_new
 def float_satty(window):
     if window.window.get_wm_class() and 'satty' in window.window.get_wm_class()[0].lower():
@@ -14,6 +12,21 @@ def float_edit_nvim(window):
     if window.window.get_name() == "edit-field":
         window.floating = True
         window.cmd_set_size_floating(650, 200)
+
+@hook.subscribe.client_new
+def float_imv(window):
+    if window.window.get_wm_class() and 'imv' in window.window.get_wm_class()[0].lower():
+        window.floating = True
+        window.cmd_set_size_floating(800, 600)
+        window.cmd_center()
+
+@hook.subscribe.client_new
+def float_feh(window):
+    if window.window.get_wm_class() and 'feh' in window.window.get_wm_class()[0].lower():
+        window.floating = True
+        window.cmd_set_size_floating(250, 250)
+
+        window.qtile.call_later(0.025, window.cmd_center)
 
 @hook.subscribe.client_new
 def float_link_preview(window):

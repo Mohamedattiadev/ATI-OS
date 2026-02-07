@@ -1,0 +1,23 @@
+
+# ======================
+# Repo metadata
+# ======================
+.git
+.gitignore
+README.md
+
+# ======================
+# Images / assets
+# ======================
+IMGS
+
+# ======================
+# Scripts (not dotfiles)
+# ======================
+installScripts
+
+# ======================
+# Things that must NOT be stowed
+# ======================
+.config/arch-config/.git
+.config/arch-config/.backup-*

@@ -1,0 +1,11 @@
+description: Networking and wireless stack
+
+packages:
+  - iwd
+  - wpa_supplicant
+  - wireless_tools
+  - bluez
+  - bluez-utils
+
+exclude: []
+conflicts: []

@@ -1,0 +1,26 @@
+@import "colors.scss";
+@import "cheatsheet/cheatsheet.scss";
+@import "onboarding/onboarding.scss";
+* {
+  all: unset;
+}
+
+tooltip {
+  background-color: #14171c;
+  color: #b8bfe5;
+  font-family: Inconsolata SemiCondensed Medium;
+  font-weight: Bold;
+  font-size: 1rem;
+}
+
+.onb-text span {
+  transition:
+    color 0.2s ease,
+    text-shadow 0.2s ease;
+}
+
+.onb-text span:hover {
+  text-shadow: 0 0 6px currentColor;
+}
+// @import "profilecard/profilecard.scss";
+// @import "player/player.scss";

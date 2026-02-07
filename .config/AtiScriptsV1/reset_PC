@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# ==================================================
+# Ultimate Qtile Soft Reset (Lv1 + Lv2)
+# ~95% Fresh PC without reboot
+# ==================================================
+
+set -e
+
+notify-send "Qtile" "⚡ Ultimate soft reset started…"
+
+USER_NAME="$USER"
+AUTOSTART="$HOME/.config/qtile/autostart.sh"
+
+# --------------------------------------------------
+# 1. Gracefully terminate known user apps (Lv1)
+# --------------------------------------------------
+APPS=(
+  firefox brave chromium google-chrome qutebrowser
+  kitty alacritty wezterm
+  code zed obsidian
+  telegram-desktop discord anki
+  vlc mpv thunderbird
+  pcmanfm nautilus
+)
+
+for app in "${APPS[@]}"; do
+  pkill -TERM -u "$USER_NAME" "$app" 2>/dev/null || true
+done
+
+sleep 2
+
+# --------------------------------------------------
+# 2. Force kill leftovers (Lv1)
+# --------------------------------------------------
+for app in "${APPS[@]}"; do
+  pkill -KILL -u "$USER_NAME" "$app" 2>/dev/null || true
+done
+
+# --------------------------------------------------
+# 3. Close *all* remaining windows (WM-level)
+# --------------------------------------------------
+if command -v wmctrl >/dev/null; then
+  wmctrl -k on || true
+  wmctrl -k off || true
+fi
+
+# --------------------------------------------------
+# 4. Restart critical user services (Lv2)
+# --------------------------------------------------
+SYSTEMD_SERVICES=(
+  pipewire
+  pipewire-pulse
+  wireplumber
+  dunst
+  picom
+  warpd
+)
+
+for svc in "${SYSTEMD_SERVICES[@]}"; do
+  systemctl --user restart "$svc" 2>/dev/null || true
+done
+
+# --------------------------------------------------
+# 5. Restart Qtile itself (Lv2 – THE MAGIC)
+# --------------------------------------------------
+qtile cmd-obj -o cmd -f restart 2>/dev/null || pkill -HUP qtile
+
+sleep 1
+
+# --------------------------------------------------
+# 6. Re-run autostart cleanly
+# --------------------------------------------------
+if [ -x "$AUTOSTART" ]; then
+  bash "$AUTOSTART" &
+fi
+
+# --------------------------------------------------
+# 7. Final cleanup
+# --------------------------------------------------
+sync
+notify-send "Qtile" "✨ Ultimate soft reset complete"

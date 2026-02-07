@@ -1,0 +1,39 @@
+description: Daily user applications
+
+packages:
+  - alacritty
+  - kitty
+  - brave-bin
+  - firefox
+  - qutebrowser
+  - obsidian
+  - telegram-desktop
+  - vlc
+  - zathura
+  - zathura-pdf-poppler
+  - okular
+  - pcmanfm
+  - dolphin
+  - kate
+  - copyq
+  - rofi
+  - rofi-pass
+  - dunst
+  - feh
+  - arandr
+  - pavucontrol
+  - mission-center
+  - maim
+  - satty
+  - mpv
+  - ark
+  - imv
+  - qalculate-gtk
+  - piper
+  - warpd
+  - eww
+  - ani-cli
+  - yt-x-git
+  - ueberzugpp
+  - zed
+  - kdeconnect

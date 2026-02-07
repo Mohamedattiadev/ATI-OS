@@ -1,0 +1,84 @@
+.onboarding {
+  background-color: $bg;
+  border-radius: 10px;
+  padding: 1.2rem;
+  min-width: 300px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
+}
+
+.onboarding-tooltip {
+  background-color: $bg;
+  border-radius: 10px;
+  padding: 1.2rem;
+  min-width: 300px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
+}
+.onb-title {
+  font-family: JetBrainsMono NF;
+  font-size: 1.1rem;
+  font-weight: Bold;
+  color: $magenta;
+}
+
+.onb-text {
+  /* margin-top: 0.6rem; */
+
+  letter-spacing: 0.02em;
+  font-family: JetBrainsMono NF;
+  font-size: 0.85rem;
+  color: $fg;
+}
+
+.onb-footer {
+  margin-top: 1rem;
+}
+
+.onb-btn {
+  background-color: $bg-alt;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-family: JetBrainsMono NF;
+  font-size: 0.75rem;
+  color: $fg;
+}
+
+.onb-btn:hover {
+  background-color: $blue;
+  color: $bg;
+}
+
+.onb-btn-danger:hover {
+  background-color: $red;
+  color: $bg;
+}
+
+.onb-btn-Apply:hover {
+  background-color: $green;
+  color: $bg;
+}
+
+.bar-overlay {
+  background-color: rgba(28, 31, 36, 0.35);
+  margin: 0 12px;
+  min-height: 36px;
+}
+
+.bar-overlay-text {
+  font-family: JetBrainsMono NF;
+  background-color: $bg;
+  padding: 0.4rem 1.6rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: $cyan;
+}
+.bar-overlay-container {
+  margin-top: 3rem;
+  margin-bottom: 1rem;
+}
+.tip-text {
+  letter-spacing: 0.02em;
+  font-family: JetBrainsMono NF;
+  font-size: 0.85rem;
+
+  color: $cyan;
+}

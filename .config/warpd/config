@@ -1,0 +1,12 @@
+# ---------- Doom One colors ----------
+cursor_color: 51afef
+hint_fgcolor: ffffff
+hint_bgcolor: 2e3i58
+
+# ---------- font ----------
+hint_size: 23
+hint_font: Mono
+
+scroll_up: K
+scroll_down: J
+

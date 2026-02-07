@@ -1,3 +1,25 @@
 -- bootstrap lazy.nvim, lazyvim and your plugins
 --
 require("config.lazy")
+--- Disable langremap so mappings work correctly
+---
+---
+-- -- 1. Disable langremap (standard requirement for langmap)
+-- vim.opt.langremap = false
+--
+-- vim.cmd([[
+--   " 1. Top Row (Standard List Syntax)
+--   set langmap=ضصثقفغعهخحجد;qwertyuiop[]
+--
+--   " 2. Middle Row (Split to fix 'Lam-Alif' bug)
+--   set langmap+=,شسيبل;asdfg
+--   set langmap+=,اتنمكط;hjkl\;\'
+--
+--   " 3. Bottom Row (Letters)
+--   set langmap+=,ئءؤرىة;zxcvnm
+--
+--   " 4. Bottom Row (Punctuation)
+--   " We use PAIR syntax here (ArabicEnglish) to fix the comma bug.
+--   " و->,  ز->.  ظ->/
+--   set langmap+=,و\,ز.ظ/
+-- ]])

@@ -2,7 +2,7 @@
 # scripts/mpv_manager.py
 import logging
 from typing import Optional
-from libqtile.backend.base import Window
+from libqtile.backend.base.window import Window
 from libqtile import hook, qtile
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,8 @@ class MPVManager:
         if wm_class and any(cls.lower() in ['mpv', 'mpvk'] for cls in wm_class):
             self.current_mpv = window
             self.is_in_pip_mode = False
-            window.cmd_enable_floating()
+            # window.cmd_enable_floating()
+            getattr(window, "cmd_enable_floating")()
             self.set_center_mode()
 
     def on_mpv_killed(self, window: Window):
@@ -40,9 +41,12 @@ class MPVManager:
         height = int(screen.height * 0.50)
         x = screen.x + (screen.width - width) // 2
         y = screen.y + (screen.height - height) // 2
-        self.current_mpv.cmd_set_size_floating(width, height)
-        self.current_mpv.cmd_set_position_floating(x, y)
-        self.current_mpv.togroup(qtile.current_group.name)
+        # self.current_mpv.cmd_set_size_floating(width, height)
+        # self.current_mpv.cmd_set_position_floating(x, y)
+        getattr(self.current_mpv, "cmd_set_size_floating")(width, height)
+        getattr(self.current_mpv, "cmd_set_position_floating")(x, y)
+        getattr(self.current_mpv, "togroup")(qtile.current_group.name)
+        # self.current_mpv.togroup(qtile.current_group.name)
 
     def set_pip_mode(self):
         if not self.current_mpv:
@@ -52,11 +56,14 @@ class MPVManager:
         margin = 20
         x = screen.x + screen.width - width - margin
         y = screen.y + screen.height - height - margin
-        self.current_mpv.cmd_set_size_floating(width, height)
-        self.current_mpv.cmd_set_position_floating(x, y)
-        self.current_mpv.cmd_bring_to_front()
+        # self.current_mpv.cmd_set_size_floating(width, height)
+        # self.current_mpv.cmd_set_position_floating(x, y)
+        # self.current_mpv.cmd_bring_to_front()
+        getattr(self.current_mpv, "cmd_set_size_floating")(width, height)
+        getattr(self.current_mpv, "cmd_set_position_floating")(x, y)
+        getattr(self.current_mpv, "cmd_bring_to_front")()
 
-    def toggle_pip_mode(self, qtile):
+    def toggle_pip_mode(self, _qtile):
         if not self.current_mpv:
             return
         self.is_in_pip_mode = not self.is_in_pip_mode

@@ -1,0 +1,44 @@
+# Host configuration for ati
+# Dev
+
+host: ati
+description: Dev
+
+# Import shared configurations (optional)
+# Example:
+# import:
+#   - hosts/shared/laptop-common.yaml
+
+# Enabled modules
+enabled_modules:
+  - apps
+  - dev
+  - wm
+  - media
+  - fonts
+  - system-tools
+  # - sys
+  # - system-packages-ati
+  - graphics
+  - network
+  - xorg
+  - python-lib
+
+# Host-specific packages
+packages: []
+
+# Exclude packages from base or modules
+exclude: []
+
+# Configuration backup settings
+config_backups:
+  enabled: true # Auto-backup on sync
+  max_backups: 5 # Keep last 5 backups (0 = unlimited)
+
+# Settings
+flatpak_scope: user
+auto_prune: false
+backup_tool: timeshift
+
+# AUR helper to use (auto-detects paru or yay if not specified)
+# aur_helper: paru   # Options: paru, yay, or any AUR helper

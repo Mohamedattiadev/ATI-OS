@@ -26,7 +26,7 @@ window {
     location:         center;
     anchor:           center;
     width:            50%;
-    height:           80%;
+    height:           70%;
     padding:          12px;
     border-radius:    3px;
     
@@ -62,8 +62,11 @@ element.normal.normal {
 }
 
 element.selected.normal {
-    background-color: @selectedone;
-    text-color:       @background;
+    background-color: transparent;
+    border: 3px;
+    border-radius: 9px;
+    border-color: @selectedone;
+    text-color:       #ffffff;
 }
 
 element.alternate.normal {

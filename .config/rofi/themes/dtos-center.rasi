@@ -75,9 +75,13 @@ element.normal.normal {
     text-color:       @foreground;
 }
 
+
 element.selected.normal {
-    background-color: @selectedone;
-    text-color:       @background;
+    background-color: transparent;
+    border: 3px;
+    border-radius: 9px;
+    border-color: @selectedone;
+    text-color:       #ffffff;
 }
 
 element.alternate.normal {

@@ -1,0 +1,42 @@
+description: System utilities
+
+packages:
+  - acpi
+  - brightnessctl
+  - powertop
+  # - tlp               -- not using
+  - smartmontools
+  - unzip
+  - zip
+  - wget
+  - xclip
+  - xdotool
+  - inotify-tools
+  - translate-shell
+  - sweet-gtk-theme-dark
+  - gtkmm
+  - libwnck3
+  - auto-cpufreq
+  - didyoumean
+  - dmscripts-git
+  - shell-color-scripts
+  - findutils
+  - shellcheck
+  - udisks2
+  - man-db
+  - man-pages
+  - awk
+  - sed
+  - coreutils
+  - openssh
+  - slop
+  - ffmepg
+  - jq
+  - yt-dlp
+  - xdg-utils
+  - stow
+  - imagemagick
+  # files sys ,  mounts , media transfer
+  - gvfs
+  - gvfs-mtp
+  - openslide

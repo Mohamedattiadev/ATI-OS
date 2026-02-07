@@ -1,0 +1,13 @@
+description: Window manager and desktop environment && apps
+
+packages:
+  - qtile-extras
+  - picom
+  - light
+  - betterlockscreen
+  - gromit-mpx
+  - screenkey
+  - espanso-x11
+  - network-manager-applet
+  - blueman
+  - syncthing
