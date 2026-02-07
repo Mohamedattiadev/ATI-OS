@@ -46,7 +46,7 @@ This document explains:
 
 ---
 
-## 3. dcli (Declarative Package Management)
+## 3. dcli (Declarative Package Management) (will be used in the next step)
 
 All system packages are managed using **dcli**, allowing the entire environment to be defined declaratively.
 
@@ -57,8 +57,8 @@ Package installation, system profiles, and optional components are all handled a
 
 ---
 
-## 3.1 Installation (Single Command)
-
+## 4. Installation (Single Command)
+> I assume u have a fresh installed arch linux 
 The entire system is bootstrapped using a single install script.
 
 ### Step 1: Clone the repository
@@ -99,7 +99,7 @@ No additional manual steps are required.
 
 ---
 
-## 4. Qtile Startup & Workflow
+## 5. Qtile Startup & Workflow
 
 Qtile is started using `startx`.
 
@@ -118,9 +118,9 @@ qtile cmd-obj -o cmd -f restart
 
 ---
 
-## 5. Videos
+## 6. Videos
 
-### 5.1 Main Videos (System Overview)
+### 6.1 Main Videos (System Overview)
 
 https://github.com/user-attachments/assets/aaec7215-c595-4ba3-bc65-a355b11edf05
 
@@ -128,7 +128,7 @@ https://github.com/user-attachments/assets/a7993cce-e04e-4168-9b32-b914d76539be
 
 ---
 
-### 5.2 Feature Demonstrations
+### 6.2 Feature Demonstrations
 
 https://github.com/user-attachments/assets/6990186e-336d-48d4-8330-7c8ffd0f0a81
 
@@ -138,9 +138,12 @@ https://github.com/user-attachments/assets/acb09f1a-f268-4a68-ae23-819ecee27453
 
 https://github.com/user-attachments/assets/9d8f53bb-eead-4e02-a844-3aba44fe9a34
 
+https://github.com/user-attachments/assets/0189c230-a0df-4d8f-9687-ca8e5c00ed4a
+
+
 ---
 
-## 6. Modes
+## 7. Modes
 
 ### Window Manager Modes
 
