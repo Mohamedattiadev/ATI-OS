@@ -21,8 +21,8 @@ COLORS = {
 MODE_NOTE_TEMPLATE = (
     '<span size="small" foreground="{muted}" style="italic">'
     'Press <b><span foreground="{key_color}">{key}</span></b> '
-    'to activate the mode'
-    '</span>'
+    "to activate the mode"
+    "</span>"
 )
 
 # =============================================================================
@@ -47,12 +47,11 @@ CHEATSHEET = {
         ("Reload Qtile", "Mod + Shift + r"),
         ("Kill window", "Mod + Shift + c"),
         ("CheetSheet", "Super + Shift + k"),
-        ("Toggle Zen mode", "Mod + Shift + z"),
+        ("Toggle Normal bar ", "Mod + Shift + z"),
         ("Logout menu", "Mod + Shift + q"),
         ("Close notification", "Super + n"),
         ("Remap Alt (sys)", "Super + Shift + R"),
     ],
-
     "Navigation": [
         ("WorkSpace[1-9]", "Mod + [1–9]"),
         ("Focus left", "Mod + h"),
@@ -63,7 +62,6 @@ CHEATSHEET = {
         ("Next monitor", "Mod + ."),
         ("Prev monitor", "Mod + ,"),
     ],
-
     "Windows": [
         ("Move to group", "Mod + Shift + [1–9]"),
         ("Swap left", "Mod + Shift + h"),
@@ -74,7 +72,6 @@ CHEATSHEET = {
         ("Toggle fullscreen", "Mod + f"),
         ("Maximize window", "Mod + x"),
     ],
-
     "session / Toggles": [
         ("Terminal toggle", "Mod + n"),
         ("File manager", "Mod + m"),
@@ -85,9 +82,7 @@ CHEATSHEET = {
         ("Todos Preview", "Super + p"),
         ("Cpu-Memo-Battery widget", "Super + `"),
         ("Lang-Volume widget", "Mod + `"),
-
     ],
-
     "Scratchpads": [
         ("Terminal 1", "Super + 1"),
         ("Terminal 2", "Super + 2"),
@@ -99,7 +94,6 @@ CHEATSHEET = {
         ("ChatGPT", "Super + 0"),
         ("Collector", "Super + Shift + d"),
     ],
-
     "MOUSE MODE": [
         ("Hint mode", "f"),
         ("Normal mode", "n"),
@@ -107,7 +101,6 @@ CHEATSHEET = {
         ("Fast scroll down", "b"),
         ("Exit mode", "q / Esc"),
     ],
-
     "DRAW MODE": [
         ("Toggle draw", "w"),
         ("Clear drawings", "c"),
@@ -116,7 +109,6 @@ CHEATSHEET = {
         ("Toggle visibility", "v"),
         ("Exit mode", "q / Esc"),
     ],
-
     "ROFI MODE": [
         ("Translate text", "e"),
         ("Add Anki note", "a"),
@@ -135,14 +127,12 @@ CHEATSHEET = {
         ("Wallpaper picker", "b"),
         ("Saved Links", "z"),
     ],
-
     "RESIZE MODE": [
         ("Shrink window", "Shift + h"),
         ("Grow window", "Shift + l"),
         ("Reset layout", "Shift + n"),
         ("Exit mode", "q / Esc"),
     ],
-
     "MEDIA MODE": [
         ("Volume down", "Shift + j"),
         ("Volume up", "Shift + k"),
@@ -150,7 +140,6 @@ CHEATSHEET = {
         ("MPV PiP", "Shift + p"),
         ("Exit mode", "q / Esc"),
     ],
-
     "LANUAGE SWITCH MODE": [
         ("Arabic", "a"),
         ("English", "e"),
@@ -161,6 +150,7 @@ CHEATSHEET = {
 }
 
 COLUMNS = list(CHEATSHEET.items())
+
 
 # =============================================================================
 # TEXT RENDERER
@@ -179,9 +169,7 @@ def render_section(title, items):
                 key=MODE_KEYS[title],
             )
         )
-        lines.append(
-            f'<span foreground="{COLORS["muted"]}">────────────────</span>'
-        )
+        lines.append(f'<span foreground="{COLORS["muted"]}">────────────────</span>')
 
     # ---------------- ITEMS ----------------
     for label, combo in items:
@@ -193,8 +181,8 @@ def render_section(title, items):
             f'<b><span foreground="{combo_color}">{combo}</span></b>'
         )
 
-
     return "\n".join(lines)
+
 
 # =============================================================================
 # TOGGLE FUNCTION
@@ -214,12 +202,12 @@ def toggle_cheatsheet(qtile):
         PopupText(
             text=(
                 f'<span size="xx-large" weight="bold" foreground="{COLORS["blue"]}">'
-                f'󰆍  QTILE CHEATSHEET</span>\n'
+                f"󰆍  QTILE CHEATSHEET</span>\n"
                 f'<span foreground="{COLORS["muted"]}">'
                 f'Mod = <b><span foreground="{COLORS["green"]}">Alt</span></b> '
                 f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span> '
                 f'Super = <b><span foreground="{COLORS["purple"]}">Win</span></b>'
-                f'</span>'
+                f"</span>"
             ),
             markup=True,
             pos_x=0.0,
@@ -264,7 +252,7 @@ def toggle_cheatsheet(qtile):
             text=(
                 f'<span size="small" foreground="{COLORS["muted"]}">'
                 f' · <b><span foreground="{COLORS["blue"]}">Esc to close ·</span></b> '
-                f' the Qtile Cheatsheet · </span>'
+                f" the Qtile Cheatsheet · </span>"
             ),
             markup=True,
             pos_x=0.0,
@@ -288,6 +276,7 @@ def toggle_cheatsheet(qtile):
     )
 
     _CHEATSHEET_LAYOUT.show(centered=True)
+
 
 def close_qtile_cheatsheet():
     global _CHEATSHEET_LAYOUT
