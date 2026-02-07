@@ -1,3 +1,5 @@
+
+;; ============================
 ;; (include "cheatsheet/cheatsheet.yuck")
 ;; ============================
 ;; Global variables
@@ -13,4 +15,7 @@
 (include "onboarding/workspaces.yuck")
 (include "onboarding/keybindings.yuck")
 (include "onboarding/finish.yuck")
+
+
+
 

@@ -122,6 +122,7 @@ user = (os.environ.get("USER") or os.environ.get("LOGNAME") or "").upper()
 todos_dir = os.path.expanduser(f"~/{user}TODOS")
 sum_file = os.path.join(todos_dir, "TODOS.md")
 
+BAR_MODE = "top"  # "top" or "bottom"
 
 ACTIVE_CHORD = None
 
@@ -164,6 +165,55 @@ CHORD_CHIP_COLORS = {
 # │░▄█▄█▄░█▀▀░█░█░█░█░█░░░░█░░░█░░█░█░█░█░▀▀█│
 # │░░▀░▀░░▀░░░▀▀▀░▀░▀░▀▀▀░░▀░░▀▀▀░▀▀▀░▀░▀░▀▀▀│
 # ╚──────────────────────────────────────────╝
+
+
+# ----------------------------------------------------------
+# -1  Function for toggle to normaluserbar
+# ---------------------------------------------------------
+
+
+def apply_bar_mode():
+    for s in qtile.screens:
+        if BAR_MODE == "top":
+            if s.bottom and s.bottom.is_show():
+                s.bottom.show(False)
+            if s.top and not s.top.is_show():
+                s.top.show(True)
+        else:
+            if s.top and s.top.is_show():
+                s.top.show(False)
+            if s.bottom and not s.bottom.is_show():
+                s.bottom.show(True)
+
+
+@hook.subscribe.startup_complete
+def apply_bar_on_startup():
+    qtile.call_later(0.2, apply_bar_mode)
+
+
+@hook.subscribe.screens_reconfigured
+def apply_bar_on_reconfigure():
+    apply_bar_mode()
+
+
+@lazy.function
+def toggle_top_bottom_exclusive(qtile):
+    global BAR_MODE
+
+    screen = qtile.current_screen
+    top = screen.top
+    bottom = screen.bottom
+
+    if not top or not bottom:
+        return
+
+    if BAR_MODE == "top":
+        BAR_MODE = "bottom"
+    else:
+        BAR_MODE = "top"
+
+    apply_bar_mode()
+
 
 # ------------------------------------------------------------
 # 0-  Function for the autostart.sh script  (runs on startup)
@@ -549,6 +599,134 @@ def parse_task_name(text):
 # │░▄█▄█▄░░█░░█░█░█▀▀░░░█▀▄░█▀█░█▀▄│
 # │░░▀░▀░░░▀░░▀▀▀░▀░░░░░▀▀░░▀░▀░▀░▀│
 # ╚────────────────────────────────╝
+
+
+# ------------------------------------------------------------------------------
+# 0- normal user bar
+# -----------------------------------------------------------------------------
+def normal_user_bar():
+    return [
+        widget.TextBox(
+            name="main_icon_chip",
+            text=ARCH_ICON_MAIN,
+            fontsize=19,
+            padding=16,
+            foreground=colors[7],
+            mouse_callbacks={
+                "Button1": lazy.function(open_launcher),
+                "Button3": lazy.function(open_terminal),
+            },
+        ),
+        widget.TextBox(
+            text="|",
+            font="Ubuntu Mono",
+            foreground=colors[1],
+            padding=3,
+            fontsize=14,
+        ),
+        widget.LaunchBar(
+            progs=[
+                ("", "brave", "Brave Browser"),
+                ("", "qutebrowser", "Qutebrowser"),
+                ("", "kitty", "Kitty Terminal"),
+                ("", "pcmanfm", "File Manager"),
+                ("󰨞", "code", "VS Code"),
+            ],
+            fontsize=14,
+            padding=12,
+            foreground=colors[1],
+        ),
+        ewidget.Spacer(length=bar.STRETCH),
+        widget.GroupBox(
+            fontsize=12,
+            margin_y=2,
+            margin_x=8,
+            padding_y=2,
+            padding_x=8,
+            borderwidth=4,
+            active=colors[8],
+            inactive=colors[1],
+            highlight_color=colors[2],
+            highlight_method="text",
+            this_current_screen_border=colors[7],
+            this_screen_border=colors[4],
+            other_current_screen_border=colors[7],
+            other_screen_border=colors[4],
+            # hide_unused=True,
+        ),
+        ewidget.Spacer(length=bar.STRETCH),
+        widget.Battery(
+            name="w_battery",
+            format="  {char}{percent:2.0%}",
+            fontsize=11,
+            padding=4,
+            foreground=colors[6],
+            low_foreground=colors[3],
+            low_percentage=0.2,
+            charge_char=" ↑ ",
+            discharge_char=" ↓ ",
+            full_char="✔ ",
+            show_percentage=True,
+            show_short_text=False,
+            mouse_callbacks={
+                "Button1": lambda: qtile.cmd_spawn(
+                    '/bin/sh -c \'notify-send "Battery Status" "$(acpi | cut -d "," -f 2-)"\''
+                )
+            },
+        ),
+        widget.TextBox(
+            text="|",
+            font="Ubuntu Mono",
+            foreground=colors[1],
+            padding=4,
+            fontsize=14,
+        ),
+        widget.CPU(
+            name="w_cpu",
+            _hide_on_chord=True,
+            format="  {load_percent}%",
+            fontsize=10,
+            padding=4,
+            foreground=colors[5],
+            mouse_callbacks={
+                "Button1": lambda: qtile.cmd_spawn(
+                    "env GTK_THEME=Adwaita:dark missioncenter"
+                )
+            },
+        ),
+        widget.TextBox(
+            text="|",
+            font="Ubuntu Mono",
+            foreground=colors[1],
+            padding=4,
+            fontsize=14,
+        ),
+        widget.Memory(
+            name="w_mem",
+            format="{MemUsed: .0f}{mm}",
+            fmt="🖥  {} ",
+            fontsize=10,
+            padding=4,
+            foreground=colors[8],
+            mouse_callbacks={
+                "Button1": lambda: qtile.cmd_spawn(myFullScreenTerm + " -e btop")
+            },
+        ),
+        widget.TextBox(
+            text="|",
+            font="Ubuntu Mono",
+            foreground=colors[1],
+            padding=0,
+            fontsize=14,
+        ),
+        widget.Clock(
+            format=" %a, %b %d - %H:%M",
+            padding=14,
+            fontsize=11,
+            foreground=colors[1],
+            mouse_callbacks={"Button1": lambda: qtile.spawn("clock_popup")},
+        ),
+    ]
 
 
 # -----------------------------------------------------------------------
@@ -946,9 +1124,12 @@ keys = [
         lazy.function(lambda qtile: toggle_or_spawn_sum(qtile, my2ndTerm, sum_file)),
         desc="Open or focus sum.md globally",
     ),
-    # ---zen-mode---
+    # ---toggle to normal user bar---
     Key(
-        [mod, "shift"], "z", lazy.hide_show_bar(position="top"), desc="Toggle Zen Mode"
+        [mod, "shift"],
+        "z",
+        toggle_top_bottom_exclusive,
+        desc="Toggle Top ↔ Bottom bar",
     ),
     # ---today & week: plans-todos popup---
     Key(
@@ -1015,6 +1196,7 @@ keys = [
         lazy.function(
             lambda qtile: (
                 qtile.reload_config(),
+                qtile.hide_show_bar(position="bottom", screen="current"),
                 qtile.spawn(
                     "notify-send -u critical -i dialog-ok-symbolic  'success' ' Qtile Config : Successfully reloaded!'"
                 ),
@@ -1805,6 +1987,12 @@ def init_widgets_list():
     ]
 
 
+def init_widgets_list_normaluserbar():
+    return [
+        *normal_user_bar(),
+    ]
+
+
 # Monitor 1 will display ALL widgets in widgets_list. It is important that this
 # is the only monitor that displays all widgets because the systray widget will
 # crash if you try to run multiple instances of it.
@@ -1823,6 +2011,12 @@ def init_widgets_screen2():
     return widgets_screen2
 
 
+def init_widgets_normaluserbar():
+    widgets_screen1 = init_widgets_list_normaluserbar()
+    # del widgets_screen1[22:24]
+    return widgets_screen1
+
+
 def init_screens():
     return [
         Screen(
@@ -1832,6 +2026,13 @@ def init_screens():
                 margin=[5, 10, 5, 10],  # top, right, bottom, left
                 # IMP: this is the background color of the bar
                 background="#11111b00",  # transparent
+            ),
+            bottom=bar.Bar(
+                widgets=init_widgets_list_normaluserbar(),
+                size=40,
+                margin=[5, 10, 5, 10],  # top, right, bottom, left
+                # IMP: this is the background color of the bar
+                background=colors[2],  # transparent
             ),
         ),
         Screen(
