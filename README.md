@@ -108,6 +108,11 @@ Start the graphical session from TTY:
 ```bash
 exec dbus-run-session startx
 ```
+Or u can run  my own alias :
+
+```bash
+letsgo
+```
 
 Restart Qtile and reload fonts without logging out:
 
