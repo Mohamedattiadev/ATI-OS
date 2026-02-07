@@ -11,11 +11,6 @@ packages:
   # - zram-generator
 
   # Documentation & basics
-  - man-db
-  - man-pages
-  - openssh
-  - xdg-utils
-  - stow
 
   # dcli dependencies
   - paru

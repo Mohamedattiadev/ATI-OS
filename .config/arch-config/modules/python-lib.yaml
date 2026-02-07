@@ -15,6 +15,7 @@ packages:
   - python-dbus-next
   - python-dbus-fast
   - python-pulsectl
+  - python-psutil
 
 exclude: []
 conflicts: []

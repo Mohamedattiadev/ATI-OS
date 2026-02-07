@@ -4,6 +4,8 @@ packages:
   - xorg-xinit
   - xorg-xinput
   - xorg-xev
+  - xorg-fonts-encodings
+  - xorg-setxkbmap
   - xorg-fonts-misc
   - wmctrl
   - xwallpaper

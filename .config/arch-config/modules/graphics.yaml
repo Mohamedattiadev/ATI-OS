@@ -1,19 +1,24 @@
-description: Graphics drivers and acceleration
+description: Graphics drivers and acceleration (Intel only)
 
 packages:
-  - nvidia
-  - nvidia-utils
-  - xf86-video-intel
-  - xf86-video-amdgpu
-  - xf86-video-ati
-  - xf86-video-nouveau
-  - vulkan-intel
-  - vulkan-nouveau
-  - vulkan-radeon
-  - intel-media-driver
-  - intel-gpu-tools
-  - libva-intel-driver
-  - libva-utils
+  # - vulkan-intel
+  # - intel-media-driver
+  # - intel-gpu-tools
+  # - libva-intel-driver
+  # - libva-utils
 
 exclude: []
 conflicts: []
+
+# description: Graphics drivers and acceleration (AMD)
+#
+# packages:
+#   - vulkan-radeon
+#   - mesa
+#   - libva
+#   - libva-mesa-driver
+#   - mesa-vdpau
+#   - radeontop
+#
+# exclude: []
+# conflicts: []

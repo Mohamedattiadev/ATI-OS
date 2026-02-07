@@ -19,6 +19,23 @@ packages:
   - auto-cpufreq
   - didyoumean
   - dmscripts-git
+  - shell-color-scripts
+  - findutils
+  - shellcheck
+  - udisks2
+  - man-db
+  - man-pages
+  - awk
+  - sed
+  - coreutils
+  - openssh
+  - slop
+  - ffmepg
+  - jq
+  - yt-dlp
+  - xdg-utils
+  - stow
+  - imagemagick
   # files sys ,  mounts , media transfer
   - gvfs
   - gvfs-mtp

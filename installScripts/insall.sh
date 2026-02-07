@@ -29,6 +29,9 @@ INSTALL_SCRIPTS="$DOTFILES_DIR/installScripts"
 STOW_SCRIPT="$INSTALL_SCRIPTS/stow_script.sh"
 ARCH_CONFIG_SCRIPT="$INSTALL_SCRIPTS/arch-config.sh"
 
+ATI_SCRIPTS_DIR="$DOTFILES_DIR/.config/AtiScriptsV1"
+ATI_INSTALL_SCRIPT="$ATI_SCRIPTS_DIR/install.sh"
+
 # =====================================================
 # 1. ASSUMPTIONS
 # =====================================================
@@ -105,7 +108,35 @@ ok "arch-config synced"
 info "Installing packages via dcli"
 cd "$DOTFILES_DIR"
 dcli sync
+sudo mandb
+fc-cache -fv
+
 ok "dcli sync completed"
+# =====================================================
+# 7.1 INSTALL PACKAGES  needed**
+# =====================================================
+info "Installing packages"
+
+cargo install pomodoro-tui
+pip install --break-system-packages Pillow
+pip install --break-system-packages dbus-fast
+ok "Packages installed"
+
+# =====================================================
+# 7.2 INSTALL ATI SCRIPTS
+# =====================================================
+
+info "Installing AtiScriptsV1"
+
+if [[ -d "$ATI_SCRIPTS_DIR" && -x "$ATI_INSTALL_SCRIPT" ]]; then
+  (
+    cd "$ATI_SCRIPTS_DIR"
+    ./install.sh
+  )
+  ok "AtiScriptsV1 installed"
+else
+  warn "AtiScriptsV1 install script not found, skipping"
+fi
 
 # =====================================================
 # 8. TOUCHPAD CONFIG
@@ -177,8 +208,6 @@ ok "Lid behavior configured"
 # =====================================================
 info "Installing image support"
 
-yay -S --noconfirm openslide
-sudo pacman -S --needed --noconfirm ueberzugpp
 echo 'set -x VIPS_WARNING 0' >>"$HOME_DIR/.profile"
 
 ok "Image support installed"
@@ -279,5 +308,5 @@ ok "Wallpapers installed"
 # =====================================================
 echo
 ok "INSTALLATION COMPLETE"
-echo -e "${GREEN}→ Start X11 with:${RESET} exec dbus-run-session startx"
+echo -e "${GREEN}→ Later to start the  X11 run this :${RESET} 'exec dbus-run-session startx' or u can use the alias 'letsgo' "
 echo -e "${GREEN}→ Restart Qtile:${RESET} fc-cache -fv && qtile cmd-obj -o cmd -f restart"
