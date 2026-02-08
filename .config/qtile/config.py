@@ -655,6 +655,31 @@ def normal_user_bar():
             # hide_unused=True,
         ),
         ewidget.Spacer(length=bar.STRETCH),
+        widget.Chord(
+            name="chord_chip",
+            fmt=" {} ",
+            padding=11,
+            foreground=colors[7],
+            background=None,
+            name_transform=lambda name: {
+                "Resize-Mode": "󰩨   RESIZE : H, J, N",
+                "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
+                "Media-Mode": "󰕾   MEDIA : J , K , P , M ",
+                "Scratch-Mode": "󰈆   SCRATCH",
+                "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
+                "Mouse-Mode": "󰍽   MOUSE : n , f , g , e , r , m ",
+                "Lang-Switch": "   LANG : a , e , t , d ",
+                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
+                "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
+            }.get(name, name.upper()),
+        ),
+        widget.TextBox(
+            text="|",
+            font="Ubuntu Mono",
+            foreground=colors[1],
+            padding=0,
+            fontsize=14,
+        ),
         widget.Battery(
             name="w_battery",
             format="  {char}{percent:2.0%}",
@@ -683,7 +708,6 @@ def normal_user_bar():
         ),
         widget.CPU(
             name="w_cpu",
-            _hide_on_chord=True,
             format="  {load_percent}%",
             fontsize=10,
             padding=4,
@@ -857,7 +881,6 @@ def right_side_widgets():
                 chip(
                     ewidget.CPU,
                     name="w_cpu",
-                    _hide_on_chord=True,
                     format="  {load_percent}%",
                     fontsize=10,
                     padding=11,
