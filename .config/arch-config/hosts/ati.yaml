@@ -41,4 +41,4 @@ auto_prune: false
 backup_tool: timeshift
 
 # AUR helper to use (auto-detects paru or yay if not specified)
-# aur_helper: paru   # Options: paru, yay, or any AUR helper
+aur_helper: yay # Options: paru, yay, or any AUR helper
