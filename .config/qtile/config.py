@@ -129,6 +129,9 @@ ACTIVE_CHORD = None
 NON_EN_NOTIFY_ID = 9001
 
 
+passthrough_active = False
+FLOAT_STATES = {}
+
 colors: list[list[str]] = color_schemes.DoomOne
 
 # NOTE:
@@ -158,6 +161,7 @@ CHORD_CHIP_COLORS = {
     "Lang-Switch": colorsW[1],
     "CheatSheet-Mode": colorsW[3],
     "WallpaperPicker": colorsW[3],
+    "PASSTHROUGH": colorsW[8],
 }
 
 # ╔──────────────────────────────────────────╗
@@ -167,11 +171,43 @@ CHORD_CHIP_COLORS = {
 # ╚──────────────────────────────────────────╝
 
 
+# ------------------------------------------------
+# -2- passthrough
+# -------------------------------------------------
+
+
+def _enable_passthrough(qtile):
+    global passthrough_active
+    passthrough_active = True
+
+    qtile.spawn("notify-send 'PASSTHROUGH MODE'")
+    qtile.ungrab_keys()
+
+
+def _disable_passthrough(qtile):
+    global passthrough_active
+    passthrough_active = False
+
+    qtile.spawn("notify-send 'NORMAL MODE'")
+    qtile.grab_keys()
+
+
+@lazy.function
+def passthrough_on(qtile):
+    _enable_passthrough(qtile)
+
+
+@lazy.function
+def passthrough_off(qtile):
+    _disable_passthrough(qtile)
+
+
 # ----------------------------------------------------------
 # -1  Function for toggle to normaluserbar
 # ---------------------------------------------------------
 
 
+#
 def apply_bar_mode():
     for s in qtile.screens:
         if BAR_MODE == "top":
@@ -188,7 +224,7 @@ def apply_bar_mode():
 
 @hook.subscribe.startup_complete
 def apply_bar_on_startup():
-    qtile.call_later(0.2, apply_bar_mode)
+    qtile.call_later(0.1, apply_bar_mode)
 
 
 @hook.subscribe.screens_reconfigured
@@ -196,6 +232,8 @@ def apply_bar_on_reconfigure():
     apply_bar_mode()
 
 
+#
+#
 @lazy.function
 def toggle_top_bottom_exclusive(qtile):
     global BAR_MODE
@@ -446,6 +484,10 @@ def cleanup_on_leave():
         w = qtile.widgets_map.get("wallpaper_toggle")
         if w and w.box_is_open:
             w.toggle()
+
+    elif ACTIVE_CHORD == "PASSTHROUGH":
+        _disable_passthrough(qtile)
+
     ACTIVE_CHORD = None
 
 
@@ -498,6 +540,17 @@ def chord_chip_leave():
             setattr(deco, "colour", colorsW[2])
 
     w.bar.draw()
+
+
+# ----------------------------------------------
+# 13- Function to enable the passthrough mode
+# ---------------------------------------------
+
+
+@hook.subscribe.enter_chord
+def auto_enable_passthrough(chord_name):
+    if chord_name == "PASSTHROUGH":
+        _enable_passthrough(qtile)
 
 
 # ╔───────────────────────────────────────────────────────────────────────────────────────────╗
@@ -671,6 +724,7 @@ def normal_user_bar():
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
+                "PASSTHROUGH": "   PASSTHROUGH : ESC , q",
             }.get(name, name.upper()),
         ),
         widget.TextBox(
@@ -1003,6 +1057,7 @@ def right_side_widgets():
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
+                "PASSTHROUGH": "   PASSTHROUGH : ESC , q",
             }.get(name, name.upper()),
         ),
         # Keyboard layout
@@ -1630,6 +1685,16 @@ keys = [
         mode=True,
         swallow=True,
     ),
+    KeyChord(
+        [mod],
+        "F12",
+        [
+            Key([], "Escape", lazy.ungrab_chord()),
+            Key([], "F12", lazy.ungrab_chord()),
+        ],
+        mode=True,
+        name="PASSTHROUGH",
+    ),
     # ╔───────────────────────────────────────────────────────╗
     # │░▄█▄█▄░█▄█░█▀█░█▀▄░█▀▀░█▀▀░░░█▀▀░█▀█░█▀▄░█▀▀░░░░░░░░░░░│
     # │░▄█▄█▄░█░█░█░█░█░█░█▀▀░▀▀█░░░█▀▀░█░█░█░█░▀▀█░░░░░░░░░░░│
@@ -2091,17 +2156,21 @@ if __name__ in ["config", "__main__"]:
 # ╚──────────────────────────╝
 
 # Drag floating layouts.
+# Move windows with SUPER instead of ALT
 mouse = [
     Drag(
-        [mod],
+        [mod2],  # Super key
         "Button1",
         lazy.window.set_position_floating(),
         start=lazy.window.get_position(),
     ),
     Drag(
-        [mod], "Button3", lazy.window.set_size_floating(), start=lazy.window.get_size()
+        [mod2],
+        "Button3",
+        lazy.window.set_size_floating(),
+        start=lazy.window.get_size(),
     ),
-    Click([mod], "Button2", lazy.window.bring_to_front()),
+    Click(["mod4"], "Button2", lazy.window.bring_to_front()),
 ]
 
 
@@ -2111,7 +2180,7 @@ follow_mouse_focus = True
 bring_front_click = False
 cursor_warp = False
 floating_layout = layout.Floating(
-    border_focus=colors[8],
+    border_focus=colors[7],
     border_width=2,
     float_rules=[
         # Run the utility of `xprop` to see the wm class and name of an X client.

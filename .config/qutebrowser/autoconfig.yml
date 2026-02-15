@@ -106,7 +106,7 @@ settings:
   colors.statusbar.caret.selection.fg:
     global: '#dfdfdf'
   colors.webpage.darkmode.enabled:
-    global: true
+    global: false
   content.geolocation:
     https://www.dunkindonuts.com: true
   content.javascript.log_message.excludes:
