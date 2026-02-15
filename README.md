@@ -122,6 +122,22 @@ qtile cmd-obj -o cmd -f restart
 ```
 
 ---
+> make sure to have these var. in ur `/etc/environment`
+
+> run `sudo vim /etc/enviromen` or `sudoedit /etc/environment` and paste this :
+
+```bash
+EDITOR=nvim
+BROWSER=qutebrowser
+ACCESSIBILITY_ENABLED=1
+GTK_MODULES=gail:atk-bridge
+OOO_FORCE_DESKTOP=gnome
+GNOME_ACCESSIBILITY=1
+QT_ACCESSIBILITY=1
+QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+```
+
+---
 
 ## 6. Videos
 
