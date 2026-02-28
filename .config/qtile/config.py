@@ -960,27 +960,6 @@ def right_side_widgets():
                         )
                     },
                 ),
-                # Battery
-                chip(
-                    ewidget.Battery,
-                    name="w_battery",
-                    format="  {char}{percent:2.0%}",
-                    fontsize=10,
-                    padding=12,
-                    foreground=colors[6],
-                    low_foreground=colors[3],
-                    low_percentage=0.2,
-                    charge_char=" ↑ ",
-                    discharge_char=" ↓ ",
-                    full_char="✔ ",
-                    show_percentage=True,
-                    show_short_text=False,
-                    mouse_callbacks={
-                        "Button1": lambda: qtile.cmd_spawn(
-                            '/bin/sh -c \'notify-send "Battery Status" "$(acpi | cut -d "," -f 2-)"\''
-                        )
-                    },
-                ),
             ],
             foreground=colors[7],
         ),
@@ -1038,6 +1017,27 @@ def right_side_widgets():
                 ),
             ],
             foreground=colors[5],
+        ),
+        # Battery
+        chip(
+            ewidget.Battery,
+            name="w_battery",
+            format="  {char}{percent:2.0%}",
+            fontsize=10,
+            padding=12,
+            foreground=colors[6],
+            low_foreground=colors[3],
+            low_percentage=0.2,
+            charge_char=" ↑ ",
+            discharge_char=" ↓ ",
+            full_char="✔ ",
+            show_percentage=True,
+            show_short_text=False,
+            mouse_callbacks={
+                "Button1": lambda: qtile.cmd_spawn(
+                    '/bin/sh -c \'notify-send "Battery Status" "$(acpi | cut -d "," -f 2-)"\''
+                )
+            },
         ),
         # Chord (Modes) Chip
         chip(

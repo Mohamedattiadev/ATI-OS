@@ -115,7 +115,7 @@
   :markup
 "Right-side widgets:  (collapsed widgets) :
 • <span foreground=\"#98be65\">△</span>  : system tray 
-• <span foreground=\"#ff6c6b\">󰤂</span>   : CPU, memory, and battery status
+• <span foreground=\"#ff6c6b\">󰤂</span>   : CPU and  memory status
 • <span foreground=\"#c678dd\">󰖯</span>   : Update , Volume and Disk status
 • <b><span foreground=\"#46d9ff\">x</span></b>   : wallpaper launcher
 • <b><span foreground=\"#ffffff\">󰌶</span></b>   : Tooltip (current opened app)

@@ -80,7 +80,7 @@ CHEATSHEET = {
         ("Obsidian session", "Super + Shift + o"),
         ("Anki session", "Super + Shift + a"),
         ("Todos Preview", "Super + p"),
-        ("Cpu-Memo-Battery widget", "Super + `"),
+        ("Cpu-Memo widget", "Super + `"),
         ("Lang-Volume widget", "Mod + `"),
     ],
     "Scratchpads": [
