@@ -10,6 +10,7 @@ from libqtile.log_utils import logger
 # =============================================================================
 try:
     from PIL import Image
+
     HAS_PIL = True
 except ImportError:
     Image = None
@@ -48,9 +49,10 @@ COLORS = {
     "red": "#ff6c6b",
     "line": "#2a2e36",
     "dark": "#1b1b1b",
-    "highlight_bg": "#51afef", # The background of selected item
-    "highlight_fg": "#1c1f24"  # The text color of selected item
+    "highlight_bg": "#51afef",  # The background of selected item
+    "highlight_fg": "#1c1f24",  # The text color of selected item
 }
+
 
 # =============================================================================
 # HELPERS
@@ -65,6 +67,7 @@ def load_images():
         if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
     )
 
+
 def load_current_wallpaper():
     if os.path.exists(CACHE_WALL):
         try:
@@ -74,16 +77,18 @@ def load_current_wallpaper():
             pass
     return None
 
+
 def get_thumbnail_path(original_path):
     if not HAS_PIL:
         return original_path
-    
+
     filename = os.path.basename(original_path)
     thumb_path = os.path.join(CACHE_THUMBS, filename)
 
     if os.path.exists(thumb_path):
         return thumb_path
     return original_path
+
 
 def generate_thumbnails_background():
     if not HAS_PIL or Image is None:
@@ -99,18 +104,22 @@ def generate_thumbnails_background():
             except Exception:
                 pass
 
+
 def truncate(name: str) -> str:
     # Ensure name fills the space for the background color to look like a bar
     if len(name) > MAX_NAME_LEN:
-        name = name[:MAX_NAME_LEN - 1] + "…"
+        name = name[: MAX_NAME_LEN - 1] + "…"
     return f"{name:<{MAX_NAME_LEN}}"
+
 
 def index_to_pos(i):
     return i % ROWS_PER_COL, i // ROWS_PER_COL
 
+
 def pos_to_index(row, col):
     idx = col * ROWS_PER_COL + row
     return idx if 0 <= idx < len(_IMAGES) else None
+
 
 def render_column(visible_col):
     lines = []
@@ -118,57 +127,55 @@ def render_column(visible_col):
 
     for row in range(ROWS_PER_COL):
         idx = pos_to_index(row, actual_col)
-        
+
         if idx is None:
             break
 
         path = _IMAGES[idx]
         filename = os.path.basename(path)
         display_name = truncate(filename)
-        
+
         is_selected = idx == _INDEX
         is_current = path == _CURRENT_WALL
 
         # --- ENHANCED STYLING LOGIC ---
         if is_selected:
             # "Card" style: Solid background block
-            icon = "  " # Circle icon
+            icon = "  "  # Circle icon
             text = (
                 f'<span background="{COLORS["highlight_bg"]}" foreground="{COLORS["highlight_fg"]}" weight="bold">'
-                f'{icon} {display_name}</span>'
+                f"{icon} {display_name}</span>"
             )
         elif is_current:
             # Green checkmark for active
-            icon = "  " # Checkmark
+            icon = "  "  # Checkmark
             text = (
                 f'<span foreground="{COLORS["green"]}" weight="bold">'
-                f'{icon} {display_name}</span>'
+                f"{icon} {display_name}</span>"
             )
         else:
             # Standard item
-            icon = "  " # Empty circle
-            text = (
-                f'<span foreground="{COLORS["fg"]}">'
-                f'{icon} {display_name}</span>'
-            )
-            
+            icon = "  "  # Empty circle
+            text = f'<span foreground="{COLORS["fg"]}">{icon} {display_name}</span>'
+
         lines.append(text)
 
     return "\n".join(lines)
+
 
 def render_footer():
     """Returns the markup for the footer status bar."""
     if not _IMAGES:
         return ""
-    
+
     current_img = _IMAGES[_INDEX]
     filename = os.path.basename(current_img)
-    
+
     # Calculate scroll percentage
     percent = int(((_INDEX + 1) / len(_IMAGES)) * 100)
-    
+
     count_str = f" {percent}% "
-    
+
     return (
         f'<span foreground="{COLORS["highlight_bg"]}" weight="bold">   IMAGE: </span>'
         f'<span foreground="{COLORS["fg"]}">{filename}</span>   '
@@ -176,6 +183,7 @@ def render_footer():
         f'<span foreground="{COLORS["purple"]}" weight="bold">{count_str}</span>'
         f'<span foreground="{COLORS["muted"]}">of {len(_IMAGES)}</span>'
     )
+
 
 # =============================================================================
 # WALLPAPER ACTION
@@ -192,6 +200,7 @@ def apply_wallpaper():
 
     _CURRENT_WALL = path
 
+
 # =============================================================================
 # SEARCH & RANDOM FUNCTIONS
 # =============================================================================
@@ -199,14 +208,15 @@ def jump_to_random():
     global _INDEX
     if not _IMAGES:
         return
-    
+
     # Pick random index
     new_idx = random.randint(0, len(_IMAGES) - 1)
-    
+
     # Update state and ensure visibility
     _INDEX = new_idx
     ensure_visible()
     update_ui()
+
 
 def fuzzy_search_rofi():
     global _INDEX
@@ -215,18 +225,26 @@ def fuzzy_search_rofi():
 
     # Create a list of names for Rofi
     names = "\n".join([os.path.basename(p) for p in _IMAGES])
-    
+
     try:
         # Run rofi to get selection
         result = subprocess.run(
-            ["rofi", "-dmenu", "-p", "Search Wallpaper", "-i", "-theme-str", 'window {width: 50%;}'],
+            [
+                "rofi",
+                "-dmenu",
+                "-p",
+                "Search Wallpaper",
+                "-i",
+                "-theme-str",
+                "window {width: 50%;}",
+            ],
             input=names.encode(),
             stdout=subprocess.PIPE,
-            check=False
+            check=False,
         )
-        
+
         selected_name = result.stdout.decode().strip()
-        
+
         if selected_name:
             # Find the index of the selected name
             for idx, path in enumerate(_IMAGES):
@@ -237,6 +255,7 @@ def fuzzy_search_rofi():
                     return
     except Exception as e:
         logger.error(f"Wallpaper Search Error: {e}")
+
 
 # =============================================================================
 # POPUP CONTROL
@@ -262,21 +281,19 @@ def show_wallpaper_picker(qtile):
     # ---------------- HEADER ----------------
     controls.append(
         PopupText(
-
-
-text=(
-        f'<span size="xx-large" weight="bold" foreground="{COLORS["blue"]}">'
-        f'󰸉  WALLPAPER SELECTOR</span>\n'
-        f'<span foreground="{COLORS["muted"]}">'
-        f'Navigate : <b><span foreground="{COLORS["green"]}">hjkl</span></b>'
-        f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
-        f'Search : <b><span foreground="{COLORS["purple"]}">/</span></b>'
-        f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
-        f'Random : <b><span foreground="{COLORS["green"]}">R</span></b>'
-        f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
-        f'Apply : <b><span foreground="{COLORS["purple"]}">Enter</span></b>'
-        f'</span>'
-    ),
+            text=(
+                f'<span size="xx-large" weight="bold" foreground="{COLORS["blue"]}">'
+                f"󰸉  WALLPAPER SELECTOR</span>\n"
+                f'<span foreground="{COLORS["muted"]}">'
+                f'Navigate : <b><span foreground="{COLORS["green"]}">hjkl</span></b>'
+                f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
+                f'Search : <b><span foreground="{COLORS["purple"]}">/</span></b>'
+                f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
+                f'Random : <b><span foreground="{COLORS["green"]}">R</span></b>'
+                f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
+                f'Apply : <b><span foreground="{COLORS["purple"]}">Enter</span></b>'
+                f"</span>"
+            ),
             markup=True,
             pos_x=0.05,
             pos_y=0.05,
@@ -288,16 +305,20 @@ text=(
 
     # ---------------- LINE DIVIDER ----------------
     controls.append(
-         PopupText(
-             text=f'<span foreground="{COLORS["line"]}">{"━" * 80}</span>',
-             markup=True,
-             pos_x=0.05, pos_y=0.13, width=0.9, height=0.05, h_align="center"
-         )
+        PopupText(
+            text=f'<span foreground="{COLORS["line"]}">{"━" * 80}</span>',
+            markup=True,
+            pos_x=0.05,
+            pos_y=0.13,
+            width=0.9,
+            height=0.05,
+            h_align="center",
+        )
     )
 
     # ---------------- COLUMNS ----------------
     start_x = 0.05
-    col_width = 0.16 # Adjusted for layout
+    col_width = 0.16  # Adjusted for layout
     gap = 0.01
 
     for c in range(COL_COUNT):
@@ -328,7 +349,7 @@ text=(
             name="preview",
         )
     )
-    
+
     # ---------------- FOOTER ----------------
     controls.append(
         PopupText(
@@ -340,7 +361,7 @@ text=(
             height=0.08,
             h_align="center",
             v_align="center",
-            name="footer"
+            name="footer",
         )
     )
 
@@ -348,7 +369,7 @@ text=(
         qtile,
         width=1050,
         height=680,
-        background=COLORS["bg"] + "F2", # F2 = High opacity but not 100%
+        background=COLORS["bg"] + "F2",  # F2 = High opacity but not 100%
         close_on_click=False,
         controls=controls,
     )
@@ -362,11 +383,13 @@ def close_wallpaper_picker():
         _WALLPAPER_LAYOUT.hide()
         _WALLPAPER_LAYOUT = None
 
+
 def toggle_wallpaper_picker(qtile):
     if _WALLPAPER_LAYOUT:
         close_wallpaper_picker()
     else:
         show_wallpaper_picker(qtile)
+
 
 # =============================================================================
 # NAVIGATION LOGIC
@@ -374,16 +397,17 @@ def toggle_wallpaper_picker(qtile):
 def ensure_visible():
     """Calculates _COL_OFFSET to make sure _INDEX is visible."""
     global _COL_OFFSET
-    
+
     # Calculate which column the current index is in (globally)
     row, col = index_to_pos(_INDEX)
-    
+
     # If the column is to the left of our view
     if col < _COL_OFFSET:
         _COL_OFFSET = col
     # If the column is to the right of our view
     elif col >= _COL_OFFSET + COL_COUNT:
         _COL_OFFSET = col - COL_COUNT + 1
+
 
 def update_ui():
     """Redraws the UI components efficiently."""
@@ -393,11 +417,12 @@ def update_ui():
     updates = {}
     updates["preview"] = get_thumbnail_path(_IMAGES[_INDEX])
     updates["footer"] = render_footer()
-    
+
     for c in range(COL_COUNT):
         updates[f"col{c}"] = render_column(c)
 
     _WALLPAPER_LAYOUT.update_controls(**updates)
+
 
 def move(drow=0, dcol=0):
     global _INDEX
@@ -414,16 +439,17 @@ def move(drow=0, dcol=0):
     if idx is None and dcol != 0:
         max_cols = (len(_IMAGES) // ROWS_PER_COL) + 1
         if 0 <= new_col < max_cols:
-             idx = len(_IMAGES) - 1
+            idx = len(_IMAGES) - 1
         else:
-             return 
-    
+            return
+
     if idx is None:
         return
 
     _INDEX = idx
     ensure_visible()
     update_ui()
+
 
 def apply(qtile):
     apply_wallpaper()

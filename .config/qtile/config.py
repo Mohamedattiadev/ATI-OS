@@ -81,6 +81,53 @@ from popups.WallpaperPopup import (
     show_wallpaper_picker,
     close_wallpaper_picker,
 )
+
+# NOTE: Bluetooth popup will be used later
+# from popups.BluetoothPopup import (
+#     show as show_bluetooth_popup,
+#     close as close_bluetooth_popup,
+#     move as bluetooth_move,
+#     toggle_device as bluetooth_toggle,
+#     request_disconnect,
+#     confirm_disconnect,
+#     reload_devices,
+# )
+
+
+# NOTE : Audio popup will be used later
+# from popups.AudioPopup import (
+#     show as show_audio_popup,
+#     close as close_audio_popup,
+#     move as audio_move,
+#     left as audio_left,
+#     right as audio_right,
+#     select as audio_select,
+#     refresh as audio_refresh,
+# )
+
+
+# NOTE : WiFi popup will be used later
+# from popups.WifiPopup import (
+#     show as show_wifi_popup,
+#     close as close_wifi_popup,
+#     move_vertical as wifi_move,
+#     move_horizontal as wifi_move_col,
+#     select as wifi_select,
+#     manual_refresh as wifi_manual_refresh,
+# )
+
+# NOTE: updates popup  will be used later
+# from popups.UpdatesPopup import (
+#     show as updates_popup,
+#     move as updates_move,
+#     toggle_select as updates_toggle,
+#     request_update,
+#     ignore_selected,
+#     confirm,
+#     rofi_search,
+#     close as close_updates_popup,
+# )
+
 import colors as color_schemes
 import logging
 
@@ -162,6 +209,14 @@ CHORD_CHIP_COLORS = {
     "CheatSheet-Mode": colorsW[3],
     "WallpaperPicker": colorsW[3],
     "PASSTHROUGH": colorsW[8],
+    # NOTE: Bluetooth popup will be used later
+    # "Bluetooth-Mode": colorsW[4],
+    # NOTE: Audio popup will be used later
+    # "Audio-Mode": colorsW[4],
+    # NOTE: Wifi popup will be used later
+    # "Wifi-Mode": colorsW[4],
+    # NOTE: updates popup  will be used later
+    # "Updates-Mode": colorsW[4],
 }
 
 # ╔──────────────────────────────────────────╗
@@ -488,6 +543,22 @@ def cleanup_on_leave():
     elif ACTIVE_CHORD == "PASSTHROUGH":
         _disable_passthrough(qtile)
 
+    # NOTE: Bluetooth popup will be used later
+    # elif ACTIVE_CHORD == "Bluetooth-Mode":
+    #     close_bluetooth_popup(qtile)
+
+    # NOTE : Audio popup will be used later
+    # elif ACTIVE_CHORD == "Audio-Mode":
+    #     close_audio_popup(qtile)
+
+    # NOTE : Wifi popup will be used later
+    # elif ACTIVE_CHORD == "Wifi-Mode":
+    #     close_wifi_popup(qtile)
+
+    # NOTE : updates popup  will be used later
+    # elif ACTIVE_CHORD == "Updates-Mode":
+    #     close_updates_popup(qtile)
+
     ACTIVE_CHORD = None
 
 
@@ -551,6 +622,49 @@ def chord_chip_leave():
 def auto_enable_passthrough(chord_name):
     if chord_name == "PASSTHROUGH":
         _enable_passthrough(qtile)
+
+
+# --------------------------------------------------------------------
+# 14- Function to lanuch the Bluetooth popup when it's mode activated
+# --------------------------------------------------------------------
+# NOTE: Bluetooth popup will be used later
+# @hook.subscribe.enter_chord
+# def auto_enable_bluetooth_popup(chord_name):
+#     if chord_name == "Bluetooth-Mode":
+#         show_bluetooth_popup(qtile)
+
+
+# ------------------------------------------------------------------------------
+# 15 - Function to lanuch the Audio popup when it's mode activated
+# ------------------------------------------------------------------------------
+
+
+# NOTE : Audio popup will be used later
+# @hook.subscribe.enter_chord
+# def auto_enable_audio_popup(chord_name):
+#     if chord_name == "Audio-Mode":
+#         show_audio_popup(qtile)
+
+# -----------------------------------------------------------
+# 16 - Function to launch WiFi popup when mode is activated
+# -----------------------------------------------------------
+
+
+# NOTE : Wifi popup will be used later
+# @hook.subscribe.enter_chord
+# def auto_enable_wifi_popup(chord_name):
+#     if chord_name == "Wifi-Mode":
+#         show_wifi_popup(qtile)
+
+# -----------------------------------------------------------
+# 17 - Function to launch Updates popup when mode is activated
+# -----------------------------------------------------------
+
+
+# @hook.subscribe.enter_chord
+# def auto_enable_updates_popup(chord_name):
+#     if chord_name == "Updates-Mode":
+#         updates_popup(qtile)
 
 
 # ╔───────────────────────────────────────────────────────────────────────────────────────────╗
@@ -725,6 +839,12 @@ def normal_user_bar():
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC , q",
+                # NOTE: Bluetooth popup will be used later
+                # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
+                # NOTE: Audio popup will be used later
+                # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
+                # NOTE: Wifi popup will be used later
+                # "Wifi-Mode": "󰤨   WIFI : j , k , Enter , x , r",
             }.get(name, name.upper()),
         ),
         widget.TextBox(
@@ -992,6 +1112,10 @@ def right_side_widgets():
                 chip(
                     ewidget.CheckUpdates,
                     padding=11,
+                    # NOTE: upadtes popup click handler will be used later
+                    # mouse_callbacks={
+                    #     "Button1": lazy.spawn("sh -c 'xdotool key Alt_L+u '")
+                    # },
                 ),
                 # Disk
                 chip(
@@ -1058,6 +1182,14 @@ def right_side_widgets():
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC , q",
+                # NOTE: Bluetooth popup will be used later
+                # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
+                # NOTE: Audio popup will be used later
+                # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
+                # NOTE: Wifi popup will be used later
+                # "Wifi-Mode": "󰤨   WIFI : j , k , Enter , x , r",
+                # NOTE: updates popup  will be used later
+                # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
             }.get(name, name.upper()),
         ),
         # Keyboard layout
@@ -1695,6 +1827,94 @@ keys = [
         mode=True,
         name="PASSTHROUGH",
     ),
+    # NOTE : Bluetooth popup will be used later
+    # KeyChord(
+    #     [mod],
+    #     "u",
+    #     [
+    #         Key([], "j", lazy.function(lambda _: bluetooth_move(1))),
+    #         Key([], "k", lazy.function(lambda _: bluetooth_move(-1))),
+    #         Key([], "Return", lazy.function(lambda _: bluetooth_toggle())),
+    #         Key([], "x", lazy.function(lambda _: request_disconnect())),
+    #         Key([], "y", lazy.function(lambda _: confirm_disconnect(True))),
+    #         Key([], "n", lazy.function(lambda _: confirm_disconnect(False))),
+    #         Key([], "r", lazy.function(lambda _: reload_devices())),
+    #         Key(
+    #             [],
+    #             "Escape",
+    #             lazy.function(lambda qtile: close_bluetooth_popup(qtile)),
+    #             lazy.ungrab_chord(),
+    #         ),
+    #     ],
+    #     mode=True,
+    #     name="Bluetooth-Mode",
+    #     desc="Bluetooth device picker",
+    # ),
+    # NOTE : Audio popup will be used later
+    # KeyChord(
+    #     [mod],
+    #     "o",
+    #     [
+    #         Key([], "j", lazy.function(lambda _: audio_move(1))),
+    #         Key([], "k", lazy.function(lambda _: audio_move(-1))),
+    #         Key([], "h", lazy.function(lambda _: audio_left())),
+    #         Key([], "l", lazy.function(lambda _: audio_right())),
+    #         Key([], "Return", lazy.function(lambda _: audio_select())),
+    #         Key([], "r", lazy.function(lambda _: audio_refresh())),
+    #         Key([], "Escape", lazy.function(lambda qtile: close_audio_popup(qtile))),
+    #     ],
+    #     mode=True,
+    #     name="Audio-Mode",
+    # ),
+    # NOTE: Wifi popup will be used later
+    # KeyChord(
+    #     [mod],
+    #     "i",
+    #     [
+    #         Key([], "j", lazy.function(lambda _: wifi_move(1))),
+    #         Key([], "k", lazy.function(lambda _: wifi_move(-1))),
+    #         Key([], "h", lazy.function(lambda _: wifi_move_col(-1))),
+    #         Key([], "l", lazy.function(lambda _: wifi_move_col(1))),
+    #         Key([], "Return", lazy.function(lambda _: wifi_select())),
+    #         Key([], "r", lazy.function(lambda _: wifi_manual_refresh())),
+    #         Key([], "Escape", lazy.function(lambda qtile: close_wifi_popup(qtile))),
+    #     ],
+    #     mode=True,
+    #     name="Wifi-Mode",
+    #     desc="WiFi network picker",
+    # ),
+    # NOTE: updates popup  will be used later
+    # KeyChord(
+    #     [mod],
+    #     "u",
+    #     [
+    #         Key([], "j", lazy.function(lambda q: updates_move(1, 0))),
+    #         Key([], "k", lazy.function(lambda q: updates_move(-1, 0))),
+    #         Key([], "h", lazy.function(lambda q: updates_move(0, -1))),
+    #         Key([], "l", lazy.function(lambda q: updates_move(0, 1))),
+    #         Key([], "space", lazy.function(lambda q: updates_toggle())),
+    #         Key([], "Return", lazy.function(lambda q: request_update())),
+    #         Key([], "x", lazy.function(lambda q: ignore_selected())),
+    #         Key([], "slash", lazy.function(lambda q: rofi_search())),
+    #         Key(
+    #             [],
+    #             "y",
+    #             lazy.function(
+    #                 lambda q: confirm(True),
+    #             ),
+    #             lazy.ungrab_chord(),
+    #         ),
+    #         Key([], "n", lazy.function(lambda q: confirm(False))),
+    #         Key(
+    #             [],
+    #             "Escape",
+    #             lazy.function(lambda q: close_updates_popup(q)),
+    #             lazy.ungrab_chord(),
+    #         ),
+    #     ],
+    #     mode=True,
+    #     name="Updates-Mode",
+    # ),
     # ╔───────────────────────────────────────────────────────╗
     # │░▄█▄█▄░█▄█░█▀█░█▀▄░█▀▀░█▀▀░░░█▀▀░█▀█░█▀▄░█▀▀░░░░░░░░░░░│
     # │░▄█▄█▄░█░█░█░█░█░█░█▀▀░▀▀█░░░█▀▀░█░█░█░█░▀▀█░░░░░░░░░░░│
