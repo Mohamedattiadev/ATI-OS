@@ -1,0 +1,10 @@
+/* Rose Pine. */
+* {
+    background:     #191724;
+    background-alt: #1f1d2e;
+    foreground:     #e0def4;
+    selected:       #c4a7e7;
+    selectedone:    #ebbcba;
+    urgent:         #eb6f92;
+    active:         #9ccfd8;
+}

@@ -85,6 +85,11 @@ return {
             nord = "nord",
             tokyonight = "tokyonight",
             catppuccin = "catppuccin",
+            monokai = "monokai-pro",
+            everforest = "everforest",
+            ["rose-pine"] = "rose-pine",
+            kanagawa = "kanagawa",
+            oxocarbon = "oxocarbon",
           }
           return map[m] or "doom-one"
         end
@@ -99,6 +104,11 @@ return {
   { "shaunsingh/nord.nvim", lazy = true },
   { "folke/tokyonight.nvim", lazy = true },
   { "catppuccin/nvim", name = "catppuccin", lazy = true },
+  { "loctvl842/monokai-pro.nvim", lazy = true },
+  { "neanias/everforest-nvim", lazy = true },
+  { "rose-pine/neovim", name = "rose-pine", lazy = true },
+  { "rebelot/kanagawa.nvim", lazy = true },
+  { "nyoom-engineering/oxocarbon.nvim", lazy = true },
 
   {
     "NTBBloodbath/doom-one.nvim",

@@ -1,0 +1,10 @@
+/* Oxocarbon (IBM Carbon Dark). */
+* {
+    background:     #161616;
+    background-alt: #262626;
+    foreground:     #f2f4f8;
+    selected:       #33b1ff;
+    selectedone:    #ee5396;
+    urgent:         #ff7eb6;
+    active:         #42be65;
+}
