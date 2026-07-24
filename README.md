@@ -174,9 +174,24 @@ git push
 
 ---
 
-## 7. Videos
+## 7. Post-install tuning (optional, one-time)
 
-### 7.1 Main Videos (System Overview)
+Two interactive scripts under `installScripts/` for boot-time / runtime
+trimming. Not wired into `install.sh` — they need reboot, are per-machine,
+and prompt before touching anything. Idempotent (safe to rerun).
+
+```bash
+bash ~/.dotfiles/installScripts/grub_boost.sh    # kernel cmdline: nowatchdog, quiet loglevel=3, cursor off, i915 GuC
+bash ~/.dotfiles/installScripts/service_trim.sh  # audit + disable heavy services (docker, postgres, tailscaled, ...)
+```
+
+Each backs up before writing. Revert instructions printed at end.
+
+---
+
+## 8. Videos
+
+### 8.1 Main Videos (System Overview)
 
 https://github.com/user-attachments/assets/aaec7215-c595-4ba3-bc65-a355b11edf05
 
@@ -184,7 +199,7 @@ https://github.com/user-attachments/assets/a7993cce-e04e-4168-9b32-b914d76539be
 
 ---
 
-### 7.2 Feature Demonstrations
+### 8.2 Feature Demonstrations
 
 https://github.com/user-attachments/assets/6990186e-336d-48d4-8330-7c8ffd0f0a81
 
@@ -199,7 +214,7 @@ https://github.com/user-attachments/assets/0189c230-a0df-4d8f-9687-ca8e5c00ed4a
 
 ---
 
-## 8. Modes
+## 9. Modes
 
 ### Window Manager Modes
 
