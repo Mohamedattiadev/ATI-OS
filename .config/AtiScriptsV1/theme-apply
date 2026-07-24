@@ -80,6 +80,47 @@ else
   ln -sfn "palette-$MODE.rasi" "$ROFI_THEMES/current-palette.rasi"
 fi
 
+# ---- Qutebrowser homepage CSS vars ----
+QB_CSS="$CACHE_DIR/qutebrowser-vars.css"
+gen_qb_css() {
+  local bg="$1" bg_alt="$2" fg="$3" red="$4" green="$5" yellow="$6" blue="$7" purple="$8" cyan="$9"
+  cat >"$QB_CSS" <<EOF
+:root {
+  --bg: $bg;
+  --bg-alt: $bg_alt;
+  --fg: $fg;
+  --red: $red;
+  --green: $green;
+  --yellow: $yellow;
+  --blue: $blue;
+  --purple: $purple;
+  --cyan: $cyan;
+}
+EOF
+}
+
+case "$MODE" in
+  wal)
+    W=~/.cache/wal/colors.json
+    gen_qb_css \
+      "$(jq -r .special.background "$W")" \
+      "$(jq -r .colors.color0 "$W")" \
+      "$(jq -r .special.foreground "$W")" \
+      "$(jq -r .colors.color9 "$W")" \
+      "$(jq -r .colors.color10 "$W")" \
+      "$(jq -r .colors.color11 "$W")" \
+      "$(jq -r .colors.color12 "$W")" \
+      "$(jq -r .colors.color13 "$W")" \
+      "$(jq -r .colors.color14 "$W")"
+    ;;
+  doomone)   gen_qb_css "#282c34" "#1e222a" "#dcdfe4" "#ff6c6b" "#98be65" "#ecbe7b" "#51afef" "#c678dd" "#46d9ff" ;;
+  dracula)   gen_qb_css "#282a36" "#21222c" "#f8f8f2" "#ff5555" "#50fa7b" "#f1fa8c" "#bd93f9" "#ff79c6" "#8be9fd" ;;
+  nord)      gen_qb_css "#2e3440" "#3b4252" "#d8dee9" "#bf616a" "#a3be8c" "#ebcb8b" "#81a1c1" "#b48ead" "#88c0d0" ;;
+  gruvbox)   gen_qb_css "#282828" "#1d2021" "#ebdbb2" "#fb4934" "#b8bb26" "#fabd2f" "#83a598" "#d3869b" "#8ec07c" ;;
+  tokyonight) gen_qb_css "#1a1b26" "#16161e" "#c0caf5" "#f7768e" "#9ece6a" "#e0af68" "#7aa2f7" "#bb9af7" "#7dcfff" ;;
+  catppuccin) gen_qb_css "#1e1e2e" "#181825" "#cdd6f4" "#f38ba8" "#a6e3a1" "#f9e2af" "#89b4fa" "#cba6f7" "#94e2d5" ;;
+esac
+
 echo "$MODE" >"$STATE_FILE"
 
 # Live-reload all running kitty instances
