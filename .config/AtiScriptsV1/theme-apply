@@ -178,6 +178,75 @@ if [[ -f "$DUNST_TMPL" ]]; then
   disown
 fi
 
+# ---- GTK overlay (pcmanfm + any GTK3/4 app that picks up @define-color) ----
+# Writes ~/.cache/qtile/gtk-wal.css with wal-derived accent colors and
+# ensures ~/.config/gtk-{3.0,4.0}/gtk.css @imports it. Underlying GTK
+# theme (Sweet-Dark etc) still supplies structure; only the accents
+# shift with the palette.
+GTK_CSS="$CACHE_DIR/gtk-wal.css"
+gen_gtk_css() {
+  local bg="$1" bg_alt="$2" fg="$3" accent="$4" urgent="$5" ok="$6"
+  cat >"$GTK_CSS" <<EOF
+@define-color accent_color $accent;
+@define-color accent_bg_color $accent;
+@define-color accent_fg_color $bg;
+@define-color window_bg_color $bg;
+@define-color window_fg_color $fg;
+@define-color view_bg_color $bg;
+@define-color view_fg_color $fg;
+@define-color headerbar_bg_color $bg_alt;
+@define-color headerbar_fg_color $fg;
+@define-color card_bg_color $bg_alt;
+@define-color card_fg_color $fg;
+@define-color destructive_color $urgent;
+@define-color destructive_bg_color $urgent;
+@define-color success_color $ok;
+@define-color success_bg_color $ok;
+@define-color theme_selected_bg_color $accent;
+@define-color theme_selected_fg_color $bg;
+EOF
+}
+
+case "$MODE" in
+  wal)
+    W=~/.cache/wal/colors.json
+    gen_gtk_css \
+      "$(jq -r .special.background "$W")" \
+      "$(jq -r .colors.color0 "$W")" \
+      "$(jq -r .special.foreground "$W")" \
+      "$(jq -r .colors.color12 "$W")" \
+      "$(jq -r .colors.color9 "$W")" \
+      "$(jq -r .colors.color10 "$W")"
+    ;;
+  doomone)   gen_gtk_css "#282c34" "#1e222a" "#dcdfe4" "#51afef" "#ff6c6b" "#98be65" ;;
+  dracula)   gen_gtk_css "#282a36" "#21222c" "#f8f8f2" "#bd93f9" "#ff5555" "#50fa7b" ;;
+  nord)      gen_gtk_css "#2e3440" "#3b4252" "#d8dee9" "#88c0d0" "#bf616a" "#a3be8c" ;;
+  gruvbox)   gen_gtk_css "#282828" "#1d2021" "#ebdbb2" "#fabd2f" "#fb4934" "#b8bb26" ;;
+  tokyonight) gen_gtk_css "#1a1b26" "#16161e" "#c0caf5" "#7aa2f7" "#f7768e" "#9ece6a" ;;
+  catppuccin) gen_gtk_css "#1e1e2e" "#181825" "#cdd6f4" "#cba6f7" "#f38ba8" "#a6e3a1" ;;
+esac
+
+# Wire @import into gtk-3.0/gtk.css (create if missing)
+ensure_gtk_import() {
+  local target="$1"
+  local marker="/* theme-apply wal overlay */"
+  mkdir -p "$(dirname "$target")"
+  touch "$target"
+  if ! grep -q "theme-apply wal overlay" "$target" 2>/dev/null; then
+    printf '\n%s\n@import url("%s");\n' "$marker" "$GTK_CSS" >>"$target"
+  fi
+}
+ensure_gtk_import "$HOME/.config/gtk-3.0/gtk.css"
+ensure_gtk_import "$HOME/.config/gtk-4.0/gtk.css"
+
+# Restart pcmanfm so it re-reads GTK CSS
+if pgrep -x pcmanfm >/dev/null; then
+  pkill -x pcmanfm 2>/dev/null || true
+  sleep 0.3
+  DISPLAY="${DISPLAY:-:0}" pcmanfm --daemon-mode >/dev/null 2>&1 &
+  disown
+fi
+
 # Reload qtile
 command -v qtile >/dev/null && qtile cmd-obj -o cmd -f reload_config 2>/dev/null || true
 
