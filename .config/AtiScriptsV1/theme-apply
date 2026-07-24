@@ -318,8 +318,13 @@ if pgrep -x pcmanfm >/dev/null; then
   disown
 fi
 
-# Reload qtile
-command -v qtile >/dev/null && qtile cmd-obj -o cmd -f reload_config 2>/dev/null || true
+# Reload qtile. reload_config doesn't refresh widget backgrounds that
+# read colors[] at instantiation time, so also fire a restart which
+# rebuilds every widget from scratch.
+if command -v qtile >/dev/null; then
+  qtile cmd-obj -o cmd -f reload_config 2>/dev/null || true
+  qtile cmd-obj -o cmd -f restart 2>/dev/null || true
+fi
 
 # Reload qutebrowser: :config-source re-runs config.py (which reads the
 # new palette). Then :reload --force-color-scheme actually rebuilds
