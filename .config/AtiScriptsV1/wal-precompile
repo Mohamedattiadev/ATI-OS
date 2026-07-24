@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""wal-precompile — walk wallpaper dir, extract & force palette per image.
+
+Output: ~/.cache/qtile/palettes/<basename>.json with fields
+{ wallpaper, score, bg, bg_alt, fg, accents[6], wal_colors, notes }.
+
+Color-theory rules (doomone-quality bar):
+  bg  HLS L in [0.06,0.12], slight tint towards dominant wallpaper hue
+  fg  HLS L ~0.86, low saturation
+  accents: 6 hues at 60deg steps around dominant, HLS S ~0.72 L ~0.62,
+           WCAG contrast >=4.5 vs bg
+"""
+from __future__ import annotations
+import argparse, colorsys, json, math, os, sys, time
+from pathlib import Path
+from PIL import Image
+
+WP_DIR = Path.home() / "Pictures/Wallpapers"
+OUT_DIR = Path.home() / ".cache/qtile/palettes"
+
+def hex2rgb(h): return tuple(int(h[i:i+2], 16)/255 for i in (1, 3, 5))
+def rgb2hex(r,g,b): return "#{:02x}{:02x}{:02x}".format(
+    max(0,min(255,round(r*255))),
+    max(0,min(255,round(g*255))),
+    max(0,min(255,round(b*255))))
+def hls(h): r,g,b = hex2rgb(h); return colorsys.rgb_to_hls(r,g,b)
+def hex_from_hls(h,l,s):
+    r,g,b = colorsys.hls_to_rgb(h,l,s); return rgb2hex(r,g,b)
+
+def rel_lum(hex_):
+    r,g,b = hex2rgb(hex_)
+    def c(v): return v/12.92 if v<=0.03928 else ((v+0.055)/1.055)**2.4
+    return 0.2126*c(r)+0.7152*c(g)+0.0722*c(b)
+def contrast(a,b):
+    la, lb = rel_lum(a), rel_lum(b)
+    hi, lo = max(la,lb), min(la,lb)
+    return (hi+0.05)/(lo+0.05)
+
+def extract_dominants(path: Path, k=16):
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        im.thumbnail((320, 320))
+        q = im.quantize(colors=k, method=Image.Quantize.MEDIANCUT)
+        pal = q.getpalette()[:k*3]
+        counts = sorted(q.getcolors(k) or [], reverse=True)
+    out = []
+    for cnt, idx in counts:
+        r,g,b = pal[idx*3:idx*3+3]
+        out.append((cnt, (r/255, g/255, b/255)))
+    return out
+
+def dominant_hue(colors):
+    xs = ys = w = 0.0
+    for cnt, (r,g,b) in colors:
+        h,l,s = colorsys.rgb_to_hls(r,g,b)
+        if s < 0.15 or l < 0.10 or l > 0.90:
+            continue
+        weight = cnt * s
+        ang = h * 2 * math.pi
+        xs += math.cos(ang) * weight
+        ys += math.sin(ang) * weight
+        w += weight
+    if w == 0:
+        return 0.6
+    ang = math.atan2(ys, xs)
+    if ang < 0: ang += 2*math.pi
+    return ang / (2*math.pi)
+
+def top_hues(colors, n=3, min_sep=0.10):
+    """Return up to n dominant wallpaper hues (weighted by pixel count * saturation),
+    each at least min_sep (fraction of hue circle) apart from prior picks."""
+    scored = []
+    for cnt, (r,g,b) in colors:
+        h,l,s = colorsys.rgb_to_hls(r,g,b)
+        if s < 0.20 or l < 0.10 or l > 0.90:
+            continue
+        scored.append((cnt * s, h))
+    scored.sort(reverse=True)
+    picks = []
+    for _, h in scored:
+        ok = True
+        for p in picks:
+            d = abs(h - p)
+            d = min(d, 1 - d)
+            if d < min_sep:
+                ok = False; break
+        if ok:
+            picks.append(h)
+            if len(picks) >= n:
+                break
+    return picks
+
+def force_bg_fg(dh):
+    bg     = hex_from_hls(dh, 0.08, 0.18)
+    bg_alt = hex_from_hls(dh, 0.13, 0.16)
+    fg     = hex_from_hls(dh, 0.86, 0.05)
+    return bg, bg_alt, fg
+
+def force_accents(seed_hues, L=0.62, S=0.72):
+    """Fill 6 accent slots. Use provided seed_hues first (from wallpaper),
+    then fill remaining slots by rotating 60deg from last hue until 6 total.
+    Ensures every accent hue is >=40deg from every other for readability."""
+    out = list(seed_hues[:6])
+    while len(out) < 6:
+        base = out[-1] if out else 0.6
+        cand = (base + 1/6) % 1.0
+        # nudge until >=1/9 (40deg) from every existing
+        tries = 0
+        while any(min(abs(cand - h), 1 - abs(cand - h)) < 1/9 for h in out) and tries < 24:
+            cand = (cand + 1/24) % 1.0; tries += 1
+        out.append(cand)
+    # sort by hue so palette layout stable across similar wallpapers
+    out.sort()
+    return [hex_from_hls(h, L, S) for h in out]
+
+def build_palette(path: Path):
+    colors = extract_dominants(path, k=16)
+    dh = dominant_hue(colors)
+    bg, bg_alt, fg = force_bg_fg(dh)
+    seeds = top_hues(colors, n=3, min_sep=1/9)  # ~40deg
+    if not seeds:
+        seeds = [dh]
+    L = 0.62
+    accents = force_accents(seeds, L=L)
+    # Retry: if any accent contrast <4.5 vs bg, raise L
+    for _ in range(4):
+        if all(contrast(bg, a) >= 4.5 for a in accents):
+            break
+        L += 0.06
+        accents = force_accents(seeds, L=L)
+    return bg, bg_alt, fg, accents, dh
+
+def score(bg, fg, accents):
+    s = 0.0
+    notes = []
+    c_bgfg = contrast(bg, fg)
+    if c_bgfg >= 7: s += 30
+    elif c_bgfg >= 4.5: s += 20
+    else: notes.append(f"bg/fg contrast {c_bgfg:.1f} <4.5")
+    ac = [contrast(bg, a) for a in accents]
+    good = sum(1 for c in ac if c >= 4.5)
+    s += 30 * (good/6)
+    if good < 6: notes.append(f"{6-good} accents <4.5 contrast")
+    hues = sorted([hls(a)[0] * 360 for a in accents])
+    spread = hues[-1] - hues[0]
+    s += min(20, 20 * spread / 300)
+    if spread < 200: notes.append(f"hue spread {spread:.0f} <200")
+    sat_mean = sum(hls(a)[2] for a in accents) / 6
+    s += min(20, 40 * sat_mean)
+    if sat_mean < 0.5: notes.append(f"sat_mean {sat_mean:.2f} <0.5")
+    return round(s, 1), notes
+
+def to_wal_json(bg, bg_alt, fg, accents, wallpaper):
+    c = {"color0": bg, "color7": fg, "color8": bg_alt, "color15": fg}
+    for i, a in enumerate(accents):
+        c[f"color{i+1}"] = a
+        c[f"color{i+9}"] = a
+    return {
+        "wallpaper": str(wallpaper),
+        "alpha": "100",
+        "special": {"background": bg, "foreground": fg, "cursor": fg},
+        "colors": c,
+    }
+
+def process(path: Path, force=False):
+    out_file = OUT_DIR / (path.stem + ".json")
+    if out_file.exists() and not force:
+        return None
+    try:
+        bg, bg_alt, fg, accents, dh = build_palette(path)
+    except Exception as e:
+        return {"wallpaper": str(path), "error": str(e), "score": 0}
+    sc, notes = score(bg, fg, accents)
+    wal_j = to_wal_json(bg, bg_alt, fg, accents, path)
+    out = {
+        "wallpaper": str(path),
+        "score": sc,
+        "notes": notes,
+        "dominant_hue_deg": round(dh * 360, 1),
+        "bg": bg, "bg_alt": bg_alt, "fg": fg,
+        "accents": accents,
+        "wal_colors": wal_j,
+    }
+    out_file.write_text(json.dumps(out, indent=2))
+    return out
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--dir", default=str(WP_DIR))
+    ap.add_argument("--report", default=str(Path.home()/".dotfiles/.config/qtile/WAL_PRECOMPILE_REPORT.md"))
+    ap.add_argument("--only", help="single wallpaper basename to (re)process")
+    args = ap.parse_args()
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    root = Path(args.dir)
+    imgs = sorted([p for p in root.iterdir() if p.suffix.lower() in {".jpg",".jpeg",".png",".webp"}])
+    if args.only:
+        imgs = [p for p in imgs if p.name == args.only]
+    t0 = time.time()
+    results = []
+    for i, p in enumerate(imgs, 1):
+        r = process(p, force=args.force)
+        if r is None:
+            r = json.loads((OUT_DIR / (p.stem + ".json")).read_text())
+        results.append(r)
+        if i % 20 == 0 or i == len(imgs):
+            print(f"[{i}/{len(imgs)}] {p.name} score={r.get('score')} {r.get('notes',[])}", flush=True)
+    dt = time.time() - t0
+    scores = [r["score"] for r in results if "score" in r and "error" not in r]
+    if not scores:
+        print("no scores"); return
+    good = sum(1 for s in scores if s >= 80)
+    lines = [
+        "# wal-precompile report",
+        "",
+        f"- wallpapers: {len(imgs)}",
+        f"- avg score: {sum(scores)/len(scores):.1f}",
+        f"- >=80: {good} ({100*good/len(scores):.0f}%)",
+        f"- <70: {sum(1 for s in scores if s<70)}",
+        f"- elapsed: {dt:.1f}s",
+        "",
+        "## Worst 20",
+        "",
+        "| wallpaper | score | bg | fg | accents | notes |",
+        "|---|---|---|---|---|---|",
+    ]
+    worst = sorted(results, key=lambda r: r.get("score",0))[:20]
+    for r in worst:
+        if "error" in r:
+            lines.append(f"| {Path(r['wallpaper']).name} | ERR | | | | {r['error']} |"); continue
+        lines.append("| {} | {} | `{}` | `{}` | {} | {} |".format(
+            Path(r["wallpaper"]).name, r["score"], r["bg"], r["fg"],
+            " ".join(f"`{a}`" for a in r["accents"]),
+            "; ".join(r["notes"])))
+    Path(args.report).write_text("\n".join(lines))
+    print(f"\nreport -> {args.report}")
+
+if __name__ == "__main__":
+    main()
