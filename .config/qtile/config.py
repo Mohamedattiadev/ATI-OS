@@ -38,6 +38,7 @@ import threading
 from libqtile import bar, hook, layout, qtile, widget
 from qtile_extras.widget.decorations import RectDecoration
 from qtile_extras import widget as ewidget
+from qtile_extras.widget.mixins import TooltipMixin
 from scripts.volume_control import volume_change, toggle_mute
 
 # from scripts.float_windows import ( float_satty, float_edit_nvim, float_imv, float_feh, float_link_preview)
@@ -291,6 +292,242 @@ def apply_bar_on_reload_startup():
 @hook.subscribe.screens_reconfigured
 def apply_bar_on_reconfigure():
     apply_bar_mode()
+
+
+# ----------------------------------------------------------------
+# Bar tooltips — hover any widget for a hint. Dynamically injects
+# TooltipMixin into each widget instance's class.
+# ----------------------------------------------------------------
+
+TOOLTIP_BY_NAME = {
+    "chord_chip": "Current mode",
+    "chord_chip_nu": "Current mode",
+    "main_icon_chip": "Arch menu · L-click → terminal · R-click → launcher",
+    "main_icon_chip_nu": "Arch menu · L-click → launcher · R-click → terminal",
+    "tooltip_widgetbox": "Tips (💡) · click → toggle onboarding",
+    "system_widgetbox": "CPU + Memory",
+    "2nd_system_widgetbox": "Updates · Disk · Volume",
+    "wallpaper_toggle": "Wallpaper picker",
+    "systray_widgetbox": "System tray",
+    "w_cpu": "CPU load · click → mission-center",
+    "w_mem": "RAM used · click → btop",
+    "w_disk": "Disk free · click → notify",
+    "w_volume": "Volume · scroll to change",
+    "w_battery": "Battery · click → status",
+    "w_lang": "Keyboard layout",
+}
+
+TOOLTIP_BY_CLASS = {
+    "GroupBox": "Workspaces · click to switch",
+    "TaskList": "Open windows",
+    "Clock": "Date & time · click → popup",
+    "Spacer": None,
+    "TextBox": None,
+    "Chord": "Current mode",
+    "Systray": "System tray",
+    "CheckUpdates": "Pending updates",
+    "CurrentLayout": "Layout · R-click to cycle",
+    "LaunchBar": "Quick launch: Brave · Qute · Kitty · Files · VSCode",
+}
+
+
+_TOOLTIP_WIDGETS = []
+
+
+def _kill_all_tooltips(except_w=None):
+    for w in list(_TOOLTIP_WIDGETS):
+        if w is except_w:
+            continue
+        try:
+            if getattr(w, "_tooltip_timer", None):
+                w._tooltip_timer.cancel()
+                w._tooltip_timer = None
+            if getattr(w, "_tooltip", None) is not None:
+                w._tooltip.hide()
+                w._tooltip.kill()
+                w._tooltip = None
+        except Exception:
+            pass
+
+
+def _install_tooltip(widget_, text):
+    if not text:
+        return
+    cls = widget_.__class__
+    if not issubclass(cls, TooltipMixin):
+        new_cls = type(cls.__name__ + "WithTooltip", (cls, TooltipMixin), {})
+        try:
+            widget_.__class__ = new_cls
+        except TypeError:
+            return
+        TooltipMixin.__init__(widget_)
+        try:
+            widget_.add_defaults(TooltipMixin.defaults)
+        except Exception:
+            pass
+    # kill any stale popup from previous install/reload
+    try:
+        if getattr(widget_, "_tooltip", None) is not None:
+            widget_._tooltip.hide()
+            widget_._tooltip.kill()
+            widget_._tooltip = None
+        if getattr(widget_, "_tooltip_timer", None):
+            widget_._tooltip_timer.cancel()
+            widget_._tooltip_timer = None
+    except Exception:
+        pass
+    if widget_ not in _TOOLTIP_WIDGETS:
+        _TOOLTIP_WIDGETS.append(widget_)
+    widget_.tooltip_text = text
+    widget_.tooltip_delay = 0.35
+    widget_.tooltip_background = "#11131a"
+    widget_.tooltip_color = "#e6e8ef"
+    widget_.tooltip_font = "Ubuntu"
+    widget_.tooltip_fontsize = 11
+    widget_.tooltip_padding = [4, 10]
+
+    # Patch _show_tooltip: upstream sets `self._tooltip.text = ...`, but
+    # Popup has no `text` setter — attr is orphaned and layout stays empty
+    # (width=0). Also set `layout.text` so text actually renders.
+    _orig_show = widget_._show_tooltip
+
+    def _fixed_show(x, y, _w=widget_, _orig=_orig_show):
+        _orig(x, y)
+        try:
+            if _w._tooltip is None or not _w.tooltip_text.strip():
+                if _w._tooltip is not None:
+                    _w._tooltip.hide()
+                    _w._tooltip.kill()
+                    _w._tooltip = None
+                return
+            tt = _w._tooltip
+            tt.layout.text = _w.tooltip_text
+            tt.width = tt.layout.width + 2 * tt.horizontal_padding
+            tt.height = tt.layout.height + 2 * tt.vertical_padding
+            # clamp x within screen and add small vertical margin below bar
+            screen = _w.bar.screen
+            margin = 6
+            tt.x = max(4, min(tt.x, screen.width - tt.width - 4))
+            if screen.top == _w.bar:
+                tt.y = _w.bar.height + margin
+            elif screen.bottom == _w.bar:
+                tt.y = screen.height - _w.bar.height - tt.height - margin
+            # start invisible for fade-in
+            try:
+                tt.win.opacity = 0.0
+            except Exception:
+                pass
+            tt.place()
+            tt.clear()
+            tt.draw_text()
+            tt.draw()
+            # fade in over ~140ms
+            steps = 7
+            for i in range(1, steps + 1):
+                op = i / steps
+
+                def _step(o=op, _tt=tt):
+                    try:
+                        if _tt.win:
+                            _tt.win.opacity = o
+                    except Exception:
+                        pass
+
+                qtile.call_later(0.02 * i, _step)
+        except Exception:
+            pass
+
+    widget_._show_tooltip = _fixed_show
+
+    def _safe_stop(x, y, _w=widget_):
+        try:
+            if _w._tooltip_timer and not _w._tooltip:
+                _w._tooltip_timer.cancel()
+                _w._tooltip_timer = None
+                return
+            if _w._tooltip is not None:
+                _w._tooltip.hide()
+                _w._tooltip.kill()
+            _w._tooltip = None
+            _w._tooltip_timer = None
+        except Exception:
+            pass
+
+    def _wrapped_enter(x, y, _w=widget_):
+        _kill_all_tooltips(except_w=_w)
+        _w._start_tooltip(x, y)
+
+    widget_.mouse_enter = _wrapped_enter
+    widget_.mouse_leave = _safe_stop
+
+
+def install_bar_tooltips():
+    from libqtile.log_utils import logger
+
+    _kill_all_tooltips()
+    _TOOLTIP_WIDGETS.clear()
+    # kill orphan internal windows (leftover tooltip popups from
+    # previous config reloads). exclude bar windows + big internals.
+    try:
+        bar_wids = set()
+        for screen in qtile.screens:
+            for pos in ("top", "bottom", "left", "right"):
+                b = getattr(screen, pos, None)
+                if b and getattr(b, "window", None):
+                    try:
+                        bar_wids.add(b.window.wid)
+                    except Exception:
+                        pass
+        for wid, w in list(qtile.windows_map.items()):
+            try:
+                if type(w).__name__ != "Internal":
+                    continue
+                if wid in bar_wids:
+                    continue
+                ww = getattr(w, "width", 0)
+                hh = getattr(w, "height", 0)
+                if ww <= 500 and hh <= 100:
+                    w.kill()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    seen = set()
+    installed = 0
+    total = 0
+    for screen in qtile.screens:
+        for pos in ("top", "bottom", "left", "right"):
+            b = getattr(screen, pos, None)
+            if not b:
+                continue
+            for w in b.widgets:
+                if id(w) in seen:
+                    continue
+                seen.add(id(w))
+                total += 1
+                text = TOOLTIP_BY_NAME.get(getattr(w, "name", ""), None)
+                if text is None:
+                    text = TOOLTIP_BY_CLASS.get(w.__class__.__name__)
+                if text:
+                    try:
+                        _install_tooltip(w, text)
+                        installed += 1
+                    except Exception as e:
+                        logger.warning(
+                            f"tooltip install failed for {w.__class__.__name__}: {e}"
+                        )
+    logger.warning(f"[tooltips] installed={installed} total={total}")
+
+
+@hook.subscribe.startup_complete
+def _bar_tooltips_on_start_complete():
+    qtile.call_later(0.3, install_bar_tooltips)
+
+
+@hook.subscribe.startup
+def _bar_tooltips_on_reload():
+    # startup fires on reload_config too; startup_complete does not.
+    qtile.call_later(2.0, install_bar_tooltips)
 
 
 #
@@ -619,6 +856,68 @@ def chord_chip_leave():
     w.bar.draw()
 
 
+# ----------------------------------------------------------------
+# 12.5- On chord enter: close any open SmartWidgetBox and remember
+#       which ones were open. On chord leave: reopen exactly those.
+# ----------------------------------------------------------------
+
+_SAVED_WIDGETBOX_NAMES = []
+
+
+def _all_smart_widgetboxes():
+    seen = set()
+    for screen in qtile.screens:
+        for pos in ("top", "bottom", "left", "right"):
+            b = getattr(screen, pos, None)
+            if not b:
+                continue
+            for w in b.widgets:
+                if w.__class__.__name__ == "SmartWidgetBox" and id(w) not in seen:
+                    seen.add(id(w))
+                    yield w
+    # also cover any SmartWidgetBox tracked via its own registry
+    for w in getattr(SmartWidgetBox, "_instances", []):
+        if id(w) not in seen:
+            seen.add(id(w))
+            yield w
+
+
+@hook.subscribe.enter_chord
+def close_widgetboxes_on_chord(chord_name):
+    global _SAVED_WIDGETBOX_NAMES
+    _SAVED_WIDGETBOX_NAMES = []
+    for w in _all_smart_widgetboxes():
+        if bool(getattr(w, "box_is_open", False)):
+            _SAVED_WIDGETBOX_NAMES.append(getattr(w, "name", None))
+            try:
+                w.toggle()
+            except Exception:
+                pass
+
+
+@hook.subscribe.leave_chord
+def restore_widgetboxes_on_chord_leave():
+    global _SAVED_WIDGETBOX_NAMES
+    names = list(_SAVED_WIDGETBOX_NAMES)
+    _SAVED_WIDGETBOX_NAMES = []
+    if not names:
+        return
+
+    def _do_restore():
+        for w in _all_smart_widgetboxes():
+            if getattr(w, "name", None) in names and not bool(
+                getattr(w, "box_is_open", False)
+            ):
+                try:
+                    w.toggle()
+                except Exception:
+                    pass
+
+    # defer one tick so the chord-leave state fully settles before
+    # we mutate bar widgets (otherwise toggle can race and no-op).
+    qtile.call_later(0.05, _do_restore)
+
+
 # ----------------------------------------------
 # 13- Function to enable the passthrough mode
 # ---------------------------------------------
@@ -828,7 +1127,7 @@ def normal_user_bar():
             this_screen_border=colors[4],
             other_current_screen_border=colors[7],
             other_screen_border=colors[4],
-            # hide_unused=True,
+            hide_unused=True,
         ),
         ewidget.Spacer(length=bar.STRETCH),
         widget.Chord(
@@ -1012,7 +1311,7 @@ def left_side_widgets():
             markup_floating=f'<span background="{colors[0][0]}EE" foreground="{colors[5][0]}">V {{}}</span>',
             markup_focused_floating=f'<span background="{colors[0][0]}EE" foreground="{colors[5][0]}" weight="bold">VF {{}}</span>',
             markup_minimized=f'<span background="{colors[0][0]}EE" foreground="{colors[3][0]}">↓ {{}}</span>',
-            max_title_width=200,
+            max_title_width=120,
             padding_x=3,
             padding_y=2,
             margin_x=3,
