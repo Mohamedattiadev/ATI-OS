@@ -346,7 +346,15 @@ if command -v papirus-folders >/dev/null; then
       ;;
     *) ICON_COLOR="blue" ;;
   esac
-  papirus-folders -C "$ICON_COLOR" -t Papirus-Dark 2>/dev/null || true
+  # -u forces papirus-folders to invalidate the icon cache. Without it
+  # open pcmanfm windows keep rendering the previous folder colors.
+  papirus-folders -C "$ICON_COLOR" -u -t Papirus-Dark 2>/dev/null || true
+
+  # Rebuild GTK icon cache index so cold pcmanfm windows also pick up
+  # the new symlink target on first render.
+  for d in ~/.local/share/icons/Papirus-Dark /usr/share/icons/Papirus-Dark; do
+    [[ -d "$d" ]] && gtk-update-icon-cache -f -t "$d" 2>/dev/null || true
+  done
 
   # Ensure GTK icon theme is Papirus-Dark (rewrite settings.ini once)
   SETTINGS_INI="$HOME/.config/gtk-3.0/settings.ini"

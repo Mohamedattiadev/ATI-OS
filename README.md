@@ -118,6 +118,8 @@ Done. One command. Bootstrap covers:
 | 19   | Disable all display managers                                  |
 | 20   | Install candy-icons theme                                     |
 | 21   | Clone wallpaper collection                                    |
+| 22   | System speed tweaks (`speed_boost.sh`)                        |
+| 23   | Theme system (pywal + palette precompile + brave-flags + init)|
 
 No manual follow-up. Everything in `.config` works on first `startx`.
 
@@ -189,9 +191,46 @@ Each backs up before writing. Revert instructions printed at end.
 
 ---
 
-## 8. Videos
+## 8. Theming (kitty · rofi · dunst · qtile · gtk · qutebrowser · nvim · brave · papirus folders)
 
-### 8.1 Main Videos (System Overview)
+Every consumer follows one selected theme. Installer step 23 seeds it end-to-end.
+
+**Modes:** `doomone` · `dracula` · `gruvbox` · `nord` · `tokyonight` · `catppuccin` · `wal`
+
+```bash
+theme-apply doomone   # any preset
+theme-apply wal       # pywal from current wallpaper
+theme-toggle          # cycle to next preset
+```
+
+Wal mode uses a precompiled cache. `wal-precompile` walks
+`~/Pictures/Wallpapers/` and produces per-image palettes at
+`~/.cache/qtile/palettes/<basename>.json`. Every palette is forced to a
+doomone-quality bar (WCAG AAA bg/fg, WCAG AA per-accent, hue-spread
+guaranteed). See `.config/qtile/WAL_PRECOMPILE_REPORT.md`.
+
+**Coverage per apply**
+
+| Consumer | Reload mechanism |
+|---|---|
+| kitty | `set-colors --all` per live socket + SIGUSR1 |
+| rofi | symlink `current-palette.rasi` swap |
+| dunst | render `dunstrc.tmpl` + restart |
+| qtile | `restart` (detached so caller doesn't deadlock) |
+| gtk 3/4 | `@import` overlay at `~/.cache/qtile/gtk-wal.css` |
+| qutebrowser | inline `<style>` block rewrite + `:reload -f` |
+| nvim | fs_event on `~/.cache/qtile/theme_mode` re-sources scheme |
+| brave / chromium | `brave-flags.conf` force-dark + GTK theme |
+| papirus folders | `papirus-folders -C <hue-match> -u` |
+
+Wallpaper change auto-reapplies wal mode (`dm-setbg` + `WallpaperPopup`
+both invoke `theme-apply wal` on a bg thread so qtile stays responsive).
+
+---
+
+## 9. Videos
+
+### 9.1 Main Videos (System Overview)
 
 https://github.com/user-attachments/assets/aaec7215-c595-4ba3-bc65-a355b11edf05
 
@@ -199,7 +238,7 @@ https://github.com/user-attachments/assets/a7993cce-e04e-4168-9b32-b914d76539be
 
 ---
 
-### 8.2 Feature Demonstrations
+### 9.2 Feature Demonstrations
 
 https://github.com/user-attachments/assets/6990186e-336d-48d4-8330-7c8ffd0f0a81
 
@@ -214,7 +253,7 @@ https://github.com/user-attachments/assets/0189c230-a0df-4d8f-9687-ca8e5c00ed4a
 
 ---
 
-## 9. Modes
+## 10. Modes
 
 ### Window Manager Modes
 
