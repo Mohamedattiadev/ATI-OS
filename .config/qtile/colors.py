@@ -152,23 +152,63 @@ Catppuccin = [
 # Wal mode reads ~/.cache/wal/colors.json and prefers the bright color
 # variants (color9-14) so bar accents stay visible on dim wallpapers.
 
+def _hex_to_hsv(hx):
+    r = int(hx[1:3], 16) / 255.0
+    g = int(hx[3:5], 16) / 255.0
+    b = int(hx[5:7], 16) / 255.0
+    mx, mn = max(r, g, b), min(r, g, b)
+    d = mx - mn
+    if d == 0:
+        h = 0.0
+    elif mx == r:
+        h = (60 * ((g - b) / d) + 360) % 360
+    elif mx == g:
+        h = 60 * ((b - r) / d) + 120
+    else:
+        h = 60 * ((r - g) / d) + 240
+    return h
+
+
 def _wal_palette():
+    """Build a 9-slot palette from pywal cache.
+
+    If the extracted accent colors span <60 degrees of hue (i.e. the
+    wallpaper is monochromatic and wal produced 8 shades of the same
+    color), only bg/fg are taken from wal and the DoomOne accents are
+    used instead so the workspace-active border stays visible.
+    """
     import json, os
     try:
         with open(os.path.expanduser("~/.cache/wal/colors.json")) as f:
             w = json.load(f)
         s = w["special"]
         c = w["colors"]
+        accents = [c[f"color{i}"] for i in range(9, 15)]
+        hues = [_hex_to_hsv(a) for a in accents]
+        spread = max(hues) - min(hues)
+        bg, fg = s["background"], s["foreground"]
+        if spread < 60:
+            return [
+                [bg, bg],
+                [fg, fg],
+                DoomOne[2],
+                DoomOne[3],
+                DoomOne[4],
+                DoomOne[5],
+                DoomOne[6],
+                DoomOne[7],
+                DoomOne[8],
+            ]
         pick = [
-            s["background"],   # bg
-            s["foreground"],   # fg
-            c["color0"],       # dim
-            c["color9"],       # bright red
-            c["color10"],      # bright green
-            c["color11"],      # bright yellow
-            c["color12"],      # bright blue
-            c["color13"],      # bright magenta
-            c["color14"],      # bright cyan  (used as workspace active)
+            bg,
+            fg,
+            c["color0"],
+            c["color9"],
+            c["color10"],
+            c["color11"],
+            c["color12"],
+            c["color13"],
+            c["color14"],
         ]
         return [[h, h] for h in pick]
     except Exception:
