@@ -1,0 +1,10 @@
+/* Kanagawa Wave. */
+* {
+    background:     #1f1f28;
+    background-alt: #16161d;
+    foreground:     #dcd7ba;
+    selected:       #7e9cd8;
+    selectedone:    #e6c384;
+    urgent:         #e46876;
+    active:         #98bb6c;
+}

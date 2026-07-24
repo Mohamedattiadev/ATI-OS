@@ -21,7 +21,7 @@ STATE_FILE="$CACHE_DIR/theme_mode"
 
 mkdir -p "$CACHE_DIR"
 
-PRESETS=(doomone dracula gruvbox nord tokyonight catppuccin)
+PRESETS=(doomone dracula gruvbox nord tokyonight catppuccin monokai everforest rose-pine kanagawa oxocarbon)
 
 is_preset() {
   local m="$1"
@@ -32,7 +32,7 @@ is_preset() {
 }
 
 if [[ "$MODE" != "wal" ]] && ! is_preset "$MODE"; then
-  echo "usage: theme-apply <doomone|dracula|gruvbox|nord|tokyonight|catppuccin|wal>" >&2
+  echo "usage: theme-apply <doomone|dracula|gruvbox|nord|tokyonight|catppuccin|monokai|everforest|rose-pine|kanagawa|oxocarbon|wal>" >&2
   exit 1
 fi
 
@@ -195,6 +195,11 @@ case "$MODE" in
   gruvbox)   gen_qb_css "#282828" "#1d2021" "#ebdbb2" "#fb4934" "#b8bb26" "#fabd2f" "#83a598" "#d3869b" "#8ec07c" ;;
   tokyonight) gen_qb_css "#1a1b26" "#16161e" "#c0caf5" "#f7768e" "#9ece6a" "#e0af68" "#7aa2f7" "#bb9af7" "#7dcfff" ;;
   catppuccin) gen_qb_css "#1e1e2e" "#181825" "#cdd6f4" "#f38ba8" "#a6e3a1" "#f9e2af" "#89b4fa" "#cba6f7" "#94e2d5" ;;
+  monokai)   gen_qb_css "#272822" "#1e1f1c" "#f8f8f2" "#f92672" "#a6e22e" "#f4bf75" "#66d9ef" "#ae81ff" "#a1efe4" ;;
+  everforest) gen_qb_css "#2d353b" "#232a2e" "#d3c6aa" "#e67e80" "#a7c080" "#dbbc7f" "#7fbbb3" "#d699b6" "#83c092" ;;
+  rose-pine) gen_qb_css "#191724" "#1f1d2e" "#e0def4" "#eb6f92" "#31748f" "#f6c177" "#9ccfd8" "#c4a7e7" "#ebbcba" ;;
+  kanagawa)  gen_qb_css "#1f1f28" "#16161d" "#dcd7ba" "#e46876" "#98bb6c" "#e6c384" "#7e9cd8" "#957fb8" "#7aa89f" ;;
+  oxocarbon) gen_qb_css "#161616" "#262626" "#f2f4f8" "#ee5396" "#42be65" "#ffe97b" "#33b1ff" "#be95ff" "#3ddbd9" ;;
 esac
 
 echo "$MODE" >"$STATE_FILE"
@@ -252,6 +257,11 @@ if [[ -f "$DUNST_TMPL" ]]; then
     gruvbox)   render_dunstrc "#282828" "#ebdbb2" "#3c1f1c" "#ffdada" "#fabd2f" "#b8bb26" "#fb4934" ;;
     tokyonight) render_dunstrc "#1a1b26" "#c0caf5" "#3d1f2a" "#ffdada" "#7aa2f7" "#9ece6a" "#f7768e" ;;
     catppuccin) render_dunstrc "#1e1e2e" "#cdd6f4" "#3d1f2a" "#ffdada" "#cba6f7" "#a6e3a1" "#f38ba8" ;;
+    monokai)   render_dunstrc "#272822" "#f8f8f2" "#3d1f2a" "#ffdada" "#66d9ef" "#a6e22e" "#f92672" ;;
+    everforest) render_dunstrc "#2d353b" "#d3c6aa" "#3d1f22" "#ffdada" "#7fbbb3" "#a7c080" "#e67e80" ;;
+    rose-pine) render_dunstrc "#191724" "#e0def4" "#3d1f2a" "#ffdada" "#c4a7e7" "#9ccfd8" "#eb6f92" ;;
+    kanagawa)  render_dunstrc "#1f1f28" "#dcd7ba" "#3d1f22" "#ffdada" "#7e9cd8" "#98bb6c" "#e46876" ;;
+    oxocarbon) render_dunstrc "#161616" "#f2f4f8" "#3d1f2a" "#ffdada" "#33b1ff" "#42be65" "#ee5396" ;;
   esac
   # Restart dunst so it re-reads dunstrc
   pkill -x dunst 2>/dev/null || true
@@ -306,6 +316,11 @@ case "$MODE" in
   gruvbox)   gen_gtk_css "#282828" "#1d2021" "#ebdbb2" "#fabd2f" "#fb4934" "#b8bb26" ;;
   tokyonight) gen_gtk_css "#1a1b26" "#16161e" "#c0caf5" "#7aa2f7" "#f7768e" "#9ece6a" ;;
   catppuccin) gen_gtk_css "#1e1e2e" "#181825" "#cdd6f4" "#cba6f7" "#f38ba8" "#a6e3a1" ;;
+  monokai)   gen_gtk_css "#272822" "#1e1f1c" "#f8f8f2" "#66d9ef" "#f92672" "#a6e22e" ;;
+  everforest) gen_gtk_css "#2d353b" "#232a2e" "#d3c6aa" "#7fbbb3" "#e67e80" "#a7c080" ;;
+  rose-pine) gen_gtk_css "#191724" "#1f1d2e" "#e0def4" "#c4a7e7" "#eb6f92" "#9ccfd8" ;;
+  kanagawa)  gen_gtk_css "#1f1f28" "#16161d" "#dcd7ba" "#7e9cd8" "#e46876" "#98bb6c" ;;
+  oxocarbon) gen_gtk_css "#161616" "#262626" "#f2f4f8" "#33b1ff" "#ee5396" "#42be65" ;;
 esac
 
 # Wire @import into gtk-3.0/gtk.css (create if missing)
@@ -327,10 +342,11 @@ ensure_gtk_import "$HOME/.config/gtk-4.0/gtk.css"
 # one so folder icons follow the palette.
 if command -v papirus-folders >/dev/null; then
   case "$MODE" in
-    doomone|nord)   ICON_COLOR="blue" ;;
-    dracula|catppuccin) ICON_COLOR="violet" ;;
-    gruvbox)        ICON_COLOR="yellow" ;;
-    tokyonight)     ICON_COLOR="indigo" ;;
+    doomone|nord|kanagawa|oxocarbon) ICON_COLOR="blue" ;;
+    dracula|catppuccin|rose-pine)    ICON_COLOR="violet" ;;
+    gruvbox|monokai)                 ICON_COLOR="yellow" ;;
+    tokyonight)                      ICON_COLOR="indigo" ;;
+    everforest)                      ICON_COLOR="green" ;;
     wal)
       HUE=$(python3 -c "import json,colorsys;d=json.load(open('$HOME/.cache/wal/colors.json'));c=d['colors']['color12'];r,g,b=int(c[1:3],16)/255,int(c[3:5],16)/255,int(c[5:7],16)/255;print(int(colorsys.rgb_to_hsv(r,g,b)[0]*360))")
       if   (( HUE < 15 || HUE >= 345 )); then ICON_COLOR="red"
