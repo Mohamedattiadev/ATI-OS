@@ -536,6 +536,30 @@ open(outp,"w").write(json.dumps(manifest, indent=2))
 PYEOF
 fi
 
+# Repack extension to .crx + bump updates.xml so chrome policy
+# force-install picks up the new version. Brave applies theme from
+# --load-extension directly, chrome needs the policy path.
+BROWSER_CRX="$HOME/.config/qtile/browser-theme.crx"
+BROWSER_PEM="$HOME/.config/qtile/browser-theme.pem"
+BROWSER_UPDATES="$HOME/.config/qtile/browser-theme-updates.xml"
+EXT_ID="fommfacojlllmdogognehdgombidbpjg"
+if [[ -f "$BROWSER_PEM" ]] && command -v google-chrome-stable >/dev/null 2>&1 || [[ -x /opt/google/chrome/chrome ]]; then
+  CHROME_BIN="${CHROME_BIN:-/opt/google/chrome/chrome}"
+  # Pack silently, ignore errors (chrome running lock — retry next apply)
+  "$CHROME_BIN" --pack-extension="$BROWSER_EXT" --pack-extension-key="$BROWSER_PEM" --no-message-box >/dev/null 2>&1 || true
+  VER=$(python3 -c "import json;print(json.load(open('$BROWSER_EXT/manifest.json'))['version'])" 2>/dev/null)
+  if [[ -n "$VER" ]]; then
+    cat > "$BROWSER_UPDATES" <<EOF
+<?xml version='1.0' encoding='UTF-8'?>
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='$EXT_ID'>
+    <updatecheck codebase='file://$BROWSER_CRX' version='$VER' />
+  </app>
+</gupdate>
+EOF
+  fi
+fi
+
 # Ensure --load-extension flag is in each browser's flags file so the
 # theme extension survives restart.
 add_load_ext() {
