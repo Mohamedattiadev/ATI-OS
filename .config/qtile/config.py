@@ -162,9 +162,6 @@ from lib.constants import (
     CHORD_CHIP_COLORS,
 )
 
-passthrough_active = False
-FLOAT_STATES = {}
-
 colors: list[list[str]] = color_schemes.DoomOne
 
 # NOTE:
@@ -273,28 +270,6 @@ import lib.hooks  # noqa: F401  side-effect: registers @hook.subscribe.* handler
 # -----------------------------------
 # 12- Function to set keyboard layout
 # -----------------------------------
-
-
-def set_kb(layout):
-    @lazy.function
-    def _set(qtile):
-        # Reset options + reapply Xmodmap so Alt (mod1) survives layout switch
-        qtile.spawn(
-            f"sh -c 'setxkbmap -layout {layout} -option && xmodmap ~/.Xmodmap'"
-        )
-
-        w = qtile.widgets_map.get("w_lang")
-        if w:
-            w.backend.set_keyboard(layout, w.option)
-
-        if layout != "us":
-            show_layout_warning(qtile, layout)
-        else:
-            hide_layout_warning(qtile)
-
-        qtile.ungrab_chord()
-
-    return _set
 
 
 # -------------------------------
