@@ -142,6 +142,83 @@ return {
       -- (user tabbed back to terminal), :Theme user command.
       local mode_file = vim.fn.expand("~/.cache/qtile/theme_mode")
       local wal_cache = vim.fn.expand("~/.cache/wal/colors-wal.vim")
+      local wal_json  = vim.fn.expand("~/.cache/wal/colors.json")
+
+      -- dylanaraps/wal.vim only sets cterm* — invisible under
+      -- termguicolors. Read colors.json and set gui* highlights so bg
+      -- and syntax actually track the wallpaper. Overrides the common
+      -- LazyVim dashboard/UI groups so those tint too.
+      local function apply_wal_from_json()
+        local ok, f = pcall(io.open, wal_json, "r")
+        if not (ok and f) then return false end
+        local raw = f:read("*a"); f:close()
+        local ok2, d = pcall(vim.json.decode, raw)
+        if not ok2 then return false end
+        local c = d.colors; local bg = d.special.background; local fg = d.special.foreground
+        vim.cmd("hi clear")
+        if vim.fn.exists("syntax_on") == 1 then vim.cmd("syntax reset") end
+        vim.o.background = "dark"
+        vim.g.colors_name = "wal"
+        local set = function(g, o) vim.api.nvim_set_hl(0, g, o) end
+        set("Normal",       { fg = fg,       bg = bg })
+        set("NormalFloat",  { fg = fg,       bg = c.color0 })
+        set("NormalNC",     { fg = fg,       bg = bg })
+        set("SignColumn",   { fg = fg,       bg = bg })
+        set("EndOfBuffer",  { fg = bg,       bg = bg })
+        set("LineNr",       { fg = c.color8, bg = bg })
+        set("CursorLineNr", { fg = c.color3, bg = bg, bold = true })
+        set("CursorLine",   { bg = c.color0 })
+        set("Visual",       { bg = c.color8 })
+        set("Comment",      { fg = c.color8, italic = true })
+        set("Constant",     { fg = c.color3 })
+        set("String",       { fg = c.color2 })
+        set("Statement",    { fg = c.color1 })
+        set("Keyword",      { fg = c.color1 })
+        set("Function",     { fg = c.color4 })
+        set("Type",         { fg = c.color5 })
+        set("Special",      { fg = c.color6 })
+        set("PreProc",      { fg = c.color3 })
+        set("Identifier",   { fg = c.color1 })
+        set("StatusLine",   { fg = fg,       bg = c.color0 })
+        set("StatusLineNC", { fg = c.color8, bg = c.color0 })
+        set("TabLine",      { fg = c.color8, bg = c.color0 })
+        set("TabLineSel",   { fg = bg,       bg = c.color4, bold = true })
+        set("TabLineFill",  { bg = c.color0 })
+        set("WinSeparator", { fg = c.color8, bg = bg })
+        set("Pmenu",        { fg = fg,       bg = c.color0 })
+        set("PmenuSel",     { fg = bg,       bg = c.color4, bold = true })
+        set("PmenuThumb",   { bg = c.color4 })
+        set("Search",       { fg = bg,       bg = c.color3 })
+        set("IncSearch",    { fg = bg,       bg = c.color6 })
+        set("MatchParen",   { fg = c.color6, bold = true })
+        set("DiagnosticError", { fg = c.color1 })
+        set("DiagnosticWarn",  { fg = c.color3 })
+        set("DiagnosticInfo",  { fg = c.color4 })
+        set("DiagnosticHint",  { fg = c.color6 })
+        set("Error",        { fg = c.color1, bold = true })
+        set("WarningMsg",   { fg = c.color3 })
+        -- LazyVim dashboard (avoids the default dark-neutral fallback
+        -- shown in the reference screenshot).
+        set("DashboardHeader", { fg = c.color4, bold = true })
+        set("DashboardIcon",   { fg = c.color5 })
+        set("DashboardDesc",   { fg = fg })
+        set("DashboardKey",    { fg = c.color3 })
+        set("DashboardFooter", { fg = c.color8, italic = true })
+        set("DashboardProjectTitle", { fg = c.color5, bold = true })
+        set("SnacksDashboardHeader", { fg = c.color4, bold = true })
+        set("SnacksDashboardIcon",   { fg = c.color5 })
+        set("SnacksDashboardDesc",   { fg = fg })
+        set("SnacksDashboardKey",    { fg = c.color3 })
+        set("SnacksDashboardFooter", { fg = c.color8, italic = true })
+        -- git signs
+        set("DiffAdd",     { fg = c.color2 })
+        set("DiffChange",  { fg = c.color3 })
+        set("DiffDelete",  { fg = c.color1 })
+        set("GitSignsAdd",    { fg = c.color2 })
+        set("GitSignsChange", { fg = c.color3 })
+        set("GitSignsDelete", { fg = c.color1 })
+        return true
+      end
       local map = {
         wal = "wal",
         doomone = "doom-one",
@@ -179,13 +256,18 @@ return {
         if not changed then return end
         last_mode = m
         last_wal_mtime = mt
-        local scheme = map[m] or "doom-one"
-        if m == "wal" and vim.fn.filereadable(wal_cache) == 1 then
-          pcall(vim.cmd, "source " .. wal_cache)
-        end
-        local ok = pcall(vim.cmd, "colorscheme " .. scheme)
-        if not ok then
-          pcall(vim.cmd, "colorscheme doom-one")
+        if m == "wal" then
+          -- Native json reader — sets gui* highlights (wal.vim only
+          -- sets cterm*, invisible under termguicolors).
+          if not apply_wal_from_json() then
+            pcall(vim.cmd, "colorscheme doom-one")
+          end
+        else
+          local scheme = map[m] or "doom-one"
+          local ok = pcall(vim.cmd, "colorscheme " .. scheme)
+          if not ok then
+            pcall(vim.cmd, "colorscheme doom-one")
+          end
         end
       end
       apply(true)
