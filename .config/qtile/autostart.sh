@@ -21,13 +21,16 @@ COLORSCHEME=DoomOne
 # These should start IMMEDIATELY without delays.
 # Avoid slow apps here — keep this section lightweight.
 
+# Long-running daemons: managed by systemd --user for auto-restart on crash.
+# Units live in ~/.config/systemd/user/{dunst,copyq,eww}.service.
+# Enable once:
+#   systemctl --user enable --now dunst.service copyq.service eww.service
+systemctl --user start dunst.service copyq.service eww.service 2>/dev/null
+
 (
-  dunst &          # Notification daemon
   nm-applet &      # Network tray icon
   blueman-applet & # Bluetooth tray icon
-  copyq &          # Clipboard manager
-  warpd &          # waprd daemon
-  eww daemon       # EWW daemon
+  warpd &          # warpd daemon (mouse control)
 ) &
 
 # ---------------------------------------------------------

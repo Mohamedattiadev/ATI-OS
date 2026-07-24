@@ -1,0 +1,13 @@
+[Unit]
+Description=eww daemon (ElKowar's Wacky Widgets)
+PartOf=graphical-session.target
+After=graphical-session-pre.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/eww daemon --no-daemonize
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=graphical-session.target
