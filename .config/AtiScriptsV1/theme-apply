@@ -49,21 +49,31 @@ if [[ "$MODE" == "wal" ]]; then
     notify-send -u critical "theme-apply" "~/.cache/wall missing — set a wallpaper first"
     exit 1
   fi
-  # Default backend + max saturation. Monochromatic wallpapers still
-  # produce single-hue palettes; colors.py falls back to DoomOne accents
-  # (keeping only wal bg/fg) when the accent hues span <60 degrees.
-  # colorz backend uses k-means clustering — much better for multi-color
-  # wallpapers (paint splatters, city photos) than the default wal backend
-  # which tends to pick a single dominant hue.
-  # If colorz isn't installed, pywal silently falls back to the default.
-  wal --backend colorz -i "$(cat "$WALL_LINK")" -n -s -t -q --saturate 1.0 2>/dev/null \
-    || wal -i "$(cat "$WALL_LINK")" -n -s -t -q --saturate 1.0 2>/dev/null
+  WALL_PATH="$(cat "$WALL_LINK")"
+  WALL_STEM="$(basename "$WALL_PATH")"; WALL_STEM="${WALL_STEM%.*}"
+  PRECOMPILED="$HOME/.cache/qtile/palettes/$WALL_STEM.json"
 
-  # Monochrome / desaturated wallpapers produce useless palettes (all
-  # one hue). Detect via HSV hue spread AND mean saturation on
-  # color9-14; if either fails, overwrite accents with DoomOne while
-  # keeping wal bg/fg. Thresholds match WAL_AUDIT_REPORT.md findings.
-  python3 <<'PYEOF' 2>/dev/null || true
+  if [[ -f "$PRECOMPILED" ]]; then
+    # Fast path: precompiled palette. Write straight to ~/.cache/wal/colors.json;
+    # skip the wal binary + monochrome-fallback pass. wal -R regenerates templates.
+    mkdir -p "$HOME/.cache/wal"
+    python3 - "$PRECOMPILED" <<'PYEOF' 2>/dev/null || true
+import json, os, sys
+src = json.load(open(sys.argv[1]))
+out = src["wal_colors"]
+with open(os.path.expanduser("~/.cache/wal/colors.json"), "w") as f:
+    json.dump(out, f, indent=4)
+PYEOF
+  else
+    # Fallback: live wal extraction. Colorz backend + saturation punch.
+    wal --backend colorz -i "$WALL_PATH" -n -s -t -q --saturate 1.0 2>/dev/null \
+      || wal -i "$WALL_PATH" -n -s -t -q --saturate 1.0 2>/dev/null
+
+    # Monochrome / desaturated wallpapers produce useless palettes (all
+    # one hue). Detect via HSV hue spread AND mean saturation on
+    # color9-14; if either fails, overwrite accents with DoomOne while
+    # keeping wal bg/fg. Thresholds match WAL_AUDIT_REPORT.md findings.
+    python3 <<'PYEOF' 2>/dev/null || true
 import json, os, colorsys
 p = os.path.expanduser("~/.cache/wal/colors.json")
 with open(p) as f:
@@ -89,9 +99,10 @@ if spread < 60 or sat_mean < 0.25:
     with open(p, "w") as f:
         json.dump(d, f, indent=4)
 PYEOF
+  fi
 
   # Regenerate wal template outputs so kitty/rofi files reflect the
-  # post-processed colors.json.
+  # colors.json we just wrote (whether from precompile or live wal).
   wal -R -q 2>/dev/null || true
 
   # ---- Build wal-flavored rofi palette from wal cache ----
@@ -194,7 +205,7 @@ echo "$MODE" >"$STATE_FILE"
 # so push the palette explicitly via `kitty @ set-colors --all`.
 for sock in /tmp/kitty-*; do
   [[ -S "$sock" ]] || continue
-  kitty @ --to "unix:$sock" set-colors --all --configured \
+  timeout 1 kitty @ --to "unix:$sock" set-colors --all --configured \
     "$KITTY_THEMES/current.conf" 2>/dev/null || true
 done
 for pid in $(pgrep -x kitty || true); do
@@ -353,19 +364,22 @@ if pgrep -x pcmanfm >/dev/null; then
 fi
 
 # Reload qtile. reload_config doesn't refresh widget backgrounds that
-# read colors[] at instantiation time, so also fire a restart which
-# rebuilds every widget from scratch.
+# read colors[] at instantiation time, so fire restart which rebuilds
+# every widget from scratch. Detach via setsid so callers (e.g. the
+# WallpaperPopup) don't wait on the qtile re-exec — that path deadlocked
+# the compositor when the popup was the caller.
 if command -v qtile >/dev/null; then
-  qtile cmd-obj -o cmd -f reload_config 2>/dev/null || true
-  qtile cmd-obj -o cmd -f restart 2>/dev/null || true
+  setsid -f bash -c 'sleep 0.15; timeout 3 qtile cmd-obj -o cmd -f restart' \
+    >/dev/null 2>&1 </dev/null || true
 fi
 
 # Reload qutebrowser: :config-source re-runs config.py (which reads the
 # new palette). Then :reload --force-color-scheme actually rebuilds
-# the current page so cached file:// CSS is dropped.
+# the current page so cached file:// CSS is dropped. Timeouts guard
+# against a hung qutebrowser IPC.
 if pgrep -x qutebrowser >/dev/null; then
-  qutebrowser ":config-source" 2>/dev/null || true
-  qutebrowser ":reload -f" 2>/dev/null || true
+  timeout 2 qutebrowser ":config-source" 2>/dev/null || true
+  timeout 2 qutebrowser ":reload -f" 2>/dev/null || true
 fi
 
 notify-send "theme-apply" "Theme -> $MODE"

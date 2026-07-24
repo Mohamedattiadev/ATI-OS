@@ -192,23 +192,46 @@ def apply_wallpaper():
     global _CURRENT_WALL
     path = _IMAGES[_INDEX]
 
-    subprocess.run(["xwallpaper", "--stretch", path], check=False)
-
     os.makedirs(os.path.dirname(CACHE_WALL), exist_ok=True)
     with open(CACHE_WALL, "w") as f:
         f.write(path)
-
     _CURRENT_WALL = path
 
-    # If pywal mode is active, regenerate palette from the new wallpaper.
+    # Close popup first so subsequent qtile restart (from theme-apply) doesn't
+    # rebuild widgets mid-render and freeze the compositor.
     try:
-        mode_p = os.path.expanduser("~/.cache/qtile/theme_mode")
-        with open(mode_p) as f:
-            mode = f.read().strip()
-        if mode == "wal":
-            subprocess.Popen(["theme-apply", "wal"])
+        if _WALLPAPER_LAYOUT is not None:
+            _WALLPAPER_LAYOUT.kill()
     except Exception:
         pass
+
+    # Run xwallpaper + theme-apply off the qtile main thread. xwallpaper --stretch
+    # on 4K images blocks 1-3s; qtile freezes for that duration if run sync.
+    def _bg():
+        try:
+            mode_p = os.path.expanduser("~/.cache/qtile/theme_mode")
+            mode = ""
+            try:
+                with open(mode_p) as f:
+                    mode = f.read().strip()
+            except Exception:
+                pass
+            subprocess.run(
+                ["xwallpaper", "--stretch", path],
+                check=False,
+                timeout=10,
+            )
+            if mode == "wal":
+                subprocess.Popen(
+                    ["theme-apply", "wal"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+        except Exception as e:
+            logger.warning("apply_wallpaper bg failed: %s", e)
+
+    threading.Thread(target=_bg, daemon=True).start()
 
 
 # =============================================================================
