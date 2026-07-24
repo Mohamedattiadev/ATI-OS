@@ -1004,12 +1004,14 @@ def left_side_widgets():
             # icons
             icon_size=16,
             markup=True,
-            # markup styles
-            markup_normal='<span background="#00000055">{}</span>',
-            markup_focused='<span background="#1a1b26EE" foreground="#7aa2f7" weight="bold">F {}</span>',
-            markup_floating='<span background="#1a1b26EE" foreground="#da8548">V {}</span>',
-            markup_focused_floating='<span background="#1a1b26EE" foreground="#ffaa00" weight="bold">VF {}</span>',
-            markup_minimized='<span background="#1a1b26EE" foreground="#ff6c6b">↓ {}</span>',
+            # markup styles — use the active palette so TaskList retints
+            # on theme swap. colors[2]=bg-alt, colors[0]=bg, colors[6]=blue,
+            # colors[5]=purple, colors[3]=red.
+            markup_normal=f'<span background="{colors[2][0]}55">{{}}</span>',
+            markup_focused=f'<span background="{colors[0][0]}EE" foreground="{colors[6][0]}" weight="bold">F {{}}</span>',
+            markup_floating=f'<span background="{colors[0][0]}EE" foreground="{colors[5][0]}">V {{}}</span>',
+            markup_focused_floating=f'<span background="{colors[0][0]}EE" foreground="{colors[5][0]}" weight="bold">VF {{}}</span>',
+            markup_minimized=f'<span background="{colors[0][0]}EE" foreground="{colors[3][0]}">↓ {{}}</span>',
             max_title_width=200,
             padding_x=3,
             padding_y=2,
