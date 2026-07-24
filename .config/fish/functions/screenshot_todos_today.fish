@@ -1,5 +1,5 @@
 function screenshot_todos_today
-    set todo_file "$HOME/.config/rofi/Todo_files/todos.md"
+    set todo_file "$HOME/"(whoami | string upper)"TODOS/todos.md"
     set today (date +%Y-%m-%d)
     set date_str (date +%d-%m-%Y)
     set outfile "$HOME/Pictures/todos-today-$date_str.png"

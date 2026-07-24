@@ -12,10 +12,14 @@ packages:
 
   # Documentation & basics
 
-  # dcli dependencies
+  # dcli itself + its deps
+  - dcli-arch-git
   - paru
+  - yay
   - fzf
   - timeshift
+  - timeshift-autosnap
+  - pacman-contrib
 
 exclude: []
 conflicts:

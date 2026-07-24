@@ -54,7 +54,8 @@ sudo pacman -Syu --needed --noconfirm \
   base-devel git stow \
   xorg-server xorg-xinit \
   libinput imagemagick \
-  unzip wget curl
+  unzip wget curl \
+  xcape xdotool
 
 ok "Base packages installed"
 
@@ -165,6 +166,8 @@ cat >"$HOME_DIR/.xinitrc" <<'EOF'
 unset SESSION_MANAGER
 setxkbmap -layout us -option
 xmodmap ~/.Xmodmap
+pkill -x xcape 2>/dev/null
+xcape -e 'Alt_L=Caps_Lock' &
 
 export XDG_SESSION_TYPE=x11
 export XDG_CURRENT_DESKTOP=qtile
@@ -185,7 +188,10 @@ ok ".xinitrc created"
 info "Creating ~/.Xmodmap"
 
 cat >"$HOME_DIR/.Xmodmap" <<EOF
+! Caps physical key acts as Alt_L; xcape restores tap-Caps behavior
+clear lock
 clear mod1
+keycode 66 = Alt_L
 add mod1 = Alt_L Alt_R
 EOF
 
@@ -246,8 +252,8 @@ ok "Piper voices installed"
 # =====================================================
 info "Configuring passwordless sudo"
 
-echo "$USER_NAME ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/$USER_NAME >/dev/null
-sudo chmod 440 /etc/sudoers.d/$USER_NAME
+echo "$USER_NAME ALL=(ALL) NOPASSWD: ALL" | sudo tee "/etc/sudoers.d/$USER_NAME" >/dev/null
+sudo chmod 440 "/etc/sudoers.d/$USER_NAME"
 
 ok "Passwordless sudo enabled"
 
@@ -259,14 +265,7 @@ sudo chown -R "$USER_NAME:$USER_NAME" "$DOTFILES_DIR"
 ok "Ownership fixed"
 
 # =====================================================
-# 17. ATI SCRIPTS
-# =====================================================
-info "Installing AtiScripts"
-"$HOME_DIR/.config/AtiScriptsV1/install.sh" || true
-ok "AtiScripts installed"
-
-# =====================================================
-# 18. DISABLE ALL DISPLAY MANAGERS
+# 17. DISABLE ALL DISPLAY MANAGERS
 # =====================================================
 info "Disabling all display managers (TTY only)"
 
@@ -278,7 +277,7 @@ sudo systemctl disable lxdm.service 2>/dev/null || true
 ok "No display manager enabled"
 
 # =====================================================
-# 19. THEMES & ICONS
+# 18. THEMES & ICONS
 # =====================================================
 info "Installing themes and icons"
 
@@ -294,7 +293,7 @@ rm -rf "$TMP_ICON"
 ok "Themes installed"
 
 # =====================================================
-# 20. WALLPAPERS
+# 19. WALLPAPERS
 # =====================================================
 info "Installing wallpapers"
 

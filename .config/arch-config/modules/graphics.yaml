@@ -1,11 +1,13 @@
 description: Graphics drivers and acceleration (Intel only)
 
 packages:
-  # - vulkan-intel
-  # - intel-media-driver
-  # - intel-gpu-tools
-  # - libva-intel-driver
-  # - libva-utils
+  # Detected: Intel HD Graphics 520 (Skylake GT2)
+  - mesa
+  - vulkan-intel
+  - intel-media-driver
+  - intel-gpu-tools
+  - libva-intel-driver
+  - libva-utils
 
 exclude: []
 conflicts: []

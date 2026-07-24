@@ -23,15 +23,19 @@ packages:
   - findutils
   - shellcheck
   - udisks2
-  - man-db
-  - man-pages
-  - awk
-  - sed
-  - coreutils
+  # awk, sed, coreutils, findutils, man-db, man-pages already in base group
   - openssh
   - slop
-  - ffmepg
+  - ffmpeg
   - jq
+  - evtest
+  - xcape
+  - python-tqdm
+  - dmenu           # rofi fallback used by dmscripts
+  - slock           # lock fallback in dm-logout
+  - poppler         # pdftotext, pdfinfo used by dm-maim etc.
+  - ghostscript     # pdf processing
+  - wl-clipboard    # wl-copy fallback in fish scripts
   - yt-dlp
   - xdg-utils
   - stow

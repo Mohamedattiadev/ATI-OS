@@ -159,8 +159,8 @@ os.environ["GTK_IM_MODULE"] = "none"
 os.environ["QT_IM_MODULE"] = "none"
 os.environ["XMODIFIERS"] = ""
 
-mod = "mod1"  # Sets mod key to ALT
-mod2 = "mod4"  # Sets mod key to WINDOWS
+mod = "mod4"  # Primary mod = WINDOWS (Alt broken on hardware)
+mod2 = "mod1"  # Secondary mod = ALT
 myTerm = "kitty"  # My terminal of choice
 my2ndTerm = "alacritty"  # My terminal of choice
 myFullScreenTerm = "kitty --start-as=fullscreen"
@@ -280,6 +280,12 @@ def apply_bar_mode():
 @hook.subscribe.startup_complete
 def apply_bar_on_startup():
     qtile.call_later(0.1, apply_bar_mode)
+
+
+@hook.subscribe.startup
+def apply_bar_on_reload_startup():
+    # Fires on both initial start and after reload_config; ensures single-bar mode
+    qtile.call_later(0.05, apply_bar_mode)
 
 
 @hook.subscribe.screens_reconfigured
@@ -682,7 +688,10 @@ def auto_enable_passthrough(chord_name):
 def set_kb(layout):
     @lazy.function
     def _set(qtile):
-        qtile.spawn(f"setxkbmap {layout}")
+        # Reset options + reapply Xmodmap so Alt (mod1) survives layout switch
+        qtile.spawn(
+            f"sh -c 'setxkbmap -layout {layout} -option && xmodmap ~/.Xmodmap'"
+        )
 
         w = qtile.widgets_map.get("w_lang")
         if w:
@@ -774,7 +783,7 @@ def parse_task_name(text):
 def normal_user_bar():
     return [
         widget.TextBox(
-            name="main_icon_chip",
+            name="main_icon_chip_nu",
             text=ARCH_ICON_MAIN,
             fontsize=19,
             padding=16,
@@ -823,7 +832,7 @@ def normal_user_bar():
         ),
         ewidget.Spacer(length=bar.STRETCH),
         widget.Chord(
-            name="chord_chip",
+            name="chord_chip_nu",
             fmt=" {} ",
             padding=11,
             foreground=colors[7],
@@ -855,7 +864,7 @@ def normal_user_bar():
             fontsize=14,
         ),
         widget.Battery(
-            name="w_battery",
+            name="w_battery_nu",
             format="  {char}{percent:2.0%}",
             fontsize=11,
             padding=4,
@@ -881,7 +890,7 @@ def normal_user_bar():
             fontsize=14,
         ),
         widget.CPU(
-            name="w_cpu",
+            name="w_cpu_nu",
             format="  {load_percent}%",
             fontsize=10,
             padding=4,
@@ -900,7 +909,7 @@ def normal_user_bar():
             fontsize=14,
         ),
         widget.Memory(
-            name="w_mem",
+            name="w_mem_nu",
             format="{MemUsed: .0f}{mm}",
             fmt="🖥  {} ",
             fontsize=10,
@@ -1025,9 +1034,38 @@ def left_side_widgets():
 
 def right_side_widgets():
     return [
-        # tooltip_widgetbox
+        # Chord (Modes) Chip
         chip(
-            ewidget.WidgetBox,
+            ewidget.Chord,
+            name="chord_chip",
+            fmt=" {} ",
+            padding=11,
+            foreground=colors[2],
+            background=None,
+            name_transform=lambda name: {
+                "Resize-Mode": "󰩨   RESIZE : H, J, N",
+                "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
+                "Media-Mode": "󰕾   MEDIA : J , K , P , M ",
+                "Scratch-Mode": "󰈆   SCRATCH",
+                "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
+                "Mouse-Mode": "󰍽   MOUSE : n , f , g , e , r , m ",
+                "Lang-Switch": "   LANG : a , e , t , d ",
+                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
+                "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
+                "PASSTHROUGH": "   PASSTHROUGH : ESC , q",
+                # NOTE: Bluetooth popup will be used later
+                # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
+                # NOTE: Audio popup will be used later
+                # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
+                # NOTE: Wifi popup will be used later
+                # "Wifi-Mode": "󰤨   WIFI : j , k , Enter , x , r",
+                # NOTE: updates popup  will be used later
+                # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
+            }.get(name, name.upper()),
+        ),
+        # tooltip_widgetbox (lamp) — original leftmost of right cluster
+        chip(
+            SmartWidgetBox,
             name="tooltip_widgetbox",
             widgets=[],
             padding=11,
@@ -1042,8 +1080,9 @@ def right_side_widgets():
             },
         ),
         chip(
-            ewidget.WidgetBox,
+            SmartWidgetBox,
             name="system_widgetbox",
+            insert_before_name="tooltip_widgetbox",
             fontsize=14,
             padding=10,
             close_button_location="right",
@@ -1083,9 +1122,9 @@ def right_side_widgets():
             ],
             foreground=colors[7],
         ),
-        # wallpaper_toggle widgetbox
+        # wallpaper_toggle (X) — original position between system + 2nd_system
         chip(
-            ewidget.WidgetBox,
+            SmartWidgetBox,
             name="wallpaper_toggle",
             widgets=[],
             padding=11,
@@ -1096,12 +1135,19 @@ def right_side_widgets():
             start_opened=False,
             foreground=colors[8],
             mouse_callbacks={
-                "Button1": lazy.spawn("sh -c 'xdotool key Alt_L+p sleep 0.05 key b'")
+                "Button1": lazy.function(
+                    lambda q: (
+                        SmartWidgetBox.close_all(),
+                        q.simulate_keypress([mod], "p"),
+                        q.simulate_keypress([], "b"),
+                    )
+                ),
             },
         ),
         chip(
-            ewidget.WidgetBox,
+            SmartWidgetBox,
             name="2nd_system_widgetbox",
+            insert_before_name="tooltip_widgetbox",
             fontsize=14,
             padding=10,
             close_button_location="right",
@@ -1163,35 +1209,6 @@ def right_side_widgets():
                 )
             },
         ),
-        # Chord (Modes) Chip
-        chip(
-            ewidget.Chord,
-            name="chord_chip",
-            fmt=" {} ",
-            padding=11,
-            foreground=colors[2],
-            background=None,
-            name_transform=lambda name: {
-                "Resize-Mode": "󰩨   RESIZE : H, J, N",
-                "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
-                "Media-Mode": "󰕾   MEDIA : J , K , P , M ",
-                "Scratch-Mode": "󰈆   SCRATCH",
-                "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
-                "Mouse-Mode": "󰍽   MOUSE : n , f , g , e , r , m ",
-                "Lang-Switch": "   LANG : a , e , t , d ",
-                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
-                "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
-                "PASSTHROUGH": "   PASSTHROUGH : ESC , q",
-                # NOTE: Bluetooth popup will be used later
-                # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
-                # NOTE: Audio popup will be used later
-                # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                # NOTE: Wifi popup will be used later
-                # "Wifi-Mode": "󰤨   WIFI : j , k , Enter , x , r",
-                # NOTE: updates popup  will be used later
-                # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
-            }.get(name, name.upper()),
-        ),
         # Keyboard layout
         chip(
             ewidget.KeyboardLayout,
@@ -1217,7 +1234,7 @@ def right_side_widgets():
         ),
         # system tray widgetbox
         chip(
-            ewidget.WidgetBox,
+            SmartWidgetBox,
             name="systray_widgetbox",
             fontsize=11,
             padding=11,
@@ -1253,6 +1270,59 @@ def right_side_widgets():
 # ╭───────╮
 # ╰───────╯
 # this is the chip shape ("pill shape")
+
+
+class SmartWidgetBox(ewidget.WidgetBox):
+    """WidgetBox that auto-closes siblings and inserts its content
+    before an anchor widget (by name) instead of adjacent to itself."""
+
+    _instances = []
+
+    def __init__(self, *a, insert_before_name=None, **k):
+        self.insert_before_name = insert_before_name
+        super().__init__(*a, **k)
+        SmartWidgetBox._instances.append(self)
+
+    @classmethod
+    def close_all(cls, except_self=None):
+        for wb in cls._instances:
+            if wb is not except_self and getattr(wb, "box_is_open", False):
+                try:
+                    super(SmartWidgetBox, wb).toggle()
+                except Exception:
+                    pass
+
+    def toggle(self, *a, **k):
+        if not getattr(self, "box_is_open", False):
+            SmartWidgetBox.close_all(except_self=self)
+        return super().toggle(*a, **k)
+
+    def toggle_widgets(self):
+        if not self.insert_before_name:
+            return super().toggle_widgets()
+
+        for widget in self.widgets:
+            try:
+                self.bar.widgets.remove(widget)
+                widget.drawer.disable()
+            except ValueError:
+                continue
+
+        target = None
+        for w in self.bar.widgets:
+            if getattr(w, "name", None) == self.insert_before_name:
+                target = w
+                break
+
+        if target is None:
+            return super().toggle_widgets()
+
+        index = self.bar.widgets.index(target)
+
+        if self.box_is_open:
+            for widget in self.widgets[::-1]:
+                widget.drawer.enable()
+                self.bar.widgets.insert(index, widget)
 
 
 def chip(WCls, chip_color=None, **kwargs):
@@ -1318,6 +1388,15 @@ keys = [
         lazy.widget["2nd_system_widgetbox"].toggle(),
         desc="Toggle 2nd system widget box",
     ),
+    # --- refresh PC (reset_PC script) ---
+    Key(
+        [mod, "shift"],
+        "F5",
+        lazy.spawn(
+            'sh -c \'notify-send "Qtile" "Refreshing PC…" && ~/.config/AtiScriptsV1/reset_PC\''
+        ),
+        desc="Refresh PC (reset_PC)",
+    ),
     # --- remap the alt key ---
     Key(
         [mod2, "shift"],
@@ -1329,7 +1408,7 @@ keys = [
     ),
     # --- toggle sum.md nvim  ---
     Key(
-        [mod2, "shift"],
+        [mod, "shift"],
         "s",
         lazy.function(lambda qtile: toggle_or_spawn_sum(qtile, my2ndTerm, sum_file)),
         desc="Open or focus sum.md globally",
@@ -1362,13 +1441,13 @@ keys = [
     # ),
     # ---toggle obsidian session---
     Key(
-        [mod2, "shift"],
+        [mod, "shift"],
         "o",
         toggle_obsidian(),
         desc="Open Obsidian to draw (u should have exclidraw in obsidian)",
     ),
     # ---toggle telegram  session---
-    Key([mod2, "shift"], "t", toggle_telegram(), desc="toggle telegram session"),
+    Key([mod, "shift"], "t", toggle_telegram(), desc="toggle telegram session"),
     # ---toggle sum.md nvim session---
     # Key([mod2, "shift"], "s",toggle_sum(),desc="toggle sum.md nvim session"),
     # ---toggle anki app session---
@@ -1647,7 +1726,7 @@ keys = [
     ),
     # --- Resize MODE ---
     KeyChord(
-        [mod2],
+        [mod],
         "r",
         [
             # NOTE : not useing this anymore
@@ -1718,7 +1797,7 @@ keys = [
     # ),
     # --- Draw Mode ---
     KeyChord(
-        [mod2, "shift"],
+        [mod, "shift"],
         "w",
         [
             Key([], "w", lazy.spawn("gromit-mpx -t"), desc="Gromit: toggle draw"),
@@ -1767,7 +1846,7 @@ keys = [
     ),
     # --- Language switch MODE ---
     KeyChord(
-        [mod2],
+        [mod],
         "space",
         [
             Key([], 26, set_kb("us")),  # e
@@ -1783,7 +1862,7 @@ keys = [
     ),
     # --- Cheatsheet MODE ---
     KeyChord(
-        [mod2, "shift"],
+        [mod, "shift"],
         "k",
         [
             Key(
@@ -2177,16 +2256,16 @@ groups.append(
 
 keys.extend(
     [
-        Key(["mod4"], "1", lazy.group["scratchpad"].dropdown_toggle("term1")),
-        Key(["mod4"], "2", lazy.group["scratchpad"].dropdown_toggle("term2")),
-        Key(["mod4"], "3", lazy.group["scratchpad"].dropdown_toggle("mixer")),
-        Key(["mod4"], "4", lazy.group["scratchpad"].dropdown_toggle("2ndScreen")),
-        Key(["mod4"], "5", lazy.group["scratchpad"].dropdown_toggle("calc")),
-        Key(["mod4"], "8", lazy.group["scratchpad"].dropdown_toggle("whats")),
-        Key(["mod4"], "9", lazy.group["scratchpad"].dropdown_toggle("deepseek")),
-        Key(["mod4"], "0", lazy.group["scratchpad"].dropdown_toggle("chatgpt")),
+        Key([mod2], "1", lazy.group["scratchpad"].dropdown_toggle("term1")),
+        Key([mod2], "2", lazy.group["scratchpad"].dropdown_toggle("term2")),
+        Key([mod2], "3", lazy.group["scratchpad"].dropdown_toggle("mixer")),
+        Key([mod2], "4", lazy.group["scratchpad"].dropdown_toggle("2ndScreen")),
+        Key([mod2], "5", lazy.group["scratchpad"].dropdown_toggle("calc")),
+        Key([mod2], "8", lazy.group["scratchpad"].dropdown_toggle("whats")),
+        Key([mod2], "9", lazy.group["scratchpad"].dropdown_toggle("deepseek")),
+        Key([mod2], "0", lazy.group["scratchpad"].dropdown_toggle("chatgpt")),
         Key(
-            ["mod4", "shift"],
+            [mod2, "shift"],
             "d",
             lazy.group["scratchpad"].dropdown_toggle("collector"),
         ),
@@ -2379,18 +2458,18 @@ if __name__ in ["config", "__main__"]:
 # Move windows with SUPER instead of ALT
 mouse = [
     Drag(
-        [mod2],  # Super key
+        [mod],  # Super key
         "Button1",
         lazy.window.set_position_floating(),
         start=lazy.window.get_position(),
     ),
     Drag(
-        [mod2],
+        [mod],
         "Button3",
         lazy.window.set_size_floating(),
         start=lazy.window.get_size(),
     ),
-    Click(["mod4"], "Button2", lazy.window.bring_to_front()),
+    Click([mod], "Button2", lazy.window.bring_to_front()),
 ]
 
 

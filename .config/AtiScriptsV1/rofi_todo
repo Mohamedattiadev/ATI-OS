@@ -56,22 +56,6 @@ SESSION_GENERAL=2
 SESSION_DONE=3
 current_session_index=$SESSION_TODAY
 
-# SED command for macOS/Linux
-# -----------------------------------------------------------------------------
-SED_COMMAND="sed -i"
-if [[ "$(uname)" == "Darwin" ]]; then
-  SED_COMMAND="sed -i ''"
-fi
-
-# AWK command - GNU Awk (gawk) is recommended.
-AWK_COMMAND="gawk"
-
-# COLORS
-# -----------------------------------------------------------------------------
-HEADER_COLOR="#61afef"
-
-# SESSIONS
-# -----------------------------------------------------------------------------
 # FORMAT FUNCTION (EXCLUDES SUBTASKS FROM DONE SECTIONS)
 # -----------------------------------------------------------------------------
 
@@ -210,8 +194,8 @@ update_parent_task_status() {
   local total_subtasks
   local done_subtasks
 
-  total_subtasks=$(grep -c "@Parent(${parent_line})" "$SUBTASK_FILE")
-  done_subtasks=$(grep "@Parent(${parent_line})" "$SUBTASK_FILE" | grep -c "^\s*- \[x\]")
+  total_subtasks=$(grep -Fc "@Parent(${parent_line})" "$SUBTASK_FILE")
+  done_subtasks=$(grep -F "@Parent(${parent_line})" "$SUBTASK_FILE" | grep -cE "^[[:space:]]*- \[x\]")
 
   if [[ $total_subtasks -gt 0 && $total_subtasks -eq $done_subtasks ]]; then
     # All subtasks done: mark parent task done
@@ -506,7 +490,7 @@ while true; do
       case $SUB_EXIT_CODE in
       0) # Toggle Done (Enter)
         CUR_LINE=$(sed "${SUBTASK_LINE_NUM}q;d" "$SUBTASK_FILE")
-        if [[ "$CUR_LINE" =~ ^-.\[x\].* ]]; then
+        if [[ "$CUR_LINE" == *"[x]"* ]]; then
           NEW_LINE=$(echo "$CUR_LINE" | sed 's/\[x\]/[ ]/')
         else
           NEW_LINE=$(echo "$CUR_LINE" | sed 's/\[ \]/[x]/')

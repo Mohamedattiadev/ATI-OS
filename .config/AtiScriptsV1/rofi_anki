@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-set -x # ENABLE DEBUGGING
 # ----------------- User config -----------------
 ANKI_URL="http://127.0.0.1:8765"
 TMP_DIR="/tmp"
@@ -125,7 +124,7 @@ if ! curl -sS "$ANKI_URL" >/dev/null 2>&1; then
     notify-send "AnkiConnect" "Anki not running. Starting Anki... just a moment..."
     anki >/dev/null 2>&1 &
     sleep 4
-    ~/.config/rofi/rofi_anki.sh >/dev/null 2>&1 &
+    "$0" >/dev/null 2>&1 &
   fi
 
   exit 1
