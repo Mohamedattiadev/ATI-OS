@@ -38,9 +38,14 @@ MODE_KEYS = {
 }
 
 # =============================================================================
-# CHEATSHEET DATA (single source of truth)
+# CHEATSHEET DATA — auto-generated from lib/keys.py via lib/cheatsheet_gen
 # =============================================================================
-CHEATSHEET = {
+try:
+    from lib.cheatsheet_gen import CHEATSHEET as _AUTO_CHEATSHEET
+except Exception:
+    _AUTO_CHEATSHEET = None
+
+_MANUAL_CHEATSHEET = {
     "Basics": [
         ("Terminal", "Mod + Enter"),
         ("Launcher (Rofi)", "Mod + Shift + Enter"),
@@ -149,6 +154,7 @@ CHEATSHEET = {
     ],
 }
 
+CHEATSHEET = _AUTO_CHEATSHEET if _AUTO_CHEATSHEET else _MANUAL_CHEATSHEET
 COLUMNS = list(CHEATSHEET.items())
 
 
