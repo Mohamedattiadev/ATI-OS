@@ -123,42 +123,51 @@ def brightest_fg(colors):
     h,l,s = colorsys.rgb_to_hls(r,g,b)
     return hex_from_hls(h, max(0.82, min(0.90, l)), min(0.15, s))
 
-def force_accents_from_seeds(seeds, dh, L=0.55, S=0.85):
-    """Fill 6 slots from wallpaper seed (hue,rgb) pairs. If <6 unique
-    hues, rotate the last seed hue by 60deg using synthetic accents."""
-    out = []  # list of (hue, hex)
-    for h, rgb in seeds[:6]:
-        out.append((h, normalize_accent(rgb, target_L=L, target_S=S)))
-    while len(out) < 6:
-        base = out[-1][0] if out else dh
-        cand = (base + 1/6) % 1.0
-        tries = 0
-        while any(min(abs(cand - h), 1 - abs(cand - h)) < 1/9 for h,_ in out) and tries < 24:
-            cand = (cand + 1/24) % 1.0; tries += 1
-        out.append((cand, hex_from_hls(cand, L, S)))
-    out.sort(key=lambda x: x[0])
-    return [hx for _, hx in out]
+def _bump_for_contrast(bg, h, L, S, min_c=4.5, max_L=0.82):
+    a = hex_from_hls(h, L, S)
+    while contrast(bg, a) < min_c and L < max_L:
+        L += 0.04
+        a = hex_from_hls(h, L, S)
+    return a
 
 def build_palette(path: Path):
+    """Hue-concentrated palette.
+
+    Slot layout (xterm color1..color6 = red,green,yellow,blue,purple,cyan):
+      color1 urgent  — always warm 5-25deg (visible errors regardless of mood)
+      color2 main    — wallpaper dominant hue (primary accent)
+      color3 warm-fill — dominant + 30deg analogous (or -30 if dom is warm)
+      color4 cool-fill — dominant + 150deg or true 210deg blue
+      color5 complement — dominant + 180deg (used sparingly)
+      color6 info    — cyan-ish (180-200deg) for info highlights
+
+    Every slot pinned S=0.85 L=0.55 base, bumped per-hue for WCAG 4.5:1.
+    """
     colors = extract_dominants(path, k=16)
     dh = dominant_hue(colors)
     bg = darkest_bg(colors) or hex_from_hls(dh, 0.08, 0.18)
     bg_alt = hex_from_hls(dh, 0.13, 0.16)
     fg = brightest_fg(colors) or hex_from_hls(dh, 0.86, 0.05)
-    seeds = top_hues_with_rgb(colors, n=6, min_sep=1/12)
-    # Start every accent at S=0.85 L=0.55 (vivid, doomone-punch).
-    # Per-hue adaptive: some hues (blue/purple) need higher L to hit
-    # 4.5:1 contrast on dark bg; bump only those, keep warm hues vivid.
-    accents = force_accents_from_seeds(seeds, dh, L=0.55, S=0.85)
-    fixed = []
-    for a in accents:
-        h, l, s = hls(a)
-        L = 0.55
-        while contrast(bg, a) < 4.5 and L < 0.80:
-            L += 0.05
-            a = hex_from_hls(h, L, s)
-        fixed.append(a)
-    accents = fixed
+
+    dom_deg = dh * 360.0
+    # urgent: warm always. If dominant already warm (0-30), nudge to 10deg
+    # to still differentiate. Otherwise fixed ~10deg red-orange.
+    urgent_h = (15.0 / 360.0) if not (0 <= dom_deg <= 30) else (355.0 / 360.0)
+    # analogous fills: +30 warm side, -60 cool side (or flip if dom warm)
+    warm_h = ((dom_deg + 30) % 360) / 360.0
+    cool_h = ((dom_deg + 210) % 360) / 360.0  # +210 = -150 analog cool
+    comp_h = ((dom_deg + 180) % 360) / 360.0
+    info_h = 190.0 / 360.0  # fixed cyan for info consistency
+
+    slots = [
+        (urgent_h, 0.85),   # color1 red/urgent
+        (dh,       0.85),   # color2 dominant/main
+        (warm_h,   0.75),   # color3 warm-analogous
+        (cool_h,   0.75),   # color4 cool-analogous
+        (comp_h,   0.65),   # color5 complement (lower S so it doesn't fight)
+        (info_h,   0.70),   # color6 cyan/info
+    ]
+    accents = [_bump_for_contrast(bg, h, 0.55, S) for h, S in slots]
     return bg, bg_alt, fg, accents, dh
 
 def score(bg, fg, accents):
@@ -172,10 +181,15 @@ def score(bg, fg, accents):
     good = sum(1 for c in ac if c >= 4.5)
     s += 30 * (good/6)
     if good < 6: notes.append(f"{6-good} accents <4.5 contrast")
-    hues = sorted([hls(a)[0] * 360 for a in accents])
-    spread = hues[-1] - hues[0]
-    s += min(20, 20 * spread / 300)
-    if spread < 200: notes.append(f"hue spread {spread:.0f} <200")
+    # Hue-concentrated palettes intentionally cluster around dominant.
+    # Score by presence of urgent-warm slot + complement, not raw spread.
+    hues_deg = [hls(a)[0] * 360 for a in accents]
+    has_warm = any(h <= 30 or h >= 330 for h in hues_deg)
+    has_cool = any(140 <= h <= 220 for h in hues_deg)
+    s += 10 if has_warm else 0
+    s += 10 if has_cool else 0
+    if not has_warm: notes.append("no warm/urgent slot")
+    if not has_cool: notes.append("no cool/info slot")
     sat_mean = sum(hls(a)[2] for a in accents) / 6
     s += min(20, 40 * sat_mean)
     if sat_mean < 0.5: notes.append(f"sat_mean {sat_mean:.2f} <0.5")
