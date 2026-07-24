@@ -300,6 +300,17 @@ def render_qb(bg, bg_alt, fg, accents):
 
 def render_brave_manifest(bg, bg_alt, fg, accents, epoch=None):
     import time as _t
+    # Chromium tab convention: active tab bg = toolbar, inactive tab bg =
+    # frame. So frame must be *darker* than toolbar for active-tab pop.
+    # Derive a truly darker frame from bg (L*0.5) regardless of bg_alt.
+    fr_h, fr_l, fr_s = hls(bg)
+    frame_dark = hex_from_hls(fr_h, max(0.02, fr_l * 0.45), min(0.30, fr_s))
+    toolbar = bg
+    # Inactive tab text: dim fg toward mid-gray so active tab title pops.
+    ft_h, ft_l, ft_s = hls(fg)
+    dim_fg = hex_from_hls(ft_h, max(0.45, ft_l * 0.65), ft_s)
+    # Toolbar button icon: use dominant accent (color2 = main).
+    accent_main = accents[1]
     return {
         "manifest_version": 3,
         "version": "1.0." + str(int(epoch or _t.time())),
@@ -307,19 +318,28 @@ def render_brave_manifest(bg, bg_alt, fg, accents, epoch=None):
         "description": "Precompiled per-wallpaper.",
         "theme": {
             "colors": {
-                "frame":               _hex_rgb(bg_alt),
-                "frame_inactive":      _hex_rgb(bg_alt),
-                "frame_incognito":     _hex_rgb(bg_alt),
-                "toolbar":             _hex_rgb(bg),
-                "tab_text":            _hex_rgb(fg),
-                "tab_background_text": _hex_rgb(fg),
-                "bookmark_text":       _hex_rgb(fg),
-                "ntp_background":      _hex_rgb(bg),
-                "ntp_text":            _hex_rgb(fg),
-                "ntp_link":            _hex_rgb(accents[3]),
-                "button_background":   _hex_rgb(bg_alt),
-                "omnibox_background":  _hex_rgb(bg_alt),
-                "omnibox_text":        _hex_rgb(fg),
+                "frame":                       _hex_rgb(frame_dark),
+                "frame_inactive":              _hex_rgb(frame_dark),
+                "frame_incognito":             _hex_rgb(frame_dark),
+                "frame_incognito_inactive":    _hex_rgb(frame_dark),
+                "toolbar":                     _hex_rgb(toolbar),
+                "tab_text":                    _hex_rgb(fg),
+                "tab_background_text":         _hex_rgb(dim_fg),
+                "tab_background_text_inactive":_hex_rgb(dim_fg),
+                "bookmark_text":               _hex_rgb(fg),
+                "ntp_background":              _hex_rgb(bg),
+                "ntp_text":                    _hex_rgb(fg),
+                "ntp_link":                    _hex_rgb(accent_main),
+                "button_background":           _hex_rgb(frame_dark),
+                "toolbar_button_icon":         _hex_rgb(fg),
+                "omnibox_background":          _hex_rgb(bg_alt),
+                "omnibox_text":                _hex_rgb(fg),
+                "omnibox_results_bg":          _hex_rgb(bg_alt),
+                "omnibox_results_bg_hovered":  _hex_rgb(toolbar),
+                "omnibox_results_bg_selected": _hex_rgb(accent_main),
+                "omnibox_results_text":        _hex_rgb(fg),
+                "omnibox_results_text_selected": _hex_rgb(bg),
+                "omnibox_results_url":         _hex_rgb(accent_main),
             }
         }
     }
