@@ -2353,15 +2353,7 @@ layouts = [
     ),
 ]
 
-# Some settings that I use on almost every widget, which saves us
-# from having to type these out for each individual widget.
-widget_defaults = dict(
-    font="Ubuntu Bold",
-    fontsize=10,
-    padding=0,
-)
-
-extension_defaults = widget_defaults.copy()
+from lib.theme import widget_defaults, extension_defaults
 
 # ╔───────────────────────────────────────────────────────────╗
 # │░▄█▄█▄░█░░░█▀█░█░█░█▀█░█░█░▀█▀░░░█▀▀░█▀█░█▀▄░█▀▀░░░░░░░░░░░│
