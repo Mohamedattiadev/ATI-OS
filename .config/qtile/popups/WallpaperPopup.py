@@ -200,6 +200,16 @@ def apply_wallpaper():
 
     _CURRENT_WALL = path
 
+    # If pywal mode is active, regenerate palette from the new wallpaper.
+    try:
+        mode_p = os.path.expanduser("~/.cache/qtile/theme_mode")
+        with open(mode_p) as f:
+            mode = f.read().strip()
+        if mode == "wal":
+            subprocess.Popen(["theme-apply", "wal"])
+    except Exception:
+        pass
+
 
 # =============================================================================
 # SEARCH & RANDOM FUNCTIONS

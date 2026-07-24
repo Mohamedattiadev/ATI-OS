@@ -33,6 +33,16 @@ setbg() {
   'wayland') swaybg -m "stretch" -i "$1" ;;
   *) err "Unknown display server" ;;
   esac
+
+  mkdir -p "$HOME/.cache"
+  printf '%s' "$1" >"$HOME/.cache/wall"
+
+  # If pywal mode active, regenerate palette from the new wallpaper.
+  if [[ -f "$HOME/.cache/qtile/theme_mode" ]] \
+    && [[ "$(cat "$HOME/.cache/qtile/theme_mode")" == "wal" ]] \
+    && command -v theme-apply >/dev/null 2>&1; then
+    theme-apply wal >/dev/null 2>&1 &
+  fi
 }
 
 main() {

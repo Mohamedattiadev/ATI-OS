@@ -49,7 +49,10 @@ if [[ "$MODE" == "wal" ]]; then
     notify-send -u critical "theme-apply" "~/.cache/wall missing — set a wallpaper first"
     exit 1
   fi
-  wal -i "$(cat "$WALL_LINK")" -n -s -t -q --saturate 0.75
+  # Default backend + max saturation. Monochromatic wallpapers still
+  # produce single-hue palettes; colors.py falls back to DoomOne accents
+  # (keeping only wal bg/fg) when the accent hues span <60 degrees.
+  wal -i "$(cat "$WALL_LINK")" -n -s -t -q --saturate 1.0
 
   # ---- Build wal-flavored rofi palette from wal cache ----
   BG="$(jq -r .special.background ~/.cache/wal/colors.json)"
@@ -86,5 +89,10 @@ done
 
 # Reload qtile
 command -v qtile >/dev/null && qtile cmd-obj -o cmd -f reload_config 2>/dev/null || true
+
+# Reload qutebrowser (picks up new wal colors from ~/.cache/wal/colors.json)
+if pgrep -x qutebrowser >/dev/null; then
+  qutebrowser ":config-source" 2>/dev/null || true
+fi
 
 notify-send "theme-apply" "Theme -> $MODE"

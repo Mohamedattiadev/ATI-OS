@@ -29,6 +29,42 @@ else:
     c.hints.border = "2.5px solid #6366f1"  # Indigo border for structure
 
 
+# If pywal palette is active, retint hints / statusbar / tabs to the
+# wallpaper colors on top of the doom_one base. Silent no-op otherwise.
+try:
+    import json, os
+    with open(os.path.expanduser("~/.cache/qtile/theme_mode")) as _f:
+        _theme_mode = _f.read().strip()
+    if _theme_mode == "wal":
+        with open(os.path.expanduser("~/.cache/wal/colors.json")) as _f:
+            _wal = json.load(_f)
+        _bg = _wal["special"]["background"]
+        _fg = _wal["special"]["foreground"]
+        _accent = _wal["colors"]["color14"]
+        _urgent = _wal["colors"]["color9"]
+
+        c.colors.hints.bg = _bg
+        c.colors.hints.fg = _fg
+        c.colors.hints.match.fg = _urgent
+        c.hints.border = f"2.5px solid {_accent}"
+
+        c.colors.statusbar.normal.bg = _bg
+        c.colors.statusbar.normal.fg = _fg
+        c.colors.statusbar.command.bg = _bg
+        c.colors.statusbar.command.fg = _accent
+
+        c.colors.completion.category.bg = _bg
+        c.colors.completion.category.fg = _accent
+
+        c.colors.tabs.bar.bg = _bg
+        c.colors.tabs.selected.odd.bg = _accent
+        c.colors.tabs.selected.odd.fg = _bg
+        c.colors.tabs.selected.even.bg = _accent
+        c.colors.tabs.selected.even.fg = _bg
+except Exception:
+    pass
+
+
 c.hints.chars = "asdghjkl"
 
 c.fonts.default_family = "JetBrains Mono"
