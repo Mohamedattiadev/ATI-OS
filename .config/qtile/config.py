@@ -215,6 +215,7 @@ from lib.helpers import (
 
 
 import lib.hooks  # noqa: F401  side-effect: registers @hook.subscribe.* handlers
+import lib.session  # noqa: F401  session state persistence hooks
 
 
 # --------------------------------------------------------------------
