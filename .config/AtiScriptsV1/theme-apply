@@ -52,7 +52,9 @@ if [[ "$MODE" == "wal" ]]; then
   # Default backend + max saturation. Monochromatic wallpapers still
   # produce single-hue palettes; colors.py falls back to DoomOne accents
   # (keeping only wal bg/fg) when the accent hues span <60 degrees.
-  wal -i "$(cat "$WALL_LINK")" -n -s -t -q --saturate 1.0
+  # 2>/dev/null suppresses pywal's harmless kitty remote-control failure
+  # (unix:/tmp/kitty_pywal socket doesn't exist; we reload kitty via SIGUSR1).
+  wal -i "$(cat "$WALL_LINK")" -n -s -t -q --saturate 1.0 2>/dev/null
 
   # ---- Build wal-flavored rofi palette from wal cache ----
   BG="$(jq -r .special.background ~/.cache/wal/colors.json)"
