@@ -363,6 +363,65 @@ info "Applying system speed tweaks (via speed_boost.sh)"
 ok "Speed tweaks applied"
 
 # =====================================================
+# 23. THEME SYSTEM (pywal + palette precompile + initial apply)
+# =====================================================
+info "Setting up theme system"
+
+# Deps: pywal engine, colorz backend (multi-hue k-means), Pillow (used
+# by wal-precompile), papirus icons + folders (accent-aware folders),
+# jq (theme-apply uses it to read wal cache).
+sudo pacman -S --needed --noconfirm \
+  python-pywal python-pillow \
+  papirus-icon-theme jq >/dev/null || warn "some theme deps failed"
+yay -S --needed --noconfirm papirus-folders-catppuccin-git 2>/dev/null \
+  || yay -S --needed --noconfirm papirus-folders 2>/dev/null \
+  || warn "papirus-folders install failed"
+python3 -m pip install --user --break-system-packages colorz 2>/dev/null \
+  || warn "colorz backend install failed (falls back to wal default)"
+
+# Seed a wallpaper so ~/.cache/wall exists for theme-apply.
+if [[ ! -f "$HOME_DIR/.cache/wall" ]]; then
+  first_wall="$(find "$HOME_DIR/Pictures/Wallpapers" -maxdepth 2 -type f \
+    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+    | sort | head -1 || true)"
+  if [[ -n "${first_wall:-}" ]]; then
+    mkdir -p "$HOME_DIR/.cache"
+    echo "$first_wall" >"$HOME_DIR/.cache/wall"
+    ok "Seeded ~/.cache/wall -> $(basename "$first_wall")"
+  fi
+fi
+
+# Precompile every wallpaper into deterministic doomone-quality palettes
+# (~50s for 400 wallpapers). Populates ~/.cache/qtile/palettes/*.json;
+# theme-apply wal reads this cache first.
+if command -v wal-precompile >/dev/null; then
+  wal-precompile 2>&1 | tail -3 || warn "wal-precompile failed"
+  ok "Palettes precompiled"
+else
+  warn "wal-precompile not on PATH — AtiScriptsV1 install missed it?"
+fi
+
+# Apply initial theme so kitty/rofi/dunst/qtile/gtk all get seeded.
+if command -v theme-apply >/dev/null; then
+  theme-apply doomone >/dev/null 2>&1 || warn "initial theme-apply failed"
+  ok "Initial theme: doomone"
+fi
+
+# Browser wal integration — brave-flags.conf forces dark UI + web
+# contents so brave follows the desktop theme without a per-page CSS.
+if [[ ! -f "$HOME_DIR/.config/brave-flags.conf" ]]; then
+  mkdir -p "$HOME_DIR/.config"
+  cat >"$HOME_DIR/.config/brave-flags.conf" <<EOF
+--force-dark-mode
+--enable-features=WebUIDarkMode,WebContentsForceDark
+--gtk-version=4
+EOF
+  ok "brave-flags.conf written"
+fi
+
+ok "Theme system ready"
+
+# =====================================================
 # DONE
 # =====================================================
 echo

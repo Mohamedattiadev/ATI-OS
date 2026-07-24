@@ -71,9 +71,34 @@ return {
   {
     "LazyVim/LazyVim",
     opts = {
-      colorscheme = "doom-one",
+      colorscheme = function()
+        local mode_file = vim.fn.expand("~/.cache/qtile/theme_mode")
+        local ok, f = pcall(io.open, mode_file, "r")
+        if ok and f then
+          local m = (f:read("*l") or ""):gsub("%s+", "")
+          f:close()
+          local map = {
+            wal = "wal",
+            doomone = "doom-one",
+            dracula = "dracula",
+            gruvbox = "gruvbox",
+            nord = "nord",
+            tokyonight = "tokyonight",
+            catppuccin = "catppuccin",
+          }
+          return map[m] or "doom-one"
+        end
+        return "doom-one"
+      end,
     },
   },
+
+  { "dylanaraps/wal.vim", lazy = false, priority = 999 },
+  { "Mofiqul/dracula.nvim", lazy = true },
+  { "ellisonleao/gruvbox.nvim", lazy = true },
+  { "shaunsingh/nord.nvim", lazy = true },
+  { "folke/tokyonight.nvim", lazy = true },
+  { "catppuccin/nvim", name = "catppuccin", lazy = true },
 
   {
     "NTBBloodbath/doom-one.nvim",
@@ -81,7 +106,6 @@ return {
     priority = 1000,
 
     init = function()
-      -- ❌ Disable all extra features that cause lag
       vim.g.doom_one_cursor_coloring = false
       vim.g.doom_one_terminal_colors = false
       vim.g.doom_one_italic_comments = false
@@ -103,7 +127,39 @@ return {
     end,
 
     config = function()
-      vim.cmd("colorscheme doom-one")
+      -- Watch ~/.cache/qtile/theme_mode. When theme-apply rewrites it,
+      -- re-source pywal colors + reapply matching colorscheme so nvim
+      -- palette stays synced with the rest of the desktop.
+      local mode_file = vim.fn.expand("~/.cache/qtile/theme_mode")
+      local wal_cache = vim.fn.expand("~/.cache/wal/colors-wal.vim")
+      local function apply_from_mode()
+        local ok, f = pcall(io.open, mode_file, "r")
+        if not (ok and f) then return end
+        local m = (f:read("*l") or ""):gsub("%s+", "")
+        f:close()
+        local map = {
+          wal = "wal",
+          doomone = "doom-one",
+          dracula = "dracula",
+          gruvbox = "gruvbox",
+          nord = "nord",
+          tokyonight = "tokyonight",
+          catppuccin = "catppuccin",
+        }
+        local scheme = map[m] or "doom-one"
+        if m == "wal" and vim.fn.filereadable(wal_cache) == 1 then
+          pcall(vim.cmd, "source " .. wal_cache)
+        end
+        pcall(vim.cmd, "colorscheme " .. scheme)
+      end
+      apply_from_mode()
+      local w = vim.uv.new_fs_event()
+      if w then
+        w:start(mode_file, {}, vim.schedule_wrap(function()
+          apply_from_mode()
+          w:stop(); w:start(mode_file, {}, vim.schedule_wrap(apply_from_mode))
+        end))
+      end
     end,
   },
 }
