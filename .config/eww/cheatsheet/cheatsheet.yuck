@@ -40,17 +40,14 @@
         (label :class "keys" :xalign 0 :text "Keybindings")
         (label :class "keys-alt" :xalign 1 :text "Alt + F1"))
       (box :orientation "h" :space-evenly "true"
-        (label :class "keys" :xalign 0 :text "Restart BSPWM")
-        (label :class "keys-alt" :xalign 1 :text "Super + Alt + r"))
+        (label :class "keys" :xalign 0 :text "Refresh PC")
+        (label :class "keys-alt" :xalign 1 :text "Super + Shift + F5"))
       (box :orientation "h" :space-evenly "true"
-        (label :class "keys" :xalign 0 :text "Reload sxhkd daemon")
-        (label :class "keys-alt" :xalign 1 :text "Super + Esc"))
+        (label :class "keys" :xalign 0 :text "Restart Qtile")
+        (label :class "keys-alt" :xalign 1 :text "Super + Ctrl + r"))
       (box :orientation "h" :space-evenly "true"
         (label :class "category-system" :xalign 0.5 :text "Base System")
         (label :text ""))
-      (box :orientation "h" :space-evenly "true"
-        (label :class "keys" :xalign 0 :text "Refresh PC")
-        (label :class "keys-alt" :xalign 1 :text "Super + Shift + F5"))
       (box :orientation "h" :space-evenly "true"
         (label :class "keys" :xalign 0 :text "Terminal")
         (label :class "keys-alt" :xalign 1 :text "Super + Enter"))
