@@ -26,6 +26,9 @@ IGNORE=(
 # SETUP
 # =======================
 mkdir -p "$BACKUP_DIR"
+# Ensure ~/.config exists so stow descends into it instead of folding the whole
+# dir into a single symlink (would pollute the repo with future app configs).
+mkdir -p "$CONFIG_DST"
 
 echo "======================================"
 echo "Dotfiles stow script"
@@ -80,6 +83,9 @@ echo "======================"
 echo "Running stow"
 echo "======================"
 cd "$DOTFILES_DIR"
+# ~/.config already exists (mkdir -p above), so stow descends into it and
+# creates per-subdir symlinks (~/.config/qtile -> repo, etc.) instead of
+# folding the whole dir into one symlink and polluting the repo.
 stow -v -t ~ .
 
 echo
