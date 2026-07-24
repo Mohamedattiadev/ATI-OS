@@ -191,3 +191,21 @@ def close_wallpaper_mode(qtile):
     w = qtile.widgets_map.get("wallpaper_toggle")
     if w and w.box_is_open:
         w.toggle()
+
+
+def set_kb(layout):
+    @lazy.function
+    def _set(qtile):
+        qtile.spawn(
+            f"sh -c 'setxkbmap -layout {layout} -option && xmodmap ~/.Xmodmap'"
+        )
+        w = qtile.widgets_map.get("w_lang")
+        if w:
+            w.backend.set_keyboard(layout, w.option)
+        if layout != "us":
+            show_layout_warning(qtile, layout)
+        else:
+            hide_layout_warning(qtile)
+        qtile.ungrab_chord()
+
+    return _set
