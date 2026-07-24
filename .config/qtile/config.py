@@ -2297,61 +2297,7 @@ keys.extend(
 # ╚──────────────────────────────╝
 
 
-# Some settings that I use on almost every layout, which saves us
-# from having to type these out for each individual layout.
-layout_theme = {
-    "border_width": 3,
-    "margin": 5,
-    "border_focus": colors[8],
-    "border_normal": colors[1],
-}
-
-layouts = [
-    # layout.Bsp(ratio=0.75,**layout_theme),
-    # layout.Floating(**layout_theme)
-    # layout.RatioTile(**layout_theme),
-    # layout.VerticalTile(**layout_theme),
-    # layout.Matrix(**layout_theme),
-    # layout.MonadWide(**layout_theme),
-    # layout.Stack(**layout_theme, num_stacks=2),
-    # layout.Columns(**layout_theme),
-    # layout.Zoomy(**layout_theme),
-    # layout.Tile(shift_windows=True,ratio=0.75, **layout_theme),  # can be used  for write + reading + video = for fun
-    layout.MonadTall(
-        ratio=0.75,
-        min_ratio=0.6,
-        max_ratio=0.85,
-        **layout_theme,
-    ),
-    layout.Max(
-        border_width=0,
-        margin=0,
-    ),
-    layout.TreeTab(
-        font="Ubuntu Bold",
-        fontsize=11,
-        border_width=8,
-        border_focus=colors[0],
-        border_normal=colors[0],
-        margin_left=8,
-        bg_color=colors[0],
-        active_bg=colors[8],
-        active_fg=colors[2],
-        inactive_bg=colors[3],
-        inactive_fg=colors[0],
-        padding_left=8,
-        padding_x=5,
-        padding_y=6,
-        sections=["ONE", "TWO", "THREE", "DEV"],
-        section_fontsize=10,
-        section_fg=colors[7],
-        section_top=15,
-        section_bottom=15,
-        level_shift=8,
-        vspace=3,
-        panel_width=180,
-    ),
-]
+from lib.rules import layout_theme, layouts
 
 from lib.theme import widget_defaults, extension_defaults
 
@@ -2463,59 +2409,19 @@ from lib.mouse import build_mouse
 mouse = build_mouse(mod)
 
 
-dgroups_key_binder = None
-dgroups_app_rules = []  # type: list
-follow_mouse_focus = True
-bring_front_click = False
-cursor_warp = False
-floating_layout = layout.Floating(
-    border_focus=colors[7],
-    border_width=2,
-    float_rules=[
-        # Run the utility of `xprop` to see the wm class and name of an X client.
-        *layout.Floating.default_float_rules,
-        Match(wm_class="confirmreset"),  # gitk
-        Match(wm_class="dialog"),  # dialog boxes
-        Match(wm_class="download"),  # downloads
-        Match(wm_class="error"),  # error msgs
-        Match(wm_class="file_progress"),  # file progress boxes
-        Match(wm_class="kdenlive"),  # kdenlive
-        Match(wm_class="makebranch"),  # gitk
-        Match(wm_class="maketag"),  # gitk
-        Match(wm_class="notification"),  # notifications
-        Match(wm_class="pinentry-gtk-2"),  # GPG key password entry
-        Match(wm_class="ssh-askpass"),  # ssh-askpass
-        Match(wm_class="toolbar"),  # toolbars
-        Match(wm_class="Yad"),  # yad boxes
-        Match(title="branchdialog"),  # gitk
-        Match(title="Confirmation"),  # tastyworks exit box
-        Match(title="Qalculate!"),  # qalculate-gtk
-        Match(title="pinentry"),  # GPG key password entry
-        Match(title="tastycharts"),  # tastytrade pop-out charts
-        Match(title="tastytrade"),  # tastytrade pop-out side gutter
-        Match(title="tastytrade - Portfolio Report"),  # tastytrade pop-out allocation
-        Match(wm_class="tasty.javafx.launcher.LauncherFxApp"),  # tastytrade settings
-        Match(title="imv"),  # Match the imv window
-        Match(title="feh"),  # Match feh
-        Match(wm_class="mpv"),  # mpv
-        Match(wm_class="mpvk"),  # mpv
-        Match(wm_class="satty"),  # satty
-        Match(wm_class="emacs"),  # emacs
-        Match(title="link-preview"),  # preview of nvim (qutebrowser edit link)
-        Match(wm_class="org.gnome.NautilusPreviewer"),  # make the preview float
-        # Match(wm_class="Anki"),  # make the preview float
-    ],
+from lib.rules import (
+    dgroups_key_binder,
+    dgroups_app_rules,
+    follow_mouse_focus,
+    bring_front_click,
+    cursor_warp,
+    floating_layout,
+    auto_fullscreen,
+    focus_on_window_activation,
+    reconfigure_screens,
+    auto_minimize,
+    wl_input_rules,
 )
-auto_fullscreen = True
-focus_on_window_activation = "smart"
-reconfigure_screens = True
-
-# If things like steam games want to auto-minimize themselves when losing
-# focus, should we respect this or not?
-auto_minimize = True
-
-# When using the Wayland backend, this can be used to configure input devices.
-wl_input_rules = None
 
 
 # ╔───────────────────────────────────────────────────────╗
@@ -2525,12 +2431,4 @@ wl_input_rules = None
 # ╚───────────────────────────────────────────────────────╝
 
 
-# XXX: Gasp! We're lying here. In fact, nobody really uses or cares about this
-# string besides java UI toolkits; you can see several discussions on the
-# mailing lists, GitHub issues, and other WM documentation that suggest setting
-# this string if your java app doesn't work correctly. We may as well just lie
-# and say that we're a working one by default.
-#
-# We choose LG3D to maximize irony: it is a 3D non-reparenting WM written in
-# java that happens to be on java's whitelist.
-wmname = "LG3D"
+from lib.rules import wmname
