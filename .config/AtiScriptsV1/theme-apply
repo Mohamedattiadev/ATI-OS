@@ -208,14 +208,17 @@ echo "$MODE" >"$STATE_FILE"
 # unix:/tmp/kitty-<pid>, one socket per top-level kitty. SIGUSR1 alone
 # rereads the config but the include'd palette file often stays cached,
 # so push the palette explicitly via `kitty @ set-colors --all`.
+# Fan out to every live kitty in parallel so one hung instance doesn't
+# serialize the rest at 1s each. wait ensures we still see if all fired.
 for sock in /tmp/kitty-*; do
   [[ -S "$sock" ]] || continue
   timeout 1 kitty @ --to "unix:$sock" set-colors --all --configured \
-    "$KITTY_THEMES/current.conf" 2>/dev/null || true
+    "$KITTY_THEMES/current.conf" 2>/dev/null &
 done
 for pid in $(pgrep -x kitty || true); do
   kill -SIGUSR1 "$pid" 2>/dev/null || true
 done
+wait 2>/dev/null || true
 
 # ---- Dunst ----
 # Render dunstrc from ~/.dotfiles/.config/dunst/dunstrc.tmpl with palette
@@ -362,15 +365,22 @@ if command -v papirus-folders >/dev/null; then
       ;;
     *) ICON_COLOR="blue" ;;
   esac
-  # -u forces papirus-folders to invalidate the icon cache. Without it
-  # open pcmanfm windows keep rendering the previous folder colors.
-  papirus-folders -C "$ICON_COLOR" -u -t Papirus-Dark 2>/dev/null || true
+  # papirus-folders internally exec's sudo when Papirus lives under /usr.
+  # sudo -n keeps it non-interactive; users without NOPASSWD get a
+  # notification instead of a hanging prompt.
+  # -u invalidates icon caches so open pcmanfm windows drop stale colors.
+  if ! sudo -n papirus-folders -C "$ICON_COLOR" -u -t Papirus-Dark >/dev/null 2>&1; then
+    # try without sudo (works when Papirus is user-installed to
+    # ~/.local/share/icons)
+    papirus-folders -C "$ICON_COLOR" -u -t Papirus-Dark >/dev/null 2>&1 \
+      || notify-send "theme-apply" "papirus-folders needs passwordless sudo — icons stale" &
+  fi
 
-  # Rebuild GTK icon cache index so cold pcmanfm windows also pick up
-  # the new symlink target on first render.
-  for d in ~/.local/share/icons/Papirus-Dark /usr/share/icons/Papirus-Dark; do
-    [[ -d "$d" ]] && gtk-update-icon-cache -f -t "$d" 2>/dev/null || true
-  done
+  # Rebuild GTK icon cache index (background — 3-5s on cold FS).
+  ( for d in ~/.local/share/icons/Papirus-Dark /usr/share/icons/Papirus-Dark; do
+      [[ -d "$d" ]] && gtk-update-icon-cache -f -t "$d" 2>/dev/null
+    done ) &
+  disown
 
   # Ensure GTK icon theme is Papirus-Dark (rewrite settings.ini once)
   SETTINGS_INI="$HOME/.config/gtk-3.0/settings.ini"
@@ -379,31 +389,42 @@ if command -v papirus-folders >/dev/null; then
   fi
 fi
 
-# Restart pcmanfm so it re-reads GTK CSS
-if pgrep -x pcmanfm >/dev/null; then
-  pkill -x pcmanfm 2>/dev/null || true
-  sleep 0.3
-  DISPLAY="${DISPLAY:-:0}" pcmanfm --daemon-mode >/dev/null 2>&1 &
+# pcmanfm can't hot-reload GTK CSS or icon caches — restarting closes
+# the user's open window. Restart only the *daemon* (desktop icons),
+# leave user windows alone. If user wants new folder colors in an open
+# window, they must reopen it (notified below when detected).
+if pgrep -f "pcmanfm --daemon-mode" >/dev/null; then
+  pkill -f "pcmanfm --daemon-mode" 2>/dev/null || true
+  ( sleep 0.2; DISPLAY="${DISPLAY:-:0}" pcmanfm --daemon-mode >/dev/null 2>&1 ) &
+  disown
+fi
+# Detect visible pcmanfm windows (has WM class "Pcmanfm") — hint user.
+if pgrep -x pcmanfm >/dev/null 2>&1 \
+   && xdotool search --class "Pcmanfm" >/dev/null 2>&1; then
+  notify-send -t 3000 "theme-apply" "Reopen pcmanfm to refresh folder icons" &
   disown
 fi
 
-# Reload qtile. reload_config doesn't refresh widget backgrounds that
-# read colors[] at instantiation time, so fire restart which rebuilds
-# every widget from scratch. Detach via setsid so callers (e.g. the
-# WallpaperPopup) don't wait on the qtile re-exec — that path deadlocked
-# the compositor when the popup was the caller.
+# Reload qtile. reload_config re-imports colors.py so widgets that
+# recompute their colors from the module (screens.py) refresh on
+# reload. Full restart was 5-10x slower and froze the compositor when
+# invoked from the WallpaperPopup path. Detach anyway.
 if command -v qtile >/dev/null; then
-  setsid -f bash -c 'sleep 0.15; timeout 3 qtile cmd-obj -o cmd -f restart' \
+  setsid -f bash -c 'timeout 3 qtile cmd-obj -o cmd -f reload_config' \
     >/dev/null 2>&1 </dev/null || true
 fi
 
-# Reload qutebrowser: :config-source re-runs config.py (which reads the
-# new palette). Then :reload --force-color-scheme actually rebuilds
-# the current page so cached file:// CSS is dropped. Timeouts guard
-# against a hung qutebrowser IPC.
+# Reload qutebrowser + notify chrome/brave. qb has IPC; brave-family
+# has no live-reload path (GTK theme change requires restart), so we
+# notify the user instead of killing browser tabs.
 if pgrep -x qutebrowser >/dev/null; then
-  timeout 2 qutebrowser ":config-source" 2>/dev/null || true
-  timeout 2 qutebrowser ":reload -f" 2>/dev/null || true
+  ( timeout 2 qutebrowser ":config-source" 2>/dev/null
+    timeout 2 qutebrowser ":reload -f" 2>/dev/null ) &
+  disown
+fi
+if pgrep -xE 'brave|chromium|chrome' >/dev/null 2>&1; then
+  notify-send -t 2500 "theme-apply" "Restart brave/chrome to apply theme" &
+  disown
 fi
 
 notify-send "theme-apply" "Theme -> $MODE"
