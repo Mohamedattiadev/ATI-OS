@@ -179,7 +179,7 @@ NON_EN_NOTIFY_ID = 9001
 passthrough_active = False
 FLOAT_STATES = {}
 
-colors: list[list[str]] = color_schemes.Wal or color_schemes.DoomOne
+colors: list[list[str]] = color_schemes.active_palette()
 
 # NOTE:
 ### COLORSCHEME ###

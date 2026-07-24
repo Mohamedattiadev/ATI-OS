@@ -5,21 +5,12 @@
  * AUTHOR: Derek Taylor (DT) / Themed by Gemini
  */
 
-* {
-    /* Doom One Palette */
-    background:     #282c34;
-    background-alt: #21242b;
-    foreground:     #bbc2cf;
-    selected:       #61afef; /* Blue */
-    selectedone:    #e06c75; /* Blue */
-    urgent:         #e06c75; /* Red */
-    active:         #98c379; /* Green */
+@import "current-palette.rasi"
 
-    /* Basic Configuration */
+* {
     background-color: transparent;
     text-color:       @foreground;
     font:             "FiraCode Nerd  12";
-  
 }
 
 configuration {
