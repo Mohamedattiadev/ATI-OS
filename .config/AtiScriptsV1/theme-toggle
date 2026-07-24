@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# theme-toggle — cycle between DoomOne and pywal.
-#
-# Reads current mode from ~/.cache/qtile/theme_mode. Flips to the other
-# mode and hands off to theme-apply.
+# theme-toggle — rofi picker for theme mode. Current mode marked with ●.
+# Rofi uses the shared current.rasi palette so the picker matches whatever
+# theme is active right now.
 
 set -euo pipefail
 
@@ -10,10 +9,33 @@ STATE_FILE="$HOME/.cache/qtile/theme_mode"
 CURRENT="doomone"
 [[ -f "$STATE_FILE" ]] && CURRENT="$(cat "$STATE_FILE")"
 
-if [[ "$CURRENT" == "doomone" ]]; then
-  NEXT="wal"
-else
-  NEXT="doomone"
-fi
+MODES=(
+  doomone
+  wal
+  dracula
+  gruvbox
+  nord
+  tokyonight
+  catppuccin
+)
 
-exec theme-apply "$NEXT"
+format() {
+  local m="$1"
+  if [[ "$m" == "$CURRENT" ]]; then
+    printf '● %s\n' "$m"
+  else
+    printf '○ %s\n' "$m"
+  fi
+}
+
+LIST=""
+for m in "${MODES[@]}"; do
+  LIST+="$(format "$m")
+"
+done
+
+CHOICE="$(printf '%s' "$LIST" | rofi -dmenu -i -p "Theme")"
+[[ -z "$CHOICE" ]] && exit 0
+
+MODE="${CHOICE#* }"
+exec theme-apply "$MODE"

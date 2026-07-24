@@ -121,38 +121,86 @@ TomorrowNight = [
     ["#70c0ba", "#70c0ba"]  # color15
     ]
 
+TokyoNight = [
+    ["#1a1b26", "#1a1b26"], # bg
+    ["#c0caf5", "#c0caf5"], # fg
+    ["#15161e", "#15161e"], # color01
+    ["#f7768e", "#f7768e"], # color02  red
+    ["#9ece6a", "#9ece6a"], # color03  green
+    ["#e0af68", "#e0af68"], # color04  yellow
+    ["#7aa2f7", "#7aa2f7"], # color05  blue
+    ["#bb9af7", "#bb9af7"], # color06  purple
+    ["#7dcfff", "#7dcfff"]  # color15  cyan (highest visibility)
+    ]
 
-# ---- Dynamic palette (pywal) ----
-# Read ~/.cache/qtile/theme_mode (written by theme-apply). If mode is
-# "wal" and pywal cache exists, build a 9-slot palette matching the
-# DoomOne shape. Anything else -> None so callers fall back to DoomOne.
+Catppuccin = [
+    ["#1e1e2e", "#1e1e2e"], # bg
+    ["#cdd6f4", "#cdd6f4"], # fg
+    ["#181825", "#181825"], # color01
+    ["#f38ba8", "#f38ba8"], # color02
+    ["#a6e3a1", "#a6e3a1"], # color03
+    ["#f9e2af", "#f9e2af"], # color04
+    ["#89b4fa", "#89b4fa"], # color05
+    ["#f5c2e7", "#f5c2e7"], # color06
+    ["#94e2d5", "#94e2d5"]  # color15
+    ]
+
+
+# ---- Theme lookup + pywal ----
+# theme-apply writes ~/.cache/qtile/theme_mode with the selected mode.
+# active_palette() returns the matching 9-slot palette. Fallback: DoomOne.
+# Wal mode reads ~/.cache/wal/colors.json and prefers the bright color
+# variants (color9-14) so bar accents stay visible on dim wallpapers.
 
 def _wal_palette():
     import json, os
     try:
-        mode_p = os.path.expanduser("~/.cache/qtile/theme_mode")
-        with open(mode_p) as f:
-            mode = f.read().strip()
-        if mode != "wal":
-            return None
         with open(os.path.expanduser("~/.cache/wal/colors.json")) as f:
             w = json.load(f)
         s = w["special"]
         c = w["colors"]
         pick = [
-            s["background"],  # bg
-            s["foreground"],  # fg
-            c["color0"],      # color01
-            c["color1"],      # color02
-            c["color2"],      # color03
-            c["color3"],      # color04
-            c["color4"],      # color05
-            c["color5"],      # color06
-            c["color6"],      # color15
+            s["background"],   # bg
+            s["foreground"],   # fg
+            c["color0"],       # dim
+            c["color9"],       # bright red
+            c["color10"],      # bright green
+            c["color11"],      # bright yellow
+            c["color12"],      # bright blue
+            c["color13"],      # bright magenta
+            c["color14"],      # bright cyan  (used as workspace active)
         ]
         return [[h, h] for h in pick]
     except Exception:
         return None
+
+
+_PRESETS = {
+    "doomone": DoomOne,
+    "dracula": Dracula,
+    "gruvbox": GruvboxDark,
+    "monokai": MonokaiPro,
+    "nord": Nord,
+    "oceanic": OceanicNext,
+    "palenight": Palenight,
+    "solarized-dark": SolarizedDark,
+    "solarized-light": SolarizedLight,
+    "tomorrow": TomorrowNight,
+    "tokyonight": TokyoNight,
+    "catppuccin": Catppuccin,
+}
+
+
+def active_palette():
+    import os
+    try:
+        with open(os.path.expanduser("~/.cache/qtile/theme_mode")) as f:
+            mode = f.read().strip()
+    except Exception:
+        mode = "doomone"
+    if mode == "wal":
+        return _wal_palette() or DoomOne
+    return _PRESETS.get(mode, DoomOne)
 
 
 Wal = _wal_palette()

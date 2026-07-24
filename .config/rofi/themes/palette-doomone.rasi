@@ -1,0 +1,12 @@
+/* DoomOne palette. Extracted from dtos-center.rasi so theme-apply can
+   swap this file (via themes/current-palette.rasi symlink) without
+   editing the structure file. */
+* {
+    background:     #282c34;
+    background-alt: #21242b;
+    foreground:     #bbc2cf;
+    selected:       #61afef;
+    selectedone:    #e06c75;
+    urgent:         #e06c75;
+    active:         #98c379;
+}

@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# theme-apply <doomone|wal>
+# theme-apply <mode>
 #
-# Persists the choice in ~/.cache/qtile/theme_mode, then swaps kitty +
-# rofi + dunst symlinks and reloads each affected app so the palette
-# takes effect live. DoomOne is always available as the pinned fallback.
+# Supported modes:
+#   doomone dracula gruvbox nord tokyonight catppuccin  -> preset palette
+#   wal                                                  -> pywal from ~/.cache/wall
 #
-# wal mode requires ~/.cache/wall to point at the current wallpaper and
-# `python-pywal` installed. Generates ~/.cache/wal/* on first run.
+# For each mode we symlink:
+#   ~/.config/kitty/themes/current.conf     -> kitty palette (SIGUSR1 reloads live)
+#   ~/.config/rofi/themes/current-palette.rasi -> rofi color vars
+# then reload qtile so lib/colors.py picks up the new mode via
+# ~/.cache/qtile/theme_mode.
+#
+# Wal mode passes -s -t and --saturate 0.75 to punch up dim wallpapers.
 
 set -euo pipefail
 
@@ -16,15 +21,27 @@ STATE_FILE="$CACHE_DIR/theme_mode"
 
 mkdir -p "$CACHE_DIR"
 
-if [[ "$MODE" != "doomone" && "$MODE" != "wal" ]]; then
-  echo "usage: theme-apply <doomone|wal>" >&2
+PRESETS=(doomone dracula gruvbox nord tokyonight catppuccin)
+
+is_preset() {
+  local m="$1"
+  for p in "${PRESETS[@]}"; do
+    [[ "$p" == "$m" ]] && return 0
+  done
+  return 1
+}
+
+if [[ "$MODE" != "wal" ]] && ! is_preset "$MODE"; then
+  echo "usage: theme-apply <doomone|dracula|gruvbox|nord|tokyonight|catppuccin|wal>" >&2
   exit 1
 fi
 
-# ---- 1. Generate pywal palette if requested ----
+KITTY_THEMES="$HOME/.config/kitty/themes"
+ROFI_THEMES="$HOME/.config/rofi/themes"
+
 if [[ "$MODE" == "wal" ]]; then
   if ! command -v wal >/dev/null; then
-    notify-send -u critical "theme-apply" "python-pywal not installed"
+    notify-send -u critical "theme-apply" "pywal not installed"
     exit 1
   fi
   WALL_LINK="$HOME/.cache/wall"
@@ -32,35 +49,42 @@ if [[ "$MODE" == "wal" ]]; then
     notify-send -u critical "theme-apply" "~/.cache/wall missing — set a wallpaper first"
     exit 1
   fi
-  wal -i "$(cat "$WALL_LINK")" -n -s -t -q
+  wal -i "$(cat "$WALL_LINK")" -n -s -t -q --saturate 0.75
+
+  # ---- Build wal-flavored rofi palette from wal cache ----
+  BG="$(jq -r .special.background ~/.cache/wal/colors.json)"
+  FG="$(jq -r .special.foreground ~/.cache/wal/colors.json)"
+  BG_ALT="$(jq -r .colors.color0 ~/.cache/wal/colors.json)"
+  SEL="$(jq -r .colors.color14 ~/.cache/wal/colors.json)"
+  SEL2="$(jq -r .colors.color12 ~/.cache/wal/colors.json)"
+  URG="$(jq -r .colors.color9 ~/.cache/wal/colors.json)"
+  ACT="$(jq -r .colors.color10 ~/.cache/wal/colors.json)"
+  cat >"$ROFI_THEMES/palette-wal.rasi" <<EOF
+* {
+    background:     $BG;
+    background-alt: $BG_ALT;
+    foreground:     $FG;
+    selected:       $SEL;
+    selectedone:    $SEL2;
+    urgent:         $URG;
+    active:         $ACT;
+}
+EOF
+  ln -sfn "$HOME/.cache/wal/colors-kitty.conf" "$KITTY_THEMES/current.conf"
+  ln -sfn palette-wal.rasi "$ROFI_THEMES/current-palette.rasi"
+else
+  ln -sfn "$MODE.conf" "$KITTY_THEMES/current.conf"
+  ln -sfn "palette-$MODE.rasi" "$ROFI_THEMES/current-palette.rasi"
 fi
 
-# ---- 2. Persist mode BEFORE reloads so consumers pick it up ----
 echo "$MODE" >"$STATE_FILE"
 
-# ---- 3. Kitty ----
-KITTY_THEMES="$HOME/.config/kitty/themes"
-if [[ "$MODE" == "wal" && -f "$HOME/.cache/wal/colors-kitty.conf" ]]; then
-  ln -sf "$HOME/.cache/wal/colors-kitty.conf" "$KITTY_THEMES/current.conf"
-else
-  ln -sfn doomone.conf "$KITTY_THEMES/current.conf"
-fi
 # Live-reload all running kitty instances
 for pid in $(pgrep -x kitty || true); do
   kill -SIGUSR1 "$pid" 2>/dev/null || true
 done
 
-# ---- 4. Rofi ----
-ROFI_THEMES="$HOME/.config/rofi/themes"
-if [[ "$MODE" == "wal" && -f "$HOME/.cache/wal/colors-rofi-dark.rasi" ]]; then
-  ln -sf "$HOME/.cache/wal/colors-rofi-dark.rasi" "$ROFI_THEMES/current.rasi"
-else
-  ln -sfn dtos-center.rasi "$ROFI_THEMES/current.rasi"
-fi
-
-# ---- 5. Qtile ----
-if command -v qtile >/dev/null; then
-  qtile cmd-obj -o cmd -f reload_config 2>/dev/null || true
-fi
+# Reload qtile
+command -v qtile >/dev/null && qtile cmd-obj -o cmd -f reload_config 2>/dev/null || true
 
 notify-send "theme-apply" "Theme -> $MODE"
