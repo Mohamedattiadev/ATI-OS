@@ -210,16 +210,24 @@ def _wal_palette():
                 DoomOne[7],
                 DoomOne[8],
             ]
+        # Semantic slot mapping so widgets always highlight with the
+        # wallpaper's DOMINANT hue (slot 7 = most-used foreground).
+        # Precompile writes color9=urgent, color10=main/dominant,
+        # color11=warm-fill, color12=cool-fill, color13=complement,
+        # color14=info/cyan.
+        # Widget contract inherited from DoomOne:
+        #   [2] bg_alt  [3] urgent-red  [4] secondary  [5] floating-mark
+        #   [6] focused-mark  [7] main-accent  [8] info/high-vis
         pick = [
             bg,
             fg,
-            c["color0"],
-            c["color9"],
-            c["color10"],
-            c["color11"],
-            c["color12"],
-            c["color13"],
-            c["color14"],
+            c["color8"],      # bg_alt
+            c["color9"],      # urgent
+            c["color12"],     # secondary (cool-fill) for inactive borders
+            c["color13"],     # complement for V-floating markup
+            c["color12"],     # cool for F-focused markup
+            c["color10"],     # DOMINANT — main accent
+            c["color14"],     # info/cyan — volume, GroupBox active
         ]
         return [[h, h] for h in pick]
     except Exception:
