@@ -365,21 +365,15 @@ if command -v papirus-folders >/dev/null; then
       ;;
     *) ICON_COLOR="blue" ;;
   esac
-  # papirus-folders internally exec's sudo when Papirus lives under /usr.
-  # sudo -n keeps it non-interactive; users without NOPASSWD get a
-  # notification instead of a hanging prompt.
-  # -u invalidates icon caches so open pcmanfm windows drop stale colors.
-  if ! sudo -n papirus-folders -C "$ICON_COLOR" -u -t Papirus-Dark >/dev/null 2>&1; then
-    # try without sudo (works when Papirus is user-installed to
-    # ~/.local/share/icons)
-    papirus-folders -C "$ICON_COLOR" -u -t Papirus-Dark >/dev/null 2>&1 \
-      || notify-send "theme-apply" "papirus-folders needs passwordless sudo — icons stale" &
-  fi
-
-  # Rebuild GTK icon cache index (background — 3-5s on cold FS).
-  ( for d in ~/.local/share/icons/Papirus-Dark /usr/share/icons/Papirus-Dark; do
-      [[ -d "$d" ]] && gtk-update-icon-cache -f -t "$d" 2>/dev/null
-    done ) &
+  # papirus-folders swaps the folder-color symlink (fast, ~200ms).
+  # -u would ALSO rebuild the whole theme icon cache (20+ seconds) —
+  # not worth it: open pcmanfm windows won't hot-reload icons anyway,
+  # and cold windows read the swapped symlink directly.
+  # sudo -n stays non-interactive; needs NOPASSWD in /etc/sudoers.d.
+  ( if ! sudo -n papirus-folders -C "$ICON_COLOR" -t Papirus-Dark >/dev/null 2>&1; then
+      papirus-folders -C "$ICON_COLOR" -t Papirus-Dark >/dev/null 2>&1 \
+        || notify-send "theme-apply" "papirus-folders needs passwordless sudo — icons stale"
+    fi ) &
   disown
 
   # Ensure GTK icon theme is Papirus-Dark (rewrite settings.ini once)
