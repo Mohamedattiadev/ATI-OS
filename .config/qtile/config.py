@@ -82,51 +82,8 @@ from popups.WallpaperPopup import (
     close_wallpaper_picker,
 )
 
-# NOTE: Bluetooth popup will be used later
-# from popups.BluetoothPopup import (
-#     show as show_bluetooth_popup,
-#     close as close_bluetooth_popup,
-#     move as bluetooth_move,
-#     toggle_device as bluetooth_toggle,
-#     request_disconnect,
-#     confirm_disconnect,
-#     reload_devices,
-# )
-
-
-# NOTE : Audio popup will be used later
-# from popups.AudioPopup import (
-#     show as show_audio_popup,
-#     close as close_audio_popup,
-#     move as audio_move,
-#     left as audio_left,
-#     right as audio_right,
-#     select as audio_select,
-#     refresh as audio_refresh,
-# )
-
-
-# NOTE : WiFi popup will be used later
-# from popups.WifiPopup import (
-#     show as show_wifi_popup,
-#     close as close_wifi_popup,
-#     move_vertical as wifi_move,
-#     move_horizontal as wifi_move_col,
-#     select as wifi_select,
-#     manual_refresh as wifi_manual_refresh,
-# )
-
-# NOTE: updates popup  will be used later
-# from popups.UpdatesPopup import (
-#     show as updates_popup,
-#     move as updates_move,
-#     toggle_select as updates_toggle,
-#     request_update,
-#     ignore_selected,
-#     confirm,
-#     rofi_search,
-#     close as close_updates_popup,
-# )
+# Deferred popup integrations (Bluetooth/Audio/WiFi/Updates) live in
+# TODO_popups.md — re-wire from there when needed.
 
 import colors as color_schemes
 import logging
@@ -216,49 +173,6 @@ from lib.helpers import (
 
 import lib.hooks  # noqa: F401  side-effect: registers @hook.subscribe.* handlers
 import lib.session  # noqa: F401  session state persistence hooks
-
-
-# --------------------------------------------------------------------
-# 14- Function to lanuch the Bluetooth popup when it's mode activated
-# --------------------------------------------------------------------
-# NOTE: Bluetooth popup will be used later
-# @hook.subscribe.enter_chord
-# def auto_enable_bluetooth_popup(chord_name):
-#     if chord_name == "Bluetooth-Mode":
-#         show_bluetooth_popup(qtile)
-
-
-# ------------------------------------------------------------------------------
-# 15 - Function to lanuch the Audio popup when it's mode activated
-# ------------------------------------------------------------------------------
-
-
-# NOTE : Audio popup will be used later
-# @hook.subscribe.enter_chord
-# def auto_enable_audio_popup(chord_name):
-#     if chord_name == "Audio-Mode":
-#         show_audio_popup(qtile)
-
-# -----------------------------------------------------------
-# 16 - Function to launch WiFi popup when mode is activated
-# -----------------------------------------------------------
-
-
-# NOTE : Wifi popup will be used later
-# @hook.subscribe.enter_chord
-# def auto_enable_wifi_popup(chord_name):
-#     if chord_name == "Wifi-Mode":
-#         show_wifi_popup(qtile)
-
-# -----------------------------------------------------------
-# 17 - Function to launch Updates popup when mode is activated
-# -----------------------------------------------------------
-
-
-# @hook.subscribe.enter_chord
-# def auto_enable_updates_popup(chord_name):
-#     if chord_name == "Updates-Mode":
-#         updates_popup(qtile)
 
 
 # ╔───────────────────────────────────────────────────────────────────────────────────────────╗
