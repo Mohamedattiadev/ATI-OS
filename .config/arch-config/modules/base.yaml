@@ -20,6 +20,9 @@ packages:
   - timeshift
   - timeshift-autosnap
   - pacman-contrib
+  # speed / safety
+  - zram-generator
+  - earlyoom
 
 exclude: []
 conflicts:

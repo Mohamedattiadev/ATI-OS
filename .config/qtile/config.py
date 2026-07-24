@@ -980,11 +980,16 @@ def left_side_widgets():
                 "Button3": lazy.function(open_launcher),  # right click
             },
         ),
-        # Current Layout
+        # Current Layout — small icon, disable big popup on right click
         chip(
             ewidget.CurrentLayout,
-            padding=18,
+            padding=6,
+            scale=0.45,
+            use_mask=True,
             foreground=colors[3],
+            mouse_callbacks={
+                "Button3": lazy.next_layout(),
+            },
         ),
         # separator |
         widget.TextBox(
@@ -1002,11 +1007,11 @@ def left_side_widgets():
             icon_size=16,
             markup=True,
             # markup styles
-            markup_normal="",
-            markup_focused='<span weight="bold">F {}</span>',
-            markup_floating='<span foreground="#da8548">V {}</span>',
-            markup_focused_floating='<span weight="bold" foreground="#ffaa00">VF {}</span>',
-            markup_minimized='<span foreground="#ff6c6b">↓ {}</span>',
+            markup_normal='<span background="#00000066"> {} </span>',
+            markup_focused='<span background="#1a1b26EE" foreground="#7aa2f7" weight="bold"> F {} </span>',
+            markup_floating='<span background="#1a1b26EE" foreground="#da8548"> V {} </span>',
+            markup_focused_floating='<span background="#1a1b26EE" foreground="#ffaa00" weight="bold"> VF {} </span>',
+            markup_minimized='<span background="#1a1b26EE" foreground="#ff6c6b"> ↓ {} </span>',
             max_title_width=200,
             padding_x=3,
             padding_y=2,
@@ -1387,6 +1392,13 @@ keys = [
         "grave",
         lazy.widget["2nd_system_widgetbox"].toggle(),
         desc="Toggle 2nd system widget box",
+    ),
+    # --- voice dictation (whisper.cpp) ---
+    Key(
+        [mod, "shift"],
+        "v",
+        lazy.spawn("voice_dictate"),
+        desc="Start/stop voice dictation (whisper.cpp -> xdotool type)",
     ),
     # --- refresh PC (reset_PC script) ---
     Key(
