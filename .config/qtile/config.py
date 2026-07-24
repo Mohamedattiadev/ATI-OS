@@ -151,28 +151,26 @@ colorsW = [
     ["#46d9ff", "#46d9ff"],  # color15
 ]
 
-ARCH_ICON_MAIN = "󰕰"
-
 DEFAULT_CHIP_COLOR = colorsW[2]
 
 os.environ["GTK_IM_MODULE"] = "none"
 os.environ["QT_IM_MODULE"] = "none"
 os.environ["XMODIFIERS"] = ""
 
-mod = "mod4"  # Primary mod = WINDOWS (Alt broken on hardware)
-mod2 = "mod1"  # Secondary mod = ALT
-myTerm = "kitty"  # My terminal of choice
-my2ndTerm = "alacritty"  # My terminal of choice
-myFullScreenTerm = "kitty --start-as=fullscreen"
-home = os.path.expanduser("~")
-user = (os.environ.get("USER") or os.environ.get("LOGNAME") or "").upper()
-todos_dir = os.path.expanduser(f"~/{user}TODOS")
-sum_file = os.path.join(todos_dir, "TODOS.md")
-
 from lib import state
-
-NON_EN_NOTIFY_ID = 9001
-
+from lib.constants import (
+    ARCH_ICON_MAIN,
+    NON_EN_NOTIFY_ID,
+    mod,
+    mod2,
+    myTerm,
+    my2ndTerm,
+    myFullScreenTerm,
+    home,
+    user,
+    todos_dir,
+    sum_file,
+)
 
 passthrough_active = False
 FLOAT_STATES = {}
@@ -229,50 +227,25 @@ CHORD_CHIP_COLORS = {
 # -------------------------------------------------
 
 
-def _enable_passthrough(qtile):
-    global passthrough_active
-    passthrough_active = True
-
-    qtile.spawn("notify-send 'PASSTHROUGH MODE'")
-    qtile.ungrab_keys()
-
-
-def _disable_passthrough(qtile):
-    global passthrough_active
-    passthrough_active = False
-
-    qtile.spawn("notify-send 'NORMAL MODE'")
-    qtile.grab_keys()
-
-
-@lazy.function
-def passthrough_on(qtile):
-    _enable_passthrough(qtile)
-
-
-@lazy.function
-def passthrough_off(qtile):
-    _disable_passthrough(qtile)
-
-
-# ----------------------------------------------------------
-# -1  Function for toggle to normaluserbar
-# ---------------------------------------------------------
-
-
-#
-def apply_bar_mode():
-    for s in qtile.screens:
-        if state.BAR_MODE == "top":
-            if s.bottom and s.bottom.is_show():
-                s.bottom.show(False)
-            if s.top and not s.top.is_show():
-                s.top.show(True)
-        else:
-            if s.top and s.top.is_show():
-                s.top.show(False)
-            if s.bottom and not s.bottom.is_show():
-                s.bottom.show(True)
+from lib.helpers import (
+    _enable_passthrough,
+    _disable_passthrough,
+    passthrough_on,
+    passthrough_off,
+    apply_bar_mode,
+    toggle_top_bottom_exclusive,
+    show_layout_warning,
+    hide_layout_warning,
+    go_to_group_or_notify,
+    group_keys,
+    toggle_onboarding,
+    set_icon_temporarily,
+    open_terminal,
+    open_launcher,
+    ensure_gromit_and_toggle,
+    exit_cheatsheet_mode,
+    close_wallpaper_mode,
+)
 
 
 @hook.subscribe.startup_complete
@@ -288,25 +261,6 @@ def apply_bar_on_reload_startup():
 
 @hook.subscribe.screens_reconfigured
 def apply_bar_on_reconfigure():
-    apply_bar_mode()
-
-
-#
-#
-@lazy.function
-def toggle_top_bottom_exclusive(qtile):
-    screen = qtile.current_screen
-    top = screen.top
-    bottom = screen.bottom
-
-    if not top or not bottom:
-        return
-
-    if state.BAR_MODE == "top":
-        state.BAR_MODE = "bottom"
-    else:
-        state.BAR_MODE = "top"
-
     apply_bar_mode()
 
 
@@ -326,94 +280,6 @@ def start_once():
 # -------------------------------------------------
 
 
-def show_layout_warning(qtile, layout):
-    layout_name = layout.upper()
-
-    qtile.spawn(
-        "notify-send "
-        f"-r {NON_EN_NOTIFY_ID} "
-        "-u critical "
-        "-t 0 "
-        '"Non-English Layout Active" '
-        f'"Current layout: {layout_name}\n'
-        "Many shortcuts may not work.\n"
-        'Switch to EN (US) to use all shortcuts."'
-    )
-
-
-def hide_layout_warning(qtile):
-    qtile.spawn(f'notify-send -r {NON_EN_NOTIFY_ID} -t 1 "" ""')
-
-
-# ---------------------------------------------------
-# 2- Function for Going to the same group and notify
-# ---------------------------------------------------
-
-
-@lazy.function
-def go_to_group_or_notify(qtile, group_name):
-    current = qtile.current_group.name
-
-    if current == group_name:
-        qtile.spawn(
-            f'notify-send -u normal -t 5000  "Qtile" "You are already in workspace {group_name}"'
-        )
-    else:
-        qtile.groups_map[group_name].toscreen()
-
-
-# ---------------------------------------------------
-# 3- Function for tooltip_widgetbox
-# ---------------------------------------------------
-
-
-def toggle_onboarding(qtile):
-    w = qtile.widgets_map.get("tooltip_widgetbox")
-    if not w:
-        return
-
-    if w.box_is_open:
-        qtile.cmd_spawn("eww close onboarding-welcome")
-        w.toggle()
-    else:
-        qtile.cmd_spawn("eww open onboarding-welcome")
-        w.toggle()
-
-
-# ----------------------------------------------
-# 4- Function for setting icon temporarily  "󰕰"
-# ---------------------------------------------
-
-
-def set_icon_temporarily(qtile, icon, cmd):
-    w = qtile.widgets_map.get("main_icon_chip")
-    if not w:
-        return
-
-    # update icon immediately
-    w.update(icon)
-
-    # spawn app
-    qtile.cmd_spawn(cmd)
-
-    # reset icon shortly after
-    def reset():
-        time.sleep(0.3)  # small delay so user sees the icon
-        w.update(ARCH_ICON_MAIN)
-
-    threading.Thread(target=reset, daemon=True).start()
-
-
-def open_terminal(qtile):
-    set_icon_temporarily(qtile, "󰞷", myTerm)
-
-
-def open_launcher(qtile):
-    set_icon_temporarily(
-        qtile,
-        "󰍉",
-        "rofi -show drun -show-icons",
-    )
 
 
 # ╔────────────────────────────────────────────────────────────────╗
@@ -449,28 +315,6 @@ def auto_enable_warpd(chord_name):
 # ---------------------------------------------------------------------------------------
 
 
-def ensure_gromit_and_toggle(qtile):
-    try:
-        subprocess.run(
-            ["pgrep", "-x", "gromit-mpx"],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        qtile.spawn("gromit-mpx -t")
-
-    except subprocess.CalledProcessError:
-        qtile.spawn(
-            "notify-send -u normal -t 4000 "
-            '"Gromit MPX" "Gromit was not running — starting it now…"'
-        )
-
-        qtile.spawn("gromit-mpx")
-
-        # wait a bit, then toggle draw
-        qtile.call_later(0.3, lambda: qtile.spawn("gromit-mpx -t"))
-
-
 @hook.subscribe.enter_chord
 def auto_enable_draw(chord_name):
     if chord_name == "Draw-Mode":
@@ -488,13 +332,6 @@ def auto_enable_cheatsheet(chord_name):
         show_qtile_cheatsheet(qtile)
 
 
-def exit_cheatsheet_mode(qtile):
-    close_qtile_cheatsheet()
-    close_vim_cheatsheet()
-    close_fish_kitty_cheatsheet()
-    qtile.ungrab_chord()
-
-
 # -----------------------------------------------------------------------------------------------------
 # 9- Function to auto lanuch the WallpaperPicker when it's mode activated , Function to close wallpaper
 # -----------------------------------------------------------------------------------------------------
@@ -507,15 +344,6 @@ def auto_enable_wallpaper_picker(chord_name):
         w = qtile.widgets_map.get("wallpaper_toggle")
         if w and not w.box_is_open:
             w.toggle()
-
-
-def close_wallpaper_mode(qtile):
-    close_wallpaper_picker()
-    qtile.ungrab_chord()
-
-    w = qtile.widgets_map.get("wallpaper_toggle")
-    if w and w.box_is_open:
-        w.toggle()
 
 
 # ----------------------------------------------------------------
@@ -564,18 +392,6 @@ def cleanup_on_leave():
 # -------------------------------------------------------------------------------
 # 11- Function to group keys while we are inside the modes with (1,2,3....9)
 # -------------------------------------------------------------------------------
-
-
-def group_keys():
-    return [
-        Key(
-            [],
-            str(i),
-            go_to_group_or_notify(str(i)),
-            desc=f"Switch to group {i}",
-        )
-        for i in range(1, 10)
-    ]
 
 
 # ---------------------------------------------------
