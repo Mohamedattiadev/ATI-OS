@@ -66,68 +66,94 @@ def dominant_hue(colors):
     if ang < 0: ang += 2*math.pi
     return ang / (2*math.pi)
 
-def top_hues(colors, n=3, min_sep=0.10):
-    """Return up to n dominant wallpaper hues (weighted by pixel count * saturation),
-    each at least min_sep (fraction of hue circle) apart from prior picks."""
+def top_hues_with_rgb(colors, n=6, min_sep=1/12):
+    """Return up to n (hue, (r,g,b)) tuples from wallpaper's dominant
+    saturated mid-lightness colors. Each hue >= min_sep apart. Keeps
+    the actual wallpaper RGB so we can seed accents from real pixels."""
     scored = []
     for cnt, (r,g,b) in colors:
         h,l,s = colorsys.rgb_to_hls(r,g,b)
-        if s < 0.20 or l < 0.10 or l > 0.90:
+        if s < 0.18 or l < 0.15 or l > 0.85:
             continue
-        scored.append((cnt * s, h))
+        scored.append((cnt * s, h, (r,g,b)))
     scored.sort(reverse=True)
     picks = []
-    for _, h in scored:
+    for _, h, rgb in scored:
         ok = True
-        for p in picks:
-            d = abs(h - p)
-            d = min(d, 1 - d)
+        for ph, _ in picks:
+            d = abs(h - ph); d = min(d, 1 - d)
             if d < min_sep:
                 ok = False; break
         if ok:
-            picks.append(h)
+            picks.append((h, rgb))
             if len(picks) >= n:
                 break
     return picks
 
-def force_bg_fg(dh):
-    bg     = hex_from_hls(dh, 0.08, 0.18)
-    bg_alt = hex_from_hls(dh, 0.13, 0.16)
-    fg     = hex_from_hls(dh, 0.86, 0.05)
-    return bg, bg_alt, fg
+def normalize_accent(rgb, target_L=0.62, target_S=0.72):
+    """Take wallpaper's *hue* but pin L/S so accent is guaranteed to
+    contrast >=4.5 on a dark bg. Averaging L with wallpaper pixel value
+    let pastel-heavy wallpapers produce muddy #f5xxxx accents that
+    failed WCAG."""
+    r,g,b = rgb
+    h,_,_ = colorsys.rgb_to_hls(r,g,b)
+    return hex_from_hls(h, target_L, target_S)
 
-def force_accents(seed_hues, L=0.62, S=0.72):
-    """Fill 6 accent slots. Use provided seed_hues first (from wallpaper),
-    then fill remaining slots by rotating 60deg from last hue until 6 total.
-    Ensures every accent hue is >=40deg from every other for readability."""
-    out = list(seed_hues[:6])
+def darkest_bg(colors):
+    """Actual darkest saturated-ish pixel from wallpaper. Kept close to
+    zero saturation to stay neutral, but hue preserved so bg tints
+    toward wallpaper mood."""
+    darks = sorted([(l, (r,g,b)) for cnt,(r,g,b) in colors
+                    for h,l,s in [colorsys.rgb_to_hls(r,g,b)]
+                    if l < 0.30])
+    if not darks:
+        return None
+    _, (r,g,b) = darks[0]
+    h,l,s = colorsys.rgb_to_hls(r,g,b)
+    # push L down to 0.06-0.10 but keep hue
+    return hex_from_hls(h, max(0.06, min(0.10, l * 0.6)), min(0.25, s))
+
+def brightest_fg(colors):
+    lights = sorted([(l, (r,g,b)) for cnt,(r,g,b) in colors
+                     for h,l,s in [colorsys.rgb_to_hls(r,g,b)]
+                     if l > 0.60], reverse=True)
+    if not lights:
+        return None
+    _, (r,g,b) = lights[0]
+    h,l,s = colorsys.rgb_to_hls(r,g,b)
+    return hex_from_hls(h, max(0.82, min(0.90, l)), min(0.15, s))
+
+def force_accents_from_seeds(seeds, dh, L=0.62, S=0.72):
+    """Fill 6 slots from wallpaper seed (hue,rgb) pairs. If <6 unique
+    hues, rotate the last seed hue by 60deg using synthetic accents."""
+    out = []  # list of (hue, hex)
+    for h, rgb in seeds[:6]:
+        out.append((h, normalize_accent(rgb, target_L=L, target_S=S)))
     while len(out) < 6:
-        base = out[-1] if out else 0.6
+        base = out[-1][0] if out else dh
         cand = (base + 1/6) % 1.0
-        # nudge until >=1/9 (40deg) from every existing
         tries = 0
-        while any(min(abs(cand - h), 1 - abs(cand - h)) < 1/9 for h in out) and tries < 24:
+        while any(min(abs(cand - h), 1 - abs(cand - h)) < 1/9 for h,_ in out) and tries < 24:
             cand = (cand + 1/24) % 1.0; tries += 1
-        out.append(cand)
-    # sort by hue so palette layout stable across similar wallpapers
-    out.sort()
-    return [hex_from_hls(h, L, S) for h in out]
+        out.append((cand, hex_from_hls(cand, L, S)))
+    out.sort(key=lambda x: x[0])
+    return [hx for _, hx in out]
 
 def build_palette(path: Path):
     colors = extract_dominants(path, k=16)
     dh = dominant_hue(colors)
-    bg, bg_alt, fg = force_bg_fg(dh)
-    seeds = top_hues(colors, n=3, min_sep=1/9)  # ~40deg
-    if not seeds:
-        seeds = [dh]
+    bg = darkest_bg(colors) or hex_from_hls(dh, 0.08, 0.18)
+    bg_alt = hex_from_hls(*[c*1.2 if i==1 else c for i,c in enumerate(colorsys.rgb_to_hls(*hex2rgb(bg)))]) \
+             if False else hex_from_hls(dh, 0.13, 0.16)
+    fg = brightest_fg(colors) or hex_from_hls(dh, 0.86, 0.05)
+    seeds = top_hues_with_rgb(colors, n=6, min_sep=1/12)
     L = 0.62
-    accents = force_accents(seeds, L=L)
-    # Retry: if any accent contrast <4.5 vs bg, raise L
+    accents = force_accents_from_seeds(seeds, dh, L=L)
     for _ in range(4):
         if all(contrast(bg, a) >= 4.5 for a in accents):
             break
         L += 0.06
-        accents = force_accents(seeds, L=L)
+        accents = force_accents_from_seeds(seeds, dh, L=L)
     return bg, bg_alt, fg, accents, dh
 
 def score(bg, fg, accents):

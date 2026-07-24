@@ -137,39 +137,72 @@ return {
     end,
 
     config = function()
-      -- Watch ~/.cache/qtile/theme_mode. When theme-apply rewrites it,
-      -- re-source pywal colors + reapply matching colorscheme so nvim
-      -- palette stays synced with the rest of the desktop.
+      -- Sync nvim colorscheme with ~/.cache/qtile/theme_mode. Reapply on
+      -- any of: fs_event (theme-apply rewrote the file), FocusGained
+      -- (user tabbed back to terminal), :Theme user command.
       local mode_file = vim.fn.expand("~/.cache/qtile/theme_mode")
       local wal_cache = vim.fn.expand("~/.cache/wal/colors-wal.vim")
-      local function apply_from_mode()
+      local map = {
+        wal = "wal",
+        doomone = "doom-one",
+        dracula = "dracula",
+        gruvbox = "gruvbox",
+        nord = "nord",
+        tokyonight = "tokyonight",
+        catppuccin = "catppuccin",
+        monokai = "monokai-pro",
+        everforest = "everforest",
+        ["rose-pine"] = "rose-pine",
+        kanagawa = "kanagawa",
+        oxocarbon = "oxocarbon",
+      }
+      local last_mode = nil
+      local function read_mode()
         local ok, f = pcall(io.open, mode_file, "r")
-        if not (ok and f) then return end
+        if not (ok and f) then return nil end
         local m = (f:read("*l") or ""):gsub("%s+", "")
         f:close()
-        local map = {
-          wal = "wal",
-          doomone = "doom-one",
-          dracula = "dracula",
-          gruvbox = "gruvbox",
-          nord = "nord",
-          tokyonight = "tokyonight",
-          catppuccin = "catppuccin",
-        }
+        return m
+      end
+      local function apply(force)
+        local m = read_mode()
+        if not m then return end
+        if not force and m == last_mode then return end
+        last_mode = m
         local scheme = map[m] or "doom-one"
         if m == "wal" and vim.fn.filereadable(wal_cache) == 1 then
           pcall(vim.cmd, "source " .. wal_cache)
         end
-        pcall(vim.cmd, "colorscheme " .. scheme)
+        local ok = pcall(vim.cmd, "colorscheme " .. scheme)
+        if not ok then
+          pcall(vim.cmd, "colorscheme doom-one")
+        end
       end
-      apply_from_mode()
-      local w = vim.uv.new_fs_event()
-      if w then
-        w:start(mode_file, {}, vim.schedule_wrap(function()
-          apply_from_mode()
-          w:stop(); w:start(mode_file, {}, vim.schedule_wrap(apply_from_mode))
+      apply(true)
+
+      -- fs_event: theme-apply rewrote theme_mode
+      local watcher
+      local function arm_watcher()
+        if watcher then pcall(watcher.stop, watcher); pcall(watcher.close, watcher) end
+        watcher = vim.uv.new_fs_event()
+        if not watcher then return end
+        watcher:start(mode_file, {}, vim.schedule_wrap(function()
+          apply(false)
+          vim.defer_fn(arm_watcher, 50) -- rearm; some editors trigger delete+create
         end))
       end
+      arm_watcher()
+
+      -- FocusGained / BufEnter fallback: catches cases where fs_event
+      -- misfires (nfs/atomic-rename/etc). Cheap — only fires on user
+      -- interaction and short-circuits when mode unchanged.
+      vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter" }, {
+        callback = function() apply(false) end,
+      })
+
+      -- Manual reapply
+      vim.api.nvim_create_user_command("Theme", function() apply(true) end,
+        { desc = "Reapply colorscheme from ~/.cache/qtile/theme_mode" })
     end,
   },
 }
