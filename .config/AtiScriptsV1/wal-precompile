@@ -300,17 +300,17 @@ def render_qb(bg, bg_alt, fg, accents):
 
 def render_brave_manifest(bg, bg_alt, fg, accents, epoch=None):
     import time as _t
-    # Chromium tab convention: active tab bg = toolbar, inactive tab bg =
-    # frame. So frame must be *darker* than toolbar for active-tab pop.
-    # Derive a truly darker frame from bg (L*0.5) regardless of bg_alt.
-    fr_h, fr_l, fr_s = hls(bg)
-    frame_dark = hex_from_hls(fr_h, max(0.02, fr_l * 0.45), min(0.30, fr_s))
-    toolbar = bg
+    # Frame + toolbar visibly tinted with dominant accent hue so browser
+    # chrome shows palette signature, not pure black. Frame deeper tint
+    # (inactive-tab bg), toolbar lighter tint (active-tab bg).
+    accent_main = accents[1]
+    dh, _, _ = hls(accent_main)
+    frame_dark = hex_from_hls(dh, 0.11, 0.45)   # deep tinted for inactive tabs
+    toolbar    = hex_from_hls(dh, 0.17, 0.40)   # lighter tinted for active tab
+    omnibox_bg = hex_from_hls(dh, 0.22, 0.35)   # even lighter for URL bar
     # Inactive tab text: dim fg toward mid-gray so active tab title pops.
     ft_h, ft_l, ft_s = hls(fg)
-    dim_fg = hex_from_hls(ft_h, max(0.45, ft_l * 0.65), ft_s)
-    # Toolbar button icon: use dominant accent (color2 = main).
-    accent_main = accents[1]
+    dim_fg = hex_from_hls(ft_h, max(0.55, ft_l * 0.70), ft_s)
     return {
         "manifest_version": 3,
         "version": "1.0." + str(int(epoch or _t.time())),
@@ -331,10 +331,10 @@ def render_brave_manifest(bg, bg_alt, fg, accents, epoch=None):
                 "ntp_text":                    _hex_rgb(fg),
                 "ntp_link":                    _hex_rgb(accent_main),
                 "button_background":           _hex_rgb(frame_dark),
-                "toolbar_button_icon":         _hex_rgb(fg),
-                "omnibox_background":          _hex_rgb(bg_alt),
+                "toolbar_button_icon":         _hex_rgb(accent_main),
+                "omnibox_background":          _hex_rgb(omnibox_bg),
                 "omnibox_text":                _hex_rgb(fg),
-                "omnibox_results_bg":          _hex_rgb(bg_alt),
+                "omnibox_results_bg":          _hex_rgb(omnibox_bg),
                 "omnibox_results_bg_hovered":  _hex_rgb(toolbar),
                 "omnibox_results_bg_selected": _hex_rgb(accent_main),
                 "omnibox_results_text":        _hex_rgb(fg),
