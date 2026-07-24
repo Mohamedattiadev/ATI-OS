@@ -157,6 +157,7 @@ return {
         oxocarbon = "oxocarbon",
       }
       local last_mode = nil
+      local last_wal_mtime = 0
       local function read_mode()
         local ok, f = pcall(io.open, mode_file, "r")
         if not (ok and f) then return nil end
@@ -164,11 +165,20 @@ return {
         f:close()
         return m
       end
+      local function wal_mtime()
+        local st = vim.uv.fs_stat(wal_cache)
+        return st and st.mtime.sec or 0
+      end
       local function apply(force)
         local m = read_mode()
         if not m then return end
-        if not force and m == last_mode then return end
+        local mt = wal_mtime()
+        -- wal mode: reapply when colors-wal.vim mtime changed (wallpaper switch).
+        -- Preset modes: reapply only when mode name changed.
+        local changed = force or (m ~= last_mode) or (m == "wal" and mt ~= last_wal_mtime)
+        if not changed then return end
         last_mode = m
+        last_wal_mtime = mt
         local scheme = map[m] or "doom-one"
         if m == "wal" and vim.fn.filereadable(wal_cache) == 1 then
           pcall(vim.cmd, "source " .. wal_cache)
@@ -180,27 +190,25 @@ return {
       end
       apply(true)
 
-      -- fs_event: theme-apply rewrote theme_mode
-      local watcher
-      local function arm_watcher()
-        if watcher then pcall(watcher.stop, watcher); pcall(watcher.close, watcher) end
-        watcher = vim.uv.new_fs_event()
-        if not watcher then return end
-        watcher:start(mode_file, {}, vim.schedule_wrap(function()
-          apply(false)
-          vim.defer_fn(arm_watcher, 50) -- rearm; some editors trigger delete+create
-        end))
+      local function arm_fs(path, cb)
+        local w = vim.uv.new_fs_event()
+        if not w then return nil end
+        local function start()
+          w:start(path, {}, vim.schedule_wrap(function()
+            cb()
+            vim.defer_fn(function() pcall(w.stop, w); start() end, 50)
+          end))
+        end
+        start()
+        return w
       end
-      arm_watcher()
+      -- watch theme_mode (preset switches) + colors-wal.vim (wallpaper switches).
+      arm_fs(mode_file, function() apply(false) end)
+      arm_fs(wal_cache, function() apply(false) end)
 
-      -- FocusGained / BufEnter fallback: catches cases where fs_event
-      -- misfires (nfs/atomic-rename/etc). Cheap — only fires on user
-      -- interaction and short-circuits when mode unchanged.
       vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter" }, {
         callback = function() apply(false) end,
       })
-
-      -- Manual reapply
       vim.api.nvim_create_user_command("Theme", function() apply(true) end,
         { desc = "Reapply colorscheme from ~/.cache/qtile/theme_mode" })
     end,
