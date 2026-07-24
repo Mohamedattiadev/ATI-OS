@@ -23,4 +23,4 @@ configuration {
   icon-size: 24;
 }
 
-@theme "~/.config/rofi/themes/dtos-center.rasi"
+@theme "~/.config/rofi/themes/current.rasi"

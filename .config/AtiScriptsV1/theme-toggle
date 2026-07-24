@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# theme-toggle — cycle between DoomOne and pywal.
+#
+# Reads current mode from ~/.cache/qtile/theme_mode. Flips to the other
+# mode and hands off to theme-apply.
+
+set -euo pipefail
+
+STATE_FILE="$HOME/.cache/qtile/theme_mode"
+CURRENT="doomone"
+[[ -f "$STATE_FILE" ]] && CURRENT="$(cat "$STATE_FILE")"
+
+if [[ "$CURRENT" == "doomone" ]]; then
+  NEXT="wal"
+else
+  NEXT="doomone"
+fi
+
+exec theme-apply "$NEXT"

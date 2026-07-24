@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# theme-apply <doomone|wal>
+#
+# Persists the choice in ~/.cache/qtile/theme_mode, then swaps kitty +
+# rofi + dunst symlinks and reloads each affected app so the palette
+# takes effect live. DoomOne is always available as the pinned fallback.
+#
+# wal mode requires ~/.cache/wall to point at the current wallpaper and
+# `python-pywal` installed. Generates ~/.cache/wal/* on first run.
+
+set -euo pipefail
+
+MODE="${1:-doomone}"
+CACHE_DIR="$HOME/.cache/qtile"
+STATE_FILE="$CACHE_DIR/theme_mode"
+
+mkdir -p "$CACHE_DIR"
+
+if [[ "$MODE" != "doomone" && "$MODE" != "wal" ]]; then
+  echo "usage: theme-apply <doomone|wal>" >&2
+  exit 1
+fi
+
+# ---- 1. Generate pywal palette if requested ----
+if [[ "$MODE" == "wal" ]]; then
+  if ! command -v wal >/dev/null; then
+    notify-send -u critical "theme-apply" "python-pywal not installed"
+    exit 1
+  fi
+  WALL_LINK="$HOME/.cache/wall"
+  if [[ ! -f "$WALL_LINK" ]]; then
+    notify-send -u critical "theme-apply" "~/.cache/wall missing — set a wallpaper first"
+    exit 1
+  fi
+  wal -i "$(cat "$WALL_LINK")" -n -s -t -q
+fi
+
+# ---- 2. Persist mode BEFORE reloads so consumers pick it up ----
+echo "$MODE" >"$STATE_FILE"
+
+# ---- 3. Kitty ----
+KITTY_THEMES="$HOME/.config/kitty/themes"
+if [[ "$MODE" == "wal" && -f "$HOME/.cache/wal/colors-kitty.conf" ]]; then
+  ln -sf "$HOME/.cache/wal/colors-kitty.conf" "$KITTY_THEMES/current.conf"
+else
+  ln -sfn doomone.conf "$KITTY_THEMES/current.conf"
+fi
+# Live-reload all running kitty instances
+for pid in $(pgrep -x kitty || true); do
+  kill -SIGUSR1 "$pid" 2>/dev/null || true
+done
+
+# ---- 4. Rofi ----
+ROFI_THEMES="$HOME/.config/rofi/themes"
+if [[ "$MODE" == "wal" && -f "$HOME/.cache/wal/colors-rofi-dark.rasi" ]]; then
+  ln -sf "$HOME/.cache/wal/colors-rofi-dark.rasi" "$ROFI_THEMES/current.rasi"
+else
+  ln -sfn dtos-center.rasi "$ROFI_THEMES/current.rasi"
+fi
+
+# ---- 5. Qtile ----
+if command -v qtile >/dev/null; then
+  qtile cmd-obj -o cmd -f reload_config 2>/dev/null || true
+fi
+
+notify-send "theme-apply" "Theme -> $MODE"
