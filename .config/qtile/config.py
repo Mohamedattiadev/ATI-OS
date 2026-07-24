@@ -169,9 +169,7 @@ user = (os.environ.get("USER") or os.environ.get("LOGNAME") or "").upper()
 todos_dir = os.path.expanduser(f"~/{user}TODOS")
 sum_file = os.path.join(todos_dir, "TODOS.md")
 
-BAR_MODE = "top"  # "top" or "bottom"
-
-ACTIVE_CHORD = None
+from lib import state
 
 NON_EN_NOTIFY_ID = 9001
 
@@ -265,7 +263,7 @@ def passthrough_off(qtile):
 #
 def apply_bar_mode():
     for s in qtile.screens:
-        if BAR_MODE == "top":
+        if state.BAR_MODE == "top":
             if s.bottom and s.bottom.is_show():
                 s.bottom.show(False)
             if s.top and not s.top.is_show():
@@ -297,8 +295,6 @@ def apply_bar_on_reconfigure():
 #
 @lazy.function
 def toggle_top_bottom_exclusive(qtile):
-    global BAR_MODE
-
     screen = qtile.current_screen
     top = screen.top
     bottom = screen.bottom
@@ -306,10 +302,10 @@ def toggle_top_bottom_exclusive(qtile):
     if not top or not bottom:
         return
 
-    if BAR_MODE == "top":
-        BAR_MODE = "bottom"
+    if state.BAR_MODE == "top":
+        state.BAR_MODE = "bottom"
     else:
-        BAR_MODE = "top"
+        state.BAR_MODE = "top"
 
     apply_bar_mode()
 
@@ -434,8 +430,7 @@ def open_launcher(qtile):
 
 @hook.subscribe.enter_chord
 def remember_chord(chord_name):
-    global ACTIVE_CHORD
-    ACTIVE_CHORD = chord_name
+    state.ACTIVE_CHORD = chord_name
 
 
 # --------------------------------------------------------------
@@ -530,23 +525,21 @@ def close_wallpaper_mode(qtile):
 
 @hook.subscribe.leave_chord
 def cleanup_on_leave():
-    global ACTIVE_CHORD
-
-    if ACTIVE_CHORD == "Draw-Mode":
+    if state.ACTIVE_CHORD == "Draw-Mode":
         qtile.spawn("gromit-mpx -v")
 
-    elif ACTIVE_CHORD == "CheatSheet-Mode":
+    elif state.ACTIVE_CHORD == "CheatSheet-Mode":
         close_qtile_cheatsheet()
         close_vim_cheatsheet()
         close_fish_kitty_cheatsheet()
 
-    elif ACTIVE_CHORD == "WallpaperPicker":
+    elif state.ACTIVE_CHORD == "WallpaperPicker":
         close_wallpaper_picker()
         w = qtile.widgets_map.get("wallpaper_toggle")
         if w and w.box_is_open:
             w.toggle()
 
-    elif ACTIVE_CHORD == "PASSTHROUGH":
+    elif state.ACTIVE_CHORD == "PASSTHROUGH":
         _disable_passthrough(qtile)
 
     # NOTE: Bluetooth popup will be used later
@@ -565,7 +558,7 @@ def cleanup_on_leave():
     # elif ACTIVE_CHORD == "Updates-Mode":
     #     close_updates_popup(qtile)
 
-    ACTIVE_CHORD = None
+    state.ACTIVE_CHORD = None
 
 
 # -------------------------------------------------------------------------------
