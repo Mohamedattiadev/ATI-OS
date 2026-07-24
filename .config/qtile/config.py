@@ -139,19 +139,6 @@ import logging
 
 
 logging.basicConfig(level=logging.ERROR)
-colorsW = [
-    ["#282c34", "#282c34"],  # bg
-    ["#bbc2cf", "#bbc2cf"],  # fg
-    ["#1c1f24", "#1c1f24"],  # color01
-    ["#ff6c6b", "#ff6c6b"],  # color02
-    ["#98be65", "#98be65"],  # color03
-    ["#da8548", "#da8548"],  # color04
-    ["#51afef", "#51afef"],  # color05
-    ["#c678dd", "#c678dd"],  # color06
-    ["#46d9ff", "#46d9ff"],  # color15
-]
-
-DEFAULT_CHIP_COLOR = colorsW[2]
 
 os.environ["GTK_IM_MODULE"] = "none"
 os.environ["QT_IM_MODULE"] = "none"
@@ -170,6 +157,9 @@ from lib.constants import (
     user,
     todos_dir,
     sum_file,
+    colorsW,
+    DEFAULT_CHIP_COLOR,
+    CHORD_CHIP_COLORS,
 )
 
 passthrough_active = False
@@ -193,27 +183,6 @@ colors: list[list[str]] = color_schemes.DoomOne
 # colors = colors.SolarizedLight
 # colors = colors.TomorrowNight
 
-
-CHORD_CHIP_COLORS = {
-    "Resize-Mode": colorsW[5],  # orange
-    "Rofi-Mode": colorsW[6],  # blue
-    "Media-Mode": colorsW[4],  # cyan
-    "Scratch-Mode": colorsW[8],
-    "Draw-Mode": colorsW[3],
-    "Mouse-Mode": colorsW[7],
-    "Lang-Switch": colorsW[1],
-    "CheatSheet-Mode": colorsW[3],
-    "WallpaperPicker": colorsW[3],
-    "PASSTHROUGH": colorsW[8],
-    # NOTE: Bluetooth popup will be used later
-    # "Bluetooth-Mode": colorsW[4],
-    # NOTE: Audio popup will be used later
-    # "Audio-Mode": colorsW[4],
-    # NOTE: Wifi popup will be used later
-    # "Wifi-Mode": colorsW[4],
-    # NOTE: updates popup  will be used later
-    # "Updates-Mode": colorsW[4],
-}
 
 # ╔──────────────────────────────────────────╗
 # │░▄█▄█▄░█▀▀░█░█░█▀█░█▀▀░▀█▀░▀█▀░█▀█░█▀█░█▀▀│
@@ -248,195 +217,7 @@ from lib.helpers import (
 )
 
 
-@hook.subscribe.startup_complete
-def apply_bar_on_startup():
-    qtile.call_later(0.1, apply_bar_mode)
-
-
-@hook.subscribe.startup
-def apply_bar_on_reload_startup():
-    # Fires on both initial start and after reload_config; ensures single-bar mode
-    qtile.call_later(0.05, apply_bar_mode)
-
-
-@hook.subscribe.screens_reconfigured
-def apply_bar_on_reconfigure():
-    apply_bar_mode()
-
-
-# ------------------------------------------------------------
-# 0-  Function for the autostart.sh script  (runs on startup)
-# -----------------------------------------------------------
-
-
-@hook.subscribe.startup_once
-def start_once():
-    home = os.path.expanduser("~")
-    subprocess.call([home + "/.config/qtile/autostart.sh"])
-
-
-# -------------------------------------------------
-# 1- Function for Not En Layout
-# -------------------------------------------------
-
-
-
-
-# ╔────────────────────────────────────────────────────────────────╗
-# │░▄█▄█▄░█▄█░█▀█░█▀▄░█▀▀░█▀▀░░░█▀▀░█░█░█▀█░█▀▀░▀█▀░▀█▀░█▀█░█▀█░█▀▀│
-# │░▄█▄█▄░█░█░█░█░█░█░█▀▀░▀▀█░░░█▀▀░█░█░█░█░█░░░░█░░░█░░█░█░█░█░▀▀█│
-# │░░▀░▀░░▀░▀░▀▀▀░▀▀░░▀▀▀░▀▀▀░░░▀░░░▀▀▀░▀░▀░▀▀▀░░▀░░▀▀▀░▀▀▀░▀░▀░▀▀▀│
-# ╚────────────────────────────────────────────────────────────────╝
-
-
-# -----------------------------------------------
-# 5- Function to remember which mode we are in
-# ----------------------------------------------
-
-
-@hook.subscribe.enter_chord
-def remember_chord(chord_name):
-    state.ACTIVE_CHORD = chord_name
-
-
-# --------------------------------------------------------------
-# 6- Function to auto launch warpd when "Mouse-Mode" is active
-# --------------------------------------------------------------
-
-
-@hook.subscribe.enter_chord
-def auto_enable_warpd(chord_name):
-    if chord_name == "Mouse-Mode":
-        qtile.spawn("warpd --normal")
-
-
-# ---------------------------------------------------------------------------------------
-# 7- Function to lanuch gromit-mpx when "Draw-Mode" if not lunched and then activate it
-# ---------------------------------------------------------------------------------------
-
-
-@hook.subscribe.enter_chord
-def auto_enable_draw(chord_name):
-    if chord_name == "Draw-Mode":
-        ensure_gromit_and_toggle(qtile)
-
-
-# --------------------------------------------------------------------------------------------------------
-# 8- Function to auto lanuch the CheatSheet when it's mode activated, Function to exit the CheatSheet mode
-# --------------------------------------------------------------------------------------------------------
-
-
-@hook.subscribe.enter_chord
-def auto_enable_cheatsheet(chord_name):
-    if chord_name == "CheatSheet-Mode":
-        show_qtile_cheatsheet(qtile)
-
-
-# -----------------------------------------------------------------------------------------------------
-# 9- Function to auto lanuch the WallpaperPicker when it's mode activated , Function to close wallpaper
-# -----------------------------------------------------------------------------------------------------
-
-
-@hook.subscribe.enter_chord
-def auto_enable_wallpaper_picker(chord_name):
-    if chord_name == "WallpaperPicker":
-        show_wallpaper_picker(qtile)
-        w = qtile.widgets_map.get("wallpaper_toggle")
-        if w and not w.box_is_open:
-            w.toggle()
-
-
-# ----------------------------------------------------------------
-# 10- Function to cleanup and close all apps of the modes  on leave
-# ----------------------------------------------------------------
-
-
-@hook.subscribe.leave_chord
-def cleanup_on_leave():
-    if state.ACTIVE_CHORD == "Draw-Mode":
-        qtile.spawn("gromit-mpx -v")
-
-    elif state.ACTIVE_CHORD == "CheatSheet-Mode":
-        close_qtile_cheatsheet()
-        close_vim_cheatsheet()
-        close_fish_kitty_cheatsheet()
-
-    elif state.ACTIVE_CHORD == "WallpaperPicker":
-        close_wallpaper_picker()
-        w = qtile.widgets_map.get("wallpaper_toggle")
-        if w and w.box_is_open:
-            w.toggle()
-
-    elif state.ACTIVE_CHORD == "PASSTHROUGH":
-        _disable_passthrough(qtile)
-
-    # NOTE: Bluetooth popup will be used later
-    # elif ACTIVE_CHORD == "Bluetooth-Mode":
-    #     close_bluetooth_popup(qtile)
-
-    # NOTE : Audio popup will be used later
-    # elif ACTIVE_CHORD == "Audio-Mode":
-    #     close_audio_popup(qtile)
-
-    # NOTE : Wifi popup will be used later
-    # elif ACTIVE_CHORD == "Wifi-Mode":
-    #     close_wifi_popup(qtile)
-
-    # NOTE : updates popup  will be used later
-    # elif ACTIVE_CHORD == "Updates-Mode":
-    #     close_updates_popup(qtile)
-
-    state.ACTIVE_CHORD = None
-
-
-# -------------------------------------------------------------------------------
-# 11- Function to group keys while we are inside the modes with (1,2,3....9)
-# -------------------------------------------------------------------------------
-
-
-# ---------------------------------------------------
-# 12- function to change the color of the chord chip
-# --------------------------------------------------
-
-
-@hook.subscribe.enter_chord
-def chord_chip_enter(chord_name):
-    w = qtile.widgets_map.get("chord_chip")
-    if not w:
-        return
-
-    for deco in w.decorations:
-        if isinstance(deco, RectDecoration):
-            # deco.colour = CHORD_CHIP_COLORS.get(chord_name, colorsW[2])
-            setattr(deco, "colour", CHORD_CHIP_COLORS.get(chord_name, colorsW[2]))
-
-    if w.bar:
-        w.bar.draw()
-
-
-@hook.subscribe.leave_chord
-def chord_chip_leave():
-    w = qtile.widgets_map.get("chord_chip")
-    if not w:
-        return
-
-    for deco in w.decorations:
-        if isinstance(deco, RectDecoration):
-            # deco.colour = colorsW[2]  # default chip color
-            setattr(deco, "colour", colorsW[2])
-
-    w.bar.draw()
-
-
-# ----------------------------------------------
-# 13- Function to enable the passthrough mode
-# ---------------------------------------------
-
-
-@hook.subscribe.enter_chord
-def auto_enable_passthrough(chord_name):
-    if chord_name == "PASSTHROUGH":
-        _enable_passthrough(qtile)
+import lib.hooks  # noqa: F401  side-effect: registers @hook.subscribe.* handlers
 
 
 # --------------------------------------------------------------------
