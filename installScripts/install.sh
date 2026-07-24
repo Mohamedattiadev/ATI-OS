@@ -46,35 +46,27 @@ info "Checking system assumptions"
 ok "System assumptions OK"
 
 # =====================================================
-# 2. BASE PACKAGES
+# 2. BOOTSTRAP PACKAGES (minimum to reach `dcli sync`)
 # =====================================================
-info "Installing base packages"
+info "Installing bootstrap packages"
 
 sudo pacman -Syu --needed --noconfirm \
   base-devel git stow \
   xorg-server xorg-xinit \
-  libinput imagemagick \
-  unzip wget curl \
-  xcape xdotool
+  curl wget unzip
 
-ok "Base packages installed"
+ok "Bootstrap packages installed"
 
 # =====================================================
-# 3. INSTALL yay (pacman → fallback)
+# 3. INSTALL yay (AUR helper)
 # =====================================================
 if ! command -v yay >/dev/null; then
-  warn "yay not found, attempting install"
-
-  if sudo pacman -S --noconfirm yay; then
-    ok "yay installed via pacman"
-  else
-    warn "pacman failed, building yay-bin manually"
-    TMP="$(mktemp -d)"
-    git clone https://aur.archlinux.org/yay-bin.git "$TMP/yay-bin"
-    (cd "$TMP/yay-bin" && makepkg -si --noconfirm)
-    rm -rf "$TMP"
-    ok "yay built manually"
-  fi
+  warn "yay not found, building yay-bin from AUR"
+  TMP="$(mktemp -d)"
+  git clone https://aur.archlinux.org/yay-bin.git "$TMP/yay-bin"
+  (cd "$TMP/yay-bin" && makepkg -si --noconfirm)
+  rm -rf "$TMP"
+  ok "yay built"
 else
   ok "yay already installed"
 fi
@@ -83,7 +75,7 @@ fi
 # 4. INSTALL dcli
 # =====================================================
 if ! command -v dcli >/dev/null; then
-  info "Installing dcli"
+  info "Installing dcli-arch-git"
   yay -S --noconfirm dcli-arch-git
 else
   ok "dcli already installed"
@@ -92,55 +84,58 @@ fi
 # =====================================================
 # 5. DEPLOY DOTFILES (STOW)
 # =====================================================
-info "Deploying dotfiles"
+info "Deploying dotfiles (stow)"
 "$STOW_SCRIPT"
 ok "Dotfiles deployed"
 
 # =====================================================
 # 6. ARCH-CONFIG HOST SYNC
 # =====================================================
-info "Syncing arch-config"
+info "Syncing arch-config host"
 "$ARCH_CONFIG_SCRIPT"
 ok "arch-config synced"
 
 # =====================================================
-# 7. INSTALL PACKAGES VIA dcli (CORRECT PLACE)
+# 7. INSTALL ALL PACKAGES VIA dcli (single source of truth)
 # =====================================================
-info "Installing packages via dcli"
+info "Installing all declared packages via dcli sync"
 cd "$DOTFILES_DIR"
 dcli sync
 sudo mandb
 fc-cache -fv
-
 ok "dcli sync completed"
-# =====================================================
-# 7.1 INSTALL PACKAGES  needed**
-# =====================================================
-info "Installing packages"
-
-cargo install pomodoro-tui
-pip install --break-system-packages Pillow
-pip install --break-system-packages dbus-fast
-ok "Packages installed"
 
 # =====================================================
-# 7.2 INSTALL ATI SCRIPTS
+# 8. CARGO TOOLS (out of dcli scope)
 # =====================================================
+info "Installing cargo tools"
 
-info "Installing AtiScriptsV1"
+if command -v rustup >/dev/null; then
+  rustup default stable >/dev/null 2>&1 || true
+fi
+
+if command -v cargo >/dev/null; then
+  cargo install pomodoro-tui || warn "pomodoro-tui install failed"
+else
+  warn "cargo not available; skip pomodoro-tui"
+fi
+
+ok "Cargo tools done"
+
+# =====================================================
+# 9. INSTALL ATI SCRIPTS (deploys rofi_todo, dm-logout, etc. to /usr/local/bin)
+# =====================================================
+info "Installing AtiScriptsV1 to /usr/local/bin"
 
 if [[ -d "$ATI_SCRIPTS_DIR" && -x "$ATI_INSTALL_SCRIPT" ]]; then
-  (
-    cd "$ATI_SCRIPTS_DIR"
-    ./install.sh
-  )
+  (cd "$ATI_SCRIPTS_DIR" && ./install.sh)
   ok "AtiScriptsV1 installed"
 else
   warn "AtiScriptsV1 install script not found, skipping"
 fi
 
 # =====================================================
-# 8. TOUCHPAD CONFIG
+# 10. TOUCHPAD CONFIG
 # =====================================================
 info "Configuring touchpad"
 
@@ -157,7 +152,7 @@ EOF
 ok "Touchpad configured"
 
 # =====================================================
-# 9. XINIT + QTILE
+# 11. .xinitrc (starts qtile + xcape + picom)
 # =====================================================
 info "Creating ~/.xinitrc"
 
@@ -183,7 +178,7 @@ chmod +x "$HOME_DIR/.xinitrc"
 ok ".xinitrc created"
 
 # =====================================================
-# 10. XMODMAP
+# 12. .Xmodmap (Caps hold = Alt_L; xcape maps tap → Caps)
 # =====================================================
 info "Creating ~/.Xmodmap"
 
@@ -198,7 +193,7 @@ EOF
 ok ".Xmodmap created"
 
 # =====================================================
-# 11. LID CLOSE = DO NOTHING
+# 13. LID CLOSE = IGNORE
 # =====================================================
 info "Configuring lid close behavior"
 
@@ -210,29 +205,28 @@ sudo systemctl restart systemd-logind
 ok "Lid behavior configured"
 
 # =====================================================
-# 12. KITTY + NVIM IMAGE SUPPORT
+# 14. KITTY + NVIM IMAGE SUPPORT (suppress VIPS warnings)
 # =====================================================
-info "Installing image support"
-
-echo 'set -x VIPS_WARNING 0' >>"$HOME_DIR/.profile"
-
-ok "Image support installed"
+info "Enabling image support envs"
+grep -qx 'set -x VIPS_WARNING 0' "$HOME_DIR/.profile" 2>/dev/null \
+  || echo 'set -x VIPS_WARNING 0' >>"$HOME_DIR/.profile"
+ok "Image support envs set"
 
 # =====================================================
-# 13. COLLECTOR APP
+# 15. FLATPAK + COLLECTOR
 # =====================================================
-info "Installing Collector dependencies"
+info "Configuring flatpak + collector"
 
-yay -S --noconfirm discover || true
-
-flatpak override --user \
-  --filesystem=home \
-  it.mijorus.collector || true
+sudo pacman -S --needed --noconfirm flatpak || true
+flatpak remote-add --if-not-exists --user flathub \
+  https://flathub.org/repo/flathub.flatpakrepo || true
+flatpak install -y --user flathub it.mijorus.collector || true
+flatpak override --user --filesystem=home it.mijorus.collector || true
 
 ok "Collector configured"
 
 # =====================================================
-# 14. PIPER VOICES
+# 16. PIPER VOICES (English + German)
 # =====================================================
 info "Installing Piper voices"
 
@@ -240,72 +234,75 @@ VOICE_DIR="$HOME_DIR/.config/piper-voices"
 mkdir -p "$VOICE_DIR"
 cd "$VOICE_DIR"
 
-curl -LO https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx
-curl -LO https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx.json
-curl -LO https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/high/de_DE-thorsten-high.onnx
-curl -LO https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/high/de_DE-thorsten-high.onnx.json
+for f in \
+  en/en_US/ryan/high/en_US-ryan-high.onnx \
+  en/en_US/ryan/high/en_US-ryan-high.onnx.json \
+  de/de_DE/thorsten/high/de_DE-thorsten-high.onnx \
+  de/de_DE/thorsten/high/de_DE-thorsten-high.onnx.json; do
+  fname="$(basename "$f")"
+  [[ -f "$fname" ]] && continue
+  curl -LO "https://huggingface.co/rhasspy/piper-voices/resolve/main/$f" || warn "voice fetch failed: $f"
+done
 
 ok "Piper voices installed"
 
 # =====================================================
-# 15. PASSWORDLESS SUDO
+# 17. PASSWORDLESS SUDO
 # =====================================================
 info "Configuring passwordless sudo"
-
 echo "$USER_NAME ALL=(ALL) NOPASSWD: ALL" | sudo tee "/etc/sudoers.d/$USER_NAME" >/dev/null
 sudo chmod 440 "/etc/sudoers.d/$USER_NAME"
-
 ok "Passwordless sudo enabled"
 
 # =====================================================
-# 16. OWN DOTFILES
+# 18. FIX DOTFILES OWNERSHIP
 # =====================================================
 info "Fixing dotfiles ownership"
 sudo chown -R "$USER_NAME:$USER_NAME" "$DOTFILES_DIR"
 ok "Ownership fixed"
 
 # =====================================================
-# 17. DISABLE ALL DISPLAY MANAGERS
+# 19. DISABLE ALL DISPLAY MANAGERS (TTY + startx only)
 # =====================================================
-info "Disabling all display managers (TTY only)"
-
-sudo systemctl disable lightdm.service 2>/dev/null || true
-sudo systemctl disable gdm.service 2>/dev/null || true
-sudo systemctl disable sddm.service 2>/dev/null || true
-sudo systemctl disable lxdm.service 2>/dev/null || true
-
+info "Disabling all display managers"
+for dm in lightdm gdm sddm lxdm; do
+  sudo systemctl disable "$dm.service" 2>/dev/null || true
+done
 ok "No display manager enabled"
 
 # =====================================================
-# 18. THEMES & ICONS
+# 20. THEMES & ICONS (candy-icons — not in AUR)
 # =====================================================
-info "Installing themes and icons"
+info "Installing candy-icons theme"
 
-yay -S --noconfirm sweet-gtk-theme-dark
-
-TMP_ICON="$(mktemp -d)"
-cd "$TMP_ICON"
-wget https://github.com/EliverLara/candy-icons/archive/refs/heads/master.zip
-unzip master.zip
-sudo mv candy-icons-master /usr/share/icons/candy-icons
-rm -rf "$TMP_ICON"
-
-ok "Themes installed"
+if [[ ! -d /usr/share/icons/candy-icons ]]; then
+  TMP_ICON="$(mktemp -d)"
+  cd "$TMP_ICON"
+  wget https://github.com/EliverLara/candy-icons/archive/refs/heads/master.zip
+  unzip master.zip
+  sudo mv candy-icons-master /usr/share/icons/candy-icons
+  rm -rf "$TMP_ICON"
+  ok "candy-icons installed"
+else
+  ok "candy-icons already installed"
+fi
 
 # =====================================================
-# 19. WALLPAPERS
+# 21. WALLPAPERS
 # =====================================================
 info "Installing wallpapers"
 
 mkdir -p "$HOME_DIR/Pictures"
-git clone https://github.com/w3dg/wallpapers.git "$HOME_DIR/Pictures/Wallpapers" || true
-
-ok "Wallpapers installed"
+[[ -d "$HOME_DIR/Pictures/Wallpapers" ]] \
+  || git clone https://github.com/w3dg/wallpapers.git "$HOME_DIR/Pictures/Wallpapers" \
+  || warn "wallpaper clone failed"
+ok "Wallpapers ready"
 
 # =====================================================
 # DONE
 # =====================================================
 echo
 ok "INSTALLATION COMPLETE"
-echo -e "${GREEN}→ Later to start the  X11 run this :${RESET} 'exec dbus-run-session startx' or u can use the alias 'letsgo' "
-echo -e "${GREEN}→ Restart Qtile:${RESET} fc-cache -fv && qtile cmd-obj -o cmd -f restart"
+echo -e "${GREEN}→ Start X:${RESET} 'startx'  (or alias 'letsgo')"
+echo -e "${GREEN}→ Reload qtile:${RESET} 'qtile cmd-obj -o cmd -f reload_config'"
+echo -e "${GREEN}→ Update system anytime:${RESET} 'dcli sync' (timeshift snapshot auto)"
