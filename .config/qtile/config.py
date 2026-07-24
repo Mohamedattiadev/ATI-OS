@@ -980,12 +980,10 @@ def left_side_widgets():
                 "Button3": lazy.function(open_launcher),  # right click
             },
         ),
-        # Current Layout — small icon, disable big popup on right click
+        # Current Layout — original padding, text mode; right-click cycles layout
         chip(
             ewidget.CurrentLayout,
-            padding=6,
-            scale=0.45,
-            use_mask=True,
+            padding=18,
             foreground=colors[3],
             mouse_callbacks={
                 "Button3": lazy.next_layout(),
@@ -1007,11 +1005,11 @@ def left_side_widgets():
             icon_size=16,
             markup=True,
             # markup styles
-            markup_normal='<span background="#00000066"> {} </span>',
-            markup_focused='<span background="#1a1b26EE" foreground="#7aa2f7" weight="bold"> F {} </span>',
-            markup_floating='<span background="#1a1b26EE" foreground="#da8548"> V {} </span>',
-            markup_focused_floating='<span background="#1a1b26EE" foreground="#ffaa00" weight="bold"> VF {} </span>',
-            markup_minimized='<span background="#1a1b26EE" foreground="#ff6c6b"> ↓ {} </span>',
+            markup_normal='<span background="#00000055">{}</span>',
+            markup_focused='<span background="#1a1b26EE" foreground="#7aa2f7" weight="bold">F {}</span>',
+            markup_floating='<span background="#1a1b26EE" foreground="#da8548">V {}</span>',
+            markup_focused_floating='<span background="#1a1b26EE" foreground="#ffaa00" weight="bold">VF {}</span>',
+            markup_minimized='<span background="#1a1b26EE" foreground="#ff6c6b">↓ {}</span>',
             max_title_width=200,
             padding_x=3,
             padding_y=2,
@@ -2332,7 +2330,10 @@ layouts = [
     layout.TreeTab(
         font="Ubuntu Bold",
         fontsize=11,
-        border_width=0,
+        border_width=8,
+        border_focus=colors[0],
+        border_normal=colors[0],
+        margin_left=8,
         bg_color=colors[0],
         active_bg=colors[8],
         active_fg=colors[2],
