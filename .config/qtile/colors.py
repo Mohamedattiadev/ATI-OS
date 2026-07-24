@@ -120,3 +120,39 @@ TomorrowNight = [
     ["#b294bb", "#b294bb"], # color06
     ["#70c0ba", "#70c0ba"]  # color15
     ]
+
+
+# ---- Dynamic palette (pywal) ----
+# Read ~/.cache/qtile/theme_mode (written by theme-apply). If mode is
+# "wal" and pywal cache exists, build a 9-slot palette matching the
+# DoomOne shape. Anything else -> None so callers fall back to DoomOne.
+
+def _wal_palette():
+    import json, os
+    try:
+        mode_p = os.path.expanduser("~/.cache/qtile/theme_mode")
+        with open(mode_p) as f:
+            mode = f.read().strip()
+        if mode != "wal":
+            return None
+        with open(os.path.expanduser("~/.cache/wal/colors.json")) as f:
+            w = json.load(f)
+        s = w["special"]
+        c = w["colors"]
+        pick = [
+            s["background"],  # bg
+            s["foreground"],  # fg
+            c["color0"],      # color01
+            c["color1"],      # color02
+            c["color2"],      # color03
+            c["color3"],      # color04
+            c["color4"],      # color05
+            c["color5"],      # color06
+            c["color6"],      # color15
+        ]
+        return [[h, h] for h in pick]
+    except Exception:
+        return None
+
+
+Wal = _wal_palette()

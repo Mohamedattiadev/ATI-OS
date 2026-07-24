@@ -179,7 +179,7 @@ NON_EN_NOTIFY_ID = 9001
 passthrough_active = False
 FLOAT_STATES = {}
 
-colors: list[list[str]] = color_schemes.DoomOne
+colors: list[list[str]] = color_schemes.Wal or color_schemes.DoomOne
 
 # NOTE:
 ### COLORSCHEME ###
@@ -1505,6 +1505,8 @@ keys = [
     ),
     # --- logout menu ---
     Key([mod, "shift"], "q", lazy.spawn("dm-logout -r"), desc="Logout menu"),
+    # --- theme toggle (doomone <-> pywal) ---
+    Key([mod, "shift"], "y", lazy.spawn("theme-toggle"), desc="Toggle DoomOne <-> pywal palette"),
     # Switch between windows
     # Some layouts like 'monadtall' only need to use j/k to move
     # through the stack, but other layouts like 'columns' will
