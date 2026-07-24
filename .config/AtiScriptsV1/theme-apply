@@ -160,7 +160,15 @@ esac
 
 echo "$MODE" >"$STATE_FILE"
 
-# Live-reload all running kitty instances
+# Live-reload all running kitty instances. kitty listens on
+# unix:/tmp/kitty-<pid>, one socket per top-level kitty. SIGUSR1 alone
+# rereads the config but the include'd palette file often stays cached,
+# so push the palette explicitly via `kitty @ set-colors --all`.
+for sock in /tmp/kitty-*; do
+  [[ -S "$sock" ]] || continue
+  kitty @ --to "unix:$sock" set-colors --all --configured \
+    "$KITTY_THEMES/current.conf" 2>/dev/null || true
+done
 for pid in $(pgrep -x kitty || true); do
   kill -SIGUSR1 "$pid" 2>/dev/null || true
 done
