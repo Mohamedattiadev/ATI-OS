@@ -4,3 +4,5 @@
 
 ACTIVE_CHORD: str | None = None
 BAR_MODE: str = "top"  # "top" or "bottom"
+passthrough_active: bool = False
+FLOAT_STATES: dict = {}
