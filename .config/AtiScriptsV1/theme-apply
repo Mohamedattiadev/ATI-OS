@@ -130,6 +130,54 @@ for pid in $(pgrep -x kitty || true); do
   kill -SIGUSR1 "$pid" 2>/dev/null || true
 done
 
+# ---- Dunst ----
+# Render dunstrc from ~/.dotfiles/.config/dunst/dunstrc.tmpl with palette
+# substitutions. Retint only the 3 urgency levels + global frame_color;
+# named notification classes (success/warning/todo/spotify/etc) keep
+# their semantic hardcoded colors.
+DUNSTRC="$HOME/.config/dunst/dunstrc"
+DUNST_TMPL="$HOME/.dotfiles/.config/dunst/dunstrc.tmpl"
+render_dunstrc() {
+  local bg="$1" fg="$2" bg_crit="$3" fg_crit="$4" accent="$5" ok="$6" urgent="$7"
+  # Break any stow symlink to dunstrc — we'll manage the real file now.
+  [[ -L "$DUNSTRC" ]] && rm "$DUNSTRC"
+  sed -e "s|{{BG}}|$bg|g" \
+      -e "s|{{FG}}|$fg|g" \
+      -e "s|{{BG_CRIT}}|$bg_crit|g" \
+      -e "s|{{FG_CRIT}}|$fg_crit|g" \
+      -e "s|{{ACCENT}}|$accent|g" \
+      -e "s|{{OK}}|$ok|g" \
+      -e "s|{{URGENT}}|$urgent|g" \
+      "$DUNST_TMPL" >"$DUNSTRC"
+}
+
+if [[ -f "$DUNST_TMPL" ]]; then
+  case "$MODE" in
+    wal)
+      W=~/.cache/wal/colors.json
+      render_dunstrc \
+        "$(jq -r .special.background "$W")" \
+        "$(jq -r .special.foreground "$W")" \
+        "$(jq -r .colors.color0 "$W")" \
+        "$(jq -r .special.foreground "$W")" \
+        "$(jq -r .colors.color12 "$W")" \
+        "$(jq -r .colors.color10 "$W")" \
+        "$(jq -r .colors.color9 "$W")"
+      ;;
+    doomone)   render_dunstrc "#1c2028" "#bbc2cf" "#2b1517" "#ffdada" "#51afef" "#98be65" "#ff6c6b" ;;
+    dracula)   render_dunstrc "#21222c" "#f8f8f2" "#3d1e2c" "#ffdada" "#bd93f9" "#50fa7b" "#ff5555" ;;
+    nord)      render_dunstrc "#2e3440" "#d8dee9" "#3b1f22" "#ffdada" "#88c0d0" "#a3be8c" "#bf616a" ;;
+    gruvbox)   render_dunstrc "#282828" "#ebdbb2" "#3c1f1c" "#ffdada" "#fabd2f" "#b8bb26" "#fb4934" ;;
+    tokyonight) render_dunstrc "#1a1b26" "#c0caf5" "#3d1f2a" "#ffdada" "#7aa2f7" "#9ece6a" "#f7768e" ;;
+    catppuccin) render_dunstrc "#1e1e2e" "#cdd6f4" "#3d1f2a" "#ffdada" "#cba6f7" "#a6e3a1" "#f38ba8" ;;
+  esac
+  # Restart dunst so it re-reads dunstrc
+  pkill -x dunst 2>/dev/null || true
+  sleep 0.2
+  dunst >/dev/null 2>&1 &
+  disown
+fi
+
 # Reload qtile
 command -v qtile >/dev/null && qtile cmd-obj -o cmd -f reload_config 2>/dev/null || true
 

@@ -18,7 +18,7 @@
     text_icon_padding = 6
     frame_width = 2
     gap_size = 8
-    frame_color = "#51afef"
+    frame_color = "{{ACCENT}}"
     separator_color = frame
     sort = yes
     font = JetBrainsMono Nerd Font 10
@@ -59,26 +59,26 @@
 
 # --- Default Urgency Levels ---
 [urgency_low]
-    background = "#1c2028"
-    foreground = "#bbc2cf"
-    frame_color = "#98be65"
-    highlight = "#98be65"
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{OK}}"
+    highlight = "{{OK}}"
     timeout = 5
     icon = emblem-ok-symbolic
 
 [urgency_normal]
-    background = "#1c2028"
-    foreground = "#f0f4fc"
-    frame_color = "#51afef"
-    highlight = "#51afef"
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    highlight = "{{ACCENT}}"
     timeout = 10
     icon = dialog-information-symbolic
 
 [urgency_critical]
-    background = "#2b1517"
-    foreground = "#ffdada"
-    frame_color = "#ff6c6b"
-    highlight = "#ff6c6b"
+    background = "{{BG_CRIT}}"
+    foreground = "{{FG_CRIT}}"
+    frame_color = "{{URGENT}}"
+    highlight = "{{URGENT}}"
     timeout = 0
     icon = dialog-error-symbolic
 
