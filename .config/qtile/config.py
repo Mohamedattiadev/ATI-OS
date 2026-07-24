@@ -1505,8 +1505,6 @@ keys = [
     ),
     # --- logout menu ---
     Key([mod, "shift"], "q", lazy.spawn("dm-logout -r"), desc="Logout menu"),
-    # --- spawn a command using a prompt widget ---
-    Key([mod], "r", lazy.spawncmd(), desc="Spawn a command using a prompt widget"),
     # Switch between windows
     # Some layouts like 'monadtall' only need to use j/k to move
     # through the stack, but other layouts like 'columns' will
@@ -1540,13 +1538,6 @@ keys = [
         lazy.layout.shuffle_down(),
         lazy.layout.section_down().when(layout=["treetab"]),
         desc="Move window down/move down a section in treetab",
-    ),
-    Key(
-        [mod, "shift"],
-        "k",
-        lazy.layout.shuffle_up(),
-        lazy.layout.section_up().when(layout=["treetab"]),
-        desc="Move window downup/move up a section in treetab",
     ),
     # Toggle between split and unsplit sides of stack.
     # Split = all windows displayed
