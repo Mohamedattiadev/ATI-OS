@@ -10,3 +10,9 @@ brave-profiles
 # dunstrc.tmpl is the versioned template.
 .config/dunst/dunstrc
 
+
+# Chrome theme signing artifacts (per-machine, never commit private key)
+.config/qtile/browser-theme.pem
+.config/qtile/browser-theme.crx
+.config/qtile/browser-theme-updates.xml
+.config/qtile/browser-theme/Cached Theme.pak
