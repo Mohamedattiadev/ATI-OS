@@ -306,10 +306,16 @@ ok "Whisper model ready"
 # =====================================================
 # 17. PASSWORDLESS SUDO
 # =====================================================
+# zz- prefix so this file sorts LAST in /etc/sudoers.d — the last
+# matching rule wins in sudo, so this overrides any earlier
+# "(ALL) ALL" (password-required) rule that some sudoers configs ship.
 info "Configuring passwordless sudo"
-echo "$USER_NAME ALL=(ALL) NOPASSWD: ALL" | sudo tee "/etc/sudoers.d/$USER_NAME" >/dev/null
-sudo chmod 440 "/etc/sudoers.d/$USER_NAME"
-ok "Passwordless sudo enabled"
+echo "$USER_NAME ALL=(ALL) NOPASSWD: ALL" | sudo tee "/etc/sudoers.d/zz-$USER_NAME-nopasswd" >/dev/null
+sudo chmod 440 "/etc/sudoers.d/zz-$USER_NAME-nopasswd"
+# Drop old un-prefixed file if it exists — it sorts earlier so its
+# effect is stomped by any later /etc/sudoers.d rule.
+[[ -f "/etc/sudoers.d/$USER_NAME" ]] && sudo rm "/etc/sudoers.d/$USER_NAME"
+ok "Passwordless sudo enabled (zz-$USER_NAME-nopasswd)"
 
 # =====================================================
 # 18. FIX DOTFILES OWNERSHIP
