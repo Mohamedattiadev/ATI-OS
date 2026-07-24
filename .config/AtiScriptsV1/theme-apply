@@ -293,9 +293,12 @@ fi
 # Reload qtile
 command -v qtile >/dev/null && qtile cmd-obj -o cmd -f reload_config 2>/dev/null || true
 
-# Reload qutebrowser (picks up new wal colors from ~/.cache/wal/colors.json)
+# Reload qutebrowser: :config-source re-runs config.py (which reads the
+# new palette). Then :reload --force-color-scheme actually rebuilds
+# the current page so cached file:// CSS is dropped.
 if pgrep -x qutebrowser >/dev/null; then
   qutebrowser ":config-source" 2>/dev/null || true
+  qutebrowser ":reload -f" 2>/dev/null || true
 fi
 
 notify-send "theme-apply" "Theme -> $MODE"
