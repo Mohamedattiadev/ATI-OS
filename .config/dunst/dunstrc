@@ -5,24 +5,24 @@
     always_run_script = true
     monitor = 0
     follow = none
-    width = 300
+    width = (300, 420)
     height = (0, 2200)
     origin = top-right
-    offset = (10, 50)
+    offset = (14, 60)
     scale = 0
-    notification_limit = 0
-    transparency = 10
+    notification_limit = 5
+    transparency = 0
     separator_height = 2
-    padding = 8
-    horizontal_padding = 8
-    text_icon_padding = 0
-    frame_width = 3
-    gap_size = 10
+    padding = 14
+    horizontal_padding = 16
+    text_icon_padding = 10
+    frame_width = 2
+    gap_size = 12
     frame_color = "#51afef"
     separator_color = frame
     sort = yes
-    font = Ubuntu 10
-    line_height = 0
+    font = JetBrainsMono Nerd Font 11
+    line_height = 4
     markup = full
     format = "<b>%s</b>\n%b"
     alignment = left
@@ -36,8 +36,8 @@
     enable_recursive_icon_lookup = true
     icon_theme = Adwaita
     icon_position = left
-    min_icon_size = 32
-    max_icon_size = 128
+    min_icon_size = 48
+    max_icon_size = 64
     icon_path = /usr/share/icons/gnome/16x16/status/:/usr/share/icons/gnome/16x16/devices/
     sticky_history = yes
     history_length = 20
@@ -45,7 +45,7 @@
     browser = /usr/bin/qutebrowser
     title = Dunst
     class = Dunst
-    corner_radius = 8
+    corner_radius = 12
     ignore_dbusclose = false
     force_xwayland = false
     force_xinerama = false
@@ -59,23 +59,26 @@
 
 # --- Default Urgency Levels ---
 [urgency_low]
-    background = "#282c34"
-    foreground = "#5B6268"
-    frame_color = "#1c1f24"
+    background = "#1c2028"
+    foreground = "#bbc2cf"
+    frame_color = "#98be65"
+    highlight = "#98be65"
     timeout = 5
     icon = emblem-ok-symbolic
 
 [urgency_normal]
-    background = "#282c34"
-    foreground = "#bbc2cf"
+    background = "#1c2028"
+    foreground = "#f0f4fc"
     frame_color = "#51afef"
+    highlight = "#51afef"
     timeout = 10
     icon = dialog-information-symbolic
 
 [urgency_critical]
-    background = "#282c34"
-    foreground = "#ff6c6b"
+    background = "#2b1517"
+    foreground = "#ffdada"
     frame_color = "#ff6c6b"
+    highlight = "#ff6c6b"
     timeout = 0
     icon = dialog-error-symbolic
 

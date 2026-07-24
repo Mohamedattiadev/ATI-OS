@@ -247,6 +247,20 @@ done
 ok "Piper voices installed"
 
 # =====================================================
+# 16b. WHISPER MODEL (voice_dictate)
+# =====================================================
+info "Downloading whisper small.en model"
+
+WHISPER_DIR="$HOME_DIR/.local/share/whisper"
+mkdir -p "$WHISPER_DIR"
+if [[ ! -f "$WHISPER_DIR/ggml-small.en.bin" ]]; then
+  curl -L -o "$WHISPER_DIR/ggml-small.en.bin" \
+    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin \
+    || warn "whisper model fetch failed"
+fi
+ok "Whisper model ready"
+
+# =====================================================
 # 17. PASSWORDLESS SUDO
 # =====================================================
 info "Configuring passwordless sudo"
@@ -297,6 +311,49 @@ mkdir -p "$HOME_DIR/Pictures"
   || git clone https://github.com/w3dg/wallpapers.git "$HOME_DIR/Pictures/Wallpapers" \
   || warn "wallpaper clone failed"
 ok "Wallpapers ready"
+
+# =====================================================
+# 22. SYSTEM SPEED TWEAKS (safe, reversible)
+# =====================================================
+info "Applying system speed tweaks"
+
+# 22a. zram-generator: RAM-backed swap (much faster than disk swap)
+sudo pacman -S --needed --noconfirm zram-generator || warn "zram-generator install failed"
+sudo tee /etc/systemd/zram-generator.conf >/dev/null <<'EOF'
+[zram0]
+zram-size = min(ram / 2, 4096)
+compression-algorithm = zstd
+swap-priority = 100
+EOF
+sudo systemctl daemon-reload
+sudo systemctl start /dev/zram0 2>/dev/null || true
+
+# 22b. earlyoom: kill runaway processes before kernel freezes
+sudo pacman -S --needed --noconfirm earlyoom || warn "earlyoom install failed"
+sudo systemctl enable --now earlyoom.service 2>/dev/null || true
+
+# 22c. auto-cpufreq: verify enabled (installed via dcli)
+sudo systemctl enable --now auto-cpufreq.service 2>/dev/null || true
+
+# 22d. pacman NoExtract: skip non-English locales in pkg extract → faster updates
+if ! grep -q '^NoExtract.*usr/share/locale' /etc/pacman.conf; then
+  sudo sed -i '/^\[options\]/a NoExtract   = usr/share/locale/* !usr/share/locale/en*' /etc/pacman.conf
+fi
+
+# 22e. pacman parallel downloads
+sudo sed -i 's/^#ParallelDownloads.*/ParallelDownloads = 5/' /etc/pacman.conf
+
+# 22f. journald: cap size (default unlimited)
+sudo mkdir -p /etc/systemd/journald.conf.d
+sudo tee /etc/systemd/journald.conf.d/00-size.conf >/dev/null <<'EOF'
+[Journal]
+SystemMaxUse=200M
+SystemKeepFree=1G
+RuntimeMaxUse=100M
+EOF
+sudo systemctl restart systemd-journald || true
+
+ok "Speed tweaks applied (zram, earlyoom, auto-cpufreq, parallel downloads, NoExtract locales, journald caps)"
 
 # =====================================================
 # DONE

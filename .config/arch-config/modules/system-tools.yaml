@@ -36,6 +36,7 @@ packages:
   - poppler         # pdftotext, pdfinfo used by dm-maim etc.
   - ghostscript     # pdf processing
   - wl-clipboard    # wl-copy fallback in fish scripts
+  - whisper.cpp-git # voice_dictate backend (AUR)
   - yt-dlp
   - xdg-utils
   - stow

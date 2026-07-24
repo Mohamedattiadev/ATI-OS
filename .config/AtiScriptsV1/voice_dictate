@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# voice_dictate — press keybind to start; press again to stop and paste transcript.
+# Backend: whisper.cpp (small.en model). Requires: whisper-cli (whisper.cpp), sox, xdotool.
+#
+# One-time setup:
+#   yay -S whisper.cpp-git
+#   mkdir -p ~/.local/share/whisper
+#   curl -L -o ~/.local/share/whisper/ggml-small.en.bin \
+#     https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+
+set -euo pipefail
+
+MODEL="${WHISPER_MODEL:-$HOME/.local/share/whisper/ggml-small.en.bin}"
+LANG="${WHISPER_LANG:-en}"
+TMPDIR="/tmp/voice_dictate"
+PIDFILE="$TMPDIR/rec.pid"
+WAV="$TMPDIR/rec.wav"
+
+mkdir -p "$TMPDIR"
+
+if [[ ! -f "$MODEL" ]]; then
+  notify-send -u critical "voice_dictate" "Model missing: $MODEL"
+  exit 1
+fi
+
+for bin in sox whisper-cli xdotool; do
+  command -v "$bin" >/dev/null || {
+    notify-send -u critical "voice_dictate" "Missing binary: $bin"
+    exit 1
+  }
+done
+
+# Stop mode: PID exists → kill rec, transcribe, paste
+if [[ -f "$PIDFILE" ]]; then
+  PID="$(cat "$PIDFILE")"
+  kill "$PID" 2>/dev/null || true
+  rm -f "$PIDFILE"
+  notify-send "voice_dictate" "Transcribing…"
+
+  TXT="$(whisper-cli -m "$MODEL" -l "$LANG" -otxt -nt -f "$WAV" 2>/dev/null | tail -1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+  if [[ -z "$TXT" ]]; then
+    notify-send -u critical "voice_dictate" "Empty transcription"
+    exit 0
+  fi
+
+  # Paste via xdotool at cursor
+  xdotool type --delay 8 "$TXT"
+  notify-send "voice_dictate" "Pasted: ${TXT:0:60}…"
+  exit 0
+fi
+
+# Start mode: begin recording
+notify-send "voice_dictate" "🎙  Recording… (press bind again to stop)"
+sox -q -d -c 1 -r 16000 -b 16 "$WAV" &
+echo $! >"$PIDFILE"
