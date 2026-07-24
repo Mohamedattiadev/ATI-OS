@@ -52,9 +52,12 @@ if [[ "$MODE" == "wal" ]]; then
   # Default backend + max saturation. Monochromatic wallpapers still
   # produce single-hue palettes; colors.py falls back to DoomOne accents
   # (keeping only wal bg/fg) when the accent hues span <60 degrees.
-  # 2>/dev/null suppresses pywal's harmless kitty remote-control failure
-  # (unix:/tmp/kitty_pywal socket doesn't exist; we reload kitty via SIGUSR1).
-  wal -i "$(cat "$WALL_LINK")" -n -s -t -q --saturate 1.0 2>/dev/null
+  # colorz backend uses k-means clustering — much better for multi-color
+  # wallpapers (paint splatters, city photos) than the default wal backend
+  # which tends to pick a single dominant hue.
+  # If colorz isn't installed, pywal silently falls back to the default.
+  wal --backend colorz -i "$(cat "$WALL_LINK")" -n -s -t -q --saturate 1.0 2>/dev/null \
+    || wal -i "$(cat "$WALL_LINK")" -n -s -t -q --saturate 1.0 2>/dev/null
 
   # Monochrome wallpapers (grayscale roads, single-hue photos) produce
   # single-hue palettes. Detect via HSV hue spread on color9-14; if
@@ -118,22 +121,47 @@ else
 fi
 
 # ---- Qutebrowser homepage CSS vars ----
-QB_CSS="$CACHE_DIR/qutebrowser-vars.css"
+# Inline the palette into homepage.html between BEGIN-THEME-VARS /
+# END-THEME-VARS markers. Editing the HTML itself defeats file:// CSS
+# caching that file:// stylesheets have for the qutebrowser --temp
+# window used by the homepage.
+QB_HTML="$HOME/.config/qutebrowser/html/homepage.html"
 gen_qb_css() {
   local bg="$1" bg_alt="$2" fg="$3" red="$4" green="$5" yellow="$6" blue="$7" purple="$8" cyan="$9"
-  cat >"$QB_CSS" <<EOF
-:root {
-  --bg: $bg;
-  --bg-alt: $bg_alt;
-  --fg: $fg;
-  --red: $red;
-  --green: $green;
-  --yellow: $yellow;
-  --blue: $blue;
-  --purple: $purple;
-  --cyan: $cyan;
-}
-EOF
+  [[ -f "$QB_HTML" ]] || return
+  python3 - "$QB_HTML" "$bg" "$bg_alt" "$fg" "$red" "$green" "$yellow" "$blue" "$purple" "$cyan" <<'PYEOF'
+import sys, re
+path = sys.argv[1]
+bg, bg_alt, fg, red, green, yellow, blue, purple, cyan = sys.argv[2:11]
+with open(path) as f:
+    src = f.read()
+block = (
+    "    <!-- BEGIN-THEME-VARS (rewritten by theme-apply) -->\n"
+    "    <style id=\"theme-vars\">\n"
+    "      :root {\n"
+    f"        --bg: {bg};\n"
+    f"        --bg-alt: {bg_alt};\n"
+    f"        --fg: {fg};\n"
+    f"        --red: {red};\n"
+    f"        --green: {green};\n"
+    f"        --yellow: {yellow};\n"
+    f"        --blue: {blue};\n"
+    f"        --purple: {purple};\n"
+    f"        --cyan: {cyan};\n"
+    "      }\n"
+    "    </style>\n"
+    "    <!-- END-THEME-VARS -->"
+)
+new = re.sub(
+    r"    <!-- BEGIN-THEME-VARS.*?<!-- END-THEME-VARS -->",
+    block,
+    src,
+    count=1,
+    flags=re.DOTALL,
+)
+with open(path, 'w') as f:
+    f.write(new)
+PYEOF
 }
 
 case "$MODE" in
