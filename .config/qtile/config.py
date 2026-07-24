@@ -2459,23 +2459,8 @@ if __name__ in ["config", "__main__"]:
 # │░░▀░▀░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀▀▀│
 # ╚──────────────────────────╝
 
-# Drag floating layouts.
-# Move windows with SUPER instead of ALT
-mouse = [
-    Drag(
-        [mod],  # Super key
-        "Button1",
-        lazy.window.set_position_floating(),
-        start=lazy.window.get_position(),
-    ),
-    Drag(
-        [mod],
-        "Button3",
-        lazy.window.set_size_floating(),
-        start=lazy.window.get_size(),
-    ),
-    Click([mod], "Button2", lazy.window.bring_to_front()),
-]
+from lib.mouse import build_mouse
+mouse = build_mouse(mod)
 
 
 dgroups_key_binder = None
