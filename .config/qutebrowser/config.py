@@ -5,6 +5,61 @@ config.load_autoconfig()
 # Import the theme module (doom_one.py should be in ~/.config/qutebrowser/)
 import doom_one
 
+# ---- wal / theme_mode integration ---------------------------------------
+# Read ~/.cache/qtile/theme_mode. When "wal", override doom_one's palette
+# with the current pywal colors so qb tabs / statusbar / completion match
+# the wallpaper. `:config-source` (fired by theme-apply) re-runs this.
+def _apply_wal():
+    import json, os
+    try:
+        mode = open(os.path.expanduser("~/.cache/qtile/theme_mode")).read().strip()
+        if mode != "wal":
+            return
+        d = json.load(open(os.path.expanduser("~/.cache/wal/colors.json")))
+        bg  = d["special"]["background"]
+        fg  = d["special"]["foreground"]
+        col = d["colors"]
+        alt = col["color0"]
+        acc = col["color4"]
+        c.colors.completion.category.bg = alt
+        c.colors.completion.category.fg = fg
+        c.colors.completion.category.border.top    = alt
+        c.colors.completion.category.border.bottom = alt
+        c.colors.completion.odd.bg  = bg
+        c.colors.completion.even.bg = alt
+        c.colors.completion.fg = fg
+        c.colors.completion.item.selected.bg = acc
+        c.colors.completion.item.selected.fg = bg
+        c.colors.completion.item.selected.border.top    = acc
+        c.colors.completion.item.selected.border.bottom = acc
+        c.colors.completion.match.fg = col["color3"]
+        c.colors.statusbar.normal.bg  = bg
+        c.colors.statusbar.normal.fg  = fg
+        c.colors.statusbar.insert.bg  = col["color2"]
+        c.colors.statusbar.insert.fg  = bg
+        c.colors.statusbar.command.bg = alt
+        c.colors.statusbar.command.fg = fg
+        c.colors.statusbar.url.fg     = fg
+        c.colors.statusbar.url.hover.fg = acc
+        c.colors.tabs.bar.bg      = alt
+        c.colors.tabs.odd.bg      = alt
+        c.colors.tabs.even.bg     = bg
+        c.colors.tabs.odd.fg      = fg
+        c.colors.tabs.even.fg     = fg
+        c.colors.tabs.selected.odd.bg  = acc
+        c.colors.tabs.selected.even.bg = acc
+        c.colors.tabs.selected.odd.fg  = bg
+        c.colors.tabs.selected.even.fg = bg
+        c.colors.tabs.indicator.start = acc
+        c.colors.tabs.indicator.stop  = col["color6"]
+        c.colors.webpage.bg = bg
+        c.colors.hints.bg = acc
+        c.colors.hints.fg = bg
+        c.hints.border = f"2px solid {acc}"
+    except Exception:
+        pass
+_apply_wal()
+
 # -----------------------------------------------------------------------------
 # Theme & UI
 # -----------------------------------------------------------------------------
