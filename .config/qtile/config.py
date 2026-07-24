@@ -2420,7 +2420,7 @@ def init_screens():
                 size=28,
                 margin=[5, 10, 5, 10],  # top, right, bottom, left
                 # IMP: this is the background color of the bar
-                background="#11111b00",  # transparent
+                background=colors[0][0] + "CC",  # ~80% opaque theme bg so bar stays readable on any wallpaper
             ),
             bottom=bar.Bar(
                 widgets=init_widgets_list_normaluserbar(),
@@ -2436,7 +2436,7 @@ def init_screens():
                 size=28,
                 margin=[5, 10, 5, 10],  # top, right, bottom, left
                 # IMP: this is the background color of the bar
-                background="#11111b00",  # transparent
+                background=colors[0][0] + "CC",  # ~80% opaque theme bg so bar stays readable on any wallpaper
             ),
         ),
     ]
