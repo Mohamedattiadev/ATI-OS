@@ -188,6 +188,123 @@ def to_wal_json(bg, bg_alt, fg, accents, wallpaper):
         "colors": c,
     }
 
+# ---- per-consumer template renderers ---------------------------------
+
+def _hex_rgb(h):
+    return [int(h[i:i+2], 16) for i in (1, 3, 5)]
+
+def _papirus_color_for_hue(hue_deg):
+    h = hue_deg % 360
+    if h < 15 or h >= 345: return "red"
+    if h < 45:  return "orange"
+    if h < 65:  return "yellow"
+    if h < 165: return "green"
+    if h < 200: return "teal"
+    if h < 260: return "blue"
+    if h < 290: return "violet"
+    return "pink"
+
+def render_kitty_conf(bg, bg_alt, fg, accents):
+    lines = [
+        f"foreground         {fg}",
+        f"background         {bg}",
+        "background_opacity 1.0",
+        f"cursor             {fg}",
+        "",
+        f"active_tab_foreground     {bg}",
+        f"active_tab_background     {fg}",
+        f"inactive_tab_foreground   {fg}",
+        f"inactive_tab_background   {bg}",
+        "",
+        f"active_border_color   {fg}",
+        f"inactive_border_color {bg}",
+        f"bell_border_color     {accents[0]}",
+        "",
+        f"color0       {bg}",
+        f"color8       {bg_alt}",
+    ]
+    for i, a in enumerate(accents):
+        lines.append(f"color{i+1}       {a}")
+        lines.append(f"color{i+9}      {a}")
+    lines.append(f"color7       {fg}")
+    lines.append(f"color15      {fg}")
+    return "\n".join(lines) + "\n"
+
+def render_rofi_rasi(bg, bg_alt, fg, accents):
+    return (
+        "* {\n"
+        f"    background:     {bg};\n"
+        f"    background-alt: {bg_alt};\n"
+        f"    foreground:     {fg};\n"
+        f"    selected:       {accents[3]};\n"
+        f"    selectedone:    {accents[4]};\n"
+        f"    urgent:         {accents[0]};\n"
+        f"    active:         {accents[1]};\n"
+        "}\n"
+    )
+
+def render_dunst(bg, bg_alt, fg, accents):
+    return {
+        "bg": bg, "fg": fg,
+        "bg_crit": bg_alt, "fg_crit": fg,
+        "accent": accents[3], "ok": accents[1], "urgent": accents[0],
+    }
+
+def render_gtk_css(bg, bg_alt, fg, accents):
+    accent, urgent, ok = accents[3], accents[0], accents[1]
+    return (
+        f"@define-color accent_color {accent};\n"
+        f"@define-color accent_bg_color {accent};\n"
+        f"@define-color accent_fg_color {bg};\n"
+        f"@define-color window_bg_color {bg};\n"
+        f"@define-color window_fg_color {fg};\n"
+        f"@define-color view_bg_color {bg};\n"
+        f"@define-color view_fg_color {fg};\n"
+        f"@define-color headerbar_bg_color {bg_alt};\n"
+        f"@define-color headerbar_fg_color {fg};\n"
+        f"@define-color card_bg_color {bg_alt};\n"
+        f"@define-color card_fg_color {fg};\n"
+        f"@define-color destructive_color {urgent};\n"
+        f"@define-color destructive_bg_color {urgent};\n"
+        f"@define-color success_color {ok};\n"
+        f"@define-color success_bg_color {ok};\n"
+        f"@define-color theme_selected_bg_color {accent};\n"
+        f"@define-color theme_selected_fg_color {bg};\n"
+    )
+
+def render_qb(bg, bg_alt, fg, accents):
+    return {
+        "bg": bg, "bg_alt": bg_alt, "fg": fg,
+        "red": accents[0], "green": accents[1], "yellow": accents[2],
+        "blue": accents[3], "purple": accents[4], "cyan": accents[5],
+    }
+
+def render_brave_manifest(bg, bg_alt, fg, accents, epoch=None):
+    import time as _t
+    return {
+        "manifest_version": 3,
+        "version": "1.0." + str(int(epoch or _t.time())),
+        "name": "Wal Theme",
+        "description": "Precompiled per-wallpaper.",
+        "theme": {
+            "colors": {
+                "frame":               _hex_rgb(bg_alt),
+                "frame_inactive":      _hex_rgb(bg_alt),
+                "frame_incognito":     _hex_rgb(bg_alt),
+                "toolbar":             _hex_rgb(bg),
+                "tab_text":            _hex_rgb(fg),
+                "tab_background_text": _hex_rgb(fg),
+                "bookmark_text":       _hex_rgb(fg),
+                "ntp_background":      _hex_rgb(bg),
+                "ntp_text":            _hex_rgb(fg),
+                "ntp_link":            _hex_rgb(accents[3]),
+                "button_background":   _hex_rgb(bg_alt),
+                "omnibox_background":  _hex_rgb(bg_alt),
+                "omnibox_text":        _hex_rgb(fg),
+            }
+        }
+    }
+
 def process(path: Path, force=False):
     out_file = OUT_DIR / (path.stem + ".json")
     if out_file.exists() and not force:
@@ -198,14 +315,27 @@ def process(path: Path, force=False):
         return {"wallpaper": str(path), "error": str(e), "score": 0}
     sc, notes = score(bg, fg, accents)
     wal_j = to_wal_json(bg, bg_alt, fg, accents, path)
+    dom_deg = round(dh * 360, 1)
     out = {
         "wallpaper": str(path),
         "score": sc,
         "notes": notes,
-        "dominant_hue_deg": round(dh * 360, 1),
+        "dominant_hue_deg": dom_deg,
         "bg": bg, "bg_alt": bg_alt, "fg": fg,
         "accents": accents,
+        "papirus_color": _papirus_color_for_hue(dom_deg),
         "wal_colors": wal_j,
+        # Pre-rendered per-consumer templates so theme-apply becomes a
+        # sequence of pure file writes — no template evaluation, no wal
+        # binary, no per-consumer python. Cache hit = sub-500ms apply.
+        "consumers": {
+            "kitty_conf":  render_kitty_conf(bg, bg_alt, fg, accents),
+            "rofi_rasi":   render_rofi_rasi(bg, bg_alt, fg, accents),
+            "dunst":       render_dunst(bg, bg_alt, fg, accents),
+            "gtk_css":     render_gtk_css(bg, bg_alt, fg, accents),
+            "qb":          render_qb(bg, bg_alt, fg, accents),
+            "brave_theme": render_brave_manifest(bg, bg_alt, fg, accents),
+        },
     }
     out_file.write_text(json.dumps(out, indent=2))
     return out
