@@ -9,13 +9,13 @@ from lib.helpers import go_to_group_or_notify
 groups = [
     Group(
         "1",
-        label="",
+        label="",
         matches=[Match(wm_class="ticktick")],
         layout="monadtall",
     ),
     Group(
         "2",
-        label="",
+        label="",
         matches=[
             Match(wm_class="qutebrowser"),
             Match(wm_class="zen-browser"),
@@ -27,13 +27,13 @@ groups = [
     ),
     Group(
         "3",
-        label="",
+        label="",
         matches=[Match(wm_class="org.gnome.Nautilus"), Match(wm_class="pcmanfm")],
         layout="monadtall",
     ),
     Group(
         "4",
-        label="",
+        label="",
         matches=[
             Match(wm_class="code"),
             Match(wm_class="dev.zed.Zed"),
@@ -44,7 +44,7 @@ groups = [
     ),
     Group(
         "5",
-        label="",
+        label="",
         matches=[
             Match(wm_class="brave"),
             Match(wm_class="brave-browser"),
@@ -67,7 +67,7 @@ groups = [
     ),
     Group(
         "9",
-        label="",
+        label="",
         matches=[
             Match(wm_class="thunderbird"),
             Match(wm_class="TelegramDesktop"),
