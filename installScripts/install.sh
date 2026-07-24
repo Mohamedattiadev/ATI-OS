@@ -158,19 +158,62 @@ info "Creating ~/.xinitrc"
 
 cat >"$HOME_DIR/.xinitrc" <<'EOF'
 #!/bin/sh
-unset SESSION_MANAGER
-setxkbmap -layout us -option
-xmodmap ~/.Xmodmap
-pkill -x xcape 2>/dev/null
-xcape -e 'Alt_L=Caps_Lock' &
+# ===============================
+# XINITRC – QTILE (STABLE BUILD)
+# ===============================
 
+# ---- Sanity cleanup (CRITICAL)
+unset SESSION_MANAGER
+# unset DBUS_SESSION_BUS_ADDRESS
+
+# ---- Keyboard / input (EARLY)
+setxkbmap -layout us -option
+[ -f "$HOME/.Xmodmap" ] && xmodmap "$HOME/.Xmodmap"
+# xcape: tap Caps -> Caps_Lock (hold = Alt via xmodmap remap above)
+if command -v xcape >/dev/null 2>&1; then
+  pkill -x xcape 2>/dev/null
+  xcape -e 'Alt_L=Caps_Lock' &
+fi
+
+# ---- XDG session identity
 export XDG_SESSION_TYPE=x11
 export XDG_CURRENT_DESKTOP=qtile
 export XDG_SESSION_DESKTOP=qtile
 
-systemctl --user import-environment DISPLAY XAUTHORITY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP
+# ---- Make systemd --user aware of X
+systemctl --user import-environment \
+  DISPLAY \
+  XAUTHORITY \
+  XDG_SESSION_TYPE \
+  XDG_CURRENT_DESKTOP \
+  XDG_SESSION_DESKTOP
 
-picom &
+# ---- DBus activation env (dunst / portals need this)
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+  dbus-update-activation-environment --systemd \
+    DISPLAY XAUTHORITY \
+    XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP 2>/dev/null
+fi
+
+# ---- Root cursor (avoid X-shaped default)
+command -v xsetroot >/dev/null 2>&1 && xsetroot -cursor_name left_ptr
+
+# ---- Disable screensaver + DPMS (no blank/monitor sleep)
+xset s off -dpms
+
+# ---- Wallpaper (FAST, NON-BLOCKING)
+if [ -f "$HOME/.cache/wall" ] && command -v xwallpaper >/dev/null 2>&1; then
+  wall_path="$(cat "$HOME/.cache/wall")"
+  [ -f "$wall_path" ] && xwallpaper --stretch "$wall_path" &
+fi
+
+# ---- Compositor (start before WM, no dupes)
+if command -v picom >/dev/null 2>&1; then
+  pkill -x picom 2>/dev/null
+  picom &
+fi
+
+# ---- Start Qtile (NO dbus-run-session)
 exec qtile start
 EOF
 
