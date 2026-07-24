@@ -4,7 +4,7 @@ function ss
         return 1
     end
 
-    set -l todo_file "$HOME/.config/rofi/Todo_files/todos.md"
+    set -l todo_file "$HOME/"(whoami | string upper)"TODOS/todos.md"
     set -l date_str (date +%d-%m-%Y)
     set -l base "$HOME/Pictures/todos-$(string join _ $argv)-$date_str"
     set -l outfile "$base.png"

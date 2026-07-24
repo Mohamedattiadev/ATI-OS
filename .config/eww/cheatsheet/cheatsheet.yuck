@@ -21,7 +21,7 @@
         :space-evenly "false"
     (label  :class "title"
             :xalign 0.5
-            :text " Cheetsheet")
+            :text " Cheatsheet")
     (label  :class "title-info"
             :yalign 5
             :text "(Press Alt + F1 to close this window)")
@@ -48,6 +48,9 @@
       (box :orientation "h" :space-evenly "true"
         (label :class "category-system" :xalign 0.5 :text "Base System")
         (label :text ""))
+      (box :orientation "h" :space-evenly "true"
+        (label :class "keys" :xalign 0 :text "Refresh PC")
+        (label :class "keys-alt" :xalign 1 :text "Super + Shift + F5"))
       (box :orientation "h" :space-evenly "true"
         (label :class "keys" :xalign 0 :text "Terminal")
         (label :class "keys-alt" :xalign 1 :text "Super + Enter"))

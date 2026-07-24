@@ -142,7 +142,7 @@ if [ -n "$TTS_WORD" ]; then
 		if command -v gtts-cli >/dev/null; then
 			OUT_FILE="$OUT_FILE.mp3"
 			gtts-cli -l en "$TTS_WORD" --output "$OUT_FILE" &>/dev/null
-			mpv --speed="$TTS_SPEED" --really-quiet "$OUT_FILE" "$OUT_FILE" &
+			mpv --speed="$TTS_SPEED" --really-quiet "$OUT_FILE" &
 		fi
 		;;
 	de)
