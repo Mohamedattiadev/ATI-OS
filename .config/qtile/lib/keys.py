@@ -25,6 +25,7 @@ from lib.helpers import (
     group_keys,
     exit_cheatsheet_mode,
     toggle_top_bottom_exclusive,
+    set_kb,
 )
 
 
