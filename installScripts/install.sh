@@ -407,17 +407,19 @@ if command -v theme-apply >/dev/null; then
   ok "Initial theme: doomone"
 fi
 
-# Browser wal integration — brave-flags.conf forces dark UI + web
-# contents so brave follows the desktop theme without a per-page CSS.
-if [[ ! -f "$HOME_DIR/.config/brave-flags.conf" ]]; then
-  mkdir -p "$HOME_DIR/.config"
-  cat >"$HOME_DIR/.config/brave-flags.conf" <<EOF
+# Browser wal integration — *-flags.conf force dark UI + web contents
+# so brave/chromium/chrome follow the GTK/wal theme without extensions.
+mkdir -p "$HOME_DIR/.config"
+for f in brave-flags.conf chromium-flags.conf chrome-flags.conf; do
+  if [[ ! -f "$HOME_DIR/.config/$f" ]]; then
+    cat >"$HOME_DIR/.config/$f" <<EOF
 --force-dark-mode
 --enable-features=WebUIDarkMode,WebContentsForceDark
 --gtk-version=4
 EOF
-  ok "brave-flags.conf written"
-fi
+  fi
+done
+ok "browser flags written (brave/chromium/chrome)"
 
 ok "Theme system ready"
 
