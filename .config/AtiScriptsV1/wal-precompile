@@ -90,7 +90,7 @@ def top_hues_with_rgb(colors, n=6, min_sep=1/12):
                 break
     return picks
 
-def normalize_accent(rgb, target_L=0.62, target_S=0.72):
+def normalize_accent(rgb, target_L=0.55, target_S=0.85):
     """Take wallpaper's *hue* but pin L/S so accent is guaranteed to
     contrast >=4.5 on a dark bg. Averaging L with wallpaper pixel value
     let pastel-heavy wallpapers produce muddy #f5xxxx accents that
@@ -123,7 +123,7 @@ def brightest_fg(colors):
     h,l,s = colorsys.rgb_to_hls(r,g,b)
     return hex_from_hls(h, max(0.82, min(0.90, l)), min(0.15, s))
 
-def force_accents_from_seeds(seeds, dh, L=0.62, S=0.72):
+def force_accents_from_seeds(seeds, dh, L=0.55, S=0.85):
     """Fill 6 slots from wallpaper seed (hue,rgb) pairs. If <6 unique
     hues, rotate the last seed hue by 60deg using synthetic accents."""
     out = []  # list of (hue, hex)
@@ -143,17 +143,22 @@ def build_palette(path: Path):
     colors = extract_dominants(path, k=16)
     dh = dominant_hue(colors)
     bg = darkest_bg(colors) or hex_from_hls(dh, 0.08, 0.18)
-    bg_alt = hex_from_hls(*[c*1.2 if i==1 else c for i,c in enumerate(colorsys.rgb_to_hls(*hex2rgb(bg)))]) \
-             if False else hex_from_hls(dh, 0.13, 0.16)
+    bg_alt = hex_from_hls(dh, 0.13, 0.16)
     fg = brightest_fg(colors) or hex_from_hls(dh, 0.86, 0.05)
     seeds = top_hues_with_rgb(colors, n=6, min_sep=1/12)
-    L = 0.62
-    accents = force_accents_from_seeds(seeds, dh, L=L)
-    for _ in range(4):
-        if all(contrast(bg, a) >= 4.5 for a in accents):
-            break
-        L += 0.06
-        accents = force_accents_from_seeds(seeds, dh, L=L)
+    # Start every accent at S=0.85 L=0.55 (vivid, doomone-punch).
+    # Per-hue adaptive: some hues (blue/purple) need higher L to hit
+    # 4.5:1 contrast on dark bg; bump only those, keep warm hues vivid.
+    accents = force_accents_from_seeds(seeds, dh, L=0.55, S=0.85)
+    fixed = []
+    for a in accents:
+        h, l, s = hls(a)
+        L = 0.55
+        while contrast(bg, a) < 4.5 and L < 0.80:
+            L += 0.05
+            a = hex_from_hls(h, L, s)
+        fixed.append(a)
+    accents = fixed
     return bg, bg_alt, fg, accents, dh
 
 def score(bg, fg, accents):
