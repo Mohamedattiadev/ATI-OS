@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Iterate ~/Pictures/Wallpapers/, run wal --backend colorz, capture palette
+stats. Write CSV + REPORT.md summary highlighting best and worst cases.
+"""
+import json
+import subprocess
+import colorsys
+import os
+import sys
+import glob
+import time
+import statistics
+
+WALL_DIR = os.path.expanduser("~/Pictures/Wallpapers")
+CACHE = os.path.expanduser("~/.cache/wal/colors.json")
+OUT_MD = "/tmp/wal_audit_report.md"
+LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else 100
+
+
+def hue_sat_val(hx):
+    r = int(hx[1:3], 16) / 255
+    g = int(hx[3:5], 16) / 255
+    b = int(hx[5:7], 16) / 255
+    return colorsys.rgb_to_hsv(r, g, b)
+
+
+def luminance(hx):
+    r = int(hx[1:3], 16) / 255
+    g = int(hx[3:5], 16) / 255
+    b = int(hx[5:7], 16) / 255
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def analyze(colors_json):
+    accents = [colors_json["colors"][f"color{i}"] for i in range(9, 15)]
+    hues = [hue_sat_val(a)[0] * 360 for a in accents]
+    sats = [hue_sat_val(a)[1] for a in accents]
+    vals = [hue_sat_val(a)[2] for a in accents]
+    return {
+        "hue_spread": max(hues) - min(hues),
+        "sat_mean": statistics.mean(sats),
+        "sat_min": min(sats),
+        "val_mean": statistics.mean(vals),
+        "val_min": min(vals),
+        "val_max": max(vals),
+        "bg": colors_json["special"]["background"],
+        "fg": colors_json["special"]["foreground"],
+        "accents": accents,
+    }
+
+
+rows = []
+imgs = sorted(glob.glob(os.path.join(WALL_DIR, "*.jpg")))[:LIMIT]
+print(f"testing {len(imgs)} wallpapers")
+
+for i, img in enumerate(imgs, 1):
+    subprocess.run(
+        ["wal", "--backend", "colorz", "-i", img, "-n", "-q"],
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        with open(CACHE) as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"[{i}] {os.path.basename(img)}: FAILED {e}")
+        continue
+    st = analyze(data)
+    st["img"] = os.path.basename(img)
+    rows.append(st)
+    print(
+        f"[{i}] {st['img']:10s} hue_spread={st['hue_spread']:6.1f} "
+        f"sat={st['sat_mean']:.2f} val={st['val_mean']:.2f} bg={st['bg']}"
+    )
+
+# --- REPORT.md ---
+rows.sort(key=lambda r: r["hue_spread"])
+mono = [r for r in rows if r["hue_spread"] < 60]
+low_sat = [r for r in rows if r["sat_mean"] < 0.25]
+dark_val = [r for r in rows if r["val_mean"] < 0.35]
+
+lines = [
+    "# Pywal palette audit",
+    "",
+    f"Sample: **{len(rows)}** wallpapers from `~/Pictures/Wallpapers/` "
+    f"processed with `wal --backend colorz`.",
+    "",
+    "## Summary",
+    "",
+    f"- Monochrome (hue spread < 60°): **{len(mono)}** "
+    f"({100*len(mono)/len(rows):.0f}%)",
+    f"- Low-saturation (<0.25): **{len(low_sat)}** "
+    f"({100*len(low_sat)/len(rows):.0f}%)",
+    f"- Dark accents (val_mean < 0.35): **{len(dark_val)}** "
+    f"({100*len(dark_val)/len(rows):.0f}%)",
+    "",
+    "## Worst monochrome examples (hue spread near 0)",
+    "",
+    "| Wallpaper | hue_spread | sat_mean | val_mean | bg | fg | accents |",
+    "|---|---|---|---|---|---|---|",
+]
+for r in rows[:10]:
+    lines.append(
+        f"| {r['img']} | {r['hue_spread']:.1f} | {r['sat_mean']:.2f} | "
+        f"{r['val_mean']:.2f} | `{r['bg']}` | `{r['fg']}` | "
+        f"{' '.join(f'`{a}`' for a in r['accents'])} |"
+    )
+
+rows.sort(key=lambda r: -r["hue_spread"])
+lines += [
+    "",
+    "## Best (widest hue spread)",
+    "",
+    "| Wallpaper | hue_spread | sat_mean | val_mean | bg | fg | accents |",
+    "|---|---|---|---|---|---|---|",
+]
+for r in rows[:10]:
+    lines.append(
+        f"| {r['img']} | {r['hue_spread']:.1f} | {r['sat_mean']:.2f} | "
+        f"{r['val_mean']:.2f} | `{r['bg']}` | `{r['fg']}` | "
+        f"{' '.join(f'`{a}`' for a in r['accents'])} |"
+    )
+
+lines += [
+    "",
+    "## Recommendations",
+    "",
+    "- Keep the hue-spread < 60° fallback in `colors.py._wal_palette`; "
+    f"{100*len(mono)/len(rows):.0f}% of wallpapers hit it.",
+    "- Add a saturation fallback: if `sat_mean < 0.25`, treat as monochrome and use preset accents.",
+    "- Boost `--saturate` in theme-apply if `sat_mean` drops below 0.4 across the sample.",
+]
+
+with open(OUT_MD, "w") as f:
+    f.write("\n".join(lines))
+
+print(f"\nreport: {OUT_MD}")

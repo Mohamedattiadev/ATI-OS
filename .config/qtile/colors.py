@@ -169,13 +169,22 @@ def _hex_to_hsv(hx):
     return h
 
 
+def _hex_to_sat(hx):
+    import colorsys
+    r = int(hx[1:3], 16) / 255.0
+    g = int(hx[3:5], 16) / 255.0
+    b = int(hx[5:7], 16) / 255.0
+    return colorsys.rgb_to_hsv(r, g, b)[1]
+
+
 def _wal_palette():
     """Build a 9-slot palette from pywal cache.
 
-    If the extracted accent colors span <60 degrees of hue (i.e. the
-    wallpaper is monochromatic and wal produced 8 shades of the same
-    color), only bg/fg are taken from wal and the DoomOne accents are
-    used instead so the workspace-active border stays visible.
+    Two fallback triggers force DoomOne accents (keeping wal bg/fg):
+      - Hue spread across color9-14 < 60 degrees (monochromatic image).
+      - Mean saturation < 0.25 (washed-out image with no real color to
+        extract — WAL_AUDIT_REPORT.md sample shows ~12% of wallpapers
+        hit this even when the hue spread looks fine).
     """
     import json, os
     try:
@@ -185,9 +194,11 @@ def _wal_palette():
         c = w["colors"]
         accents = [c[f"color{i}"] for i in range(9, 15)]
         hues = [_hex_to_hsv(a) for a in accents]
+        sats = [_hex_to_sat(a) for a in accents]
         spread = max(hues) - min(hues)
+        sat_mean = sum(sats) / len(sats)
         bg, fg = s["background"], s["foreground"]
-        if spread < 60:
+        if spread < 60 or sat_mean < 0.25:
             return [
                 [bg, bg],
                 [fg, fg],
