@@ -69,6 +69,7 @@ def get_audio():
             ["pactl", "-f", "json", "list", "sinks"],
             stdout=subprocess.PIPE,
             text=True,
+            timeout=3,
         )
 
         data = json.loads(out.stdout)
@@ -86,6 +87,7 @@ def get_audio():
             ["pactl", "-f", "json", "list", "sources"],
             stdout=subprocess.PIPE,
             text=True,
+            timeout=3,
         )
 
         data = json.loads(inp.stdout)
@@ -103,15 +105,19 @@ def get_audio():
             )
 
         default_out = subprocess.run(
-            ["pactl", "get-default-sink"], stdout=subprocess.PIPE, text=True
+            ["pactl", "get-default-sink"], stdout=subprocess.PIPE, text=True,
+            timeout=2,
         ).stdout.strip()
 
         default_in = subprocess.run(
-            ["pactl", "get-default-source"], stdout=subprocess.PIPE, text=True
+            ["pactl", "get-default-source"], stdout=subprocess.PIPE, text=True,
+            timeout=2,
         ).stdout.strip()
 
         return outputs, inputs, default_out, default_in
 
+    except subprocess.TimeoutExpired:
+        logger.warning("AudioPopup get_audio: pactl timed out")
     except Exception as e:
         logger.error(e)
 
@@ -232,16 +238,24 @@ def select():
     if _ACTIVE_COL == 0:
         dev = _OUTPUTS[_OUT_INDEX]
 
-        subprocess.run(["pactl", "set-default-sink", dev["name"]])
-
-        _STATUS_MSG = f"Output → {dev['label']}"
+        try:
+            subprocess.run(
+                ["pactl", "set-default-sink", dev["name"]], timeout=2
+            )
+            _STATUS_MSG = f"Output → {dev['label']}"
+        except subprocess.TimeoutExpired:
+            _STATUS_MSG = "Output set timed out"
 
     else:
         dev = _INPUTS[_IN_INDEX]
 
-        subprocess.run(["pactl", "set-default-source", dev["name"]])
-
-        _STATUS_MSG = f"Mic → {dev['label']}"
+        try:
+            subprocess.run(
+                ["pactl", "set-default-source", dev["name"]], timeout=2
+            )
+            _STATUS_MSG = f"Mic → {dev['label']}"
+        except subprocess.TimeoutExpired:
+            _STATUS_MSG = "Mic set timed out"
 
     refresh()
 
