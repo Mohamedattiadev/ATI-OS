@@ -13,6 +13,10 @@ load_palette
 ROFI_THEME="$HOME/.config/rofi/themes/kill-large.rasi"
 STATE_FILE="/tmp/rofi-kill-sort-mode"
 ROW_STATE_FILE="/tmp/rofi-kill-selected-row"
+# Row → PID map, rebuilt each invocation. Solves pid-extraction
+# problem: rofi -format 's' with -markup-rows returns raw pango so
+# regex against the visible line is unreliable.
+PID_MAP_FILE="/tmp/rofi-kill-pidmap"
 
 SORT_MODE="${1:-$(cat "$STATE_FILE" 2>/dev/null || echo 'mem_desc')}"
 LAST_ROW="${2:-$(cat "$ROW_STATE_FILE" 2>/dev/null || echo 0)}"
@@ -164,11 +168,16 @@ build_rofi_input() {
         -v fg="$PAL_FG" \
         -v sel="$PAL_SEL" \
         -v sel1="$PAL_SEL1" \
-        -v sep_color="$sep_color" '
+        -v sep_color="$sep_color" \
+        -v pidmap="$PID_MAP_FILE" '
         BEGIN {
             n_colors = split(colors, name_colors, " ")
             split("▁ ▂ ▃ ▄ ▅ ▆ ▇ █", bars, " ")
             W_PID=7; W_NAME=52; W_CPU=13; W_MEM=13
+            # Truncate pidmap file for this run. First PID = line 1
+            # (matches rofi row 1 since header row 0 is nonselectable).
+            if (pidmap != "") { printf "" > pidmap; close(pidmap) }
+            row_idx = 0
             # Force pango monospace family only inside the row content
             # (prompt + mesg keep the base proportional font). This is
             # the only way divider bars align without touching base.rasi.
@@ -237,6 +246,11 @@ build_rofi_input() {
             pid = $2; cmd = $3; cpu = $4 + 0; mem = $5 + 0
             etime = $6; user = $7
             if (cmd ~ exclude) next
+            # Record PID for this rofi row so the caller can look it
+            # up by index (rofi -format i s returns markup soup that
+            # would need brittle regex parsing).
+            row_idx++
+            print pid >> pidmap
             color = hash_color(cmd)
             icon = pick_icon(cmd)
             cpu_col = (cpu >= 50) ? urgent : (cpu >= 20 ? "#E5C07B" : fg)
@@ -286,16 +300,24 @@ chosen=$(
 )
 ret=$?
 
-# -format 'i s' → first line = index, second = text
+# -format 'i s' → first line = index (0-based, includes header), second = markup text
 sel_row=$(printf '%s\n' "$chosen" | sed -n '1p')
 sel_line=$(printf '%s\n' "$chosen" | sed -n '2p')
 [[ "$sel_row" =~ ^[0-9]+$ ]] || sel_row="$LAST_ROW"
 echo "$sel_row" > "$ROW_STATE_FILE"
 
+# Look up PID via pidmap file (built during build_rofi_input). Row
+# indices in rofi include the non-selectable header at 0, so the
+# first process is row 1 = line 1 in pidmap.
 pid=""
-# Strip pango markup then grab first integer (which is PID).
-sel_stripped=$(printf '%s' "$sel_line" | sed 's/<[^>]*>//g')
-[[ "$sel_stripped" =~ ([0-9]+) ]] && pid="${BASH_REMATCH[1]}"
+if [[ "$sel_row" =~ ^[0-9]+$ && "$sel_row" -ge 1 && -f "$PID_MAP_FILE" ]]; then
+    pid=$(sed -n "${sel_row}p" "$PID_MAP_FILE")
+fi
+# Fallback: strip pango markup from selected line and grab first int.
+if [[ -z "$pid" ]]; then
+    sel_stripped=$(printf '%s' "$sel_line" | sed 's/<[^>]*>//g')
+    [[ "$sel_stripped" =~ ([0-9]+) ]] && pid="${BASH_REMATCH[1]}"
+fi
 
 reexec() {
     exec "$0" "$SORT_MODE" "$sel_row"
@@ -340,25 +362,21 @@ case "$ret" in
         reexec
         ;;
     0) # Enter — regular kill, guaranteed
+        printf '[%s] Enter sel_row=%s pid=%s sel_line=%s\n' \
+            "$(date +%H:%M:%S)" "$sel_row" "$pid" "${sel_line:0:80}" \
+            >>/tmp/rofi-kill.log
         if [[ -n "$pid" ]]; then
             proc_name="$(ps -p "$pid" -o comm= 2>/dev/null)"
             if [[ -z "$proc_name" ]]; then
                 notify_safe "❌ PID $pid already gone"
                 reexec
             fi
-            # Debug: log to /tmp so we can inspect the flow.
-            printf '[%s] kill Enter pid=%s comm=%s ret=%s\n' \
-                "$(date +%H:%M:%S)" "$pid" "$proc_name" "$ret" \
-                >>/tmp/rofi-kill.log
             if rofi_confirm "Kill PID $pid ($proc_name)?" ""; then
-                printf '  confirmed, killing\n' >>/tmp/rofi-kill.log
                 kill_guaranteed "$pid"
-            else
-                printf '  cancelled\n' >>/tmp/rofi-kill.log
             fi
             reexec
         else
-            notify_safe "❌ Could not extract PID from selection"
+            notify_safe "❌ No PID (row $sel_row)" "check /tmp/rofi-kill.log"
             reexec
         fi
         ;;
