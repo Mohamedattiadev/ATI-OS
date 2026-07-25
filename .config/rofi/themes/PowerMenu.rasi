@@ -1,108 +1,114 @@
-// # z0mbi3 - https://github.com/gh0stzk/dotfiles
+/**
+ * Power menu — horizontal icon grid (different paradigm from base.rasi).
+ * Palette pulled from current-palette.rasi so wallpaper drives colors.
+ * Original by z0mbi3 (github.com/gh0stzk/dotfiles).
+ */
+
+@import "current-palette.rasi"
 
 configuration {
-	hover-select:				true;
-	me-select-entry:			"";
-	me-accept-entry:			"MousePrimary";
+    hover-select:     true;
+    me-select-entry:  "";
+    me-accept-entry:  "MousePrimary";
 }
 
-// @import "shared.rasi"
-
 window {
-    transparency:                "real";
-    location:                    center;
-    anchor:                      center;
-    fullscreen:                  false;
-    width:                       50%;
-    x-offset:                    0px;
-    y-offset:                    0px;
-    
-    background-color:            @background;
-    //border-radius: 				 6px;
+    transparency:     "real";
+    location:         center;
+    anchor:           center;
+    fullscreen:       false;
+    width:            50%;
+    x-offset:         0px;
+    y-offset:         0px;
+    background-color: @background;
+    border-radius:    12px;
+    border:           1px;
+    border-color:     @selected;
 }
 
 mainbox {
-    enabled:                     true;
-    spacing:                     15px;
-    padding:                     30px;
-    background-color:            @background;
-    children:                    [ "inputbar", "listview" ];
+    enabled:          true;
+    spacing:          15px;
+    padding:          30px;
+    background-color: @background;
+    children:         [ "inputbar", "listview" ];
 }
 
 inputbar {
-    enabled:                     true;
-    spacing:                     15px;
-    border-color:                @selected;
-    background-color:            transparent;
-    text-color:                  @foreground;
-    children:                    [ "textbox-prompt-colon", "prompt" ];
+    enabled:          true;
+    spacing:          15px;
+    border-color:     @selected;
+    background-color: transparent;
+    text-color:       @foreground;
+    children:         [ "textbox-prompt-colon", "prompt" ];
 }
 
 textbox-prompt-colon {
-    enabled:                     true;
-    expand:                      false;
-    font:                        "JetBrainsMono Nerd Font Bold 11";
-    str:                         "  ";
-    padding:                     12px 16px 12px 12px;
-    background-color:            @urgent;
-    text-color:                  @background;
+    enabled:          true;
+    expand:           false;
+    font:             "FiraCode Nerd Bold 11";
+    str:              "  ";
+    padding:          12px 16px 12px 12px;
+    background-color: @urgent;
+    text-color:       @background;
+    border-radius:    8px;
 }
 
 prompt {
-	font:                        "JetBrainsMono Nerd Font Bold 11";
-    enabled:                     true;
-    padding:                     12px;
-    background-color:            @active;
-    text-color:                  @background;
+    font:             "FiraCode Nerd Bold 11";
+    enabled:          true;
+    padding:          12px;
+    background-color: @active;
+    text-color:       @background;
+    border-radius:    8px;
 }
 
 message {
-    enabled:                     true;
-    padding:                     12px;
-    border-color:                @selected;
-    background-color:            @background-alt;
-    text-color:                  @foreground;
+    enabled:          true;
+    padding:          12px;
+    border-color:     @selected;
+    background-color: @background-alt;
+    text-color:       @foreground;
+    border-radius:    8px;
 }
 
 listview {
-    enabled:                     true;
-    columns:                     5;
-    lines:                       1;
-    cycle:                       true;
-    dynamic:                     true;
-    scrollbar:                   false;
-    layout:                      vertical;
-    reverse:                     false;
-    fixed-height:                true;
-    fixed-columns:               true;
-    
-    spacing:                     15px;
-    border-color:                @selected;
-    background-color:            transparent;
-    text-color:                  @foreground;
-    cursor:                      "default";
+    enabled:          true;
+    columns:          5;
+    lines:            1;
+    cycle:            true;
+    dynamic:          true;
+    scrollbar:        false;
+    layout:           vertical;
+    reverse:          false;
+    fixed-height:     true;
+    fixed-columns:    true;
+    spacing:          15px;
+    background-color: transparent;
+    text-color:       @foreground;
+    cursor:           "default";
 }
 
 element {
-    enabled:                     true;
-    padding:                     40px 10px;
-    border:                      0px solid;
-    border-radius:               0px;
-    background-color:            @bg-alt;
-    text-color:                  @foreground;
-    cursor:                      pointer;
+    enabled:          true;
+    padding:          40px 10px;
+    border:           0px solid;
+    border-radius:    8px;
+    background-color: @background-alt;
+    text-color:       @foreground;
+    cursor:           pointer;
 }
 
 element-text {
-    font:                        "Material Design Icons Desktop 36";
-    background-color:            transparent;
-    text-color:                  inherit;
-    cursor:                      inherit;
-    vertical-align:              0.5;
-    horizontal-align:            0.5;
+    font:             "Material Design Icons Desktop 36";
+    background-color: transparent;
+    text-color:       inherit;
+    cursor:           inherit;
+    vertical-align:   0.5;
+    horizontal-align: 0.5;
 }
 
 element selected.normal {
-    background-color:            @selected;
-    text-color:                  @background;
+    background-color: @selected;
+    text-color:       @background;
 }

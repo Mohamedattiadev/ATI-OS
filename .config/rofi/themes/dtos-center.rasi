@@ -1,113 +1,17 @@
 /**
- * ROFI Color theme
- * NAME: dt-center.rasi (Re-themed to Minimal Doom One)
- * DESCRIPTION: This is a centered prompt, styled with the minimal doom-one theme.
- * AUTHOR: Derek Taylor (DT) / Themed by Gemini
+ * Main launcher (drun). Delta over base: width + lines.
  */
 
-@import "current-palette.rasi"
-
-* {
-    background-color: transparent;
-    text-color:       @foreground;
-    font:             "FiraCode Nerd  12";
-}
+@import "base.rasi"
 
 configuration {
-    drun-icon-theme: "Tela circle blue dark"; /* This is kept from your original config */
+    drun-icon-theme: "Tela circle blue dark";
 }
 
 window {
-    background-color: @background;
-    location:         center;
-    anchor:           center;
-    width:            45%;
-    padding:          15px;
-    border-radius:    3px;
-    border:           2px;
-    border-color:     @selected;
-}
-
-mainbox {
-    children: [ inputbar, listview ];
-    border:  0;
-    padding: 0;
-}
-
-message {
-    padding: 10px;
-    border: 0px;
-    border-color: @selected;
+    width: 45%;
 }
 
 listview {
-    fixed-height: 0;
-    lines:      8;
-    spacing:    5px;
-    scrollbar:  false;
-    padding:    10px 0px 0px;
-    border:     0px;
-}
-
-element {
-    padding:       5px 8px;
-    border-radius: 3px;
-    border:        0;
-}
-
-element-text {
-    background-color: inherit;
-    text-color:       inherit;
-    vertical-align:   0.5;
-}
-
-element.normal.normal {
-    background-color: @background;
-    text-color:       @foreground;
-}
-
-
-element.selected.normal {
-    background-color: transparent;
-    border: 3px;
-    border-radius: 9px;
-    border-color: @selectedone;
-    text-color:       #ffffff;
-}
-
-element.alternate.normal {
-    background-color: @background;
-    text-color:       @foreground;
-}
-
-scrollbar {
-    width:        0px;
-    border:       0;
-    handle-width: 0px;
-    padding:      0;
-}
-
-inputbar {
-    padding: 5px;
-    spacing: 10px;
-}
-
-prompt {
-    enabled:          true;
-    padding:          0 0 0 5px;
-    background-color: inherit;
-    text-color:       @selected;
-}
-
-entry {
-    background-color: inherit;
-    placeholder:      "Search...";
-    placeholder-color: @selectedone;
-    expand:           true; /* Allows it to fill the space */
-    padding:          0px;
-}
-
-/* Remove case indicator for minimal look */
-case-indicator {
-    spacing: 0;
+    lines: 8;
 }

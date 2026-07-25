@@ -1,0 +1,147 @@
+/**
+ * Shared rofi base — doom-one flavored, polished.
+ * Palette from current-palette.rasi (theme-apply symlinks to
+ * palette-wal.rasi so wallpaper drives colors).
+ * Consumers @import this and override only layout deltas.
+ */
+
+@import "current-palette.rasi"
+
+* {
+    background-color: transparent;
+    text-color:       @foreground;
+    font:             "FiraCode Nerd 12";
+}
+
+window {
+    background-color: @background;
+    location:         center;
+    anchor:           center;
+    padding:          16px;
+    border-radius:    12px;
+    border:           1px;
+    border-color:     @selected;
+}
+
+mainbox {
+    children: [ inputbar, listview ];
+    border:   0;
+    padding:  0;
+    spacing:  8px;
+}
+
+listview {
+    fixed-height: 0;
+    spacing:      4px;
+    scrollbar:    false;
+    padding:      6px 0px 0px;
+    border:       0;
+}
+
+element {
+    padding:       7px 10px;
+    border-radius: 8px;
+    border:        0;
+    spacing:       10px;
+}
+
+element-icon {
+    size:             20px;
+    background-color: inherit;
+    padding:          0 6px 0 0;
+}
+
+element-text {
+    background-color: inherit;
+    text-color:       inherit;
+    vertical-align:   0.5;
+}
+
+element.normal.normal,
+element.alternate.normal {
+    background-color: @background;
+    text-color:       @foreground;
+}
+
+element.selected.normal {
+    background-color: @background-alt;
+    border:           1px;
+    border-radius:    8px;
+    border-color:     @selectedone;
+    text-color:       #ffffff;
+}
+
+element.normal.urgent,
+element.selected.urgent,
+element.alternate.urgent {
+    background-color: @urgent;
+    text-color:       @background;
+}
+
+element.normal.active,
+element.selected.active,
+element.alternate.active {
+    background-color: @active;
+    text-color:       @background;
+}
+
+scrollbar {
+    width:        0px;
+    border:       0;
+    handle-width: 0px;
+    padding:      0;
+}
+
+inputbar {
+    padding:          8px 10px;
+    spacing:          8px;
+    background-color: @background-alt;
+    border-radius:    8px;
+    children:         [ prompt, entry, num-filtered-rows, textbox-num-sep, num-rows ];
+}
+
+prompt {
+    enabled:          true;
+    padding:          0 8px 0 2px;
+    background-color: inherit;
+    text-color:       @selected;
+    markup:           true;
+}
+
+entry {
+    background-color:  inherit;
+    placeholder:       "Search...";
+    placeholder-color: @selectedone;
+    expand:            true;
+    padding:           0px;
+}
+
+num-filtered-rows {
+    expand:           false;
+    background-color: inherit;
+    text-color:       @foreground;
+}
+
+textbox-num-sep {
+    expand:           false;
+    str:              "/";
+    background-color: inherit;
+    text-color:       @selectedone;
+}
+
+num-rows {
+    expand:           false;
+    background-color: inherit;
+    text-color:       @foreground;
+}
+
+message {
+    padding:          10px;
+    border:           0px;
+    border-radius:    8px;
+    background-color: @background-alt;
+}
+
+case-indicator {
+    spacing: 0;
+}
