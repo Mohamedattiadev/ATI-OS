@@ -14,6 +14,35 @@
 
 set -Eeuo pipefail
 
+# ─── SIGNAL / EXIT TRAPS ─────────────────────────────────────────────
+# Catch Ctrl-C anywhere, print a friendly bye card instead of a raw
+# trace. Cleanup pid-file style artifacts.
+_TRAP_ACTIVE=1
+_on_interrupt() {
+  (( _TRAP_ACTIVE )) || return
+  _TRAP_ACTIVE=0
+  echo
+  gum style --border thick --border-foreground '#ff6c6b' \
+    --padding "1 3" --align center \
+    "$(gum style --bold --foreground '#ff6c6b' 'Interrupted')" \
+    "" \
+    "Wizard aborted by user (Ctrl-C)." \
+    "State may be partial. Re-run — steps are idempotent."
+  exit 130
+}
+trap _on_interrupt INT TERM
+
+_on_err() {
+  local rc=$?
+  gum style --foreground '#ff6c6b' "wizard.sh: internal bash error (rc=$rc) at line $1"
+}
+trap '_on_err $LINENO' ERR
+
+# ─── LOG SINK ────────────────────────────────────────────────────────
+WIZ_LOGDIR="${XDG_STATE_HOME:-$HOME/.local/state}/wizard"
+mkdir -p "$WIZ_LOGDIR"
+WIZ_RUNLOG="$WIZ_LOGDIR/run-$(date +%Y%m%d-%H%M%S).log"
+
 # ─── CONFIG ──────────────────────────────────────────────────────────
 DRY_RUN=0
 ASSUME_YES=0
@@ -183,7 +212,10 @@ step_sanity() {
   [[ -d "$DOTFILES_DIR" ]] || { _ERR "~/.dotfiles missing"; return 1; }
   _OK "System checks passed"
 }
-step_bootstrap()    { run "sudo pacman -Syu --needed --noconfirm base-devel git stow xorg-server xorg-xinit curl wget unzip"; }
+step_bootstrap() {
+  if (( DRY_RUN )); then _DIM "  [dry] sudo pacman -Syu … (retry x3)"; return; fi
+  retry_net 3 5 sudo pacman -Syu --needed --noconfirm base-devel git stow xorg-server xorg-xinit curl wget unzip
+}
 step_yay()          { command -v yay >/dev/null && { _OK "yay present"; return; }
                       run "cd /tmp && git clone https://aur.archlinux.org/yay-bin.git yay-bin && cd yay-bin && makepkg -si --noconfirm"; }
 step_dcli()         { command -v dcli >/dev/null && { _OK "dcli present"; return; }
@@ -263,9 +295,10 @@ step_piper() {
   )
   for f in "${files[@]}"; do
     local fname; fname=$(basename "$f")
-    (( DRY_RUN )) && { _DIM "  [dry] curl piper $fname"; continue; }
+    (( DRY_RUN )) && { _DIM "  [dry] curl piper $fname (retry x3)"; continue; }
     [[ -f "$dir/$fname" ]] && continue
-    curl -sL -o "$dir/$fname" "https://huggingface.co/rhasspy/piper-voices/resolve/main/$f"
+    retry_net 3 5 curl -fsSL -o "$dir/$fname" "https://huggingface.co/rhasspy/piper-voices/resolve/main/$f" || \
+      { _ERR "piper $fname failed after 3 retries"; return 1; }
   done
 }
 
@@ -273,9 +306,11 @@ step_whisper() {
   local dir="$HOME/.local/share/whisper"
   local out="$dir/ggml-small.en.bin"
   run "mkdir -p $dir"
-  if (( DRY_RUN )); then _DIM "  [dry] curl whisper small.en (~500MB)"; return; fi
+  if (( DRY_RUN )); then _DIM "  [dry] curl whisper small.en (~500MB, retry x3)"; return; fi
   [[ -f "$out" ]] && return
-  curl -sL -o "$out" "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin"
+  retry_net 3 10 curl -fL --retry 3 --continue-at - -o "$out" \
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin" || \
+    { _ERR "whisper model download failed after 3 retries"; return 1; }
 }
 step_nopasswd()     { run "echo \"$(id -un) ALL=(ALL) NOPASSWD: ALL\" | sudo tee /etc/sudoers.d/zz-$(id -un)-nopasswd >/dev/null && sudo chmod 440 /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
 step_ownership()    { run "sudo chown -R $(id -un):$(id -un) $DOTFILES_DIR"; }
@@ -375,6 +410,79 @@ POLICY_EOF
     printf '%s' "$policy_json" | sudo tee /etc/opt/chrome/policies/managed/wal-theme.json >/dev/null
     printf '%s' "$policy_json" | sudo tee /etc/chromium/policies/managed/wal-theme.json >/dev/null
   fi
+}
+
+# ─── PREFLIGHT / RESILIENCE ──────────────────────────────────────────
+# retry_net <max> <sleep> -- <cmd...>  → retry on non-zero exit.
+# Wraps network-heavy actions (pacman, git clone, curl).
+retry_net() {
+  local max="${1:-3}" delay="${2:-3}" attempt=0
+  shift 2
+  while :; do
+    attempt=$((attempt+1))
+    if "$@"; then return 0; fi
+    (( attempt >= max )) && return 1
+    _DIM "  ↻ retry $attempt/$max after ${delay}s: $*"
+    sleep "$delay"
+  done
+}
+
+# Ensure no stale pacman db lock. Root cause of many mid-install fails:
+# a crashed pacman leaves /var/lib/pacman/db.lck. Detect + prompt.
+_pacman_lock_check() {
+  [[ -f /var/lib/pacman/db.lck ]] || return 0
+  # Real pacman running? If yes, wait.
+  if pgrep -x pacman >/dev/null 2>&1; then
+    _WARN "pacman is running — waiting up to 60s"
+    local i
+    for i in $(seq 1 60); do
+      pgrep -x pacman >/dev/null 2>&1 || return 0
+      sleep 1
+    done
+    _ERR "pacman still running after 60s — aborting"
+    return 1
+  fi
+  _WARN "stale pacman db.lck detected (no pacman process)"
+  if (( ASSUME_YES )); then
+    _DIM "  --yes: auto-removing"
+    sudo rm -f /var/lib/pacman/db.lck
+    return 0
+  fi
+  if gum confirm "Remove stale /var/lib/pacman/db.lck?"; then
+    sudo rm -f /var/lib/pacman/db.lck
+    return 0
+  fi
+  return 1
+}
+
+# Preflight — hard-check the environment before any step runs.
+# Fails loud + actionable instead of letting a mid-install step die.
+preflight() {
+  _BOX_HEADER "preflight checks"
+  local fatal=0
+  _check() {
+    local msg="$1" test_expr="$2" hint="$3"
+    if eval "$test_expr" >/dev/null 2>&1; then _OK "  ✔ $msg"
+    else _ERR "  ✖ $msg"; [[ -n "$hint" ]] && _DIM "      → $hint"; fatal=1
+    fi
+  }
+  _check "Arch Linux"                  "[[ -f /etc/arch-release ]]"                "not Arch — this dotfile stack targets Arch only"
+  _check "not running as root"         "[[ $(id -u) -ne 0 ]]"                      "run as your normal user, sudo prompts on demand"
+  _check "sudo available"              "command -v sudo >/dev/null"                "install sudo: pacman -S sudo (as root)"
+  _check "X11 session (not Wayland)"   "[[ '${XDG_SESSION_TYPE:-}' != 'wayland' ]]" "boot into TTY, not a Wayland session"
+  _check "HOME writable"               "[[ -w $HOME ]]"                            "fix HOME permissions"
+  _check "dotfiles clone at $DOTFILES_DIR" "[[ -d $DOTFILES_DIR ]]"                "git clone the repo to $DOTFILES_DIR"
+  _check "internet reachable"          "curl -fsS --max-time 5 https://archlinux.org >/dev/null" "network down or firewall blocks HTTPS"
+  _check "disk free > 10 GB on \$HOME" "[[ $(df -Pk $HOME | awk 'NR==2{print $4}') -gt 10485760 ]]" "wizard needs ~10GB (piper 60MB + whisper 500MB + dcli pkgs + wallpapers)"
+  _check "pacman db lock clear"        "_pacman_lock_check"                        "another pacman may be running"
+  if (( fatal )); then
+    echo
+    _ERR "Preflight failed. Fix the above and re-run."
+    exit 1
+  fi
+  echo
+  _OK "All preflight checks passed."
+  sleep 1
 }
 
 # ─── PAGES ───────────────────────────────────────────────────────────
@@ -559,6 +667,9 @@ page_finale() {
 # ─── MAIN FLOW ───────────────────────────────────────────────────────
 main() {
   page_welcome
+  if (( ! DRY_RUN )); then
+    preflight
+  fi
   if (( ASSUME_YES )); then
     PICKED_IDS=("${MOD_ORDER[@]}")
   else
