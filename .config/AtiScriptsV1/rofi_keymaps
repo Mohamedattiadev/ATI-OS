@@ -22,9 +22,30 @@ MOD_SYMBOLS = {
     "control": "CTRL",
 }
 
-DESC_COLOR = "#98c379"
-# DESC_COLOR = "#ffffff"
-RIGHT_COLOR = "#61afef"
+def _load_palette():
+    """Read current-palette.rasi so keymap colors track wallpaper."""
+    defaults = {
+        "background": "#282c34", "background-alt": "#21242b",
+        "foreground": "#bbc2cf", "selected": "#61afef",
+        "selectedone": "#c678dd", "urgent": "#e06c75",
+        "active": "#98c379",
+    }
+    path = os.path.expanduser("~/.config/rofi/themes/current-palette.rasi")
+    if not os.path.isfile(path):
+        return defaults
+    try:
+        with open(path) as fh:
+            for line in fh:
+                m = re.match(r"\s*([\w-]+)\s*:\s*(#[0-9a-fA-F]{6})", line)
+                if m and m.group(1) in defaults:
+                    defaults[m.group(1)] = m.group(2)
+    except OSError:
+        pass
+    return defaults
+
+_PAL = _load_palette()
+DESC_COLOR = _PAL["active"]
+RIGHT_COLOR = _PAL["selected"]
 # --------------------------------------------------
 # HUMAN DESCRIPTIONS FOR FISH
 # --------------------------------------------------
