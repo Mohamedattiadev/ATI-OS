@@ -39,23 +39,29 @@ if ! command -v gum >/dev/null; then
   fi
 fi
 
-# ─── PALETTE (DoomOne — stable across wallpapers) ────────────────────
-# Fixed palette so wizard looks identical on fresh Arch and on themed
-# systems. Don't leak the user's current wal palette into the installer
-# — installer needs a consistent brand feel.
-ACCENT='#98be65'   # doom green
+# ─── PALETTE — Doom Emacs doom-one ───────────────────────────────────
+# Full doom-one accent palette. ACCENT is magenta so headers, chips,
+# borders pop violet/blue instead of the muted-green feel. Cyan for
+# info emphasis, blue for hyperlinks/keys, green reserved for ✓ ok.
+ACCENT='#c678dd'   # doom magenta — primary brand
+INFO='#46d9ff'     # doom cyan
+BLUE='#51afef'     # doom blue
+VIOLET='#a9a1e1'   # doom violet — badges accent
+TEAL='#4db5bd'     # doom teal
+OK_C='#98be65'     # doom green — reserved for ✓
 URGENT='#ff6c6b'   # doom red
-INFO='#51afef'     # doom blue
-WARN_C='#e5c07b'   # doom yellow
+ORANGE='#da8548'   # doom orange
+WARN_C='#ecbe7b'   # doom yellow
 MUTED='#5b6268'
-FG='#dcdfe4'
+FG='#bbc2cf'
+BG='#282c34'
 
 # Gum uses 256-color / hex; passing hex directly is supported.
 _H1()   { gum style --bold --foreground "$ACCENT" "$@"; }
 _H2()   { gum style --bold --foreground "$INFO"   "$@"; }
 _INFO() { gum style --foreground "$FG"     "$@"; }
 _DIM()  { gum style --foreground "$MUTED"  "$@"; }
-_OK()   { gum style --foreground '#82c882' "$@"; }
+_OK()   { gum style --foreground "$OK_C" "$@"; }
 _WARN() { gum style --foreground '#e5c07b' "$@"; }
 _ERR()  { gum style --foreground "$URGENT" "$@"; }
 
@@ -72,25 +78,26 @@ _BOX_HEADER() {
     "$1"
 }
 
-# Colored group badge — 6-char pill with fg=black bg=group-color.
+# Colored group badge — pill with fg=bg bg=group-color. Palette biased
+# toward doom's blue/magenta/cyan/violet family.
 _BADGE() {
   local g="$1" c
   case "$g" in
-    System)   c='#61afef' ;;
-    Dotfiles) c='#c678dd' ;;
-    Themes)   c='#e5c07b' ;;
-    Browsers) c='#56b6c2' ;;
-    Apps)     c='#98c379' ;;
-    Media)    c='#e06c75' ;;
-    *)        c='#5b6268' ;;
+    System)   c="$BLUE" ;;
+    Dotfiles) c="$VIOLET" ;;
+    Themes)   c="$ACCENT" ;;   # magenta
+    Browsers) c="$INFO" ;;     # cyan
+    Apps)     c="$TEAL" ;;
+    Media)    c="$ORANGE" ;;
+    *)        c="$MUTED" ;;
   esac
-  gum style --foreground '#282c34' --background "$c" --padding "0 1" --bold "$g"
+  gum style --foreground "$BG" --background "$c" --padding "0 1" --bold "$g"
 }
 
-# Numbered step chip: "[03/26]"
+# Numbered step chip: "[03/26]" — magenta background per brand.
 _CHIP() {
   local n="$1" total="$2"
-  gum style --foreground '#282c34' --background "$ACCENT" --bold --padding "0 1" \
+  gum style --foreground "$BG" --background "$ACCENT" --bold --padding "0 1" \
     "$(printf '%02d/%02d' "$n" "$total")"
 }
 
@@ -261,7 +268,7 @@ page_summary() {
   # Aligned card list: chip · badge · title
   for id in "${PICKED_IDS[@]}"; do
     local chip badge title
-    chip="$(gum style --foreground '#82c882' --bold '  ✔')"
+    chip="$(gum style --foreground "$OK_C" --bold '  ✔')"
     badge="$(_BADGE "${MOD_GROUP[$id]}")"
     title="$(gum style --foreground "$FG" "${MOD_TITLE[$id]}")"
     gum join --horizontal "$chip" "  " "$badge" "  " "$title"
@@ -309,14 +316,14 @@ page_execute() {
     title="$(gum style --bold --foreground "$FG" "${MOD_TITLE[$id]}")"
     gum join --horizontal "$chip" " " "$badge" " " "$title"
     if (( DRY_RUN )); then
-      status_line="$(gum style --foreground '#82c882' '   ✔ preview ok')"
+      status_line="$(gum style --foreground "$OK_C" '   ✔ preview ok')"
       ok=$((ok+1))
     else
       local attempts=0
       while :; do
         attempts=$((attempts+1))
         if _run_module "$id"; then
-          status_line="$(gum style --foreground '#82c882' '   ✔ ok')"
+          status_line="$(gum style --foreground "$OK_C" '   ✔ ok')"
           ok=$((ok+1))
           break
         fi
@@ -366,7 +373,7 @@ _finale_summary() {
     --border-foreground "$border_color" \
     "$(gum style --bold "$title")" \
     "" \
-    "$(gum style --foreground '#82c882' "✔ $ok ok")   $(gum style --foreground "$WARN_C" "⚠ $((total - ran)) not run")   $(gum style --foreground "$URGENT" "✖ $fail failed")"
+    "$(gum style --foreground "$OK_C" "✔ $ok ok")   $(gum style --foreground "$WARN_C" "⚠ $((total - ran)) not run")   $(gum style --foreground "$URGENT" "✖ $fail failed")"
   if (( ${#_FAILED_IDS[@]} )); then
     echo
     _H2 "Failed modules — logs at /tmp/wizard-<id>.err:"
