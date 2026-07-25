@@ -93,10 +93,25 @@ git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles
 
 ### Step 2: Run the installer
 
+Two flavors:
+
 ```bash
 cd ~/.dotfiles/installScripts
+
+# a) One-shot — installs everything unattended.
 ./install.sh
+
+# b) TUI wizard — pick modules interactively, colored panels, spinners,
+#    dry-run to preview every command before touching anything.
+./wizard.sh              # full run
+./wizard.sh --dry-run    # preview only
+./wizard.sh --yes        # skip picker, install all
 ```
+
+The wizard auto-installs its own dep (`gum`) via pacman on first
+launch, then presents grouped module cards (System / Dotfiles / Themes /
+Browsers / Media). Every side-effecting command routes through a `run`
+wrapper so `--dry-run` is a real audit, not a stub.
 
 Done. One command. Bootstrap covers:
 
