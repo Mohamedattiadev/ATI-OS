@@ -414,18 +414,98 @@ if command -v theme-apply >/dev/null; then
 fi
 
 # Browser wal integration — *-flags.conf force dark UI + web contents
-# so brave/chromium/chrome follow the GTK/wal theme without extensions.
-mkdir -p "$HOME_DIR/.config"
+# and load the generated theme extension so brave/chromium/chrome
+# follow the wal palette on every apply.
+mkdir -p "$HOME_DIR/.config" "$HOME_DIR/.config/qtile/browser-theme"
+BROWSER_EXT="$HOME_DIR/.config/qtile/browser-theme"
 for f in brave-flags.conf chromium-flags.conf chrome-flags.conf; do
-  if [[ ! -f "$HOME_DIR/.config/$f" ]]; then
-    cat >"$HOME_DIR/.config/$f" <<EOF
+  cfg="$HOME_DIR/.config/$f"
+  if [[ ! -f "$cfg" ]]; then
+    cat >"$cfg" <<EOF
 --force-dark-mode
 --enable-features=WebUIDarkMode,WebContentsForceDark
 --gtk-version=4
+--load-extension=$BROWSER_EXT
 EOF
+  else
+    grep -q -- '--load-extension=' "$cfg" || printf '\n--load-extension=%s\n' "$BROWSER_EXT" >>"$cfg"
   fi
 done
 ok "browser flags written (brave/chromium/chrome)"
+
+# =====================================================
+# 23b. CHROME THEME KEY + POLICY (auto-apply theme on every wallpaper)
+# =====================================================
+# Chrome (unlike brave) ignores --load-extension for themes since v134.
+# Fix: sign the theme extension with a stable .pem, embed its public
+# key as `key` field in manifest.json (via wal-precompile), and install
+# it via chrome enterprise policy force_installed pointing at a local
+# updates.xml. Every theme-apply repacks the .crx + bumps updates.xml
+# so chrome re-installs on next launch (theme-apply also wipes stale
+# Preferences entries so the update lands immediately).
+info "Setting up chrome/chromium theme policy"
+BROWSER_PEM="$HOME_DIR/.config/qtile/browser-theme.pem"
+BROWSER_KEY="$HOME_DIR/.config/qtile/browser-theme.key"
+BROWSER_CRX="$HOME_DIR/.config/qtile/browser-theme.crx"
+BROWSER_UPDATES="$HOME_DIR/.config/qtile/browser-theme-updates.xml"
+
+# Generate stable RSA 2048 signing key if missing (per-machine, gitignored).
+if [[ ! -f "$BROWSER_PEM" ]]; then
+  openssl genrsa -out "$BROWSER_PEM" 2048 2>/dev/null
+  chmod 600 "$BROWSER_PEM"
+  ok "Generated browser-theme.pem (RSA 2048)"
+fi
+# Extract base64 public key so wal-precompile can embed it in manifest.
+openssl rsa -in "$BROWSER_PEM" -pubout -outform DER 2>/dev/null | base64 -w0 >"$BROWSER_KEY"
+# Compute extension id from public key.
+EXT_ID=$(python3 - <<PYEOF
+import hashlib, base64
+k = open("$BROWSER_KEY").read()
+h = hashlib.sha256(base64.b64decode(k)).hexdigest()[:32]
+print(''.join(chr(ord('a')+int(c,16)) for c in h))
+PYEOF
+)
+ok "Extension id: $EXT_ID"
+
+# Pack initial .crx (silently ok if it fails — theme-apply will retry).
+CHROME_BIN=""
+for c in /opt/google/chrome/chrome /usr/bin/chromium /opt/brave-bin/brave; do
+  [[ -x "$c" ]] && { CHROME_BIN="$c"; break; }
+done
+if [[ -n "$CHROME_BIN" && -d "$BROWSER_EXT" ]]; then
+  "$CHROME_BIN" --pack-extension="$BROWSER_EXT" --pack-extension-key="$BROWSER_PEM" --no-message-box >/dev/null 2>&1 || true
+fi
+# Initial updates.xml (theme-apply overwrites on each apply).
+if [[ -f "$BROWSER_EXT/manifest.json" ]]; then
+  VER=$(python3 -c "import json;print(json.load(open('$BROWSER_EXT/manifest.json'))['version'])" 2>/dev/null || echo "1.0.1")
+  cat >"$BROWSER_UPDATES" <<EOF
+<?xml version='1.0' encoding='UTF-8'?>
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='$EXT_ID'>
+    <updatecheck codebase='file://$BROWSER_CRX' version='$VER' />
+  </app>
+</gupdate>
+EOF
+fi
+
+# Sudo write policy for chrome + chromium (system-wide).
+POLICY_JSON=$(cat <<EOF
+{
+  "ExtensionSettings": {
+    "$EXT_ID": {
+      "installation_mode": "force_installed",
+      "update_url": "file://$BROWSER_UPDATES",
+      "toolbar_pin": "default_unpinned"
+    }
+  },
+  "ExtensionInstallSources": ["file:///*"]
+}
+EOF
+)
+sudo mkdir -p /etc/opt/chrome/policies/managed /etc/chromium/policies/managed
+echo "$POLICY_JSON" | sudo tee /etc/opt/chrome/policies/managed/wal-theme.json >/dev/null
+echo "$POLICY_JSON" | sudo tee /etc/chromium/policies/managed/wal-theme.json >/dev/null
+ok "Chrome/chromium theme policy installed"
 
 ok "Theme system ready"
 
