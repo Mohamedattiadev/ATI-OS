@@ -69,6 +69,7 @@ def get_networks():
             ["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL,SECURITY", "dev", "wifi"],
             stdout=subprocess.PIPE,
             text=True,
+            timeout=10,
         )
 
         for line in out.stdout.splitlines():
@@ -239,21 +240,27 @@ def connect_worker(network):
     for i in range(10):
         _PROGRESS = (i + 1) * 10
 
-        update()
+        # UI updates from thread must go through event loop.
+        if _QTILE is not None:
+            _QTILE.call_soon_threadsafe(update)
 
         time.sleep(0.15)
 
-    subprocess.run(
-        ["nmcli", "dev", "wifi", "connect", network["ssid"]],
-        stdout=subprocess.PIPE,
-    )
+    try:
+        subprocess.run(
+            ["nmcli", "dev", "wifi", "connect", network["ssid"]],
+            stdout=subprocess.PIPE,
+            timeout=30,
+        )
+        _STATUS_MSG = f"Connected → {network['ssid']}"
+    except subprocess.TimeoutExpired:
+        _STATUS_MSG = f"Timeout connecting to {network['ssid']}"
 
     _CONNECTING = False
     _PROGRESS = 0
 
-    _STATUS_MSG = f"Connected → {network['ssid']}"
-
-    refresh()
+    if _QTILE is not None:
+        _QTILE.call_soon_threadsafe(refresh)
 
 
 # ------------------------------------------------
@@ -279,7 +286,7 @@ def refresh_worker():
         _STATUS_MSG = "Ready"
 
     # schedule UI update safely
-    _QTILE.call_soon(start_msg)
+    _QTILE.call_soon_threadsafe(start_msg)
 
     # fetch networks in background
     nets = get_networks()
@@ -290,7 +297,7 @@ def refresh_worker():
         _NETWORKS = nets
         finish_refresh()
 
-    _QTILE.call_soon(apply)
+    _QTILE.call_soon_threadsafe(apply)
 
 
 # ------------------------------------------------
