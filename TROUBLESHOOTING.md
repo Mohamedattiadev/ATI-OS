@@ -122,6 +122,17 @@ subsystem. Each entry: **symptom → root cause → fix**.
   `/usr/local/bin` which has the sibling). Or copy `rofi_common.sh`
   alongside every rofi-* script you place in `~/.local/bin`.
 
+### rofi-kill kills without asking Yes/No
+- **Symptom:** hit Enter on a process, it dies immediately, no confirm.
+- **Root cause:** `rofi_confirm` inherited the caller's `ROFI_THEME`
+  (kill-large.rasi is huge). `-theme-str` overrides could not fully
+  collapse it, so the confirm popup rendered off-screen or covered
+  the pick list, making it invisible / mis-clicked.
+- **Fix:** `rofi_confirm` now always uses `base.rasi` with tight
+  overrides (`width: 22%`, `lines: 2`, `dynamic: false`) so the
+  compact popup renders centered regardless of caller theme. Default
+  `-selected-row 0` = No so accidental Enter cancels safely.
+
 ### Bash syntax error inside rofi-kill from an apostrophe
 - **Symptom:** script fails to launch, `bash -n` reports "syntax
   error near unexpected token" inside the awk block.

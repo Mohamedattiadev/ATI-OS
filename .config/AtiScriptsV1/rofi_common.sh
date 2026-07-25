@@ -69,14 +69,17 @@ require_cmd() {
     fi
 }
 
-# Small confirm prompt (compact theme via -theme-str override).
+# Small confirm prompt. Always uses base.rasi + tight overrides so
+# it renders as a compact centered popup regardless of which caller's
+# ROFI_THEME is huge (kill-large, todo-large, etc). Selected row 0
+# = No, so accidental Enter cancels safely.
 rofi_confirm() {
     local prompt="${1:-Confirm?}"
     local msg="${2:-}"
     local answer
     answer=$(printf 'No\nYes\n' | rofi -dmenu -i \
-        -theme "${ROFI_THEME:-$HOME/.config/rofi/themes/kill-large.rasi}" \
-        -theme-str 'window { width: 25%; } listview { lines: 2; }' \
+        -theme "$HOME/.config/rofi/themes/base.rasi" \
+        -theme-str 'window { width: 22%; } listview { lines: 2; dynamic: false; } element { padding: 6px 12px; }' \
         -p "$prompt" ${msg:+-mesg "$msg"} -selected-row 0)
     [[ "$answer" == "Yes" ]]
 }
