@@ -120,6 +120,7 @@ Done. One command. Bootstrap covers:
 | 21   | Clone wallpaper collection                                    |
 | 22   | System speed tweaks (`speed_boost.sh`)                        |
 | 23   | Theme system (pywal + palette precompile + brave-flags + init)|
+| 23b  | Chrome/chromium theme policy (sign key + enterprise force-install) |
 
 No manual follow-up. Everything in `.config` works on first `startx`.
 
@@ -218,10 +219,17 @@ guaranteed). See `.config/qtile/WAL_PRECOMPILE_REPORT.md`.
 | dunst | render `dunstrc.tmpl` + restart |
 | qtile | `restart` (detached so caller doesn't deadlock) |
 | gtk 3/4 | `@import` overlay at `~/.cache/qtile/gtk-wal.css` |
-| qutebrowser | inline `<style>` block rewrite + `:reload -f` |
-| nvim | fs_event on `~/.cache/qtile/theme_mode` re-sources scheme |
-| brave / chromium | `brave-flags.conf` force-dark + GTK theme |
+| qutebrowser | inline `<style>` + `--accent` CSS var, `:config-source` + `:restart` |
+| nvim | fs_event on `~/.cache/qtile/theme_mode` re-sources scheme (Snacks dashboard uses dominant hue) |
+| brave | `--load-extension` reads live `manifest.json` on relaunch (id matches via embedded `key`) |
+| chrome / chromium | Enterprise policy `force_installed` from local `updates.xml`; `.crx` repacked + Preferences purged each apply so install lands immediately |
 | papirus folders | `papirus-folders -C <hue-match> -u` |
+
+**Palette semantics** — `wal-precompile` generates 6-slot hue-concentrated palettes:
+`color1` urgent (always warm), `color2` dominant (main wallpaper hue),
+`color3` warm-fill, `color4` cool-fill, `color5` complement, `color6` info/cyan.
+qtile bar accents pin to `color2`; test harness at
+`.config/qtile/scripts/wal-visual-test.py` validates 12 hue buckets end-to-end.
 
 Wallpaper change auto-reapplies wal mode (`dm-setbg` + `WallpaperPopup`
 both invoke `theme-apply wal` on a bg thread so qtile stays responsive).
