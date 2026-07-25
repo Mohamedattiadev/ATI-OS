@@ -46,15 +46,35 @@ WIZ_RUNLOG="$WIZ_LOGDIR/run-$(date +%Y%m%d-%H%M%S).log"
 # ─── CONFIG ──────────────────────────────────────────────────────────
 DRY_RUN=0
 ASSUME_YES=0
+ONLY_LIST=""
+SKIP_LIST=""
 for arg in "$@"; do
   case "$arg" in
     --dry-run|-n) DRY_RUN=1 ;;
     --yes|-y)     ASSUME_YES=1 ;;
+    --only=*)     ONLY_LIST="${arg#*=}" ;;
+    --skip=*)     SKIP_LIST="${arg#*=}" ;;
     --help|-h)
       sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+      cat <<'HELP'
+
+Filters (combine with --yes for scripted runs):
+  --only=id1,id2       Run only these module ids (comma-sep)
+  --skip=id1,id2       Skip these module ids (comma-sep)
+
+Module ids: sanity bootstrap yay dcli stow arch-config dcli-sync
+cargo ati-scripts touchpad xinit xmodmap lid image-envs flatpak
+piper whisper passwordless-sudo ownership disable-dm candy-icons
+wallpapers speed themes browser-flags chrome-policy
+
+Example (safe non-network test — skip heavy downloads):
+  ./wizard.sh --yes --skip=dcli-sync,whisper,piper,wallpapers,flatpak
+HELP
       exit 0 ;;
   esac
 done
+
+_id_in_csv() { [[ ",$1," == *",$2,"* ]]; }
 
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 INSTALL_SH="$DOTFILES_DIR/installScripts/install.sh"
@@ -676,6 +696,22 @@ main() {
   else
     page_module_picker
   fi
+  # Apply --only / --skip filters after picker (compose cleanly).
+  if [[ -n "$ONLY_LIST" ]]; then
+    local filtered=()
+    for id in "${PICKED_IDS[@]}"; do
+      _id_in_csv "$ONLY_LIST" "$id" && filtered+=("$id")
+    done
+    PICKED_IDS=("${filtered[@]}")
+  fi
+  if [[ -n "$SKIP_LIST" ]]; then
+    local filtered=()
+    for id in "${PICKED_IDS[@]}"; do
+      _id_in_csv "$SKIP_LIST" "$id" || filtered+=("$id")
+    done
+    PICKED_IDS=("${filtered[@]}")
+  fi
+  (( ${#PICKED_IDS[@]} )) || { _WARN "No modules left after filter."; exit 0; }
   page_summary || { _WARN "Cancelled by user."; exit 0; }
   page_execute
   page_finale
