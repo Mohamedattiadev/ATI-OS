@@ -85,31 +85,35 @@ Upstream: https://gitlab.com/theblackdon/dcli
 
 Assumes a **fresh Arch base install** (no DE, no display manager).
 
-### Step 1: Clone
-
 ```bash
-git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles
+git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
+  && cd ~/.dotfiles/installScripts \
+  && ./install.sh
 ```
 
-### Step 2: Run the wizard
+That is it. `./install.sh` fires the wizard in unattended mode:
 
-Single installer — TUI-driven, all logic behind one script:
+- Auto-bootstraps `gum` via pacman (~2 s)
+- Runs all 26 modules end-to-end (system pkgs · dcli sync · dotfile
+  stow · themes · brave/chrome policy · piper + whisper models · …)
+- One sudo prompt on entry; passwordless-sudo module removes future
+  prompts
+- Any failed module auto-skips, logs to `/tmp/wizard-<id>.err`, listed
+  in final summary
+
+### Prefer to pick modules or preview first?
 
 ```bash
-cd ~/.dotfiles/installScripts
-
-./wizard.sh              # interactive: pick modules with checkboxes
+./wizard.sh              # interactive: TUI checkbox picker
 ./wizard.sh --dry-run    # preview every command, touch nothing
-./wizard.sh --yes        # unattended: install all modules
-./install.sh             # alias for `wizard.sh --yes` (legacy path)
+./wizard.sh --yes        # same as ./install.sh
 ```
 
-The wizard auto-installs its own dep (`gum`) via pacman on first
-launch, then shows an ASCII banner + grouped module picker (System /
-Dotfiles / Themes / Browsers / Apps / Media). Every side-effecting
-command routes through a `run` wrapper so `--dry-run` is a real audit,
-not a stub. Per-module logs land at `/tmp/wizard-<id>.log/.err` — on
-failure the wizard shows a tail-preview and offers **retry / skip / quit**.
+Wizard renders an ASCII banner, grouped module cards (System /
+Dotfiles / Themes / Browsers / Apps / Media), spinners, unicode
+progress bars, and doom-emacs colored badges. On step failure it
+shows a red-bordered error tail and prompts **retry · skip · quit**
+(unless `--yes`, which auto-skips).
 
 Done. One command. Bootstrap covers:
 
