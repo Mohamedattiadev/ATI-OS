@@ -64,14 +64,49 @@ _OK()   { gum style --foreground '#82c882' "$@"; }
 _WARN() { gum style --foreground '#e5c07b' "$@"; }
 _ERR()  { gum style --foreground "$URGENT" "$@"; }
 
+_LOGO=$'\n     █████╗ ████████╗██╗\n    ██╔══██╗╚══██╔══╝██║\n    ███████║   ██║   ██║\n    ██╔══██║   ██║   ██║\n    ██║  ██║   ██║   ██║\n    ╚═╝  ╚═╝   ╚═╝   ╚═╝\n           d o t f i l e s\n'
+
 _BOX_HEADER() {
-  # Full-width banner with logo + subtitle.
   clear
-  gum style --border double --align center \
-    --border-foreground "$ACCENT" --padding "1 4" --margin "0" \
-    "  ▲ Ati Dotfiles Installer  " \
-    "Arch · X11 · Qtile · wal-themed" \
+  gum style --align center --foreground "$ACCENT" "$_LOGO"
+  gum style --align center --foreground "$MUTED" \
+    "Arch · X11 · Qtile · wal-themed"
+  echo
+  gum style --border thick --align center \
+    --border-foreground "$ACCENT" --padding "0 4" --margin "0 0 1 0" \
     "$1"
+}
+
+# Colored group badge — 6-char pill with fg=black bg=group-color.
+_BADGE() {
+  local g="$1" c
+  case "$g" in
+    System)   c='#61afef' ;;
+    Dotfiles) c='#c678dd' ;;
+    Themes)   c='#e5c07b' ;;
+    Browsers) c='#56b6c2' ;;
+    Apps)     c='#98c379' ;;
+    Media)    c='#e06c75' ;;
+    *)        c='#5b6268' ;;
+  esac
+  gum style --foreground '#282c34' --background "$c" --padding "0 1" --bold "$g"
+}
+
+# Numbered step chip: "[03/26]"
+_CHIP() {
+  local n="$1" total="$2"
+  gum style --foreground '#282c34' --background "$ACCENT" --bold --padding "0 1" \
+    "$(printf '%02d/%02d' "$n" "$total")"
+}
+
+# Progress bar via unicode blocks.
+_PROGRESS() {
+  local cur="$1" total="$2" width=40
+  local pct=$(( cur * 100 / total ))
+  local filled=$(( cur * width / total ))
+  local bar
+  bar="$(printf '█%.0s' $(seq 1 $filled))$(printf '░%.0s' $(seq 1 $((width - filled))))"
+  gum style --foreground "$ACCENT" "  $bar  ${pct}%"
 }
 
 _FOOTER() {
@@ -224,46 +259,65 @@ page_module_picker() {
 }
 
 page_summary() {
-  _BOX_HEADER "review + confirm"
-  echo
-  _H2 "Modules queued (${#PICKED_IDS[@]}):"
+  _BOX_HEADER "review · ${#PICKED_IDS[@]} module(s) queued"
+  # Aligned card list: chip · badge · title
   for id in "${PICKED_IDS[@]}"; do
-    printf '  '
-    _OK "✔ $(printf '%-22s' "$id")"
-    _DIM "  ${MOD_DESC[$id]}"
+    local chip badge title
+    chip="$(gum style --foreground '#82c882' --bold '  ✔')"
+    badge="$(_BADGE "${MOD_GROUP[$id]}")"
+    title="$(gum style --foreground "$FG" "${MOD_TITLE[$id]}")"
+    gum join --horizontal "$chip" "  " "$badge" "  " "$title"
+    _DIM "       ${MOD_DESC[$id]}"
   done
   echo
-  (( DRY_RUN )) && _WARN "DRY RUN — commands will be previewed, not executed"
-  _FOOTER "[y] proceed  ·  [n] cancel  ·  arrow keys navigate"
+  if (( DRY_RUN )); then
+    gum style --border thick --align center --padding "0 2" \
+      --border-foreground "$URGENT" --foreground "$URGENT" --bold \
+      "DRY RUN — commands preview only, nothing executed"
+  fi
+  _FOOTER "[y] proceed  ·  [n] cancel"
   if (( ASSUME_YES )); then return 0; fi
   gum confirm "Proceed with ${#PICKED_IDS[@]} module(s)?"
 }
 
 page_execute() {
-  _BOX_HEADER "installing"
-  echo
+  _BOX_HEADER "installing modules"
   local ok=0 fail=0 total=${#PICKED_IDS[@]} idx=0
   for id in "${PICKED_IDS[@]}"; do
     idx=$((idx+1))
-    echo
-    _H1 "[$idx/$total] ${MOD_TITLE[$id]}"
-    _DIM "         ${MOD_DESC[$id]}"
+    local chip badge title status
+    chip="$(_CHIP "$idx" "$total")"
+    badge="$(_BADGE "${MOD_GROUP[$id]}")"
+    title="$(gum style --bold --foreground "$FG" "${MOD_TITLE[$id]}")"
+    # Header row: chip [badge] title
+    gum join --horizontal "$chip" " " "$badge" " " "$title"
+    _DIM   "        ${MOD_DESC[$id]}"
     if (( DRY_RUN )); then
-      "${MOD_CMD[$id]}"
-      _OK "✔ preview complete"
+      # Preview commands with subtle indent + capture output.
+      out="$("${MOD_CMD[$id]}" 2>&1)"
+      [[ -n "$out" ]] && printf '%s\n' "$out" | sed 's/^/    /'
+      status="$(gum style --foreground '#82c882' '  ✔ preview')"
       ok=$((ok+1))
     else
-      if gum spin --spinner dot --title "  running $id…" -- bash -c "$(declare -f run _OK _WARN _ERR _DIM); DRY_RUN=$DRY_RUN; ${MOD_CMD[$id]}" 2>/tmp/wizard-$id.err; then
-        _OK "✔ $id done"; ok=$((ok+1))
+      if bash -c "$(declare -f run _OK _WARN _ERR _DIM); DRY_RUN=$DRY_RUN; ${MOD_CMD[$id]}" \
+           >/tmp/wizard-$id.log 2>/tmp/wizard-$id.err; then
+        status="$(gum style --foreground '#82c882' '  ✔ ok')"; ok=$((ok+1))
       else
-        _ERR "✖ $id failed — see /tmp/wizard-$id.err"; fail=$((fail+1))
+        status="$(gum style --foreground "$URGENT" '  ✖ failed')"; fail=$((fail+1))
       fi
     fi
+    printf '%s\n' "$status"
+    _PROGRESS "$idx" "$total"
+    echo
   done
   echo
-  gum style --border rounded --padding "1 2" --align center \
-    --border-foreground "$([[ $fail -eq 0 ]] && echo "$ACCENT" || echo "$URGENT")" \
-    "Done · $ok ok · $fail failed"
+  local border_color="$ACCENT"
+  (( fail )) && border_color="$URGENT"
+  gum style --border rounded --padding "1 3" --align center \
+    --border-foreground "$border_color" \
+    "$(gum style --bold "Installation Complete")" \
+    "" \
+    "$(gum style --foreground '#82c882' "✔ $ok succeeded")   $(gum style --foreground "$URGENT" "✖ $fail failed")"
 }
 
 page_finale() {
