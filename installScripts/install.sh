@@ -421,21 +421,22 @@ if command -v theme-apply >/dev/null; then
   ok "Initial theme: doomone"
 fi
 
-# Browser wal integration — *-flags.conf force dark UI + web contents
-# and load the generated theme extension so brave/chromium/chrome
-# follow the wal palette on every apply.
+# Browser wal integration — flags load the palette extension so
+# brave/chromium/chrome frame tracks wal. Do NOT force-dark web
+# contents: it breaks canva / figma / any editor that ships its
+# own dark theme (colors invert twice, images render wrong).
 mkdir -p "$HOME_DIR/.config" "$HOME_DIR/.config/qtile/browser-theme"
 BROWSER_EXT="$HOME_DIR/.config/qtile/browser-theme"
 for f in brave-flags.conf chromium-flags.conf chrome-flags.conf; do
   cfg="$HOME_DIR/.config/$f"
   if [[ ! -f "$cfg" ]]; then
     cat >"$cfg" <<EOF
---force-dark-mode
---enable-features=WebUIDarkMode,WebContentsForceDark
 --gtk-version=4
 --load-extension=$BROWSER_EXT
 EOF
   else
+    # Strip legacy content-force-dark flags from any existing config.
+    sed -i '/--force-dark-mode/d; /WebContentsForceDark/d' "$cfg"
     grep -q -- '--load-extension=' "$cfg" || printf '\n--load-extension=%s\n' "$BROWSER_EXT" >>"$cfg"
   fi
 done
