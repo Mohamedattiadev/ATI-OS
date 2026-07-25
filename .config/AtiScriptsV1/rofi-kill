@@ -135,74 +135,128 @@ fmt_title_plain() {
 }
 
 build_rofi_input() {
-    local sep="<span foreground=\"$PAL_SEL1\">│</span>"
-    # Column widths (char counts, monospace assumed).
-    local W_PID=7 W_NAME=52 W_CPU=13 W_MEM=13 W_UP=10 W_USER=8
-    # Header row (non-selectable). Plain-text pad first, then wrap in span.
-    local h_pid h_name h_cpu h_mem h_up h_user
-    printf -v h_pid  "%-${W_PID}s"  "PID"
-    printf -v h_name "%-${W_NAME}s" "PROCESS [WINDOW]"
-    printf -v h_cpu  "%-${W_CPU}s"  "CPU"
-    printf -v h_mem  "%-${W_MEM}s"  "MEM"
-    printf -v h_up   "%-${W_UP}s"   "UPTIME"
-    printf -v h_user "%-${W_USER}s" "USER"
-    printf "<span foreground=\"%s\" weight=\"bold\">%s</span>%s<span foreground=\"%s\" weight=\"bold\">%s</span>%s<span foreground=\"%s\" weight=\"bold\">%s</span>%s<span foreground=\"%s\" weight=\"bold\">%s</span>%s<span foreground=\"%s\" weight=\"bold\">%s</span>%s<span foreground=\"%s\" weight=\"bold\">%s</span>\0meta\x1fnonselectable\x1ftrue\n" \
-        "$PAL_SEL" "$h_pid" "$sep" "$PAL_SEL" " $h_name" "$sep" "$PAL_SEL" " $h_cpu" "$sep" "$PAL_SEL" " $h_mem" "$sep" "$PAL_SEL" " $h_up" "$sep" "$PAL_SEL" " $h_user"
-    build_titles_map
-    # Build PID→PPID map once (single ps call) for ancestry lookup.
-    declare -A PPID_MAP=()
-    while read -r p pp; do
-        PPID_MAP[$p]="$pp"
-    done < <(ps -eo pid=,ppid=)
-    # Walk ancestry up to 6 hops to find a windowed ancestor's title.
-    lookup_title() {
-        local cur="$1" hops=0 t
-        while (( hops < 6 )) && [[ -n "$cur" && "$cur" != "1" && "$cur" != "0" ]]; do
-            t="${WIN_TITLES[$cur]:-}"
-            [[ -n "$t" ]] && { printf '%s' "$t"; return; }
-            cur="${PPID_MAP[$cur]:-}"
-            hops=$((hops+1))
-        done
-    }
-    get_process_list | while IFS='|' read -r pid icon cmd cpu mem etime user color cpu_color mem_color; do
-        cpu_bar=$(draw_bar "${cpu%.*}")
-        mem_bar=$(draw_bar "${mem%.*}")
-        title="${WIN_TITLES[$pid]:-}"
-        # For GUI apps without direct title, walk PPID chain.
-        if [[ -z "$title" && "$cmd" =~ (brave|chrom|firefox|electron|code|discord|slack|thunderbird) ]]; then
-            title=$(lookup_title "$pid")
+    # Single-pass awk render. Previously a bash while-read loop for
+    # ~280 processes took 9-18s (rofi couldn't open until stdin EOF).
+    # Awk version: <200ms. Pre-collect titles + ppid map into stream
+    # tagged lines so awk can build lookups in memory.
+    local sep_color="$PAL_SEL1"
+    {
+        # Tag 'T': window titles (wmctrl -lp: id desk pid host title...).
+        if command -v wmctrl >/dev/null 2>&1; then
+            wmctrl -lp 2>/dev/null | awk '{
+                pid=$3; if (pid !~ /^[0-9]+$/) next;
+                title=""; for(i=5;i<=NF;i++) title=title (i>5?" ":"") $i;
+                if (title=="") next;
+                printf "T\t%s\t%s\n", pid, title;
+            }'
         fi
-        title_span=""
-        if [[ -n "$title" ]]; then
-            title_span=" <span foreground=\"$PAL_ACTIVE\">[$(fmt_title "$title")]</span>"
-        fi
-        # Build plain-text NAME cell then pad + truncate.
-        title_plain=""
-        [[ -n "$title" ]] && title_plain=" [$(fmt_title_plain "$title")]"
-        name_plain="$icon $cmd$title_plain"
-        if (( ${#name_plain} > W_NAME )); then
-            name_plain="${name_plain:0:$((W_NAME-1))}…"
-        fi
-        printf -v name_padded "%-${W_NAME}s" "$name_plain"
-
-        cpu_cell=$(printf "%s %.1f%%" "$cpu_bar" "$cpu")
-        printf -v cpu_padded "%-${W_CPU}s" "$cpu_cell"
-
-        mem_cell=$(printf "%s %.1f%%" "$mem_bar" "$mem")
-        printf -v mem_padded "%-${W_MEM}s" "$mem_cell"
-
-        printf -v etime_padded "%-${W_UP}s" "$etime"
-        printf -v user_padded  "%-${W_USER}s" "$user"
-        printf -v pid_padded   "%-${W_PID}s" "$pid"
-
-        printf "<span foreground=\"%s\">%s</span>%s <span foreground=\"%s\">%s</span>%s <span foreground=\"%s\">%s</span>%s <span foreground=\"%s\">%s</span>%s <span foreground=\"%s\">%s</span>%s <span foreground=\"%s\">%s</span>\n" \
-            "$PAL_SEL1" "$pid_padded" "$sep" \
-            "$color"    "$name_padded" "$sep" \
-            "$cpu_color" "$cpu_padded" "$sep" \
-            "$mem_color" "$mem_padded" "$sep" \
-            "$PAL_FG"    "$etime_padded" "$sep" \
-            "$PAL_FG"    "$user_padded"
-    done
+        # Tag 'P': ppid map.
+        ps -eo pid=,ppid= | awk '{printf "P\t%s\t%s\n", $1, $2}'
+        # Tag 'R': process rows.
+        ps -eo pid,comm:32,pcpu,pmem,etime,user \
+            --sort="$(get_sort_flag "$SORT_MODE")" \
+            | awk 'NR>1{printf "R\t%s\t%s\t%s\t%s\t%s\t%s\n", $1,$2,$3,$4,$5,$6}'
+    } | awk -F'\t' \
+        -v exclude="$EXCLUDE" \
+        -v colors="${NAME_COLORS[*]}" \
+        -v urgent="$PAL_URGENT" \
+        -v active="$PAL_ACTIVE" \
+        -v fg="$PAL_FG" \
+        -v sel="$PAL_SEL" \
+        -v sel1="$PAL_SEL1" \
+        -v sep_color="$sep_color" '
+        BEGIN {
+            n_colors = split(colors, name_colors, " ")
+            split("▁ ▂ ▃ ▄ ▅ ▆ ▇ █", bars, " ")
+            W_PID=7; W_NAME=52; W_CPU=13; W_MEM=13; W_UP=10; W_USER=8
+            sep = "<span foreground=\"" sep_color "\">│</span>"
+            # Header (non-selectable).
+            printf("<span foreground=\"%s\" weight=\"bold\">%-*s</span>%s<span foreground=\"%s\" weight=\"bold\"> %-*s</span>%s<span foreground=\"%s\" weight=\"bold\"> %-*s</span>%s<span foreground=\"%s\" weight=\"bold\"> %-*s</span>%s<span foreground=\"%s\" weight=\"bold\"> %-*s</span>%s<span foreground=\"%s\" weight=\"bold\"> %-*s</span>\0meta\x1fnonselectable\x1ftrue\n",
+                sel, W_PID, "PID", sep,
+                sel, W_NAME, "PROCESS [WINDOW]", sep,
+                sel, W_CPU, "CPU", sep,
+                sel, W_MEM, "MEM", sep,
+                sel, W_UP, "UPTIME", sep,
+                sel, W_USER, "USER")
+        }
+        function draw_bar(v,   idx) {
+            idx = int((v * 7) / 100)
+            if (idx < 0) idx = 0
+            if (idx > 7) idx = 7
+            return bars[idx+1]
+        }
+        function pango_escape(s) {
+            gsub(/&/, "\\&amp;", s)
+            gsub(/</, "\\&lt;", s)
+            gsub(/>/, "\\&gt;", s)
+            return s
+        }
+        function truncate(s, max) {
+            if (length(s) > max) return substr(s, 1, max-1) "…"
+            return s
+        }
+        function hash_color(cmd,   h, i) {
+            h = 0
+            for (i = 1; i <= length(cmd); i++) h += index("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", substr(cmd, i, 1))
+            return name_colors[(h % n_colors) + 1]
+        }
+        function pick_icon(cmd) {
+            if (cmd ~ /firefox/) return ""
+            if (cmd ~ /brave/) return ""
+            if (cmd ~ /chrom/) return ""
+            if (cmd ~ /nautilus|thunar|nemo|pcmanfm/) return ""
+            if (cmd ~ /code|nvim|vim/) return ""
+            if (cmd ~ /steam/) return ""
+            if (cmd ~ /vlc|mpv/) return ""
+            if (cmd ~ /spotify/) return ""
+            if (cmd ~ /discord/) return ""
+            if (cmd ~ /python|node|ruby|java/) return ""
+            return ""
+        }
+        function lookup_title(pid,   cur, hops, t) {
+            cur = pid; hops = 0
+            while (hops < 6 && cur != "" && cur != "1" && cur != "0") {
+                t = titles[cur]
+                if (t != "") return t
+                cur = ppid_of[cur]
+                hops++
+            }
+            return ""
+        }
+        $1 == "T" {
+            if (titles[$2] == "") titles[$2] = $3
+            else titles[$2] = titles[$2] " · " $3
+            next
+        }
+        $1 == "P" { ppid_of[$2] = $3; next }
+        $1 == "R" {
+            pid = $2; cmd = $3; cpu = $4 + 0; mem = $5 + 0
+            etime = $6; user = $7
+            if (cmd ~ exclude) next
+            color = hash_color(cmd)
+            icon = pick_icon(cmd)
+            cpu_col = (cpu >= 50) ? urgent : (cpu >= 20 ? "#E5C07B" : fg)
+            mem_col = (mem >= 30) ? urgent : (mem >= 10 ? "#E5C07B" : fg)
+            title = titles[pid]
+            if (title == "" && cmd ~ /brave|chrom|firefox|electron|code|discord|slack|thunderbird/) {
+                title = lookup_title(pid)
+            }
+            title_plain = ""
+            if (title != "") title_plain = " [" truncate(title, 45) "]"
+            name_plain = icon " " cmd title_plain
+            if (length(name_plain) > W_NAME) name_plain = substr(name_plain, 1, W_NAME-1) "…"
+            name_plain = pango_escape(name_plain)
+            cpu_cell = sprintf("%s %.1f%%", draw_bar(int(cpu)), cpu)
+            mem_cell = sprintf("%s %.1f%%", draw_bar(int(mem)), mem)
+            printf("<span foreground=\"%s\">%-*s</span>%s <span foreground=\"%s\">%-*s</span>%s <span foreground=\"%s\">%-*s</span>%s <span foreground=\"%s\">%-*s</span>%s <span foreground=\"%s\">%-*s</span>%s <span foreground=\"%s\">%-*s</span>\n",
+                sel1, W_PID, pid, sep,
+                color, W_NAME, name_plain, sep,
+                cpu_col, W_CPU, cpu_cell, sep,
+                mem_col, W_MEM, mem_cell, sep,
+                fg, W_UP, etime, sep,
+                fg, W_USER, user)
+        }
+    '
 }
 
 # Prompt suffix shows sort mode.
