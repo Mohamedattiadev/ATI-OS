@@ -169,9 +169,9 @@ build_rofi_input() {
             n_colors = split(colors, name_colors, " ")
             split("▁ ▂ ▃ ▄ ▅ ▆ ▇ █", bars, " ")
             W_PID=7; W_NAME=52; W_CPU=13; W_MEM=13
-            # No vertical divider — rofi base font is proportional so
-            # `│` characters don't align between rows. Rely on padding +
-            # color contrast for column separation.
+            # No vertical divider: rofi base font is proportional so
+            # unicode dividers do not align between rows. Rely on
+            # padding + color contrast for column separation.
             printf("<span foreground=\"%s\" weight=\"bold\">%-*s  %-*s  %-*s  %-*s</span>\0meta\x1fnonselectable\x1ftrue\n",
                 sel, W_PID, "PID", W_NAME, "PROCESS [WINDOW]", W_CPU, "CPU", W_MEM, "MEM")
         }
