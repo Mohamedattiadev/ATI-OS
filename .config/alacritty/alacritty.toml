@@ -1,6 +1,8 @@
 # ATI  ALaCritty config
 [general]
-import = ["~/.config/alacritty/themes/themes/doom_one.toml"]
+# theme-apply symlinks current.toml to the active preset (themes/themes/*)
+# or writes a wal-generated palette here. Alacritty auto-reloads on write.
+import = ["~/.config/alacritty/themes/current.toml"]
 
 [env]
 TERM = "xterm-256color"
