@@ -1,7 +1,21 @@
 #!/usr/bin/env bash
+# Screen brightness picker via `light`.
 
-choice=$(printf "100\n80\n60\n40\n20\n10" | rofi -dmenu -p "Brightness (%)")
+set -u
 
-[ -z "$choice" ] && exit 0
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=rofi_common.sh
+source "$SCRIPT_DIR/rofi_common.sh"
 
-/usr/bin/light -S "$choice"
+require_cmd rofi light || exit 1
+
+current=$(light -G 2>/dev/null | awk '{printf "%d", $1}')
+
+choice=$(printf "100\n80\n60\n40\n20\n10\n5" | \
+    rofi -dmenu -i \
+        -p "Brightness" \
+        -mesg "Current: ${current}%")
+
+[[ -z "$choice" ]] && exit 0
+
+/usr/bin/light -S "$choice" && notify_safe "🔆 Brightness" "${choice}%"
