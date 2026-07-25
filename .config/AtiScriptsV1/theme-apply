@@ -38,6 +38,26 @@ fi
 
 KITTY_THEMES="$HOME/.config/kitty/themes"
 ROFI_THEMES="$HOME/.config/rofi/themes"
+ALACRITTY_THEMES="$HOME/.config/alacritty/themes"
+
+# Alacritty preset name (upstream repo uses snake_case, our modes use
+# kebab/short). Maps preset mode -> themes/themes/<file>.toml.
+alacritty_preset_for() {
+  case "$1" in
+    doomone)    echo doom_one ;;
+    dracula)    echo dracula ;;
+    gruvbox)    echo gruvbox_dark ;;
+    nord)       echo nord ;;
+    tokyonight) echo tokyo_night ;;
+    catppuccin) echo catppuccin_mocha ;;
+    monokai)    echo monokai_pro ;;
+    everforest) echo everforest_dark ;;
+    rose-pine)  echo rose_pine ;;
+    kanagawa)   echo kanagawa_wave ;;
+    oxocarbon)  echo oxocarbon ;;
+    *)          echo doom_one ;;
+  esac
+}
 
 if [[ "$MODE" == "wal" ]]; then
   if ! command -v wal >/dev/null; then
@@ -86,8 +106,16 @@ w(os.path.expanduser("~/.config/qtile/browser-theme/manifest.json"),
 w(os.path.expanduser("~/.cache/qtile/gtk-wal.css"), cons["gtk_css"])
 PYEOF
     # Skip wal -R: precompiled templates already cover kitty+rofi+brave+gtk.
+    # Alacritty wal palette from precompiled consumers.alacritty_toml
+    python3 -c "
+import json, sys
+d=json.load(open('$PRECOMPILED'))
+t=d['consumers'].get('alacritty_toml','')
+open('$HOME/.cache/wal/colors-alacritty.toml','w').write(t)
+" 2>/dev/null || true
     ln -sfn "$HOME/.cache/wal/colors-kitty.conf" "$KITTY_THEMES/current.conf"
     ln -sfn palette-wal.rasi "$ROFI_THEMES/current-palette.rasi"
+    ln -sfn "$HOME/.cache/wal/colors-alacritty.toml" "$ALACRITTY_THEMES/current.toml"
     PRECOMPILED_APPLIED=1
   else
     # Fallback: live wal extraction. Colorz backend + saturation punch.
@@ -150,10 +178,12 @@ PYEOF
 EOF
     ln -sfn "$HOME/.cache/wal/colors-kitty.conf" "$KITTY_THEMES/current.conf"
     ln -sfn palette-wal.rasi "$ROFI_THEMES/current-palette.rasi"
+    ln -sfn "$HOME/.cache/wal/colors-alacritty.toml" "$ALACRITTY_THEMES/current.toml"
   fi
 else
   ln -sfn "$MODE.conf" "$KITTY_THEMES/current.conf"
   ln -sfn "palette-$MODE.rasi" "$ROFI_THEMES/current-palette.rasi"
+  ln -sfn "themes/$(alacritty_preset_for "$MODE").toml" "$ALACRITTY_THEMES/current.toml"
 fi
 
 # ---- Qutebrowser homepage CSS vars ----

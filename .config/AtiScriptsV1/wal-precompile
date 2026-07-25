@@ -300,6 +300,33 @@ def render_qb(bg, bg_alt, fg, accents):
         "blue": accents[3], "purple": accents[4], "cyan": accents[5],
     }
 
+def render_alacritty_toml(bg, bg_alt, fg, accents):
+    # wal_colors accents fill color1..6 + color9..14; bg=color0, fg=color7
+    lines = ["[colors.primary]",
+             f"background = '{bg}'",
+             f"foreground = '{fg}'",
+             "",
+             "[colors.normal]",
+             f"black   = '{bg}'",
+             f"red     = '{accents[0]}'",
+             f"green   = '{accents[1]}'",
+             f"yellow  = '{accents[2]}'",
+             f"blue    = '{accents[3]}'",
+             f"magenta = '{accents[4]}'",
+             f"cyan    = '{accents[5]}'",
+             f"white   = '{fg}'",
+             "",
+             "[colors.bright]",
+             f"black   = '{bg_alt}'",
+             f"red     = '{accents[0]}'",
+             f"green   = '{accents[1]}'",
+             f"yellow  = '{accents[2]}'",
+             f"blue    = '{accents[3]}'",
+             f"magenta = '{accents[4]}'",
+             f"cyan    = '{accents[5]}'",
+             f"white   = '{fg}'"]
+    return "\n".join(lines) + "\n"
+
 def render_brave_manifest(bg, bg_alt, fg, accents, epoch=None):
     import time as _t
     # Frame + toolbar visibly tinted with dominant accent hue so browser
@@ -383,12 +410,13 @@ def process(path: Path, force=False):
         # sequence of pure file writes — no template evaluation, no wal
         # binary, no per-consumer python. Cache hit = sub-500ms apply.
         "consumers": {
-            "kitty_conf":  render_kitty_conf(bg, bg_alt, fg, accents),
-            "rofi_rasi":   render_rofi_rasi(bg, bg_alt, fg, accents),
-            "dunst":       render_dunst(bg, bg_alt, fg, accents),
-            "gtk_css":     render_gtk_css(bg, bg_alt, fg, accents),
-            "qb":          render_qb(bg, bg_alt, fg, accents),
-            "brave_theme": render_brave_manifest(bg, bg_alt, fg, accents),
+            "kitty_conf":    render_kitty_conf(bg, bg_alt, fg, accents),
+            "alacritty_toml":render_alacritty_toml(bg, bg_alt, fg, accents),
+            "rofi_rasi":     render_rofi_rasi(bg, bg_alt, fg, accents),
+            "dunst":         render_dunst(bg, bg_alt, fg, accents),
+            "gtk_css":       render_gtk_css(bg, bg_alt, fg, accents),
+            "qb":            render_qb(bg, bg_alt, fg, accents),
+            "brave_theme":   render_brave_manifest(bg, bg_alt, fg, accents),
         },
     }
     out_file.write_text(json.dumps(out, indent=2))
