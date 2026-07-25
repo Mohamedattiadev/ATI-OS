@@ -36,7 +36,8 @@ def get_devices():
 
     try:
         result = subprocess.run(
-            ["bluetoothctl", "devices"], stdout=subprocess.PIPE, text=True
+            ["bluetoothctl", "devices"], stdout=subprocess.PIPE, text=True,
+            timeout=5,
         )
 
         for line in result.stdout.splitlines():
@@ -48,9 +49,13 @@ def get_devices():
             mac = parts[1]
             name = parts[2]
 
-            info = subprocess.run(
-                ["bluetoothctl", "info", mac], stdout=subprocess.PIPE, text=True
-            ).stdout
+            try:
+                info = subprocess.run(
+                    ["bluetoothctl", "info", mac], stdout=subprocess.PIPE, text=True,
+                    timeout=3,
+                ).stdout
+            except subprocess.TimeoutExpired:
+                info = ""
 
             connected = "Connected: yes" in info
 
@@ -219,18 +224,27 @@ def connect_worker(device):
     for i in range(10):
         _PROGRESS = (i + 1) * 10
 
-        update_ui()
+        # UI updates from thread must go through event loop.
+        if _QTILE is not None:
+            _QTILE.call_soon_threadsafe(update_ui)
 
         time.sleep(0.15)
 
-    subprocess.run(["bluetoothctl", "connect", device["mac"]])
+    try:
+        subprocess.run(
+            ["bluetoothctl", "connect", device["mac"]],
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        _STATUS_MSG = f"Timeout connecting to {device['name']}"
+    else:
+        _STATUS_MSG = f"Connected to {device['name']}"
 
     _CONNECTING = False
     _PROGRESS = 0
 
-    _STATUS_MSG = f"Connected to {device['name']}"
-
-    refresh()
+    if _QTILE is not None:
+        _QTILE.call_soon_threadsafe(refresh)
 
 
 # ------------------------------------------------
@@ -242,9 +256,14 @@ def toggle_device():
     device = _DEVICES[_INDEX]
 
     if device["connected"]:
-        subprocess.run(["bluetoothctl", "disconnect", device["mac"]])
-
-        _STATUS_MSG = f"Disconnected {device['name']}"
+        try:
+            subprocess.run(
+                ["bluetoothctl", "disconnect", device["mac"]],
+                timeout=10,
+            )
+            _STATUS_MSG = f"Disconnected {device['name']}"
+        except subprocess.TimeoutExpired:
+            _STATUS_MSG = f"Timeout disconnecting {device['name']}"
 
         refresh()
 
