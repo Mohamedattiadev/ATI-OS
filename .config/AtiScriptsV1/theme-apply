@@ -21,15 +21,25 @@ STATE_FILE="$CACHE_DIR/theme_mode"
 
 mkdir -p "$CACHE_DIR"
 
-# Prevent concurrent invocations from corrupting cached files (rapid
-# wallpaper switches, keybind spam). flock with -n exits fast; second
-# caller drops silently. FD 9 stays open for the whole script run.
-LOCK="$CACHE_DIR/.theme-apply.lock"
-exec 9>"$LOCK"
-if ! flock -n 9; then
-  notify-send "theme-apply" "already running, skipped ($MODE)" 2>/dev/null || true
-  exit 0
+# Prevent concurrent invocations. flock(1) can't be used here: theme-
+# apply spawns brave/chrome which inherit the lock FD and hold it
+# forever after theme-apply exits — every subsequent apply then no-ops
+# with "already running". Use a PID-file lock instead: cheap TOCTOU
+# race is acceptable for interactive keybind spam.
+LOCK="$CACHE_DIR/.theme-apply.pid"
+if [[ -f "$LOCK" ]]; then
+  old_pid="$(cat "$LOCK" 2>/dev/null || true)"
+  if [[ -n "$old_pid" ]] && kill -0 "$old_pid" 2>/dev/null; then
+    # Verify the pid actually belongs to a theme-apply run (not a
+    # random pid recycled by another program).
+    if grep -q theme-apply "/proc/$old_pid/cmdline" 2>/dev/null; then
+      notify-send "theme-apply" "already running, skipped ($MODE)" 2>/dev/null || true
+      exit 0
+    fi
+  fi
 fi
+echo $$ >"$LOCK"
+trap 'rm -f "$LOCK"' EXIT INT TERM
 
 PRESETS=(doomone dracula gruvbox nord tokyonight catppuccin monokai everforest rose-pine kanagawa oxocarbon)
 
