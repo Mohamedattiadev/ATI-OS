@@ -180,6 +180,43 @@ subsystem. Each entry: **symptom → root cause → fix**.
 
 ---
 
+## Testing on a fresh Arch VM
+
+Before trusting `./install.sh` on your primary machine, run it on a
+throw-away VM. Fastest reliable path:
+
+```bash
+# 1. Download Arch ISO (~1 GB)
+curl -LO https://mirror.rackspace.com/archlinux/iso/latest/archlinux-x86_64.iso
+
+# 2. Boot in your GUI hypervisor of choice — separate window, own RAM.
+#    - GNOME Boxes / virt-manager / VirtualBox / QEMU GUI
+#    - Suggest: 4 GB RAM · 20 GB disk · 2 vCPU
+#    - Enable UEFI, virtio disk
+#    - Boot from ISO
+
+# 3. Inside VM: unattended base install
+loadkeys us
+archinstall   # follow prompts: minimal, user with sudo, mirror region
+
+# 4. Reboot into installed system, log in as your user
+git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles
+cd ~/.dotfiles/installScripts
+./install.sh
+```
+
+**Why a real hypervisor, not nspawn/docker on your daily machine:**
+running the full wizard (dcli sync ~5 min pacman, piper 60 MB curl,
+whisper 500 MB curl, wallpapers 500 MB git clone, chrome policy sudo
+writes) concurrently with your normal workload can saturate disk / RAM
+and freeze the host. A separate VM with its own resource ceiling
+never contends with your session.
+
+**Success criteria at end:**
+Wizard prints the green-bordered "Installation Complete · ✔ 26 ok · ⚠ 0
+not run · ✖ 0 failed" card. Logout, `startx`, and qtile + wal theme
+should come up cleanly.
+
 ## Wizard / Installer
 
 ### `gum: command not found` on fresh Arch

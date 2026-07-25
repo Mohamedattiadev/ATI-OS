@@ -474,6 +474,7 @@ preflight() {
   _check "dotfiles clone at $DOTFILES_DIR" "[[ -d $DOTFILES_DIR ]]"                "git clone the repo to $DOTFILES_DIR"
   _check "internet reachable"          "curl -fsS --max-time 5 https://archlinux.org >/dev/null" "network down or firewall blocks HTTPS"
   _check "disk free > 10 GB on \$HOME" "[[ $(df -Pk $HOME | awk 'NR==2{print $4}') -gt 10485760 ]]" "wizard needs ~10GB (piper 60MB + whisper 500MB + dcli pkgs + wallpapers)"
+  _check "RAM ≥ 2 GB"                  "[[ $(awk '/MemTotal/{print $2}' /proc/meminfo) -gt 2000000 ]]" "wizard pulls 500MB+ concurrently — <2GB risks OOM/freeze"
   _check "pacman db lock clear"        "_pacman_lock_check"                        "another pacman may be running"
   if (( fatal )); then
     echo
