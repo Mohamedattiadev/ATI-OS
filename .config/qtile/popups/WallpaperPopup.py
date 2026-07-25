@@ -256,38 +256,48 @@ def fuzzy_search_rofi():
     if not _IMAGES:
         return
 
-    # Create a list of names for Rofi
     names = "\n".join([os.path.basename(p) for p in _IMAGES])
 
-    try:
-        # Run rofi to get selection
-        result = subprocess.run(
-            [
-                "rofi",
-                "-dmenu",
-                "-p",
-                "Search Wallpaper",
-                "-i",
-                "-theme-str",
-                "window {width: 50%;}",
-            ],
-            input=names.encode(),
-            stdout=subprocess.PIPE,
-            check=False,
-        )
+    def _run_rofi():
+        try:
+            result = subprocess.run(
+                [
+                    "rofi",
+                    "-dmenu",
+                    "-p",
+                    "Search Wallpaper",
+                    "-i",
+                    "-theme-str",
+                    "window {width: 50%;}",
+                ],
+                input=names.encode(),
+                stdout=subprocess.PIPE,
+                check=False,
+                timeout=120,
+            )
+            selected_name = result.stdout.decode().strip()
+        except subprocess.TimeoutExpired:
+            return
+        except Exception as e:
+            logger.warning("fuzzy_search_rofi failed: %s", e)
+            return
 
-        selected_name = result.stdout.decode().strip()
+        if not selected_name:
+            return
 
-        if selected_name:
-            # Find the index of the selected name
+        def _apply():
+            global _INDEX
             for idx, path in enumerate(_IMAGES):
                 if os.path.basename(path) == selected_name:
                     _INDEX = idx
                     ensure_visible()
                     update_ui()
                     return
-    except Exception as e:
-        logger.error(f"Wallpaper Search Error: {e}")
+
+        if _QTILE is not None:
+            _QTILE.call_soon_threadsafe(_apply)
+
+    threading.Thread(target=_run_rofi, daemon=True).start()
 
 
 # =============================================================================
