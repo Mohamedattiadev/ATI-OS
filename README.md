@@ -224,6 +224,8 @@ guaranteed). See `.config/qtile/WAL_PRECOMPILE_REPORT.md`.
 | brave | `--load-extension` reads live `manifest.json` on relaunch (id matches via embedded `key`) |
 | chrome / chromium | Enterprise policy `force_installed` from local `updates.xml`; `.crx` repacked + Preferences purged each apply so install lands immediately |
 | papirus folders | `papirus-folders -C <hue-match> -u` |
+| eww widgets | `colors.scss` rewritten per palette, `eww reload` fires; cheatsheet/onboarding/bar-tooltip retint on next open |
+| qtile cheatsheets (Vim/Fish/Qtile popups) | `popups/_wal_colors.load_colors()` refreshes on each toggle; muted derived from `bg`→`fg` blend for readable dividers |
 
 **Palette semantics** — `wal-precompile` generates 6-slot hue-concentrated palettes:
 `color1` urgent (always warm), `color2` dominant (main wallpaper hue),
