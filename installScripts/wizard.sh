@@ -483,12 +483,17 @@ page_execute() {
           ok=$((ok+1))
           break
         fi
-        # Failed: show tail, prompt retry/skip/quit.
+        # Failed: show tail, then prompt (or auto-skip under --yes).
         gum style --foreground "$URGENT" --bold "   ✖ failed (attempt $attempts)"
         _show_error_tail "$id"
         local choice
-        choice=$(gum choose --header "Module '$id' failed. What now?" \
-          "retry" "skip · continue" "quit installer")
+        if (( ASSUME_YES )); then
+          choice="skip · continue"
+          gum style --foreground "$WARN_C" "   (--yes: auto-skipping)"
+        else
+          choice=$(gum choose --header "Module '$id' failed. What now?" \
+            "retry" "skip · continue" "quit installer")
+        fi
         case "$choice" in
           retry)
             gum style --foreground "$INFO" "   ↻ retrying $id…"
