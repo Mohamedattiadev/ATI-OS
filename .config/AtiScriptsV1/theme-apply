@@ -587,11 +587,30 @@ if [[ "${THEME_APPLY_NO_BROWSER:-0}" != 1 ]]; then
 </gupdate>
 EOF
     fi
+    # Chrome caches installed extension + polls update_url only every
+    # few hours. Purge cached extension dir so force_installed policy
+    # reinstalls fresh .crx on next launch. Same for chromium.
+    for prof in \
+      "$HOME/.config/google-chrome/Default/Extensions/$EXT_ID" \
+      "$HOME/.config/chromium/Default/Extensions/$EXT_ID"; do
+      [[ -d "$prof" ]] && rm -rf "$prof"
+    done
   fi
 
-  # Relaunch each killed browser.
+  # Relaunch each killed browser. Map process name → binary path since
+  # `chrome`/`chromium` are not in PATH on Arch (installed under /opt).
+  browser_bin() {
+    case "$1" in
+      chrome|google-chrome) echo "/opt/google/chrome/chrome" ;;
+      brave|brave-browser)  echo "$(command -v brave || echo /opt/brave-bin/brave)" ;;
+      chromium)             echo "$(command -v chromium || echo /usr/bin/chromium)" ;;
+      *) command -v "$1" ;;
+    esac
+  }
   for proc in "${RESTART_PROCS[@]}"; do
-    ( DISPLAY="${DISPLAY:-:0}" setsid "$proc" >/dev/null 2>&1 </dev/null & disown ) &
+    bin=$(browser_bin "$proc")
+    [[ -x "$bin" ]] || continue
+    ( DISPLAY="${DISPLAY:-:0}" setsid "$bin" >/dev/null 2>&1 </dev/null & disown ) &
     disown
   done
 fi
