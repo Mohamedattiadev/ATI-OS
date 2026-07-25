@@ -559,7 +559,13 @@ def toggle_top_bottom_exclusive(qtile):
 @hook.subscribe.startup_once
 def start_once():
     home = os.path.expanduser("~")
-    subprocess.call([home + "/.config/qtile/autostart.sh"])
+    # Popen fire-and-forget: subprocess.call blocks main loop until autostart.sh returns.
+    subprocess.Popen(
+        [home + "/.config/qtile/autostart.sh"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
 
 # -------------------------------------------------
@@ -637,12 +643,8 @@ def set_icon_temporarily(qtile, icon, cmd):
     # spawn app
     qtile.cmd_spawn(cmd)
 
-    # reset icon shortly after
-    def reset():
-        time.sleep(0.3)  # small delay so user sees the icon
-        w.update(ARCH_ICON_MAIN)
-
-    threading.Thread(target=reset, daemon=True).start()
+    # qtile.call_later avoids spawning a thread per keypress.
+    qtile.call_later(0.3, lambda: w.update(ARCH_ICON_MAIN))
 
 
 def open_terminal(qtile):
@@ -692,25 +694,17 @@ def auto_enable_warpd(chord_name):
 
 
 def ensure_gromit_and_toggle(qtile):
-    try:
-        subprocess.run(
-            ["pgrep", "-x", "gromit-mpx"],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        qtile.spawn("gromit-mpx -t")
-
-    except subprocess.CalledProcessError:
-        qtile.spawn(
-            "notify-send -u normal -t 4000 "
-            '"Gromit MPX" "Gromit was not running — starting it now…"'
-        )
-
-        qtile.spawn("gromit-mpx")
-
-        # wait a bit, then toggle draw
-        qtile.call_later(0.3, lambda: qtile.spawn("gromit-mpx -t"))
+    # Shell handles pgrep + branching. Async fork via qtile.spawn — main loop never blocks.
+    qtile.spawn(
+        "sh -c '"
+        "if pgrep -x gromit-mpx >/dev/null; then "
+        "gromit-mpx -t; "
+        "else "
+        "notify-send -u normal -t 4000 \"Gromit MPX\" "
+        "\"Gromit was not running — starting it now…\"; "
+        "gromit-mpx & sleep 0.3; gromit-mpx -t; "
+        "fi'"
+    )
 
 
 @hook.subscribe.enter_chord
