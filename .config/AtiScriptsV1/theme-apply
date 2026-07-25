@@ -462,8 +462,10 @@ fi
 # has no live-reload path (GTK theme change requires restart), so we
 # notify the user instead of killing browser tabs.
 if pgrep -x qutebrowser >/dev/null; then
-  ( timeout 2 qutebrowser ":config-source" 2>/dev/null
-    timeout 2 qutebrowser ":reload -f" 2>/dev/null ) &
+  # :config-source alone doesn't re-read wal cache colors. :restart
+  # reboots qb process preserving open tabs via session save/restore.
+  ( timeout 3 qutebrowser ":config-source" 2>/dev/null
+    timeout 3 qutebrowser ":restart" 2>/dev/null ) &
   disown
 fi
 # Regenerate a Chromium theme extension so brave/chrome UI colors track
@@ -536,30 +538,6 @@ open(outp,"w").write(json.dumps(manifest, indent=2))
 PYEOF
 fi
 
-# Repack extension to .crx + bump updates.xml so chrome policy
-# force-install picks up the new version. Brave applies theme from
-# --load-extension directly, chrome needs the policy path.
-BROWSER_CRX="$HOME/.config/qtile/browser-theme.crx"
-BROWSER_PEM="$HOME/.config/qtile/browser-theme.pem"
-BROWSER_UPDATES="$HOME/.config/qtile/browser-theme-updates.xml"
-EXT_ID="fommfacojlllmdogognehdgombidbpjg"
-if [[ -f "$BROWSER_PEM" ]] && command -v google-chrome-stable >/dev/null 2>&1 || [[ -x /opt/google/chrome/chrome ]]; then
-  CHROME_BIN="${CHROME_BIN:-/opt/google/chrome/chrome}"
-  # Pack silently, ignore errors (chrome running lock — retry next apply)
-  "$CHROME_BIN" --pack-extension="$BROWSER_EXT" --pack-extension-key="$BROWSER_PEM" --no-message-box >/dev/null 2>&1 || true
-  VER=$(python3 -c "import json;print(json.load(open('$BROWSER_EXT/manifest.json'))['version'])" 2>/dev/null)
-  if [[ -n "$VER" ]]; then
-    cat > "$BROWSER_UPDATES" <<EOF
-<?xml version='1.0' encoding='UTF-8'?>
-<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
-  <app appid='$EXT_ID'>
-    <updatecheck codebase='file://$BROWSER_CRX' version='$VER' />
-  </app>
-</gupdate>
-EOF
-  fi
-fi
-
 # Ensure --load-extension flag is in each browser's flags file so the
 # theme extension survives restart.
 add_load_ext() {
@@ -573,19 +551,48 @@ add_load_ext "$HOME/.config/brave-flags.conf"
 add_load_ext "$HOME/.config/chromium-flags.conf"
 add_load_ext "$HOME/.config/chrome-flags.conf"
 
-# brave/chrome/chromium have no live-theme-reload API. Auto-restart so
-# the extension is picked up. Tabs restore via each browser's "continue
-# where you left off" session preference. Set THEME_APPLY_NO_BROWSER=1
-# to skip if this disrupts a demo/livestream.
+BROWSER_CRX="$HOME/.config/qtile/browser-theme.crx"
+BROWSER_PEM="$HOME/.config/qtile/browser-theme.pem"
+BROWSER_UPDATES="$HOME/.config/qtile/browser-theme-updates.xml"
+EXT_ID="fommfacojlllmdogognehdgombidbpjg"
+
+# brave/chrome/chromium have no live-theme-reload API. Kill running
+# browsers FIRST, then repack .crx (chrome pack needs no lock), then
+# relaunch — so chrome sees the fresh crx + bumped updates.xml on
+# startup and force-installs. Set THEME_APPLY_NO_BROWSER=1 to skip.
 if [[ "${THEME_APPLY_NO_BROWSER:-0}" != 1 ]]; then
+  RESTART_PROCS=()
   for proc in brave chromium chrome google-chrome brave-browser; do
     if pgrep -x "$proc" >/dev/null 2>&1; then
-      ( pkill -x "$proc" 2>/dev/null || true
-        sleep 0.5
-        DISPLAY="${DISPLAY:-:0}" setsid "$proc" >/dev/null 2>&1 </dev/null &
-        disown ) &
-      disown
+      RESTART_PROCS+=("$proc")
+      pkill -x "$proc" 2>/dev/null || true
     fi
+  done
+  # Wait for locks to release before repack.
+  [[ ${#RESTART_PROCS[@]} -gt 0 ]] && sleep 1
+
+  # Repack .crx + bump updates.xml (chrome policy force-installs on
+  # next launch). Now safe: no chrome process holding the pack lock.
+  if [[ -f "$BROWSER_PEM" ]] && [[ -x /opt/google/chrome/chrome ]]; then
+    CHROME_BIN="${CHROME_BIN:-/opt/google/chrome/chrome}"
+    "$CHROME_BIN" --pack-extension="$BROWSER_EXT" --pack-extension-key="$BROWSER_PEM" --no-message-box >/dev/null 2>&1 || true
+    VER=$(python3 -c "import json;print(json.load(open('$BROWSER_EXT/manifest.json'))['version'])" 2>/dev/null)
+    if [[ -n "$VER" ]]; then
+      cat > "$BROWSER_UPDATES" <<EOF
+<?xml version='1.0' encoding='UTF-8'?>
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='$EXT_ID'>
+    <updatecheck codebase='file://$BROWSER_CRX' version='$VER' />
+  </app>
+</gupdate>
+EOF
+    fi
+  fi
+
+  # Relaunch each killed browser.
+  for proc in "${RESTART_PROCS[@]}"; do
+    ( DISPLAY="${DISPLAY:-:0}" setsid "$proc" >/dev/null 2>&1 </dev/null & disown ) &
+    disown
   done
 fi
 
