@@ -180,6 +180,38 @@ subsystem. Each entry: **symptom → root cause → fix**.
 
 ---
 
+## Wizard / Installer
+
+### `gum: command not found` on fresh Arch
+- **Symptom:** wizard.sh prints error, exits.
+- **Root cause:** wizard depends on `gum` for the TUI; not in base.
+- **Fix:** wizard auto-runs `sudo pacman -S --needed --noconfirm gum`
+  on first launch. If that fails (offline / mirror down), install
+  manually then re-run: `sudo pacman -S gum && ./wizard.sh`.
+
+### Module fails, wizard offers retry / skip / quit
+- **Symptom:** step shows `✖ failed (attempt N)` + red tail-box.
+- **Where to look:** `/tmp/wizard-<id>.log` (stdout) and
+  `/tmp/wizard-<id>.err` (stderr). Wizard displays last 5 error lines
+  inline; full logs on disk.
+- **Fix by choice:**
+  - `retry` — re-runs the same step (fixes transient network/db lock)
+  - `skip · continue` — marks as failed, continues; failed list shown
+    in final summary card
+  - `quit installer` — aborts, prints partial summary (ok / skipped / failed)
+
+### Preselected modules render mixed `✓` and `•` in picker
+- **Root cause:** gum `--selected` takes CSV; module descriptions
+  containing literal commas broke the parse — some items matched, some
+  did not.
+- **Fix:** all module descriptions use `·` as separator, never commas.
+
+### `install.sh` behaves differently than before
+- **Fact:** `install.sh` is now a 4-line alias for `wizard.sh --yes`.
+- **Reason:** single-installer refactor — one code path to maintain.
+  Everything install.sh used to do is now in `wizard.sh`'s `step_*`
+  functions.
+
 ## Install / Bootstrap
 
 ### `dcli sync` fails on fresh Arch
