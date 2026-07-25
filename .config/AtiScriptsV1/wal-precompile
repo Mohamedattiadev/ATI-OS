@@ -313,7 +313,17 @@ def render_brave_manifest(bg, bg_alt, fg, accents, epoch=None):
     # Inactive tab text: dim fg toward mid-gray so active tab title pops.
     ft_h, ft_l, ft_s = hls(fg)
     dim_fg = hex_from_hls(ft_h, max(0.55, ft_l * 0.70), ft_s)
-    return {
+    # Embed stable public key so unpacked + packed extension share the
+    # same id. Without this, chrome's --load-extension gets a path-hashed
+    # id != policy force_installed id, and the two extensions don't
+    # merge. With key: unpacked reads manifest.json live on every apply.
+    import os as _os
+    _key_path = _os.path.expanduser("~/.config/qtile/browser-theme.key")
+    try:
+        _key = open(_key_path).read().strip()
+    except Exception:
+        _key = None
+    m = {
         "manifest_version": 3,
         "version": "1.0." + str(int(epoch or _t.time())),
         "name": "Wal Theme",
@@ -345,6 +355,9 @@ def render_brave_manifest(bg, bg_alt, fg, accents, epoch=None):
             }
         }
     }
+    if _key:
+        m["key"] = _key
+    return m
 
 def process(path: Path, force=False):
     out_file = OUT_DIR / (path.stem + ".json")

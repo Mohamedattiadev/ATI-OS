@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "version": "1.0.1784937969",
+  "version": "1.0.1784938517",
   "name": "Wal Theme",
   "description": "Precompiled per-wallpaper.",
   "theme": {
@@ -116,5 +116,6 @@
         43
       ]
     }
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvN70ZSq6qWVMu09b2+CPlE6U7QeFlUDaLzZkipM60Nd89O2izS5CjEHq3Lygs1lx7pn04vlk2XmpZ1yXI/HtTQPMCB3wBRKFTVvG+sh4AuL1ceo5ttWdGxOK7um7p58i46JPzACGMzqnjF5mjK7IfCInmBzKVUK3wMl77HcjWv8ZAXtY3YF+n4L2fk87IpsfTcdWlovqniE+bhVJUHoRwqKFByqrZsSOX1z4Cvbn8WE96qp/+snXjSAQ8GAFVxjIF2ud4fW1kaFk04ivYI7woCDxDo7511/HwPU1BNRPrPWZQMb0n9+45+xrY2VB5vH/p5+xFhwUFyqQkUQllKDHvwIDAQAB"
 }

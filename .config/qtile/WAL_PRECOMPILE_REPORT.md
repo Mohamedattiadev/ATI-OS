@@ -4,7 +4,7 @@
 - avg score: 100.0
 - >=80: 363 (100%)
 - <70: 0
-- elapsed: 99.4s
+- elapsed: 98.3s
 
 ## Worst 20
 
