@@ -169,13 +169,11 @@ build_rofi_input() {
             n_colors = split(colors, name_colors, " ")
             split("▁ ▂ ▃ ▄ ▅ ▆ ▇ █", bars, " ")
             W_PID=7; W_NAME=52; W_CPU=13; W_MEM=13
-            sep = "<span foreground=\"" sep_color "\">│</span>"
-            # Header (non-selectable).
-            printf("<span foreground=\"%s\" weight=\"bold\">%-*s</span>%s<span foreground=\"%s\" weight=\"bold\"> %-*s</span>%s<span foreground=\"%s\" weight=\"bold\"> %-*s</span>%s<span foreground=\"%s\" weight=\"bold\"> %-*s</span>\0meta\x1fnonselectable\x1ftrue\n",
-                sel, W_PID, "PID", sep,
-                sel, W_NAME, "PROCESS [WINDOW]", sep,
-                sel, W_CPU, "CPU", sep,
-                sel, W_MEM, "MEM")
+            # No vertical divider — rofi base font is proportional so
+            # `│` characters don't align between rows. Rely on padding +
+            # color contrast for column separation.
+            printf("<span foreground=\"%s\" weight=\"bold\">%-*s  %-*s  %-*s  %-*s</span>\0meta\x1fnonselectable\x1ftrue\n",
+                sel, W_PID, "PID", W_NAME, "PROCESS [WINDOW]", W_CPU, "CPU", W_MEM, "MEM")
         }
         function draw_bar(v,   idx) {
             idx = int((v * 7) / 100)
@@ -246,10 +244,10 @@ build_rofi_input() {
             name_plain = pango_escape(name_plain)
             cpu_cell = sprintf("%s %.1f%%", draw_bar(int(cpu)), cpu)
             mem_cell = sprintf("%s %.1f%%", draw_bar(int(mem)), mem)
-            printf("<span foreground=\"%s\">%-*s</span>%s <span foreground=\"%s\">%-*s</span>%s <span foreground=\"%s\">%-*s</span>%s <span foreground=\"%s\">%-*s</span>\n",
-                sel1, W_PID, pid, sep,
-                color, W_NAME, name_plain, sep,
-                cpu_col, W_CPU, cpu_cell, sep,
+            printf("<span foreground=\"%s\">%-*s</span>  <span foreground=\"%s\">%-*s</span>  <span foreground=\"%s\">%-*s</span>  <span foreground=\"%s\">%-*s</span>\n",
+                sel1, W_PID, pid,
+                color, W_NAME, name_plain,
+                cpu_col, W_CPU, cpu_cell,
                 mem_col, W_MEM, mem_cell)
         }
     '
