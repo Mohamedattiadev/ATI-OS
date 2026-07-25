@@ -37,21 +37,22 @@ ROWS_PER_COL = 21  # Adjusted for better vertical spacing
 COL_COUNT = 3
 MAX_NAME_LEN = 26
 
-# DOOM ONE PALETTE (Enhanced)
-COLORS = {
-    "bg": "#1c1f24",
-    "fg": "#bbc2cf",
-    "muted": "#5b6268",
-    "blue": "#51afef",
-    "cyan": "#46d9ff",
-    "green": "#98be65",
-    "purple": "#c678dd",
-    "red": "#ff6c6b",
-    "line": "#2a2e36",
-    "dark": "#1b1b1b",
-    "highlight_bg": "#51afef",  # The background of selected item
-    "highlight_fg": "#1c1f24",  # The text color of selected item
-}
+# Wal-derived palette — refreshed each open via _load_wal_colors().
+# Extends the shared cheatsheet loader with popup-specific slots
+# (line, dark, highlight_bg, highlight_fg).
+from popups._wal_colors import load_colors as _load_wal_colors
+
+def _load_colors():
+    base = _load_wal_colors()
+    # highlight_bg = dominant accent (green slot = wal color10).
+    # highlight_fg = bg so selected text pops against accent.
+    base["line"] = base["muted"]  # separator between rows
+    base["dark"] = base["bg"]     # borders
+    base["highlight_bg"] = base["green"]  # dominant accent
+    base["highlight_fg"] = base["bg"]
+    return base
+
+COLORS = _load_colors()
 
 
 # =============================================================================
@@ -309,6 +310,9 @@ def show_wallpaper_picker(qtile):
     if _WALLPAPER_LAYOUT:
         return
 
+    # Refresh from wal cache so popup retints after wallpaper switch
+    # without qtile restart (same pattern as cheatsheet popups).
+    COLORS.update(_load_colors())
     _IMAGES = load_images()
     if not _IMAGES:
         return
