@@ -71,19 +71,35 @@ require_cmd() {
 
 # Small confirm prompt. Always uses base.rasi + tight overrides so
 # it renders as a compact centered popup regardless of which caller's
-# ROFI_THEME is huge (kill-large, todo-large, etc). Selected row 0
-# = No, so accidental Enter cancels safely.
+# ROFI_THEME is huge (kill-large, todo-large, etc). Default selection
+# = Yes so single Enter confirms.
+#
+# rofi is single-instance: caller's rofi must be fully released before
+# this one starts. Poll pidfile up to 1s to avoid the "Rofi already
+# running" race that silently returned no-answer (= treated as cancel).
 rofi_confirm() {
     local prompt="${1:-Confirm?}"
     local msg="${2:-}"
-    local answer
-    # Default row 0 = Yes so Enter confirms fast. Users mostly say yes
-    # (they explicitly triggered the action); accidental double-Enter
-    # from the caller is rare vs the friction of always arrowing down.
+    local answer i
+    # Wait for any lingering rofi instance to fully exit.
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        pgrep -x rofi >/dev/null 2>&1 || break
+        sleep 0.05
+    done
     answer=$(printf 'Yes\nNo\n' | rofi -dmenu -i \
         -theme "$HOME/.config/rofi/themes/base.rasi" \
         -theme-str 'window { width: 22%; } listview { lines: 2; dynamic: false; } element { padding: 6px 12px; }' \
-        -p "$prompt" ${msg:+-mesg "$msg"} -selected-row 0)
+        -p "$prompt" ${msg:+-mesg "$msg"} -selected-row 0 2>/tmp/rofi-confirm.err)
+    local rc=$?
+    # rofi failed to launch (still-running lock, no display, etc).
+    # Notify the user so silent no-op is not confused with cancel.
+    if [[ -z "$answer" && $rc -ne 0 ]]; then
+        local err="$(cat /tmp/rofi-confirm.err 2>/dev/null | head -1)"
+        printf '[%s] rofi_confirm launch failed rc=%s err=%s\n' \
+            "$(date +%H:%M:%S)" "$rc" "$err" >>/tmp/rofi-confirm.log
+        notify_safe "❌ confirm dialog failed" "${err:-check /tmp/rofi-confirm.log}"
+        return 1
+    fi
     [[ "$answer" == "Yes" ]]
 }
 
