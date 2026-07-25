@@ -1,6 +1,8 @@
 import subprocess
 import textwrap
+import threading
 from qtile_extras.popup import PopupRelativeLayout, PopupText
+from libqtile.log_utils import logger
 
 _LAYOUT = None
 _QTILE = None
@@ -45,6 +47,7 @@ def load_updates():
             ["pacman", "-Qu"],
             stdout=subprocess.PIPE,
             text=True,
+            timeout=15,
         )
 
         for line in result.stdout.splitlines():
@@ -142,7 +145,8 @@ def render_info():
 
     try:
         info = subprocess.run(
-            ["pacman", "-Si", pkg], stdout=subprocess.PIPE, text=True
+            ["pacman", "-Si", pkg], stdout=subprocess.PIPE, text=True,
+            timeout=5,
         ).stdout
 
         for line in info.splitlines():
@@ -363,29 +367,38 @@ def confirm(answer):
 def rofi_search():
     names = "\n".join(p["name"] for p in _UPDATES)
 
-    result = subprocess.run(
-        ["rofi", "-dmenu", "-p", "Search package"],
-        input=names,
-        text=True,
-        stdout=subprocess.PIPE,
-    )
+    def _run_rofi():
+        try:
+            result = subprocess.run(
+                ["rofi", "-dmenu", "-p", "Search package"],
+                input=names,
+                text=True,
+                stdout=subprocess.PIPE,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            return
+        except Exception as e:
+            logger.warning("UpdatesPopup rofi_search failed: %s", e)
+            return
 
-    choice = result.stdout.strip()
+        choice = result.stdout.strip()
+        if not choice:
+            return
 
-    if not choice:
-        return
-
-    for i, p in enumerate(_UPDATES):
-        if p["name"] == choice:
+        def _apply():
             global _INDEX
+            for i, p in enumerate(_UPDATES):
+                if p["name"] == choice:
+                    _INDEX = i
+                    ensure_visible()
+                    update_ui()
+                    break
 
-            _INDEX = i
+        if _QTILE is not None:
+            _QTILE.call_soon_threadsafe(_apply)
 
-            ensure_visible()
-
-            update_ui()
-
-            break
+    threading.Thread(target=_run_rofi, daemon=True).start()
 
 
 # ------------------------------------------------
@@ -415,7 +428,19 @@ def show(qtile):
 
     _QTILE = qtile
 
-    _UPDATES = load_updates()
+    # Load updates in background — pacman -Qu can take seconds if db is busy.
+    _UPDATES = []
+
+    def _bg_load():
+        nets = load_updates()
+        def _apply():
+            global _UPDATES
+            _UPDATES = nets
+            update_ui()
+        if _QTILE is not None:
+            _QTILE.call_soon_threadsafe(_apply)
+
+    threading.Thread(target=_bg_load, daemon=True).start()
 
     controls = []
 
