@@ -10,6 +10,11 @@ This repository documents **both** the configuration itself and the **automated 
 
 ---
 
+> **Troubleshooting:** hit an issue? Check
+> **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — real cases logged
+> with symptom / root cause / fix (chrome not retinting, rofi-kill
+> slow, qtile freezes, eww not reloading, etc.).
+
 ## 1. Assumptions
 
 Before proceeding, ensure that your system matches the following requirements:
