@@ -10,7 +10,10 @@
 * {
     background-color: transparent;
     text-color:       @foreground;
-    font:             "FiraCode Nerd 12";
+    /* Mono variant packs Nerd icons in one cell — required so tabular
+     * menus (rofi-kill) keep column alignment. All other menus benefit
+     * from consistent monospace glyphs too. */
+    font:             "FiraCode Nerd Font Mono 12";
 }
 
 window {

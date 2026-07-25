@@ -9,10 +9,8 @@ window {
     height: 60%;
 }
 
-* {
-    font: "FiraCode Nerd Font Mono Bold 10";
-}
-
+/* Font inherited from base.rasi ("FiraCode Nerd Font Mono 12") so
+ * rofi-kill matches other menus. */
 listview {
     lines:   15;
     dynamic: true;
