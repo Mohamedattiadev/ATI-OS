@@ -234,6 +234,14 @@ qtile bar accents pin to `color2`; test harness at
 Wallpaper change auto-reapplies wal mode (`dm-setbg` + `WallpaperPopup`
 both invoke `theme-apply wal` on a bg thread so qtile stays responsive).
 
+**Rofi UI stack** — all `.rasi` themes import a shared `base.rasi`
+(doom-one flavor, radius 12, palette-driven). Overrides are layout-only
+(width, height, lines). Rofi scripts source
+`.config/AtiScriptsV1/rofi_common.sh` for palette parsing, wayland-safe
+clipboard, dep checks, and a compact `rofi_confirm` prompt. Notable:
+`rofi-kill` shows PID + process + window title (via `wmctrl -lp` + PPID
+walk for browser subprocs) in aligned columns with vertical dividers.
+
 ---
 
 ## 9. Videos
