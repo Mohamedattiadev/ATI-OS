@@ -87,6 +87,34 @@ Out of scope (stable, do not touch): `AtiScriptsV1/`, `browser-theme*`,
   Selection is applied back on the main loop via
   `_QTILE.call_soon_threadsafe`.
 
+### 8. HIGH — AudioPopup pactl freezes on every refresh
+- **File:** `.config/qtile/popups/AudioPopup.py` (`get_audio`, `select`)
+- **Symptom:** `refresh()` reschedules itself every 5s via
+  `qtile.call_later` and runs 4 blocking `pactl` `subprocess.run` calls
+  each cycle. Any PulseAudio stall (post-suspend, sink switch,
+  bluetooth handshake) would freeze qtile for the duration of the
+  stall.
+- **Fix:** timeouts on `pactl list sinks/sources` (3s),
+  `get-default-sink/source` (2s), and `set-default-sink/source` (2s).
+  Failures log-and-noop; refresh loop stays alive.
+
+### 9. HIGH — UpdatesPopup pacman freezes WM on open + every keypress
+- **File:** `.config/qtile/popups/UpdatesPopup.py`
+- **Symptoms:**
+  - `load_updates()` ran `pacman -Qu` synchronously on the main loop
+    when the popup opened. pacman commonly blocks on db lock during
+    background sync — WM froze for the full lock duration.
+  - `render_info()` ran `pacman -Si` on every navigation keypress with
+    no timeout. Slow disk / stale mirrors → per-keypress freeze.
+  - `rofi_search` blocked main loop while user browsed rofi (same
+    pattern as WallpaperPopup fuzzy search).
+- **Fixes:**
+  - `pacman -Qu`: `timeout=15` + moved to daemon thread on popup show;
+    UI applies via `call_soon_threadsafe` when ready.
+  - `pacman -Si`: `timeout=5`.
+  - `rofi_search`: moved into daemon thread with `timeout=120`;
+    selection applied via `call_soon_threadsafe`.
+
 ---
 
 ## Not fixed (assessed safe)
@@ -126,6 +154,9 @@ verify no regression.
 | 6 | Bluetooth popup: connect to a device that will fail (out of range) | Popup shows progress, then "Timeout connecting to …" ≤15s. WM never freezes. |
 | 7 | Wifi popup: connect to an unreachable SSID | Popup shows progress, then "Timeout connecting to …" ≤30s. WM never freezes. |
 | 8 | Wallpaper picker → fuzzy-search rofi. Open rofi, wait 5s, dismiss. | WM stays responsive while rofi is open (mouse / other keys work). Selection applies after dismissal. |
+| 9 | Open Audio popup, unplug + replug a bluetooth sink mid-refresh | Refresh survives; status may briefly show error but popup + WM stay responsive. |
+| 10 | Open Updates popup while `sudo pacman -Sy` is running in another term (db locked) | Popup opens instantly with empty list; updates populate once pacman -Qu returns (up to 15s). WM never freezes. |
+| 11 | Updates popup → `/` (rofi search). Open rofi, wait, dismiss. | WM responsive during rofi browse. Selection navigates to package on dismiss. |
 
 ### Chord release
 After each chord, press `Escape` — chord must exit and normal keys
@@ -138,9 +169,11 @@ correctly.
 
 ```
 .config/qtile/config.py
+.config/qtile/popups/AudioPopup.py
 .config/qtile/popups/BluetoothPopup.py
-.config/qtile/popups/WifiPopup.py
+.config/qtile/popups/UpdatesPopup.py
 .config/qtile/popups/WallpaperPopup.py
+.config/qtile/popups/WifiPopup.py
 .config/qtile/scripts/volume_control.py
 ```
 
