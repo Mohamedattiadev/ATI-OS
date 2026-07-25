@@ -341,11 +341,24 @@ case "$ret" in
         ;;
     0) # Enter — regular kill, guaranteed
         if [[ -n "$pid" ]]; then
-            if rofi_confirm "Kill PID $pid?" "$(ps -p "$pid" -o comm= 2>/dev/null)"; then
+            proc_name="$(ps -p "$pid" -o comm= 2>/dev/null)"
+            if [[ -z "$proc_name" ]]; then
+                notify_safe "❌ PID $pid already gone"
+                reexec
+            fi
+            # Debug: log to /tmp so we can inspect the flow.
+            printf '[%s] kill Enter pid=%s comm=%s ret=%s\n' \
+                "$(date +%H:%M:%S)" "$pid" "$proc_name" "$ret" \
+                >>/tmp/rofi-kill.log
+            if rofi_confirm "Kill PID $pid ($proc_name)?" ""; then
+                printf '  confirmed, killing\n' >>/tmp/rofi-kill.log
                 kill_guaranteed "$pid"
+            else
+                printf '  cancelled\n' >>/tmp/rofi-kill.log
             fi
             reexec
         else
+            notify_safe "❌ Could not extract PID from selection"
             reexec
         fi
         ;;
