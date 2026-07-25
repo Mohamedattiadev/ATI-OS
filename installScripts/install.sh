@@ -407,7 +407,15 @@ else
   warn "wal-precompile not on PATH — AtiScriptsV1 install missed it?"
 fi
 
-# Apply initial theme so kitty/rofi/dunst/qtile/gtk all get seeded.
+# Seed eww colors.scss from template so eww.scss @import resolves
+# before the first theme-apply runs. theme-apply overwrites this on
+# every switch; the .tmpl is versioned as the doom-one fallback.
+if [[ -f "$HOME_DIR/.config/eww/colors.scss.tmpl" && ! -f "$HOME_DIR/.config/eww/colors.scss" ]]; then
+  cp "$HOME_DIR/.config/eww/colors.scss.tmpl" "$HOME_DIR/.config/eww/colors.scss"
+  ok "Seeded eww colors.scss from tmpl"
+fi
+
+# Apply initial theme so kitty/rofi/dunst/qtile/gtk/eww all get seeded.
 if command -v theme-apply >/dev/null; then
   theme-apply doomone >/dev/null 2>&1 || warn "initial theme-apply failed"
   ok "Initial theme: doomone"
