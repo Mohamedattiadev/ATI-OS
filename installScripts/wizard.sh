@@ -39,19 +39,14 @@ if ! command -v gum >/dev/null; then
   fi
 fi
 
-# ─── WAL-TINTED PALETTE ──────────────────────────────────────────────
-# Pull accents from wal cache when available; fall back to a doom-one
-# inspired defaults so wizard renders identical on fresh Arch (before
-# any theme-apply has ever run).
-_wal_hex() {
-  local key="$1" fallback="$2" hex
-  hex=$(jq -r ".colors.$key // empty" ~/.cache/wal/colors.json 2>/dev/null)
-  [[ -z "$hex" || "$hex" == null ]] && hex="$fallback"
-  echo "$hex"
-}
-ACCENT=$(_wal_hex color10 '#98be65')   # dominant
-URGENT=$(_wal_hex color9  '#ff6c6b')
-INFO=$(_wal_hex   color14 '#46d9ff')
+# ─── PALETTE (DoomOne — stable across wallpapers) ────────────────────
+# Fixed palette so wizard looks identical on fresh Arch and on themed
+# systems. Don't leak the user's current wal palette into the installer
+# — installer needs a consistent brand feel.
+ACCENT='#98be65'   # doom green
+URGENT='#ff6c6b'   # doom red
+INFO='#51afef'     # doom blue
+WARN_C='#e5c07b'   # doom yellow
 MUTED='#5b6268'
 FG='#dcdfe4'
 
@@ -144,14 +139,14 @@ MOD_ORDER=(
 
 _reg() { MOD_TITLE[$1]="$2"; MOD_GROUP[$1]="$3"; MOD_DESC[$1]="$4"; MOD_CMD[$1]="$5"; }
 _reg sanity            "System check"        System    "Arch + X11 + dotfiles present"                          "step_sanity"
-_reg bootstrap         "Bootstrap packages"  System    "base-devel, git, stow, xorg-server, curl"               "step_bootstrap"
+_reg bootstrap         "Bootstrap packages"  System    "base-devel · git · stow · xorg-server · curl"           "step_bootstrap"
 _reg yay               "AUR helper (yay)"    System    "Build yay-bin from AUR if missing"                      "step_yay"
 _reg dcli              "dcli"                System    "Declarative package sync tool"                          "step_dcli"
-_reg stow              "Deploy dotfiles"     Dotfiles  "Symlink .config, .local, etc via GNU stow"              "step_stow"
+_reg stow              "Deploy dotfiles"     Dotfiles  "Symlink .config · .local · etc via GNU stow"            "step_stow"
 _reg arch-config       "Host arch-config"    Dotfiles  "Point arch-config at this host"                         "step_arch_config"
 _reg dcli-sync         "dcli sync (all pkgs)" System   "Install every declared pkg + flatpak (slow)"            "step_dcli_sync"
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
-_reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill, theme-apply, etc to /usr/local/bin"  "step_ati_scripts"
+_reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"
 _reg xinit             ".xinitrc"            Dotfiles  "Auto-start qtile + xcape + picom"                       "step_xinit"
 _reg xmodmap           ".Xmodmap"            Dotfiles  "Caps hold = Alt (xcape restores tap-Caps)"              "step_xmodmap"
@@ -239,17 +234,20 @@ page_welcome() {
 }
 
 page_module_picker() {
-  _BOX_HEADER "select modules to install"
-  echo
-  local options=()
+  _BOX_HEADER "select modules · all pre-checked · space to toggle"
+  # Options are just clean module lines (no commas anywhere) so gum's
+  # CSV --selected can preselect everything by default.
+  local options=() csv
   for id in "${MOD_ORDER[@]}"; do
-    options+=("$(printf '%-22s %-9s %s' "$id" "[${MOD_GROUP[$id]}]" "${MOD_DESC[$id]}")")
+    options+=("$(printf '%-22s [%-8s] %s' "$id" "${MOD_GROUP[$id]}" "${MOD_DESC[$id]}")")
   done
+  csv="$(printf '%s\n' "${options[@]}" | paste -sd, -)"
   local picked
   picked=$(printf '%s\n' "${options[@]}" | gum choose --no-limit \
+    --cursor.foreground "$ACCENT" \
+    --selected.foreground "$ACCENT" \
     --header "space=toggle · a=all · enter=continue" \
-    --selected="$(printf '%s\n' "${options[@]}" | paste -sd, -)")
-  # Extract id (first whitespace token) per line.
+    --selected="$csv" || true)
   PICKED_IDS=()
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
@@ -280,44 +278,102 @@ page_summary() {
   gum confirm "Proceed with ${#PICKED_IDS[@]} module(s)?"
 }
 
+_FAILED_IDS=()
+
+_run_module() {
+  local id="$1" logf="/tmp/wizard-$id.log" errf="/tmp/wizard-$id.err"
+  : >"$logf"; : >"$errf"
+  bash -c "$(declare -f run _OK _WARN _ERR _DIM); DRY_RUN=$DRY_RUN; set -e; ${MOD_CMD[$id]}" \
+    >"$logf" 2>"$errf"
+}
+
+_show_error_tail() {
+  local id="$1" errf="/tmp/wizard-$id.err" logf="/tmp/wizard-$id.log"
+  local tail_content
+  tail_content=$(tail -5 "$errf" 2>/dev/null | grep -v '^\s*$' | head -5)
+  [[ -z "$tail_content" ]] && tail_content=$(tail -5 "$logf" 2>/dev/null | grep -v '^\s*$' | head -5)
+  [[ -z "$tail_content" ]] && tail_content="(no output captured — check $errf)"
+  gum style --border rounded --border-foreground "$URGENT" \
+    --padding "0 2" --margin "0 4" --foreground "$URGENT" \
+    "$tail_content"
+}
+
 page_execute() {
   _BOX_HEADER "installing modules"
   local ok=0 fail=0 total=${#PICKED_IDS[@]} idx=0
   for id in "${PICKED_IDS[@]}"; do
     idx=$((idx+1))
-    local chip badge title status
+    local chip badge title status_line
     chip="$(_CHIP "$idx" "$total")"
     badge="$(_BADGE "${MOD_GROUP[$id]}")"
     title="$(gum style --bold --foreground "$FG" "${MOD_TITLE[$id]}")"
-    # Header row: chip [badge] title
     gum join --horizontal "$chip" " " "$badge" " " "$title"
-    _DIM   "        ${MOD_DESC[$id]}"
     if (( DRY_RUN )); then
-      # Preview commands with subtle indent + capture output.
-      out="$("${MOD_CMD[$id]}" 2>&1)"
-      [[ -n "$out" ]] && printf '%s\n' "$out" | sed 's/^/    /'
-      status="$(gum style --foreground '#82c882' '  ✔ preview')"
+      status_line="$(gum style --foreground '#82c882' '   ✔ preview ok')"
       ok=$((ok+1))
     else
-      if bash -c "$(declare -f run _OK _WARN _ERR _DIM); DRY_RUN=$DRY_RUN; ${MOD_CMD[$id]}" \
-           >/tmp/wizard-$id.log 2>/tmp/wizard-$id.err; then
-        status="$(gum style --foreground '#82c882' '  ✔ ok')"; ok=$((ok+1))
-      else
-        status="$(gum style --foreground "$URGENT" '  ✖ failed')"; fail=$((fail+1))
-      fi
+      local attempts=0
+      while :; do
+        attempts=$((attempts+1))
+        if _run_module "$id"; then
+          status_line="$(gum style --foreground '#82c882' '   ✔ ok')"
+          ok=$((ok+1))
+          break
+        fi
+        # Failed: show tail, prompt retry/skip/quit.
+        gum style --foreground "$URGENT" --bold "   ✖ failed (attempt $attempts)"
+        _show_error_tail "$id"
+        local choice
+        choice=$(gum choose --header "Module '$id' failed. What now?" \
+          "retry" "skip · continue" "quit installer")
+        case "$choice" in
+          retry)
+            gum style --foreground "$INFO" "   ↻ retrying $id…"
+            ;;
+          "skip · continue")
+            status_line="$(gum style --foreground "$WARN_C" '   ⚠ skipped after failure')"
+            fail=$((fail+1))
+            _FAILED_IDS+=("$id")
+            break
+            ;;
+          *)
+            gum style --foreground "$URGENT" --bold "   ✖ Aborted by user at $id"
+            _finale_summary "$ok" "$fail" "$total" "$idx" "aborted"
+            exit 2
+            ;;
+        esac
+      done
     fi
-    printf '%s\n' "$status"
+    printf '%s\n' "$status_line"
     _PROGRESS "$idx" "$total"
     echo
   done
+  _finale_summary "$ok" "$fail" "$total" "$total" "done"
+}
+
+_finale_summary() {
+  local ok="$1" fail="$2" total="$3" ran="$4" status="$5"
+  local border_color="$ACCENT" title="Installation Complete"
+  if [[ "$status" == "aborted" ]]; then
+    border_color="$URGENT"
+    title="Installation Aborted"
+  elif (( fail )); then
+    border_color="$WARN_C"
+    title="Installation Finished (with failures)"
+  fi
   echo
-  local border_color="$ACCENT"
-  (( fail )) && border_color="$URGENT"
   gum style --border rounded --padding "1 3" --align center \
     --border-foreground "$border_color" \
-    "$(gum style --bold "Installation Complete")" \
+    "$(gum style --bold "$title")" \
     "" \
-    "$(gum style --foreground '#82c882' "✔ $ok succeeded")   $(gum style --foreground "$URGENT" "✖ $fail failed")"
+    "$(gum style --foreground '#82c882' "✔ $ok ok")   $(gum style --foreground "$WARN_C" "⚠ $((total - ran)) not run")   $(gum style --foreground "$URGENT" "✖ $fail failed")"
+  if (( ${#_FAILED_IDS[@]} )); then
+    echo
+    _H2 "Failed modules — logs at /tmp/wizard-<id>.err:"
+    for fid in "${_FAILED_IDS[@]}"; do
+      _ERR "  · $fid  ($(gum style --foreground "$MUTED" "tail /tmp/wizard-$fid.err"))"
+    done
+  fi
 }
 
 page_finale() {
