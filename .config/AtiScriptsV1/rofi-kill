@@ -324,10 +324,10 @@ case "$ret" in
         fi
         reexec
         ;;
-    13) # Alt+k force kill
+    13) # Alt+k force kill (skip grace, go straight to SIGKILL)
         if [[ -n "$pid" ]]; then
             if rofi_confirm "Force kill PID $pid?" "$(ps -p "$pid" -o comm= 2>/dev/null)"; then
-                kill -9 "$pid" 2>/dev/null && notify_safe "☠️ Killed PID $pid" || notify_safe "❌ Failed to kill PID $pid"
+                kill_guaranteed "$pid" force
             fi
         fi
         reexec
@@ -339,10 +339,10 @@ case "$ret" in
         fi
         reexec
         ;;
-    0) # Enter — regular kill
+    0) # Enter — regular kill, guaranteed
         if [[ -n "$pid" ]]; then
             if rofi_confirm "Kill PID $pid?" "$(ps -p "$pid" -o comm= 2>/dev/null)"; then
-                kill -15 "$pid" 2>/dev/null && notify_safe "✅ Killed PID $pid" || notify_safe "❌ Failed to kill PID $pid"
+                kill_guaranteed "$pid"
             fi
             reexec
         else
