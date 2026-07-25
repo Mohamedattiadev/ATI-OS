@@ -21,6 +21,16 @@ STATE_FILE="$CACHE_DIR/theme_mode"
 
 mkdir -p "$CACHE_DIR"
 
+# Prevent concurrent invocations from corrupting cached files (rapid
+# wallpaper switches, keybind spam). flock with -n exits fast; second
+# caller drops silently. FD 9 stays open for the whole script run.
+LOCK="$CACHE_DIR/.theme-apply.lock"
+exec 9>"$LOCK"
+if ! flock -n 9; then
+  notify-send "theme-apply" "already running, skipped ($MODE)" 2>/dev/null || true
+  exit 0
+fi
+
 PRESETS=(doomone dracula gruvbox nord tokyonight catppuccin monokai everforest rose-pine kanagawa oxocarbon)
 
 is_preset() {
@@ -70,8 +80,20 @@ if [[ "$MODE" == "wal" ]]; then
     exit 1
   fi
   WALL_PATH="$(cat "$WALL_LINK")"
+  # Guard: wall path stale (file deleted after cache write).
+  if [[ ! -f "$WALL_PATH" ]]; then
+    notify-send -u critical "theme-apply" "wallpaper file missing: $WALL_PATH"
+    exit 1
+  fi
   WALL_STEM="$(basename "$WALL_PATH")"; WALL_STEM="${WALL_STEM%.*}"
   PRECOMPILED="$HOME/.cache/qtile/palettes/$WALL_STEM.json"
+
+  # New wallpaper (not in precompile cache) — generate its palette on
+  # demand so the fast path can be used. Falls through to legacy live
+  # wal only if wal-precompile itself fails or is missing.
+  if [[ ! -f "$PRECOMPILED" ]] && command -v wal-precompile >/dev/null; then
+    wal-precompile --only "$(basename "$WALL_PATH")" --force >/dev/null 2>&1 || true
+  fi
 
   if [[ -f "$PRECOMPILED" ]]; then
     # Fast path: precompiled palette contains pre-rendered consumer

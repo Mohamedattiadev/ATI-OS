@@ -210,6 +210,15 @@ Wal mode uses a precompiled cache. `wal-precompile` walks
 doomone-quality bar (WCAG AAA bg/fg, WCAG AA per-accent, hue-spread
 guaranteed). See `.config/qtile/WAL_PRECOMPILE_REPORT.md`.
 
+**New wallpapers** — drop any image into `~/Pictures/Wallpapers/` and
+select it (dm-setbg / WallpaperPopup). `theme-apply wal` auto-runs
+`wal-precompile --only <basename>` on cache miss so the palette is
+generated before consumers write. No manual precompile step.
+
+**Concurrency** — `theme-apply` uses `flock` on
+`~/.cache/qtile/.theme-apply.lock`; rapid wallpaper switches or
+keybind spam are dropped silently instead of corrupting caches.
+
 **Coverage per apply**
 
 | Consumer | Reload mechanism |
