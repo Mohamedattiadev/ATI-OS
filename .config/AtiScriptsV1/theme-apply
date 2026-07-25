@@ -184,6 +184,8 @@ block = (
     f"        --blue: {blue};\n"
     f"        --purple: {purple};\n"
     f"        --cyan: {cyan};\n"
+    f"        --accent: {green};\n"
+    f"        --urgent: {red};\n"
     "      }\n"
     "    </style>\n"
     "    <!-- END-THEME-VARS -->"
@@ -587,13 +589,27 @@ if [[ "${THEME_APPLY_NO_BROWSER:-0}" != 1 ]]; then
 </gupdate>
 EOF
     fi
-    # Chrome caches installed extension + polls update_url only every
-    # few hours. Purge cached extension dir so force_installed policy
-    # reinstalls fresh .crx on next launch. Same for chromium.
-    for prof in \
-      "$HOME/.config/google-chrome/Default/Extensions/$EXT_ID" \
-      "$HOME/.config/chromium/Default/Extensions/$EXT_ID"; do
-      [[ -d "$prof" ]] && rm -rf "$prof"
+    # Chrome caches the installed .crx AND records its path in
+    # Preferences. Even after we delete Extensions/<id>/, Chrome loads
+    # from the stale Preferences path (or ignores the update_url poll
+    # which happens every ~5h). Purge BOTH: Extensions dir + Preferences
+    # entry. On next launch chrome sees force_installed policy with no
+    # local trace → downloads fresh .crx from update_url immediately.
+    for base in "$HOME/.config/google-chrome/Default" "$HOME/.config/chromium/Default"; do
+      [[ -d "$base" ]] || continue
+      rm -rf "$base/Extensions/$EXT_ID"
+      python3 - "$base/Preferences" "$EXT_ID" <<'PYPURGE' 2>/dev/null || true
+import json, sys
+path, ext_id = sys.argv[1], sys.argv[2]
+try:
+    d = json.load(open(path))
+except Exception:
+    sys.exit(0)
+ext = d.get("extensions", {}).get("settings", {})
+if ext_id in ext:
+    del ext[ext_id]
+    open(path, "w").write(json.dumps(d, separators=(',', ':')))
+PYPURGE
     done
   fi
 
