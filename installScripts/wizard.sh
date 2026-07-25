@@ -201,13 +201,82 @@ Section \"InputClass\"
     Option \"Tapping\" \"on\"
 EndSection
 EOF"; }
-step_xinit()        { _DIM "  (skipped in wizard scaffold — run install.sh for full .xinitrc)"; }
-step_xmodmap()      { _DIM "  (skipped in wizard scaffold)"; }
+step_xinit() {
+  local xrc="$HOME/.xinitrc"
+  if (( DRY_RUN )); then _DIM "  [dry] write $xrc + chmod +x"; return; fi
+  cat >"$xrc" <<'XINIT_EOF'
+#!/bin/sh
+# ===============================
+# XINITRC – QTILE (STABLE BUILD)
+# ===============================
+unset SESSION_MANAGER
+setxkbmap -layout us -option
+[ -f "$HOME/.Xmodmap" ] && xmodmap "$HOME/.Xmodmap"
+if command -v xcape >/dev/null 2>&1; then
+  pkill -x xcape 2>/dev/null
+  xcape -e 'Alt_L=Caps_Lock' &
+fi
+export XDG_SESSION_TYPE=x11
+export XDG_CURRENT_DESKTOP=qtile
+export XDG_SESSION_DESKTOP=qtile
+systemctl --user import-environment DISPLAY XAUTHORITY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+  dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP 2>/dev/null
+fi
+command -v xsetroot >/dev/null 2>&1 && xsetroot -cursor_name left_ptr
+xset s off -dpms
+if [ -f "$HOME/.cache/wall" ] && command -v xwallpaper >/dev/null 2>&1; then
+  wall_path="$(cat "$HOME/.cache/wall")"
+  [ -f "$wall_path" ] && xwallpaper --stretch "$wall_path" &
+fi
+if command -v picom >/dev/null 2>&1; then
+  pkill -x picom 2>/dev/null
+  picom &
+fi
+exec qtile start
+XINIT_EOF
+  chmod +x "$xrc"
+}
+
+step_xmodmap() {
+  local xmm="$HOME/.Xmodmap"
+  if (( DRY_RUN )); then _DIM "  [dry] write $xmm"; return; fi
+  cat >"$xmm" <<'XMM_EOF'
+! Caps physical key acts as Alt_L; xcape restores tap-Caps behavior
+clear lock
+clear mod1
+keycode 66 = Alt_L
+add mod1 = Alt_L Alt_R
+XMM_EOF
+}
 step_lid()          { run "sudo sed -i 's/^#\\?HandleLidSwitch=.*/HandleLidSwitch=ignore/' /etc/systemd/logind.conf && sudo systemctl restart systemd-logind"; }
 step_image_envs()   { run "grep -qx 'set -x VIPS_WARNING 0' $HOME/.profile 2>/dev/null || echo 'set -x VIPS_WARNING 0' >> $HOME/.profile"; }
 step_flatpak()      { run "sudo pacman -S --needed --noconfirm flatpak && flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo && flatpak install -y --user flathub it.mijorus.collector"; }
-step_piper()        { _DIM "  (delegates to install.sh full path — big downloads)"; run "true"; }
-step_whisper()      { _DIM "  (delegates to install.sh full path — 500MB download)"; run "true"; }
+step_piper() {
+  local dir="$HOME/.config/piper-voices"
+  run "mkdir -p $dir"
+  local files=(
+    en/en_US/ryan/high/en_US-ryan-high.onnx
+    en/en_US/ryan/high/en_US-ryan-high.onnx.json
+    de/de_DE/thorsten/high/de_DE-thorsten-high.onnx
+    de/de_DE/thorsten/high/de_DE-thorsten-high.onnx.json
+  )
+  for f in "${files[@]}"; do
+    local fname; fname=$(basename "$f")
+    (( DRY_RUN )) && { _DIM "  [dry] curl piper $fname"; continue; }
+    [[ -f "$dir/$fname" ]] && continue
+    curl -sL -o "$dir/$fname" "https://huggingface.co/rhasspy/piper-voices/resolve/main/$f"
+  done
+}
+
+step_whisper() {
+  local dir="$HOME/.local/share/whisper"
+  local out="$dir/ggml-small.en.bin"
+  run "mkdir -p $dir"
+  if (( DRY_RUN )); then _DIM "  [dry] curl whisper small.en (~500MB)"; return; fi
+  [[ -f "$out" ]] && return
+  curl -sL -o "$out" "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin"
+}
 step_nopasswd()     { run "echo \"$(id -un) ALL=(ALL) NOPASSWD: ALL\" | sudo tee /etc/sudoers.d/zz-$(id -un)-nopasswd >/dev/null && sudo chmod 440 /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
 step_ownership()    { run "sudo chown -R $(id -un):$(id -un) $DOTFILES_DIR"; }
 step_disable_dm()   { for dm in lightdm gdm sddm lxdm; do run "sudo systemctl disable $dm.service 2>/dev/null || true"; done; }
@@ -216,14 +285,97 @@ step_candy()        { [[ -d /usr/share/icons/candy-icons ]] && { _OK "candy-icon
 step_wallpapers()   { [[ -d $HOME/Pictures/Wallpapers ]] && { _OK "wallpapers present"; return; }
                       run "mkdir -p $HOME/Pictures && git clone https://github.com/w3dg/wallpapers.git $HOME/Pictures/Wallpapers"; }
 step_speed()        { run "$DOTFILES_DIR/installScripts/speed_boost.sh"; }
-step_themes()       { run "sudo pacman -S --needed --noconfirm python-pywal python-pillow papirus-icon-theme jq && wal-precompile && theme-apply doomone"; }
+step_themes() {
+  run "sudo pacman -S --needed --noconfirm python-pywal python-pillow papirus-icon-theme jq"
+  # Seed eww colors.scss from .tmpl so first theme-apply resolves.
+  local eww_tmpl="$HOME/.config/eww/colors.scss.tmpl"
+  local eww_out="$HOME/.config/eww/colors.scss"
+  [[ -f "$eww_tmpl" && ! -f "$eww_out" ]] && run "cp $eww_tmpl $eww_out"
+  # Seed default wallpaper if none set.
+  if [[ ! -f "$HOME/.cache/wall" ]]; then
+    local first
+    first=$(find "$HOME/Pictures/Wallpapers" -maxdepth 2 -type f \
+      \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null | sort | head -1)
+    [[ -n "$first" ]] && run "mkdir -p $HOME/.cache && echo $first > $HOME/.cache/wall"
+  fi
+  run "wal-precompile"
+  run "theme-apply doomone"
+}
 step_browser_flags() {
   run "for f in brave-flags.conf chromium-flags.conf chrome-flags.conf; do
     cfg=$HOME/.config/\$f
     grep -q -- '--load-extension=' \$cfg 2>/dev/null || echo '--load-extension=$HOME/.config/qtile/browser-theme' >> \$cfg
   done"
 }
-step_chrome_policy() { _DIM "  (delegates to install.sh step 23b — pem+crx+policy setup)"; run "true"; }
+step_chrome_policy() {
+  local pem="$HOME/.config/qtile/browser-theme.pem"
+  local key="$HOME/.config/qtile/browser-theme.key"
+  local crx="$HOME/.config/qtile/browser-theme.crx"
+  local upd="$HOME/.config/qtile/browser-theme-updates.xml"
+  local ext="$HOME/.config/qtile/browser-theme"
+  run "mkdir -p $ext"
+  # Sign key (per-machine, gitignored).
+  if [[ ! -f "$pem" ]]; then
+    run "openssl genrsa -out $pem 2048 2>/dev/null && chmod 600 $pem"
+  fi
+  run "openssl rsa -in $pem -pubout -outform DER 2>/dev/null | base64 -w0 > $key"
+  # Extension id from pubkey.
+  local ext_id
+  if (( DRY_RUN )); then
+    ext_id="<computed_from_pem>"
+    _DIM "  [dry] ext_id = sha256(pubkey)[:32] → maps a-p"
+  else
+    ext_id=$(python3 -c "
+import hashlib, base64
+k = open('$key').read()
+h = hashlib.sha256(base64.b64decode(k)).hexdigest()[:32]
+print(''.join(chr(ord('a')+int(c,16)) for c in h))
+")
+  fi
+  # Pack + updates.xml.
+  local cbin=""
+  for c in /opt/google/chrome/chrome /usr/bin/chromium /opt/brave-bin/brave; do
+    [[ -x "$c" ]] && { cbin="$c"; break; }
+  done
+  [[ -n "$cbin" && -f "$ext/manifest.json" ]] && \
+    run "$cbin --pack-extension=$ext --pack-extension-key=$pem --no-message-box >/dev/null 2>&1 || true"
+  if [[ -f "$ext/manifest.json" ]]; then
+    local ver
+    if (( DRY_RUN )); then ver="<from-manifest.json>"
+    else ver=$(python3 -c "import json;print(json.load(open('$ext/manifest.json'))['version'])"); fi
+    if (( DRY_RUN )); then
+      _DIM "  [dry] write $upd (updatecheck version=$ver)"
+    else
+      cat >"$upd" <<POLICY_EOF
+<?xml version='1.0' encoding='UTF-8'?>
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='$ext_id'>
+    <updatecheck codebase='file://$crx' version='$ver' />
+  </app>
+</gupdate>
+POLICY_EOF
+    fi
+  fi
+  # Sudo write chrome + chromium policies.
+  local policy_json="{
+  \"ExtensionSettings\": {
+    \"$ext_id\": {
+      \"installation_mode\": \"force_installed\",
+      \"update_url\": \"file://$upd\",
+      \"toolbar_pin\": \"default_unpinned\"
+    }
+  },
+  \"ExtensionInstallSources\": [\"file:///*\"]
+}"
+  run "sudo mkdir -p /etc/opt/chrome/policies/managed /etc/chromium/policies/managed"
+  if (( DRY_RUN )); then
+    _DIM "  [dry] sudo tee /etc/opt/chrome/policies/managed/wal-theme.json"
+    _DIM "  [dry] sudo tee /etc/chromium/policies/managed/wal-theme.json"
+  else
+    printf '%s' "$policy_json" | sudo tee /etc/opt/chrome/policies/managed/wal-theme.json >/dev/null
+    printf '%s' "$policy_json" | sudo tee /etc/chromium/policies/managed/wal-theme.json >/dev/null
+  fi
+}
 
 # ─── PAGES ───────────────────────────────────────────────────────────
 

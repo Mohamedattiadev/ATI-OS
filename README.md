@@ -91,27 +91,25 @@ Assumes a **fresh Arch base install** (no DE, no display manager).
 git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles
 ```
 
-### Step 2: Run the installer
+### Step 2: Run the wizard
 
-Two flavors:
+Single installer — TUI-driven, all logic behind one script:
 
 ```bash
 cd ~/.dotfiles/installScripts
 
-# a) One-shot — installs everything unattended.
-./install.sh
-
-# b) TUI wizard — pick modules interactively, colored panels, spinners,
-#    dry-run to preview every command before touching anything.
-./wizard.sh              # full run
-./wizard.sh --dry-run    # preview only
-./wizard.sh --yes        # skip picker, install all
+./wizard.sh              # interactive: pick modules with checkboxes
+./wizard.sh --dry-run    # preview every command, touch nothing
+./wizard.sh --yes        # unattended: install all modules
+./install.sh             # alias for `wizard.sh --yes` (legacy path)
 ```
 
 The wizard auto-installs its own dep (`gum`) via pacman on first
-launch, then presents grouped module cards (System / Dotfiles / Themes /
-Browsers / Media). Every side-effecting command routes through a `run`
-wrapper so `--dry-run` is a real audit, not a stub.
+launch, then shows an ASCII banner + grouped module picker (System /
+Dotfiles / Themes / Browsers / Apps / Media). Every side-effecting
+command routes through a `run` wrapper so `--dry-run` is a real audit,
+not a stub. Per-module logs land at `/tmp/wizard-<id>.log/.err` — on
+failure the wizard shows a tail-preview and offers **retry / skip / quit**.
 
 Done. One command. Bootstrap covers:
 
