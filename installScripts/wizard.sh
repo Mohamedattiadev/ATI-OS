@@ -48,12 +48,14 @@ DRY_RUN=0
 ASSUME_YES=0
 ONLY_LIST=""
 SKIP_LIST=""
+UNINSTALL=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run|-n) DRY_RUN=1 ;;
     --yes|-y)     ASSUME_YES=1 ;;
     --only=*)     ONLY_LIST="${arg#*=}" ;;
     --skip=*)     SKIP_LIST="${arg#*=}" ;;
+    --uninstall)  UNINSTALL=1 ;;
     --help|-h)
       sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
       cat <<'HELP'
@@ -69,6 +71,12 @@ wallpapers speed themes browser-flags chrome-policy
 
 Example (safe non-network test — skip heavy downloads):
   ./wizard.sh --yes --skip=dcli-sync,whisper,piper,wallpapers,flatpak
+
+Uninstall (reverse config files + sudoers + policies wizard wrote —
+NEVER touches pacman packages, dcli syncs, or downloaded models):
+  ./wizard.sh --uninstall            # interactive confirm
+  ./wizard.sh --uninstall --dry-run  # preview reversals
+  ./wizard.sh --uninstall --yes      # unattended
 HELP
       exit 0 ;;
   esac
@@ -506,6 +514,103 @@ preflight() {
   sleep 1
 }
 
+# ─── UNINSTALL FUNCTIONS ─────────────────────────────────────────────
+# Each reverses what its step_* wrote. Package installs, dcli syncs,
+# and downloaded models are NEVER touched — those may be shared with
+# other user workflows. Only removes files/policies wizard authored.
+# Idempotent: safe to run twice.
+
+uninstall_xinit()            { run "rm -f $HOME/.xinitrc"; }
+uninstall_xmodmap()          { run "rm -f $HOME/.Xmodmap"; }
+uninstall_image_envs()       { run "sed -i '/VIPS_WARNING/d' $HOME/.profile 2>/dev/null || true"; }
+uninstall_touchpad()         { run "sudo rm -f /etc/X11/xorg.conf.d/30-touchpad.conf"; }
+uninstall_passwordless_sudo(){ run "sudo rm -f /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
+uninstall_browser_flags() {
+  for f in brave-flags.conf chromium-flags.conf chrome-flags.conf; do
+    run "sed -i '/--load-extension=.*browser-theme/d' $HOME/.config/$f 2>/dev/null || true"
+  done
+}
+uninstall_chrome_policy() {
+  run "sudo rm -f /etc/opt/chrome/policies/managed/wal-theme.json /etc/chromium/policies/managed/wal-theme.json"
+  run "rm -f $HOME/.config/qtile/browser-theme.pem $HOME/.config/qtile/browser-theme.key $HOME/.config/qtile/browser-theme.crx $HOME/.config/qtile/browser-theme-updates.xml"
+  # Remove installed extension traces per browser profile.
+  local ext=fommfacojlllmdogognehdgombidbpjg
+  for base in "$HOME/.config/google-chrome/Default" "$HOME/.config/chromium/Default"; do
+    [[ -d "$base" ]] && run "rm -rf $base/Extensions/$ext"
+  done
+}
+uninstall_ati_scripts() {
+  # Remove every AtiScriptsV1 script from /usr/local/bin.
+  local ati="$DOTFILES_DIR/.config/AtiScriptsV1"
+  [[ -d "$ati" ]] || return 0
+  for f in "$ati"/*; do
+    [[ -f "$f" ]] || continue
+    local n; n=$(basename "$f")
+    [[ "$n" == install.sh ]] && continue
+    run "sudo rm -f /usr/local/bin/$n"
+  done
+}
+uninstall_stow() {
+  # `stow -D` unlinks the symlinks stow deployed.
+  run "cd $DOTFILES_DIR && stow -D -t $HOME . 2>/dev/null || true"
+}
+uninstall_candy_icons()      { run "sudo rm -rf /usr/share/icons/candy-icons"; }
+uninstall_lid() {
+  # Restore defaults (Handle*Switch commented out).
+  run "sudo sed -i 's/^HandleLidSwitch=ignore/#HandleLidSwitch=suspend/; s/^HandleLidSwitchExternalPower=ignore/#HandleLidSwitchExternalPower=suspend/; s/^HandleLidSwitchDocked=ignore/#HandleLidSwitchDocked=ignore/' /etc/systemd/logind.conf"
+  run "sudo systemctl restart systemd-logind"
+}
+uninstall_themes() {
+  # Remove generated caches only, keep any user-selected wallpaper.
+  run "rm -rf $HOME/.cache/qtile/palettes $HOME/.cache/wal"
+  run "rm -f $HOME/.config/eww/colors.scss"
+}
+# No-op uninstalls (installer step is safe to leave in place, or
+# reversing it would harm the user's system).
+uninstall_sanity()            { :; }
+uninstall_bootstrap()         { :; }  # do NOT pacman -R base-devel
+uninstall_yay()               { :; }
+uninstall_dcli()              { :; }
+uninstall_dcli_sync()         { :; }
+uninstall_cargo()             { :; }
+uninstall_arch_config()       { :; }
+uninstall_flatpak()           { :; }
+uninstall_piper()             { :; }  # models may be shared
+uninstall_whisper()           { :; }
+uninstall_wallpapers()        { :; }  # user's picture collection
+uninstall_ownership()         { :; }
+uninstall_disable_dm()        { :; }
+uninstall_speed()             { :; }
+
+# Register uninstaller commands per module id.
+declare -A UMOD_CMD
+UMOD_CMD[sanity]="uninstall_sanity"
+UMOD_CMD[bootstrap]="uninstall_bootstrap"
+UMOD_CMD[yay]="uninstall_yay"
+UMOD_CMD[dcli]="uninstall_dcli"
+UMOD_CMD[stow]="uninstall_stow"
+UMOD_CMD[arch-config]="uninstall_arch_config"
+UMOD_CMD[dcli-sync]="uninstall_dcli_sync"
+UMOD_CMD[cargo]="uninstall_cargo"
+UMOD_CMD[ati-scripts]="uninstall_ati_scripts"
+UMOD_CMD[touchpad]="uninstall_touchpad"
+UMOD_CMD[xinit]="uninstall_xinit"
+UMOD_CMD[xmodmap]="uninstall_xmodmap"
+UMOD_CMD[lid]="uninstall_lid"
+UMOD_CMD[image-envs]="uninstall_image_envs"
+UMOD_CMD[flatpak]="uninstall_flatpak"
+UMOD_CMD[piper]="uninstall_piper"
+UMOD_CMD[whisper]="uninstall_whisper"
+UMOD_CMD[passwordless-sudo]="uninstall_passwordless_sudo"
+UMOD_CMD[ownership]="uninstall_ownership"
+UMOD_CMD[disable-dm]="uninstall_disable_dm"
+UMOD_CMD[candy-icons]="uninstall_candy_icons"
+UMOD_CMD[wallpapers]="uninstall_wallpapers"
+UMOD_CMD[speed]="uninstall_speed"
+UMOD_CMD[themes]="uninstall_themes"
+UMOD_CMD[browser-flags]="uninstall_browser_flags"
+UMOD_CMD[chrome-policy]="uninstall_chrome_policy"
+
 # ─── PAGES ───────────────────────────────────────────────────────────
 
 page_welcome() {
@@ -575,9 +680,9 @@ _FAILED_IDS=()
 _run_module() {
   local id="$1" logf="/tmp/wizard-$id.log" errf="/tmp/wizard-$id.err"
   : >"$logf"; : >"$errf"
-  # Run in a subshell of THIS shell (not a new bash) so declared
-  # step_* functions + helpers + palette vars remain in scope.
-  ( set +e; "${MOD_CMD[$id]}" ) >"$logf" 2>"$errf"
+  local cmd
+  if (( UNINSTALL )); then cmd="${UMOD_CMD[$id]}"; else cmd="${MOD_CMD[$id]}"; fi
+  ( set +e; "$cmd" ) >"$logf" 2>"$errf"
 }
 
 _show_error_tail() {
@@ -592,7 +697,11 @@ _show_error_tail() {
 }
 
 page_execute() {
-  _BOX_HEADER "installing modules"
+  if (( UNINSTALL )); then
+    _BOX_HEADER "uninstalling — reversing wizard writes"
+  else
+    _BOX_HEADER "installing modules"
+  fi
   local ok=0 fail=0 total=${#PICKED_IDS[@]} idx=0
   for id in "${PICKED_IDS[@]}"; do
     idx=$((idx+1))
@@ -602,6 +711,11 @@ page_execute() {
     title="$(gum style --bold --foreground "$FG" "${MOD_TITLE[$id]}")"
     gum join --horizontal "$chip" " " "$badge" " " "$title"
     if (( DRY_RUN )); then
+      # Actually call the step/uninstall so their `run` wrapper prints
+      # every command that would execute — real audit trail.
+      local cmd
+      if (( UNINSTALL )); then cmd="${UMOD_CMD[$id]}"; else cmd="${MOD_CMD[$id]}"; fi
+      "$cmd" 2>&1 | sed 's/^/    /'
       status_line="$(gum style --foreground "$OK_C" '   ✔ preview ok')"
       ok=$((ok+1))
     else

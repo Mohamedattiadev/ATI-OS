@@ -104,9 +104,14 @@ That is it. `./install.sh` fires the wizard in unattended mode:
 ### Prefer to pick modules or preview first?
 
 ```bash
-./wizard.sh              # interactive: TUI checkbox picker
-./wizard.sh --dry-run    # preview every command, touch nothing
-./wizard.sh --yes        # same as ./install.sh
+./wizard.sh                 # interactive: TUI checkbox picker
+./wizard.sh --dry-run       # preview every command, touch nothing
+./wizard.sh --yes           # same as ./install.sh
+./wizard.sh --only=stow,themes,browser-flags   # subset
+./wizard.sh --skip=whisper,piper               # skip heavy downloads
+./wizard.sh --uninstall     # reverse wizard writes (safe: never
+                            #   touches packages or downloaded models)
+./wizard.sh --uninstall --dry-run  # preview reversals
 ```
 
 Wizard renders an ASCII banner, grouped module cards (System /
