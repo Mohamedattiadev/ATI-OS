@@ -1,114 +1,14 @@
 /**
- * ROFI Color theme
- * NAME: minimal-doom-one-stroke.rasi
- * DESCRIPTION: An extremely minimal theme that fits the doom-one color palette, with a blue stroke.
- * AUTHOR: Gemini
+ * Todo picker. Delta: taller window, 8 lines.
  */
 
-* {
-    /* Doom One Palette */
-    background:     #282c34;
-    background-alt: #21242b;
-    foreground:     #bbc2cf;
-    selected:       #61afef; /* Blue */
-    selectedone:    #e06c75; /* Blue */
-    urgent:         #e06c75; /* Red */
-    active:         #98c379; /* Green */
-
-    /* Basic Configuration */
-    background-color: transparent;
-    text-color:       white;
-    font:             "FiraCode Nerd 12";
-}
+@import "base.rasi"
 
 window {
-    background-color: @background;
-    location:         center;
-    anchor:           center;
-    width:            50%;
-    height:           70%;
-    padding:          12px;
-    border-radius:    3px;
-    
-    /* --- THIS IS THE ADDED LINE --- */
-    border:           2px;
-    border-color:     @selected;
-}
-
-mainbox {
-    children: [ inputbar, listview ];
+    width:  50%;
+    height: 70%;
 }
 
 listview {
-    lines:      8;
-    spacing:    5px;
-    scrollbar:  false;
-    padding:    10px 0px 0px;
-}
-
-element {
-    padding:       5px 8px;
-    border-radius: 3px;
-}
-
-element-text {
-    background-color: inherit;
-    text-color:       inherit;
-    vertical-align:   0.5;
-}
-
-element.normal.normal {
-    background-color: @background;
-}
-
-element.selected.normal {
-    background-color: transparent;
-    border: 3px;
-    border-radius: 9px;
-    border-color: @selectedone;
-    text-color:       #ffffff;
-}
-
-element.alternate.normal {
-    background-color: @background;
-}
-
-element.normal.urgent {
-    background-color: @urgent;
-    text-color: @background;
-}
-element.selected.urgent {
-    background-color: @urgent;
-    text-color: @background;
-}
-
-element.normal.active {
-    background-color: @active;
-    text-color: @background;
-}
-element.selected.active {
-    background-color: @active;
-    text-color: @background;
-}
-
-inputbar {
-    padding: 5px;
-}
-
-prompt {
-    enabled:          true;
-    padding:          0 10px 0 5px;
-    background-color: inherit;
-    text-color:       @selected;
-    markup:           true; /* <-- ADD THIS LINE */
-}
-
-entry {
-    background-color: inherit;
-    placeholder:      "Search...";
-    placeholder-color: @selectedone;
-}
-
-case-indicator {
-    spacing: 0;
+    lines: 8;
 }
