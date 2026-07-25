@@ -77,9 +77,49 @@ rofi_confirm() {
     local prompt="${1:-Confirm?}"
     local msg="${2:-}"
     local answer
-    answer=$(printf 'No\nYes\n' | rofi -dmenu -i \
+    # Default row 0 = Yes so Enter confirms fast. Users mostly say yes
+    # (they explicitly triggered the action); accidental double-Enter
+    # from the caller is rare vs the friction of always arrowing down.
+    answer=$(printf 'Yes\nNo\n' | rofi -dmenu -i \
         -theme "$HOME/.config/rofi/themes/base.rasi" \
         -theme-str 'window { width: 22%; } listview { lines: 2; dynamic: false; } element { padding: 6px 12px; }' \
         -p "$prompt" ${msg:+-mesg "$msg"} -selected-row 0)
     [[ "$answer" == "Yes" ]]
+}
+
+# Guaranteed kill: SIGTERM + 0.8s grace + SIGKILL if still alive.
+# Second arg 'force' skips SIGTERM path. Sends both direct kill(2)
+# via bash builtin (fast, no fork) and falls back to /usr/bin/kill
+# for edge cases. Emits notify with actual outcome.
+kill_guaranteed() {
+    local pid="$1" mode="${2:-graceful}" name
+    [[ "$pid" =~ ^[0-9]+$ ]] || { notify_safe "❌ Bad PID" "$pid"; return 1; }
+    name="$(ps -p "$pid" -o comm= 2>/dev/null || echo unknown)"
+    if [[ "$mode" == "force" ]]; then
+        kill -9 "$pid" 2>/dev/null || /usr/bin/kill -9 "$pid" 2>/dev/null
+    else
+        kill -15 "$pid" 2>/dev/null || /usr/bin/kill -15 "$pid" 2>/dev/null
+        # Poll up to 0.8s (8 * 0.1s) — SIGTERM grace period.
+        local i
+        for i in 1 2 3 4 5 6 7 8; do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.1
+        done
+    fi
+    # Verify. Escalate to SIGKILL if still alive.
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null || /usr/bin/kill -9 "$pid" 2>/dev/null
+        sleep 0.15
+    fi
+    if kill -0 "$pid" 2>/dev/null; then
+        notify_safe "❌ PID $pid ($name) refuses to die" \
+                    "may need sudo — try: sudo kill -9 $pid"
+        return 1
+    fi
+    if [[ "$mode" == "force" ]]; then
+        notify_safe "☠️ SIGKILL PID $pid" "$name"
+    else
+        notify_safe "✅ Killed PID $pid" "$name"
+    fi
+    return 0
 }

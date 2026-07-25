@@ -122,6 +122,22 @@ subsystem. Each entry: **symptom → root cause → fix**.
   `/usr/local/bin` which has the sibling). Or copy `rofi_common.sh`
   alongside every rofi-* script you place in `~/.local/bin`.
 
+### rofi-kill kill did not actually kill the process
+- **Symptom:** confirmed kill, target process still running afterwards.
+- **Root cause:** `kill -15` (SIGTERM) is a request — trap-immune
+  processes (own SIGTERM handler, zombie state, uninterruptible sleep)
+  ignore it. Script reported success without verifying.
+- **Fix:** `rofi_common.sh:kill_guaranteed` sends SIGTERM, polls
+  `kill -0` up to 0.8s, escalates to SIGKILL, re-verifies. Only
+  reports success if `kill -0` fails. Alt+k skips grace and goes
+  straight to SIGKILL. Both call the same helper for consistency.
+
+### rofi-kill confirm defaults to No — friction on every kill
+- **Symptom:** Enter on process → arrow-down → Enter again.
+- **Fix:** confirm defaults to Yes (single Enter confirms). Escape
+  cancels. Users triggered the action intentionally; accidental
+  double-Enter from the caller is rare.
+
 ### rofi-kill kills without asking Yes/No
 - **Symptom:** hit Enter on a process, it dies immediately, no confirm.
 - **Root cause:** `rofi_confirm` inherited the caller's `ROFI_THEME`
