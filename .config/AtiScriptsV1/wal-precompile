@@ -250,15 +250,17 @@ def render_kitty_conf(bg, bg_alt, fg, accents):
     return "\n".join(lines) + "\n"
 
 def render_rofi_rasi(bg, bg_alt, fg, accents):
+    # accents[1] = dominant (main wallpaper hue) so rofi selection tint
+    # matches the wallpaper mood. urgent=warm, active=info-cyan.
     return (
         "* {\n"
         f"    background:     {bg};\n"
         f"    background-alt: {bg_alt};\n"
         f"    foreground:     {fg};\n"
-        f"    selected:       {accents[3]};\n"
-        f"    selectedone:    {accents[4]};\n"
+        f"    selected:       {accents[1]};\n"
+        f"    selectedone:    {accents[1]};\n"
         f"    urgent:         {accents[0]};\n"
-        f"    active:         {accents[1]};\n"
+        f"    active:         {accents[5]};\n"
         "}\n"
     )
 

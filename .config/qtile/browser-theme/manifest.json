@@ -1,119 +1,119 @@
 {
   "manifest_version": 3,
-  "version": "1.0.1784936942",
+  "version": "1.0.1784937969",
   "name": "Wal Theme",
   "description": "Precompiled per-wallpaper.",
   "theme": {
     "colors": {
       "frame": [
-        15,
-        22,
-        41
+        41,
+        30,
+        15
       ],
       "frame_inactive": [
-        15,
-        22,
-        41
+        41,
+        30,
+        15
       ],
       "frame_incognito": [
-        15,
-        22,
-        41
+        41,
+        30,
+        15
       ],
       "frame_incognito_inactive": [
-        15,
-        22,
-        41
+        41,
+        30,
+        15
       ],
       "toolbar": [
-        26,
-        35,
-        61
+        61,
+        46,
+        26
       ],
       "tab_text": [
-        207,
         216,
+        214,
         202
       ],
       "tab_background_text": [
-        142,
         163,
+        158,
         130
       ],
       "tab_background_text_inactive": [
-        142,
         163,
+        158,
         130
       ],
       "bookmark_text": [
-        207,
         216,
+        214,
         202
       ],
       "ntp_background": [
-        14,
-        11,
-        19
+        24,
+        18,
+        15
       ],
       "ntp_text": [
-        207,
         216,
+        214,
         202
       ],
       "ntp_link": [
-        80,
-        124,
-        241
+        238,
+        157,
+        43
       ],
       "button_background": [
-        15,
-        22,
-        41
+        41,
+        30,
+        15
       ],
       "toolbar_button_icon": [
-        80,
-        124,
-        241
+        238,
+        157,
+        43
       ],
       "omnibox_background": [
-        36,
-        47,
-        76
+        76,
+        59,
+        36
       ],
       "omnibox_text": [
-        207,
         216,
+        214,
         202
       ],
       "omnibox_results_bg": [
-        36,
-        47,
-        76
+        76,
+        59,
+        36
       ],
       "omnibox_results_bg_hovered": [
-        26,
-        35,
-        61
+        61,
+        46,
+        26
       ],
       "omnibox_results_bg_selected": [
-        80,
-        124,
-        241
+        238,
+        157,
+        43
       ],
       "omnibox_results_text": [
-        207,
         216,
+        214,
         202
       ],
       "omnibox_results_text_selected": [
-        14,
-        11,
-        19
+        24,
+        18,
+        15
       ],
       "omnibox_results_url": [
-        80,
-        124,
-        241
+        238,
+        157,
+        43
       ]
     }
   }
