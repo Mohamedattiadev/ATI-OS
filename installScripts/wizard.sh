@@ -446,8 +446,9 @@ _FAILED_IDS=()
 _run_module() {
   local id="$1" logf="/tmp/wizard-$id.log" errf="/tmp/wizard-$id.err"
   : >"$logf"; : >"$errf"
-  bash -c "$(declare -f run _OK _WARN _ERR _DIM); DRY_RUN=$DRY_RUN; set -e; ${MOD_CMD[$id]}" \
-    >"$logf" 2>"$errf"
+  # Run in a subshell of THIS shell (not a new bash) so declared
+  # step_* functions + helpers + palette vars remain in scope.
+  ( set +e; "${MOD_CMD[$id]}" ) >"$logf" 2>"$errf"
 }
 
 _show_error_tail() {
