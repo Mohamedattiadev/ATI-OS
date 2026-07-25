@@ -55,7 +55,7 @@ body {
 #clock {
   font-family: "Anton", sans-serif;
   font-size: 4rem;
-  color: var(--blue);
+  color: var(--accent);
   margin-bottom: 0.25em;
   /* text-shadow: 0 0 4px var(--highlight); */
 }
@@ -63,7 +63,7 @@ body {
 .welcome-message {
   font-family: "Anton", sans-serif;
   font-size: 2.2rem;
-  color: var(--cyan);
+  color: var(--accent);
   margin-bottom: 2rem;
   animation: fadeIn 2s ease-in-out infinite alternate;
 }
@@ -102,9 +102,9 @@ body {
   font-family: "Roboto", sans-serif;
   font-size: 1.2rem;
   font-weight: 600;
-  color: var(--purple);
+  color: var(--accent);
   margin-bottom: 0.5rem;
-  border-bottom: 1px solid var(--highlight);
+  border-bottom: 1px solid var(--accent);
   padding-bottom: 0.3rem;
 }
 
@@ -121,7 +121,7 @@ body {
 }
 
 .bookmark:hover {
-  color: var(--cyan);
+  color: var(--accent);
   padding-left: 5px;
 }
 
