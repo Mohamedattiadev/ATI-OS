@@ -27,3 +27,9 @@ brave-profiles
 .config/qtile/browser-theme/manifest.json
 .config/qtile/WAL_PRECOMPILE_REPORT.md
 .config/rofi/themes/palette-wal.rasi
+
+# theme-apply symlinks these to the active theme file per mode.
+# Per-machine runtime state, not portable.
+.config/rofi/themes/current-palette.rasi
+.config/kitty/themes/current.conf
+.config/alacritty/themes/current.toml
