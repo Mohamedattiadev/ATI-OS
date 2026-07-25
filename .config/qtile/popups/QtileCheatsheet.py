@@ -6,17 +6,11 @@ from qtile_extras.popup import PopupRelativeLayout, PopupText
 _CHEATSHEET_LAYOUT = None
 
 # =============================================================================
-# COLORS (Doom One)
+# COLORS — wal-derived (dominant = green slot). Re-read at each toggle so
+# a wallpaper switch retints the popup without qtile restart.
 # =============================================================================
-COLORS = {
-    "bg": "#1c1f24",
-    "fg": "#bbc2cf",
-    "muted": "#5b6268",
-    "green": "#98be65",
-    "blue": "#51afef",
-    "purple": "#c678dd",
-    "red": "#ff6c6b",
-}
+from popups._wal_colors import load_colors as _load_colors
+COLORS = _load_colors()
 
 MODE_NOTE_TEMPLATE = (
     '<span size="small" foreground="{muted}" style="italic">'
@@ -195,6 +189,7 @@ def toggle_cheatsheet(qtile):
         _CHEATSHEET_LAYOUT = None
         return
 
+    COLORS.update(_load_colors())
     controls = []
 
     # ---------------- TITLE ----------------
