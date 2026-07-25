@@ -388,6 +388,10 @@ page_welcome() {
   _DIM  "  · Wal-themed kitty/rofi/dunst/qtile/gtk/eww"
   _DIM  "  · Brave/chromium wal theme extension + policy"
   _DIM  "  · Optional media/voice models (piper + whisper)"
+  if (( ASSUME_YES )); then
+    _DIM "  (--yes: skipping interactive prompts)"
+    return
+  fi
   _FOOTER "[enter] continue  ·  [ctrl-c] quit"
   read -rsn1 -p ""
 }
