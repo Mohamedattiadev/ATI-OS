@@ -278,10 +278,15 @@ keybind spam are dropped silently instead of corrupting caches.
 | gtk base theme + icon theme | `settings.ini` rewritten per palette: `mono-light` → `Breeze` + `Papirus-Light`; all others → `Sweet-Dark` + `Papirus-Dark` |
 | cursor | `~/.Xresources` sets `Xcursor.size: 24` + `Xcursor.theme: breeze_cursors`; loaded via `xrdb -merge` in `~/.xinitrc` |
 
-**Qtile restart preserves layout state**: `Mod + Shift + R` restarts qtile
-(needed for widget colors to repaint) but MonadTall ratios + secondary
-stack sizes are saved every 3s to `~/.cache/qtile/layout_state.json` and
-restored on `startup_complete`. Window widths/heights survive the restart.
+**Qtile restart preserves layout + window→group state**: `Mod + Shift + R`
+restarts qtile (needed for widget colors to repaint). MonadTall ratios +
+secondary stack sizes save every 3s to `~/.cache/qtile/layout_state.json`;
+window→group mapping + per-group focus order save to
+`~/.cache/qtile/window_group_state.json`. Both restore on
+`startup_complete` (+0.6s / +1.6s). Manually-moved windows stay in their
+chosen group even though Match rules re-fire on adoption — the `client_new`
+hook overrides Match assignment for any wid present in the restored map.
+Window widths/heights + placement survive the restart.
 
 **Palette semantics** — `wal-precompile` generates 6-slot hue-concentrated palettes:
 `color1` urgent (always warm), `color2` dominant (main wallpaper hue),
