@@ -347,23 +347,26 @@ case "$MODE" in
   ayu-mirage) gen_all_theme_css "#1f2430" "#171b24" "#cbccc6" "#ff6666" "#bae67e" "#ffcc66" "#5ccfe6" "#c3a6ff" "#95e6cb" ;;
 esac
 
-# Force eww to recompile scss. `eww reload` alone leaves the daemon's
-# compiled-css cache stale for open + subsequent windows on some eww
-# builds — restart daemon so every next open reads the fresh
-# colors.scss. Reopen any windows that were live at switch time.
+# eww: reload only if daemon alive + there are no open windows. If
+# windows are open, kill+restart+reopen (scss recompile needed).
+# Backgrounded so theme-apply doesn't block.
 if pgrep -x eww >/dev/null 2>&1; then
-  OPEN_WINS="$(eww active-windows 2>/dev/null | awk -F: '{print $1}')"
-  eww kill >/dev/null 2>&1 || pkill -x eww 2>/dev/null || true
-  for _ in 1 2 3 4 5; do pgrep -x eww >/dev/null 2>&1 || break; sleep 0.1; done
-  # Detach daemon fully so it survives theme-apply exit.
-  setsid -f eww daemon </dev/null >/dev/null 2>&1 || eww daemon >/dev/null 2>&1 &
-  disown 2>/dev/null || true
-  # Wait for IPC to come up, then reopen previously-live windows.
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    eww ping >/dev/null 2>&1 && break
-    sleep 0.1
-  done
-  for w in $OPEN_WINS; do eww open "$w" >/dev/null 2>&1 || true; done
+  (
+    OPEN_WINS="$(eww active-windows 2>/dev/null | awk -F: '{print $1}')"
+    if [[ -z "$OPEN_WINS" ]]; then
+      eww reload >/dev/null 2>&1 || true
+    else
+      eww kill >/dev/null 2>&1 || pkill -x eww 2>/dev/null || true
+      for _ in 1 2 3 4 5; do pgrep -x eww >/dev/null 2>&1 || break; sleep 0.1; done
+      setsid -f eww daemon </dev/null >/dev/null 2>&1 || true
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        eww ping >/dev/null 2>&1 && break
+        sleep 0.1
+      done
+      for w in $OPEN_WINS; do eww open "$w" >/dev/null 2>&1 || true; done
+    fi
+  ) &
+  disown
 fi
 
 echo "$MODE" >"$STATE_FILE"
@@ -629,18 +632,11 @@ fi
 # apply_palette_live() which returns True on success. Fall back to
 # `restart` only if the live call fails or times out.
 if command -v qtile >/dev/null; then
-  LIVE_MARKER="$HOME/.cache/qtile/.palette_live_ok"
-  rm -f "$LIVE_MARKER"
-  # Multi-statement eval → success indicated by marker file, not
-  # return value (qtile eval returns "" for exec paths).
-  timeout 2 qtile cmd-obj -o cmd -f eval -a \
-    'import sys; sys.path.insert(0, "/home/ati/.dotfiles/.config/qtile"); import config; config.apply_palette_live()' \
-    >/dev/null 2>&1
-  if [[ ! -f "$LIVE_MARKER" ]]; then
-    # Live swap failed — fall back to full restart.
-    setsid -f bash -c 'timeout 5 qtile cmd-obj -o cmd -f restart' \
-      >/dev/null 2>&1 </dev/null || true
-  fi
+  # Full restart, detached. Live-swap path was toggled off — visual
+  # coverage across all themes proved unreliable; full restart is
+  # slower but guaranteed correct. execvp + config re-import ~1-2s.
+  setsid -f bash -c 'qtile cmd-obj -o cmd -f restart' \
+    >/dev/null 2>&1 </dev/null || true
 fi
 
 # Reload qutebrowser + notify chrome/brave. qb has IPC; brave-family
