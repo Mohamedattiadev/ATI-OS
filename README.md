@@ -269,12 +269,12 @@ keybind spam are dropped silently instead of corrupting caches.
 | qtile | `restart` (detached so caller doesn't deadlock) |
 | gtk 3/4 | `@import` overlay at `~/.cache/qtile/gtk-wal.css` |
 | qutebrowser | inline `<style>` + `--accent` CSS var, `:config-source` + `:restart` |
-| nvim | fs_event on `~/.cache/qtile/theme_mode` re-sources scheme (Snacks dashboard uses dominant hue) |
+| nvim | fs_event on `~/.cache/qtile/theme_mode` + `current_palette.json` re-sources scheme; aliased modes (matrix, mono-*, synthwave, cyberpunk-neon, palenight, github-dark, ayu-mirage, onedark, nightowl) render distinct highlights from the JSON when no dedicated plugin is installed (Snacks dashboard uses dominant hue) |
 | brave | `--load-extension` reads live `manifest.json` on relaunch (id matches via embedded `key`) |
 | chrome / chromium | Enterprise policy `force_installed` from local `updates.xml`; `.crx` repacked + Preferences purged each apply so install lands immediately |
 | papirus folders | `papirus-folders -C <hue-match> -u` |
 | eww widgets | daemon killed + `setsid eww daemon` restart + reopen prior windows (previous `eww reload` left compiled scss cached) |
-| qtile cheatsheets (Vim/Fish/Qtile popups) | `popups/_wal_colors.load_colors()` refreshes on each toggle; muted derived from `bg`→`fg` blend for readable dividers |
+| qtile cheatsheets (Vim/Fish/Qtile popups) + WallpaperPicker | `popups/_wal_colors.load_colors()` reads `~/.cache/qtile/current_palette.json` first (matches active preset), falls back to `~/.cache/wal/colors.json`; muted derived from `bg`→`fg` blend for readable dividers; popup panel bg driven from `COLORS["bg"]` so mono-light renders on white |
 | gtk base theme + icon theme | `settings.ini` rewritten per palette: `mono-light` → `Breeze` + `Papirus-Light`; all others → `Sweet-Dark` + `Papirus-Dark` |
 | cursor | `~/.Xresources` sets `Xcursor.size: 24` + `Xcursor.theme: breeze_cursors`; loaded via `xrdb -merge` in `~/.xinitrc` |
 
@@ -287,6 +287,13 @@ window→group mapping + per-group focus order save to
 chosen group even though Match rules re-fire on adoption — the `client_new`
 hook overrides Match assignment for any wid present in the restored map.
 Window widths/heights + placement survive the restart.
+
+**State files** (auto-created — no manual bootstrap):
+- `~/.cache/qtile/theme_mode` — single-line active mode name
+- `~/.cache/qtile/current_palette.json` — 9-slot palette (bg, bg_alt, fg, red, green, yellow, blue, purple, cyan) dumped on every preset + wal apply; consumed by nvim + popups
+- `~/.cache/qtile/layout_state.json` — MonadTall ratios + relative_sizes per group
+- `~/.cache/qtile/window_group_state.json` — wid→group map + per-group focus order
+- `~/.cache/wall` — symlink to active wallpaper (writers: `dm-setbg`, `WallpaperPopup`, `wizard step_themes`)
 
 **Palette semantics** — `wal-precompile` generates 6-slot hue-concentrated palettes:
 `color1` urgent (always warm), `color2` dominant (main wallpaper hue),
