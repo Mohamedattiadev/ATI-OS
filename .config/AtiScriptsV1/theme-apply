@@ -382,31 +382,28 @@ targets = {
     'blue':   225,
     'purple': 290,
 }
-# Doomone defaults — used to fill any slot no accent can claim.
-defaults = {
-    'red':    '#ff6c6b',
-    'yellow': '#ecbe7b',
-    'green':  '#98be65',
-    'cyan':   '#46d9ff',
-    'blue':   '#51afef',
-    'purple': '#c678dd',
-}
-
 accents = [d['colors'][f'color{i}'] for i in range(9, 15)]
 
 def circ_dist(a, b):
     d = abs(a - b) % 360
     return min(d, 360 - d)
 
+def circ_shift(base_deg, tgt_deg, frac):
+    # Rotate base_deg toward tgt_deg by frac (0..1) along shortest arc.
+    diff = (tgt_deg - base_deg + 540) % 360 - 180  # signed [-180,180]
+    return (base_deg + diff * frac) % 360
+
 # Score each (slot, accent) pair by hue distance. Greedy assign lowest
 # distance first, one accent per slot. Skip accents with saturation<0.15
 # (near-gray) — they'd pollute any slot they land in.
 pairs = []
+saturated = []  # (hue_deg, sat, light, hex) — for fallback synthesis
 for accent in accents:
     ah, al, asat = hex_to_hls(accent)
     if asat < 0.15:
         continue
     ah_deg = ah * 360
+    saturated.append((ah_deg, asat, al, accent))
     for slot, tgt in targets.items():
         pairs.append((circ_dist(ah_deg, tgt), slot, accent))
 pairs.sort(key=lambda x: x[0])
@@ -414,9 +411,10 @@ pairs.sort(key=lambda x: x[0])
 slots = {}
 used_accents = set()
 # Hue-distance threshold: if best accent is > 60° from the slot's
-# target hue, the accent is closer in name than in color, so prefer
-# doomone default. Keeps "green" green even when the wallpaper has
-# no green hue.
+# target hue, no wallpaper accent naturally covers this hue name;
+# synthesize a wallpaper-cohesive value below instead of forcing a
+# clashing doomone default (#c678dd purple, #98be65 green, ...) on
+# top of a monochromatic wallpaper.
 MAX_DIST = 60
 for dist, slot, accent in pairs:
     if slot in slots or accent in used_accents:
@@ -428,9 +426,25 @@ for dist, slot, accent in pairs:
     if len(slots) == len(targets):
         break
 
-# Any slot still empty gets doomone default.
-for slot in targets:
-    slots.setdefault(slot, defaults[slot])
+# Any slot still empty: synthesize from wallpaper's dominant accent
+# (most saturated). Rotate its hue 50% toward the slot's target hue
+# so it leans toward the name while staying palette-harmonic. Boost
+# saturation slightly so the slot reads as an accent, not muted.
+if saturated:
+    saturated.sort(key=lambda x: -x[1])  # most saturated first
+    dom_h, dom_s, dom_l, _ = saturated[0]
+    for slot, tgt in targets.items():
+        if slot in slots:
+            continue
+        new_h = circ_shift(dom_h, tgt, 0.5) / 360
+        new_l = max(0.45, min(0.65, dom_l))
+        new_s = max(0.55, dom_s)
+        slots[slot] = hls_to_hex(new_h, new_l, new_s)
+else:
+    # No saturated accent at all (grayscale wallpaper) — use fg for
+    # every slot so consumers still get a readable value.
+    for slot in targets:
+        slots.setdefault(slot, fg)
 
 print(bg, bg_alt, fg, slots['red'], slots['green'], slots['yellow'],
       slots['blue'], slots['purple'], slots['cyan'])
