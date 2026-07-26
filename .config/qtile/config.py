@@ -341,6 +341,37 @@ def apply_palette_live():
                 bar_obj.draw()
             except Exception:
                 pass
+    # Window border colors — MonadTall/Max/etc. store border_focus /
+    # border_normal captured from layout_theme at __init__. Walk every
+    # group's layouts and remap.
+    for g in qtile.groups:
+        for lay in getattr(g, "layouts", []) or []:
+            for attr in ("border_focus", "border_normal", "border_focus_stack",
+                         "border_normal_stack", "active_bg", "active_fg",
+                         "inactive_bg", "inactive_fg", "bg_color", "urgent_border"):
+                if not hasattr(lay, attr):
+                    continue
+                v = getattr(lay, attr)
+                new_v = remap_value(v)
+                if new_v != v:
+                    try:
+                        setattr(lay, attr, new_v)
+                    except Exception:
+                        pass
+            # trigger re-tile so borders repaint
+            try:
+                lay.group.layout_all()
+            except Exception:
+                pass
+    # Also repaint focused window borders on every screen.
+    for scr in qtile.screens:
+        try:
+            g = scr.group
+            if g and hasattr(g, "layout_all"):
+                g.layout_all()
+        except Exception:
+            pass
+
     # Update global so subsequent live-swaps have correct old_flat
     colors = new_palette_rows
     # Write marker so bash caller can detect success (qtile eval
