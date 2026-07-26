@@ -138,16 +138,15 @@ Done. One command. Bootstrap covers:
 | 12   | Write `~/.Xmodmap` (Caps hold = Alt, xcape restores tap Caps) |
 | 13   | Lid close = ignore (`systemd-logind`)                         |
 | 14   | Suppress VIPS warnings (kitty+nvim image support)             |
-| 15   | Flatpak + Collector                                           |
-| 16   | Download Piper voices (EN + DE)                               |
-| 17   | Passwordless sudo                                             |
-| 18   | Fix dotfiles ownership                                        |
-| 19   | Disable all display managers                                  |
-| 20   | Install candy-icons theme                                     |
-| 21   | Clone wallpaper collection                                    |
-| 22   | System speed tweaks (`speed_boost.sh`)                        |
-| 23   | Theme system (pywal + palette precompile + brave-flags + init)|
-| 23b  | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| 15   | Download Piper voices (EN + DE)                               |
+| 16   | Passwordless sudo                                             |
+| 17   | Fix dotfiles ownership                                        |
+| 18   | Disable all display managers                                  |
+| 19   | Install candy-icons theme                                     |
+| 20   | Clone wallpaper collection                                    |
+| 21   | System speed tweaks (`speed_boost.sh`)                        |
+| 22   | Theme system (pywal + palette precompile + brave-flags + init)|
+| 22b  | Chrome/chromium theme policy (sign key + enterprise force-install) |
 
 No manual follow-up. Everything in `.config` works on first `startx`.
 
@@ -314,9 +313,42 @@ walk for browser subprocs) in aligned columns with vertical dividers.
 
 ---
 
-## 9. Videos
+## 9. qdrop — native drop-stash
 
-### 9.1 Main Videos (System Overview)
+Lightweight GTK3 daemon replacing the flatpak `it.mijorus.collector`.
+Slides in from top-center, stashes files/text/URLs, drag them back out anywhere.
+Themed live from the active wal palette (`~/.cache/wal/colors.json`).
+
+**Usage**
+
+- `Alt+Shift+D` — toggle.
+- **Shake** the mouse while dragging (rapid left-right, 3 reversals in 1s) → auto-shows.
+- Drop file/text/URL into window → adds entry. URL text auto-detected.
+- Drag an item back out → paste into any app.
+- Rubber-band select on empty area. Ctrl+A / Ctrl+click. Right-click for menu.
+- `Ctrl+V` paste clipboard. `Ctrl+F` search. `Del` remove. `Enter` open.
+- Text/text-files → floating alacritty+nvim (`clip-view` class).
+- Image files → `imv` (uses existing qtile float rule).
+- Auto-hides 8s after pointer leaves (paused while dialogs/menus open).
+
+**Files**
+
+- `.config/qtile/scripts/qdrop.py` — daemon + IPC + widget
+- `.config/qtile/scripts/qdrop_watch.py` — XInput2 raw-event shake detector
+- `.config/qtile/scripts/qdrop_test.py` — 30+ pure/live tests
+- Autostart entry in `autostart.sh` launches daemon + watcher at login.
+
+**IPC** — Unix socket at `/tmp/qdrop-$UID.sock`. CLI:
+`qdrop.py --show|--hide|--toggle|--add-text TXT|--reload|--status`.
+Palette reload auto-triggers via mtime poll on `colors.json`.
+
+**Resources** — 0% CPU idle. ~90 MB combined RSS.
+
+---
+
+## 10. Videos
+
+### 10.1 Main Videos (System Overview)
 
 https://github.com/user-attachments/assets/aaec7215-c595-4ba3-bc65-a355b11edf05
 
@@ -324,7 +356,7 @@ https://github.com/user-attachments/assets/a7993cce-e04e-4168-9b32-b914d76539be
 
 ---
 
-### 9.2 Feature Demonstrations
+### 10.2 Feature Demonstrations
 
 https://github.com/user-attachments/assets/6990186e-336d-48d4-8330-7c8ffd0f0a81
 
@@ -339,7 +371,7 @@ https://github.com/user-attachments/assets/0189c230-a0df-4d8f-9687-ca8e5c00ed4a
 
 ---
 
-## 10. Modes
+## 11. Modes
 
 ### Window Manager Modes
 
