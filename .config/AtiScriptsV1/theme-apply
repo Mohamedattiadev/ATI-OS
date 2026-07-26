@@ -347,9 +347,22 @@ gen_all_theme_css() {
 case "$MODE" in
   wal)
     W=~/.cache/wal/colors.json
+    # wal-precompile emits color0 == special.background on every wallpaper,
+    # so bg_alt would collapse into bg and eww/popup layers lose depth.
+    # Derive bg_alt as a +6% lightened bg to guarantee separation.
+    WAL_BG_ALT=$(python3 -c "
+import json, colorsys
+d = json.load(open('$HOME/.cache/wal/colors.json'))
+bg = d['special']['background'].lstrip('#')
+r, g, b = int(bg[0:2],16)/255, int(bg[2:4],16)/255, int(bg[4:6],16)/255
+h, l, s = colorsys.rgb_to_hls(r, g, b)
+l = min(1.0, l + 0.06)
+r, g, b = colorsys.hls_to_rgb(h, l, s)
+print('#{:02x}{:02x}{:02x}'.format(int(r*255), int(g*255), int(b*255)))
+")
     gen_all_theme_css \
       "$(jq -r .special.background "$W")" \
-      "$(jq -r .colors.color0 "$W")" \
+      "$WAL_BG_ALT" \
       "$(jq -r .special.foreground "$W")" \
       "$(jq -r .colors.color9 "$W")" \
       "$(jq -r .colors.color10 "$W")" \
