@@ -386,6 +386,11 @@ step_themes() {
   local eww_tmpl="$HOME/.config/eww/colors.scss.tmpl"
   local eww_out="$HOME/.config/eww/colors.scss"
   [[ -f "$eww_tmpl" && ! -f "$eww_out" ]] && run "cp $eww_tmpl $eww_out"
+  # Seed qutebrowser homepage.html from .tmpl (gitignored — regenerated
+  # per palette by theme-apply, needs a stable skeleton first).
+  local qb_tmpl="$HOME/.config/qutebrowser/html/homepage.html.tmpl"
+  local qb_out="$HOME/.config/qutebrowser/html/homepage.html"
+  [[ -f "$qb_tmpl" && ! -f "$qb_out" ]] && run "cp $qb_tmpl $qb_out"
   # Seed default wallpaper if none set.
   if [[ ! -f "$HOME/.cache/wall" ]]; then
     local first
