@@ -229,20 +229,51 @@ def _remap_palette_value(val, slot):
 
 def apply_palette_live():
     """Mutate every bar widget's palette-derived color to the new
-    palette on disk. No qtile restart, no widget re-instantiation."""
+    palette on disk. No qtile restart, no widget re-instantiation.
+
+    Slot map built from EVERY known preset (not just current), so a
+    decoration built with e.g. doomone hex still resolves after
+    dracula was swapped in-between: any hex → its slot index in
+    ANY preset → new palette's hex at same slot."""
     global colors
     import importlib
     importlib.reload(color_schemes)
     new_palette_rows = color_schemes.active_palette()
     new_flat = [row[0] if isinstance(row, (list, tuple)) else row for row in new_palette_rows]
-    old_flat = [row[0] if isinstance(row, (list, tuple)) else row for row in colors]
-    if len(new_flat) != len(old_flat):
+    # Build hex → slot index map from every registered preset + wal.
+    hex_to_slot = {}
+    presets = list(color_schemes._PRESETS.values())
+    wal = getattr(color_schemes, "Wal", None)
+    if wal:
+        presets.append(wal)
+    for pal in presets:
+        for i, row in enumerate(pal):
+            h = row[0] if isinstance(row, (list, tuple)) else row
+            if isinstance(h, str) and h not in hex_to_slot:
+                hex_to_slot[h] = i
+                hex_to_slot[h.lower()] = i
+                hex_to_slot[h.upper()] = i
+    if len(new_flat) < 9:
         return False
-    # hex → new hex (single map covers both str + list cases)
-    slot_map = {old_flat[i]: new_flat[i] for i in range(len(old_flat))}
-    # normalize case (some widgets store #FF vs #ff)
-    slot_map.update({k.upper(): v for k, v in list(slot_map.items())})
-    slot_map.update({k.lower(): v for k, v in list(slot_map.items())})
+    def remap_hex(h):
+        if not isinstance(h, str):
+            return h
+        idx = hex_to_slot.get(h)
+        if idx is None:
+            idx = hex_to_slot.get(h.lower())
+        if idx is None:
+            return h
+        return new_flat[idx] if idx < len(new_flat) else h
+    # Local remap function that closes over hex_to_slot/new_flat.
+    def remap_value(val):
+        if isinstance(val, str):
+            return remap_hex(val)
+        if isinstance(val, (list, tuple)):
+            typ = type(val)
+            return typ(remap_value(v) for v in val)
+        return val
+    # Shadow global helper with the closure version.
+    slot_map = None  # kept for API compat; unused below
     for screen in qtile.screens:
         for bar_obj in (getattr(screen, "top", None), getattr(screen, "bottom", None),
                         getattr(screen, "left", None), getattr(screen, "right", None)):
@@ -252,7 +283,7 @@ def apply_palette_live():
             # bar background itself
             bg = getattr(bar_obj, "background", None)
             if bg:
-                new_bg = _remap_palette_value(bg, slot_map)
+                new_bg = remap_value(bg)
                 if new_bg != bg:
                     try:
                         bar_obj.background = new_bg
@@ -263,7 +294,7 @@ def apply_palette_live():
                     if not hasattr(w, attr):
                         continue
                     v = getattr(w, attr)
-                    new_v = _remap_palette_value(v, slot_map)
+                    new_v = remap_value(v)
                     if new_v != v:
                         try:
                             setattr(w, attr, new_v)
@@ -276,7 +307,7 @@ def apply_palette_live():
                         if not hasattr(d, attr):
                             continue
                         v = getattr(d, attr)
-                        new_v = _remap_palette_value(v, slot_map)
+                        new_v = remap_value(v)
                         if new_v != v:
                             try:
                                 setattr(d, attr, new_v)
