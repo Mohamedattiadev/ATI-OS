@@ -3788,6 +3788,7 @@ floating_layout = layout.Floating(
         Match(wm_class="satty"),  # satty
         Match(wm_class="emacs"),  # emacs
         Match(title="link-preview"),  # preview of nvim (qutebrowser edit link)
+        Match(wm_class="clip-view"),  # copyq_rofi alt+w full-text preview
         Match(wm_class="org.gnome.NautilusPreviewer"),  # make the preview float
         # Match(wm_class="Anki"),  # make the preview float
     ],

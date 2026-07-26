@@ -5,21 +5,7 @@
 set -euo pipefail
 
 MAX=${1:-15}
-TAB="${2:-&clipboard}"
-
-next_tab() {
-  mapfile -t all < <(copyq tab)
-  local n=${#all[@]}
-  [ "$n" -le 1 ] && { echo "$TAB"; return; }
-  local i
-  for i in "${!all[@]}"; do
-    if [ "${all[$i]}" = "$TAB" ]; then
-      echo "${all[$(( (i+1) % n ))]}"
-      return
-    fi
-  done
-  echo "${all[0]}"
-}
+TAB='&clipboard'
 THUMBS=/tmp/copyq-thumbs
 mkdir -p "$THUMBS"
 rm -f "$THUMBS"/*.png 2>/dev/null || true
@@ -122,19 +108,17 @@ build_input() {
 
 while true; do
   N=${#rows[@]}
-  MESG=$(printf '<span alpha="60%%">tab: %s · %d entries · enter paste · alt+d del · alt+e edit · alt+w view · alt+n next-tab · esc quit</span>' "$TAB" "$N")
+  MESG=$(printf '<span alpha="60%%">%d entries · enter paste · alt+d del · alt+w view · esc quit</span>' "$N")
   set +e
   sel=$(build_input | rofi -dmenu -i \
-    -p "clip[$TAB]" \
+    -p "clip" \
     -mesg "$MESG" \
     -show-icons \
     -markup-rows \
     -no-custom \
     -theme "$THEME_FILE" \
     -kb-custom-1 'Alt+d' \
-    -kb-custom-2 'Alt+e' \
-    -kb-custom-3 'Alt+w' \
-    -kb-custom-4 'Alt+n' \
+    -kb-custom-2 'Alt+w' \
     -format 'i')
   rc=$?
   set -e
@@ -172,31 +156,22 @@ JSEOF3
       [ "$sel" -ge "$N" ] && exit 0
       IFS=$'\t' read -r idx _ _ _ <<< "${rows[$sel]}"
       [ -z "$idx" ] && exit 0
-      copyq eval - <<JSEOF4
-tab("$TAB");
-edit($idx);
-JSEOF4
-      exit 0
-      ;;
-    12)
-      [ -z "$sel" ] && exit 0
-      [ "$sel" -ge "$N" ] && exit 0
-      IFS=$'\t' read -r idx _ _ _ <<< "${rows[$sel]}"
-      [ -z "$idx" ] && exit 0
       tmp=$(mktemp --suffix=.txt /tmp/copyq-view.XXXXXX)
-      copyq eval - <<JSEOF5 > "$tmp"
+      copyq eval - > "$tmp" <<JSEOF5
 tab("$TAB");
 print(str(read($idx)));
 JSEOF5
-      alacritty --title "clip-view [$idx]" -e less -R "$tmp" >/dev/null 2>&1 &
+      # Floating alacritty running nvim (read-only). WM class clip-view is
+      # matched by qtile floating_layout; alacritty dims keep window compact.
+      setsid alacritty --class clip-view --title "clip-view" \
+        -o "window.dimensions.columns=100" \
+        -o "window.dimensions.lines=28" \
+        -o "window.padding.x=10" \
+        -o "window.padding.y=10" \
+        -e nvim -R -c "set nonumber norelativenumber signcolumn=no laststatus=0" "$tmp" \
+        >/dev/null 2>&1 < /dev/null &
       disown
       exit 0
-      ;;
-    13)
-      TAB=$(next_tab)
-      load_rows
-      [ "${#rows[@]}" -eq 0 ] && continue
-      continue
       ;;
     *)
       exit 0
