@@ -154,6 +154,91 @@ return {
       local mode_file = vim.fn.expand("~/.cache/qtile/theme_mode")
       local wal_cache = vim.fn.expand("~/.cache/wal/colors-wal.vim")
       local wal_json  = vim.fn.expand("~/.cache/wal/colors.json")
+      local preset_json = vim.fn.expand("~/.cache/qtile/current_palette.json")
+
+      local function apply_preset_from_json()
+        local ok, f = pcall(io.open, preset_json, "r")
+        if not (ok and f) then return false end
+        local raw = f:read("*a"); f:close()
+        local ok2, d = pcall(vim.json.decode, raw)
+        if not ok2 then return false end
+        local bg, bg_alt, fg = d.bg, d.bg_alt, d.fg
+        local red, green, yellow = d.red, d.green, d.yellow
+        local blue, purple, cyan = d.blue, d.purple, d.cyan
+        if not (bg and fg and red) then return false end
+        vim.cmd("hi clear")
+        if vim.fn.exists("syntax_on") == 1 then vim.cmd("syntax reset") end
+        vim.o.background = (d.mode == "mono-light") and "light" or "dark"
+        vim.g.colors_name = "qtile-" .. (d.mode or "preset")
+        local set = function(g, o) vim.api.nvim_set_hl(0, g, o) end
+        set("Normal",       { fg = fg,     bg = bg })
+        set("NormalFloat",  { fg = fg,     bg = bg_alt })
+        set("NormalNC",     { fg = fg,     bg = bg })
+        set("SignColumn",   { fg = fg,     bg = bg })
+        set("EndOfBuffer",  { fg = bg,     bg = bg })
+        set("LineNr",       { fg = purple, bg = bg })
+        set("CursorLineNr", { fg = yellow, bg = bg, bold = true })
+        set("CursorLine",   { bg = bg_alt })
+        set("Visual",       { bg = bg_alt })
+        set("Comment",      { fg = purple, italic = true })
+        set("Constant",     { fg = yellow })
+        set("String",       { fg = green })
+        set("Statement",    { fg = red })
+        set("Keyword",      { fg = red })
+        set("Function",     { fg = blue })
+        set("Type",         { fg = purple })
+        set("Special",      { fg = cyan })
+        set("PreProc",      { fg = yellow })
+        set("Identifier",   { fg = red })
+        set("StatusLine",   { fg = fg,     bg = bg_alt })
+        set("StatusLineNC", { fg = purple, bg = bg_alt })
+        set("TabLine",      { fg = purple, bg = bg_alt })
+        set("TabLineSel",   { fg = bg,     bg = blue, bold = true })
+        set("TabLineFill",  { bg = bg_alt })
+        set("WinSeparator", { fg = purple, bg = bg })
+        set("Pmenu",        { fg = fg,     bg = bg_alt })
+        set("PmenuSel",     { fg = bg,     bg = blue, bold = true })
+        set("PmenuThumb",   { bg = blue })
+        set("Search",       { fg = bg,     bg = yellow })
+        set("IncSearch",    { fg = bg,     bg = cyan })
+        set("MatchParen",   { fg = cyan,   bold = true })
+        set("DiagnosticError", { fg = red })
+        set("DiagnosticWarn",  { fg = yellow })
+        set("DiagnosticInfo",  { fg = blue })
+        set("DiagnosticHint",  { fg = cyan })
+        set("Error",        { fg = red,    bold = true })
+        set("WarningMsg",   { fg = yellow })
+        set("DashboardHeader",       { fg = green, bold = true })
+        set("DashboardIcon",         { fg = green })
+        set("DashboardDesc",         { fg = fg })
+        set("DashboardKey",          { fg = red })
+        set("DashboardFooter",       { fg = purple, italic = true })
+        set("DashboardProjectTitle", { fg = green, bold = true })
+        set("SnacksDashboardHeader", { fg = green, bold = true })
+        set("SnacksDashboardIcon",   { fg = green })
+        set("SnacksDashboardDesc",   { fg = fg })
+        set("SnacksDashboardKey",    { fg = red })
+        set("SnacksDashboardFooter", { fg = purple, italic = true })
+        set("SnacksDashboardTitle",  { fg = green, bold = true })
+        set("SnacksDashboardFile",   { fg = fg })
+        set("SnacksDashboardDir",    { fg = purple })
+        set("SnacksDashboardSpecial",{ fg = green })
+        set("NeoTreeNormal",   { fg = fg, bg = bg })
+        set("TelescopeNormal", { fg = fg, bg = bg })
+        set("TelescopeBorder", { fg = green, bg = bg })
+        set("TelescopeSelection", { fg = fg, bg = bg_alt, bold = true })
+        set("WhichKeyGroup",   { fg = green })
+        set("WhichKeyDesc",    { fg = fg })
+        set("WhichKey",        { fg = red })
+        set("BufferLineFill",  { bg = bg_alt })
+        set("DiffAdd",     { fg = green })
+        set("DiffChange",  { fg = yellow })
+        set("DiffDelete",  { fg = red })
+        set("GitSignsAdd",    { fg = green })
+        set("GitSignsChange", { fg = yellow })
+        set("GitSignsDelete", { fg = red })
+        return true
+      end
 
       -- dylanaraps/wal.vim only sets cterm* — invisible under
       -- termguicolors. Read colors.json and set gui* highlights so bg
@@ -249,6 +334,9 @@ return {
         set("GitSignsDelete", { fg = c.color1 })
         return true
       end
+      -- Modes with a dedicated plugin. Anything else renders from
+      -- ~/.cache/qtile/current_palette.json (dumped by theme-apply) so
+      -- every mode gets a distinct nvim look matching the qtile bar.
       local map = {
         wal = "wal",
         doomone = "doom-one",
@@ -262,16 +350,6 @@ return {
         ["rose-pine"] = "rose-pine",
         kanagawa = "kanagawa",
         oxocarbon = "oxocarbon",
-        ["cyberpunk-neon"] = "dracula",
-        synthwave = "dracula",
-        matrix = "gruvbox",
-        ["mono-dark"] = "doom-one",
-        ["mono-light"] = "doom-one",
-        nightowl = "nord",
-        onedark = "doom-one",
-        palenight = "nord",
-        ["github-dark"] = "nord",
-        ["ayu-mirage"] = "kanagawa",
       }
       local last_mode = nil
       local last_wal_mtime = 0
@@ -335,13 +413,16 @@ return {
         last_mode = m
         last_wal_mtime = mt
         if m == "wal" then
-          -- Native json reader — sets gui* highlights (wal.vim only
-          -- sets cterm*, invisible under termguicolors).
           if not apply_wal_from_json() then
             set_scheme("doom-one")
           end
+        elseif map[m] then
+          set_scheme(map[m])
         else
-          set_scheme(map[m] or "doom-one")
+          -- Aliased/non-plugin modes: render from current_palette.json.
+          if not apply_preset_from_json() then
+            set_scheme("doom-one")
+          end
         end
       end
       apply(true)
@@ -358,9 +439,11 @@ return {
         start()
         return w
       end
-      -- watch theme_mode (preset switches) + colors-wal.vim (wallpaper switches).
+      -- watch theme_mode (preset switches) + colors-wal.vim (wallpaper switches)
+      -- + current_palette.json (aliased preset repaints).
       arm_fs(mode_file, function() apply(false) end)
       arm_fs(wal_cache, function() apply(false) end)
+      arm_fs(preset_json, function() apply(true) end)
 
       vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter" }, {
         callback = function() apply(false) end,
