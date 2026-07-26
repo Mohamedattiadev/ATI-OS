@@ -104,7 +104,7 @@ if [[ "$MODE" == "wal" ]]; then
     notify-send -u critical "theme-apply" "~/.cache/wall missing — set a wallpaper first"
     exit 1
   fi
-  WALL_PATH="$(cat "$WALL_LINK")"
+  WALL_PATH="$(readlink -f "$WALL_LINK")"
   # Guard: wall path stale (file deleted after cache write).
   if [[ ! -f "$WALL_PATH" ]]; then
     notify-send -u critical "theme-apply" "wallpaper file missing: $WALL_PATH"
