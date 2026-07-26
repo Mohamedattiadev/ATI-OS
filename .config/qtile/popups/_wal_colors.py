@@ -30,25 +30,48 @@ def _mix(hex_a, hex_b, t):
     return "#{:02x}{:02x}{:02x}".format(*m)
 
 
+def _from_preset_json():
+    """Preferred source: ~/.cache/qtile/current_palette.json dumped by
+    theme-apply on every preset AND wal apply. Guarantees the popup
+    matches the currently-active mode instead of leaking a stale wal
+    palette from the last wallpaper switch."""
+    with open(os.path.expanduser("~/.cache/qtile/current_palette.json")) as f:
+        d = json.load(f)
+    bg, fg = d["bg"], d["fg"]
+    muted = _mix(bg, fg, 0.40)
+    return {
+        "bg": bg,
+        "fg": fg,
+        "muted": muted,
+        "green": d["green"],
+        "blue": d["blue"],
+        "purple": d["purple"],
+        "red": d["red"],
+    }
+
+
+def _from_wal_json():
+    with open(os.path.expanduser("~/.cache/wal/colors.json")) as f:
+        w = json.load(f)
+    c = w["colors"]
+    s = w["special"]
+    bg, fg = s["background"], s["foreground"]
+    muted = _mix(bg, fg, 0.40)
+    return {
+        "bg": bg,
+        "fg": fg,
+        "muted": muted,
+        "green": c["color10"],
+        "blue": c["color12"],
+        "purple": c["color13"],
+        "red": c["color9"],
+    }
+
+
 def load_colors():
-    try:
-        with open(os.path.expanduser("~/.cache/wal/colors.json")) as f:
-            w = json.load(f)
-        c = w["colors"]
-        s = w["special"]
-        bg, fg = s["background"], s["foreground"]
-        # muted = 40% toward fg from bg. color8 is too close to bg on
-        # wal palettes (bg_alt only 5-8% lighter), so dividers and hint
-        # text vanished. This gives ~L=0.35 gray, readable but subdued.
-        muted = _mix(bg, fg, 0.40)
-        return {
-            "bg": bg,
-            "fg": fg,
-            "muted": muted,
-            "green": c["color10"],   # dominant (main accent)
-            "blue": c["color12"],    # cool-fill
-            "purple": c["color13"],  # complement
-            "red": c["color9"],      # urgent
-        }
-    except Exception:
-        return dict(_DOOMONE)
+    for source in (_from_preset_json, _from_wal_json):
+        try:
+            return source()
+        except Exception:
+            continue
+    return dict(_DOOMONE)
