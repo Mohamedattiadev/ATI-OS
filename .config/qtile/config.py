@@ -2699,6 +2699,8 @@ keys = [
     ),
     # ---close notifications---
     Key([mod2], "n", lazy.spawn("dunstctl close")),
+    # ---copyq clipboard popup---
+    Key([mod2], "v", lazy.spawn(os.path.expanduser("~/.config/AtiScriptsV1/copyq_rofi")), desc="CopyQ clipboard rofi picker (ctrl+j/k nav, thumbnails)"),
     # ---gptscript-inline---
     # FIX:  was working but now not......
     # Key(
