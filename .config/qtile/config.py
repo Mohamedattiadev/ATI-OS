@@ -2388,22 +2388,58 @@ def _mem_top_text():
 _TOP_DIRS_CACHE = ""
 _TOP_DIRS_LAST = 0.0
 _TOP_DIRS_TTL = 900  # 15 min
+_TOP_DIRS_RUNNING = False
+_TOP_DIRS_CACHE_FILE = os.path.expanduser("~/.cache/qtile/top_dirs")
+
+
+def _load_top_dirs_cache():
+    global _TOP_DIRS_CACHE, _TOP_DIRS_LAST
+    try:
+        st = os.stat(_TOP_DIRS_CACHE_FILE)
+        with open(_TOP_DIRS_CACHE_FILE) as f:
+            _TOP_DIRS_CACHE = f.read().strip()
+        _TOP_DIRS_LAST = st.st_mtime
+    except Exception:
+        pass
 
 
 def _refresh_top_dirs():
-    global _TOP_DIRS_CACHE, _TOP_DIRS_LAST
+    global _TOP_DIRS_CACHE, _TOP_DIRS_LAST, _TOP_DIRS_RUNNING
+    if _TOP_DIRS_RUNNING:
+        return
+    _TOP_DIRS_RUNNING = True
     try:
+        # Parallel per-subdir du: much faster on multi-core than single du walk.
+        # ionice+nice keep it out of the way. Only top-level dirs of $HOME.
+        cmd = (
+            "cd ~ && ls -A1 | "
+            "xargs -d '\\n' -P 8 -I{} "
+            "ionice -c3 nice -n19 du -sxb -- {} 2>/dev/null | "
+            "sort -rn | head -6 | "
+            "numfmt --to=iec --suffix=B --field=1 --padding=7"
+        )
         r = subprocess.run(
-            ["sh", "-c", "du -hxd 1 ~ 2>/dev/null | sort -rh | head -6"],
+            ["bash", "-c", cmd],
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=600,
         )
-        if r.returncode == 0:
+        if r.returncode == 0 and r.stdout.strip():
             _TOP_DIRS_CACHE = r.stdout.strip()
             _TOP_DIRS_LAST = time.time()
+            try:
+                os.makedirs(os.path.dirname(_TOP_DIRS_CACHE_FILE), exist_ok=True)
+                with open(_TOP_DIRS_CACHE_FILE, "w") as f:
+                    f.write(_TOP_DIRS_CACHE)
+            except Exception:
+                pass
     except Exception:
         pass
+    finally:
+        _TOP_DIRS_RUNNING = False
+
+
+_load_top_dirs_cache()
 
 
 def _top_dirs_text():
@@ -2418,10 +2454,15 @@ def _top_dirs_text():
         if len(parts) != 2:
             continue
         size, path = parts
-        if path == home:
+        if path == home or path in (".", ""):
             continue
-        short = path.replace(home, "~")
-        out.append(f" {size:>6}  {short}")
+        if path.startswith(home):
+            short = "~" + path[len(home):]
+        elif path.startswith("/"):
+            short = path
+        else:
+            short = "~/" + path
+        out.append(f" {size:>7}  {short}")
     return "\n".join(out[:5])
 
 
@@ -3457,17 +3498,7 @@ groups.append(
                 y=0.1,
                 opacity=1,
             ),
-            DropDown(
-                "qdrop",
-                f"python3 {os.path.expanduser('~')}/.config/qtile/scripts/qdrop.py",
-                match=Match(wm_class="qdrop"),
-                width=0.25,
-                height=0.3,
-                x=0.725,
-                y=0.67,
-                opacity=1.0,
-                on_focus_lost_hide=False,
-            ),
+            # qdrop is self-managed (socket-controlled). See scripts/qdrop.py.
             ### NOTE:for chatgpt & deepseek & whatsapp i decided to use brave browser by using one browser engine for all, i  used separate profiles for
             ### each browser and it will be in the ~/.config/qtile/brave-profiles
             ### by using some flags i can disable some features like sync, background networking, component update, etc which will make it faster and reduce
@@ -3542,7 +3573,7 @@ keys.extend(
         Key(
             [mod2, "shift"],
             "d",
-            lazy.group["scratchpad"].dropdown_toggle("qdrop"),
+            lazy.spawn("python3 " + os.path.expanduser("~/.config/qtile/scripts/qdrop.py") + " --toggle"),
         ),
     ]
 )
@@ -3793,6 +3824,7 @@ floating_layout = layout.Floating(
         Match(wm_class="clip-view"),  # copyq_rofi alt+w full-text preview
         Match(wm_class="imv"),  # copyq_rofi alt+w image preview
         Match(wm_class="org.gnome.NautilusPreviewer"),  # make the preview float
+        Match(wm_class="qdrop"),  # qdrop drop-stash
         # Match(wm_class="Anki"),  # make the preview float
     ],
 )

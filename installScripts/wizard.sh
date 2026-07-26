@@ -217,7 +217,6 @@ _reg xresources        ".Xresources"         Dotfiles  "Xcursor size 24 + Breeze
 _reg xmodmap           ".Xmodmap"            Dotfiles  "Caps hold = Alt (xcape restores tap-Caps)"              "step_xmodmap"
 _reg lid               "Lid = ignore"        System    "Never sleep on lid close"                               "step_lid"
 _reg image-envs        "Image env"           Dotfiles  "Suppress VIPS warnings for kitty+nvim images"           "step_image_envs"
-_reg flatpak           "Flatpak + Collector" Apps      "flathub + it.mijorus.collector"                         "step_flatpak"
 _reg piper             "Piper voices"        Media     "EN + DE TTS voices (~60MB)"                             "step_piper"
 _reg whisper           "Whisper model"       Media     "small.en STT model (~500MB)"                            "step_whisper"
 _reg passwordless-sudo "Passwordless sudo"   System    "Add user to NOPASSWD sudoers"                           "step_nopasswd"
@@ -343,7 +342,6 @@ XMM_EOF
 }
 step_lid()          { run "sudo sed -i 's/^#\\?HandleLidSwitch=.*/HandleLidSwitch=ignore/' /etc/systemd/logind.conf && sudo systemctl restart systemd-logind"; }
 step_image_envs()   { run "grep -qx 'set -x VIPS_WARNING 0' $HOME/.profile 2>/dev/null || echo 'set -x VIPS_WARNING 0' >> $HOME/.profile"; }
-step_flatpak()      { run "sudo pacman -S --needed --noconfirm flatpak && flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo && flatpak install -y --user flathub it.mijorus.collector"; }
 step_piper() {
   local dir="$HOME/.config/piper-voices"
   run "mkdir -p $dir"

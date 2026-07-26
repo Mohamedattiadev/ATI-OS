@@ -1,50 +1,40 @@
 #!/usr/bin/env python3
 """qdrop shake detector.
 
-Watches xinput --test-xi2 --root for Button1-held rapid horizontal
-direction reversals ("shake" while dragging). Fires qtile scratchpad toggle
-for qdrop when N reversals happen within TIME_WINDOW_S.
+Watches xinput --test-xi2 --root for Button1-held rapid horizontal direction
+reversals. Uses RAW events (not blocked by X grabs during XDND drag).
+Tracks button state from RawButtonPress/Release, position deltas from
+RawMotion valuators.
+
+Fires `qdrop --show` on shake. Motion outside a button1 drag is ignored,
+so closing the window and moving the mouse never re-triggers.
 """
 import collections
+import os
 import re
 import subprocess
+import sys
 import time
 
-REVERSALS_NEEDED = 4         # sign flips on X
-TIME_WINDOW_S = 0.7          # within this many seconds
-MIN_SEG_PX = 12              # ignore jitter shorter than this
-DEBOUNCE_S = 1.5
-COOLDOWN_AFTER_RELEASE = 0.2
+REVERSALS_NEEDED = 3
+TIME_WINDOW_S = 1.0
+MIN_SEG_PX = 8
+DEBOUNCE_S = 1.2
+COOLDOWN_AFTER_RELEASE_S = 0.2
 
-TOGGLE_CMD = [
-    "qtile", "cmd-obj",
-    "-o", "group", "scratchpad",
-    "-f", "dropdown_toggle",
-    "-a", "qdrop",
-]
+QDROP = os.path.expanduser("~/.config/qtile/scripts/qdrop.py")
 
 
 def log(msg: str):
     print(f"[qdrop_watch] {msg}", flush=True)
 
 
-def already_visible() -> bool:
-    try:
-        r = subprocess.run(
-            ["xdotool", "search", "--onlyvisible", "--class", "qdrop"],
-            capture_output=True, text=True, timeout=1,
-        )
-        return bool(r.stdout.strip())
-    except Exception:
-        return False
-
-
 def fire():
-    if already_visible():
-        log("shake ignored (already visible)")
-        return
-    subprocess.Popen(TOGGLE_CMD, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    log("shake -> toggled")
+    subprocess.Popen(
+        [sys.executable, QDROP, "--show"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    log("shake -> show")
 
 
 def main():
@@ -53,71 +43,83 @@ def main():
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
     )
 
+    ev_re = re.compile(r"^EVENT type\s+\d+\s+\((\w+)\)")
+    detail_re = re.compile(r"^\s+detail:\s+(\d+)")
+    axis_re = re.compile(r"^\s+0:\s+([\-\d.]+)")
+
+    ev_type = None
+    detail = None
+
     button1_down = False
-    last_x = 0.0
-    current_sign = 0            # +1 right, -1 left, 0 unknown
+    integrated_x = 0.0
     seg_start_x = 0.0
+    current_sign = 0
     reversal_times: collections.deque = collections.deque()
     last_fire = 0.0
     fired_for_drag = False
 
-    ev_type = None
-    detail = None
-    coord_re = re.compile(r"^\s+root:\s+([\-\d.]+)\s*/\s*([\-\d.]+)")
-
     for line in proc.stdout:
-        line = line.rstrip("\n")
-
-        m_ev = re.match(r"^EVENT type\s+(\d+)\s+\((\w+)\)", line)
-        if m_ev:
-            ev_type = m_ev.group(2)
-            detail = None
+        if not line:
+            continue
+        c0 = line[0]
+        if c0 == "E":
+            m = ev_re.match(line)
+            if m:
+                ev_type = m.group(1)
+                detail = None
+            continue
+        if c0 != " " and c0 != "\t":
             continue
 
-        m_det = re.match(r"^\s+detail:\s+(\d+)", line)
-        if m_det:
-            detail = int(m_det.group(1))
+        if ev_type in ("RawButtonPress", "RawButtonRelease"):
+            m = detail_re.match(line)
+            if m:
+                detail = int(m.group(1))
+                if detail == 1:
+                    if ev_type == "RawButtonPress":
+                        button1_down = True
+                        integrated_x = 0.0
+                        seg_start_x = 0.0
+                        current_sign = 0
+                        reversal_times.clear()
+                        fired_for_drag = False
+                    else:
+                        button1_down = False
+                        time.sleep(COOLDOWN_AFTER_RELEASE_S)
             continue
 
-        m_root = coord_re.match(line)
-        if not m_root:
+        if ev_type != "RawMotion" or not button1_down or fired_for_drag:
             continue
 
-        x = float(m_root.group(1))
+        m = axis_re.match(line)
+        if not m:
+            continue
 
-        if ev_type == "ButtonPress" and detail == 1:
-            button1_down = True
-            last_x = x
-            seg_start_x = x
-            current_sign = 0
-            reversal_times.clear()
-            fired_for_drag = False
-        elif ev_type == "ButtonRelease" and detail == 1:
-            button1_down = False
-            reversal_times.clear()
-            time.sleep(COOLDOWN_AFTER_RELEASE)
-        elif ev_type == "Motion" and button1_down and not fired_for_drag:
-            dx = x - last_x
-            last_x = x
-            if abs(x - seg_start_x) < MIN_SEG_PX:
-                continue
-            new_sign = 1 if dx > 0 else -1 if dx < 0 else current_sign
-            if current_sign == 0:
-                current_sign = new_sign
-                seg_start_x = x
-            elif new_sign != 0 and new_sign != current_sign:
-                # direction flip
-                now = time.time()
-                reversal_times.append(now)
-                cutoff = now - TIME_WINDOW_S
-                while reversal_times and reversal_times[0] < cutoff:
-                    reversal_times.popleft()
-                current_sign = new_sign
-                seg_start_x = x
-                if len(reversal_times) >= REVERSALS_NEEDED and now - last_fire >= DEBOUNCE_S:
-                    fire()
-                    last_fire = now
-                    fired_for_drag = True
+        dx = float(m.group(1))
+        if dx == 0:
+            continue
+        integrated_x += dx
+        if abs(integrated_x - seg_start_x) < MIN_SEG_PX:
+            continue
+
+        new_sign = 1 if dx > 0 else -1
+        if current_sign == 0:
+            current_sign = new_sign
+            seg_start_x = integrated_x
+            continue
+
+        if new_sign != current_sign:
+            now = time.time()
+            reversal_times.append(now)
+            cutoff = now - TIME_WINDOW_S
+            while reversal_times and reversal_times[0] < cutoff:
+                reversal_times.popleft()
+            current_sign = new_sign
+            seg_start_x = integrated_x
+            if len(reversal_times) >= REVERSALS_NEEDED and now - last_fire >= DEBOUNCE_S:
+                fire()
+                last_fire = now
+                fired_for_drag = True
 
 
 if __name__ == "__main__":
