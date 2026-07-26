@@ -45,3 +45,9 @@ packages:
   - gvfs
   - gvfs-mtp
   - openslide
+  - curl
+  - gum
+  - python-pywal
+  - papirus-icon-theme
+  - flatpak
+  - dbus-broker
