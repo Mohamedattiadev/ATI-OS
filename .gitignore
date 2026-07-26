@@ -33,3 +33,6 @@ brave-profiles
 .config/rofi/themes/current-palette.rasi
 .config/kitty/themes/current.conf
 .config/alacritty/themes/current.toml
+
+# homepage.html regenerated per palette from homepage.html.tmpl
+.config/qutebrowser/html/homepage.html
