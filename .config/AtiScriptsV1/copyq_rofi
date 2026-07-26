@@ -154,23 +154,28 @@ JSEOF3
     11)
       [ -z "$sel" ] && exit 0
       [ "$sel" -ge "$N" ] && exit 0
-      IFS=$'\t' read -r idx _ _ _ <<< "${rows[$sel]}"
+      IFS=$'\t' read -r idx _ _ icon <<< "${rows[$sel]}"
       [ -z "$idx" ] && exit 0
-      tmp=$(mktemp --suffix=.txt /tmp/copyq-view.XXXXXX)
-      copyq eval - > "$tmp" <<JSEOF5
+      if [ -n "${icon:-}" ] && [ -f "$icon" ]; then
+        # Image entry: reuse the thumb (raw PNG). imv is floated by qtile
+        # via Match(wm_class="imv"). -s shrink prevents upscaling small clips.
+        setsid imv -s shrink "$icon" >/dev/null 2>&1 < /dev/null &
+        disown
+      else
+        tmp=$(mktemp --suffix=.txt /tmp/copyq-view.XXXXXX)
+        copyq eval - > "$tmp" <<JSEOF5
 tab("$TAB");
 print(str(read($idx)));
 JSEOF5
-      # Floating alacritty running nvim (read-only). WM class clip-view is
-      # matched by qtile floating_layout; alacritty dims keep window compact.
-      setsid alacritty --class clip-view --title "clip-view" \
-        -o "window.dimensions.columns=100" \
-        -o "window.dimensions.lines=28" \
-        -o "window.padding.x=10" \
-        -o "window.padding.y=10" \
-        -e nvim -R -c "set nonumber norelativenumber signcolumn=no laststatus=0" "$tmp" \
-        >/dev/null 2>&1 < /dev/null &
-      disown
+        setsid alacritty --class clip-view --title "clip-view" \
+          -o "window.dimensions.columns=100" \
+          -o "window.dimensions.lines=28" \
+          -o "window.padding.x=10" \
+          -o "window.padding.y=10" \
+          -e nvim -R -c "set nonumber norelativenumber signcolumn=no laststatus=0" "$tmp" \
+          >/dev/null 2>&1 < /dev/null &
+        disown
+      fi
       exit 0
       ;;
     *)
