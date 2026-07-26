@@ -186,6 +186,122 @@ FLOAT_STATES = {}
 
 colors: list[list[str]] = color_schemes.active_palette()
 
+
+# ────────────────────────────────────────────────────────────────────
+# Live palette swap — instant theme change without qtile restart.
+# theme-apply invokes this via `qtile cmd-obj -f eval` after writing
+# the new mode to ~/.cache/qtile/theme_mode. Walks every widget in
+# every bar, remaps colors by slot index (matched against the old
+# palette hex), then redraws. Falls back to restart in theme-apply
+# if this fails or a widget skips redraw.
+#
+# Slot mapping is derived from the current `colors` global: each
+# hex the widget currently holds is looked up in old_palette →
+# replaced with the same slot from new_palette. Works for any
+# widget attr set from `colors[N]` at construction (foreground /
+# background / border_color / GroupBox active|inactive|highlight_*
+# / RectDecoration.colour|colours|line_colour / decoration lists).
+# ────────────────────────────────────────────────────────────────────
+
+# widget/decoration attributes we scan for palette hexes
+_PALETTE_ATTRS = (
+    "foreground", "background", "border_color",
+    "active", "inactive", "urgent_border",
+    "this_current_screen_border", "this_screen_border",
+    "other_current_screen_border", "other_screen_border",
+    "highlight_color", "block_highlight_text_color",
+    "fill_color", "colour", "colours", "line_colour",
+    "border", "border_focus", "border_normal",
+)
+
+
+def _remap_palette_value(val, slot):
+    """Given a widget attr value and a hex→slot map, return the new
+    value with each recognized hex replaced. Preserves structure
+    (str stays str, list stays list, tuple stays tuple)."""
+    if isinstance(val, str):
+        return slot.get(val, val)
+    if isinstance(val, (list, tuple)):
+        typ = type(val)
+        return typ(_remap_palette_value(v, slot) for v in val)
+    return val
+
+
+def apply_palette_live():
+    """Mutate every bar widget's palette-derived color to the new
+    palette on disk. No qtile restart, no widget re-instantiation."""
+    global colors
+    import importlib
+    importlib.reload(color_schemes)
+    new_palette_rows = color_schemes.active_palette()
+    new_flat = [row[0] if isinstance(row, (list, tuple)) else row for row in new_palette_rows]
+    old_flat = [row[0] if isinstance(row, (list, tuple)) else row for row in colors]
+    if len(new_flat) != len(old_flat):
+        return False
+    # hex → new hex (single map covers both str + list cases)
+    slot_map = {old_flat[i]: new_flat[i] for i in range(len(old_flat))}
+    # normalize case (some widgets store #FF vs #ff)
+    slot_map.update({k.upper(): v for k, v in list(slot_map.items())})
+    slot_map.update({k.lower(): v for k, v in list(slot_map.items())})
+    for screen in qtile.screens:
+        for bar_obj in (getattr(screen, "top", None), getattr(screen, "bottom", None),
+                        getattr(screen, "left", None), getattr(screen, "right", None)):
+            if bar_obj is None:
+                continue
+            widgets = getattr(bar_obj, "widgets", None) or []
+            # bar background itself
+            bg = getattr(bar_obj, "background", None)
+            if bg:
+                new_bg = _remap_palette_value(bg, slot_map)
+                if new_bg != bg:
+                    try:
+                        bar_obj.background = new_bg
+                    except Exception:
+                        pass
+            for w in widgets:
+                for attr in _PALETTE_ATTRS:
+                    if not hasattr(w, attr):
+                        continue
+                    v = getattr(w, attr)
+                    new_v = _remap_palette_value(v, slot_map)
+                    if new_v != v:
+                        try:
+                            setattr(w, attr, new_v)
+                        except Exception:
+                            pass
+                # Decorations (RectDecoration etc)
+                decs = getattr(w, "decorations", None) or []
+                for d in decs:
+                    for attr in _PALETTE_ATTRS:
+                        if not hasattr(d, attr):
+                            continue
+                        v = getattr(d, attr)
+                        new_v = _remap_palette_value(v, slot_map)
+                        if new_v != v:
+                            try:
+                                setattr(d, attr, new_v)
+                            except Exception:
+                                pass
+                # force redraw
+                try:
+                    w.draw()
+                except Exception:
+                    pass
+            try:
+                bar_obj.draw()
+            except Exception:
+                pass
+    # Update global so subsequent live-swaps have correct old_flat
+    colors = new_palette_rows
+    # Write marker so bash caller can detect success (qtile eval
+    # can't return values from multi-statement code).
+    try:
+        with open(os.path.expanduser("~/.cache/qtile/.palette_live_ok"), "w") as f:
+            f.write(str(int(time.time())))
+    except Exception:
+        pass
+    return True
+
 # NOTE:
 ### COLORSCHEME ###
 # Colors are defined in a separate 'colors.py' file.
@@ -487,6 +603,17 @@ def _apply_layout_state():
             g.layout_all()
         except Exception:
             continue
+
+
+@hook.subscribe.startup_complete
+def _attach_live_swap():
+    # Expose apply_palette_live on the qtile object so
+    # `qtile cmd-obj -f eval -a 'str(self.apply_palette_live())'`
+    # from theme-apply can call it without config-module imports.
+    try:
+        qtile.apply_palette_live = apply_palette_live
+    except Exception:
+        pass
 
 
 @hook.subscribe.startup_complete

@@ -624,14 +624,23 @@ if pgrep -x pcmanfm >/dev/null 2>&1; then
   disown
 fi
 
-# Full qtile restart. reload_config only re-runs config.py — widget
-# instances keep their captured color arrays and the bar never repaints
-# with the new palette until the user forces a screen reconfigure.
-# `restart` rebuilds the whole widget tree so the bar visibly updates
-# immediately. Detach so theme-apply exits fast.
+# Try LIVE palette swap first (no restart). Walks bar widgets +
+# decorations, remaps slot-matched hexes, redraws. Config.py exposes
+# apply_palette_live() which returns True on success. Fall back to
+# `restart` only if the live call fails or times out.
 if command -v qtile >/dev/null; then
-  setsid -f bash -c 'timeout 5 qtile cmd-obj -o cmd -f restart' \
-    >/dev/null 2>&1 </dev/null || true
+  LIVE_MARKER="$HOME/.cache/qtile/.palette_live_ok"
+  rm -f "$LIVE_MARKER"
+  # Multi-statement eval → success indicated by marker file, not
+  # return value (qtile eval returns "" for exec paths).
+  timeout 2 qtile cmd-obj -o cmd -f eval -a \
+    'import sys; sys.path.insert(0, "/home/ati/.dotfiles/.config/qtile"); import config; config.apply_palette_live()' \
+    >/dev/null 2>&1
+  if [[ ! -f "$LIVE_MARKER" ]]; then
+    # Live swap failed — fall back to full restart.
+    setsid -f bash -c 'timeout 5 qtile cmd-obj -o cmd -f restart' \
+      >/dev/null 2>&1 </dev/null || true
+  fi
 fi
 
 # Reload qutebrowser + notify chrome/brave. qb has IPC; brave-family
