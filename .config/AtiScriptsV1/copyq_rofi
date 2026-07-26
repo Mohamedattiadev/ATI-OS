@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Rofi-based CopyQ picker with vim (ctrl+j/k) nav + image thumbnails.
+
+set -euo pipefail
+
+MAX=${1:-15}
+TAB='&clipboard'
+THUMBS=/tmp/copyq-thumbs
+mkdir -p "$THUMBS"
+rm -f "$THUMBS"/*.png 2>/dev/null || true
+
+mapfile -t rows < <(
+  MAX="$MAX" TAB="$TAB" THUMBS="$THUMBS" copyq eval - <<'JSEOF'
+var TAB = env("TAB");
+var MAX = parseInt(env("MAX"));
+var THUMBS = env("THUMBS");
+tab(TAB);
+var n = Math.min(count(), MAX);
+for (var i = 0; i < n; i++) {
+  var d = getitem(i);
+  var keys = Object.keys(d);
+  var isImg = false;
+  for (var j = 0; j < keys.length; j++) {
+    if (keys[j].indexOf("image/") == 0) { isImg = true; break; }
+  }
+  var label = "";
+  var icon = "";
+  if (isImg) {
+    var buf = read("image/png", i);
+    if (buf && buf.length > 0) {
+      icon = THUMBS + "/" + i + ".png";
+      var f = new File(icon);
+      f.open();
+      f.write(buf);
+      f.close();
+    }
+    label = "[image]";
+  } else {
+    var t = str(d["text/plain"] || "").replace(/[\r\n\t]/g, " ").substring(0, 160);
+    label = t.length ? t : "<empty>";
+  }
+  print(i + "\t" + label + "\t" + icon + "\n");
+}
+JSEOF
+)
+
+# Ephemeral theme: inherit user base (matches other rofi scripts), just enable thumbs.
+THEME_FILE=/tmp/copyq-rofi-theme.rasi
+cat > "$THEME_FILE" <<'RASI'
+@import "~/.config/rofi/themes/base.rasi"
+
+listview     { lines: 8; fixed-height: 1; scrollbar: true; }
+scrollbar    { width: 4px; }
+element-icon { size: 48px; expand: false; }
+RASI
+
+build_input() {
+  for row in "${rows[@]}"; do
+    IFS=$'\t' read -r idx label icon <<< "$row"
+    [ -z "${idx:-}" ] && continue
+    if [ -n "${icon:-}" ] && [ -f "$icon" ]; then
+      printf '[%02d] %s\0icon\x1f%s\n' "$idx" "$label" "$icon"
+    else
+      printf '[%02d] %s\n' "$idx" "$label"
+    fi
+  done
+}
+
+sel=$(build_input | rofi -dmenu -i \
+  -p "clip" \
+  -show-icons \
+  -no-custom \
+  -theme "$THEME_FILE" \
+  -format 's') || exit 0
+
+[ -z "$sel" ] && exit 0
+idx=$(printf '%s' "$sel" | sed -n 's/^\[0*\([0-9]\+\)\].*/\1/p')
+[ -z "$idx" ] && exit 0
+
+copyq eval - <<JSEOF2
+tab("$TAB");
+select($idx);
+JSEOF2
+sleep 0.05
+xdotool key --clearmodifiers ctrl+v
