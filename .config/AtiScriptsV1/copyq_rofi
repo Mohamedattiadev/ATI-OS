@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Rofi-based CopyQ picker with vim (ctrl+j/k) nav + image thumbnails.
+# alt+d deletes the highlighted entry, alt+p pin/unpin (via copyq), enter pastes.
 
 set -euo pipefail
 
@@ -9,53 +10,73 @@ THUMBS=/tmp/copyq-thumbs
 mkdir -p "$THUMBS"
 rm -f "$THUMBS"/*.png 2>/dev/null || true
 
-mapfile -t rows < <(
+fetch_rows() {
   MAX="$MAX" TAB="$TAB" THUMBS="$THUMBS" copyq eval - <<'JSEOF'
 var TAB = env("TAB");
 var MAX = parseInt(env("MAX"));
 var THUMBS = env("THUMBS");
 tab(TAB);
 var n = Math.min(count(), MAX);
+var seen = {};
 for (var i = 0; i < n; i++) {
   var d = getitem(i);
   var keys = Object.keys(d);
   var isImg = false;
+  var pinned = false;
   for (var j = 0; j < keys.length; j++) {
-    if (keys[j].indexOf("image/") == 0) { isImg = true; break; }
+    if (keys[j].indexOf("image/") == 0) isImg = true;
+    if (keys[j] == "application/x-copyq-item-pinned") pinned = true;
   }
   var label = "";
   var icon = "";
+  var dedupeKey = "";
   if (isImg) {
     var buf = read("image/png", i);
-    if (buf && buf.length > 0) {
-      icon = THUMBS + "/" + i + ".png";
-      var f = new File(icon);
-      f.open();
-      f.write(buf);
-      f.close();
-    }
-    // PNG IHDR: bytes 16-23. buf is QByteArray; use .mid+.toString+charCodeAt.
-    var w = 0, h = 0;
     if (buf && buf.size && buf.size() > 24) {
+      icon = THUMBS + "/" + i + ".png";
+      var f = new File(icon); f.open(); f.write(buf); f.close();
       var hdr = buf.mid(16, 8).toString();
-      w = (hdr.charCodeAt(0)<<24) | (hdr.charCodeAt(1)<<16) | (hdr.charCodeAt(2)<<8) | hdr.charCodeAt(3);
-      h = (hdr.charCodeAt(4)<<24) | (hdr.charCodeAt(5)<<16) | (hdr.charCodeAt(6)<<8) | hdr.charCodeAt(7);
+      var w = (hdr.charCodeAt(0)<<24) | (hdr.charCodeAt(1)<<16) | (hdr.charCodeAt(2)<<8) | hdr.charCodeAt(3);
+      var h = (hdr.charCodeAt(4)<<24) | (hdr.charCodeAt(5)<<16) | (hdr.charCodeAt(6)<<8) | hdr.charCodeAt(7);
+      label = "image " + w + "×" + h;
+      dedupeKey = "img:" + buf.size();
+    } else {
+      label = "image";
+      dedupeKey = "img:" + i;
     }
-    label = w && h ? ("image " + w + "×" + h) : "image";
   } else {
-    var t = str(d["text/plain"] || "").replace(/[\r\n\t]/g, " ").substring(0, 220);
-    label = t.length ? t : "<empty>";
+    var raw = str(d["text/plain"] || "");
+    var t = raw.replace(/[\r\n\t]/g, " ").substring(0, 220);
+    if (!t.length) { label = "<empty>"; dedupeKey = "empty:" + i; }
+    else {
+      var glyph = "";
+      if (/^https?:\/\//.test(raw)) glyph = " ";
+      else if (/^(\/|~\/|\.\/)/.test(raw)) glyph = " ";
+      else if (/^\s*(git|sudo|cd|ls|npm|pnpm|yarn|cargo|python|node|pip|systemctl|docker|make|curl|wget|ssh|rsync)\s/.test(raw)) glyph = " ";
+      else if (raw.indexOf("\n") >= 0) glyph = " ";
+      label = glyph + t;
+      dedupeKey = "txt:" + raw;
+    }
   }
-  print(i + "\t" + label + "\t" + icon + "\n");
+  if (seen[dedupeKey]) continue;
+  seen[dedupeKey] = true;
+  var pinMark = pinned ? "P" : " ";
+  print(i + "\t" + pinMark + "\t" + label + "\t" + icon + "\n");
 }
 JSEOF
-)
+}
+
+load_rows() { mapfile -t rows < <(fetch_rows); }
+load_rows
 
 # Ephemeral theme: inherit user base (matches other rofi scripts), just enable thumbs.
 THEME_FILE=/tmp/copyq-rofi-theme.rasi
 cat > "$THEME_FILE" <<'RASI'
 @import "~/.config/rofi/themes/base.rasi"
 
+mainbox      { children: [inputbar, message, listview]; }
+message      { padding: 4px 6px; border: 0; }
+textbox      { text-color: inherit; }
 listview     { lines: 8; fixed-height: 1; scrollbar: true; spacing: 3px; }
 scrollbar    { width: 4px; }
 element      { padding: 4px 8px; spacing: 10px; }
@@ -68,10 +89,15 @@ esc_pango() {
 
 build_input() {
   for row in "${rows[@]}"; do
-    IFS=$'\t' read -r idx label icon <<< "$row"
+    IFS=$'\t' read -r idx pin label icon <<< "$row"
     [ -z "${idx:-}" ] && continue
     safe=$(esc_pango "$label")
-    entry=$(printf '<span alpha="50%%">%02d</span>  %s' "$idx" "$safe")
+    if [ "$pin" = "P" ]; then
+      prefix=$(printf '<span alpha="50%%">%02d</span> <span foreground="#f2c94c"></span> ' "$idx")
+    else
+      prefix=$(printf '<span alpha="50%%">%02d</span>   ' "$idx")
+    fi
+    entry="${prefix}${safe}"
     if [ -n "${icon:-}" ] && [ -f "$icon" ]; then
       printf '%s\0icon\x1f%s\n' "$entry" "$icon"
     else
@@ -80,24 +106,53 @@ build_input() {
   done
 }
 
-sel=$(build_input | rofi -dmenu -i \
-  -p "clip" \
-  -show-icons \
-  -markup-rows \
-  -no-custom \
-  -theme "$THEME_FILE" \
-  -format 'i') || exit 0
+while true; do
+  N=${#rows[@]}
+  MESG=$(printf '<span alpha="60%%">%d entries · enter paste · alt+d delete · esc quit</span>' "$N")
+  set +e
+  sel=$(build_input | rofi -dmenu -i \
+    -p "clip" \
+    -mesg "$MESG" \
+    -show-icons \
+    -markup-rows \
+    -no-custom \
+    -theme "$THEME_FILE" \
+    -kb-custom-1 'Alt+d' \
+    -format 'i')
+  rc=$?
+  set -e
 
-[ -z "$sel" ] && exit 0
-# sel is now the row index in `rows` (0-based, from `-format i`). Map to CopyQ index.
-row_pos=$sel
-if [ "$row_pos" -ge "${#rows[@]}" ]; then exit 0; fi
-IFS=$'\t' read -r idx _ _ <<< "${rows[$row_pos]}"
-[ -z "$idx" ] && exit 0
-
-copyq eval - <<JSEOF2
+  # Exit codes: 0=Enter, 1=cancel, 10=custom-1 (delete)
+  case $rc in
+    0)
+      [ -z "$sel" ] && exit 0
+      [ "$sel" -ge "$N" ] && exit 0
+      IFS=$'\t' read -r idx _ _ _ <<< "${rows[$sel]}"
+      [ -z "$idx" ] && exit 0
+      copyq eval - <<JSEOF2
 tab("$TAB");
 select($idx);
 JSEOF2
-sleep 0.05
-xdotool key --clearmodifiers ctrl+v
+      sleep 0.05
+      xdotool key --clearmodifiers ctrl+v
+      exit 0
+      ;;
+    10)
+      # delete highlighted row and re-open picker
+      [ -z "$sel" ] && exit 0
+      [ "$sel" -ge "$N" ] && exit 0
+      IFS=$'\t' read -r idx _ _ _ <<< "${rows[$sel]}"
+      [ -z "$idx" ] && exit 0
+      copyq eval - <<JSEOF3
+tab("$TAB");
+remove($idx);
+JSEOF3
+      load_rows
+      [ "${#rows[@]}" -eq 0 ] && exit 0
+      continue
+      ;;
+    *)
+      exit 0
+      ;;
+  esac
+done
