@@ -223,13 +223,26 @@ Each backs up before writing. Revert instructions printed at end.
 
 Every consumer follows one selected theme. Installer step 23 seeds it end-to-end.
 
-**Modes:** `doomone` · `dracula` · `gruvbox` · `nord` · `tokyonight` · `catppuccin` · `wal`
+**22 modes.** Presets: `doomone` · `dracula` · `gruvbox` · `nord` · `tokyonight`
+· `catppuccin` · `monokai` · `everforest` · `rose-pine` · `kanagawa` ·
+`oxocarbon` · `onedark` · `palenight` · `nightowl` · `github-dark` ·
+`ayu-mirage` · `cyberpunk-neon` · `synthwave` · `matrix` · `mono-dark` ·
+`mono-light`. Plus `wal` = pywal palette from the current wallpaper.
 
 ```bash
 theme-apply doomone   # any preset
 theme-apply wal       # pywal from current wallpaper
-theme-toggle          # cycle to next preset
+theme-toggle          # rofi picker (also bound to Mod+P → c)
 ```
+
+- **Picker**: `Mod + P` then `c` → rofi list with all 22 themes. Displays
+  friendly names (`wal` shown as `Wallpaper`, `mono-light` as `Mono Light`,
+  etc.). Current theme is marked with `●`.
+- **Light-mode theme swap**: `mono-light` flips the base GTK theme to
+  `Breeze` + `Papirus-Light` (dark themes stay on `Sweet-Dark` +
+  `Papirus-Dark`) so pcmanfm/gtk apps render properly light-on-white.
+- **Instant preemption**: rapid picker clicks kill the in-flight
+  `theme-apply` and start the newer one — no more silent lock skips.
 
 Wal mode uses a precompiled cache. `wal-precompile` walks
 `~/Pictures/Wallpapers/` and produces per-image palettes at
@@ -260,8 +273,15 @@ keybind spam are dropped silently instead of corrupting caches.
 | brave | `--load-extension` reads live `manifest.json` on relaunch (id matches via embedded `key`) |
 | chrome / chromium | Enterprise policy `force_installed` from local `updates.xml`; `.crx` repacked + Preferences purged each apply so install lands immediately |
 | papirus folders | `papirus-folders -C <hue-match> -u` |
-| eww widgets | `colors.scss` rewritten per palette, `eww reload` fires; cheatsheet/onboarding/bar-tooltip retint on next open |
+| eww widgets | daemon killed + `setsid eww daemon` restart + reopen prior windows (previous `eww reload` left compiled scss cached) |
 | qtile cheatsheets (Vim/Fish/Qtile popups) | `popups/_wal_colors.load_colors()` refreshes on each toggle; muted derived from `bg`→`fg` blend for readable dividers |
+| gtk base theme + icon theme | `settings.ini` rewritten per palette: `mono-light` → `Breeze` + `Papirus-Light`; all others → `Sweet-Dark` + `Papirus-Dark` |
+| cursor | `~/.Xresources` sets `Xcursor.size: 24` + `Xcursor.theme: breeze_cursors`; loaded via `xrdb -merge` in `~/.xinitrc` |
+
+**Qtile restart preserves layout state**: `Mod + Shift + R` restarts qtile
+(needed for widget colors to repaint) but MonadTall ratios + secondary
+stack sizes are saved every 3s to `~/.cache/qtile/layout_state.json` and
+restored on `startup_complete`. Window widths/heights survive the restart.
 
 **Palette semantics** — `wal-precompile` generates 6-slot hue-concentrated palettes:
 `color1` urgent (always warm), `color2` dominant (main wallpaper hue),
