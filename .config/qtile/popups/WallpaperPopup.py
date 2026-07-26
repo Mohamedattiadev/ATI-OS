@@ -194,8 +194,13 @@ def apply_wallpaper():
     path = _IMAGES[_INDEX]
 
     os.makedirs(os.path.dirname(CACHE_WALL), exist_ok=True)
-    with open(CACHE_WALL, "w") as f:
-        f.write(path)
+    try:
+        if os.path.lexists(CACHE_WALL):
+            os.remove(CACHE_WALL)
+        os.symlink(path, CACHE_WALL)
+    except OSError:
+        with open(CACHE_WALL, "w") as f:
+            f.write(path)
     _CURRENT_WALL = path
 
     # Close popup first so subsequent qtile restart (from theme-apply) doesn't
