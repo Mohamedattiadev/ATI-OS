@@ -274,12 +274,31 @@ def apply_palette_live():
         return val
     # Shadow global helper with the closure version.
     slot_map = None  # kept for API compat; unused below
+    def collect_widgets(w_list, out, seen):
+        """Recurse into WidgetBox / nested containers so children get
+        remapped too (SmartWidgetBox holds the icon widgets whose
+        foreground otherwise never updates)."""
+        for w in w_list:
+            wid = id(w)
+            if wid in seen:
+                continue
+            seen.add(wid)
+            out.append(w)
+            # WidgetBox exposes .widgets — its children may be shown
+            # when the box is open. Recurse.
+            for attr in ("widgets", "_widgets"):
+                nested = getattr(w, attr, None)
+                if isinstance(nested, (list, tuple)):
+                    collect_widgets(nested, out, seen)
+
     for screen in qtile.screens:
         for bar_obj in (getattr(screen, "top", None), getattr(screen, "bottom", None),
                         getattr(screen, "left", None), getattr(screen, "right", None)):
             if bar_obj is None:
                 continue
-            widgets = getattr(bar_obj, "widgets", None) or []
+            top_widgets = getattr(bar_obj, "widgets", None) or []
+            widgets = []
+            collect_widgets(top_widgets, widgets, set())
             # bar background itself
             bg = getattr(bar_obj, "background", None)
             if bg:
