@@ -40,11 +40,11 @@ CHEATSHEET = {
         ("Launcher (Rofi)", "Mod + Shift + Enter"),
         ("Reload Qtile", "Mod + Shift + r"),
         ("Kill window", "Mod + Shift + c"),
-        ("CheetSheet", "Super + Shift + k"),
+        ("Passthrough Mode", "Win + F12"),
         ("Toggle Normal bar ", "Mod + Shift + z"),
         ("Logout menu", "Mod + Shift + q"),
         ("Close notification", "Super + n"),
-        ("Remap Alt (sys)", "Super + Shift + R"),
+        ("Refresh PC", "Mod + Shift + F5"),
     ],
     "Navigation": [
         ("WorkSpace[1-9]", "Mod + [1–9]"),
@@ -199,9 +199,9 @@ def toggle_cheatsheet(qtile):
                 f'<span size="xx-large" weight="bold" foreground="{COLORS["blue"]}">'
                 f"󰆍  QTILE CHEATSHEET</span>\n"
                 f'<span foreground="{COLORS["muted"]}">'
-                f'Mod = <b><span foreground="{COLORS["green"]}">Alt</span></b> '
+                f'Mod = <b><span foreground="{COLORS["green"]}">Win</span></b> '
                 f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span> '
-                f'Super = <b><span foreground="{COLORS["purple"]}">Win</span></b>'
+                f'Super = <b><span foreground="{COLORS["purple"]}">Alt</span></b>'
                 f"</span>"
             ),
             markup=True,

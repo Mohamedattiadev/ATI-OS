@@ -40,6 +40,7 @@ from qtile_extras.widget.decorations import RectDecoration
 from qtile_extras import widget as ewidget
 from qtile_extras.widget.mixins import TooltipMixin
 from scripts.volume_control import volume_change, toggle_mute
+from scripts.brightness_control import brightness_change
 
 # from scripts.float_windows import ( float_satty, float_edit_nvim, float_imv, float_feh, float_link_preview)
 from scripts.mpv_manager import mpv_manager
@@ -178,6 +179,9 @@ NON_EN_NOTIFY_ID = 9001
 
 
 passthrough_active = False
+_PASS_PREV_BAR_MODE = None
+_PASS_ESC_ARMED = False
+_PASS_CONFIRM_LAYOUT = None
 FLOAT_STATES = {}
 
 colors: list[list[str]] = color_schemes.active_palette()
@@ -233,19 +237,121 @@ CHORD_CHIP_COLORS = {
 
 
 def _enable_passthrough(qtile):
-    global passthrough_active
+    global passthrough_active, _PASS_PREV_BAR_MODE, BAR_MODE
     passthrough_active = True
 
+    _PASS_PREV_BAR_MODE = BAR_MODE
+    BAR_MODE = "bottom"
+    try:
+        apply_bar_mode()
+    except Exception:
+        pass
+
     qtile.spawn("notify-send 'PASSTHROUGH MODE'")
-    qtile.ungrab_keys()
 
 
 def _disable_passthrough(qtile):
-    global passthrough_active
+    global passthrough_active, _PASS_PREV_BAR_MODE, BAR_MODE, _PASS_ESC_ARMED
     passthrough_active = False
+    _PASS_ESC_ARMED = False
+    _close_pass_confirm()
+
+    if _PASS_PREV_BAR_MODE is not None:
+        BAR_MODE = _PASS_PREV_BAR_MODE
+        _PASS_PREV_BAR_MODE = None
+        try:
+            apply_bar_mode()
+        except Exception:
+            pass
 
     qtile.spawn("notify-send 'NORMAL MODE'")
-    qtile.grab_keys()
+
+
+def _close_pass_confirm():
+    global _PASS_CONFIRM_LAYOUT
+    if _PASS_CONFIRM_LAYOUT:
+        try:
+            _PASS_CONFIRM_LAYOUT.hide()
+        except Exception:
+            pass
+        _PASS_CONFIRM_LAYOUT = None
+
+
+def _show_pass_confirm(qtile):
+    global _PASS_CONFIRM_LAYOUT
+    if _PASS_CONFIRM_LAYOUT:
+        return
+    from qtile_extras.popup import PopupRelativeLayout, PopupText
+
+    def _yes(*_a, **_k):
+        _close_pass_confirm()
+        _disable_passthrough(qtile)
+        qtile.ungrab_chord()
+
+    def _no(*_a, **_k):
+        global _PASS_ESC_ARMED
+        _PASS_ESC_ARMED = False
+        _close_pass_confirm()
+
+    controls = [
+        PopupText(
+            text=(
+                '<span size="large" weight="bold" foreground="#ffffff">'
+                'Exit passthrough mode?</span>'
+            ),
+            markup=True,
+            pos_x=0.0, pos_y=0.15, width=1.0, height=0.30,
+            h_align="center", v_align="middle",
+        ),
+        PopupText(
+            text='<b><span foreground="#98be65">  Yes  (y)  </span></b>',
+            markup=True,
+            pos_x=0.05, pos_y=0.55, width=0.42, height=0.30,
+            h_align="center", v_align="middle",
+            mouse_callbacks={"Button1": _yes},
+        ),
+        PopupText(
+            text='<b><span foreground="#ff6c6b">  No  (n)  </span></b>',
+            markup=True,
+            pos_x=0.53, pos_y=0.55, width=0.42, height=0.30,
+            h_align="center", v_align="middle",
+            mouse_callbacks={"Button1": _no},
+        ),
+    ]
+    _PASS_CONFIRM_LAYOUT = PopupRelativeLayout(
+        qtile,
+        width=360, height=140,
+        background="1c1f24ee",
+        initial_focus=None,
+        close_on_click=False,
+        controls=controls,
+    )
+    _PASS_CONFIRM_LAYOUT.show(centered=True)
+
+
+def _passthrough_esc(qtile):
+    global _PASS_ESC_ARMED
+    if _PASS_CONFIRM_LAYOUT:
+        return
+    if not _PASS_ESC_ARMED:
+        _PASS_ESC_ARMED = True
+        qtile.spawn(
+            "notify-send -t 1500 'PASSTHROUGH' 'Press Esc again to confirm exit'"
+        )
+    else:
+        _show_pass_confirm(qtile)
+
+
+def _passthrough_confirm_yes(qtile):
+    _close_pass_confirm()
+    _disable_passthrough(qtile)
+    qtile.ungrab_chord()
+
+
+def _passthrough_confirm_no(qtile):
+    global _PASS_ESC_ARMED
+    _PASS_ESC_ARMED = False
+    _close_pass_confirm()
 
 
 @lazy.function
@@ -289,6 +395,115 @@ def apply_bar_on_reload_startup():
     qtile.call_later(0.05, apply_bar_mode)
 
 
+# ----------------------------------------------------------------
+# Layout state persistence — qtile's built-in restart pickle keeps
+# window→group mapping but resets layout ratios/sizes to defaults.
+# Save MonadTall ratio + relative stack sizes per group before shutdown,
+# restore after startup_complete so widths survive mod+shift+r.
+# ----------------------------------------------------------------
+import json as _json
+_LAYOUT_STATE_FILE = os.path.expanduser("~/.cache/qtile/layout_state.json")
+
+
+# NOTE: no shutdown hook — qtile tears down layouts BEFORE firing
+# shutdown, so a save at that point would clobber the file with
+# default ratios. Periodic 3s save + inline save in the mod+shift+r
+# keybind cover both the resize and the restart paths.
+
+
+# layout_change hook removed too — it fires during restart's teardown
+# with default state and clobbers the saved good values.
+
+
+def _save_layout_state():
+    """Merge current layout state INTO existing file — never overwrite
+    non-default entries with defaults. Prevents freshly-restarted qtile
+    (empty rs, default ratio) from clobbering the saved good values
+    before restore has a chance to run."""
+    try:
+        try:
+            with open(_LAYOUT_STATE_FILE) as f:
+                state = _json.load(f)
+        except Exception:
+            state = {}
+        for g in qtile.groups:
+            lay = g.layout
+            new_entry = {"name": lay.name, "index": g.current_layout}
+            if hasattr(lay, "ratio"):
+                new_entry["ratio"] = lay.ratio
+            if hasattr(lay, "relative_sizes"):
+                new_entry["relative_sizes"] = list(lay.relative_sizes)
+            old_entry = state.get(g.name, {})
+            # Only overwrite each field when we have meaningful new data.
+            # Default MonadTall: ratio=0.75, relative_sizes=[].
+            merged = dict(old_entry)
+            merged["name"] = new_entry["name"]
+            merged["index"] = new_entry["index"]
+            if "ratio" in new_entry:
+                # Always take live ratio — MonadTall min_ratio=0.6 so any
+                # user resize produces a non-default value; on cold start
+                # this equals the config default which is also fine.
+                merged["ratio"] = new_entry["ratio"]
+            # Only overwrite relative_sizes when live value is non-empty.
+            # Empty = layout was just re-instantiated and hasn't been
+            # touched — keep the saved value from previous session.
+            if new_entry.get("relative_sizes"):
+                merged["relative_sizes"] = new_entry["relative_sizes"]
+            state[g.name] = merged
+        os.makedirs(os.path.dirname(_LAYOUT_STATE_FILE), exist_ok=True)
+        with open(_LAYOUT_STATE_FILE, "w") as f:
+            _json.dump(state, f)
+    except Exception:
+        pass
+
+
+def _apply_layout_state():
+    try:
+        with open(_LAYOUT_STATE_FILE) as f:
+            state = _json.load(f)
+    except Exception:
+        return
+    for g in qtile.groups:
+        entry = state.get(g.name)
+        if not entry:
+            continue
+        try:
+            if "index" in entry and 0 <= entry["index"] < len(g.layouts):
+                if g.current_layout != entry["index"]:
+                    g.current_layout = entry["index"]
+            lay = g.layout
+            if entry.get("name") != lay.name:
+                continue
+            if "ratio" in entry and hasattr(lay, "ratio"):
+                if hasattr(lay, "set_ratio"):
+                    try:
+                        lay.set_ratio(float(entry["ratio"]))
+                    except Exception:
+                        lay.ratio = float(entry["ratio"])
+                else:
+                    lay.ratio = float(entry["ratio"])
+            if "relative_sizes" in entry and hasattr(lay, "relative_sizes"):
+                lay.relative_sizes = list(entry["relative_sizes"])
+            g.layout_all()
+        except Exception:
+            continue
+
+
+@hook.subscribe.startup_complete
+def _restore_layout_state():
+    # Defer so all windows finish re-parenting to their groups before we
+    # overwrite the freshly-instantiated layout's ratios.
+    qtile.call_later(0.5, _apply_layout_state)
+    qtile.call_later(1.5, _apply_layout_state)
+    # Periodic save starts AFTER restore has run — otherwise the
+    # freshly-instantiated layout's empty state overwrites the good file
+    # before restore even reads it.
+    def _periodic():
+        _save_layout_state()
+        qtile.call_later(3, _periodic)
+    qtile.call_later(5, _periodic)
+
+
 @hook.subscribe.screens_reconfigured
 def apply_bar_on_reconfigure():
     apply_bar_mode()
@@ -315,6 +530,9 @@ TOOLTIP_BY_NAME = {
     "w_volume": "Volume · scroll to change",
     "w_battery": "Battery · click → status",
     "w_lang": "Keyboard layout",
+    "w_clock": "Next prayer",
+    "w_mpris": "L: play/pause · M: album art · R: prev · scroll: next/prev",
+    "w_nightlight": "Nightlight · L: on · R: off",
 }
 
 TOOLTIP_BY_CLASS = {
@@ -512,11 +730,61 @@ def install_bar_tooltips():
                     try:
                         _install_tooltip(w, text)
                         installed += 1
+                        if getattr(w, "name", "") == "w_mpris":
+                            _make_tooltip_dynamic(w, _player_title_text, "No player")
+                        if getattr(w, "name", "") == "w_clock":
+                            _make_tooltip_dynamic(w, _prayer_text, "No prayer data")
+                        if getattr(w, "name", "") == "w_cpu":
+                            _make_tooltip_dynamic(w, _cpu_top_text)
+                        if getattr(w, "name", "") == "w_mem":
+                            _make_tooltip_dynamic(w, _mem_top_text)
+                        if getattr(w, "name", "") == "w_disk":
+                            _make_tooltip_dynamic(w, _disk_parts_text)
+                        if getattr(w, "name", "") == "w_battery":
+                            _make_tooltip_dynamic(w, _battery_detail_text)
                     except Exception as e:
                         logger.warning(
                             f"tooltip install failed for {w.__class__.__name__}: {e}"
                         )
     logger.warning(f"[tooltips] installed={installed} total={total}")
+
+
+def _wrap_mpris_hover(widget_):
+    _prev_enter = getattr(widget_, "mouse_enter", None)
+    _prev_leave = getattr(widget_, "mouse_leave", None)
+
+    def _enter(x, y, _p=_prev_enter):
+        _mpris_apply_templates(True)
+        if _p:
+            try:
+                _p(x, y)
+            except Exception:
+                pass
+
+    def _leave(x, y, _p=_prev_leave):
+        _mpris_apply_templates(False)
+        if _p:
+            try:
+                _p(x, y)
+            except Exception:
+                pass
+
+    widget_.mouse_enter = _enter
+    widget_.mouse_leave = _leave
+
+
+def _make_tooltip_dynamic(widget_, text_func, fallback=""):
+    _orig_enter = widget_.mouse_enter
+
+    def _dyn_enter(x, y, _w=widget_, _fn=text_func, _fb=fallback, _orig=_orig_enter):
+        try:
+            t = (_fn() or "").strip() or _fb
+            _w.tooltip_text = t
+        except Exception:
+            pass
+        _orig(x, y)
+
+    widget_.mouse_enter = _dyn_enter
 
 
 @hook.subscribe.startup_complete
@@ -1133,14 +1401,14 @@ def normal_user_bar():
             name_transform=lambda name: {
                 "Resize-Mode": "󰩨   RESIZE : H, J, N",
                 "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
-                "Media-Mode": "󰕾   MEDIA : J , K , P , M ",
+                "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
                 "Scratch-Mode": "󰈆   SCRATCH",
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
                 "Mouse-Mode": "󰍽   MOUSE : n , f , g , e , r , m ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
-                "PASSTHROUGH": "   PASSTHROUGH : ESC , q",
+                "PASSTHROUGH": "   PASSTHROUGH : ESC×2 , y , n",
                 # NOTE: Bluetooth popup will be used later
                 # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
                 # NOTE: Audio popup will be used later
@@ -1343,14 +1611,14 @@ def right_side_widgets():
             name_transform=lambda name: {
                 "Resize-Mode": "󰩨   RESIZE : H, J, N",
                 "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
-                "Media-Mode": "󰕾   MEDIA : J , K , P , M ",
+                "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
                 "Scratch-Mode": "󰈆   SCRATCH",
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
                 "Mouse-Mode": "󰍽   MOUSE : n , f , g , e , r , m ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
-                "PASSTHROUGH": "   PASSTHROUGH : ESC , q",
+                "PASSTHROUGH": "   PASSTHROUGH : ESC×2 , y , n",
                 # NOTE: Bluetooth popup will be used later
                 # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
                 # NOTE: Audio popup will be used later
@@ -1377,6 +1645,35 @@ def right_side_widgets():
                 "Button1": lazy.function(toggle_onboarding),
             },
         ),
+        # ---------------- player (Mpris2, hover expands in-chip) ----------------
+        chip(
+            ewidget.Mpris2,
+            name="w_mpris",
+            objname="org.mpris.MediaPlayer2.playerctld",
+            format="{xesam:title} — {xesam:artist}",
+            playing_text='<span size="12000">⏸</span>',
+            paused_text='<span size="9000">▶</span>',
+            markup=True,
+            stopped_text="",
+            no_metadata_text="",
+            scroll=True,
+            scroll_chars=28,
+            padding=10,
+            fontsize=15,
+            foreground=colors[4],
+            mouse_callbacks={
+                "Button1": lambda: qtile.spawn("playerctl play-pause"),
+                "Button2": lambda: (
+                    qtile.widgets_map["w_mpris"].toggle_player()
+                    if hasattr(qtile.widgets_map.get("w_mpris"), "toggle_player")
+                    else None
+                ),
+                "Button3": lambda: qtile.spawn("playerctl previous"),
+                "Button4": lambda: qtile.spawn("playerctl next"),
+                "Button5": lambda: qtile.spawn("playerctl previous"),
+            },
+        ),
+        # ------------------------------------------------------------------------
         chip(
             SmartWidgetBox,
             name="system_widgetbox",
@@ -1525,6 +1822,7 @@ def right_side_widgets():
         # Clock
         chip(
             ewidget.Clock,
+            name="w_clock",
             format=" %a, %b %d - %H:%M",
             padding=11,
             foreground=colors[8],
@@ -1545,6 +1843,19 @@ def right_side_widgets():
                     icon_size=14,
                     padding=6,
                     hide_crash=True,
+                ),
+                chip(
+                    HideablePollText,
+                    name="w_nightlight",
+                    func=_nightlight_text,
+                    update_interval=5,
+                    padding=11,
+                    fontsize=11,
+                    foreground=colors[6],
+                    mouse_callbacks={
+                        "Button1": lambda: _nightlight_on(),
+                        "Button3": lambda: _nightlight_off(),
+                    },
                 ),
             ],
             foreground=colors[4],
@@ -1570,6 +1881,323 @@ def right_side_widgets():
 # this is the chip shape ("pill shape")
 
 
+# ----------------------------------------------------------------
+# Player (playerctl) helpers + auto-hiding poll text
+# ----------------------------------------------------------------
+
+
+def _pctl(*args):
+    try:
+        r = subprocess.run(
+            ["playerctl", *args], capture_output=True, text=True, timeout=0.5
+        )
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _player_status():
+    s = _pctl("status")
+    return s if s in ("Playing", "Paused") else ""
+
+
+def _player_title_text():
+    if not _player_status():
+        return ""
+    t = _pctl("metadata", "-f", "{{artist}} - {{title}}")
+    t = t.strip(" -")
+    return (" " + (t[:35] + "…" if len(t) > 36 else t)) if t else ""
+
+
+def _player_playpause_text():
+    s = _player_status()
+    if s == "Playing":
+        return "="
+    if s == "Paused":
+        return "▶"
+    return ""
+
+
+def _player_prev_text():
+    return "<" if _player_status() else ""
+
+
+def _player_next_text():
+    return ">" if _player_status() else ""
+
+
+def _player_close_text():
+    return "✕" if _player_status() else ""
+
+
+# Mpris hover — expand icon to "‹  icon  ›" inside same chip
+_MPRIS_BASE_PLAYING = '<span size="12000">⏸</span>'
+_MPRIS_BASE_PAUSED = '<span size="9000">▶</span>'
+_MPRIS_HOVER_PLAYING = '<span size="12000">‹    ⏸    ›</span>'
+_MPRIS_HOVER_PAUSED = '<span size="11000">‹    ▶    ›</span>'
+
+
+def _mpris_apply_templates(hovered):
+    w = qtile.widgets_map.get("w_mpris")
+    if not w:
+        return
+    playing = _MPRIS_HOVER_PLAYING if hovered else _MPRIS_BASE_PLAYING
+    paused = _MPRIS_HOVER_PAUSED if hovered else _MPRIS_BASE_PAUSED
+    try:
+        w.playing_text = playing
+        w.paused_text = paused
+        if hasattr(w, "prefixes"):
+            w.prefixes["Playing"] = playing
+            w.prefixes["Paused"] = paused
+        w.status = playing if getattr(w, "is_playing", False) else paused
+        track = getattr(w, "track_info", "") or ""
+        new_text = w.status.format(track=track)
+        w.update(new_text)
+    except Exception:
+        pass
+
+
+# -------- Nightlight (gammastep / redshift) --------
+def _nightlight_bin():
+    for b in ("gammastep", "redshift"):
+        try:
+            r = subprocess.run(["which", b], capture_output=True, text=True)
+            if r.returncode == 0:
+                return b
+        except Exception:
+            pass
+    return None
+
+
+_NIGHTLIGHT_MARK = os.path.expanduser("~/.cache/qtile_nightlight")
+
+
+def _nightlight_active():
+    return os.path.exists(_NIGHTLIGHT_MARK)
+
+
+def _nightlight_text():
+    if not _nightlight_bin():
+        return ""
+    return "󱩌"
+
+
+def _nightlight_on():
+    b = _nightlight_bin()
+    if not b:
+        subprocess.Popen(
+            ["notify-send", "Nightlight", "install gammastep or redshift"]
+        )
+        return
+    subprocess.Popen(["pkill", "-x", b])
+    flags = "-m randr " if b == "gammastep" else ""
+    subprocess.Popen(["sh", "-c", f"{b} {flags}-O 4000 >/dev/null 2>&1"])
+    try:
+        open(_NIGHTLIGHT_MARK, "w").close()
+    except Exception:
+        pass
+
+
+def _nightlight_off():
+    b = _nightlight_bin()
+    if not b:
+        return
+    subprocess.Popen(["pkill", "-x", b])
+    if b == "gammastep":
+        subprocess.Popen(["sh", "-c", "gammastep -m randr -x >/dev/null 2>&1"])
+    else:
+        subprocess.Popen(["sh", "-c", "redshift -x >/dev/null 2>&1"])
+    try:
+        os.remove(_NIGHTLIGHT_MARK)
+    except Exception:
+        pass
+
+
+# -------- Dynamic tooltip helpers --------
+def _sh(cmd, timeout=1.5):
+    try:
+        r = subprocess.run(
+            ["sh", "-c", cmd], capture_output=True, text=True, timeout=timeout
+        )
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _cpu_top_text():
+    out = _sh(
+        "ps -eo pcpu,comm --sort=-pcpu --no-headers | awk 'NF' | head -5"
+    )
+    if not out:
+        return "No data"
+    lines = []
+    for ln in out.splitlines():
+        parts = ln.strip().split(None, 1)
+        if len(parts) == 2:
+            lines.append(f"{parts[0]:>5}%  {parts[1]}")
+    return "Top CPU:\n" + "\n".join(lines)
+
+
+def _mem_top_text():
+    out = _sh(
+        "ps -eo pmem,rss,comm --sort=-pmem --no-headers | awk 'NF' | head -5"
+    )
+    if not out:
+        return "No data"
+    lines = []
+    for ln in out.splitlines():
+        parts = ln.strip().split(None, 2)
+        if len(parts) == 3:
+            mib = int(parts[1]) // 1024
+            lines.append(f"{parts[0]:>5}%  {mib:>5} MiB  {parts[2]}")
+    return "Top MEM:\n" + "\n".join(lines)
+
+
+_TOP_DIRS_CACHE = ""
+_TOP_DIRS_LAST = 0.0
+_TOP_DIRS_TTL = 900  # 15 min
+
+
+def _refresh_top_dirs():
+    global _TOP_DIRS_CACHE, _TOP_DIRS_LAST
+    try:
+        r = subprocess.run(
+            ["sh", "-c", "du -hxd 1 ~ 2>/dev/null | sort -rh | head -6"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if r.returncode == 0:
+            _TOP_DIRS_CACHE = r.stdout.strip()
+            _TOP_DIRS_LAST = time.time()
+    except Exception:
+        pass
+
+
+def _top_dirs_text():
+    if time.time() - _TOP_DIRS_LAST > _TOP_DIRS_TTL:
+        threading.Thread(target=_refresh_top_dirs, daemon=True).start()
+    if not _TOP_DIRS_CACHE:
+        return "(computing…)"
+    home = os.path.expanduser("~")
+    out = []
+    for ln in _TOP_DIRS_CACHE.splitlines():
+        parts = ln.split(None, 1)
+        if len(parts) != 2:
+            continue
+        size, path = parts
+        if path == home:
+            continue
+        short = path.replace(home, "~")
+        out.append(f" {size:>6}  {short}")
+    return "\n".join(out[:5])
+
+
+def _disk_parts_text():
+    out = _sh(
+        "df -h --output=target,source,fstype,size,used,avail,pcent "
+        "-x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs -x fuse.portal "
+        "2>/dev/null | tail -n +2"
+    )
+    if not out:
+        return "No data"
+    rows = []
+    for ln in out.splitlines():
+        p = ln.split()
+        if len(p) < 7:
+            continue
+        target, source, fstype, size, used, avail, pcent = p[:7]
+        try:
+            pct = int(pcent.rstrip("%"))
+        except Exception:
+            pct = 0
+        rows.append((target, source, fstype, size, used, avail, pcent, pct))
+    if not rows:
+        return "No data"
+    rows.sort(key=lambda r: -r[7])
+    lines = ["Disk usage"]
+    for target, source, fstype, size, used, avail, pcent, pct in rows:
+        lines.append(f" {target} — {pcent}   ({avail} free / {size})")
+    top = _top_dirs_text()
+    if top:
+        lines.append("")
+        lines.append("Biggest in ~:")
+        lines.append(top)
+    return "\n".join(lines)
+
+
+def _battery_detail_text():
+    import glob
+
+    bats = glob.glob("/sys/class/power_supply/BAT*")
+    if not bats:
+        return "No battery"
+    b = bats[0]
+
+    def _r(p, cast=str, default=None):
+        try:
+            with open(os.path.join(b, p)) as f:
+                return cast(f.read().strip())
+        except Exception:
+            return default
+
+    status = _r("status", str, "?") or "?"
+    pct = _r("capacity", int, 0)
+    energy_now = _r("energy_now", int) or _r("charge_now", int) or 0
+    energy_full = _r("energy_full", int) or _r("charge_full", int) or 1
+    power_now = _r("power_now", int) or _r("current_now", int) or 0
+
+    lines = [f"Battery: {status}  {pct}%"]
+    if power_now > 0:
+        watts = power_now / 1_000_000
+        lines.append(f"Draw: {watts:.2f} W")
+        if status == "Discharging":
+            hours = energy_now / power_now
+        elif status == "Charging":
+            hours = (energy_full - energy_now) / power_now
+        else:
+            hours = 0
+        if hours > 0:
+            h = int(hours)
+            m = int((hours - h) * 60)
+            label = "remaining" if status == "Discharging" else "to full"
+            lines.append(f"~{h}h {m}m {label}")
+    else:
+        lines.append("Draw: idle")
+    return "\n".join(lines)
+
+
+# -------- Prayer countdown --------
+_PRAYER_SCRIPT = os.path.expanduser("~/.config/qtile/scripts/prayer_next.sh")
+
+
+def _prayer_text():
+    try:
+        r = subprocess.run(
+            [_PRAYER_SCRIPT], capture_output=True, text=True, timeout=8
+        )
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+class HideablePollText(ewidget.GenPollText):
+    def calculate_length(self):
+        if not (self.text or "").strip():
+            return 0
+        return super().calculate_length()
+
+    def draw(self):
+        if not (self.text or "").strip():
+            try:
+                self.drawer.clear(self.background or self.bar.background)
+                self.drawer.draw(offsetx=self.offset, offsety=self.offsety, width=0)
+            except Exception:
+                pass
+            return
+        super().draw()
+
+
 class SmartWidgetBox(ewidget.WidgetBox):
     """WidgetBox that auto-closes siblings and inserts its content
     before an anchor widget (by name) instead of adjacent to itself."""
@@ -1593,7 +2221,12 @@ class SmartWidgetBox(ewidget.WidgetBox):
     def toggle(self, *a, **k):
         if not getattr(self, "box_is_open", False):
             SmartWidgetBox.close_all(except_self=self)
-        return super().toggle(*a, **k)
+        res = super().toggle(*a, **k)
+        try:
+            qtile.call_later(0.1, install_bar_tooltips)
+        except Exception:
+            pass
+        return res
 
     def toggle_widgets(self):
         if not self.insert_before_name:
@@ -1783,25 +2416,27 @@ keys = [
     Key([mod], "Tab", lazy.next_layout(), desc="Toggle between layouts"),
     # ---kill focused window---
     Key([mod, "shift"], "c", lazy.window.kill(), desc="Kill focused window"),
-    # ---reload the qtile config with notification and without---
+    # ---restart qtile — preserves window→group + layout state via
+    # qtile's pickle serialization. reload_config loses layout order and
+    # can re-shuffle Match'd apps to their default group.
     Key(
         [mod, "shift"],
         "r",
         lazy.function(
             lambda qtile: (
-                qtile.reload_config(),
-                qtile.hide_show_bar(position="bottom", screen="current"),
+                _save_layout_state(),
                 qtile.spawn(
-                    "notify-send -u critical -i dialog-ok-symbolic  'success' ' Qtile Config : Successfully reloaded!'"
+                    "notify-send -u low -t 3000 -i dialog-ok-symbolic 'Qtile' 'Reloaded'"
                 ),
+                qtile.restart(),
             )
         ),
-        desc="Reload the config",
+        desc="Restart qtile (preserves window state)",
     ),
     # --- logout menu ---
     Key([mod, "shift"], "q", lazy.spawn("dm-logout -r"), desc="Logout menu"),
     # --- theme toggle (doomone <-> pywal) ---
-    Key([mod, "shift"], "y", lazy.spawn("theme-toggle"), desc="Toggle DoomOne <-> pywal palette"),
+    # Theme picker moved to win+p → c (KeyChord below).
     # Switch between windows
     # Some layouts like 'monadtall' only need to use j/k to move
     # through the stack, but other layouts like 'columns' will
@@ -1960,12 +2595,12 @@ keys = [
             ),
             # --- show documents ---
             Key([], "d", lazy.spawn("dm-documents -r"), desc="Show documents"),
-            # make a screenshot of today's todos
+            # Theme picker (rofi).
             Key(
                 [],
                 "c",
-                lazy.spawn("fish -c 'screenshot_todos_today'"),
-                desc="Screenshot today's todos",
+                lazy.spawn("theme-toggle"),
+                desc="Theme picker (rofi)",
             ),
             # --- Take a screenshot v2 of dm-maim ---
             Key(
@@ -2012,6 +2647,8 @@ keys = [
             Key(["shift"], "j", lazy.function(lambda _: volume_change(-5))),
             Key(["shift"], "k", lazy.function(lambda _: volume_change(5))),
             Key(["shift"], "m", lazy.function(lambda _: toggle_mute())),
+            Key(["shift"], "h", lazy.function(lambda _: brightness_change(-5))),
+            Key(["shift"], "l", lazy.function(lambda _: brightness_change(5))),
             Key(["shift"], "p", lazy.function(mpv_manager.toggle_pip_mode)),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
             *group_keys(),
@@ -2198,10 +2835,13 @@ keys = [
         [mod],
         "F12",
         [
-            Key([], "Escape", lazy.ungrab_chord()),
-            Key([], "F12", lazy.ungrab_chord()),
+            Key([], "Escape", lazy.function(_passthrough_esc)),
+            Key([], "F12", lazy.function(_passthrough_esc)),
+            Key([], "y", lazy.function(_passthrough_confirm_yes)),
+            Key([], "n", lazy.function(_passthrough_confirm_no)),
         ],
         mode=True,
+        swallow=False,
         name="PASSTHROUGH",
     ),
     # NOTE : Bluetooth popup will be used later

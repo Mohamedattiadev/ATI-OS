@@ -18,4 +18,9 @@ choice=$(printf "100\n80\n60\n40\n20\n10\n5" | \
 
 [[ -z "$choice" ]] && exit 0
 
-/usr/bin/light -S "$choice" && notify_safe "🔆 Brightness" "${choice}%"
+/usr/bin/light -S "$choice" && notify_safe \
+    -a Brightness \
+    -h string:x-dunst-stack-tag:brightness \
+    -h "int:value:${choice}" \
+    -i display-brightness-medium-symbolic \
+    "Brightness" "${choice}%"

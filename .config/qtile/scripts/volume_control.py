@@ -48,6 +48,7 @@ def volume_change(change):
         "-a", "Volume",
         "-u", "normal",
         "-h", "string:x-dunst-stack-tag:volume",
+        "-h", f"int:value:{new_vol}",
         "-i", icon,
         "Volume",
         f"{new_vol}%"
