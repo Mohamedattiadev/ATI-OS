@@ -34,9 +34,16 @@ for (var i = 0; i < n; i++) {
       f.write(buf);
       f.close();
     }
-    label = "[image]";
+    // PNG IHDR: bytes 16-23. buf is QByteArray; use .mid+.toString+charCodeAt.
+    var w = 0, h = 0;
+    if (buf && buf.size && buf.size() > 24) {
+      var hdr = buf.mid(16, 8).toString();
+      w = (hdr.charCodeAt(0)<<24) | (hdr.charCodeAt(1)<<16) | (hdr.charCodeAt(2)<<8) | hdr.charCodeAt(3);
+      h = (hdr.charCodeAt(4)<<24) | (hdr.charCodeAt(5)<<16) | (hdr.charCodeAt(6)<<8) | hdr.charCodeAt(7);
+    }
+    label = w && h ? ("image " + w + "×" + h) : "image";
   } else {
-    var t = str(d["text/plain"] || "").replace(/[\r\n\t]/g, " ").substring(0, 160);
+    var t = str(d["text/plain"] || "").replace(/[\r\n\t]/g, " ").substring(0, 220);
     label = t.length ? t : "<empty>";
   }
   print(i + "\t" + label + "\t" + icon + "\n");
@@ -49,19 +56,26 @@ THEME_FILE=/tmp/copyq-rofi-theme.rasi
 cat > "$THEME_FILE" <<'RASI'
 @import "~/.config/rofi/themes/base.rasi"
 
-listview     { lines: 8; fixed-height: 1; scrollbar: true; }
+listview     { lines: 8; fixed-height: 1; scrollbar: true; spacing: 3px; }
 scrollbar    { width: 4px; }
+element      { padding: 4px 8px; spacing: 10px; }
 element-icon { size: 48px; expand: false; }
 RASI
+
+esc_pango() {
+  printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
+}
 
 build_input() {
   for row in "${rows[@]}"; do
     IFS=$'\t' read -r idx label icon <<< "$row"
     [ -z "${idx:-}" ] && continue
+    safe=$(esc_pango "$label")
+    entry=$(printf '<span alpha="50%%">%02d</span>  %s' "$idx" "$safe")
     if [ -n "${icon:-}" ] && [ -f "$icon" ]; then
-      printf '[%02d] %s\0icon\x1f%s\n' "$idx" "$label" "$icon"
+      printf '%s\0icon\x1f%s\n' "$entry" "$icon"
     else
-      printf '[%02d] %s\n' "$idx" "$label"
+      printf '%s\n' "$entry"
     fi
   done
 }
@@ -69,12 +83,16 @@ build_input() {
 sel=$(build_input | rofi -dmenu -i \
   -p "clip" \
   -show-icons \
+  -markup-rows \
   -no-custom \
   -theme "$THEME_FILE" \
-  -format 's') || exit 0
+  -format 'i') || exit 0
 
 [ -z "$sel" ] && exit 0
-idx=$(printf '%s' "$sel" | sed -n 's/^\[0*\([0-9]\+\)\].*/\1/p')
+# sel is now the row index in `rows` (0-based, from `-format i`). Map to CopyQ index.
+row_pos=$sel
+if [ "$row_pos" -ge "${#rows[@]}" ]; then exit 0; fi
+IFS=$'\t' read -r idx _ _ <<< "${rows[$row_pos]}"
 [ -z "$idx" ] && exit 0
 
 copyq eval - <<JSEOF2
