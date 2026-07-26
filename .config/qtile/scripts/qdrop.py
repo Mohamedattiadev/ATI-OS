@@ -837,7 +837,7 @@ class Dropzone(Gtk.Window):
         # bias slightly left of true center
         x = geo.x + (geo.width - WIN_W) // 2 - int(geo.width * 0.03)
         x = max(geo.x + 8, x)
-        y = geo.y + 32
+        y = geo.y + int(geo.height * 0.055)
         self.move(x, y)
 
     # --- menu / search / sort / export ----------------------------
