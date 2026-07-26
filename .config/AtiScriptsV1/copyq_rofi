@@ -159,7 +159,7 @@ JSEOF3
       if [ -n "${icon:-}" ] && [ -f "$icon" ]; then
         # Image entry: reuse the thumb (raw PNG). imv is floated by qtile
         # via Match(wm_class="imv"). -s shrink prevents upscaling small clips.
-        setsid imv -s shrink "$icon" >/dev/null 2>&1 < /dev/null &
+        setsid imv -W 820 -H 500 -s shrink "$icon" >/dev/null 2>&1 < /dev/null &
         disown
       else
         tmp=$(mktemp --suffix=.txt /tmp/copyq-view.XXXXXX)
