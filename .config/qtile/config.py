@@ -3458,9 +3458,11 @@ groups.append(
                 opacity=1,
             ),
             DropDown(
-                "collector",
-                "flatpak run it.mijorus.collector",
-                match=Match(wm_class="collector"),
+                "qdrop",
+                f"python3 {os.path.expanduser('~')}/.config/qtile/scripts/qdrop.py",
+                match=Match(wm_class="qdrop"),
+                width=0.25,
+                height=0.3,
                 x=0.725,
                 y=0.67,
                 opacity=1.0,
@@ -3540,7 +3542,7 @@ keys.extend(
         Key(
             [mod2, "shift"],
             "d",
-            lazy.group["scratchpad"].dropdown_toggle("collector"),
+            lazy.group["scratchpad"].dropdown_toggle("qdrop"),
         ),
     ]
 )
