@@ -196,7 +196,7 @@ run() {
 declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
   sanity bootstrap yay dcli stow arch-config dcli-sync cargo ati-scripts
-  touchpad xinit xmodmap lid image-envs flatpak piper whisper
+  touchpad xinit xresources xmodmap lid image-envs flatpak piper whisper
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes browser-flags chrome-policy
 )
@@ -212,7 +212,8 @@ _reg dcli-sync         "dcli sync (all pkgs)" System   "Install every declared p
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
 _reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"
-_reg xinit             ".xinitrc"            Dotfiles  "Auto-start qtile + xcape + picom"                       "step_xinit"
+_reg xinit             ".xinitrc"            Dotfiles  "Auto-start qtile + xcape + picom + cursor size"         "step_xinit"
+_reg xresources        ".Xresources"         Dotfiles  "Xcursor size 24 + Breeze theme (load via xrdb)"         "step_xresources"
 _reg xmodmap           ".Xmodmap"            Dotfiles  "Caps hold = Alt (xcape restores tap-Caps)"              "step_xmodmap"
 _reg lid               "Lid = ignore"        System    "Never sleep on lid close"                               "step_lid"
 _reg image-envs        "Image env"           Dotfiles  "Suppress VIPS warnings for kitty+nvim images"           "step_image_envs"
@@ -283,6 +284,10 @@ systemctl --user import-environment DISPLAY XAUTHORITY XDG_SESSION_TYPE XDG_CURR
 if command -v dbus-update-activation-environment >/dev/null 2>&1; then
   dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP 2>/dev/null
 fi
+# Cursor size + theme for X apps (Xcursor honors both env vars).
+export XCURSOR_SIZE=24
+export XCURSOR_THEME=breeze_cursors
+[ -f "$HOME/.Xresources" ] && xrdb -merge "$HOME/.Xresources"
 command -v xsetroot >/dev/null 2>&1 && xsetroot -cursor_name left_ptr
 xset s off -dpms
 if [ -f "$HOME/.cache/wall" ] && command -v xwallpaper >/dev/null 2>&1; then
@@ -296,6 +301,33 @@ fi
 exec qtile start
 XINIT_EOF
   chmod +x "$xrc"
+}
+
+step_xresources() {
+  local xres="$HOME/.Xresources"
+  if (( DRY_RUN )); then _DIM "  [dry] write $xres + xrdb -merge"; return; fi
+  # Preserve existing content, only replace the Xcursor block managed
+  # here. Marker-guarded so re-runs are idempotent.
+  local marker_begin="! BEGIN-WIZARD-XCURSOR"
+  local marker_end="! END-WIZARD-XCURSOR"
+  local block="$marker_begin
+Xcursor.size: 24
+Xcursor.theme: breeze_cursors
+$marker_end"
+  touch "$xres"
+  if grep -q "$marker_begin" "$xres" 2>/dev/null; then
+    # Replace existing block (portable sed via python for safety).
+    python3 - "$xres" "$marker_begin" "$marker_end" "$block" <<'PY'
+import sys, re
+path, mb, me, block = sys.argv[1:5]
+src = open(path).read()
+pat = re.compile(re.escape(mb) + r'.*?' + re.escape(me), re.DOTALL)
+open(path, 'w').write(pat.sub(block, src, count=1))
+PY
+  else
+    printf '\n%s\n' "$block" >>"$xres"
+  fi
+  command -v xrdb >/dev/null 2>&1 && xrdb -merge "$xres" 2>/dev/null || true
 }
 
 step_xmodmap() {
