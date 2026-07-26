@@ -708,8 +708,132 @@ def _restore_layout_state():
     # before restore even reads it.
     def _periodic():
         _save_layout_state()
+        _save_window_group_state()
         qtile.call_later(3, _periodic)
     qtile.call_later(5, _periodic)
+
+
+# ----------------------------------------------------------------
+# Window→group persistence — qtile's Match rules re-fire on restart
+# and yank manually-moved windows back to their default group.
+# Save {wid: group_name} + per-group focus order, restore after
+# startup_complete, and skip Match reassignment for known wids.
+# ----------------------------------------------------------------
+_WINDOW_GROUP_FILE = os.path.expanduser("~/.cache/qtile/window_group_state.json")
+_RESTORED_WIN_MAP = {}   # wid(str) -> group_name; consulted by client_new
+_RESTORED_FOCUS = {}     # group_name -> [wid, ...] focus order
+
+
+def _save_window_group_state():
+    try:
+        wmap = {}
+        focus = {}
+        for g in qtile.groups:
+            order = []
+            for w in g.windows:
+                wid = str(w.wid)
+                wmap[wid] = g.name
+                order.append(wid)
+            focus[g.name] = order
+        os.makedirs(os.path.dirname(_WINDOW_GROUP_FILE), exist_ok=True)
+        with open(_WINDOW_GROUP_FILE, "w") as f:
+            _json.dump({"map": wmap, "focus": focus}, f)
+    except Exception:
+        pass
+
+
+def _load_window_group_state():
+    global _RESTORED_WIN_MAP, _RESTORED_FOCUS
+    try:
+        with open(_WINDOW_GROUP_FILE) as f:
+            data = _json.load(f)
+        _RESTORED_WIN_MAP = dict(data.get("map", {}))
+        _RESTORED_FOCUS = dict(data.get("focus", {}))
+    except Exception:
+        _RESTORED_WIN_MAP = {}
+        _RESTORED_FOCUS = {}
+
+
+def _restore_window_group_state():
+    """Move already-adopted windows to their saved groups + restore
+    per-group focus order. Runs after startup_complete so all windows
+    have been re-adopted by qtile."""
+    try:
+        for wid_str, gname in list(_RESTORED_WIN_MAP.items()):
+            try:
+                wid = int(wid_str)
+            except Exception:
+                continue
+            win = qtile.windows_map.get(wid)
+            if not win:
+                continue
+            if getattr(win, "group", None) and win.group.name == gname:
+                continue
+            try:
+                win.togroup(gname)
+            except Exception:
+                pass
+        for gname, order in _RESTORED_FOCUS.items():
+            g = qtile.groups_map.get(gname)
+            if not g:
+                continue
+            for wid_str in order:
+                try:
+                    wid = int(wid_str)
+                except Exception:
+                    continue
+                win = qtile.windows_map.get(wid)
+                if win and getattr(win, "group", None) and win.group.name == gname:
+                    try:
+                        g.focus(win, warp=False)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+
+@hook.subscribe.startup_complete
+def _init_window_group_state():
+    _load_window_group_state()
+    qtile.call_later(0.6, _restore_window_group_state)
+    qtile.call_later(1.6, _restore_window_group_state)
+
+
+@hook.subscribe.client_new
+def _override_match_from_saved(client):
+    # Runs before Match assignment completes; schedule after so we win.
+    try:
+        wid_str = str(client.wid)
+    except Exception:
+        return
+    gname = _RESTORED_WIN_MAP.get(wid_str)
+    if not gname:
+        return
+    def _move():
+        try:
+            win = qtile.windows_map.get(client.wid)
+            if win and (not getattr(win, "group", None) or win.group.name != gname):
+                win.togroup(gname)
+        except Exception:
+            pass
+    qtile.call_later(0.05, _move)
+
+
+@hook.subscribe.client_managed
+def _track_window_group(client):
+    try:
+        if getattr(client, "group", None):
+            _RESTORED_WIN_MAP[str(client.wid)] = client.group.name
+    except Exception:
+        pass
+
+
+@hook.subscribe.client_killed
+def _drop_window_group(client):
+    try:
+        _RESTORED_WIN_MAP.pop(str(client.wid), None)
+    except Exception:
+        pass
 
 
 @hook.subscribe.screens_reconfigured
@@ -2633,6 +2757,7 @@ keys = [
         lazy.function(
             lambda qtile: (
                 _save_layout_state(),
+                _save_window_group_state(),
                 qtile.spawn(
                     "notify-send -u low -t 3000 -i dialog-ok-symbolic 'Qtile' 'Reloaded'"
                 ),
