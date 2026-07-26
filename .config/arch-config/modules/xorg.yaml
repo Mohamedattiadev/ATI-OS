@@ -1,6 +1,7 @@
 description: Xorg, input, and display utilities
 
 packages:
+  - xorg-server
   - xorg-xinit
   - xorg-xinput
   - xorg-xev
