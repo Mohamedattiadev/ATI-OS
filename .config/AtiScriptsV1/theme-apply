@@ -597,7 +597,7 @@ if command -v papirus-folders >/dev/null; then
       # Precompile JSON stores the mapped papirus_color directly; use
       # that when available. Fallback to hue-from-color9 for wallpapers
       # without a precompile cache entry.
-      WSTEM="$(basename "$(cat "$HOME/.cache/wall" 2>/dev/null)" 2>/dev/null)"
+      WSTEM="$(basename "$(readlink -f "$HOME/.cache/wall" 2>/dev/null)" 2>/dev/null)"
       WSTEM="${WSTEM%.*}"
       ICON_COLOR_OVERRIDE=$(python3 -c "
 import json,os
