@@ -168,10 +168,11 @@ tab("$TAB");
 print(str(read($idx)));
 JSEOF5
         setsid alacritty --class clip-view --title "clip-view" \
-          -o "window.dimensions.columns=100" \
-          -o "window.dimensions.lines=28" \
-          -o "window.padding.x=10" \
-          -o "window.padding.y=10" \
+          -o "window.dimensions.columns=80" \
+          -o "window.dimensions.lines=20" \
+          -o "window.padding.x=8" \
+          -o "window.padding.y=8" \
+          -o "font.size=10" \
           -e nvim -R -c "set nonumber norelativenumber signcolumn=no laststatus=0" "$tmp" \
           >/dev/null 2>&1 < /dev/null &
         disown
