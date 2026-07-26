@@ -104,7 +104,17 @@ if [[ "$MODE" == "wal" ]]; then
     notify-send -u critical "theme-apply" "~/.cache/wall missing — set a wallpaper first"
     exit 1
   fi
-  WALL_PATH="$(readlink -f "$WALL_LINK")"
+  # Prefer symlink target; fall back to file contents for legacy plain-text
+  # `~/.cache/wall` written by older dm-setbg / WallpaperPopup versions.
+  if [[ -L "$WALL_LINK" ]]; then
+    WALL_PATH="$(readlink -f "$WALL_LINK")"
+  else
+    WALL_PATH="$(head -n 1 "$WALL_LINK" 2>/dev/null | tr -d '\r\n\0')"
+    # Migrate to symlink so future runs take the fast path.
+    if [[ -f "$WALL_PATH" ]]; then
+      ln -sfn "$WALL_PATH" "$WALL_LINK" 2>/dev/null || true
+    fi
+  fi
   # Guard: wall path stale (file deleted after cache write).
   if [[ ! -f "$WALL_PATH" ]]; then
     notify-send -u critical "theme-apply" "wallpaper file missing: $WALL_PATH"
@@ -305,9 +315,33 @@ gen_eww_scss() {
 EOF
 }
 
+dump_palette_json() {
+  # Dump current 9-slot palette to ~/.cache/qtile/current_palette.json so
+  # nvim (+ any other consumer) can render themes for modes that don't
+  # have a dedicated plugin (matrix, mono-*, synthwave, cyberpunk-neon,
+  # palenight, github-dark, ayu-mirage, onedark, nightowl, ...).
+  local out="$HOME/.cache/qtile/current_palette.json"
+  mkdir -p "$(dirname "$out")"
+  cat >"$out" <<EOF
+{
+  "mode": "$MODE",
+  "bg": "$1",
+  "bg_alt": "$2",
+  "fg": "$3",
+  "red": "$4",
+  "green": "$5",
+  "yellow": "$6",
+  "blue": "$7",
+  "purple": "$8",
+  "cyan": "$9"
+}
+EOF
+}
+
 gen_all_theme_css() {
   gen_qb_css "$@"
   gen_eww_scss "$@"
+  dump_palette_json "$@"
 }
 
 case "$MODE" in
