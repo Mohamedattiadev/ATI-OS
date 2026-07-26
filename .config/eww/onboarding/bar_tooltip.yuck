@@ -139,16 +139,14 @@
 
     (button
       :class "onb-btn"
-      :onclick "eww close bar-tooltip; eww open onboarding-welcome"
-      :timeout  "900ms"
-        ;; :onclick "sh -c 'eww close bar-tooltip; eww open onboarding-welcome'"
+      :timeout "3000ms"
+      :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open onboarding-welcome'"
       "Back")
 
     (button
       :class "onb-btn onb-btn-Apply"
-      :onclick "eww close bar-tooltip; eww open onboarding-workspaces"
-        :timeout  "900ms"
-        ;; :onclick "sh -c 'eww close bar-tooltip; eww open onboarding-workspaces'"
+      :timeout "3000ms"
+      :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open onboarding-workspaces'"
       "Next")
   )
 

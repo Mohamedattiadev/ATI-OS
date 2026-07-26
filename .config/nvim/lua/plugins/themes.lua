@@ -83,13 +83,24 @@ return {
             dracula = "dracula",
             gruvbox = "gruvbox",
             nord = "nord",
-            tokyonight = "tokyonight",
-            catppuccin = "catppuccin",
+            tokyonight = "nord",
+            catppuccin = "dracula",
             monokai = "monokai-pro",
             everforest = "everforest",
             ["rose-pine"] = "rose-pine",
             kanagawa = "kanagawa",
             oxocarbon = "oxocarbon",
+            -- New themes fall back to closest installed nvim scheme.
+            ["cyberpunk-neon"] = "dracula",
+            synthwave = "dracula",
+            matrix = "gruvbox",
+            ["mono-dark"] = "doom-one",
+            ["mono-light"] = "doom-one",
+            nightowl = "nord",
+            onedark = "doom-one",
+            palenight = "nord",
+            ["github-dark"] = "nord",
+            ["ayu-mirage"] = "kanagawa",
           }
           return map[m] or "doom-one"
         end
@@ -251,6 +262,16 @@ return {
         ["rose-pine"] = "rose-pine",
         kanagawa = "kanagawa",
         oxocarbon = "oxocarbon",
+        ["cyberpunk-neon"] = "dracula",
+        synthwave = "dracula",
+        matrix = "gruvbox",
+        ["mono-dark"] = "doom-one",
+        ["mono-light"] = "doom-one",
+        nightowl = "nord",
+        onedark = "doom-one",
+        palenight = "nord",
+        ["github-dark"] = "nord",
+        ["ayu-mirage"] = "kanagawa",
       }
       local last_mode = nil
       local last_wal_mtime = 0
@@ -265,6 +286,44 @@ return {
         local st = vim.uv.fs_stat(wal_cache)
         return st and st.mtime.sec or 0
       end
+      -- scheme name -> lazy.nvim plugin dir name (for on-demand load).
+      local plugin_for = {
+        ["doom-one"] = "doom-one.nvim",
+        dracula = "dracula.nvim",
+        gruvbox = "gruvbox.nvim",
+        nord = "nord.nvim",
+        tokyonight = "tokyonight.nvim",
+        catppuccin = "catppuccin",
+        ["monokai-pro"] = "monokai-pro.nvim",
+        everforest = "everforest-nvim",
+        ["rose-pine"] = "rose-pine",
+        kanagawa = "kanagawa.nvim",
+        oxocarbon = "oxocarbon.nvim",
+        wal = "wal.vim",
+      }
+
+      local function try_load_plugin(scheme)
+        local plug = plugin_for[scheme]
+        if not plug then return end
+        local ok, lazy = pcall(require, "lazy")
+        if ok then pcall(lazy.load, { plugins = { plug } }) end
+      end
+
+      local function set_scheme(scheme)
+        try_load_plugin(scheme)
+        local ok = pcall(vim.cmd, "colorscheme " .. scheme)
+        if ok then return true end
+        -- Retry after next tick so lazy load can finish plugin setup.
+        vim.defer_fn(function()
+          try_load_plugin(scheme)
+          if not pcall(vim.cmd, "colorscheme " .. scheme) then
+            try_load_plugin("doom-one")
+            pcall(vim.cmd, "colorscheme doom-one")
+          end
+        end, 30)
+        return false
+      end
+
       local function apply(force)
         local m = read_mode()
         if not m then return end
@@ -279,14 +338,10 @@ return {
           -- Native json reader — sets gui* highlights (wal.vim only
           -- sets cterm*, invisible under termguicolors).
           if not apply_wal_from_json() then
-            pcall(vim.cmd, "colorscheme doom-one")
+            set_scheme("doom-one")
           end
         else
-          local scheme = map[m] or "doom-one"
-          local ok = pcall(vim.cmd, "colorscheme " .. scheme)
-          if not ok then
-            pcall(vim.cmd, "colorscheme doom-one")
-          end
+          set_scheme(map[m] or "doom-one")
         end
       end
       apply(true)

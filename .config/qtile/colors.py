@@ -145,6 +145,90 @@ Catppuccin = [
     ["#94e2d5", "#94e2d5"]  # color15
     ]
 
+Everforest = [
+    ["#2d353b", "#2d353b"], ["#d3c6aa", "#d3c6aa"], ["#232a2e", "#232a2e"],
+    ["#e67e80", "#e67e80"], ["#a7c080", "#a7c080"], ["#dbbc7f", "#dbbc7f"],
+    ["#7fbbb3", "#7fbbb3"], ["#d699b6", "#d699b6"], ["#83c092", "#83c092"],
+]
+
+RosePine = [
+    ["#191724", "#191724"], ["#e0def4", "#e0def4"], ["#1f1d2e", "#1f1d2e"],
+    ["#eb6f92", "#eb6f92"], ["#31748f", "#31748f"], ["#f6c177", "#f6c177"],
+    ["#9ccfd8", "#9ccfd8"], ["#c4a7e7", "#c4a7e7"], ["#ebbcba", "#ebbcba"],
+]
+
+Kanagawa = [
+    ["#1f1f28", "#1f1f28"], ["#dcd7ba", "#dcd7ba"], ["#16161d", "#16161d"],
+    ["#e46876", "#e46876"], ["#98bb6c", "#98bb6c"], ["#e6c384", "#e6c384"],
+    ["#7e9cd8", "#7e9cd8"], ["#957fb8", "#957fb8"], ["#7aa89f", "#7aa89f"],
+]
+
+Oxocarbon = [
+    ["#161616", "#161616"], ["#f2f4f8", "#f2f4f8"], ["#262626", "#262626"],
+    ["#ee5396", "#ee5396"], ["#42be65", "#42be65"], ["#ffe97b", "#ffe97b"],
+    ["#33b1ff", "#33b1ff"], ["#be95ff", "#be95ff"], ["#3ddbd9", "#3ddbd9"],
+]
+
+CyberpunkNeon = [
+    ["#0a0e27", "#0a0e27"], ["#d1f7ff", "#d1f7ff"], ["#000000", "#000000"],
+    ["#ff2740", "#ff2740"], ["#00ff9f", "#00ff9f"], ["#f9f002", "#f9f002"],
+    ["#00b8ff", "#00b8ff"], ["#bd00ff", "#bd00ff"], ["#00fff9", "#00fff9"],
+]
+
+Synthwave = [
+    ["#241b30", "#241b30"], ["#f4e9d0", "#f4e9d0"], ["#1a1428", "#1a1428"],
+    ["#fe4450", "#fe4450"], ["#72f1b8", "#72f1b8"], ["#fede5d", "#fede5d"],
+    ["#03edf9", "#03edf9"], ["#c792ea", "#c792ea"], ["#36f9f6", "#36f9f6"],
+]
+
+Matrix = [
+    ["#000000", "#000000"], ["#00ff41", "#00ff41"], ["#0a0a0a", "#0a0a0a"],
+    ["#ff0000", "#ff0000"], ["#00ff41", "#00ff41"], ["#c0ff00", "#c0ff00"],
+    ["#008f11", "#008f11"], ["#00b849", "#00b849"], ["#00ff9f", "#00ff9f"],
+]
+
+MonoDark = [
+    ["#000000", "#000000"], ["#e0e0e0", "#e0e0e0"], ["#0a0a0a", "#0a0a0a"],
+    ["#808080", "#808080"], ["#a0a0a0", "#a0a0a0"], ["#c0c0c0", "#c0c0c0"],
+    ["#a0a0a0", "#a0a0a0"], ["#909090", "#909090"], ["#b0b0b0", "#b0b0b0"],
+]
+
+MonoLight = [
+    ["#ffffff", "#ffffff"], ["#000000", "#000000"], ["#e0e0e0", "#e0e0e0"],
+    ["#c00000", "#c00000"], ["#006000", "#006000"], ["#805000", "#805000"],
+    ["#000080", "#000080"], ["#600060", "#600060"], ["#005080", "#005080"],
+]
+
+NightOwl = [
+    ["#011627", "#011627"], ["#d6deeb", "#d6deeb"], ["#010e1a", "#010e1a"],
+    ["#ef5350", "#ef5350"], ["#22da6e", "#22da6e"], ["#ffeb95", "#ffeb95"],
+    ["#82aaff", "#82aaff"], ["#c792ea", "#c792ea"], ["#7fdbca", "#7fdbca"],
+]
+
+OneDark = [
+    ["#282c34", "#282c34"], ["#abb2bf", "#abb2bf"], ["#21252b", "#21252b"],
+    ["#e06c75", "#e06c75"], ["#98c379", "#98c379"], ["#e5c07b", "#e5c07b"],
+    ["#61afef", "#61afef"], ["#c678dd", "#c678dd"], ["#56b6c2", "#56b6c2"],
+]
+
+PalenightNew = [
+    ["#292d3e", "#292d3e"], ["#a6accd", "#a6accd"], ["#1e2030", "#1e2030"],
+    ["#f07178", "#f07178"], ["#c3e88d", "#c3e88d"], ["#ffcb6b", "#ffcb6b"],
+    ["#82b1ff", "#82b1ff"], ["#c792ea", "#c792ea"], ["#89ddff", "#89ddff"],
+]
+
+GithubDark = [
+    ["#0d1117", "#0d1117"], ["#c9d1d9", "#c9d1d9"], ["#010409", "#010409"],
+    ["#ff7b72", "#ff7b72"], ["#7ee787", "#7ee787"], ["#f2cc60", "#f2cc60"],
+    ["#58a6ff", "#58a6ff"], ["#d2a8ff", "#d2a8ff"], ["#a5d6ff", "#a5d6ff"],
+]
+
+AyuMirage = [
+    ["#1f2430", "#1f2430"], ["#cbccc6", "#cbccc6"], ["#171b24", "#171b24"],
+    ["#ff6666", "#ff6666"], ["#bae67e", "#bae67e"], ["#ffcc66", "#ffcc66"],
+    ["#5ccfe6", "#5ccfe6"], ["#c3a6ff", "#c3a6ff"], ["#95e6cb", "#95e6cb"],
+]
+
 
 # ---- Theme lookup + pywal ----
 # theme-apply writes ~/.cache/qtile/theme_mode with the selected mode.
@@ -241,12 +325,25 @@ _PRESETS = {
     "monokai": MonokaiPro,
     "nord": Nord,
     "oceanic": OceanicNext,
-    "palenight": Palenight,
+    "palenight": PalenightNew,
     "solarized-dark": SolarizedDark,
     "solarized-light": SolarizedLight,
     "tomorrow": TomorrowNight,
     "tokyonight": TokyoNight,
     "catppuccin": Catppuccin,
+    "everforest": Everforest,
+    "rose-pine": RosePine,
+    "kanagawa": Kanagawa,
+    "oxocarbon": Oxocarbon,
+    "cyberpunk-neon": CyberpunkNeon,
+    "synthwave": Synthwave,
+    "matrix": Matrix,
+    "mono-dark": MonoDark,
+    "mono-light": MonoLight,
+    "nightowl": NightOwl,
+    "onedark": OneDark,
+    "github-dark": GithubDark,
+    "ayu-mirage": AyuMirage,
 }
 
 

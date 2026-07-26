@@ -27,21 +27,26 @@ mkdir -p "$CACHE_DIR"
 # with "already running". Use a PID-file lock instead: cheap TOCTOU
 # race is acceptable for interactive keybind spam.
 LOCK="$CACHE_DIR/.theme-apply.pid"
+# Preempt any in-flight run so rapid picker clicks always land the
+# latest choice instead of silently no-op'ing on the lock.
 if [[ -f "$LOCK" ]]; then
   old_pid="$(cat "$LOCK" 2>/dev/null || true)"
-  if [[ -n "$old_pid" ]] && kill -0 "$old_pid" 2>/dev/null; then
-    # Verify the pid actually belongs to a theme-apply run (not a
-    # random pid recycled by another program).
+  if [[ -n "$old_pid" ]] && [[ "$old_pid" != "$$" ]] && kill -0 "$old_pid" 2>/dev/null; then
     if grep -q theme-apply "/proc/$old_pid/cmdline" 2>/dev/null; then
-      notify-send "theme-apply" "already running, skipped ($MODE)" 2>/dev/null || true
-      exit 0
+      kill "$old_pid" 2>/dev/null || true
+      # Give it a moment to release resources.
+      for _ in 1 2 3 4 5; do
+        kill -0 "$old_pid" 2>/dev/null || break
+        sleep 0.1
+      done
+      kill -9 "$old_pid" 2>/dev/null || true
     fi
   fi
 fi
 echo $$ >"$LOCK"
 trap 'rm -f "$LOCK"' EXIT INT TERM
 
-PRESETS=(doomone dracula gruvbox nord tokyonight catppuccin monokai everforest rose-pine kanagawa oxocarbon)
+PRESETS=(doomone dracula gruvbox nord tokyonight catppuccin monokai everforest rose-pine kanagawa oxocarbon cyberpunk-neon synthwave matrix mono-dark mono-light nightowl onedark palenight github-dark ayu-mirage)
 
 is_preset() {
   local m="$1"
@@ -52,7 +57,7 @@ is_preset() {
 }
 
 if [[ "$MODE" != "wal" ]] && ! is_preset "$MODE"; then
-  echo "usage: theme-apply <doomone|dracula|gruvbox|nord|tokyonight|catppuccin|monokai|everforest|rose-pine|kanagawa|oxocarbon|wal>" >&2
+  echo "usage: theme-apply <doomone|dracula|gruvbox|nord|tokyonight|catppuccin|monokai|everforest|rose-pine|kanagawa|oxocarbon|cyberpunk-neon|synthwave|matrix|mono-dark|mono-light|nightowl|onedark|palenight|github-dark|ayu-mirage|wal>" >&2
   exit 1
 fi
 
@@ -75,6 +80,16 @@ alacritty_preset_for() {
     rose-pine)  echo rose_pine ;;
     kanagawa)   echo kanagawa_wave ;;
     oxocarbon)  echo oxocarbon ;;
+    cyberpunk-neon) echo cyber_punk_neon ;;
+    synthwave)  echo synthwave_84 ;;
+    matrix)     echo hardhacker ;;
+    mono-dark)  echo alabaster_dark ;;
+    mono-light) echo alabaster ;;
+    nightowl)   echo night_owl ;;
+    onedark)    echo one_dark ;;
+    palenight)  echo palenight ;;
+    github-dark) echo github_dark ;;
+    ayu-mirage) echo ayu_mirage ;;
     *)          echo doom_one ;;
   esac
 }
@@ -320,13 +335,35 @@ case "$MODE" in
   rose-pine) gen_all_theme_css "#191724" "#1f1d2e" "#e0def4" "#eb6f92" "#31748f" "#f6c177" "#9ccfd8" "#c4a7e7" "#ebbcba" ;;
   kanagawa)  gen_all_theme_css "#1f1f28" "#16161d" "#dcd7ba" "#e46876" "#98bb6c" "#e6c384" "#7e9cd8" "#957fb8" "#7aa89f" ;;
   oxocarbon) gen_all_theme_css "#161616" "#262626" "#f2f4f8" "#ee5396" "#42be65" "#ffe97b" "#33b1ff" "#be95ff" "#3ddbd9" ;;
+  cyberpunk-neon) gen_all_theme_css "#0a0e27" "#000000" "#d1f7ff" "#ff2740" "#00ff9f" "#f9f002" "#00b8ff" "#bd00ff" "#00fff9" ;;
+  synthwave) gen_all_theme_css "#241b30" "#1a1428" "#f4e9d0" "#fe4450" "#72f1b8" "#fede5d" "#03edf9" "#c792ea" "#36f9f6" ;;
+  matrix)    gen_all_theme_css "#000000" "#0a0a0a" "#00ff41" "#ff0000" "#00ff41" "#c0ff00" "#008f11" "#00b849" "#00ff9f" ;;
+  mono-dark) gen_all_theme_css "#000000" "#0a0a0a" "#e0e0e0" "#808080" "#a0a0a0" "#c0c0c0" "#a0a0a0" "#909090" "#b0b0b0" ;;
+  mono-light) gen_all_theme_css "#ffffff" "#e0e0e0" "#000000" "#c00000" "#006000" "#805000" "#000080" "#600060" "#005080" ;;
+  nightowl)  gen_all_theme_css "#011627" "#010e1a" "#d6deeb" "#ef5350" "#22da6e" "#ffeb95" "#82aaff" "#c792ea" "#7fdbca" ;;
+  onedark)   gen_all_theme_css "#282c34" "#21252b" "#abb2bf" "#e06c75" "#98c379" "#e5c07b" "#61afef" "#c678dd" "#56b6c2" ;;
+  palenight) gen_all_theme_css "#292d3e" "#1e2030" "#a6accd" "#f07178" "#c3e88d" "#ffcb6b" "#82b1ff" "#c792ea" "#89ddff" ;;
+  github-dark) gen_all_theme_css "#0d1117" "#010409" "#c9d1d9" "#ff7b72" "#7ee787" "#f2cc60" "#58a6ff" "#d2a8ff" "#a5d6ff" ;;
+  ayu-mirage) gen_all_theme_css "#1f2430" "#171b24" "#cbccc6" "#ff6666" "#bae67e" "#ffcc66" "#5ccfe6" "#c3a6ff" "#95e6cb" ;;
 esac
 
-# Reload eww so open windows repick colors.scss. Windows re-render on
-# reload; closed windows pick up on next open. Fire-and-forget.
+# Force eww to recompile scss. `eww reload` alone leaves the daemon's
+# compiled-css cache stale for open + subsequent windows on some eww
+# builds — restart daemon so every next open reads the fresh
+# colors.scss. Reopen any windows that were live at switch time.
 if pgrep -x eww >/dev/null 2>&1; then
-  ( eww reload >/dev/null 2>&1 || true ) &
-  disown
+  OPEN_WINS="$(eww active-windows 2>/dev/null | awk -F: '{print $1}')"
+  eww kill >/dev/null 2>&1 || pkill -x eww 2>/dev/null || true
+  for _ in 1 2 3 4 5; do pgrep -x eww >/dev/null 2>&1 || break; sleep 0.1; done
+  # Detach daemon fully so it survives theme-apply exit.
+  setsid -f eww daemon </dev/null >/dev/null 2>&1 || eww daemon >/dev/null 2>&1 &
+  disown 2>/dev/null || true
+  # Wait for IPC to come up, then reopen previously-live windows.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    eww ping >/dev/null 2>&1 && break
+    sleep 0.1
+  done
+  for w in $OPEN_WINS; do eww open "$w" >/dev/null 2>&1 || true; done
 fi
 
 echo "$MODE" >"$STATE_FILE"
@@ -392,6 +429,16 @@ if [[ -f "$DUNST_TMPL" ]]; then
     rose-pine) render_dunstrc "#191724" "#e0def4" "#3d1f2a" "#ffdada" "#c4a7e7" "#9ccfd8" "#eb6f92" ;;
     kanagawa)  render_dunstrc "#1f1f28" "#dcd7ba" "#3d1f22" "#ffdada" "#7e9cd8" "#98bb6c" "#e46876" ;;
     oxocarbon) render_dunstrc "#161616" "#f2f4f8" "#3d1f2a" "#ffdada" "#33b1ff" "#42be65" "#ee5396" ;;
+    cyberpunk-neon) render_dunstrc "#0a0e27" "#d1f7ff" "#3d1f2a" "#ffdada" "#00fff9" "#00ff9f" "#ff2740" ;;
+    synthwave) render_dunstrc "#241b30" "#f4e9d0" "#3d1f2a" "#ffdada" "#36f9f6" "#72f1b8" "#fe4450" ;;
+    matrix)    render_dunstrc "#000000" "#00ff41" "#1a0000" "#ffdada" "#00ff9f" "#00ff41" "#ff0000" ;;
+    mono-dark) render_dunstrc "#000000" "#e0e0e0" "#2a2a2a" "#ffdada" "#b0b0b0" "#a0a0a0" "#808080" ;;
+    mono-light) render_dunstrc "#ffffff" "#000000" "#ffd0d0" "#600000" "#000080" "#006000" "#c00000" ;;
+    nightowl)  render_dunstrc "#011627" "#d6deeb" "#3d1f2a" "#ffdada" "#82aaff" "#22da6e" "#ef5350" ;;
+    onedark)   render_dunstrc "#282c34" "#abb2bf" "#3d1f2a" "#ffdada" "#61afef" "#98c379" "#e06c75" ;;
+    palenight) render_dunstrc "#292d3e" "#a6accd" "#3d1f2a" "#ffdada" "#82b1ff" "#c3e88d" "#f07178" ;;
+    github-dark) render_dunstrc "#0d1117" "#c9d1d9" "#3d1f2a" "#ffdada" "#58a6ff" "#7ee787" "#ff7b72" ;;
+    ayu-mirage) render_dunstrc "#1f2430" "#cbccc6" "#3d1f2a" "#ffdada" "#5ccfe6" "#bae67e" "#ff6666" ;;
   esac
   # Restart dunst so it re-reads dunstrc
   pkill -x dunst 2>/dev/null || true
@@ -451,6 +498,16 @@ case "$MODE" in
   rose-pine) gen_gtk_css "#191724" "#1f1d2e" "#e0def4" "#c4a7e7" "#eb6f92" "#9ccfd8" ;;
   kanagawa)  gen_gtk_css "#1f1f28" "#16161d" "#dcd7ba" "#7e9cd8" "#e46876" "#98bb6c" ;;
   oxocarbon) gen_gtk_css "#161616" "#262626" "#f2f4f8" "#33b1ff" "#ee5396" "#42be65" ;;
+  cyberpunk-neon) gen_gtk_css "#0a0e27" "#000000" "#d1f7ff" "#00fff9" "#ff2740" "#00ff9f" ;;
+  synthwave) gen_gtk_css "#241b30" "#1a1428" "#f4e9d0" "#36f9f6" "#fe4450" "#72f1b8" ;;
+  matrix)    gen_gtk_css "#000000" "#0a0a0a" "#00ff41" "#00ff9f" "#ff0000" "#00ff41" ;;
+  mono-dark) gen_gtk_css "#000000" "#0a0a0a" "#e0e0e0" "#b0b0b0" "#808080" "#a0a0a0" ;;
+  mono-light) gen_gtk_css "#ffffff" "#e0e0e0" "#000000" "#000080" "#c00000" "#006000" ;;
+  nightowl)  gen_gtk_css "#011627" "#010e1a" "#d6deeb" "#82aaff" "#ef5350" "#22da6e" ;;
+  onedark)   gen_gtk_css "#282c34" "#21252b" "#abb2bf" "#61afef" "#e06c75" "#98c379" ;;
+  palenight) gen_gtk_css "#292d3e" "#1e2030" "#a6accd" "#82b1ff" "#f07178" "#c3e88d" ;;
+  github-dark) gen_gtk_css "#0d1117" "#010409" "#c9d1d9" "#58a6ff" "#ff7b72" "#7ee787" ;;
+  ayu-mirage) gen_gtk_css "#1f2430" "#171b24" "#cbccc6" "#5ccfe6" "#ff6666" "#bae67e" ;;
 esac
 
 # Wire @import into gtk-3.0/gtk.css (create if missing)
@@ -466,17 +523,39 @@ ensure_gtk_import() {
 ensure_gtk_import "$HOME/.config/gtk-3.0/gtk.css"
 ensure_gtk_import "$HOME/.config/gtk-4.0/gtk.css"
 
+# ---- Base GTK theme + icon theme swap per palette ----
+# Sweet-Dark forces dark bg in all GTK apps (pcmanfm/nautilus etc); the
+# per-palette @import overlay can't override background colors. Swap the
+# BASE theme name + icon theme so light palettes actually render light.
+case "$MODE" in
+  mono-light) GTK_THEME="Breeze"; GTK_ICON="Papirus-Light" ;;
+  *)          GTK_THEME="Sweet-Dark"; GTK_ICON="Papirus-Dark" ;;
+esac
+SETTINGS_INI="$HOME/.config/gtk-3.0/settings.ini"
+if [[ -f "$SETTINGS_INI" ]]; then
+  sed -i "s|^gtk-theme-name=.*|gtk-theme-name=$GTK_THEME|" "$SETTINGS_INI"
+  sed -i "s|^gtk-application-prefer-dark-theme=.*|gtk-application-prefer-dark-theme=$([ "$MODE" = mono-light ] && echo 0 || echo 1)|" "$SETTINGS_INI"
+  sed -i "s|^gtk-icon-theme-name=.*|gtk-icon-theme-name=$GTK_ICON|" "$SETTINGS_INI"
+fi
+# gtk-4.0 too
+mkdir -p "$HOME/.config/gtk-4.0"
+touch "$HOME/.config/gtk-4.0/settings.ini"
+
 # ---- Papirus folder color per palette ----
 # papirus-folders (yay -S papirus-folders papirus-icon-theme) accepts a
 # fixed set of color keywords. Map the active accent hue to the closest
 # one so folder icons follow the palette.
 if command -v papirus-folders >/dev/null; then
   case "$MODE" in
-    doomone|nord|kanagawa|oxocarbon) ICON_COLOR="blue" ;;
+    doomone|nord|kanagawa|oxocarbon|nightowl|onedark|palenight|github-dark) ICON_COLOR="blue" ;;
     dracula|catppuccin|rose-pine)    ICON_COLOR="violet" ;;
     gruvbox|monokai)                 ICON_COLOR="yellow" ;;
     tokyonight)                      ICON_COLOR="indigo" ;;
     everforest)                      ICON_COLOR="green" ;;
+    cyberpunk-neon|synthwave)        ICON_COLOR="pink" ;;
+    matrix)                          ICON_COLOR="green" ;;
+    mono-dark|mono-light)            ICON_COLOR="grey" ;;
+    ayu-mirage)                      ICON_COLOR="cyan" ;;
     wal)
       # Precompile JSON stores the mapped papirus_color directly; use
       # that when available. Fallback to hue-from-color9 for wallpapers
@@ -522,17 +601,11 @@ print(int(colorsys.rgb_to_hsv(r,g,b)[0]*360))
   # not worth it: open pcmanfm windows won't hot-reload icons anyway,
   # and cold windows read the swapped symlink directly.
   # sudo -n stays non-interactive; needs NOPASSWD in /etc/sudoers.d.
-  ( if ! sudo -n papirus-folders -C "$ICON_COLOR" -t Papirus-Dark >/dev/null 2>&1; then
-      papirus-folders -C "$ICON_COLOR" -t Papirus-Dark >/dev/null 2>&1 \
+  ( if ! sudo -n papirus-folders -C "$ICON_COLOR" -t "$GTK_ICON" >/dev/null 2>&1; then
+      papirus-folders -C "$ICON_COLOR" -t "$GTK_ICON" >/dev/null 2>&1 \
         || notify-send "theme-apply" "papirus-folders needs passwordless sudo — icons stale"
     fi ) &
   disown
-
-  # Ensure GTK icon theme is Papirus-Dark (rewrite settings.ini once)
-  SETTINGS_INI="$HOME/.config/gtk-3.0/settings.ini"
-  if [[ -f "$SETTINGS_INI" ]] && ! grep -q '^gtk-icon-theme-name=Papirus-Dark' "$SETTINGS_INI"; then
-    sed -i 's|^gtk-icon-theme-name=.*|gtk-icon-theme-name=Papirus-Dark|' "$SETTINGS_INI"
-  fi
 fi
 
 # pcmanfm caches icons per-process — GTK provides no hot-reload API.
@@ -551,12 +624,13 @@ if pgrep -x pcmanfm >/dev/null 2>&1; then
   disown
 fi
 
-# Reload qtile. reload_config re-imports colors.py so widgets that
-# recompute their colors from the module (screens.py) refresh on
-# reload. Full restart was 5-10x slower and froze the compositor when
-# invoked from the WallpaperPopup path. Detach anyway.
+# Full qtile restart. reload_config only re-runs config.py — widget
+# instances keep their captured color arrays and the bar never repaints
+# with the new palette until the user forces a screen reconfigure.
+# `restart` rebuilds the whole widget tree so the bar visibly updates
+# immediately. Detach so theme-apply exits fast.
 if command -v qtile >/dev/null; then
-  setsid -f bash -c 'timeout 3 qtile cmd-obj -o cmd -f reload_config' \
+  setsid -f bash -c 'timeout 5 qtile cmd-obj -o cmd -f restart' \
     >/dev/null 2>&1 </dev/null || true
 fi
 
@@ -608,6 +682,16 @@ else:
       "rose-pine": ("#191724","#e0def4","#1f1d2e","#c4a7e7"),
       "kanagawa":  ("#1f1f28","#dcd7ba","#16161d","#7e9cd8"),
       "oxocarbon": ("#161616","#f2f4f8","#262626","#33b1ff"),
+      "cyberpunk-neon": ("#0a0e27","#d1f7ff","#000000","#00fff9"),
+      "synthwave": ("#241b30","#f4e9d0","#1a1428","#36f9f6"),
+      "matrix":    ("#000000","#00ff41","#0a0a0a","#00ff9f"),
+      "mono-dark": ("#000000","#e0e0e0","#0a0a0a","#b0b0b0"),
+      "mono-light":("#ffffff","#000000","#e0e0e0","#000080"),
+      "nightowl":  ("#011627","#d6deeb","#010e1a","#82aaff"),
+      "onedark":   ("#282c34","#abb2bf","#21252b","#61afef"),
+      "palenight": ("#292d3e","#a6accd","#1e2030","#82b1ff"),
+      "github-dark":("#0d1117","#c9d1d9","#010409","#58a6ff"),
+      "ayu-mirage":("#1f2430","#cbccc6","#171b24","#5ccfe6"),
     }
     bg, fg, alt, accent = presets.get(mode, presets["doomone"])
 def rgb(h): return hx(h)
