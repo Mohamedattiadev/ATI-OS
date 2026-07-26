@@ -264,7 +264,7 @@ def toggle_cheatsheet(qtile):
         qtile,
         width=1050,
         height=680,
-        background="1c1f24ee",
+        background=COLORS["bg"].lstrip("#") + "ee",
         initial_focus=None,
         close_on_click=False,
         controls=controls,
