@@ -291,7 +291,7 @@ export XCURSOR_THEME=breeze_cursors
 command -v xsetroot >/dev/null 2>&1 && xsetroot -cursor_name left_ptr
 xset s off -dpms
 if [ -f "$HOME/.cache/wall" ] && command -v xwallpaper >/dev/null 2>&1; then
-  wall_path="$(cat "$HOME/.cache/wall")"
+  wall_path="$(readlink -f "$HOME/.cache/wall")"
   [ -f "$wall_path" ] && xwallpaper --stretch "$wall_path" &
 fi
 if command -v picom >/dev/null 2>&1; then
@@ -391,7 +391,7 @@ step_themes() {
     local first
     first=$(find "$HOME/Pictures/Wallpapers" -maxdepth 2 -type f \
       \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null | sort | head -1)
-    [[ -n "$first" ]] && run "mkdir -p $HOME/.cache && echo $first > $HOME/.cache/wall"
+    [[ -n "$first" ]] && run "mkdir -p $HOME/.cache && ln -sfn $first $HOME/.cache/wall"
   fi
   run "wal-precompile"
   run "theme-apply doomone"
