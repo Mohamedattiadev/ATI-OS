@@ -347,29 +347,96 @@ gen_all_theme_css() {
 case "$MODE" in
   wal)
     W=~/.cache/wal/colors.json
-    # wal-precompile emits color0 == special.background on every wallpaper,
-    # so bg_alt would collapse into bg and eww/popup layers lose depth.
-    # Derive bg_alt as a +6% lightened bg to guarantee separation.
-    WAL_BG_ALT=$(python3 -c "
-import json, colorsys
-d = json.load(open('$HOME/.cache/wal/colors.json'))
-bg = d['special']['background'].lstrip('#')
-r, g, b = int(bg[0:2],16)/255, int(bg[2:4],16)/255, int(bg[4:6],16)/255
-h, l, s = colorsys.rgb_to_hls(r, g, b)
-l = min(1.0, l + 0.06)
-r, g, b = colorsys.hls_to_rgb(h, l, s)
-print('#{:02x}{:02x}{:02x}'.format(int(r*255), int(g*255), int(b*255)))
-")
-    gen_all_theme_css \
-      "$(jq -r .special.background "$W")" \
-      "$WAL_BG_ALT" \
-      "$(jq -r .special.foreground "$W")" \
-      "$(jq -r .colors.color9 "$W")" \
-      "$(jq -r .colors.color10 "$W")" \
-      "$(jq -r .colors.color11 "$W")" \
-      "$(jq -r .colors.color12 "$W")" \
-      "$(jq -r .colors.color13 "$W")" \
-      "$(jq -r .colors.color14 "$W")"
+    # wal-precompile assigns accents by wallpaper DOMINANCE, not by
+    # semantic hue name (color10 = wallpaper's main hue, not necessarily
+    # green). Also emits color0 == special.background collapsing bg_alt
+    # into bg. Post-process here: derive bg_alt via HLS +6% lightness,
+    # and re-slot each accent into the semantic slot whose target hue is
+    # closest, filling gaps with doomone defaults so every consumer that
+    # asks for "green" actually receives a green-ish color.
+    read -r WAL_BG WAL_BG_ALT WAL_FG WAL_RED WAL_GREEN WAL_YELLOW WAL_BLUE WAL_PURPLE WAL_CYAN <<<"$(python3 <<'PYEOF'
+import json, colorsys, os
+d = json.load(open(os.path.expanduser('~/.cache/wal/colors.json')))
+bg = d['special']['background']
+fg = d['special']['foreground']
+
+def hex_to_hls(hx):
+    hx = hx.lstrip('#')
+    r, g, b = int(hx[0:2],16)/255, int(hx[2:4],16)/255, int(hx[4:6],16)/255
+    return colorsys.rgb_to_hls(r, g, b)
+
+def hls_to_hex(h, l, s):
+    r, g, b = colorsys.hls_to_rgb(h, l, s)
+    return '#{:02x}{:02x}{:02x}'.format(int(r*255), int(g*255), int(b*255))
+
+# bg_alt = +6% lightened bg
+h, l, s = hex_to_hls(bg)
+bg_alt = hls_to_hex(h, min(1.0, l + 0.06), s)
+
+# Semantic slot target hues (0-360). Distance is min(|a-b|, 360-|a-b|).
+targets = {
+    'red':    0,
+    'yellow': 55,
+    'green':  120,
+    'cyan':   180,
+    'blue':   225,
+    'purple': 290,
+}
+# Doomone defaults — used to fill any slot no accent can claim.
+defaults = {
+    'red':    '#ff6c6b',
+    'yellow': '#ecbe7b',
+    'green':  '#98be65',
+    'cyan':   '#46d9ff',
+    'blue':   '#51afef',
+    'purple': '#c678dd',
+}
+
+accents = [d['colors'][f'color{i}'] for i in range(9, 15)]
+
+def circ_dist(a, b):
+    d = abs(a - b) % 360
+    return min(d, 360 - d)
+
+# Score each (slot, accent) pair by hue distance. Greedy assign lowest
+# distance first, one accent per slot. Skip accents with saturation<0.15
+# (near-gray) — they'd pollute any slot they land in.
+pairs = []
+for accent in accents:
+    ah, al, asat = hex_to_hls(accent)
+    if asat < 0.15:
+        continue
+    ah_deg = ah * 360
+    for slot, tgt in targets.items():
+        pairs.append((circ_dist(ah_deg, tgt), slot, accent))
+pairs.sort(key=lambda x: x[0])
+
+slots = {}
+used_accents = set()
+# Hue-distance threshold: if best accent is > 60° from the slot's
+# target hue, the accent is closer in name than in color, so prefer
+# doomone default. Keeps "green" green even when the wallpaper has
+# no green hue.
+MAX_DIST = 60
+for dist, slot, accent in pairs:
+    if slot in slots or accent in used_accents:
+        continue
+    if dist > MAX_DIST:
+        continue
+    slots[slot] = accent
+    used_accents.add(accent)
+    if len(slots) == len(targets):
+        break
+
+# Any slot still empty gets doomone default.
+for slot in targets:
+    slots.setdefault(slot, defaults[slot])
+
+print(bg, bg_alt, fg, slots['red'], slots['green'], slots['yellow'],
+      slots['blue'], slots['purple'], slots['cyan'])
+PYEOF
+)"
+    gen_all_theme_css "$WAL_BG" "$WAL_BG_ALT" "$WAL_FG" "$WAL_RED" "$WAL_GREEN" "$WAL_YELLOW" "$WAL_BLUE" "$WAL_PURPLE" "$WAL_CYAN"
     ;;
   doomone)   gen_all_theme_css "#282c34" "#1e222a" "#dcdfe4" "#ff6c6b" "#98be65" "#ecbe7b" "#51afef" "#c678dd" "#46d9ff" ;;
   dracula)   gen_all_theme_css "#282a36" "#21222c" "#f8f8f2" "#ff5555" "#50fa7b" "#f1fa8c" "#bd93f9" "#ff79c6" "#8be9fd" ;;
