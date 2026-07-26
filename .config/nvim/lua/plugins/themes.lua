@@ -395,8 +395,13 @@ return {
         vim.defer_fn(function()
           try_load_plugin(scheme)
           if not pcall(vim.cmd, "colorscheme " .. scheme) then
-            try_load_plugin("doom-one")
-            pcall(vim.cmd, "colorscheme doom-one")
+            -- Plugin unavailable — render distinct highlights from
+            -- current_palette.json rather than silently collapsing to
+            -- doom-one (which makes multiple modes look identical).
+            if not apply_preset_from_json() then
+              try_load_plugin("doom-one")
+              pcall(vim.cmd, "colorscheme doom-one")
+            end
           end
         end, 30)
         return false
