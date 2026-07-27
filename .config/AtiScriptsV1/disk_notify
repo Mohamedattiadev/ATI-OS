@@ -1,6 +1,23 @@
 #!/bin/bash
 
-total=$(df -h / | awk "NR==2 {print \"💽  TOTAL: \" \$2 \"\n       USED: \" \$3 \"\n       FREE: \" \$4\"\"}")
+root_src=$(df --output=source / 2>/dev/null | tail -1)
+home_src=$(df --output=source /home 2>/dev/null | tail -1)
+
+fmt_section() {
+  local label="$1" path="$2"
+  df -h "$path" 2>/dev/null | awk -v label="$label" \
+    'NR==2 {print "💽  " label "\n       TOTAL: " $2 "\n       USED:  " $3 "\n       FREE:  " $4}'
+}
+
+if [[ -n "$home_src" && "$home_src" != "$root_src" ]]; then
+  # Separate partitions -- show both.
+  body="$(fmt_section "/" /)
+
+$(fmt_section "/home" /home)"
+else
+  body="$(fmt_section "/" /)"
+fi
+
 notify-send -u normal -i drive-harddisk -a success -t 0 "" "💾 DISK USAGE
 
-$total"
+$body"

@@ -315,6 +315,69 @@ gen_eww_scss() {
 EOF
 }
 
+gen_btop_theme() {
+  # btop has never been themed by this setup (pure defaults) -- generate
+  # a proper .theme file from the current 9-slot palette and point
+  # btop.conf at it. Applies on btop's next launch (no signal-based
+  # live-reload API to force an already-running instance to pick it up).
+  local bg="$1" bg_alt="$2" fg="$3" red="$4" green="$5" yellow="$6" blue="$7" purple="$8" cyan="$9"
+  local dir="$HOME/.config/btop/themes"
+  local theme_file="$dir/wal-theme.theme"
+  local conf="$HOME/.config/btop/btop.conf"
+  mkdir -p "$dir"
+  python3 - "$theme_file" "$bg" "$bg_alt" "$fg" "$red" "$green" "$yellow" "$blue" "$purple" "$cyan" <<'PYEOF' 2>/dev/null || true
+import sys, colorsys
+outp, bg, bg_alt, fg, red, green, yellow, blue, purple, cyan = sys.argv[1:11]
+
+def hex_to_hls(hx):
+    hx = hx.lstrip('#')
+    r, g, b = int(hx[0:2], 16) / 255, int(hx[2:4], 16) / 255, int(hx[4:6], 16) / 255
+    return colorsys.rgb_to_hls(r, g, b)
+
+def hls_to_hex(h, l, s):
+    r, g, b = colorsys.hls_to_rgb(h, l, s)
+    return '#{:02x}{:02x}{:02x}'.format(round(r * 255), round(g * 255), round(b * 255))
+
+def gradient(hexcolor, lights=(0.75, 0.55, 0.40)):
+    h, l, s = hex_to_hls(hexcolor)
+    s = max(s, 0.55)
+    return [hls_to_hex(h, lv, s) for lv in lights]
+
+temp, cpug, freeg = gradient(red), gradient(purple), gradient(blue)
+cacheg, availg, usedg = gradient(cyan), gradient(yellow), gradient(green)
+downg, upg = gradient(blue), gradient(purple)
+procg = gradient(green, (0.60, 0.45, 0.30))
+
+lines = [
+    f'theme[main_bg]="{bg}"', f'theme[main_fg]="{fg}"', f'theme[title]="{fg}"',
+    f'theme[hi_fg]="{blue}"', f'theme[selected_bg]="{purple}"', f'theme[selected_fg]="{bg}"',
+    f'theme[inactive_fg]="{bg_alt}"', f'theme[graph_text]="{fg}"', f'theme[meter_bg]="{bg_alt}"',
+    f'theme[proc_misc]="{purple}"', f'theme[cpu_box]="{blue}"', f'theme[mem_box]="{green}"',
+    f'theme[net_box]="{red}"', f'theme[proc_box]="{cyan}"', f'theme[div_line]="{bg_alt}"',
+    f'theme[temp_start]="{temp[0]}"', f'theme[temp_mid]="{temp[1]}"', f'theme[temp_end]="{temp[2]}"',
+    f'theme[cpu_start]="{cpug[0]}"', f'theme[cpu_mid]="{cpug[1]}"', f'theme[cpu_end]="{cpug[2]}"',
+    f'theme[free_start]="{freeg[0]}"', f'theme[free_mid]="{freeg[1]}"', f'theme[free_end]="{freeg[2]}"',
+    f'theme[cached_start]="{cacheg[0]}"', f'theme[cached_mid]="{cacheg[1]}"', f'theme[cached_end]="{cacheg[2]}"',
+    f'theme[available_start]="{availg[0]}"', f'theme[available_mid]="{availg[1]}"', f'theme[available_end]="{availg[2]}"',
+    f'theme[used_start]="{usedg[0]}"', f'theme[used_mid]="{usedg[1]}"', f'theme[used_end]="{usedg[2]}"',
+    f'theme[download_start]="{downg[0]}"', f'theme[download_mid]="{downg[1]}"', f'theme[download_end]="{downg[2]}"',
+    f'theme[upload_start]="{upg[0]}"', f'theme[upload_mid]="{upg[1]}"', f'theme[upload_end]="{upg[2]}"',
+    f'theme[process_start]="{procg[0]}"', f'theme[process_mid]="{procg[1]}"', f'theme[process_end]="{procg[2]}"',
+]
+with open(outp, 'w') as f:
+    f.write('\n'.join(lines) + '\n')
+PYEOF
+  if [[ -f "$conf" ]]; then
+    if grep -q '^color_theme' "$conf"; then
+      sed -i 's|^color_theme.*|color_theme = "wal-theme"|' "$conf"
+    else
+      printf '\ncolor_theme = "wal-theme"\n' >>"$conf"
+    fi
+  else
+    printf 'color_theme = "wal-theme"\ntheme_background = true\n' >"$conf"
+  fi
+}
+
 dump_palette_json() {
   # Dump current 9-slot palette to ~/.cache/qtile/current_palette.json so
   # nvim (+ any other consumer) can render themes for modes that don't
@@ -341,6 +404,7 @@ EOF
 gen_all_theme_css() {
   gen_qb_css "$@"
   gen_eww_scss "$@"
+  gen_btop_theme "$@"
   dump_palette_json "$@"
 }
 
@@ -948,4 +1012,4 @@ PYPURGE
   done
 fi
 
-notify-send "theme-apply" "Theme -> $MODE"
+notify-send "theme-apply" "Theme -> $MODE" 2>/dev/null || true

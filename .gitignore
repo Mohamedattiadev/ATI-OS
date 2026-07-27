@@ -36,3 +36,7 @@ brave-profiles
 
 # homepage.html regenerated per palette from homepage.html.tmpl
 .config/qutebrowser/html/homepage.html
+
+# dcli's own per-machine install-state tracking (installed.yaml,
+# dotfiles-state.yaml, config-backups) -- not portable across hosts.
+.config/arch-config/state/

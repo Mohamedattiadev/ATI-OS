@@ -37,7 +37,7 @@ def toggle_or_spawn_sum(qtile, myTerm, sum_file):
                 return
 
     # 🚀 CASE 3: not running
-    qtile.cmd_spawn(
+    qtile.spawn(
         f"{myTerm} --title sum.md -e nvim -c':set nonumber norelativenumber' {sum_file}"
     )
 

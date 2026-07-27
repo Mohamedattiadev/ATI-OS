@@ -858,7 +858,7 @@ TOOLTIP_BY_NAME = {
     "systray_widgetbox": "System tray",
     "w_cpu": "CPU load · click → mission-center",
     "w_mem": "RAM used · click → btop",
-    "w_disk": "Disk free · click → notify",
+    "w_disk": "Disk free (/ + /home) · click → notify",
     "w_volume": "Volume · scroll to change",
     "w_battery": "Battery · click → status",
     "w_lang": "Keyboard layout",
@@ -1220,10 +1220,10 @@ def toggle_onboarding(qtile):
         return
 
     if w.box_is_open:
-        qtile.cmd_spawn("eww close onboarding-welcome")
+        qtile.spawn("eww close onboarding-welcome")
         w.toggle()
     else:
-        qtile.cmd_spawn("eww open onboarding-welcome")
+        qtile.spawn("eww open onboarding-welcome")
         w.toggle()
 
 
@@ -1241,7 +1241,7 @@ def set_icon_temporarily(qtile, icon, cmd):
     w.update(icon)
 
     # spawn app
-    qtile.cmd_spawn(cmd)
+    qtile.spawn(cmd)
 
     # qtile.call_later avoids spawning a thread per keypress.
     qtile.call_later(0.3, lambda: w.update(ARCH_ICON_MAIN))
@@ -1352,6 +1352,20 @@ def close_wallpaper_mode(qtile):
     w = qtile.widgets_map.get("wallpaper_toggle")
     if w and w.box_is_open:
         w.toggle()
+
+
+def toggle_wallpaper_picker(qtile):
+    # The chip's icon (✖/) already tracks open/close state via the
+    # enter_chord/leave_chord hooks below -- but the click handler itself
+    # used to ignore that state and always re-fire the "open" keypress
+    # sequence, so clicking while already open didn't close it.
+    w = qtile.widgets_map.get("wallpaper_toggle")
+    if w and w.box_is_open:
+        close_wallpaper_mode(qtile)
+    else:
+        SmartWidgetBox.close_all()
+        qtile.simulate_keypress([mod], "p")
+        qtile.simulate_keypress([], "b")
 
 
 # ----------------------------------------------------------------
@@ -1770,7 +1784,7 @@ def normal_user_bar():
             show_percentage=True,
             show_short_text=False,
             mouse_callbacks={
-                "Button1": lambda: qtile.cmd_spawn(
+                "Button1": lambda: qtile.spawn(
                     '/bin/sh -c \'notify-send "Battery Status" "$(acpi | cut -d "," -f 2-)"\''
                 )
             },
@@ -1789,7 +1803,7 @@ def normal_user_bar():
             padding=4,
             foreground=colors[5],
             mouse_callbacks={
-                "Button1": lambda: qtile.cmd_spawn(
+                "Button1": lambda: qtile.spawn(
                     "env GTK_THEME=Adwaita:dark missioncenter"
                 )
             },
@@ -1809,7 +1823,7 @@ def normal_user_bar():
             padding=4,
             foreground=colors[8],
             mouse_callbacks={
-                "Button1": lambda: qtile.cmd_spawn(myFullScreenTerm + " -e btop")
+                "Button1": lambda: qtile.spawn(myFullScreenTerm + " -e btop")
             },
         ),
         widget.TextBox(
@@ -2026,7 +2040,7 @@ def right_side_widgets():
                     padding=11,
                     foreground=colors[5],
                     mouse_callbacks={
-                        "Button1": lambda: qtile.cmd_spawn(
+                        "Button1": lambda: qtile.spawn(
                             "env GTK_THEME=Adwaita:dark missioncenter"
                         )
                     },
@@ -2041,7 +2055,7 @@ def right_side_widgets():
                     padding=11,
                     foreground=colors[8],
                     mouse_callbacks={
-                        "Button1": lambda: qtile.cmd_spawn(
+                        "Button1": lambda: qtile.spawn(
                             myFullScreenTerm + " -e btop"
                         )
                     },
@@ -2062,13 +2076,7 @@ def right_side_widgets():
             start_opened=False,
             foreground=colors[8],
             mouse_callbacks={
-                "Button1": lazy.function(
-                    lambda q: (
-                        SmartWidgetBox.close_all(),
-                        q.simulate_keypress([mod], "p"),
-                        q.simulate_keypress([], "b"),
-                    )
-                ),
+                "Button1": lazy.function(toggle_wallpaper_picker),
             },
         ),
         chip(
@@ -2093,17 +2101,16 @@ def right_side_widgets():
                         ),
                     },
                 ),
-                # Disk
+                # Disk — root + home free space in one chip (separate
+                # partitions on this machine; root alone is misleading
+                # since it's the much smaller one).
                 chip(
-                    ewidget.DF,
+                    ewidget.GenPollText,
                     name="w_disk",
+                    func=_disk_combined_text,
                     update_interval=60,
-                    partition="/",
-                    format="{uf}{m}",
-                    fmt="🖴  {}",
                     fontsize=10,
                     padding=11,
-                    visible_on_warn=False,
                     foreground=colors[1],
                     mouse_callbacks={"Button1": lambda: qtile.spawn("disk_notify")},
                 ),
@@ -2134,7 +2141,7 @@ def right_side_widgets():
             show_percentage=True,
             show_short_text=False,
             mouse_callbacks={
-                "Button1": lambda: qtile.cmd_spawn(
+                "Button1": lambda: qtile.spawn(
                     '/bin/sh -c \'notify-send "Battery Status" "$(acpi | cut -d "," -f 2-)"\''
                 )
             },
@@ -2467,6 +2474,31 @@ def _top_dirs_text():
             short = "~/" + path
         out.append(f" {size:>7}  {short}")
     return "\n".join(out[:5])
+
+
+def _disk_combined_text():
+    import os
+
+    def stat_info(path):
+        try:
+            st_dev = os.stat(path).st_dev
+            vfs = os.statvfs(path)
+            return st_dev, vfs.f_bavail * vfs.f_frsize / (1024**3)
+        except Exception:
+            return None, None
+
+    root_dev, root_free = stat_info("/")
+    home_dev, home_free = stat_info("/home")
+
+    if root_free is None and home_free is None:
+        return "🖴 N/A"
+    if home_dev is None or root_dev == home_dev:
+        # /home isn't a separate partition -- just show root.
+        return f"🖴 /{root_free:.1f}G" if root_free is not None else "🖴 N/A"
+    # Separated partitions -- show whichever has more free space.
+    if (root_free or 0) >= (home_free or 0):
+        return f"🖴 /{root_free:.1f}G"
+    return f"🖴  {home_free:.1f}G"
 
 
 def _disk_parts_text():

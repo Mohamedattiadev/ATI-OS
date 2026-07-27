@@ -55,7 +55,7 @@ main() {
     # Grepping with awk here, /+/ means return only lines with +, ie grep
     # On that note, this could probably be written more efficiently in one awk
     # command as opposed to two however I am not an awk guru soo...
-    _displays=$(xrandr --listactivemonitors | awk '/+/ {print $4, $3}' | awk -F'[x/+* ]' '{print $1,$2"x"$4"+"$6"+"$7}')
+    _displays=$(xrandr --listactivemonitors | awk '/\+/ {print $4, $3}' | awk -F'[x/+* ]' '{print $1,$2"x"$4"+"$6"+"$7}')
 
     # Add monitor data
 

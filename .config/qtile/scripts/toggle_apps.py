@@ -87,7 +87,7 @@ def toggle_telegram(qtile):
 
     # Not open → spawn it
     qtile.groups_map[telegram_group].toscreen()
-    qtile.cmd_spawn("Telegram")
+    qtile.spawn("Telegram")
 
 
 @lazy.function
@@ -119,7 +119,7 @@ def toggle_file_manager(qtile):
 
     # Not open → spawn it
     qtile.groups_map[file_manager_group].toscreen()
-    qtile.cmd_spawn("pcmanfm")
+    qtile.spawn("pcmanfm")
 
 
 @lazy.function
@@ -157,7 +157,7 @@ def toggle_terminal(qtile):
     # Not open in group 4 → spawn it
     last_group[0] = current_group
     qtile.groups_map[terminal_group].toscreen()
-    qtile.cmd_spawn("kitty")
+    qtile.spawn("kitty")
 
 
 @lazy.function
@@ -188,7 +188,7 @@ def toggle_qutebrowser(qtile):
 
     # Not open → spawn it
     qtile.groups_map[qute_group].toscreen()
-    qtile.cmd_spawn("qutebrowser")
+    qtile.spawn("qutebrowser")
 
 
 @lazy.function
@@ -220,7 +220,7 @@ def toggle_google_chrome(qtile):
 
     # Not open → spawn it
     qtile.groups_map[google_chrome_group].toscreen()
-    qtile.cmd_spawn("google-chrome-stable")
+    qtile.spawn("google-chrome-stable")
 
 
 @lazy.function
@@ -252,7 +252,7 @@ def toggle_brave(qtile):
 
     # Not open → spawn it
     qtile.groups_map[brave_group].toscreen()
-    qtile.cmd_spawn("brave")
+    qtile.spawn("brave")
 
 
 @lazy.function
@@ -284,7 +284,7 @@ def toggle_anki(qtile):
 
     # Not open → spawn it
     qtile.groups_map[anki_group].toscreen()
-    qtile.cmd_spawn("anki")
+    qtile.spawn("anki")
 
 
 
@@ -318,7 +318,7 @@ def toggle_obsidian(qtile):
 
     # Not open → spawn it
     qtile.groups_map[obsidian_group].toscreen()
-    qtile.cmd_spawn("obsidian")
+    qtile.spawn("obsidian")
 
 
 # --- Hooks to return to previous group ---

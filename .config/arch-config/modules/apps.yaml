@@ -37,3 +37,7 @@ packages:
   - ueberzugpp
   - zed
   - kdeconnect
+  - anki
+  - google-chrome
+  - zenity          # rofi_ilovepdf file picker
+  - libreoffice-fresh   # rofi_ilovepdf doc->pdf conversion

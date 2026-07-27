@@ -55,7 +55,7 @@ main() {
 		show_error "xrandr is required but not installed"
 	fi
 
-	_displays=$(xrandr --listactivemonitors 2>/dev/null | awk '/+/ {print $4, $3}' | awk -F'[x/+* ]' '{print $1,$2"x"$4"+"$6"+"$7}') || {
+	_displays=$(xrandr --listactivemonitors 2>/dev/null | awk '/\+/ {print $4, $3}' | awk -F'[x/+* ]' '{print $1,$2"x"$4"+"$6"+"$7}') || {
 		show_error "Failed to get monitor information"
 	}
 
