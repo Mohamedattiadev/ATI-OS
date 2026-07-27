@@ -15,7 +15,7 @@ packages:
   # dcli itself + its deps
   - dcli-arch-git
   - paru
-  - yay
+  - yay-bin   # matches wizard.sh's step_yay bootstrap choice (prebuilt, no AUR-helper chicken-and-egg build) -- plain "yay" conflicts with it
   - fzf
   - timeshift
   - timeshift-autosnap

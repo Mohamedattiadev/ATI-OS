@@ -19,7 +19,7 @@ packages:
   - auto-cpufreq
   - didyoumean
   - dmscripts-git
-  - shell-color-scripts
+  - shell-color-scripts-git
   - findutils
   - shellcheck
   - udisks2
@@ -52,3 +52,4 @@ packages:
   - flatpak
   - dbus-broker
   - libnotify              # notify-send (qupdate background completion notifications)
+  - gammastep              # nightlight widget (w_nightlight) -- invisible without it

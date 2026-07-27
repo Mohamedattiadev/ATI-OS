@@ -94,12 +94,14 @@ git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
 That is it. `./install.sh` fires the wizard in unattended mode:
 
 - Auto-bootstraps `gum` via pacman (~2 s)
-- Runs all 26 modules end-to-end (system pkgs · dcli sync · dotfile
+- Runs all 27 modules end-to-end (system pkgs · dcli sync · dotfile
   stow · themes · brave/chrome policy · piper + whisper models · …)
-- One sudo prompt on entry; passwordless-sudo module removes future
-  prompts
+- Keeps `sudo` alive for the whole run (primed once, refreshed in the
+  background) so long AUR builds don't silently drop package installs
+  when the credential cache would otherwise expire mid-run
 - Any failed module auto-skips, logs to `/tmp/wizard-<id>.err`, listed
-  in final summary
+  in final summary; `dcli sync` additionally self-verifies with a
+  dry-run and retries if anything's still missing afterward
 
 ### Prefer to pick modules or preview first?
 
@@ -120,33 +122,37 @@ progress bars, and doom-emacs colored badges. On step failure it
 shows a red-bordered error tail and prompts **retry · skip · quit**
 (unless `--yes`, which auto-skips).
 
-Done. One command. Bootstrap covers:
+Done. One command. Bootstrap covers all 27 modules, in order:
 
-| Step | What                                                          |
-| ---- | ------------------------------------------------------------- |
-| 1    | Sanity checks (Arch, X11, dotfiles present)                   |
-| 2    | Bootstrap pkgs (git, stow, xorg-server, base-devel)           |
-| 3    | Build `yay` from AUR if absent                                |
-| 4    | Install `dcli-arch-git`                                       |
-| 5    | Stow dotfiles into `$HOME`                                    |
-| 6    | Sync `arch-config` host file to current username              |
-| 7    | **`dcli sync`** — installs every declared pkg + flatpak       |
-| 8    | Cargo tools (`pomodoro-tui`)                                  |
-| 9    | Install AtiScriptsV1 to `/usr/local/bin`                      |
-| 10   | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`)     |
-| 11   | Write `~/.xinitrc` (starts qtile + picom + xcape)             |
-| 12   | Write `~/.Xmodmap` (Caps hold = Alt, xcape restores tap Caps) |
-| 13   | Lid close = ignore (`systemd-logind`)                         |
-| 14   | Suppress VIPS warnings (kitty+nvim image support)             |
-| 15   | Download Piper voices (EN + DE)                               |
-| 16   | Passwordless sudo                                             |
-| 17   | Fix dotfiles ownership                                        |
-| 18   | Disable all display managers                                  |
-| 19   | Install candy-icons theme                                     |
-| 20   | Clone wallpaper collection                                    |
-| 21   | System speed tweaks (`speed_boost.sh`)                        |
-| 22   | Theme system (pywal + palette precompile + brave-flags + init)|
-| 22b  | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| # | id | What |
+| - | -- | ---- |
+| 1  | `sanity` | Sanity checks (Arch, X11, dotfiles present) |
+| 2  | `bootstrap` | Bootstrap pkgs (git, stow, xorg-server, base-devel) |
+| 3  | `yay` | Build `yay-bin` from AUR if absent |
+| 4  | `dcli` | Install `dcli-arch-git` |
+| 5  | `stow` | Stow dotfiles into `$HOME` |
+| 6  | `arch-config` | Sync `arch-config` host file to current username |
+| 7  | `dcli-sync` | **`dcli sync --force`** — installs every declared pkg (self-verifies + retries) |
+| 8  | `cargo` | Cargo tools (`rustup default stable` + `pomodoro-tui`) |
+| 9  | `ati-scripts` | Install AtiScriptsV1 to `/usr/local/bin` |
+| 10 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
+| 11 | `xinit` | Write `~/.xinitrc` (qtile + picom + xcape + tray + copyq) |
+| 12 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
+| 13 | `xmodmap` | Write `~/.Xmodmap` (Caps hold = Alt, xcape restores tap Caps) |
+| 14 | `lid` | Lid close = ignore (`systemd-logind`) |
+| 15 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
+| 16 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
+| 17 | `piper` | Download Piper voices (EN + DE) |
+| 18 | `whisper` | Download Whisper `small.en` model |
+| 19 | `passwordless-sudo` | Passwordless sudo |
+| 20 | `ownership` | Fix dotfiles ownership |
+| 21 | `disable-dm` | Disable all display managers |
+| 22 | `candy-icons` | Install candy-icons theme |
+| 23 | `wallpapers` | Clone wallpaper collection |
+| 24 | `speed` | System speed tweaks (`speed_boost.sh`) |
+| 25 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
+| 26 | `browser-flags` | brave/chrome/chromium wal theme extension flags |
+| 27 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
 
 No manual follow-up. Everything in `.config` works on first `startx`.
 

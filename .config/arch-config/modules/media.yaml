@@ -8,6 +8,7 @@ packages:
   - wireplumber
   - alsa-utils
   - libpulse
+  - playerctl      # mpris widget + media keybindings
   - gst-plugin-pipewire
   - sox
   - espeak-ng

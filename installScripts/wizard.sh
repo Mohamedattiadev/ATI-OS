@@ -38,6 +38,28 @@ _on_err() {
 }
 trap '_on_err $LINENO' ERR
 
+# ─── SUDO KEEP-ALIVE ─────────────────────────────────────────────────
+# A long run (AUR builds especially — easily 30-60+ min) can outlast
+# sudo's credential cache (~15 min default). When that happens mid-way
+# through an AUR build, the final `pacman -U` install-after-build step
+# fails silently: makepkg reports "Finished making", but the package
+# never actually lands on disk. Priming once + refreshing in the
+# background for the whole run prevents that class of silent failure
+# outright, instead of chasing it step by step.
+_SUDO_KEEPALIVE_PID=""
+_start_sudo_keepalive() {
+  (( DRY_RUN )) && return
+  sudo -v 2>/dev/null || return  # no tty to prompt on — nothing to keep alive
+  ( while true; do sleep 60; sudo -n -v 2>/dev/null || exit; done ) &
+  _SUDO_KEEPALIVE_PID=$!
+  disown
+}
+_stop_sudo_keepalive() {
+  [[ -n "$_SUDO_KEEPALIVE_PID" ]] && kill "$_SUDO_KEEPALIVE_PID" 2>/dev/null
+  return 0
+}
+trap _stop_sudo_keepalive EXIT
+
 # ─── LOG SINK ────────────────────────────────────────────────────────
 WIZ_LOGDIR="${XDG_STATE_HOME:-$HOME/.local/state}/wizard"
 mkdir -p "$WIZ_LOGDIR"
@@ -111,6 +133,9 @@ ORANGE='#da8548'   # doom orange
 WARN_C='#ecbe7b'   # doom yellow
 MUTED='#5b6268'
 FG='#bbc2cf'
+# Precomputed truecolor escape for the live spinner line — avoids
+# spawning `gum style` on every poll tick (would visibly lag the spin).
+MUTED_ANSI=$(printf '\033[38;2;%d;%d;%dm' "0x5b" "0x62" "0x68")
 BG='#282c34'
 
 # Gum uses 256-color / hex; passing hex directly is supported.
@@ -216,7 +241,8 @@ _reg xinit             ".xinitrc"            Dotfiles  "Auto-start qtile + xcape
 _reg xresources        ".Xresources"         Dotfiles  "Xcursor size 24 + Breeze theme (load via xrdb)"         "step_xresources"
 _reg xmodmap           ".Xmodmap"            Dotfiles  "Caps hold = Alt (xcape restores tap-Caps)"              "step_xmodmap"
 _reg lid               "Lid = ignore"        System    "Never sleep on lid close"                               "step_lid"
-_reg image-envs        "Image env"           Dotfiles  "Suppress VIPS warnings for kitty+nvim images"           "step_image_envs"
+_reg image-envs        "Image env"           Dotfiles  "Suppress VIPS warnings + ensure ~/tmp (fish TMPDIR)"    "step_image_envs"
+_reg flatpak           "Flatpak (legacy)"    Apps      "Uninstall-only: qdrop replaced flathub/collector"       "step_flatpak"
 _reg piper             "Piper voices"        Media     "EN + DE TTS voices (~60MB)"                             "step_piper"
 _reg whisper           "Whisper model"       Media     "small.en STT model (~500MB)"                            "step_whisper"
 _reg passwordless-sudo "Passwordless sudo"   System    "Add user to NOPASSWD sudoers"                           "step_nopasswd"
@@ -245,13 +271,42 @@ step_bootstrap() {
   retry_net 3 5 sudo pacman -Syu --needed --noconfirm base-devel git stow xorg-server xorg-xinit curl wget unzip
 }
 step_yay()          { command -v yay >/dev/null && { _OK "yay present"; return; }
-                      run "cd /tmp && git clone https://aur.archlinux.org/yay-bin.git yay-bin && cd yay-bin && makepkg -si --noconfirm"; }
+                      run "rm -rf /tmp/yay-bin && cd /tmp && git clone https://aur.archlinux.org/yay-bin.git yay-bin && cd yay-bin && makepkg -si --noconfirm"; }
 step_dcli()         { command -v dcli >/dev/null && { _OK "dcli present"; return; }
                       run "yay -S --noconfirm dcli-arch-git"; }
 step_stow()         { run "$DOTFILES_DIR/installScripts/stow_script.sh"; }
 step_arch_config()  { run "$DOTFILES_DIR/installScripts/arch-config.sh"; }
-step_dcli_sync()    { run "cd $DOTFILES_DIR && dcli sync && sudo mandb && fc-cache -fv"; }
-step_cargo()        { command -v cargo >/dev/null && run "cargo install pomodoro-tui" || _WARN "cargo missing, skip"; }
+step_dcli_sync() {
+  run "cd $DOTFILES_DIR && dcli sync --force && { command -v mandb >/dev/null && sudo mandb || true; } && fc-cache -fv"
+  (( DRY_RUN )) && return
+  # dcli can report the sync step as done even when an individual AUR
+  # package's post-build install silently failed (e.g. a sudo hiccup
+  # mid-build, long before the sudo-keepalive fix existed). Verify
+  # with a dry-run and self-heal with bounded retries before moving on
+  # — cheap insurance, and turns a silent gap into either a real fix
+  # or a visible failure instead of a false "✔ ok".
+  local pending attempt=0
+  while (( attempt < 2 )); do
+    pending=$(cd "$DOTFILES_DIR" && dcli sync --dry-run 2>/dev/null | grep -oP 'Packages to install: \K[0-9]+' | head -1)
+    [[ -z "$pending" || "$pending" == "0" ]] && return 0
+    attempt=$((attempt+1))
+    echo "dcli sync left $pending package(s) uninstalled — retry $attempt/2"
+    ( cd "$DOTFILES_DIR" && dcli sync --force )
+  done
+  pending=$(cd "$DOTFILES_DIR" && dcli sync --dry-run 2>/dev/null | grep -oP 'Packages to install: \K[0-9]+' | head -1)
+  if [[ -n "$pending" && "$pending" != "0" ]]; then
+    echo "dcli sync still has $pending package(s) uninstalled after retries — run 'dcli sync --force' manually later"
+    return 1
+  fi
+}
+step_cargo() {
+  # rustup installs the stable toolchain but doesn't activate it as the
+  # default -- every cargo/rustup invocation (this step, and any AUR
+  # package built with cargo, e.g. paru/didyoumean) fails with "rustup
+  # could not choose a version of cargo to run" until this is set once.
+  command -v rustup >/dev/null && run "rustup default stable"
+  command -v cargo >/dev/null && run "cargo install pomodoro-tui" || _WARN "cargo missing, skip"
+}
 step_ati_scripts()  { run "cd $DOTFILES_DIR/.config/AtiScriptsV1 && ./install.sh"; }
 step_touchpad()     { run "sudo tee /etc/X11/xorg.conf.d/30-touchpad.conf > /dev/null << 'EOF'
 Section \"InputClass\"
@@ -297,6 +352,13 @@ if command -v picom >/dev/null 2>&1; then
   pkill -x picom 2>/dev/null
   picom &
 fi
+# Tray icons -- Systray widget is passive, needs something to register.
+command -v blueman-applet >/dev/null 2>&1 && blueman-applet &
+command -v nm-applet >/dev/null 2>&1 && nm-applet &
+# copyq_rofi needs copyq's background server running to have any
+# clipboard history to query -- --start-server avoids popping its
+# window open on every login.
+command -v copyq >/dev/null 2>&1 && copyq --start-server &
 exec qtile start
 XINIT_EOF
   chmod +x "$xrc"
@@ -336,12 +398,20 @@ step_xmodmap() {
 ! Caps physical key acts as Alt_L; xcape restores tap-Caps behavior
 clear lock
 clear mod1
-keycode 66 = Alt_L
+! Caps_Lock kept as an inert level-2 symbol (Lock modifier is cleared
+! above, so it never actually toggles) purely so xcape has a real
+! keycode to reference -- xcape needs the target keysym to exist
+! *somewhere* in the current keymap or it refuses to start entirely.
+keycode 66 = Alt_L Caps_Lock Alt_L Caps_Lock
 add mod1 = Alt_L Alt_R
 XMM_EOF
 }
 step_lid()          { run "sudo sed -i 's/^#\\?HandleLidSwitch=.*/HandleLidSwitch=ignore/' /etc/systemd/logind.conf && sudo systemctl restart systemd-logind"; }
-step_image_envs()   { run "grep -qx 'set -x VIPS_WARNING 0' $HOME/.profile 2>/dev/null || echo 'set -x VIPS_WARNING 0' >> $HOME/.profile"; }
+step_image_envs()   { run "grep -qx 'set -x VIPS_WARNING 0' $HOME/.profile 2>/dev/null || echo 'set -x VIPS_WARNING 0' >> $HOME/.profile"
+                      # fish_variables (versioned) pins TMPDIR to ~/tmp for psub/mktemp
+                      # (starship init, pyenv init) -- must exist or fish startup breaks.
+                      run "mkdir -p $HOME/tmp"; }
+step_flatpak()      { _OK "Nothing to install — flatpak/collector replaced by qdrop"; }
 step_piper() {
   local dir="$HOME/.config/piper-voices"
   run "mkdir -p $dir"
@@ -374,9 +444,9 @@ step_nopasswd()     { run "echo \"$(id -un) ALL=(ALL) NOPASSWD: ALL\" | sudo tee
 step_ownership()    { run "sudo chown -R $(id -un):$(id -un) $DOTFILES_DIR"; }
 step_disable_dm()   { for dm in lightdm gdm sddm lxdm; do run "sudo systemctl disable $dm.service 2>/dev/null || true"; done; }
 step_candy()        { [[ -d /usr/share/icons/candy-icons ]] && { _OK "candy-icons present"; return; }
-                      run "cd /tmp && wget -q https://github.com/EliverLara/candy-icons/archive/refs/heads/master.zip && unzip -q master.zip && sudo mv candy-icons-master /usr/share/icons/candy-icons"; }
-step_wallpapers()   { [[ -d $HOME/Pictures/Wallpapers ]] && { _OK "wallpapers present"; return; }
-                      run "mkdir -p $HOME/Pictures && git clone https://github.com/w3dg/wallpapers.git $HOME/Pictures/Wallpapers"; }
+                      run "cd /tmp && rm -rf master.zip candy-icons-master && wget -q https://github.com/EliverLara/candy-icons/archive/refs/heads/master.zip && unzip -qo master.zip && sudo mv candy-icons-master /usr/share/icons/candy-icons"; }
+step_wallpapers()   { [[ -d $HOME/Pictures/Wallpapers/.git ]] && { _OK "wallpapers present"; return; }
+                      run "rm -rf $HOME/Pictures/Wallpapers && mkdir -p $HOME/Pictures && git clone https://github.com/w3dg/wallpapers.git $HOME/Pictures/Wallpapers"; }
 step_speed()        { run "$DOTFILES_DIR/installScripts/speed_boost.sh"; }
 step_themes() {
   run "sudo pacman -S --needed --noconfirm python-pywal python-pillow papirus-icon-theme jq"
@@ -393,7 +463,7 @@ step_themes() {
   if [[ ! -f "$HOME/.cache/wall" ]]; then
     local first
     first=$(find "$HOME/Pictures/Wallpapers" -maxdepth 2 -type f \
-      \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null | sort | head -1)
+      \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null | sort | head -1) || true
     [[ -n "$first" ]] && run "mkdir -p $HOME/.cache && ln -sfn $first $HOME/.cache/wall"
   fi
   run "wal-precompile"
@@ -717,14 +787,32 @@ _run_module() {
   : >"$logf"; : >"$errf"
   local cmd
   if (( UNINSTALL )); then cmd="${UMOD_CMD[$id]}"; else cmd="${MOD_CMD[$id]}"; fi
-  ( set +e; "$cmd" ) >"$logf" 2>"$errf"
+  # sudo writes its password prompt straight to the tty, bypassing our
+  # log capture — if it fires mid-spinner, the \r redraw below erases
+  # it almost as fast as it appears. Prime credentials up front with a
+  # clean, uncontested prompt before the spinner starts. Cheap/instant
+  # no-op if already cached; harmless no-op (no hang) if there's no
+  # tty to prompt on at all.
+  sudo -v 2>/dev/null || true
+  ( set +e; "$cmd" >"$logf" 2>"$errf" ) &
+  local pid=$! spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' i=0 last=""
+  while kill -0 "$pid" 2>/dev/null; do
+    last="$(tail -n1 "$logf" 2>/dev/null)"
+    [[ -z "$last" ]] && last="$(tail -n1 "$errf" 2>/dev/null)"
+    printf '\r  %s%s %.80s\033[0m\033[K' "$MUTED_ANSI" "${spin:i++%${#spin}:1}" "$last"
+    sleep 0.12
+  done
+  printf '\r\033[K'
+  local rc=0
+  wait "$pid" || rc=$?
+  return "$rc"
 }
 
 _show_error_tail() {
   local id="$1" errf="/tmp/wizard-$id.err" logf="/tmp/wizard-$id.log"
   local tail_content
-  tail_content=$(tail -5 "$errf" 2>/dev/null | grep -v '^\s*$' | head -5)
-  [[ -z "$tail_content" ]] && tail_content=$(tail -5 "$logf" 2>/dev/null | grep -v '^\s*$' | head -5)
+  tail_content=$(tail -5 "$errf" 2>/dev/null | grep -v '^\s*$' | head -5) || true
+  [[ -z "$tail_content" ]] && { tail_content=$(tail -5 "$logf" 2>/dev/null | grep -v '^\s*$' | head -5) || true; }
   [[ -z "$tail_content" ]] && tail_content="(no output captured — check $errf)"
   gum style --border rounded --border-foreground "$URGENT" \
     --padding "0 2" --margin "0 4" --foreground "$URGENT" \
@@ -750,7 +838,7 @@ page_execute() {
       # every command that would execute — real audit trail.
       local cmd
       if (( UNINSTALL )); then cmd="${UMOD_CMD[$id]}"; else cmd="${MOD_CMD[$id]}"; fi
-      "$cmd" 2>&1 | sed 's/^/    /'
+      "$cmd" 2>&1 | sed 's/^/    /' || true
       status_line="$(gum style --foreground "$OK_C" '   ✔ preview ok')"
       ok=$((ok+1))
     else
@@ -839,6 +927,7 @@ main() {
   page_welcome
   if (( ! DRY_RUN )); then
     preflight
+    _start_sudo_keepalive || true
   fi
   if (( ASSUME_YES )); then
     PICKED_IDS=("${MOD_ORDER[@]}")
