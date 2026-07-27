@@ -76,6 +76,7 @@ pamac-tray-icon-plasma & # Update notifier
   adhkar &
   battery-events &
   pgrep -f 'scripts/qdrop.py$' >/dev/null || python3 ~/.config/qtile/scripts/qdrop.py &
+  pgrep -f 'scripts/qupdate.py$' >/dev/null || python3 ~/.config/qtile/scripts/qupdate.py --daemon &
   pgrep -f qdrop_watch.py >/dev/null || python3 ~/.config/qtile/scripts/qdrop_watch.py &
   # ~/.config/qtile/scripts/watch_todo_conflicts.sh &
 ) &

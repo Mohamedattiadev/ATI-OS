@@ -51,3 +51,4 @@ packages:
   - papirus-icon-theme
   - flatpak
   - dbus-broker
+  - libnotify              # notify-send (qupdate background completion notifications)

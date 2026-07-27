@@ -346,9 +346,42 @@ Palette reload auto-triggers via mtime poll on `colors.json`.
 
 ---
 
-## 10. Videos
+## 10. qupdate — pending updates + install picker
 
-### 10.1 Main Videos (System Overview)
+Click the CheckUpdates chip in the top bar. Floating GTK3 daemon with two tabs:
+
+**Updates tab**
+- Lists pending pacman + AUR packages (parallel `paru -Qu` + `paru -Qua`).
+- Cache-first render (`~/.cache/qupdate.json`) → instant open, revalidation
+  runs in background thread.
+- Per-package checkbox + `PKG`/`AUR` badge + `oldver → newver`.
+- Refresh / All / None / filter.
+- Footer: `Update selected` (paru -S --needed) or `Full upgrade` via
+  the tool combo — defaults to **`dcli sync`** so timeshift snapshots
+  + arch-config module state stay in sync.
+- `Run in background` checkbox → runs without terminal, notify-send on
+  success/failure, log at `/tmp/qupdate-$UID-run.log`.
+
+**Install tab**
+- Search official repos (`pacman -Ss`) + AUR (`paru -Ssa`) with 350ms
+  debounce. Repo used for common queries so paru's "too many results"
+  cap doesn't apply. Deduped, sorted: exact match → prefix → substring
+  → repo before AUR → not-installed first → shortest name.
+- Row shows name + badge + description; `installed` marker when already present.
+- `Install selected` runs `paru -S --needed <pkgs>` (terminal or bg).
+
+**Shared**
+- Socket at `/tmp/qupdate-$UID.sock`. CLI:
+  `qupdate.py --show|--hide|--toggle|--refresh|--status|--daemon`.
+- Wal-palette themed (reads `~/.cache/qtile/current_palette.json`, polls
+  mtime every 3s → auto-restyle on theme swap).
+- Autostarted hidden at login. Widget Button1 sends `--toggle`.
+
+---
+
+## 11. Videos
+
+### 11.1 Main Videos (System Overview)
 
 https://github.com/user-attachments/assets/aaec7215-c595-4ba3-bc65-a355b11edf05
 
@@ -356,7 +389,7 @@ https://github.com/user-attachments/assets/a7993cce-e04e-4168-9b32-b914d76539be
 
 ---
 
-### 10.2 Feature Demonstrations
+### 11.2 Feature Demonstrations
 
 https://github.com/user-attachments/assets/6990186e-336d-48d4-8330-7c8ffd0f0a81
 
@@ -371,7 +404,7 @@ https://github.com/user-attachments/assets/0189c230-a0df-4d8f-9687-ca8e5c00ed4a
 
 ---
 
-## 11. Modes
+## 12. Modes
 
 ### Window Manager Modes
 

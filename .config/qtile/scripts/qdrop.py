@@ -49,13 +49,14 @@ UID = os.getuid()
 STATE_FILE = Path.home() / ".cache" / "qdrop.json"
 LOCK_FILE = Path(f"/tmp/qdrop-{UID}.lock")
 SOCK_PATH = Path(f"/tmp/qdrop-{UID}.sock")
+QT_PALETTE = Path.home() / ".cache" / "qtile" / "current_palette.json"
 WAL_COLORS = Path.home() / ".cache" / "wal" / "colors.json"
 
 THUMB = 48
 AUTO_HIDE_MS = 8000
-REVEAL_MS = 220
-WIN_W = 520
-WIN_H = 340
+REVEAL_MS = 150
+WIN_W = 440
+WIN_H = 320
 
 IMG_EXT = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".tiff"}
 DOC_EXT = {".pdf", ".doc", ".docx", ".odt", ".rtf"}
@@ -120,7 +121,7 @@ window#qdrop {{ background: transparent; }}
     background: {bg_alpha};
     border: 1px solid {border};
     border-radius: 12px;
-    min-width: 520px;
+    min-width: 440px;
 }}
 #qdrop-header {{
     padding: 8px 12px;
@@ -140,13 +141,24 @@ window#qdrop {{ background: transparent; }}
 button {{
     background: {btn_bg};
     color: {fg};
-    border: none;
-    padding: 5px 10px;
+    border: 1px solid transparent;
+    padding: 4px 10px;
     border-radius: 6px;
     font-size: 11px;
     margin-left: 6px;
 }}
-button:hover {{ background: {btn_hover}; }}
+button:hover {{
+    background: {hover_bg};
+    color: {fg};
+    border-color: {accent};
+}}
+button:disabled, button:disabled:hover {{
+    opacity: 0.35;
+    background: {btn_bg};
+    color: {muted};
+    border-color: transparent;
+}}
+button:disabled image {{ opacity: 0.35; }}
 flowbox {{ padding: 8px; }}
 flowboxchild {{
     padding: 6px;
@@ -187,6 +199,14 @@ def _hex_rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r}, {g}, {b}, {alpha})"
 
 
+def _mix_hex(h1: str, h2: str, t: float) -> str:
+    h1 = h1.lstrip("#"); h2 = h2.lstrip("#")
+    r = int(int(h1[0:2],16) * (1-t) + int(h2[0:2],16) * t)
+    g = int(int(h1[2:4],16) * (1-t) + int(h2[2:4],16) * t)
+    b = int(int(h1[4:6],16) * (1-t) + int(h2[4:6],16) * t)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 def load_palette() -> dict:
     default = {
         "bg": "#1e1e2e", "header_bg": "#181825",
@@ -194,21 +214,34 @@ def load_palette() -> dict:
         "border": "#45475a", "btn_bg": "#313244", "btn_hover": "#45475a",
         "accent": "#89b4fa", "sel_fg": "#ffffff",
     }
+    # Prefer semantic palette written by theme-apply. Falls back to wal.
+    try:
+        d = json.loads(QT_PALETTE.read_text())
+        bg = d["bg"]; fg = d["fg"]
+        bg_alt = d.get("bg_alt", _mix_hex(bg, fg, 0.08))
+        accent = d.get("blue", d.get("green", default["accent"]))
+        muted = _mix_hex(bg, fg, 0.35)
+        return {
+            "bg": bg, "header_bg": bg_alt, "fg": fg,
+            "muted": muted, "border": muted,
+            "btn_bg": _mix_hex(bg, fg, 0.15),
+            "btn_hover": accent,
+            "accent": accent, "sel_fg": fg,
+        }
+    except Exception:
+        pass
     try:
         data = json.loads(WAL_COLORS.read_text())
-        sp = data.get("special", {})
-        cols = data.get("colors", {})
+        sp = data.get("special", {}); cols = data.get("colors", {})
         bg = sp.get("background", default["bg"])
         fg = sp.get("foreground", default["fg"])
         accent = cols.get("color4", cols.get("color6", default["accent"]))
-        muted = cols.get("color8", default["muted"])
-        header_bg = muted  # slightly lighter than bg
-        border = muted
+        muted = _mix_hex(bg, fg, 0.35)
         return {
-            "bg": bg, "header_bg": header_bg,
-            "fg": fg, "muted": muted,
-            "border": border,
-            "btn_bg": muted, "btn_hover": cols.get("color7", default["btn_hover"]),
+            "bg": bg, "header_bg": _mix_hex(bg, fg, 0.08), "fg": fg,
+            "muted": muted, "border": muted,
+            "btn_bg": _mix_hex(bg, fg, 0.15),
+            "btn_hover": accent,
             "accent": accent, "sel_fg": fg,
         }
     except Exception:
@@ -222,6 +255,7 @@ def build_css() -> bytes:
     subs["header_bg"] = _hex_rgba(p["header_bg"], 0.9)
     subs["sel_bg"] = _hex_rgba(p["accent"], 0.20)
     subs["sel_bg_hover"] = _hex_rgba(p["accent"], 0.30)
+    subs["hover_bg"] = _hex_rgba(p["accent"], 0.30)
     return CSS_TEMPLATE.format(**subs).encode()
 
 # ═══════════════════════════════════════════════════════════════════
@@ -614,6 +648,17 @@ class Dropzone(Gtk.Window):
             self.set_visual(visual)
         self.set_app_paintable(True)
 
+        # Lock width regardless of content; height stays flexible for slide anim.
+        geo = Gdk.Geometry()
+        geo.min_width = WIN_W
+        geo.max_width = WIN_W
+        geo.min_height = 1
+        geo.max_height = 4096
+        self.set_geometry_hints(
+            None, geo,
+            Gdk.WindowHints.MIN_SIZE | Gdk.WindowHints.MAX_SIZE,
+        )
+
         self.revealer = Gtk.Revealer()
         self.revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
         self.revealer.set_transition_duration(REVEAL_MS)
@@ -622,6 +667,7 @@ class Dropzone(Gtk.Window):
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         root.set_name("qdrop-root")
+        root.set_size_request(WIN_W, -1)
         self.revealer.add(root)
 
         hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -632,7 +678,10 @@ class Dropzone(Gtk.Window):
         hdr.pack_start(title, False, False, 0)
         self.stats_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
         self.stats_box.set_name("qdrop-stats")
-        hdr.pack_start(self.stats_box, True, True, 0)
+        self.stats_box.set_size_request(130, -1)
+        hdr.pack_start(self.stats_box, False, False, 0)
+        # spacer between stats and buttons — absorbs slack instead of stretching stats
+        hdr.pack_start(Gtk.Box(), True, True, 0)
 
         def make_btn(icon_name: str, tip: str, cb, label: str | None = None) -> Gtk.Button:
             b = Gtk.Button()
@@ -656,13 +705,13 @@ class Dropzone(Gtk.Window):
 
         self.clear_btn = make_btn(
             "user-trash-symbolic", "Clear all (Ctrl+L)",
-            lambda *_: self._confirm_clear(), label="Clear",
+            lambda *_: self._confirm_clear(),
         )
         hdr.pack_end(self.clear_btn, False, False, 0)
 
         self.export_btn = make_btn(
             "package-x-generic-symbolic", "Export selection as zip",
-            lambda *_: self._export_selection(), label="Export",
+            lambda *_: self._export_selection(),
         )
         self.export_btn.set_sensitive(False)
         hdr.pack_end(self.export_btn, False, False, 0)
@@ -674,8 +723,7 @@ class Dropzone(Gtk.Window):
                                          Gtk.IconSize.SMALL_TOOLBAR),
             False, False, 0,
         )
-        self.sort_lbl = Gtk.Label(label="Date")
-        sbox.pack_start(self.sort_lbl, False, False, 0)
+        self.sort_lbl = Gtk.Label(label="")  # hidden; sort mode reflected via tooltip
         sort_btn.add(sbox)
         sort_btn.set_relief(Gtk.ReliefStyle.NONE)
         sort_btn.set_tooltip_text("Sort by")
@@ -788,24 +836,27 @@ class Dropzone(Gtk.Window):
         self._search_shown = False
         self._suspend_hide = 0  # count of active modals/menus
 
-        self._wal_mtime = 0.0
+        self._palette_mtime = 0.0
         self._apply_css()
         try:
-            self._wal_mtime = WAL_COLORS.stat().st_mtime
+            self._palette_mtime = (
+                QT_PALETTE.stat().st_mtime if QT_PALETTE.exists() else WAL_COLORS.stat().st_mtime
+            )
         except Exception:
             pass
-        GLib.timeout_add_seconds(3, self._poll_wal)
+        GLib.timeout_add_seconds(3, self._poll_palette)
         for e in load_state():
             self._add(e, persist=False, at_start=False)
         self._refresh()
 
-    def _poll_wal(self):
+    def _poll_palette(self):
         try:
-            m = WAL_COLORS.stat().st_mtime
+            src = QT_PALETTE if QT_PALETTE.exists() else WAL_COLORS
+            m = src.stat().st_mtime
         except Exception:
             return True
-        if m != self._wal_mtime:
-            self._wal_mtime = m
+        if m != self._palette_mtime:
+            self._palette_mtime = m
             self._apply_css()
         return True
 
@@ -834,9 +885,8 @@ class Dropzone(Gtk.Window):
         if monitor is None:
             monitor = display.get_primary_monitor() or display.get_monitor(0)
         geo = monitor.get_geometry()
-        # bias slightly left of true center
-        x = geo.x + (geo.width - WIN_W) // 2 - int(geo.width * 0.03)
-        x = max(geo.x + 8, x)
+        w = max(WIN_W, self.get_allocated_width() or WIN_W)
+        x = geo.x + (geo.width - w) // 2
         y = geo.y + int(geo.height * 0.055)
         self.move(x, y)
 
@@ -981,7 +1031,9 @@ class Dropzone(Gtk.Window):
         self.show_all()
         self._place_top_center()
         self.present()
-        GLib.timeout_add(20, lambda: (self.revealer.set_reveal_child(True), False)[1])
+        # Re-center once real allocation is known
+        GLib.timeout_add(30, lambda: (self._place_top_center(), False)[1])
+        GLib.timeout_add(10, lambda: (self.revealer.set_reveal_child(True), False)[1])
         self._reset_hide_timer()
 
     def hide_animated(self):
@@ -997,7 +1049,7 @@ class Dropzone(Gtk.Window):
             self._hiding = False
             return False
 
-        GLib.timeout_add(REVEAL_MS + 40, _finish)
+        GLib.timeout_add(REVEAL_MS + 20, _finish)
 
     def toggle(self):
         if self._visible:
@@ -1329,17 +1381,13 @@ class Dropzone(Gtk.Window):
         total_icon = pick("view-app-grid-symbolic", "applications-utilities-symbolic",
                           "view-grid-symbolic", "view-list-symbolic")
         chip(total_icon, len(self.entries), "Total items")
-        if n_files:
-            chip(pick("folder-documents-symbolic", "text-x-generic-symbolic"),
-                 n_files, "Files")
-        if n_text:
-            chip(pick("accessories-text-editor-symbolic", "text-editor-symbolic",
-                      "text-x-script-symbolic"),
-                 n_text, "Text notes")
-        if n_url:
-            chip(pick("emblem-web-symbolic", "applications-internet-symbolic",
-                      "web-browser-symbolic"),
-                 n_url, "URLs")
+        chip(pick("folder-documents-symbolic", "text-x-generic-symbolic"),
+             n_files, "Files")
+        chip(pick("accessories-text-editor-symbolic", "text-editor-symbolic"),
+             n_text, "Text notes")
+        chip(pick("emblem-web-symbolic", "applications-internet-symbolic",
+                  "web-browser-symbolic"),
+             n_url, "URLs")
         if n_pin:
             chip(pick("view-pin-symbolic", "starred-symbolic",
                       "emblem-favorite-symbolic"),
