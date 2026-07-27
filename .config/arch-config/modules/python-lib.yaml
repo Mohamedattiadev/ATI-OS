@@ -16,6 +16,7 @@ packages:
   - python-dbus-fast
   - python-pulsectl
   - python-psutil
+  - python-gobject      # qdrop + qupdate GTK3 UI
 
 exclude: []
 conflicts: []

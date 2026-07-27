@@ -2085,10 +2085,13 @@ def right_side_widgets():
                 chip(
                     ewidget.CheckUpdates,
                     padding=11,
-                    # NOTE: upadtes popup click handler will be used later
-                    # mouse_callbacks={
-                    #     "Button1": lazy.spawn("sh -c 'xdotool key Alt_L+u '")
-                    # },
+                    mouse_callbacks={
+                        "Button1": lazy.spawn(
+                            "python3 " + os.path.expanduser(
+                                "~/.config/qtile/scripts/qupdate.py"
+                            ) + " --toggle"
+                        ),
+                    },
                 ),
                 # Disk
                 chip(

@@ -29,7 +29,31 @@ def log(msg: str):
     print(f"[qdrop_watch] {msg}", flush=True)
 
 
+SCREENSHOT_TOOLS = ("satty", "flameshot", "spectacle", "gnome-screenshot",
+                    "shotwell", "maim", "scrot", "grim", "slurp", "gm")
+
+
+def _screenshot_active() -> bool:
+    try:
+        r = subprocess.run(["pgrep", "-x", "-l", "|".join(SCREENSHOT_TOOLS)],
+                           capture_output=True, text=True, timeout=1)
+        # pgrep -x needs one name; use a shell-friendly loop instead:
+    except Exception:
+        return False
+    for name in SCREENSHOT_TOOLS:
+        try:
+            r = subprocess.run(["pgrep", "-x", name], capture_output=True, timeout=1)
+            if r.returncode == 0:
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def fire():
+    if _screenshot_active():
+        log("screenshot tool active — shake ignored")
+        return
     subprocess.Popen(
         [sys.executable, QDROP, "--show"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
