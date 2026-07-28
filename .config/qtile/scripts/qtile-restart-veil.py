@@ -111,6 +111,28 @@ def ease_out(t: float) -> float:
     return 1 - pow(1 - t, 3)
 
 
+def ease_out_expo(t: float) -> float:
+    """Exponential settle: most of the distance is covered in the first
+    third, then it eases in to rest.
+
+    Used for the veil's own opacity at both ends, where cubic was doing
+    the wrong thing in each direction. Coming in, cubic ramps opacity
+    roughly linearly at the start, so the desktop underneath stays
+    readable for the first ~80ms of a 160ms fade -- exactly the frames
+    the veil exists to hide. Going out, the old symmetric cubic held near
+    full opacity through the first half, so the desktop was already
+    restored and the user was still looking at a scrim.
+
+    Expo fixes both: opaque almost immediately on the way in, clearing
+    immediately on the way out, with the slow part of the curve spent
+    near the value that is not covering anything up. Same durations, so
+    nothing here changes how long a restart takes -- only how much of it
+    is spent looking at a half-transparent overlay.
+    """
+    t = max(0.0, min(1.0, t))
+    return 1.0 if t >= 1.0 else 1 - pow(2, -10 * t)
+
+
 def hex_rgb(s, fallback=(0.11, 0.11, 0.16)):
     try:
         s = s.lstrip("#")
@@ -448,11 +470,16 @@ class Veil(Gtk.Window):
         name, p = self.phase()
 
         if name == "collapse":
-            veil_a = ease_out(p)
+            # Cover fast, settle slow. The cards keep the cubic stagger
+            # below -- only the scrim itself is expo, so the motion still
+            # reads as deliberate rather than snapped.
+            veil_a = ease_out_expo(p)
         elif name == "hold":
             veil_a = 1.0
         else:
-            veil_a = 1.0 - ease_in_out(p)
+            # Clear fast on the way out: the desktop is already restored
+            # by this point, so any opacity left is pure latency.
+            veil_a = 1.0 - ease_out_expo(p)
         if not self.have_alpha:
             veil_a = 1.0
 
