@@ -224,8 +224,14 @@ NON_EN_NOTIFY_ID = 9001
 
 passthrough_active = False
 _PASS_PREV_BAR_MODE = None
-_PASS_ESC_ARMED = False
 _PASS_CONFIRM_LAYOUT = None
+# qtile hardcodes Escape to leave any chord (core/manager.py: `key.key == "Escape"`),
+# so Esc always ungrabs before we can veto it. _PASS_NEXT tells the leave_chord hook
+# which chord to re-enter instead of tearing passthrough down:
+#   "CONFIRM" -> the y/n popup chord, "PASS" -> back to passthrough, None -> really exit.
+_PASS_NEXT = None
+PASSTHROUGH_CHORD = None
+PASSTHROUGH_CONFIRM_CHORD = None
 FLOAT_STATES = {}
 
 colors: list[list[str]] = color_schemes.active_palette()
@@ -455,6 +461,7 @@ CHORD_CHIP_COLORS = {
     "CheatSheet-Mode": colorsW[3],
     "WallpaperPicker": colorsW[3],
     "PASSTHROUGH": colorsW[8],
+    "PASSTHROUGH-CONFIRM": colorsW[1],  # urgent/warm -- it is asking to quit
     # NOTE: Bluetooth popup will be used later
     # "Bluetooth-Mode": colorsW[4],
     # NOTE: Audio popup will be used later
@@ -479,6 +486,10 @@ CHORD_CHIP_COLORS = {
 
 def _enable_passthrough(qtile):
     global passthrough_active, _PASS_PREV_BAR_MODE, BAR_MODE
+    if passthrough_active:
+        # Re-grab after an Esc that was answered "no" — already in passthrough,
+        # so don't re-save BAR_MODE (it is "bottom" now) or re-notify.
+        return
     passthrough_active = True
 
     _PASS_PREV_BAR_MODE = BAR_MODE
@@ -492,10 +503,14 @@ def _enable_passthrough(qtile):
 
 
 def _disable_passthrough(qtile):
-    global passthrough_active, _PASS_PREV_BAR_MODE, BAR_MODE, _PASS_ESC_ARMED
-    passthrough_active = False
-    _PASS_ESC_ARMED = False
+    global passthrough_active, _PASS_PREV_BAR_MODE, BAR_MODE, _PASS_NEXT
+    _PASS_NEXT = None
     _close_pass_confirm()
+    if not passthrough_active:
+        # "y" disables directly and then ungrabs, which fires leave_chord and
+        # lands here a second time. Don't restore the bar or notify twice.
+        return
+    passthrough_active = False
 
     if _PASS_PREV_BAR_MODE is not None:
         BAR_MODE = _PASS_PREV_BAR_MODE
@@ -523,76 +538,90 @@ def _show_pass_confirm(qtile):
     if _PASS_CONFIRM_LAYOUT:
         return
     from qtile_extras.popup import PopupRelativeLayout, PopupText
+    from popups._wal_colors import fade_in_popup, load_colors
 
-    def _yes(*_a, **_k):
-        _close_pass_confirm()
-        _disable_passthrough(qtile)
-        qtile.ungrab_chord()
-
-    def _no(*_a, **_k):
-        global _PASS_ESC_ARMED
-        _PASS_ESC_ARMED = False
-        _close_pass_confirm()
+    # Read per open, like the cheatsheet/wallpaper popups, so a theme-apply while
+    # qtile is running is picked up without a restart.
+    c = load_colors()
 
     controls = [
         PopupText(
             text=(
-                '<span size="large" weight="bold" foreground="#ffffff">'
-                'Exit passthrough mode?</span>'
+                '<span size="large" weight="bold" foreground="{fg}">'
+                "Exit passthrough mode?</span>".format(fg=c["fg"])
             ),
             markup=True,
             pos_x=0.0, pos_y=0.15, width=1.0, height=0.30,
             h_align="center", v_align="middle",
         ),
         PopupText(
-            text='<b><span foreground="#98be65">  Yes  (y)  </span></b>',
+            text='<b><span foreground="{0}">  Yes  (y)  </span></b>'.format(c["green"]),
             markup=True,
             pos_x=0.05, pos_y=0.55, width=0.42, height=0.30,
             h_align="center", v_align="middle",
-            mouse_callbacks={"Button1": _yes},
+            # can_focus defaults to "auto" -> True for anything with a Button1
+            # callback, which flips the layout's keyboard_navigation on and makes
+            # show() steal X focus + hijack key presses. That swallows the chord's
+            # y/n/Escape. Clicks still work: button_press only reads mouse_callbacks.
+            can_focus=False,
+            mouse_callbacks={"Button1": lambda *_a, **_k: _passthrough_confirm_yes(qtile)},
         ),
         PopupText(
-            text='<b><span foreground="#ff6c6b">  No  (n)  </span></b>',
+            text='<b><span foreground="{0}">  No  (n)  </span></b>'.format(c["red"]),
             markup=True,
             pos_x=0.53, pos_y=0.55, width=0.42, height=0.30,
             h_align="center", v_align="middle",
-            mouse_callbacks={"Button1": _no},
+            can_focus=False,  # see the Yes control above
+            mouse_callbacks={"Button1": lambda *_a, **_k: _passthrough_confirm_no(qtile)},
         ),
     ]
     _PASS_CONFIRM_LAYOUT = PopupRelativeLayout(
         qtile,
         width=360, height=140,
-        background="1c1f24ee",
+        background=c["bg"] + "F2",
         initial_focus=None,
         close_on_click=False,
         controls=controls,
     )
     _PASS_CONFIRM_LAYOUT.show(centered=True)
+    fade_in_popup(_PASS_CONFIRM_LAYOUT, duration=0.16, steps=10)
 
 
 def _passthrough_esc(qtile):
-    global _PASS_ESC_ARMED
-    if _PASS_CONFIRM_LAYOUT:
-        return
-    if not _PASS_ESC_ARMED:
-        _PASS_ESC_ARMED = True
-        qtile.spawn(
-            "notify-send -t 1500 'PASSTHROUGH' 'Press Esc again to confirm exit'"
-        )
-    else:
-        _show_pass_confirm(qtile)
+    """Esc inside PASSTHROUGH: raise the confirm popup and hand the keyboard to
+    the confirm chord. qtile ungrabs on Escape no matter what, so the actual swap
+    happens in cleanup_on_leave."""
+    global _PASS_NEXT
+    _show_pass_confirm(qtile)
+    _PASS_NEXT = "CONFIRM"
+
+
+def _pass_back_to_passthrough(qtile, ungrab):
+    """Dismiss the popup and return to passthrough."""
+    global _PASS_NEXT
+    _close_pass_confirm()
+    _PASS_NEXT = "PASS"
+    if ungrab:
+        qtile.ungrab_chord()
 
 
 def _passthrough_confirm_yes(qtile):
+    global _PASS_NEXT
     _close_pass_confirm()
+    _PASS_NEXT = None
     _disable_passthrough(qtile)
     qtile.ungrab_chord()
 
 
 def _passthrough_confirm_no(qtile):
-    global _PASS_ESC_ARMED
-    _PASS_ESC_ARMED = False
-    _close_pass_confirm()
+    # "n" (and the popup's No button): qtile only auto-ungrabs for Escape, so
+    # leaving the confirm chord is on us.
+    _pass_back_to_passthrough(qtile, ungrab=True)
+
+
+def _passthrough_confirm_esc(qtile):
+    # Escape: qtile ungrabs the confirm chord itself right after this returns.
+    _pass_back_to_passthrough(qtile, ungrab=False)
 
 
 @lazy.function
@@ -1488,6 +1517,7 @@ TOOLTIP_BY_NAME = {
     "chord_chip_nu": "Current mode",
     "main_icon_chip": "Arch menu · L-click → terminal · R-click → launcher",
     "main_icon_chip_nu": "Arch menu · L-click → launcher · R-click → terminal",
+    "screenshot_chip_nu": "Screenshot area → clipboard",
     "tooltip_widgetbox": "Tips (💡) · click → toggle onboarding",
     "system_widgetbox": "CPU + Memory",
     "2nd_system_widgetbox": "Updates · Disk · Volume",
@@ -2012,7 +2042,7 @@ def toggle_wallpaper_picker(qtile):
 
 @hook.subscribe.leave_chord
 def cleanup_on_leave():
-    global ACTIVE_CHORD
+    global ACTIVE_CHORD, _PASS_NEXT
 
     if ACTIVE_CHORD == "Draw-Mode":
         qtile.spawn("gromit-mpx -v")
@@ -2028,8 +2058,16 @@ def cleanup_on_leave():
         if w and w.box_is_open:
             w.toggle()
 
-    elif ACTIVE_CHORD == "PASSTHROUGH":
-        _disable_passthrough(qtile)
+    elif ACTIVE_CHORD in ("PASSTHROUGH", "PASSTHROUGH-CONFIRM"):
+        # Deferred because ungrab_chord() still calls ungrab_keys() and pops the
+        # chord stack after this hook returns -- grabbing inline gets wiped.
+        nxt, _PASS_NEXT = _PASS_NEXT, None
+        if nxt == "CONFIRM" and PASSTHROUGH_CONFIRM_CHORD is not None:
+            qtile.call_later(0.01, lambda: qtile.grab_chord(PASSTHROUGH_CONFIRM_CHORD))
+        elif nxt == "PASS" and PASSTHROUGH_CHORD is not None:
+            qtile.call_later(0.01, lambda: qtile.grab_chord(PASSTHROUGH_CHORD))
+        else:
+            _disable_passthrough(qtile)
 
     # NOTE: Bluetooth popup will be used later
     # elif ACTIVE_CHORD == "Bluetooth-Mode":
@@ -2357,6 +2395,14 @@ def parse_task_name(text):
 # ╚────────────────────────────────╝
 
 
+# Select an area and copy the PNG to the clipboard. A real script rather than an
+# inline `sh -c` string: it logs to /tmp/qtile-screenshot-$UID.log, so if the
+# button ever looks like it does nothing there is something to read.
+SCREENSHOT_AREA_CMD = os.path.expanduser(
+    "~/.config/qtile/scripts/screenshot-area.sh"
+)
+
+
 # ------------------------------------------------------------------------------
 # 0- normal user bar
 # -----------------------------------------------------------------------------
@@ -2391,6 +2437,16 @@ def normal_user_bar():
             fontsize=14,
             padding=12,
             foreground=colors[1],
+        ),
+        widget.TextBox(
+            name="screenshot_chip_nu",
+            text="󰹑",
+            fontsize=16,
+            padding=10,
+            foreground=colors[1],
+            mouse_callbacks={
+                "Button1": lazy.spawn(SCREENSHOT_AREA_CMD),
+            },
         ),
         ewidget.Spacer(length=bar.STRETCH),
         widget.GroupBox(
@@ -2455,7 +2511,8 @@ def normal_user_bar():
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
-                "PASSTHROUGH": "   PASSTHROUGH : ESC×2 , y , n",
+                "PASSTHROUGH": "   PASSTHROUGH : ESC",
+                "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
                 # NOTE: Bluetooth popup will be used later
                 # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
                 # NOTE: Audio popup will be used later
@@ -2676,7 +2733,8 @@ def right_side_widgets():
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
-                "PASSTHROUGH": "   PASSTHROUGH : ESC×2 , y , n",
+                "PASSTHROUGH": "   PASSTHROUGH : ESC",
+                "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
                 # NOTE: Bluetooth popup will be used later
                 # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
                 # NOTE: Audio popup will be used later
@@ -3619,6 +3677,19 @@ def chip(WCls, chip_color=None, **kwargs):
 
 
 keys = [
+    # --- Homerow: keyboard hints over the focused window ---
+    # Not Homerow's own shift+space, which would swallow every shift+space
+    # you type.
+    Key(
+        [mod2, "shift"],
+        "f",
+        lazy.spawn(
+            os.path.expanduser(
+                "~/Attia-Pro/Projects/Homerow_replika/homerow-hint"
+            )
+        ),
+        desc="Homerow: hint and click UI elements by keyboard",
+    ),
     # FIX: try to make a speach to text app
     # ---------------------
     # Key([mod], "s", lazy.spawn("bash -c \"notify-send '🎤 STT' 'Speak now…' && ~/.config/qtile/scripts/stt_script.sh\"")),
@@ -3673,6 +3744,13 @@ keys = [
         "s",
         lazy.function(lambda qtile: toggle_or_spawn_sum(qtile, my2ndTerm, sum_file)),
         desc="Open or focus sum.md globally",
+    ),
+    # ---screenshot: select an area, straight to the clipboard---
+    Key(
+        [],
+        "Print",
+        lazy.spawn(SCREENSHOT_AREA_CMD),
+        desc="Screenshot area -> clipboard (same as the bar's camera chip)",
     ),
     # ---toggle to normal user bar---
     Key(
@@ -4152,10 +4230,10 @@ keys = [
         [mod],
         "F12",
         [
-            Key([], "Escape", lazy.function(_passthrough_esc)),
+            # Only F12 here: y/n live in PASSTHROUGH_CONFIRM_CHORD so they stay
+            # typable in passthrough, and Escape is re-appended below (qtile's
+            # KeyChord.__init__ would otherwise shadow it).
             Key([], "F12", lazy.function(_passthrough_esc)),
-            Key([], "y", lazy.function(_passthrough_confirm_yes)),
-            Key([], "n", lazy.function(_passthrough_confirm_no)),
         ],
         mode=True,
         swallow=False,
@@ -4255,6 +4333,38 @@ keys = [
     # │░░▀░▀░░▀░▀░▀▀▀░▀▀░░▀▀▀░▀▀▀░░░▀▀▀░▀░▀░▀▀░░▀▀▀░░░▀░░▀░░▀░│
     # ╚───────────────────────────────────────────────────────╝
 ]
+
+# Handle to re-grab PASSTHROUGH after Esc; see _passthrough_esc / cleanup_on_leave.
+PASSTHROUGH_CHORD = next(
+    (k for k in keys if isinstance(k, KeyChord) and k.name == "PASSTHROUGH"), None
+)
+
+# Only grabbed while the confirm popup is up, so y/n remain ordinary typable keys
+# for the rest of passthrough. Never reachable from the root keymap -- the trigger
+# below is a placeholder; cleanup_on_leave grabs this chord programmatically.
+PASSTHROUGH_CONFIRM_CHORD = KeyChord(
+    [],
+    "F13",
+    [
+        Key([], "y", lazy.function(_passthrough_confirm_yes)),
+        Key([], "n", lazy.function(_passthrough_confirm_no)),
+    ],
+    mode=True,
+    swallow=True,
+    name="PASSTHROUGH-CONFIRM",
+)
+
+# KeyChord.__init__ appends its own bare Key([], "Escape") to every chord's
+# submappings. It lands last, so grab_chord() grabs it last and it overwrites our
+# Escape in keys_map -- leaving Escape with zero commands, which is why the confirm
+# popup never opened. Re-append ours so it is grabbed last and actually runs.
+if PASSTHROUGH_CHORD is not None:
+    PASSTHROUGH_CHORD.submappings.append(
+        Key([], "Escape", lazy.function(_passthrough_esc))
+    )
+PASSTHROUGH_CONFIRM_CHORD.submappings.append(
+    Key([], "Escape", lazy.function(_passthrough_confirm_esc))
+)
 
 # ╔───────────────────────────────────────────────────────────────╗
 # │░▄█▄█▄░█░█░█▀▀░█░█░█▄█░█▀█░█▀█░█▀▀░░░█▀▀░█▀█░█▀▄░█▀▀░░░░░░░░░░░│
@@ -4624,10 +4734,102 @@ extension_defaults = widget_defaults.copy()
 # ╚──────────────────────────────╝
 
 
+def _center_top_groupbox():
+    """Pin the GroupBox to the true centre of each top bar.
+
+    Two STRETCH spacers only split the *leftover* space evenly, so the GroupBox
+    slides right as the TaskList grows with each opened window. Instead the left
+    spacer is a fixed length we recompute: bar centre minus everything left of it.
+    The right spacer stays STRETCH so the right-hand widgets still hug the edge.
+    """
+    for screen in getattr(qtile, "screens", []):
+        b = getattr(screen, "top", None)
+        widgets = getattr(b, "widgets", None) if b else None
+        if not widgets:
+            continue
+        gb_i = next(
+            (i for i, w in enumerate(widgets) if isinstance(w, ewidget.GroupBox)), None
+        )
+        if not gb_i:  # missing, or nothing to its left
+            continue
+        sp = widgets[gb_i - 1]
+        if not isinstance(sp, ewidget.Spacer):
+            continue
+        try:
+            target = (b.width - widgets[gb_i].length) // 2
+            left = widgets[: gb_i - 1]
+            tl = next((w for w in left if isinstance(w, widget.TaskList)), None)
+            others = sum(w.length for w in left if w is not tl)
+
+            changed = False
+            # Pin the TaskList to a fixed width. With stretch=False it sizes to
+            # content, so each opened window widened it and shoved the GroupBox
+            # right -- at 605px it was already past the bar's centre, which no
+            # spacer value can undo. TaskList natively accepts an externally
+            # assigned length (that is what its default stretch mode does), so
+            # holding it STATIC here is not fighting the widget.
+            if tl is not None:
+                cap = max(0, target - others)
+                if tl.length_type != bar.STATIC or tl.length != cap:
+                    tl.length_type = bar.STATIC
+                    tl.length = cap
+                    changed = True
+
+            left_w = others + (tl.length if tl is not None else 0)
+            new_len = max(0, target - left_w)
+            # Guard the assignment: draw() redraws widgets and can re-enter this,
+            # so an unconditional set would loop.
+            if new_len != sp.length:
+                sp.length = new_len
+                changed = True
+
+            if changed:
+                b.draw()
+        except Exception:
+            pass
+
+
+_GB_CENTER_PENDING = False
+
+
+def _schedule_center_groupbox(*_args, **_kwargs):
+    """Debounced trigger -- these hooks can fire several times per window event."""
+    global _GB_CENTER_PENDING
+    if _GB_CENTER_PENDING:
+        return
+    _GB_CENTER_PENDING = True
+
+    def _run():
+        global _GB_CENTER_PENDING
+        _GB_CENTER_PENDING = False
+        _center_top_groupbox()
+
+    try:
+        qtile.call_later(0.05, _run)
+    except Exception:
+        _GB_CENTER_PENDING = False
+
+
+for _gb_hook in (
+    "startup_complete",
+    "client_managed",
+    "client_killed",
+    "client_name_updated",
+    "setgroup",
+    "changegroup",
+    "focus_change",
+):
+    try:
+        getattr(hook.subscribe, _gb_hook)(_schedule_center_groupbox)
+    except Exception:
+        pass
+
+
 def init_widgets_list():
     return [
         *left_side_widgets(),
-        ewidget.Spacer(length=bar.STRETCH),
+        # Fixed, not STRETCH -- _center_top_groupbox() drives this length.
+        ewidget.Spacer(length=0),
         groupbox_widget(),
         ewidget.Spacer(length=bar.STRETCH),
         *right_side_widgets(),
