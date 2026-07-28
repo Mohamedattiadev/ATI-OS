@@ -44,8 +44,32 @@ WAL_COLORS = Path.home() / ".cache" / "wal" / "colors.json"
 
 WIN_W = 620
 WIN_H = 480
+# Open/close fade. 180ms sits between the 160ms the small cheatsheet popups
+# use and the 280ms WallpaperPopup needs for its 1050x680 panel -- this window
+# is 620x480, so the eye tracks it for longer than a cheatsheet but not as
+# long as the picker. Close is shorter than open (same ratio as the shared
+# qtile helper): a dismissal that lingers reads as lag, not polish.
 FADE_MS = 180
+FADE_OUT_MS = 140
 FADE_STEPS = 16
+
+
+def _ease_out_cubic(t: float) -> float:
+    """t in 0..1 -> eased 0..1. Fast start, soft landing.
+
+    A linear opacity ramp reads as a mechanical flicker at these durations
+    because perceived brightness is non-linear; easing the tail is what makes
+    the same step count look like a real fade. Kept identical to
+    ~/.config/qtile/popups/_wal_colors.py so this window and the in-process
+    qtile popups animate on the same curve -- that file is the source of
+    truth, but it imports libqtile and this is a separate GTK process.
+    """
+    return 1 - (1 - t) ** 3
+
+
+def _ease_in_cubic(t: float) -> float:
+    """Mirror of _ease_out_cubic, for fades that end at transparent."""
+    return t ** 3
 
 CSS_TEMPLATE = """
 window#qupdate {{ background: transparent; }}
@@ -350,6 +374,8 @@ def save_cache(pkgs: list[dict]):
 class Updater(Gtk.Window):
     def __init__(self):
         super().__init__(title="qupdate")
+        self._closing = False   # True while the close fade is in flight
+        self._fade_src = None   # GLib timeout id of the running fade, if any
         self.set_name("qupdate")
         self.set_wmclass("qupdate", "qupdate")
         self.set_default_size(WIN_W, WIN_H)
@@ -804,12 +830,128 @@ class Updater(Gtk.Window):
             return True
         return False
 
+    # --- open/close animation ---
+    #
+    # Opacity only, deliberately. GTK's set_opacity() maps straight onto
+    # _NET_WM_WINDOW_OPACITY on X11 and picom renders each change live, so
+    # nothing here touches position or size. Animating geometry on a mapped
+    # floating window is what caused the qdrop mid-screen-flash bug (qtile
+    # re-centers such windows); see TROUBLESHOOTING.md. Do not "improve"
+    # this into a slide or a scale.
+
+    def _set_opacity(self, value: float):
+        """Write `value` to _NET_WM_WINDOW_OPACITY on the toplevel X window.
+
+        Deliberately the GdkWindow call and not Gtk.Widget/Window.set_opacity():
+        this window uses an RGBA visual on a composited screen, and in that
+        configuration GTK3 implements widget opacity by re-rendering its own
+        content at reduced alpha. That never sets the WM property, so picom
+        never sees a fade and xprop shows nothing -- measured, not assumed.
+        gdk_window_set_opacity() sets the property directly, which is the same
+        mechanism the in-process qtile popups animate through.
+
+        Note X11 deletes the property at opacity 1.0, so a fully-opaque
+        window legitimately has no _NET_WM_WINDOW_OPACITY at all.
+        """
+        gdkwin = self.get_window()
+        if gdkwin is None:
+            self.realize()
+            gdkwin = self.get_window()
+        gdkwin.set_opacity(value)
+
+    def _cancel_fade(self):
+        """Drop any in-flight fade timeout without running its on_done."""
+        if getattr(self, "_fade_src", None) is not None:
+            try:
+                GLib.source_remove(self._fade_src)
+            except Exception:
+                pass
+            self._fade_src = None
+
+    def _fade(self, start: float, end: float, ease, duration_ms: int,
+              on_done=None):
+        """Ramp window opacity start -> end over duration_ms.
+
+        on_done() is called exactly once, and is called immediately if the
+        window is already gone or any step raises -- a popup must never be
+        left stranded on screen just because its animation failed.
+        """
+        self._cancel_fade()
+        state = {"i": 0, "done": False}
+
+        def finish():
+            if state["done"]:
+                return
+            state["done"] = True
+            self._fade_src = None
+            if on_done is not None:
+                try:
+                    on_done()
+                except Exception:
+                    pass
+
+        def step():
+            state["i"] += 1
+            i = state["i"]
+            try:
+                self._set_opacity(start + (end - start) * ease(i / FADE_STEPS))
+            except Exception:
+                finish()
+                return False
+            if i >= FADE_STEPS:
+                finish()
+                return False
+            return True
+
+        try:
+            self._set_opacity(start)
+        except Exception:
+            finish()
+            return
+        self._fade_src = GLib.timeout_add(
+            max(1, duration_ms // FADE_STEPS), step
+        )
+
     def close_win(self):
-        self.hide()
+        # _closing guards the window between "fade started" and "hide() ran":
+        # without it a fast re-toggle would show a second time on top of the
+        # window still fading out, and the pending teardown would then hide
+        # the one the user just asked for.
+        if self._closing or not self.get_visible():
+            return
+        self._closing = True
+
+        def _teardown():
+            # Every step is individually guarded and _closing is cleared in
+            # a finally: if teardown ever raised half-way the guard would
+            # latch on and the window could never be opened again.
+            try:
+                self.hide()
+                # Restore full opacity on the hidden window so the next
+                # show_win starts from a known state even if its fade never
+                # runs.
+                self._set_opacity(1.0)
+            except Exception:
+                pass
+            finally:
+                self._closing = False
+
+        self._fade(1.0, 0.0, _ease_in_cubic, FADE_OUT_MS, _teardown)
 
     def show_win(self):
+        if self._closing:
+            return
+        # Cancel any in-flight fade-in so a double SHOW doesn't run two
+        # ramps against each other. Fade-in has no on_done, so nothing is
+        # skipped by dropping it.
+        self._cancel_fade()
+        try:
+            self._set_opacity(0.0)
+        except Exception:
+            pass
         self.show_all()
         self.present()
+        self._fade(0.0, 1.0, _ease_out_cubic, FADE_MS)
         self._start_fetch(refresh=False)
 
     # --- fetch ---
@@ -1026,7 +1168,13 @@ def _handle_cmd(win: "Updater", cmd: str):
         elif op == "HIDE":
             win.close_win()
         elif op == "TOGGLE":
-            if win.get_visible():
+            # Drop the toggle outright while the close fade is running,
+            # rather than treating a still-visible fading window as "open"
+            # (which would start a second close) or as "closed" (which would
+            # show a window the pending teardown is about to hide).
+            if win._closing:
+                pass
+            elif win.get_visible():
                 win.close_win()
             else:
                 win.show_win()
