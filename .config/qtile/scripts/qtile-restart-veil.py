@@ -406,10 +406,29 @@ class Veil(Gtk.Window):
         # Keep the veil on top. It is override-redirect, but qtile still
         # raises its own managed windows (on focus, on layout) and would
         # otherwise stack them over us mid-transition.
+        #
+        # dunst notifications are the hard case and the reason for
+        # restack() rather than raise_(). A dunst popup is *also* an
+        # override-redirect window, so no window manager arbitrates
+        # between us -- X stacking is simply last-raiser-wins, and dunst
+        # re-raises its window on every redraw (it redraws continuously
+        # while a notification counts down). raise_() only lifts us above
+        # our own toplevel group and lost that race, which is why one
+        # would still surface on top of the veil now and then.
+        #
+        # restack(None, True) is the documented "put this above every
+        # sibling in the stack" -- an unconditional XRaiseWindow to the
+        # very top, re-asserted on every frame. Pausing dunst (which
+        # qtile does before restarting) remains the primary defence; this
+        # is what catches anything that slips through, including
+        # notifications from anything that is not dunst at all.
         try:
             gw = self.get_window()
             if gw is not None:
-                gw.raise_()
+                try:
+                    gw.restack(None, True)
+                except Exception:
+                    gw.raise_()          # older GDK: best effort
         except Exception:
             pass
         if time.monotonic() - self.t0 > self.args.max_seconds:
