@@ -560,8 +560,10 @@ if not string match -q -- $PNPM_HOME $PATH
 end
 
 # fnm (nvm alter)
-# fnm env | source
-# status --is-interactive; and source (fnm env)
+# --use-on-cd auto-switches Node per .nvmrc when you cd into a project
+if type -q fnm
+    fnm env --use-on-cd --shell fish | source
+end
 
 # =============================================================================
 # FZF Configuration
