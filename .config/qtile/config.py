@@ -1001,6 +1001,50 @@ def _veil_stage(frac, text):
         pass
 
 
+def _veil_active():
+    """True if a veil we launched is still up and has painted.
+
+    Used so a caller that already raised the veil (theme-apply, via
+    _veil_hold) does not get a second one stacked on top when the restart
+    finally happens. Checks the process, not just the ready file: a stale
+    ready file from a veil that died would otherwise suppress the real one
+    and expose the window pile.
+    """
+    try:
+        _rects, _done, ready_file = _veil_paths()
+        if not os.path.exists(ready_file):
+            return False
+        out = subprocess.run(
+            ["pgrep", "-f", os.path.basename(_VEIL_SCRIPT)],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=1,
+        )
+        return bool(out.stdout.strip())
+    except Exception:
+        return False
+
+
+def _veil_hold():
+    """Paint the veil now and leave it up; the caller restarts later.
+
+    Exists for theme-apply. It writes ~10 app palettes (kitty, alacritty,
+    GTK, qt5ct/qt6ct, rofi, dunst, …) before it asks for a restart, which
+    meant ~4s of fully visible desktop between picking a theme and the
+    veil appearing -- the palette visibly swapping under you, then a pause,
+    then a loading screen. Raising the veil first hides that entire window
+    of work behind it, so the restart *feels* ~4s shorter without being
+    one second faster.
+
+    Idempotent: a second call while a veil is already up is a no-op.
+    """
+    if _veil_active():
+        return True
+    ok = _veil_launch()
+    if ok:
+        _veil_stage(0.05, "Applying theme")
+        _dunst(True)
+    return ok
+
+
 def _veil_launch():
     """Start the veil. Returns True only if it was actually spawned."""
     if not os.path.exists(_VEIL_SCRIPT):
@@ -1188,7 +1232,10 @@ def _veil_signal_done():
 def _smooth_restart(qtile):
     _veil_stage(0.08, "Saving session")
     try:
-        if _veil_launch():
+        # Reuse a veil that theme-apply already raised via _veil_hold();
+        # only spawn one if nothing is up. Spawning unconditionally would
+        # put a second veil over the first and restart the fade-in.
+        if _veil_active() or _veil_launch():
             # Save state AFTER spawning the veil, not before. qtile then
             # blocks on the veil reporting it has painted, and the veil
             # needs ~0.4s just to start python and import GTK -- measured.
