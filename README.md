@@ -162,11 +162,19 @@ No manual follow-up. Everything in `.config` works on first `startx`.
 
 Start X session from TTY:
 
-```bash
+```fish
 startx
-# or the alias:
+# or the fish function (guards against a stale /tmp/.X0-lock and
+# refuses if X is already running):
 letsgo
 ```
+
+`letsgo` is a **fish function** (`.config/fish/config.fish`), not a shell
+alias — it only exists in fish. The account's login shell is therefore set
+to fish (`chsh`, wizard step `login-shell`) so the TTY matches what kitty
+already forces via `shell /usr/bin/fish`. Without that, the TTY drops to
+bash and `letsgo` is `command not found` — precisely when you need it,
+after X has died. Revert with `chsh -s /usr/bin/bash $USER`.
 
 Reload qtile config without logout:
 

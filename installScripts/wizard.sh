@@ -237,6 +237,7 @@ _reg dcli-sync         "dcli sync (all pkgs)" System   "Install every declared p
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
 _reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"
+_reg login-shell       "Fish login shell"    System    "chsh to fish so the TTY matches kitty (letsgo, aliases)" "step_login_shell"
 _reg xinit             ".xinitrc"            Dotfiles  "Auto-start qtile + picom + cursor size"                 "step_xinit"
 _reg xresources        ".Xresources"         Dotfiles  "Xcursor size 24 + Breeze theme (load via xrdb)"         "step_xresources"
 _reg xmodmap           ".Xmodmap"            Dotfiles  "Caps fully repurposed as Alt (no tap-Caps fallback)"    "step_xmodmap"
@@ -401,7 +402,12 @@ add mod1 = Alt_L Alt_R
 XMM_EOF
 }
 step_lid()          { run "sudo sed -i 's/^#\\?HandleLidSwitch=.*/HandleLidSwitch=ignore/' /etc/systemd/logind.conf && sudo systemctl restart systemd-logind"; }
-step_image_envs()   { run "grep -qx 'set -x VIPS_WARNING 0' $HOME/.profile 2>/dev/null || echo 'set -x VIPS_WARNING 0' >> $HOME/.profile"
+                    # VIPS_WARNING now ships as a tracked fish conf.d snippet
+                    # (.config/fish/conf.d/vips.fish) instead of being appended
+                    # to ~/.profile: that line was fish syntax in a POSIX file,
+                    # so fish never read it and sh read `set -x` as xtrace.
+                    # Strip the old broken line if a previous run added it.
+step_image_envs()   { run "sed -i '/VIPS_WARNING/d' $HOME/.profile 2>/dev/null || true"
                       # fish_variables (versioned) pins TMPDIR to ~/tmp for psub/mktemp
                       # (starship init, pyenv init) -- must exist or fish startup breaks.
                       run "mkdir -p $HOME/tmp"; }
@@ -436,6 +442,25 @@ step_whisper() {
 }
 step_nopasswd()     { run "echo \"$(id -un) ALL=(ALL) NOPASSWD: ALL\" | sudo tee /etc/sudoers.d/zz-$(id -un)-nopasswd >/dev/null && sudo chmod 440 /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
 step_ownership()    { run "sudo chown -R $(id -un):$(id -un) $DOTFILES_DIR"; }
+step_login_shell() {
+  # kitty.conf hardcodes `shell /usr/bin/fish`, so inside X you always got
+  # fish -- but the TTY kept the account's login shell (bash by default).
+  # Everything defined in config.fish (the `letsgo` startx helper, aliases,
+  # abbreviations) was therefore missing exactly where you need it most:
+  # the TTY you drop to when X dies. chsh makes the two agree.
+  local target="/usr/bin/fish"
+  if [[ ! -x "$target" ]]; then
+    _DIM "  fish not installed yet — skipping (run after dcli sync)"
+    return 0
+  fi
+  if [[ "$(getent passwd "$(id -un)" | cut -d: -f7)" == "$target" ]]; then
+    _OK "login shell already fish"
+    return 0
+  fi
+  # chsh refuses any shell missing from /etc/shells.
+  grep -qx "$target" /etc/shells || run "echo $target | sudo tee -a /etc/shells >/dev/null"
+  run "sudo chsh -s $target $(id -un)"
+}
 step_disable_dm()   { for dm in lightdm gdm sddm lxdm; do run "sudo systemctl disable $dm.service 2>/dev/null || true"; done; }
 step_candy()        { [[ -d /usr/share/icons/candy-icons ]] && { _OK "candy-icons present"; return; }
                       run "cd /tmp && rm -rf master.zip candy-icons-master && wget -q https://github.com/EliverLara/candy-icons/archive/refs/heads/master.zip && unzip -qo master.zip && sudo mv candy-icons-master /usr/share/icons/candy-icons"; }
@@ -623,6 +648,7 @@ uninstall_xinit()            { run "rm -f $HOME/.xinitrc"; }
 uninstall_xmodmap()          { run "rm -f $HOME/.Xmodmap"; }
 uninstall_image_envs()       { run "sed -i '/VIPS_WARNING/d' $HOME/.profile 2>/dev/null || true"; }
 uninstall_touchpad()         { run "sudo rm -f /etc/X11/xorg.conf.d/30-touchpad.conf"; }
+uninstall_login_shell()      { run "sudo chsh -s /usr/bin/bash $(id -un)"; }
 uninstall_passwordless_sudo(){ run "sudo rm -f /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
 uninstall_browser_flags() {
   for f in brave-flags.conf chromium-flags.conf chrome-flags.conf; do
