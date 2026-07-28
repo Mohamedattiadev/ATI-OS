@@ -378,6 +378,44 @@ PYEOF
   fi
 }
 
+gen_qt_colors() {
+  # Qt apps (telegram-desktop, any qt5/qt6 GUI) do NOT follow the GTK
+  # theme. With no QT_QPA_PLATFORMTHEME set they fall back to Qt's
+  # built-in palette, which is LIGHT -- that is why telegram and friends
+  # rendered white on an otherwise dark desktop.
+  #
+  # .xinitrc exports QT_QPA_PLATFORMTHEME=qt6ct, and qt6ct/qt5ct read a
+  # palette file. Generate that palette from the active theme so Qt apps
+  # track every mode like every other consumer.
+  local bg="$1" bg_alt="$2" fg="$3" red="$4" green="$5" yellow="$6" blue="$7" purple="$8" cyan="$9"
+  local sel_fg="$bg"
+  for dir in "$HOME/.config/qt6ct" "$HOME/.config/qt5ct"; do
+    mkdir -p "$dir/colors"
+    # QPalette role order, 21 entries -- qt6ct is positional, so the
+    # count and order matter. Wrong length = silently ignored palette.
+    #  WindowText Button Light Midlight Dark Mid Text BrightText
+    #  ButtonText Base Window Shadow Highlight HighlightedText Link
+    #  LinkVisited AlternateBase NoRole ToolTipBase ToolTipText
+    #  PlaceholderText
+    local roles="$fg, $bg_alt, $bg_alt, $bg_alt, $bg, $bg, $fg, $red, $fg, $bg, $bg, #000000, $blue, $sel_fg, $cyan, $purple, $bg_alt, $bg, $bg_alt, $fg, $fg"
+    cat >"$dir/colors/current.conf" <<EOF
+[ColorScheme]
+active_colors=$roles
+inactive_colors=$roles
+disabled_colors=$roles
+EOF
+    local conf="$dir/${dir##*/}.conf"
+    cat >"$conf" <<EOF
+[Appearance]
+color_scheme_path=$dir/colors/current.conf
+custom_palette=true
+standard_dialogs=default
+style=Fusion
+icon_theme=$([[ "$MODE" == mono-light ]] && echo Papirus-Light || echo Papirus-Dark)
+EOF
+  done
+}
+
 dump_palette_json() {
   # Dump current 9-slot palette to ~/.cache/qtile/current_palette.json so
   # nvim (+ any other consumer) can render themes for modes that don't
@@ -405,6 +443,7 @@ gen_all_theme_css() {
   gen_qb_css "$@"
   gen_eww_scss "$@"
   gen_btop_theme "$@"
+  gen_qt_colors "$@"
   dump_palette_json "$@"
 }
 

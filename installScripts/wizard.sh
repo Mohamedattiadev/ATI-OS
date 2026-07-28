@@ -332,10 +332,15 @@ setxkbmap -layout us -option
 export XDG_SESSION_TYPE=x11
 export XDG_CURRENT_DESKTOP=qtile
 export XDG_SESSION_DESKTOP=qtile
-systemctl --user import-environment DISPLAY XAUTHORITY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP
+systemctl --user import-environment DISPLAY XAUTHORITY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP QT_QPA_PLATFORMTHEME
 if command -v dbus-update-activation-environment >/dev/null 2>&1; then
-  dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP 2>/dev/null
+  dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP QT_QPA_PLATFORMTHEME 2>/dev/null
 fi
+# Qt apps (telegram-desktop etc) ignore the GTK theme entirely. Without
+# a platform theme Qt uses its built-in LIGHT palette, so they render
+# white on the dark desktop. qt6ct/qt5ct read the palette theme-apply
+# generates into ~/.config/qt6ct/colors/current.conf.
+export QT_QPA_PLATFORMTHEME=qt6ct
 # Cursor size + theme for X apps (Xcursor honors both env vars).
 export XCURSOR_SIZE=24
 export XCURSOR_THEME=breeze_cursors
