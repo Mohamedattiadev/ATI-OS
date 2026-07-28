@@ -866,8 +866,55 @@ if command -v qtile >/dev/null; then
   # Full restart, detached. Live-swap path was toggled off — visual
   # coverage across all themes proved unreliable; full restart is
   # slower but guaranteed correct. execvp + config re-import ~1-2s.
-  setsid -f bash -c 'qtile cmd-obj -o cmd -f restart' \
-    >/dev/null 2>&1 </dev/null || true
+  #
+  # Go through smooth_restart (exposed on the qtile object by config.py's
+  # startup_complete hook) rather than the raw `restart` command, so a
+  # theme change gets the same veil Super+Shift+R does. Without this the
+  # restart that follows a theme switch shows the whole boot window pile
+  # uncovered. Falls back to the raw restart if the attribute is missing
+  # — e.g. an older config.py, or a restart that happened before
+  # startup_complete fired — so a theme change can never fail to apply.
+  # Probe FIRST, then commit. The obvious shape — call smooth_restart and
+  # fall back if it errors — is wrong: smooth_restart ends in execv, so
+  # the IPC connection always dies mid-call and every success looks like
+  # a failure. That fallback would fire a second restart every time.
+  setsid -f bash -c '
+    # This subshell inherits `set -euo pipefail`. Both qtile calls below
+    # routinely exit non-zero -- the probe if the IPC socket is busy, and
+    # the restart call ALWAYS, because _smooth_restart ends in execv and
+    # kills the connection it was answering on. Under `set -e` that made
+    # the subshell abort before restarting anything at all. Same trap the
+    # qutebrowser block below documents.
+    set +e
+    # Probe the CONFIG MODULE, not a qtile attribute. qtile.smooth_restart
+    # is attached by a startup_complete hook, so it only exists on an
+    # instance that has already restarted into a config new enough to
+    # attach it — meaning the very first theme switch after any config
+    # change silently falls back to the raw restart and shows no veil.
+    # _smooth_restart has lived in the config module far longer, and this
+    # is the same entry point the Super+Shift+R binding uses.
+    # `qtile cmd-obj -f eval` prints the returned string wrapped in
+    # DOUBLE quotes: literally  "1"  — not a tuple repr, not a bare 1.
+    # Matching a quoting style instead of stripping the quotes is how this
+    # silently fell through to the raw restart on every theme switch, so
+    # normalise first and compare exactly.
+    probe=$(qtile cmd-obj -o cmd -f eval -a \
+      "str(int(hasattr(__import__(\"sys\").modules.get(\"config\"), \"_smooth_restart\")))" 2>&1)
+    # Strips double-quote (octal 042) and apostrophe (octal 047).
+    # Written as octal, and described in words rather than shown: this
+    # whole block lives inside setsid -f bash -c + single quotes, so a
+    # literal apostrophe ANYWHERE here -- including in a comment --
+    # terminates that string early and silently truncates the script.
+    # bash -n does not catch it, because the remainder happens to
+    # re-balance into something still syntactically valid.
+    probe=$(printf %s "$probe" | tr -d "\042\047" | tr -d "[:space:]")
+    if [ "$probe" = "1" ]; then
+      qtile cmd-obj -o cmd -f eval -a \
+        "str(__import__(\"sys\").modules[\"config\"]._smooth_restart(self))"
+    else
+      qtile cmd-obj -o cmd -f restart
+    fi
+  ' >/dev/null 2>&1 </dev/null || true
 fi
 
 # Reload qutebrowser + notify chrome/brave. qb has IPC; brave-family

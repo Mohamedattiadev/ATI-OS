@@ -142,6 +142,49 @@ import logging
 
 
 logging.basicConfig(level=logging.ERROR)
+
+# ----------------------------------------------------------------
+# Stop xmodmap blocking startup.
+#
+# libqtile's KeyboardLayout widget runs `xmodmap ~/.Xmodmap` through a
+# blocking check_output while the bar is being built. ~/.Xmodmap here
+# rewrites the modifier map (clear mod1 / add mod1 for the Caps->Alt
+# remap), and xmodmap refuses to do that while ANY modifier key is held,
+# retrying at 2s, 4s, 8s, 16s, 32s. The restart keybind is Super+Shift+R,
+# so Super is always still down at that moment -- measured at 15s of dead
+# startup time on this config, which was the entire reason restarts felt
+# slow. There is no XKB option equivalent to this remap (no `caps:alt`),
+# so the Xmodmap has to stay; it just must not be on the critical path.
+#
+# Same command, fire-and-forget. _reapply_xmodmap_when_idle() below then
+# guarantees it actually lands once the keyboard is quiet.
+# ----------------------------------------------------------------
+try:
+    from libqtile.widget import keyboardlayout as _kbl
+
+    def _set_keyboard_nonblocking(self, layout, options):
+        command = ["setxkbmap"]
+        command.extend(layout.split(" "))
+        if options:
+            command.extend(["-option", options])
+        try:
+            subprocess.check_output(command)
+        except Exception:
+            return
+        if os.path.isfile(os.path.expanduser("~/.Xmodmap")):
+            try:
+                subprocess.Popen(
+                    ["sh", "-c", "xmodmap $HOME/.Xmodmap"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except Exception:
+                pass
+
+    _kbl._X11LayoutBackend.set_keyboard = _set_keyboard_nonblocking
+except Exception:
+    pass
+
 colorsW = [
     ["#282c34", "#282c34"],  # bg
     ["#bbc2cf", "#bbc2cf"],  # fg
@@ -696,6 +739,14 @@ def _attach_live_swap():
         qtile.apply_palette_live = apply_palette_live
     except Exception:
         pass
+    # Same trick for the restart itself. theme-apply used to call qtile's
+    # raw `restart`, which skips _smooth_restart entirely -- so changing
+    # theme reloaded with the full window pile on show and no veil, even
+    # though Super+Shift+R was covered.
+    try:
+        qtile.smooth_restart = lambda: _smooth_restart(qtile)
+    except Exception:
+        pass
 
 
 @hook.subscribe.startup_complete
@@ -767,9 +818,28 @@ def _save_window_group_state():
 # ----------------------------------------------------------------
 _VEIL_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "scripts", "qtile-restart-veil.py")
-_VEIL_BG = "#1e1e2e"
-_VEIL_MAX_SECONDS = 8.0
-_VEIL_SIGNAL_DELAY = 1.8        # after startup_complete, once restores settle
+# Failsafe only — the veil normally exits as soon as _veil_signal_done()
+# fires. Measured restart on this config takes ~7s wall (dominated by
+# config/widget load, not by the veil), so 8s was dangerously tight: if
+# boot ran long the veil would vanish and expose the pile it exists to
+# hide. The veil is click-through and self-destructs, so a generous
+# ceiling costs nothing.
+_VEIL_MAX_SECONDS = 20.0
+# The veil reads the wallpaper + palette from ~/.cache/wal/colors.json
+# itself, so it always matches the current theme with no plumbing here.
+#
+# Timings: the restore passes used to sit at 0.6s/1.6s and the veil lifted
+# at 1.8s, which made every restart feel ~1s longer than it needed to.
+# Pulled in after verifying in the sandbox that the restores still land.
+# These are pure dead time at the END of the restart -- qtile is already
+# up and the desktop is already correct, the veil is just still on screen.
+# Every 0.1s here is 0.1s the user experiences as "slow". Halved after
+# confirming in the sandbox that both restore passes still land before
+# the veil lifts; pass 2 is the safety net, and it now runs at 0.34s
+# rather than 0.70s.
+_VEIL_SIGNAL_DELAY = 0.40       # after startup_complete, once restores settle
+_RESTORE_PASS_1 = 0.14
+_RESTORE_PASS_2 = 0.34
 
 
 def _veil_paths():
@@ -777,6 +847,158 @@ def _veil_paths():
     return (os.path.join(d, "veil_rects.json"),
             os.path.join(d, "veil_done"),
             os.path.join(d, "veil_ready"))
+
+
+def _veil_stage_path():
+    return os.path.join(os.path.dirname(_WINDOW_GROUP_FILE), "veil_stage")
+
+
+def _veil_tips_path():
+    return os.path.join(os.path.dirname(_WINDOW_GROUP_FILE), "veil_tips.json")
+
+
+import random as _random  # noqa: E402  (kept next to its only use)
+
+
+_VEIL_MOD_NAMES = {
+    "mod4": "Super", "mod1": "Alt", "mod5": "AltGr",
+    "shift": "Shift", "control": "Ctrl", "lock": "Caps",
+}
+# Keyed by the lowered keysym — see _veil_tips.
+_VEIL_KEY_NAMES = {
+    "return": "Enter", "space": "Space", "tab": "Tab", "escape": "Esc",
+    "backspace": "Backspace", "print": "PrtSc", "period": ".", "comma": ",",
+    "slash": "/", "backslash": "\\", "minus": "-", "equal": "=",
+    "bracketleft": "[", "bracketright": "]", "semicolon": ";",
+    "apostrophe": "'", "grave": "`",
+}
+# Bindings that are useless or actively confusing to advertise while the
+# thing they act on is mid-restart.
+_VEIL_TIP_SKIP = ("restart", "reload", "quit", "shutdown", "logout",
+                  "exit qtile")
+
+
+def _veil_message():
+    """One line shown above the cards, different every reload.
+
+    Deliberately built from facts about THIS session -- window and group
+    counts, the live layout, the active theme, the real binding count --
+    rather than from a canned list of encouraging sentences. Generic
+    filler ("Getting things ready...") is precisely the thing that reads
+    as machine-written, and it also tells the user nothing they cannot
+    already see.
+    """
+    opts = []
+    try:
+        groups = [g for g in qtile.groups if g.windows]
+        wins = sum(len(g.windows) for g in groups)
+        if wins:
+            opts.append("%d window%s open across %d group%s"
+                        % (wins, "" if wins == 1 else "s",
+                           len(groups), "" if len(groups) == 1 else "s"))
+    except Exception:
+        pass
+    try:
+        lay = qtile.current_group.layout.name
+        opts.append("layout · %s" % lay)
+    except Exception:
+        pass
+    try:
+        mode = open(os.path.expanduser(
+            "~/.cache/qtile/theme_mode")).read().strip()
+        if mode:
+            opts.append("theme · %s" % mode)
+    except Exception:
+        pass
+    try:
+        n = len([k for k in qtile.config.keys if getattr(k, "desc", "")])
+        opts.append("%d keybindings loaded" % n)
+    except Exception:
+        pass
+    try:
+        with open("/proc/uptime") as f:
+            up = float(f.read().split()[0])
+        h, m = int(up // 3600), int((up % 3600) // 60)
+        opts.append("uptime · %dh %02dm" % (h, m) if h else
+                    "uptime · %dm" % m)
+    except Exception:
+        pass
+    if not opts:
+        return ""
+    try:
+        return _random.choice(opts)
+    except Exception:
+        return opts[0]
+
+
+def _veil_tips(n=5):
+    """Sample real bindings out of the running config.
+
+    Deliberately read from qtile.config.keys rather than from a
+    hand-written list: a hardcoded list silently goes stale the moment a
+    binding changes, and showing the user a shortcut that no longer
+    exists is worse than showing nothing.
+    """
+    out = []
+    try:
+        for k in qtile.config.keys:
+            desc = (getattr(k, "desc", "") or "").strip()
+            key = getattr(k, "key", "")
+            if not desc or not isinstance(key, str) or not key:
+                continue
+            if any(s in desc.lower() for s in _VEIL_TIP_SKIP):
+                continue
+            # Descriptions here double as developer notes ("CopyQ
+            # clipboard rofi picker (ctrl+j/k nav, thumbnails)"). The
+            # parenthetical is detail nobody reads off a 2.6s hint.
+            desc = desc.split("(")[0].strip(" -–—") or desc
+            if len(desc) > 44:
+                continue
+            # The per-group bindings are ~18 near-identical entries
+            # ("Switch to group 7", "Move focused window to group 4").
+            # Left in, they swamp a random sample of five -- and they are
+            # the one set of shortcuts the user certainly already knows.
+            if key.isdigit():
+                continue
+            mods = [_VEIL_MOD_NAMES.get(m, m.title())
+                    for m in (getattr(k, "modifiers", None) or [])]
+            # Keysyms are not consistently cased in the config ("tab" and
+            # "Tab" both appear), so match on the lowered name.
+            label = _VEIL_KEY_NAMES.get(key.lower())
+            if label is None:
+                label = key.upper() if len(key) == 1 else key.title()
+            out.append({"keys": " + ".join(mods + [label]), "desc": desc})
+    except Exception:
+        return []
+    # Prefer the shortcuts worth advertising. A flat random sample kept
+    # surfacing single-modifier basics the user already uses every day
+    # ("Super + T  toggle floating"); the interesting ones are the deeper
+    # chords and the function keys, which are exactly what gets forgotten.
+    deep = [t for t in out if t["keys"].count("+") >= 2]
+    shallow = [t for t in out if t["keys"].count("+") < 2]
+    try:
+        pick = _random.sample(deep, min(n - 1, len(deep)))
+        rest = [t for t in shallow + deep if t not in pick]
+        pick += _random.sample(rest, min(n - len(pick), len(rest)))
+        _random.shuffle(pick)
+        return pick
+    except Exception:
+        return out[:n]
+
+
+def _veil_stage(frac, text):
+    """Report real progress to the veil.
+
+    The veil could fake a timed bar, but qtile actually knows where it is
+    in the restart, so it reports genuine stages instead: a bar that
+    stalls because the config is slow is useful information, a bar that
+    animates regardless is a lie.
+    """
+    try:
+        with open(_veil_stage_path(), "w") as f:
+            f.write("%.3f\n%s" % (frac, text))
+    except Exception:
+        pass
 
 
 def _veil_launch():
@@ -790,7 +1012,43 @@ def _veil_launch():
         try:
             if getattr(w, "minimized", False):
                 continue
-            rects.append({"x": w.x, "y": w.y, "w": w.width, "h": w.height})
+            cls = ""
+            try:
+                wc = w.get_wm_class() or []
+                if wc:
+                    cls = wc[-1] or wc[0] or ""
+            except Exception:
+                cls = ""
+            entry = {"x": w.x, "y": w.y, "w": w.width, "h": w.height,
+                     "wm_class": cls, "name": (w.name or "")[:40]}
+            # Icon-theme lookup by wm_class misses plenty of apps
+            # (qutebrowser fell back to a "Q" badge). _NET_WM_ICON is the
+            # icon the app itself advertises, so it always matches, and
+            # qtile already decodes it to premultiplied BGRA -- which is
+            # byte-identical to cairo's ARGB32, so the veil can wrap it
+            # with no conversion.
+            try:
+                icons = getattr(w, "icons", None) or {}
+                best, best_px = None, -1
+                for dim, arr in icons.items():
+                    iw, _, ih = dim.partition("x")
+                    iw, ih = int(iw), int(ih)
+                    if iw != ih or iw > 128:
+                        continue
+                    if iw * ih > best_px:
+                        best, best_px = (iw, ih, arr), iw * ih
+                if best:
+                    iw, ih, arr = best
+                    raw = os.path.join(os.path.dirname(rects_file),
+                                       "veil_icon_%d.raw" % len(rects))
+                    with open(raw, "wb") as f:
+                        f.write(bytes(arr))
+                    entry["icon_raw"] = raw
+                    entry["icon_w"] = iw
+                    entry["icon_h"] = ih
+            except Exception:
+                pass
+            rects.append(entry)
         except Exception:
             continue
     os.makedirs(os.path.dirname(rects_file), exist_ok=True)
@@ -801,12 +1059,23 @@ def _veil_launch():
             os.remove(stale)
         except OSError:
             pass
+    tips_file = _veil_tips_path()
+    try:
+        with open(tips_file, "w") as f:
+            _json.dump(_veil_tips(), f)
+    except Exception:
+        tips_file = ""
+
+    _veil_stage(0.14, "Preparing")
     subprocess.Popen(
         [sys.executable, _VEIL_SCRIPT,
          "--x", str(scr.x), "--y", str(scr.y),
          "--width", str(scr.width), "--height", str(scr.height),
-         "--bg", _VEIL_BG,
          "--rects-file", rects_file,
+         "--tips-file", tips_file,
+         "--message", _veil_message(),
+         "--stage-file", _veil_stage_path(),
+         "--group", str(getattr(qtile.current_group, "name", "")),
          "--done-file", done_file,
          "--ready-file", ready_file,
          "--max-seconds", str(_VEIL_MAX_SECONDS)],
@@ -814,6 +1083,87 @@ def _veil_launch():
         start_new_session=True,          # must survive the execv
     )
     return True
+
+
+def _dunst(paused):
+    """Notifications are their own override-redirect windows and sit above
+    the veil, so anything that fires mid-restart (including qtile's own
+    "Reloaded" toast, now removed) lands on top of the transition."""
+    try:
+        subprocess.Popen(["dunstctl", "set-paused", "true" if paused else "false"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
+def _modifiers_held():
+    """True while Shift/Ctrl/Alt/Super are physically down.
+
+    This matters a lot: the KeyboardLayout widget runs
+    `xmodmap ~/.Xmodmap` synchronously at startup (libqtile
+    widget/keyboardlayout.py), and ~/.Xmodmap does `clear mod1` /
+    `add mod1`. xmodmap refuses to rewrite the modifier map while any
+    modifier key is held and retries at 2s, 4s, 8s, 16s, 32s -- blocking
+    qtile's whole startup. Since the restart keybind is Super+Shift+R,
+    Super is *always* still down at that moment, which is what made
+    restarts take ~12s. Waiting for release first avoids it entirely.
+
+    Checked via QueryKeymap (the real physical key bitmap), NOT the
+    pointer's modifier mask: xmodmap inspects pressed *keys*, and the two
+    disagree -- an early version of this used the pointer mask, reported
+    "nothing held", and the 2/4/8/16/32s stall happened anyway. Waiting
+    for the keyboard to be completely idle is stricter than necessary but
+    is exactly what clears xmodmap's check, and after releasing
+    Super+Shift+R that takes ~200ms.
+
+    Only genuine modifier keycodes count. An earlier version treated any
+    pressed key as "held", so merely typing would have delayed a restart
+    (and a single stuck key wasted the whole wait budget).
+    """
+    try:
+        core = qtile.core.conn.conn.core
+        mods = core.GetModifierMapping().reply()
+        mod_codes = {kc for kc in mods.keycodes if kc}
+        if not mod_codes:
+            return False
+        keymap = core.QueryKeymap().reply().keys
+        for kc in mod_codes:
+            if keymap[kc >> 3] & (1 << (kc & 7)):
+                return True
+        return False
+    except Exception:
+        return False
+
+
+@hook.subscribe.startup
+def _veil_stage_config_loaded():
+    # Fires once the config has been imported and screens/bars are built —
+    # the single longest part of a restart on this config.
+    if os.path.exists(_veil_stage_path()):
+        _veil_stage(0.62, "Configuration loaded")
+
+
+def _reapply_xmodmap_when_idle(tries=40):
+    """Re-run ~/.Xmodmap once the keyboard is actually idle.
+
+    The startup call is fire-and-forget now, so it can lose the race
+    against a held Super. This retries cheaply (250ms apart, ~10s total)
+    and applies it the moment no key is down, keeping Caps->Alt reliable
+    without ever blocking qtile.
+    """
+    try:
+        if not os.path.isfile(os.path.expanduser("~/.Xmodmap")):
+            return
+        if _modifiers_held() and tries > 0:
+            qtile.call_later(0.25, _reapply_xmodmap_when_idle, tries - 1)
+            return
+        subprocess.Popen(
+            ["sh", "-c", "xmodmap $HOME/.Xmodmap"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:
+        pass
 
 
 def _veil_signal_done():
@@ -824,24 +1174,53 @@ def _veil_signal_done():
         open(done_file, "w").close()
     except Exception:
         pass
+    _veil_stage(1.0, "Ready")
+    qtile.call_later(0.1, _reapply_xmodmap_when_idle)
+    # The veil unpauses dunst itself when its window actually goes away
+    # (see the `finally` in qtile-restart-veil.py) -- that is the only
+    # place that knows the real moment, and dunst dumps its entire queued
+    # backlog the instant it unpauses. This is a backstop for the case
+    # where the veil died without running its exit path; it is idempotent,
+    # so both firing is harmless. Kept well clear of the fade-out.
+    qtile.call_later(1.5, lambda: _dunst(False))
 
 
 def _smooth_restart(qtile):
-    _save_layout_state()
-    _save_window_group_state()
-    qtile.spawn("notify-send -u low -t 3000 -i dialog-ok-symbolic 'Qtile' 'Reloaded'")
+    _veil_stage(0.08, "Saving session")
     try:
         if _veil_launch():
+            # Save state AFTER spawning the veil, not before. qtile then
+            # blocks on the veil reporting it has painted, and the veil
+            # needs ~0.4s just to start python and import GTK -- measured.
+            # Doing the saves first meant that 0.4s was spent idling; doing
+            # them here overlaps them with the veil's boot. Both still
+            # complete strictly before qtile.restart() below.
+            _save_layout_state()
+            _save_window_group_state()
+            _dunst(True)
             # Wait for the veil to report it has actually painted before
             # replacing the process image. A fixed delay is not enough:
             # python+GTK startup is slower than any sane fixed wait, and
             # restarting early lets the pile flash through underneath.
             _rects, _done, ready_file = _veil_paths()
-            budget = [40]            # 40 * 25ms = 1.0s ceiling
+            # 1.0s ceiling. This wait used to be load-bearing (it kept
+            # xmodmap from stalling startup for tens of seconds), but that
+            # is now fixed at the source by making the xmodmap call
+            # non-blocking, so this is only belt-and-braces. A stuck key
+            # should not cost a full 3s of dead time on every restart.
+            budget = [40]
 
             def _wait():
                 budget[0] -= 1
-                if os.path.exists(ready_file) or budget[0] <= 0:
+                if budget[0] <= 0:
+                    _veil_stage(0.22, "Restarting window manager")
+                    qtile.restart()
+                    return
+                # Both conditions: the veil must be painted (so the pile
+                # never shows) and the modifiers must be up (so xmodmap
+                # does not stall the next startup for tens of seconds).
+                if os.path.exists(ready_file) and not _modifiers_held():
+                    _veil_stage(0.22, "Restarting window manager")
                     qtile.restart()
                 else:
                     qtile.call_later(0.025, _wait)
@@ -850,6 +1229,9 @@ def _smooth_restart(qtile):
             return
     except Exception:
         pass
+    # Fallthrough: the veil never launched, so nothing has been saved yet.
+    _save_layout_state()
+    _save_window_group_state()
     qtile.restart()          # kill-switch: plain, known-good restart
 
 
@@ -905,9 +1287,10 @@ def _restore_window_group_state():
 
 @hook.subscribe.startup_complete
 def _init_window_group_state():
+    _veil_stage(0.80, "Restoring windows")
     _load_window_group_state()
-    qtile.call_later(0.6, _restore_window_group_state)
-    qtile.call_later(1.6, _restore_window_group_state)
+    qtile.call_later(_RESTORE_PASS_1, _restore_window_group_state)
+    qtile.call_later(_RESTORE_PASS_2, _restore_window_group_state)
     qtile.call_later(_VEIL_SIGNAL_DELAY, _veil_signal_done)
 
 
