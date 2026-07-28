@@ -33,6 +33,7 @@
 
 import os
 import subprocess
+import sys
 import time
 import threading
 from libqtile import bar, hook, layout, qtile, widget
@@ -742,17 +743,114 @@ def _save_window_group_state():
         pass
 
 
+# ----------------------------------------------------------------
+# Restart transition.
+#
+# Measured on this config in an isolated Xephyr sandbox: after execv,
+# qtile's boot scan maps EVERY window from EVERY group at once and leaves
+# them piled on top of each other for ~2.2s, then hides the foreign ones
+# roughly 0.1s BEFORE the `startup` hook fires. So no config-level code
+# is alive while the ugly frame is on screen -- masking it requires a
+# process that outlives the execv. That is scripts/qtile-restart-veil.py.
+#
+# All visual work happens in the veil. qtile only snapshots the current
+# window rects, launches the veil, waits for it to confirm it has
+# painted, restarts, and signals "done" once the layout has settled.
+# Nothing here moves window geometry, so there is no fighting with
+# layout_all() and no way to strand a window off-grid.
+#
+# The veil is override-redirect with an empty input shape: it can never
+# take focus, never grabs keyboard or pointer, and passes all input
+# through. It also self-destructs after --max-seconds. This is
+# deliberately unlike the earlier feh --fullscreen attempt, which behaved
+# as an exclusive fullscreen app and had to be dismissed by hand.
+# ----------------------------------------------------------------
+_VEIL_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "scripts", "qtile-restart-veil.py")
+_VEIL_BG = "#1e1e2e"
+_VEIL_MAX_SECONDS = 8.0
+_VEIL_SIGNAL_DELAY = 1.8        # after startup_complete, once restores settle
+
+
+def _veil_paths():
+    d = os.path.dirname(_WINDOW_GROUP_FILE)
+    return (os.path.join(d, "veil_rects.json"),
+            os.path.join(d, "veil_done"),
+            os.path.join(d, "veil_ready"))
+
+
+def _veil_launch():
+    """Start the veil. Returns True only if it was actually spawned."""
+    if not os.path.exists(_VEIL_SCRIPT):
+        return False
+    rects_file, done_file, ready_file = _veil_paths()
+    scr = qtile.current_screen
+    rects = []
+    for w in qtile.current_group.windows:
+        try:
+            if getattr(w, "minimized", False):
+                continue
+            rects.append({"x": w.x, "y": w.y, "w": w.width, "h": w.height})
+        except Exception:
+            continue
+    os.makedirs(os.path.dirname(rects_file), exist_ok=True)
+    with open(rects_file, "w") as f:
+        _json.dump(rects, f)
+    for stale in (done_file, ready_file):
+        try:
+            os.remove(stale)
+        except OSError:
+            pass
+    subprocess.Popen(
+        [sys.executable, _VEIL_SCRIPT,
+         "--x", str(scr.x), "--y", str(scr.y),
+         "--width", str(scr.width), "--height", str(scr.height),
+         "--bg", _VEIL_BG,
+         "--rects-file", rects_file,
+         "--done-file", done_file,
+         "--ready-file", ready_file,
+         "--max-seconds", str(_VEIL_MAX_SECONDS)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True,          # must survive the execv
+    )
+    return True
+
+
+def _veil_signal_done():
+    """Tell the veil the desktop is ready; it fades out and exits. If this
+    never runs, the veil's own watchdog kills it anyway."""
+    try:
+        _rects, done_file, _ready = _veil_paths()
+        open(done_file, "w").close()
+    except Exception:
+        pass
+
+
 def _smooth_restart(qtile):
-    # Reverted: a fullscreen-feh-screenshot overlay was tried here to
-    # mask the transient bad-looking relayout during restart, but it
-    # caused real freezes (feh's fullscreen grab needing a manual Esc
-    # to dismiss, and at least one X server crash during testing) on
-    # this live session. Not worth the instability -- back to the
-    # plain, previously-reliable restart.
     _save_layout_state()
     _save_window_group_state()
     qtile.spawn("notify-send -u low -t 3000 -i dialog-ok-symbolic 'Qtile' 'Reloaded'")
-    qtile.restart()
+    try:
+        if _veil_launch():
+            # Wait for the veil to report it has actually painted before
+            # replacing the process image. A fixed delay is not enough:
+            # python+GTK startup is slower than any sane fixed wait, and
+            # restarting early lets the pile flash through underneath.
+            _rects, _done, ready_file = _veil_paths()
+            budget = [40]            # 40 * 25ms = 1.0s ceiling
+
+            def _wait():
+                budget[0] -= 1
+                if os.path.exists(ready_file) or budget[0] <= 0:
+                    qtile.restart()
+                else:
+                    qtile.call_later(0.025, _wait)
+
+            qtile.call_later(0.025, _wait)
+            return
+    except Exception:
+        pass
+    qtile.restart()          # kill-switch: plain, known-good restart
 
 
 def _load_window_group_state():
@@ -810,6 +908,7 @@ def _init_window_group_state():
     _load_window_group_state()
     qtile.call_later(0.6, _restore_window_group_state)
     qtile.call_later(1.6, _restore_window_group_state)
+    qtile.call_later(_VEIL_SIGNAL_DELAY, _veil_signal_done)
 
 
 @hook.subscribe.client_new
@@ -2242,19 +2341,21 @@ def right_side_widgets():
             # monochrome glyph is just a character, so the size and
             # colour set below actually take effect.
             #
-            # U+F0313 (keyboard_variant) rather than U+F030C: the plain
-            # keyboard glyph has finer internal detail that mushes into a
-            # smudge at bar size and stops reading as a keyboard.
+            # Flag emoji. Tried monochrome Nerd Font glyphs (keyboard,
+            # keyboard_variant, globe) to get something that inherits the
+            # theme colour -- none of them read as well as the flag, which
+            # is instantly recognisable without being learned.
             #
-            # Each layout carries its flag's dominant hue, pulled from
-            # the active palette so it still tracks the theme -- TR red,
-            # DE gold, AR green, EN blue. The colour is the fast signal;
-            # you register it before reading the "TR"/"EN" label.
+            # Size is the fiddly part: these are colour BITMAP glyphs, so
+            # they render at whatever size the font provides and sit
+            # slightly small next to text at the same nominal size. Bar
+            # text is 10pt (10240 pango units); unscaled the flag looked
+            # undersized, and 15000 was too big. 12000 splits it.
             display_map={
-                "us": f"<span size='15000' foreground='{colors[6][0]}'>󰌓</span>  EN",
-                "ara": f"<span size='15000' foreground='{colors[8][0]}'>󰌓</span>  AR",
-                "tr": f"<span size='15000' foreground='{colors[3][0]}'>󰌓</span>  TR",
-                "de": f"<span size='15000' foreground='{colors[5][0]}'>󰌓</span>  DE",
+                "us": "<span size='11000'>🇺🇸</span> EN",
+                "ara": "<span size='11000'>🇸🇦</span> AR",
+                "tr": "<span size='11000'>🇹🇷</span> TR",
+                "de": "<span size='11000'>🇩🇪</span> DE",
             },
             markup=True,
             fmt="{}",
