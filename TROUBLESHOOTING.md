@@ -320,13 +320,26 @@ subsystem. Each entry: **symptom → root cause → fix**.
   - `-a success` set the *appname* to `success`, but the `[success]` rule
     in `dunstrc.tmpl` matches on **summary**, not appname — so it never
     applied and was pure noise.
-- **Now:** per-filesystem percentage, a 20-cell bar colored by threshold
-  (<75 green / <90 yellow / >=90 red), `free of total · used` underneath,
-  and urgency escalating to `critical` with the title "Disk almost full"
-  at >=90% so a real problem is styled like one. Colors come from
-  `current_palette.json`, so it tracks the active theme; it falls back to
-  doom-one if that file is missing. `/home` is only listed when it is a
-  distinct filesystem from `/`.
+- **Now:** per-filesystem percentage plus a 20-cell bar colored by
+  threshold (<75 green / <90 yellow / >=90 red) and `free of total ·
+  used` underneath. Colors come from `current_palette.json`, so it tracks
+  the active theme, falling back to doom-one if that file is missing.
+- **Which filesystem drives the alarm** — this is the subtle part.
+  Escalation follows the **primary** filesystem (`/home` when it is
+  separate, else `/`), *not* simply the fullest one. On a split layout
+  `/` is a small system partition that sits chronically tight — here it
+  is a 32G root at 91% — and letting it set the urgency meant a red
+  "Disk almost full" banner on every single open. That trains you to
+  ignore the banner, which destroys the value of the one signal that
+  matters. `/home` therefore leads the list and sets the title.
+- **`/` is not ignored**, two ways: it still renders its own red bar and
+  percentage, and it escalates the whole popup once it passes
+  `SYS_CRIT_PCT` (97%) — near enough to 100% to actually wedge the
+  machine — with a title naming it, since the generic title no longer
+  implies which filesystem is meant.
+- **Titles:** `Disk usage` (normal) → `Disk filling up` (primary >=75) →
+  `Disk almost full` (primary >=90, critical) → `<mount> almost full`
+  (non-primary past SYS_CRIT_PCT, critical).
 - **Bar math edge cases** (worth keeping if you touch it): never show an
   empty bar while any space is used, never show a full bar below 100%,
   and the two segments must always sum to exactly `BAR_WIDTH`.
