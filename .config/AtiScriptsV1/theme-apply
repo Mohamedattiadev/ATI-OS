@@ -61,6 +61,23 @@ if [[ "$MODE" != "wal" ]] && ! is_preset "$MODE"; then
   exit 1
 fi
 
+# ---- Raise the restart veil NOW, before any palette is written ----
+# The restart at the end of this script is what the veil normally covers,
+# but everything between here and there -- ~10 app palettes, GTK, qt5ct,
+# rofi, dunst, papirus -- takes about 4s, and the user watched all of it
+# happen on a naked desktop: colours visibly swapping, a pause, and only
+# then a loading screen. Raising the veil first hides that whole window.
+#
+# Fire-and-forget in the background: this must never delay or fail the
+# theme change. Same probe-the-config-module pattern as the restart call
+# below (a qtile attribute may not be attached yet; the module function
+# has been there far longer).
+(
+  qtile cmd-obj -o cmd -f eval -a \
+    "str(__import__(\"sys\").modules[\"config\"]._veil_hold())" \
+    >/dev/null 2>&1 || true
+) &
+
 KITTY_THEMES="$HOME/.config/kitty/themes"
 ROFI_THEMES="$HOME/.config/rofi/themes"
 ALACRITTY_THEMES="$HOME/.config/alacritty/themes"
