@@ -296,6 +296,40 @@ subsystem. Each entry: **symptom → root cause → fix**.
   from `dunstrc.tmpl`, and `~/.config/dunst` is a symlink into the repo,
   so the tracked `dunstrc` is overwritten on every apply. Edit the
   `.tmpl`; edits to `dunstrc` alone are lost at the next theme switch.
+- **Knock-on:** the UI font is now *proportional*, so any notification
+  body that aligns columns with padded spaces renders ragged. Wrap just
+  that block in `<tt>` (pango monospace) rather than reverting the font —
+  see `disk_notify`. Requires `markup = full`, which is set globally.
+  Fixed-width `-----` separators are fine (they actually stopped wrapping
+  onto a second line, since `Sans` is narrower than the old mono face).
+
+### Disk chip popup is an unreadable wall of numbers
+- **Symptom:** clicking the disk chip gave a bare TOTAL/USED/FREE list
+  per filesystem, with the columns not lining up, a blank bold line above
+  it, and no indication that `/` was 91% full.
+- **Causes, in order of how much they hurt:**
+  - No **percentage or bar** anywhere, so the one thing you actually
+    open this for — "am I about to run out?" — had to be computed in your
+    head from `USED` vs `TOTAL`.
+  - Columns padded with literal spaces, which stopped aligning when the
+    dunst font became proportional (see the entry above).
+  - `notify-send ... "" "<body>"` passed an **empty summary**. dunstrc's
+    `format = "<b>%s</b>\n%b"` still renders that empty `%s` as a blank
+    bold line, which is where the dead space at the top came from. Always
+    pass a real summary.
+  - `-a success` set the *appname* to `success`, but the `[success]` rule
+    in `dunstrc.tmpl` matches on **summary**, not appname — so it never
+    applied and was pure noise.
+- **Now:** per-filesystem percentage, a 20-cell bar colored by threshold
+  (<75 green / <90 yellow / >=90 red), `free of total · used` underneath,
+  and urgency escalating to `critical` with the title "Disk almost full"
+  at >=90% so a real problem is styled like one. Colors come from
+  `current_palette.json`, so it tracks the active theme; it falls back to
+  doom-one if that file is missing. `/home` is only listed when it is a
+  distinct filesystem from `/`.
+- **Bar math edge cases** (worth keeping if you touch it): never show an
+  empty bar while any space is used, never show a full bar below 100%,
+  and the two segments must always sum to exactly `BAR_WIDTH`.
 
 ### Chromium follows the palette but Chrome does not
 - **Symptom:** after a theme switch Chromium showed the "Installed theme
