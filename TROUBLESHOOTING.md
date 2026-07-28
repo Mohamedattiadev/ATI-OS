@@ -1335,3 +1335,76 @@ Append entries here as you hit them. Keep the same tri-format
   discarded as the same noise in a less obvious form.
 - Escalates to critical urgency only when **below 15% AND not charging** —
   a low battery that is already on the charger is not a problem.
+
+---
+
+## System updates
+
+### An update broke the system badly enough to need a reinstall
+- **Symptom:** a `pacman -Syu` left libraries missing and the system
+  unbootable; snapshots were no help and the machine had to be
+  reinstalled from scratch.
+- **Root cause — not an Arch bug, a disk-space accident.** A full upgrade
+  downloads into `/var/cache/pacman/pkg` and then unpacks into `/usr`,
+  so it needs room for **both at once**. If `/` fills part-way through a
+  transaction, a package's old files have already been removed and the
+  new ones were never written: libraries vanish mid-upgrade and the
+  system stops booting.
+- **Why it happened here:** Timeshift defaulted to
+  `backup_device_uuid` = the **root partition itself**, so 12G of
+  snapshots sat on the same 32G `/` they were protecting, leaving 2.7G
+  free. That is self-defeating twice over:
+  1. the snapshots consume exactly the headroom upgrades need, and
+  2. when `/` is damaged the snapshots are damaged with it — which is
+     why recovery meant a reinstall rather than a restore.
+- **Fix:** snapshots live on a different filesystem (`/home`, or better
+  an external disk). Check with:
+  ```sh
+  findmnt -no SOURCE --target /timeshift
+  findmnt -no SOURCE --target /
+  # these must NOT be the same device
+  ```
+- **Use `safe-update`** instead of a bare `pacman -Syu`. Every step is a
+  refusal point and nothing is mutated until the last one: space
+  preflight (≥6G) → `archlinux-keyring` → `informant` news gate →
+  verified snapshot → `pacman -Syuw` download-only → re-check space →
+  `pacman -Su`.
+- **Why that order:** keyring before `-Syu` (a stale keyring fails every
+  signature check, and the tempting "fix" is disabling sig checks, which
+  is far worse than the problem); download-only before install (a
+  network failure or full disk during download is harmless and
+  resumable); re-check space after download because the download itself
+  consumed some.
+- **The snapshot is verified, not assumed** — `safe-update` counts
+  snapshots before and after rather than trusting timeshift's exit code.
+  An unverified backup is worse than none, because you act as though you
+  have one.
+
+### Recovering from a broken upgrade
+- **System still boots:** `sudo downgrade <package>` rolls back a single
+  bad package from the pacman cache without a full restore. This is why
+  the cache should not be aggressively cleared — `paccache -rk1` keeps
+  one previous version of everything, which is the rollback material.
+- **System does not boot / dynamic linking broken:** this is what
+  `pacman-static` is for. It is statically linked, so it still runs when
+  a `glibc` or `libstdc++` upgrade has broken every dynamically linked
+  binary on the system — including normal `pacman`, which is exactly
+  when you need it most. Boot the Arch ISO, `arch-chroot`, then use
+  `pacman-static` to repair or roll back.
+- **ext4 has no bootable snapshots.** Timeshift in rsync mode restores
+  through a live USB; it cannot boot into a previous state the way
+  btrfs + snapper + grub-btrfs can. Worth knowing *before* you need it.
+- **Never `pacman -Sy <pkg>`.** Partial upgrades are the other classic
+  way to break an Arch system: refreshing the database without upgrading
+  installed packages leaves libraries and their dependents at mismatched
+  versions. Always `-Syu`.
+
+### "Is install.sh guaranteed to work?"
+- No, and no honest process can claim that. What is verifiable:
+  `./wizard.sh --dry-run --yes` proves every module is **reachable,
+  correctly ordered, and idempotent** (28/28 ok). It cannot prove that
+  AUR builds compile, that upstream URLs still resolve, or that a
+  package has not been renamed — those depend on the world outside the
+  repo on the day you run it.
+- The only real proof is a fresh-VM run; see "Testing on a fresh Arch VM"
+  above. Treat the dry-run as a structural check, not a guarantee.
