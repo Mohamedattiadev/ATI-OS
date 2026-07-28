@@ -91,18 +91,46 @@ future=$(
 [ -z "$general" ] && general="<i>  (No overdue tasks)</i>"
 [ -z "$future" ] && future="<i>(No future tasks)</i>"
 
+# Palette from theme-apply's dump so the popup tracks the active mode.
+# The old version hardcoded #ffffff/#c678dd/#70D78F/#FF6B6B/#98c379 and
+# stayed doom-one coloured under every other theme.
+read -r P_FG P_MUTED P_GREEN P_RED P_YELLOW P_BLUE <<<"$(
+python3 <<'PY' 2>/dev/null
+import json, os
+try:
+    d = json.load(open(os.path.expanduser("~/.cache/qtile/current_palette.json")))
+    def mix(a, b, t=0.45):
+        pa = [int(a[i:i+2], 16) for i in (1, 3, 5)]
+        pb = [int(b[i:i+2], 16) for i in (1, 3, 5)]
+        return "#{:02x}{:02x}{:02x}".format(*(round(x + (y - x) * t) for x, y in zip(pa, pb)))
+    print(d["fg"], mix(d["bg"], d["fg"]), d["green"], d["red"], d["yellow"], d["blue"])
+except Exception:
+    print("#bbc2cf", "#5b6268", "#98be65", "#ff6c6b", "#ecbe7b", "#51afef")
+PY
+)"
+[[ -n "${P_BLUE:-}" ]] || read -r P_FG P_MUTED P_GREEN P_RED P_YELLOW P_BLUE \
+  <<<"#bbc2cf #5b6268 #98be65 #ff6c6b #ecbe7b #51afef"
+
+# Sections are separated by blank lines rather than rows of dashes. A
+# fixed-width dash rule cannot work here: dunst's UI font is proportional
+# and the popup width is a range (260-340), so the old
+# "-----------------" either overflowed and wrapped onto a second line or
+# fell short of the edge. Whitespace reads just as clearly and cannot
+# wrap. Only section headers are bold now -- previously every line was
+# wrapped in <b>, so nothing stood out from anything else.
 notify-send -u low -h string:markup:1 -t 40000 \
-  "what is the plan Today?" \
-  "<b><span foreground='#ffffff'>$header</span></b>
-<b><span >------------------------------------------------------</span></b>
-<b><span foreground='#ffffff'>🗓️ Due Today:</span></b>
-<b><span >$due_today</span></b>
-<b><span >------------------------------------------------------</span></b>
-<b><span foreground='#c678dd'>✅ Done Today:</span></b>
-<b><span foreground='#70D78F'>$done_today</span></b>
-<b><span >------------------------------------------------------</span></b>
-<b><span foreground='#FF6B6B'>📝 General (Past Due):</span></b>
-<b><span foreground='#ffffff' >$general</span></b>
-<b><span >------------------------------------------------------</span></b>
-<b><span foreground='#98c379' >⏳ Future Tasks:</span></b>
-<b><span foreground='#ffffff' >$future</span></b>"
+  -h string:x-dunst-stack-tag:plantoday \
+  "Today's plan" \
+  "<span foreground='${P_MUTED}'>$header</span>
+
+<b><span foreground='${P_BLUE}'>🗓  Due today</span></b>
+<span foreground='${P_FG}'>$due_today</span>
+
+<b><span foreground='${P_GREEN}'>✅  Done today</span></b>
+<span foreground='${P_FG}'>$done_today</span>
+
+<b><span foreground='${P_RED}'>📝  Past due</span></b>
+<span foreground='${P_FG}'>$general</span>
+
+<b><span foreground='${P_YELLOW}'>⏳  Upcoming</span></b>
+<span foreground='${P_FG}'>$future</span>"

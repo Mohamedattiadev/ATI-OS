@@ -1,0 +1,110 @@
+#!/bin/bash
+# battery_notify -- dunst popup with charge level and state (bar chip click).
+#
+# Was an inline `notify-send "Battery Status" "$(acpi | cut -d, -f2-)"`
+# in config.py, which printed a raw acpi fragment like " 100%" or
+# " 47%, 01:23:14 remaining" -- leading space, percent with no context,
+# and no indication of whether that number is good or bad.
+#
+# Same conventions as disk_notify: <tt> for the bar (dunst's UI font is
+# proportional, so space-padded columns do not align), and colors from
+# ~/.cache/qtile/current_palette.json so it tracks the active theme.
+
+set -uo pipefail
+
+BAR_WIDTH=20
+BAT_DIR=/sys/class/power_supply
+
+read -r C_OK C_WARN C_CRIT C_MUTED <<<"$(
+python3 <<'PY' 2>/dev/null
+import json, os
+try:
+    d = json.load(open(os.path.expanduser("~/.cache/qtile/current_palette.json")))
+    def mix(a, b, t=0.45):
+        pa = [int(a[i:i+2], 16) for i in (1, 3, 5)]
+        pb = [int(b[i:i+2], 16) for i in (1, 3, 5)]
+        return "#{:02x}{:02x}{:02x}".format(*(round(x + (y - x) * t) for x, y in zip(pa, pb)))
+    print(d["green"], d["yellow"], d["red"], mix(d["bg"], d["fg"]))
+except Exception:
+    print("#98be65", "#ecbe7b", "#ff6c6b", "#5b6268")
+PY
+)"
+[[ -n "${C_MUTED:-}" ]] || read -r C_OK C_WARN C_CRIT C_MUTED <<<"#98be65 #ecbe7b #ff6c6b #5b6268"
+
+# Read straight from sysfs rather than parsing acpi(1): no extra package,
+# and no locale-dependent text to scrape.
+bat=""
+for b in "$BAT_DIR"/BAT*; do [[ -d "$b" ]] && { bat="$b"; break; }; done
+if [[ -z "$bat" ]]; then
+  notify-send -u normal -i battery-missing "Battery" "No battery detected"
+  exit 0
+fi
+
+pct=$(<"$bat/capacity")
+status=$(<"$bat/status")
+[[ "$pct" =~ ^[0-9]+$ ]] || pct=0
+
+# Time remaining, when the kernel exposes the counters. energy_* is
+# reported by most laptops, charge_* by the rest; skip silently if
+# neither is present or current is 0 (idle/full -> no meaningful ETA).
+eta=""
+now=""; full=""; rate=""
+for pair in "energy_now:energy_full:power_now" "charge_now:charge_full:current_now"; do
+  IFS=: read -r f_now f_full f_rate <<<"$pair"
+  if [[ -r "$bat/$f_now" && -r "$bat/$f_rate" ]]; then
+    now=$(<"$bat/$f_now"); full=$(<"$bat/$f_full"); rate=$(<"$bat/$f_rate")
+    break
+  fi
+done
+# Only meaningful while actively charging or discharging. At Full the
+# draw drops to ~0, and dividing by a near-zero rate produced absurd
+# figures like "4323h remaining". Anything over a day is likewise the
+# same noise, just less obviously wrong, so it is dropped too.
+if [[ "$status" == "Charging" || "$status" == "Discharging" ]] &&
+   [[ -n "$rate" && "$rate" =~ ^[0-9]+$ ]] && (( rate > 0 )); then
+  if [[ "$status" == "Charging" ]]; then
+    mins=$(( (full - now) * 60 / rate ))
+    label="until full"
+  else
+    mins=$(( now * 60 / rate ))
+    label="remaining"
+  fi
+  (( mins > 0 && mins <= 1440 )) &&
+    eta=$(printf '%dh %02dm %s' $(( mins / 60 )) $(( mins % 60 )) "$label")
+fi
+
+# Charge level drives the color; charging always reads as OK since the
+# number is on its way up regardless of how low it is right now.
+color="$C_CRIT"
+(( pct >= 20 )) && color="$C_WARN"
+(( pct >= 40 )) && color="$C_OK"
+[[ "$status" == "Charging" || "$status" == "Full" ]] && color="$C_OK"
+
+case "$status" in
+  Charging)    icon="battery-charging"; state="Charging" ;;
+  Full)        icon="battery-full";     state="Fully charged" ;;
+  Discharging) icon="battery";          state="On battery" ;;
+  *)           icon="battery";          state="$status" ;;
+esac
+
+filled=$(( (pct * BAR_WIDTH + 50) / 100 ))
+(( filled == 0 && pct > 0 )) && filled=1
+(( filled >= BAR_WIDTH && pct < 100 )) && filled=$(( BAR_WIDTH - 1 ))
+bar_on=""; bar_off=""
+(( filled > 0 )) && bar_on=$(printf '█%.0s' $(seq 1 "$filled"))
+(( BAR_WIDTH - filled > 0 )) && bar_off=$(printf '░%.0s' $(seq 1 $(( BAR_WIDTH - filled ))))
+
+body="<span foreground=\"${color}\"><b>${pct}%</b></span>   <span foreground=\"${C_MUTED}\">${state}</span>
+<tt><span foreground=\"${color}\">${bar_on}</span><span foreground=\"${C_MUTED}\">${bar_off}</span></tt>"
+[[ -n "$eta" ]] && body+="
+<span foreground=\"${C_MUTED}\">${eta}</span>"
+
+# Only nag when it is actually urgent: low AND not charging.
+urgency=normal
+if (( pct < 15 )) && [[ "$status" != "Charging" && "$status" != "Full" ]]; then
+  urgency=critical
+fi
+
+notify-send -u "$urgency" -i "$icon" -t 6000 \
+  -h string:x-dunst-stack-tag:battery \
+  "Battery" "$body"
