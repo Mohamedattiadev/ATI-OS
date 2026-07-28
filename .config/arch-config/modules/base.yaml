@@ -22,10 +22,16 @@ packages:
   - pacman-contrib
   # Fallback kernel. A bad `linux` upgrade -- or an out-of-tree module
   # that fails to build against it -- leaves an unbootable system with no
-  # way back in. linux-lts is a SECOND kernel with its own GRUB entry:
-  # you pick it at the boot menu and repair from a working system instead
-  # of hunting for an Arch ISO. Single highest-value insurance on a
-  # rolling release, and it costs ~400MB.
+  # way back in. linux-lts is a SECOND kernel you pick at the boot menu to
+  # repair from a working system instead of hunting for an Arch ISO.
+  # Single highest-value insurance on a rolling release, ~400MB.
+  #
+  # The package alone gets you NOTHING: it ships no boot entry, and no UKI
+  # either (see TROUBLESHOOTING, "Bootloader"). The wizard module
+  # `boot-fallback` writes the systemd-boot entries that make it
+  # selectable. Installing linux-lts without that module is the failure
+  # mode where you reboot into a broken system and discover the rescue
+  # kernel was never reachable from the menu.
   - linux-lts
   - linux-lts-headers      # so DKMS modules build against it too
   # speed / safety
@@ -34,6 +40,9 @@ packages:
 
 exclude: []
 conflicts:
-  - linux-lts
+  # Alternate kernels we do not want. linux-lts used to be listed here and
+  # was left behind when it was promoted to `packages` above -- declaring
+  # it in both is self-contradictory and risks dcli removing the very
+  # rescue kernel this module installs.
   - linux-zen
   - linux-hardened

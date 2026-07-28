@@ -1457,10 +1457,15 @@ mismatch (reboot) and new `.pacnew` files.
 3. **System won't boot** → pick **"Arch Linux (LTS fallback)"** at the
    boot menu and repair from a working system. This is why `linux-lts` is
    declared in `base.yaml`.
-4. **Fallback kernel also fails** → Arch ISO, `arch-chroot`, then
+4. **LTS fallback drops to an emergency shell** → pick **"Arch Linux (LTS
+   rescue - all modules)"**. Same kernel, but its initramfs was built
+   without the `autodetect` hook, so it carries every module rather than
+   only those probed when the image was generated. Boots slower, costs
+   ~205MB on the ESP, and comes up when the trimmed image cannot.
+5. **Fallback kernel also fails** → Arch ISO, `arch-chroot`, then
    `pacman-static` — statically linked, so it still runs when a `glibc`
    upgrade has broken every dynamically linked binary including `pacman`.
-5. **Unrepairable** → Timeshift restore. Snapshots live on `/home`
+6. **Unrepairable** → Timeshift restore. Snapshots live on `/home`
    (`/dev/sda3`), so they survive a dead root.
 
 ### Bootloader: this machine uses systemd-boot, not GRUB
@@ -1475,10 +1480,42 @@ mismatch (reboot) and new `.pacnew` files.
   `arch.conf`'s `options` line can carry a stale PARTUUID and still boot.
   **Take kernel options from `/proc/cmdline`**, which is authoritative,
   not from `arch.conf`.
-- `linux-lts` produces no UKI, so its entry (`arch-lts.conf`, kept in
-  `arch-config/boot/`) is a plain type-1 entry with `linux` + `initrd`
-  lines. It is machine-specific (PARTUUID), so the wizard does **not**
-  write it — recreate it by hand on a new machine.
+- `linux-lts` produces no UKI, so its entries are plain type-1 entries
+  with `linux` + `initrd` lines.
 - `loader.conf` shipped with `#timeout 3` commented out, which suppresses
   the menu entirely. A fallback entry you cannot select is not a
-  fallback; set a real `timeout`.
+  fallback; the wizard appends `timeout 5` if no real timeout is set.
+
+### The two LTS entries, and who writes them
+Wizard module **`boot-fallback`** (runs after `pacman-guard`) writes both,
+after `dcli-sync` has installed `linux-lts`:
+
+| Entry | Initramfs | When you want it |
+|---|---|---|
+| `arch-lts.conf` — *Arch Linux (LTS fallback)* | `initramfs-linux-lts.img`, autodetect-trimmed, ~18MB | a bad `linux` upgrade |
+| `arch-lts-fallback.conf` — *Arch Linux (LTS rescue - all modules)* | `initramfs-linux-lts-fallback.img`, no autodetect, ~205MB | the trimmed image is missing a driver |
+
+- The rescue image only exists because the module adds `fallback` to
+  `PRESETS` in `/etc/mkinitcpio.d/linux-lts.preset` (Arch ships
+  `PRESETS=('default')` for LTS) and reruns `mkinitcpio -p linux-lts`. The
+  preset is edited **in place**, not overwritten — pacman owns that file
+  and an overwrite means a `.pacnew` on every `linux-lts` upgrade.
+- **The module generates the entries, it does not copy them.** Boot
+  entries are machine-specific: `root=` comes from `/proc/cmdline` (the
+  authoritative source — see above), the microcode `initrd` line is only
+  emitted for the `intel-ucode.img`/`amd-ucode.img` that actually exists,
+  and the ESP comes from `bootctl --print-esp-path`. The copies in
+  `arch-config/boot/` are *this machine's* snapshot, kept for reference
+  and diffing — deploying them verbatim elsewhere gives you an entry that
+  looks correct in the menu and fails at the moment you need it.
+- **Check the ESP has room.** The rescue image is ~205MB on a typical
+  1GB `/boot`; `df -h /boot` before, and expect `mkinitcpio` to fail
+  loudly rather than silently truncate if it does not fit.
+- Verify with `bootctl list` — all four (UKI, `arch.conf`, and the two LTS
+  entries) should appear. `(not reported/new)` next to an entry just means
+  it has not been booted yet, not that it is broken.
+- ⚠️ **Not yet boot-tested on this machine.** Everything short of a reboot
+  has been validated: `bootctl list` shows both entries, and `ext4`,
+  `ahci` and `sd_mod` are built **into** the LTS kernel (`CONFIG_*=y`), so
+  the trimmed image having fewer modules cannot cost us the root device.
+  Actually confirming it boots requires a reboot.

@@ -1,0 +1,34 @@
+# mkinitcpio preset file for the 'linux-lts' package
+#
+# Snapshot of /etc/mkinitcpio.d/linux-lts.preset on this machine. The only
+# change from what linux-lts ships is that 'fallback' is added to PRESETS
+# (Arch ships PRESETS=('default') for LTS). That builds a SECOND initramfs
+# with `-S autodetect`, i.e. without the autodetect hook, so it carries
+# every module instead of only those probed on the machine that built it.
+#
+# Why bother: the trimmed default image only contains drivers that were
+# loaded at build time. If the disk controller changes, or a module simply
+# was not loaded when mkinitcpio ran, the LTS entry drops to an emergency
+# shell -- exactly the situation the fallback kernel exists to rescue.
+# The rescue image costs ~205MB on the ESP and is slower to boot; that is
+# the whole price.
+#
+# The wizard module `boot-fallback` applies this same edit in place (it
+# does not copy this file over, since pacman owns it).
+
+#ALL_config="/etc/mkinitcpio.conf"
+ALL_kver="/boot/vmlinuz-linux-lts"
+#ALL_kerneldest="/boot/vmlinuz-linux-lts"
+
+PRESETS=('default' 'fallback')
+#PRESETS=('default' 'fallback')
+
+#default_config="/etc/mkinitcpio.conf"
+default_image="/boot/initramfs-linux-lts.img"
+#default_uki="/efi/EFI/Linux/arch-linux-lts.efi"
+#default_options="--splash /usr/share/systemd/bootctl/splash-arch.bmp"
+
+#fallback_config="/etc/mkinitcpio.conf"
+fallback_image="/boot/initramfs-linux-lts-fallback.img"
+#fallback_uki="/efi/EFI/Linux/arch-linux-lts-fallback.efi"
+fallback_options="-S autodetect"

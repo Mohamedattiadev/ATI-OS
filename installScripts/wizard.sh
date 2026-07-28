@@ -221,7 +221,7 @@ run() {
 declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
   sanity bootstrap yay dcli stow arch-config dcli-sync cargo ati-scripts
-  pacman-guard login-shell
+  pacman-guard boot-fallback login-shell
   touchpad xinit xresources xmodmap lid image-envs flatpak piper whisper
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes browser-flags chrome-policy
@@ -239,6 +239,7 @@ _reg cargo             "Cargo tools"         System    "pomodoro-tui"           
 _reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"
 _reg pacman-guard      "Pacman safety hook"  System    "PreTransaction gate: refuse upgrades when / is too full"  "step_pacman_guard"
+_reg boot-fallback     "LTS boot entries"    System    "systemd-boot entries for linux-lts + a rescue initramfs"  "step_boot_fallback"
 _reg login-shell       "Fish login shell"    System    "chsh to fish so the TTY matches kitty (letsgo, aliases)" "step_login_shell"
 _reg xinit             ".xinitrc"            Dotfiles  "Auto-start qtile + picom + cursor size"                 "step_xinit"
 _reg xresources        ".Xresources"         Dotfiles  "Xcursor size 24 + Breeze theme (load via xrdb)"         "step_xresources"
@@ -330,6 +331,100 @@ step_pacman_guard() {
   if (( ! DRY_RUN )) && [[ ! -x /usr/local/bin/pacman-preflight ]]; then
     _WARN "/usr/local/bin/pacman-preflight not found — run the ati-scripts module first"
   fi
+}
+step_boot_fallback() {
+  # Writes the boot menu entries that make `linux-lts` reachable, plus a
+  # rescue entry backed by a full-module initramfs.
+  #
+  # Why the wizard generates these instead of copying arch-config/boot/*:
+  # a boot entry is machine-specific. The root= line, the microcode image
+  # and the ESP mount point differ per machine, and a stale PARTUUID gives
+  # you an entry that looks fine in the menu and drops to an emergency
+  # shell when you finally need it. Everything here is derived from the
+  # RUNNING system: /proc/cmdline is authoritative (this machine boots a
+  # UKI, so the shipped arch.conf options line is ignored and has been
+  # wrong for months without anyone noticing).
+  #
+  # The copies in arch-config/boot/ are this machine's snapshot, kept for
+  # reference and diffing -- they are not deployed.
+  if ! command -v bootctl >/dev/null; then
+    _WARN "bootctl missing — not a systemd-boot system, skipping LTS entries"; return 0
+  fi
+  local esp
+  esp="$(sudo bootctl --print-esp-path 2>/dev/null)" || esp=""
+  [[ -n "$esp" ]] || esp=/boot
+  if ! sudo test -d "$esp/loader/entries"; then
+    _WARN "$esp/loader/entries missing — systemd-boot not installed here, skipping"; return 0
+  fi
+  if ! sudo test -e "$esp/vmlinuz-linux-lts"; then
+    _WARN "linux-lts not installed (no $esp/vmlinuz-linux-lts) — run the dcli-sync module first"
+    return 0
+  fi
+
+  # Options straight off the running kernel. Anything else is a guess.
+  local opts; opts="$(tr -d '\n' < /proc/cmdline)"
+  # Microcode is vendor-specific and optional; only reference what exists.
+  local ucode_line=""
+  local u
+  for u in intel-ucode.img amd-ucode.img; do
+    sudo test -e "$esp/$u" && ucode_line="initrd  /$u"
+  done
+
+  _DIM "  ESP $esp · options from /proc/cmdline"
+  local ent="$esp/loader/entries"
+  run "sudo tee $ent/arch-lts.conf >/dev/null << EOF
+# Fallback kernel entry -- pick this at the boot menu when a \\\`linux\\\`
+# upgrade leaves the system unbootable, and repair from here instead of
+# hunting for an Arch ISO. Written by wizard.sh (boot-fallback module).
+title   Arch Linux (LTS fallback)
+linux   /vmlinuz-linux-lts
+$ucode_line
+initrd  /initramfs-linux-lts.img
+options $opts
+EOF"
+
+  # Enable the fallback preset so the rescue initramfs actually exists.
+  # pacman owns this file, so edit in place rather than overwriting it --
+  # an overwrite would fight every linux-lts upgrade with a .pacnew.
+  local preset=/etc/mkinitcpio.d/linux-lts.preset
+  if sudo test -f "$preset"; then
+    if sudo grep -q "^PRESETS=.*fallback" "$preset"; then
+      _DIM "  fallback preset already enabled"
+    else
+      run "sudo sed -i \"s/^PRESETS=.*/PRESETS=('default' 'fallback')/\" $preset"
+    fi
+    # -S autodetect drops the autodetect hook: every module ships, not just
+    # the ones probed on this machine. ~205MB, and worth it.
+    sudo grep -q "^fallback_options" "$preset" \
+      || run "echo \"fallback_options=\\\"-S autodetect\\\"\" | sudo tee -a $preset >/dev/null"
+    run "sudo mkinitcpio -p linux-lts"
+  else
+    _WARN "$preset missing — skipping rescue initramfs"
+  fi
+
+  if (( DRY_RUN )) || sudo test -e "$esp/initramfs-linux-lts-fallback.img"; then
+    run "sudo tee $ent/arch-lts-fallback.conf >/dev/null << EOF
+# Last-resort rescue entry. Same LTS kernel as arch-lts.conf, but paired
+# with the -fallback initramfs built WITHOUT autodetect, so it carries
+# every module. Slower to boot, but it still comes up when the trimmed
+# image is missing something. Written by wizard.sh (boot-fallback module).
+title   Arch Linux (LTS rescue - all modules)
+linux   /vmlinuz-linux-lts
+$ucode_line
+initrd  /initramfs-linux-lts-fallback.img
+options $opts
+EOF"
+  else
+    _WARN "rescue initramfs was not built — skipping the rescue entry"
+  fi
+
+  # A fallback entry you cannot select is not a fallback: systemd-boot
+  # ships loader.conf with timeout commented out, which hides the menu.
+  local lc="$esp/loader/loader.conf"
+  if sudo test -f "$lc" && ! sudo grep -qE '^timeout[[:space:]]+[0-9]+' "$lc"; then
+    run "echo 'timeout 5' | sudo tee -a $lc >/dev/null"
+  fi
+  (( DRY_RUN )) || _DIM "  verify with: bootctl list"
 }
 step_touchpad()     { run "sudo tee /etc/X11/xorg.conf.d/30-touchpad.conf > /dev/null << 'EOF'
 Section \"InputClass\"
@@ -673,9 +768,28 @@ preflight() {
 
 uninstall_xinit()            { run "rm -f $HOME/.xinitrc"; }
 uninstall_xmodmap()          { run "rm -f $HOME/.Xmodmap"; }
+# .Xresources is NOT deleted: step_xresources appends a marker-guarded
+# block to a file the user may own. Strip only our block.
+uninstall_xresources()       { run "sed -i '/^! BEGIN-WIZARD-XCURSOR\$/,/^! END-WIZARD-XCURSOR\$/d' $HOME/.Xresources 2>/dev/null || true"; }
 uninstall_image_envs()       { run "sed -i '/VIPS_WARNING/d' $HOME/.profile 2>/dev/null || true"; }
 uninstall_touchpad()         { run "sudo rm -f /etc/X11/xorg.conf.d/30-touchpad.conf"; }
 uninstall_pacman_guard()     { run "sudo rm -f /etc/pacman.d/hooks/00-preflight.hook"; }
+uninstall_boot_fallback() {
+  # Removes the entries and the ~205MB rescue image, and puts the preset
+  # back to what linux-lts ships. The linux-lts PACKAGE is left alone --
+  # it is declared in base.yaml and other things may want it.
+  local esp
+  esp="$(sudo bootctl --print-esp-path 2>/dev/null)" || esp=""
+  [[ -n "$esp" ]] || esp=/boot
+  run "sudo rm -f $esp/loader/entries/arch-lts.conf $esp/loader/entries/arch-lts-fallback.conf"
+  run "sudo rm -f $esp/initramfs-linux-lts-fallback.img"
+  local preset=/etc/mkinitcpio.d/linux-lts.preset
+  sudo test -f "$preset" \
+    && run "sudo sed -i \"s/^PRESETS=.*/PRESETS=('default')/\" $preset"
+  # loader.conf timeout is left in place: hiding the boot menu again would
+  # be a strictly worse system, and it is not exclusively ours.
+  return 0
+}
 uninstall_login_shell()      { run "sudo chsh -s /usr/bin/bash $(id -un)"; }
 uninstall_passwordless_sudo(){ run "sudo rm -f /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
 uninstall_browser_flags() {
@@ -761,9 +875,11 @@ UMOD_CMD[dcli-sync]="uninstall_dcli_sync"
 UMOD_CMD[cargo]="uninstall_cargo"
 UMOD_CMD[ati-scripts]="uninstall_ati_scripts"
 UMOD_CMD[pacman-guard]="uninstall_pacman_guard"
+UMOD_CMD[boot-fallback]="uninstall_boot_fallback"
 UMOD_CMD[login-shell]="uninstall_login_shell"
 UMOD_CMD[touchpad]="uninstall_touchpad"
 UMOD_CMD[xinit]="uninstall_xinit"
+UMOD_CMD[xresources]="uninstall_xresources"
 UMOD_CMD[xmodmap]="uninstall_xmodmap"
 UMOD_CMD[lid]="uninstall_lid"
 UMOD_CMD[image-envs]="uninstall_image_envs"
