@@ -281,6 +281,7 @@ keybind spam are dropped silently instead of corrupting caches.
 | dunst | render `dunstrc.tmpl` + restart |
 | qtile | `restart` (detached so caller doesn't deadlock) |
 | gtk 3/4 | `@import` overlay at `~/.cache/qtile/gtk-wal.css` |
+| qt5 / qt6 (telegram, …) | `gen_qt_colors()` writes a 21-role QPalette to `~/.config/qt6ct/colors/current.conf` (+ qt5ct). Needs `QT_QPA_PLATFORMTHEME=qt6ct`, exported from `.xinitrc` — Qt ignores the GTK theme entirely and falls back to a **light** palette without it. Read at app start, so a fresh X session is required |
 | qutebrowser | homepage: inline `<style>` + `--accent` CSS var. Browser chrome (tabs/statusbar/completion/messages/prompts/downloads, 78 options): `config.py:_apply_palette()` reads `current_palette.json` — runs for **all** modes, not just `wal`. Both via `:config-source` + `:restart` |
 | nvim | fs_event on `~/.cache/qtile/theme_mode` + `current_palette.json` re-sources scheme; aliased modes (matrix, mono-*, synthwave, cyberpunk-neon, palenight, github-dark, ayu-mirage, onedark, nightowl) render distinct highlights from the JSON when no dedicated plugin is installed (Snacks dashboard uses dominant hue) |
 | brave | `--load-extension` reads live `manifest.json` on relaunch (id matches via embedded `key`) |
