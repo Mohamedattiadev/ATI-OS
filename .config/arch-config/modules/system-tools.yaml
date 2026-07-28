@@ -49,6 +49,8 @@ packages:
   - gum
   - python-pywal
   - papirus-icon-theme
+  - papirus-folders        # AUR -- folder color swap used by theme-apply; silently
+                            # no-ops (icons stay default color) if missing
   - flatpak
   - dbus-broker
   - libnotify              # notify-send (qupdate background completion notifications)
