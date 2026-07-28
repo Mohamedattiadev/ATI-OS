@@ -71,7 +71,70 @@ if command -v informant >/dev/null 2>&1; then
     || warn "unread Arch news -- run 'informant read' before continuing"
 fi
 
-# ---- 4. Rollback material ---------------------------------------------
+# ---- 4. Existing dependency breakage -----------------------------------
+# Upgrading on top of an already-inconsistent database turns one problem
+# into two, and the resulting mess is far harder to attribute. Fix first,
+# then upgrade.
+if command -v pacman >/dev/null 2>&1; then
+  if pacman -Dk >/dev/null 2>&1; then
+    ok "package database is consistent"
+  else
+    bad "package database already has dependency errors:"
+    pacman -Dk 2>&1 | grep -v "^$" | head -8 | sed 's/^/            /'
+    printf '            Resolve these BEFORE upgrading.\n\n'
+  fi
+fi
+
+# ---- 5. Unmerged .pacnew configs ---------------------------------------
+# A .pacnew means a previous upgrade shipped a new default config that was
+# never merged. They accumulate silently, and the breakage shows up much
+# later as a service that will not start with a config you did not realise
+# was stale.
+mapfile -t pacnew < <(find /etc -name '*.pacnew' 2>/dev/null | head -20)
+if (( ${#pacnew[@]} )); then
+  warn "${#pacnew[@]} unmerged .pacnew config(s):"
+  printf '            %s\n' "${pacnew[@]:0:6}"
+  printf '            Merge with pacdiff (pacman-contrib) before upgrading.\n'
+else
+  ok "no unmerged .pacnew configs"
+fi
+
+# ---- 6. What is actually coming ----------------------------------------
+# checkupdates uses a temporary database, so it can preview an upgrade
+# WITHOUT the -Sy that would leave the real DB refreshed and the system
+# one bad command away from a partial upgrade.
+if command -v checkupdates >/dev/null 2>&1; then
+  mapfile -t pending < <(timeout 90 checkupdates 2>/dev/null)
+  if (( ${#pending[@]} )); then
+    say "${#pending[@]} package(s) pending"
+    # Packages whose breakage takes the whole system down rather than one
+    # app. Worth knowing before you start, not after.
+    risky=$(printf '%s\n' "${pending[@]}" \
+      | grep -iE '^(linux|linux-lts|linux-firmware|glibc|systemd|mesa|nvidia|xorg-server|gcc-libs|openssl) ' || true)
+    if [[ -n "$risky" ]]; then
+      warn "high-impact packages in this batch -- reboot after, and do not"
+      printf '            interrupt the transaction:\n'
+      printf '%s\n' "$risky" | sed 's/^/              /'
+    fi
+    # A soname bump in a core library silently invalidates every AUR
+    # package compiled against the old version: they keep their files but
+    # fail at load time with "cannot open shared object file". Repo
+    # packages get rebuilt by the maintainers; AUR ones are yours.
+    aur_count=$(pacman -Qmq 2>/dev/null | wc -l)
+    libbump=$(printf '%s\n' "${pending[@]}" \
+      | grep -iE '^(icu|boost|ffmpeg|openssl|protobuf|abseil-cpp|libxml2|imagemagick|qt6-base|llvm) ' || true)
+    if [[ -n "$libbump" && "$aur_count" -gt 0 ]]; then
+      warn "library bump + $aur_count AUR package(s) installed."
+      printf '            AUR builds linked against the old soname will break at\n'
+      printf '            load time. Rebuild after with: yay -S --rebuildall\n'
+      printf '            or reinstall the affected ones individually.\n'
+    fi
+  else
+    ok "nothing to update"
+  fi
+fi
+
+# ---- 7. Rollback material ---------------------------------------------
 # `downgrade` restores a single bad package from the pacman cache. An
 # empty cache means the only recovery left is a full snapshot restore.
 cached=$(find /var/cache/pacman/pkg -maxdepth 1 -name '*.pkg.tar*' 2>/dev/null | wc -l)
