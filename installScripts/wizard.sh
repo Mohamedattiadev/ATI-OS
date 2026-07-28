@@ -86,10 +86,12 @@ Filters (combine with --yes for scripted runs):
   --only=id1,id2       Run only these module ids (comma-sep)
   --skip=id1,id2       Skip these module ids (comma-sep)
 
-Module ids: sanity bootstrap yay dcli stow arch-config dcli-sync
-cargo ati-scripts touchpad xinit xmodmap lid image-envs flatpak
-piper whisper passwordless-sudo ownership disable-dm candy-icons
-wallpapers speed themes browser-flags chrome-policy
+Module ids (keep in sync with MOD_ORDER; unknown ids are rejected):
+sanity bootstrap yay dcli stow arch-config dcli-sync cargo
+ati-scripts pacman-guard boot-fallback login-shell touchpad xinit
+xresources xmodmap lid image-envs flatpak piper whisper
+passwordless-sudo ownership disable-dm candy-icons wallpapers speed
+themes browser-flags chrome-policy
 
 Example (safe non-network test — skip heavy downloads):
   ./wizard.sh --yes --skip=dcli-sync,whisper,piper,wallpapers,flatpak
@@ -101,6 +103,18 @@ NEVER touches pacman packages, dcli syncs, or downloaded models):
   ./wizard.sh --uninstall --yes      # unattended
 HELP
       exit 0 ;;
+    # These take a value with '=' and are silently value-less otherwise.
+    # `--only boot-fallback` used to leave ONLY_LIST empty and drop the id
+    # into the ignored-argument bucket below -- i.e. it ran the FULL
+    # install, live, instead of the one module you asked for. On a wizard
+    # whose second step is `pacman -Syu`, that is not a typo you get to
+    # make twice.
+    --only|--skip)
+      echo "wizard: $arg takes its value with '=' — try ${arg}=id1,id2" >&2
+      exit 2 ;;
+    *)
+      echo "wizard: unknown argument '$arg' (see --help)" >&2
+      exit 2 ;;
   esac
 done
 
@@ -228,6 +242,25 @@ MOD_ORDER=(
 )
 
 _reg() { MOD_TITLE[$1]="$2"; MOD_GROUP[$1]="$3"; MOD_DESC[$1]="$4"; MOD_CMD[$1]="$5"; }
+
+# Reject typo'd ids in --only/--skip. Without this a misspelled --only
+# filters down to nothing and exits 0 as if it had worked, and a
+# misspelled --skip silently skips nothing -- both look like success.
+_validate_ids() {
+  local list="$1" flag="$2" id
+  local -a bad=() _ids=()
+  [[ -n "$list" ]] || return 0
+  IFS=',' read -r -a _ids <<< "$list"
+  for id in "${_ids[@]}"; do
+    [[ -z "$id" ]] && continue
+    [[ " ${MOD_ORDER[*]} " == *" $id "* ]] || bad+=("$id")
+  done
+  if (( ${#bad[@]} )); then
+    echo "wizard: $flag: unknown module id(s): ${bad[*]}" >&2
+    echo "wizard: valid ids: ${MOD_ORDER[*]}" >&2
+    exit 2
+  fi
+}
 _reg sanity            "System check"        System    "Arch + X11 + dotfiles present"                          "step_sanity"
 _reg bootstrap         "Bootstrap packages"  System    "base-devel · git · stow · xorg-server · curl"           "step_bootstrap"
 _reg yay               "AUR helper (yay)"    System    "Build yay-bin from AUR if missing"                      "step_yay"
@@ -258,6 +291,9 @@ _reg speed             "Speed tweaks"        System    "sysctl + service trims (
 _reg themes            "Theme system"        Themes    "pywal + palette precompile + initial doom-one apply"    "step_themes"
 _reg browser-flags     "Browser flags"       Browsers  "brave/chrome/chromium wal theme extension flags"        "step_browser_flags"
 _reg chrome-policy     "Chrome theme policy" Browsers  "Sign .pem + install /etc/opt/chrome force_installed"    "step_chrome_policy"
+
+_validate_ids "$ONLY_LIST" --only
+_validate_ids "$SKIP_LIST" --skip
 
 # ─── STEP IMPLEMENTATIONS ────────────────────────────────────────────
 # Each step_* delegates to install.sh's actual work via `run`.
