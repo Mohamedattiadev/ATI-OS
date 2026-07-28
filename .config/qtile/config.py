@@ -2234,19 +2234,21 @@ def right_side_widgets():
             ewidget.KeyboardLayout,
             name="w_lang",
             configured_keyboards=["us", "ara", "tr", "de"],
-            # The flag is a colour-emoji glyph and renders noticeably
-            # smaller than surrounding text at the same nominal size. A
-            # pango span scales only the flag, leaving the "EN" label at
-            # bar size -- raising the widget fontsize instead would grow
-            # the text too and misalign this chip with its neighbours.
-            # Requires markup=True.
+            # Nerd Font keyboard glyph rather than a flag emoji. Colour
+            # emoji are bitmap glyphs: they ignore the widget's
+            # foreground, sit on their own baseline, and render at a
+            # size unrelated to the surrounding text -- which is why the
+            # flag first looked too small, then too big when scaled with
+            # a pango span. A monochrome glyph inherits foreground and
+            # font size like any other character, so it lines up with
+            # the neighbouring chips for free. U+F030C is the same
+            # Material Design range as the widgetbox glyphs above.
             display_map={
-                "us": "<span size='15000'>🇺🇸</span> EN",
-                "ara": "<span size='15000'>🇸🇦</span> AR",
-                "tr": "<span size='15000'>🇹🇷</span> TR",
-                "de": "<span size='15000'>🇩🇪</span> DE",
+                "us": "󰌌  EN",
+                "ara": "󰌌  AR",
+                "tr": "󰌌  TR",
+                "de": "󰌌  DE",
             },
-            markup=True,
             fmt="{}",
             padding=11,
             foreground=colors[4],
