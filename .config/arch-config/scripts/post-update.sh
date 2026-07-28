@@ -42,6 +42,12 @@ if (( ${#broken_pkgs[@]} )); then
   printf '              %s\n' "${broken_pkgs[@]}"
   printf '\n              These will fail to start. Rebuild them:\n'
   printf '                yay -S --rebuild %s\n\n' "${broken_pkgs[*]}"
+  # Do not rely on the user still watching this terminal. Push the exact
+  # command to a popup AND to the clipboard, so fixing it is one paste
+  # rather than retyping package names out of a scrollback buffer.
+  command -v post-update-notify >/dev/null 2>&1 && \
+    post-update-notify "${#broken_pkgs[@]} AUR package(s) broken by this update" \
+      "yay -S --rebuild ${broken_pkgs[*]}" || true
 else
   ok "no broken library links in AUR packages"
 fi
