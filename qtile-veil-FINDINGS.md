@@ -20,10 +20,34 @@ three repeats agreed within ±0.3s.
 | core init + window scan → `startup_complete` | **1.20s** | qtile |
 | **total** | **4.55s** | |
 
-### What this corrects in the handoff
+### CORRECTION (2026-07-28, from the user's GIF)
 
-- **The "~11s unattributed" is gone.** Total is now ~4.5s in the same
-  sandbox. That figure predated the xmodmap fix; do not keep chasing it.
+**The sandbox understates the real machine by ~2.5x. Do not use the table
+above as their numbers.** A screen recording of a real theme-change
+restart, read off the veil's own elapsed counter:
+
+| veil timer | stage | % |
+| ---------- | ----- | - |
+| 0.8s | restarting window manager | 21% |
+| 3.7s | restarting window manager | 22% |
+| 6.7s | restarting window manager | 22% |
+| 9.7s | restoring windows | 80% |
+
+`"Restarting window manager"` is set immediately before `qtile.restart()`
+and the next update comes from the *new* process, so that label's dwell
+time **is** the execv → interpreter → `libqtile` import → config load →
+core init → window scan span. On the real machine that is **>7s**; the
+sandbox measured 3.2s for the same span.
+
+So the handoff's "~11s" was **right for the real machine**, and my earlier
+claim that it was "gone" was wrong — it was measured on 3 windows with no
+real widget backends, against a 32-widget bar and a full desktop. The
+sandbox is still the right place to test *behaviour*; it is not a
+stand-in for their *timings*.
+
+This also answers the handoff's open question ("ask them which stage text
+sits longest") without needing to ask: it is the qtile-internal startup
+phase, not anything the veil or the config does around it.
 - **The config module is loaded twice per restart, and that is correct.**
   `manager.py:301` loads it in the *old* process purely to refuse the
   restart if it would not parse — the safety feature that stops a typo
@@ -76,7 +100,22 @@ survives execv, so a **single** user-triggered `Super+Shift+R` produces the
 full table above. Scripts in this session's scratchpad:
 `sb-setup.sh` (build sandbox), `sb-instrument.py` (insert probes).
 
+## The theme-change delay (user-reported, confirmed on the GIF)
+
+Selecting a theme shows: palette swaps live → **~4s of fully visible,
+un-veiled desktop** → veil appears → restart. Frames 16–23 of the
+recording are the dead gap.
+
+Cause is ordering, not slowness: `theme-apply` triggers the restart at
+line ~901 of 1156. Everything before it — writing the kitty, alacritty,
+GTK, qt5ct/qt6ct, rofi and dunst palettes — runs *before* the veil is
+ever asked for. The user watches the whole thing happen naked.
+
+Fix is to split the veil from the restart: a `_veil_hold()` that paints
+the veil and returns, called by `theme-apply` **before** it starts writing
+palettes, with the existing `_smooth_restart` reusing the already-painted
+veil instead of spawning a second one. Not yet implemented.
+
 ## Not yet tested
 
-Theme change and wallpaper change paths were **not** exercised. Only the
-reload/restart path was measured and fixed.
+Wallpaper change path was **not** exercised.
