@@ -54,7 +54,7 @@ from scripts.toggle_apps import (
     toggle_file_manager,
     toggle_brave,
 )
-from scripts.sum_app import toggle_or_spawn_sum
+from scripts.sum_app import float_center_sum, is_sum_window, toggle_or_spawn_sum
 from libqtile.config import (
     Click,
     Drag,
@@ -1368,6 +1368,28 @@ def _track_window_group(client):
             _RESTORED_WIN_MAP[str(client.wid)] = client.group.name
     except Exception:
         pass
+
+
+@hook.subscribe.client_managed
+def _float_and_center_sum(client):
+    """TODOS summary (Mod+Shift+S) opens floating and centered.
+
+    The float_rules Match handles the floating part on its own, but qtile only
+    auto-centers a float whose first-map position is off-screen (see the
+    no_reposition_rules note on floating_layout) -- alacritty maps on-screen, so
+    the centering has to be explicit.
+
+    Done synchronously, NOT via call_later: manage() fires client_new (before the
+    window has a group), then group.add() applies the float rules and places the
+    window, then fires client_managed. So by the time we get here `floating` and
+    `group.screen` are both set -- everything center() needs. Deferring even 50ms
+    past this point just let the window paint once at alacritty's own size before
+    snapping to 55%x65%, which is the jump that looked like a glitch.
+    """
+    if not is_sum_window(client):
+        return
+
+    float_center_sum(client)
 
 
 @hook.subscribe.client_killed
@@ -4700,6 +4722,11 @@ floating_layout = layout.Floating(
         Match(wm_class="imv"),  # copyq_rofi alt+w image preview
         Match(wm_class="org.gnome.NautilusPreviewer"),  # make the preview float
         Match(wm_class="qdrop"),  # qdrop drop-stash
+        # TODOS summary (Mod+Shift+S), centered by _float_and_center_sum.
+        # wm_class, not title: WM_CLASS exists before the MapRequest, so this rule
+        # wins at group.add() and the window never enters the tiling layout.
+        Match(wm_class="sum-md"),
+        Match(title="sum.md"),  # fallback for a window opened before the reload
         # Match(wm_class="Anki"),  # make the preview float
     ],
     # qdrop fully self-manages its own position (slide animation driven
