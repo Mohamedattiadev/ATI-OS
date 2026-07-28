@@ -836,10 +836,24 @@ fi
 # notify the user instead of killing browser tabs.
 if pgrep -x qutebrowser >/dev/null; then
   # :config-source alone doesn't re-read wal cache colors. :restart
-  # reboots qb process preserving open tabs via session save/restore.
-  ( timeout 3 qutebrowser ":config-source" 2>/dev/null
-    timeout 3 qutebrowser ":restart" 2>/dev/null ) &
-  disown
+  # reboots the qb process preserving open tabs via session
+  # save/restore, and is what actually re-runs config.py end to end.
+  #
+  # Both calls MUST be `|| true`. This subshell inherits `set -e`, and
+  # each qb IPC call spawns a full python client that takes ~2s idle --
+  # far longer while qtile is restarting from this same script. The old
+  # `timeout 3` therefore expired routinely, returned 124, and `set -e`
+  # tore the subshell down *after* :config-source and *before*
+  # :restart. That is why qb never restarted on its own even though the
+  # exact same command works when run by hand.
+  #
+  # setsid detaches from theme-apply's process group so the restart
+  # still completes after this script exits (and survives the
+  # preemption `kill` a rapid second theme switch sends).
+  setsid -f bash -c '
+    timeout 15 qutebrowser ":config-source" >/dev/null 2>&1 || true
+    timeout 30 qutebrowser ":restart"       >/dev/null 2>&1 || true
+  ' >/dev/null 2>&1 </dev/null || true
 fi
 # Regenerate a Chromium theme extension so brave/chrome UI colors track
 # the wallpaper. --load-extension=<dir> in *-flags.conf keeps it loaded
@@ -937,7 +951,27 @@ add_load_ext "$HOME/.config/chrome-flags.conf"
 BROWSER_CRX="$HOME/.config/qtile/browser-theme.crx"
 BROWSER_PEM="$HOME/.config/qtile/browser-theme.pem"
 BROWSER_UPDATES="$HOME/.config/qtile/browser-theme-updates.xml"
-EXT_ID="fommfacojlllmdogognehdgombidbpjg"
+
+# A Chromium extension's id is sha256(DER pubkey)[:32] mapped 0-f -> a-p,
+# so it is a pure function of the signing key. It MUST be derived from
+# browser-theme.pem, never hardcoded: wizard.sh generates that key
+# per-machine and writes /etc/opt/chrome/policies/managed/wal-theme.json
+# keyed by the derived id. A hardcoded literal here (previously
+# "fommfacojlllmdogognehdgombidbpjg") made every apply rewrite
+# updates.xml with an appid the policy does not reference, so Chrome's
+# force_installed poll found no matching <app> and silently never
+# installed the theme -- while Chromium looked fine, because it picks
+# the theme up through --load-extension instead of policy.
+ext_id_from_pem() {
+  [[ -f "$BROWSER_PEM" ]] || return 1
+  openssl rsa -in "$BROWSER_PEM" -pubout -outform DER 2>/dev/null |
+    python3 -c "
+import hashlib, sys
+h = hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:32]
+print(''.join(chr(ord('a') + int(c, 16)) for c in h))
+" 2>/dev/null
+}
+EXT_ID="$(ext_id_from_pem || true)"
 
 # brave/chrome/chromium have no live-theme-reload API. Kill running
 # browsers FIRST, then repack .crx (chrome pack needs no lock), then
@@ -956,8 +990,18 @@ if [[ "${THEME_APPLY_NO_BROWSER:-0}" != 1 ]]; then
 
   # Repack .crx + bump updates.xml (chrome policy force-installs on
   # next launch). Now safe: no chrome process holding the pack lock.
-  if [[ -f "$BROWSER_PEM" ]] && [[ -x /opt/google/chrome/chrome ]]; then
-    CHROME_BIN="${CHROME_BIN:-/opt/google/chrome/chrome}"
+  # Any chromium-family binary can --pack-extension; don't require Chrome
+  # specifically or a chromium-only machine never gets a packed .crx.
+  if [[ -z "${CHROME_BIN:-}" ]]; then
+    for _c in /opt/google/chrome/chrome /usr/bin/chromium /opt/brave-bin/brave; do
+      [[ -x "$_c" ]] && { CHROME_BIN="$_c"; break; }
+    done
+  fi
+  # EXT_ID empty means the pem is missing or openssl/python3 failed.
+  # Bail out rather than continue: an empty id would write appid='' into
+  # updates.xml and, worse, expand `rm -rf "$base/Extensions/$EXT_ID"`
+  # into deleting the entire Extensions directory.
+  if [[ -f "$BROWSER_PEM" ]] && [[ -n "$EXT_ID" ]] && [[ -n "${CHROME_BIN:-}" ]]; then
     "$CHROME_BIN" --pack-extension="$BROWSER_EXT" --pack-extension-key="$BROWSER_PEM" --no-message-box >/dev/null 2>&1 || true
     VER=$(python3 -c "import json;print(json.load(open('$BROWSER_EXT/manifest.json'))['version'])" 2>/dev/null)
     if [[ -n "$VER" ]]; then
@@ -994,11 +1038,22 @@ PYPURGE
     done
   fi
 
-  # Relaunch each killed browser. Map process name → binary path since
-  # `chrome`/`chromium` are not in PATH on Arch (installed under /opt).
+  # Relaunch each killed browser. Map process name → launcher path.
+  #
+  # ALWAYS prefer the /usr/bin wrapper script over the real binary under
+  # /opt. On Arch the wrapper is what sources ~/.config/<name>-flags.conf
+  # and appends --load-extension=<browser-theme> to the command line;
+  # /opt/google/chrome/chrome is the bare binary and ignores that file
+  # entirely. Relaunching Chrome via the bare binary is why Chrome came
+  # back untinted after every apply while Chromium (whose /usr/bin entry
+  # already IS a wrapper) picked the theme up fine.
   browser_bin() {
     case "$1" in
-      chrome|google-chrome) echo "/opt/google/chrome/chrome" ;;
+      chrome|google-chrome)
+        for b in /usr/bin/google-chrome-stable /usr/bin/google-chrome \
+                 /opt/google/chrome/google-chrome /opt/google/chrome/chrome; do
+          [[ -x "$b" ]] && { echo "$b"; return; }
+        done ;;
       brave|brave-browser)  echo "$(command -v brave || echo /opt/brave-bin/brave)" ;;
       chromium)             echo "$(command -v chromium || echo /usr/bin/chromium)" ;;
       *) command -v "$1" ;;

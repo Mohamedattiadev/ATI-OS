@@ -4,7 +4,7 @@
 }
 
 .title {
-  font-family: fira-code;
+  font-family: $display-font;
   font-weight: Bolder;
   font-size: 5.7rem;
   color: $accent;
@@ -12,7 +12,7 @@
 }
 
 .title-info {
-  font-family: JetBrainsMono NF;
+  font-family: $ui-font;
   font-style: Italic;
   font-size: 0.8rem;
   margin-top: 3px;
@@ -24,7 +24,7 @@
 }
 
 .category-bspwm {
-  font-family: JetBrainsMono NF;
+  font-family: $ui-font;
   font-weight: Bold;
   font-size: 0.8rem;
   background-color: $green;
@@ -35,7 +35,7 @@
 }
 
 .category-system {
-  font-family: JetBrainsMono NF;
+  font-family: $ui-font;
   font-weight: Bold;
   font-size: 0.8rem;
   background-color: $red;
@@ -46,7 +46,7 @@
 }
 
 .category-nodes {
-  font-family: JetBrainsMono NF;
+  font-family: $ui-font;
   font-weight: Bold;
   font-size: 0.8rem;
   background-color: $yellow;
@@ -57,7 +57,7 @@
 }
 
 .category-workspaces {
-  font-family: JetBrainsMono NF;
+  font-family: $ui-font;
   font-weight: Bold;
   font-size: 0.8rem;
   background-color: $magenta;
@@ -68,7 +68,7 @@
 }
 
 .category-move {
-  font-family: JetBrainsMono NF;
+  font-family: $ui-font;
   font-weight: Bold;
   font-size: 0.8rem;
   background-color: $archicon;
@@ -79,7 +79,7 @@
 }
 
 .category-apps {
-  font-family: JetBrainsMono NF;
+  font-family: $ui-font;
   font-weight: Bold;
   font-size: 0.8rem;
   background-color: $green;
@@ -90,7 +90,7 @@
 }
 
 .category-preselection {
-  font-family: JetBrainsMono NF;
+  font-family: $ui-font;
   font-weight: Bold;
   font-size: 0.8rem;
   background-color: $blue;
@@ -101,7 +101,7 @@
 }
 
 .category-others {
-  font-family: JetBrainsMono NF;
+  font-family: $ui-font;
   font-weight: Bold;
   font-size: 0.8rem;
   background-color: $red;
@@ -112,7 +112,7 @@
 }
 
 .category-power {
-  font-family: JetBrainsMono NF;
+  font-family: $ui-font;
   font-weight: Bold;
   font-size: 0.8rem;
   background-color: $cyan;
@@ -129,7 +129,7 @@
 }
 
 .keys-alt {
-  font-family: JetBrainsMono NF;
+  font-family: $ui-font;
   font-weight: Bold;
   font-size: 0.8rem;
   color: $fg;

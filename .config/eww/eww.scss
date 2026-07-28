@@ -1,3 +1,4 @@
+@import "fonts.scss";
 @import "colors.scss";
 @import "cheatsheet/cheatsheet.scss";
 @import "onboarding/onboarding.scss";
@@ -8,7 +9,7 @@
 tooltip {
   background-color: #14171c;
   color: #b8bfe5;
-  font-family: FiraCode Nerd Font, monospace;
+  font-family: $ui-font;
   font-weight: Bold;
   font-size: 1rem;
 }

@@ -1,0 +1,16 @@
+// Single source of truth for eww body text.
+//
+// `sans-serif` deliberately resolves through fontconfig rather than
+// naming a family: qtile_extras' PopupText defaults to the "sans"
+// family, so routing eww through the same alias makes every popup,
+// tooltip and onboarding step render in one identical typeface. Hard-
+// coding "JetBrainsMono NF" here is what made eww and dunst drift away
+// from the qtile popups (wallpaper picker, cheatsheets).
+//
+// Change the alias in ~/.config/fontconfig/fonts.conf to restyle qtile
+// popups, eww and dunst together.
+$ui-font: sans-serif;
+
+// Display face for oversized decorative headings only (cheatsheet
+// splash title). Not body text -- leave it out of $ui-font.
+$display-font: fira-code;

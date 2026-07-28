@@ -237,9 +237,9 @@ _reg dcli-sync         "dcli sync (all pkgs)" System   "Install every declared p
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
 _reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"
-_reg xinit             ".xinitrc"            Dotfiles  "Auto-start qtile + xcape + picom + cursor size"         "step_xinit"
+_reg xinit             ".xinitrc"            Dotfiles  "Auto-start qtile + picom + cursor size"                 "step_xinit"
 _reg xresources        ".Xresources"         Dotfiles  "Xcursor size 24 + Breeze theme (load via xrdb)"         "step_xresources"
-_reg xmodmap           ".Xmodmap"            Dotfiles  "Caps hold = Alt (xcape restores tap-Caps)"              "step_xmodmap"
+_reg xmodmap           ".Xmodmap"            Dotfiles  "Caps fully repurposed as Alt (no tap-Caps fallback)"    "step_xmodmap"
 _reg lid               "Lid = ignore"        System    "Never sleep on lid close"                               "step_lid"
 _reg image-envs        "Image env"           Dotfiles  "Suppress VIPS warnings + ensure ~/tmp (fish TMPDIR)"    "step_image_envs"
 _reg flatpak           "Flatpak (legacy)"    Apps      "Uninstall-only: qdrop replaced flathub/collector"       "step_flatpak"
@@ -327,10 +327,6 @@ step_xinit() {
 unset SESSION_MANAGER
 setxkbmap -layout us -option
 [ -f "$HOME/.Xmodmap" ] && xmodmap "$HOME/.Xmodmap"
-if command -v xcape >/dev/null 2>&1; then
-  pkill -x xcape 2>/dev/null
-  xcape -e 'Alt_L=Caps_Lock' &
-fi
 export XDG_SESSION_TYPE=x11
 export XDG_CURRENT_DESKTOP=qtile
 export XDG_SESSION_DESKTOP=qtile
@@ -395,14 +391,12 @@ step_xmodmap() {
   local xmm="$HOME/.Xmodmap"
   if (( DRY_RUN )); then _DIM "  [dry] write $xmm"; return; fi
   cat >"$xmm" <<'XMM_EOF'
-! Caps physical key acts as Alt_L; xcape restores tap-Caps behavior
+! Caps physical key acts purely as Alt_L -- no tap-to-Caps-Lock fallback,
+! by design (Alt is broken in hardware on this laptop, see config.py's
+! `mod = "mod4"` comment; Caps is fully repurposed as the only working Alt).
 clear lock
 clear mod1
-! Caps_Lock kept as an inert level-2 symbol (Lock modifier is cleared
-! above, so it never actually toggles) purely so xcape has a real
-! keycode to reference -- xcape needs the target keysym to exist
-! *somewhere* in the current keymap or it refuses to start entirely.
-keycode 66 = Alt_L Caps_Lock Alt_L Caps_Lock
+keycode 66 = Alt_L
 add mod1 = Alt_L Alt_R
 XMM_EOF
 }
@@ -636,13 +630,27 @@ uninstall_browser_flags() {
   done
 }
 uninstall_chrome_policy() {
+  # Derive the extension id BEFORE deleting the pem below. The id is
+  # sha256(DER pubkey)[:32] mapped a-p, so it is a function of this
+  # machine's signing key -- a hardcoded literal would point at some
+  # other key's extension and leave the real one installed forever.
+  local ext=""
+  if [[ -f "$HOME/.config/qtile/browser-theme.pem" ]]; then
+    ext=$(openssl rsa -in "$HOME/.config/qtile/browser-theme.pem" -pubout -outform DER 2>/dev/null |
+      python3 -c "
+import hashlib, sys
+h = hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:32]
+print(''.join(chr(ord('a') + int(c, 16)) for c in h))
+" 2>/dev/null) || true
+  fi
   run "sudo rm -f /etc/opt/chrome/policies/managed/wal-theme.json /etc/chromium/policies/managed/wal-theme.json"
   run "rm -f $HOME/.config/qtile/browser-theme.pem $HOME/.config/qtile/browser-theme.key $HOME/.config/qtile/browser-theme.crx $HOME/.config/qtile/browser-theme-updates.xml"
-  # Remove installed extension traces per browser profile.
-  local ext=fommfacojlllmdogognehdgombidbpjg
-  for base in "$HOME/.config/google-chrome/Default" "$HOME/.config/chromium/Default"; do
-    [[ -d "$base" ]] && run "rm -rf $base/Extensions/$ext"
-  done
+  # Guard: an empty id would expand to the whole Extensions directory.
+  if [[ -n "$ext" ]]; then
+    for base in "$HOME/.config/google-chrome/Default" "$HOME/.config/chromium/Default"; do
+      [[ -d "$base" ]] && run "rm -rf $base/Extensions/$ext"
+    done
+  fi
 }
 uninstall_ati_scripts() {
   # Remove every AtiScriptsV1 script from /usr/local/bin.

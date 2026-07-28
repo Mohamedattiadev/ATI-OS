@@ -21,7 +21,13 @@
     frame_color = "{{ACCENT}}"
     separator_color = frame
     sort = yes
-    font = JetBrainsMono Nerd Font 10
+    # "Sans" is a fontconfig alias, not a family name -- qtile_extras'
+    # PopupText defaults to the "sans" family, so resolving dunst through
+    # the same alias keeps notifications in the exact typeface as the
+    # qtile popups (wallpaper picker, cheatsheets) and eww. Naming
+    # "JetBrainsMono Nerd Font" here is what made them drift apart.
+    # Nerd Font glyphs still render: pango falls back per-glyph.
+    font = Sans 10
     line_height = 2
     markup = full
     format = "<b>%s</b>\n%b"
