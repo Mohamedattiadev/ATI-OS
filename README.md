@@ -5,6 +5,10 @@
 **One command installs the whole desktop.** 22 themes that retint every app at once,
 a drop-stash, a package picker, and a restart that doesn't flash.
 
+![system overview](/IMGS/overview.gif)
+
+<sub>Tiling · launcher · qdrop · qupdate · a theme switch carried by the restart veil.</sub>
+
 </div>
 
 ---
@@ -102,11 +106,13 @@ qtile.
 
 ## Videos
 
-**System overview**
+**System overview** — the GIF at the top of this page is a 33s cut of it.
 
-https://github.com/user-attachments/assets/aaec7215-c595-4ba3-bc65-a355b11edf05
-
-https://github.com/user-attachments/assets/a7993cce-e04e-4168-9b32-b914d76539be
+<!-- Full 1:46 tour, recorded 2026-07-28: ~/Videos/qtile-overview.mp4
+     Drag that file into any GitHub issue/PR comment box, then paste the
+     https://github.com/user-attachments/assets/... URL it returns on the
+     line below (a bare URL on its own line renders as a player).
+     The two older overview clips it replaces are in git history at 0e1ed51. -->
 
 **Features**
 
