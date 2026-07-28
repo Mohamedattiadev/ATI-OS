@@ -91,6 +91,9 @@ pamac-tray-icon-plasma & # Update notifier
   pgrep -f 'scripts/qdrop.py$' >/dev/null || python3 ~/.config/qtile/scripts/qdrop.py &
   pgrep -f 'scripts/qupdate.py$' >/dev/null || python3 ~/.config/qtile/scripts/qupdate.py --daemon &
   pgrep -f qdrop_watch.py >/dev/null || python3 ~/.config/qtile/scripts/qdrop_watch.py &
+  # Homerow hint daemon. alt+shift+f only feels instant if the imports are
+  # already paid for; the client falls back to starting this on demand.
+  pgrep -f 'homerow-daemon$' >/dev/null || ~/Attia-Pro/Projects/Homerow_replika/homerow-daemon &
   # ~/.config/qtile/scripts/watch_todo_conflicts.sh &
 ) &
 
