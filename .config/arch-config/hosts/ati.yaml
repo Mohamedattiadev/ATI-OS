@@ -47,6 +47,7 @@ backup_tool: timeshift
 # accident -- a safety check you can click past is not a safety check.
 update_hooks:
   pre_update: "scripts/pre-update.sh"
+  post_update: "scripts/post-update.sh"
   behavior: always
 
 # AUR helper to use (auto-detects paru or yay if not specified)
