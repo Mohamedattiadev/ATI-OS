@@ -305,6 +305,7 @@ class Veil(Gtk.Window):
         self.backdrop = self._grab_blur()
         self.icons = [None] * len(self.rects)
         self._icons_tried = False
+        self._topmost_thread = None
 
         try:
             self.set_wmclass(VEIL_CLASS, VEIL_CLASS)
@@ -412,6 +413,59 @@ class Veil(Gtk.Window):
         if out < self.args.expand:
             return "expand", out / self.args.expand
         return "gone", 1.0
+
+    def start_topmost_watch(self):
+        """Stay on top by REACTING to restacks instead of polling for them.
+
+        tick() re-raises every 16ms, which is a poll: any window that
+        raises itself just after a frame is visible on top of the veil
+        until the next one. dunst was the obvious offender (it re-raises
+        on every redraw), but anything override-redirect wins the same
+        way -- tray menus, other notifiers, picom's own surfaces.
+
+        This opens a second X connection on a daemon thread and asks for
+        SubstructureNotify on the root window, which fires on every map
+        and every restack of a top-level. wait_for_event() blocks, so the
+        thread costs nothing while idle and answers in microseconds when
+        something does stack itself above us. tick()'s raise stays as a
+        backstop for anything that changes stacking without an event we
+        see.
+
+        Deliberately not on the GTK main loop: that loop is busy drawing
+        at 60fps, and the whole point is to respond faster than a frame.
+        """
+        try:
+            import threading
+            import xcffib
+            import xcffib.xproto as xp
+        except Exception:
+            return                      # no xcffib: tick() still covers us
+        try:
+            xid = self.get_window().get_xid()
+        except Exception:
+            return
+
+        def run():
+            try:
+                c = xcffib.connect()
+                root = c.get_setup().roots[0].root
+                c.core.ChangeWindowAttributes(
+                    root, xp.CW.EventMask,
+                    [xp.EventMask.SubstructureNotify])
+                c.flush()
+                while True:
+                    c.wait_for_event()          # blocks; not a poll
+                    c.core.ConfigureWindow(
+                        xid, xp.ConfigWindow.StackMode, [xp.StackMode.Above])
+                    c.flush()
+            except Exception:
+                # Connection dropped (we are exiting) or the window is
+                # gone. Nothing to do -- the process is on its way out.
+                return
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        self._topmost_thread = t
 
     def tick(self):
         # Keep the veil on top. It is override-redirect, but qtile still
@@ -1005,6 +1059,7 @@ def main():
 
     v = Veil(args, load_theme())
     v.show_all()
+    v.start_topmost_watch()      # after show_all(): needs a realised XID
     GLib.timeout_add(16, v.tick)
     # Belt and braces: even if the GTK loop wedges, the process still dies.
     GLib.timeout_add(int((args.max_seconds + 2) * 1000),
