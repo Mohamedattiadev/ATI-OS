@@ -337,6 +337,18 @@ Arch ISO → Timeshift restore from `/home`. The wizard module
 its own ships none, so without it the rescue kernel is installed but
 unreachable. See TROUBLESHOOTING.md "The update safety net".
 
+**Reloading qtile** — `Super+Shift+R` (and any theme change) goes through
+`_smooth_restart`, which raises a **veil** over the transition:
+`qtile/scripts/qtile-restart-veil.py`, a separate process so it survives
+the `execv`. It frosts the desktop, shows a card per window with its real
+icon, and reports genuine progress from the incoming qtile — not a timer.
+It exists because qtile's own boot maps every window from every workspace
+for ~2s before the `startup` hook, which is unfixable from config. The
+veil pauses dunst and keeps itself topmost by reacting to root-window
+restack events, so nothing lands on top of it. Needs `python-gobject`;
+without it the reload silently falls back to a plain restart. Details and
+the measured time budget: TROUBLESHOOTING.md "the restart veil".
+
 **Wallpaper vs. theme** — changing the wallpaper re-derives the palette
 **only when the active mode is already `wal`**, since `wal` is the mode
 that means "follow the wallpaper". On a preset (`gruvbox`, `doomone`, …)
@@ -386,7 +398,12 @@ Themed live from the active wal palette (`~/.cache/wal/colors.json`).
 **Files**
 
 - `.config/qtile/scripts/qdrop.py` — daemon + IPC + widget
-- `.config/qtile/scripts/qdrop_watch.py` — XInput2 raw-event shake detector
+- `.config/qtile/scripts/qdrop_watch.py` — XInput2 raw-event shake detector.
+  Shake on any axis (left-right, up-down, diagonal) while dragging a
+  file/folder/image to pop the stash open; a plain click-drag with
+  nothing picked up is ignored, because firing also requires a real XDND
+  drag to be in flight. `--debug` logs each decision, `--any-drag`
+  disables the drag requirement.
 - `.config/qtile/scripts/qdrop_test.py` — 30+ pure/live tests
 - Autostart entry in `autostart.sh` launches daemon + watcher at login.
 

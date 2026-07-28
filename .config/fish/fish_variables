@@ -10,32 +10,9 @@ SETUVAR --export SUDO_EDITOR:nvim
 SETUVAR --export TMPDIR:/home/ati/tmp
 SETUVAR --export TV_DEFAULT_OPTS:\x2d\x2dheight\x3d60\x25\x20\x2d\x2dlayout\x3dreverse\x20\x2d\x2dmulti\x20\x2d\x2dinfo\x3dinline\x20\x2d\x2dtiebreak\x3dbegin\x2clength\x20\x2d\x2dansi\x20\x2d\x2dborder\x3drounded\x20\x2d\x2dpreview\x2dwindow\x3dright\x3a55\x25\x3awrap\x20\x2d\x2dpreview\x3d\x27bat\x20\x2d\x2dstyle\x3dnumbers\x2cchanges\x20\x2d\x2dcolor\x3dalways\x20\x2d\x2dpaging\x3dnever\x20\x7b\x7d\x20\x7c\x7c\x20exa\x20\x2dT\x20\x2d\x2dicons\x20\x7b\x7d\x20\x7c\x7c\x20file\x20\x7b\x7d\x27
 SETUVAR --export VISUAL:nvim
-SETUVAR __fish_initialized:3800
+SETUVAR __fish_initialized:4300
 SETUVAR _fisher_edc_2F_bass_files:\x7e/\x2econfig/fish/functions/__bass\x2epy\x1e\x7e/\x2econfig/fish/functions/bass\x2efish
 SETUVAR _fisher_jorgebucaran_2F_fisher_files:\x7e/\x2econfig/fish/functions/fisher\x2efish\x1e\x7e/\x2econfig/fish/completions/fisher\x2efish
 SETUVAR _fisher_plugins:jorgebucaran/fisher\x1eedc/bass
 SETUVAR _fisher_upgraded_to_4_4:\x1d
-SETUVAR fish_color_cancel:\x2dr
-SETUVAR fish_color_comment:red
-SETUVAR fish_color_cwd:green
-SETUVAR fish_color_cwd_root:red
-SETUVAR fish_color_end:green
-SETUVAR fish_color_escape:brcyan
-SETUVAR fish_color_history_current:\x2d\x2dbold
-SETUVAR fish_color_host:normal
-SETUVAR fish_color_host_remote:yellow
-SETUVAR fish_color_operator:brcyan
-SETUVAR fish_color_quote:yellow
-SETUVAR fish_color_redirection:cyan\x1e\x2d\x2dbold
-SETUVAR fish_color_search_match:white\x1e\x2d\x2dbackground\x3dbrblack
-SETUVAR fish_color_selection:white\x1e\x2d\x2dbold\x1e\x2d\x2dbackground\x3dbrblack
-SETUVAR fish_color_status:red
-SETUVAR fish_color_user:brgreen
-SETUVAR fish_color_valid_path:\x2d\x2dunderline
-SETUVAR fish_key_bindings:fish_vi_key_bindings
-SETUVAR fish_pager_color_completion:normal
-SETUVAR fish_pager_color_description:B3A06D\x1eyellow\x1e\x2di
-SETUVAR fish_pager_color_prefix:normal\x1e\x2d\x2dbold\x1e\x2d\x2dunderline
-SETUVAR fish_pager_color_progress:brwhite\x1e\x2d\x2dbackground\x3dcyan
-SETUVAR fish_pager_color_selected_background:\x2dr
 SETUVAR fish_user_paths:/home/ati/\x2ebin\x1e/home/ati/\x2elocal/bin\x1e/home/ati/\x2econfig/emacs/bin\x1e/home/ati/Applications\x1e/var/lib/flatpak/exports/bin/\x1e/home/ati/Desktop

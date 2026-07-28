@@ -852,6 +852,10 @@ class Dropzone(Gtk.Window):
         self._visible = False
         self._hiding = False
         self._mapped = False  # has show_animated() ever actually mapped us?
+        self._slide_timer = 0  # in-flight _slide_move() tick, 0 if idle
+        self._show_pending = False  # first-show waiting on its allocation pass
+        self._y = None  # last Y we moved to; None until first move()
+        self._anim_gen = 0  # bumped by every show/hide, cancels stale callbacks
         self._sort_mode = "date"
         self._search_shown = False
         self._suspend_hide = 0  # count of active modals/menus
@@ -913,7 +917,7 @@ class Dropzone(Gtk.Window):
 
     def _place_top_center(self):
         x, y = self._target_xy()
-        self.move(x, y)
+        self._move(x, y)
 
     def _slide_move(self, x, y_from, y_to, duration_ms, on_done=None):
         # Manual position-based slide, not GTK's Revealer: the outer
@@ -926,6 +930,16 @@ class Dropzone(Gtk.Window):
         # transition_duration. Animating the window's Y position
         # directly is reliable regardless of that Revealer/sizing
         # interaction and gives an unambiguous slide-from-the-top.
+        #
+        # Only one slide may ever be in flight: a second one started
+        # while the first is still ticking used to leave both timers
+        # alive, each calling move() with its own idea of where the
+        # window belongs -- the two interleave every 16ms and the window
+        # visibly vibrates between the two paths. Starting a slide
+        # therefore cancels whatever was running (and drops its
+        # on_done, so e.g. a hide that gets reversed mid-flight never
+        # runs the callback that would mark us invisible).
+        self._cancel_slide()
         steps = max(1, duration_ms // 16)  # ~60fps
         state = {"i": 0}
 
@@ -934,14 +948,42 @@ class Dropzone(Gtk.Window):
             t = min(1.0, state["i"] / steps)
             eased = 1 - (1 - t) ** 3  # ease-out cubic
             y = int(y_from + (y_to - y_from) * eased)
-            self.move(x, y)
+            self._move(x, y)
             if t >= 1.0:
+                self._slide_timer = 0
                 if on_done:
                     on_done()
                 return False
             return True
 
-        GLib.timeout_add(16, _step)
+        self._slide_timer = GLib.timeout_add(16, _step)
+
+    def _cancel_slide(self):
+        if self._slide_timer:
+            GLib.source_remove(self._slide_timer)
+            self._slide_timer = 0
+
+    def _move(self, x, y):
+        """move() that remembers where we put the window.
+
+        Reversing an animation needs the *current* Y, and asking X for
+        it (get_position()) round-trips and lags a frame behind the
+        move() we just issued; tracking it here is exact and free.
+        """
+        self._y = y
+        self.move(x, y)
+
+    def _reversed_duration(self, y_from, y_to, full_span, full_ms) -> int:
+        """Duration for a slide that starts partway along its path.
+
+        Without this, reversing a nearly-finished animation replays the
+        full duration over a few remaining pixels, which reads as a
+        stall rather than a redirect.
+        """
+        if full_span <= 0:
+            return full_ms
+        frac = min(1.0, abs(y_to - y_from) / float(full_span))
+        return max(60, int(full_ms * frac))
 
     # --- menu / search / sort / export ----------------------------
 
@@ -1139,9 +1181,59 @@ class Dropzone(Gtk.Window):
             pass
 
     def show_animated(self):
+        self._anim_gen += 1
+        gen = self._anim_gen
+
         if self._hiding:
+            # Mid-close and asked to open again (shake during the close
+            # animation, or a second toggle). Previously this returned
+            # early, so the window finished closing and the request was
+            # silently dropped. Reverse the slide instead: cancel the
+            # close, keep every other bit of state as-is, and run back
+            # down from wherever the window currently sits.
+            self._cancel_slide()
+            self._hiding = False
+            self._visible = True
+            x, target_y = self._target_xy()
+            height = self.get_allocated_height() or WIN_H
+            cur_y = self._y if self._y is not None else -height
+            self._slide_move(
+                x, cur_y, target_y,
+                self._reversed_duration(cur_y, target_y, height, REVEAL_MS),
+            )
+            self.present()
+            self._reset_hide_timer()
             return
+
+        # Before deciding "already open, nothing to do", make sure
+        # "open" still means "open where the user is looking". qtile
+        # unmaps windows that aren't on the current group, so after a
+        # workspace switch self._visible is still True while nothing is
+        # on screen; the early-out below would then swallow the request
+        # and qdrop would never appear. Syncing first clears _mapped on
+        # a cross-group move, which drops us through to the full
+        # (re)map path underneath.
         self._sync_to_current_qtile_group()
+
+        if self._visible and self._mapped and not self._anim_busy():
+            # Already open and settled. A SHOW here (shake while the
+            # window is up, a second keybind press, qdrop --show twice)
+            # must NOT re-run the reveal: that teleports the window to
+            # -height and slides it back down, which looks exactly like
+            # it closed and reopened. Just keep it up and restart the
+            # auto-hide countdown, which is the useful half of the
+            # request.
+            self.present()
+            self._reset_hide_timer()
+            return
+
+        if self._visible and self._anim_busy():
+            # Open and still sliding down (or waiting on the first-show
+            # allocation pass). Let the in-flight reveal finish rather
+            # than restarting it from the top.
+            self._reset_hide_timer()
+            return
+
         self._visible = True
         self._refresh()
         self.revealer.set_reveal_child(True)  # content visible immediately;
@@ -1209,31 +1301,52 @@ class Dropzone(Gtk.Window):
         # the center placement entirely instead of racing to correct it
         # after the fact. This dance only matters for this very first
         # map -- see the self._mapped branch above for every later show.
-        self.move(x, SAFE_OFFSCREEN_Y)
+        self._move(x, SAFE_OFFSCREEN_Y)
         self.show_all()
         self.present()
         self._force_qtile_focus()
         self._mapped = True
+        self._show_pending = True
 
         def _begin_slide():
+            self._show_pending = False
+            # A HIDE (or another SHOW) can land inside this 20ms gap.
+            # Without the generation check the window would obediently
+            # slide into view right after being told to go away.
+            if gen != self._anim_gen or not self._visible:
+                return False
             x2, target_y2 = self._target_xy()
             h = self.get_allocated_height() or WIN_H
             start_y = -h  # bottom edge at screen y=0, fully off
-            self.move(x2, start_y)  # off-screen -> off-screen, invisible
+            self._move(x2, start_y)  # off-screen -> off-screen, invisible
             self._slide_move(x2, start_y, target_y2, REVEAL_MS)
             return False
 
         GLib.timeout_add(20, _begin_slide)
         self._reset_hide_timer()
 
+    def _anim_busy(self) -> bool:
+        """Is a reveal/close transition still in flight?"""
+        return bool(self._slide_timer) or self._show_pending
+
     def hide_animated(self):
         if not self._visible or self._hiding:
             return
+        self._anim_gen += 1
         self._hiding = True
+        self._show_pending = False  # abandon a not-yet-started reveal
         self._cancel_hide_timer()
         x, target_y = self._target_xy()
         height = self.get_allocated_height() or WIN_H
-        start_y = -height  # bottom edge at screen y=0, fully off
+        end_y = -height  # bottom edge at screen y=0, fully off
+        # Start from where the window actually is, not from target_y: a
+        # HIDE landing mid-reveal (auto-hide racing the open animation,
+        # or Esc pressed while it slides in) used to snap the window
+        # down to its final resting place first and close from there,
+        # which reads as a jump.
+        start_y = self._y if self._y is not None else target_y
+        start_y = max(end_y, min(start_y, target_y))
+        duration = self._reversed_duration(start_y, end_y, height, HIDE_MS)
 
         def _finish():
             self._visible = False
@@ -1246,10 +1359,16 @@ class Dropzone(Gtk.Window):
             # __init__) already keep a mapped-but-off-screen window out
             # of any WM chrome, so there's no visible downside.
 
-        self._slide_move(x, target_y, start_y, HIDE_MS, on_done=_finish)
+        self._slide_move(x, start_y, end_y, duration, on_done=_finish)
 
     def toggle(self):
-        if self._visible:
+        # _hiding first: mid-close, "toggle" means bring it back, not
+        # "it's still visible so hide it" (which the old ordering did --
+        # a no-op, since hide_animated() bails while already hiding, so
+        # a toggle during the close animation did nothing at all).
+        if self._hiding:
+            self.show_animated()
+        elif self._visible:
             self.hide_animated()
         else:
             self.show_animated()

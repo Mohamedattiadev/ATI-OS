@@ -621,6 +621,50 @@ subsystem. Each entry: **symptom → root cause → fix**.
   sensitivity. Verified with synthetic `xdotool` pointer sequences:
   a vertical drag with small horizontal jitter no longer triggers
   qdrop; a genuine horizontal shake still does.
+- **Superseded:** `MIN_DX_DY_RATIO` is gone — see the entry below. It
+  was a proxy for "is the user actually carrying something"; qdrop now
+  asks X that question directly, so the axis restriction it imposed
+  (which also made up/down shakes impossible) is no longer needed.
+
+### qdrop opens on any mouse drag, not just when dragging a file
+- **Symptom:** shaking the mouse with Button1 held opens qdrop even when
+  nothing is picked up — rubber-band selecting on the desktop, panning a
+  canvas, dragging a window, scrubbing a slider. The shake gesture had
+  no idea whether there was anything to drop.
+- **Root cause:** `qdrop_watch.py` only ever looked at pointer *motion*.
+  Motion shape alone cannot distinguish "waggling a picked-up file" from
+  "waggling the pointer"; the horizontal-dominance heuristic above was a
+  weak stand-in that both missed real drags (any vertical shake) and let
+  non-drags through (any horizontal wiggle).
+- **Fix:** the shake now has a second, independent gate — an XDND drag
+  must actually be in flight before a shake can fire (`dnd_payload()`).
+  Every X11 drag source takes ownership of the `XdndSelection` selection
+  for the exact duration of the drag and releases it on drop or cancel,
+  so `XGetSelectionOwner(XdndSelection)` is a precise "is something
+  picked up right now" test. If the source advertises more than three
+  data types it also publishes them in the `XdndTypeList` property on
+  its own window; that list is read to require file/folder/image-ish
+  content (`text/uri-list`, `image/*`, the KDE/GNOME URI flavours, XDS)
+  and reject a pure `text/plain`+`STRING` drag. With ≤3 types the list
+  is only in the ClientMessage the drop target sees, so the property is
+  absent and the drag is accepted — something *is* being carried.
+  - Probed over `ctypes`+`libX11`, not GDK: `gdk_selection_owner_get()`
+    only ever reports selections owned by the *calling* process, so it
+    always returns NULL for another app's drag. An X error handler is
+    installed because a drag source can disappear between the owner
+    lookup and the property read (`BadWindow`), which would otherwise
+    take the whole watcher down with Xlib's default exit-on-error.
+  - Probe runs only at the moment a shake would fire (one round trip),
+    never per motion event.
+- **Also fixed:** reversal counting measured `MIN_SEG_PX` from the last
+  turning point, so a 1px backwards tremor during a long one-way drag
+  counted as a full reversal. It now measures retrace *from the furthest
+  point reached in the current direction*, which absorbs tremor.
+- **Result:** shakes work on any axis — left-right, up-down, diagonal —
+  because the payload gate, not the motion axis, is what rejects
+  non-drags. Escape hatches: `--any-drag` restores the old
+  fire-on-any-shake behaviour, `--debug` logs why each gesture did or
+  did not fire.
 
 ### SmartWidgetBox chip-list cascade-flash animation (CPU/Mem, updates/disk/volume groups)
 - **Symptom:** N/A — this documents verification of an animation added
@@ -1519,3 +1563,46 @@ after `dcli-sync` has installed `linux-lts`:
   `ahci` and `sd_mod` are built **into** the LTS kernel (`CONFIG_*=y`), so
   the trimmed image having fewer modules cannot cost us the root device.
   Actually confirming it boots requires a reboot.
+
+### Reload shows every window piled up, or takes ~10s (the restart veil)
+`Super+Shift+R` used to show every window from every workspace stacked on
+top of each other for ~2s. A "veil" (`qtile/scripts/qtile-restart-veil.py`,
+launched by `config.py`'s `_smooth_restart`) covers the transition and
+reports real progress.
+
+- **The pile is inside qtile's own boot**, between its window scan and the
+  `startup` hook — measured, no config-level code is alive then. It cannot
+  be fixed from config, which is why the veil is a **separate process**
+  (it has to survive the `execv`).
+- **The veil needs `python-gobject`.** Without it `_veil_launch()` returns
+  False and `_smooth_restart` falls through to a plain `qtile.restart()` —
+  the pile comes back and nothing tells you why. Declared in
+  `python-lib.yaml`.
+- **Notifications landing on top of the veil.** Two mechanisms, both
+  needed. qtile pauses dunst before restarting, and the veil *unpauses it
+  itself* from a `finally` when its window actually goes away — dunst
+  **queues** while paused and flushes the entire backlog the instant it
+  unpauses, so unpausing on a timer dumped everything onto the veil.
+  Separately, the veil keeps itself topmost by reacting to
+  `SubstructureNotify` on the root window: X has no always-on-top flag it
+  enforces for override-redirect windows, so re-raising is the only
+  mechanism, and a 16ms poll left a hole any window could appear through.
+- **If dunst ever goes permanently silent after a failed reload**, this is
+  the first thing to check: `dunstctl is-paused`. `dunstctl set-paused
+  false` fixes it. The `finally` covers the crash and watchdog paths so it
+  should not happen, and qtile keeps an idempotent backstop at 1.5s.
+- **Changing theme feels laggy before the veil appears.** `theme-apply`
+  calls `_veil_hold()` as its first act so the veil is up *before* it
+  writes ~10 app palettes. Without that you watch ~4s of colours swapping
+  on a naked desktop, then a loading screen.
+- **The ~7s is qtile, not the veil.** Read the veil's own elapsed counter:
+  "restarting window manager" sits at 21–22% for the whole span, and that
+  label is set immediately before `qtile.restart()` with the next update
+  coming from the *new* process. So it is execv + interpreter + `libqtile`
+  import + config load + 32-widget bar + window scan. Making the veil
+  simpler saves nothing — it is a separate process animating in parallel.
+- **Never iterate on this by restarting the live session.** An early
+  attempt (fullscreen `feh` overlay) froze the desktop and crashed X. Use
+  the Xephyr sandbox; recipe in `qtile-veil-HANDOFF.md`. Note the sandbox
+  understates real timings by ~2.5x — good for behaviour, useless for
+  numbers.
