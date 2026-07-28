@@ -2,6 +2,7 @@ import subprocess
 import threading
 import time
 from qtile_extras.popup import PopupRelativeLayout, PopupText
+from popups._wal_colors import fade_in_popup
 
 _LAYOUT = None
 _QTILE = None
@@ -443,6 +444,7 @@ def show(qtile):
     )
 
     _LAYOUT.show(centered=True)
+    fade_in_popup(_LAYOUT)
 
     refresh()
 

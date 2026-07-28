@@ -16,11 +16,19 @@ import subprocess
 import sys
 import time
 
-REVERSALS_NEEDED = 3
-TIME_WINDOW_S = 1.0
-MIN_SEG_PX = 8
+REVERSALS_NEEDED = 2  # was 3 -- reported needing a hard/deliberate shake to fire
+TIME_WINDOW_S = 1.2  # was 1.0 -- more time to land fewer required reversals
+MIN_SEG_PX = 6  # was 8 -- smaller wiggles now count as a reversal segment
 DEBOUNCE_S = 1.2
 COOLDOWN_AFTER_RELEASE_S = 0.2
+# A real "shake" (waggling a picked-up file left-right) is horizontal-
+# dominant motion. Dragging up/down to extend a text selection is
+# vertical-dominant motion, but the small horizontal hand jitter that
+# comes along with it was enough to satisfy REVERSALS_NEEDED/MIN_SEG_PX
+# and fire a false show. Gate firing on total |dx| accumulated since
+# button-press being at least as large as total |dy| -- cleanly separates
+# the two gestures without touching reversal-detection sensitivity.
+MIN_DX_DY_RATIO = 1.0
 
 QDROP = os.path.expanduser("~/.config/qtile/scripts/qdrop.py")
 
@@ -69,7 +77,8 @@ def main():
 
     ev_re = re.compile(r"^EVENT type\s+\d+\s+\((\w+)\)")
     detail_re = re.compile(r"^\s+detail:\s+(\d+)")
-    axis_re = re.compile(r"^\s+0:\s+([\-\d.]+)")
+    axis_x_re = re.compile(r"^\s+0:\s+([\-\d.]+)")
+    axis_y_re = re.compile(r"^\s+1:\s+([\-\d.]+)")
 
     ev_type = None
     detail = None
@@ -81,6 +90,8 @@ def main():
     reversal_times: collections.deque = collections.deque()
     last_fire = 0.0
     fired_for_drag = False
+    abs_dx_total = 0.0
+    abs_dy_total = 0.0
 
     for line in proc.stdout:
         if not line:
@@ -107,6 +118,8 @@ def main():
                         current_sign = 0
                         reversal_times.clear()
                         fired_for_drag = False
+                        abs_dx_total = 0.0
+                        abs_dy_total = 0.0
                     else:
                         button1_down = False
                         time.sleep(COOLDOWN_AFTER_RELEASE_S)
@@ -115,13 +128,19 @@ def main():
         if ev_type != "RawMotion" or not button1_down or fired_for_drag:
             continue
 
-        m = axis_re.match(line)
+        my = axis_y_re.match(line)
+        if my:
+            abs_dy_total += abs(float(my.group(1)))
+            continue
+
+        m = axis_x_re.match(line)
         if not m:
             continue
 
         dx = float(m.group(1))
         if dx == 0:
             continue
+        abs_dx_total += abs(dx)
         integrated_x += dx
         if abs(integrated_x - seg_start_x) < MIN_SEG_PX:
             continue
@@ -140,7 +159,12 @@ def main():
                 reversal_times.popleft()
             current_sign = new_sign
             seg_start_x = integrated_x
-            if len(reversal_times) >= REVERSALS_NEEDED and now - last_fire >= DEBOUNCE_S:
+            is_horizontal_dominant = abs_dx_total >= abs_dy_total * MIN_DX_DY_RATIO
+            if (
+                len(reversal_times) >= REVERSALS_NEEDED
+                and now - last_fire >= DEBOUNCE_S
+                and is_horizontal_dominant
+            ):
                 fire()
                 last_fire = now
                 fired_for_drag = True

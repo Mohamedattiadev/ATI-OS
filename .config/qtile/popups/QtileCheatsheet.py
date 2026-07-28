@@ -10,6 +10,7 @@ _CHEATSHEET_LAYOUT = None
 # a wallpaper switch retints the popup without qtile restart.
 # =============================================================================
 from popups._wal_colors import load_colors as _load_colors
+from popups._wal_colors import fade_in_popup
 COLORS = _load_colors()
 
 MODE_NOTE_TEMPLATE = (
@@ -271,6 +272,7 @@ def toggle_cheatsheet(qtile):
     )
 
     _CHEATSHEET_LAYOUT.show(centered=True)
+    fade_in_popup(_CHEATSHEET_LAYOUT)
 
 
 def close_qtile_cheatsheet():

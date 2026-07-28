@@ -19,6 +19,7 @@ def escape_markup(text: str) -> str:
 # a wallpaper switch retints the popup without qtile restart.
 # =============================================================================
 from popups._wal_colors import load_colors as _load_colors
+from popups._wal_colors import fade_in_popup
 COLORS = _load_colors()
 
 # =============================================================================
@@ -264,6 +265,7 @@ def toggle_vim_cheatsheet(qtile):
     )
 
     _VIM_CHEATSHEET.show(centered=True)
+    fade_in_popup(_VIM_CHEATSHEET)
 
 def close_vim_cheatsheet():
     global _VIM_CHEATSHEET

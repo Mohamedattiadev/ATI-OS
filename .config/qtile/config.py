@@ -742,6 +742,19 @@ def _save_window_group_state():
         pass
 
 
+def _smooth_restart(qtile):
+    # Reverted: a fullscreen-feh-screenshot overlay was tried here to
+    # mask the transient bad-looking relayout during restart, but it
+    # caused real freezes (feh's fullscreen grab needing a manual Esc
+    # to dismiss, and at least one X server crash during testing) on
+    # this live session. Not worth the instability -- back to the
+    # plain, previously-reliable restart.
+    _save_layout_state()
+    _save_window_group_state()
+    qtile.spawn("notify-send -u low -t 3000 -i dialog-ok-symbolic 'Qtile' 'Reloaded'")
+    qtile.restart()
+
+
 def _load_window_group_state():
     global _RESTORED_WIN_MAP, _RESTORED_FOCUS
     try:
@@ -834,6 +847,25 @@ def _drop_window_group(client):
         _RESTORED_WIN_MAP.pop(str(client.wid), None)
     except Exception:
         pass
+
+
+# qdrop (scripts/qdrop.py) following the currently active group: tried
+# two qtile-side approaches, both reverted.
+#   1. Re-togroup() on every `setgroup` hook fire: togroup() unconditionally
+#      calls the window's own hide() (a real X11 unmap) and re-runs the
+#      floating layout's placement pass (incl. a mouse warp), which
+#      desyncs GTK's own mapped-state bookkeeping from reality and left
+#      the window stuck unmapped.
+#   2. client.static(): detaches the window from the group system
+#      entirely (screen-bound, like a dock/panel) so it's always visible
+#      regardless of active group -- but qtile never routes keyboard
+#      focus to a Static window, which broke qdrop's search/delete/
+#      ctrl+a shortcuts.
+# Fix now lives in qdrop.py itself instead: it asks qtile (via the
+# command socket) which group it's really on right before showing, and
+# if it differs from the current one, does its own hide()+togroup()+
+# full remap dance (see show_animated()) rather than qtile silently
+# doing it from underneath.
 
 
 @hook.subscribe.screens_reconfigured
@@ -1735,6 +1767,15 @@ def normal_user_bar():
             this_screen_border=colors[4],
             other_current_screen_border=colors[7],
             other_screen_border=colors[4],
+            # default urgent_alert_method is "border" -- draws a thick
+            # (borderwidth=4) solid-colored box around the group's icon
+            # glyph when a background/unvisited group gets a new window,
+            # which at this icon size just reads as an ugly filled
+            # square. "text" instead just recolors the icon glyph itself,
+            # consistent with highlight_method="text" above for the
+            # active group -- no boxes anywhere on this widget.
+            urgent_alert_method="text",
+            urgent_text=colors[3],
             hide_unused=True,
         ),
         ewidget.Spacer(length=bar.STRETCH),
@@ -1863,6 +1904,12 @@ def groupbox_widget():
         this_screen_border=colors[4],
         other_current_screen_border=colors[7],
         other_screen_border=colors[4],
+        # See matching comment on the normal_user_bar() GroupBox above --
+        # default urgent_alert_method="border" draws an ugly filled-
+        # looking box around the icon glyph for unvisited groups with a
+        # new window; "text" just recolors the glyph instead.
+        urgent_alert_method="text",
+        urgent_text=colors[3],
         hide_unused=True,
     )
 
@@ -2627,14 +2674,76 @@ class SmartWidgetBox(ewidget.WidgetBox):
                     pass
 
     def toggle(self, *a, **k):
-        if not getattr(self, "box_is_open", False):
+        was_open = getattr(self, "box_is_open", False)
+        if not was_open:
             SmartWidgetBox.close_all(except_self=self)
         res = super().toggle(*a, **k)
         try:
             qtile.call_later(0.1, install_bar_tooltips)
         except Exception:
             pass
+        if not was_open and self.box_is_open:
+            self._animate_reveal()
         return res
+
+    def _animate_reveal(self):
+        # A true width/layout-growth animation isn't practical here --
+        # qtile computes each widget's own calculate_length() at insert
+        # time, and animating that reliably across both toggle_widgets()
+        # code paths (default vs insert_before_name) is fragile.
+        #
+        # Tried hiding each chip via drawer.disable() until its reveal
+        # moment first -- turned out disable() is a pure no-op skip
+        # inside Drawer.draw() (see backend/base/drawer.py), not a
+        # blank-paint, so nothing was ever actually hidden: the chips
+        # were already fully visible the instant toggle_widgets() ran
+        # (base WidgetBox.toggle() itself calls bar.draw() with every
+        # child already enabled), so the "reveal" was just riding on
+        # stale already-visible pixels -- no perceptible left-to-right
+        # order, and disable()/enable() churn mid-flash likely explains
+        # the reported glitchiness.
+        #
+        # Replaced with what's actually achievable: a real multi-step
+        # (not instant on/off) color pulse across each chip's
+        # background decoration, staggered left-to-right by
+        # `self.widgets` index -- confirmed via `qtile cmd-obj -o bar
+        # top -f info` that this index order matches true on-screen
+        # left-to-right order (toggle_widgets() reverse-inserts at a
+        # fixed index, which nets out to preserving self.widgets'
+        # original order).
+        STEPS = 8
+        RAMP_S = 0.09
+        STAGGER_S = 0.10
+
+        def _mix(base_hex, bright_hex, t):
+            b = base_hex.lstrip("#")
+            h = bright_hex.lstrip("#")
+            br, bgc, bb = int(b[0:2], 16), int(b[2:4], 16), int(b[4:6], 16)
+            hr, hg, hb = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            r = int(br + (hr - br) * t)
+            g = int(bgc + (hg - bgc) * t)
+            bl = int(bb + (hb - bb) * t)
+            return f"#{r:02x}{g:02x}{bl:02x}"
+
+        for i, w in enumerate(self.widgets):
+            deco = getattr(w, "_flash_deco", None)
+            base = getattr(w, "_flash_base", None)
+            bright = getattr(w, "_flash_bright", None)
+            if deco is None or base is None or bright is None:
+                continue
+
+            def _tick(step, deco=deco, base=base, bright=bright):
+                try:
+                    t = step / STEPS if step <= STEPS else 1 - (step - STEPS) / STEPS
+                    deco.colour = _mix(base, bright, max(0.0, min(1.0, t)))
+                    self.bar.draw()
+                except Exception:
+                    return False
+                if step < STEPS * 2:
+                    self.timeout_add(RAMP_S / STEPS, lambda: _tick(step + 1))
+                return False
+
+            self.timeout_add(i * STAGGER_S, lambda tick=_tick: tick(0))
 
     def toggle_widgets(self):
         if not self.insert_before_name:
@@ -2664,27 +2773,91 @@ class SmartWidgetBox(ewidget.WidgetBox):
                 self.bar.widgets.insert(index, widget)
 
 
-def chip(WCls, chip_color=None, **kwargs):
-    deco = [
-        RectDecoration(
-            colour=chip_color if chip_color is not None else DEFAULT_CHIP_COLOR,
-            radius=11,
-            filled=True,
-            padding_x=3,
-            padding_y=2,
-            # NOTE:  if u want just a border, u can use this
-            # filled=False,
-            # line_width=1.5,
-            # line_colour= colorsW[8]
+def _brighten_hex(hexcolor, amount=0.35):
+    hexcolor = hexcolor.lstrip("#")
+    r, g, b = int(hexcolor[0:2], 16), int(hexcolor[2:4], 16), int(hexcolor[4:6], 16)
+    r = int(r + (255 - r) * amount)
+    g = int(g + (255 - g) * amount)
+    b = int(b + (255 - b) * amount)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _brighten_color(c, amount=0.35):
+    # colorsW entries are [hex, hex] pairs (gradient-capable decorations);
+    # handle both that and a plain hex string.
+    if isinstance(c, (list, tuple)):
+        return [_brighten_hex(x, amount) for x in c]
+    return _brighten_hex(c, amount)
+
+
+class _ChipFlashMixin:
+    """Brief brighten-then-fade flash on click. Wraps button_press so
+    whatever click behavior the underlying widget/mouse_callbacks already
+    have runs completely unchanged -- this only adds visual feedback
+    around it, never replaces the actual click handling."""
+
+    _flash_deco = None
+    _flash_base = None
+    _flash_bright = None
+
+    def button_press(self, x, y, button):
+        if self._flash_deco is not None:
+            try:
+                self._flash_deco.colour = self._flash_bright
+                self.bar.draw()
+                self.timeout_add(0.25, self._chip_flash_revert)
+            except Exception:
+                pass
+        return super().button_press(x, y, button)
+
+    def _chip_flash_revert(self):
+        try:
+            self._flash_deco.colour = self._flash_base
+            self.bar.draw()
+        except Exception:
+            pass
+
+
+_flash_widget_cache = {}
+
+
+def _flash_widget_class(WCls):
+    if WCls not in _flash_widget_cache:
+        _flash_widget_cache[WCls] = type(
+            f"Flash{WCls.__name__}", (_ChipFlashMixin, WCls), {}
         )
-    ]
+    return _flash_widget_cache[WCls]
+
+
+def chip(WCls, chip_color=None, **kwargs):
+    base_color = chip_color if chip_color is not None else DEFAULT_CHIP_COLOR
+    deco = RectDecoration(
+        colour=base_color,
+        radius=11,
+        filled=True,
+        padding_x=3,
+        padding_y=2,
+        # NOTE:  if u want just a border, u can use this
+        # filled=False,
+        # line_width=1.5,
+        # line_colour= colorsW[8]
+    )
 
     if "decorations" in kwargs and kwargs["decorations"]:
-        kwargs["decorations"] = list(kwargs["decorations"]) + deco
+        kwargs["decorations"] = list(kwargs["decorations"]) + [deco]
     else:
-        kwargs["decorations"] = deco
+        kwargs["decorations"] = [deco]
 
-    w = WCls(**kwargs)
+    # Click-feedback flash only on chips that actually respond to clicks --
+    # no point animating ones that don't do anything when pressed.
+    has_click = bool(kwargs.get("mouse_callbacks"))
+    cls = _flash_widget_class(WCls) if has_click else WCls
+
+    w = cls(**kwargs)
+    if has_click:
+        w._flash_deco = deco
+        w._flash_base = base_color
+        w._flash_bright = _brighten_color(base_color, amount=0.55)
 
     return w
 
@@ -2832,16 +3005,7 @@ keys = [
     Key(
         [mod, "shift"],
         "r",
-        lazy.function(
-            lambda qtile: (
-                _save_layout_state(),
-                _save_window_group_state(),
-                qtile.spawn(
-                    "notify-send -u low -t 3000 -i dialog-ok-symbolic 'Qtile' 'Reloaded'"
-                ),
-                qtile.restart(),
-            )
-        ),
+        lazy.function(_smooth_restart),
         desc="Restart qtile (preserves window state)",
     ),
     # --- logout menu ---
@@ -3416,7 +3580,17 @@ groups = [
         layout="max",
     ),
     Group(
-        "6", label="👁", matches=[Match(wm_class="google-chrome")], layout="monadtall"
+        "6",
+        label="👁",
+        matches=[
+            Match(wm_class="google-chrome"),
+            # Chrome sets WM_CLASS "chrome"/"Chrome" for some windows and
+            # "google-chrome"/"Google-chrome" for others, so match both or
+            # half the windows escape to the current group.
+            Match(wm_class="chrome"),
+            Match(wm_class="chromium"),
+        ],
+        layout="monadtall",
     ),
     Group("7", label="7", layout="monadtall"),
     Group("8", label="8", layout="monadtall"),
@@ -3860,8 +4034,26 @@ floating_layout = layout.Floating(
         Match(wm_class="imv"),  # copyq_rofi alt+w image preview
         Match(wm_class="org.gnome.NautilusPreviewer"),  # make the preview float
         Match(wm_class="qdrop"),  # qdrop drop-stash
+        Match(title="qtile-restart-overlay"),  # smooth-restart screenshot freeze
         # Match(wm_class="Anki"),  # make the preview float
     ],
+    # qdrop fully self-manages its own position (slide animation driven
+    # by scripts/qdrop.py's own move() calls). Without this, qtile's
+    # Floating.compute_client_position() re-centers ANY window whose
+    # first-map position isn't already on-screen -- confirmed via
+    # xdotool geometry polling: it happens regardless of
+    # has_user_set_position()/WM_NORMAL_HINTS, since on_screen() alone
+    # gates the recenter branch. qdrop deliberately maps off-screen
+    # first (see SAFE_OFFSCREEN_Y in qdrop.py) so its real content
+    # height can settle before the visible slide starts, which qtile's
+    # placement logic reads as "invalid position" and recenters --
+    # producing a one-frame flash at qtile's own centered coordinates
+    # (computed from qdrop's pre-allocation width, so not even the same
+    # spot as a true screen-center) before qdrop's own code corrects it
+    # 20ms later. no_reposition_rules skips compute_client_position()
+    # entirely for matched clients, so qdrop's own move() calls are the
+    # only thing that ever touches its position.
+    no_reposition_rules=[Match(wm_class="qdrop")],
 )
 auto_fullscreen = True
 focus_on_window_activation = "smart"
