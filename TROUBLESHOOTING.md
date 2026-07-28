@@ -1357,7 +1357,17 @@ Append entries here as you hit them. Keep the same tri-format
   1. the snapshots consume exactly the headroom upgrades need, and
   2. when `/` is damaged the snapshots are damaged with it — which is
      why recovery meant a reinstall rather than a restore.
-- **Fix:** snapshots live on a different filesystem (`/home`, or better
+- **Fix (done on this machine 2026-07-28):** snapshots were relocated to
+  `/home` (`/dev/sda3`), taking `/` from **91% used / 2.7G free** to
+  **54% / 14G free**. Procedure, if it must be redone: `rsync -aHAX`
+  (the `-H` matters — timeshift hardlinks unchanged files between
+  snapshots, and losing that multiplies disk use per snapshot) to the
+  new location, verify file counts match and a dry-run re-sync reports
+  zero differences, repoint `backup_device_uuid` in
+  `/etc/timeshift/timeshift.json` at the new partition's UUID, confirm
+  `timeshift --list` still shows the snapshots, and only then delete the
+  original. Never delete first.
+- **Snapshots must live on a different filesystem** (`/home`, or better
   an external disk). Check with:
   ```sh
   findmnt -no SOURCE --target /timeshift
