@@ -13,7 +13,11 @@ if test "$TERM" = linux; and not set -q TTY_COLORS_APPLIED
 end
 
 function fish_exit --on-event fish_exit
-    reset
+    # Only meaningful for a shell attached to a real terminal; running it in
+    # `fish -c` / scripts just prints "reset: terminal attributes".
+    if status is-interactive; and test -t 1
+        reset
+    end
 end
 #
 #
@@ -28,9 +32,14 @@ set -U fish_user_paths $HOME/.bin $HOME/.local/bin $HOME/.config/emacs/bin $HOME
 ### EXPORT ###
 
 set fish_greeting # Supresses fish's intro message
-set TERM xterm-256color # Sets the terminal type
-set VISUAL nvim # $VISUAL use nvim in GUI mode
-set EDITOR nvim # $EDITOR use nvim in terminal
+# Only fall back to xterm-256color when the terminal did not tell us what it
+# is (or told us something we have no terminfo entry for). Overriding this
+# unconditionally threw away kitty's xterm-kitty capabilities.
+if not set -q TERM; or not infocmp "$TERM" >/dev/null 2>&1
+    set -gx TERM xterm-256color
+end
+set -gx VISUAL nvim # $VISUAL use nvim in GUI mode
+set -gx EDITOR nvim # $EDITOR use nvim in terminal
 set -Ux SUDO_EDITOR nvim
 
 ### SET MANPAGER
@@ -535,10 +544,14 @@ alias mocp="bash -c mocp"
 ### RANDOM COLOR SCRIPT ###
 # Get this script from my GitLab: gitlab.com/dwt1/shell-color-scripts
 # Or install it from the Arch User Repository: shell-color-scripts
-colorscript random
+if status is-interactive
+    colorscript random
+end
 
 ### SETTING THE STARSHIP PROMPT ###
-starship init fish | source
+if status is-interactive
+    starship init fish | source
+end
 
 ### tmux  ###
 export TMUX_CONF=~/.config/.tmux.conf
