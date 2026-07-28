@@ -2,7 +2,7 @@ description: Window manager and desktop environment && apps
 
 packages:
   - qtile-extras
-  - picom
+  - picom-ftlabs-git  # animation-capable fork -- vanilla picom has no animation support at all
   - light
   - betterlockscreen
   - gromit-mpx
