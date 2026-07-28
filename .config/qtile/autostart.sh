@@ -15,6 +15,12 @@ COLORSCHEME=DoomOne
 
 # (systemd-detect-virt | grep -qv none && ~/.config/qtile/scripts/set_vm_resolution.sh) &
 
+# Touchpad scroll speed: pixels of finger travel per scroll unit (default 15).
+# Higher = slower, smoother two-finger scrolling. Device id is not stable across
+# boots, so resolve it by name.
+touchpad_id=$(xinput list --id-only "AlpsPS/2 ALPS GlidePoint" 2>/dev/null)
+[ -n "$touchpad_id" ] && xinput set-prop "$touchpad_id" "libinput Scrolling Pixel Distance" 40 2>/dev/null
+
 # ---------------------------------------------------------
 # 2. Core environment (ESSENTIAL FAST START)
 # ---------------------------------------------------------
