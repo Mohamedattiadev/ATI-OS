@@ -1243,3 +1243,95 @@ Append entries here as you hit them. Keep the same tri-format
   does not affect it. Page content there is controlled by
   `--enable-features=WebContentsForceDark` in `brave-flags.conf` plus
   WhatsApp Web's own in-app dark setting.
+
+### Tray icons are invisible but still clickable
+- **Symptom:** after toggling the systray widgetbox (△), the tray icons
+  render as blank space — but clicking that space still activates them.
+  Intermittent.
+- **Root cause:** tray icons are not painted by the bar. Each is a
+  separate XEmbed **client** window owned by its application.
+  `WidgetBox.toggle_widgets()` hides them on close and relies on
+  `Systray.draw()` calling `icon.unhide()` to bring them back, but
+  `draw()` also binds each icon's background to the systray drawer's
+  pixmap:
+  ```python
+  icon.window.set_attribute(backpixmap=self.drawer.pixmap)
+  ```
+  That pixmap is reallocated when the widget is removed from and
+  re-inserted into the bar. The icons therefore come back mapped and
+  correctly positioned — hence still clickable — while painting from a
+  stale pixmap, which reads as invisible. It is intermittent because it
+  depends on whether the client happens to receive an expose event and
+  redraw itself anyway.
+- **Fix:** `SmartWidgetBox.toggle()` schedules `_repaint_systray()`,
+  which re-runs the hide → draw → unhide + `_XEMBED_EMBEDDED_NOTIFY`
+  handshake against the current pixmap once the bar has settled.
+- **Duck-typed on `tray_icons`**, not `isinstance(Systray)`:
+  `qtile_extras` subclasses the libqtile widget, so an isinstance check
+  against either import is fragile. Also wrapped in try/except — a
+  cosmetic repaint must never break the toggle itself.
+
+### A layout switch (or any watcher popup) fires several times at once
+- **Symptom:** one keyboard-layout change produced three stacked
+  notifications. Also made an edited watcher script look like it had not
+  changed at all, since old copies were still running.
+- **Root cause:** `autostart.sh` runs again on **every qtile restart**,
+  and `keyboard_layout_watcher`, `adhkar` and `battery-events` were
+  started with no guard — unlike the python daemons directly below them,
+  which all use `pgrep … ||`. Every restart therefore left another copy
+  running. Three keyboard watchers and six `battery-events` processes
+  were live before this was noticed.
+- **Fix:** the same `pgrep -f '<name>$' >/dev/null || <name> &` guard on
+  all three.
+- **Check for it:** `pgrep -cf 'keyboard_layout_watcher$'` — anything
+  above 1 means duplicates. Same for any other `while true` script.
+- **Gotcha when editing a watcher:** the running process keeps executing
+  the *old* file. Restart it (`pkill -f '<name>$'` then relaunch) or the
+  fix appears to do nothing. This is what made the dunst `stack-tag` fix
+  look broken when it was already correct.
+- **Notification dedup:** repeat popups from the same source carry
+  `-h string:x-dunst-stack-tag:<tag>` so a new one replaces the previous
+  instead of stacking. Used by `keyboard_layout_watcher`,
+  `battery_notify` and `clock_popup`. It only dedups within one sender —
+  it cannot save you from duplicate daemons.
+
+### A stray drag reorders the workspace icons and apps open in the wrong group
+- **Symptom:** workspace icons in the bar occasionally swap places, and
+  afterwards apps open in the wrong workspace.
+- **Root cause:** `GroupBox` ships with `disable_drag=False`, so
+  drag-and-drop of group names is enabled by default.
+  `button_release()` ends a drag with
+  `group.switch_groups(self.clicked.name)`, which **swaps the two
+  groups**. A slight sideways movement while clicking is enough.
+- **Why it is destructive, not cosmetic:** every group carries
+  `matches=[]` rules binding apps to it (browsers → 2, files → 3,
+  editors → 4, chrome → 6). Swapping two groups repoints those bindings,
+  so apps keep opening in the wrong place with nothing on screen
+  explaining why.
+- **Fix:** `disable_drag=True` on **both** GroupBoxes — the main bar and
+  the `normal_user_bar` helper. Setting it on only one leaves that bar
+  destructive.
+- **Side effect:** clicking the already-active group now toggles back to
+  the previous group (`toggle` defaults True, and `go_to_group` only
+  reaches that branch when `disable_drag` is set). Set `toggle=False` if
+  you want the old inert behaviour.
+- **Verify:** script the gesture rather than trusting a hand test —
+  `xdotool mousemove <x1> 17 mousedown 1; xdotool mousemove <x2> 17;
+  xdotool mouseup 1` — then compare `qtile cmd-obj -o cmd -f get_groups`
+  before and after.
+
+### Battery chip popup
+- Was an inline `notify-send "Battery Status" "$(acpi | cut -d, -f2-)"`
+  in `config.py`, printing a raw fragment like `" 100%"` — leading space,
+  no context, no sense of whether the number is good or bad. Now
+  `AtiScriptsV1/battery_notify`, matching `disk_notify`: percentage, a
+  bar coloured by level, charge state and an ETA.
+- **Reads sysfs directly** (`/sys/class/power_supply/BAT*`) instead of
+  parsing `acpi(1)` — no extra package, and no locale-dependent text to
+  scrape.
+- **ETA landmine:** at `Full` the draw drops to ~0, and dividing by a
+  near-zero rate printed `"4323h 00m remaining"`. The ETA is now computed
+  only while actively `Charging`/`Discharging`, and anything over 24h is
+  discarded as the same noise in a less obvious form.
+- Escalates to critical urgency only when **below 15% AND not charging** —
+  a low battery that is already on the charger is not a problem.
