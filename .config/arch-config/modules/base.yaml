@@ -20,6 +20,14 @@ packages:
   - timeshift
   - timeshift-autosnap
   - pacman-contrib
+  # Fallback kernel. A bad `linux` upgrade -- or an out-of-tree module
+  # that fails to build against it -- leaves an unbootable system with no
+  # way back in. linux-lts is a SECOND kernel with its own GRUB entry:
+  # you pick it at the boot menu and repair from a working system instead
+  # of hunting for an Arch ISO. Single highest-value insurance on a
+  # rolling release, and it costs ~400MB.
+  - linux-lts
+  - linux-lts-headers      # so DKMS modules build against it too
   # speed / safety
   - zram-generator
   - earlyoom

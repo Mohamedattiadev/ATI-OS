@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# pacman-preflight -- PreTransaction safety gate, run by pacman itself.
+#
+# WHY THIS IS A PACMAN HOOK AND NOT A dcli HOOK
+# ---------------------------------------------
+# dcli is third-party. If it changes its hook format, drops update_hooks,
+# or you upgrade it and the config silently stops being read, a dcli-only
+# guard disappears without any error -- and you would not find out until
+# the next time it was supposed to save you.
+#
+# pacman hooks are part of pacman itself. This runs on EVERY package
+# transaction regardless of what launched it: dcli, yay, paru, or a bare
+# `pacman -Syu`. There is no wrapper to bypass and no third-party format
+# to drift. AbortOnFail in the .hook means a non-zero exit here stops the
+# transaction before a single file is written.
+#
+# Deliberately minimal: it must be fast enough to run on every `pacman -S`
+# without being annoying, so it checks only the conditions that cause
+# UNRECOVERABLE damage. Everything advisory lives in the dcli hooks.
+
+set -uo pipefail
+
+MIN_FREE_MB="${PACMAN_PREFLIGHT_MIN_MB:-3000}"
+
+r=$'\033[31m'; y=$'\033[33m'; o=$'\033[0m'
+
+avail_mb=$(df -BM --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9')
+[[ -n "$avail_mb" ]] || exit 0   # cannot read -> do not block
+
+if (( avail_mb < MIN_FREE_MB )); then
+  cat >&2 <<EOF
+
+${r}==> ABORTING: only $((avail_mb / 1000))G free on /, need $((MIN_FREE_MB / 1000))G${o}
+
+    Unpacking with this little space risks filling / part-way through the
+    transaction. When that happens a package's old files are already
+    deleted and the new ones were never written -- libraries disappear
+    and the system stops booting.
+
+    Reclaim space, then retry:
+      sudo paccache -rk1
+      journalctl --vacuum-size=50M
+      du -xhd1 / | sort -rh | head
+
+EOF
+  exit 1
+fi
+
+# Snapshots stored on the filesystem they protect are not a backup: they
+# consume the space the transaction needs, and they are destroyed along
+# with the thing they were meant to restore. Warn only -- this must never
+# block a routine `pacman -S`.
+if [[ -d /timeshift ]]; then
+  ts=$(findmnt -no SOURCE --target /timeshift 2>/dev/null)
+  rt=$(findmnt -no SOURCE --target / 2>/dev/null)
+  [[ -n "$ts" && "$ts" == "$rt" ]] && \
+    printf '%s==> WARNING: timeshift snapshots are on %s, your root disk.%s\n' "$y" "$ts" "$o" >&2
+fi
+
+exit 0

@@ -1,0 +1,19 @@
+# Runs before EVERY pacman transaction, whatever launched it -- dcli, yay,
+# paru, or bare pacman. Unlike a dcli update_hook this cannot be bypassed
+# by using a different tool, and cannot silently stop working if dcli
+# changes its config format.
+#
+# AbortOnFail: a non-zero exit stops the transaction before any file is
+# written, which is the only point at which stopping costs nothing.
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = *
+
+[Action]
+Description = Checking free space before touching the filesystem...
+When = PreTransaction
+Exec = /usr/local/bin/pacman-preflight
+AbortOnFail
