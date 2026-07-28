@@ -226,6 +226,17 @@ def centre_slots(rects, sx, sy, sw, sh):
     gap = max(12, int(sw * 0.014))
     band_w = sw * 0.52
     cell_w = (band_w - gap * (cols - 1)) / cols
+
+    # Cap the cell so the band is a MAXIMUM width, not a target to fill.
+    # Dividing the band by the column count meant the card size depended
+    # on how many windows happened to be open: four windows got a sane
+    # ~13%-of-width card each, but a single window got the entire 52%
+    # band as one slab -- roughly 750px on a 1440px screen, with a card
+    # so large the icon inside it read as oversized and the whole thing
+    # stopped looking like a card at all. Cards should be a consistent
+    # size and the row should simply be shorter when there are fewer of
+    # them.
+    cell_w = min(cell_w, sw * 0.165)
     cell_h = cell_w * 0.62
 
     max_band_h = sh * 0.42
