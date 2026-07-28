@@ -136,25 +136,26 @@ Done. One command. Bootstrap covers all 29 modules, in order:
 | 8 | `cargo` | Cargo tools (`rustup default stable` + `pomodoro-tui`) |
 | 9 | `ati-scripts` | Install AtiScriptsV1 to `/usr/local/bin` |
 | 10 | `pacman-guard` | PreTransaction hook: refuse any pacman/yay/dcli upgrade when `/` is too full |
-| 11 | `login-shell` | `chsh` to fish so the TTY matches kitty (`letsgo`, aliases) |
-| 12 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
-| 13 | `xinit` | Write `~/.xinitrc` (qtile + picom + xcape + tray + copyq) |
-| 14 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
-| 15 | `xmodmap` | Write `~/.Xmodmap` (Caps hold = Alt, xcape restores tap Caps) |
-| 16 | `lid` | Lid close = ignore (`systemd-logind`) |
-| 17 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
-| 18 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
-| 19 | `piper` | Download Piper voices (EN + DE) |
-| 20 | `whisper` | Download Whisper `small.en` model |
-| 21 | `passwordless-sudo` | Passwordless sudo |
-| 22 | `ownership` | Fix dotfiles ownership |
-| 23 | `disable-dm` | Disable all display managers |
-| 24 | `candy-icons` | Install candy-icons theme |
-| 25 | `wallpapers` | Clone wallpaper collection |
-| 26 | `speed` | System speed tweaks (`speed_boost.sh`) |
-| 27 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
-| 28 | `browser-flags` | brave/chrome/chromium wal theme extension flags |
-| 29 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| 11 | `boot-fallback` | systemd-boot entries for `linux-lts` + a full-module rescue initramfs |
+| 12 | `login-shell` | `chsh` to fish so the TTY matches kitty (`letsgo`, aliases) |
+| 13 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
+| 14 | `xinit` | Write `~/.xinitrc` (qtile + picom + xcape + tray + copyq) |
+| 15 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
+| 16 | `xmodmap` | Write `~/.Xmodmap` (Caps hold = Alt, xcape restores tap Caps) |
+| 17 | `lid` | Lid close = ignore (`systemd-logind`) |
+| 18 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
+| 19 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
+| 20 | `piper` | Download Piper voices (EN + DE) |
+| 21 | `whisper` | Download Whisper `small.en` model |
+| 22 | `passwordless-sudo` | Passwordless sudo |
+| 23 | `ownership` | Fix dotfiles ownership |
+| 24 | `disable-dm` | Disable all display managers |
+| 25 | `candy-icons` | Install candy-icons theme |
+| 26 | `wallpapers` | Clone wallpaper collection |
+| 27 | `speed` | System speed tweaks (`speed_boost.sh`) |
+| 28 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
+| 29 | `browser-flags` | brave/chrome/chromium wal theme extension flags |
+| 30 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
 
 No manual follow-up. Everything in `.config` works on first `startx`.
 
@@ -324,9 +325,12 @@ bypassed), a dcli `pre_update` hook that blocks on low space, snapshots
 stored on the root device, or an inconsistent package DB, and a
 `post_update` hook that finds AUR packages broken by a library soname
 bump and puts the rebuild command straight on your clipboard. Recovery
-ladder: `downgrade` → LTS fallback kernel at the boot menu →
-`pacman-static` from the Arch ISO → Timeshift restore from `/home`. See
-TROUBLESHOOTING.md "The update safety net".
+ladder: `downgrade` → LTS fallback kernel at the boot menu → LTS *rescue*
+entry (same kernel, full-module initramfs) → `pacman-static` from the
+Arch ISO → Timeshift restore from `/home`. The wizard module
+`boot-fallback` writes both LTS boot entries — the `linux-lts` package on
+its own ships none, so without it the rescue kernel is installed but
+unreachable. See TROUBLESHOOTING.md "The update safety net".
 
 **Wallpaper vs. theme** — changing the wallpaper re-derives the palette
 **only when the active mode is already `wal`**, since `wal` is the mode
