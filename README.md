@@ -94,7 +94,7 @@ git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
 That is it. `./install.sh` fires the wizard in unattended mode:
 
 - Auto-bootstraps `gum` via pacman (~2 s)
-- Runs all 29 modules end-to-end (system pkgs · dcli sync · dotfile
+- Runs all 30 modules end-to-end (system pkgs · dcli sync · dotfile
   stow · themes · brave/chrome policy · piper + whisper models · …)
 - Keeps `sudo` alive for the whole run (primed once, refreshed in the
   background) so long AUR builds don't silently drop package installs
@@ -116,13 +116,18 @@ That is it. `./install.sh` fires the wizard in unattended mode:
 ./wizard.sh --uninstall --dry-run  # preview reversals
 ```
 
+`--only`/`--skip` need the `=`. `--only foo` is rejected outright rather
+than quietly ignored, because an ignored filter means **the full live
+install runs instead** — and its second module is `pacman -Syu`. Unknown
+flags and unknown module ids fail the same way: exit 2, nothing touched.
+
 Wizard renders an ASCII banner, grouped module cards (System /
 Dotfiles / Themes / Browsers / Apps / Media), spinners, unicode
 progress bars, and doom-emacs colored badges. On step failure it
 shows a red-bordered error tail and prompts **retry · skip · quit**
 (unless `--yes`, which auto-skips).
 
-Done. One command. Bootstrap covers all 29 modules, in order:
+Done. One command. Bootstrap covers all 30 modules, in order:
 
 | # | id | What |
 | - | -- | ---- |
