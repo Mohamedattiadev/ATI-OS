@@ -5,7 +5,7 @@
 **One command installs the whole desktop.** 22 themes that retint every app at once,
 a drop-stash, a package picker, and a restart that doesn't flash.
 
-![system overview](/IMGS/overview.gif)
+![system overview](IMGS/overview.gif)
 
 <sub>Tiling · launcher · qdrop · qupdate · a theme switch carried by the restart veil.</sub>
 
@@ -38,7 +38,7 @@ Then `startx`. That's it — 30 modules run end to end, nothing to follow up on.
 Pick a theme and *everything* follows — bar, terminal, rofi, notifications,
 GTK, Qt, browser, nvim, even your folder icons.
 
-![22 themes](/IMGS/themes.png)
+![22 themes](IMGS/themes.png)
 
 <sub>10 of the 22 modes. Also: monokai, kanagawa, oxocarbon, onedark, palenight,
 nightowl, github-dark, ayu-mirage, cyberpunk-neon, synthwave, mono-dark, and
@@ -50,7 +50,7 @@ theme-apply wal       # follow the current wallpaper
 theme-toggle          # picker — or Mod+P then c
 ```
 
-![theme picker](/IMGS/theme-picker.gif)
+![theme picker](IMGS/theme-picker.gif)
 
 → [How theming works](#theming)
 
@@ -62,7 +62,7 @@ Drag files, text, URLs or images in. Drag them back out into any app.
 `Alt+Shift+D` to toggle — or just **shake the mouse while dragging a file** and
 it comes to you.
 
-![qdrop](/IMGS/qdrop.gif)
+![qdrop](IMGS/qdrop.gif)
 
 → [qdrop details](#qdrop)
 
@@ -73,7 +73,7 @@ it comes to you.
 Click the updates chip in the bar. Tab one lists pending pacman + AUR packages
 with checkboxes. Tab two searches the repos and the AUR.
 
-![qupdate](/IMGS/qupdate.gif)
+![qupdate](IMGS/qupdate.gif)
 
 → [qupdate details](#qupdate)
 
@@ -86,7 +86,7 @@ workspace flash across the screen for ~2 seconds. Instead a veil frosts the
 desktop, shows a card per window, and reports real progress from the incoming
 qtile.
 
-![restart veil](/IMGS/veil.gif)
+![restart veil](IMGS/veil.gif)
 
 → [How the veil works](#the-restart-veil)
 
@@ -94,13 +94,36 @@ qtile.
 
 ### Modes
 
-| Language Switcher   | Draw Mode           | Resize Mode           |
-| ------------------- | ------------------- | --------------------- |
-| ![](/IMGS/lang.gif) | ![](/IMGS/draw.gif) | ![](/IMGS/resize.gif) |
+Every mode is a `KeyChord` that takes over the keyboard and announces itself as a
+chip in the bar, listing the keys it accepts. `Esc` leaves.
 
-| Rofi                | Cheatsheet                | Wallpaper                |
-| ------------------- | ------------------------- | ------------------------ |
-| ![](/IMGS/rofi.gif) | ![](/IMGS/cheatsheet.gif) | ![](/IMGS/wallpaper.gif) |
+**`Mod+Space` — language switcher**
+
+![lang mode chip in the bar](IMGS/lang.gif)
+
+**`Mod+P` — rofi mode** (launchers, `c` theme picker, `b` wallpaper picker)
+
+![rofi mode chip in the bar](IMGS/rofi.gif)
+
+**`Mod+P` then `b` — wallpaper picker**
+
+![wallpaper picker chip in the bar](IMGS/wallpaper.gif)
+
+**`Mod+R` — resize mode**
+
+![resize mode chip in the bar](IMGS/resize.gif)
+
+**`Mod+Shift+W` — draw mode** (gromit-mpx overlay)
+
+![draw mode chip in the bar](IMGS/draw.gif)
+
+**`Mod+Shift+K` — cheatsheet**
+
+![cheatsheet chip in the bar](IMGS/cheatsheet.gif)
+
+<sub>Clips are cropped to the bar's right section — that's where the mode chip
+appears. Also available: `Mod+/` media, `Alt+F` mouse mode, `Mod+F12`
+passthrough.</sub>
 
 ---
 
