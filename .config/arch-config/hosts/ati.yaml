@@ -40,5 +40,14 @@ flatpak_scope: user
 auto_prune: false
 backup_tool: timeshift
 
+# Update hooks -- pre-update.sh gates `dcli update` on free space and on
+# timeshift snapshots not living on the root filesystem. It REFUSES (exit
+# non-zero aborts the update before anything is downloaded or unpacked);
+# it does not repair. behavior: always so it can never be skipped by
+# accident -- a safety check you can click past is not a safety check.
+update_hooks:
+  pre_update: "scripts/pre-update.sh"
+  behavior: always
+
 # AUR helper to use (auto-detects paru or yay if not specified)
 aur_helper: yay # Options: paru, yay, or any AUR helper
