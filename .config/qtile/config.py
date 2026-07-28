@@ -1826,7 +1826,7 @@ def normal_user_bar():
             show_short_text=False,
             mouse_callbacks={
                 "Button1": lambda: qtile.spawn(
-                    '/bin/sh -c \'notify-send "Battery Status" "$(acpi | cut -d "," -f 2-)"\''
+                    'battery_notify'
                 )
             },
         ),
@@ -2189,7 +2189,7 @@ def right_side_widgets():
             show_short_text=False,
             mouse_callbacks={
                 "Button1": lambda: qtile.spawn(
-                    '/bin/sh -c \'notify-send "Battery Status" "$(acpi | cut -d "," -f 2-)"\''
+                    'battery_notify'
                 )
             },
         ),
@@ -2684,7 +2684,58 @@ class SmartWidgetBox(ewidget.WidgetBox):
             pass
         if not was_open and self.box_is_open:
             self._animate_reveal()
+        # Systray icons need a forced repaint after every toggle, in both
+        # directions -- see _repaint_systray for why.
+        try:
+            qtile.call_later(0.05, self._repaint_systray)
+        except Exception:
+            pass
         return res
+
+    def _repaint_systray(self):
+        """Force embedded tray icons to repaint after a box toggle.
+
+        Symptom this fixes: tray icons are invisible but still take
+        clicks.
+
+        Tray icons are not painted by the bar at all -- each is a
+        separate XEmbed *client* window owned by its application.
+        WidgetBox.toggle_widgets() hides them on close and relies on
+        Systray.draw() calling icon.unhide() to bring them back. But
+        draw() also does
+
+            icon.window.set_attribute(backpixmap=self.drawer.pixmap)
+
+        and that pixmap is reallocated when the widget is removed from
+        and re-inserted into the bar. So the icons come back mapped and
+        correctly positioned -- hence still clickable -- while painting
+        from a stale pixmap, which reads as invisible. It is
+        intermittent because it depends on whether the client happens to
+        receive an expose event that makes it redraw itself.
+
+        Fix: once the bar has settled, hide the icons and redraw, which
+        re-runs the unhide + _XEMBED_EMBEDDED_NOTIFY handshake against
+        the current pixmap and makes each client repaint.
+        """
+        try:
+            for w in self.widgets:
+                # Duck-typed rather than isinstance: qtile_extras'
+                # Systray subclasses the libqtile one, and importing
+                # either here just to type-check would be fragile.
+                icons = getattr(w, "tray_icons", None)
+                if not icons:
+                    continue
+                if w not in self.bar.widgets:
+                    continue  # box is closed; nothing to repaint
+                for icon in icons:
+                    try:
+                        icon.hide()
+                    except Exception:
+                        pass
+                w.draw()
+        except Exception:
+            # Never let a cosmetic repaint break the toggle itself.
+            pass
 
     def _animate_reveal(self):
         # A true width/layout-growth animation isn't practical here --
@@ -4034,7 +4085,6 @@ floating_layout = layout.Floating(
         Match(wm_class="imv"),  # copyq_rofi alt+w image preview
         Match(wm_class="org.gnome.NautilusPreviewer"),  # make the preview float
         Match(wm_class="qdrop"),  # qdrop drop-stash
-        Match(title="qtile-restart-overlay"),  # smooth-restart screenshot freeze
         # Match(wm_class="Anki"),  # make the preview float
     ],
     # qdrop fully self-manages its own position (slide animation driven
