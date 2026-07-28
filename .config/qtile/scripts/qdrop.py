@@ -54,7 +54,9 @@ WAL_COLORS = Path.home() / ".cache" / "wal" / "colors.json"
 
 THUMB = 48
 AUTO_HIDE_MS = 8000
-REVEAL_MS = 150
+REVEAL_MS = 220  # open duration -- whole-window Y slide (see _slide_move).
+HIDE_MS = 130  # close duration -- deliberately faster than REVEAL_MS;
+# a lingering close reads as sluggish even when the open feels fine.
 WIN_W = 440
 WIN_H = 320
 
@@ -511,12 +513,29 @@ class Item(Gtk.EventBox):
                 flow.unselect_child(fbc)
             else:
                 flow.select_child(fbc)
+            self.win._select_anchor = fbc
         elif shift:
-            flow.select_child(fbc)
+            # Standard range-select: extend from the last plain/ctrl
+            # click (the "anchor") through this item, inclusive, in
+            # visual/sorted order -- not just add this one item like
+            # before.
+            anchor = self.win._select_anchor
+            children = flow.get_children()
+            if anchor is not None and anchor in children:
+                i1, i2 = children.index(anchor), children.index(fbc)
+                lo, hi = (i1, i2) if i1 <= i2 else (i2, i1)
+                flow.unselect_all()
+                for c in children[lo : hi + 1]:
+                    flow.select_child(c)
+            else:
+                flow.unselect_all()
+                flow.select_child(fbc)
+                self.win._select_anchor = fbc
         else:
             # single-select semantics
             flow.unselect_all()
             flow.select_child(fbc)
+            self.win._select_anchor = fbc
         return True
 
     def _open(self):
@@ -832,9 +851,11 @@ class Dropzone(Gtk.Window):
         self._hide_timer = 0
         self._visible = False
         self._hiding = False
+        self._mapped = False  # has show_animated() ever actually mapped us?
         self._sort_mode = "date"
         self._search_shown = False
         self._suspend_hide = 0  # count of active modals/menus
+        self._select_anchor = None  # FlowBoxChild shift-click range starts from
 
         self._palette_mtime = 0.0
         self._apply_css()
@@ -872,7 +893,7 @@ class Dropzone(Gtk.Window):
             )
         self._css_provider.load_from_data(build_css())
 
-    def _place_top_center(self):
+    def _target_xy(self):
         display = Gdk.Display.get_default()
         monitor = None
         try:
@@ -888,7 +909,39 @@ class Dropzone(Gtk.Window):
         w = max(WIN_W, self.get_allocated_width() or WIN_W)
         x = geo.x + (geo.width - w) // 2
         y = geo.y + int(geo.height * 0.055)
+        return x, y
+
+    def _place_top_center(self):
+        x, y = self._target_xy()
         self.move(x, y)
+
+    def _slide_move(self, x, y_from, y_to, duration_ms, on_done=None):
+        # Manual position-based slide, not GTK's Revealer: the outer
+        # window here has a fixed size_request on its content (see
+        # self.stack.set_size_request), so it never actually resizes as
+        # the Revealer's reveal_child toggles -- confirmed empirically
+        # via `xdotool getwindowgeometry` polling showing a completely
+        # static size through the whole transition, appearing/
+        # disappearing effectively instantly regardless of
+        # transition_duration. Animating the window's Y position
+        # directly is reliable regardless of that Revealer/sizing
+        # interaction and gives an unambiguous slide-from-the-top.
+        steps = max(1, duration_ms // 16)  # ~60fps
+        state = {"i": 0}
+
+        def _step():
+            state["i"] += 1
+            t = min(1.0, state["i"] / steps)
+            eased = 1 - (1 - t) ** 3  # ease-out cubic
+            y = int(y_from + (y_to - y_from) * eased)
+            self.move(x, y)
+            if t >= 1.0:
+                if on_done:
+                    on_done()
+                return False
+            return True
+
+        GLib.timeout_add(16, _step)
 
     # --- menu / search / sort / export ----------------------------
 
@@ -965,6 +1018,7 @@ class Dropzone(Gtk.Window):
         self.flow.invalidate_filter()
 
     def rebuild_flow(self):
+        self._select_anchor = None  # about to destroy every FlowBoxChild
         for c in self.flow.get_children():
             c.destroy()
         for e in self.entries:
@@ -1023,17 +1077,153 @@ class Dropzone(Gtk.Window):
 
     # --- show / hide ----------------------------------------------
 
+    def _force_qtile_focus(self):
+        # GTK present() alone doesn't reliably win focus after the
+        # hide()+togroup()+remap dance in _sync_to_current_qtile_group()
+        # below -- confirmed empirically: a same-group show (fast path,
+        # no remap) always gets focus via present(), but a cross-group
+        # show left focus on whatever was previously active even though
+        # the window displayed correctly. Likely qtile's own
+        # focus_on_window_activation="smart" policy declining to honor
+        # what looks like a newly-(re)managed client's activation
+        # request. Asking qtile directly to focus us -- as an explicit
+        # command rather than a passive client request -- sidesteps that
+        # policy entirely.
+        try:
+            from libqtile.command.client import InteractiveCommandClient
+            gdk_win = self.get_window()
+            if gdk_win is None:
+                return
+            InteractiveCommandClient().window[gdk_win.get_xid()].focus()
+        except Exception:
+            pass
+
+    def _sync_to_current_qtile_group(self):
+        # qdrop is a persistent daemon window that stays mapped forever
+        # (see hide_animated()), so it's permanently attached to whatever
+        # qtile group it happened to be on when last (re)mapped --
+        # switching workspaces just hides it like any other group-bound
+        # window, so without this it only ever reappears on that one
+        # group instead of wherever the user currently is.
+        #
+        # qtile's own togroup() (what the built-in scratchpad dropdowns
+        # use for this exact "follow me to the current group" behavior)
+        # unconditionally does a real X11 unmap + floating-layout
+        # replacement pass. That's fine for ordinary clients, but it
+        # silently invalidates GTK's own cached "am I mapped" bookkeeping
+        # if GTK doesn't find out about it -- confirmed empirically: after
+        # letting qtile togroup() us reactively (on every workspace
+        # switch, via a hook), the window got permanently stuck refusing
+        # to reappear. Being explicit here instead: call our own hide()
+        # (a real, GTK-tracked unmap) BEFORE asking qtile to move us, then
+        # let the normal first-time-show path in show_animated() below
+        # do a full, clean remap into the new group -- exactly the same
+        # dance already proven correct for the very first show ever.
+        if not self._mapped:
+            return
+        try:
+            from libqtile.command.client import InteractiveCommandClient
+            c = InteractiveCommandClient()
+            gdk_win = self.get_window()
+            if gdk_win is None:
+                return
+            xid = gdk_win.get_xid()
+            my_group = c.window[xid].info().get("group")
+            current_group = c.group.info().get("name")
+            if my_group is None or my_group == current_group:
+                return
+            self.hide()  # real GTK-tracked unmap before qtile touches it
+            c.window[xid].togroup()
+            self._mapped = False
+        except Exception:
+            pass
+
     def show_animated(self):
         if self._hiding:
             return
+        self._sync_to_current_qtile_group()
         self._visible = True
         self._refresh()
+        self.revealer.set_reveal_child(True)  # content visible immediately;
+        # the window's own Y position is what slides now, not the revealer.
+
+        x, target_y = self._target_xy()
+
+        if self._mapped:
+            # Already mapped -- just sitting off-screen from a previous
+            # hide_animated() (see there for why we no longer unmap on
+            # hide). Real allocation is already known and stable, so
+            # this is a plain slide with no remap involved at all: the
+            # exact same mechanism as the close animation, just
+            # reversed. This is also what makes the close animation
+            # "perfect" and the old open path glitchy -- every
+            # show_all()/present() after a real unmap re-triggers
+            # qtile's floating-window placement logic (it re-centers
+            # newly *mapped* clients), which raced against our move()
+            # and produced a one-frame flash at screen-center before
+            # jumping to the real start position. Never unmapping means
+            # that placement logic only ever runs once, on the very
+            # first show below.
+            self.present()
+            height = self.get_allocated_height() or WIN_H
+            # -height, not target_y-height: bottom edge must land at
+            # screen y=0 (fully off), not at target_y (~42px on-screen --
+            # left a permanent sliver visible even while "hidden", masked
+            # before only because the old code unmapped on hide).
+            start_y = -height
+            self._slide_move(x, start_y, target_y, REVEAL_MS)
+            self._reset_hide_timer()
+            return
+
+        # First-ever show: the window has never been realized, so we
+        # don't know its real content height yet -- confirmed
+        # empirically that get_preferred_size() under-reports it before
+        # the window has ever been realized (e.g. reported ~160px for
+        # content that allocates to 329px once mapped, because
+        # Gtk.FlowBox doesn't settle row heights until a real
+        # size-allocate pass happens). Using that estimate to place the
+        # window off-screen used to start it only barely above the top
+        # edge, so a chunk of it was visible immediately on show.
+        #
+        # Fix: map far off-screen at a sentinel Y first (guaranteed
+        # fully hidden no matter what the real height turns out to be),
+        # then once the window is actually realized/allocated (20ms
+        # later), jump to the *real* start_y computed from the now-
+        # accurate get_allocated_height() -- that jump is invisible
+        # since it's off-screen -> off-screen -- and only then start the
+        # visible slide down to target_y.
+        SAFE_OFFSCREEN_Y = -4096
+        # move() MUST happen before show_all()/present() on a window that's
+        # not currently mapped. Reason (confirmed via qtile's
+        # layout/floating.py compute_client_position): qtile only skips
+        # its own center-on-screen placement for a newly-mapped floating
+        # window if has_user_set_position() is true, which checks the
+        # X11 WM_NORMAL_HINTS USPosition/PPosition flags. GTK only sets
+        # that hint from move() when the window is still unrealized;
+        # calling move() after show_all() (i.e. after the window is
+        # already mapped) just issues a plain post-map ConfigureRequest
+        # with no position hint, so qtile centers it on that first map
+        # and only *then* honors the reposition -- producing a
+        # one-frame flash at screen-center before the window jumps to
+        # start_y and the slide animation begins. Moving first avoids
+        # the center placement entirely instead of racing to correct it
+        # after the fact. This dance only matters for this very first
+        # map -- see the self._mapped branch above for every later show.
+        self.move(x, SAFE_OFFSCREEN_Y)
         self.show_all()
-        self._place_top_center()
         self.present()
-        # Re-center once real allocation is known
-        GLib.timeout_add(30, lambda: (self._place_top_center(), False)[1])
-        GLib.timeout_add(10, lambda: (self.revealer.set_reveal_child(True), False)[1])
+        self._force_qtile_focus()
+        self._mapped = True
+
+        def _begin_slide():
+            x2, target_y2 = self._target_xy()
+            h = self.get_allocated_height() or WIN_H
+            start_y = -h  # bottom edge at screen y=0, fully off
+            self.move(x2, start_y)  # off-screen -> off-screen, invisible
+            self._slide_move(x2, start_y, target_y2, REVEAL_MS)
+            return False
+
+        GLib.timeout_add(20, _begin_slide)
         self._reset_hide_timer()
 
     def hide_animated(self):
@@ -1041,15 +1231,22 @@ class Dropzone(Gtk.Window):
             return
         self._hiding = True
         self._cancel_hide_timer()
-        self.revealer.set_reveal_child(False)
+        x, target_y = self._target_xy()
+        height = self.get_allocated_height() or WIN_H
+        start_y = -height  # bottom edge at screen y=0, fully off
 
         def _finish():
-            self.hide()
             self._visible = False
             self._hiding = False
-            return False
+            # Deliberately NOT calling self.hide() (unmap): staying
+            # mapped but off-screen is what lets the *next*
+            # show_animated() be a plain slide instead of a real remap
+            # -- see the _mapped branch there for why that matters.
+            # skip_taskbar/skip_pager/UTILITY type-hint (set in
+            # __init__) already keep a mapped-but-off-screen window out
+            # of any WM chrome, so there's no visible downside.
 
-        GLib.timeout_add(REVEAL_MS + 20, _finish)
+        self._slide_move(x, target_y, start_y, HIDE_MS, on_done=_finish)
 
     def toggle(self):
         if self._visible:
@@ -1332,6 +1529,8 @@ class Dropzone(Gtk.Window):
         for fbc in self.flow.get_children():
             child = fbc.get_child()
             if getattr(child, "entry", None) is entry:
+                if fbc is self._select_anchor:
+                    self._select_anchor = None
                 fbc.destroy()
                 break
         save_state(self.entries)

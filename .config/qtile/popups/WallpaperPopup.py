@@ -25,6 +25,7 @@ _IMAGES = []
 _INDEX = 0
 _COL_OFFSET = 0
 _CURRENT_WALL = None
+_CLOSING = False  # True while the close fade is in flight
 
 # =============================================================================
 # CONFIG & STYLING
@@ -41,6 +42,8 @@ MAX_NAME_LEN = 26
 # Extends the shared cheatsheet loader with popup-specific slots
 # (line, dark, highlight_bg, highlight_fg).
 from popups._wal_colors import load_colors as _load_wal_colors
+from popups._wal_colors import fade_in_popup, fade_out_popup
+from popups._wal_colors import current_theme_mode
 
 def _load_colors():
     base = _load_wal_colors()
@@ -190,7 +193,7 @@ def render_footer():
 # WALLPAPER ACTION
 # =============================================================================
 def apply_wallpaper():
-    global _CURRENT_WALL
+    global _CURRENT_WALL, _WALLPAPER_LAYOUT, _CLOSING
     path = _IMAGES[_INDEX]
 
     os.makedirs(os.path.dirname(CACHE_WALL), exist_ok=True)
@@ -204,30 +207,35 @@ def apply_wallpaper():
     _CURRENT_WALL = path
 
     # Close popup first so subsequent qtile restart (from theme-apply) doesn't
-    # rebuild widgets mid-render and freeze the compositor.
+    # rebuild widgets mid-render and freeze the compositor. Killed outright
+    # rather than faded: the fade would still be running when theme-apply
+    # restarts qtile out from under it.
     try:
         if _WALLPAPER_LAYOUT is not None:
             _WALLPAPER_LAYOUT.kill()
     except Exception:
         pass
+    # Clear the handle, else the next toggle sees a dead layout as "open"
+    # and the first keypress is swallowed re-closing nothing.
+    _WALLPAPER_LAYOUT = None
+    _CLOSING = False
 
     # Run xwallpaper + theme-apply off the qtile main thread. xwallpaper --stretch
     # on 4K images blocks 1-3s; qtile freezes for that duration if run sync.
     def _bg():
         try:
-            mode_p = os.path.expanduser("~/.cache/qtile/theme_mode")
-            mode = ""
-            try:
-                with open(mode_p) as f:
-                    mode = f.read().strip()
-            except Exception:
-                pass
             subprocess.run(
                 ["xwallpaper", "--stretch", path],
                 check=False,
                 timeout=10,
             )
-            if mode == "wal":
+            # Retheme ONLY when the active mode is "wal" -- that mode is
+            # defined as "follow the wallpaper", so a new wallpaper has to
+            # re-derive the palette. On a preset (gruvbox, doomone, ...)
+            # the user deliberately pinned a palette: picking a wallpaper
+            # must swap the desktop image and leave every themed consumer
+            # alone, otherwise the preset is silently replaced by wal.
+            if current_theme_mode() == "wal":
                 subprocess.Popen(
                     ["theme-apply", "wal"],
                     stdout=subprocess.DEVNULL,
@@ -427,16 +435,40 @@ def show_wallpaper_picker(qtile):
     )
 
     _WALLPAPER_LAYOUT.show(centered=True)
+    # Longer/eased than the shared default: this popup is 1050x680, and
+    # a fade that reads fine on a small cheatsheet is over before the eye
+    # tracks it on a panel this large.
+    fade_in_popup(_WALLPAPER_LAYOUT, duration=0.28, steps=18)
 
 
 def close_wallpaper_picker():
-    global _WALLPAPER_LAYOUT
-    if _WALLPAPER_LAYOUT:
-        _WALLPAPER_LAYOUT.hide()
+    global _WALLPAPER_LAYOUT, _CLOSING
+    if not _WALLPAPER_LAYOUT or _CLOSING:
+        return
+    layout = _WALLPAPER_LAYOUT
+    _CLOSING = True
+
+    def _teardown():
+        global _WALLPAPER_LAYOUT, _CLOSING
+        try:
+            layout.hide()
+        except Exception:
+            pass
         _WALLPAPER_LAYOUT = None
+        _CLOSING = False
+
+    # Clear the module handle up front so a keypress during the fade
+    # can't drive navigation on a popup that is already on its way out.
+    _WALLPAPER_LAYOUT = None
+    fade_out_popup(layout, _teardown)
 
 
 def toggle_wallpaper_picker(qtile):
+    # _CLOSING guards the window between "fade started" and "hide() ran":
+    # without it a fast re-toggle would open a second picker on top of
+    # the one still fading, and the teardown would then blank the new one.
+    if _CLOSING:
+        return
     if _WALLPAPER_LAYOUT:
         close_wallpaper_picker()
     else:

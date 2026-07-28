@@ -22,6 +22,7 @@ COLORSCHEME=DoomOne
 # Avoid slow apps here — keep this section lightweight.
 
 (
+  picom &          # Compositor (transparency, shadows, animations)
   dunst &          # Notification daemon
   nm-applet &      # Network tray icon
   blueman-applet & # Bluetooth tray icon
