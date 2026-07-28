@@ -1912,6 +1912,25 @@ def normal_user_bar():
             urgent_alert_method="text",
             urgent_text=colors[3],
             hide_unused=True,
+            # GroupBox enables drag-and-drop of group names by default.
+            # button_release() ends a drag with
+            # `group.switch_groups(self.clicked.name)`, which SWAPS the
+            # two groups outright -- so a stray drag while clicking
+            # silently reorders the workspace icons. That is destructive
+            # here because every group carries `matches=[]` rules binding
+            # apps to it (browsers -> 2, files -> 3, editors -> 4,
+            # chrome -> 6); swapping two groups leaves apps opening in
+            # the wrong workspace with nothing on screen explaining why.
+            #
+            # Nothing here wants runtime group reordering -- the order is
+            # declared in the Group list and the keybinds assume it -- so
+            # the gesture is turned off entirely.
+            #
+            # Side effect, and a welcome one: with drag disabled,
+            # clicking the ALREADY-ACTIVE group toggles back to the
+            # previous group (`toggle` defaults True, and go_to_group
+            # only reaches that branch when disable_drag is set).
+            disable_drag=True,
         ),
         ewidget.Spacer(length=bar.STRETCH),
         widget.Chord(
@@ -2046,6 +2065,11 @@ def groupbox_widget():
         urgent_alert_method="text",
         urgent_text=colors[3],
         hide_unused=True,
+        # See the disable_drag comment on the other GroupBox above: a
+        # stray drag swaps two groups and breaks the per-group app
+        # matches. Must be set on BOTH GroupBoxes or the bar this one
+        # builds keeps the destructive gesture.
+        disable_drag=True,
     )
 
 
