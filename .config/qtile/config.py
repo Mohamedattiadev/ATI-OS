@@ -2236,19 +2236,27 @@ def right_side_widgets():
             configured_keyboards=["us", "ara", "tr", "de"],
             # Nerd Font keyboard glyph rather than a flag emoji. Colour
             # emoji are bitmap glyphs: they ignore the widget's
-            # foreground, sit on their own baseline, and render at a
-            # size unrelated to the surrounding text -- which is why the
-            # flag first looked too small, then too big when scaled with
-            # a pango span. A monochrome glyph inherits foreground and
-            # font size like any other character, so it lines up with
-            # the neighbouring chips for free. U+F030C is the same
-            # Material Design range as the widgetbox glyphs above.
+            # foreground, sit on their own baseline, and render at a size
+            # unrelated to the surrounding text -- which is why the flag
+            # looked too small at bar size and too big once scaled. A
+            # monochrome glyph is just a character, so the size and
+            # colour set below actually take effect.
+            #
+            # U+F0313 (keyboard_variant) rather than U+F030C: the plain
+            # keyboard glyph has finer internal detail that mushes into a
+            # smudge at bar size and stops reading as a keyboard.
+            #
+            # Each layout carries its flag's dominant hue, pulled from
+            # the active palette so it still tracks the theme -- TR red,
+            # DE gold, AR green, EN blue. The colour is the fast signal;
+            # you register it before reading the "TR"/"EN" label.
             display_map={
-                "us": "󰌌  EN",
-                "ara": "󰌌  AR",
-                "tr": "󰌌  TR",
-                "de": "󰌌  DE",
+                "us": f"<span size='15000' foreground='{colors[6][0]}'>󰌓</span>  EN",
+                "ara": f"<span size='15000' foreground='{colors[8][0]}'>󰌓</span>  AR",
+                "tr": f"<span size='15000' foreground='{colors[3][0]}'>󰌓</span>  TR",
+                "de": f"<span size='15000' foreground='{colors[5][0]}'>󰌓</span>  DE",
             },
+            markup=True,
             fmt="{}",
             padding=11,
             foreground=colors[4],
