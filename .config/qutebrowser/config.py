@@ -5,44 +5,55 @@ config.load_autoconfig()
 # Import the theme module (doom_one.py should be in ~/.config/qutebrowser/)
 import doom_one
 
-# ---- wal / theme_mode integration ---------------------------------------
-# Read ~/.cache/qtile/theme_mode. When "wal", override doom_one's palette
-# with the current pywal colors so qb tabs / statusbar / completion match
-# the wallpaper. `:config-source` (fired by theme-apply) re-runs this.
-def _apply_wal():
+# ---- theme_mode integration ---------------------------------------------
+# Retint qb's whole chrome (tabs / statusbar / completion / messages /
+# prompts / downloads) from the active palette. Applies to EVERY mode,
+# not just "wal": theme-apply dumps ~/.cache/qtile/current_palette.json
+# on every preset apply too, so gating this on mode == "wal" left every
+# preset (gruvbox, dracula, ...) stuck on doom_one's hardcoded colors
+# while the rest of the desktop had already switched.
+# `:config-source` (fired by theme-apply) re-runs this.
+def _apply_palette():
     import json, os
     try:
-        mode = open(os.path.expanduser("~/.cache/qtile/theme_mode")).read().strip()
-        if mode != "wal":
-            return
-        d = json.load(open(os.path.expanduser("~/.cache/wal/colors.json")))
-        bg  = d["special"]["background"]
-        fg  = d["special"]["foreground"]
-        col = d["colors"]
-        alt = col["color0"]
-        acc = col["color4"]
-        c.colors.completion.category.bg = alt
+        # Read the same semantically re-slotted 9-slot palette every other
+        # consumer uses (homepage CSS, eww, nvim, qtile popups) instead of
+        # raw wal colors.json. theme-apply re-slots wal's raw accents by
+        # hue before they reach any consumer -- reading the raw file here
+        # meant qb's native chrome (tabs/statusbar) could show a totally
+        # different accent than the homepage content it sits right next to.
+        with open(os.path.expanduser("~/.cache/qtile/current_palette.json")) as f:
+            d = json.load(f)
+        bg, bg_alt, fg = d["bg"], d["bg_alt"], d["fg"]
+        yellow, cyan = d["yellow"], d["cyan"]
+        red, green, purple = d["red"], d["green"], d["purple"]
+        # Blue is the slot theme-apply also feeds to the GTK accent and to
+        # dunst's frame color, so using it here keeps qb's selected tab in
+        # the same hue family as the rest of the desktop instead of
+        # picking a second, unrelated accent.
+        acc = d["blue"]
+        c.colors.completion.category.bg = bg_alt
         c.colors.completion.category.fg = fg
-        c.colors.completion.category.border.top    = alt
-        c.colors.completion.category.border.bottom = alt
+        c.colors.completion.category.border.top    = bg_alt
+        c.colors.completion.category.border.bottom = bg_alt
         c.colors.completion.odd.bg  = bg
-        c.colors.completion.even.bg = alt
+        c.colors.completion.even.bg = bg_alt
         c.colors.completion.fg = fg
         c.colors.completion.item.selected.bg = acc
         c.colors.completion.item.selected.fg = bg
         c.colors.completion.item.selected.border.top    = acc
         c.colors.completion.item.selected.border.bottom = acc
-        c.colors.completion.match.fg = col["color3"]
+        c.colors.completion.match.fg = yellow
         c.colors.statusbar.normal.bg  = bg
         c.colors.statusbar.normal.fg  = fg
-        c.colors.statusbar.insert.bg  = col["color2"]
+        c.colors.statusbar.insert.bg  = acc
         c.colors.statusbar.insert.fg  = bg
-        c.colors.statusbar.command.bg = alt
+        c.colors.statusbar.command.bg = bg_alt
         c.colors.statusbar.command.fg = fg
         c.colors.statusbar.url.fg     = fg
         c.colors.statusbar.url.hover.fg = acc
-        c.colors.tabs.bar.bg      = alt
-        c.colors.tabs.odd.bg      = alt
+        c.colors.tabs.bar.bg      = bg_alt
+        c.colors.tabs.odd.bg      = bg_alt
         c.colors.tabs.even.bg     = bg
         c.colors.tabs.odd.fg      = fg
         c.colors.tabs.even.fg     = fg
@@ -51,16 +62,64 @@ def _apply_wal():
         c.colors.tabs.selected.odd.fg  = bg
         c.colors.tabs.selected.even.fg = bg
         c.colors.tabs.indicator.start = acc
-        c.colors.tabs.indicator.stop  = col["color6"]
+        c.colors.tabs.indicator.stop  = cyan
         c.colors.webpage.bg = bg
         c.colors.hints.bg = acc
         c.colors.hints.fg = bg
+        c.colors.hints.match.fg = red
         c.hints.border = f"2px solid {acc}"
+        # Groups doom_one hardcodes and the old wal-only block never
+        # touched -- these are what still read "doom one blue/red" over a
+        # gruvbox or wal desktop (e.g. the ":adblock-update" info bar).
+        c.colors.messages.info.bg = bg_alt
+        c.colors.messages.info.fg = fg
+        c.colors.messages.info.border = bg_alt
+        c.colors.messages.warning.bg = bg_alt
+        c.colors.messages.warning.fg = yellow
+        c.colors.messages.warning.border = yellow
+        c.colors.messages.error.bg = bg_alt
+        c.colors.messages.error.fg = red
+        c.colors.messages.error.border = red
+        c.colors.prompts.bg = bg_alt
+        c.colors.prompts.fg = fg
+        c.colors.prompts.border = f"1px solid {acc}"
+        c.colors.prompts.selected.bg = acc
+        c.colors.prompts.selected.fg = bg
+        c.colors.downloads.bar.bg = bg
+        c.colors.downloads.start.bg = acc
+        c.colors.downloads.start.fg = bg
+        c.colors.downloads.stop.bg = green
+        c.colors.downloads.stop.fg = bg
+        c.colors.downloads.error.bg = red
+        c.colors.downloads.error.fg = bg
+        c.colors.statusbar.caret.bg = purple
+        c.colors.statusbar.caret.fg = bg
+        c.colors.statusbar.caret.selection.bg = purple
+        c.colors.statusbar.caret.selection.fg = bg
+        c.colors.statusbar.passthrough.bg = cyan
+        c.colors.statusbar.passthrough.fg = bg
+        c.colors.statusbar.private.bg = bg_alt
+        c.colors.statusbar.private.fg = fg
+        c.colors.statusbar.progress.bg = acc
+        c.colors.statusbar.url.success.http.fg = green
+        c.colors.statusbar.url.success.https.fg = green
+        c.colors.statusbar.url.warn.fg = yellow
+        c.colors.statusbar.url.error.fg = red
+        c.colors.tabs.pinned.odd.bg = bg_alt
+        c.colors.tabs.pinned.even.bg = bg
+        c.colors.tabs.pinned.odd.fg = fg
+        c.colors.tabs.pinned.even.fg = fg
+        c.colors.tabs.pinned.selected.odd.bg = acc
+        c.colors.tabs.pinned.selected.even.bg = acc
+        c.colors.tabs.pinned.selected.odd.fg = bg
+        c.colors.tabs.pinned.selected.even.fg = bg
     except Exception:
+        # Palette dump missing/corrupt -- keep doom_one's defaults rather
+        # than a half-applied palette.
         pass
 # Called after doom_one.setup() below (not here) -- doom_one sets ~90
-# c.colors.* properties and would silently clobber every wal override
-# if _apply_wal() ran first.
+# c.colors.* properties and would silently clobber every palette override
+# if _apply_palette() ran first.
 
 # -----------------------------------------------------------------------------
 # Theme & UI
@@ -86,13 +145,13 @@ else:
     c.hints.border = "2.5px solid #6366f1"  # Indigo border for structure
 
 
-# If pywal palette is active, retint the whole browser UI (hints,
-# statusbar, completion, tabs, webpage bg) to the wallpaper colors on
-# top of the doom_one base -- must run after doom_one.setup() and the
-# dark_mode block above, or those clobber it right back. Silent no-op
-# when theme_mode isn't "wal". `:config-source` (fired by theme-apply)
-# re-runs this whole file, so switching wallpapers re-applies live.
-_apply_wal()
+# Retint the whole browser UI (hints, statusbar, completion, tabs,
+# messages, prompts, downloads, webpage bg) from the active palette on
+# top of the doom_one base -- must run after doom_one.setup() AND the
+# dark_mode block above, or those clobber it right back. Runs for every
+# mode (preset or wal). `:config-source` (fired by theme-apply) re-runs
+# this whole file, so switching theme or wallpaper re-applies live.
+_apply_palette()
 
 
 c.hints.chars = "asdghjkl"

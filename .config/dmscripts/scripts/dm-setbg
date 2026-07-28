@@ -34,12 +34,13 @@ setbg() {
     esac
 }
 
-# Reapply wal palette when a new wallpaper is set + current theme is wal.
-# Runs detached so caller stays responsive.
+# Retheme ONLY when the active mode is "wal" -- that mode means "follow
+# the wallpaper". On a preset (gruvbox, doomone, ...) the user chose a
+# fixed palette, so a new wallpaper must change the desktop image and
+# leave the theme alone. Runs detached so caller stays responsive.
 reapply_wal() {
-    local mode=""
-    [ -f "$HOME/.cache/qtile/theme_mode" ] && mode="$(cat "$HOME/.cache/qtile/theme_mode")"
-    if [ "$mode" = "wal" ] && command -v theme-apply >/dev/null 2>&1; then
+    if command -v theme-apply >/dev/null 2>&1 &&
+        [ "$(cat "$HOME/.cache/qtile/theme_mode" 2>/dev/null)" = "wal" ]; then
         setsid -f theme-apply wal >/dev/null 2>&1 || true
     fi
 }
