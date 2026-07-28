@@ -161,8 +161,24 @@ end
 #     printf $output
 # end
 
-function letsgo
-    exec dbus-run-session startx
+function letsgo --description 'Start the X session (qtile) from a TTY'
+    # No `exec`: it replaced the login shell, so if startx aborted (stale
+    # lock, X already active, ...) the error flashed past and you landed
+    # back at the login prompt with no shell to read it in -- a failure
+    # and a success looked identical. Without exec the message stays on
+    # screen, and you return to this shell when X exits.
+    if pgrep -x Xorg >/dev/null
+        echo "X is already running on :0 — switch to that VT (Ctrl+Alt+F1)."
+        return 1
+    end
+    # Xorg normally removes this on exit; a lock left behind with no
+    # server running is stale and blocks startx with "Server is already
+    # active for display 0".
+    if test -e /tmp/.X0-lock
+        echo "Removing stale /tmp/.X0-lock left by an unclean exit."
+        rm -f /tmp/.X0-lock
+    end
+    dbus-run-session startx
 end
 
 ### END OF FUNCTIONS ###
