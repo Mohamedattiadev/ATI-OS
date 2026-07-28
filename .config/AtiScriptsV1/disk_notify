@@ -41,11 +41,21 @@ PY
 
 esc() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
 
-worst=0
+# Escalation is driven by the PRIMARY filesystem (the one holding your
+# data) and not simply by the fullest one. On a typical split layout /
+# is a small system partition that sits chronically tight -- letting it
+# set the popup's urgency meant a red "almost full" banner on every
+# single open, which trains you to ignore the one signal that matters.
+# A non-primary filesystem still escalates, but only once it is close
+# enough to 100% to actually break things (SYS_CRIT_PCT).
+SYS_CRIT_PCT=97
+primary_pct=0
+sys_crit_label=""
 body=""
 
+# add_section <label> <path> <is_primary>
 add_section() {
-  local label="$1" path="$2"
+  local label="$1" path="$2" is_primary="${3:-0}"
   local size used avail pct
   read -r size used avail pct <<<"$(
     df -h --output=size,used,avail,pcent "$path" 2>/dev/null |
@@ -55,7 +65,11 @@ add_section() {
 
   pct="${pct%\%}"
   [[ "$pct" =~ ^[0-9]+$ ]] || return
-  (( pct > worst )) && worst=$pct
+  if (( is_primary )); then
+    primary_pct=$pct
+  elif (( pct >= SYS_CRIT_PCT )); then
+    sys_crit_label="$label"
+  fi
 
   # Threshold colors: comfortable / getting tight / act now.
   local color="$C_OK"
@@ -81,23 +95,32 @@ add_section() {
 root_src=$(df --output=source / 2>/dev/null | tail -1)
 home_src=$(df --output=source /home 2>/dev/null | tail -1)
 
-add_section "/" /
-# Only list /home when it is a distinct filesystem, else it is the same
-# numbers printed twice.
 if [[ -n "$home_src" && "$home_src" != "$root_src" ]]; then
-  add_section "/home" /home
+  # Split layout: /home holds the data, so it leads and it is what the
+  # popup's urgency reflects. / follows as the system partition.
+  add_section "/home" /home 1
+  add_section "/" / 0
+else
+  # Single filesystem -- / is the primary, and listing /home too would
+  # just print the same numbers twice.
+  add_section "/" / 1
 fi
 
 [[ -n "$body" ]] || body="<span foreground=\"${C_CRIT}\">df returned nothing</span>"
 
-# Escalate once a filesystem is genuinely at risk so a nearly-full disk
-# gets critical styling instead of blending in with routine popups.
 # -t 0 keeps it up until dismissed (it is click-invoked, not passive).
 urgency=normal
 title="Disk usage"
-if (( worst >= 90 )); then
+if (( primary_pct >= 90 )); then
   urgency=critical
   title="Disk almost full"
+elif (( primary_pct >= 75 )); then
+  title="Disk filling up"
+elif [[ -n "$sys_crit_label" ]]; then
+  # Data disk is fine but a system partition is about to wedge the
+  # machine -- name it, since the title no longer implies which one.
+  urgency=critical
+  title="${sys_crit_label} almost full"
 fi
 
 notify-send -u "$urgency" -i drive-harddisk -t 0 "$title" "$body"
