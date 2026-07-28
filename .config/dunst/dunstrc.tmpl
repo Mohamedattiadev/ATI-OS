@@ -131,8 +131,12 @@
 
 [Keyboard Layout Changed!]
 
-    summary = "Keyboard Layout Changed!"
+    # Matched on BODY, not summary: keyboard_layout_watcher puts the
+    # layout name in the summary (it is the actual content), so a
+    # summary matcher here would silently stop applying.
+    body = "keyboard layout"
     urgency = low
+    format = "<b>%s</b>"
     background = "{{BG}}"
     foreground = "{{FG}}"
     frame_color = "{{ACCENT}}"
