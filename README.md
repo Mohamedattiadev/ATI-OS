@@ -386,11 +386,17 @@ Themed live from the active wal palette (`~/.cache/wal/colors.json`).
 **Usage**
 
 - `Alt+Shift+D` — toggle.
-- **Shake** the mouse while dragging (rapid left-right, 3 reversals in 1s) → auto-shows.
-- Drop file/text/URL into window → adds entry. URL text auto-detected.
+- **Shake** the mouse *while actually dragging a file/folder/image*
+  (any axis — left-right, up-down, diagonal; 2 reversals in 1.2s) →
+  auto-shows. A click-drag carrying nothing (text selection, rubber
+  band, panning) is ignored; shaking while it's already open just keeps
+  it open instead of replaying the reveal.
+- Drop file/text/URL/image into window → adds entry. URL text auto-detected.
 - Drag an item back out → paste into any app.
 - Rubber-band select on empty area. Ctrl+A / Ctrl+click. Right-click for menu.
-- `Ctrl+V` paste clipboard. `Ctrl+F` search. `Del` remove. `Enter` open.
+- `Ctrl+V` paste clipboard — text, files, or a **copied image** (a web
+  image is raw pixels, saved to `~/.cache/qdrop-images/` and added as a
+  normal file entry). `Ctrl+F` search. `Del` remove. `Enter` open.
 - Text/text-files → floating alacritty+nvim (`clip-view` class).
 - Image files → `imv` (uses existing qtile float rule).
 - Auto-hides 8s after pointer leaves (paused while dialogs/menus open).
@@ -404,7 +410,9 @@ Themed live from the active wal palette (`~/.cache/wal/colors.json`).
   nothing picked up is ignored, because firing also requires a real XDND
   drag to be in flight. `--debug` logs each decision, `--any-drag`
   disables the drag requirement.
-- `.config/qtile/scripts/qdrop_test.py` — 30+ pure/live tests
+- `.config/qtile/scripts/qdrop_test.py` — pure/live tests: helpers, IPC,
+  shake detection, and a stubbed-GTK suite over the open/close state
+  machine (repeat SHOW, mid-animation reversals, group switch)
 - Autostart entry in `autostart.sh` launches daemon + watcher at login.
 
 **IPC** — Unix socket at `/tmp/qdrop-$UID.sock`. CLI:

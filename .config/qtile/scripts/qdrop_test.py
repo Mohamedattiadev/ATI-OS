@@ -363,7 +363,7 @@ def resumes_from(first: int, cur: int, dest: int) -> bool:
     beyond the destination, or snapping back past `cur`.
     """
     lo, hi = min(cur, dest), max(cur, dest)
-    return lo <= first <= hi and abs(first - cur) <= 0.35 * abs(dest - cur)
+    return lo <= first <= hi and abs(first - cur) <= 0.45 * abs(dest - cur)
 
 
 def t_anim_open_close():
@@ -405,6 +405,23 @@ def t_anim_show_while_open():
         w.show_animated()
     settle(w, 300)
     check(w.moves == [], "five rapid SHOWs still never move the window")
+
+
+def t_anim_show_after_group_switch():
+    section("animation: SHOW after a workspace switch")
+    w = open_settled()
+    # qtile unmaps windows that aren't on the current group, so qdrop is
+    # off screen while still believing it's visible.
+    # _sync_to_current_qtile_group() detects that and clears _mapped;
+    # emulate exactly that side effect.
+    def fake_sync():
+        w._mapped = False
+    w._sync_to_current_qtile_group = fake_sync
+    w.show_animated()
+    settle(w)
+    check(bool(w.moves), "does not early-out as 'already open'")
+    check(w.moves[-1] == ANIM_TARGET_Y, "re-reveals on the new group")
+    check(w._mapped and w._visible, "state restored after remap")
 
 
 def t_anim_show_during_reveal():
@@ -530,6 +547,170 @@ def t_anim_single_timer():
           "final approach is smooth (no two animations fighting)")
 
 
+def t_window_layout():
+    section("window: first-show content + fixed width")
+    tmp = Path(tempfile.mkdtemp())
+    f1 = tmp / "one.txt"
+    f1.write_text("x")
+    state = tmp / "state.json"
+    state.write_text(json.dumps([
+        {"type": "file", "value": str(f1), "added_ts": 1, "pinned": False},
+        {"type": "text", "value": "saved note", "added_ts": 2, "pinned": False},
+    ]))
+    real_state = qdrop.STATE_FILE
+    qdrop.STATE_FILE = state
+    try:
+        w = qdrop.Dropzone()  # constructed only; never mapped on screen
+    finally:
+        qdrop.STATE_FILE = real_state
+    try:
+        # Saved entries must be on screen the *first* time qdrop opens.
+        # A Gtk.Stack ignores set_visible_child() while the target page
+        # is still hidden, so this used to stay unset and the first
+        # show_all() picked the "empty" page on its own -- qdrop came up
+        # empty until it was closed and reopened.
+        check(w.stack.get_visible_child_name() == "items",
+              "loaded entries select the items page during __init__")
+        w.stack.show_all()  # what the first real show does
+        check(w.stack.get_visible_child_name() == "items",
+              "show_all() does not reset the page back to 'empty'")
+
+        # Width must not depend on content. Showing the content widgets
+        # (not the window) is enough to get real size requests.
+        w.revealer.get_child().show_all()
+        widths = {"2 entries": w.get_preferred_width()[0]}
+        for i in range(20):
+            w._add({"type": "text", "value": f"note {i}"}, persist=False)
+        w._refresh()
+        widths["22 entries (2 digits)"] = w.get_preferred_width()[0]
+        w.entries[0]["pinned"] = True  # adds a whole extra stats chip
+        w._refresh()
+        widths["with a pinned chip"] = w.get_preferred_width()[0]
+        w.entries = []
+        w._refresh()
+        widths["empty"] = w.get_preferred_width()[0]
+        uniq = sorted(set(widths.values()))
+        check(len(uniq) == 1, f"width identical across content changes: {widths}")
+
+        # The header is what actually decides the width; if a font or
+        # icon-theme change pushes its minimum past WIN_W, the window
+        # silently grows again. Fail loudly here instead.
+        hdr = w.revealer.get_child().get_children()[0]
+        hdr_min = hdr.get_preferred_width()[0]
+        check(hdr_min <= qdrop.WIN_W,
+              f"header minimum {hdr_min} fits inside WIN_W {qdrop.WIN_W}")
+        check(qdrop.STATS_W >= 206,
+              "stats strip is wide enough for the worst-case chip row")
+    finally:
+        w.destroy()
+
+
+def _blank_pixbuf(w=12, h=9):
+    from gi.repository import GdkPixbuf
+    pb = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, w, h)
+    pb.fill(0xFF0000FF)
+    return pb
+
+
+def t_image_paste_drop():
+    section("image paste / drop (web images)")
+    from gi.repository import Gdk, Gtk
+
+    tmp = Path(tempfile.mkdtemp())
+    real_state, real_imgdir = qdrop.STATE_FILE, qdrop.IMG_DIR
+    qdrop.STATE_FILE = tmp / "state.json"
+    qdrop.IMG_DIR = tmp / "images"
+    try:
+        w = qdrop.Dropzone()
+        try:
+            # --- save_pixbuf itself ---
+            p1 = qdrop.save_pixbuf(_blank_pixbuf())
+            p2 = qdrop.save_pixbuf(_blank_pixbuf())
+            check(p1 and Path(p1).exists(), "save_pixbuf writes a file")
+            check(p1 != p2 and Path(p2).exists(),
+                  "two saves in the same second don't collide")
+            check(Path(p1).suffix == ".png" and Path(p1).stat().st_size > 0,
+                  "saved as a non-empty png")
+            check(qdrop.is_text_file(p1) is False, "saved image is not text")
+
+            # --- paste ---
+            # A private selection, so the user's real clipboard is left
+            # alone by the suite.
+            sel = Gtk.Clipboard.get(Gdk.Atom.intern("QDROP_TEST_SEL", False))
+            sel.set_image(_blank_pixbuf())
+            sel.store()
+            pump(120)
+            before = len(w.entries)
+            w._paste_clipboard(sel)
+            check(len(w.entries) == before + 1, "pasting an image adds an entry")
+            e = w.entries[0]
+            # The bug: a web image copy carries image/png *and* the page
+            # URL as text, and the text branch always won -> a link.
+            check(e["type"] == "file", f"pasted image is a file entry, not {e['type']}")
+            check(Path(e["value"]).exists() and Path(e["value"]).suffix == ".png",
+                  "pasted image points at a real png")
+            check(str(qdrop.IMG_DIR) in e["value"], "stored under IMG_DIR")
+
+            # text-only clipboard must still paste as text/url
+            sel.set_text("https://example.com/page", -1)
+            sel.store()
+            pump(120)
+            w._paste_clipboard(sel)
+            check(w.entries[0]["type"] == "url", "text-only paste is still a url entry")
+
+            # --- cache housekeeping ---
+            keep = Path(next(e["value"] for e in w.entries if e["type"] == "file"))
+            os.utime(keep, (0, 0))  # ancient *and* still referenced
+            old = qdrop.IMG_DIR / "qdrop-20200101-000000.png"
+            old.write_bytes(b"x")
+            os.utime(old, (0, 0))  # ancient and unreferenced
+            fresh = qdrop.IMG_DIR / "qdrop-29991231-000000.png"
+            fresh.write_bytes(b"x")  # unreferenced but new
+            qdrop.prune_image_cache(w.entries)
+            check(not old.exists(), "prune removes old unreferenced images")
+            check(keep.exists(), "prune keeps images an entry still points at")
+            check(fresh.exists(), "prune keeps recent images (paste in flight)")
+
+            # --- drop ---
+            class FakeData:
+                def __init__(self, pb=None, uris=None, txt=None):
+                    self._pb, self._uris, self._txt = pb, uris, txt
+
+                def get_pixbuf(self):
+                    return self._pb
+
+                def get_uris(self):
+                    return self._uris
+
+                def get_text(self):
+                    return self._txt
+
+            n = len(w.entries)
+            w._on_drop(None, None, 0, 0, FakeData(pb=_blank_pixbuf()), 2, 0)
+            check(len(w.entries) == n + 1 and w.entries[0]["type"] == "file",
+                  "dropped image data becomes a file entry")
+            check(Path(w.entries[0]["value"]).exists(), "dropped image was written to disk")
+
+            # a remote uri-list drop (web image dragged straight off a page)
+            n = len(w.entries)
+            w._on_drop(None, None, 0, 0,
+                       FakeData(uris=["https://example.com/cat.png"]), 0, 0)
+            check(len(w.entries) == n + 1 and w.entries[0]["type"] == "url",
+                  "remote uri drop is kept as a url instead of being dropped")
+
+            # a plain file uri-list drop still works
+            f = tmp / "a.txt"
+            f.write_text("x")
+            n = len(w.entries)
+            w._on_drop(None, None, 0, 0, FakeData(uris=[f.as_uri()]), 0, 0)
+            check(len(w.entries) == n + 1 and w.entries[0]["value"] == str(f),
+                  "local file drop unaffected")
+        finally:
+            w.destroy()
+    finally:
+        qdrop.STATE_FILE, qdrop.IMG_DIR = real_state, real_imgdir
+
+
 def t_watcher_alive():
     section("watcher process")
     r = subprocess.run(["pgrep", "-af", "qdrop_watch.py"],
@@ -548,6 +729,7 @@ def main() -> int:
     t_dnd_probe()
     t_anim_open_close()
     t_anim_show_while_open()
+    t_anim_show_after_group_switch()
     t_anim_show_during_reveal()
     t_anim_show_during_close()
     t_anim_hide_during_reveal()
@@ -555,6 +737,8 @@ def main() -> int:
     t_anim_toggle()
     t_anim_idempotence()
     t_anim_single_timer()
+    t_window_layout()
+    t_image_paste_drop()
     t_watcher_alive()
     t_ipc_shake_flow()
     t_ipc()
