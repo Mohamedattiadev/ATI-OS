@@ -107,6 +107,42 @@ subsystem. Each entry: **symptom → root cause → fix**.
   `wal-precompile --only <basename> --force` on cache miss before
   writing consumer files.
 
+### Picking a new wallpaper doesn't retheme anything (pcmanfm/qb/eww/popups all stay stale)
+- **Symptom:** selecting a wallpaper via `WallpaperPopup` (or
+  `dm-setbg`) changes the desktop background image, but every themed
+  consumer — GTK apps, qutebrowser, eww, qtile popups — keeps
+  whatever colors it had before, as if `theme-apply` never ran.
+- **Root cause:** both `WallpaperPopup.apply_wallpaper()` and
+  `dm-setbg`'s `reapply_wal()` (both copies —
+  `AtiScriptsV1/dm-setbg` and `dmscripts/scripts/dm-setbg`) only
+  called `theme-apply wal` if `~/.cache/qtile/theme_mode` was
+  *already* `wal`. If you were on any preset (doomone, dracula, ...)
+  and picked a new wallpaper, nothing retheme'd — the check silently
+  skipped it, since picking a wallpaper doesn't imply you were
+  already in wal mode.
+- **Fix:** removed the `theme_mode == "wal"` gate in all three places
+  — picking a wallpaper through any of these paths now always calls
+  `theme-apply wal` unconditionally, since selecting a wallpaper is
+  itself an explicit "theme around this image" action.
+
+### qutebrowser's own tabs/statusbar show a different accent than its homepage
+- **Symptom:** in the same qutebrowser window, the tab bar/statusbar
+  render one accent color while the homepage content (headers, clock)
+  renders a visibly different one.
+- **Root cause:** two independent color pipelines feeding the same
+  app. `theme-apply`'s `gen_qb_css()` writes the homepage's CSS vars
+  from the *semantically re-slotted* 9-slot palette
+  (`~/.cache/qtile/current_palette.json` — the same source eww, nvim,
+  and qtile popups all use). But qutebrowser's own `config.py`
+  (`_apply_wal()`) read raw `~/.cache/wal/colors.json` `color4`
+  directly for its native tabs/statusbar/completion accent — wal's
+  raw color slots and theme-apply's hue-re-slotted semantic slots are
+  not the same values for a given wallpaper.
+- **Fix:** rewrote `_apply_wal()` to read `current_palette.json` like
+  every other consumer, using its `green` slot as the accent (matching
+  `gen_qb_css`'s `--accent: {green}`) so qb's native chrome and its
+  homepage always agree.
+
 ### Concurrent theme-apply races
 - **Symptom:** partial consumer writes, half-tinted UI after rapid
   wallpaper switches / keybind spam.
@@ -130,6 +166,237 @@ subsystem. Each entry: **symptom → root cause → fix**.
   earlier fatal-path `notify-send` calls at lines ~99/104/120 are
   fine as-is — they're already followed by `exit 1` on a genuine
   error.)
+
+### Folder icons never change color, regardless of preset
+- **Symptom:** every other theme-apply consumer (kitty, rofi, qutebrowser,
+  eww, btop, gtk accent colors, base gtk theme) retints correctly, but
+  pcmanfm/nautilus folder icons stay whatever color they were on first
+  install — `theme-apply`'s own log/notify shows success, no error
+  anywhere.
+- **Root cause:** `theme-apply` calls `papirus-folders -C <hue-match>`
+  guarded by `command -v papirus-folders` — it silently no-ops the whole
+  block if the binary isn't found. `papirus-icon-theme` (the icon set
+  itself) was declared in `arch-config/modules/system-tools.yaml`, but
+  `papirus-folders` (a separate AUR package that does the color-symlink
+  swap) never was, so a machine provisioned purely via `install.sh` /
+  `dcli sync` never had it.
+- **Fix:** added `papirus-folders` to `system-tools.yaml` next to
+  `papirus-icon-theme`. Picked up automatically by `dcli sync` — same
+  AUR-via-yay path already used for `picom-ftlabs-git`,
+  `whisper.cpp-git`, etc., no wizard.sh changes needed.
+- **Verification:** ran `theme-apply <mode>` for all 21 modes (20
+  presets + `wal`) and diffed the generated output of all 6 downstream
+  consumers (btop `.theme` file + `btop.conf`, qutebrowser homepage CSS
+  vars, eww `colors.scss`, the papirus folder-color symlink + gtk icon
+  theme name, and `current_palette.json` as read by qtile
+  popups/cheatsheets) against the exact hex values `theme-apply` itself
+  defines per mode — 126 checks total, all passing after the fix above
+  (including re-confirming the qutebrowser `--accent`/eww `$accent`
+  slots still resolve to `green`, not a raw wal color, per the fix
+  above this one). A representative sample (`mono-light`, `dracula`,
+  `wal`) was additionally spot-checked visually via screenshots of
+  btop, pcmanfm, and brave (full pipeline, including the browser
+  extension repack/relaunch) to catch anything a file diff can't
+  (stale icon cache, GTK theme not actually reloading, etc.) — all
+  rendered correctly.
+
+### Changing the wallpaper silently replaces the active preset theme
+- **Symptom:** on `gruvbox` (or any preset), picking a new wallpaper —
+  via the qtile wallpaper popup, `dm-setbg`, or the dmscripts
+  `dm-setbg` — swapped the desktop image *and* repainted kitty, rofi,
+  dunst, GTK, qutebrowser and the qtile bar into a wallpaper-derived
+  palette. `~/.cache/qtile/theme_mode` flipped to `wal` and the preset
+  was gone.
+- **Root cause:** all three wallpaper setters called `theme-apply wal`
+  unconditionally. That was a deliberate earlier change ("picking a
+  wallpaper is an explicit *theme around this image* action"), but it
+  conflates two separate choices. `wal` is the one mode that means
+  "follow the wallpaper"; every preset is an explicit request for a
+  *fixed* palette, so a wallpaper change there must not touch the
+  theme.
+- **Fix:** gate the `theme-apply wal` call on
+  `~/.cache/qtile/theme_mode` already being `wal`, in all three
+  setters:
+  - `.config/AtiScriptsV1/dm-setbg` (`setbg()`)
+  - `.config/dmscripts/scripts/dm-setbg` (`reapply_wal()`)
+  - `.config/qtile/popups/WallpaperPopup.py` (`apply_wallpaper()`, via
+    the new `current_theme_mode()` helper in `popups/_wal_colors.py`)
+
+  The gate fails **closed** — an unreadable/missing `theme_mode` means
+  "don't retheme", so a broken cache file can never overwrite a preset.
+- **Note:** the wallpaper still changes in every mode; only the palette
+  re-derivation is gated. To re-theme around a new wallpaper while on a
+  preset, run `theme-apply wal` explicitly (or pick `wal` in the theme
+  picker).
+
+### qutebrowser keeps doom-one colors on every preset theme
+- **Symptom:** switching to `gruvbox`/`dracula`/etc repainted the whole
+  desktop but qutebrowser's tabs, statusbar and completion stayed
+  doom-one blue. Only `wal` mode ever retinted the browser.
+- **Root cause:** `.config/qutebrowser/config.py` opened `_apply_wal()`
+  with `if mode != "wal": return`. But `theme-apply` dumps
+  `~/.cache/qtile/current_palette.json` on **every** apply, preset
+  included — the mode check was the only thing preventing presets from
+  working.
+- **Fix:** renamed to `_apply_palette()` and dropped the mode gate, so
+  it retints from `current_palette.json` for all 21 modes. Also
+  extended coverage to the groups `doom_one.setup()` hardcodes and the
+  old block never overrode — `colors.messages.*` (this is what kept the
+  `:adblock-update` info bar doom-one navy), `colors.prompts.*`,
+  `colors.downloads.*`, `colors.statusbar.{caret,passthrough,private,
+  progress,url}.*` and `colors.tabs.pinned.*` — 78 options total.
+- **Accent slot:** the selected tab now uses the palette's `blue` slot
+  rather than `green`. `blue` is the slot `theme-apply` also feeds to
+  the GTK accent and to dunst's frame color, so qb's chrome sits in the
+  same hue family as the rest of the desktop instead of inventing a
+  second accent.
+- **Gotcha:** `_apply_palette()` must stay *after* `doom_one.setup()`
+  and after the `dark_mode` block — both set `c.colors.*` and clobber it
+  otherwise. Its `except Exception: pass` also means one mistyped
+  option name silently disables **all** browser theming, with no error
+  anywhere. Validate names against `configdata.DATA` after editing:
+  ```sh
+  python3 -c "
+  from qutebrowser.config import configdata; configdata.init()
+  import re, os
+  s = open(os.path.expanduser('~/.config/qutebrowser/config.py')).read()
+  b = s.split('def _apply_palette():')[1].split(chr(10)+'# Called after')[0]
+  n = set(re.findall(r'c\.((?:\w+\.)+\w+)\s*=', b))
+  print('invalid:', [x for x in n if x not in configdata.DATA] or 'none')"
+  ```
+
+### dunst and eww render in a different font than the qtile popups
+- **Symptom:** notifications and the eww onboarding/tooltips showed a
+  monospace face, while the qtile popups right next to them (wallpaper
+  picker, cheatsheets) used a proportional one.
+- **Root cause:** each consumer named a *concrete family* independently
+  and they drifted: dunst had `font = JetBrainsMono Nerd Font 10`, eww
+  had `FiraCode Nerd Font` (tooltips) plus `JetBrainsMono NF` (18 rules
+  across `cheatsheet.scss` + `onboarding.scss`). The qtile popups never
+  set a font at all — `qtile_extras`' `PopupText` defaults to the
+  **`sans` fontconfig alias**, which is why they alone looked different.
+- **Fix:** route dunst and eww through the same alias instead of a
+  family name, so all three resolve identically:
+  - `.config/dunst/dunstrc.tmpl` → `font = Sans 10` (Nerd Font glyphs
+    still render; pango falls back per-glyph)
+  - new `.config/eww/fonts.scss` defines `$ui-font: sans-serif` (plus
+    `$display-font` for the oversized cheatsheet splash title only),
+    `@import`ed **first** in `eww.scss` so the variable is in scope for
+    the `cheatsheet.scss` / `onboarding.scss` imports that follow
+- **Where the alias resolves:** `~/.config/fontconfig/fonts.conf`. Change
+  it there once to restyle qtile popups, eww and dunst together;
+  `fc-match sans` shows the current winner. Note that file *prefers*
+  Arimo / Tinos / Cousine, none of which are installed or declared
+  (they live in `ttf-croscore`), so all three of its aliases currently
+  fall through to `noto-fonts-cjk` — which **is** declared in
+  `.config/arch-config/modules/fonts.yaml`, so a fresh install resolves
+  the same way. Installing `ttf-croscore` would make `fonts.conf` work
+  as written, at the cost of changing all three consumers at once.
+- **Careful:** `~/.config/dunst/dunstrc` is *generated* by `theme-apply`
+  from `dunstrc.tmpl`, and `~/.config/dunst` is a symlink into the repo,
+  so the tracked `dunstrc` is overwritten on every apply. Edit the
+  `.tmpl`; edits to `dunstrc` alone are lost at the next theme switch.
+
+### Chromium follows the palette but Chrome does not
+- **Symptom:** after a theme switch Chromium showed the "Installed theme
+  Wal Theme" toast and repainted, while Chrome came back in its stock
+  colors every single time.
+- **Two independent root causes**, either one alone is enough to break it:
+  1. **Wrong extension id.** `theme-apply` hardcoded
+     `EXT_ID="fommfacojlllmdogognehdgombidbpjg"`, but a Chromium
+     extension id is `sha256(DER pubkey)[:32]` mapped `0-f`→`a-p` — a
+     pure function of `~/.config/qtile/browser-theme.pem`, which
+     `wizard.sh` generates *per machine*. `step_chrome_policy` derives
+     the id correctly and writes
+     `/etc/opt/chrome/policies/managed/wal-theme.json` keyed by it, but
+     then the very first `theme-apply` rewrote `updates.xml` with the
+     hardcoded id. Chrome's `force_installed` poll looked up its
+     policy id, found no matching `<app>`, and gave up silently.
+     Chromium never noticed because it gets the theme from
+     `--load-extension`, not from policy.
+  2. **Relaunched via the wrong binary.** `browser_bin()` mapped
+     `chrome` → `/opt/google/chrome/chrome`, the bare binary.
+     `~/.config/chrome-flags.conf` (which carries
+     `--load-extension=…/browser-theme`) is read by the *wrapper*
+     `/usr/bin/google-chrome-stable`, not by the binary. So every
+     relaunch dropped the flag. Chromium's `/usr/bin/chromium` already
+     is a wrapper, which is why only Chrome was affected.
+- **Fix:** derive `EXT_ID` from the pem at runtime via
+  `ext_id_from_pem()` (never hardcode it), and prefer the `/usr/bin`
+  wrapper over the `/opt` binary in `browser_bin()`. Same hardcoded id
+  was also removed from `uninstall_chrome_policy` in `wizard.sh`, where
+  it had been deleting a nonexistent extension directory.
+- **Landmine:** the purge loop runs `rm -rf "$base/Extensions/$EXT_ID"`.
+  An empty `EXT_ID` expands that to the whole `Extensions` directory, so
+  the block is now guarded on `-n "$EXT_ID"` in both files. Keep that
+  guard if you touch this code.
+- **Verify:**
+  ```sh
+  # these three must agree
+  grep -o "appid='[^']*'" ~/.config/qtile/browser-theme-updates.xml
+  sudo grep -o '"[a-p]\{32\}"' /etc/opt/chrome/policies/managed/wal-theme.json
+  ls ~/.config/google-chrome/Default/Extensions/     # id appears after relaunch
+  # and Chrome's main process must carry the flag:
+  tr '\0' ' ' < /proc/$(pgrep -x chrome | head -1)/cmdline | grep -o '\-\-load-extension=[^ ]*'
+  ```
+
+### qutebrowser never restarts itself after a theme switch
+- **Symptom:** `theme-apply` left qb on the old palette until it was
+  restarted by hand, even though the script clearly calls `:restart` —
+  and running that same command manually worked every time.
+- **Root cause:** the calls lived in a `( ... ) &` subshell:
+  ```sh
+  ( timeout 3 qutebrowser ":config-source" 2>/dev/null
+    timeout 3 qutebrowser ":restart" 2>/dev/null ) &
+  ```
+  The subshell inherits `set -euo pipefail` from the top of the script.
+  Each qb IPC call spawns a full python client that needs ~2s when idle
+  and considerably longer while qtile is restarting from this same
+  script, so `timeout 3` expired routinely and returned **124** —
+  and `set -e` then tore the subshell down *after* `:config-source` and
+  *before* `:restart`. Standalone the call finished in 1.8s and so never
+  reproduced.
+- **Fix:** `|| true` on both calls so a slow/failed IPC can't abort the
+  chain, realistic budgets (15s / 30s), and `setsid` so the restart
+  still completes after `theme-apply` exits and survives the preemption
+  `kill` that a rapid second theme switch sends.
+- **Debugging tip:** `bash -x theme-apply <mode> 2>&1 | grep -A6
+  qutebrowser` shows this instantly — the trace contains the
+  `:config-source` line and simply has no `:restart` line after it. Any
+  time a `( ... ) &` block in this script stops halfway, suspect
+  inherited `set -e` plus a non-zero exit first.
+
+### Wallpaper picker popup opens/closes with no animation
+- **Cause:** it only ever had `fade_in_popup(..., duration=0.16)`, tuned
+  for the small cheatsheet popups. On a 1050x680 panel that is over
+  before the eye tracks it, and close had no animation at all.
+- **Fix:** `_wal_colors.py` gained `fade_out_popup(layout, on_done)` and
+  cubic easing (`_ease_out_cubic` in, `_ease_in_cubic` out — a linear
+  opacity ramp reads as a flicker because perceived brightness is
+  non-linear). The picker now fades in over 0.28s/18 steps and fades out
+  before teardown.
+- **Deliberately opacity-only.** Do **not** "improve" this into a slide
+  or scale animation: changing a floating window's geometry while it is
+  mapped is exactly what caused the qdrop mid-screen flash (qtile
+  re-centers such windows), which cost a whole debugging session and is
+  documented under the qtile sections. `_NET_WM_WINDOW_OPACITY` never
+  touches placement.
+- **Invariants if you edit this:** `on_done` must fire exactly once and
+  must still fire when the window is already gone, or a popup can be
+  stranded on screen forever. `_CLOSING` guards the interval between
+  "fade started" and "hide() ran" so a fast re-toggle can't open a
+  second picker that the pending teardown then blanks. `apply_wallpaper`
+  deliberately uses `.kill()` instead of the fade — theme-apply restarts
+  qtile immediately after, which would yank the animation mid-flight.
+- **Verifying animations:** screenshots are useless here. Poll
+  `xprop -id <win> _NET_WM_WINDOW_OPACITY` and assert the ramp is
+  monotonic; the easing shows up as shrinking (in) or growing (out)
+  deltas between steps.
+- **Do not poll X in a tight loop to do this.** Spawning `xdotool` /
+  `xprop` every ~12ms creates hundreds of short-lived X clients per
+  second. Sample at >=50ms, over a single known window id, and always
+  close popups you opened — orphaned popups accumulate when a test
+  clears qtile's handle to them via `qtile cmd-obj -f eval`.
 
 ---
 
@@ -245,6 +512,87 @@ subsystem. Each entry: **symptom → root cause → fix**.
 ---
 
 ## Qtile config
+
+### qdrop's dropdown doesn't feel like it's sliding down, just pops open
+- **Symptom:** the drop-stash window (`Alt+Shift+D`) appears/disappears
+  abruptly rather than reading as a slide animation.
+- **Root cause:** `Gtk.RevealerTransitionType.SLIDE_DOWN` was already
+  correctly set (semantically: content slides in *from the top*,
+  which is the right direction) — the actual issue was
+  `REVEAL_MS = 150`, too fast at 150ms for the eye to register as
+  motion rather than an instant pop.
+- **Fix:** bumped to `REVEAL_MS = 260`, a more standard perceptible
+  reveal duration.
+
+### qdrop flashes at screen-center for a frame before sliding down from the top
+- **Symptom:** on open (`Alt+Shift+D`), the window briefly appears in
+  the middle of the screen for one frame, then jumps to the top and
+  slides down as intended. The slide itself is smooth — only the
+  initial flash is wrong.
+- **Root cause:** `show_animated()` called `self.move(x, start_y)`
+  *after* `self.show_all()`/`self.present()`. Confirmed via qtile's own
+  `layout/floating.py` (`compute_client_position()`): a newly-mapped
+  floating window only skips qtile's own center-on-screen placement if
+  `client.has_user_set_position()` is true, which checks the X11
+  `WM_NORMAL_HINTS` `USPosition`/`PPosition` flags. GTK only sets that
+  hint from `move()` while the window is still unrealized — calling
+  `move()` after `show_all()` (i.e. after the window is already mapped)
+  just issues a plain post-map `ConfigureRequest` with no position
+  hint, so qtile centers it on that first map and only *then* honors
+  the reposition, producing one visible frame at screen-center before
+  the jump to `start_y`.
+- **Fix:** reordered `show_animated()` so `self.move(x, start_y)` runs
+  *before* `self.show_all()`/`self.present()`, avoiding the center
+  placement entirely instead of racing to correct it after the fact.
+  Verified via `xdotool getwindowgeometry` polled every ~10-30ms across
+  the whole open transition: X position is now constant from the very
+  first sample (no center jump), Y moves monotonically from off-screen
+  to the target. Auto-hide (the 8s inactivity timer) was separately
+  confirmed to already call `hide_animated()` — not a raw `hide()` — and
+  geometry-polling across that transition shows the same smooth
+  monotonic slide back up off-screen before the real unmap.
+
+### qdrop pops up while dragging to select/extend text
+- **Symptom:** clicking and dragging upward inside a text field (e.g.
+  to extend a selection) sometimes pops qdrop open mid-drag, with no
+  keybind pressed.
+- **Root cause:** `qdrop_watch.py` implements a "shake to show" gesture
+  (rapid left-right pointer-direction reversals while Button1 is held,
+  meant for waggling a picked-up file/text-drag the way macOS's Finder
+  shelf works) by watching raw `RawMotion` X events. It only tracked
+  the X-axis valuator; `MIN_SEG_PX = 8` is small enough that the
+  incidental horizontal hand jitter naturally present in an almost-pure
+  *vertical* drag (dragging up to extend a selection) was enough to
+  rack up 3 direction reversals and satisfy the shake heuristic.
+- **Fix:** now also tracks the Y-axis valuator and accumulates total
+  `|dx|`/`|dy|` since the button press; a shake only fires if
+  accumulated horizontal movement is at least as large as vertical
+  movement (`MIN_DX_DY_RATIO = 1.0`). A real shake is horizontal-
+  dominant (waggling roughly in place); a selection-extend drag is
+  vertical-dominant with only incidental horizontal noise — this
+  cleanly separates the two without touching reversal-detection
+  sensitivity. Verified with synthetic `xdotool` pointer sequences:
+  a vertical drag with small horizontal jitter no longer triggers
+  qdrop; a genuine horizontal shake still does.
+
+### SmartWidgetBox chip-list cascade-flash animation (CPU/Mem, updates/disk/volume groups)
+- **Symptom:** N/A — this documents verification of an animation added
+  in the same pass as the qdrop fixes above, not a bug.
+- **What it does:** `SmartWidgetBox._animate_reveal()` staggers a
+  brief brighten-then-fade flash (`i * 0.07s` stagger, `0.18s` flash)
+  across each child widget's `_flash_deco` when the box opens, so the
+  revealed chips (e.g. CPU/Memory under the `system_widgetbox` toggle,
+  or updates/disk/volume under `2nd_system_widgetbox`) read as popping
+  in one after another instead of appearing all at once.
+- **Verification:** confirmed via `qtile cmd-obj -o bar top -f info`
+  (ground truth for what's actually in `bar.widgets`, far more reliable
+  than reading rendered glyphs off a screenshot) that clicking the
+  toggle correctly inserts/removes the real child widgets with live
+  content. The flash itself was confirmed via a timestamped screenshot
+  burst: frames taken while a child's flash window is still active show
+  a visibly lighter pill background than frames taken after its revert
+  fires, at the expected timing boundary. No errors in
+  `~/.local/share/qtile/qtile.log` across repeated open/close cycles.
 
 ### Every app-launching keybind crashes: `'Qtile' object has no attribute 'cmd_spawn'`
 - **Symptom:** browser toggles, terminal, file manager, Telegram,

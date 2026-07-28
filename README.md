@@ -273,11 +273,11 @@ keybind spam are dropped silently instead of corrupting caches.
 | dunst | render `dunstrc.tmpl` + restart |
 | qtile | `restart` (detached so caller doesn't deadlock) |
 | gtk 3/4 | `@import` overlay at `~/.cache/qtile/gtk-wal.css` |
-| qutebrowser | inline `<style>` + `--accent` CSS var, `:config-source` + `:restart` |
+| qutebrowser | homepage: inline `<style>` + `--accent` CSS var. Browser chrome (tabs/statusbar/completion/messages/prompts/downloads, 78 options): `config.py:_apply_palette()` reads `current_palette.json` — runs for **all** modes, not just `wal`. Both via `:config-source` + `:restart` |
 | nvim | fs_event on `~/.cache/qtile/theme_mode` + `current_palette.json` re-sources scheme; aliased modes (matrix, mono-*, synthwave, cyberpunk-neon, palenight, github-dark, ayu-mirage, onedark, nightowl) render distinct highlights from the JSON when no dedicated plugin is installed (Snacks dashboard uses dominant hue) |
 | brave | `--load-extension` reads live `manifest.json` on relaunch (id matches via embedded `key`) |
-| chrome / chromium | Enterprise policy `force_installed` from local `updates.xml`; `.crx` repacked + Preferences purged each apply so install lands immediately |
-| papirus folders | `papirus-folders -C <hue-match> -u` |
+| chrome / chromium | Enterprise policy `force_installed` from local `updates.xml`; `.crx` repacked + Preferences purged each apply so install lands immediately. Extension id is derived from `browser-theme.pem` at runtime (never hardcoded — it is per-machine), and browsers relaunch via their `/usr/bin` wrapper so `*-flags.conf` (`--load-extension`) is actually applied |
+| papirus folders | `papirus-folders -C <hue-match> -u` (needs the `papirus-folders` AUR pkg — declared in `arch-config/modules/system-tools.yaml`; silently no-ops, icons stay default color, if missing) |
 | eww widgets | daemon killed + `setsid eww daemon` restart + reopen prior windows (previous `eww reload` left compiled scss cached) |
 | qtile cheatsheets (Vim/Fish/Qtile popups) + WallpaperPicker | `popups/_wal_colors.load_colors()` reads `~/.cache/qtile/current_palette.json` first (matches active preset), falls back to `~/.cache/wal/colors.json`; muted derived from `bg`→`fg` blend for readable dividers; popup panel bg driven from `COLORS["bg"]` so mono-light renders on white |
 | gtk base theme + icon theme | `settings.ini` rewritten per palette: `mono-light` → `Breeze` + `Papirus-Light`; all others → `Sweet-Dark` + `Papirus-Dark` |
@@ -306,8 +306,23 @@ Window widths/heights + placement survive the restart.
 qtile bar accents pin to `color2`; test harness at
 `.config/qtile/scripts/wal-visual-test.py` validates 12 hue buckets end-to-end.
 
-Wallpaper change auto-reapplies wal mode (`dm-setbg` + `WallpaperPopup`
-both invoke `theme-apply wal` on a bg thread so qtile stays responsive).
+**Wallpaper vs. theme** — changing the wallpaper re-derives the palette
+**only when the active mode is already `wal`**, since `wal` is the mode
+that means "follow the wallpaper". On a preset (`gruvbox`, `doomone`, …)
+you picked a fixed palette on purpose, so a new wallpaper swaps the
+desktop image and nothing else. All three setters (`dm-setbg`, the
+dmscripts `dm-setbg`, `WallpaperPopup`) check
+`~/.cache/qtile/theme_mode` before invoking `theme-apply wal` on a bg
+thread (so qtile stays responsive), and fail closed if that file is
+unreadable. To re-theme around a new wallpaper from a preset, run
+`theme-apply wal` explicitly or pick `Wallpaper` in the theme picker.
+
+**Shared UI font** — the qtile popups (wallpaper picker, cheatsheets)
+use `qtile_extras`' default `sans` family, so dunst (`Sans 10` in
+`dunstrc.tmpl`) and eww (`$ui-font: sans-serif` in
+`.config/eww/fonts.scss`) resolve through that same fontconfig alias
+rather than naming a family. Restyle all three at once by editing
+`~/.config/fontconfig/fonts.conf`; `fc-match sans` shows the winner.
 
 **Rofi UI stack** — all `.rasi` themes import a shared `base.rasi`
 (doom-one flavor, radius 12, palette-driven). Overrides are layout-only
