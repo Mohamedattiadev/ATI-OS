@@ -47,6 +47,13 @@ packages:
   - openslide
   - curl
   - gum
+  # --- update safety net (see safe-update + TROUBLESHOOTING) ---
+  - informant            # blocks -Syu until Arch news is read; those are the
+                         # posts that say 'manual intervention required'
+  - downgrade            # roll back ONE bad package without a full restore
+  - pacman-static        # statically linked pacman -- still runs when a libc
+                         # or libstdc++ upgrade breaks dynamic linking, which
+                         # is exactly when normal pacman cannot help you
   - python-pywal
   - papirus-icon-theme
   - papirus-folders        # AUR -- folder color swap used by theme-apply; silently

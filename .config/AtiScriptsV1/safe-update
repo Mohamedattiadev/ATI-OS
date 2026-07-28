@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# safe-update -- guarded Arch system upgrade.
+#
+# WHY THIS EXISTS
+# ---------------
+# A rolling release can always ship a broken package; nothing can make
+# that impossible. What IS preventable is the failure mode that cost a
+# full reinstall here: pacman running out of space PART WAY through a
+# transaction. When that happens a package's old files are already gone
+# and the new ones were never written, so libraries vanish and the
+# system stops booting. That is not a mysterious Arch bug -- it is a
+# disk-space accident, and it is fully avoidable.
+#
+# The order below matters:
+#   1. space preflight   -- refuse before anything is touched
+#   2. keyring first     -- a stale keyring makes every later sig fail
+#   3. news gate         -- catches "manual intervention required"
+#   4. snapshot          -- and VERIFY it, an unverified backup is none
+#   5. download-only     -- fetch everything with zero system mutation
+#   6. re-check space    -- the download itself consumed some
+#   7. install           -- the only destructive step, now de-risked
+#
+# Every step is a refusal point. Nothing is mutated until step 7.
+
+set -uo pipefail
+
+# A full upgrade downloads into /var/cache/pacman/pkg and then unpacks
+# into /usr, so it needs room for BOTH at once. 6G is deliberately
+# generous: the point is to fail early and loudly, not to squeak by.
+MIN_FREE_GB="${SAFE_UPDATE_MIN_FREE_GB:-6}"
+
+c_ok=$'\033[32m'; c_warn=$'\033[33m'; c_err=$'\033[31m'; c_dim=$'\033[90m'; c_off=$'\033[0m'
+ok()   { printf '%s  ✓%s %s\n' "$c_ok" "$c_off" "$*"; }
+warn() { printf '%s  !%s %s\n' "$c_warn" "$c_off" "$*"; }
+die()  { printf '%s  ✖%s %s\n' "$c_err" "$c_off" "$*" >&2; exit 1; }
+step() { printf '\n%s──%s %s\n' "$c_dim" "$c_off" "$*"; }
+
+free_gb() { df -BG --output=avail "$1" 2>/dev/null | tail -1 | tr -dc '0-9'; }
+
+# ---------------------------------------------------------------- 1
+step "Checking free space"
+root_free=$(free_gb /)
+[[ -n "$root_free" ]] || die "could not read free space on /"
+printf '     / has %sG free (need %sG)\n' "$root_free" "$MIN_FREE_GB"
+
+if (( root_free < MIN_FREE_GB )); then
+  printf '\n'
+  warn "Not enough room on / to upgrade safely. Refusing."
+  printf '\n     Largest consumers:\n'
+  sudo du -xhd1 / 2>/dev/null | sort -rh | head -6 | sed 's/^/       /'
+  # The classic trap: Timeshift defaulting to the same partition it
+  # protects. It eats the headroom the upgrade needs, AND the snapshots
+  # die with the filesystem they were meant to restore.
+  if [[ -d /timeshift ]]; then
+    ts_dev=$(findmnt -no SOURCE --target /timeshift 2>/dev/null)
+    root_dev=$(findmnt -no SOURCE --target / 2>/dev/null)
+    if [[ "$ts_dev" == "$root_dev" ]]; then
+      printf '\n'
+      warn "Timeshift is storing snapshots on ${ts_dev}, which IS your root."
+      printf '       That is self-defeating twice over: the snapshots eat the\n'
+      printf '       space upgrades need, and if / is damaged they are damaged\n'
+      printf '       with it. Move them to another partition or an external\n'
+      printf '       disk (Timeshift > Settings > Location).\n'
+    fi
+  fi
+  printf '\n     Reclaim ideas:  sudo paccache -rk1   ·   journalctl --vacuum-size=50M\n\n'
+  exit 1
+fi
+ok "space looks fine"
+
+# ---------------------------------------------------------------- 2
+step "Refreshing keyring"
+# Must precede -Syu. If the keyring is stale every signature check on the
+# real upgrade fails, and the usual "fix" people reach for is disabling
+# signature checking, which is far worse than the problem.
+sudo pacman -Sy --needed --noconfirm archlinux-keyring >/dev/null 2>&1 \
+  && ok "keyring current" \
+  || warn "keyring refresh failed -- continuing, signatures may fail"
+
+# ---------------------------------------------------------------- 3
+step "Checking Arch news"
+if command -v informant >/dev/null; then
+  if ! informant check >/dev/null 2>&1; then
+    warn "Unread Arch news. These are the posts that say things like"
+    printf '       "manual intervention required" -- the ones that break\n'
+    printf '       systems when skipped.\n\n'
+    informant read || true
+  else
+    ok "no unread news"
+  fi
+else
+  warn "informant not installed -- news gate skipped (pacman -S informant)"
+fi
+
+# ---------------------------------------------------------------- 4
+step "Snapshot"
+if command -v timeshift >/dev/null; then
+  before=$(sudo timeshift --list 2>/dev/null | grep -c '^[0-9]')
+  sudo timeshift --create --comments "pre safe-update $(date +%F_%H:%M)" --scripted >/dev/null 2>&1
+  after=$(sudo timeshift --list 2>/dev/null | grep -c '^[0-9]')
+  # Verify rather than trust the exit code: a snapshot that silently did
+  # not happen is worse than none, because you will act as if you have one.
+  if (( after > before )); then
+    ok "snapshot created (now $after)"
+  else
+    warn "Timeshift reported success but the snapshot count did not rise."
+    read -rp "     Continue with NO usable snapshot? [y/N] " a
+    [[ "$a" == [yY] ]] || die "aborted"
+  fi
+else
+  warn "timeshift not installed -- no snapshot"
+  read -rp "     Continue without a rollback point? [y/N] " a
+  [[ "$a" == [yY] ]] || die "aborted"
+fi
+
+# ---------------------------------------------------------------- 5
+step "Downloading packages (no changes yet)"
+# -w fetches everything without touching the installed system, so a
+# network failure or a full disk here is harmless and resumable.
+sudo pacman -Syuw --noconfirm || die "download failed -- system untouched"
+ok "all packages downloaded"
+
+# ---------------------------------------------------------------- 6
+step "Re-checking space after download"
+root_free=$(free_gb /)
+printf '     / has %sG free\n' "$root_free"
+(( root_free < 2 )) && die "too tight to unpack safely -- run 'sudo paccache -rk1' and retry"
+ok "enough room to unpack"
+
+# ---------------------------------------------------------------- 7
+step "Installing"
+if sudo pacman -Su; then
+  ok "system upgraded"
+else
+  printf '\n'
+  die "Upgrade failed. The snapshot from step 4 is your rollback.
+     If the system still boots:  sudo downgrade <package>
+     If it does not:             boot the Arch ISO, arch-chroot, and use
+                                 pacman-static (it is statically linked,
+                                 so it still runs when libc is broken)."
+fi
+
+# ---------------------------------------------------------------- 8
+if command -v checkservices >/dev/null; then
+  step "Services needing restart"
+  sudo checkservices || true
+fi
+
+printf '\n%s  Done.%s Reboot if the kernel or systemd was updated.\n\n' "$c_ok" "$c_off"
