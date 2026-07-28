@@ -47,6 +47,10 @@ from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
 
 UID = os.getuid()
 STATE_FILE = Path.home() / ".cache" / "qdrop.json"
+# Images pasted/dropped as raw bitmap data (a copied web image is pixels
+# on the clipboard, not a file) have to be written somewhere before they
+# can be an entry -- every entry is a path, a URL or text.
+IMG_DIR = Path.home() / ".cache" / "qdrop-images"
 LOCK_FILE = Path(f"/tmp/qdrop-{UID}.lock")
 SOCK_PATH = Path(f"/tmp/qdrop-{UID}.sock")
 QT_PALETTE = Path.home() / ".cache" / "qtile" / "current_palette.json"
@@ -57,8 +61,16 @@ AUTO_HIDE_MS = 8000
 REVEAL_MS = 220  # open duration -- whole-window Y slide (see _slide_move).
 HIDE_MS = 130  # close duration -- deliberately faster than REVEAL_MS;
 # a lingering close reads as sluggish even when the open feels fine.
-WIN_W = 440
+WIN_W = 620  # was 440, which was never the real width: the header's own
+# minimum (title + stats chips + 6 buttons) already forced ~569px, so the
+# 440 in the geometry hints was a lie qtile happened not to enforce. It
+# also *varied* with the stats chips -- see STATS_W below. WIN_W is now
+# wide enough that the header never binds, so the width is constant and
+# the hints match reality. qdrop_test.py asserts the header still fits.
 WIN_H = 320
+STATS_W = 210  # fixed width of the header stats-chip strip; fits the
+# worst case measured (999 items + a pinned chip = 206px), so nothing
+# clips and the width still never depends on the counts.
 
 IMG_EXT = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".tiff"}
 DOC_EXT = {".pdf", ".doc", ".docx", ".odt", ".rtf"}
@@ -293,6 +305,59 @@ def load_state() -> list[dict]:
         return []
 
 
+def save_pixbuf(pixbuf) -> str | None:
+    """Write clipboard/drop image data to IMG_DIR, return its path.
+
+    Copying an image in a browser puts the *bitmap* on the clipboard
+    (image/png), usually alongside the page URL as text. qdrop entries
+    are paths/URLs/text, so the bitmap is saved to a real PNG and added
+    as a file entry -- which also gets it a thumbnail, `imv` preview and
+    drag-out-to-another-app for free.
+    """
+    try:
+        IMG_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        dest = IMG_DIR / f"qdrop-{stamp}.png"
+        n = 2
+        while dest.exists():  # several pastes inside the same second
+            dest = IMG_DIR / f"qdrop-{stamp}-{n}.png"
+            n += 1
+        pixbuf.savev(str(dest), "png", [], [])
+        return str(dest)
+    except Exception:
+        return None
+
+
+IMG_CACHE_MAX_AGE_S = 30 * 24 * 3600
+
+
+def prune_image_cache(entries: list[dict]) -> int:
+    """Drop saved-image files no entry refers to any more.
+
+    Pasted images are written to IMG_DIR and only ever removed here --
+    remove_entry() deliberately leaves the file alone, since the user may
+    have dragged it somewhere else in the meantime. Age-gated so a file
+    that was just saved can never be swept out from under a paste that
+    hasn't finished being added yet.
+    """
+    kept = {e["value"] for e in entries}
+    removed = 0
+    try:
+        cutoff = time.time() - IMG_CACHE_MAX_AGE_S
+        for p in IMG_DIR.glob("qdrop-*.png"):
+            if str(p) in kept:
+                continue
+            try:
+                if p.stat().st_mtime < cutoff:
+                    p.unlink()
+                    removed += 1
+            except OSError:
+                continue
+    except Exception:
+        pass
+    return removed
+
+
 def save_state(entries: list[dict]) -> None:
     try:
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -408,8 +473,12 @@ class Item(Gtk.EventBox):
                 pin = Gtk.Label(label="★")
             pin.set_halign(Gtk.Align.END)
             pin.set_valign(Gtk.Align.START)
-            pin.set_margin_top(-4)
-            pin.set_margin_end(-4)
+            # Margins stay >= 0: GTK3 has no CSS-style negative margins,
+            # and the -4/-4 that used to be here made the 16x16 icon ask
+            # to be allocated 20x20 -- refused, with a size warning
+            # logged on every single pin/unpin and stats refresh.
+            pin.set_margin_top(0)
+            pin.set_margin_end(0)
             overlay.add_overlay(pin)
 
         self.set_tooltip_text(entry_tooltip(entry))
@@ -646,6 +715,36 @@ class Item(Gtk.EventBox):
 # ═══════════════════════════════════════════════════════════════════
 
 
+class FixedWidth(Gtk.Bin):
+    """Container that always requests exactly `width`, whatever it holds.
+
+    The window is set_resizable(False), so GTK sizes it to whatever its
+    content asks for -- and the header is the widest thing in it. With
+    the stats chips asking for their natural width directly, that
+    request changed whenever the chips did: one more digit in a count,
+    or the pinned chip appearing, silently resized the whole window.
+    Pinning the strip's request makes the header's request constant, so
+    the trailing spacer absorbs content changes instead of the window.
+
+    A ScrolledWindow with min/max content width does the same job, but
+    its viewport re-negotiates the *height* of what it holds, which
+    squeezed the chip icons below their minimum (GTK size warnings on
+    every stats update). Overriding the width request alone touches
+    nothing else.
+    """
+
+    def __init__(self, width: int):
+        super().__init__()
+        self._width = width
+
+    def do_get_preferred_width(self):
+        return self._width, self._width
+
+    def do_get_preferred_height(self):
+        child = self.get_child()
+        return child.get_preferred_height() if child else (0, 0)
+
+
 class Dropzone(Gtk.Window):
     def __init__(self):
         super().__init__(title="qdrop")
@@ -668,6 +767,13 @@ class Dropzone(Gtk.Window):
         self.set_app_paintable(True)
 
         # Lock width regardless of content; height stays flexible for slide anim.
+        # WIN_W is only the floor here -- the real lock is applied from
+        # the first size-allocate (_lock_width), because the header's own
+        # minimum, not this constant, is what ultimately decides the
+        # width, and it shifts a little with fonts/icon theme. Declaring
+        # a max the window then exceeds (the old hint said 440 while the
+        # window drew at 569) means the hint is simply a lie that the WM
+        # is free to act on.
         geo = Gdk.Geometry()
         geo.min_width = WIN_W
         geo.max_width = WIN_W
@@ -677,6 +783,8 @@ class Dropzone(Gtk.Window):
             None, geo,
             Gdk.WindowHints.MIN_SIZE | Gdk.WindowHints.MAX_SIZE,
         )
+        self._width_locked = False
+        self.connect("size-allocate", self._lock_width)
 
         self.revealer = Gtk.Revealer()
         self.revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
@@ -695,10 +803,11 @@ class Dropzone(Gtk.Window):
         title.set_name("qdrop-title")
         title.set_xalign(0)
         hdr.pack_start(title, False, False, 0)
-        self.stats_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+        self.stats_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.stats_box.set_name("qdrop-stats")
-        self.stats_box.set_size_request(130, -1)
-        hdr.pack_start(self.stats_box, False, False, 0)
+        stats_clip = FixedWidth(STATS_W)
+        stats_clip.add(self.stats_box)
+        hdr.pack_start(stats_clip, False, False, 0)
         # spacer between stats and buttons — absorbs slack instead of stretching stats
         hdr.pack_start(Gtk.Box(), True, True, 0)
 
@@ -830,7 +939,13 @@ class Dropzone(Gtk.Window):
 
         self.stack.add_named(overlay, "items")
 
+        # info 2 = raw image data. Listed first so GTK prefers it: an
+        # image dragged out of a browser offers its bitmap *and* the page
+        # URL, and taking the URL turns a dropped picture into a link.
         drop_targets = [
+            Gtk.TargetEntry.new("image/png", 0, 2),
+            Gtk.TargetEntry.new("image/jpeg", 0, 2),
+            Gtk.TargetEntry.new("image/bmp", 0, 2),
             Gtk.TargetEntry.new("text/uri-list", 0, 0),
             Gtk.TargetEntry.new("text/plain", 0, 1),
             Gtk.TargetEntry.new("UTF8_STRING", 0, 1),
@@ -870,9 +985,11 @@ class Dropzone(Gtk.Window):
         except Exception:
             pass
         GLib.timeout_add_seconds(3, self._poll_palette)
-        for e in load_state():
+        loaded = load_state()
+        for e in loaded:
             self._add(e, persist=False, at_start=False)
         self._refresh()
+        prune_image_cache(loaded)
 
     def _poll_palette(self):
         try:
@@ -914,6 +1031,26 @@ class Dropzone(Gtk.Window):
         x = geo.x + (geo.width - w) // 2
         y = geo.y + int(geo.height * 0.055)
         return x, y
+
+    def _lock_width(self, _w, alloc):
+        """Freeze the width at whatever the first real allocation was.
+
+        Everything inside now requests a content-independent width, so
+        the first allocation is the width forever -- pin the geometry
+        hints to it so the WM and GTK agree, instead of advertising a
+        constant the window may not actually honour.
+        """
+        if self._width_locked or alloc.width <= 1:
+            return
+        self._width_locked = True
+        geo = Gdk.Geometry()
+        geo.min_width = geo.max_width = alloc.width
+        geo.min_height = 1
+        geo.max_height = 4096
+        self.set_geometry_hints(
+            None, geo,
+            Gdk.WindowHints.MIN_SIZE | Gdk.WindowHints.MAX_SIZE,
+        )
 
     def _place_top_center(self):
         x, y = self._target_xy()
@@ -979,11 +1116,17 @@ class Dropzone(Gtk.Window):
         Without this, reversing a nearly-finished animation replays the
         full duration over a few remaining pixels, which reads as a
         stall rather than a redirect.
+
+        Floored at 6 frames' worth (96ms): _slide_move runs
+        duration//16 steps and eases *out*, so a 3-frame slide puts 70%
+        of the travel in its first frame -- which looks like a snap, the
+        very thing scaling the duration was meant to avoid. Six frames
+        keeps the first one down to ~40% of an already-short distance.
         """
         if full_span <= 0:
             return full_ms
         frac = min(1.0, abs(y_to - y_from) / float(full_span))
-        return max(60, int(full_ms * frac))
+        return max(96, int(full_ms * frac))
 
     # --- menu / search / sort / export ----------------------------
 
@@ -1469,8 +1612,11 @@ class Dropzone(Gtk.Window):
             return True
         return False
 
-    def _paste_clipboard(self):
-        cb = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+    def _paste_clipboard(self, cb=None):
+        # cb is injectable so the tests can drive a private selection
+        # instead of clobbering the real clipboard.
+        if cb is None:
+            cb = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         added = False
         uris = cb.wait_for_uris()
         if uris:
@@ -1480,6 +1626,16 @@ class Dropzone(Gtk.Window):
                     e["type"] == "file" and e["value"] == p for e in self.entries
                 ):
                     self._add({"type": "file", "value": p})
+                    added = True
+        if not added:
+            # Before the text branch: an image copied from a web page
+            # offers both image/png and the page URL as text, and the
+            # text always won -- pasting a picture stored a link.
+            pixbuf = cb.wait_for_image()
+            if pixbuf is not None:
+                path = save_pixbuf(pixbuf)
+                if path:
+                    self._add({"type": "file", "value": path})
                     added = True
         if not added:
             txt = cb.wait_for_text()
@@ -1603,9 +1759,25 @@ class Dropzone(Gtk.Window):
 
     def _on_drop(self, _w, _ctx, _x, _y, data, info, _time):
         added = False
-        if info == 0:
+        if info == 2:
+            pixbuf = data.get_pixbuf()
+            if pixbuf is not None:
+                path = save_pixbuf(pixbuf)
+                if path:
+                    self._add({"type": "file", "value": path})
+                    added = True
+        elif info == 0:
             for uri in (data.get_uris() or []):
                 p = uri_to_path(uri)
+                if p is None and uri.startswith(("http://", "https://")):
+                    # Remote URI (dragging an image straight off a web
+                    # page often offers only this). Keep it as a URL
+                    # entry -- it used to be skipped outright, so the
+                    # drop silently did nothing at all.
+                    if not any(e["value"] == uri for e in self.entries):
+                        self._add({"type": "url", "value": uri})
+                        added = True
+                    continue
                 if not p or not os.path.exists(p):
                     continue
                 if any(e["type"] == "file" and e["value"] == p for e in self.entries):
@@ -1669,7 +1841,20 @@ class Dropzone(Gtk.Window):
 
     def _refresh(self):
         self._update_header_stats()
-        self.stack.set_visible_child_name("items" if self.entries else "empty")
+        name = "items" if self.entries else "empty"
+        child = self.stack.get_child_by_name(name)
+        if child is None:
+            return
+        # show() before set_visible_child(): a Gtk.Stack silently ignores
+        # a request to switch to a child that isn't visible yet, and
+        # nothing in __init__ has been shown at the point the saved
+        # entries are loaded. So the very first show_animated() ran
+        # show_all(), at which point the stack picked its *first* page
+        # ("empty") on its own -- qdrop came up empty despite having
+        # entries, and only looked right on the second open, once
+        # _refresh() ran again with the pages finally visible.
+        child.show()
+        self.stack.set_visible_child(child)
 
     def _update_header_stats(self):
         for c in self.stats_box.get_children():

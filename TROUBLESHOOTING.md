@@ -666,6 +666,160 @@ subsystem. Each entry: **symptom → root cause → fix**.
   fire-on-any-shake behaviour, `--debug` logs why each gesture did or
   did not fire.
 
+### qdrop glitches (looks like it closes and reopens) when shaken while open
+- **Symptom:** shaking with qdrop already on screen makes it flicker as
+  if it were closing and immediately reopening. Same for a second
+  keybind press, or any repeated `qdrop --show`.
+- **Root cause:** `show_animated()` had one path for "open it" and no
+  concept of "it's already open". Every SHOW ran the full reveal:
+  teleport the window to `-height` (fully off-screen, one frame) and
+  slide it back down to the resting position. That *is* a close and a
+  reopen — just a very fast one.
+- **Fix:** the transition is now a state machine over
+  `_visible`/`_hiding`/`_anim_busy()`:
+  - open and settled → don't move at all; `present()` + restart the
+    auto-hide countdown, which is the only useful half of a repeated
+    SHOW.
+  - open and still revealing → let the in-flight slide finish instead of
+    restarting it from the top.
+  - mid-close → *reverse* the slide from wherever the window currently
+    is. Previously `show_animated()` returned early whenever `_hiding`
+    was set, so a shake during the close animation was silently dropped
+    and the window closed anyway. `toggle()` had the matching bug in
+    mirror image: it checked `_visible` first and called
+    `hide_animated()`, which bails while already hiding — so a toggle
+    mid-close did nothing at all.
+- **Related fixes found while testing this:**
+  - `_slide_move()` never cancelled a previous animation. Two overlapping
+    slides left two 16ms timers alive, each calling `move()` with its own
+    idea of the target — they interleave and the window vibrates. Only
+    one slide may now be in flight, and a cancelled slide's `on_done` is
+    dropped (so a reversed close never runs the callback that would mark
+    the window invisible).
+  - A HIDE landing mid-reveal snapped the window down to its resting
+    place and closed from *there*. Both directions now start from the
+    window's real current Y, tracked in `self._y` by a `_move()` wrapper
+    (`get_position()` round-trips X and lags a frame behind the `move()`
+    just issued).
+  - A HIDE landing inside the 20ms first-show allocation gap was ignored
+    by the pending `_begin_slide()` callback, so the window slid into
+    view right after being told to go away. Deferred callbacks now carry
+    an `_anim_gen` stamp and bail when superseded.
+  - A redirected slide scaled its duration by remaining distance, which
+    could leave 3 frames — and `_slide_move` eases *out*, so frame one
+    took 70% of the travel: a snap. Floored at 6 frames (96ms).
+  - SHOW while `_visible` but on a *different* qtile group would have hit
+    the new "already open, do nothing" early-out and never appeared,
+    since qtile unmaps off-group windows without GTK updating `_visible`.
+    `_sync_to_current_qtile_group()` now runs *before* that check; it
+    clears `_mapped` on a cross-group move, which drops through to the
+    full remap path.
+- **Verification:** `qdrop_test.py` gained a 10-section animation suite
+  that drives the real `show_animated`/`hide_animated`/`toggle` and their
+  GLib timers with every GTK/X/qtile call stubbed, recording each
+  requested Y. That makes "does it jump / replay / vibrate?" an
+  assertion (monotonicity, exact endpoints, no teleport past an
+  endpoint, no timer left running) rather than something judged by eye.
+  Covers: plain open/close, SHOW while open, SHOW ×5, SHOW after a group
+  switch, SHOW mid-reveal, SHOW mid-close, HIDE mid-reveal, HIDE in the
+  first-show gap, all three toggle states, no-op/repeat commands, and a
+  hammered show/hide/toggle sequence.
+
+### qdrop opens empty the first time, shows its items only after a reopen
+- **Symptom:** the first time qdrop is opened in a session it shows the
+  "Drop files or text here" empty page even though items are saved.
+  Close it, open it again, and everything is there.
+- **Root cause:** `Gtk.Stack.set_visible_child_name()` is silently
+  ignored when the target page isn't visible yet. `__init__` loads the
+  saved entries and calls `_refresh()` long before anything has been
+  shown, so the switch to the "items" page did nothing and the stack's
+  visible child stayed NULL. The first `show_all()` then made both pages
+  visible at once, and a stack with no visible child adopts the *first*
+  one added — which is "empty". The second open ran `_refresh()` again,
+  by which time the pages were visible and the switch finally took.
+- **Fix:** `_refresh()` now calls `child.show()` on the target page
+  before `set_visible_child()`. With a visible child already selected,
+  the later `show_all()` has nothing to adopt and leaves it alone.
+- **Verification:** `qdrop_test.py::t_window_layout` asserts the page is
+  `items` straight after `__init__` and still `items` after a
+  `show_all()` — reproducible without ever mapping a window.
+
+### qdrop's width changes when you put something in it
+- **Symptom:** the window is subtly wider or narrower at different
+  times — after adding items, after pinning one.
+- **Root cause:** the window is `set_resizable(False)`, so GTK sizes it
+  to whatever its content requests, and the header requests more than
+  anything else: title + stats chips + 6 buttons. The stats chips are
+  rebuilt on every content change, and their width is content-dependent
+  — an extra digit in a count, or the pinned chip appearing at all
+  (it's only created when `n_pin > 0`). So the header's request moved,
+  and the whole window moved with it.
+  - The `WIN_W = 440` in the geometry hints had nothing to do with the
+    real width: the header's own minimum was already ~569px. The hint
+    was simply wrong, and only harmless because qtile didn't act on it.
+- **Fix:** the chip strip lives in a `FixedWidth` container (a `Gtk.Bin`
+  overriding `do_get_preferred_width`) that always requests `STATS_W =
+  210` — sized from the measured worst case (999 items plus a pinned
+  chip = 206px), so nothing clips. The header's request is now constant
+  and the trailing spacer absorbs content changes instead of the window.
+  `WIN_W` is 620, above the header's real 613px minimum, so the header
+  no longer binds; `_lock_width()` then pins the geometry hints to the
+  first actual allocation, so the hints describe the real window
+  instead of a constant it may not honour.
+  - A `Gtk.ScrolledWindow` with min/max content width does the same job
+    in fewer lines, but its viewport re-negotiates the *height* of what
+    it holds, squeezing the chip icons below their 16px minimum and
+    logging GTK size warnings on every stats update.
+- **Also fixed:** the pinned-item overlay icon used `margin_top = -4`,
+  `margin_end = -4`. GTK3 has no CSS-style negative margins; the 16x16
+  icon was asking to be allocated 20x20, which GTK refuses with
+  `adjust_size_allocation must keep allocation inside original bounds`
+  logged on every pin.
+- **Verification:** `t_window_layout` measures the window's requested
+  width across 2 entries → 22 entries (two-digit counts) → a pinned chip
+  → empty, and requires all four to be identical; it also asserts the
+  header minimum still fits inside `WIN_W`, so a future font or
+  icon-theme change fails the suite instead of silently resizing the
+  window. Confirmed on the live daemon with `xdotool getwindowgeometry`:
+  622x329 across repeated shows.
+
+### Pasting an image from a web page into qdrop stores a link instead
+- **Symptom:** copy an image in the browser, `Ctrl+V` into qdrop, and
+  you get a URL entry rather than the picture.
+- **Root cause:** `_paste_clipboard()` only ever asked the clipboard for
+  URIs and then text. Copying an image in a browser puts the *bitmap*
+  on the clipboard (`image/png` and friends) together with the page URL
+  as `text/plain` — so the text branch always won. Nothing in qdrop
+  ever requested the image target.
+- **Fix:** paste now asks for URIs → **image** → text, in that order.
+  Image data is written to `~/.cache/qdrop-images/qdrop-<stamp>.png` by
+  `save_pixbuf()` and added as a normal file entry, which gets it a
+  thumbnail, `imv` preview and drag-out-to-another-app for free (every
+  qdrop entry is a path, a URL or text — there is no in-memory blob
+  entry type).
+- **Same gap on the drop path, also fixed:** the drop target list was
+  uri-list + text only, so an image dragged off a web page arrived as
+  the page URL. `image/png`/`jpeg`/`bmp` are now listed *first*, so GTK
+  prefers the bitmap over the URL.
+- **Also fixed:** a drop whose uri-list held an `http(s)` URI (common
+  when dragging straight off a page) was skipped outright by the
+  `uri_to_path()` check — the drop silently did nothing at all. Remote
+  URIs are now kept as URL entries.
+- **Housekeeping:** `prune_image_cache()` runs at daemon start and
+  deletes saved images that no entry references *and* that are older
+  than 30 days. `remove_entry()` deliberately does not delete the file —
+  it may have been dragged somewhere else since.
+- **Verification:** `qdrop_test.py::t_image_paste_drop` covers
+  `save_pixbuf` (including two saves in the same second), paste of an
+  image, paste of text-only (still a URL entry), drop of raw image data,
+  drop of a remote URI, drop of a local file, and the three prune cases.
+  It drives a private selection atom rather than the real clipboard, so
+  running the suite doesn't clobber what you have copied. Additionally
+  confirmed against a genuine cross-process X selection owned by another
+  GTK process (the in-process clipboard path is short-circuited by GTK
+  and so proves less): qdrop negotiated `image/png` off it, wrote the
+  file, and it decoded back at the right dimensions.
+
 ### SmartWidgetBox chip-list cascade-flash animation (CPU/Mem, updates/disk/volume groups)
 - **Symptom:** N/A — this documents verification of an animation added
   in the same pass as the qdrop fixes above, not a bug.
