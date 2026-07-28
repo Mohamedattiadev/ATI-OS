@@ -1418,3 +1418,67 @@ Append entries here as you hit them. Keep the same tri-format
   repo on the day you run it.
 - The only real proof is a fresh-VM run; see "Testing on a fresh Arch VM"
   above. Treat the dry-run as a structural check, not a guarantee.
+
+### The update safety net — what runs, and where each piece lives
+Three layers, deliberately at different levels so no single failure
+removes all protection.
+
+**1. pacman hook — `/etc/pacman.d/hooks/00-preflight.hook`**
+Runs `PreTransaction` on *every* Install/Upgrade, whatever launched it:
+dcli, yay, paru, or bare `pacman`. `AbortOnFail` stops the transaction
+before a single file is written. Refuses under 3G free on `/`.
+- **Why not just a dcli hook:** dcli is third-party. If its config format
+  changes, or `update_hooks` is dropped, a dcli-only guard stops working
+  **silently** — and you find out at the moment it was supposed to save
+  you. A pacman hook has no wrapper to bypass and no third-party format
+  to drift.
+- Installed by wizard module `pacman-guard`. The script itself
+  (`AtiScriptsV1/pacman-preflight`) is symlinked by `ati-scripts`, so
+  `pacman-guard` must run **after** it in `MOD_ORDER`.
+
+**2. dcli pre_update — `arch-config/scripts/pre-update.sh`**
+Richer checks, but only on `dcli update`. Blocks on: <6G free,
+snapshots on the root device, `pacman -Dk` inconsistency. Warns on:
+soname bump + AUR packages, unread Arch news, unmerged `.pacnew`, thin
+pacman cache, high-impact packages.
+
+**3. dcli post_update — `arch-config/scripts/post-update.sh`**
+Runs after. Scans AUR packages for unresolved libraries, and on a hit
+pushes the exact `yay -S --rebuild …` command to a dunst popup **and the
+clipboard** via `post-update-notify`, because a fix you must retype from
+scrollback is a fix that does not get applied. Also flags kernel
+mismatch (reboot) and new `.pacnew` files.
+
+### Recovery ladder, in the order to try it
+1. **App misbehaves, system fine** → `sudo downgrade <pkg>`. Needs the
+   pacman cache, which is why it must not be over-trimmed.
+2. **AUR app won't start** ("cannot open shared object file") → the
+   post-update hook already gave you the rebuild command.
+3. **System won't boot** → pick **"Arch Linux (LTS fallback)"** at the
+   boot menu and repair from a working system. This is why `linux-lts` is
+   declared in `base.yaml`.
+4. **Fallback kernel also fails** → Arch ISO, `arch-chroot`, then
+   `pacman-static` — statically linked, so it still runs when a `glibc`
+   upgrade has broken every dynamically linked binary including `pacman`.
+5. **Unrepairable** → Timeshift restore. Snapshots live on `/home`
+   (`/dev/sda3`), so they survive a dead root.
+
+### Bootloader: this machine uses systemd-boot, not GRUB
+- Easy to get wrong: `grub` is installed and `/boot/grub/grub.cfg`
+  exists, but `efibootmgr` shows `BootCurrent` →
+  `\EFI\systemd\systemd-bootx64.efi`. Running `grub-mkconfig` appears to
+  succeed and changes nothing that boots.
+- Entries live in `/boot/loader/entries/*.conf`. Verify with
+  `bootctl list`, never by reading `grub.cfg`.
+- The primary entry is a **Unified Kernel Image**
+  (`/EFI/Linux/arch-linux.efi`) with its cmdline baked in — which is why
+  `arch.conf`'s `options` line can carry a stale PARTUUID and still boot.
+  **Take kernel options from `/proc/cmdline`**, which is authoritative,
+  not from `arch.conf`.
+- `linux-lts` produces no UKI, so its entry (`arch-lts.conf`, kept in
+  `arch-config/boot/`) is a plain type-1 entry with `linux` + `initrd`
+  lines. It is machine-specific (PARTUUID), so the wizard does **not**
+  write it — recreate it by hand on a new machine.
+- `loader.conf` shipped with `#timeout 3` commented out, which suppresses
+  the menu entirely. A fallback entry you cannot select is not a
+  fallback; set a real `timeout`.

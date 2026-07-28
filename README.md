@@ -94,7 +94,7 @@ git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
 That is it. `./install.sh` fires the wizard in unattended mode:
 
 - Auto-bootstraps `gum` via pacman (~2 s)
-- Runs all 27 modules end-to-end (system pkgs · dcli sync · dotfile
+- Runs all 29 modules end-to-end (system pkgs · dcli sync · dotfile
   stow · themes · brave/chrome policy · piper + whisper models · …)
 - Keeps `sudo` alive for the whole run (primed once, refreshed in the
   background) so long AUR builds don't silently drop package installs
@@ -122,37 +122,39 @@ progress bars, and doom-emacs colored badges. On step failure it
 shows a red-bordered error tail and prompts **retry · skip · quit**
 (unless `--yes`, which auto-skips).
 
-Done. One command. Bootstrap covers all 27 modules, in order:
+Done. One command. Bootstrap covers all 29 modules, in order:
 
 | # | id | What |
 | - | -- | ---- |
-| 1  | `sanity` | Sanity checks (Arch, X11, dotfiles present) |
-| 2  | `bootstrap` | Bootstrap pkgs (git, stow, xorg-server, base-devel) |
-| 3  | `yay` | Build `yay-bin` from AUR if absent |
-| 4  | `dcli` | Install `dcli-arch-git` |
-| 5  | `stow` | Stow dotfiles into `$HOME` |
-| 6  | `arch-config` | Sync `arch-config` host file to current username |
-| 7  | `dcli-sync` | **`dcli sync --force`** — installs every declared pkg (self-verifies + retries) |
-| 8  | `cargo` | Cargo tools (`rustup default stable` + `pomodoro-tui`) |
-| 9  | `ati-scripts` | Install AtiScriptsV1 to `/usr/local/bin` |
-| 10 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
-| 11 | `xinit` | Write `~/.xinitrc` (qtile + picom + xcape + tray + copyq) |
-| 12 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
-| 13 | `xmodmap` | Write `~/.Xmodmap` (Caps hold = Alt, xcape restores tap Caps) |
-| 14 | `lid` | Lid close = ignore (`systemd-logind`) |
-| 15 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
-| 16 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
-| 17 | `piper` | Download Piper voices (EN + DE) |
-| 18 | `whisper` | Download Whisper `small.en` model |
-| 19 | `passwordless-sudo` | Passwordless sudo |
-| 20 | `ownership` | Fix dotfiles ownership |
-| 21 | `disable-dm` | Disable all display managers |
-| 22 | `candy-icons` | Install candy-icons theme |
-| 23 | `wallpapers` | Clone wallpaper collection |
-| 24 | `speed` | System speed tweaks (`speed_boost.sh`) |
-| 25 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
-| 26 | `browser-flags` | brave/chrome/chromium wal theme extension flags |
-| 27 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| 1 | `sanity` | Sanity checks (Arch, X11, dotfiles present) |
+| 2 | `bootstrap` | Bootstrap pkgs (git, stow, xorg-server, base-devel) |
+| 3 | `yay` | Build `yay-bin` from AUR if absent |
+| 4 | `dcli` | Install `dcli-arch-git` |
+| 5 | `stow` | Stow dotfiles into `$HOME` |
+| 6 | `arch-config` | Sync `arch-config` host file to current username |
+| 7 | `dcli-sync` | **`dcli sync --force`** — installs every declared pkg (self-verifies + retries) |
+| 8 | `cargo` | Cargo tools (`rustup default stable` + `pomodoro-tui`) |
+| 9 | `ati-scripts` | Install AtiScriptsV1 to `/usr/local/bin` |
+| 10 | `pacman-guard` | PreTransaction hook: refuse any pacman/yay/dcli upgrade when `/` is too full |
+| 11 | `login-shell` | `chsh` to fish so the TTY matches kitty (`letsgo`, aliases) |
+| 12 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
+| 13 | `xinit` | Write `~/.xinitrc` (qtile + picom + xcape + tray + copyq) |
+| 14 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
+| 15 | `xmodmap` | Write `~/.Xmodmap` (Caps hold = Alt, xcape restores tap Caps) |
+| 16 | `lid` | Lid close = ignore (`systemd-logind`) |
+| 17 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
+| 18 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
+| 19 | `piper` | Download Piper voices (EN + DE) |
+| 20 | `whisper` | Download Whisper `small.en` model |
+| 21 | `passwordless-sudo` | Passwordless sudo |
+| 22 | `ownership` | Fix dotfiles ownership |
+| 23 | `disable-dm` | Disable all display managers |
+| 24 | `candy-icons` | Install candy-icons theme |
+| 25 | `wallpapers` | Clone wallpaper collection |
+| 26 | `speed` | System speed tweaks (`speed_boost.sh`) |
+| 27 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
+| 28 | `browser-flags` | brave/chrome/chromium wal theme extension flags |
+| 29 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
 
 No manual follow-up. Everything in `.config` works on first `startx`.
 
@@ -314,6 +316,17 @@ Window widths/heights + placement survive the restart.
 `color3` warm-fill, `color4` cool-fill, `color5` complement, `color6` info/cyan.
 qtile bar accents pin to `color2`; test harness at
 `.config/qtile/scripts/wal-visual-test.py` validates 12 hue buckets end-to-end.
+
+**System updates** — use `dcli update` (or `safe-update`), not bare
+`pacman -Syu`. Three layers guard it: a pacman `PreTransaction` hook that
+refuses when `/` is too full (fires for *any* tool, so it cannot be
+bypassed), a dcli `pre_update` hook that blocks on low space, snapshots
+stored on the root device, or an inconsistent package DB, and a
+`post_update` hook that finds AUR packages broken by a library soname
+bump and puts the rebuild command straight on your clipboard. Recovery
+ladder: `downgrade` → LTS fallback kernel at the boot menu →
+`pacman-static` from the Arch ISO → Timeshift restore from `/home`. See
+TROUBLESHOOTING.md "The update safety net".
 
 **Wallpaper vs. theme** — changing the wallpaper re-derives the palette
 **only when the active mode is already `wal`**, since `wal` is the mode

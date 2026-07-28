@@ -221,7 +221,7 @@ run() {
 declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
   sanity bootstrap yay dcli stow arch-config dcli-sync cargo ati-scripts
-  login-shell
+  pacman-guard login-shell
   touchpad xinit xresources xmodmap lid image-envs flatpak piper whisper
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes browser-flags chrome-policy
@@ -238,6 +238,7 @@ _reg dcli-sync         "dcli sync (all pkgs)" System   "Install every declared p
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
 _reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"
+_reg pacman-guard      "Pacman safety hook"  System    "PreTransaction gate: refuse upgrades when / is too full"  "step_pacman_guard"
 _reg login-shell       "Fish login shell"    System    "chsh to fish so the TTY matches kitty (letsgo, aliases)" "step_login_shell"
 _reg xinit             ".xinitrc"            Dotfiles  "Auto-start qtile + picom + cursor size"                 "step_xinit"
 _reg xresources        ".Xresources"         Dotfiles  "Xcursor size 24 + Breeze theme (load via xrdb)"         "step_xresources"
@@ -310,6 +311,26 @@ step_cargo() {
   command -v cargo >/dev/null && run "cargo install pomodoro-tui" || _WARN "cargo missing, skip"
 }
 step_ati_scripts()  { run "cd $DOTFILES_DIR/.config/AtiScriptsV1 && ./install.sh"; }
+step_pacman_guard() {
+  # Installs the PreTransaction hook that refuses a package operation when
+  # / is too full to unpack safely. This has to be a pacman hook rather
+  # than a dcli update_hook: dcli is third-party, and a dcli-only guard
+  # disappears silently if its config format changes. A pacman hook runs
+  # for dcli, yay, paru and bare pacman alike, with nothing to bypass.
+  #
+  # The script itself lives in AtiScriptsV1 and is symlinked into
+  # /usr/local/bin by step_ati_scripts, so only the .hook needs placing.
+  local hook="$DOTFILES_DIR/.config/arch-config/pacman-hooks/00-preflight.hook"
+  if [[ ! -f "$hook" ]]; then
+    _WARN "pacman preflight hook missing from repo — skipping"
+    return 0
+  fi
+  run "sudo install -Dm644 $hook /etc/pacman.d/hooks/00-preflight.hook"
+  # Fail loudly here rather than at the moment it was supposed to save you.
+  if (( ! DRY_RUN )) && [[ ! -x /usr/local/bin/pacman-preflight ]]; then
+    _WARN "/usr/local/bin/pacman-preflight not found — run the ati-scripts module first"
+  fi
+}
 step_touchpad()     { run "sudo tee /etc/X11/xorg.conf.d/30-touchpad.conf > /dev/null << 'EOF'
 Section \"InputClass\"
     Identifier \"Touchpad\"
@@ -654,6 +675,7 @@ uninstall_xinit()            { run "rm -f $HOME/.xinitrc"; }
 uninstall_xmodmap()          { run "rm -f $HOME/.Xmodmap"; }
 uninstall_image_envs()       { run "sed -i '/VIPS_WARNING/d' $HOME/.profile 2>/dev/null || true"; }
 uninstall_touchpad()         { run "sudo rm -f /etc/X11/xorg.conf.d/30-touchpad.conf"; }
+uninstall_pacman_guard()     { run "sudo rm -f /etc/pacman.d/hooks/00-preflight.hook"; }
 uninstall_login_shell()      { run "sudo chsh -s /usr/bin/bash $(id -un)"; }
 uninstall_passwordless_sudo(){ run "sudo rm -f /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
 uninstall_browser_flags() {
@@ -738,6 +760,7 @@ UMOD_CMD[arch-config]="uninstall_arch_config"
 UMOD_CMD[dcli-sync]="uninstall_dcli_sync"
 UMOD_CMD[cargo]="uninstall_cargo"
 UMOD_CMD[ati-scripts]="uninstall_ati_scripts"
+UMOD_CMD[pacman-guard]="uninstall_pacman_guard"
 UMOD_CMD[login-shell]="uninstall_login_shell"
 UMOD_CMD[touchpad]="uninstall_touchpad"
 UMOD_CMD[xinit]="uninstall_xinit"
