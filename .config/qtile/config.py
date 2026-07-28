@@ -1624,6 +1624,42 @@ def auto_enable_passthrough(chord_name):
 # -----------------------------------
 
 
+def _cycle_keyboard(step=1):
+    """Cycle the w_lang chip's layout forward (step=1) or back (step=-1).
+
+    KeyboardLayout ships only next_keyboard(), so right-click-to-go-back
+    has to walk configured_keyboards itself. Reuses the widget's own
+    backend + option so the layout is set exactly the way the widget
+    would have set it, then tick()s to repaint immediately rather than
+    waiting for the next poll.
+
+    Not reachable from `qtile cmd-obj -f eval`: that runs in the Qtile
+    object's namespace, not this module's. Test it by clicking the chip
+    (or via xdotool), not through eval.
+    """
+    w = qtile.widgets_map.get("w_lang")
+    if not w:
+        return
+    try:
+        kbs = list(w.configured_keyboards)
+        if not kbs:
+            return
+        current = w.backend.get_keyboard()
+        idx = kbs.index(current) if current in kbs else 0
+        target = kbs[(idx + step) % len(kbs)]
+        # set_keyboard() already reloads ~/.Xmodmap itself after running
+        # setxkbmap, so there is no need to spawn xmodmap again here.
+        w.backend.set_keyboard(target, w.option)
+        w.tick()
+    except Exception:
+        # logger is imported lazily elsewhere in this file, so import it
+        # here rather than relying on a module-level name that does not
+        # exist -- otherwise the handler itself raises NameError.
+        from libqtile.log_utils import logger
+
+        logger.exception("_cycle_keyboard failed")
+
+
 def set_kb(layout):
     @lazy.function
     def _set(qtile):
@@ -2198,15 +2234,29 @@ def right_side_widgets():
             ewidget.KeyboardLayout,
             name="w_lang",
             configured_keyboards=["us", "ara", "tr", "de"],
+            # The flag is a colour-emoji glyph and renders noticeably
+            # smaller than surrounding text at the same nominal size. A
+            # pango span scales only the flag, leaving the "EN" label at
+            # bar size -- raising the widget fontsize instead would grow
+            # the text too and misalign this chip with its neighbours.
+            # Requires markup=True.
             display_map={
-                "us": "🇺🇸 EN",
-                "ara": "🇸🇦 AR",
-                "tr": "🇹🇷 TR",
-                "de": "🇩🇪 DE",
+                "us": "<span size='15000'>🇺🇸</span> EN",
+                "ara": "<span size='15000'>🇸🇦</span> AR",
+                "tr": "<span size='15000'>🇹🇷</span> TR",
+                "de": "<span size='15000'>🇩🇪</span> DE",
             },
+            markup=True,
             fmt="{}",
             padding=11,
             foreground=colors[4],
+            mouse_callbacks={
+                # Left cycles forward, right cycles back. Upstream ships
+                # only next_keyboard, so _cycle_keyboard walks the same
+                # configured_keyboards list in either direction.
+                "Button1": lambda: _cycle_keyboard(1),
+                "Button3": lambda: _cycle_keyboard(-1),
+            },
         ),
         # Clock
         chip(
