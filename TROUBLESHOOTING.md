@@ -870,6 +870,35 @@ should come up cleanly.
   `--uninstall` cleanup, keep `_reg` with a no-op `MOD_CMD` (see
   `step_flatpak` — install mode just prints "nothing to install").
 
+### New wizard module silently never runs (`_reg` is not enough)
+- **Symptom:** you add `_reg <id> ... "step_<id>"`, `bash -n` passes, the
+  function is obviously defined — and the module simply never appears in
+  the picker or the run. No error, no warning, nothing to grep for.
+- **Root cause:** `_reg()` only populates the `MOD_TITLE` / `MOD_GROUP` /
+  `MOD_DESC` / `MOD_CMD` lookup maps. What the wizard actually *iterates*
+  is the hand-maintained `MOD_ORDER=( ... )` array just above the `_reg`
+  block. An id missing from `MOD_ORDER` is invisible: `--yes` does
+  `PICKED_IDS=("${MOD_ORDER[@]}")`, and the picker builds its options from
+  the same array.
+- **Uninstall is a third, separate registry.** Defining
+  `uninstall_<name>()` does nothing on its own — there is no
+  dash-to-underscore auto-dispatch. You must also add
+  `UMOD_CMD[<id>]="uninstall_<name>"` to the explicit table.
+- **So adding one module means editing four places:**
+  1. `MOD_ORDER` — position determines run order (e.g. anything needing
+     fish/packages must come after `dcli-sync`)
+  2. `_reg <id> "<title>" <group> "<desc>" "step_<name>"`
+  3. `step_<name>() { ... }`
+  4. `UMOD_CMD[<id>]="uninstall_<name>"` + the `uninstall_<name>()` body
+- **Verify both directions before committing** — the dry-runs are cheap
+  and would have caught this immediately:
+  ```sh
+  ./wizard.sh --dry-run --yes           | grep -i '<your module title>'
+  ./wizard.sh --uninstall --dry-run --yes | grep -i '<your module title>'
+  ```
+  Also confirm the step is *idempotent*: re-running the wizard on a
+  configured machine must print "already …" and change nothing.
+
 ### Wizard dies mid-run instead of showing a failed step
 - **Symptom:** wizard exits entirely with
   `wizard.sh: internal bash error (rc=1) at line NNN` instead of the

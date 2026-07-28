@@ -221,6 +221,7 @@ run() {
 declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
   sanity bootstrap yay dcli stow arch-config dcli-sync cargo ati-scripts
+  login-shell
   touchpad xinit xresources xmodmap lid image-envs flatpak piper whisper
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes browser-flags chrome-policy
@@ -732,6 +733,7 @@ UMOD_CMD[arch-config]="uninstall_arch_config"
 UMOD_CMD[dcli-sync]="uninstall_dcli_sync"
 UMOD_CMD[cargo]="uninstall_cargo"
 UMOD_CMD[ati-scripts]="uninstall_ati_scripts"
+UMOD_CMD[login-shell]="uninstall_login_shell"
 UMOD_CMD[touchpad]="uninstall_touchpad"
 UMOD_CMD[xinit]="uninstall_xinit"
 UMOD_CMD[xmodmap]="uninstall_xmodmap"
@@ -948,7 +950,7 @@ _finale_summary() {
 page_finale() {
   echo
   _H1 "Next steps"
-  _INFO "  · Log out to TTY and run:  startx"
+  _INFO "  · Log out to TTY and run:  letsgo   (or: startx)"
   _INFO "  · Reload qtile any time:   qtile cmd-obj -o cmd -f reload_config"
   _INFO "  · Update system:           dcli sync"
   echo
