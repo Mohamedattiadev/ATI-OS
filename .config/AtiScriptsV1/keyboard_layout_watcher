@@ -39,7 +39,7 @@ while true; do
     if [[ -n "$prev_layout" ]]; then
       notify-send \
         -u low \
-        -t 1500 \
+        -t 2500 \
         -h string:x-dunst-stack-tag:kblayout \
         "$(layout_label "$current_layout")" \
         "keyboard layout"

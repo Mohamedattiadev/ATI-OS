@@ -73,9 +73,15 @@ pamac-tray-icon-plasma & # Update notifier
 
 (
   sleep 40
-  keyboard_layout_watcher &
-  adhkar &
-  battery-events &
+  # These are long-running `while true` daemons, and autostart.sh runs
+  # again on every qtile restart -- with no guard each restart left
+  # another copy alive. Three stale keyboard_layout_watcher processes is
+  # what made one layout switch pop up three notifications at once, and
+  # kept a pre-edit build of the script running long after it changed.
+  # Same pgrep pattern as the python daemons below.
+  pgrep -f 'keyboard_layout_watcher$' >/dev/null || keyboard_layout_watcher &
+  pgrep -f 'adhkar$' >/dev/null || adhkar &
+  pgrep -f 'battery-events$' >/dev/null || battery-events &
   pgrep -f 'scripts/qdrop.py$' >/dev/null || python3 ~/.config/qtile/scripts/qdrop.py &
   pgrep -f 'scripts/qupdate.py$' >/dev/null || python3 ~/.config/qtile/scripts/qupdate.py --daemon &
   pgrep -f qdrop_watch.py >/dev/null || python3 ~/.config/qtile/scripts/qdrop_watch.py &
