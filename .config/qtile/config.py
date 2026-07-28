@@ -774,22 +774,31 @@ def _restore_layout_state():
 _WINDOW_GROUP_FILE = os.path.expanduser("~/.cache/qtile/window_group_state.json")
 _RESTORED_WIN_MAP = {}   # wid(str) -> group_name; consulted by client_new
 _RESTORED_FOCUS = {}     # group_name -> [wid, ...] focus order
+# wid(str) set that was minimized at save time. qtile's restart pickle does not
+# carry minimized state, so a reload used to un-minimize everything -- most
+# visibly the Mod+Shift+S summary, which client_managed then re-floated centre
+# screen. Consulted by _float_and_center_sum and re-asserted by the restore pass.
+_RESTORED_MINIMIZED = set()
 
 
 def _save_window_group_state():
     try:
         wmap = {}
         focus = {}
+        minimized = []
         for g in qtile.groups:
             order = []
             for w in g.windows:
                 wid = str(w.wid)
                 wmap[wid] = g.name
                 order.append(wid)
+                if getattr(w, "minimized", False):
+                    minimized.append(wid)
             focus[g.name] = order
         os.makedirs(os.path.dirname(_WINDOW_GROUP_FILE), exist_ok=True)
         with open(_WINDOW_GROUP_FILE, "w") as f:
-            _json.dump({"map": wmap, "focus": focus}, f)
+            _json.dump({"map": wmap, "focus": focus,
+                        "minimized": minimized}, f)
     except Exception:
         pass
 
@@ -1294,6 +1303,25 @@ def _load_window_group_state():
         _RESTORED_FOCUS = {}
 
 
+def _load_minimized_state():
+    """Read just the minimized wids, at config-import time.
+
+    Deliberately separate from _load_window_group_state, which only runs on
+    startup_complete: the boot scan fires client_managed for every adopted
+    window BEFORE that, and _float_and_center_sum needs this set already
+    populated or the summary window floats open for a moment first.
+    """
+    global _RESTORED_MINIMIZED
+    try:
+        with open(_WINDOW_GROUP_FILE) as f:
+            _RESTORED_MINIMIZED = set(_json.load(f).get("minimized", []))
+    except Exception:
+        _RESTORED_MINIMIZED = set()
+
+
+_load_minimized_state()
+
+
 def _restore_window_group_state():
     """Move already-adopted windows to their saved groups + restore
     per-group focus order. Runs after startup_complete so all windows
@@ -1328,6 +1356,18 @@ def _restore_window_group_state():
                         g.focus(win, warp=False)
                     except Exception:
                         pass
+        # Last, after togroup() and focus() have both had their way with these
+        # windows -- either can leave a window mapped again.
+        for wid_str in list(_RESTORED_MINIMIZED):
+            try:
+                win = qtile.windows_map.get(int(wid_str))
+            except Exception:
+                continue
+            if win is not None and not getattr(win, "minimized", False):
+                try:
+                    win.minimized = True
+                except Exception:
+                    pass
     except Exception:
         pass
 
@@ -1389,6 +1429,17 @@ def _float_and_center_sum(client):
     if not is_sum_window(client):
         return
 
+    # Re-adopted across a reload while minimized: leave it minimized. Without
+    # this the window is floated centre screen here and only re-hidden by the
+    # restore pass ~0.14s later, which reads as a flash. float_center_sum()
+    # un-minimizes as part of _enablefloating(), so it cannot run first.
+    if str(client.wid) in _RESTORED_MINIMIZED:
+        try:
+            client.minimized = True
+        except Exception:
+            pass
+        return
+
     float_center_sum(client)
 
 
@@ -1396,6 +1447,9 @@ def _float_and_center_sum(client):
 def _drop_window_group(client):
     try:
         _RESTORED_WIN_MAP.pop(str(client.wid), None)
+        # X reuses wids, so a stale entry here would minimize an unrelated
+        # window that happens to inherit the number.
+        _RESTORED_MINIMIZED.discard(str(client.wid))
     except Exception:
         pass
 
