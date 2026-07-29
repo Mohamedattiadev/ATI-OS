@@ -1,0 +1,23 @@
+[Unit]
+Description=Reassert sane ALSA mic capture gain after WirePlumber
+# WirePlumber applies its own default ALSA mixer levels to hardware nodes
+# on session start (Capture/Internal Mic Boost reset to 100%/100% here,
+# ~60dB combined -- enough to saturate/clip the mic into constant
+# distorted noise even in a quiet room), independent of and overriding
+# whatever `alsactl restore` set moments earlier. This runs after
+# WirePlumber has had a chance to do that, then reasserts the levels that
+# actually keep the mic from clipping.
+After=wireplumber.service
+Wants=wireplumber.service
+
+[Service]
+Type=oneshot
+# Give WirePlumber a moment to finish its own device init before we
+# reassert -- otherwise this can win the race only for WirePlumber to
+# stomp it right back moments later.
+ExecStartPre=/usr/bin/sleep 3
+ExecStart=/usr/bin/amixer -c 0 sset 'Internal Mic Boost' 0
+ExecStart=/usr/bin/amixer -c 0 sset 'Capture' 75%%
+
+[Install]
+WantedBy=default.target
