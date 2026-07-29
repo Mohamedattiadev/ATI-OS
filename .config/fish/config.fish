@@ -297,42 +297,91 @@ function img
         $argv
 end
 
-#pwd copy to cliboard func 
-#TODO: needed to be modifed
-function pwd
-    set full_path (builtin pwd)
-    echo $full_path
+# Shared helpers for the pwd/which/path clipboard trio below: collapse $HOME
+# to ~ (so copied paths read like they would in a prompt) and escape spaces
+# (so the copied text pastes straight into a shell command without quoting).
+function __fish_display_path
+    set -l p (string replace --regex "^$HOME" "~" -- $argv[1])
+    string replace -a " " "\ " -- $p
+end
 
-    set display_path (string replace --regex "^$HOME" "~" $full_path)
-
+function __fish_clip_copy
     if not type -q xclip
         echo "xclip not found. Installing with yay..."
         yay -S --noconfirm xclip
     end
-
-    echo $display_path | xclip -selection clipboard
+    printf '%s' "$argv[1]" | xclip -selection clipboard
 end
 
-function ppwd
-    set full_path (builtin pwd)
+# pwd: print the cwd (optionally with a path appended) and copy it to the
+# clipboard, ~-collapsed and space-escaped. Absorbs the old "ppwd" variant --
+# one command, always copies, no need to remember which name did what.
+function pwd
+    set -l full_path (builtin pwd)
 
     if test (count $argv) -ge 1
         set full_path "$full_path/$argv[1]"
     end
 
-    # replace HOME with ~
-    set display_path (string replace --regex "^$HOME" "~" $full_path)
+    set -l display_path (__fish_display_path $full_path)
+    echo $display_path
+    __fish_clip_copy $display_path
+end
 
-    # 🔧 escape spaces ONLY (no quotes, no fish escaping)
-    set escaped_path (string replace -a " " "\ " -- $display_path)
+# which: resolve like the real `which`, but also copy the resolved path(s)
+# to the clipboard using the same ~-collapse/escape convention as pwd/path.
+function which
+    set -l resolved (command which $argv 2>/dev/null)
 
-    if not type -q xclip
-        echo "xclip not found. Installing with yay..."
-        yay -S --noconfirm xclip
+    if test -z "$resolved"
+        command which $argv
+        return 1
     end
 
-    echo $escaped_path
-    echo $escaped_path | xclip -selection clipboard
+    set -l display_paths
+    for p in $resolved
+        set -a display_paths (__fish_display_path $p)
+    end
+
+    set -l joined (string join \n $display_paths)
+    echo $joined
+    __fish_clip_copy $joined
+end
+
+# path: fish ships a builtin `path` with its own subcommands (path
+# extension/resolve/basename/...) -- scripts in this repo rely on those, so
+# pass those straight through unshadowed. With no recognised subcommand,
+# treat the args as files: resolve to an absolute path (like realpath),
+# print ~-collapsed when under $HOME, and copy the result to the clipboard.
+function path
+    set -l builtin_subcommands basename dirname extension filter is mtime normalize resolve sort change-extension
+    if test (count $argv) -ge 1; and contains -- $argv[1] $builtin_subcommands
+        builtin path $argv
+        return $status
+    end
+
+    if test (count $argv) -lt 1
+        echo "Usage: path <file_or_dir> ..." >&2
+        return 1
+    end
+
+    set -l display_paths
+    for arg in $argv
+        set -l resolved (realpath -- $arg 2>/dev/null)
+        if test -z "$resolved"
+            echo "path: no such file or directory: $arg" >&2
+            continue
+        end
+        set -a display_paths (__fish_display_path $resolved)
+    end
+
+    if test (count $display_paths) -eq 0
+        return 1
+    end
+
+    set -l joined (string join \n $display_paths)
+    echo $joined
+    __fish_clip_copy $joined
 end
 
 #NOTE:  used to source all the config files (fish, bash, zsh, etc)
