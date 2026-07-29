@@ -36,6 +36,7 @@ import subprocess
 import sys
 import time
 import threading
+import weakref
 from libqtile import bar, hook, layout, qtile, widget
 from qtile_extras.widget.decorations import RectDecoration
 from qtile_extras import widget as ewidget
@@ -1579,6 +1580,8 @@ TOOLTIP_BY_NAME = {
     "2nd_system_widgetbox": "Updates · Disk · Volume",
     "wallpaper_toggle": "Wallpaper picker",
     "systray_widgetbox": "System tray",
+    "w_layout": "Layout · R-click to cycle",
+    "w_updates": "Pending updates · click → update manager",
     "w_cpu": "CPU load · click → mission-center",
     "w_mem": "RAM used · click → btop",
     "w_disk": "Disk free (/ + /home) · click → notify",
@@ -1623,12 +1626,38 @@ def _kill_all_tooltips(except_w=None):
             pass
 
 
+_tooltip_widget_cache = {}
+
+
+def _tooltip_widget_class(cls):
+    """Cached `cls + TooltipMixin`, keeping cls's own __name__.
+
+    Two separate bugs lived here. install_bar_tooltips() runs at least
+    twice per startup and again 0.1s after every SmartWidgetBox toggle,
+    and this used to mint a brand-new class object on each pass -- an
+    unbounded class leak. It also renamed the class to "<X>WithTooltip",
+    so on the SECOND pass the TOOLTIP_BY_CLASS lookup no longer matched
+    and those widgets silently dropped out of _TOOLTIP_WIDGETS. That is
+    the installed=19 / installed=14 alternation in qtile.log.
+    """
+    if cls not in _tooltip_widget_cache:
+        new_cls = type(cls.__name__, (cls, TooltipMixin), {})
+        new_cls.__qualname__ = f"{cls.__name__}WithTooltip"
+        _tooltip_widget_cache[cls] = new_cls
+    return _tooltip_widget_cache[cls]
+
+
 def _install_tooltip(widget_, text):
     if not text:
         return
+    # An unconfigured widget has no .bar/.drawer, so touching it later
+    # (calculate_length, _show_tooltip) raises. It also should not be in
+    # a bar at all -- see _SafeLengthMixin.
+    if not getattr(widget_, "configured", False):
+        return
     cls = widget_.__class__
     if not issubclass(cls, TooltipMixin):
-        new_cls = type(cls.__name__ + "WithTooltip", (cls, TooltipMixin), {})
+        new_cls = _tooltip_widget_class(cls)
         try:
             widget_.__class__ = new_cls
         except TypeError:
@@ -1828,16 +1857,80 @@ def _wrap_mpris_hover(widget_):
     widget_.mouse_leave = _leave
 
 
+_TOOLTIP_TEXT_CACHE = {}
+
+
 def _make_tooltip_dynamic(widget_, text_func, fallback=""):
+    """Resolve a tooltip's text WITHOUT blocking the event loop.
+
+    mouse_enter is dispatched straight from qtile's asyncio loop, and
+    every one of these text_funcs shells out with a blocking
+    subprocess.run -- so hovering a chip froze the whole WM (keyboard,
+    focus, bar, everything) for as long as the command took:
+
+        w_clock  _prayer_text       -> prayer_next.sh, timeout=8
+        w_disk   _disk_parts_text   -> _sh(timeout=1.5)
+        w_cpu    _cpu_top_text      -> _sh(timeout=1.5)
+        w_mem    _mem_top_text      -> _sh(timeout=1.5)
+        w_mpris  _player_title_text -> 2x playerctl @ 0.5s
+
+    The clock is the worst and the least obvious. Measured,
+    prayer_next.sh returns in ~44ms while ~/.cache/qtile_prayer.json is
+    same-day -- but the first hover after midnight takes the refresh
+    branch and runs `curl --max-time 6`. That was a hard 6-8s freeze of
+    the window manager, once a day, caused by hovering the clock.
+
+    Now: show the last known value instantly (or the fallback on the very
+    first hover), compute the fresh one in a worker thread, and hand the
+    result back to the loop via call_soon_threadsafe. A per-widget
+    in-flight guard keeps repeated hovers from stacking threads. Nothing
+    here blocks, so the worst case is a tooltip one hover stale rather
+    than an unresponsive desktop.
+    """
     _orig_enter = widget_.mouse_enter
+    key = id(widget_)
 
     def _dyn_enter(x, y, _w=widget_, _fn=text_func, _fb=fallback, _orig=_orig_enter):
-        try:
-            t = (_fn() or "").strip() or _fb
-            _w.tooltip_text = t
-        except Exception:
-            pass
+        cached = _TOOLTIP_TEXT_CACHE.get(key)
+        _w.tooltip_text = cached if cached else _fb
         _orig(x, y)
+
+        if getattr(_w, "_tooltip_refreshing", False):
+            return
+        _w._tooltip_refreshing = True
+
+        def _work():
+            try:
+                text = (_fn() or "").strip() or _fb
+            except Exception:
+                text = _fb
+
+            def _publish():
+                _w._tooltip_refreshing = False
+                _TOOLTIP_TEXT_CACHE[key] = text
+                _w.tooltip_text = text
+                # Only repaint if the tooltip is still on screen -- the
+                # pointer may well have moved on by now.
+                tt = getattr(_w, "_tooltip", None)
+                if tt is None:
+                    return
+                try:
+                    tt.layout.text = text
+                    tt.width = tt.layout.width + 2 * tt.horizontal_padding
+                    tt.height = tt.layout.height + 2 * tt.vertical_padding
+                    tt.place()
+                    tt.clear()
+                    tt.draw_text()
+                    tt.draw()
+                except Exception:
+                    pass
+
+            try:
+                qtile.call_soon_threadsafe(_publish)
+            except Exception:
+                _w._tooltip_refreshing = False
+
+        threading.Thread(target=_work, daemon=True).start()
 
     widget_.mouse_enter = _dyn_enter
 
@@ -2210,12 +2303,16 @@ def _all_smart_widgetboxes():
             if not b:
                 continue
             for w in b.widgets:
-                if w.__class__.__name__ == "SmartWidgetBox" and id(w) not in seen:
+                # isinstance, not a __name__ string compare: chip() builds
+                # a subclass, so the clickable boxes (tooltip_widgetbox,
+                # wallpaper_toggle) never matched by name and were only
+                # ever found via the registry fallback below.
+                if isinstance(w, SmartWidgetBox) and id(w) not in seen:
                     seen.add(id(w))
                     yield w
     # also cover any SmartWidgetBox tracked via its own registry
-    for w in getattr(SmartWidgetBox, "_instances", []):
-        if id(w) not in seen:
+    for w in list(getattr(SmartWidgetBox, "_instances", [])):
+        if id(w) not in seen and w._usable():
             seen.add(id(w))
             yield w
 
@@ -2565,7 +2662,7 @@ def normal_user_bar():
                 "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret , n/w warpd ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
-                "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
+                "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC",
                 "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
                 # NOTE: Bluetooth popup will be used later
@@ -2714,6 +2811,10 @@ def left_side_widgets():
         # Current Layout — original padding, text mode; right-click cycles layout
         chip(
             ewidget.CurrentLayout,
+            # Explicit name so the tooltip resolves by name and the widget
+            # is addressable as lazy.widget["w_layout"], rather than
+            # depending on class-name derivation.
+            name="w_layout",
             padding=18,
             foreground=colors[3],
             mouse_callbacks={
@@ -2787,7 +2888,7 @@ def right_side_widgets():
                 "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret , n/w warpd ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
-                "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
+                "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC",
                 "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
                 # NOTE: Bluetooth popup will be used later
@@ -2829,6 +2930,11 @@ def right_side_widgets():
             no_metadata_text="",
             scroll=True,
             scroll_chars=28,
+            # Required. qtile refuses to enable scrolling without an
+            # explicit pixel width and logs "You must specify a width when
+            # enabling scrolling" -- which it did on all 53 recorded
+            # starts, so scroll=True/scroll_chars above were dead config.
+            width=220,
             padding=10,
             fontsize=15,
             foreground=colors[4],
@@ -2917,6 +3023,7 @@ def right_side_widgets():
             widgets=[
                 chip(
                     ewidget.CheckUpdates,
+                    name="w_updates",
                     padding=11,
                     mouse_callbacks={
                         "Button1": lazy.spawn(
@@ -3461,17 +3568,37 @@ class SmartWidgetBox(ewidget.WidgetBox):
     """WidgetBox that auto-closes siblings and inserts its content
     before an anchor widget (by name) instead of adjacent to itself."""
 
-    _instances = []
+    # WeakSet, not list. As a plain list this leaked in two directions:
+    # the orphan widget trees built at the bottom of this file registered
+    # here and were never used, and every reload_config appended a whole
+    # new generation while the previous one stayed -- with .bar pointing
+    # at a dead Bar. close_all() and _all_smart_widgetboxes() then
+    # iterated those corpses and called toggle() on them, which
+    # toggle_widgets() turns into `self.bar.widgets.insert(...)`. That is
+    # the most plausible route by which an unconfigured widget reached a
+    # live bar and crashed the draw (see _SafeLengthMixin).
+    _instances = weakref.WeakSet()
 
     def __init__(self, *a, insert_before_name=None, **k):
         self.insert_before_name = insert_before_name
         super().__init__(*a, **k)
-        SmartWidgetBox._instances.append(self)
+
+    def _configure(self, qtile, bar):
+        super()._configure(qtile, bar)
+        # Register on _configure, not __init__: only boxes that actually
+        # belong to a live bar should ever be reachable from here.
+        SmartWidgetBox._instances.add(self)
+
+    def _usable(self):
+        """True only if this box is attached to a bar we can safely touch."""
+        return bool(getattr(self, "configured", False)) and getattr(self, "bar", None)
 
     @classmethod
     def close_all(cls, except_self=None):
-        for wb in cls._instances:
-            if wb is not except_self and getattr(wb, "box_is_open", False):
+        for wb in list(cls._instances):
+            if wb is except_self or not wb._usable():
+                continue
+            if getattr(wb, "box_is_open", False):
                 try:
                     super(SmartWidgetBox, wb).toggle()
                 except Exception:
@@ -3601,6 +3728,10 @@ class SmartWidgetBox(ewidget.WidgetBox):
             self.timeout_add(i * STAGGER_S, lambda tick=_tick: tick(0))
 
     def toggle_widgets(self):
+        # Never mutate a bar we are not actually part of.
+        if not self._usable():
+            return None
+
         if not self.insert_before_name:
             return super().toggle_widgets()
 
@@ -3608,7 +3739,10 @@ class SmartWidgetBox(ewidget.WidgetBox):
             try:
                 self.bar.widgets.remove(widget)
                 widget.drawer.disable()
-            except ValueError:
+            except (ValueError, AttributeError):
+                # ValueError: not currently in the bar (already removed).
+                # AttributeError: widget was never _configure()d, so it
+                # has no .drawer -- and must not be inserted below either.
                 continue
 
         target = None
@@ -3624,6 +3758,10 @@ class SmartWidgetBox(ewidget.WidgetBox):
 
         if self.box_is_open:
             for widget in self.widgets[::-1]:
+                # An unconfigured child has no .drawer and would raise
+                # from calculate_length() on the very next Bar._resize().
+                if not getattr(widget, "configured", False):
+                    continue
                 widget.drawer.enable()
                 self.bar.widgets.insert(index, widget)
 
@@ -3645,7 +3783,58 @@ def _brighten_color(c, amount=0.35):
     return _brighten_hex(c, amount)
 
 
-class _ChipFlashMixin:
+class _SafeLengthMixin:
+    """Never let one widget's length take the whole bar down.
+
+    libqtile's own _Widget.length wraps calculate_length() in a
+    try/except and returns 0 on failure (widget/base.py). But
+    libqtile.widget.textbox.TextBox OVERRIDES `length` (via length_get)
+    without that guard, so any exception escapes the property, Python
+    falls through to Configurable.__getattr__, and the caller sees
+
+        AttributeError: <X> has no attribute: length
+
+    Bar._resize() sums w.length over every widget, so a single bad one
+    aborts the entire draw. That is exactly what happened here: 6 crashed
+    startups out of 47 in qtile.log, all of the form
+
+        bar.py:440 in _resize -> sum(w.length for w in widgets ...)
+        AttributeError: FlashTextBoxWithTooltip has no attribute: length
+
+    Reproduced directly: an UNCONFIGURED TextBox raises
+    `AttributeError: ... has no attribute: bar` out of calculate_length(),
+    because self.bar only exists after _configure(). So the underlying
+    defect is an unconfigured widget reaching bar.widgets -- addressed by
+    the orphan widget trees removed at the bottom of this file and the
+    guards on SmartWidgetBox below -- but the bar should degrade to a
+    0-width widget rather than stop rendering, which is what upstream
+    already does and what this restores.
+    """
+
+    @property
+    def length(self):
+        try:
+            return super().length
+        except Exception:
+            from libqtile.log_utils import logger
+
+            logger.warning(
+                "widget %s could not compute length (configured=%s); "
+                "treating as 0 so the bar still draws",
+                getattr(self, "name", self.__class__.__name__),
+                getattr(self, "configured", "?"),
+            )
+            return 0
+
+    @length.setter
+    def length(self, value):
+        # _Widget.__init__ assigns self.length, so the setter has to keep
+        # working or no chip could be constructed at all. Same body as
+        # upstream _Widget.length.setter.
+        self._length = value
+
+
+class _ChipFlashMixin(_SafeLengthMixin):
     """Brief brighten-then-fade flash on click. Wraps button_press so
     whatever click behavior the underlying widget/mouse_callbacks already
     have runs completely unchanged -- this only adds visual feedback
@@ -3674,14 +3863,49 @@ class _ChipFlashMixin:
 
 
 _flash_widget_cache = {}
+_safe_widget_cache = {}
+
+
+def _derive(WCls, bases, marker):
+    """Build a subclass that is indistinguishable from WCls by name.
+
+    This matters more than it looks. _Widget.__init__ does
+
+        self.name = self.__class__.__name__.lower()
+
+    so naming the generated class "FlashCurrentLayout" silently renamed
+    the widget to "flashcurrentlayout" -- which then matched neither
+    TOOLTIP_BY_NAME nor TOOLTIP_BY_CLASS (keyed "CurrentLayout"), so the
+    CurrentLayout and CheckUpdates chips could never get a tooltip.
+    Confirmed live: `qtile cmd-obj -o bar top -f info` reported the
+    widget as "flashcurrentlayout". It also hid the clickable
+    SmartWidgetBox chips from _all_smart_widgetboxes(), whose bar scan
+    tested `w.__class__.__name__ == "SmartWidgetBox"`.
+
+    Keeping __name__ identical fixes all of that at once. __qualname__
+    still carries the marker, so tracebacks and repr stay debuggable.
+    """
+    cls = type(WCls.__name__, bases, {})
+    cls.__qualname__ = f"{marker}{WCls.__name__}"
+    return cls
 
 
 def _flash_widget_class(WCls):
     if WCls not in _flash_widget_cache:
-        _flash_widget_cache[WCls] = type(
-            f"Flash{WCls.__name__}", (_ChipFlashMixin, WCls), {}
-        )
+        _flash_widget_cache[WCls] = _derive(WCls, (_ChipFlashMixin, WCls), "Flash")
     return _flash_widget_cache[WCls]
+
+
+def _safe_widget_class(WCls):
+    """Same _SafeLengthMixin guard for chips with no click handler.
+
+    The crash in the log happened to be on a clickable chip, but nothing
+    about it is click-specific -- any chip can hit it -- so every chip
+    gets the guard, not just the ones that pick up _ChipFlashMixin.
+    """
+    if WCls not in _safe_widget_cache:
+        _safe_widget_cache[WCls] = _derive(WCls, (_SafeLengthMixin, WCls), "Safe")
+    return _safe_widget_cache[WCls]
 
 
 def chip(WCls, chip_color=None, **kwargs):
@@ -3705,8 +3929,11 @@ def chip(WCls, chip_color=None, **kwargs):
 
     # Click-feedback flash only on chips that actually respond to clicks --
     # no point animating ones that don't do anything when pressed.
+    # Either way the chip gets _SafeLengthMixin (via _ChipFlashMixin for
+    # the clickable ones), so a widget that cannot compute its length can
+    # never abort the whole bar draw.
     has_click = bool(kwargs.get("mouse_callbacks"))
-    cls = _flash_widget_class(WCls) if has_click else WCls
+    cls = _flash_widget_class(WCls) if has_click else _safe_widget_class(WCls)
 
     w = cls(**kwargs)
     if has_click:
@@ -3914,8 +4141,27 @@ keys = [
     # through the stack, but other layouts like 'columns' will
     # require all four directions h/j/k/l to move around.
     # --- Move focus to left, right, down, up ---
-    Key([mod], "h", lazy.layout.left(), desc="Move focus to left"),
-    Key([mod], "l", lazy.layout.right(), desc="Move focus to right"),
+    # left()/right() exist on MonadTall/Columns/BSP but NOT on Max or
+    # TreeTab -- and groups 2 (browsers) and 5 (brave) both default to
+    # max, so plain lazy.layout.left() logged
+    #     KB command error left: No such command
+    # during ordinary use. Verified against the layout classes: Max
+    # exposes up/down/next/previous, TreeTab exposes next/previous
+    # (plus section_up/section_down and move_left/move_right).
+    Key(
+        [mod],
+        "h",
+        lazy.layout.left().when(layout=["monadtall", "monadwide", "columns", "bsp"]),
+        lazy.layout.previous().when(layout=["max", "treetab"]),
+        desc="Move focus to left",
+    ),
+    Key(
+        [mod],
+        "l",
+        lazy.layout.right().when(layout=["monadtall", "monadwide", "columns", "bsp"]),
+        lazy.layout.next().when(layout=["max", "treetab"]),
+        desc="Move focus to right",
+    ),
     Key([mod], "j", lazy.layout.down(), desc="Move focus down"),
     Key([mod], "k", lazy.layout.up(), desc="Move focus up"),
     # Key([mod], "space", lazy.layout.next(), desc="Move window focus to other window"),
@@ -4032,9 +4278,15 @@ keys = [
                     # NAVIGATE LEFT / RIGHT
                     Key([], "h", lazy.function(lambda _: WallpaperPopup.move(0, -1))),
                     Key([], "l", lazy.function(lambda _: WallpaperPopup.move(0, 1))),
+                    # Lowercase deliberately. qtile's keysym table is
+                    # lowercase-normalised and lookups are lowercased, so
+                    # Key([], "R") never meant Shift+R -- it has always
+                    # bound plain `r`. Spelling it "r" keeps the existing
+                    # behaviour and stops the binding lying about itself;
+                    # the chord chip labels now agree.
                     Key(
                         [],
-                        "R",
+                        "r",
                         lazy.function(lambda _: WallpaperPopup.jump_to_random()),
                     ),
                     Key(
@@ -4047,11 +4299,19 @@ keys = [
                     Key([], "k", lazy.function(lambda _: WallpaperPopup.move(-1, 0))),
                     # ACTIONS
                     Key([], "Return", lazy.function(lambda _: WallpaperPopup.apply(_))),
+                    # `A and B` evaluated to B alone -- lazy.function(...)
+                    # is truthy -- so the close call was discarded at
+                    # config-load time and this Key only ever ungrabbed.
+                    # It looked fine because ungrab fires leave_chord and
+                    # cleanup_on_leave closes the picker. Key(*commands)
+                    # takes them as separate positional arguments.
                     Key(
                         [],
                         "q",
-                        lazy.function(lambda _: WallpaperPopup.close_wallpaper_picker())
-                        and lazy.ungrab_chord(),
+                        lazy.function(
+                            lambda _: WallpaperPopup.close_wallpaper_picker()
+                        ),
+                        lazy.ungrab_chord(),
                     ),
                     Key(
                         [],
@@ -5088,10 +5348,14 @@ def init_screens():
 
 
 if __name__ in ["config", "__main__"]:
+    # Only `screens` is read by qtile. The widgets_list / widgets_screen1 /
+    # widgets_screen2 assignments that used to live here were leftovers
+    # from the DTOS template: each one built a COMPLETE extra widget tree
+    # -- Systray included -- that was never attached to a bar and never
+    # _configure()d, then registered its SmartWidgetBoxes in the global
+    # instance registry, where the chord hooks would later toggle them.
+    # Three dead widget trees per config load, for nothing.
     screens = init_screens()
-    widgets_list = init_widgets_list()
-    widgets_screen1 = init_widgets_screen1()
-    widgets_screen2 = init_widgets_screen2()
 
 
 # ╔───────────────────────────────────────────────────────────╗
