@@ -1027,6 +1027,49 @@ subsystem. Each entry: **symptom → root cause → fix**.
   caps lock as a modifier — it only exists for xcape's internal
   lookup. Fixed in both the live `~/.Xmodmap` and `step_xmodmap`'s
   heredoc in `wizard.sh`.
+- **SUPERSEDED — the tap-Caps fallback was dropped on purpose.** The
+  current `.Xmodmap` (and `step_xmodmap`) is back to a bare
+  `keycode 66 = Alt_L`, and nothing starts `xcape` any more — it is not
+  in `.xinitrc` and not in `autostart.sh`. Reason: with Alt dead in
+  hardware, Caps is the *only* working Alt, and a tap-to-Caps-Lock
+  fallback on the modifier you press hundreds of times an hour fires by
+  accident far more often than it is wanted. There is now no way to
+  toggle Caps Lock from the keyboard, which is the intended trade.
+  The `xcape` package is still declared in `system-tools.yaml` but is
+  vestigial. Keep this entry: if anyone re-adds the fallback, the
+  `keycode 66 = Alt_L Caps_Lock Alt_L Caps_Lock` line above is the fix
+  they will need again.
+
+### `adhkar` reminders behave oddly / bash-isms silently misfire
+- **Symptom:** the `adhkar` notifier autostarted by `autostart.sh` runs,
+  but anything bash-specific in it is unreliable. No error is printed
+  anywhere you would look.
+- **Root cause:** the file began with a **blank line before `#!/bin/bash`**.
+  A shebang is only honoured on byte 0 of the file; with a leading
+  newline the kernel returns `ENOEXEC`, and the parent shell falls back
+  to running the script with `/bin/sh`. So it was being interpreted by
+  `sh`, not `bash`, despite the shebang sitting right there in line 2.
+- **Fix:** removed the leading blank line. `shellcheck` catches this as
+  `SC1128` — it is worth running across the tree after bulk edits:
+  ```sh
+  git ls-files -z | xargs -0 grep -lI '^#!.*bash' | xargs shellcheck -S error
+  ```
+
+### Login runs a "command not found" in the background on every session
+- **Symptom:** nothing visibly wrong, but `autostart.sh` was spawning
+  `pamac-tray-icon-plasma &` on every login and it always failed.
+- **Root cause:** `pamac-tray-icon-plasma` is a **Manjaro** package. It
+  has never been installed on this Arch box and is not declared in
+  `arch-config`. It was the update notifier back when this config was
+  first adapted, and survived the move. Because it was backgrounded with
+  `&`, the failure went to a stderr nobody reads and never affected exit
+  status.
+- **Fix:** removed. The update notifier is now `qupdate.py --daemon`,
+  started in the qtile-owned block further down the same file.
+- **General lesson:** an unguarded command in `autostart.sh` fails
+  silently. Anything optional belongs behind
+  `command -v <cmd> >/dev/null && <cmd> &`, which is the pattern the rest
+  of that file already uses.
 
 ---
 
@@ -1143,6 +1186,69 @@ should come up cleanly.
   ```
   Also confirm the step is *idempotent*: re-running the wizard on a
   configured machine must print "already …" and change nothing.
+- **Step 4 is now enforced at startup.** The wizard checks every
+  `MOD_ORDER` id has a `UMOD_CMD` entry and exits 2 with
+  `BUG: module(s) with no uninstaller: <ids>` before doing any work.
+  It used to be discovered mid-uninstall — see the next entry.
+- **There is no longer a fifth place.** `--help` used to carry a
+  hand-typed copy of the module id list; it is now generated from
+  `MOD_ORDER` at runtime and cannot drift.
+
+### `--uninstall` aborts ~90% through with `UMOD_CMD[$id]: unbound variable`
+- **Symptom:** `./wizard.sh --uninstall` reverses 28 modules, then dies:
+  `wizard.sh: line 1173: UMOD_CMD[$id]: unbound variable`. Exit is
+  non-zero, no summary card, and the last four modules are never
+  reversed — so the machine is left in a half-uninstalled state that
+  neither a re-run nor a re-install obviously repairs.
+- **Root cause:** `dark-mode` and `browser-memory` were added to
+  `MOD_ORDER` and `_reg` when they shipped, but no `UMOD_CMD` entry and
+  no `uninstall_*` body were written for them. Install mode never touches
+  `UMOD_CMD`, so all the install dry-runs passed and the gap sat there
+  unnoticed. Under `set -u` the first missing key is a hard crash, and it
+  lands at the *worst* moment: after the reversals that already ran.
+- **Why it hid for so long:** `--uninstall` is the one path nobody runs
+  on a working machine. `./wizard.sh --yes --dry-run` exercised 32/32
+  modules and reported success the entire time.
+- **Fix:** added `uninstall_dark_mode` (`gsettings reset` — back to "no
+  preference", not a forced light theme, which would be a different
+  opinion rather than a reversal) and `uninstall_browser_memory`
+  (removes only our `50-memory-saver.json`, never the shared
+  `policies/managed/` directories). Plus the startup guard above, so the
+  next module that forgets an uninstaller fails in the first second
+  instead of at 90%.
+- **Regression test:** `./wizard.sh --uninstall --yes --dry-run` must end
+  on `✔ 32 ok   ⚠ 0 not run   ✖ 0 failed`. Run it whenever you touch
+  `MOD_ORDER`.
+
+### `--only=pacman-guard` on a fresh box breaks every pacman transaction
+- **Symptom:** after running just the `pacman-guard` module, *every*
+  `pacman`, `yay`, `paru` and `dcli` operation aborts before it starts.
+  Including the one that would install the fix.
+- **Root cause:** `00-preflight.hook` is `AbortOnFail` and its `Exec=`
+  points at `/usr/local/bin/pacman-preflight`, which is symlinked into
+  place by a *different* module (`ati-scripts`). A missing `Exec=` target
+  is a hook failure, and a failing `AbortOnFail` PreTransaction hook
+  cancels the transaction. A full `./install.sh` is safe because
+  `ati-scripts` runs first, but a targeted `--only` run was not.
+- **Fix:** `step_pacman_guard` now **refuses** — it checks for an
+  executable `/usr/local/bin/pacman-preflight` and returns 1 with
+  instructions before installing the hook, rather than warning and
+  installing it anyway. A warning is the wrong severity when the failure
+  mode locks you out of the package manager.
+- **If you already hit it:** `sudo rm /etc/pacman.d/hooks/00-preflight.hook`
+  restores pacman, then re-run
+  `./wizard.sh --yes --only=ati-scripts,pacman-guard` in that order.
+
+### `--help` claims a module id is invalid when it works fine
+- **Symptom:** `./wizard.sh --help` does not list `dark-mode` or
+  `browser-memory`, but `--only=dark-mode` runs correctly.
+- **Root cause:** the id list in the help heredoc was a hand-maintained
+  copy of `MOD_ORDER` and had not been updated when those two modules
+  landed. It also printed a stray `set -Eeuo pipefail` line, because the
+  header was extracted with a fixed `sed -n '2,15p'` range that had
+  drifted past the end of the comment block.
+- **Fix:** `--help` is deferred until after `MOD_ORDER` is defined and now
+  prints the array itself, with a count. It cannot go stale again.
 
 ### Wizard dies mid-run instead of showing a failed step
 - **Symptom:** wizard exits entirely with
@@ -1328,6 +1434,32 @@ should come up cleanly.
   name in `system-tools.yaml` was just wrong, unrelated to any of the
   sudo/rustup/conflict issues above.
 - **Fix:** corrected to `shell-color-scripts-git`.
+
+### Packages the desktop needs that were never actually declared
+- **Symptom:** none on this machine — which is the point. They were
+  present only as *transitive dependencies* of something else, so a
+  fresh install happened to work and nothing ever flagged them.
+- **How to find them:** resolve every binary the configs invoke back to
+  its owning package, then diff against the declared set:
+  ```sh
+  # for each command referenced in .config/ and installScripts/
+  pacman -Qoq "$(command -v <cmd>)"
+  # ...and check it appears under .config/arch-config/modules/
+  ```
+- **`qtile` itself was not declared.** It was installed only because
+  `qtile-extras` depends on it. That dependency is entirely upstream's
+  to change; if it were ever relaxed, `dcli sync` would have had no
+  reason to keep the window manager installed. Now declared explicitly
+  in `wm.yaml`.
+- **`xorg-xsetroot` was missing outright.** `.xinitrc` sets the root
+  cursor with `command -v xsetroot >/dev/null 2>&1 && xsetroot -cursor_name
+  left_ptr`. The guard meant no error — the cursor just silently stayed
+  the default X11 "X" over the root window on a fresh install. Now
+  declared in `xorg.yaml`.
+- **Deliberately left undeclared:** `xsel` (only a third-tier clipboard
+  fallback behind `wl-clipboard` and `xclip`, both declared) and
+  `sqlite` (guaranteed by half the declared graphical stack). Guarded
+  optional fallbacks do not need declaring; unguarded calls do.
 
 ### AUR helper (yay) step fails after a previous failed/interrupted run
 - **Symptom:** `fatal: destination path 'yay-bin' already exists and is

@@ -213,6 +213,13 @@ ignored — because an ignored filter means the full live install runs instead,
 and its second module is `pacman -Syu`. Unknown flags and unknown module ids
 fail the same way: exit 2, nothing touched.
 
+Every one of the 32 modules has a reversal, even where that reversal is a
+deliberate no-op (`dcli-sync`, `piper`, `whisper`, `wallpapers` — removing
+those would delete packages or multi-hundred-MB downloads the uninstaller has
+no business touching). The wizard refuses to start if a module is ever added
+without one, because the alternative is discovering it *part-way through* an
+uninstall, with earlier modules already reversed.
+
 **What `./install.sh` does**
 
 - Auto-bootstraps `gum` via pacman (~2 s)
@@ -246,9 +253,9 @@ quit** (unless `--yes`, which auto-skips).
 | 11 | `boot-fallback` | systemd-boot entries for `linux-lts` + a full-module rescue initramfs |
 | 12 | `login-shell` | `chsh` to fish so the TTY matches kitty |
 | 13 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
-| 14 | `xinit` | Write `~/.xinitrc` (qtile + picom + xcape + tray + copyq) |
+| 14 | `xinit` | Write `~/.xinitrc` (qtile · picom · wallpaper · tray applets · copyq server · `QT_QPA_PLATFORMTHEME=qt6ct` · cursor) |
 | 15 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
-| 16 | `xmodmap` | Write `~/.Xmodmap` (Caps hold = Alt, xcape restores tap Caps) |
+| 16 | `xmodmap` | Write `~/.Xmodmap` — Caps is repurposed as **Alt_L outright**, with no tap-to-Caps-Lock fallback (Alt is dead in hardware on this laptop) |
 | 17 | `lid` | Lid close = ignore (`systemd-logind`) |
 | 18 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
 | 19 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
@@ -294,7 +301,7 @@ arch-config/
 └── modules/
     ├── base.yaml               # dcli itself, timeshift, pacman-contrib
     ├── apps.yaml               # daily apps (brave, obsidian, ...)
-    ├── wm.yaml                 # qtile-extras, picom, dunst, ...
+    ├── wm.yaml                 # qtile, qtile-extras, picom, qt5ct/qt6ct, ...
     ├── dev.yaml                # nvim, git, fish, cargo/rust, ...
     ├── media.yaml              # pipewire stack, easyeffects, ...
     ├── fonts.yaml              # Nerd Fonts, Amiri, Cairo, ...
