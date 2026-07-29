@@ -1079,9 +1079,29 @@ subsystem. Each entry: **symptom → root cause → fix**.
 
 ```bash
 ./vm-test.sh --check    # preflight only, creates nothing — run this first
+./vm-test.sh --smoke    # ~2 min headless boot: proves qemu/KVM/ISO/disk work
 ./vm-test.sh            # preflight, fetch + verify ISO, make disk, boot
 ./vm-test.sh --clean    # delete the VM disk and ISO
 ```
+
+`--smoke` is the cheap confidence check. It boots the ISO headless with a
+2 GB guest and a 240s cap, captures the whole boot over a serial console,
+and asserts the VM reached the network target and `archiso login:`. Two
+minutes to learn that qemu, KVM, the ISO and the disk are all sound,
+before committing to a multi-hour install. It asserts on the boot log
+rather than qemu's exit status, because the guest sits at the login
+prompt forever and `timeout` always kills it.
+
+To capture serial output it boots the ISO's kernel directly
+(`-kernel`/`-initrd`) so `console=ttyS0` can be appended — booting the
+cdrom normally produces nothing to assert on. The `archisolabel` is read
+off the ISO with `blkid` rather than hardcoded: it carries the release
+date (`ARCH_YYYYMM`) and changes monthly.
+
+`--smoke` vets its own 2 GB guest, not the 4 GB install budget. Demanding
+the full budget made it unrunnable on exactly the hosts it exists to
+help. Override the install size with `VM_RAM_MB=3072 ./vm-test.sh` on a
+tight machine.
 
 The preflight is the part worth having. It refuses with the specific
 number that failed — qemu missing, `/dev/kvm` not writable, not enough
