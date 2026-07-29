@@ -207,6 +207,12 @@ os.environ["XMODIFIERS"] = ""
 
 mod = "mod4"  # Primary mod = WINDOWS (Alt broken on hardware)
 mod2 = "mod1"  # Secondary mod = ALT
+
+# homerow client. A shell script that pokes the resident daemon over a socket,
+# so spawning it costs ~12ms rather than a Python interpreter start.
+HOMEROW = os.path.expanduser(
+    "~/Attia-Pro/Projects/Homerow_replika/homerow-hint"
+)
 myTerm = "kitty"  # My terminal of choice
 my2ndTerm = "alacritty"  # My terminal of choice
 myFullScreenTerm = "kitty --start-as=fullscreen"
@@ -456,7 +462,7 @@ CHORD_CHIP_COLORS = {
     "Media-Mode": colorsW[4],  # cyan
     "Scratch-Mode": colorsW[8],
     "Draw-Mode": colorsW[3],
-    "Mouse-Mode": colorsW[7],
+    "Hint-Mode": colorsW[7],
     "Lang-Switch": colorsW[1],
     "CheatSheet-Mode": colorsW[3],
     "WallpaperPicker": colorsW[3],
@@ -1472,6 +1478,34 @@ def _float_and_center_sum(client):
     float_center_sum(client)
 
 
+@hook.subscribe.client_managed
+def _keep_qdrop_floating(client):
+    """Force qdrop out of the tiling layout.
+
+    floating_layout already carries Match(wm_class="qdrop") and it does
+    match -- checked against the live client, both config.floating_layout
+    and the group's own clone return True. Even so, qtile has been seen
+    holding qdrop at NOT_FLOATING, i.e. as an ordinary tiled client. The
+    cost is not just qdrop being the wrong shape: monadtall hands it a
+    column and resizes every other window on the group to make room, so
+    merely having the (hidden, off-screen) qdrop daemon around rearranges
+    the workspace.
+
+    qdrop re-asserts this itself on each show, which covers the state
+    being lost during its hide()+togroup()+remap dance. This hook covers
+    the other window: qtile restarts (theme-apply triggers them often)
+    re-manage the long-lived daemon window, and without this the layout
+    would stay disturbed from the restart until the next qdrop keypress.
+    """
+    try:
+        if "qdrop" not in (client.get_wm_class() or []):
+            return
+        if not client.floating:
+            client.floating = True
+    except Exception:
+        pass
+
+
 @hook.subscribe.client_killed
 def _drop_window_group(client):
     try:
@@ -1505,6 +1539,28 @@ def _drop_window_group(client):
 @hook.subscribe.screens_reconfigured
 def apply_bar_on_reconfigure():
     apply_bar_mode()
+    # reconfigure_screens=True only re-lays-out the Screen objects that
+    # already exist; it never creates new ones. Since `screens` is built
+    # once at config-load time from the monitor count then, plugging a
+    # monitor in afterwards leaves that output with no bar at all (and
+    # unplugging leaves a stranded Screen). The only thing that rebuilds
+    # the list is re-importing the config, i.e. a restart.
+    #
+    # Guarded on the count specifically: this hook also fires for plain
+    # resolution/rotation changes, and restarting qtile on every one of
+    # those would be far more disruptive than the bug being fixed.
+    try:
+        if _monitor_count() != len(qtile.screens):
+            # Deferred: this hook runs inside qtile's own RandR handling,
+            # and replacing the process image from in there re-enters the
+            # event loop mid-teardown. A 1s tick also coalesces the burst
+            # of events a single hotplug emits into one restart.
+            qtile.call_later(1, lambda: _smooth_restart(qtile))
+    except Exception:
+        # Never let a failed monitor probe take the hook (and with it
+        # apply_bar_mode) down -- a missing bar mode is worse than a
+        # missing bar on a second screen.
+        pass
 
 
 # ----------------------------------------------------------------
@@ -1945,14 +2001,13 @@ def remember_chord(chord_name):
 
 
 # --------------------------------------------------------------
-# 6- Function to auto launch warpd when "Mouse-Mode" is active
+# 6- Hint-Mode deliberately launches nothing on entry
 # --------------------------------------------------------------
-
-
-@hook.subscribe.enter_chord
-def auto_enable_warpd(chord_name):
-    if chord_name == "Mouse-Mode":
-        qtile.spawn("warpd --normal")
+# The old Mouse-Mode spawned `warpd --normal` from an enter_chord hook. That
+# cannot stay: warpd grabs the keyboard as soon as it starts, so h/s/f would
+# never reach qtile and the chord would appear dead. warpd is still one
+# keypress away inside the chord -- `n` for normal mode, `w` for its hints --
+# it just is not started for you.
 
 
 # ---------------------------------------------------------------------------------------
@@ -2507,7 +2562,7 @@ def normal_user_bar():
                 "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
                 "Scratch-Mode": "󰈆   SCRATCH",
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
-                "Mouse-Mode": "󰍽   MOUSE : n , f , g , e , r , m ",
+                "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret , n/w warpd ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
@@ -2729,7 +2784,7 @@ def right_side_widgets():
                 "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
                 "Scratch-Mode": "󰈆   SCRATCH",
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
-                "Mouse-Mode": "󰍽   MOUSE : n , f , g , e , r , m ",
+                "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret , n/w warpd ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , R , ENTER ",
@@ -3677,18 +3732,40 @@ def chip(WCls, chip_color=None, **kwargs):
 
 
 keys = [
-    # --- Homerow: keyboard hints over the focused window ---
-    # Not Homerow's own shift+space, which would swallow every shift+space
-    # you type.
+    # Hint mode is bound directly, not only in the chord. It is the action
+    # you take constantly, and a chord costs a keystroke plus remembering you
+    # are in a mode -- Homerow on macOS is one chord-free keystroke, and that
+    # is most of what makes it feel immediate. The other modes stay in the
+    # Hint-Mode chord (win+shift+f), where discovering them is worth the step.
+    # alt+space rather than Homerow's shift+space, which would swallow every
+    # shift+space you type.
     Key(
-        [mod2, "shift"],
-        "f",
-        lazy.spawn(
-            os.path.expanduser(
-                "~/Attia-Pro/Projects/Homerow_replika/homerow-hint"
-            )
-        ),
-        desc="Homerow: hint and click UI elements by keyboard",
+        [mod2],
+        "space",
+        lazy.spawn(HOMEROW),
+        desc="Homerow: hint and click / switch window",
+    ),
+    # Homerow binds a key per mode rather than nesting them: shift+space,
+    # shift+J, shift+/ over there. Same shape here with alt, since grabbing
+    # shift+<letter> globally on X11 would swallow ordinary typing.
+    # alt+v is already the CopyQ picker, so caret takes alt+c.
+    Key(
+        [mod2],
+        "j",
+        lazy.spawn(HOMEROW + " --scroll"),
+        desc="Homerow: scroll mode",
+    ),
+    Key(
+        [mod2],
+        "slash",
+        lazy.spawn(HOMEROW + " --search"),
+        desc="Homerow: search mode",
+    ),
+    Key(
+        [mod2],
+        "c",
+        lazy.spawn(HOMEROW + " --caret"),
+        desc="Homerow: caret mode",
     ),
     # FIX: try to make a speach to text app
     # ---------------------
@@ -4144,14 +4221,49 @@ keys = [
         mode=True,
         swallow=True,
     ),
-    # --- Mouse Mode ---
+    # --- Hint Mode (was Mouse-Mode) ---
+    # win+shift+f opens it; h/s/f then pick hint, scroll or search. Keys only
+    # do anything while the chord is active, so none of these letters are
+    # taken away from normal typing.
     KeyChord(
-        [mod2],
+        [mod, "shift"],
         "f",
         [
-            Key([], "f", lazy.spawn("warpd --hint")),
-            Key([], "n", lazy.spawn("warpd --normal")),
-            # Key([], "g", lazy.spawn("warpd --grid")),
+            # --- homerow (AT-SPI: real elements, exact bounds) ---
+            # Each of these leaves the chord. It used to persist so actions
+            # could be chained, but this chord is mode=True and swallow=True:
+            # while it is open every other binding on the desktop is dead,
+            # including the ones that reload qtile, and nothing in the bar
+            # says you are in it. A chord you cannot tell you are inside is
+            # indistinguishable from the keyboard having broken. Chaining is
+            # no longer worth that -- every mode has its own alt binding now.
+            Key(
+                [], "h",
+                lazy.spawn(HOMEROW),
+                lazy.ungrab_chord(),
+                desc="hint and click elements / switch window",
+            ),
+            Key(
+                [], "s",
+                lazy.spawn(HOMEROW + " --scroll"),
+                lazy.ungrab_chord(),
+                desc="pick a scrollable region, drive it with vim keys",
+            ),
+            Key(
+                [], "f",
+                lazy.spawn(HOMEROW + " --search"),
+                lazy.ungrab_chord(),
+                desc="search elements, digits pick, enter clicks",
+            ),
+            Key(
+                [], "v",
+                lazy.spawn(HOMEROW + " --caret"),
+                lazy.ungrab_chord(),
+                desc="caret mode: vim motions over real text, v selects, y yanks",
+            ),
+            # --- warpd (pixel grid: works where accessibility does not) ---
+            Key([], "n", lazy.spawn("warpd --normal"), lazy.ungrab_chord()),
+            Key([], "w", lazy.spawn("warpd --hint"), lazy.ungrab_chord()),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
             *group_keys(),
             Key([], "q", lazy.ungrab_chord()),
@@ -4170,7 +4282,7 @@ keys = [
                 desc="scroll down fast",
             ),
         ],
-        name="Mouse-Mode",
+        name="Hint-Mode",
         mode=True,
         swallow=True,
     ),
@@ -4877,27 +4989,72 @@ def init_widgets_list_normaluserbar():
 # crash if you try to run multiple instances of it.
 
 
-# TODO: FIX THE SYSTRAY issue later when i got 2nd screen :)
 def init_widgets_screen1():
     widgets_screen1 = init_widgets_list()
     return widgets_screen1
 
 
-# All other monitors' bars will display everything but widgets 22 (systray) and 23 (spacer).
+def _strip_systray(widgets):
+    """Remove the Systray from a widget list, in place, and return it.
+
+    X11 allows exactly one system tray owner per display (the tray is a
+    single XEmbed selection, _NET_SYSTEM_TRAY_S0). Building a second
+    Systray therefore does not merely render an empty box -- the second
+    instance fails to acquire the selection and qtile aborts config load,
+    which is the whole reason the second monitor's bar never worked.
+
+    The Systray is not a top-level entry here: it lives inside the
+    SmartWidgetBox named "systray_widgetbox" (see right_side_widgets), so
+    the old index-slicing approach could never have reached it. Descend
+    into any widget exposing a .widgets list and drop Systray instances
+    wherever they turn up, leaving every sibling (nightlight, etc.) in
+    place so secondary bars stay otherwise identical.
+    """
+    for w in widgets:
+        inner = getattr(w, "widgets", None)
+        if isinstance(inner, list):
+            inner[:] = [i for i in inner if not isinstance(i, widget.Systray)]
+    return [w for w in widgets if not isinstance(w, widget.Systray)]
+
+
+# All other monitors' bars display everything except the systray.
 def init_widgets_screen2():
-    widgets_screen2 = init_widgets_list()
-    # del widgets_screen2[22:24]
-    return widgets_screen2
+    return _strip_systray(init_widgets_list())
 
 
 def init_widgets_normaluserbar():
     widgets_screen1 = init_widgets_list_normaluserbar()
-    # del widgets_screen1[22:24]
     return widgets_screen1
 
 
+def _monitor_count():
+    """How many monitors are currently connected (>=1).
+
+    Screens are matched positionally against qtile's detected outputs, so
+    a hardcoded list of two is wrong in both directions: with one monitor
+    qtile builds a bar it never shows, and with three the third output
+    gets no bar at all. `xrandr --listmonitors` reports the post-RandR
+    monitor list (what qtile itself lays screens out against), not raw
+    connectors, so mirrored outputs correctly count once.
+    """
+    try:
+        out = subprocess.run(
+            ["xrandr", "--listmonitors"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+        # First line is "Monitors: N"; trust it over counting lines.
+        n = int(out.split("\n", 1)[0].split(":")[1])
+        return max(n, 1)
+    except Exception:
+        # No X yet, xrandr missing, or unparsable output. One screen is
+        # the safe floor -- returning 0 would leave qtile with no bar at
+        # all, which is far worse than a spare unused Screen.
+        return 1
+
+
 def init_screens():
-    return [
+    # Screen 0 is the only one with the systray and the bottom bar.
+    screens_list = [
         Screen(
             top=bar.Bar(
                 widgets=init_widgets_screen1(),
@@ -4914,16 +5071,20 @@ def init_screens():
                 background=colors[2],  # transparent
             ),
         ),
-        Screen(
-            top=bar.Bar(
-                widgets=init_widgets_screen2(),
-                size=28,
-                margin=[5, 10, 5, 10],  # top, right, bottom, left
-                # IMP: this is the background color of the bar
-                background="#11111b00",  # transparent
-            ),
-        ),
     ]
+    for _ in range(_monitor_count() - 1):
+        screens_list.append(
+            Screen(
+                top=bar.Bar(
+                    widgets=init_widgets_screen2(),
+                    size=28,
+                    margin=[5, 10, 5, 10],  # top, right, bottom, left
+                    # IMP: this is the background color of the bar
+                    background="#11111b00",  # transparent
+                ),
+            )
+        )
+    return screens_list
 
 
 if __name__ in ["config", "__main__"]:
