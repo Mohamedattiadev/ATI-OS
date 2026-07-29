@@ -126,20 +126,24 @@ def _norm_word(w):
     return PUNCT_RE.sub("", w).lower()
 
 
-def collapse_repeats(words, max_ngram=12, min_repeats=3):
-    """Collapse a phrase that repeats 3+ times back-to-back down to one
-    occurrence.
+def _min_repeats_for(length):
+    # A single word or two doubled ("no no", "very very tired") is real
+    # speech, not a loop -- needs 3+ consecutive copies before it's
+    # treated as a hallucination. A phrase of 3+ words repeated verbatim
+    # is a different story: nobody naturally says a full clause twice in
+    # a row, so even 2 consecutive copies is already the loop ("what I
+    # did was I tried to upgrade the system" x2, reported directly).
+    return 3 if length <= 2 else 2
+
+
+def collapse_repeats(words, max_ngram=12):
+    """Collapse a phrase that repeats back-to-back down to one occurrence.
 
     Safety net for Whisper's decoder repetition-loop failure mode -- a
     well-documented Whisper issue where greedy decoding on longer or messy
-    audio gets stuck re-emitting the same phrase ("I'm sorry about the
-    other one." x6 observed on this setup). -bs 3 (beam search) is the
-    real fix since greedy has no mechanism to escape a loop once locked
-    on, but this catches whatever gets through regardless. min_repeats=3
-    (not 2) is deliberate: people genuinely double a word sometimes ("no
-    no", "very very tired") and that's real speech, not a loop -- three+
-    consecutive identical repeats of the same phrase essentially never
-    happens naturally.
+    audio gets stuck re-emitting the same phrase. -bs 3 (beam search) is
+    the real fix since greedy has no mechanism to escape a loop once
+    locked on, but this catches whatever gets through regardless.
     """
     norm = [_norm_word(w) for w in words]
     n = len(words)
@@ -152,8 +156,11 @@ def collapse_repeats(words, max_ngram=12, min_repeats=3):
         # double-copies still look like 3 repeats to the check below), so
         # searching largest-first would lock onto one of those multiples
         # and only collapse away part of the loop.
-        max_l = min(max_ngram, (n - i) // min_repeats)
+        max_l = min(max_ngram, n - i)
         for length in range(1, max_l + 1):
+            min_repeats = _min_repeats_for(length)
+            if i + min_repeats * length > n:
+                continue
             reps = 1
             while (i + (reps + 1) * length <= n
                    and norm[i + reps * length: i + (reps + 1) * length] == norm[i: i + length]):

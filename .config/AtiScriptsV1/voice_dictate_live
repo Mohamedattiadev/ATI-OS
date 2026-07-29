@@ -75,9 +75,12 @@ pill() {
 }
 
 clear_pill() {
-  notify-send -t 1 \
+  # Same tag as the "Listening..." pill, so this replaces it in place
+  # rather than leaving it up forever or stacking a second notification --
+  # then auto-dismisses itself after 1.5s.
+  notify-send -t 1500 \
     -h "string:x-canonical-private-synchronous:$NOTIFY_TAG" \
-    " " " " 2>/dev/null || true
+    "🎙  Stopped" 2>/dev/null || true
 }
 
 if [[ ! -f "$MODEL" ]]; then
