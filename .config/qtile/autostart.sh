@@ -6,7 +6,6 @@
 # Designed for: Fast login, low CPU usage, smooth window manager startup.
 # Every section is labeled and explained.
 
-COLORSCHEME=DoomOne
 # ---------------------------------------------------------
 # 1. Pre-X configuration
 # ---------------------------------------------------------
@@ -79,12 +78,17 @@ pamac-tray-icon-plasma & # Update notifier
 
 (
   sleep 40
-  # These are long-running `while true` daemons, and autostart.sh runs
-  # again on every qtile restart -- with no guard each restart left
-  # another copy alive. Three stale keyboard_layout_watcher processes is
-  # what made one layout switch pop up three notifications at once, and
-  # kept a pre-edit build of the script running long after it changed.
-  # Same pgrep pattern as the python daemons below.
+  # These are long-running `while true` daemons, so each one is guarded by
+  # a pgrep check before being started.
+  #
+  # The guards are worth keeping, but the reason originally written here
+  # ("autostart.sh runs again on every qtile restart") is not accurate:
+  # this script is invoked from @hook.subscribe.startup_once, and qtile
+  # only fires startup_once when it has no restored state -- i.e. on a
+  # true first start, NOT after Mod+Shift+R. What the guards actually
+  # protect against is a re-login into an existing session and manual
+  # re-runs of this script; both can leave a second copy alive, which is
+  # what made one layout switch pop up three notifications at once.
   pgrep -f 'keyboard_layout_watcher$' >/dev/null || keyboard_layout_watcher &
   pgrep -f 'adhkar$' >/dev/null || adhkar &
   pgrep -f 'battery-events$' >/dev/null || battery-events &

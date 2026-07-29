@@ -26,6 +26,12 @@ _INDEX = 0
 _COL_OFFSET = 0
 _CURRENT_WALL = None
 _CLOSING = False  # True while the close fade is in flight
+# The Qtile object, captured in show_wallpaper_picker(). fuzzy_search_rofi()
+# runs rofi in a worker thread and needs call_soon_threadsafe to get back
+# onto the event loop -- it referenced _QTILE without this ever being
+# defined, so picking a wallpaper from the `/` search raised NameError in a
+# daemon thread (silently) and the selection was discarded.
+_QTILE = None
 
 # =============================================================================
 # CONFIG & STYLING
@@ -318,7 +324,11 @@ def fuzzy_search_rofi():
 # POPUP CONTROL
 # =============================================================================
 def show_wallpaper_picker(qtile):
-    global _WALLPAPER_LAYOUT, _IMAGES, _INDEX, _COL_OFFSET, _CURRENT_WALL
+    global _WALLPAPER_LAYOUT, _IMAGES, _INDEX, _COL_OFFSET, _CURRENT_WALL, _QTILE
+
+    # Captured before the early-return: fuzzy_search_rofi() needs it, and
+    # the picker may already be open when the search is invoked.
+    _QTILE = qtile
 
     if _WALLPAPER_LAYOUT:
         return
