@@ -1,0 +1,1359 @@
+#!/usr/bin/env bash
+# theme-apply <mode>
+#
+# Supported modes:
+#   doomone dracula gruvbox nord tokyonight catppuccin  -> preset palette
+#   wal                                                  -> pywal from ~/.cache/wall
+#
+# For each mode we symlink:
+#   ~/.config/kitty/themes/current.conf     -> kitty palette (SIGUSR1 reloads live)
+#   ~/.config/rofi/themes/current-palette.rasi -> rofi color vars
+# then reload qtile so lib/colors.py picks up the new mode via
+# ~/.cache/qtile/theme_mode.
+#
+# Wal mode passes -s -t and --saturate 0.75 to punch up dim wallpapers.
+
+set -euo pipefail
+
+MODE="${1:-doomone}"
+CACHE_DIR="$HOME/.cache/qtile"
+STATE_FILE="$CACHE_DIR/theme_mode"
+
+mkdir -p "$CACHE_DIR"
+
+# Prevent concurrent invocations. flock(1) can't be used here: theme-
+# apply spawns brave/chrome which inherit the lock FD and hold it
+# forever after theme-apply exits — every subsequent apply then no-ops
+# with "already running". Use a PID-file lock instead: cheap TOCTOU
+# race is acceptable for interactive keybind spam.
+LOCK="$CACHE_DIR/.theme-apply.pid"
+# Preempt any in-flight run so rapid picker clicks always land the
+# latest choice instead of silently no-op'ing on the lock.
+if [[ -f "$LOCK" ]]; then
+  old_pid="$(cat "$LOCK" 2>/dev/null || true)"
+  if [[ -n "$old_pid" ]] && [[ "$old_pid" != "$$" ]] && kill -0 "$old_pid" 2>/dev/null; then
+    if grep -q theme-apply "/proc/$old_pid/cmdline" 2>/dev/null; then
+      kill "$old_pid" 2>/dev/null || true
+      # Give it a moment to release resources.
+      for _ in 1 2 3 4 5; do
+        kill -0 "$old_pid" 2>/dev/null || break
+        sleep 0.1
+      done
+      kill -9 "$old_pid" 2>/dev/null || true
+    fi
+  fi
+fi
+echo $$ >"$LOCK"
+trap 'rm -f "$LOCK"' EXIT INT TERM
+
+PRESETS=(doomone dracula gruvbox nord tokyonight catppuccin monokai everforest rose-pine kanagawa oxocarbon cyberpunk-neon synthwave matrix mono-dark mono-light nightowl onedark palenight github-dark ayu-mirage)
+
+is_preset() {
+  local m="$1"
+  for p in "${PRESETS[@]}"; do
+    [[ "$p" == "$m" ]] && return 0
+  done
+  return 1
+}
+
+if [[ "$MODE" != "wal" ]] && ! is_preset "$MODE"; then
+  echo "usage: theme-apply <doomone|dracula|gruvbox|nord|tokyonight|catppuccin|monokai|everforest|rose-pine|kanagawa|oxocarbon|cyberpunk-neon|synthwave|matrix|mono-dark|mono-light|nightowl|onedark|palenight|github-dark|ayu-mirage|wal>" >&2
+  exit 1
+fi
+
+# ---- Raise the restart veil NOW, before any palette is written ----
+# The restart at the end of this script is what the veil normally covers,
+# but everything between here and there -- ~10 app palettes, GTK, qt5ct,
+# rofi, dunst, papirus -- takes about 4s, and the user watched all of it
+# happen on a naked desktop: colours visibly swapping, a pause, and only
+# then a loading screen. Raising the veil first hides that whole window.
+#
+# Fire-and-forget in the background: this must never delay or fail the
+# theme change. Same probe-the-config-module pattern as the restart call
+# below (a qtile attribute may not be attached yet; the module function
+# has been there far longer).
+(
+  qtile cmd-obj -o cmd -f eval -a \
+    "str(__import__(\"sys\").modules[\"config\"]._veil_hold())" \
+    >/dev/null 2>&1 || true
+) &
+
+KITTY_THEMES="$HOME/.config/kitty/themes"
+ROFI_THEMES="$HOME/.config/rofi/themes"
+ALACRITTY_THEMES="$HOME/.config/alacritty/themes"
+
+# Alacritty preset name (upstream repo uses snake_case, our modes use
+# kebab/short). Maps preset mode -> themes/themes/<file>.toml.
+alacritty_preset_for() {
+  case "$1" in
+    doomone)    echo doom_one ;;
+    dracula)    echo dracula ;;
+    gruvbox)    echo gruvbox_dark ;;
+    nord)       echo nord ;;
+    tokyonight) echo tokyo_night ;;
+    catppuccin) echo catppuccin_mocha ;;
+    monokai)    echo monokai_pro ;;
+    everforest) echo everforest_dark ;;
+    rose-pine)  echo rose_pine ;;
+    kanagawa)   echo kanagawa_wave ;;
+    oxocarbon)  echo oxocarbon ;;
+    cyberpunk-neon) echo cyber_punk_neon ;;
+    synthwave)  echo synthwave_84 ;;
+    matrix)     echo hardhacker ;;
+    mono-dark)  echo alabaster_dark ;;
+    mono-light) echo alabaster ;;
+    nightowl)   echo night_owl ;;
+    onedark)    echo one_dark ;;
+    palenight)  echo palenight ;;
+    github-dark) echo github_dark ;;
+    ayu-mirage) echo ayu_mirage ;;
+    *)          echo doom_one ;;
+  esac
+}
+
+if [[ "$MODE" == "wal" ]]; then
+  if ! command -v wal >/dev/null; then
+    notify-send -u critical "theme-apply" "pywal not installed"
+    exit 1
+  fi
+  WALL_LINK="$HOME/.cache/wall"
+  if [[ ! -f "$WALL_LINK" ]]; then
+    # shellcheck disable=SC2088  # ~ is prose in a message, not a path
+    notify-send -u critical "theme-apply" "~/.cache/wall missing — set a wallpaper first"
+    exit 1
+  fi
+  # Prefer symlink target; fall back to file contents for legacy plain-text
+  # `~/.cache/wall` written by older dm-setbg / WallpaperPopup versions.
+  if [[ -L "$WALL_LINK" ]]; then
+    WALL_PATH="$(readlink -f "$WALL_LINK")"
+  else
+    WALL_PATH="$(head -n 1 "$WALL_LINK" 2>/dev/null | tr -d '\r\n\0')"
+    # Migrate to symlink so future runs take the fast path.
+    if [[ -f "$WALL_PATH" ]]; then
+      ln -sfn "$WALL_PATH" "$WALL_LINK" 2>/dev/null || true
+    fi
+  fi
+  # Guard: wall path stale (file deleted after cache write).
+  if [[ ! -f "$WALL_PATH" ]]; then
+    notify-send -u critical "theme-apply" "wallpaper file missing: $WALL_PATH"
+    exit 1
+  fi
+  WALL_STEM="$(basename "$WALL_PATH")"; WALL_STEM="${WALL_STEM%.*}"
+  PRECOMPILED="$HOME/.cache/qtile/palettes/$WALL_STEM.json"
+
+  # New wallpaper (not in precompile cache) — generate its palette on
+  # demand so the fast path can be used. Falls through to legacy live
+  # wal only if wal-precompile itself fails or is missing.
+  if [[ ! -f "$PRECOMPILED" ]] && command -v wal-precompile >/dev/null; then
+    wal-precompile --only "$(basename "$WALL_PATH")" --force >/dev/null 2>&1 || true
+  fi
+
+  if [[ -f "$PRECOMPILED" ]]; then
+    # Fast path: precompiled palette contains pre-rendered consumer
+    # templates. Write them directly, skip wal binary + wal -R.
+    mkdir -p "$HOME/.cache/wal" "$HOME/.config/qtile/browser-theme"
+    python3 - "$PRECOMPILED" "$KITTY_THEMES" "$ROFI_THEMES" <<'PYEOF' 2>/dev/null || true
+import json, os, sys, time
+src   = json.load(open(sys.argv[1]))
+kdir  = sys.argv[2]
+rdir  = sys.argv[3]
+cons  = src["consumers"]
+def w(p, s):
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    open(p, "w").write(s)
+w(os.path.expanduser("~/.cache/wal/colors.json"),
+  json.dumps(src["wal_colors"], indent=4))
+w(os.path.expanduser("~/.cache/wal/colors-kitty.conf"),
+  cons["kitty_conf"])
+w(os.path.join(rdir, "palette-wal.rasi"), cons["rofi_rasi"])
+# also emit a minimal colors-wal.vim so any tool still expecting it works
+wc = src["wal_colors"]["colors"]
+w(os.path.expanduser("~/.cache/wal/colors-wal.vim"),
+  "let background = \"{}\"\n".format(src["bg"]) +
+  "let foreground = \"{}\"\n".format(src["fg"]) +
+  "".join(f'let color{i} = "{wc["color"+str(i)]}"\n' for i in range(16)))
+# brave manifest with fresh version so chromium reloads
+mf = dict(cons["brave_theme"])
+mf["version"] = "1.0." + str(int(time.time()))
+w(os.path.expanduser("~/.config/qtile/browser-theme/manifest.json"),
+  json.dumps(mf, indent=2))
+# gtk css overlay (~/.cache/qtile/gtk-wal.css already @imported)
+w(os.path.expanduser("~/.cache/qtile/gtk-wal.css"), cons["gtk_css"])
+PYEOF
+    # Skip wal -R: precompiled templates already cover kitty+rofi+brave+gtk.
+    # Alacritty wal palette from precompiled consumers.alacritty_toml
+    python3 -c "
+import json, sys
+d=json.load(open('$PRECOMPILED'))
+t=d['consumers'].get('alacritty_toml','')
+open('$HOME/.cache/wal/colors-alacritty.toml','w').write(t)
+" 2>/dev/null || true
+    ln -sfn "$HOME/.cache/wal/colors-kitty.conf" "$KITTY_THEMES/current.conf"
+    ln -sfn palette-wal.rasi "$ROFI_THEMES/current-palette.rasi"
+    ln -sfn "$HOME/.cache/wal/colors-alacritty.toml" "$ALACRITTY_THEMES/current.toml"
+    PRECOMPILED_APPLIED=1
+  else
+    # Fallback: live wal extraction. Colorz backend + saturation punch.
+    wal --backend colorz -i "$WALL_PATH" -n -s -t -q --saturate 1.0 2>/dev/null \
+      || wal -i "$WALL_PATH" -n -s -t -q --saturate 1.0 2>/dev/null
+
+    # Monochrome / desaturated wallpapers produce useless palettes (all
+    # one hue). Detect via HSV hue spread AND mean saturation on
+    # color9-14; if either fails, overwrite accents with DoomOne while
+    # keeping wal bg/fg. Thresholds match WAL_AUDIT_REPORT.md findings.
+    python3 <<'PYEOF' 2>/dev/null || true
+import json, os, colorsys
+p = os.path.expanduser("~/.cache/wal/colors.json")
+with open(p) as f:
+    d = json.load(f)
+accents = [d["colors"][f"color{i}"] for i in range(9, 15)]
+def hsv(hx):
+    r, g, b = int(hx[1:3],16)/255, int(hx[3:5],16)/255, int(hx[5:7],16)/255
+    return colorsys.rgb_to_hsv(r, g, b)
+hs = [hsv(a)[0] * 360 for a in accents]
+ss = [hsv(a)[1] for a in accents]
+spread = max(hs) - min(hs)
+sat_mean = sum(ss) / len(ss)
+if spread < 60 or sat_mean < 0.25:
+    doomone = {
+        "color1":"#ff6c6b","color9":"#ff6c6b",
+        "color2":"#98be65","color10":"#98be65",
+        "color3":"#da8548","color11":"#da8548",
+        "color4":"#51afef","color12":"#51afef",
+        "color5":"#c678dd","color13":"#c678dd",
+        "color6":"#46d9ff","color14":"#46d9ff",
+    }
+    d["colors"].update(doomone)
+    with open(p, "w") as f:
+        json.dump(d, f, indent=4)
+PYEOF
+  fi
+
+  if [[ "${PRECOMPILED_APPLIED:-0}" != 1 ]]; then
+    # No precompile — legacy path needs wal -R to regenerate kitty conf
+    # then build rofi rasi from live wal cache.
+    wal -R -q 2>/dev/null || true
+    BG="$(jq -r .special.background ~/.cache/wal/colors.json)"
+    FG="$(jq -r .special.foreground ~/.cache/wal/colors.json)"
+    BG_ALT="$(jq -r .colors.color0 ~/.cache/wal/colors.json)"
+    SEL="$(jq -r .colors.color14 ~/.cache/wal/colors.json)"
+    SEL2="$(jq -r .colors.color12 ~/.cache/wal/colors.json)"
+    URG="$(jq -r .colors.color9 ~/.cache/wal/colors.json)"
+    ACT="$(jq -r .colors.color10 ~/.cache/wal/colors.json)"
+    cat >"$ROFI_THEMES/palette-wal.rasi" <<EOF
+* {
+    background:     $BG;
+    background-alt: $BG_ALT;
+    foreground:     $FG;
+    selected:       $SEL;
+    selectedone:    $SEL2;
+    urgent:         $URG;
+    active:         $ACT;
+}
+EOF
+    ln -sfn "$HOME/.cache/wal/colors-kitty.conf" "$KITTY_THEMES/current.conf"
+    ln -sfn palette-wal.rasi "$ROFI_THEMES/current-palette.rasi"
+    ln -sfn "$HOME/.cache/wal/colors-alacritty.toml" "$ALACRITTY_THEMES/current.toml"
+  fi
+else
+  ln -sfn "$MODE.conf" "$KITTY_THEMES/current.conf"
+  ln -sfn "palette-$MODE.rasi" "$ROFI_THEMES/current-palette.rasi"
+  ln -sfn "themes/$(alacritty_preset_for "$MODE").toml" "$ALACRITTY_THEMES/current.toml"
+fi
+
+# ---- Qutebrowser homepage CSS vars ----
+# Inline the palette into homepage.html between BEGIN-THEME-VARS /
+# END-THEME-VARS markers. Editing the HTML itself defeats file:// CSS
+# caching that file:// stylesheets have for the qutebrowser --temp
+# window used by the homepage.
+QB_HTML="$HOME/.config/qutebrowser/html/homepage.html"
+gen_qb_css() {
+  local bg="$1" bg_alt="$2" fg="$3" red="$4" green="$5" yellow="$6" blue="$7" purple="$8" cyan="$9"
+  [[ -f "$QB_HTML" ]] || return
+  python3 - "$QB_HTML" "$bg" "$bg_alt" "$fg" "$red" "$green" "$yellow" "$blue" "$purple" "$cyan" <<'PYEOF'
+import sys, re
+path = sys.argv[1]
+bg, bg_alt, fg, red, green, yellow, blue, purple, cyan = sys.argv[2:11]
+with open(path) as f:
+    src = f.read()
+block = (
+    "    <!-- BEGIN-THEME-VARS (rewritten by theme-apply) -->\n"
+    "    <style id=\"theme-vars\">\n"
+    "      :root {\n"
+    f"        --bg: {bg};\n"
+    f"        --bg-alt: {bg_alt};\n"
+    f"        --fg: {fg};\n"
+    f"        --red: {red};\n"
+    f"        --green: {green};\n"
+    f"        --yellow: {yellow};\n"
+    f"        --blue: {blue};\n"
+    f"        --purple: {purple};\n"
+    f"        --cyan: {cyan};\n"
+    f"        --accent: {green};\n"
+    f"        --urgent: {red};\n"
+    "      }\n"
+    "    </style>\n"
+    "    <!-- END-THEME-VARS -->"
+)
+new = re.sub(
+    r"    <!-- BEGIN-THEME-VARS.*?<!-- END-THEME-VARS -->",
+    block,
+    src,
+    count=1,
+    flags=re.DOTALL,
+)
+with open(path, 'w') as f:
+    f.write(new)
+PYEOF
+}
+
+gen_eww_scss() {
+  # eww uses scss compiled at window-open. Rewrite colors.scss so all
+  # eww widgets (cheatsheet, onboarding, bar tooltips) track wallpaper.
+  # Slot map: bg/bg-alt/fg + accent=dominant (color5 slot passed here
+  # is the dominant hue since caller passes color10 = precompile dh).
+  local bg="$1" bg_alt="$2" fg="$3" red="$4" green="$5" yellow="$6" blue="$7" purple="$8" cyan="$9"
+  local scss="$HOME/.config/eww/colors.scss"
+  [[ -d "$(dirname "$scss")" ]] || return
+  cat >"$scss" <<EOF
+// Generated by theme-apply. Do not edit — regenerated per palette.
+\$bg: $bg;
+\$bg-alt: $bg_alt;
+\$fg: $fg;
+\$accent: $green;
+\$black: $bg_alt;
+\$lightblack: $bg_alt;
+\$red: $red;
+\$blue: $blue;
+\$cyan: $cyan;
+\$magenta: $purple;
+\$green: $green;
+\$yellow: $yellow;
+\$archicon: $green;
+EOF
+}
+
+gen_btop_theme() {
+  # btop has never been themed by this setup (pure defaults) -- generate
+  # a proper .theme file from the current 9-slot palette and point
+  # btop.conf at it. Applies on btop's next launch (no signal-based
+  # live-reload API to force an already-running instance to pick it up).
+  local bg="$1" bg_alt="$2" fg="$3" red="$4" green="$5" yellow="$6" blue="$7" purple="$8" cyan="$9"
+  local dir="$HOME/.config/btop/themes"
+  local theme_file="$dir/wal-theme.theme"
+  local conf="$HOME/.config/btop/btop.conf"
+  mkdir -p "$dir"
+  python3 - "$theme_file" "$bg" "$bg_alt" "$fg" "$red" "$green" "$yellow" "$blue" "$purple" "$cyan" <<'PYEOF' 2>/dev/null || true
+import sys, colorsys
+outp, bg, bg_alt, fg, red, green, yellow, blue, purple, cyan = sys.argv[1:11]
+
+def hex_to_hls(hx):
+    hx = hx.lstrip('#')
+    r, g, b = int(hx[0:2], 16) / 255, int(hx[2:4], 16) / 255, int(hx[4:6], 16) / 255
+    return colorsys.rgb_to_hls(r, g, b)
+
+def hls_to_hex(h, l, s):
+    r, g, b = colorsys.hls_to_rgb(h, l, s)
+    return '#{:02x}{:02x}{:02x}'.format(round(r * 255), round(g * 255), round(b * 255))
+
+def gradient(hexcolor, lights=(0.75, 0.55, 0.40)):
+    h, l, s = hex_to_hls(hexcolor)
+    s = max(s, 0.55)
+    return [hls_to_hex(h, lv, s) for lv in lights]
+
+temp, cpug, freeg = gradient(red), gradient(purple), gradient(blue)
+cacheg, availg, usedg = gradient(cyan), gradient(yellow), gradient(green)
+downg, upg = gradient(blue), gradient(purple)
+procg = gradient(green, (0.60, 0.45, 0.30))
+
+lines = [
+    f'theme[main_bg]="{bg}"', f'theme[main_fg]="{fg}"', f'theme[title]="{fg}"',
+    f'theme[hi_fg]="{blue}"', f'theme[selected_bg]="{purple}"', f'theme[selected_fg]="{bg}"',
+    f'theme[inactive_fg]="{bg_alt}"', f'theme[graph_text]="{fg}"', f'theme[meter_bg]="{bg_alt}"',
+    f'theme[proc_misc]="{purple}"', f'theme[cpu_box]="{blue}"', f'theme[mem_box]="{green}"',
+    f'theme[net_box]="{red}"', f'theme[proc_box]="{cyan}"', f'theme[div_line]="{bg_alt}"',
+    f'theme[temp_start]="{temp[0]}"', f'theme[temp_mid]="{temp[1]}"', f'theme[temp_end]="{temp[2]}"',
+    f'theme[cpu_start]="{cpug[0]}"', f'theme[cpu_mid]="{cpug[1]}"', f'theme[cpu_end]="{cpug[2]}"',
+    f'theme[free_start]="{freeg[0]}"', f'theme[free_mid]="{freeg[1]}"', f'theme[free_end]="{freeg[2]}"',
+    f'theme[cached_start]="{cacheg[0]}"', f'theme[cached_mid]="{cacheg[1]}"', f'theme[cached_end]="{cacheg[2]}"',
+    f'theme[available_start]="{availg[0]}"', f'theme[available_mid]="{availg[1]}"', f'theme[available_end]="{availg[2]}"',
+    f'theme[used_start]="{usedg[0]}"', f'theme[used_mid]="{usedg[1]}"', f'theme[used_end]="{usedg[2]}"',
+    f'theme[download_start]="{downg[0]}"', f'theme[download_mid]="{downg[1]}"', f'theme[download_end]="{downg[2]}"',
+    f'theme[upload_start]="{upg[0]}"', f'theme[upload_mid]="{upg[1]}"', f'theme[upload_end]="{upg[2]}"',
+    f'theme[process_start]="{procg[0]}"', f'theme[process_mid]="{procg[1]}"', f'theme[process_end]="{procg[2]}"',
+]
+with open(outp, 'w') as f:
+    f.write('\n'.join(lines) + '\n')
+PYEOF
+  if [[ -f "$conf" ]]; then
+    if grep -q '^color_theme' "$conf"; then
+      sed -i 's|^color_theme.*|color_theme = "wal-theme"|' "$conf"
+    else
+      printf '\ncolor_theme = "wal-theme"\n' >>"$conf"
+    fi
+  else
+    printf 'color_theme = "wal-theme"\ntheme_background = true\n' >"$conf"
+  fi
+}
+
+gen_qt_colors() {
+  # Qt apps (telegram-desktop, any qt5/qt6 GUI) do NOT follow the GTK
+  # theme. With no QT_QPA_PLATFORMTHEME set they fall back to Qt's
+  # built-in palette, which is LIGHT -- that is why telegram and friends
+  # rendered white on an otherwise dark desktop.
+  #
+  # .xinitrc exports QT_QPA_PLATFORMTHEME=qt6ct, and qt6ct/qt5ct read a
+  # palette file. Generate that palette from the active theme so Qt apps
+  # track every mode like every other consumer.
+  local bg="$1" bg_alt="$2" fg="$3" red="$4" green="$5" yellow="$6" blue="$7" purple="$8" cyan="$9"
+  local sel_fg="$bg"
+  for dir in "$HOME/.config/qt6ct" "$HOME/.config/qt5ct"; do
+    mkdir -p "$dir/colors"
+    # QPalette role order, 21 entries -- qt6ct is positional, so the
+    # count and order matter. Wrong length = silently ignored palette.
+    #  WindowText Button Light Midlight Dark Mid Text BrightText
+    #  ButtonText Base Window Shadow Highlight HighlightedText Link
+    #  LinkVisited AlternateBase NoRole ToolTipBase ToolTipText
+    #  PlaceholderText
+    local roles="$fg, $bg_alt, $bg_alt, $bg_alt, $bg, $bg, $fg, $red, $fg, $bg, $bg, #000000, $blue, $sel_fg, $cyan, $purple, $bg_alt, $bg, $bg_alt, $fg, $fg"
+    cat >"$dir/colors/current.conf" <<EOF
+[ColorScheme]
+active_colors=$roles
+inactive_colors=$roles
+disabled_colors=$roles
+EOF
+    local conf="$dir/${dir##*/}.conf"
+    cat >"$conf" <<EOF
+[Appearance]
+color_scheme_path=$dir/colors/current.conf
+custom_palette=true
+standard_dialogs=default
+style=Fusion
+icon_theme=$([[ "$MODE" == mono-light ]] && echo Papirus-Light || echo Papirus-Dark)
+EOF
+  done
+}
+
+dump_palette_json() {
+  # Dump current 9-slot palette to ~/.cache/qtile/current_palette.json so
+  # nvim (+ any other consumer) can render themes for modes that don't
+  # have a dedicated plugin (matrix, mono-*, synthwave, cyberpunk-neon,
+  # palenight, github-dark, ayu-mirage, onedark, nightowl, ...).
+  local out="$HOME/.cache/qtile/current_palette.json"
+  mkdir -p "$(dirname "$out")"
+  cat >"$out" <<EOF
+{
+  "mode": "$MODE",
+  "bg": "$1",
+  "bg_alt": "$2",
+  "fg": "$3",
+  "red": "$4",
+  "green": "$5",
+  "yellow": "$6",
+  "blue": "$7",
+  "purple": "$8",
+  "cyan": "$9"
+}
+EOF
+}
+
+gen_all_theme_css() {
+  gen_qb_css "$@"
+  gen_eww_scss "$@"
+  gen_btop_theme "$@"
+  gen_qt_colors "$@"
+  dump_palette_json "$@"
+}
+
+case "$MODE" in
+  wal)
+    W=~/.cache/wal/colors.json
+    # wal-precompile assigns accents by wallpaper DOMINANCE, not by
+    # semantic hue name (color10 = wallpaper's main hue, not necessarily
+    # green). Also emits color0 == special.background collapsing bg_alt
+    # into bg. Post-process here: derive bg_alt via HLS +6% lightness,
+    # and re-slot each accent into the semantic slot whose target hue is
+    # closest, filling gaps with doomone defaults so every consumer that
+    # asks for "green" actually receives a green-ish color.
+    read -r WAL_BG WAL_BG_ALT WAL_FG WAL_RED WAL_GREEN WAL_YELLOW WAL_BLUE WAL_PURPLE WAL_CYAN <<<"$(python3 <<'PYEOF'
+import json, colorsys, os
+d = json.load(open(os.path.expanduser('~/.cache/wal/colors.json')))
+bg = d['special']['background']
+fg = d['special']['foreground']
+
+def hex_to_hls(hx):
+    hx = hx.lstrip('#')
+    r, g, b = int(hx[0:2],16)/255, int(hx[2:4],16)/255, int(hx[4:6],16)/255
+    return colorsys.rgb_to_hls(r, g, b)
+
+def hls_to_hex(h, l, s):
+    r, g, b = colorsys.hls_to_rgb(h, l, s)
+    return '#{:02x}{:02x}{:02x}'.format(int(r*255), int(g*255), int(b*255))
+
+# bg_alt = +6% lightened bg
+h, l, s = hex_to_hls(bg)
+bg_alt = hls_to_hex(h, min(1.0, l + 0.06), s)
+
+# Semantic slot target hues (0-360). Distance is min(|a-b|, 360-|a-b|).
+targets = {
+    'red':    0,
+    'yellow': 55,
+    'green':  120,
+    'cyan':   180,
+    'blue':   225,
+    'purple': 290,
+}
+accents = [d['colors'][f'color{i}'] for i in range(9, 15)]
+
+def circ_dist(a, b):
+    d = abs(a - b) % 360
+    return min(d, 360 - d)
+
+def circ_shift(base_deg, tgt_deg, frac):
+    # Rotate base_deg toward tgt_deg by frac (0..1) along shortest arc.
+    diff = (tgt_deg - base_deg + 540) % 360 - 180  # signed [-180,180]
+    return (base_deg + diff * frac) % 360
+
+# Score each (slot, accent) pair by hue distance. Greedy assign lowest
+# distance first, one accent per slot. Skip accents with saturation<0.15
+# (near-gray) — they'd pollute any slot they land in.
+pairs = []
+saturated = []  # (hue_deg, sat, light, hex) — for fallback synthesis
+for accent in accents:
+    ah, al, asat = hex_to_hls(accent)
+    if asat < 0.15:
+        continue
+    ah_deg = ah * 360
+    saturated.append((ah_deg, asat, al, accent))
+    for slot, tgt in targets.items():
+        pairs.append((circ_dist(ah_deg, tgt), slot, accent))
+pairs.sort(key=lambda x: x[0])
+
+slots = {}
+used_accents = set()
+# Hue-distance threshold: if best accent is > 60° from the slot's
+# target hue, no wallpaper accent naturally covers this hue name;
+# synthesize a wallpaper-cohesive value below instead of forcing a
+# clashing doomone default (#c678dd purple, #98be65 green, ...) on
+# top of a monochromatic wallpaper.
+MAX_DIST = 60
+for dist, slot, accent in pairs:
+    if slot in slots or accent in used_accents:
+        continue
+    if dist > MAX_DIST:
+        continue
+    slots[slot] = accent
+    used_accents.add(accent)
+    if len(slots) == len(targets):
+        break
+
+# Any slot still empty: synthesize from wallpaper's dominant accent
+# (most saturated). Rotate its hue 50% toward the slot's target hue
+# so it leans toward the name while staying palette-harmonic. Boost
+# saturation slightly so the slot reads as an accent, not muted.
+if saturated:
+    saturated.sort(key=lambda x: -x[1])  # most saturated first
+    dom_h, dom_s, dom_l, _ = saturated[0]
+    for slot, tgt in targets.items():
+        if slot in slots:
+            continue
+        new_h = circ_shift(dom_h, tgt, 0.5) / 360
+        new_l = max(0.45, min(0.65, dom_l))
+        new_s = max(0.55, dom_s)
+        slots[slot] = hls_to_hex(new_h, new_l, new_s)
+else:
+    # No saturated accent at all (grayscale wallpaper) — use fg for
+    # every slot so consumers still get a readable value.
+    for slot in targets:
+        slots.setdefault(slot, fg)
+
+print(bg, bg_alt, fg, slots['red'], slots['green'], slots['yellow'],
+      slots['blue'], slots['purple'], slots['cyan'])
+PYEOF
+)"
+    gen_all_theme_css "$WAL_BG" "$WAL_BG_ALT" "$WAL_FG" "$WAL_RED" "$WAL_GREEN" "$WAL_YELLOW" "$WAL_BLUE" "$WAL_PURPLE" "$WAL_CYAN"
+    ;;
+  doomone)   gen_all_theme_css "#282c34" "#1e222a" "#dcdfe4" "#ff6c6b" "#98be65" "#ecbe7b" "#51afef" "#c678dd" "#46d9ff" ;;
+  dracula)   gen_all_theme_css "#282a36" "#21222c" "#f8f8f2" "#ff5555" "#50fa7b" "#f1fa8c" "#bd93f9" "#ff79c6" "#8be9fd" ;;
+  nord)      gen_all_theme_css "#2e3440" "#3b4252" "#d8dee9" "#bf616a" "#a3be8c" "#ebcb8b" "#81a1c1" "#b48ead" "#88c0d0" ;;
+  gruvbox)   gen_all_theme_css "#282828" "#1d2021" "#ebdbb2" "#fb4934" "#b8bb26" "#fabd2f" "#83a598" "#d3869b" "#8ec07c" ;;
+  tokyonight) gen_all_theme_css "#1a1b26" "#16161e" "#c0caf5" "#f7768e" "#9ece6a" "#e0af68" "#7aa2f7" "#bb9af7" "#7dcfff" ;;
+  catppuccin) gen_all_theme_css "#1e1e2e" "#181825" "#cdd6f4" "#f38ba8" "#a6e3a1" "#f9e2af" "#89b4fa" "#cba6f7" "#94e2d5" ;;
+  monokai)   gen_all_theme_css "#272822" "#1e1f1c" "#f8f8f2" "#f92672" "#a6e22e" "#f4bf75" "#66d9ef" "#ae81ff" "#a1efe4" ;;
+  everforest) gen_all_theme_css "#2d353b" "#232a2e" "#d3c6aa" "#e67e80" "#a7c080" "#dbbc7f" "#7fbbb3" "#d699b6" "#83c092" ;;
+  rose-pine) gen_all_theme_css "#191724" "#1f1d2e" "#e0def4" "#eb6f92" "#31748f" "#f6c177" "#9ccfd8" "#c4a7e7" "#ebbcba" ;;
+  kanagawa)  gen_all_theme_css "#1f1f28" "#16161d" "#dcd7ba" "#e46876" "#98bb6c" "#e6c384" "#7e9cd8" "#957fb8" "#7aa89f" ;;
+  oxocarbon) gen_all_theme_css "#161616" "#262626" "#f2f4f8" "#ee5396" "#42be65" "#ffe97b" "#33b1ff" "#be95ff" "#3ddbd9" ;;
+  cyberpunk-neon) gen_all_theme_css "#0a0e27" "#000000" "#d1f7ff" "#ff2740" "#00ff9f" "#f9f002" "#00b8ff" "#bd00ff" "#00fff9" ;;
+  synthwave) gen_all_theme_css "#241b30" "#1a1428" "#f4e9d0" "#fe4450" "#72f1b8" "#fede5d" "#03edf9" "#c792ea" "#36f9f6" ;;
+  matrix)    gen_all_theme_css "#000000" "#0a0a0a" "#00ff41" "#ff0000" "#00ff41" "#c0ff00" "#008f11" "#00b849" "#00ff9f" ;;
+  mono-dark) gen_all_theme_css "#000000" "#0a0a0a" "#e0e0e0" "#808080" "#a0a0a0" "#c0c0c0" "#a0a0a0" "#909090" "#b0b0b0" ;;
+  mono-light) gen_all_theme_css "#ffffff" "#e0e0e0" "#000000" "#c00000" "#006000" "#805000" "#000080" "#600060" "#005080" ;;
+  nightowl)  gen_all_theme_css "#011627" "#010e1a" "#d6deeb" "#ef5350" "#22da6e" "#ffeb95" "#82aaff" "#c792ea" "#7fdbca" ;;
+  onedark)   gen_all_theme_css "#282c34" "#21252b" "#abb2bf" "#e06c75" "#98c379" "#e5c07b" "#61afef" "#c678dd" "#56b6c2" ;;
+  palenight) gen_all_theme_css "#292d3e" "#1e2030" "#a6accd" "#f07178" "#c3e88d" "#ffcb6b" "#82b1ff" "#c792ea" "#89ddff" ;;
+  github-dark) gen_all_theme_css "#0d1117" "#010409" "#c9d1d9" "#ff7b72" "#7ee787" "#f2cc60" "#58a6ff" "#d2a8ff" "#a5d6ff" ;;
+  ayu-mirage) gen_all_theme_css "#1f2430" "#171b24" "#cbccc6" "#ff6666" "#bae67e" "#ffcc66" "#5ccfe6" "#c3a6ff" "#95e6cb" ;;
+esac
+
+# eww: reload only if daemon alive + there are no open windows. If
+# windows are open, kill+restart+reopen (scss recompile needed).
+# Backgrounded so theme-apply doesn't block.
+if pgrep -x eww >/dev/null 2>&1; then
+  (
+    OPEN_WINS="$(eww active-windows 2>/dev/null | awk -F: '{print $1}')"
+    if [[ -z "$OPEN_WINS" ]]; then
+      eww reload >/dev/null 2>&1 || true
+    else
+      eww kill >/dev/null 2>&1 || pkill -x eww 2>/dev/null || true
+      for _ in 1 2 3 4 5; do pgrep -x eww >/dev/null 2>&1 || break; sleep 0.1; done
+      setsid -f eww daemon </dev/null >/dev/null 2>&1 || true
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        eww ping >/dev/null 2>&1 && break
+        sleep 0.1
+      done
+      for w in $OPEN_WINS; do eww open "$w" >/dev/null 2>&1 || true; done
+    fi
+  ) &
+  disown
+fi
+
+echo "$MODE" >"$STATE_FILE"
+
+# Live-reload all running kitty instances. kitty listens on
+# unix:/tmp/kitty-<pid>, one socket per top-level kitty. SIGUSR1 alone
+# rereads the config but the include'd palette file often stays cached,
+# so push the palette explicitly via `kitty @ set-colors --all`.
+# Fan out to every live kitty in parallel so one hung instance doesn't
+# serialize the rest at 1s each. wait ensures we still see if all fired.
+for sock in /tmp/kitty-*; do
+  [[ -S "$sock" ]] || continue
+  timeout 1 kitty @ --to "unix:$sock" set-colors --all --configured \
+    "$KITTY_THEMES/current.conf" 2>/dev/null &
+done
+for pid in $(pgrep -x kitty || true); do
+  kill -SIGUSR1 "$pid" 2>/dev/null || true
+done
+wait 2>/dev/null || true
+
+# ---- Dunst ----
+# Render dunstrc from ~/.dotfiles/.config/dunst/dunstrc.tmpl with palette
+# substitutions. Retint only the 3 urgency levels + global frame_color;
+# named notification classes (success/warning/todo/spotify/etc) keep
+# their semantic hardcoded colors.
+DUNSTRC="$HOME/.config/dunst/dunstrc"
+DUNST_TMPL="$HOME/.dotfiles/.config/dunst/dunstrc.tmpl"
+render_dunstrc() {
+  local bg="$1" fg="$2" bg_crit="$3" fg_crit="$4" accent="$5" ok="$6" urgent="$7"
+  # Break any stow symlink to dunstrc — we'll manage the real file now.
+  [[ -L "$DUNSTRC" ]] && rm "$DUNSTRC"
+  sed -e "s|{{BG}}|$bg|g" \
+      -e "s|{{FG}}|$fg|g" \
+      -e "s|{{BG_CRIT}}|$bg_crit|g" \
+      -e "s|{{FG_CRIT}}|$fg_crit|g" \
+      -e "s|{{ACCENT}}|$accent|g" \
+      -e "s|{{OK}}|$ok|g" \
+      -e "s|{{URGENT}}|$urgent|g" \
+      "$DUNST_TMPL" >"$DUNSTRC"
+}
+
+if [[ -f "$DUNST_TMPL" ]]; then
+  case "$MODE" in
+    wal)
+      W=~/.cache/wal/colors.json
+      render_dunstrc \
+        "$(jq -r .special.background "$W")" \
+        "$(jq -r .special.foreground "$W")" \
+        "$(jq -r .colors.color0 "$W")" \
+        "$(jq -r .special.foreground "$W")" \
+        "$(jq -r .colors.color12 "$W")" \
+        "$(jq -r .colors.color10 "$W")" \
+        "$(jq -r .colors.color9 "$W")"
+      ;;
+    doomone)   render_dunstrc "#1c2028" "#bbc2cf" "#2b1517" "#ffdada" "#51afef" "#98be65" "#ff6c6b" ;;
+    dracula)   render_dunstrc "#21222c" "#f8f8f2" "#3d1e2c" "#ffdada" "#bd93f9" "#50fa7b" "#ff5555" ;;
+    nord)      render_dunstrc "#2e3440" "#d8dee9" "#3b1f22" "#ffdada" "#88c0d0" "#a3be8c" "#bf616a" ;;
+    gruvbox)   render_dunstrc "#282828" "#ebdbb2" "#3c1f1c" "#ffdada" "#fabd2f" "#b8bb26" "#fb4934" ;;
+    tokyonight) render_dunstrc "#1a1b26" "#c0caf5" "#3d1f2a" "#ffdada" "#7aa2f7" "#9ece6a" "#f7768e" ;;
+    catppuccin) render_dunstrc "#1e1e2e" "#cdd6f4" "#3d1f2a" "#ffdada" "#cba6f7" "#a6e3a1" "#f38ba8" ;;
+    monokai)   render_dunstrc "#272822" "#f8f8f2" "#3d1f2a" "#ffdada" "#66d9ef" "#a6e22e" "#f92672" ;;
+    everforest) render_dunstrc "#2d353b" "#d3c6aa" "#3d1f22" "#ffdada" "#7fbbb3" "#a7c080" "#e67e80" ;;
+    rose-pine) render_dunstrc "#191724" "#e0def4" "#3d1f2a" "#ffdada" "#c4a7e7" "#9ccfd8" "#eb6f92" ;;
+    kanagawa)  render_dunstrc "#1f1f28" "#dcd7ba" "#3d1f22" "#ffdada" "#7e9cd8" "#98bb6c" "#e46876" ;;
+    oxocarbon) render_dunstrc "#161616" "#f2f4f8" "#3d1f2a" "#ffdada" "#33b1ff" "#42be65" "#ee5396" ;;
+    cyberpunk-neon) render_dunstrc "#0a0e27" "#d1f7ff" "#3d1f2a" "#ffdada" "#00fff9" "#00ff9f" "#ff2740" ;;
+    synthwave) render_dunstrc "#241b30" "#f4e9d0" "#3d1f2a" "#ffdada" "#36f9f6" "#72f1b8" "#fe4450" ;;
+    matrix)    render_dunstrc "#000000" "#00ff41" "#1a0000" "#ffdada" "#00ff9f" "#00ff41" "#ff0000" ;;
+    mono-dark) render_dunstrc "#000000" "#e0e0e0" "#2a2a2a" "#ffdada" "#b0b0b0" "#a0a0a0" "#808080" ;;
+    mono-light) render_dunstrc "#ffffff" "#000000" "#ffd0d0" "#600000" "#000080" "#006000" "#c00000" ;;
+    nightowl)  render_dunstrc "#011627" "#d6deeb" "#3d1f2a" "#ffdada" "#82aaff" "#22da6e" "#ef5350" ;;
+    onedark)   render_dunstrc "#282c34" "#abb2bf" "#3d1f2a" "#ffdada" "#61afef" "#98c379" "#e06c75" ;;
+    palenight) render_dunstrc "#292d3e" "#a6accd" "#3d1f2a" "#ffdada" "#82b1ff" "#c3e88d" "#f07178" ;;
+    github-dark) render_dunstrc "#0d1117" "#c9d1d9" "#3d1f2a" "#ffdada" "#58a6ff" "#7ee787" "#ff7b72" ;;
+    ayu-mirage) render_dunstrc "#1f2430" "#cbccc6" "#3d1f2a" "#ffdada" "#5ccfe6" "#bae67e" "#ff6666" ;;
+  esac
+  # Restart dunst so it re-reads dunstrc
+  pkill -x dunst 2>/dev/null || true
+  sleep 0.2
+  dunst >/dev/null 2>&1 &
+  disown
+fi
+
+# ---- GTK overlay (pcmanfm + any GTK3/4 app that picks up @define-color) ----
+# Writes ~/.cache/qtile/gtk-wal.css with wal-derived accent colors and
+# ensures ~/.config/gtk-{3.0,4.0}/gtk.css @imports it. Underlying GTK
+# theme (Sweet-Dark etc) still supplies structure; only the accents
+# shift with the palette.
+GTK_CSS="$CACHE_DIR/gtk-wal.css"
+gen_gtk_css() {
+  local bg="$1" bg_alt="$2" fg="$3" accent="$4" urgent="$5" ok="$6"
+  cat >"$GTK_CSS" <<EOF
+@define-color accent_color $accent;
+@define-color accent_bg_color $accent;
+@define-color accent_fg_color $bg;
+@define-color window_bg_color $bg;
+@define-color window_fg_color $fg;
+@define-color view_bg_color $bg;
+@define-color view_fg_color $fg;
+@define-color headerbar_bg_color $bg_alt;
+@define-color headerbar_fg_color $fg;
+@define-color card_bg_color $bg_alt;
+@define-color card_fg_color $fg;
+@define-color destructive_color $urgent;
+@define-color destructive_bg_color $urgent;
+@define-color success_color $ok;
+@define-color success_bg_color $ok;
+@define-color theme_selected_bg_color $accent;
+@define-color theme_selected_fg_color $bg;
+EOF
+}
+
+case "$MODE" in
+  wal)
+    W=~/.cache/wal/colors.json
+    gen_gtk_css \
+      "$(jq -r .special.background "$W")" \
+      "$(jq -r .colors.color0 "$W")" \
+      "$(jq -r .special.foreground "$W")" \
+      "$(jq -r .colors.color12 "$W")" \
+      "$(jq -r .colors.color9 "$W")" \
+      "$(jq -r .colors.color10 "$W")"
+    ;;
+  doomone)   gen_gtk_css "#282c34" "#1e222a" "#dcdfe4" "#51afef" "#ff6c6b" "#98be65" ;;
+  dracula)   gen_gtk_css "#282a36" "#21222c" "#f8f8f2" "#bd93f9" "#ff5555" "#50fa7b" ;;
+  nord)      gen_gtk_css "#2e3440" "#3b4252" "#d8dee9" "#88c0d0" "#bf616a" "#a3be8c" ;;
+  gruvbox)   gen_gtk_css "#282828" "#1d2021" "#ebdbb2" "#fabd2f" "#fb4934" "#b8bb26" ;;
+  tokyonight) gen_gtk_css "#1a1b26" "#16161e" "#c0caf5" "#7aa2f7" "#f7768e" "#9ece6a" ;;
+  catppuccin) gen_gtk_css "#1e1e2e" "#181825" "#cdd6f4" "#cba6f7" "#f38ba8" "#a6e3a1" ;;
+  monokai)   gen_gtk_css "#272822" "#1e1f1c" "#f8f8f2" "#66d9ef" "#f92672" "#a6e22e" ;;
+  everforest) gen_gtk_css "#2d353b" "#232a2e" "#d3c6aa" "#7fbbb3" "#e67e80" "#a7c080" ;;
+  rose-pine) gen_gtk_css "#191724" "#1f1d2e" "#e0def4" "#c4a7e7" "#eb6f92" "#9ccfd8" ;;
+  kanagawa)  gen_gtk_css "#1f1f28" "#16161d" "#dcd7ba" "#7e9cd8" "#e46876" "#98bb6c" ;;
+  oxocarbon) gen_gtk_css "#161616" "#262626" "#f2f4f8" "#33b1ff" "#ee5396" "#42be65" ;;
+  cyberpunk-neon) gen_gtk_css "#0a0e27" "#000000" "#d1f7ff" "#00fff9" "#ff2740" "#00ff9f" ;;
+  synthwave) gen_gtk_css "#241b30" "#1a1428" "#f4e9d0" "#36f9f6" "#fe4450" "#72f1b8" ;;
+  matrix)    gen_gtk_css "#000000" "#0a0a0a" "#00ff41" "#00ff9f" "#ff0000" "#00ff41" ;;
+  mono-dark) gen_gtk_css "#000000" "#0a0a0a" "#e0e0e0" "#b0b0b0" "#808080" "#a0a0a0" ;;
+  mono-light) gen_gtk_css "#ffffff" "#e0e0e0" "#000000" "#000080" "#c00000" "#006000" ;;
+  nightowl)  gen_gtk_css "#011627" "#010e1a" "#d6deeb" "#82aaff" "#ef5350" "#22da6e" ;;
+  onedark)   gen_gtk_css "#282c34" "#21252b" "#abb2bf" "#61afef" "#e06c75" "#98c379" ;;
+  palenight) gen_gtk_css "#292d3e" "#1e2030" "#a6accd" "#82b1ff" "#f07178" "#c3e88d" ;;
+  github-dark) gen_gtk_css "#0d1117" "#010409" "#c9d1d9" "#58a6ff" "#ff7b72" "#7ee787" ;;
+  ayu-mirage) gen_gtk_css "#1f2430" "#171b24" "#cbccc6" "#5ccfe6" "#ff6666" "#bae67e" ;;
+esac
+
+# Wire @import into gtk-3.0/gtk.css (create if missing)
+ensure_gtk_import() {
+  local target="$1"
+  local marker="/* theme-apply wal overlay */"
+  mkdir -p "$(dirname "$target")"
+  touch "$target"
+  if ! grep -q "theme-apply wal overlay" "$target" 2>/dev/null; then
+    printf '\n%s\n@import url("%s");\n' "$marker" "$GTK_CSS" >>"$target"
+  fi
+}
+ensure_gtk_import "$HOME/.config/gtk-3.0/gtk.css"
+ensure_gtk_import "$HOME/.config/gtk-4.0/gtk.css"
+
+# ---- Base GTK theme + icon theme swap per palette ----
+# Sweet-Dark forces dark bg in all GTK apps (pcmanfm/nautilus etc); the
+# per-palette @import overlay can't override background colors. Swap the
+# BASE theme name + icon theme so light palettes actually render light.
+case "$MODE" in
+  mono-light) GTK_THEME="Breeze"; GTK_ICON="Papirus-Light" ;;
+  *)          GTK_THEME="Sweet-Dark"; GTK_ICON="Papirus-Dark" ;;
+esac
+SETTINGS_INI="$HOME/.config/gtk-3.0/settings.ini"
+if [[ -f "$SETTINGS_INI" ]]; then
+  sed -i "s|^gtk-theme-name=.*|gtk-theme-name=$GTK_THEME|" "$SETTINGS_INI"
+  sed -i "s|^gtk-application-prefer-dark-theme=.*|gtk-application-prefer-dark-theme=$([ "$MODE" = mono-light ] && echo 0 || echo 1)|" "$SETTINGS_INI"
+  sed -i "s|^gtk-icon-theme-name=.*|gtk-icon-theme-name=$GTK_ICON|" "$SETTINGS_INI"
+fi
+# gtk-4.0 too
+mkdir -p "$HOME/.config/gtk-4.0"
+touch "$HOME/.config/gtk-4.0/settings.ini"
+
+# ---- Papirus folder color per palette ----
+# papirus-folders (yay -S papirus-folders papirus-icon-theme) accepts a
+# fixed set of color keywords. Map the active accent hue to the closest
+# one so folder icons follow the palette.
+if command -v papirus-folders >/dev/null; then
+  case "$MODE" in
+    doomone|nord|kanagawa|oxocarbon|nightowl|onedark|palenight|github-dark) ICON_COLOR="blue" ;;
+    dracula|catppuccin|rose-pine)    ICON_COLOR="violet" ;;
+    gruvbox|monokai)                 ICON_COLOR="yellow" ;;
+    tokyonight)                      ICON_COLOR="indigo" ;;
+    everforest)                      ICON_COLOR="green" ;;
+    cyberpunk-neon|synthwave)        ICON_COLOR="pink" ;;
+    matrix)                          ICON_COLOR="green" ;;
+    mono-dark|mono-light)            ICON_COLOR="grey" ;;
+    ayu-mirage)                      ICON_COLOR="cyan" ;;
+    wal)
+      # Precompile JSON stores the mapped papirus_color directly; use
+      # that when available. Fallback to hue-from-color9 for wallpapers
+      # without a precompile cache entry.
+      WSTEM="$(basename "$(readlink -f "$HOME/.cache/wall" 2>/dev/null)" 2>/dev/null)"
+      WSTEM="${WSTEM%.*}"
+      ICON_COLOR_OVERRIDE=$(python3 -c "
+import json,os
+p=os.path.expanduser('~/.cache/qtile/palettes/$WSTEM.json')
+if os.path.exists(p):
+    pc = json.load(open(p)).get('papirus_color')
+    if pc: print(pc)
+" 2>/dev/null)
+      if [[ -n "$ICON_COLOR_OVERRIDE" ]]; then
+        ICON_COLOR="$ICON_COLOR_OVERRIDE"
+        HUE=""
+      else
+        HUE=$(python3 -c "
+import json,colorsys,os
+d=json.load(open(os.path.expanduser('~/.cache/wal/colors.json')))
+c=d['colors']['color9']
+r,g,b=int(c[1:3],16)/255,int(c[3:5],16)/255,int(c[5:7],16)/255
+print(int(colorsys.rgb_to_hsv(r,g,b)[0]*360))
+")
+      fi
+      if [[ -n "$HUE" ]]; then
+        if   (( HUE < 15 || HUE >= 345 )); then ICON_COLOR="red"
+        elif (( HUE < 45 ));  then ICON_COLOR="orange"
+        elif (( HUE < 65 ));  then ICON_COLOR="yellow"
+        elif (( HUE < 165 )); then ICON_COLOR="green"
+        elif (( HUE < 200 )); then ICON_COLOR="teal"
+        elif (( HUE < 260 )); then ICON_COLOR="blue"
+        elif (( HUE < 290 )); then ICON_COLOR="violet"
+        elif (( HUE < 345 )); then ICON_COLOR="pink"
+        else                       ICON_COLOR="blue"
+        fi
+      fi
+      ;;
+    *) ICON_COLOR="blue" ;;
+  esac
+  # papirus-folders swaps the folder-color symlink (fast, ~200ms).
+  # -u would ALSO rebuild the whole theme icon cache (20+ seconds) —
+  # not worth it: open pcmanfm windows won't hot-reload icons anyway,
+  # and cold windows read the swapped symlink directly.
+  # sudo -n stays non-interactive; needs NOPASSWD in /etc/sudoers.d.
+  ( if ! sudo -n papirus-folders -C "$ICON_COLOR" -t "$GTK_ICON" >/dev/null 2>&1; then
+      papirus-folders -C "$ICON_COLOR" -t "$GTK_ICON" >/dev/null 2>&1 \
+        || notify-send "theme-apply" "papirus-folders needs passwordless sudo — icons stale"
+    fi ) &
+  disown
+fi
+
+# pcmanfm caches icons per-process — GTK provides no hot-reload API.
+# Kill every pcmanfm (windows + daemon) and relaunch each visible
+# window at $HOME. Preserves the "file manager is open" state at the
+# cost of losing per-window cwd. Daemon restarts for desktop icons.
+if pgrep -x pcmanfm >/dev/null 2>&1; then
+  had_windows=0
+  xdotool search --class "Pcmanfm" >/dev/null 2>&1 && had_windows=1
+  pkill -x pcmanfm 2>/dev/null || true
+  ( sleep 0.3
+    DISPLAY="${DISPLAY:-:0}" pcmanfm --daemon-mode >/dev/null 2>&1 &
+    if [[ "$had_windows" == 1 ]]; then
+      DISPLAY="${DISPLAY:-:0}" pcmanfm "$HOME" >/dev/null 2>&1 &
+    fi ) &
+  disown
+fi
+
+# Try LIVE palette swap first (no restart). Walks bar widgets +
+# decorations, remaps slot-matched hexes, redraws. Config.py exposes
+# apply_palette_live() which returns True on success. Fall back to
+# `restart` only if the live call fails or times out.
+if command -v qtile >/dev/null; then
+  # Full restart, detached. Live-swap path was toggled off — visual
+  # coverage across all themes proved unreliable; full restart is
+  # slower but guaranteed correct. execvp + config re-import ~1-2s.
+  #
+  # Go through smooth_restart (exposed on the qtile object by config.py's
+  # startup_complete hook) rather than the raw `restart` command, so a
+  # theme change gets the same veil Super+Shift+R does. Without this the
+  # restart that follows a theme switch shows the whole boot window pile
+  # uncovered. Falls back to the raw restart if the attribute is missing
+  # — e.g. an older config.py, or a restart that happened before
+  # startup_complete fired — so a theme change can never fail to apply.
+  # Probe FIRST, then commit. The obvious shape — call smooth_restart and
+  # fall back if it errors — is wrong: smooth_restart ends in execv, so
+  # the IPC connection always dies mid-call and every success looks like
+  # a failure. That fallback would fire a second restart every time.
+  setsid -f bash -c '
+    # This subshell inherits `set -euo pipefail`. Both qtile calls below
+    # routinely exit non-zero -- the probe if the IPC socket is busy, and
+    # the restart call ALWAYS, because _smooth_restart ends in execv and
+    # kills the connection it was answering on. Under `set -e` that made
+    # the subshell abort before restarting anything at all. Same trap the
+    # qutebrowser block below documents.
+    set +e
+    # Probe the CONFIG MODULE, not a qtile attribute. qtile.smooth_restart
+    # is attached by a startup_complete hook, so it only exists on an
+    # instance that has already restarted into a config new enough to
+    # attach it — meaning the very first theme switch after any config
+    # change silently falls back to the raw restart and shows no veil.
+    # _smooth_restart has lived in the config module far longer, and this
+    # is the same entry point the Super+Shift+R binding uses.
+    # `qtile cmd-obj -f eval` prints the returned string wrapped in
+    # DOUBLE quotes: literally  "1"  — not a tuple repr, not a bare 1.
+    # Matching a quoting style instead of stripping the quotes is how this
+    # silently fell through to the raw restart on every theme switch, so
+    # normalise first and compare exactly.
+    probe=$(qtile cmd-obj -o cmd -f eval -a \
+      "str(int(hasattr(__import__(\"sys\").modules.get(\"config\"), \"_smooth_restart\")))" 2>&1)
+    # Strips double-quote (octal 042) and apostrophe (octal 047).
+    # Written as octal, and described in words rather than shown: this
+    # whole block lives inside setsid -f bash -c + single quotes, so a
+    # literal apostrophe ANYWHERE here -- including in a comment --
+    # terminates that string early and silently truncates the script.
+    # bash -n does not catch it, because the remainder happens to
+    # re-balance into something still syntactically valid.
+    probe=$(printf %s "$probe" | tr -d "\042\047" | tr -d "[:space:]")
+    if [ "$probe" = "1" ]; then
+      qtile cmd-obj -o cmd -f eval -a \
+        "str(__import__(\"sys\").modules[\"config\"]._smooth_restart(self))"
+    else
+      qtile cmd-obj -o cmd -f restart
+    fi
+  ' >/dev/null 2>&1 </dev/null || true
+fi
+
+# Reload qutebrowser + notify chrome/brave. qb has IPC; brave-family
+# has no live-reload path (GTK theme change requires restart), so we
+# notify the user instead of killing browser tabs.
+if pgrep -x qutebrowser >/dev/null; then
+  # :config-source alone doesn't re-read wal cache colors. :restart
+  # reboots the qb process preserving open tabs via session
+  # save/restore, and is what actually re-runs config.py end to end.
+  #
+  # Both calls MUST be `|| true`. This subshell inherits `set -e`, and
+  # each qb IPC call spawns a full python client that takes ~2s idle --
+  # far longer while qtile is restarting from this same script. The old
+  # `timeout 3` therefore expired routinely, returned 124, and `set -e`
+  # tore the subshell down *after* :config-source and *before*
+  # :restart. That is why qb never restarted on its own even though the
+  # exact same command works when run by hand.
+  #
+  # setsid detaches from theme-apply's process group so the restart
+  # still completes after this script exits (and survives the
+  # preemption `kill` a rapid second theme switch sends).
+  setsid -f bash -c '
+    timeout 15 qutebrowser ":config-source" >/dev/null 2>&1 || true
+    timeout 30 qutebrowser ":restart"       >/dev/null 2>&1 || true
+  ' >/dev/null 2>&1 </dev/null || true
+fi
+# Resolve the four palette roles (background / foreground / alt-surface /
+# accent) for the active $MODE, as four space-separated #rrggbb values.
+#
+# Single source of truth on purpose: both the Chromium theme extension
+# below and the Firefox userChrome block further down need the exact same
+# palette, and when the preset table lived inline in the Chromium
+# generator the only way to add a second consumer was to copy all 21
+# entries -- which then silently drifts the first time a preset is
+# retuned in one copy and not the other.
+resolve_palette() {
+  python3 - "$1" <<'PYPALETTE'
+import json, os, sys
+mode = sys.argv[1]
+if mode == "wal":
+    d = json.load(open(os.path.expanduser("~/.cache/wal/colors.json")))
+    bg = d["special"]["background"]; fg = d["special"]["foreground"]
+    c  = d["colors"]
+    accent = c["color4"]; alt = c["color0"]
+else:
+    # preset palettes hard-coded to match theme-apply per-mode blocks
+    presets = {
+      "doomone":   ("#282c34","#dcdfe4","#1e222a","#51afef"),
+      "dracula":   ("#282a36","#f8f8f2","#21222c","#bd93f9"),
+      "nord":      ("#2e3440","#d8dee9","#3b4252","#88c0d0"),
+      "gruvbox":   ("#282828","#ebdbb2","#1d2021","#fabd2f"),
+      "tokyonight":("#1a1b26","#c0caf5","#16161e","#7aa2f7"),
+      "catppuccin":("#1e1e2e","#cdd6f4","#181825","#cba6f7"),
+      "monokai":   ("#272822","#f8f8f2","#1e1f1c","#66d9ef"),
+      "everforest":("#2d353b","#d3c6aa","#232a2e","#7fbbb3"),
+      "rose-pine": ("#191724","#e0def4","#1f1d2e","#c4a7e7"),
+      "kanagawa":  ("#1f1f28","#dcd7ba","#16161d","#7e9cd8"),
+      "oxocarbon": ("#161616","#f2f4f8","#262626","#33b1ff"),
+      "cyberpunk-neon": ("#0a0e27","#d1f7ff","#000000","#00fff9"),
+      "synthwave": ("#241b30","#f4e9d0","#1a1428","#36f9f6"),
+      "matrix":    ("#000000","#00ff41","#0a0a0a","#00ff9f"),
+      "mono-dark": ("#000000","#e0e0e0","#0a0a0a","#b0b0b0"),
+      "mono-light":("#ffffff","#000000","#e0e0e0","#000080"),
+      "nightowl":  ("#011627","#d6deeb","#010e1a","#82aaff"),
+      "onedark":   ("#282c34","#abb2bf","#21252b","#61afef"),
+      "palenight": ("#292d3e","#a6accd","#1e2030","#82b1ff"),
+      "github-dark":("#0d1117","#c9d1d9","#010409","#58a6ff"),
+      "ayu-mirage":("#1f2430","#cbccc6","#171b24","#5ccfe6"),
+    }
+    bg, fg, alt, accent = presets.get(mode, presets["doomone"])
+print(bg, fg, alt, accent)
+PYPALETTE
+}
+
+# Read once; every browser block below consumes these. Falls back to the
+# doomone palette if wal's colors.json is missing/corrupt so a broken
+# cache tints the browsers wrong rather than leaving them untouched.
+read -r PAL_BG PAL_FG PAL_ALT PAL_ACCENT < <(resolve_palette "$MODE" 2>/dev/null) || true
+: "${PAL_BG:=#282c34}" "${PAL_FG:=#dcdfe4}" "${PAL_ALT:=#1e222a}" "${PAL_ACCENT:=#51afef}"
+
+# Regenerate a Chromium theme extension so brave/chrome UI colors track
+# the wallpaper. --load-extension=<dir> in *-flags.conf keeps it loaded
+# across launches. Extension is a bare theme manifest; each apply
+# rewrites the manifest with new palette RGB triples, then restarts
+# each running browser so the theme swap takes effect.
+BROWSER_EXT="$HOME/.config/qtile/browser-theme"
+mkdir -p "$BROWSER_EXT"
+# Skip regeneration if wal fast path already wrote a fresh manifest.
+if [[ "${PRECOMPILED_APPLIED:-0}" != 1 ]]; then
+python3 - "$BROWSER_EXT/manifest.json" "$PAL_BG" "$PAL_FG" "$PAL_ALT" "$PAL_ACCENT" <<'PYEOF' 2>/dev/null || true
+import json, sys, time
+outp, bg, fg, alt, accent = sys.argv[1:6]
+def rgb(s): return [int(s[i:i+2],16) for i in (1,3,5)]
+manifest = {
+  "manifest_version": 3,
+  # Bump version each apply so Chromium detects an "update" and
+  # reloads the theme instead of keeping the cached previous colors.
+  "version": "1.0." + str(int(time.time())),
+  "name": "Wal Theme",
+  "description": "Generated by theme-apply.",
+  "theme": {
+    "colors": {
+      "frame":               rgb(alt),
+      "frame_inactive":      rgb(alt),
+      "frame_incognito":     rgb(alt),
+      "toolbar":             rgb(bg),
+      "tab_text":            rgb(fg),
+      "tab_background_text": rgb(fg),
+      "bookmark_text":       rgb(fg),
+      "ntp_background":      rgb(bg),
+      "ntp_text":            rgb(fg),
+      "ntp_link":            rgb(accent),
+      "button_background":   rgb(alt),
+      "omnibox_background":  rgb(alt),
+      "omnibox_text":        rgb(fg),
+    }
+  }
+}
+open(outp,"w").write(json.dumps(manifest, indent=2))
+PYEOF
+fi
+
+# Ensure --load-extension flag is in each browser's flags file so the
+# theme extension survives restart.
+add_load_ext() {
+  local f="$1"
+  [[ -f "$f" ]] || return
+  local line="--load-extension=$BROWSER_EXT"
+  grep -q -- "--load-extension=" "$f" 2>/dev/null && return
+  printf '\n%s\n' "$line" >>"$f"
+}
+add_load_ext "$HOME/.config/brave-flags.conf"
+add_load_ext "$HOME/.config/chromium-flags.conf"
+add_load_ext "$HOME/.config/chrome-flags.conf"
+
+BROWSER_CRX="$HOME/.config/qtile/browser-theme.crx"
+BROWSER_PEM="$HOME/.config/qtile/browser-theme.pem"
+BROWSER_UPDATES="$HOME/.config/qtile/browser-theme-updates.xml"
+
+# A Chromium extension's id is sha256(DER pubkey)[:32] mapped 0-f -> a-p,
+# so it is a pure function of the signing key. It MUST be derived from
+# browser-theme.pem, never hardcoded: wizard.sh generates that key
+# per-machine and writes /etc/opt/chrome/policies/managed/wal-theme.json
+# keyed by the derived id. A hardcoded literal here (previously
+# "fommfacojlllmdogognehdgombidbpjg") made every apply rewrite
+# updates.xml with an appid the policy does not reference, so Chrome's
+# force_installed poll found no matching <app> and silently never
+# installed the theme -- while Chromium looked fine, because it picks
+# the theme up through --load-extension instead of policy.
+ext_id_from_pem() {
+  [[ -f "$BROWSER_PEM" ]] || return 1
+  openssl rsa -in "$BROWSER_PEM" -pubout -outform DER 2>/dev/null |
+    python3 -c "
+import hashlib, sys
+h = hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:32]
+print(''.join(chr(ord('a') + int(c, 16)) for c in h))
+" 2>/dev/null
+}
+EXT_ID="$(ext_id_from_pem || true)"
+
+# brave/chrome/chromium have no live-theme-reload API. Kill running
+# browsers FIRST, then repack .crx (chrome pack needs no lock), then
+# relaunch — so chrome sees the fresh crx + bumped updates.xml on
+# startup and force-installs. Set THEME_APPLY_NO_BROWSER=1 to skip.
+if [[ "${THEME_APPLY_NO_BROWSER:-0}" != 1 ]]; then
+  RESTART_PROCS=()
+  for proc in brave chromium chrome google-chrome brave-browser; do
+    if pgrep -x "$proc" >/dev/null 2>&1; then
+      RESTART_PROCS+=("$proc")
+      pkill -x "$proc" 2>/dev/null || true
+    fi
+  done
+  # Wait for locks to release before repack.
+  [[ ${#RESTART_PROCS[@]} -gt 0 ]] && sleep 1
+
+  # Repack .crx + bump updates.xml (chrome policy force-installs on
+  # next launch). Now safe: no chrome process holding the pack lock.
+  # Any chromium-family binary can --pack-extension; don't require Chrome
+  # specifically or a chromium-only machine never gets a packed .crx.
+  if [[ -z "${CHROME_BIN:-}" ]]; then
+    for _c in /opt/google/chrome/chrome /usr/bin/chromium /opt/brave-bin/brave; do
+      [[ -x "$_c" ]] && { CHROME_BIN="$_c"; break; }
+    done
+  fi
+  # EXT_ID empty means the pem is missing or openssl/python3 failed.
+  # Bail out rather than continue: an empty id would write appid='' into
+  # updates.xml and, worse, expand `rm -rf "$base/Extensions/$EXT_ID"`
+  # into deleting the entire Extensions directory.
+  if [[ -f "$BROWSER_PEM" ]] && [[ -n "$EXT_ID" ]] && [[ -n "${CHROME_BIN:-}" ]]; then
+    "$CHROME_BIN" --pack-extension="$BROWSER_EXT" --pack-extension-key="$BROWSER_PEM" --no-message-box >/dev/null 2>&1 || true
+    VER=$(python3 -c "import json;print(json.load(open('$BROWSER_EXT/manifest.json'))['version'])" 2>/dev/null)
+    if [[ -n "$VER" ]]; then
+      cat > "$BROWSER_UPDATES" <<EOF
+<?xml version='1.0' encoding='UTF-8'?>
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='$EXT_ID'>
+    <updatecheck codebase='file://$BROWSER_CRX' version='$VER' />
+  </app>
+</gupdate>
+EOF
+    fi
+    # Chrome caches the installed .crx AND records its path in
+    # Preferences. Even after we delete Extensions/<id>/, Chrome loads
+    # from the stale Preferences path (or ignores the update_url poll
+    # which happens every ~5h). Purge BOTH: Extensions dir + Preferences
+    # entry. On next launch chrome sees force_installed policy with no
+    # local trace → downloads fresh .crx from update_url immediately.
+    for base in "$HOME/.config/google-chrome/Default" "$HOME/.config/chromium/Default"; do
+      [[ -d "$base" ]] || continue
+      rm -rf "$base/Extensions/$EXT_ID"
+      python3 - "$base/Preferences" "$EXT_ID" <<'PYPURGE' 2>/dev/null || true
+import json, sys
+path, ext_id = sys.argv[1], sys.argv[2]
+try:
+    d = json.load(open(path))
+except Exception:
+    sys.exit(0)
+ext = d.get("extensions", {}).get("settings", {})
+if ext_id in ext:
+    del ext[ext_id]
+    open(path, "w").write(json.dumps(d, separators=(',', ':')))
+PYPURGE
+    done
+  fi
+
+  # Relaunch each killed browser. Map process name → launcher path.
+  #
+  # ALWAYS prefer the /usr/bin wrapper script over the real binary under
+  # /opt. On Arch the wrapper is what sources ~/.config/<name>-flags.conf
+  # and appends --load-extension=<browser-theme> to the command line;
+  # /opt/google/chrome/chrome is the bare binary and ignores that file
+  # entirely. Relaunching Chrome via the bare binary is why Chrome came
+  # back untinted after every apply while Chromium (whose /usr/bin entry
+  # already IS a wrapper) picked the theme up fine.
+  browser_bin() {
+    case "$1" in
+      chrome|google-chrome)
+        for b in /usr/bin/google-chrome-stable /usr/bin/google-chrome \
+                 /opt/google/chrome/google-chrome /opt/google/chrome/chrome; do
+          [[ -x "$b" ]] && { echo "$b"; return; }
+        done ;;
+      brave|brave-browser)  echo "$(command -v brave || echo /opt/brave-bin/brave)" ;;
+      chromium)             echo "$(command -v chromium || echo /usr/bin/chromium)" ;;
+      *) command -v "$1" ;;
+    esac
+  }
+  for proc in "${RESTART_PROCS[@]}"; do
+    bin=$(browser_bin "$proc")
+    [[ -x "$bin" ]] || continue
+    ( DISPLAY="${DISPLAY:-:0}" setsid "$bin" >/dev/null 2>&1 </dev/null & disown ) &
+    disown
+  done
+fi
+
+# ---------------------------------------------------------------------
+# Firefox
+# ---------------------------------------------------------------------
+# Firefox cannot be themed the way the Chromium family is above. A theme
+# extension there must be a signed .xpi -- release Firefox hard-refuses
+# unsigned add-ons and `xpinstall.signatures.required=false` is ignored
+# outside Nightly/ESR/Developer -- so the .crx trick has no counterpart.
+#
+# The route that does work on a stock release build is userChrome.css:
+# Firefox maps its entire chrome UI onto a documented set of `--lwt-*` /
+# `--toolbar-*` custom properties (the same ones lightweight themes drive),
+# so overriding those on :root retints the whole browser without touching
+# add-on signing at all. It is gated behind one pref, which we write into
+# the profile's user.js.
+#
+# Two consequences worth knowing:
+#   - userChrome.css is read exactly once, at startup. Rewriting it under
+#     a running Firefox does nothing at all, which is why the restart
+#     below is not optional cosmetics -- without it an apply looks like a
+#     silent no-op until the next manual restart.
+#   - user.js is re-applied over prefs.js on every startup by design, so
+#     the pref cannot drift back off.
+if [[ "${THEME_APPLY_NO_BROWSER:-0}" != 1 ]]; then
+  # Both the native and flatpak profile roots; either may be absent.
+  FF_ROOTS=(
+    "$HOME/.mozilla/firefox"
+    "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox"
+  )
+
+  # Firefox's own built-in theme paints over the lwt variables unless a
+  # matching light/dark base is active, so pick the base from the
+  # palette's actual background luminance rather than assuming dark --
+  # mono-light is a real preset and would otherwise render black-on-black.
+  FF_THEME_ID=$(python3 -c "
+import sys
+bg = sys.argv[1]
+r, g, b = (int(bg[i:i+2], 16) for i in (1, 3, 5))
+# Rec.601 luma; >128 is a light background.
+print('firefox-compact-light@mozilla.org' if (0.299*r + 0.587*g + 0.114*b) > 128
+      else 'firefox-compact-dark@mozilla.org')
+" "$PAL_BG" 2>/dev/null || echo 'firefox-compact-dark@mozilla.org')
+
+  FF_PROFILES=()
+  for root in "${FF_ROOTS[@]}"; do
+    [[ -d "$root" ]] || continue
+    # profiles.ini is authoritative: globbing *.default* misses profiles
+    # created by `firefox -P` and picks up leftovers of deleted ones.
+    if [[ -f "$root/profiles.ini" ]]; then
+      while IFS= read -r rel; do
+        [[ -n "$rel" ]] || continue
+        # IsRelative=0 entries store an absolute Path.
+        if [[ "$rel" == /* ]]; then
+          [[ -d "$rel" ]] && FF_PROFILES+=("$rel")
+        else
+          [[ -d "$root/$rel" ]] && FF_PROFILES+=("$root/$rel")
+        fi
+      done < <(sed -n 's/^Path=//p' "$root/profiles.ini")
+    else
+      for p in "$root"/*.default*; do
+        [[ -d "$p" ]] && FF_PROFILES+=("$p")
+      done
+    fi
+  done
+
+  for prof in "${FF_PROFILES[@]}"; do
+    mkdir -p "$prof/chrome"
+
+    cat > "$prof/chrome/userChrome.css" <<EOF
+/* Generated by theme-apply -- mode: $MODE. Edits are overwritten. */
+@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+
+:root {
+  --lwt-accent-color: $PAL_ALT !important;
+  --lwt-accent-color-inactive: $PAL_ALT !important;
+  --lwt-text-color: $PAL_FG !important;
+
+  --toolbar-bgcolor: $PAL_ALT !important;
+  --toolbar-color: $PAL_FG !important;
+  --toolbarbutton-icon-fill: $PAL_FG !important;
+
+  --tab-selected-bgcolor: $PAL_BG !important;
+  --tab-selected-textcolor: $PAL_FG !important;
+
+  --toolbar-field-background-color: $PAL_BG !important;
+  --toolbar-field-color: $PAL_FG !important;
+  --toolbar-field-focus-background-color: $PAL_BG !important;
+  --toolbar-field-focus-color: $PAL_FG !important;
+  --toolbar-field-border-color: $PAL_ALT !important;
+  --toolbar-field-focus-border-color: $PAL_ACCENT !important;
+
+  --arrowpanel-background: $PAL_ALT !important;
+  --arrowpanel-color: $PAL_FG !important;
+  --arrowpanel-border-color: $PAL_BG !important;
+
+  --lwt-sidebar-background-color: $PAL_ALT !important;
+  --lwt-sidebar-text-color: $PAL_FG !important;
+
+  --focus-outline-color: $PAL_ACCENT !important;
+  --link-color: $PAL_ACCENT !important;
+}
+
+#navigator-toolbox,
+#TabsToolbar,
+#nav-bar,
+#PersonalToolbar {
+  background-color: $PAL_ALT !important;
+  color: $PAL_FG !important;
+}
+
+/* Accent underline on the active tab -- the one place the palette's
+   accent shows up as more than a focus ring. */
+.tabbrowser-tab[selected] .tab-background {
+  background: $PAL_BG !important;
+  box-shadow: inset 0 -2px 0 0 $PAL_ACCENT !important;
+}
+
+findbar,
+#sidebar-header,
+#sidebar-box {
+  background-color: $PAL_ALT !important;
+  color: $PAL_FG !important;
+}
+EOF
+
+    cat > "$prof/chrome/userContent.css" <<EOF
+/* Generated by theme-apply -- mode: $MODE. Edits are overwritten. */
+/* about: pages render as content, not chrome, so they need their own
+   rules or every new tab flashes default white between navigations. */
+@-moz-document url("about:blank"),
+               url("about:newtab"),
+               url("about:home"),
+               url("about:privatebrowsing") {
+  :root, body {
+    background-color: $PAL_BG !important;
+    color: $PAL_FG !important;
+  }
+}
+EOF
+
+    # user.js is merged over prefs.js at every startup, so these stick.
+    # Rewritten wholesale each apply -- appending would grow the file
+    # without bound and leave a stale activeThemeID ahead of the new one.
+    cat > "$prof/user.js" <<EOF
+// Generated by theme-apply -- mode: $MODE. Edits are overwritten.
+user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
+user_pref("extensions.activeThemeID", "$FF_THEME_ID");
+user_pref("browser.newtabpage.activity-stream.newNewtabExperience.colors", "$PAL_ACCENT");
+EOF
+  done
+
+  # Restart Firefox so the freshly written userChrome.css is actually
+  # read. SIGTERM (pkill's default), never -9: Firefox only writes its
+  # session-restore state on a clean shutdown, so KILL here would cost
+  # the user every open tab.
+  if [[ ${#FF_PROFILES[@]} -gt 0 ]] && pgrep -x firefox >/dev/null 2>&1; then
+    pkill -x firefox 2>/dev/null || true
+    # Firefox holds a profile lock briefly after the process exits;
+    # relaunching into it too early aborts with "already running".
+    for _ in $(seq 20); do
+      pgrep -x firefox >/dev/null 2>&1 || break
+      sleep 0.25
+    done
+    if FF_BIN=$(command -v firefox); then
+      ( DISPLAY="${DISPLAY:-:0}" setsid "$FF_BIN" >/dev/null 2>&1 </dev/null & disown ) &
+      disown
+    fi
+  fi
+fi
+
+notify-send "theme-apply" "Theme -> $MODE" 2>/dev/null || true

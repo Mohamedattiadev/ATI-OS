@@ -69,6 +69,15 @@ vim.keymap.set("n", "<leader><leader>n", "<cmd>:nohlsearch <CR>")
 ------------------------------------
 --- for arabic layout
 ------------------------------------
+-- Moved here from lua/plugins/arabic.lua, which returned
+-- `{ vim.keymap.set(...) }` -- vim.keymap.set returns nil, so that "plugin
+-- spec" was an empty table and the mapping was only a side effect of lazy
+-- parsing the spec file. This is a keymap, so it belongs in keymaps.lua.
+vim.keymap.set("n", "<leader>ar", function()
+  vim.opt_local.rightleft = not vim.opt_local.rightleft:get()
+  vim.opt_local.arabic = not vim.opt_local.arabic:get()
+end, { desc = "Toggle Arabic Mode" })
+
 -- vim.keymap.set("n", "ه", "i", { noremap = true, silent = true })
 -- vim.keymap.set("n", "ه", "i", { noremap = true, silent = true })
 -- vim.keymap.set("n", "يي", "dd", { noremap = true, silent = true })
@@ -134,7 +143,10 @@ end, { desc = "New tab + mini.files (smart)" })
 -------------------------------------------------------------------------------
 -- PASTE BEHAVIOR
 -------------------------------------------------------------------------------
-vim.keymap.set("n", "p", '"+p')
+-- NOTE: `p` is deliberately NOT remapped to '"+p'. clipboard=unnamedplus
+-- (options.lua) already makes plain `p` paste the system clipboard, and the
+-- remap silently discarded explicit registers -- `"ap` pasted the clipboard
+-- instead of register a.
 vim.keymap.set("v", "p", '"_dP')
 vim.keymap.set("n", "P", "p")
 vim.keymap.set("v", "P", "p")
@@ -183,7 +195,9 @@ vim.keymap.set("n", "<leader>bd", ":bd<CR>")
 -------------------------------------------------------------------------------
 -- RUN CODE
 -------------------------------------------------------------------------------
-vim.keymap.set("n", "<leader>r", ":RunCode<CR>")
+-- Removed: <leader>r was mapped to :RunCode, but code_runner.nvim lives in
+-- lua/notUsed/ and is never loaded, so the command does not exist. Restore
+-- the plugin spec first if you want this key back.
 
 -------------------------------------------------------------------------------
 --  clear messages
@@ -235,14 +249,18 @@ end
 -------------------------------------------------------------------------------
 -- MARKDOWN FOLDING (SIMPLE & RELIABLE)
 -------------------------------------------------------------------------------
+-- IMPORTANT: vim.opt_local, never vim.opt. Using vim.opt here set the
+-- *global* foldexpr/foldlevel, so after opening a single markdown file every
+-- code file afterwards opened fully collapsed (global foldlevel became 0)
+-- and needed zR by hand.
 vim.api.nvim_create_autocmd("FileType", {
   pattern = "markdown",
   callback = function()
-    vim.opt.foldmethod = "expr"
-    vim.opt.foldexpr = "v:lua.markdown_foldexpr()"
-    -- vim.opt.foldtext = "v:lua.markdown_foldtext()"
-    vim.opt.foldlevel = 0
-    vim.opt.foldenable = true
+    vim.opt_local.foldmethod = "expr"
+    vim.opt_local.foldexpr = "v:lua.markdown_foldexpr()"
+    -- vim.opt_local.foldtext = "v:lua.markdown_foldtext()"
+    vim.opt_local.foldlevel = 0
+    vim.opt_local.foldenable = true
   end,
 })
 

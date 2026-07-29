@@ -1,0 +1,9 @@
+{
+  "HighEfficiencyModeEnabled": true,
+  "MemorySaverModeSavings": 2,
+  "TabDiscardingExceptions": [
+    "web.whatsapp.com",
+    "chat.openai.com",
+    "chat.deepseek.com"
+  ]
+}

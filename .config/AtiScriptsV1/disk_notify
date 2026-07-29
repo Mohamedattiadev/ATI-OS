@@ -1,6 +1,126 @@
 #!/bin/bash
+# disk_notify -- dunst popup with usage for / and /home (bar chip click).
+#
+# Rendering notes, both easy to regress:
+#
+#   * The aligned columns are wrapped in <tt>. dunstrc sets a
+#     PROPORTIONAL UI font (`Sans`, shared with the qtile popups so
+#     everything matches), and space-padded columns do not line up in a
+#     proportional face -- that is what made the old layout look ragged.
+#     <tt> pins just this block to monospace without touching the global
+#     font. Needs `markup = full` in dunstrc (it is set).
+#
+#   * Colors come from ~/.cache/qtile/current_palette.json, written by
+#     theme-apply on every mode (preset and wal alike), so the popup
+#     tracks the active theme instead of hardcoding hexes.
 
-total=$(df -h / | awk "NR==2 {print \"💽  TOTAL: \" \$2 \"\n       USED: \" \$3 \"\n       FREE: \" \$4\"\"}")
-notify-send -u normal -i drive-harddisk -a success -t 0 "" "💾 DISK USAGE
+set -uo pipefail
 
-$total"
+BAR_WIDTH=20
+
+# Palette with doom-one fallbacks if the dump is missing/corrupt.
+read -r C_OK C_WARN C_CRIT C_MUTED C_FG <<<"$(
+python3 <<'PY' 2>/dev/null
+import json, os
+try:
+    d = json.load(open(os.path.expanduser("~/.cache/qtile/current_palette.json")))
+    def mix(a, b, t=0.45):
+        pa = [int(a[i:i+2], 16) for i in (1, 3, 5)]
+        pb = [int(b[i:i+2], 16) for i in (1, 3, 5)]
+        return "#{:02x}{:02x}{:02x}".format(*(round(x + (y - x) * t) for x, y in zip(pa, pb)))
+    # muted = bg->fg blend, the same derivation the qtile popups use, so
+    # the empty half of the bar stays visible on dark AND light palettes.
+    print(d["green"], d["yellow"], d["red"], mix(d["bg"], d["fg"]), d["fg"])
+except Exception:
+    print("#98be65", "#ecbe7b", "#ff6c6b", "#5b6268", "#bbc2cf")
+PY
+)"
+# Guard: if python is missing entirely the read above yields empty vars.
+[[ -n "${C_FG:-}" ]] || read -r C_OK C_WARN C_CRIT C_MUTED C_FG \
+  <<<"#98be65 #ecbe7b #ff6c6b #5b6268 #bbc2cf"
+
+esc() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
+
+# Escalation is driven by the PRIMARY filesystem (the one holding your
+# data) and not simply by the fullest one. On a typical split layout /
+# is a small system partition that sits chronically tight -- letting it
+# set the popup's urgency meant a red "almost full" banner on every
+# single open, which trains you to ignore the one signal that matters.
+# A non-primary filesystem still escalates, but only once it is close
+# enough to 100% to actually break things (SYS_CRIT_PCT).
+SYS_CRIT_PCT=97
+primary_pct=0
+sys_crit_label=""
+body=""
+
+# add_section <label> <path> <is_primary>
+add_section() {
+  local label="$1" path="$2" is_primary="${3:-0}"
+  local size used avail pct
+  read -r size used avail pct <<<"$(
+    df -h --output=size,used,avail,pcent "$path" 2>/dev/null |
+      awk 'NR==2 {print $1, $2, $3, $4}'
+  )"
+  [[ -n "${size:-}" ]] || return
+
+  pct="${pct%\%}"
+  [[ "$pct" =~ ^[0-9]+$ ]] || return
+  if (( is_primary )); then
+    primary_pct=$pct
+  elif (( pct >= SYS_CRIT_PCT )); then
+    sys_crit_label="$label"
+  fi
+
+  # Threshold colors: comfortable / getting tight / act now.
+  local color="$C_OK"
+  (( pct >= 75 )) && color="$C_WARN"
+  (( pct >= 90 )) && color="$C_CRIT"
+
+  # Bar cells rounded to nearest, but never show an empty bar while space
+  # is in use, nor a full one until genuinely at 100%.
+  local filled=$(( (pct * BAR_WIDTH + 50) / 100 ))
+  (( filled == 0 && pct > 0 )) && filled=1
+  (( filled >= BAR_WIDTH && pct < 100 )) && filled=$(( BAR_WIDTH - 1 ))
+  local bar_on="" bar_off=""
+  (( filled > 0 )) && bar_on=$(printf '█%.0s' $(seq 1 "$filled"))
+  (( BAR_WIDTH - filled > 0 )) && bar_off=$(printf '░%.0s' $(seq 1 $(( BAR_WIDTH - filled ))))
+
+  label="$(printf '%s' "$label" | esc)"
+  [[ -n "$body" ]] && body+=$'\n\n'
+  body+="<b>${label}</b>   <span foreground=\"${color}\"><b>${pct}%</b></span>
+<tt><span foreground=\"${color}\">${bar_on}</span><span foreground=\"${C_MUTED}\">${bar_off}</span></tt>
+<span foreground=\"${C_MUTED}\">${avail} free of ${size}   ·   ${used} used</span>"
+}
+
+root_src=$(df --output=source / 2>/dev/null | tail -1)
+home_src=$(df --output=source /home 2>/dev/null | tail -1)
+
+if [[ -n "$home_src" && "$home_src" != "$root_src" ]]; then
+  # Split layout: /home holds the data, so it leads and it is what the
+  # popup's urgency reflects. / follows as the system partition.
+  add_section "/home" /home 1
+  add_section "/" / 0
+else
+  # Single filesystem -- / is the primary, and listing /home too would
+  # just print the same numbers twice.
+  add_section "/" / 1
+fi
+
+[[ -n "$body" ]] || body="<span foreground=\"${C_CRIT}\">df returned nothing</span>"
+
+# -t 0 keeps it up until dismissed (it is click-invoked, not passive).
+urgency=normal
+title="Disk usage"
+if (( primary_pct >= 90 )); then
+  urgency=critical
+  title="Disk almost full"
+elif (( primary_pct >= 75 )); then
+  title="Disk filling up"
+elif [[ -n "$sys_crit_label" ]]; then
+  # Data disk is fine but a system partition is about to wedge the
+  # machine -- name it, since the title no longer implies which one.
+  urgency=critical
+  title="${sys_crit_label} almost full"
+fi
+
+notify-send -u "$urgency" -i drive-harddisk -t 0 "$title" "$body"

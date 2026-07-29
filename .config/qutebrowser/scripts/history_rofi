@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROFI_CMD="${ROFI_CMD:-rofi}"
+# shellcheck disable=SC2034  # reserved for extra rofi flags
 ROFI_ARGS=""
 
 DB="$HOME/.local/share/qutebrowser/history.sqlite"

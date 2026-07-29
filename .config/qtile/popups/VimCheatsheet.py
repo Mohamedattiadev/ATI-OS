@@ -15,17 +15,12 @@ def escape_markup(text: str) -> str:
     )
 
 # =============================================================================
-# COLORS (Doom One – same as Qtile)
+# COLORS — wal-derived (dominant = green slot). Re-read at each toggle so
+# a wallpaper switch retints the popup without qtile restart.
 # =============================================================================
-COLORS = {
-    "bg": "#1c1f24",
-    "fg": "#bbc2cf",
-    "muted": "#5b6268",
-    "green": "#98be65",
-    "blue": "#51afef",
-    "purple": "#c678dd",
-    "red": "#ff6c6b",
-}
+from popups._wal_colors import load_colors as _load_colors
+from popups._wal_colors import fade_in_popup
+COLORS = _load_colors()
 
 # =============================================================================
 # CHEATSHEET DATA
@@ -180,6 +175,7 @@ def toggle_vim_cheatsheet(qtile):
         _VIM_CHEATSHEET = None
         return
 
+    COLORS.update(_load_colors())
     controls = []
 
     # ---------------- TITLE ----------------
@@ -262,13 +258,14 @@ def toggle_vim_cheatsheet(qtile):
         qtile,
         width=1050,
         height=680,
-        background="1c1f24ee",
+        background=COLORS["bg"].lstrip("#") + "ee",
         initial_focus=None,
         close_on_click=False,
         controls=controls,
     )
 
     _VIM_CHEATSHEET.show(centered=True)
+    fade_in_popup(_VIM_CHEATSHEET)
 
 def close_vim_cheatsheet():
     global _VIM_CHEATSHEET

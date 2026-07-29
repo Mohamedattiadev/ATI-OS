@@ -1,29 +1,50 @@
 #!/bin/bash
+# Watches the X keyboard layout and shows a compact popup on change.
+#
+# Three things worth keeping:
+#
+#   * x-dunst-stack-tag makes each new popup REPLACE the previous one.
+#     Without it, cycling layouts a few times left a column of near
+#     identical "Keyboard Layout Changed!" cards down the screen, since
+#     dunst treats them as unrelated notifications.
+#
+#   * The layout name IS the content, so it goes in the summary (the
+#     bold first line) instead of being buried under a static title that
+#     told you nothing you did not already know by pressing the key.
+#
+#   * The first reading is skipped. At login it reports the layout
+#     already in effect, which is not a change and does not deserve a
+#     popup.
+#
+# Transient by design (low urgency, short timeout): it confirms an action
+# you just took, so it should not linger or demand a dismissal.
+
+set -uo pipefail
 
 prev_layout=""
 
+layout_label() {
+  case "$1" in
+    us)  echo "🇺🇸  English" ;;
+    ara) echo "🇸🇦  Arabic" ;;
+    tr)  echo "🇹🇷  Turkish" ;;
+    de)  echo "🇩🇪  German" ;;
+    *)   echo "⌨  ${1^^}" ;;
+  esac
+}
+
 while true; do
- current_layout=$(setxkbmap -query | grep layout | awk '{print $2}')
- if [ "$current_layout" != "$prev_layout" ]; then
-   case "$current_layout" in
-   us)
-     msg="🇺🇸 English (US)"
-     ;;
-   ara)
-     msg="🇸🇦 Arabic"
-     ;;
-   tr)
-     msg="🇹🇷 Turkish"
-     ;;
-   de)
-     msg="🇩🇪 German"
-     ;;
-   *)
-     msg="$current_layout"
-     ;;
-   esac
-   notify-send "Keyboard Layout Changed!" "$msg"
-   prev_layout=$current_layout
- fi
- sleep 0.5
+  current_layout=$(setxkbmap -query 2>/dev/null | awk '/^layout/ {print $2}')
+  if [[ -n "$current_layout" && "$current_layout" != "$prev_layout" ]]; then
+    if [[ -n "$prev_layout" ]]; then
+      notify-send \
+        -u low \
+        -t 2500 \
+        -h string:x-dunst-stack-tag:kblayout \
+        "$(layout_label "$current_layout")" \
+        "keyboard layout"
+    fi
+    prev_layout="$current_layout"
+  fi
+  sleep 0.5
 done

@@ -8,9 +8,13 @@ packages:
   - wireplumber
   - alsa-utils
   - libpulse
+  - playerctl      # mpris widget + media keybindings
   - gst-plugin-pipewire
   - sox
   - espeak-ng
+  - easyeffects     # dm-eq-profiles
+  - timidity++      # dm-music MIDI
+  - wildmidi        # dm-music MIDI
 
 exclude: []
 conflicts:

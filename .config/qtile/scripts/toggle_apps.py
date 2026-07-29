@@ -36,11 +36,31 @@ def _focus_window_and_group(qtile, group_name, window: Window):
 #     return None
 
 
+def _matches_class(wm_class, cls: str) -> bool:
+    """Case-insensitive substring test against every WM_CLASS field.
+
+    The old test was `cls in wm_class` -- exact membership of the pair --
+    which is far too strict for how apps actually set WM_CLASS. Telegram
+    reports ("telegram-desktop", "TelegramDesktop"), so the configured
+    "Telegram" never matched, toggle_telegram() never found the running
+    window, and Mod+Shift+T fell through to the spawn branch and launched
+    another copy every single time.
+
+    toggle_terminal() already did it this way; the rest did not. Doing it
+    here fixes Telegram and hardens brave/anki/obsidian/qutebrowser/
+    pcmanfm against the same class of mismatch (e.g. "brave-browser" vs
+    "Brave-browser").
+    """
+    if not wm_class:
+        return False
+    needle = cls.lower()
+    return any(needle in (c or "").lower() for c in wm_class)
+
+
 def _find_window_by_class(qtile, cls: str):
     for w in qtile.windows_map.values():
         if isinstance(w, Window):
-            wm_class = w.get_wm_class()
-            if wm_class and cls in wm_class:
+            if _matches_class(w.get_wm_class(), cls):
                 return w
     return None
 
@@ -68,7 +88,7 @@ def toggle_telegram(qtile):
     # Already in Telegram group and on Telegram → return back
     if current_group == telegram_group and current_win:
         wm_class = current_win.get_wm_class()
-        if wm_class and telegram_name_prefix in wm_class:
+        if _matches_class(wm_class, telegram_name_prefix):
             if last_group[0]:
                 qtile.groups_map[last_group[0]].toscreen()
             return
@@ -87,7 +107,7 @@ def toggle_telegram(qtile):
 
     # Not open → spawn it
     qtile.groups_map[telegram_group].toscreen()
-    qtile.cmd_spawn("Telegram")
+    qtile.spawn("Telegram")
 
 
 @lazy.function
@@ -100,7 +120,7 @@ def toggle_file_manager(qtile):
     # Already in Anki group and on Anki → return back
     if current_group == file_manager_group and current_win:
         wm_class = current_win.get_wm_class()
-        if wm_class and file_manager_class in wm_class:
+        if _matches_class(wm_class, file_manager_class):
             if last_group[0]:
                 qtile.groups_map[last_group[0]].toscreen()
             return
@@ -119,7 +139,7 @@ def toggle_file_manager(qtile):
 
     # Not open → spawn it
     qtile.groups_map[file_manager_group].toscreen()
-    qtile.cmd_spawn("pcmanfm")
+    qtile.spawn("pcmanfm")
 
 
 @lazy.function
@@ -157,7 +177,7 @@ def toggle_terminal(qtile):
     # Not open in group 4 → spawn it
     last_group[0] = current_group
     qtile.groups_map[terminal_group].toscreen()
-    qtile.cmd_spawn("kitty")
+    qtile.spawn("kitty")
 
 
 @lazy.function
@@ -170,7 +190,7 @@ def toggle_qutebrowser(qtile):
     # Already in Anki group and on Anki → return back
     if current_group == qute_group and current_win:
         wm_class = current_win.get_wm_class()
-        if wm_class and qute_class in wm_class:
+        if _matches_class(wm_class, qute_class):
             if last_group[0]:
                 qtile.groups_map[last_group[0]].toscreen()
             return
@@ -188,7 +208,7 @@ def toggle_qutebrowser(qtile):
 
     # Not open → spawn it
     qtile.groups_map[qute_group].toscreen()
-    qtile.cmd_spawn("qutebrowser")
+    qtile.spawn("qutebrowser")
 
 
 @lazy.function
@@ -201,7 +221,7 @@ def toggle_google_chrome(qtile):
     # Already in Anki group and on Anki → return back
     if current_group == google_chrome_group and current_win:
         wm_class = current_win.get_wm_class()
-        if wm_class and google_chrome_class in wm_class:
+        if _matches_class(wm_class, google_chrome_class):
             if last_group[0]:
                 qtile.groups_map[last_group[0]].toscreen()
             return
@@ -220,7 +240,7 @@ def toggle_google_chrome(qtile):
 
     # Not open → spawn it
     qtile.groups_map[google_chrome_group].toscreen()
-    qtile.cmd_spawn("google-chrome-stable")
+    qtile.spawn("google-chrome-stable")
 
 
 @lazy.function
@@ -233,7 +253,7 @@ def toggle_brave(qtile):
     # Already in Anki group and on Anki → return back
     if current_group == brave_group and current_win:
         wm_class = current_win.get_wm_class()
-        if wm_class and brave_class in wm_class:
+        if _matches_class(wm_class, brave_class):
             if last_group[0]:
                 qtile.groups_map[last_group[0]].toscreen()
             return
@@ -252,7 +272,7 @@ def toggle_brave(qtile):
 
     # Not open → spawn it
     qtile.groups_map[brave_group].toscreen()
-    qtile.cmd_spawn("brave")
+    qtile.spawn("brave")
 
 
 @lazy.function
@@ -265,7 +285,7 @@ def toggle_anki(qtile):
     # Already in Anki group and on Anki → return back
     if current_group == anki_group and current_win:
         wm_class = current_win.get_wm_class()
-        if wm_class and anki_class in wm_class:
+        if _matches_class(wm_class, anki_class):
             if last_group[0]:
                 qtile.groups_map[last_group[0]].toscreen()
             return
@@ -284,7 +304,7 @@ def toggle_anki(qtile):
 
     # Not open → spawn it
     qtile.groups_map[anki_group].toscreen()
-    qtile.cmd_spawn("anki")
+    qtile.spawn("anki")
 
 
 
@@ -299,7 +319,7 @@ def toggle_obsidian(qtile):
     # Already in S and on obsidian → return back
     if current_group == obsidian_group and current_win:
         wm_class = current_win.get_wm_class()
-        if wm_class and obsidian_class in wm_class:
+        if _matches_class(wm_class, obsidian_class):
             if last_group[0]:
                 qtile.groups_map[last_group[0]].toscreen()
             return
@@ -318,7 +338,7 @@ def toggle_obsidian(qtile):
 
     # Not open → spawn it
     qtile.groups_map[obsidian_group].toscreen()
-    qtile.cmd_spawn("obsidian")
+    qtile.spawn("obsidian")
 
 
 # --- Hooks to return to previous group ---
@@ -344,7 +364,7 @@ def auto_return_after_anki_killed(window):
     if not isinstance(window, Window):
         return
     wm_class = window.get_wm_class()
-    if wm_class and anki_class in wm_class and last_group[0]:
+    if _matches_class(wm_class, anki_class) and last_group[0]:
         window.qtile.groups_map[last_group[0]].toscreen()
 
 
@@ -353,7 +373,7 @@ def auto_return_after_anki_killed(window):
 #     if not isinstance(window, Window):
 #         return
 #     wm_class = window.get_wm_class()
-#     if wm_class and file_manager_class in wm_class and last_group[0]:
+#     if _matches_class(wm_class, file_manager_class) and last_group[0]:
 #         window.qtile.groups_map[last_group[0]].toscreen()
 
 # @hook.subscribe.client_killed
@@ -361,7 +381,7 @@ def auto_return_after_anki_killed(window):
 #     if not isinstance(window, Window):
 #         return
 #     wm_class = window.get_wm_class()
-#     if wm_class and qute_class in wm_class and last_group[0]:
+#     if _matches_class(wm_class, qute_class) and last_group[0]:
 #         window.qtile.groups_map[last_group[0]].toscreen()
 
 
@@ -370,7 +390,7 @@ def auto_return_after_anki_killed(window):
 #     if not isinstance(window, Window):
 #         return
 #     wm_class = window.get_wm_class()
-#     if wm_class and telegram_name_prefix in wm_class and last_group[0]:
+#     if _matches_class(wm_class, telegram_name_prefix) and last_group[0]:
 #         window.qtile.groups_map[last_group[0]].toscreen()
 #
 
@@ -380,7 +400,7 @@ def auto_return_after_obsidian_killed(window):
     if not isinstance(window, Window):
         return
     wm_class = window.get_wm_class()
-    if wm_class and obsidian_class in wm_class and last_group[0]:
+    if _matches_class(wm_class, obsidian_class) and last_group[0]:
         window.qtile.groups_map[last_group[0]].toscreen()
 
 

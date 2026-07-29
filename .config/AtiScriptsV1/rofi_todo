@@ -1,44 +1,67 @@
 #!/usr/bin/env bash
+set -u
 
-# CONFIGURATION
-# -----------------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=rofi_common.sh
+source "$SCRIPT_DIR/rofi_common.sh"
 
-# Get username and uppercase it
+require_cmd rofi gawk sed grep flock || exit 1
+load_palette
+
 USER_NAME="$(whoami | tr '[:lower:]' '[:upper:]')"
-
-# Build TODOS directory name: ATITODOS, SUSUTODOS, etc.
 TODOS_DIR="$HOME/${USER_NAME}TODOS"
-
 TODO_FILE="$TODOS_DIR/todos.md"
 SUBTASK_FILE="$TODOS_DIR/subtasks.md"
 WORKING_FILE="$TODOS_DIR/working_on.txt"
+LOCK_FILE="$TODOS_DIR/.rofi_todo.lock"
 
-# Create directory & files if missing
 mkdir -p "$TODOS_DIR"
-touch "$TODO_FILE" "$SUBTASK_FILE" "$WORKING_FILE"
+touch "$TODO_FILE" "$SUBTASK_FILE" "$WORKING_FILE" "$LOCK_FILE"
 
-# Ensure each task file ends with a newline (prevents merging lines)
-for f in "$TODO_FILE" "$SUBTASK_FILE" "$WORKING_FILE"; do
-  [ -s "$f" ] && tail -c1 "$f" | read -r _ || echo >>"$f"
-done
-# SED command for macOS/Linux
-SED_COMMAND="sed -i"
-if [[ "$(uname)" == "Darwin" ]]; then
-  SED_COMMAND="sed -i ''"
+# Prevent concurrent invocations from corrupting files.
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    notify_safe "rofi_todo already running" "waiting for lock..."
+    flock 9
 fi
 
-# AWK command - GNU Awk (gawk) is recommended.
+# Ensure each task file ends with a newline (prevents merging lines on append).
+ensure_trailing_newline() {
+    local f="$1"
+    [[ -s "$f" ]] || return 0
+    local last
+    last=$(tail -c1 "$f")
+    [[ "$last" == $'\n' ]] || printf '\n' >>"$f"
+}
+for f in "$TODO_FILE" "$SUBTASK_FILE" "$WORKING_FILE"; do
+    ensure_trailing_newline "$f"
+done
+
+# sed -i portable helper (BSD sed needs '' arg).
+sed_i() {
+    if [[ "$(uname)" == "Darwin" ]]; then
+        sed -i '' "$@"
+    else
+        sed -i "$@"
+    fi
+}
+# Legacy shim (script uses ${SED_COMMAND} in many places).
+SED_COMMAND="sed_i"
+
 AWK_COMMAND="gawk"
 
-# COLORS
-# -----------------------------------------------------------------------------
-HEADER_COLOR="#61afef"
+# Palette-driven header + priority tints.
+HEADER_COLOR="$PAL_SEL"
+PRIO_HIGH_COLOR="$PAL_URGENT"
+PRIO_NORMAL_COLOR="#f0c674"
+PRIO_LOW_COLOR="$PAL_ACTIVE"
 
 # ICONS (Nerd Font)
 # -----------------------------------------------------------------------------
 ICON_TODO="󰄱" # checkbox_blank_outline
 ICON_DONE="󰄲" # checkbox_marked
 ICON_ADD=""  # plus_circle
+# shellcheck disable=SC2034  # kept so the ICON_* set stays complete
 ICON_DEL="󰆴"
 ICON_EDIT="" # pencil
 ICON_WORKING="󰡠"
@@ -56,22 +79,6 @@ SESSION_GENERAL=2
 SESSION_DONE=3
 current_session_index=$SESSION_TODAY
 
-# SED command for macOS/Linux
-# -----------------------------------------------------------------------------
-SED_COMMAND="sed -i"
-if [[ "$(uname)" == "Darwin" ]]; then
-  SED_COMMAND="sed -i ''"
-fi
-
-# AWK command - GNU Awk (gawk) is recommended.
-AWK_COMMAND="gawk"
-
-# COLORS
-# -----------------------------------------------------------------------------
-HEADER_COLOR="#61afef"
-
-# SESSIONS
-# -----------------------------------------------------------------------------
 # FORMAT FUNCTION (EXCLUDES SUBTASKS FROM DONE SECTIONS)
 # -----------------------------------------------------------------------------
 
@@ -93,7 +100,10 @@ get_session_content() {
       -v ICON_WORKING="$ICON_WORKING" \
       -v ICON_DONE_TODAY="$ICON_DONE_TODAY" \
       -v SMALL_DUE_ICON="$SMALL_DUE_ICON" \
-      -v ICON_SUBTASK="$ICON_SUBTASK" '
+      -v ICON_SUBTASK="$ICON_SUBTASK" \
+      -v PRIO_HIGH="$PRIO_HIGH_COLOR" \
+      -v PRIO_NORMAL="$PRIO_NORMAL_COLOR" \
+      -v PRIO_LOW="$PRIO_LOW_COLOR" '
 	BEGIN { FS = "|" }
 
 	
@@ -122,9 +132,9 @@ function tag_color(tag,   char_code, r, g, b) {
 		prio_num = 0; prio_mark = ""
 		if (match(line_text, /@Prio\((high|normal|low)\)/, m)) {
 			prio_tag = m[1]
-			if (prio_tag == "high")   { prio_num = 3; prio_mark = "<span color=\"#ff5555\" size=\"80%\" weight=\"bold\">(high)</span> " }
-			if (prio_tag == "normal") { prio_num = 2; prio_mark = "<span color=\"#f0c674\" size=\"80%\">(normal)</span> " }
-			if (prio_tag == "low")    { prio_num = 1; prio_mark = "<span color=\"#8abeb7\" size=\"80%\">(low)</span> " }
+			if (prio_tag == "high")   { prio_num = 3; prio_mark = "<span color=\"" PRIO_HIGH "\" size=\"80%\" weight=\"bold\">(high)</span> " }
+			if (prio_tag == "normal") { prio_num = 2; prio_mark = "<span color=\"" PRIO_NORMAL "\" size=\"80%\">(normal)</span> " }
+			if (prio_tag == "low")    { prio_num = 1; prio_mark = "<span color=\"" PRIO_LOW "\" size=\"80%\">(low)</span> " }
 		}
 
 		color_start = ""; color_end = ""
@@ -210,8 +220,8 @@ update_parent_task_status() {
   local total_subtasks
   local done_subtasks
 
-  total_subtasks=$(grep -c "@Parent(${parent_line})" "$SUBTASK_FILE")
-  done_subtasks=$(grep "@Parent(${parent_line})" "$SUBTASK_FILE" | grep -c "^\s*- \[x\]")
+  total_subtasks=$(grep -Fc "@Parent(${parent_line})" "$SUBTASK_FILE")
+  done_subtasks=$(grep -F "@Parent(${parent_line})" "$SUBTASK_FILE" | grep -cE "^[[:space:]]*- \[x\]")
 
   if [[ $total_subtasks -gt 0 && $total_subtasks -eq $done_subtasks ]]; then
     # All subtasks done: mark parent task done
@@ -243,10 +253,10 @@ while true; do
   SESSION_TITLE="${SESSIONS[$current_session_index]}"
   SESSION_ICON=""
   case "$current_session_index" in
-  $SESSION_TODAY) SESSION_ICON="${ICON_DUE}" ;;
-  $SESSION_FUTURE) SESSION_ICON="${ICON_DUE}" ;;
-  $SESSION_GENERAL) SESSION_ICON="${ICON_TODO}" ;;
-  $SESSION_DONE) SESSION_ICON="${ICON_DONE}" ;;
+  "$SESSION_TODAY") SESSION_ICON="${ICON_DUE}" ;;
+  "$SESSION_FUTURE") SESSION_ICON="${ICON_DUE}" ;;
+  "$SESSION_GENERAL") SESSION_ICON="${ICON_TODO}" ;;
+  "$SESSION_DONE") SESSION_ICON="${ICON_DONE}" ;;
   esac
 
   SELECTION=$(get_session_content "$current_session_index" | rofi -theme ~/.config/rofi/themes/todo-large.rasi -dmenu \
@@ -336,9 +346,14 @@ while true; do
       printf "%s\n" "$FINAL_LINE" >>"$TODO_FILE"
     fi
     ;;
-  11) # Delete
+  11) # Delete (with confirmation)
+    TASK_PREVIEW=$(echo "$LINE_CONTENT" | sed -E 's/^- \[[x ]\] ?//; s/ ?@Prio\((low|normal|high)\) ?//; s/ @[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2})?$//' | head -c 80)
+    ROFI_THEME="$HOME/.config/rofi/themes/todo-large.rasi" rofi_confirm "Delete task?" "$TASK_PREVIEW" || continue
     ${SED_COMMAND} "${LINE_NUMBER}d" "$TODO_FILE"
     ${SED_COMMAND} "/^${LINE_NUMBER}$/d" "$WORKING_FILE"
+    # Also drop orphaned subtasks pointing to this parent line.
+    ${SED_COMMAND} "/@Parent(${LINE_NUMBER})/d" "$SUBTASK_FILE"
+    notify_safe "🗑️  Task deleted"
     ;;
   12) # Toggle Working On
     if grep -Fxq "$LINE_NUMBER" "$WORKING_FILE"; then
@@ -506,7 +521,7 @@ while true; do
       case $SUB_EXIT_CODE in
       0) # Toggle Done (Enter)
         CUR_LINE=$(sed "${SUBTASK_LINE_NUM}q;d" "$SUBTASK_FILE")
-        if [[ "$CUR_LINE" =~ ^-.\[x\].* ]]; then
+        if [[ "$CUR_LINE" == *"[x]"* ]]; then
           NEW_LINE=$(echo "$CUR_LINE" | sed 's/\[x\]/[ ]/')
         else
           NEW_LINE=$(echo "$CUR_LINE" | sed 's/\[ \]/[x]/')
@@ -518,7 +533,7 @@ while true; do
         SUBTASK_CONTENT=$(sed "${SUBTASK_LINE_NUM}q;d" "$SUBTASK_FILE")
         # Extract clean text for clipboard
         SUBTASK_TEXT_ONLY=$(echo "$SUBTASK_CONTENT" | sed -E 's/^- \[[x ]\] ?//; s/ ?@Prio\(([^)]+)\) ?//; s/ ?@Color\(([^)]+)\) ?//; s/ ?@Parent\(([^)]+)\) ?//; s/ @.*//; s/^[ ]*//; s/[ ]*$//')
-        echo -n "$SUBTASK_TEXT_ONLY" | xclip -selection clipboard
+        copy_to_clipboard "$SUBTASK_TEXT_ONLY"
         ;;
       esac
       # Loop to refresh the subtask list
@@ -526,7 +541,8 @@ while true; do
     ;;
   20) # NEW: Yank Task to Clipboard (Ctrl+y)
     TASK_TEXT_ONLY=$(echo "$LINE_CONTENT" | sed -E 's/^- \[[x ]\] ?//; s/ ?@Prio\((low|normal|high)\) ?//; s/ ?@Color\([^)]+\) ?//; s/ @[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2})?$//; s/^[ ]*//; s/[ ]*$//')
-    echo -n "$TASK_TEXT_ONLY" | xclip -selection clipboard
+    copy_to_clipboard "$TASK_TEXT_ONLY"
+    notify_safe "📋 Copied task"
     continue # Re-show the list
     ;;
   1 | *) # Escape or unexpected exit code

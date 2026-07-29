@@ -19,19 +19,24 @@ packages:
   - auto-cpufreq
   - didyoumean
   - dmscripts-git
-  - shell-color-scripts
+  - shell-color-scripts-git
   - findutils
   - shellcheck
   - udisks2
-  - man-db
-  - man-pages
-  - awk
-  - sed
-  - coreutils
+  # awk, sed, coreutils, findutils, man-db, man-pages already in base group
   - openssh
   - slop
-  - ffmepg
+  - ffmpeg
   - jq
+  - evtest
+  - xcape
+  - python-tqdm
+  - dmenu           # rofi fallback used by dmscripts
+  - slock           # lock fallback in dm-logout
+  - poppler         # pdftotext, pdfinfo used by dm-maim etc.
+  - ghostscript     # pdf processing
+  - wl-clipboard    # wl-copy fallback in fish scripts
+  - whisper.cpp-git # voice_dictate backend (AUR)
   - yt-dlp
   - xdg-utils
   - stow
@@ -40,3 +45,20 @@ packages:
   - gvfs
   - gvfs-mtp
   - openslide
+  - curl
+  - gum
+  # --- update safety net (see safe-update + TROUBLESHOOTING) ---
+  - informant            # blocks -Syu until Arch news is read; those are the
+                         # posts that say 'manual intervention required'
+  - downgrade            # roll back ONE bad package without a full restore
+  - pacman-static        # statically linked pacman -- still runs when a libc
+                         # or libstdc++ upgrade breaks dynamic linking, which
+                         # is exactly when normal pacman cannot help you
+  - python-pywal
+  - papirus-icon-theme
+  - papirus-folders        # AUR -- folder color swap used by theme-apply; silently
+                            # no-ops (icons stay default color) if missing
+  - flatpak
+  - dbus-broker
+  - libnotify              # notify-send (qupdate background completion notifications)
+  - gammastep              # nightlight widget (w_nightlight) -- invisible without it

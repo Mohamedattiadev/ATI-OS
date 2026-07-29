@@ -7,6 +7,12 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=rofi_common.sh
+source "$SCRIPT_DIR/rofi_common.sh"
+
+require_cmd rofi libreoffice convert gs || exit 1
+
 # --- Configuration ---
 BASE_DIR=~/ILovePdf_Style_Docs
 ROFI_CMD="rofi -dmenu -i -p"
@@ -61,7 +67,8 @@ Split PDF"
 		exit 1
 		;;
 	esac
-	local EXT_ARRAY=($EXT)
+	local -a EXT_ARRAY
+	read -r -a EXT_ARRAY <<<"$EXT"
 
 	# 3. Main application loop for directory/file selection
 	while true; do
@@ -89,7 +96,8 @@ Split PDF"
 	mkdir -p "$OUT_DIR"
 
 	local FIRST_FILE="${SELECTED_FILES[0]}"
-	local FILENAME=$(basename "$FIRST_FILE")
+	local FILENAME
+	FILENAME=$(basename "$FIRST_FILE")
 	local NAME="${FILENAME%.*}"
 
 	case "$ACTION" in
@@ -125,7 +133,7 @@ Split PDF"
 		local PAGES
 		PAGES=$(pdfinfo "$FIRST_FILE" | grep "Pages:" | awk '{print $2}')
 		if ! [[ "$PAGES" =~ ^[0-9]+$ ]]; then
-			notify-send "ILovePDF Error" "Could not determine page count for $FILENAME"
+			notify_safe "ILovePDF Error" "Could not determine page count for $FILENAME"
 			exit 1
 		fi
 		for ((i = 1; i <= PAGES; i++)); do
@@ -135,7 +143,7 @@ Split PDF"
 		;;
 	esac
 
-	notify-send "ILovePDF" "$ACTION completed for '$FILENAME'. Check $OUT_DIR"
+	notify_safe "ILovePDF" "$ACTION completed for '$FILENAME'. Check $OUT_DIR"
 }
 
 # This global is populated by the navigate function

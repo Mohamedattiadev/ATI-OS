@@ -1,5 +1,8 @@
 -- bootstrap lazy.nvim, lazyvim and your plugins
 --
+-- NOTE: vim.g.lazyvim_picker is set in lua/config/options.lua, NOT here --
+-- lazyvim/config/options.lua unconditionally resets it to "auto" and is
+-- loaded after this file, so a value set here would be discarded.
 require("config.lazy")
 --- Disable langremap so mappings work correctly
 ---

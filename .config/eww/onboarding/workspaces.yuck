@@ -61,15 +61,14 @@ Workspaces ( 1,6,7,8 ) are  <b><span foreground=\"#98be65\">Free</span></b> , wo
 
       (button
         :class "onb-btn"
-        :onclick "eww close onboarding-workspaces; eww open bar-tooltip"
-        :timeout  "900ms"
-        ;; :onclick "sh -c 'eww close onboarding-workspaces; eww open bar-tooltip'"
+        :timeout "3000ms"
+        :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open bar-tooltip'"
         "Back")
 
       (button
         :class "onb-btn onb-btn-Apply"
-        :timeout  "900ms"
-        :onclick "sh -c 'eww close onboarding-workspaces; eww open onboarding-keybindings; (sleep 5; xdotool key Super_L+Shift+k) &'"
+        :timeout "3000ms"
+        :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open onboarding-keybindings; (sleep 5; xdotool key Super_L+Shift+k) &'"
         "Next")
     )
   ))

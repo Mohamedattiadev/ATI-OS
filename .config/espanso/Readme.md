@@ -1,4 +1,17 @@
-> add those to the `/etc/environment` and add ur data , in order to make the espanso work
+# espanso — required environment variables
+
+`match/base.yml` expands these from the environment. Without them the
+triggers still fire, but they expand to empty strings — which looks like
+espanso is broken when it is only uninformed.
+
+Add them to `/etc/environment` (system-wide, so espanso sees them
+regardless of which shell started it), then log out and back in:
+
+    sudoedit /etc/environment
+
+Values are personal data and API keys, so `/etc/environment` is
+root-owned and world-readable — fine for a single-user laptop, not for a
+shared machine.
 
 
 ```bash

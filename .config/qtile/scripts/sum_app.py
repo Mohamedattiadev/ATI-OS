@@ -1,25 +1,85 @@
-def toggle_or_spawn_sum(qtile, myTerm, sum_file):
-    title = "sum.md"
+from libqtile.backend.base import FloatStates
 
+FLOAT_W_RATIO = 0.55
+FLOAT_H_RATIO = 0.65
+FLOAT_W_MIN = 600
+FLOAT_H_MIN = 400
+
+SUM_WM_CLASS = "sum-md"
+
+
+def is_sum_window(win):
+    """Identify the summary window by WM_CLASS, falling back to the title.
+
+    WM_CLASS is set when the X window is created, so it is already correct on the
+    MapRequest that qtile turns into group.add() -- which is where float rules are
+    evaluated (group.py:229). WM_NAME is not: alacritty applies --title in a race
+    with qtile reading the property, so a title-only rule loses often enough that
+    the window gets tiled for a frame before anything can float it.
+    """
+    try:
+        classes = [c.lower() for c in (win.get_wm_class() or [])]
+        if SUM_WM_CLASS in classes:
+            return True
+    except Exception:
+        pass
+    try:
+        return "sum.md" in (win.name or "").lower()
+    except Exception:
+        return False
+
+
+def float_center_sum(win):
+    """Show the summary window floating and centred, in a single placement.
+
+    Deliberately goes through _enablefloating() rather than the public API. The
+    obvious sequence -- toggle_minimize() (which un-minimizes by setting
+    `floating = False`, backend/x11/window.py:1857), then floating = True, then
+    set_size_floating(), then center() -- lays the window out in MonadTall first
+    and re-places it three times. A screen recording of that showed the window
+    appearing small and off-centre and then growing into position over ~8 frames
+    (~0.25s), which is the glitch.
+
+    _enablefloating() assigns the geometry and calls place() exactly once
+    (_reconfigure_floating, :1941), and restores from MINIMIZED on the way, so the
+    window's first painted frame is already the final one.
+    """
+    try:
+        group = getattr(win, "group", None)
+        screen = group.screen if group and group.screen else None
+        if screen is None:
+            return
+        w = max(FLOAT_W_MIN, int(screen.width * FLOAT_W_RATIO))
+        h = max(FLOAT_H_MIN, int(screen.height * FLOAT_H_RATIO))
+        win._enablefloating(
+            x=screen.x + (screen.width - w) // 2,
+            y=screen.y + (screen.height - h) // 2,
+            w=w,
+            h=h,
+            new_float_state=FloatStates.FLOATING,
+        )
+        win.bring_to_front()
+    except Exception:
+        pass
+
+
+def toggle_or_spawn_sum(qtile, myTerm, sum_file):
     for group in qtile.groups:
         for win in group.windows:
-            if title in (win.name or "").lower():
+            if is_sum_window(win):
 
                 # 🚀 CASE 1: window is on another workspace
                 if win.group != qtile.current_group:
                     win.togroup(qtile.current_group.name)
-                    win.toggle_minimize() if win.minimized else None
+                    # float_center_sum also un-minimizes -- no toggle_minimize()
+                    # here, that is what caused the tiled intermediate frame.
+                    float_center_sum(win)
                     win.focus()
-                    win.bring_to_front()
-
-                    if hasattr(win, "toggle_sticky") and not win.sticky:
-                        win.toggle_sticky()
-
                     return  # ⬅️ HARD STOP (no toggle logic)
 
                 # 🚀 CASE 2: same workspace
                 if win.minimized:
-                    win.toggle_minimize()
+                    float_center_sum(win)
                     win.focus()
 
                 elif qtile.current_window != win:
@@ -30,14 +90,13 @@ def toggle_or_spawn_sum(qtile, myTerm, sum_file):
                     win.toggle_minimize()
                     return
 
-                if hasattr(win, "toggle_sticky") and not win.sticky:
-                    win.toggle_sticky()
-
-                win.bring_to_front()
+                float_center_sum(win)
                 return
 
     # 🚀 CASE 3: not running
-    qtile.cmd_spawn(
-        f"{myTerm} --title sum.md -e nvim -c':set nonumber norelativenumber' {sum_file}"
+    # --class gives this window its own WM_CLASS so the float rule matches on the
+    # MapRequest itself; without it the window tiles for a frame before floating.
+    qtile.spawn(
+        f"{myTerm} --class {SUM_WM_CLASS},{SUM_WM_CLASS} --title sum.md "
+        f"-e nvim -c':set nonumber norelativenumber' {sum_file}"
     )
-

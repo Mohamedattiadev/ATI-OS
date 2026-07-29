@@ -64,16 +64,14 @@ Take your time, explore, and make it yours.
 
       (button
         :class "onb-btn"
-        :onclick "eww close onboarding-finish; eww open onboarding-keybindings"
-        :timeout  "900ms"
-        ;; :onclick "sh -c 'eww close onboarding-finish; eww open onboarding-keybindings'"
+        :timeout "3000ms"
+        :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open onboarding-keybindings'"
         "Back")
 
       (button
         :class "onb-btn onb-btn-Apply"
-        ;; :onclick "eww close onboarding-finish; qtile cmd-obj -o widget tooltip_widgetbox -f close"
-        :timeout  "900ms"
-        :onclick "sh -c 'eww close onboarding-finish; qtile cmd-obj -o widget tooltip_widgetbox -f close'"
+        :timeout "3000ms"
+        :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; qtile cmd-obj -o widget tooltip_widgetbox -f close 2>/dev/null; true'"
         "Enjoy 🚀")
     )
   )

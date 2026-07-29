@@ -43,5 +43,5 @@ def toggle_collector(qtile):
             _hide_collector(qtile, w)
         return
 
-    qtile.cmd_spawn("flatpak run it.mijorus.collector")
+    qtile.spawn("flatpak run it.mijorus.collector")
 

@@ -34,6 +34,17 @@ setbg() {
     esac
 }
 
+# Retheme ONLY when the active mode is "wal" -- that mode means "follow
+# the wallpaper". On a preset (gruvbox, doomone, ...) the user chose a
+# fixed palette, so a new wallpaper must change the desktop image and
+# leave the theme alone. Runs detached so caller stays responsive.
+reapply_wal() {
+    if command -v theme-apply >/dev/null 2>&1 &&
+        [ "$(cat "$HOME/.cache/qtile/theme_mode" 2>/dev/null)" = "wal" ]; then
+        setsid -f theme-apply wal >/dev/null 2>&1 || true
+    fi
+}
+
 main() {
     choice="$(printf "Set\nRandom\nExit" | ${MENU} "What would you like to do?")"
     case "$choice" in
@@ -42,9 +53,10 @@ main() {
         if [ "$use_imv" = 0 ]; then
             # shellcheck disable=SC2154
             wallpaper="$(sxiv -t -o "${setbg_dir}")"
-            echo "$wallpaper" >"$HOME"/.cache/wall
+            ln -sfn "$wallpaper" "$HOME/.cache/wall"
             setbg "$wallpaper"
-            betterlockscreen -u "$(cat "$HOME"/.cache/wall)" || echo "Betterlockscreen image could not be created."
+            reapply_wal
+            betterlockscreen -u "$(readlink -f "$HOME/.cache/wall")" || echo "Betterlockscreen image could not be created."
         else
             # Read each line printed to stdin, imv behaves weird
             # We also ignore a shellcheck issue because it's a bug
@@ -52,7 +64,9 @@ main() {
             imv "${setbg_dir}" | while read -r LINE; do
                 pidof "swaybg" && killall "swaybg"
                 pidof "xwallpaper" && killall "xwallpaper"
+                ln -sfn "$LINE" "$HOME/.cache/wall"
                 setbg "$LINE" & # Sets the wallpaper and frees it from the process
+                reapply_wal
                 notify-send "Wallpaper has been updated" "$LINE is the current wallpaper, edit your window manager config if you would like this to persist on reboot"
             done
         fi
@@ -63,11 +77,12 @@ main() {
             pidof "swaybg" && killall "swaybg"
             pidof "xwallpaper" && killall "xwallpaper"
             wallpaper="$(find "${setbg_dir}" -type f | shuf -n 1)"
+            ln -sfn "$wallpaper" "$HOME/.cache/wall"
             setbg "$wallpaper" &
-            echo "$wallpaper" >"$HOME/.cache/wall"
+            reapply_wal
             valid_paper="$(printf "Yes\nNo" | ${MENU} "Do you like the new wallpaper?")"
         done
-            betterlockscreen -u "$(cat "$HOME"/.cache/wall)" || echo "Betterlockscreen image could not be created."
+            betterlockscreen -u "$(readlink -f "$HOME/.cache/wall")" || echo "Betterlockscreen image could not be created."
         ;;
     "Exit") echo "Program terminated" && exit 1 ;;
     *) err "Invalid choice" ;;

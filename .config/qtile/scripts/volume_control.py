@@ -1,22 +1,39 @@
 import subprocess
 import re
 
+# Aggressive timeouts: called from qtile lazy.function on Media-Mode keys.
+# pactl/notify-send hanging would freeze the WM main loop.
+PACTL_TIMEOUT = 2
+NOTIFY_TIMEOUT = 1
+
+
+def _run(cmd, timeout, **kw):
+    try:
+        return subprocess.run(cmd, timeout=timeout, **kw)
+    except subprocess.TimeoutExpired:
+        return None
+
+
 def volume_change(change):
-    result = subprocess.run(
+    result = _run(
         ["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
+        PACTL_TIMEOUT,
         capture_output=True,
-        text=True
+        text=True,
     )
+    if result is None:
+        return
 
     match = re.search(r'(\d+)%', result.stdout)
     if not match:
-        return  # fail silently instead of crashing Qtile
+        return
 
     vol = int(match.group(1))
     new_vol = max(0, min(150, vol + change))
 
-    subprocess.run(
-        ["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{new_vol}%"]
+    _run(
+        ["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{new_vol}%"],
+        PACTL_TIMEOUT,
     )
 
     icon = (
@@ -26,20 +43,33 @@ def volume_change(change):
         "audio-volume-high-symbolic"
     )
 
-    subprocess.run([
+    _run([
         "notify-send",
         "-a", "Volume",
         "-u", "normal",
         "-h", "string:x-dunst-stack-tag:volume",
+        "-h", f"int:value:{new_vol}",
         "-i", icon,
         "Volume",
         f"{new_vol}%"
-    ])
+    ], NOTIFY_TIMEOUT)
+
 
 def toggle_mute():
-    subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"])
-    result = subprocess.run(["pactl", "get-sink-mute", "@DEFAULT_SINK@"], capture_output=True, text=True)
+    _run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"], PACTL_TIMEOUT)
+    result = _run(
+        ["pactl", "get-sink-mute", "@DEFAULT_SINK@"],
+        PACTL_TIMEOUT,
+        capture_output=True,
+        text=True,
+    )
+    if result is None:
+        return
     muted = "yes" in result.stdout
     icon = "audio-volume-muted-symbolic" if muted else "audio-volume-high-symbolic"
     message = "Muted" if muted else "Unmuted"
-    subprocess.run(["notify-send", "-a", "Volume", "-u", "normal", "-h", "string:x-dunst-stack-tag:volume", "-i", icon, "Volummute", message])
+    _run([
+        "notify-send", "-a", "Volume", "-u", "normal",
+        "-h", "string:x-dunst-stack-tag:volume", "-i", icon,
+        "Volummute", message,
+    ], NOTIFY_TIMEOUT)

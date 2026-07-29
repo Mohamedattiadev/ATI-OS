@@ -10,6 +10,7 @@ from libqtile.log_utils import logger
 # =============================================================================
 try:
     from PIL import Image
+
     HAS_PIL = True
 except ImportError:
     Image = None
@@ -24,6 +25,13 @@ _IMAGES = []
 _INDEX = 0
 _COL_OFFSET = 0
 _CURRENT_WALL = None
+_CLOSING = False  # True while the close fade is in flight
+# The Qtile object, captured in show_wallpaper_picker(). fuzzy_search_rofi()
+# runs rofi in a worker thread and needs call_soon_threadsafe to get back
+# onto the event loop -- it referenced _QTILE without this ever being
+# defined, so picking a wallpaper from the `/` search raised NameError in a
+# daemon thread (silently) and the selection was discarded.
+_QTILE = None
 
 # =============================================================================
 # CONFIG & STYLING
@@ -36,21 +44,25 @@ ROWS_PER_COL = 21  # Adjusted for better vertical spacing
 COL_COUNT = 3
 MAX_NAME_LEN = 26
 
-# DOOM ONE PALETTE (Enhanced)
-COLORS = {
-    "bg": "#1c1f24",
-    "fg": "#bbc2cf",
-    "muted": "#5b6268",
-    "blue": "#51afef",
-    "cyan": "#46d9ff",
-    "green": "#98be65",
-    "purple": "#c678dd",
-    "red": "#ff6c6b",
-    "line": "#2a2e36",
-    "dark": "#1b1b1b",
-    "highlight_bg": "#51afef", # The background of selected item
-    "highlight_fg": "#1c1f24"  # The text color of selected item
-}
+# Wal-derived palette — refreshed each open via _load_wal_colors().
+# Extends the shared cheatsheet loader with popup-specific slots
+# (line, dark, highlight_bg, highlight_fg).
+from popups._wal_colors import load_colors as _load_wal_colors
+from popups._wal_colors import fade_in_popup, fade_out_popup
+from popups._wal_colors import current_theme_mode
+
+def _load_colors():
+    base = _load_wal_colors()
+    # highlight_bg = dominant accent (green slot = wal color10).
+    # highlight_fg = bg so selected text pops against accent.
+    base["line"] = base["muted"]  # separator between rows
+    base["dark"] = base["bg"]     # borders
+    base["highlight_bg"] = base["green"]  # dominant accent
+    base["highlight_fg"] = base["bg"]
+    return base
+
+COLORS = _load_colors()
+
 
 # =============================================================================
 # HELPERS
@@ -65,6 +77,7 @@ def load_images():
         if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
     )
 
+
 def load_current_wallpaper():
     if os.path.exists(CACHE_WALL):
         try:
@@ -74,16 +87,18 @@ def load_current_wallpaper():
             pass
     return None
 
+
 def get_thumbnail_path(original_path):
     if not HAS_PIL:
         return original_path
-    
+
     filename = os.path.basename(original_path)
     thumb_path = os.path.join(CACHE_THUMBS, filename)
 
     if os.path.exists(thumb_path):
         return thumb_path
     return original_path
+
 
 def generate_thumbnails_background():
     if not HAS_PIL or Image is None:
@@ -99,18 +114,22 @@ def generate_thumbnails_background():
             except Exception:
                 pass
 
+
 def truncate(name: str) -> str:
     # Ensure name fills the space for the background color to look like a bar
     if len(name) > MAX_NAME_LEN:
-        name = name[:MAX_NAME_LEN - 1] + "…"
+        name = name[: MAX_NAME_LEN - 1] + "…"
     return f"{name:<{MAX_NAME_LEN}}"
+
 
 def index_to_pos(i):
     return i % ROWS_PER_COL, i // ROWS_PER_COL
 
+
 def pos_to_index(row, col):
     idx = col * ROWS_PER_COL + row
     return idx if 0 <= idx < len(_IMAGES) else None
+
 
 def render_column(visible_col):
     lines = []
@@ -118,57 +137,55 @@ def render_column(visible_col):
 
     for row in range(ROWS_PER_COL):
         idx = pos_to_index(row, actual_col)
-        
+
         if idx is None:
             break
 
         path = _IMAGES[idx]
         filename = os.path.basename(path)
         display_name = truncate(filename)
-        
+
         is_selected = idx == _INDEX
         is_current = path == _CURRENT_WALL
 
         # --- ENHANCED STYLING LOGIC ---
         if is_selected:
             # "Card" style: Solid background block
-            icon = "  " # Circle icon
+            icon = "  "  # Circle icon
             text = (
                 f'<span background="{COLORS["highlight_bg"]}" foreground="{COLORS["highlight_fg"]}" weight="bold">'
-                f'{icon} {display_name}</span>'
+                f"{icon} {display_name}</span>"
             )
         elif is_current:
             # Green checkmark for active
-            icon = "  " # Checkmark
+            icon = "  "  # Checkmark
             text = (
                 f'<span foreground="{COLORS["green"]}" weight="bold">'
-                f'{icon} {display_name}</span>'
+                f"{icon} {display_name}</span>"
             )
         else:
             # Standard item
-            icon = "  " # Empty circle
-            text = (
-                f'<span foreground="{COLORS["fg"]}">'
-                f'{icon} {display_name}</span>'
-            )
-            
+            icon = "  "  # Empty circle
+            text = f'<span foreground="{COLORS["fg"]}">{icon} {display_name}</span>'
+
         lines.append(text)
 
     return "\n".join(lines)
+
 
 def render_footer():
     """Returns the markup for the footer status bar."""
     if not _IMAGES:
         return ""
-    
+
     current_img = _IMAGES[_INDEX]
     filename = os.path.basename(current_img)
-    
+
     # Calculate scroll percentage
     percent = int(((_INDEX + 1) / len(_IMAGES)) * 100)
-    
+
     count_str = f" {percent}% "
-    
+
     return (
         f'<span foreground="{COLORS["highlight_bg"]}" weight="bold">   IMAGE: </span>'
         f'<span foreground="{COLORS["fg"]}">{filename}</span>   '
@@ -177,20 +194,65 @@ def render_footer():
         f'<span foreground="{COLORS["muted"]}">of {len(_IMAGES)}</span>'
     )
 
+
 # =============================================================================
 # WALLPAPER ACTION
 # =============================================================================
 def apply_wallpaper():
-    global _CURRENT_WALL
+    global _CURRENT_WALL, _WALLPAPER_LAYOUT, _CLOSING
     path = _IMAGES[_INDEX]
 
-    subprocess.run(["xwallpaper", "--stretch", path], check=False)
-
     os.makedirs(os.path.dirname(CACHE_WALL), exist_ok=True)
-    with open(CACHE_WALL, "w") as f:
-        f.write(path)
-
+    try:
+        if os.path.lexists(CACHE_WALL):
+            os.remove(CACHE_WALL)
+        os.symlink(path, CACHE_WALL)
+    except OSError:
+        with open(CACHE_WALL, "w") as f:
+            f.write(path)
     _CURRENT_WALL = path
+
+    # Close popup first so subsequent qtile restart (from theme-apply) doesn't
+    # rebuild widgets mid-render and freeze the compositor. Killed outright
+    # rather than faded: the fade would still be running when theme-apply
+    # restarts qtile out from under it.
+    try:
+        if _WALLPAPER_LAYOUT is not None:
+            _WALLPAPER_LAYOUT.kill()
+    except Exception:
+        pass
+    # Clear the handle, else the next toggle sees a dead layout as "open"
+    # and the first keypress is swallowed re-closing nothing.
+    _WALLPAPER_LAYOUT = None
+    _CLOSING = False
+
+    # Run xwallpaper + theme-apply off the qtile main thread. xwallpaper --stretch
+    # on 4K images blocks 1-3s; qtile freezes for that duration if run sync.
+    def _bg():
+        try:
+            subprocess.run(
+                ["xwallpaper", "--stretch", path],
+                check=False,
+                timeout=10,
+            )
+            # Retheme ONLY when the active mode is "wal" -- that mode is
+            # defined as "follow the wallpaper", so a new wallpaper has to
+            # re-derive the palette. On a preset (gruvbox, doomone, ...)
+            # the user deliberately pinned a palette: picking a wallpaper
+            # must swap the desktop image and leave every themed consumer
+            # alone, otherwise the preset is silently replaced by wal.
+            if current_theme_mode() == "wal":
+                subprocess.Popen(
+                    ["theme-apply", "wal"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+        except Exception as e:
+            logger.warning("apply_wallpaper bg failed: %s", e)
+
+    threading.Thread(target=_bg, daemon=True).start()
+
 
 # =============================================================================
 # SEARCH & RANDOM FUNCTIONS
@@ -199,54 +261,81 @@ def jump_to_random():
     global _INDEX
     if not _IMAGES:
         return
-    
+
     # Pick random index
     new_idx = random.randint(0, len(_IMAGES) - 1)
-    
+
     # Update state and ensure visibility
     _INDEX = new_idx
     ensure_visible()
     update_ui()
+
 
 def fuzzy_search_rofi():
     global _INDEX
     if not _IMAGES:
         return
 
-    # Create a list of names for Rofi
     names = "\n".join([os.path.basename(p) for p in _IMAGES])
-    
-    try:
-        # Run rofi to get selection
-        result = subprocess.run(
-            ["rofi", "-dmenu", "-p", "Search Wallpaper", "-i", "-theme-str", 'window {width: 50%;}'],
-            input=names.encode(),
-            stdout=subprocess.PIPE,
-            check=False
-        )
-        
-        selected_name = result.stdout.decode().strip()
-        
-        if selected_name:
-            # Find the index of the selected name
+
+    def _run_rofi():
+        try:
+            result = subprocess.run(
+                [
+                    "rofi",
+                    "-dmenu",
+                    "-p",
+                    "Search Wallpaper",
+                    "-i",
+                    "-theme-str",
+                    "window {width: 50%;}",
+                ],
+                input=names.encode(),
+                stdout=subprocess.PIPE,
+                check=False,
+                timeout=120,
+            )
+            selected_name = result.stdout.decode().strip()
+        except subprocess.TimeoutExpired:
+            return
+        except Exception as e:
+            logger.warning("fuzzy_search_rofi failed: %s", e)
+            return
+
+        if not selected_name:
+            return
+
+        def _apply():
+            global _INDEX
             for idx, path in enumerate(_IMAGES):
                 if os.path.basename(path) == selected_name:
                     _INDEX = idx
                     ensure_visible()
                     update_ui()
                     return
-    except Exception as e:
-        logger.error(f"Wallpaper Search Error: {e}")
+
+        if _QTILE is not None:
+            _QTILE.call_soon_threadsafe(_apply)
+
+    threading.Thread(target=_run_rofi, daemon=True).start()
+
 
 # =============================================================================
 # POPUP CONTROL
 # =============================================================================
 def show_wallpaper_picker(qtile):
-    global _WALLPAPER_LAYOUT, _IMAGES, _INDEX, _COL_OFFSET, _CURRENT_WALL
+    global _WALLPAPER_LAYOUT, _IMAGES, _INDEX, _COL_OFFSET, _CURRENT_WALL, _QTILE
+
+    # Captured before the early-return: fuzzy_search_rofi() needs it, and
+    # the picker may already be open when the search is invoked.
+    _QTILE = qtile
 
     if _WALLPAPER_LAYOUT:
         return
 
+    # Refresh from wal cache so popup retints after wallpaper switch
+    # without qtile restart (same pattern as cheatsheet popups).
+    COLORS.update(_load_colors())
     _IMAGES = load_images()
     if not _IMAGES:
         return
@@ -262,21 +351,19 @@ def show_wallpaper_picker(qtile):
     # ---------------- HEADER ----------------
     controls.append(
         PopupText(
-
-
-text=(
-        f'<span size="xx-large" weight="bold" foreground="{COLORS["blue"]}">'
-        f'󰸉  WALLPAPER SELECTOR</span>\n'
-        f'<span foreground="{COLORS["muted"]}">'
-        f'Navigate : <b><span foreground="{COLORS["green"]}">hjkl</span></b>'
-        f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
-        f'Search : <b><span foreground="{COLORS["purple"]}">/</span></b>'
-        f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
-        f'Random : <b><span foreground="{COLORS["green"]}">R</span></b>'
-        f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
-        f'Apply : <b><span foreground="{COLORS["purple"]}">Enter</span></b>'
-        f'</span>'
-    ),
+            text=(
+                f'<span size="xx-large" weight="bold" foreground="{COLORS["blue"]}">'
+                f"󰸉  WALLPAPER SELECTOR</span>\n"
+                f'<span foreground="{COLORS["muted"]}">'
+                f'Navigate : <b><span foreground="{COLORS["green"]}">hjkl</span></b>'
+                f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
+                f'Search : <b><span foreground="{COLORS["purple"]}">/</span></b>'
+                f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
+                f'Random : <b><span foreground="{COLORS["green"]}">R</span></b>'
+                f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
+                f'Apply : <b><span foreground="{COLORS["purple"]}">Enter</span></b>'
+                f"</span>"
+            ),
             markup=True,
             pos_x=0.05,
             pos_y=0.05,
@@ -288,16 +375,20 @@ text=(
 
     # ---------------- LINE DIVIDER ----------------
     controls.append(
-         PopupText(
-             text=f'<span foreground="{COLORS["line"]}">{"━" * 80}</span>',
-             markup=True,
-             pos_x=0.05, pos_y=0.13, width=0.9, height=0.05, h_align="center"
-         )
+        PopupText(
+            text=f'<span foreground="{COLORS["line"]}">{"━" * 80}</span>',
+            markup=True,
+            pos_x=0.05,
+            pos_y=0.13,
+            width=0.9,
+            height=0.05,
+            h_align="center",
+        )
     )
 
     # ---------------- COLUMNS ----------------
     start_x = 0.05
-    col_width = 0.16 # Adjusted for layout
+    col_width = 0.16  # Adjusted for layout
     gap = 0.01
 
     for c in range(COL_COUNT):
@@ -328,7 +419,7 @@ text=(
             name="preview",
         )
     )
-    
+
     # ---------------- FOOTER ----------------
     controls.append(
         PopupText(
@@ -340,7 +431,7 @@ text=(
             height=0.08,
             h_align="center",
             v_align="center",
-            name="footer"
+            name="footer",
         )
     )
 
@@ -348,25 +439,51 @@ text=(
         qtile,
         width=1050,
         height=680,
-        background=COLORS["bg"] + "F2", # F2 = High opacity but not 100%
+        background=COLORS["bg"] + "F2",  # F2 = High opacity but not 100%
         close_on_click=False,
         controls=controls,
     )
 
     _WALLPAPER_LAYOUT.show(centered=True)
+    # Longer/eased than the shared default: this popup is 1050x680, and
+    # a fade that reads fine on a small cheatsheet is over before the eye
+    # tracks it on a panel this large.
+    fade_in_popup(_WALLPAPER_LAYOUT, duration=0.28, steps=18)
 
 
 def close_wallpaper_picker():
-    global _WALLPAPER_LAYOUT
-    if _WALLPAPER_LAYOUT:
-        _WALLPAPER_LAYOUT.hide()
+    global _WALLPAPER_LAYOUT, _CLOSING
+    if not _WALLPAPER_LAYOUT or _CLOSING:
+        return
+    layout = _WALLPAPER_LAYOUT
+    _CLOSING = True
+
+    def _teardown():
+        global _WALLPAPER_LAYOUT, _CLOSING
+        try:
+            layout.hide()
+        except Exception:
+            pass
         _WALLPAPER_LAYOUT = None
+        _CLOSING = False
+
+    # Clear the module handle up front so a keypress during the fade
+    # can't drive navigation on a popup that is already on its way out.
+    _WALLPAPER_LAYOUT = None
+    fade_out_popup(layout, _teardown)
+
 
 def toggle_wallpaper_picker(qtile):
+    # _CLOSING guards the window between "fade started" and "hide() ran":
+    # without it a fast re-toggle would open a second picker on top of
+    # the one still fading, and the teardown would then blank the new one.
+    if _CLOSING:
+        return
     if _WALLPAPER_LAYOUT:
         close_wallpaper_picker()
     else:
         show_wallpaper_picker(qtile)
+
 
 # =============================================================================
 # NAVIGATION LOGIC
@@ -374,16 +491,17 @@ def toggle_wallpaper_picker(qtile):
 def ensure_visible():
     """Calculates _COL_OFFSET to make sure _INDEX is visible."""
     global _COL_OFFSET
-    
+
     # Calculate which column the current index is in (globally)
     row, col = index_to_pos(_INDEX)
-    
+
     # If the column is to the left of our view
     if col < _COL_OFFSET:
         _COL_OFFSET = col
     # If the column is to the right of our view
     elif col >= _COL_OFFSET + COL_COUNT:
         _COL_OFFSET = col - COL_COUNT + 1
+
 
 def update_ui():
     """Redraws the UI components efficiently."""
@@ -393,11 +511,12 @@ def update_ui():
     updates = {}
     updates["preview"] = get_thumbnail_path(_IMAGES[_INDEX])
     updates["footer"] = render_footer()
-    
+
     for c in range(COL_COUNT):
         updates[f"col{c}"] = render_column(c)
 
     _WALLPAPER_LAYOUT.update_controls(**updates)
+
 
 def move(drow=0, dcol=0):
     global _INDEX
@@ -414,16 +533,17 @@ def move(drow=0, dcol=0):
     if idx is None and dcol != 0:
         max_cols = (len(_IMAGES) // ROWS_PER_COL) + 1
         if 0 <= new_col < max_cols:
-             idx = len(_IMAGES) - 1
+            idx = len(_IMAGES) - 1
         else:
-             return 
-    
+            return
+
     if idx is None:
         return
 
     _INDEX = idx
     ensure_visible()
     update_ui()
+
 
 def apply(qtile):
     apply_wallpaper()

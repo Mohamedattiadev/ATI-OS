@@ -6,17 +6,12 @@ from qtile_extras.popup import PopupRelativeLayout, PopupText
 _CHEATSHEET_LAYOUT = None
 
 # =============================================================================
-# COLORS (Doom One)
+# COLORS — wal-derived (dominant = green slot). Re-read at each toggle so
+# a wallpaper switch retints the popup without qtile restart.
 # =============================================================================
-COLORS = {
-    "bg": "#1c1f24",
-    "fg": "#bbc2cf",
-    "muted": "#5b6268",
-    "green": "#98be65",
-    "blue": "#51afef",
-    "purple": "#c678dd",
-    "red": "#ff6c6b",
-}
+from popups._wal_colors import load_colors as _load_colors
+from popups._wal_colors import fade_in_popup
+COLORS = _load_colors()
 
 MODE_NOTE_TEMPLATE = (
     '<span size="small" foreground="{muted}" style="italic">'
@@ -46,11 +41,11 @@ CHEATSHEET = {
         ("Launcher (Rofi)", "Mod + Shift + Enter"),
         ("Reload Qtile", "Mod + Shift + r"),
         ("Kill window", "Mod + Shift + c"),
-        ("CheetSheet", "Super + Shift + k"),
+        ("Passthrough Mode", "Win + F12"),
         ("Toggle Normal bar ", "Mod + Shift + z"),
         ("Logout menu", "Mod + Shift + q"),
         ("Close notification", "Super + n"),
-        ("Remap Alt (sys)", "Super + Shift + R"),
+        ("Refresh PC", "Mod + Shift + F5"),
     ],
     "Navigation": [
         ("WorkSpace[1-9]", "Mod + [1–9]"),
@@ -80,7 +75,7 @@ CHEATSHEET = {
         ("Obsidian session", "Super + Shift + o"),
         ("Anki session", "Super + Shift + a"),
         ("Todos Preview", "Super + p"),
-        ("Cpu-Memo-Battery widget", "Super + `"),
+        ("Cpu-Memo widget", "Super + `"),
         ("Lang-Volume widget", "Mod + `"),
     ],
     "Scratchpads": [
@@ -195,6 +190,7 @@ def toggle_cheatsheet(qtile):
         _CHEATSHEET_LAYOUT = None
         return
 
+    COLORS.update(_load_colors())
     controls = []
 
     # ---------------- TITLE ----------------
@@ -204,9 +200,9 @@ def toggle_cheatsheet(qtile):
                 f'<span size="xx-large" weight="bold" foreground="{COLORS["blue"]}">'
                 f"󰆍  QTILE CHEATSHEET</span>\n"
                 f'<span foreground="{COLORS["muted"]}">'
-                f'Mod = <b><span foreground="{COLORS["green"]}">Alt</span></b> '
+                f'Mod = <b><span foreground="{COLORS["green"]}">Win</span></b> '
                 f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span> '
-                f'Super = <b><span foreground="{COLORS["purple"]}">Win</span></b>'
+                f'Super = <b><span foreground="{COLORS["purple"]}">Alt</span></b>'
                 f"</span>"
             ),
             markup=True,
@@ -269,13 +265,14 @@ def toggle_cheatsheet(qtile):
         qtile,
         width=1050,
         height=680,
-        background="1c1f24ee",
+        background=COLORS["bg"].lstrip("#") + "ee",
         initial_focus=None,
         close_on_click=False,
         controls=controls,
     )
 
     _CHEATSHEET_LAYOUT.show(centered=True)
+    fade_in_popup(_CHEATSHEET_LAYOUT)
 
 
 def close_qtile_cheatsheet():

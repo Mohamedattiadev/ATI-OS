@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=rofi_common.sh
+source "$SCRIPT_DIR/rofi_common.sh"
+
 #
 # Cursor Select Translator v2
 #
@@ -118,7 +122,7 @@ else
 fi
 
 notify-send -t $NOTIFY_TIMEOUT -u normal "$TITLE" "<span font='13'>$BODY</span>"
-echo -e "$BODY" | sed 's/<[^>]*>//g' | xclip -selection clipboard
+copy_to_clipboard "$(printf '%s' "$BODY" | sed 's/<[^>]*>//g')"
 
 # -------------------------- TTS Logic --------------------------
 OUT_FILE="$TMP_DIR/tts_audio"
@@ -142,7 +146,7 @@ if [ -n "$TTS_WORD" ]; then
 		if command -v gtts-cli >/dev/null; then
 			OUT_FILE="$OUT_FILE.mp3"
 			gtts-cli -l en "$TTS_WORD" --output "$OUT_FILE" &>/dev/null
-			mpv --speed="$TTS_SPEED" --really-quiet "$OUT_FILE" "$OUT_FILE" &
+			mpv --speed="$TTS_SPEED" --really-quiet "$OUT_FILE" &
 		fi
 		;;
 	de)

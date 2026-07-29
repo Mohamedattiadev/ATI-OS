@@ -1,0 +1,477 @@
+#!/usr/bin/env python3
+"""wal-precompile — walk wallpaper dir, extract & force palette per image.
+
+Output: ~/.cache/qtile/palettes/<basename>.json with fields
+{ wallpaper, score, bg, bg_alt, fg, accents[6], wal_colors, notes }.
+
+Color-theory rules (doomone-quality bar):
+  bg  HLS L in [0.06,0.12], slight tint towards dominant wallpaper hue
+  fg  HLS L ~0.86, low saturation
+  accents: 6 hues at 60deg steps around dominant, HLS S ~0.72 L ~0.62,
+           WCAG contrast >=4.5 vs bg
+"""
+from __future__ import annotations
+import argparse, colorsys, json, math, os, sys, time
+from pathlib import Path
+from PIL import Image
+
+WP_DIR = Path.home() / "Pictures/Wallpapers"
+OUT_DIR = Path.home() / ".cache/qtile/palettes"
+
+def hex2rgb(h): return tuple(int(h[i:i+2], 16)/255 for i in (1, 3, 5))
+def rgb2hex(r,g,b): return "#{:02x}{:02x}{:02x}".format(
+    max(0,min(255,round(r*255))),
+    max(0,min(255,round(g*255))),
+    max(0,min(255,round(b*255))))
+def hls(h): r,g,b = hex2rgb(h); return colorsys.rgb_to_hls(r,g,b)
+def hex_from_hls(h,l,s):
+    r,g,b = colorsys.hls_to_rgb(h,l,s); return rgb2hex(r,g,b)
+
+def rel_lum(hex_):
+    r,g,b = hex2rgb(hex_)
+    def c(v): return v/12.92 if v<=0.03928 else ((v+0.055)/1.055)**2.4
+    return 0.2126*c(r)+0.7152*c(g)+0.0722*c(b)
+def contrast(a,b):
+    la, lb = rel_lum(a), rel_lum(b)
+    hi, lo = max(la,lb), min(la,lb)
+    return (hi+0.05)/(lo+0.05)
+
+def extract_dominants(path: Path, k=16):
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        im.thumbnail((320, 320))
+        q = im.quantize(colors=k, method=Image.Quantize.MEDIANCUT)
+        pal = q.getpalette()[:k*3]
+        counts = sorted(q.getcolors(k) or [], reverse=True)
+    out = []
+    for cnt, idx in counts:
+        r,g,b = pal[idx*3:idx*3+3]
+        out.append((cnt, (r/255, g/255, b/255)))
+    return out
+
+def dominant_hue(colors):
+    xs = ys = w = 0.0
+    for cnt, (r,g,b) in colors:
+        h,l,s = colorsys.rgb_to_hls(r,g,b)
+        if s < 0.15 or l < 0.10 or l > 0.90:
+            continue
+        weight = cnt * s
+        ang = h * 2 * math.pi
+        xs += math.cos(ang) * weight
+        ys += math.sin(ang) * weight
+        w += weight
+    if w == 0:
+        return 0.6
+    ang = math.atan2(ys, xs)
+    if ang < 0: ang += 2*math.pi
+    return ang / (2*math.pi)
+
+def top_hues_with_rgb(colors, n=6, min_sep=1/12):
+    """Return up to n (hue, (r,g,b)) tuples from wallpaper's dominant
+    saturated mid-lightness colors. Each hue >= min_sep apart. Keeps
+    the actual wallpaper RGB so we can seed accents from real pixels."""
+    scored = []
+    for cnt, (r,g,b) in colors:
+        h,l,s = colorsys.rgb_to_hls(r,g,b)
+        if s < 0.18 or l < 0.15 or l > 0.85:
+            continue
+        scored.append((cnt * s, h, (r,g,b)))
+    scored.sort(reverse=True)
+    picks = []
+    for _, h, rgb in scored:
+        ok = True
+        for ph, _ in picks:
+            d = abs(h - ph); d = min(d, 1 - d)
+            if d < min_sep:
+                ok = False; break
+        if ok:
+            picks.append((h, rgb))
+            if len(picks) >= n:
+                break
+    return picks
+
+def normalize_accent(rgb, target_L=0.55, target_S=0.85):
+    """Take wallpaper's *hue* but pin L/S so accent is guaranteed to
+    contrast >=4.5 on a dark bg. Averaging L with wallpaper pixel value
+    let pastel-heavy wallpapers produce muddy #f5xxxx accents that
+    failed WCAG."""
+    r,g,b = rgb
+    h,_,_ = colorsys.rgb_to_hls(r,g,b)
+    return hex_from_hls(h, target_L, target_S)
+
+def darkest_bg(colors):
+    """Actual darkest saturated-ish pixel from wallpaper. Kept close to
+    zero saturation to stay neutral, but hue preserved so bg tints
+    toward wallpaper mood."""
+    darks = sorted([(l, (r,g,b)) for cnt,(r,g,b) in colors
+                    for h,l,s in [colorsys.rgb_to_hls(r,g,b)]
+                    if l < 0.30])
+    if not darks:
+        return None
+    _, (r,g,b) = darks[0]
+    h,l,s = colorsys.rgb_to_hls(r,g,b)
+    # push L down to 0.06-0.10 but keep hue
+    return hex_from_hls(h, max(0.06, min(0.10, l * 0.6)), min(0.25, s))
+
+def brightest_fg(colors):
+    lights = sorted([(l, (r,g,b)) for cnt,(r,g,b) in colors
+                     for h,l,s in [colorsys.rgb_to_hls(r,g,b)]
+                     if l > 0.60], reverse=True)
+    if not lights:
+        return None
+    _, (r,g,b) = lights[0]
+    h,l,s = colorsys.rgb_to_hls(r,g,b)
+    return hex_from_hls(h, max(0.82, min(0.90, l)), min(0.15, s))
+
+def _bump_for_contrast(bg, h, L, S, min_c=4.5, max_L=0.82):
+    a = hex_from_hls(h, L, S)
+    while contrast(bg, a) < min_c and L < max_L:
+        L += 0.04
+        a = hex_from_hls(h, L, S)
+    return a
+
+def build_palette(path: Path):
+    """Hue-concentrated palette.
+
+    Slot layout (xterm color1..color6 = red,green,yellow,blue,purple,cyan):
+      color1 urgent  — always warm 5-25deg (visible errors regardless of mood)
+      color2 main    — wallpaper dominant hue (primary accent)
+      color3 warm-fill — dominant + 30deg analogous (or -30 if dom is warm)
+      color4 cool-fill — dominant + 150deg or true 210deg blue
+      color5 complement — dominant + 180deg (used sparingly)
+      color6 info    — cyan-ish (180-200deg) for info highlights
+
+    Every slot pinned S=0.85 L=0.55 base, bumped per-hue for WCAG 4.5:1.
+    """
+    colors = extract_dominants(path, k=16)
+    dh = dominant_hue(colors)
+    bg = darkest_bg(colors) or hex_from_hls(dh, 0.08, 0.18)
+    bg_alt = hex_from_hls(dh, 0.13, 0.16)
+    fg = brightest_fg(colors) or hex_from_hls(dh, 0.86, 0.05)
+
+    dom_deg = dh * 360.0
+    # urgent: warm always. If dominant already warm (0-30), nudge to 10deg
+    # to still differentiate. Otherwise fixed ~10deg red-orange.
+    urgent_h = (15.0 / 360.0) if not (0 <= dom_deg <= 30) else (355.0 / 360.0)
+    # analogous fills: +30 warm side, -60 cool side (or flip if dom warm)
+    warm_h = ((dom_deg + 30) % 360) / 360.0
+    cool_h = ((dom_deg + 210) % 360) / 360.0  # +210 = -150 analog cool
+    comp_h = ((dom_deg + 180) % 360) / 360.0
+    info_h = 190.0 / 360.0  # fixed cyan for info consistency
+
+    slots = [
+        (urgent_h, 0.85),   # color1 red/urgent
+        (dh,       0.85),   # color2 dominant/main
+        (warm_h,   0.75),   # color3 warm-analogous
+        (cool_h,   0.75),   # color4 cool-analogous
+        (comp_h,   0.65),   # color5 complement (lower S so it doesn't fight)
+        (info_h,   0.70),   # color6 cyan/info
+    ]
+    accents = [_bump_for_contrast(bg, h, 0.55, S) for h, S in slots]
+    return bg, bg_alt, fg, accents, dh
+
+def score(bg, fg, accents):
+    s = 0.0
+    notes = []
+    c_bgfg = contrast(bg, fg)
+    if c_bgfg >= 7: s += 30
+    elif c_bgfg >= 4.5: s += 20
+    else: notes.append(f"bg/fg contrast {c_bgfg:.1f} <4.5")
+    ac = [contrast(bg, a) for a in accents]
+    good = sum(1 for c in ac if c >= 4.5)
+    s += 30 * (good/6)
+    if good < 6: notes.append(f"{6-good} accents <4.5 contrast")
+    # Hue-concentrated palettes intentionally cluster around dominant.
+    # Score by presence of urgent-warm slot + complement, not raw spread.
+    hues_deg = [hls(a)[0] * 360 for a in accents]
+    has_warm = any(h <= 30 or h >= 330 for h in hues_deg)
+    has_cool = any(140 <= h <= 220 for h in hues_deg)
+    s += 10 if has_warm else 0
+    s += 10 if has_cool else 0
+    if not has_warm: notes.append("no warm/urgent slot")
+    if not has_cool: notes.append("no cool/info slot")
+    sat_mean = sum(hls(a)[2] for a in accents) / 6
+    s += min(20, 40 * sat_mean)
+    if sat_mean < 0.5: notes.append(f"sat_mean {sat_mean:.2f} <0.5")
+    return round(s, 1), notes
+
+def to_wal_json(bg, bg_alt, fg, accents, wallpaper):
+    c = {"color0": bg, "color7": fg, "color8": bg_alt, "color15": fg}
+    for i, a in enumerate(accents):
+        c[f"color{i+1}"] = a
+        c[f"color{i+9}"] = a
+    return {
+        "wallpaper": str(wallpaper),
+        "alpha": "100",
+        "special": {"background": bg, "foreground": fg, "cursor": fg},
+        "colors": c,
+    }
+
+# ---- per-consumer template renderers ---------------------------------
+
+def _hex_rgb(h):
+    return [int(h[i:i+2], 16) for i in (1, 3, 5)]
+
+def _papirus_color_for_hue(hue_deg):
+    h = hue_deg % 360
+    if h < 15 or h >= 345: return "red"
+    if h < 45:  return "orange"
+    if h < 65:  return "yellow"
+    if h < 165: return "green"
+    if h < 200: return "teal"
+    if h < 260: return "blue"
+    if h < 290: return "violet"
+    return "pink"
+
+def render_kitty_conf(bg, bg_alt, fg, accents):
+    lines = [
+        f"foreground         {fg}",
+        f"background         {bg}",
+        "background_opacity 1.0",
+        f"cursor             {fg}",
+        "",
+        f"active_tab_foreground     {bg}",
+        f"active_tab_background     {fg}",
+        f"inactive_tab_foreground   {fg}",
+        f"inactive_tab_background   {bg}",
+        "",
+        f"active_border_color   {fg}",
+        f"inactive_border_color {bg}",
+        f"bell_border_color     {accents[0]}",
+        "",
+        f"color0       {bg}",
+        f"color8       {bg_alt}",
+    ]
+    for i, a in enumerate(accents):
+        lines.append(f"color{i+1}       {a}")
+        lines.append(f"color{i+9}      {a}")
+    lines.append(f"color7       {fg}")
+    lines.append(f"color15      {fg}")
+    return "\n".join(lines) + "\n"
+
+def render_rofi_rasi(bg, bg_alt, fg, accents):
+    # accents[1] = dominant (main wallpaper hue) so rofi selection tint
+    # matches the wallpaper mood. urgent=warm, active=info-cyan.
+    return (
+        "* {\n"
+        f"    background:     {bg};\n"
+        f"    background-alt: {bg_alt};\n"
+        f"    foreground:     {fg};\n"
+        f"    selected:       {accents[1]};\n"
+        f"    selectedone:    {accents[1]};\n"
+        f"    urgent:         {accents[0]};\n"
+        f"    active:         {accents[5]};\n"
+        "}\n"
+    )
+
+def render_dunst(bg, bg_alt, fg, accents):
+    return {
+        "bg": bg, "fg": fg,
+        "bg_crit": bg_alt, "fg_crit": fg,
+        "accent": accents[3], "ok": accents[1], "urgent": accents[0],
+    }
+
+def render_gtk_css(bg, bg_alt, fg, accents):
+    accent, urgent, ok = accents[3], accents[0], accents[1]
+    return (
+        f"@define-color accent_color {accent};\n"
+        f"@define-color accent_bg_color {accent};\n"
+        f"@define-color accent_fg_color {bg};\n"
+        f"@define-color window_bg_color {bg};\n"
+        f"@define-color window_fg_color {fg};\n"
+        f"@define-color view_bg_color {bg};\n"
+        f"@define-color view_fg_color {fg};\n"
+        f"@define-color headerbar_bg_color {bg_alt};\n"
+        f"@define-color headerbar_fg_color {fg};\n"
+        f"@define-color card_bg_color {bg_alt};\n"
+        f"@define-color card_fg_color {fg};\n"
+        f"@define-color destructive_color {urgent};\n"
+        f"@define-color destructive_bg_color {urgent};\n"
+        f"@define-color success_color {ok};\n"
+        f"@define-color success_bg_color {ok};\n"
+        f"@define-color theme_selected_bg_color {accent};\n"
+        f"@define-color theme_selected_fg_color {bg};\n"
+    )
+
+def render_qb(bg, bg_alt, fg, accents):
+    return {
+        "bg": bg, "bg_alt": bg_alt, "fg": fg,
+        "red": accents[0], "green": accents[1], "yellow": accents[2],
+        "blue": accents[3], "purple": accents[4], "cyan": accents[5],
+    }
+
+def render_alacritty_toml(bg, bg_alt, fg, accents):
+    # wal_colors accents fill color1..6 + color9..14; bg=color0, fg=color7
+    lines = ["[colors.primary]",
+             f"background = '{bg}'",
+             f"foreground = '{fg}'",
+             "",
+             "[colors.normal]",
+             f"black   = '{bg}'",
+             f"red     = '{accents[0]}'",
+             f"green   = '{accents[1]}'",
+             f"yellow  = '{accents[2]}'",
+             f"blue    = '{accents[3]}'",
+             f"magenta = '{accents[4]}'",
+             f"cyan    = '{accents[5]}'",
+             f"white   = '{fg}'",
+             "",
+             "[colors.bright]",
+             f"black   = '{bg_alt}'",
+             f"red     = '{accents[0]}'",
+             f"green   = '{accents[1]}'",
+             f"yellow  = '{accents[2]}'",
+             f"blue    = '{accents[3]}'",
+             f"magenta = '{accents[4]}'",
+             f"cyan    = '{accents[5]}'",
+             f"white   = '{fg}'"]
+    return "\n".join(lines) + "\n"
+
+def render_brave_manifest(bg, bg_alt, fg, accents, epoch=None):
+    import time as _t
+    # Frame + toolbar visibly tinted with dominant accent hue so browser
+    # chrome shows palette signature, not pure black. Frame deeper tint
+    # (inactive-tab bg), toolbar lighter tint (active-tab bg).
+    accent_main = accents[1]
+    dh, _, _ = hls(accent_main)
+    frame_dark = hex_from_hls(dh, 0.11, 0.45)   # deep tinted for inactive tabs
+    toolbar    = hex_from_hls(dh, 0.17, 0.40)   # lighter tinted for active tab
+    omnibox_bg = hex_from_hls(dh, 0.22, 0.35)   # even lighter for URL bar
+    # Inactive tab text: dim fg toward mid-gray so active tab title pops.
+    ft_h, ft_l, ft_s = hls(fg)
+    dim_fg = hex_from_hls(ft_h, max(0.55, ft_l * 0.70), ft_s)
+    # Embed stable public key so unpacked + packed extension share the
+    # same id. Without this, chrome's --load-extension gets a path-hashed
+    # id != policy force_installed id, and the two extensions don't
+    # merge. With key: unpacked reads manifest.json live on every apply.
+    import os as _os
+    _key_path = _os.path.expanduser("~/.config/qtile/browser-theme.key")
+    try:
+        _key = open(_key_path).read().strip()
+    except Exception:
+        _key = None
+    m = {
+        "manifest_version": 3,
+        "version": "1.0." + str(int(epoch or _t.time())),
+        "name": "Wal Theme",
+        "description": "Precompiled per-wallpaper.",
+        "theme": {
+            "colors": {
+                "frame":                       _hex_rgb(frame_dark),
+                "frame_inactive":              _hex_rgb(frame_dark),
+                "frame_incognito":             _hex_rgb(frame_dark),
+                "frame_incognito_inactive":    _hex_rgb(frame_dark),
+                "toolbar":                     _hex_rgb(toolbar),
+                "tab_text":                    _hex_rgb(fg),
+                "tab_background_text":         _hex_rgb(dim_fg),
+                "tab_background_text_inactive":_hex_rgb(dim_fg),
+                "bookmark_text":               _hex_rgb(fg),
+                "ntp_background":              _hex_rgb(bg),
+                "ntp_text":                    _hex_rgb(fg),
+                "ntp_link":                    _hex_rgb(accent_main),
+                "button_background":           _hex_rgb(frame_dark),
+                "toolbar_button_icon":         _hex_rgb(accent_main),
+                "omnibox_background":          _hex_rgb(omnibox_bg),
+                "omnibox_text":                _hex_rgb(fg),
+                "omnibox_results_bg":          _hex_rgb(omnibox_bg),
+                "omnibox_results_bg_hovered":  _hex_rgb(toolbar),
+                "omnibox_results_bg_selected": _hex_rgb(accent_main),
+                "omnibox_results_text":        _hex_rgb(fg),
+                "omnibox_results_text_selected": _hex_rgb(bg),
+                "omnibox_results_url":         _hex_rgb(accent_main),
+            }
+        }
+    }
+    if _key:
+        m["key"] = _key
+    return m
+
+def process(path: Path, force=False):
+    out_file = OUT_DIR / (path.stem + ".json")
+    if out_file.exists() and not force:
+        return None
+    try:
+        bg, bg_alt, fg, accents, dh = build_palette(path)
+    except Exception as e:
+        return {"wallpaper": str(path), "error": str(e), "score": 0}
+    sc, notes = score(bg, fg, accents)
+    wal_j = to_wal_json(bg, bg_alt, fg, accents, path)
+    dom_deg = round(dh * 360, 1)
+    out = {
+        "wallpaper": str(path),
+        "score": sc,
+        "notes": notes,
+        "dominant_hue_deg": dom_deg,
+        "bg": bg, "bg_alt": bg_alt, "fg": fg,
+        "accents": accents,
+        "papirus_color": _papirus_color_for_hue(dom_deg),
+        "wal_colors": wal_j,
+        # Pre-rendered per-consumer templates so theme-apply becomes a
+        # sequence of pure file writes — no template evaluation, no wal
+        # binary, no per-consumer python. Cache hit = sub-500ms apply.
+        "consumers": {
+            "kitty_conf":    render_kitty_conf(bg, bg_alt, fg, accents),
+            "alacritty_toml":render_alacritty_toml(bg, bg_alt, fg, accents),
+            "rofi_rasi":     render_rofi_rasi(bg, bg_alt, fg, accents),
+            "dunst":         render_dunst(bg, bg_alt, fg, accents),
+            "gtk_css":       render_gtk_css(bg, bg_alt, fg, accents),
+            "qb":            render_qb(bg, bg_alt, fg, accents),
+            "brave_theme":   render_brave_manifest(bg, bg_alt, fg, accents),
+        },
+    }
+    out_file.write_text(json.dumps(out, indent=2))
+    return out
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--dir", default=str(WP_DIR))
+    ap.add_argument("--report", default=str(Path.home()/".dotfiles/.config/qtile/WAL_PRECOMPILE_REPORT.md"))
+    ap.add_argument("--only", help="single wallpaper basename to (re)process")
+    args = ap.parse_args()
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    root = Path(args.dir)
+    imgs = sorted([p for p in root.iterdir() if p.suffix.lower() in {".jpg",".jpeg",".png",".webp"}])
+    if args.only:
+        imgs = [p for p in imgs if p.name == args.only]
+    t0 = time.time()
+    results = []
+    for i, p in enumerate(imgs, 1):
+        r = process(p, force=args.force)
+        if r is None:
+            r = json.loads((OUT_DIR / (p.stem + ".json")).read_text())
+        results.append(r)
+        if i % 20 == 0 or i == len(imgs):
+            print(f"[{i}/{len(imgs)}] {p.name} score={r.get('score')} {r.get('notes',[])}", flush=True)
+    dt = time.time() - t0
+    scores = [r["score"] for r in results if "score" in r and "error" not in r]
+    if not scores:
+        print("no scores"); return
+    good = sum(1 for s in scores if s >= 80)
+    lines = [
+        "# wal-precompile report",
+        "",
+        f"- wallpapers: {len(imgs)}",
+        f"- avg score: {sum(scores)/len(scores):.1f}",
+        f"- >=80: {good} ({100*good/len(scores):.0f}%)",
+        f"- <70: {sum(1 for s in scores if s<70)}",
+        f"- elapsed: {dt:.1f}s",
+        "",
+        "## Worst 20",
+        "",
+        "| wallpaper | score | bg | fg | accents | notes |",
+        "|---|---|---|---|---|---|",
+    ]
+    worst = sorted(results, key=lambda r: r.get("score",0))[:20]
+    for r in worst:
+        if "error" in r:
+            lines.append(f"| {Path(r['wallpaper']).name} | ERR | | | | {r['error']} |"); continue
+        lines.append("| {} | {} | `{}` | `{}` | {} | {} |".format(
+            Path(r["wallpaper"]).name, r["score"], r["bg"], r["fg"],
+            " ".join(f"`{a}`" for a in r["accents"]),
+            "; ".join(r["notes"])))
+    Path(args.report).write_text("\n".join(lines))
+    print(f"\nreport -> {args.report}")
+
+if __name__ == "__main__":
+    main()

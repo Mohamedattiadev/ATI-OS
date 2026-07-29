@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# voice_dictate — press keybind to start; press again to stop and paste transcript.
+# Backend: whisper.cpp (small.en model). Requires: whisper-cli (whisper.cpp), sox, xdotool.
+#
+# One-time setup:
+#   yay -S whisper.cpp-git
+#   mkdir -p ~/.local/share/whisper
+#   curl -L -o ~/.local/share/whisper/ggml-small.en.bin \
+#     https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+
+set -euo pipefail
+
+MODEL="${WHISPER_MODEL:-$HOME/.local/share/whisper/ggml-small.en.bin}"
+LANG="${WHISPER_LANG:-en}"
+TMPDIR="/tmp/voice_dictate"
+PIDFILE="$TMPDIR/rec.pid"
+TIMER_PIDFILE="$TMPDIR/timer.pid"
+WAV="$TMPDIR/rec.wav"
+NOTIFY_TAG="voice_dictate"
+
+mkdir -p "$TMPDIR"
+
+# In-place notification (same tag = replaces prior one).
+pill() {
+  local urgency="$1" summary="$2" body="${3:-}"
+  notify-send -u "$urgency" -t 0 \
+    -h "string:x-canonical-private-synchronous:$NOTIFY_TAG" \
+    "$summary" "$body"
+}
+
+clear_pill() {
+  # Explicit dismiss so pill vanishes when we're done (dunst honors close with same tag).
+  notify-send -t 1 \
+    -h "string:x-canonical-private-synchronous:$NOTIFY_TAG" \
+    " " " " 2>/dev/null || true
+}
+
+if [[ ! -f "$MODEL" ]]; then
+  pill critical "voice_dictate" "Model missing: $MODEL"
+  exit 1
+fi
+
+for bin in sox whisper-cli xdotool; do
+  command -v "$bin" >/dev/null || {
+    pill critical "voice_dictate" "Missing binary: $bin"
+    exit 1
+  }
+done
+
+# ------------------------------------------------------------------
+# Stop mode: PID exists → kill rec + timer, transcribe, paste
+# ------------------------------------------------------------------
+if [[ -f "$PIDFILE" ]]; then
+  PID="$(cat "$PIDFILE")"
+  kill "$PID" 2>/dev/null || true
+  rm -f "$PIDFILE"
+
+  if [[ -f "$TIMER_PIDFILE" ]]; then
+    kill "$(cat "$TIMER_PIDFILE")" 2>/dev/null || true
+    rm -f "$TIMER_PIDFILE"
+  fi
+
+  pill normal "󰦖  Transcribing…" "whisper-cli small.$LANG"
+
+  TXT="$(whisper-cli -m "$MODEL" -l "$LANG" -otxt -nt -f "$WAV" 2>/dev/null \
+    | tail -1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+  if [[ -z "$TXT" ]]; then
+    pill critical "voice_dictate" "Empty transcription"
+    sleep 1
+    clear_pill
+    exit 0
+  fi
+
+  xdotool type --delay 8 "$TXT"
+  pill normal "  Pasted" "${TXT:0:80}"
+  sleep 1
+  clear_pill
+  exit 0
+fi
+
+# ------------------------------------------------------------------
+# Start mode: begin recording + spawn timer that updates pill every 1s
+# ------------------------------------------------------------------
+sox -q -d -c 1 -r 16000 -b 16 "$WAV" &
+echo $! >"$PIDFILE"
+
+pill normal "󰑊  Recording…" "00:00 — press bind again to stop"
+
+# Background elapsed-time updater
+(
+  start=$(date +%s)
+  while [[ -f "$PIDFILE" ]]; do
+    now=$(date +%s)
+    elapsed=$((now - start))
+    m=$((elapsed / 60))
+    s=$((elapsed % 60))
+    printf -v ts "%02d:%02d" "$m" "$s"
+    pill normal "󰑊  Recording…" "$ts — press bind again to stop"
+    sleep 1
+  done
+) &
+echo $! >"$TIMER_PIDFILE"

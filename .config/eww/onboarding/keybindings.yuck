@@ -49,16 +49,14 @@ effortless.")
 
       (button
         :class "onb-btn"
-        :onclick "eww close onboarding-keybindings; eww open onboarding-workspaces"
-        :timeout  "900ms"
-        ;; :onclick "sh -c 'eww close onboarding-keybindings; eww open onboarding-workspaces'"
+        :timeout "3000ms"
+        :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open onboarding-workspaces'"
         "Back")
 
       (button
         :class "onb-btn onb-btn-Apply"
-        :onclick "eww close onboarding-keybindings; eww open onboarding-finish"
-        :timeout  "900ms"
-        ;; :onclick "sh -c 'eww close onboarding-keybindings; eww open onboarding-finish'"
+        :timeout "3000ms"
+        :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open onboarding-finish'"
         "Done")
     )
   ))

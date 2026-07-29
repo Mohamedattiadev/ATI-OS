@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ati's Homepage</title>
+    <link rel="stylesheet" href="../styles/homepage.css" />
+    <!-- BEGIN-THEME-VARS (rewritten by theme-apply) -->
+    <style id="theme-vars">
+      :root {
+        --bg: #000000;
+        --bg-alt: #0a0a0a;
+        --fg: #00ff41;
+        --red: #ff0000;
+        --green: #00ff41;
+        --yellow: #c0ff00;
+        --blue: #008f11;
+        --purple: #00b849;
+        --cyan: #00ff9f;
+        --accent: #00ff41;
+        --urgent: #ff0000;
+      }
+    </style>
+    <!-- END-THEME-VARS -->
+  </head>
+  <body>
+    <div id="search">
+      <input
+        id="search-field"
+        type="text"
+        name="search-field"
+        placeholder="Type to search..."
+      />
+    </div>
+
+    <div class="container">
+      <div id="clock"></div>
+      <div class="welcome-message">Welcome, Ati...</div>
+
+      <div class="bookmark-container">
+        <div class="bookmark-set">
+          <div class="bookmark-title">🔧 Developer Tools</div>
+          <div class="bookmark-inner-container">
+            <a class="bookmark" href="https://devdocs.io/" target="_blank"
+              >DevDocs</a
+            >
+            <a
+              class="bookmark"
+              href="https://developer.mozilla.org/"
+              target="_blank"
+              >MDN Web Docs</a
+            >
+            <a class="bookmark" href="https://github.com/" target="_blank"
+              >GitHub</a
+            >
+            <a class="bookmark" href="https://gitlab.com" target="_blank"
+              >GitLab</a
+            >
+            <a class="bookmark" href="https://stackoverflow.com" target="_blank"
+              >Stack Overflow</a
+            >
+            <a class="bookmark" href="https://onecompiler.com/" target="_blank"
+              >OneCompiler (Multi-language IDE)</a
+            >
+            <a class="bookmark" href="https://playcode.io/" target="_blank"
+              >PlayCode (Instant JS)</a
+            >
+          </div>
+        </div>
+
+        <div class="bookmark-set">
+          <div class="bookmark-title">Most used</div>
+          <div class="bookmark-inner-container">
+            <!-- <a class="bookmark" href="https://youtube.com" target="_blank" -->
+            <!--   >Youtube</a -->
+            <!-- > -->
+
+            <a class="bookmark" href="https://yewtu.be/" target="_blank"
+              >youtube - (Invidious)
+            </a>
+            <a
+              class="bookmark"
+              href="https://mohamedattiaDev.github.io/AtiDocs"
+              target="_blank"
+              >AtiDocs</a
+            >
+
+            <a
+              class="bookmark"
+              href="https://Fa3elKheer.github.io/Fa3elKheer"
+              target="_blank"
+              >Fa3elKheer</a
+            >
+            <!-- <a class="bookmark" href="https://gemini.google.com/" target="_blank">Gemini</a> -->
+            <!-- <a class="bookmark" href="https://chat.openai.com/" target="_blank">ChatGPT</a> -->
+            <!-- <a class="bookmark" href="https://www.deepseek.com/" target="_blank">DeepSeek</a> -->
+            <a
+              class="bookmark"
+              href="https://www.instagram.com/mohmd_attia/"
+              target="_blank"
+              >My Instagram</a
+            >
+
+            <a class="bookmark" href="https://x.com/Mohmd_Attia" target="_blank"
+              >My X</a
+            >
+
+            <a
+              class="bookmark"
+              href="https://www.linkedin.com/in/mohmd-attia/"
+              target="_blank"
+              >My LinkedIn</a
+            >
+            <a
+              class="bookmark"
+              href="https://github.com/MohamedattiaDev"
+              target="_blank"
+              >My Github</a
+            >
+
+            <!-- <a -->
+            <!--   class="bookmark" -->
+            <!--   href="https://youtube.com/c/DistroTube" -->
+            <!--   target="_blank" -->
+            <!--   >DistroTube</a -->
+            <!-- > -->
+            <!-- <a -->
+            <!--   class="bookmark" -->
+            <!--   href="https://www.youtube.com/c/ThePrimeagen" -->
+            <!--   target="_blank" -->
+            <!--   >ThePrimeagen</a -->
+            <!-- > -->
+            <!-- <a -->
+            <!--   class="bookmark" -->
+            <!--   href="https://www.youtube.com/c/TraversyMedia" -->
+            <!--   target="_blank" -->
+            <!--   >Traversy Media</a -->
+            <!-- > -->
+            <!-- <a -->
+            <!--   class="bookmark" -->
+            <!--   href="https://www.youtube.com/c/Fireship" -->
+            <!--   target="_blank" -->
+            <!--   >Fireship</a -->
+            <!-- > -->
+            <!-- <a -->
+            <!--   class="bookmark" -->
+            <!--   href="https://www.youtube.com/c/Computerphile" -->
+            <!--   target="_blank" -->
+            <!--   >Computerphile</a -->
+            <!-- > -->
+          </div>
+        </div>
+
+        <div class="bookmark-set">
+          <div class="bookmark-title">Uni</div>
+          <div class="bookmark-inner-container">
+            <a class="bookmark" href="https://obs.aybu.edu.tr/" target="_blank"
+              >AYBU OBS</a
+            >
+
+            <a
+              class="bookmark"
+              href="https://aybuzem.aybu.edu.tr/"
+              target="_blank"
+              >AYBUZEM</a
+            >
+            <a
+              class="bookmark"
+              href="https://aybu.edu.tr/aybu/tr/duyurular"
+              target="_blank"
+              >AYBU GENEL DUYURU</a
+            >
+
+            <a
+              class="bookmark"
+              href="https://aybu.edu.tr/yazilimMuh/tr/duyurular"
+              target="_blank"
+              >AYBU Yazilim DUYURU</a
+            >
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const getTime = () => {
+        const date = new Date();
+        const hour = date.getHours().toString().padStart(2, "0");
+        const min = date.getMinutes().toString().padStart(2, "0");
+        const sec = date.getSeconds().toString().padStart(2, "0");
+        return `${hour}:${min}:${sec}`;
+      };
+
+      const prefersDark = window.matchMedia(
+        "(prefers-color-scheme: dark)",
+      ).matches;
+      document.documentElement.setAttribute(
+        "data-theme",
+        prefersDark ? "dark" : "light",
+      );
+
+      // Optional: watch for changes
+      window
+        .matchMedia("(prefers-color-scheme: dark)")
+        .addEventListener("change", (e) => {
+          document.documentElement.setAttribute(
+            "data-theme",
+            e.matches ? "dark" : "light",
+          );
+        });
+      window.onload = () => {
+        const clock = document.getElementById("clock");
+        clock.innerHTML = getTime();
+        setInterval(() => {
+          clock.innerHTML = getTime();
+        }, 1000);
+      };
+
+      document.addEventListener("keydown", (event) => {
+        const search = document.getElementById("search");
+        const field = document.getElementById("search-field");
+
+        if (event.key === " " && document.activeElement !== field) {
+          event.preventDefault();
+          search.style.display = "flex";
+          field.focus();
+        } else if (event.key === "Escape") {
+          field.value = "";
+          search.style.display = "none";
+        } else if (event.key === "Enter" && document.activeElement === field) {
+          const query = field.value.trim();
+          if (query) {
+            window.open(
+              `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+            );
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

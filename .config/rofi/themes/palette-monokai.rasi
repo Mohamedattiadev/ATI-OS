@@ -1,0 +1,10 @@
+/* Monokai. */
+* {
+    background:     #272822;
+    background-alt: #1e1f1c;
+    foreground:     #f8f8f2;
+    selected:       #66d9ef;
+    selectedone:    #a6e22e;
+    urgent:         #f92672;
+    active:         #a6e22e;
+}

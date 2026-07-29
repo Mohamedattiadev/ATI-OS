@@ -12,13 +12,49 @@ packages:
 
   # Documentation & basics
 
-  # dcli dependencies
+  # dcli itself + its deps
+  - dcli-arch-git
   - paru
+  - yay-bin   # matches wizard.sh's step_yay bootstrap choice (prebuilt, no AUR-helper chicken-and-egg build) -- plain "yay" conflicts with it
   - fzf
   - timeshift
+  - timeshift-autosnap
+  - pacman-contrib
+  # Fallback kernel. A bad `linux` upgrade -- or an out-of-tree module
+  # that fails to build against it -- leaves an unbootable system with no
+  # way back in. linux-lts is a SECOND kernel you pick at the boot menu to
+  # repair from a working system instead of hunting for an Arch ISO.
+  # Single highest-value insurance on a rolling release, ~400MB.
+  #
+  # The package alone gets you NOTHING: it ships no boot entry, and no UKI
+  # either (see TROUBLESHOOTING, "Bootloader"). The wizard module
+  # `boot-fallback` writes the systemd-boot entries that make it
+  # selectable. Installing linux-lts without that module is the failure
+  # mode where you reboot into a broken system and discover the rescue
+  # kernel was never reachable from the menu.
+  - linux-lts
+  - linux-lts-headers      # so DKMS modules build against it too
+  # speed / safety
+  - zram-generator
+  - earlyoom
+  # Desktop colour-scheme preference channel.
+  #
+  # This is what republishes `org.gnome.desktop.interface color-scheme` as
+  # `org.freedesktop.appearance color-scheme` -- the key Chromium reads to
+  # decide whether to tell a website `prefers-color-scheme: dark`. Without
+  # the portal the wizard's `dark-mode` module still sets gsettings
+  # successfully, but nothing publishes it, every site serves its LIGHT
+  # stylesheet, and you end up reaching for force-dark again: the exact bug
+  # documented in TROUBLESHOOTING.md. The -gtk backend is the one that
+  # answers the Settings interface on a desktop that is neither GNOME nor KDE.
+  - xdg-desktop-portal
+  - xdg-desktop-portal-gtk
 
 exclude: []
 conflicts:
-  - linux-lts
+  # Alternate kernels we do not want. linux-lts used to be listed here and
+  # was left behind when it was promoted to `packages` above -- declaring
+  # it in both is self-contradictory and risks dcli removing the very
+  # rescue kernel this module installs.
   - linux-zen
   - linux-hardened

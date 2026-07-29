@@ -48,6 +48,8 @@ main() {
         local filename="${file##*/}"
         local exclude_file=0
         for pattern in "${EXCLUDE_PATTERNS[@]}"; do
+          # Unquoted RHS is deliberate: EXCLUDE_PATTERNS holds globs.
+          # shellcheck disable=SC2053
           if [[ "${filename,,}" == ${pattern,,} ]]; then
             exclude_file=1
             break

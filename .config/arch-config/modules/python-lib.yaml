@@ -16,6 +16,15 @@ packages:
   - python-dbus-fast
   - python-pulsectl
   - python-psutil
+  - python-gobject      # qdrop + qupdate GTK3 UI, and the restart veil
+                        # (qtile/scripts/qtile-restart-veil.py). Without it
+                        # the veil cannot start and Super+Shift+R silently
+                        # falls back to a plain restart -- the window pile
+                        # comes back and nothing says why.
+  - python-xcffib       # veil's event-driven always-on-top (SubstructureNotify
+                        # on root). Already pulled in by qtile; declared so a
+                        # future qtile that drops it does not take the veil
+                        # with it.
 
 exclude: []
 conflicts: []

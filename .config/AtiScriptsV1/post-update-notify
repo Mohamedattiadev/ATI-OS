@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# post-update-notify <title> <command-to-fix>
+#
+# Puts a fix command where you can actually use it: a dunst popup that
+# stays until dismissed, AND the command already on your clipboard so it
+# is one paste away. A fix you have to retype from a scrollback buffer is
+# a fix that does not get applied.
+set -uo pipefail
+title="${1:-Update needs attention}"
+cmd="${2:-}"
+[[ -n "$cmd" ]] || exit 0
+
+# copyq is the clipboard manager this setup runs; fall back to xclip.
+if command -v copyq >/dev/null 2>&1 && copyq --start-server >/dev/null 2>&1; then
+  copyq copy -- "$cmd" >/dev/null 2>&1 || true
+elif command -v xclip >/dev/null 2>&1; then
+  printf '%s' "$cmd" | xclip -selection clipboard 2>/dev/null || true
+fi
+
+# -t 0 so it waits for you rather than vanishing while you are elsewhere.
+notify-send -u critical -t 0 -i dialog-warning \
+  -h string:x-dunst-stack-tag:postupdate \
+  "$title" \
+  "<b>Command copied to clipboard — just paste it:</b>
+
+<tt>$cmd</tt>"

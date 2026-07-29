@@ -33,6 +33,19 @@ setbg() {
   'wayland') swaybg -m "stretch" -i "$1" ;;
   *) err "Unknown display server" ;;
   esac
+
+  mkdir -p "$HOME/.cache"
+  printf '%s' "$1" >"$HOME/.cache/wall"
+
+  # Retheme ONLY when the active mode is "wal". "wal" is the mode that
+  # means "follow the wallpaper", so a new wallpaper must re-derive the
+  # palette. On a preset (gruvbox, doomone, ...) the user picked a fixed
+  # palette on purpose — changing the wallpaper must swap the desktop
+  # image and nothing else, or the preset gets silently overwritten.
+  if command -v theme-apply >/dev/null 2>&1 &&
+    [ "$(cat "$HOME/.cache/qtile/theme_mode" 2>/dev/null)" = "wal" ]; then
+    theme-apply wal >/dev/null 2>&1 &
+  fi
 }
 
 main() {

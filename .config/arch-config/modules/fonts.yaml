@@ -10,3 +10,4 @@ packages:
   - ttf-amiri
   - ttf-cairo
   - noto-fonts-cjk
+  - noto-fonts-emoji   # flag glyphs for qtile KeyboardLayout widget

@@ -37,3 +37,10 @@ packages:
   - ueberzugpp
   - zed
   - kdeconnect
+  - anki
+  - google-chrome
+  - chromium        # qtile pins it to group 6 alongside chrome; also the
+                    # fallback that packs the browser-theme .crx when
+                    # google-chrome isn't installed
+  - zenity          # rofi_ilovepdf file picker
+  - libreoffice-fresh   # rofi_ilovepdf doc->pdf conversion

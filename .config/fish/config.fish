@@ -13,7 +13,11 @@ if test "$TERM" = linux; and not set -q TTY_COLORS_APPLIED
 end
 
 function fish_exit --on-event fish_exit
-    reset
+    # Only meaningful for a shell attached to a real terminal; running it in
+    # `fish -c` / scripts just prints "reset: terminal attributes".
+    if status is-interactive; and test -t 1
+        reset
+    end
 end
 #
 #
@@ -22,16 +26,34 @@ end
 ### ADDING TO THE PATH
 # First line removes the path; second line sets it.  Without the first line,
 # your path gets massive and fish becomes very slow.
+#
+# -g, not -U. Universal variables live in ~/.config/fish/fish_variables, and
+# assigning one re-serializes that whole file to disk -- so setting it here,
+# in a file that runs on every single shell launch, meant every new terminal
+# did a pointless write (confirmed: fish_variables' mtime changed on each
+# launch). It is also a race: two shells starting at once both rewrite the
+# same file. A global is rebuilt from this line on every start anyway, which
+# is exactly the intent, and it does not touch the disk.
 set -e fish_user_paths
-set -U fish_user_paths $HOME/.bin $HOME/.local/bin $HOME/.config/emacs/bin $HOME/Applications /var/lib/flatpak/exports/bin/ $HOME/Desktop $fish_user_paths
+set -g fish_user_paths $HOME/.bin $HOME/.local/bin $HOME/.config/emacs/bin $HOME/Applications /var/lib/flatpak/exports/bin/ $HOME/Desktop $fish_user_paths
 
 ### EXPORT ###
 
 set fish_greeting # Supresses fish's intro message
-set TERM xterm-256color # Sets the terminal type
-set VISUAL nvim # $VISUAL use nvim in GUI mode
-set EDITOR nvim # $EDITOR use nvim in terminal
-set -Ux SUDO_EDITOR nvim
+# Only fall back to xterm-256color when the terminal did not tell us what it
+# is (or told us something we have no terminfo entry for). Overriding this
+# unconditionally threw away kitty's xterm-kitty capabilities.
+if not set -q TERM; or not infocmp "$TERM" >/dev/null 2>&1
+    set -gx TERM xterm-256color
+end
+set -gx VISUAL nvim # $VISUAL use nvim in GUI mode
+set -gx EDITOR nvim # $EDITOR use nvim in terminal
+# -gx, not -Ux -- see the fish_user_paths note above for why universals are
+# the wrong scope for anything assigned from config.fish. The -eU clears a
+# stale universal left by the previous version; it is a silent no-op (status
+# 4) once gone, so it costs nothing on later launches.
+set -eU SUDO_EDITOR
+set -gx SUDO_EDITOR nvim
 
 ### SET MANPAGER
 ### Uncomment only one of these!
@@ -161,8 +183,50 @@ end
 #     printf $output
 # end
 
-function letsgo
-    exec dbus-run-session startx
+function letsgo --description 'Start the X session (qtile) from a TTY'
+    # No `exec`: it replaced the login shell, so if startx aborted (stale
+    # lock, X already active, ...) the error flashed past and you landed
+    # back at the login prompt with no shell to read it in -- a failure
+    # and a success looked identical. Without exec the message stays on
+    # screen, and you return to this shell when X exits.
+    if pgrep -x Xorg >/dev/null
+        echo "X is already running on :0 — switch to that VT (Ctrl+Alt+F1)."
+        return 1
+    end
+    # Xorg normally removes this on exit; a lock left behind with no
+    # server running is stale and blocks startx with "Server is already
+    # active for display 0".
+    if test -e /tmp/.X0-lock
+        echo "Removing stale /tmp/.X0-lock left by an unclean exit."
+        rm -f /tmp/.X0-lock
+    end
+    # Same class of leftover, different file. Every unclean X exit leaves its
+    # MIT-MAGIC-COOKIE in ~/.Xauthority and startx adds a fresh one on top, so
+    # entries for this display accumulate. startx then does:
+    #
+    #     authcookie=$(xauth list "$displayname" | sed ...)
+    #     xauth -q -f "$xserverauthfile" << EOF
+    #     add :$dummy . $authcookie
+    #     EOF
+    #
+    # With more than one entry, $authcookie is multi-line and the extra
+    # cookies land on their own lines inside the here-doc, where xauth reads
+    # them as commands:
+    #
+    #     xauth: (stdin):2: unknown command "cd6ac1acd7289e776cc7554a586a1a71"
+    #
+    # Harmless to the session, but it is the first thing on screen at every
+    # single login. We already know Xorg is not running (checked above), so
+    # nothing needs these cookies -- drop them and let startx write exactly
+    # one. `uname -n`, not `hostname`: hostname ships in inetutils and is not
+    # installed here.
+    if command -q xauth
+        set -l host (uname -n)
+        for d in :0 $host:0 $host/unix:0
+            xauth remove $d 2>/dev/null
+        end
+    end
+    dbus-run-session startx
 end
 
 ### END OF FUNCTIONS ###
@@ -519,10 +583,14 @@ alias mocp="bash -c mocp"
 ### RANDOM COLOR SCRIPT ###
 # Get this script from my GitLab: gitlab.com/dwt1/shell-color-scripts
 # Or install it from the Arch User Repository: shell-color-scripts
-colorscript random
+if status is-interactive
+    colorscript random
+end
 
 ### SETTING THE STARSHIP PROMPT ###
-starship init fish | source
+if status is-interactive
+    starship init fish | source
+end
 
 ### tmux  ###
 export TMUX_CONF=~/.config/.tmux.conf
@@ -544,8 +612,10 @@ if not string match -q -- $PNPM_HOME $PATH
 end
 
 # fnm (nvm alter)
-# fnm env | source
-# status --is-interactive; and source (fnm env)
+# --use-on-cd auto-switches Node per .nvmrc when you cd into a project
+if type -q fnm
+    fnm env --use-on-cd --shell fish | source
+end
 
 # =============================================================================
 # FZF Configuration
@@ -553,7 +623,10 @@ end
 
 # Set default fzf options for a large, borderless popup UI
 
-set -Ux FZF_DEFAULT_OPTS "\
+# -gx, not -Ux (see the fish_user_paths note above). This one was the worst
+# offender: a ~600-byte string rewritten into fish_variables on every launch.
+set -eU FZF_DEFAULT_OPTS
+set -gx FZF_DEFAULT_OPTS "\
 --height=60% \
 --layout=reverse \
 --multi \

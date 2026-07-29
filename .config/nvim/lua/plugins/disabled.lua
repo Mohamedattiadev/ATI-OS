@@ -46,7 +46,7 @@ return {
 
   { "folke/which-key.nvim", enabled = false },
   { "mrcjkb/rustaceanvim", enabled = false },
-  { "nvim-neo-tree/neo-tree.nvim", enabled = false },
+  -- (neo-tree is already disabled above -- duplicate entry removed)
 
   { "lewis6991/gitsigns.nvim", enabled = false },
 
@@ -60,7 +60,9 @@ return {
 
   -- UI frameworks (Primeagen does NOT use)
   { "folke/noice.nvim", enabled = false },
-  { " MunifTanjim/nui.nvim", enabled = false },
+  -- NOTE: this used to read " MunifTanjim/nui.nvim" with a leading space,
+  -- which can never match a plugin name. nui is only pulled in as a
+  -- dependency of plugins that are already disabled, so it is simply gone.
 
   -- Visual addons Prime does not use
   -- { "folke/flash.nvim", enabled = false },

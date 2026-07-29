@@ -16,7 +16,7 @@ copy() {
 rm -f /tmp/notif-copy-debug.log /tmp/notif-raw.log
 
 dbus-monitor "interface='org.freedesktop.Notifications'" |
-	awk -v shell_copy="'"$(realpath "$0")"'" '
+	awk -v shell_copy="'$(realpath "$0")'" '
 function trim(str) {
   gsub(/^[ \t\r\n]+/, "", str)
   return str

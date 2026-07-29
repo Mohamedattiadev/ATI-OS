@@ -1,0 +1,244 @@
+# See dunst(5) for all configuration options
+
+[global]
+    mouse_left_click = do_action,close_current
+    always_run_script = true
+    monitor = 0
+    follow = none
+    width = (260, 340)
+    height = (0, 2200)
+    origin = top-right
+    offset = (10, 50)
+    scale = 0
+    notification_limit = 5
+    transparency = 0
+    separator_height = 2
+    padding = 8
+    horizontal_padding = 10
+    text_icon_padding = 6
+    frame_width = 2
+    gap_size = 8
+    frame_color = "{{ACCENT}}"
+    separator_color = frame
+    sort = yes
+    # "Sans" is a fontconfig alias, not a family name -- qtile_extras'
+    # PopupText defaults to the "sans" family, so resolving dunst through
+    # the same alias keeps notifications in the exact typeface as the
+    # qtile popups (wallpaper picker, cheatsheets) and eww. Naming
+    # "JetBrainsMono Nerd Font" here is what made them drift apart.
+    # Nerd Font glyphs still render: pango falls back per-glyph.
+    font = Sans 10
+    line_height = 2
+    markup = full
+    format = "<b>%s</b>\n%b"
+    alignment = left
+    vertical_alignment = center
+    show_age_threshold = 60
+    ellipsize = middle
+    ignore_newline = no
+    stack_duplicates = true
+    hide_duplicate_count = yes
+    show_indicators = yes
+    enable_recursive_icon_lookup = true
+    icon_theme = Adwaita
+    icon_position = left
+    min_icon_size = 24
+    max_icon_size = 40
+    icon_path = /usr/share/icons/gnome/16x16/status/:/usr/share/icons/gnome/16x16/devices/
+    sticky_history = yes
+    history_length = 20
+    dmenu = rofi -dmenu -p dunst:
+    browser = /usr/bin/qutebrowser
+    title = Dunst
+    class = Dunst
+    corner_radius = 10
+    ignore_dbusclose = false
+    force_xwayland = false
+    force_xinerama = false
+    mouse_middle_click = do_action, close_current
+    mouse_right_click = close_all
+    # mouse_right_click = do_action
+
+[experimental]
+    per_monitor_dpi = false
+
+
+# --- Default Urgency Levels ---
+[urgency_low]
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{OK}}"
+    highlight = "{{OK}}"
+    timeout = 5
+    icon = emblem-ok-symbolic
+
+[urgency_normal]
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    highlight = "{{ACCENT}}"
+    timeout = 10
+    icon = dialog-information-symbolic
+
+[urgency_critical]
+    background = "{{BG_CRIT}}"
+    foreground = "{{FG_CRIT}}"
+    frame_color = "{{URGENT}}"
+    highlight = "{{URGENT}}"
+    timeout = 0
+    icon = dialog-error-symbolic
+
+# --- Notification Styles ---
+[success]
+    summary = "success"
+    urgency = low
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    icon = dialog-ok-symbolic
+
+[warning]
+    summary = "warning"
+    urgency = normal
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    icon = dialog-warning-symbolic
+
+[todo]
+    summary = "todo"
+    urgency = normal
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    icon = view-list-symbolic
+
+[What is the plan Today?]
+
+    summary = "what is the plan Today?"
+    urgency = low
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+
+[Your Plan for Week?]
+
+    summary = "Your Plan for Week?"
+    urgency = low
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+
+[Keyboard Layout Changed!]
+
+    # Matched on BODY, not summary: keyboard_layout_watcher puts the
+    # layout name in the summary (it is the actual content), so a
+    # summary matcher here would silently stop applying.
+    body = "keyboard layout"
+    urgency = low
+    format = "<b>%s</b>"
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+[Note]
+    summary = "Note"
+    urgency = low
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    # icon = dialog-information-symbolic
+
+[error]
+    summary = "error"
+    urgency = critical
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    icon = dialog-error-symbolic
+
+[delete]
+    summary = "delete"
+    urgency = critical
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    icon = user-trash-symbolic
+
+[download]
+    summary = "Download Complete"
+    urgency = normal
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    icon = folder-download-symbolic
+
+[update]
+    summary = "System Update"
+    urgency = normal
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    icon = system-software-update-symbolic
+
+[spotify]
+    appname = "Spotify"
+    urgency = low
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    icon = media-playback-start-symbolic
+
+[lowbattery]
+    summary = "Battery Low"
+    urgency = critical
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    icon = battery-caution-symbolic
+
+[volume]
+    appname = "Volume"
+    urgency = normal   # changed from low
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    timeout = 1
+    icon = audio-volume-medium-symbolic
+
+[volume-mute]
+    appname = "VolumeMute"
+    urgency = low
+    background = "{{BG}}"
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+    timeout = 1
+    icon = audio-volume-muted-symbolic
+    history_ignore = yes
+# --- Logging All Notifications ---
+
+[message-info]
+    summary = "message-info"
+    urgency = low
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+
+[message-warning]
+    summary = "message-warning"
+    urgency = normal
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+
+[message-error]
+    summary = "message-error"
+    urgency = critical
+    foreground = "{{FG}}"
+    frame_color = "{{ACCENT}}"
+
+[logall]
+    summary = "*"
+    script = /home/ati/.config/dunst/scripts/log-all.sh
+
+
+[copy]
+    summary = ".*"
+    script = /home/ati/.config/dunst/scripts/do-copy.sh
