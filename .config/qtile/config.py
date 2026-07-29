@@ -3841,6 +3841,63 @@ class _SafeLengthMixin:
         self._length = value
 
 
+def _guard_widget_length():
+    """Extend the _SafeLengthMixin guarantee to widgets we did not subclass.
+
+    _SafeLengthMixin only protects chips built through _derive(). The bar
+    also holds plain widget.TextBox / widget.Spacer / Systray instances,
+    and Bar._resize() sums `w.length` across ALL of them -- so one
+    unguarded widget still aborts the whole draw. qtile.log recorded
+    exactly that as recently as 13:17 today:
+
+        bar.py:440 in _resize -> sum(w.length for w in widgets ...)
+        AttributeError: TextBox has no attribute: length
+
+    Why upstream's own try/except does not catch it: _Widget.length reads
+    `self.length_type` and `self._length` OUTSIDE the try, and -- more
+    subtly -- its `except` handler formats `self.name` into the log
+    message. On a widget that has not been _configure()d yet, any of those
+    raises AttributeError. An AttributeError escaping a property makes
+    Python fall back to Configurable.__getattr__, which reports the
+    *property* as missing ("has no attribute: length") rather than the
+    attribute that actually failed -- which is why this was hard to read.
+
+    So the guard has to wrap the entire property access, and must not
+    touch anything on the widget while handling the failure.
+    """
+    from libqtile.widget import base as _wbase
+
+    # Reloading the config re-imports this module. Without the flag each
+    # reload would wrap the previous wrapper, nesting closures for the
+    # lifetime of the session.
+    if getattr(_wbase._Widget, "_length_guarded", False):
+        return
+    _orig = _wbase._Widget.length
+
+    def _get(self):
+        try:
+            return _orig.fget(self)
+        except Exception:
+            from libqtile.log_utils import logger
+
+            # type(self).__name__, not self.name: self.name is one of the
+            # attributes that can be missing here, and raising from inside
+            # the handler is the bug we are fixing.
+            logger.warning(
+                "widget %s could not compute length (configured=%s); "
+                "treating as 0 so the bar still draws",
+                type(self).__name__,
+                getattr(self, "configured", "?"),
+            )
+            return 0
+
+    _wbase._Widget.length = property(_get, _orig.fset, _orig.fdel)
+    _wbase._Widget._length_guarded = True
+
+
+_guard_widget_length()
+
+
 class _ChipFlashMixin(_SafeLengthMixin):
     """Brief brighten-then-fade flash on click. Wraps button_press so
     whatever click behavior the underlying widget/mouse_callbacks already
