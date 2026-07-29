@@ -113,27 +113,39 @@ def strip_timestamp(line):
     return TIMESTAMP_RE.sub("", line, count=1)
 
 
-def longest_overlap(prev, new):
-    """Largest k such that prev's last k words equal new's first k words."""
-    max_k = min(len(prev), len(new))
-    for k in range(max_k, 0, -1):
-        if prev[-k:] == new[:k]:
-            return k
-    return 0
-
-
 def _norm_word(w):
     return PUNCT_RE.sub("", w).lower()
 
 
+def longest_overlap(prev, new):
+    """Largest k such that prev's last k words equal new's first k words.
+
+    Compares normalized (punctuation/case-stripped) forms, not the raw
+    words: whisper commonly re-decodes the same audio slightly differently
+    pass to pass -- a trailing "system" vs "system," vs "System." at the
+    exact same spot in the audio -- and comparing raw strings made that
+    look like the overlap didn't exist, so the tail of what was already
+    typed got retyped as a near-duplicate instead of recognized as the
+    same content.
+    """
+    prev_norm = [_norm_word(w) for w in prev]
+    new_norm = [_norm_word(w) for w in new]
+    max_k = min(len(prev), len(new))
+    for k in range(max_k, 0, -1):
+        if prev_norm[-k:] == new_norm[:k]:
+            return k
+    return 0
+
+
 def _min_repeats_for(length):
-    # A single word or two doubled ("no no", "very very tired") is real
-    # speech, not a loop -- needs 3+ consecutive copies before it's
-    # treated as a hallucination. A phrase of 3+ words repeated verbatim
-    # is a different story: nobody naturally says a full clause twice in
-    # a row, so even 2 consecutive copies is already the loop ("what I
-    # did was I tried to upgrade the system" x2, reported directly).
-    return 3 if length <= 2 else 2
+    # A single word doubled ("no no") is still common enough in real
+    # speech to need 3+ consecutive copies before it's treated as a
+    # hallucination. Anything 2+ words is a different story: nobody
+    # naturally repeats a whole phrase verbatim back to back, so 2
+    # consecutive copies is already the loop ("what I did was I tried to
+    # upgrade the system" x2, reported directly) -- lowered from a 1-2
+    # word / 3+ word split after repeats were still getting through.
+    return 3 if length <= 1 else 2
 
 
 def collapse_repeats(words, max_ngram=12):
