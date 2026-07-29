@@ -1075,8 +1075,30 @@ subsystem. Each entry: **symptom → root cause → fix**.
 
 ## Testing on a fresh Arch VM
 
-Before trusting `./install.sh` on your primary machine, run it on a
-throw-away VM. Fastest reliable path:
+`installScripts/vm-test.sh` automates the setup around this:
+
+```bash
+./vm-test.sh --check    # preflight only, creates nothing — run this first
+./vm-test.sh            # preflight, fetch + verify ISO, make disk, boot
+./vm-test.sh --clean    # delete the VM disk and ISO
+```
+
+The preflight is the part worth having. It refuses with the specific
+number that failed — qemu missing, `/dev/kvm` not writable, not enough
+`MemAvailable` for a 4 GB guest plus host headroom, not enough disk —
+rather than letting you discover it at module 21 of 32 with a 500 MB
+download in flight. On an 8 GB laptop with a browser open it will (and
+should) tell you to come back when the machine is idle.
+
+It deliberately does **not** automate `archinstall`: that step is
+interactive by design, and a script that silently picks the wrong disk on
+a two-disk machine is worse than no script. Everything either side of it
+is automated. It boots UEFI when `edk2-ovmf` is present, and says so when
+it cannot — on a BIOS guest the `boot-fallback` module is untestable,
+because systemd-boot entries are the whole point of it.
+
+The manual path below is what the script does, if you would rather drive
+it yourself:
 
 ```bash
 # 1. Download Arch ISO (~1 GB)
@@ -1106,7 +1128,7 @@ and freeze the host. A separate VM with its own resource ceiling
 never contends with your session.
 
 **Success criteria at end:**
-Wizard prints the green-bordered "Installation Complete · ✔ 26 ok · ⚠ 0
+Wizard prints the green-bordered "Installation Complete · ✔ 32 ok · ⚠ 0
 not run · ✖ 0 failed" card. Logout, `startx`, and qtile + wal theme
 should come up cleanly.
 
@@ -1249,6 +1271,29 @@ should come up cleanly.
   drifted past the end of the comment block.
 - **Fix:** `--help` is deferred until after `MOD_ORDER` is defined and now
   prints the array itself, with a count. It cannot go stale again.
+
+### Per-module logs would have all collapsed into one `/tmp/wizard-.log`
+- **Symptom:** latent, not live — the filenames were correct on this
+  machine, by luck.
+- **Root cause:** `local id="$1" logf="/tmp/wizard-$id.log"` does **not**
+  let `logf` see the `id` assigned beside it. Bash expands the whole
+  `local` line against the *enclosing* scope first:
+  ```sh
+  f(){ local id="$1" logf="/tmp/wizard-$id.log"; echo "$logf"; }
+  f mymodule    # → /tmp/wizard-.log
+  ```
+  It produced correct names only because `page_execute`'s `for id in
+  "${PICKED_IDS[@]}"` loop variable was not `local`, so the caller's value
+  leaked in and happened to be the right one. Scope that loop variable —
+  an obvious tidy-up — and every module's log silently collapses into one
+  file while the UI keeps telling you to `tail /tmp/wizard-<id>.err`.
+- **Fix:** split into two statements (`local id="$1"` then `local logf=…`)
+  in both `_run_module` and `_show_error_tail`, and made `page_execute`'s
+  `id` local so nothing depends on the leak any more. Verified: a run of
+  `--only=sanity,touchpad,lid` produces three separate
+  `/tmp/wizard-<id>.log` files and no `/tmp/wizard-.log`.
+- **shellcheck catches this as SC2318** — it is why the sweep was worth
+  running past error level.
 
 ### Wizard dies mid-run instead of showing a failed step
 - **Symptom:** wizard exits entirely with
@@ -1504,6 +1549,89 @@ should come up cleanly.
   gets rewritten with new hex codes per palette.
 - **Fix:** tracked file, minor churn accepted (block is small).
   Do not `git add` the file unless you intended to change structure.
+
+---
+
+## Session startup (TTY → X)
+
+Everything here is about the wall of text `letsgo` prints between the TTY
+and qtile appearing. One line of it was a real error; the rest is noise
+that looks alarming and is not. They are grouped so you can match what is
+on screen against what matters.
+
+### `xauth: (stdin):2: unknown command "<32 hex chars>"` right after `letsgo`
+- **Symptom:** the very first line after `letsgo`, before the Xorg banner.
+  X still starts and the session is fine.
+- **Root cause:** duplicate cookies in `~/.Xauthority`. Every unclean X
+  exit leaves its `MIT-MAGIC-COOKIE-1` entry behind and startx adds a
+  fresh one on top, so entries for this display accumulate — `xauth list`
+  showed three for `Ati:0` here. startx then does:
+  ```sh
+  authcookie=$(xauth list "$displayname" | sed -n '...')
+  "$xauth" -q -f "$xserverauthfile" << EOF
+  add :$dummy . $authcookie
+  EOF
+  ```
+  With more than one entry `$authcookie` is multi-line, so the second and
+  third cookies land on their own lines *inside the here-doc*, where xauth
+  reads them as commands. Hence "unknown command", and hence the line
+  number: `(stdin):2` is literally the second line of that here-doc.
+- **Fix:** `letsgo` now clears stale entries before calling startx, the
+  same way it already cleared a stale `/tmp/.X0-lock`. It is safe there
+  because `letsgo` has already established that Xorg is not running, so
+  nothing needs the old cookies and startx writes exactly one.
+- **To clear it by hand** (only with X *not* running — removing the live
+  display's cookie stops new clients connecting):
+  ```sh
+  xauth remove :0 "$(uname -n):0" "$(uname -n)/unix:0"
+  ```
+  `uname -n`, not `hostname`: `hostname` lives in `inetutils`, which is
+  not installed here.
+
+### `WARNING:libqtile:Key spec duplicated, overriding previous: <Key ([], Escape)>`
+- **Symptom:** two of these on every qtile start and every reload.
+- **Root cause:** self-inflicted, and previously on purpose.
+  `KeyChord.__init__` appends its own bare `Key([], "Escape")` to every
+  chord's submappings. It lands last, so `grab_chord()` grabs it last and
+  it overwrote ours in `keys_map` — leaving Escape with zero commands,
+  which is why the passthrough confirm popup never opened. The original
+  fix appended a *second* Escape on top so ours was grabbed last. That
+  worked, but left two specs, and qtile logs a warning per chord.
+- **Fix:** `_set_chord_escape()` now strips qtile's auto-added Escape
+  first and then appends ours. Same "ours is last" guarantee, exactly one
+  spec, no warning. Verified against the real `libqtile.config` classes:
+  one Escape, it is the last submapping, it carries a command, and
+  re-applying it (as a reload does) stays at one.
+- **Do not "fix" this by simply deleting the append.** That restores the
+  original bug — Escape ends up with no commands and the confirm popup
+  silently stops working.
+
+### xkbcomp warnings: unresolved `XF86…` keysyms, `<FK23>`/`<FK24>` redefined
+- **Symptom:** a large block of `Could not resolve keysym
+  XF86ElectronicPrivacyScreenOn` / `XF86ActionOnSelection` /
+  `XF86ContextualQuery`, plus `Multiple symbols for level 1/group 1 on key
+  <FK23>` and `Using F23, ignoring XF86TouchpadOff`.
+- **Root cause:** not ours, and not a misconfiguration. `xkeyboard-config`
+  ships symbol names newer than the keysym table `xkbcomp` was built
+  against, so the compiler cannot resolve them. Every Arch machine running
+  X prints this.
+- **Fix:** none needed. X itself says so on the next line: *"Errors from
+  xkbcomp are not fatal to the X server."* The affected keysyms are for
+  hardware this laptop does not have (privacy screen, contextual-query
+  keys). Ignore.
+
+### `rofi_anki`: the EN piper voice is downloaded but never used
+- **Symptom:** none visible — flagged by a lint sweep, not by a failure.
+- **Root cause:** `rofi_anki` declares `SPELL_ENGINE="piper" # or "gtts"`
+  and `PIPER_VOICE_EN=...`, but nothing reads either. The engine is
+  hardcoded per language: English goes through `gtts-cli`, German through
+  piper. So setting `SPELL_ENGINE="gtts"` does nothing, and the wizard's
+  `piper` module downloads `en_US-ryan-high.onnx` (~30 MB) for a code path
+  that never runs.
+- **Status:** annotated in place, deliberately *not* rewired — switching
+  which engine speaks your flashcards is a preference, not a lint fix.
+  Decide one of: wire `SPELL_ENGINE` up, switch English to piper, or drop
+  the unused voice from the `piper` module.
 
 ---
 

@@ -110,6 +110,9 @@ build_titles_map() {
     declare -gA WIN_TITLES=()
     command -v wmctrl &>/dev/null || return 0
     local wid desk pid host title existing
+    # wid/desk/host are positional placeholders so `read` lands wmctrl's
+    # columns on pid and title. Never referenced on purpose.
+    # shellcheck disable=SC2034
     while read -r wid desk pid host title; do
         [[ "$pid" =~ ^[0-9]+$ ]] || continue
         [[ -z "$title" ]] && continue

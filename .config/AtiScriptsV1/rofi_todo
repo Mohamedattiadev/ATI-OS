@@ -61,6 +61,7 @@ PRIO_LOW_COLOR="$PAL_ACTIVE"
 ICON_TODO="󰄱" # checkbox_blank_outline
 ICON_DONE="󰄲" # checkbox_marked
 ICON_ADD=""  # plus_circle
+# shellcheck disable=SC2034  # kept so the ICON_* set stays complete
 ICON_DEL="󰆴"
 ICON_EDIT="" # pencil
 ICON_WORKING="󰡠"
@@ -252,10 +253,10 @@ while true; do
   SESSION_TITLE="${SESSIONS[$current_session_index]}"
   SESSION_ICON=""
   case "$current_session_index" in
-  $SESSION_TODAY) SESSION_ICON="${ICON_DUE}" ;;
-  $SESSION_FUTURE) SESSION_ICON="${ICON_DUE}" ;;
-  $SESSION_GENERAL) SESSION_ICON="${ICON_TODO}" ;;
-  $SESSION_DONE) SESSION_ICON="${ICON_DONE}" ;;
+  "$SESSION_TODAY") SESSION_ICON="${ICON_DUE}" ;;
+  "$SESSION_FUTURE") SESSION_ICON="${ICON_DUE}" ;;
+  "$SESSION_GENERAL") SESSION_ICON="${ICON_TODO}" ;;
+  "$SESSION_DONE") SESSION_ICON="${ICON_DONE}" ;;
   esac
 
   SELECTION=$(get_session_content "$current_session_index" | rofi -theme ~/.config/rofi/themes/todo-large.rasi -dmenu \

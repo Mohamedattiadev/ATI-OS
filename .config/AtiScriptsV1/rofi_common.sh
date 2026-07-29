@@ -24,6 +24,10 @@ load_palette() {
         val="${val//[[:space:]]/}"
         val="${val%;*}"
         [[ "$val" =~ ^#[0-9a-fA-F]{6}$ ]] || continue
+        # These are the whole point of sourcing this file: rofi_todo,
+        # rofi-kill, rofi_shared and theme-apply all read PAL_*. Unused
+        # *here* by design.
+        # shellcheck disable=SC2034
         case "$key" in
             background)     PAL_BG="$val" ;;
             background-alt) PAL_BG_ALT="$val" ;;
@@ -94,7 +98,8 @@ rofi_confirm() {
     # rofi failed to launch (still-running lock, no display, etc).
     # Notify the user so silent no-op is not confused with cancel.
     if [[ -z "$answer" && $rc -ne 0 ]]; then
-        local err="$(cat /tmp/rofi-confirm.err 2>/dev/null | head -1)"
+        local err
+        err="$(head -1 /tmp/rofi-confirm.err 2>/dev/null)"
         printf '[%s] rofi_confirm launch failed rc=%s err=%s\n' \
             "$(date +%H:%M:%S)" "$rc" "$err" >>/tmp/rofi-confirm.log
         notify_safe "❌ confirm dialog failed" "${err:-check /tmp/rofi-confirm.log}"
@@ -117,6 +122,7 @@ kill_guaranteed() {
         kill -15 "$pid" 2>/dev/null || /usr/bin/kill -15 "$pid" 2>/dev/null
         # Poll up to 0.8s (8 * 0.1s) — SIGTERM grace period.
         local i
+        # shellcheck disable=SC2034  # loop counter; body polls, does not read i
         for i in 1 2 3 4 5 6 7 8; do
             kill -0 "$pid" 2>/dev/null || break
             sleep 0.1

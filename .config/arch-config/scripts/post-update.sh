@@ -15,7 +15,9 @@
 
 set -uo pipefail
 
-y=$'\033[33m'; g=$'\033[32m'; r=$'\033[31m'; d=$'\033[90m'; o=$'\033[0m'
+# No red: this hook only ever reports (say/ok/warn) and never fails the
+# run. pre-update.sh is the one that refuses, and it keeps its own $r.
+y=$'\033[33m'; g=$'\033[32m'; d=$'\033[90m'; o=$'\033[0m'
 say()  { printf '%s[post-update]%s %s\n' "$d" "$o" "$*"; }
 ok()   { printf '%s[post-update]%s %s✓%s %s\n' "$d" "$o" "$g" "$o" "$*"; }
 warn() { printf '%s[post-update]%s %s!%s %s\n' "$d" "$o" "$y" "$o" "$*"; }

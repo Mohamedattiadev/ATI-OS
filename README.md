@@ -283,6 +283,16 @@ bash ~/.dotfiles/installScripts/grub_boost.sh    # kernel cmdline: nowatchdog, q
 bash ~/.dotfiles/installScripts/service_trim.sh  # audit + disable heavy services (docker, postgres, tailscaled, ...)
 ```
 
+**Try it without risking your machine** — `vm-test.sh` runs the whole
+thing on a throw-away Arch VM. Its preflight refuses with the specific
+number that failed (RAM, disk, KVM, qemu) instead of wedging the host
+halfway through a 500 MB download:
+
+```bash
+bash ~/.dotfiles/installScripts/vm-test.sh --check   # creates nothing
+bash ~/.dotfiles/installScripts/vm-test.sh           # fetch ISO, boot
+```
+
 </details>
 
 <a name="packages"></a>

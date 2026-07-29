@@ -118,6 +118,7 @@ if [[ "$MODE" == "wal" ]]; then
   fi
   WALL_LINK="$HOME/.cache/wall"
   if [[ ! -f "$WALL_LINK" ]]; then
+    # shellcheck disable=SC2088  # ~ is prose in a message, not a path
     notify-send -u critical "theme-apply" "~/.cache/wall missing — set a wallpaper first"
     exit 1
   fi

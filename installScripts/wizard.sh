@@ -62,10 +62,11 @@ _stop_sudo_keepalive() {
 }
 trap _stop_sudo_keepalive EXIT
 
-# ─── LOG SINK ────────────────────────────────────────────────────────
-WIZ_LOGDIR="${XDG_STATE_HOME:-$HOME/.local/state}/wizard"
-mkdir -p "$WIZ_LOGDIR"
-WIZ_RUNLOG="$WIZ_LOGDIR/run-$(date +%Y%m%d-%H%M%S).log"
+# Per-module logs are written to /tmp/wizard-<id>.{log,err} by _run_module.
+# There used to be a WIZ_RUNLOG="$XDG_STATE_HOME/wizard/run-<ts>.log" here
+# that nothing ever wrote to -- it only had the side effect of creating an
+# empty ~/.local/state/wizard directory on every run. Removed rather than
+# wired up: a whole-run log would duplicate the per-module ones.
 
 # ─── CONFIG ──────────────────────────────────────────────────────────
 DRY_RUN=0
@@ -104,7 +105,8 @@ done
 _id_in_csv() { [[ ",$1," == *",$2,"* ]]; }
 
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
-INSTALL_SH="$DOTFILES_DIR/installScripts/install.sh"
+# (No INSTALL_SH here any more. It dated from when the wizard shelled out to
+# install.sh; the dependency now runs the other way and it was never read.)
 
 # ─── BOOTSTRAP GUM ───────────────────────────────────────────────────
 if ! command -v gum >/dev/null; then
@@ -208,6 +210,11 @@ run() {
   if (( DRY_RUN )); then
     _DIM "  [dry] $*"
   else
+    # eval is the point, not an accident: callers pass a command *string*
+    # containing shell syntax -- pipes, &&, redirections, here-docs. Running
+    # "$@" directly would look for a binary literally named
+    # `sudo tee /etc/... > /dev/null && sudo chmod ...`.
+    # shellcheck disable=SC2294  # args are shell source, deliberately
     eval "$@"
   fi
 }
@@ -316,6 +323,8 @@ _validate_ids "$SKIP_LIST" --skip
 step_sanity() {
   [[ -f /etc/arch-release ]] || { _ERR "Not Arch Linux"; return 1; }
   [[ "${XDG_SESSION_TYPE:-}" != wayland ]] || { _ERR "Wayland not supported"; return 1; }
+  # The ~ is prose in a message shown to a human, not a path being expanded.
+  # shellcheck disable=SC2088
   [[ -d "$DOTFILES_DIR" ]] || { _ERR "~/.dotfiles missing"; return 1; }
   _OK "System checks passed"
 }
@@ -1171,7 +1180,17 @@ page_summary() {
 _FAILED_IDS=()
 
 _run_module() {
-  local id="$1" logf="/tmp/wizard-$id.log" errf="/tmp/wizard-$id.err"
+  # Two statements, not one. `local a="$1" b="$a"` does NOT let b see the
+  # a assigned beside it -- bash expands the whole `local` line against the
+  # *enclosing* scope first. This read `/tmp/wizard-$id.log` from the
+  # caller's `id`, and only produced correct filenames because
+  # page_execute's `for id in ...` loop variable happens to be unlocalised
+  # and happens to hold the same value. Make that loop `local`, or call
+  # this from anywhere else, and every module's log silently collapses
+  # into one `/tmp/wizard-.log` while the UI keeps telling you to
+  # `tail /tmp/wizard-<id>.err`. (shellcheck SC2318)
+  local id="$1"
+  local logf="/tmp/wizard-$id.log" errf="/tmp/wizard-$id.err"
   : >"$logf"; : >"$errf"
   local cmd
   if (( UNINSTALL )); then cmd="${UMOD_CMD[$id]}"; else cmd="${MOD_CMD[$id]}"; fi
@@ -1197,7 +1216,8 @@ _run_module() {
 }
 
 _show_error_tail() {
-  local id="$1" errf="/tmp/wizard-$id.err" logf="/tmp/wizard-$id.log"
+  local id="$1"                       # separate statement -- see _run_module
+  local errf="/tmp/wizard-$id.err" logf="/tmp/wizard-$id.log"
   local tail_content
   tail_content=$(tail -5 "$errf" 2>/dev/null | grep -v '^\s*$' | head -5) || true
   [[ -z "$tail_content" ]] && { tail_content=$(tail -5 "$logf" 2>/dev/null | grep -v '^\s*$' | head -5) || true; }
@@ -1213,7 +1233,9 @@ page_execute() {
   else
     _BOX_HEADER "installing modules"
   fi
-  local ok=0 fail=0 total=${#PICKED_IDS[@]} idx=0
+  # `id` is scoped deliberately. It used to leak into the global namespace,
+  # and _run_module's log filenames silently depended on that leak.
+  local ok=0 fail=0 total=${#PICKED_IDS[@]} idx=0 id
   for id in "${PICKED_IDS[@]}"; do
     idx=$((idx+1))
     local chip badge title status_line

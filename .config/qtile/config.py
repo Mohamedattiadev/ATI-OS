@@ -4729,14 +4729,28 @@ PASSTHROUGH_CONFIRM_CHORD = KeyChord(
 # KeyChord.__init__ appends its own bare Key([], "Escape") to every chord's
 # submappings. It lands last, so grab_chord() grabs it last and it overwrites our
 # Escape in keys_map -- leaving Escape with zero commands, which is why the confirm
-# popup never opened. Re-append ours so it is grabbed last and actually runs.
-if PASSTHROUGH_CHORD is not None:
-    PASSTHROUGH_CHORD.submappings.append(
-        Key([], "Escape", lazy.function(_passthrough_esc))
-    )
-PASSTHROUGH_CONFIRM_CHORD.submappings.append(
-    Key([], "Escape", lazy.function(_passthrough_confirm_esc))
-)
+# popup never opened. Ours has to be grabbed last to actually run.
+#
+# We used to just append a second Escape on top. That worked, but left two
+# Escape specs in the list, and qtile logs one
+#   WARNING:libqtile:Key spec duplicated, overriding previous: <Key ([], Escape)>
+# per chord on every startup and every reload -- two lines of scary-looking
+# noise, at the top of the screen at login, for a situation we created on
+# purpose. Drop qtile's auto-added Escape first, then append ours: same
+# "ours is last" guarantee, exactly one spec, no warning.
+def _set_chord_escape(chord, handler):
+    if chord is None:
+        return
+    chord.submappings[:] = [
+        k
+        for k in chord.submappings
+        if not (isinstance(k, Key) and k.key == "Escape" and not k.modifiers)
+    ]
+    chord.submappings.append(Key([], "Escape", lazy.function(handler)))
+
+
+_set_chord_escape(PASSTHROUGH_CHORD, _passthrough_esc)
+_set_chord_escape(PASSTHROUGH_CONFIRM_CHORD, _passthrough_confirm_esc)
 
 # ╔───────────────────────────────────────────────────────────────╗
 # │░▄█▄█▄░█░█░█▀▀░█░█░█▄█░█▀█░█▀█░█▀▀░░░█▀▀░█▀█░█▀▄░█▀▀░░░░░░░░░░░│

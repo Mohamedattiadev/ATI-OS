@@ -200,6 +200,32 @@ function letsgo --description 'Start the X session (qtile) from a TTY'
         echo "Removing stale /tmp/.X0-lock left by an unclean exit."
         rm -f /tmp/.X0-lock
     end
+    # Same class of leftover, different file. Every unclean X exit leaves its
+    # MIT-MAGIC-COOKIE in ~/.Xauthority and startx adds a fresh one on top, so
+    # entries for this display accumulate. startx then does:
+    #
+    #     authcookie=$(xauth list "$displayname" | sed ...)
+    #     xauth -q -f "$xserverauthfile" << EOF
+    #     add :$dummy . $authcookie
+    #     EOF
+    #
+    # With more than one entry, $authcookie is multi-line and the extra
+    # cookies land on their own lines inside the here-doc, where xauth reads
+    # them as commands:
+    #
+    #     xauth: (stdin):2: unknown command "cd6ac1acd7289e776cc7554a586a1a71"
+    #
+    # Harmless to the session, but it is the first thing on screen at every
+    # single login. We already know Xorg is not running (checked above), so
+    # nothing needs these cookies -- drop them and let startx write exactly
+    # one. `uname -n`, not `hostname`: hostname ships in inetutils and is not
+    # installed here.
+    if command -q xauth
+        set -l host (uname -n)
+        for d in :0 $host:0 $host/unix:0
+            xauth remove $d 2>/dev/null
+        end
+    end
     dbus-run-session startx
 end
 

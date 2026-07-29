@@ -67,7 +67,8 @@ Split PDF"
 		exit 1
 		;;
 	esac
-	local EXT_ARRAY=($EXT)
+	local -a EXT_ARRAY
+	read -r -a EXT_ARRAY <<<"$EXT"
 
 	# 3. Main application loop for directory/file selection
 	while true; do
@@ -95,7 +96,8 @@ Split PDF"
 	mkdir -p "$OUT_DIR"
 
 	local FIRST_FILE="${SELECTED_FILES[0]}"
-	local FILENAME=$(basename "$FIRST_FILE")
+	local FILENAME
+	FILENAME=$(basename "$FIRST_FILE")
 	local NAME="${FILENAME%.*}"
 
 	case "$ACTION" in

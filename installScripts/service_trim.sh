@@ -5,7 +5,8 @@
 # Per service: prompts y/n. Y = disable + stop (revert: systemctl enable --now X).
 set -Eeuo pipefail
 
-RED="\033[1;31m"; GREEN="\033[1;32m"; YELLOW="\033[1;33m"; BLUE="\033[1;34m"; RESET="\033[0m"
+# No RED: this script reports (ok/warn/skip) and never hard-fails.
+GREEN="\033[1;32m"; YELLOW="\033[1;33m"; BLUE="\033[1;34m"; RESET="\033[0m"
 info() { echo -e "${BLUE}==>${RESET} $*"; }
 ok()   { echo -e "${GREEN}✔${RESET} $*"; }
 warn() { echo -e "${YELLOW}⚠${RESET} $*"; }

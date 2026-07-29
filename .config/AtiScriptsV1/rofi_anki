@@ -20,9 +20,17 @@ PIPER_CMD="$(command -v piper)"
 
 # --- Voice Customization ---
 PIPER_SPEED="1.8"
+# VESTIGIAL -- nothing reads this. The engine is hardcoded per language:
+# English always goes through gtts-cli, German through piper. Setting it
+# to "gtts" changes nothing. Left in place rather than silently rewiring
+# the audio; make the call and either wire it up or delete it.
+# shellcheck disable=SC2034
 SPELL_ENGINE="piper" # or "gtts"
 
 # Paths to your Piper voice models
+# Also unused: English TTS calls gtts-cli, never piper. The wizard's
+# `piper` module still downloads this voice (~30MB) for nothing.
+# shellcheck disable=SC2034
 PIPER_VOICE_EN="$HOME/.config/piper-voices/en_US-ryan-high.onnx"
 PIPER_VOICE_DE="$HOME/.config/piper-voices/de_DE-thorsten-high.onnx"
 # ------------------------------------------------
@@ -140,12 +148,14 @@ CHOICE=$(echo -e "en (front: English)\nde (front: German)" | rofi -dmenu -p "Cho
 [ -z "$CHOICE" ] && exit 0
 if [[ "$CHOICE" == en* ]]; then
   FRONT_LANG="en"
+  # shellcheck disable=SC2034  # only BACK_LANG_NAME is read
   BACK_LANG="de"
   DECK="$DECK_EN"
   FRONT_LANG_NAME="English"
   BACK_LANG_NAME="German"
 else
   FRONT_LANG="de"
+  # shellcheck disable=SC2034  # only BACK_LANG_NAME is read
   BACK_LANG="en"
   DECK="$DECK_DE"
   FRONT_LANG_NAME="German"
