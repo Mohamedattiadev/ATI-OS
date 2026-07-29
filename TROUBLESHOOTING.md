@@ -1438,9 +1438,271 @@ Append entries here as you hit them. Keep the same tri-format
   launched from a shell that predates the change keep the old palette.
 - **WhatsApp is not a Qt app** — it is a Brave web app
   (`--app=https://web.whatsapp.com`, wm_class `sp-whatsapp`), so this
-  does not affect it. Page content there is controlled by
-  `--enable-features=WebContentsForceDark` in `brave-flags.conf` plus
+  does not affect it. Page content there follows the desktop's
+  `prefers-color-scheme` preference (see the force-dark case below) plus
   WhatsApp Web's own in-app dark setting.
+
+### Websites render as "bad dark" — washed out, glowing text, wrecked gradients
+- **Symptom:** dark mode is on everywhere, but *page content* looks wrong
+  rather than merely dark. On Canva the headline gradient turned into
+  glowing neon purple on near-black, icons lost contrast, and panel
+  backgrounds went muddy. Sites that have no dark theme of their own
+  looked fine. Only the sites with a **good** dark theme looked bad.
+- **Root cause:** two different mechanisms were fighting, and the wrong
+  one was winning.
+
+  | | what it is | who designed the colors |
+  |---|---|---|
+  | "normal dark" | site ships CSS behind `@media (prefers-color-scheme: dark)` | the site's designers |
+  | "bad dark" | `--enable-features=WebContentsForceDark` — Chromium re-tints already-rendered pixels | nobody; it is a blind transform |
+
+  All three `*-flags.conf` carried `--enable-features=WebContentsForceDark`.
+  It was added because **web pages were coming up white**: with no desktop
+  colour-scheme preference set, xdg-desktop-portal reported
+  `org.freedesktop.appearance color-scheme = 0` ("no preference"), and
+  Chromium — which reads exactly that key — told every site
+  `prefers-color-scheme: light`. So every site served its light stylesheet,
+  and force-dark was bolted on to compensate.
+
+  On a site with a real dark theme that compounds: the site is *already*
+  dark and force-dark darkens and inverts it a second time. Saturated
+  accents (Canva's gradient headline) get pushed past their intended
+  luminance and bloom; mid-greys collapse toward each other and contrast
+  dies. GTK3/GTK4 `settings.ini` both had `gtk-application-prefer-dark-theme`
+  set, which is why the *browser UI* looked right the whole time — that
+  setting never reaches web content.
+- **Fix:** advertise the preference properly and delete the workaround.
+  - New `dark-mode` module in `wizard.sh` runs
+    `gsettings set org.gnome.desktop.interface color-scheme prefer-dark`,
+    then **verifies through the portal** — if `xdg-desktop-portal-gtk` is
+    missing, the gsettings write succeeds while browsers still see light,
+    which is a silent failure that looks identical to the original bug.
+  - `--enable-features=WebContentsForceDark` removed from
+    `brave-flags.conf`, `chrome-flags.conf`, `chromium-flags.conf`.
+  - `step_browser_flags` is now **authoritative rather than additive**: it
+    strips the flag from existing installs instead of only appending what
+    is missing, so an already-provisioned machine actually picks the fix up.
+    It resolves stow symlinks first and skips anything pointing into
+    `~/.dotfiles` — `sed -i` on a symlink replaces the link with a regular
+    file and quietly detaches the machine from the repo.
+- **Verify:**
+  ```bash
+  busctl --user call org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop \
+    org.freedesktop.portal.Settings ReadOne ss org.freedesktop.appearance color-scheme
+  # v u 0  -> no preference (sites serve light)
+  # v u 1  -> prefer dark    (sites serve their own dark theme)   <- want this
+  ```
+  Browsers must be **fully restarted** to re-read `*-flags.conf`.
+- **For a site with genuinely no dark theme:** turn force-dark on for that
+  one site from the page menu. Do not put the flag back globally.
+
+### Random tabs die with "Aw, Snap! Error code 61696"
+- **Symptom:** a tab goes blank white with Chromium's crash page. Not tied
+  to any one site; happens more the longer the session runs and the more
+  Brave profile windows are open.
+- **Root cause:** not a browser bug — the machine ran out of memory and
+  `earlyoom` killed the renderer. The journal names the victim outright:
+  ```console
+  $ journalctl -b -u earlyoom | grep -i 'low memory' -A1
+  mem avail: 457 of 4605 MiB (9.93%), swap free: 0 of 3911 MiB (0.00%)
+  low memory! at or below SIGTERM limits: mem 10.00%, swap 10.00%
+  sending SIGTERM to process 1444313 uid 1000 "brave": oom_score 887,
+    ... cmdline "/opt/brave-bin/brave --type=renderer ..."
+  ```
+  Note `swap free: 0 of 3911 MiB` — **zram was 100% full**. earlyoom did
+  the right thing (without it the whole X session would have frozen), and
+  Chromium reports a SIGTERM'd renderer as `Aw, Snap!`. Chrome sets
+  `oom_score_adj 300` on renderers precisely so they are chosen before
+  qtile or the terminal, which is why tabs die and the desktop survives.
+
+  Three things stacked up on an 8G laptop:
+  1. `speed_boost.sh` sized zram at `min(ram / 2, 4096)` → only 3.8G, and
+     it skipped reconfiguration whenever a `[zram0]` section already
+     existed, so no existing machine would ever have grown it.
+  2. `vm.swappiness` was left at the kernel default of 60, which is tuned
+     for swap-on-disk. With zram, swapping costs a memcpy plus a zstd
+     round-trip, so 60 leaves a cheap resource idle while the machine
+     starves.
+  3. **The scratchpads were each a whole separate browser.** This turned out
+     to be the largest single cause, and the one that made the WhatsApp
+     dropdown in particular useless. See the next case.
+- **Fix:**
+  - `speed_boost.sh` section 1 now sizes zram at `min(ram, 8192)` and
+    **rewrites the config when the content differs** rather than skipping
+    on the presence of a `[zram0]` header. zram is compressed RAM, not
+    disk: at zstd's ~3:1 on browser heap, a 7.6G device costs ~2.5G of real
+    RAM when full while absorbing ~7.6G of anonymous pages.
+  - New `speed_boost.sh` section 2 writes `/etc/sysctl.d/99-zram.conf`:
+    `vm.swappiness=180`, `vm.page-cluster=0`,
+    `vm.watermark_boost_factor=0`, `vm.watermark_scale_factor=125` — the
+    set Fedora ships with zram.
+  - `--process-per-site` added to all three `*-flags.conf`: same-site tabs
+    share one renderer instead of one process each. Cross-site isolation is
+    unaffected (Site Isolation still applies). Trade-off: one renderer
+    crash now takes every tab of that site with it.
+- **The zram resize needs a reboot.** `systemd-daemon-reload` will not
+  resize a swap device that is already in use, so `swapon --show` keeps
+  reporting the old size until the next boot.
+- **If it still happens after all of the above**, drop
+  `--force-renderer-accessibility` from `brave-flags.conf` — its own
+  comment flags the per-tab cost. That disables homerow's link hinting in
+  the browser, which is why it is the last resort rather than the first.
+- **Verify:**
+  ```bash
+  swapon --show                          # zram0 size should now be ~= RAM
+  sysctl vm.swappiness vm.page-cluster   # 180 / 0
+  journalctl -b -u earlyoom | grep -ci 'low memory'   # should stay at 0
+  ```
+
+### The WhatsApp / ChatGPT / DeepSeek scratchpad shows "Aw, Snap!" constantly
+- **Symptom:** the browser scratchpads (`Mod2+8/9/0`) crash far more often
+  than ordinary tabs — often "Aw, Snap!" immediately on open, sometimes
+  rendering as a transparent crash page over whatever is behind them.
+- **Root cause:** `--user-data-dir` is not "a profile", it is **a whole
+  separate browser**, and the scratchpads used one each. A separate
+  user-data-dir cannot share anything with the main instance, so each
+  dropdown spawned its own supporting stack just to render one page:
+  ```console
+  $ ps -eo args | grep 'brave-profiles/whatsapp' | grep -oE '\-\-type=[a-z-]+' | sort | uniq -c
+        1 --type=gpu-process
+        1 --type=renderer      # <- the only one doing real work
+        2 --type=utility       # network service + storage service
+        3 --type=zygote
+  ```
+  Measured on an 8G laptop — four independent Brave stacks:
+
+  | instance | RSS | procs |
+  |---|---|---|
+  | main | 2331 MB | 26 |
+  | whatsapp | 842 MB | 8 |
+  | deepseek | 807 MB | 9 |
+  | chatgpt | 689 MB | 9 |
+
+  **4.6G of 7.6G**, roughly 350MB per scratchpad of pure duplicated
+  infrastructure. That is what kept the machine at the earlyoom threshold,
+  and since Chrome tags renderers `oom_score_adj 300` the scratchpad
+  renderers were the first thing killed. The config comment always *said*
+  "one browser engine for all" — `--user-data-dir` is the flag that
+  prevented it.
+- **Fix:** `config.py` scratchpads now use `--profile-directory="Whatsapp"`
+  (etc.) instead of `--user-data-dir=…/brave-profiles/whatsapp`. Separate
+  profiles — separate logins, cookies and sessions — living inside the one
+  running instance, sharing its gpu-process, network service and zygote.
+  Each dropdown now costs one renderer.
+- **`--class` does NOT survive this — match on the URL host instead.**
+  This is the part that bites, and it produces a second, separate symptom:
+  the dropdowns open as ordinary **tiled** windows in monadtall instead of
+  floating scratchpads.
+
+  When brave is already running, the new invocation is forwarded over the
+  singleton socket and the window is created by the **original** browser
+  process, which uses its own class. `--class` is simply lost:
+  ```console
+  $ xprop WM_CLASS        # on the whatsapp dropdown
+  WM_CLASS(STRING) = "web.whatsapp.com", "Brave-browser"
+  #                   ^ URL-derived instance   ^ NOT sp-whatsapp
+  ```
+  So `Match(wm_class="sp-whatsapp")` never fires, the window is not
+  adopted by the ScratchPad, and it tiles like any other window.
+
+  The instance field is URL-derived and stable, so match on that:
+  ```python
+  match=Match(wm_instance_class="web.whatsapp.com")   # chat.openai.com, chat.deepseek.com
+  ```
+  `compare()` maps `wm_instance_class` to `wm_class[0]` — exactly the
+  URL-derived field — where a plain `wm_class` rule is tested against every
+  field of the pair. Both work here; the instance form documents the
+  intent. Ordinary brave windows are `("brave-browser", "Brave-browser")`,
+  so these rules cannot swallow a normal browser window.
+
+  `--class`/`--name` were dropped from the commands rather than left in as
+  flags that only apply on a cold start (when the scratchpad is what
+  launches brave). Matching the host is correct in **both** cases, which is
+  precisely what `--class` is not.
+- **Two traps if you test this yourself.** Both produce a false "the class
+  survives" result:
+  1. A `data:` URL has no host, so Chromium derives the instance name from
+     the URL text and falls back to `"Brave-browser"` for the class. Test
+     with the real `https://` app URL.
+  2. If the profile does not exist yet, the invocation may **start** a
+     browser process rather than forward to one — and `--class` does apply
+     in that case. Confirm you actually forwarded before drawing a
+     conclusion:
+     ```bash
+     pgrep -af 'profile-directory=Whatsapp'   # no lingering process => forwarded
+     ```
+- **Verify the fix took, rather than eyeballing the window:**
+  ```bash
+  qtile cmd-obj -o group scratchpad -f dropdown_info -a whats
+  # want: a populated "window" object with "floating": true
+  ```
+- **One-time migration cost:** the old sessions under
+  `~/.config/qtile/brave-profiles/` are not carried over — re-scan the
+  WhatsApp QR and sign in to ChatGPT/DeepSeek once. Once the new profiles
+  work, reclaim the disk with
+  `rm -rf ~/.config/qtile/brave-profiles`.
+- **Flags that silently stopped applying.** The scratchpads used to pass
+  `--disable-background-networking`, `--disable-component-update`,
+  `--disable-breakpad`, `--disable-sync`, `--no-first-run`. Those configure
+  a **browser process at startup**; these commands now join an
+  already-running one, so they became no-ops and were removed rather than
+  left in as dead code. To keep that behaviour, put them in
+  `~/.config/brave-flags.conf`, which applies to the single instance that
+  does start.
+- **Trade-off accepted:** the scratchpads now share a crash domain with the
+  main browser — killing Brave takes them with it. On a RAM-constrained
+  machine that is a better deal than 1GB of duplicated processes.
+
+### Reducing memory usage on an 8G machine — what actually moves the needle
+Measured on this laptop (7.6G total). Ordered by payoff, so stop when you
+have enough back.
+
+```console
+$ ps -eo rss,comm --sort=-rss | awk 'NR>1{s[$2]+=$1;n[$2]++} END{for(k in s) printf "%8.0f MB %3d %s\n",s[k]/1024,n[k],k}' | sort -rn | head
+    3947 MB  21  brave
+     992 MB   3  claude
+     580 MB   1  next-server
+     334 MB   1  firefox
+     310 MB   1  dockerd
+     266 MB   4  kitty
+```
+
+1. **Brave, and specifically its renderers** — 2933MB of that 3947MB was 13
+   renderer processes serving 6 windows. Two fixes are already in the repo:
+   - `--process-per-site` in `*-flags.conf` (same-site tabs share a renderer)
+   - the `browser-memory` module, which installs
+     `50-memory-saver.json` as a managed policy to
+     `/etc/brave/policies/managed`, `/etc/chromium/policies/managed` and
+     `/etc/opt/chrome/policies/managed`. It discards idle tabs outright.
+
+   Memory Saver is a **preference**, not a flag — a line in `*-flags.conf`
+   cannot set it, and toggling it in Settings is lost on a profile reset.
+   Policy is the only durable way to ship it.
+
+   `TabDiscardingExceptions` is part of the same file and matters as much as
+   the saving: a discarded tab stops executing, so anything holding a socket
+   to notify you goes silent. WhatsApp Web is why the list exists.
+   Verify at `brave://policy` — all entries should read **OK**, and an
+   unknown-policy warning means that key was ignored, not that the file was
+   rejected.
+2. **Scratchpads as profiles, not separate browsers** — see the WhatsApp
+   scratchpad case above. Worth ~730MB and 29 processes here.
+3. **zram sizing + swappiness** — `speed_boost.sh`. Does not reduce usage,
+   but roughly doubles the headroom before earlyoom starts killing tabs.
+4. **Services you don't need every boot** — `docker.service` +
+   `containerd.service` measured 356MB resident, and docker is
+   `enabled` at boot by default. `service_trim.sh` prompts per service and
+   is reversible; Docker starts on demand with
+   `sudo systemctl start docker` when you actually need it.
+5. **`--force-renderer-accessibility`** in `brave-flags.conf` — an AT-SPI
+   tree per tab, so its cost scales with renderer count. Listed last
+   deliberately: removing it disables homerow's link hinting in the browser,
+   which is a real feature loss rather than free savings. Try everything
+   above first.
+
+Not worth chasing: `claude`, `next-server` and `node` are actual work, and
+running firefox/qutebrowser alongside brave is a session choice, not
+something the dotfiles should decide.
 
 ### Tray icons are invisible but still clickable
 - **Symptom:** after toggling the systray widgetbox (△), the tray icons
