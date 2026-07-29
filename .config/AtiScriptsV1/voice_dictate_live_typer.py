@@ -117,6 +117,27 @@ def _norm_word(w):
     return PUNCT_RE.sub("", w).lower()
 
 
+def longest_common_prefix(prev, new):
+    """Largest k such that prev[:k] == new[:k] (both anchored at word 0).
+
+    Handles both pure growth (new is prev plus more) and whisper revising
+    a word near the END of prev on the next pass ("The found and fixing."
+    -> "The found and fixed issue was...") -- new still starts at the same
+    base as prev, it just diverges partway instead of matching all the
+    way through prev's length. longest_overlap alone requires the WHOLE
+    aligned span to match exactly, so one revised word anywhere in it
+    made k=0 and retyped everything from word 0 -- the exact bug this was
+    reported against ("The found and fixing." / "The found and fixed
+    issue was..." typed as "The found and fixing. The found and fixed
+    issue was...").
+    """
+    n = min(len(prev), len(new))
+    i = 0
+    while i < n and _norm_word(prev[i]) == _norm_word(new[i]):
+        i += 1
+    return i
+
+
 def longest_overlap(prev, new):
     """Largest k such that prev's last k words equal new's first k words.
 
@@ -127,6 +148,11 @@ def longest_overlap(prev, new):
     look like the overlap didn't exist, so the tail of what was already
     typed got retyped as a near-duplicate instead of recognized as the
     same content.
+
+    This alone only covers the ring buffer actually sliding (new's start
+    corresponds to somewhere in the MIDDLE of prev, not word 0) -- see
+    longest_common_prefix for the position-0 case, and merge_point below
+    for how the two get combined.
     """
     prev_norm = [_norm_word(w) for w in prev]
     new_norm = [_norm_word(w) for w in new]
@@ -135,6 +161,13 @@ def longest_overlap(prev, new):
         if prev_norm[-k:] == new_norm[:k]:
             return k
     return 0
+
+
+def merge_point(prev, new):
+    """How many words of `new` are already covered by `prev` and should
+    not be retyped -- the larger of the two alignments above, since a
+    bigger match is never a worse read of what's actually going on."""
+    return max(longest_common_prefix(prev, new), longest_overlap(prev, new))
 
 
 def _min_repeats_for(length):
@@ -217,7 +250,7 @@ def main():
                 # block is a known silence artifact -- skip it.
                 continue
 
-            k = longest_overlap(prev_words, words)
+            k = merge_point(prev_words, words)
             new_words = words[k:]
             if new_words:
                 prefix = " " if started else ""
