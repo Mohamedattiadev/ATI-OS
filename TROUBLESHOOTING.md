@@ -1634,6 +1634,53 @@ on screen against what matters.
   original bug — Escape ends up with no commands and the confirm popup
   silently stops working.
 
+### Bar fails to draw: `AttributeError: TextBox has no attribute: length`
+- **Symptom:** intermittent. The bar does not render at all on some
+  starts — 6 of 47 in one sample — and `qtile.log` shows:
+  ```
+  bar.py:440 in _resize -> sum(w.length for w in widgets ...)
+  AttributeError: TextBox has no attribute: length
+  ```
+- **Root cause, and why the message lies.** `Bar._resize()` sums `length`
+  over *every* widget, so one bad widget aborts the whole draw. Upstream
+  `_Widget.length` looks like it is already guarded, but the `try` only
+  wraps `calculate_length()`:
+  ```python
+  @property
+  def length(self):
+      if self.length_type == bar.CALCULATED:      # ← outside the try
+          try:
+              return int(self.calculate_length())
+          except Exception:
+              logger.exception(f"... widget {self.name} length")   # ← self.name!
+              return 0
+      return self._length                          # ← outside the try
+  ```
+  On a widget that has not been `_configure()`d, `self.bar` is missing, so
+  `calculate_length()` raises — then the handler formats `self.name`,
+  which is *also* missing, and that AttributeError escapes the property.
+  An AttributeError escaping a property makes Python fall back to
+  `Configurable.__getattr__`, which reports the **property** as missing.
+  Hence "has no attribute: length" when `length` plainly exists, and the
+  real culprit (`bar`, `name`) never appears in the message.
+- **Why `_SafeLengthMixin` did not cover it:** that mixin only applies to
+  chips built through `_derive()`. The bar also holds plain
+  `widget.TextBox` (8 of them), Spacer and Systray instances.
+- **Fix:** `_guard_widget_length()` wraps `_Widget.length` itself, so
+  every widget degrades to 0 width instead of killing the draw. It logs
+  with `type(self).__name__` rather than `self.name`, since `self.name` is
+  one of the attributes that can be missing. It is idempotent — a config
+  reload re-imports the module, and without the `_length_guarded` flag
+  each reload would wrap the previous wrapper.
+- **Verified** against real libqtile with a deliberately half-built
+  widget: before, `sum(w.length ...)` aborts; after, it returns 0 and the
+  bar draws. The setter still works (`_Widget.__init__` assigns
+  `self.length`), and healthy widgets are unaffected.
+- **This is a symptom, not the disease.** An unconfigured widget should
+  not reach `bar.widgets` at all — see the orphan widget-tree cleanup and
+  the SmartWidgetBox guards. The guard just means a mistake costs you one
+  chip instead of the entire bar.
+
 ### What qtile.log looks like on a clean restart
 After `Mod+Shift+R`, `~/.local/share/qtile/qtile.log` should contain
 **zero ERROR lines** and only these warnings. Anything else is new.
