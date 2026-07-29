@@ -290,6 +290,7 @@ halfway through a 500 MB download:
 
 ```bash
 bash ~/.dotfiles/installScripts/vm-test.sh --check   # creates nothing
+bash ~/.dotfiles/installScripts/vm-test.sh --smoke   # 2-min headless boot check
 bash ~/.dotfiles/installScripts/vm-test.sh           # fetch ISO, boot
 ```
 

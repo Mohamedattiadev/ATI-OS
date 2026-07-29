@@ -14,6 +14,7 @@
 #
 # Usage:
 #   ./vm-test.sh --check     # preflight only, touch nothing (do this first)
+#   ./vm-test.sh --smoke     # 2-minute headless boot: proves qemu/KVM/ISO work
 #   ./vm-test.sh             # preflight, fetch ISO, create disk, boot
 #   ./vm-test.sh --clean     # delete the VM disk and ISO
 
@@ -27,9 +28,10 @@ MIRROR="https://geo.mirror.pkgbuild.com/iso/latest"
 # Sized from what the install actually does, not from round numbers:
 # dcli sync (~5 min of pacman), whisper small.en (~500 MB), piper voices
 # (~60 MB), wallpapers clone (~500 MB), plus the base system.
-VM_RAM_MB=4096
+VM_RAM_MB="${VM_RAM_MB:-4096}"            # override for a tighter host
+SMOKE_RAM_MB=2048                         # --smoke only reaches a login prompt
 VM_DISK_GB=20
-NEED_HOST_FREE_MB=$((VM_RAM_MB + 1024))   # VM + headroom for the host
+HOST_HEADROOM_MB=1024
 NEED_DISK_GB=$((VM_DISK_GB + 2))          # qcow2 grows; leave room for the ISO
 
 r=$'\033[31m'; g=$'\033[32m'; y=$'\033[33m'; d=$'\033[90m'; o=$'\033[0m'
@@ -41,7 +43,12 @@ bad()  { printf '%s[vm-test]%s %s✖%s %s\n' "$d" "$o" "$r" "$o" "$*"; FAIL=1; }
 FAIL=0
 
 preflight() {
-  say "checking host can host a $((VM_RAM_MB / 1024))G / ${VM_DISK_GB}G VM…"
+  # $1 = guest RAM this run actually needs. --smoke boots a 2G guest and has
+  # no business demanding the full install budget; that mismatch made
+  # --smoke unrunnable on exactly the hosts it exists to help.
+  local guest_mb="${1:-$VM_RAM_MB}"
+  local need_mb=$((guest_mb + HOST_HEADROOM_MB))
+  say "checking host can host a ${guest_mb}MB / ${VM_DISK_GB}G VM…"
 
   if command -v qemu-system-x86_64 >/dev/null; then
     ok "qemu present"
@@ -60,10 +67,10 @@ preflight() {
   # available, not free: free excludes reclaimable page cache and will
   # scare you off a machine that is actually fine.
   local avail_mb; avail_mb=$(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo)
-  if (( avail_mb >= NEED_HOST_FREE_MB )); then
-    ok "RAM available: ${avail_mb}MB (need ${NEED_HOST_FREE_MB}MB)"
+  if (( avail_mb >= need_mb )); then
+    ok "RAM available: ${avail_mb}MB (need ${need_mb}MB)"
   else
-    bad "RAM available: ${avail_mb}MB, need ${NEED_HOST_FREE_MB}MB."
+    bad "RAM available: ${avail_mb}MB, need ${need_mb}MB."
     printf '            Close your browser, or run this when the machine is idle.\n'
     printf '            Starting the VM anyway will swap the host to a standstill\n'
     printf '            mid-install, which is the one failure this script exists to stop.\n'
@@ -172,8 +179,60 @@ INSTRUCTIONS
   exec qemu-system-x86_64 "${args[@]}"
 }
 
+smoke() {
+  # Prove qemu + KVM + the ISO + the disk all work, in ~2 minutes and 2 GB,
+  # BEFORE committing to a multi-hour install. If this fails there is no
+  # point starting the real thing; if it passes, everything up to the
+  # archinstall prompt is known good.
+  #
+  # It boots the ISO's kernel directly (-kernel/-initrd) rather than via the
+  # ISO bootloader, purely so `console=ttyS0` can be appended and the whole
+  # boot captured to a file. Booting the cdrom normally gives no serial
+  # output to assert on. archisolabel is read off the ISO rather than
+  # hardcoded -- it carries the release date (ARCH_YYYYMM) and changes every
+  # month.
+  local k="$VM_DIR/arch/boot/x86_64/vmlinuz-linux"
+  local i="$VM_DIR/arch/boot/x86_64/initramfs-linux.img"
+  local slog="$VM_DIR/smoke-serial.log"
+
+  [[ -f "$ISO" ]] || { bad "no ISO yet — run ./vm-test.sh first (or --check)"; exit 1; }
+  if [[ ! -f "$k" || ! -f "$i" ]]; then
+    say "extracting kernel + initramfs from the ISO…"
+    bsdtar -xf "$ISO" -C "$VM_DIR" \
+      arch/boot/x86_64/vmlinuz-linux arch/boot/x86_64/initramfs-linux.img
+  fi
+  local label
+  label=$(blkid -o value -s LABEL "$ISO" 2>/dev/null || echo ARCH_202607)
+  [[ -f "$DISK" ]] || create_disk
+
+  say "booting headless (${SMOKE_RAM_MB}MB, 240s cap) — watching for the login prompt…"
+  timeout 240 qemu-system-x86_64 \
+    -enable-kvm -m "$SMOKE_RAM_MB" -smp 2 \
+    -drive "file=$DISK,if=virtio,format=qcow2" \
+    -cdrom "$ISO" \
+    -kernel "$k" -initrd "$i" \
+    -append "archisobasedir=arch archisolabel=$label console=ttyS0" \
+    -netdev "user,id=n0" -device "virtio-net,netdev=n0" \
+    -display none -serial "file:$slog" \
+    -no-reboot >/dev/null 2>&1 || true   # timeout is the expected exit
+
+  # Assert on what the boot actually reached, not on qemu's exit status --
+  # it sits at the login prompt forever, so `timeout` always kills it.
+  local fail=0
+  grep -q 'Reached target.*Network'      "$slog" || { bad "never reached the network target"; fail=1; }
+  grep -q 'archiso login:'               "$slog" || { bad "never reached the login prompt"; fail=1; }
+  if (( fail )); then
+    printf '\n%s[vm-test] smoke test FAILED — full boot log: %s%s\n\n' "$r" "$slog" "$o"
+    exit 1
+  fi
+  ok "network up"
+  ok "reached 'archiso login:' — qemu, KVM, ISO and disk all good"
+  printf '\n'; say "full boot log: $slog"
+}
+
 case "${1:-}" in
   --check) preflight ;;
+  --smoke) preflight "$SMOKE_RAM_MB"; fetch_iso; smoke ;;
   --clean) rm -rf "$VM_DIR"; ok "removed $VM_DIR" ;;
   --help|-h) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
   "")      preflight; fetch_iso; create_disk; boot ;;
