@@ -1073,6 +1073,83 @@ subsystem. Each entry: **symptom → root cause → fix**.
 
 ---
 
+## Voice dictation
+
+### Mic sounds/transcribes like distorted noise, or dictation randomly gets much worse than a previous session
+- **Symptom:** `voice_dictate`/`voice_dictate_live` transcribe garbage, or
+  transcription quality visibly regresses between sessions with nothing
+  else changed. A raw capture (`arecord -f S16_LE -r 48000 -c 2 test.wav`,
+  played back or checked with `sox test.wav -n stat`) shows amplitude
+  pinned near ±1.0 and a mean/midline far from 0 instead of near-silent
+  ambient noise.
+- **Root cause:** two ALSA mixer controls stack for the internal mic —
+  `Capture` (0-63) and `Internal Mic Boost` (0-3) — and both defaulting
+  to 100% is ~60dB of combined gain, enough to saturate/clip the signal
+  into constant distorted noise even in a quiet room. `alsactl store`
+  alone doesn't make a fix stick: **WirePlumber** (the PipeWire session
+  manager) applies its own default ALSA levels to hardware nodes on every
+  session start, silently overriding whatever `alsactl restore` set
+  moments earlier.
+- **Fix:** `amixer -c 0 sset 'Internal Mic Boost' 0` and
+  `amixer -c 0 sset Capture 75%`, then make it durable —
+  `fix-mic-gain.service` (`.config/systemd/user/`, `After=wireplumber.service`,
+  waits 3s for WirePlumber's own init before reasserting) covers this;
+  the wizard's `mic-gain` module enables it. If dictation quality
+  regresses again after a fresh install/reboot, check
+  `systemctl --user is-enabled fix-mic-gain.service` first before
+  suspecting anything else.
+- **Verification methodology trap:** testing capture level with
+  `timeout N arecord ... ; sox file -n stat` gave wildly wrong readings
+  (amplitude pinned, huge DC offset) even on a properly-configured mic —
+  `timeout`'s SIGTERM can cut `arecord` off before it finalizes the WAV
+  header, corrupting the read. Use `arecord ... & PID=$!; sleep N;
+  kill -INT "$PID"; wait "$PID"` instead — SIGINT gives it a chance to
+  close the file properly.
+
+### `voice_dictate` (batch dictation) or any `whisper-cli` call feels much slower than it should
+- **Symptom:** transcribing even a few seconds of audio takes 10+
+  seconds. `whisper-cli ... 2>&1 | grep 'encode time'` shows several
+  seconds to tens of seconds for a short clip.
+- **Root cause:** the `whisper.cpp-git` AUR package's `PKGBUILD` builds
+  with `-D CMAKE_BUILD_TYPE=None` — no optimization flags at all, no
+  `-march=native`. Measured on one machine: 28s to encode 2s of audio
+  with the pacman-built `whisper-cli`, vs 2.1s with a `Release` build of
+  the identical source/model — a ~13x slowdown, present in every binary
+  the package ships (`whisper-cli`, `whisper-server`, ...). It also
+  doesn't build `whisper-stream` at all (needs `-DWHISPER_SDL2=ON`,
+  which the `PKGBUILD` doesn't pass), which `voice_dictate_live` depends
+  on.
+- **Fix:** the wizard's `whisper-fast` module builds Release binaries
+  from the same AUR-cached source and shadows the slow system ones via
+  `/usr/local/bin` (already earlier in `$PATH`) + `/usr/local/lib/whisper-cpp`
+  (registered through `/etc/ld.so.conf.d`, so they keep working even if
+  the yay build cache is later cleared). Full writeup + manual steps:
+  `.config/AtiScriptsV1/patches/README.md`.
+- **Verify it actually took:** `ldd $(which whisper-cli)` should resolve
+  to `/usr/local/lib/whisper-cpp/*`, not `/usr/lib/*`.
+
+### `voice_dictate_live` (live dictation) prints/types things you never said
+- **Symptom:** repeated phrases ("I'm sorry about the other one." several
+  times in a row), stray `[BLANK_AUDIO]`/`[inaudible]`/`*singing*` tags,
+  or a whole sentence duplicated back-to-back.
+- **Root cause:** `whisper-stream`'s `--step 0` (VAD sliding-window) mode
+  is upstream-documented as "a very naive example" — it never clears its
+  audio ring buffer, so every brief pause re-transcribes the whole
+  recording so far (or a slid window once you've talked past `--length`)
+  and prints that as a new block; greedy decoding on longer/messier audio
+  is also prone to genuine repetition-loop hallucinations. Typing each
+  block verbatim (the obvious approach) surfaces all of this directly.
+- **Fix:** already handled by `voice_dictate_live_typer.py` (word-level
+  append-only diffing against the previous block, bracket/asterisk tag
+  stripping, a repetition-loop collapse pass, `-bs 3` beam search instead
+  of greedy decoding) — nothing to do unless a *new* shape of this shows
+  up. If one does: paste the exact broken output and trace which specific
+  mechanism produced it (growing/sliding merge, tail revision, decoder
+  loop, hallucinated filler are the ones covered so far) — treat it as a
+  new, specific case rather than assuming it's already covered.
+
+---
+
 ## Testing on a fresh Arch VM
 
 `installScripts/vm-test.sh` automates the setup around this:

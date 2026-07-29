@@ -388,7 +388,11 @@ def render_brave_manifest(bg, bg_alt, fg, accents, epoch=None):
 
 def process(path: Path, force=False):
     out_file = OUT_DIR / (path.stem + ".json")
-    if out_file.exists() and not force:
+    # Cache is keyed by filename stem only. If the wallpaper file was
+    # replaced (re-downloaded, overwritten) but kept the same name, a
+    # cached palette for the OLD image would otherwise be reused forever.
+    # mtime comparison catches that cheaply without hashing file content.
+    if out_file.exists() and not force and out_file.stat().st_mtime >= path.stat().st_mtime:
         return None
     try:
         bg, bg_alt, fg, accents, dh = build_palette(path)

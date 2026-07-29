@@ -214,6 +214,44 @@ mod2 = "mod1"  # Secondary mod = ALT
 HOMEROW = os.path.expanduser(
     "~/Attia-Pro/Projects/Homerow_replika/homerow-hint"
 )
+
+# Bar indicator for homerow's direct alt+space/j//c bindings. These are not
+# qtile chords (see the "Hint mode is bound directly" comment on the keys
+# below), so the existing Chord widget cannot show them -- it only reflects
+# qtile's own chord state. Instead the homerow daemon itself writes the name
+# of whichever mode is currently open to this file the instant it opens one,
+# and removes the file the instant it closes (service.py: _set_mode /
+# _clear_mode) -- including on a hang, since a killed daemon's next start
+# clears any stale file left behind. Polling this is what lets the bar show
+# real homerow state rather than a proxy for it.
+HOMEROW_MODE_PATH = os.path.join(
+    os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "homerow-mode"
+)
+HOMEROW_MODE_LABELS = {
+    "hint": "󰍽   HINT",
+    "scroll": "   SCROLL",
+    "search": "   SEARCH",
+    "caret": "   CARET",
+}
+
+
+def homerow_mode_text():
+    """" LABEL " when a mode is open, bare "" when idle.
+
+    The padding is baked in here rather than left to the widget's `fmt`,
+    which wraps every poll result unconditionally -- an empty string through
+    `fmt=" {} "` would still render as a blank padded pill instead of true
+    zero width, so the chip would sit there empty between modes instead of
+    disappearing the way the Chord widget above it does.
+    """
+    try:
+        with open(HOMEROW_MODE_PATH, encoding="utf-8") as handle:
+            name = handle.read().strip()
+    except OSError:
+        return ""
+    if not name:
+        return ""
+    return f" {HOMEROW_MODE_LABELS.get(name, name.upper())} "
 myTerm = "kitty"  # My terminal of choice
 my2ndTerm = "alacritty"  # My terminal of choice
 myFullScreenTerm = "kitty --start-as=fullscreen"
@@ -1239,6 +1277,19 @@ def _reapply_xmodmap_when_idle(tries=40):
     against a held Super. This retries cheaply (250ms apart, ~10s total)
     and applies it the moment no key is down, keeping Caps->Alt reliable
     without ever blocking qtile.
+
+    Remapping the Caps Lock keycode to Alt_L only changes what keysym it
+    produces going forward -- it does not un-latch the X server's Lock
+    modifier if Caps Lock was pressed even once before this reapply ran
+    (e.g. in the brief window at session start while the key was still
+    bound to real Caps_Lock under the default keymap). Left alone that
+    stays stuck "on" indefinitely, since no key produces the Caps_Lock
+    keysym any more to toggle it back off -- every letter then types
+    capitalised everywhere, in every app, for the rest of the session.
+    So after reapplying the remap, also check whether Lock is stuck on
+    and clear it: `xdotool key Caps_Lock` can synthesize that keysym via
+    a throwaway keycode even though nothing is statically bound to it,
+    which is exactly what toggles the latch back off.
     """
     try:
         if not os.path.isfile(os.path.expanduser("~/.Xmodmap")):
@@ -1248,6 +1299,13 @@ def _reapply_xmodmap_when_idle(tries=40):
             return
         subprocess.Popen(
             ["sh", "-c", "xmodmap $HOME/.Xmodmap"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        subprocess.Popen(
+            ["sh", "-c",
+             "xset q | grep -qE 'Caps Lock:\\s+on\\b' && "
+             "xdotool key Caps_Lock"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
@@ -1477,6 +1535,50 @@ def _float_and_center_sum(client):
         return
 
     float_center_sum(client)
+
+
+FILE_CHOOSER_W_RATIO = 0.62
+FILE_CHOOSER_H_RATIO = 0.55
+FILE_CHOOSER_W_MIN = 700
+FILE_CHOOSER_H_MIN = 350
+
+
+def _is_gtk_file_chooser(client):
+    """GTK sets WM_WINDOW_ROLE to this for its file open/save dialog,
+    regardless of which app spawned it (browsers, file managers, ...) --
+    so matching on role here covers Brave/Chromium/Nautilus-style pickers
+    alike without one Match per application."""
+    try:
+        return (client.window.get_wm_window_role() or "") == "GtkFileChooserDialog"
+    except Exception:
+        return False
+
+
+@hook.subscribe.client_managed
+def _float_and_center_file_chooser(client):
+    """GTK file-open/save dialogs (e.g. a browser's download-to/save-as
+    picker) already float -- they carry wm_type=dialog, which is in
+    default_float_rules -- but they map at a large, off-centre size that
+    covers most of the browser behind them. Shrink and centre them, same
+    approach as _float_and_center_sum above."""
+    if not _is_gtk_file_chooser(client):
+        return
+    try:
+        group = getattr(client, "group", None)
+        screen = group.screen if group and group.screen else None
+        if screen is None:
+            return
+        w = max(FILE_CHOOSER_W_MIN, int(screen.width * FILE_CHOOSER_W_RATIO))
+        h = max(FILE_CHOOSER_H_MIN, int(screen.height * FILE_CHOOSER_H_RATIO))
+        client._enablefloating(
+            x=screen.x + (screen.width - w) // 2,
+            y=screen.y + (screen.height - h) // 2,
+            w=w,
+            h=h,
+        )
+        client.bring_to_front()
+    except Exception:
+        pass
 
 
 @hook.subscribe.client_managed
@@ -2161,15 +2263,35 @@ def exit_cheatsheet_mode(qtile):
 @hook.subscribe.enter_chord
 def auto_enable_wallpaper_picker(chord_name):
     if chord_name == "WallpaperPicker":
-        show_wallpaper_picker(qtile)
+        # Icon first, THEN build the popup. show_wallpaper_picker() loads
+        # every wallpaper in the directory and lays out 3 columns of
+        # PopupText controls before it returns -- measured well over a
+        # second with a few hundred wallpapers -- so doing it before the
+        # toggle meant the chip sat on its closed icon for that whole
+        # stretch after the chord had already opened. The toggle itself is
+        # just a state flip + one redraw, so flipping it first makes the
+        # icon land the instant you enter the chord, not after the popup
+        # finishes building.
         w = qtile.widgets_map.get("wallpaper_toggle")
         if w and not w.box_is_open:
             w.toggle()
+        show_wallpaper_picker(qtile)
 
 
 def close_wallpaper_mode(qtile):
     close_wallpaper_picker()
-    qtile.ungrab_chord()
+    # ungrab_chord() only pops the innermost level and re-grabs whatever
+    # chord is beneath it -- correct for a keyboard "back" inside a nested
+    # menu, but WallpaperPicker is nested under Rofi-Mode (mod+p, then b),
+    # so that left qtile silently re-grabbed into Rofi-Mode's keymap with
+    # no visible indicator. The chip's next click assumed a clean root
+    # state and replayed [mod]+p then b to re-enter -- [mod]+p is not
+    # bound inside Rofi-Mode's own keymap (only bare "p" is, for
+    # rofi-pass), so it was swallowed and the reopen relied on "b" alone,
+    # which only works if nothing else consumed the chord state first.
+    # ungrab_all_chords() drops the whole stack back to root bindings, so
+    # a chip click is always a real, independent toggle.
+    qtile.ungrab_all_chords()
 
     w = qtile.widgets_map.get("wallpaper_toggle")
     if w and w.box_is_open:
@@ -2186,6 +2308,17 @@ def toggle_wallpaper_picker(qtile):
         close_wallpaper_mode(qtile)
     else:
         SmartWidgetBox.close_all()
+        # Flip the icon here, synchronously with the click, rather than
+        # waiting on auto_enable_wallpaper_picker's enter_chord hook below.
+        # simulate_keypress() feeds fake events back through the X server,
+        # so that hook only fires once qtile's event loop gets them back --
+        # a real (if usually short) round trip, during which the icon sat
+        # on "closed" and only flipped once that landed. auto_enable_
+        # wallpaper_picker's own `not w.box_is_open` guard makes toggling
+        # again once the chord actually opens a no-op, so this can't double
+        # -toggle.
+        if w and not w.box_is_open:
+            w.toggle()
         qtile.simulate_keypress([mod], "p")
         qtile.simulate_keypress([], "b")
 
@@ -2208,10 +2341,13 @@ def cleanup_on_leave():
         close_fish_kitty_cheatsheet()
 
     elif ACTIVE_CHORD == "WallpaperPicker":
-        close_wallpaper_picker()
+        # Icon first, same reasoning as auto_enable_wallpaper_picker above:
+        # don't make the chip's redraw wait behind the picker's own
+        # teardown work.
         w = qtile.widgets_map.get("wallpaper_toggle")
         if w and w.box_is_open:
             w.toggle()
+        close_wallpaper_picker()
 
     elif ACTIVE_CHORD in ("PASSTHROUGH", "PASSTHROUGH-CONFIRM"):
         # Deferred because ungrab_chord() still calls ungrab_keys() and pops the
@@ -2302,7 +2438,23 @@ def chord_chip_leave():
 _SAVED_WIDGETBOX_NAMES = []
 
 
+_CHORD_OWNED_WIDGETBOXES = {"wallpaper_toggle"}
+
+
 def _all_smart_widgetboxes():
+    """SmartWidgetBoxes eligible for the generic hide-while-in-a-chord
+    treatment below.
+
+    Excludes "wallpaper_toggle": that chip's open/closed icon is not an
+    independent user-toggled panel -- it *is* the WallpaperPicker chord's
+    own state, driven directly by auto_enable_wallpaper_picker (entry) and
+    cleanup_on_leave (exit). Left in this list, entering ANY chord
+    (including WallpaperPicker's own entry, since this hook has no name
+    filter) closed it back out the instant those functions opened it, and
+    leaving the chord then reopened it 50ms later via
+    restore_widgetboxes_on_chord_leave -- exactly backwards from the real
+    state, which is why the chip's icon never seemed to track open/close.
+    """
     seen = set()
     for screen in qtile.screens:
         for pos in ("top", "bottom", "left", "right"):
@@ -2314,12 +2466,20 @@ def _all_smart_widgetboxes():
                 # a subclass, so the clickable boxes (tooltip_widgetbox,
                 # wallpaper_toggle) never matched by name and were only
                 # ever found via the registry fallback below.
-                if isinstance(w, SmartWidgetBox) and id(w) not in seen:
+                if (
+                    isinstance(w, SmartWidgetBox)
+                    and id(w) not in seen
+                    and getattr(w, "name", None) not in _CHORD_OWNED_WIDGETBOXES
+                ):
                     seen.add(id(w))
                     yield w
     # also cover any SmartWidgetBox tracked via its own registry
     for w in list(getattr(SmartWidgetBox, "_instances", [])):
-        if id(w) not in seen and w._usable():
+        if (
+            id(w) not in seen
+            and w._usable()
+            and getattr(w, "name", None) not in _CHORD_OWNED_WIDGETBOXES
+        ):
             seen.add(id(w))
             yield w
 
@@ -2680,6 +2840,27 @@ def normal_user_bar():
                 # "Wifi-Mode": "󰤨   WIFI : j , k , Enter , x , r",
             }.get(name, name.upper()),
         ),
+        # Homerow mode chip — see the matching one in right_side_widgets()
+        # and homerow_mode_text() near the top of the file for why this
+        # can't just reuse the Chord widget above it.
+        #
+        # Explicit chip_color/foreground rather than colors[N] indices:
+        # colors[2] (#1c2126) landed almost exactly on DEFAULT_CHIP_COLOR
+        # (#1c1f24, the chip()-wrapped widget's default background) --
+        # near-black text on a near-black chip, invisible. These two are
+        # picked from opposite ends of the live palette (brightest accent,
+        # darkest background) specifically so that can't happen again
+        # regardless of what the active theme's other slots resolve to.
+        chip(
+            widget.GenPollText,
+            chip_color=colors[4],
+            name="homerow_mode_chip_nu",
+            func=homerow_mode_text,
+            update_interval=0.2,
+            padding=11,
+            foreground=colors[0],
+            background=None,
+        ),
         widget.TextBox(
             text="|",
             font="Ubuntu Mono",
@@ -2907,6 +3088,24 @@ def right_side_widgets():
                 # NOTE: updates popup  will be used later
                 # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
             }.get(name, name.upper()),
+        ),
+        # Homerow mode chip — same idea as the Chord widget above, but for
+        # homerow's direct alt+space/j//c bindings, which are not qtile
+        # chords and so never touch that widget. See homerow_mode_text().
+        #
+        # Explicit chip_color/foreground, not colors[N] indices -- see the
+        # matching comment on homerow_mode_chip_nu in normal_user_bar() for
+        # why: colors[2] landed on almost exactly DEFAULT_CHIP_COLOR here,
+        # invisible near-black text on a near-black chip.
+        chip(
+            widget.GenPollText,
+            chip_color=colors[4],
+            name="homerow_mode_chip",
+            func=homerow_mode_text,
+            update_interval=0.2,
+            padding=11,
+            foreground=colors[0],
+            background=None,
         ),
         # tooltip_widgetbox (lamp) — original leftmost of right cluster
         chip(
@@ -4081,12 +4280,19 @@ keys = [
         lazy.widget["2nd_system_widgetbox"].toggle(),
         desc="Toggle 2nd system widget box",
     ),
-    # --- voice dictation (whisper.cpp) ---
+    # --- voice dictation, live (whisper.cpp stream, VAD-triggered per-phrase typing) ---
     Key(
         [mod, "shift"],
         "v",
+        lazy.spawn("voice_dictate_live"),
+        desc="Start/stop live voice dictation (types each phrase as you pause)",
+    ),
+    # --- voice dictation, batch (whisper.cpp small.en, one shot at manual stop) ---
+    Key(
+        [mod, "shift"],
+        "b",
         lazy.spawn("voice_dictate"),
-        desc="Start/stop voice dictation (whisper.cpp -> xdotool type)",
+        desc="Start/stop batch voice dictation (whisper.cpp -> xdotool type)",
     ),
     # --- refresh PC (reset_PC script) ---
     Key(

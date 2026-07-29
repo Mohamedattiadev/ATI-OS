@@ -15,6 +15,19 @@
 
 set -euo pipefail
 
+# Re-exec under setsid so this invocation is always its own session AND
+# process-group leader (pgid == pid), regardless of how the caller spawned
+# us (some callers already use start_new_session, others just background
+# with `&`, which leaves us sharing the caller's pgid). This matters for
+# the preemption kill below: it targets a process GROUP, and that is only
+# safe/complete if every synchronous child we spawn (the python3 heredocs
+# that write colors.json, kitty conf, etc.) shares our pgid rather than
+# some ancestor's.
+if [[ "${THEME_APPLY_REEXEC:-0}" != 1 ]]; then
+  export THEME_APPLY_REEXEC=1
+  exec setsid "$0" "$@"
+fi
+
 MODE="${1:-doomone}"
 CACHE_DIR="$HOME/.cache/qtile"
 STATE_FILE="$CACHE_DIR/theme_mode"
@@ -29,17 +42,30 @@ mkdir -p "$CACHE_DIR"
 LOCK="$CACHE_DIR/.theme-apply.pid"
 # Preempt any in-flight run so rapid picker clicks always land the
 # latest choice instead of silently no-op'ing on the lock.
+#
+# Kill the whole process GROUP (-old_pid), not just old_pid itself. A
+# plain `kill old_pid` only signals the outer bash script; a synchronous
+# child it's currently blocked on (e.g. one of the python3 heredocs below
+# that writes ~/.cache/wal/colors.json) is never touched, gets orphaned,
+# and keeps running to completion in the background. Since none of those
+# writes are atomic, an orphaned writer from a SUPERSEDED wallpaper/theme
+# pick can finish after the new invocation and silently overwrite the
+# palette you actually picked with the stale one — invisible during the
+# live session (qtile just keeps its already-applied state) but wrong on
+# the next cold boot, when colors.py reads the file fresh off disk. The
+# re-exec above guarantees old_pid is a process-group leader so `-old_pid`
+# reliably reaches every synchronous child.
 if [[ -f "$LOCK" ]]; then
   old_pid="$(cat "$LOCK" 2>/dev/null || true)"
   if [[ -n "$old_pid" ]] && [[ "$old_pid" != "$$" ]] && kill -0 "$old_pid" 2>/dev/null; then
     if grep -q theme-apply "/proc/$old_pid/cmdline" 2>/dev/null; then
-      kill "$old_pid" 2>/dev/null || true
+      kill -- -"$old_pid" 2>/dev/null || true
       # Give it a moment to release resources.
       for _ in 1 2 3 4 5; do
         kill -0 "$old_pid" 2>/dev/null || break
         sleep 0.1
       done
-      kill -9 "$old_pid" 2>/dev/null || true
+      kill -9 -- -"$old_pid" 2>/dev/null || true
     fi
   fi
 fi

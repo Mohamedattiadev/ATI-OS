@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# voice_dictate_live — press keybind to start listening; press again to stop.
+# Types each phrase the instant you pause, instead of waiting for you to
+# manually stop the whole recording like voice_dictate does.
+#
+# Backend: whisper.cpp's whisper-stream in VAD sliding-window mode
+# (--step 0). It does NOT cleanly emit one block per finished phrase --
+# examples/stream/stream.cpp never clears its audio ring buffer in this
+# mode, so every brief pause re-transcribes the WHOLE recording so far
+# from t=0 and prints that as a new, longer block. voice_dictate_live_typer.py
+# handles this: word-level append-only diffing against the previous block
+# (never backspaces), timestamp-bracket stripping (VAD mode forces
+# per-line timestamps on with no flag to disable them), and filtering
+# Whisper's well-known silence hallucinations ("thank you", "(laughs)",
+# etc). Uses base.en rather than voice_dictate's small.en: latency matters
+# more than max accuracy for something meant to feel instant, and base.en
+# stays comfortably under real-time on a 4-core CPU -- override via
+# WHISPER_MODEL if you want to trade some speed for small.en's accuracy.
+#
+# --poll-ms/--vad-tail-ms (how often, and over what trailing window, a
+# pause gets checked for) are also patched in: upstream hardcoded these at
+# 2000ms/1000ms with no CLI flag, which meant up to ~2s of dead air before
+# a finished phrase even started transcribing. Lowered to 800/350 here so
+# a pause is noticed in well under half a second.
+#
+# One-time setup: build whisper-stream with SDL2 mic capture support
+# (the whisper.cpp-git AUR package doesn't build it by default), apply
+# patches/whisper-stream-poll-ms.patch (adds --poll-ms/--vad-tail-ms --
+# not upstreamed), and grab the base.en model --
+#   cd <whisper.cpp source>          # e.g. ~/.cache/yay/whisper.cpp-git/src/whisper.cpp-git
+#   git apply /path/to/patches/whisper-stream-poll-ms.patch
+#   cmake -S . -B build-stream -DWHISPER_SDL2=ON -DCMAKE_BUILD_TYPE=Release
+#   cmake --build build-stream --target whisper-stream -j$(nproc)
+#   sudo install -Dm755 build-stream/bin/whisper-stream /usr/local/bin/whisper-stream
+#   curl -L -o ~/.local/share/whisper/ggml-base.en.bin \
+#     https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+
+set -uo pipefail
+
+MODEL="${WHISPER_MODEL:-$HOME/.local/share/whisper/ggml-base.en.bin}"
+LANG="${WHISPER_LANG:-en}"
+VAD_THOLD="${WHISPER_VAD_THOLD:-0.6}"
+# Shorter than upstream's 10s example default: less silence-padding can
+# end up in any one window, which is exactly the kind of audio that sends
+# Whisper's greedy decoder into a repetition loop ("I'm sorry about the
+# other one." x6 in one block, observed on this setup with the old 12s
+# window) instead of just stopping.
+WINDOW_MS="${WHISPER_WINDOW_MS:-8000}"
+# Beam search instead of greedy decoding. This is the actual fix for that
+# repetition-loop failure mode -- greedy decoding has no mechanism to
+# escape once it locks onto repeating a phrase, beam search keeps
+# alternative candidates alive so it doesn't get stuck the same way.
+# Costs almost nothing here: decode time is a rounding error next to
+# encode time (measured ~2.2s encode vs 0ms decode either way for a few
+# seconds of audio on this CPU).
+BEAM_SIZE="${WHISPER_BEAM_SIZE:-3}"
+# How often (ms) whisper-stream checks for a pause, and how much trailing
+# audio that check looks at -- upstream hardcoded these at 2000/1000 with
+# no CLI flag; patched examples/stream/stream.cpp to expose --poll-ms /
+# --vad-tail-ms and lowered the defaults here so a pause is noticed in a
+# few hundred ms instead of up to 2s.
+POLL_MS="${WHISPER_POLL_MS:-800}"
+VAD_TAIL_MS="${WHISPER_VAD_TAIL_MS:-350}"
+TMPDIR="/tmp/voice_dictate_live"
+PIDFILE="$TMPDIR/stream.pid"
+NOTIFY_TAG="voice_dictate_live"
+
+mkdir -p "$TMPDIR"
+
+pill() {
+  local urgency="$1" summary="$2" body="${3:-}"
+  notify-send -u "$urgency" -t 0 \
+    -h "string:x-canonical-private-synchronous:$NOTIFY_TAG" \
+    "$summary" "$body"
+}
+
+clear_pill() {
+  # Same tag as the "Listening..." pill, so this replaces it in place
+  # rather than leaving it up forever or stacking a second notification --
+  # then auto-dismisses itself after 1.5s.
+  notify-send -t 1500 \
+    -h "string:x-canonical-private-synchronous:$NOTIFY_TAG" \
+    "🎙  Stopped" 2>/dev/null || true
+}
+
+if [[ ! -f "$MODEL" ]]; then
+  pill critical "voice_dictate_live" "Model missing: $MODEL"
+  exit 1
+fi
+
+for bin in whisper-stream xdotool python3; do
+  command -v "$bin" >/dev/null || {
+    pill critical "voice_dictate_live" "Missing binary: $bin"
+    exit 1
+  }
+done
+
+TYPER="$(dirname "$(readlink -f "$0")")/voice_dictate_live_typer.py"
+if [[ ! -f "$TYPER" ]]; then
+  pill critical "voice_dictate_live" "Missing helper: $TYPER"
+  exit 1
+fi
+
+# ------------------------------------------------------------------
+# Stop mode: PID file exists -> kill the listener.
+# ------------------------------------------------------------------
+if [[ -f "$PIDFILE" ]]; then
+  PID="$(cat "$PIDFILE")"
+  rm -f "$PIDFILE"
+  kill "$PID" 2>/dev/null || true
+  # whisper-stream takes a moment to tear down the SDL audio device --
+  # a plain kill without waiting can leave it holding the mic briefly.
+  for _ in $(seq 1 20); do
+    kill -0 "$PID" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill -9 "$PID" 2>/dev/null || true
+  clear_pill
+  exit 0
+fi
+
+# ------------------------------------------------------------------
+# Start mode: launch whisper-stream, hand its stdout to the Python typer.
+# ------------------------------------------------------------------
+pill normal "🎙  Listening…" "speak — press bind again to stop"
+
+# `$!` after a backgrounded `cmd > >(...) &` is cmd's own PID, not the
+# process-substitution reader's -- that's what we need in the PID file
+# so stop-mode kills whisper-stream (and its mic hold) directly.
+whisper-stream -m "$MODEL" -l "$LANG" -t "$(nproc)" \
+  --step 0 --length "$WINDOW_MS" -vth "$VAD_THOLD" \
+  --poll-ms "$POLL_MS" --vad-tail-ms "$VAD_TAIL_MS" \
+  -bs "$BEAM_SIZE" \
+  > >(python3 "$TYPER") 2>/dev/null &
+WS_PID=$!
+echo "$WS_PID" > "$PIDFILE"
+
+# This machine routinely has other CPU-heavy work running (other agent
+# sessions, browser, etc) at normal priority. whisper-stream's own VAD
+# polling and audio-capture timing are sensitive to getting scheduled
+# promptly -- under contention, missed timing windows mean worse-aligned
+# audio chunks, not just slower transcription, which is the concrete
+# mechanism behind an accuracy swing between two otherwise-identical runs
+# (one measured ~88%, the other ~50%, back to back). Bumping scheduling
+# priority (not real-time -- just consistently favored over normal-
+# priority contention) directly addresses that. Non-fatal if this ever
+# can't get sudo for some reason: dictation still works, just as
+# vulnerable to contention as before.
+sudo renice -n -10 -p "$WS_PID" >/dev/null 2>&1 || true

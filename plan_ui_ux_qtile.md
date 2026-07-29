@@ -64,10 +64,28 @@ proper dependency order (`After=graphical-session.target`), one-shot restart via
 background bash job — silent death, no restart.
 
 ### Voice command
-Bound to `Win+Shift+V` → `voice_dictate` script. First press = start recording
-(sox). Second press = stop + transcribe via whisper.cpp (small.en, ~460MB) +
-type at cursor with xdotool. Requires model at `~/.local/share/whisper/ggml-small.en.bin`
-(install.sh downloads on setup). Deps: `whisper.cpp-git` (AUR), `sox`, `xdotool` — all in dcli.
+Two modes, both via whisper.cpp + xdotool, both toggled by pressing the
+same bind again to stop:
+
+- **Live** — `Win+Shift+V` → `voice_dictate_live`. Types each phrase within
+  well under a second of you pausing, via `whisper-stream` in VAD
+  sliding-window mode + `ggml-base.en.bin` (~148MB) for speed. Needs a
+  Release build of `whisper-stream` (the `whisper.cpp-git` AUR package
+  builds unoptimized and doesn't build this binary at all — see
+  `.config/AtiScriptsV1/patches/README.md`) plus the
+  `voice_dictate_live_typer.py` companion, which handles whisper-stream's
+  rough edges (growing/sliding transcription blocks, repetition loops,
+  non-speech tags) that would otherwise show up as garbled/duplicated text.
+- **Batch** — `Win+Shift+B` → `voice_dictate`. First press = start
+  recording (sox), second press = stop + transcribe the whole thing at
+  once via `whisper-cli` + `ggml-small.en.bin` (~488MB, meaningfully more
+  accurate, not instant) + type at cursor with xdotool.
+
+Both require `~/.local/share/whisper/ggml-{base,small}.en.bin` (`wizard.sh`'s
+`whisper` module downloads both) and the Release-optimized `whisper-cli`/
+`whisper-stream` shadowed via `/usr/local` (`whisper-fast` module). Deps:
+`whisper.cpp-git` (AUR, source only — see above), `sox`, `sdl2`, `xdotool`
+— all in dcli.
 
 ---
 

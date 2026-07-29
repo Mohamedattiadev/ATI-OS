@@ -1,0 +1,50 @@
+diff --git a/examples/stream/stream.cpp b/examples/stream/stream.cpp
+index 94f9016e0..a40077236 100644
+--- a/examples/stream/stream.cpp
++++ b/examples/stream/stream.cpp
+@@ -24,6 +24,8 @@ struct whisper_params {
+     int32_t max_tokens = 32;
+     int32_t audio_ctx  = 0;
+     int32_t beam_size  = -1;
++    int32_t poll_ms    = 2000; // how often (VAD mode) to check for a pause
++    int32_t vad_tail_ms = 1000; // how much trailing audio the pause-check looks at
+ 
+     float vad_thold    = 0.6f;
+     float freq_thold   = 100.0f;
+@@ -62,6 +64,8 @@ static bool whisper_params_parse(int argc, char ** argv, whisper_params & params
+         else if (arg == "-ac"   || arg == "--audio-ctx")     { params.audio_ctx     = std::stoi(argv[++i]); }
+         else if (arg == "-bs"   || arg == "--beam-size")     { params.beam_size     = std::stoi(argv[++i]); }
+         else if (arg == "-vth"  || arg == "--vad-thold")     { params.vad_thold     = std::stof(argv[++i]); }
++        else if (                  arg == "--poll-ms")       { params.poll_ms       = std::stoi(argv[++i]); }
++        else if (                  arg == "--vad-tail-ms")   { params.vad_tail_ms   = std::stoi(argv[++i]); }
+         else if (arg == "-fth"  || arg == "--freq-thold")    { params.freq_thold    = std::stof(argv[++i]); }
+         else if (arg == "-tr"   || arg == "--translate")     { params.translate     = true; }
+         else if (arg == "-nf"   || arg == "--no-fallback")   { params.no_fallback   = true; }
+@@ -101,6 +105,8 @@ void whisper_print_usage(int /*argc*/, char ** argv, const whisper_params & para
+     fprintf(stderr, "  -ac N,    --audio-ctx N   [%-7d] audio context size (0 - all)\n",                   params.audio_ctx);
+     fprintf(stderr, "  -bs N,    --beam-size N   [%-7d] beam size for beam search\n",                      params.beam_size);
+     fprintf(stderr, "  -vth N,   --vad-thold N   [%-7.2f] voice activity detection threshold\n",           params.vad_thold);
++    fprintf(stderr, "            --poll-ms N     [%-7d] how often (ms) to check for a pause (VAD mode)\n", params.poll_ms);
++    fprintf(stderr, "            --vad-tail-ms N [%-7d] trailing audio (ms) the pause-check looks at\n",   params.vad_tail_ms);
+     fprintf(stderr, "  -fth N,   --freq-thold N  [%-7.2f] high-pass frequency cutoff\n",                   params.freq_thold);
+     fprintf(stderr, "  -tr,      --translate     [%-7s] translate from source language to english\n",      params.translate ? "true" : "false");
+     fprintf(stderr, "  -nf,      --no-fallback   [%-7s] do not use temperature fallback while decoding\n", params.no_fallback ? "true" : "false");
+@@ -293,15 +299,15 @@ int main(int argc, char ** argv) {
+             const auto t_now  = std::chrono::high_resolution_clock::now();
+             const auto t_diff = std::chrono::duration_cast<std::chrono::milliseconds>(t_now - t_last).count();
+ 
+-            if (t_diff < 2000) {
++            if (t_diff < params.poll_ms) {
+                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
+ 
+                 continue;
+             }
+ 
+-            audio.get(2000, pcmf32_new);
++            audio.get(params.poll_ms, pcmf32_new);
+ 
+-            if (::vad_simple(pcmf32_new, WHISPER_SAMPLE_RATE, 1000, params.vad_thold, params.freq_thold, false)) {
++            if (::vad_simple(pcmf32_new, WHISPER_SAMPLE_RATE, params.vad_tail_ms, params.vad_thold, params.freq_thold, false)) {
+                 audio.get(params.length_ms, pcmf32);
+             } else {
+                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
