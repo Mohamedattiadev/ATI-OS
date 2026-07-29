@@ -35,7 +35,14 @@ setbg() {
   esac
 
   mkdir -p "$HOME/.cache"
-  printf '%s' "$1" >"$HOME/.cache/wall"
+  # Symlink, never write-through. theme-apply migrates ~/.cache/wall into
+  # a symlink the first time it sees a plain-text file here; after that, a
+  # plain `printf > "$HOME/.cache/wall"` writes THROUGH the symlink and
+  # overwrites/corrupts whatever wallpaper file it points to instead of
+  # repointing it. Remove-then-symlink (same pattern WallpaperPopup.py
+  # uses) always repoints cleanly regardless of current file/symlink state.
+  rm -f "$HOME/.cache/wall"
+  ln -sfn "$1" "$HOME/.cache/wall"
 
   # Retheme ONLY when the active mode is "wal". "wal" is the mode that
   # means "follow the wallpaper", so a new wallpaper must re-derive the
@@ -56,9 +63,8 @@ main() {
     if [ "$use_imv" = 0 ]; then
       # shellcheck disable=SC2154
       wallpaper="$(sxiv -t -o "${setbg_dir}")"
-      echo "$wallpaper" >"$HOME"/.cache/wall
       setbg "$wallpaper"
-      betterlockscreen -u "$(cat "$HOME"/.cache/wall)" || echo "Betterlockscreen image could not be created."
+      betterlockscreen -u "$wallpaper" || echo "Betterlockscreen image could not be created."
     else
       # Read each line printed to stdin, imv behaves weird
       # We also ignore a shellcheck issue because it's a bug
@@ -78,10 +84,9 @@ main() {
       pidof "xwallpaper" && killall "xwallpaper"
       wallpaper="$(find "${setbg_dir}" -type f | shuf -n 1)"
       setbg "$wallpaper" &
-      echo "$wallpaper" >"$HOME/.cache/wall"
       valid_paper="$(printf "Yes\nNo" | ${MENU} "Do you like the new wallpaper?")"
     done
-    betterlockscreen -u "$(cat "$HOME"/.cache/wall)" || echo "Betterlockscreen image could not be created."
+    betterlockscreen -u "$wallpaper" || echo "Betterlockscreen image could not be created."
     ;;
   "Exit") echo "Program terminated" && exit 1 ;;
   *) err "Invalid choice" ;;
