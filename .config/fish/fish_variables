@@ -1,9 +1,13 @@
 # This file contains fish universal variable definitions.
 # VERSION: 3.0
 SETUVAR --export ADB_LIBUSB:0
+SETUVAR --export ANDROID_HOME:/home/ati/Android/Sdk
+SETUVAR --export ANDROID_SDK_ROOT:/home/ati/Android/Sdk
+SETUVAR --export CHROME_EXECUTABLE:/usr/bin/google\x2dchrome\x2dstable
 SETUVAR --export EDITOR:nvim
 SETUVAR --export FZF_DEFAULT_OPTS:\x2d\x2dheight\x3d60\x25\x20\x2d\x2dlayout\x3dreverse\x20\x2d\x2dmulti\x20\x2d\x2dinfo\x3dinline\x20\x2d\x2dtiebreak\x3dbegin\x2clength\x20\x2d\x2dansi\x20\x2d\x2dborder\x3drounded\x20\x2d\x2dcolor\x3dfg\x3a\x23bbc2cf\x2cbg\x3a\x23282c34\x2chl\x3a\x2351afef\x20\x2d\x2dcolor\x3dfg\x2b\x3a\x23eeeeee\x2cbg\x2b\x3a\x233e4451\x2chl\x2b\x3a\x2351afef\x20\x2d\x2dcolor\x3dinfo\x3a\x23c678dd\x2cprompt\x3a\x2398be65\x2cpointer\x3a\x23ff6c6b\x20\x2d\x2dcolor\x3dmarker\x3a\x23da8548\x2cspinner\x3a\x2361afef\x2cheader\x3a\x2351afef\x20\x2d\x2dpreview\x2dwindow\x3dright\x3a55\x25\x3awrap\x20\x2d\x2dpreview\x3d\x27clear\x3b\x20bat\x20\x2d\x2dstyle\x3dnumbers\x2cchanges\x20\x2d\x2dcolor\x3dalways\x20\x2d\x2dpaging\x3dnever\x20\x7b\x7d\x20\x7c\x7c\x20exa\x20\x2dT\x20\x2d\x2dicons\x20\x7b\x7d\x20\x7c\x7c\x20file\x20\x7b\x7d\x27
 SETUVAR --export FZF_PREVIEW_OPTS:bat\x20\x2d\x2dstyle\x3dnumbers\x2cchanges\x20\x2d\x2dcolor\x3dalways\x20\x2d\x2dline\x2drange\x3d\x3a100\x20\x7b\x7d\x20\x7c\x7c\x20exa\x20\x2dT\x20\x2d\x2dicons\x20\x7b\x7d\x20\x7c\x7c\x20file\x20\x7b\x7d
+SETUVAR --export JAVA_HOME:/usr/lib/jvm/java\x2d17\x2dopenjdk
 SETUVAR --export --path PATH:/home/ati/\x2econfig/qtile/scripts\x1e/home/ati/\x2ecargo/bin\x1e/home/ati/\x2epyenv/bin\x1e/run/user/1000/fnm_multishells/15611_1757285666521/bin\x1e/home/ati/\x2etmux/plugins/tmuxifier/bin\x1e/home/ati/\x2ebin\x1e/home/ati/\x2elocal/bin\x1e/home/ati/\x2econfig/emacs/bin\x1e/home/ati/Applications\x1e/var/lib/flatpak/exports/bin/\x1e/home/ati/Desktop\x1e/home/ati/\x2elocal/share/nvim/mason/bin\x1e/home/ati/\x2ecargo/bin\x1e/home/ati/\x2epyenv/shims\x1e/home/ati/\x2epyenv/bin\x1e/run/user/1000/fnm_multishells/14953_1757285657514/bin\x1e/home/ati/\x2etmux/plugins/tmuxifier/bin\x1e/usr/local/bin\x1e/home/ati/\x2ecargo/bin\x1e/home/ati/\x2epyenv/bin\x1e/run/user/1000/fnm_multishells/1662_1757285043598/bin\x1e/home/ati/\x2elocal/share/pnpm\x1e/home/ati/\x2etmux/plugins/tmuxifier/bin\x1e/usr/local/sbin\x1e/usr/bin\x1e/usr/lib/jvm/default/bin\x1e/usr/bin/site_perl\x1e/usr/bin/vendor_perl\x1e/usr/bin/core_perl\x1e/var/lib/snapd/snap/bin
 SETUVAR --export PYENV_ROOT:/home/ati/\x2epyenv
 SETUVAR --export SUDO_EDITOR:nvim

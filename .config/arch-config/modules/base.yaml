@@ -37,6 +37,18 @@ packages:
   # speed / safety
   - zram-generator
   - earlyoom
+  # Desktop colour-scheme preference channel.
+  #
+  # This is what republishes `org.gnome.desktop.interface color-scheme` as
+  # `org.freedesktop.appearance color-scheme` -- the key Chromium reads to
+  # decide whether to tell a website `prefers-color-scheme: dark`. Without
+  # the portal the wizard's `dark-mode` module still sets gsettings
+  # successfully, but nothing publishes it, every site serves its LIGHT
+  # stylesheet, and you end up reaching for force-dark again: the exact bug
+  # documented in TROUBLESHOOTING.md. The -gtk backend is the one that
+  # answers the Settings interface on a desktop that is neither GNOME nor KDE.
+  - xdg-desktop-portal
+  - xdg-desktop-portal-gtk
 
 exclude: []
 conflicts:
