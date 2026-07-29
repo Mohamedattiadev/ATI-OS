@@ -40,7 +40,20 @@ set -uo pipefail
 MODEL="${WHISPER_MODEL:-$HOME/.local/share/whisper/ggml-base.en.bin}"
 LANG="${WHISPER_LANG:-en}"
 VAD_THOLD="${WHISPER_VAD_THOLD:-0.6}"
-WINDOW_MS="${WHISPER_WINDOW_MS:-12000}"
+# Shorter than upstream's 10s example default: less silence-padding can
+# end up in any one window, which is exactly the kind of audio that sends
+# Whisper's greedy decoder into a repetition loop ("I'm sorry about the
+# other one." x6 in one block, observed on this setup with the old 12s
+# window) instead of just stopping.
+WINDOW_MS="${WHISPER_WINDOW_MS:-8000}"
+# Beam search instead of greedy decoding. This is the actual fix for that
+# repetition-loop failure mode -- greedy decoding has no mechanism to
+# escape once it locks onto repeating a phrase, beam search keeps
+# alternative candidates alive so it doesn't get stuck the same way.
+# Costs almost nothing here: decode time is a rounding error next to
+# encode time (measured ~2.2s encode vs 0ms decode either way for a few
+# seconds of audio on this CPU).
+BEAM_SIZE="${WHISPER_BEAM_SIZE:-3}"
 # How often (ms) whisper-stream checks for a pause, and how much trailing
 # audio that check looks at -- upstream hardcoded these at 2000/1000 with
 # no CLI flag; patched examples/stream/stream.cpp to expose --poll-ms /
@@ -114,5 +127,6 @@ pill normal "🎙  Listening…" "speak — press bind again to stop"
 whisper-stream -m "$MODEL" -l "$LANG" -t "$(nproc)" \
   --step 0 --length "$WINDOW_MS" -vth "$VAD_THOLD" \
   --poll-ms "$POLL_MS" --vad-tail-ms "$VAD_TAIL_MS" \
+  -bs "$BEAM_SIZE" \
   > >(python3 "$TYPER") 2>/dev/null &
 echo $! > "$PIDFILE"

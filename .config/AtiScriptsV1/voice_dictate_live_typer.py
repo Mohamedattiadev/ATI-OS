@@ -108,6 +108,53 @@ def longest_overlap(prev, new):
     return 0
 
 
+def _norm_word(w):
+    return PUNCT_RE.sub("", w).lower()
+
+
+def collapse_repeats(words, max_ngram=12, min_repeats=3):
+    """Collapse a phrase that repeats 3+ times back-to-back down to one
+    occurrence.
+
+    Safety net for Whisper's decoder repetition-loop failure mode -- a
+    well-documented Whisper issue where greedy decoding on longer or messy
+    audio gets stuck re-emitting the same phrase ("I'm sorry about the
+    other one." x6 observed on this setup). -bs 3 (beam search) is the
+    real fix since greedy has no mechanism to escape a loop once locked
+    on, but this catches whatever gets through regardless. min_repeats=3
+    (not 2) is deliberate: people genuinely double a word sometimes ("no
+    no", "very very tired") and that's real speech, not a loop -- three+
+    consecutive identical repeats of the same phrase essentially never
+    happens naturally.
+    """
+    norm = [_norm_word(w) for w in words]
+    n = len(words)
+    out = []
+    i = 0
+    while i < n:
+        collapsed = False
+        # Smallest period first: a phrase repeated 6x also satisfies the
+        # repeat check at 2x and 3x its own length (three "AABB"-style
+        # double-copies still look like 3 repeats to the check below), so
+        # searching largest-first would lock onto one of those multiples
+        # and only collapse away part of the loop.
+        max_l = min(max_ngram, (n - i) // min_repeats)
+        for length in range(1, max_l + 1):
+            reps = 1
+            while (i + (reps + 1) * length <= n
+                   and norm[i + reps * length: i + (reps + 1) * length] == norm[i: i + length]):
+                reps += 1
+            if reps >= min_repeats:
+                out.extend(words[i:i + length])
+                i += reps * length
+                collapsed = True
+                break
+        if not collapsed:
+            out.append(words[i])
+            i += 1
+    return out
+
+
 def main():
     prev_words = []
     started = False
@@ -126,7 +173,8 @@ def main():
             in_block = False
             raw_text = " ".join(strip_timestamp(l).strip() for l in lines if l.strip())
             text = strip_bracket_tags(raw_text).strip()
-            words = text.split()
+            words = collapse_repeats(text.split())
+            text = " ".join(words)
 
             if not words:
                 continue
