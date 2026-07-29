@@ -42,8 +42,11 @@ touchpad_id=$(xinput list --id-only "AlpsPS/2 ALPS GlidePoint" 2>/dev/null)
 # These are harmless and quick to start.
 # No sleeps needed.
 
-kdeconnectd &            # Phone integration
-pamac-tray-icon-plasma & # Update notifier
+kdeconnectd & # Phone integration
+# pamac-tray-icon-plasma was the update notifier here. It is a Manjaro
+# package, has never been installed on this Arch box, and was failing
+# silently into the background on every login. The update notifier is
+# now qupdate.py --daemon, started in the qtile-owned block below.
 
 # ---------------------------------------------------------
 # 4. Heavy apps (DELAYED START)

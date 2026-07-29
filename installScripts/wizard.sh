@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # wizard.sh — premium TUI installer for Ati Dotfiles.
 #
-# Wraps installScripts/install.sh step blocks as selectable modules.
+# This is the single source of truth for installing these dotfiles.
+# install.sh is a thin wrapper that calls `wizard.sh --yes`, kept so
+# `./install.sh` keeps working; it holds no install logic of its own.
 # Colors tint from ~/.cache/wal/colors.json when available so the
 # wizard matches the current wallpaper palette.
 #
@@ -71,6 +73,7 @@ ASSUME_YES=0
 ONLY_LIST=""
 SKIP_LIST=""
 UNINSTALL=0
+SHOW_HELP=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run|-n) DRY_RUN=1 ;;
@@ -78,31 +81,11 @@ for arg in "$@"; do
     --only=*)     ONLY_LIST="${arg#*=}" ;;
     --skip=*)     SKIP_LIST="${arg#*=}" ;;
     --uninstall)  UNINSTALL=1 ;;
-    --help|-h)
-      sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
-      cat <<'HELP'
-
-Filters (combine with --yes for scripted runs):
-  --only=id1,id2       Run only these module ids (comma-sep)
-  --skip=id1,id2       Skip these module ids (comma-sep)
-
-Module ids (keep in sync with MOD_ORDER; unknown ids are rejected):
-sanity bootstrap yay dcli stow arch-config dcli-sync cargo
-ati-scripts pacman-guard boot-fallback login-shell touchpad xinit
-xresources xmodmap lid image-envs flatpak piper whisper
-passwordless-sudo ownership disable-dm candy-icons wallpapers speed
-themes browser-flags chrome-policy
-
-Example (safe non-network test — skip heavy downloads):
-  ./wizard.sh --yes --skip=dcli-sync,whisper,piper,wallpapers,flatpak
-
-Uninstall (reverse config files + sudoers + policies wizard wrote —
-NEVER touches pacman packages, dcli syncs, or downloaded models):
-  ./wizard.sh --uninstall            # interactive confirm
-  ./wizard.sh --uninstall --dry-run  # preview reversals
-  ./wizard.sh --uninstall --yes      # unattended
-HELP
-      exit 0 ;;
+    # Deferred: the module id list is printed FROM MOD_ORDER, which is not
+    # defined yet at argument-parse time. It used to be a hand-maintained
+    # copy here and drifted -- dark-mode and browser-memory existed as real
+    # modules for weeks while --help denied they were valid --only targets.
+    --help|-h)    SHOW_HELP=1 ;;
     # These take a value with '=' and are silently value-less otherwise.
     # `--only boot-fallback` used to leave ONLY_LIST empty and drop the id
     # into the ignored-argument bucket below -- i.e. it ran the FULL
@@ -241,6 +224,34 @@ MOD_ORDER=(
   themes dark-mode browser-flags browser-memory chrome-policy
 )
 
+if (( SHOW_HELP )); then
+  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+  cat <<'HELP'
+
+Filters (combine with --yes for scripted runs):
+  --only=id1,id2       Run only these module ids (comma-sep)
+  --skip=id1,id2       Skip these module ids (comma-sep)
+
+Note: --only and --skip REQUIRE '='. `--only boot-fallback` is rejected
+rather than silently running the full install.
+
+HELP
+  printf 'Module ids (%d, generated from MOD_ORDER; unknown ids are rejected):\n' "${#MOD_ORDER[@]}"
+  printf '%s\n' "${MOD_ORDER[@]}" | fmt -w 72 | sed 's/^/  /'
+  cat <<'HELP'
+
+Example (safe non-network test — skip heavy downloads):
+  ./wizard.sh --yes --skip=dcli-sync,whisper,piper,wallpapers,flatpak
+
+Uninstall (reverse config files + sudoers + policies wizard wrote —
+NEVER touches pacman packages, dcli syncs, or downloaded models):
+  ./wizard.sh --uninstall            # interactive confirm
+  ./wizard.sh --uninstall --dry-run  # preview reversals
+  ./wizard.sh --uninstall --yes      # unattended
+HELP
+  exit 0
+fi
+
 _reg() { MOD_TITLE[$1]="$2"; MOD_GROUP[$1]="$3"; MOD_DESC[$1]="$4"; MOD_CMD[$1]="$5"; }
 
 # Reject typo'd ids in --only/--skip. Without this a misspelled --only
@@ -364,11 +375,18 @@ step_pacman_guard() {
     _WARN "pacman preflight hook missing from repo — skipping"
     return 0
   fi
-  run "sudo install -Dm644 $hook /etc/pacman.d/hooks/00-preflight.hook"
-  # Fail loudly here rather than at the moment it was supposed to save you.
+  # REFUSE, do not warn. The hook is AbortOnFail, so if Exec= points at a
+  # missing binary then EVERY pacman transaction fails -- including the one
+  # that would install the missing binary. That is an unbootstrappable box
+  # from a single `--only=pacman-guard`. A warning is not enough when the
+  # failure mode locks you out of the package manager.
   if (( ! DRY_RUN )) && [[ ! -x /usr/local/bin/pacman-preflight ]]; then
-    _WARN "/usr/local/bin/pacman-preflight not found — run the ati-scripts module first"
+    _ERR "/usr/local/bin/pacman-preflight missing — refusing to install an"
+    _ERR "AbortOnFail hook that would break every pacman transaction."
+    _ERR "Run the ati-scripts module first:  ./wizard.sh --yes --only=ati-scripts"
+    return 1
   fi
+  run "sudo install -Dm644 $hook /etc/pacman.d/hooks/00-preflight.hook"
 }
 step_boot_fallback() {
   # Writes the boot menu entries that make `linux-lts` reachable, plus a
@@ -950,6 +968,24 @@ uninstall_browser_flags() {
     run "sed -i '/--load-extension=.*browser-theme/d' $HOME/.config/$f 2>/dev/null || true"
   done
 }
+uninstall_dark_mode() {
+  # Back to "no preference" rather than forcing prefer-light: light would be
+  # a different opinion, not a reversal. `gsettings reset` restores whatever
+  # the schema default is, which is what the box looked like before us.
+  command -v gsettings >/dev/null || return 0
+  run "gsettings reset org.gnome.desktop.interface color-scheme"
+}
+uninstall_browser_memory() {
+  # Drop only our own policy file. The managed/ directories are shared with
+  # any other policy the user (or another package) installed, so removing
+  # the directory itself would take those with it.
+  local d
+  for d in /etc/brave/policies/managed \
+           /etc/chromium/policies/managed \
+           /etc/opt/chrome/policies/managed; do
+    run "sudo rm -f $d/50-memory-saver.json"
+  done
+}
 uninstall_chrome_policy() {
   # Derive the extension id BEFORE deleting the pem below. The id is
   # sha256(DER pubkey)[:32] mapped a-p, so it is a function of this
@@ -1046,8 +1082,27 @@ UMOD_CMD[candy-icons]="uninstall_candy_icons"
 UMOD_CMD[wallpapers]="uninstall_wallpapers"
 UMOD_CMD[speed]="uninstall_speed"
 UMOD_CMD[themes]="uninstall_themes"
+UMOD_CMD[dark-mode]="uninstall_dark_mode"
 UMOD_CMD[browser-flags]="uninstall_browser_flags"
+UMOD_CMD[browser-memory]="uninstall_browser_memory"
 UMOD_CMD[chrome-policy]="uninstall_chrome_policy"
+
+# Every module must have a reversal, even if that reversal is a documented
+# no-op. Without this check a module added to MOD_ORDER but not to UMOD_CMD
+# fails as `UMOD_CMD[$id]: unbound variable` under `set -u` -- and it fails
+# *mid-uninstall*, after earlier modules have already been reversed, which
+# is the worst possible moment to discover it. dark-mode and browser-memory
+# shipped that way. Catch it at startup instead.
+_missing_uninstallers=()
+for _id in "${MOD_ORDER[@]}"; do
+  [[ -n "${UMOD_CMD[$_id]:-}" ]] || _missing_uninstallers+=("$_id")
+done
+if (( ${#_missing_uninstallers[@]} )); then
+  echo "wizard: BUG: module(s) with no uninstaller: ${_missing_uninstallers[*]}" >&2
+  echo "wizard: add a UMOD_CMD entry (use a no-op if reversal would be harmful)" >&2
+  exit 2
+fi
+unset _missing_uninstallers _id
 
 # ─── PAGES ───────────────────────────────────────────────────────────
 
@@ -1221,13 +1276,15 @@ page_execute() {
 
 _finale_summary() {
   local ok="$1" fail="$2" total="$3" ran="$4" status="$5"
-  local border_color="$ACCENT" title="Installation Complete"
+  local what="Installation"
+  (( UNINSTALL )) && what="Uninstall"
+  local border_color="$ACCENT" title="$what Complete"
   if [[ "$status" == "aborted" ]]; then
     border_color="$URGENT"
-    title="Installation Aborted"
+    title="$what Aborted"
   elif (( fail )); then
     border_color="$WARN_C"
-    title="Installation Finished (with failures)"
+    title="$what Finished (with failures)"
   fi
   echo
   gum style --border rounded --padding "1 3" --align center \
@@ -1246,6 +1303,17 @@ _finale_summary() {
 
 page_finale() {
   echo
+  if (( UNINSTALL )); then
+    # Telling someone who just uninstalled to "run letsgo" would send them
+    # into a qtile session whose config was just unlinked.
+    _H1 "Next steps"
+    _INFO "  · Packages, dcli syncs and downloaded models were left alone."
+    _INFO "  · Re-install any time:     ./install.sh"
+    echo
+    _DIM "Log out and back in so the shell/session changes take effect."
+    echo
+    return
+  fi
   _H1 "Next steps"
   _INFO "  · Log out to TTY and run:  letsgo   (or: startx)"
   _INFO "  · Reload qtile any time:   qtile cmd-obj -o cmd -f reload_config"

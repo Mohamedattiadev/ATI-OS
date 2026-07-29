@@ -1,6 +1,9 @@
 description: Window manager and desktop environment && apps
 
 packages:
+  - qtile            # the WM itself -- was only ever pulled in as a
+                     # qtile-extras dependency, so a packaging change
+                     # upstream could have silently removed the desktop
   - qtile-extras
   - qt6ct            # Qt apps (telegram) ignore the GTK theme; qt6ct reads
   - qt5ct            # the palette theme-apply writes, so they follow the mode
