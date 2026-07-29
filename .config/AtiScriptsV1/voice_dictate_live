@@ -4,13 +4,17 @@
 # manually stop the whole recording like voice_dictate does.
 #
 # Backend: whisper.cpp's whisper-stream in VAD sliding-window mode
-# (--step 0): it runs a lightweight voice-activity detector on the mic
-# continuously, and the moment it sees you pause after speaking, it
-# transcribes just that phrase and prints one clean, parseable block --
-# no manual stop-and-wait, no re-transcribing everything you've said so
-# far. Uses base.en rather than voice_dictate's small.en: latency matters
-# more than max accuracy for something meant to feel instant, and base.en
-# stays comfortably under real-time on a 4-core CPU.
+# (--step 0). It does NOT cleanly emit one block per finished phrase --
+# examples/stream/stream.cpp never clears its audio ring buffer in this
+# mode, so every brief pause re-transcribes the WHOLE recording so far
+# from t=0 and prints that as a new, longer block. voice_dictate_live_typer.py
+# handles this: it diffs each new block against what's already on screen
+# and types only the changed suffix, instead of re-typing the whole
+# growing sentence every time (which is what produced duplicated,
+# garbled output before this existed). Uses base.en rather than
+# voice_dictate's small.en: latency matters more than max accuracy for
+# something meant to feel instant, and base.en stays comfortably under
+# real-time on a 4-core CPU.
 #
 # One-time setup: build whisper-stream with SDL2 mic capture support
 # (the whisper.cpp-git AUR package doesn't build it by default) and grab
@@ -52,12 +56,18 @@ if [[ ! -f "$MODEL" ]]; then
   exit 1
 fi
 
-for bin in whisper-stream xdotool; do
+for bin in whisper-stream xdotool python3; do
   command -v "$bin" >/dev/null || {
     pill critical "voice_dictate_live" "Missing binary: $bin"
     exit 1
   }
 done
+
+TYPER="$(dirname "$(readlink -f "$0")")/voice_dictate_live_typer.py"
+if [[ ! -f "$TYPER" ]]; then
+  pill critical "voice_dictate_live" "Missing helper: $TYPER"
+  exit 1
+fi
 
 # ------------------------------------------------------------------
 # Stop mode: PID file exists -> kill the listener.
@@ -78,41 +88,8 @@ if [[ -f "$PIDFILE" ]]; then
 fi
 
 # ------------------------------------------------------------------
-# Start mode: launch whisper-stream, type each VAD-triggered block the
-# instant it's printed.
+# Start mode: launch whisper-stream, hand its stdout to the Python typer.
 # ------------------------------------------------------------------
-# whisper-stream prints one block per detected phrase, of the form:
-#   ### Transcription N START | t0 = .. ms | t1 = .. ms
-#   <text>
-#   ### Transcription N END
-# Init/model-load logging goes to stderr, so stdout only ever carries
-# these blocks (plus a one-line "[Start speaking]" banner) -- safe to
-# parse directly with no extra filtering.
-_parse_and_type() {
-  local in_block=0 text="" line
-  while IFS= read -r line; do
-    case "$line" in
-      "### Transcription"*START*)
-        in_block=1
-        text=""
-        ;;
-      "### Transcription"*END*)
-        in_block=0
-        text="$(printf '%s' "$text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-        if [[ -n "$text" ]]; then
-          xdotool type --delay 4 -- "$text "
-          pill normal "🎙  Listening…" "${text:0:80}"
-        fi
-        ;;
-      *)
-        if [[ $in_block -eq 1 ]]; then
-          text+="$line"
-        fi
-        ;;
-    esac
-  done
-}
-
 pill normal "🎙  Listening…" "speak — press bind again to stop"
 
 # `$!` after a backgrounded `cmd > >(...) &` is cmd's own PID, not the
@@ -120,5 +97,5 @@ pill normal "🎙  Listening…" "speak — press bind again to stop"
 # so stop-mode kills whisper-stream (and its mic hold) directly.
 whisper-stream -m "$MODEL" -l "$LANG" -t "$(nproc)" \
   --step 0 --length "$WINDOW_MS" -vth "$VAD_THOLD" \
-  > >(_parse_and_type) 2>/dev/null &
+  > >(python3 "$TYPER") 2>/dev/null &
 echo $! > "$PIDFILE"
