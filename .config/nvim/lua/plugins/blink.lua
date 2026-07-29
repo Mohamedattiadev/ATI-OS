@@ -4,10 +4,12 @@ return {
     "rafamadriz/friendly-snippets",
   },
   opts = {
-    -- basic sources, no lazydev, no weird providers
-    sources = {
-      default = { "lsp", "path", "buffer", "snippets" },
-    },
+    -- NOTE: `sources.default` is intentionally NOT set here.
+    -- LazyVim lists it in `opts_extend`, so anything set here is APPENDED to
+    -- LazyVim's list rather than replacing it. Since LazyVim already uses
+    -- exactly { "lsp", "path", "snippets", "buffer" }, redeclaring it
+    -- produced a doubled 8-entry source list (every provider queried twice).
+    -- LazyVim also wires the `lazydev` source in for lua buffers on top.
 
     -- keep default keymaps for now (you can tune later)
     keymap = {

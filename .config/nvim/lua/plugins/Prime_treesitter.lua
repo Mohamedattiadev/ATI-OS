@@ -23,29 +23,17 @@ return {
         "query",
       },
 
-      ignore_install = { "markdown_inline" },
-
-      -- Highlighting Settings (Primeagen Style)
+      -- Highlighting settings.
+      --
+      -- nvim-treesitter is on the `main` branch, where LazyVim only honours
+      -- `disable` as a LIST of languages (see lazyvim.TSFeat). The previous
+      -- `disable = function(lang, buf)` form was silently ignored, so the
+      -- HTML rule and the >100KB guard were never actually in effect.
+      -- `ignore_install` and `additional_vim_regex_highlighting` are not part
+      -- of the main-branch API either, so they were dropped.
       highlight = {
         enable = true,
-        -- Use standard Vim regex for Markdown (fixes bugs)
-        additional_vim_regex_highlighting = { "markdown" },
-
-        -- Custom Disable Logic
-        disable = function(lang, buf)
-          -- 1. Disable HTML (Your preference)
-          if lang == "html" then
-            return true
-          end
-
-          -- 2. Disable for Large Files (>100KB)
-          local max_filesize = 100 * 1024 -- 100 KB
-          local ok, stats = pcall(vim.loop.fs_stat, vim.api.nvim_buf_get_name(buf))
-          if ok and stats and stats.size > max_filesize then
-            -- Optional: Silent return to avoid spamming notifications
-            return true
-          end
-        end,
+        disable = { "html" },
       },
 
       -- Indentation
