@@ -1830,7 +1830,14 @@ def install_bar_tooltips():
                         logger.warning(
                             f"tooltip install failed for {w.__class__.__name__}: {e}"
                         )
-    logger.warning(f"[tooltips] installed={installed} total={total}")
+    # debug, not warning: this is a routine tally, not a problem. Nothing is
+    # wrong with installed < total -- only the widgets we define tooltips for
+    # get one, so 20/33 is the expected steady state. Real failures already
+    # log a warning of their own ("tooltip install failed for ...") a few
+    # lines up. At warning level this fired on every start AND every reload,
+    # and install_bar_tooltips() is scheduled twice at startup, so it was
+    # four lines of noise a session that always said the same thing.
+    logger.debug(f"[tooltips] installed={installed} total={total}")
 
 
 def _wrap_mpris_hover(widget_):

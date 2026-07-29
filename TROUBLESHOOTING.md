@@ -1606,6 +1606,28 @@ on screen against what matters.
   original bug — Escape ends up with no commands and the confirm popup
   silently stops working.
 
+### What qtile.log looks like on a clean restart
+After `Mod+Shift+R`, `~/.local/share/qtile/qtile.log` should contain
+**zero ERROR lines** and only these warnings. Anything else is new.
+
+- `Restarting Qtile with os.execv(...)` and `Starting Qtile 0.36.0 from …`
+  — qtile's own lifecycle messages. It logs them at warning level itself;
+  they mean the restart worked.
+- `No icon found for application "" (None) switch to text mode` ×5 —
+  one per `widget.LaunchBar` entry. The `progs` list uses Nerd Font glyphs
+  as the icon field, so libqtile's `setup_images()` looks for an icon file
+  by that name, does not find one, and falls back to drawing it as text.
+  Text *is* the intended rendering — the glyph is the icon. Unavoidable
+  with `LaunchBar` short of shipping real icon files, and harmless.
+- `[tooltips] installed=N total=M` — **used to** appear here at warning
+  level. It is a routine tally (only widgets we define tooltips for get
+  one, so N < M is normal), now logged at debug. If you are looking for
+  it, run qtile with debug logging. Genuine failures still warn, with
+  `tooltip install failed for <widget>: <error>`.
+
+If you see `WARNING libqtile:Key spec duplicated ... <Key ([], Escape)>`,
+that fix has been reverted — see the entry above.
+
 ### xkbcomp warnings: unresolved `XF86…` keysyms, `<FK23>`/`<FK24>` redefined
 - **Symptom:** a large block of `Could not resolve keysym
   XF86ElectronicPrivacyScreenOn` / `XF86ActionOnSelection` /
