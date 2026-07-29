@@ -132,4 +132,18 @@ whisper-stream -m "$MODEL" -l "$LANG" -t "$(nproc)" \
   --poll-ms "$POLL_MS" --vad-tail-ms "$VAD_TAIL_MS" \
   -bs "$BEAM_SIZE" \
   > >(python3 "$TYPER") 2>/dev/null &
-echo $! > "$PIDFILE"
+WS_PID=$!
+echo "$WS_PID" > "$PIDFILE"
+
+# This machine routinely has other CPU-heavy work running (other agent
+# sessions, browser, etc) at normal priority. whisper-stream's own VAD
+# polling and audio-capture timing are sensitive to getting scheduled
+# promptly -- under contention, missed timing windows mean worse-aligned
+# audio chunks, not just slower transcription, which is the concrete
+# mechanism behind an accuracy swing between two otherwise-identical runs
+# (one measured ~88%, the other ~50%, back to back). Bumping scheduling
+# priority (not real-time -- just consistently favored over normal-
+# priority contention) directly addresses that. Non-fatal if this ever
+# can't get sudo for some reason: dictation still works, just as
+# vulnerable to contention as before.
+sudo renice -n -10 -p "$WS_PID" >/dev/null 2>&1 || true
