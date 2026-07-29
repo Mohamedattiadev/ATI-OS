@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# voice_dictate_live — press keybind to start listening; press again to stop.
+# Types each phrase the instant you pause, instead of waiting for you to
+# manually stop the whole recording like voice_dictate does.
+#
+# Backend: whisper.cpp's whisper-stream in VAD sliding-window mode
+# (--step 0): it runs a lightweight voice-activity detector on the mic
+# continuously, and the moment it sees you pause after speaking, it
+# transcribes just that phrase and prints one clean, parseable block --
+# no manual stop-and-wait, no re-transcribing everything you've said so
+# far. Uses base.en rather than voice_dictate's small.en: latency matters
+# more than max accuracy for something meant to feel instant, and base.en
+# stays comfortably under real-time on a 4-core CPU.
+#
+# One-time setup: build whisper-stream with SDL2 mic capture support
+# (the whisper.cpp-git AUR package doesn't build it by default) and grab
+# the base.en model --
+#   cd <whisper.cpp source>
+#   cmake -S . -B build-stream -DWHISPER_SDL2=ON -DCMAKE_BUILD_TYPE=Release
+#   cmake --build build-stream --target whisper-stream -j$(nproc)
+#   sudo install -Dm755 build-stream/bin/whisper-stream /usr/local/bin/whisper-stream
+#   curl -L -o ~/.local/share/whisper/ggml-base.en.bin \
+#     https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+
+set -uo pipefail
+
+MODEL="${WHISPER_MODEL:-$HOME/.local/share/whisper/ggml-base.en.bin}"
+LANG="${WHISPER_LANG:-en}"
+VAD_THOLD="${WHISPER_VAD_THOLD:-0.6}"
+WINDOW_MS="${WHISPER_WINDOW_MS:-12000}"
+TMPDIR="/tmp/voice_dictate_live"
+PIDFILE="$TMPDIR/stream.pid"
+NOTIFY_TAG="voice_dictate_live"
+
+mkdir -p "$TMPDIR"
+
+pill() {
+  local urgency="$1" summary="$2" body="${3:-}"
+  notify-send -u "$urgency" -t 0 \
+    -h "string:x-canonical-private-synchronous:$NOTIFY_TAG" \
+    "$summary" "$body"
+}
+
+clear_pill() {
+  notify-send -t 1 \
+    -h "string:x-canonical-private-synchronous:$NOTIFY_TAG" \
+    " " " " 2>/dev/null || true
+}
+
+if [[ ! -f "$MODEL" ]]; then
+  pill critical "voice_dictate_live" "Model missing: $MODEL"
+  exit 1
+fi
+
+for bin in whisper-stream xdotool; do
+  command -v "$bin" >/dev/null || {
+    pill critical "voice_dictate_live" "Missing binary: $bin"
+    exit 1
+  }
+done
+
+# ------------------------------------------------------------------
+# Stop mode: PID file exists -> kill the listener.
+# ------------------------------------------------------------------
+if [[ -f "$PIDFILE" ]]; then
+  PID="$(cat "$PIDFILE")"
+  rm -f "$PIDFILE"
+  kill "$PID" 2>/dev/null || true
+  # whisper-stream takes a moment to tear down the SDL audio device --
+  # a plain kill without waiting can leave it holding the mic briefly.
+  for _ in $(seq 1 20); do
+    kill -0 "$PID" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill -9 "$PID" 2>/dev/null || true
+  clear_pill
+  exit 0
+fi
+
+# ------------------------------------------------------------------
+# Start mode: launch whisper-stream, type each VAD-triggered block the
+# instant it's printed.
+# ------------------------------------------------------------------
+# whisper-stream prints one block per detected phrase, of the form:
+#   ### Transcription N START | t0 = .. ms | t1 = .. ms
+#   <text>
+#   ### Transcription N END
+# Init/model-load logging goes to stderr, so stdout only ever carries
+# these blocks (plus a one-line "[Start speaking]" banner) -- safe to
+# parse directly with no extra filtering.
+_parse_and_type() {
+  local in_block=0 text="" line
+  while IFS= read -r line; do
+    case "$line" in
+      "### Transcription"*START*)
+        in_block=1
+        text=""
+        ;;
+      "### Transcription"*END*)
+        in_block=0
+        text="$(printf '%s' "$text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        if [[ -n "$text" ]]; then
+          xdotool type --delay 4 -- "$text "
+          pill normal "🎙  Listening…" "${text:0:80}"
+        fi
+        ;;
+      *)
+        if [[ $in_block -eq 1 ]]; then
+          text+="$line"
+        fi
+        ;;
+    esac
+  done
+}
+
+pill normal "🎙  Listening…" "speak — press bind again to stop"
+
+# `$!` after a backgrounded `cmd > >(...) &` is cmd's own PID, not the
+# process-substitution reader's -- that's what we need in the PID file
+# so stop-mode kills whisper-stream (and its mic hold) directly.
+whisper-stream -m "$MODEL" -l "$LANG" -t "$(nproc)" \
+  --step 0 --length "$WINDOW_MS" -vth "$VAD_THOLD" \
+  > >(_parse_and_type) 2>/dev/null &
+echo $! > "$PIDFILE"

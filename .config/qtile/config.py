@@ -4280,12 +4280,19 @@ keys = [
         lazy.widget["2nd_system_widgetbox"].toggle(),
         desc="Toggle 2nd system widget box",
     ),
-    # --- voice dictation (whisper.cpp) ---
+    # --- voice dictation, live (whisper.cpp stream, VAD-triggered per-phrase typing) ---
     Key(
         [mod, "shift"],
         "v",
+        lazy.spawn("voice_dictate_live"),
+        desc="Start/stop live voice dictation (types each phrase as you pause)",
+    ),
+    # --- voice dictation, batch (whisper.cpp small.en, one shot at manual stop) ---
+    Key(
+        [mod, "shift"],
+        "b",
         lazy.spawn("voice_dictate"),
-        desc="Start/stop voice dictation (whisper.cpp -> xdotool type)",
+        desc="Start/stop batch voice dictation (whisper.cpp -> xdotool type)",
     ),
     # --- refresh PC (reset_PC script) ---
     Key(
