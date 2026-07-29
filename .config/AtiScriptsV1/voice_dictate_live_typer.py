@@ -37,6 +37,26 @@ import sys
 
 RESET_JITTER_MS = 500  # tolerate small timer noise around a buffer reset
 TIMESTAMP_RE = re.compile(r"^\[\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}\]\s*")
+PUNCT_RE = re.compile(r"[^\w\s]")
+
+# Whisper's well-known hallucinations on silence/near-silent audio -- greedy
+# decoding on noise reliably lands on one of these rather than staying
+# empty. Filtered only when a block's ENTIRE text matches one of these
+# verbatim (normalized) AND nothing real has been typed for this utterance
+# yet, so genuine speech that happens to contain these words elsewhere in
+# a longer sentence is never touched.
+HALLUCINATIONS = {
+    "you", "thank you", "thank you very much", "thanks for watching",
+    "thank you for watching", "please subscribe", "subscribe",
+    "bye", "bye bye", "the end", "yeah", "im sorry", "sorry",
+    "blank audio", "silence", "laughs", "laughing", "laughter",
+    "music", "applause",
+}
+
+
+def is_hallucination(text):
+    normalized = PUNCT_RE.sub("", text).strip().lower()
+    return normalized in HALLUCINATIONS
 
 
 def xdotool_type(text):
@@ -103,6 +123,13 @@ def main():
                     xdotool_type(" ")
                 prev_words = []
                 started = False
+
+            if not prev_words and is_hallucination(text):
+                # Nothing real typed yet for this utterance and the whole
+                # block is a known silence artifact -- skip it rather than
+                # type junk, but don't touch prev_t1/prev_words so the vad
+                # reset check above still works correctly next block.
+                continue
 
             cp = common_prefix_words(prev_words, words)
             new_words = words[cp:]

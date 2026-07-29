@@ -8,18 +8,27 @@
 # examples/stream/stream.cpp never clears its audio ring buffer in this
 # mode, so every brief pause re-transcribes the WHOLE recording so far
 # from t=0 and prints that as a new, longer block. voice_dictate_live_typer.py
-# handles this: it diffs each new block against what's already on screen
-# and types only the changed suffix, instead of re-typing the whole
-# growing sentence every time (which is what produced duplicated,
-# garbled output before this existed). Uses base.en rather than
-# voice_dictate's small.en: latency matters more than max accuracy for
-# something meant to feel instant, and base.en stays comfortably under
-# real-time on a 4-core CPU.
+# handles this: word-level append-only diffing against the previous block
+# (never backspaces), timestamp-bracket stripping (VAD mode forces
+# per-line timestamps on with no flag to disable them), and filtering
+# Whisper's well-known silence hallucinations ("thank you", "(laughs)",
+# etc). Uses base.en rather than voice_dictate's small.en: latency matters
+# more than max accuracy for something meant to feel instant, and base.en
+# stays comfortably under real-time on a 4-core CPU -- override via
+# WHISPER_MODEL if you want to trade some speed for small.en's accuracy.
+#
+# --poll-ms/--vad-tail-ms (how often, and over what trailing window, a
+# pause gets checked for) are also patched in: upstream hardcoded these at
+# 2000ms/1000ms with no CLI flag, which meant up to ~2s of dead air before
+# a finished phrase even started transcribing. Lowered to 800/350 here so
+# a pause is noticed in well under half a second.
 #
 # One-time setup: build whisper-stream with SDL2 mic capture support
-# (the whisper.cpp-git AUR package doesn't build it by default) and grab
-# the base.en model --
-#   cd <whisper.cpp source>
+# (the whisper.cpp-git AUR package doesn't build it by default), apply
+# patches/whisper-stream-poll-ms.patch (adds --poll-ms/--vad-tail-ms --
+# not upstreamed), and grab the base.en model --
+#   cd <whisper.cpp source>          # e.g. ~/.cache/yay/whisper.cpp-git/src/whisper.cpp-git
+#   git apply /path/to/patches/whisper-stream-poll-ms.patch
 #   cmake -S . -B build-stream -DWHISPER_SDL2=ON -DCMAKE_BUILD_TYPE=Release
 #   cmake --build build-stream --target whisper-stream -j$(nproc)
 #   sudo install -Dm755 build-stream/bin/whisper-stream /usr/local/bin/whisper-stream
@@ -32,6 +41,13 @@ MODEL="${WHISPER_MODEL:-$HOME/.local/share/whisper/ggml-base.en.bin}"
 LANG="${WHISPER_LANG:-en}"
 VAD_THOLD="${WHISPER_VAD_THOLD:-0.6}"
 WINDOW_MS="${WHISPER_WINDOW_MS:-12000}"
+# How often (ms) whisper-stream checks for a pause, and how much trailing
+# audio that check looks at -- upstream hardcoded these at 2000/1000 with
+# no CLI flag; patched examples/stream/stream.cpp to expose --poll-ms /
+# --vad-tail-ms and lowered the defaults here so a pause is noticed in a
+# few hundred ms instead of up to 2s.
+POLL_MS="${WHISPER_POLL_MS:-800}"
+VAD_TAIL_MS="${WHISPER_VAD_TAIL_MS:-350}"
 TMPDIR="/tmp/voice_dictate_live"
 PIDFILE="$TMPDIR/stream.pid"
 NOTIFY_TAG="voice_dictate_live"
@@ -97,5 +113,6 @@ pill normal "🎙  Listening…" "speak — press bind again to stop"
 # so stop-mode kills whisper-stream (and its mic hold) directly.
 whisper-stream -m "$MODEL" -l "$LANG" -t "$(nproc)" \
   --step 0 --length "$WINDOW_MS" -vth "$VAD_THOLD" \
+  --poll-ms "$POLL_MS" --vad-tail-ms "$VAD_TAIL_MS" \
   > >(python3 "$TYPER") 2>/dev/null &
 echo $! > "$PIDFILE"
