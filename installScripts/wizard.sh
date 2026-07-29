@@ -227,6 +227,7 @@ MOD_ORDER=(
   sanity bootstrap yay dcli stow arch-config dcli-sync cargo ati-scripts
   pacman-guard boot-fallback login-shell
   touchpad xinit xresources xmodmap lid image-envs flatpak piper whisper
+  whisper-fast mic-gain
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes dark-mode browser-flags browser-memory chrome-policy
 )
@@ -248,7 +249,7 @@ HELP
   cat <<'HELP'
 
 Example (safe non-network test — skip heavy downloads):
-  ./wizard.sh --yes --skip=dcli-sync,whisper,piper,wallpapers,flatpak
+  ./wizard.sh --yes --skip=dcli-sync,whisper,whisper-fast,piper,wallpapers,flatpak
 
 Uninstall (reverse config files + sudoers + policies wizard wrote —
 NEVER touches pacman packages, dcli syncs, or downloaded models):
@@ -299,7 +300,9 @@ _reg lid               "Lid = ignore"        System    "Never sleep on lid close
 _reg image-envs        "Image env"           Dotfiles  "Suppress VIPS warnings + ensure ~/tmp (fish TMPDIR)"    "step_image_envs"
 _reg flatpak           "Flatpak (legacy)"    Apps      "Uninstall-only: qdrop replaced flathub/collector"       "step_flatpak"
 _reg piper             "Piper voices"        Media     "EN + DE TTS voices (~60MB)"                             "step_piper"
-_reg whisper           "Whisper model"       Media     "small.en STT model (~500MB)"                            "step_whisper"
+_reg whisper           "Whisper models"      Media     "base.en (live dictation) + small.en (batch) STT (~630MB)" "step_whisper"
+_reg whisper-fast      "Whisper fast build"  Media     "Rebuild whisper-cli/-stream Release (AUR pkg is ~13x slower unoptimized)" "step_whisper_fast"
+_reg mic-gain          "Mic gain fix"        System    "Reassert mic capture gain WirePlumber resets on login"  "step_mic_gain"
 _reg passwordless-sudo "Passwordless sudo"   System    "Add user to NOPASSWD sudoers"                           "step_nopasswd"
 _reg ownership         "Fix ownership"       System    "chown -R \$USER on ~/.dotfiles"                         "step_ownership"
 _reg disable-dm        "Disable display mgrs" System   "TTY + startx only"                                      "step_disable_dm"
@@ -619,13 +622,93 @@ step_piper() {
 
 step_whisper() {
   local dir="$HOME/.local/share/whisper"
-  local out="$dir/ggml-small.en.bin"
   run "mkdir -p $dir"
-  if (( DRY_RUN )); then _DIM "  [dry] curl whisper small.en (~500MB, retry x3)"; return; fi
-  [[ -f "$out" ]] && return
-  retry_net 3 10 curl -fL --retry 3 --continue-at - -o "$out" \
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin" || \
-    { _ERR "whisper model download failed after 3 retries"; return 1; }
+  # base.en: voice_dictate_live (Super+Shift+V) -- fast enough to feel
+  # instant on modest hardware, traded for lower accuracy.
+  # small.en: voice_dictate (Super+Shift+B) -- much more accurate, not
+  # instant. Benchmarked repeatedly on a weak 2-core CPU: small.en runs
+  # ~4x slower than real-time even with the fast build below and GPU
+  # offload, so it's kept for batch (manual stop) dictation only, not
+  # the live mode.
+  for model in ggml-base.en.bin ggml-small.en.bin; do
+    local out="$dir/$model"
+    if (( DRY_RUN )); then _DIM "  [dry] curl whisper $model (retry x3)"; continue; fi
+    [[ -f "$out" ]] && continue
+    retry_net 3 10 curl -fL --retry 3 --continue-at - -o "$out" \
+      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$model" || \
+      { _ERR "whisper model $model download failed after 3 retries"; return 1; }
+  done
+}
+
+step_whisper_fast() {
+  # whisper.cpp-git's PKGBUILD builds with `-D CMAKE_BUILD_TYPE=None` --
+  # no optimization flags at all, no -march=native. Measured on this
+  # hardware: encoding 2s of audio took 28s with the pacman-built
+  # whisper-cli vs 2.1s with a Release build of the identical source/
+  # model -- a ~13x slowdown, present in every binary the package ships.
+  # It also doesn't build whisper-stream at all (needs -DWHISPER_SDL2=ON,
+  # which the PKGBUILD doesn't pass), and voice_dictate_live needs
+  # whisper-stream patched with patches/whisper-stream-poll-ms.patch
+  # (adds --poll-ms/--vad-tail-ms, hardcoded upstream with no CLI flag).
+  #
+  # Builds both from the whisper.cpp-git AUR package's own cached source
+  # (already fetched by dcli-sync/yay) and shadows the slow system
+  # binaries via /usr/local/bin (already earlier in $PATH than /usr/bin)
+  # + /usr/local/lib/whisper-cpp (registered through /etc/ld.so.conf.d,
+  # so they keep working even if the yay cache is later cleared). See
+  # .config/AtiScriptsV1/patches/README.md for the full writeup.
+  local src="$HOME/.cache/yay/whisper.cpp-git/src/whisper.cpp-git"
+  local patch="$DOTFILES_DIR/.config/AtiScriptsV1/patches/whisper-stream-poll-ms.patch"
+  local build="$src/build-fast"
+  local libdir="/usr/local/lib/whisper-cpp"
+
+  if (( DRY_RUN )); then
+    _DIM "  [dry] build whisper-cli + whisper-stream (Release, patched) from AUR cache, shadow via /usr/local"
+    return
+  fi
+
+  if [[ ! -d "$src" ]]; then
+    _ERR "whisper.cpp-git source not found at $src -- run dcli-sync first (declares whisper.cpp-git)"
+    return 1
+  fi
+
+  # Idempotent: skip the (slow, few-minute) rebuild if already shadowed.
+  # Checked via the patched --poll-ms flag rather than ldd against
+  # $libdir: RUNPATH prefers whichever path resolves first, and an
+  # earlier build's cache dir resolving fine (same file contents either
+  # way) doesn't mean it's still pointed at $libdir specifically.
+  if /usr/local/bin/whisper-stream --help 2>&1 | grep -q -- "--poll-ms"; then
+    _OK "whisper-cli/whisper-stream already built + shadowed via /usr/local"
+    return
+  fi
+
+  # --poll-ms/--vad-tail-ms not already in stream.cpp -> patch not
+  # applied yet on this checkout of the AUR cache.
+  if ! grep -q -- "--poll-ms" "$src/examples/stream/stream.cpp" 2>/dev/null; then
+    run "cd $src && git apply $patch"
+  fi
+  run "cmake -S $src -B $build -DWHISPER_SDL2=ON -DCMAKE_BUILD_TYPE=Release -W no-dev"
+  run "cmake --build $build --target whisper-cli whisper-stream -j$(nproc)"
+  run "sudo mkdir -p $libdir"
+  run "sudo cp $build/bin/lib*.so* $libdir/"
+  run "echo $libdir | sudo tee /etc/ld.so.conf.d/whisper-cpp.conf >/dev/null"
+  run "sudo ldconfig"
+  run "sudo install -Dm755 $build/bin/whisper-cli /usr/local/bin/whisper-cli"
+  run "sudo install -Dm755 $build/bin/whisper-stream /usr/local/bin/whisper-stream"
+}
+
+step_mic_gain() {
+  # WirePlumber applies its own default ALSA mixer levels to hardware
+  # nodes on every session start -- Capture + Internal Mic Boost both
+  # reset to 100%/100% here (~60dB combined), enough to saturate the mic
+  # into constant distorted noise even in a quiet room, independent of
+  # and overriding whatever `alsactl restore` set moments earlier.
+  # fix-mic-gain.service (After=wireplumber.service, symlinked live from
+  # .config/systemd/user/) reasserts sane levels every login; this just
+  # enables it once.
+  if (( DRY_RUN )); then _DIM "  [dry] systemctl --user enable --now fix-mic-gain.service"; return; fi
+  run "systemctl --user daemon-reload"
+  run "systemctl --user enable --now fix-mic-gain.service"
 }
 step_nopasswd()     { run "echo \"$(id -un) ALL=(ALL) NOPASSWD: ALL\" | sudo tee /etc/sudoers.d/zz-$(id -un)-nopasswd >/dev/null && sudo chmod 440 /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
 step_ownership()    { run "sudo chown -R $(id -un):$(id -un) $DOTFILES_DIR"; }
@@ -927,7 +1010,7 @@ preflight() {
   _check "HOME writable"               "[[ -w $HOME ]]"                            "fix HOME permissions"
   _check "dotfiles clone at $DOTFILES_DIR" "[[ -d $DOTFILES_DIR ]]"                "git clone the repo to $DOTFILES_DIR"
   _check "internet reachable"          "curl -fsS --max-time 5 https://archlinux.org >/dev/null" "network down or firewall blocks HTTPS"
-  _check "disk free > 10 GB on \$HOME" "[[ $(df -Pk $HOME | awk 'NR==2{print $4}') -gt 10485760 ]]" "wizard needs ~10GB (piper 60MB + whisper 500MB + dcli pkgs + wallpapers)"
+  _check "disk free > 10 GB on \$HOME" "[[ $(df -Pk $HOME | awk 'NR==2{print $4}') -gt 10485760 ]]" "wizard needs ~10GB (piper 60MB + whisper models+fast-build ~1GB + dcli pkgs + wallpapers)"
   _check "RAM ≥ 2 GB"                  "[[ $(awk '/MemTotal/{print $2}' /proc/meminfo) -gt 2000000 ]]" "wizard pulls 500MB+ concurrently — <2GB risks OOM/freeze"
   _check "pacman db lock clear"        "_pacman_lock_check"                        "another pacman may be running"
   if (( fatal )); then
@@ -1055,7 +1138,11 @@ uninstall_cargo()             { :; }
 uninstall_arch_config()       { :; }
 uninstall_flatpak()           { :; }
 uninstall_piper()             { :; }  # models may be shared
-uninstall_whisper()           { :; }
+uninstall_whisper()           { :; }  # models may be shared
+uninstall_whisper_fast()      { :; }  # leave the fast binaries in place -- reverting to the ~13x slower pacman ones helps no one
+uninstall_mic_gain() {
+  run "systemctl --user disable --now fix-mic-gain.service" || true
+}
 uninstall_wallpapers()        { :; }  # user's picture collection
 uninstall_ownership()         { :; }
 uninstall_disable_dm()        { :; }
@@ -1084,6 +1171,8 @@ UMOD_CMD[image-envs]="uninstall_image_envs"
 UMOD_CMD[flatpak]="uninstall_flatpak"
 UMOD_CMD[piper]="uninstall_piper"
 UMOD_CMD[whisper]="uninstall_whisper"
+UMOD_CMD[whisper-fast]="uninstall_whisper_fast"
+UMOD_CMD[mic-gain]="uninstall_mic_gain"
 UMOD_CMD[passwordless-sudo]="uninstall_passwordless_sudo"
 UMOD_CMD[ownership]="uninstall_ownership"
 UMOD_CMD[disable-dm]="uninstall_disable_dm"

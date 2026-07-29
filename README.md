@@ -23,7 +23,7 @@ git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
   && ./install.sh
 ```
 
-Then `startx`. That's it — 32 modules run end to end, nothing to follow up on.
+Then `startx`. That's it — 34 modules run end to end, nothing to follow up on.
 
 > Want to pick modules or preview first? See [Install options](#install-options).
 > Something broken? [TROUBLESHOOTING.md](TROUBLESHOOTING.md) logs real cases
@@ -212,7 +212,7 @@ Systems that don't match may need manual intervention.
 ./wizard.sh --dry-run       # preview every command, touch nothing
 ./wizard.sh --yes           # same as ./install.sh
 ./wizard.sh --only=stow,themes,browser-flags   # subset
-./wizard.sh --skip=whisper,piper               # skip heavy downloads
+./wizard.sh --skip=whisper,whisper-fast,piper               # skip heavy downloads
 ./wizard.sh --uninstall     # reverse wizard writes (safe: never
                             #   touches packages or downloaded models)
 ./wizard.sh --uninstall --dry-run  # preview reversals
@@ -223,17 +223,18 @@ ignored — because an ignored filter means the full live install runs instead,
 and its second module is `pacman -Syu`. Unknown flags and unknown module ids
 fail the same way: exit 2, nothing touched.
 
-Every one of the 32 modules has a reversal, even where that reversal is a
-deliberate no-op (`dcli-sync`, `piper`, `whisper`, `wallpapers` — removing
-those would delete packages or multi-hundred-MB downloads the uninstaller has
-no business touching). The wizard refuses to start if a module is ever added
+Every one of the 34 modules has a reversal, even where that reversal is a
+deliberate no-op (`dcli-sync`, `piper`, `whisper`, `whisper-fast`,
+`wallpapers` — removing those would delete packages, multi-hundred-MB
+downloads, or a ~13x-faster build the uninstaller has no business
+touching). The wizard refuses to start if a module is ever added
 without one, because the alternative is discovering it *part-way through* an
 uninstall, with earlier modules already reversed.
 
 **What `./install.sh` does**
 
 - Auto-bootstraps `gum` via pacman (~2 s)
-- Runs all 32 modules end-to-end
+- Runs all 34 modules end-to-end
 - Keeps `sudo` alive for the whole run (primed once, refreshed in the
   background) so long AUR builds don't silently drop package installs when the
   credential cache would otherwise expire mid-run
@@ -246,7 +247,7 @@ Themes / Browsers / Apps / Media), spinners, progress bars and colored badges.
 On failure it shows a red-bordered error tail and prompts **retry · skip ·
 quit** (unless `--yes`, which auto-skips).
 
-**The 32 modules**
+**The 34 modules**
 
 | # | id | What |
 | - | -- | ---- |
@@ -270,18 +271,20 @@ quit** (unless `--yes`, which auto-skips).
 | 18 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
 | 19 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
 | 20 | `piper` | Download Piper voices (EN + DE) |
-| 21 | `whisper` | Download Whisper `small.en` model |
-| 22 | `passwordless-sudo` | Passwordless sudo |
-| 23 | `ownership` | Fix dotfiles ownership |
-| 24 | `disable-dm` | Disable all display managers |
-| 25 | `candy-icons` | Install candy-icons theme |
-| 26 | `wallpapers` | Clone wallpaper collection |
-| 27 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
-| 28 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
-| 29 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
-| 30 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
-| 31 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
-| 32 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| 21 | `whisper` | Download Whisper `base.en` (live dictation) + `small.en` (batch) models |
+| 22 | `whisper-fast` | Rebuild `whisper-cli`/`whisper-stream` optimized + patched, shadow via `/usr/local` (AUR package is ~13x slower unoptimized, and doesn't build `whisper-stream` at all) |
+| 23 | `mic-gain` | Enable `fix-mic-gain.service` — reasserts mic capture gain WirePlumber resets to clipping levels on every login |
+| 24 | `passwordless-sudo` | Passwordless sudo |
+| 25 | `ownership` | Fix dotfiles ownership |
+| 26 | `disable-dm` | Disable all display managers |
+| 27 | `candy-icons` | Install candy-icons theme |
+| 28 | `wallpapers` | Clone wallpaper collection |
+| 29 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
+| 30 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
+| 31 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
+| 32 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
+| 33 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
+| 34 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
 
 **Optional post-install tuning** — two interactive scripts, not wired into
 `install.sh` because they need a reboot, are per-machine, and prompt before
