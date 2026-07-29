@@ -7,6 +7,9 @@ packages:
   - xorg-xev
   - xorg-fonts-encodings
   - xorg-setxkbmap
+  - xorg-xsetroot    # .xinitrc sets the root cursor with it; the call is
+                     # guarded, so without this the cursor silently stayed
+                     # the X11 default X on a fresh install
   - xorg-fonts-misc
   - wmctrl
   - xwallpaper
