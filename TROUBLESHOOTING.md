@@ -1559,6 +1559,34 @@ and qtile appearing. One line of it was a real error; the rest is noise
 that looks alarming and is not. They are grouped so you can match what is
 on screen against what matters.
 
+### Legacy: AT-SPI environment variables in `/etc/environment`
+- **Context:** older revisions of this repo's README told you to add these
+  to `/etc/environment` so GTK and Qt apps would expose their widget tree
+  over AT-SPI:
+  ```bash
+  ACCESSIBILITY_ENABLED=1
+  GTK_MODULES=gail:atk-bridge
+  OOO_FORCE_DESKTOP=gnome
+  GNOME_ACCESSIBILITY=1
+  QT_ACCESSIBILITY=1
+  QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+  ```
+  (The old instructions had a typo — `sudo vim /etc/enviromen`. Use
+  `sudoedit /etc/environment`.)
+- **Status:** not set by the wizard, and not required for what most people
+  want AT-SPI for here. homerow hints **browser** content via
+  `--force-renderer-accessibility` in `brave-flags.conf`, which is a
+  per-browser flag and needs none of the above.
+- **When you still want them:** if you want homerow to hint native GTK/Qt
+  applications rather than just web pages. They are a system-wide
+  behaviour change with a memory cost in every toolkit app, which is why
+  they are opt-in rather than part of `install.sh`.
+- **Recorded here because the README that documented them was rewritten**,
+  and `main` was the last place they survived. Their absence from the
+  current README is not evidence they never mattered.
+- See also `.config/espanso/Readme.md`, which needs its own (unrelated)
+  set of `/etc/environment` entries.
+
 ### `xauth: (stdin):2: unknown command "<32 hex chars>"` right after `letsgo`
 - **Symptom:** the very first line after `letsgo`, before the Xorg banner.
   X still starts and the session is fine.
