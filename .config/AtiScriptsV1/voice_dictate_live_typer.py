@@ -39,9 +39,10 @@ Each line whisper-stream prints is also prefixed with a timestamp bracket
 on whenever VAD mode is active (stream.cpp: `params.no_timestamps =
 !use_vad`) and exposes no flag to turn them back off, so it has to be
 stripped here rather than at the source. Whisper also emits its own
-bracketed/parenthesized non-speech tags on quiet or noisy audio --
-"[BLANK_AUDIO]", "[inaudible]", "(laughs)" and the like -- which are
-stripped outright (they're never actual dictated words), plus a short
+non-speech tags on quiet or noisy audio, wrapped in either brackets,
+parens, or a matched pair of asterisks -- "[BLANK_AUDIO]", "[inaudible]",
+"(laughs)", "*singing*" and the like -- which are stripped outright
+(they're never actual dictated words), plus a short
 list of common unbracketed filler ("thank you", "bye", ...) it
 hallucinates on near-silence, filtered only when a block has typed
 nothing else yet for the current utterance.
@@ -52,6 +53,19 @@ import sys
 
 TIMESTAMP_RE = re.compile(r"^\[\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}\]\s*")
 BRACKET_TAG_RE = re.compile(r"[\[\(][^\]\)]*[\]\)]")
+# Whisper also wraps non-speech annotations in a matched pair of asterisks
+# ("*singing*", "*inaudible*") rather than brackets/parens -- same idea,
+# different delimiter. Restricted to a single word with no spaces/
+# punctuation, deliberately: Whisper self-censors profanity the same way
+# ("f*cking"), and a naive "any pair of asterisks" pattern treats THAT
+# inner asterisk as a closing tag delimiter paired with some earlier,
+# unrelated stray "*" -- observed swallowing a whole real sentence between
+# them ("* This is a trash fish of... that's f*cking" all matched as one
+# "tag" up to the asterisk inside the censored word). Annotations are
+# always a single descriptive word; censored profanity always has letters
+# on both sides of its asterisk. Restricting to \w+ with no space tells
+# the two apart.
+ASTERISK_TAG_RE = re.compile(r"\*\w+\*")
 PUNCT_RE = re.compile(r"[^\w\s]")
 
 # Common unbracketed filler Whisper hallucinates on near-silent audio.
@@ -69,7 +83,7 @@ HALLUCINATIONS = {
 
 
 def strip_bracket_tags(text):
-    return BRACKET_TAG_RE.sub(" ", text)
+    return ASTERISK_TAG_RE.sub(" ", BRACKET_TAG_RE.sub(" ", text))
 
 
 def is_hallucination(text):
