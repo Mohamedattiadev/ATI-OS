@@ -238,7 +238,7 @@ MOD_ORDER=(
   pacman-guard boot-fallback login-shell
   touchpad xinit xresources xmodmap lid image-envs flatpak piper whisper
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
-  themes browser-flags chrome-policy
+  themes dark-mode browser-flags browser-memory chrome-policy
 )
 
 _reg() { MOD_TITLE[$1]="$2"; MOD_GROUP[$1]="$3"; MOD_DESC[$1]="$4"; MOD_CMD[$1]="$5"; }
@@ -289,7 +289,9 @@ _reg candy-icons       "Candy icons"         Themes    "Install candy-icons them
 _reg wallpapers        "Wallpapers"          Themes    "Clone w3dg/wallpapers to ~/Pictures"                    "step_wallpapers"
 _reg speed             "Speed tweaks"        System    "sysctl + service trims (from speed_boost.sh)"           "step_speed"
 _reg themes            "Theme system"        Themes    "pywal + palette precompile + initial doom-one apply"    "step_themes"
+_reg dark-mode         "Dark preference"     Themes    "Advertise prefer-dark via portal so sites use their own dark theme" "step_dark_mode"
 _reg browser-flags     "Browser flags"       Browsers  "brave/chrome/chromium wal theme extension flags"        "step_browser_flags"
+_reg browser-memory    "Browser memory saver" Browsers "Policy: discard idle tabs, keep whatsapp/chatgpt live"  "step_browser_memory"
 _reg chrome-policy     "Chrome theme policy" Browsers  "Sign .pem + install /etc/opt/chrome force_installed"    "step_chrome_policy"
 
 _validate_ids "$ONLY_LIST" --only
@@ -646,11 +648,126 @@ step_themes() {
   run "wal-precompile"
   run "theme-apply doomone"
 }
+step_dark_mode() {
+  # Make the desktop advertise a dark colour-scheme *preference* rather than
+  # forcing dark on rendered output.
+  #
+  # Why this module exists: with no preference set, xdg-desktop-portal reports
+  # `org.freedesktop.appearance color-scheme = 0` ("no preference"). Chromium
+  # reads exactly that key, so every site was served its LIGHT stylesheet — and
+  # the workaround was `--enable-features=WebContentsForceDark` in the
+  # *-flags.conf files, which re-tints already-rendered pixels and mangles any
+  # site that ships a real dark theme (see TROUBLESHOOTING.md).
+  #
+  # Setting the preference properly makes sites serve the dark CSS their own
+  # designers wrote, so force-dark is no longer needed anywhere.
+  #
+  # GTK3/GTK4 settings.ini already carry gtk-application-prefer-dark-theme;
+  # this covers the gsettings/portal channel, which is the one Chromium,
+  # Electron and libadwaita apps actually consult.
+  if ! command -v gsettings >/dev/null; then
+    _WARN "gsettings missing (glib2) — cannot set colour-scheme preference"; return 0
+  fi
+  run "gsettings set org.gnome.desktop.interface color-scheme prefer-dark"
+  (( DRY_RUN )) && return 0
+
+  # Verify through the portal rather than trusting the write: if
+  # xdg-desktop-portal-gtk is not installed, gsettings succeeds and browsers
+  # still see "no preference" — a silent failure that looks exactly like the
+  # bug this module fixes.
+  local scheme
+  scheme=$(busctl --user call org.freedesktop.portal.Desktop \
+    /org/freedesktop/portal/desktop org.freedesktop.portal.Settings \
+    ReadOne ss org.freedesktop.appearance color-scheme 2>/dev/null) || scheme=""
+  case "$scheme" in
+    *"u 1"*) _OK "portal reports prefer-dark — sites will serve their own dark theme" ;;
+    "")      _WARN "portal not answering (install xdg-desktop-portal + xdg-desktop-portal-gtk); browsers may still see light" ;;
+    *)       _WARN "portal still reports '$scheme' — restart xdg-desktop-portal or re-login" ;;
+  esac
+}
 step_browser_flags() {
-  run "for f in brave-flags.conf chromium-flags.conf chrome-flags.conf; do
-    cfg=$HOME/.config/\$f
-    grep -q -- '--load-extension=' \$cfg 2>/dev/null || echo '--load-extension=$HOME/.config/qtile/browser-theme' >> \$cfg
-  done"
+  # Authoritative, not additive: older installs of these dotfiles shipped
+  # `--enable-features=WebContentsForceDark` in every *-flags.conf. That flag
+  # is now wrong (step_dark_mode replaces it), so strip it on upgrade instead
+  # of only appending what is missing — otherwise an existing machine keeps
+  # the broken dark rendering forever while a fresh clone comes up correct.
+  #
+  # Files under ~/.config are stow symlinks into the repo, so edit through
+  # them carefully: sed -i on a symlink replaces the link with a regular file
+  # and silently detaches the machine from the repo. Resolve first, and skip
+  # anything that already points into ~/.dotfiles (the repo copy is correct).
+  local f cfg real
+  for f in brave-flags.conf chromium-flags.conf chrome-flags.conf; do
+    cfg="$HOME/.config/$f"
+    [[ -e "$cfg" ]] || { run "cp $DOTFILES_DIR/.config/$f $cfg"; continue; }
+    real="$(readlink -f "$cfg")"
+    if [[ "$real" == "$DOTFILES_DIR"/* ]]; then
+      _DIM "  $f → repo copy (already correct)"
+      continue
+    fi
+    # Plain file: repair in place.
+    #
+    # Anchor on a real flag line (`^--`), not a bare substring match: these
+    # files now carry comments that *name* WebContentsForceDark to explain why
+    # it is gone, and a loose `/WebContentsForceDark/d` would delete the
+    # explanation along with the flag.
+    if grep -qE '^\s*--[^ ]*WebContentsForceDark' "$real" 2>/dev/null; then
+      # Drop the whole line only when force-dark is the sole feature on it.
+      # `--enable-features` takes a comma-separated list, so if the user added
+      # others alongside it, delete just that one token and keep the rest.
+      run "sed -i -E \
+        -e 's/,WebContentsForceDark//g' \
+        -e 's/WebContentsForceDark,//g' \
+        -e '/^\s*--enable-features=\s*\$/d' \
+        -e '/^\s*--[^ ]*WebContentsForceDark\s*\$/d' \
+        $real"
+      _OK "$f: removed WebContentsForceDark (see dark-mode module)"
+    fi
+    grep -q -- '--load-extension=' "$real" 2>/dev/null \
+      || run "echo '--load-extension=$HOME/.config/qtile/browser-theme' >> $real"
+    grep -q -- '--process-per-site' "$real" 2>/dev/null \
+      || run "echo '--process-per-site' >> $real"
+  done
+}
+step_browser_memory() {
+  # Turn on Memory Saver for every Chromium-family browser, by policy.
+  #
+  # Why policy and not a flag: Memory Saver is a *preference*, so a flag in
+  # *-flags.conf cannot set it and a manual toggle in Settings is lost the
+  # moment a profile is reset. A managed policy applies on every launch and
+  # ships with the dotfiles, which is the point of this repo.
+  #
+  # What it buys: measured on the 8G laptop, Brave held 2933MB across 13
+  # renderer processes to show 6 windows -- most of them idle background tabs
+  # sitting on a full heap. Memory Saver discards an inactive tab's renderer
+  # outright and reloads it when you click back. This is the same "Make Brave
+  # faster" prompt the browser nags about, made declarative.
+  #
+  # TabDiscardingExceptions matters as much as the saving. A discarded tab
+  # stops executing, so anything holding a socket to notify you goes quiet.
+  # WhatsApp Web is the reason the exception list exists -- discarding the
+  # qtile scratchpad would silently stop message notifications.
+  #
+  # Policy directories differ per browser and are not guesses:
+  #   brave    -> /etc/brave/policies/managed        (strings /opt/brave-bin/brave)
+  #   chromium -> /etc/chromium/policies/managed
+  #   chrome   -> /etc/opt/chrome/policies/managed
+  local src="$DOTFILES_DIR/.config/arch-config/browser-policies/50-memory-saver.json"
+  if [[ ! -f "$src" ]]; then
+    _WARN "browser policy file missing from repo — skipping"; return 0
+  fi
+  # Fail loudly on malformed JSON rather than installing a file every browser
+  # will silently ignore.
+  if (( ! DRY_RUN )) && ! python3 -m json.tool "$src" >/dev/null 2>&1; then
+    _ERR "50-memory-saver.json is not valid JSON"; return 1
+  fi
+  local d
+  for d in /etc/brave/policies/managed \
+           /etc/chromium/policies/managed \
+           /etc/opt/chrome/policies/managed; do
+    run "sudo install -Dm644 $src $d/50-memory-saver.json"
+  done
+  _DIM "  verify at brave://policy — all four entries should read OK"
 }
 step_chrome_policy() {
   local pem="$HOME/.config/qtile/browser-theme.pem"

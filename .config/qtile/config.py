@@ -4561,20 +4561,61 @@ groups.append(
             ),
             # qdrop is self-managed (socket-controlled). See scripts/qdrop.py.
             ### NOTE:for chatgpt & deepseek & whatsapp i decided to use brave browser by using one browser engine for all, i  used separate profiles for
-            ### each browser and it will be in the ~/.config/qtile/brave-profiles
-            ### by using some flags i can disable some features like sync, background networking, component update, etc which will make it faster and reduce
-            ### the memory usage ,cpu usage and battery usage
+            ### each browser. They live as PROFILES inside the main Brave instance
+            ### (~/.config/BraveSoftware/Brave-Browser/<Name>), not as separate browsers.
+            #
+            # --profile-directory, NOT --user-data-dir. This is the difference
+            # between "a profile" and "a whole second browser", and it was worth
+            # ~1GB on this 8G laptop.
+            #
+            # A separate --user-data-dir cannot share anything with the main
+            # instance: each one spawned its own gpu-process, network service,
+            # storage service and 3 zygotes just to render a single page. Three
+            # scratchpads meant four independent Brave stacks totalling ~4.6G of
+            # 7.6G RAM, which is what kept earlyoom SIGTERMing renderers and
+            # showing "Aw, Snap!" in the WhatsApp dropdown (TROUBLESHOOTING.md).
+            # --profile-directory keeps the separate logins/cookies/sessions but
+            # shares the engine, so each dropdown costs one renderer.
+            #
+            # MATCH ON THE URL HOST, NOT ON --class.
+            #
+            # --class does NOT survive this. When brave is already running the
+            # new invocation is forwarded over the singleton socket, and the
+            # window is created by the ORIGINAL browser process using its own
+            # class. What actually lands on the window is:
+            #
+            #     WM_CLASS = ("web.whatsapp.com", "Brave-browser")
+            #                  ^ URL-derived instance  ^ NOT sp-whatsapp
+            #
+            # With Match(wm_class="sp-whatsapp") that never fires, and the
+            # dropdown opens as a normal tiled window in monadtall instead.
+            #
+            # The instance field is URL-derived and stable, so match on that.
+            # It is also correct on a cold start -- when the scratchpad is what
+            # launches brave, --class DOES apply, but the host half of the pair
+            # is identical either way, which is exactly what --class is not.
+            # Match(wm_instance_class=...) is the rule that targets exactly
+            # that field: compare() maps it to wm_class[0], where a plain
+            # wm_class rule is tested against every field of the pair.
+            #
+            # Only --app= windows get a host-derived instance name; ordinary
+            # brave windows are ("brave-browser", "Brave-browser"), so these
+            # matches cannot swallow a normal browser window by accident.
+            # --class/--name are dropped below rather than left in as flags
+            # that only sometimes do something. Check any of this with:
+            #     xprop WM_CLASS
+            #
+            # The old --disable-background-networking / --disable-component-update
+            # / --disable-breakpad / --disable-sync / --no-first-run flags are
+            # gone: they configure a BROWSER PROCESS at startup, and these
+            # commands now join the already-running one, so they were silently
+            # ignored. Put them in ~/.config/brave-flags.conf if you want them --
+            # that applies them to the single instance that actually starts.
             DropDown(
                 "chatgpt",
-                f"brave --user-data-dir={os.path.expanduser('~')}/.config/qtile/brave-profiles/chatgpt "
-                "--class=sp-chatgpt --name=sp-chatgpt "
-                "--app=https://chat.openai.com "
-                "--disable-background-networking "
-                "--disable-component-update "
-                "--disable-breakpad "
-                "--disable-sync "
-                "--no-first-run ",
-                match=Match(wm_class="sp-chatgpt"),
+                'brave --profile-directory="Chatgpt" '
+                "--app=https://chat.openai.com ",
+                match=Match(wm_instance_class="chat.openai.com"),
                 width=0.7,
                 height=0.8,
                 x=0.15,
@@ -4584,14 +4625,9 @@ groups.append(
             ),
             DropDown(
                 "deepseek",
-                f"brave --user-data-dir={os.path.expanduser('~')}/.config/qtile/brave-profiles/deepseek "
-                "--class=sp-deepseek --name=sp-deepseek --app=https://chat.deepseek.com "
-                "--disable-background-networking "
-                "--disable-component-update "
-                "--disable-breakpad "
-                "--disable-sync "
-                "--no-first-run",
-                match=Match(wm_class="sp-deepseek"),
+                'brave --profile-directory="Deepseek" '
+                "--app=https://chat.deepseek.com ",
+                match=Match(wm_instance_class="chat.deepseek.com"),
                 width=0.7,
                 height=0.8,
                 x=0.15,
@@ -4601,15 +4637,9 @@ groups.append(
             ),
             DropDown(
                 "whats",
-                f"brave --user-data-dir={os.path.expanduser('~')}/.config/qtile/brave-profiles/whatsapp "
-                "--class=sp-whatsapp --name=sp-whatsapp "
-                "--app=https://web.whatsapp.com "
-                "--disable-background-networking "
-                "--disable-component-update "
-                "--disable-breakpad "
-                "--disable-sync "
-                "--no-first-run ",
-                match=Match(wm_class="sp-whatsapp"),
+                'brave --profile-directory="Whatsapp" '
+                "--app=https://web.whatsapp.com ",
+                match=Match(wm_instance_class="web.whatsapp.com"),
                 width=0.7,
                 height=0.8,
                 x=0.15,

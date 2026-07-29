@@ -23,7 +23,7 @@ git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
   && ./install.sh
 ```
 
-Then `startx`. That's it — 30 modules run end to end, nothing to follow up on.
+Then `startx`. That's it — 32 modules run end to end, nothing to follow up on.
 
 > Want to pick modules or preview first? See [Install options](#install-options).
 > Something broken? [TROUBLESHOOTING.md](TROUBLESHOOTING.md) logs real cases
@@ -216,7 +216,7 @@ fail the same way: exit 2, nothing touched.
 **What `./install.sh` does**
 
 - Auto-bootstraps `gum` via pacman (~2 s)
-- Runs all 30 modules end-to-end
+- Runs all 32 modules end-to-end
 - Keeps `sudo` alive for the whole run (primed once, refreshed in the
   background) so long AUR builds don't silently drop package installs when the
   credential cache would otherwise expire mid-run
@@ -229,7 +229,7 @@ Themes / Browsers / Apps / Media), spinners, progress bars and colored badges.
 On failure it shows a red-bordered error tail and prompts **retry · skip ·
 quit** (unless `--yes`, which auto-skips).
 
-**The 30 modules**
+**The 32 modules**
 
 | # | id | What |
 | - | -- | ---- |
@@ -259,10 +259,12 @@ quit** (unless `--yes`, which auto-skips).
 | 24 | `disable-dm` | Disable all display managers |
 | 25 | `candy-icons` | Install candy-icons theme |
 | 26 | `wallpapers` | Clone wallpaper collection |
-| 27 | `speed` | System speed tweaks (`speed_boost.sh`) |
+| 27 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
 | 28 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
-| 29 | `browser-flags` | brave/chrome/chromium wal theme extension flags |
-| 30 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| 29 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
+| 30 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
+| 31 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
+| 32 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
 
 **Optional post-install tuning** — two interactive scripts, not wired into
 `install.sh` because they need a reboot, are per-machine, and prompt before
@@ -362,6 +364,21 @@ Upstream: https://gitlab.com/theblackdon/dcli
 | qtile popups + WallpaperPicker | `popups/_wal_colors.load_colors()` reads `current_palette.json` first, falls back to `~/.cache/wal/colors.json`; muted tone derived from a `bg`→`fg` blend for readable dividers |
 | gtk base + icon theme | `settings.ini` rewritten per palette: `mono-light` → `Breeze` + `Papirus-Light`; all others → `Sweet-Dark` + `Papirus-Dark` |
 | cursor | `~/.Xresources` sets `Xcursor.size: 24` + `Xcursor.theme: breeze_cursors`; loaded via `xrdb -merge` in `~/.xinitrc` |
+| **web page content** | Not themed by this repo, on purpose. The `dark-mode` module sets `org.gnome.desktop.interface color-scheme=prefer-dark`, which xdg-desktop-portal republishes as `org.freedesktop.appearance color-scheme = 1`. Chromium reads that key and reports `prefers-color-scheme: dark`, so each site serves **its own** dark stylesheet. The browser *chrome* stays palette-driven via the extension rows above |
+
+> **Why page content is not force-darkened.** `--enable-features=WebContentsForceDark`
+> used to sit in all three `*-flags.conf`. It is a per-pixel colour transform
+> applied after render, with no knowledge of the page's design — fine on a site
+> with no dark theme, destructive on one that has a good one (it re-darkens an
+> already-dark palette and blows out gradients and accent text). The portal
+> preference above replaces it. For the occasional site with no dark theme,
+> enable force-dark for that site from the page menu instead of globally.
+>
+> ```bash
+> # confirm the desktop is advertising dark  ->  v u 1
+> busctl --user call org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop \
+>   org.freedesktop.portal.Settings ReadOne ss org.freedesktop.appearance color-scheme
+> ```
 
 **Wallpaper mode (`wal`)** uses a precompiled cache. `wal-precompile` walks
 `~/Pictures/Wallpapers/` and produces per-image palettes at
