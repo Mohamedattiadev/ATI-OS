@@ -641,9 +641,6 @@ if status is-interactive
     starship init fish | source
 end
 
-### tmux  ###
-export TMUX_CONF=~/.config/.tmux.conf
-
 ### tmuxifier ###
 set -gx PATH $HOME/.tmux/plugins/tmuxifier/bin $PATH
 #eval (tmuxifier init - fish)

@@ -29,6 +29,16 @@ Then `startx`. That's it — 32 modules run end to end, nothing to follow up on.
 > Something broken? [TROUBLESHOOTING.md](TROUBLESHOOTING.md) logs real cases
 > with symptom → root cause → fix.
 
+One manual follow-up the installer doesn't do: tmux's plugins (TPM) need a
+one-time bootstrap —
+```bash
+git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+~/.tmux/plugins/tpm/bin/install_plugins
+```
+Without it, `vim-tmux-navigator`'s pane navigation and
+resurrect/continuum's save-on-interval + restore-on-start all silently
+do nothing. See [TROUBLESHOOTING.md → Tmux](TROUBLESHOOTING.md#tmux).
+
 ---
 
 ## What you get
