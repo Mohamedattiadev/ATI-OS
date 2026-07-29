@@ -1,5 +1,18 @@
 -- ~/.config/nvim/lua/config/options.lua
 --------------------------------------------------------------
+-- PICKER
+--------------------------------------------------------------
+-- Pick ONE picker. Both fzf-lua (LazyVim's auto-selected default) and
+-- telescope used to be installed: <leader>ff / <leader>fg went to telescope
+-- while every other LazyVim picker key went to fzf-lua. This makes telescope
+-- the single picker all of LazyVim's keymaps route to.
+--
+-- This MUST live in this file: LazyVim loads lazyvim/config/options.lua
+-- (which hardcodes vim.g.lazyvim_picker = "auto") immediately before this
+-- file, and reads the value afterwards when resolving default extras.
+vim.g.lazyvim_picker = "telescope"
+
+--------------------------------------------------------------
 -- BASIC OPTIONS
 --------------------------------------------------------------
 -- Disable netrw completely
@@ -38,9 +51,19 @@ opt.scrolloff = 8
 opt.sidescrolloff = 8
 opt.smoothscroll = true
 
+-- Folds
+-- LazyVim already sets foldlevel=99 (everything open on file open). Kept
+-- explicit here because a stray global foldlevel=0 is what used to make
+-- code files open fully collapsed -- see the markdown FileType autocmd in
+-- keymaps.lua, which must stay buffer-local (vim.opt_local).
+opt.foldlevel = 99
+opt.foldlevelstart = 99
+opt.foldenable = true
+
 -- Performance
-opt.lazyredraw = true
-opt.ttyfast = true
+-- NOTE: 'lazyredraw' was removed here on purpose: it suppresses redraws
+-- during async work and causes stale/ghost frames with image.nvim's kitty
+-- backend. 'ttyfast' was removed too -- it is a no-op on Neovim.
 opt.updatetime = 50
 opt.timeoutlen = 300
 
@@ -100,26 +123,7 @@ vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
   end,
 })
 
--- HACK: Monkey patch the internal Treesitter highlighter to catch the crash
--- Place this at the VERY TOP of your init.lua or config/options.lua
-
-local ok, TSHighlighter = pcall(require, "vim.treesitter.highlighter")
-if ok and TSHighlighter.on_line_impl then
-  local original_on_line_impl = TSHighlighter.on_line_impl
-
-  TSHighlighter.on_line_impl = function(self, ...)
-    -- Try to run the original function
-    local status, err = pcall(original_on_line_impl, self, ...)
-
-    -- If it crashes...
-    if not status then
-      -- Check if it's the specific "end_col" or "out of range" error
-      if err and (err:match("end_col") or err:match("out of range")) then
-        -- SILENCE: Do nothing. Pretend it worked.
-        return
-      end
-      -- If it's a different error, let it crash so you know.
-      error(err)
-    end
-  end
-end
+-- NOTE: a monkey patch of vim.treesitter.highlighter.on_line_impl used to
+-- live here to swallow "end_col out of range" crashes. It was dead code on
+-- Neovim 0.12 (on_line_impl no longer exists, so the guard never fired) and
+-- would have hidden genuine errors if the name ever came back. Removed.
