@@ -1052,6 +1052,52 @@ class Dropzone(Gtk.Window):
             Gdk.WindowHints.MIN_SIZE | Gdk.WindowHints.MAX_SIZE,
         )
 
+    def _restore_natural_size(self):
+        """Undo a size imposed from outside (tiling, fullscreen).
+
+        Nothing here ever resized the window back, so any size the WM
+        forced on it became permanent:
+
+          * Height. A tiled or fullscreened qdrop is configured to the
+            layout's height (~714 on this screen). GTK keeps that size
+            afterwards -- set_resizable(False) is only a request, and the
+            WM had already overridden it -- so qdrop stayed full-height
+            with two items in it.
+          * Width. Worse, because _lock_width() pins the geometry hints to
+            the *first* real allocation. If that first allocation happened
+            while qtile had the window tiled, the wrong width is frozen
+            into min_width/max_width and the WM then enforces it forever
+            -- which is why it settled at ~531 rather than WIN_W (620).
+
+        Recomputing from GTK's preferred size fixes both: preferred size
+        is derived from the content's own requests, independent of
+        whatever the window is currently sized to. The stale hints are
+        rewritten first, since a max_width of 531 would otherwise block
+        the resize back out to 620.
+        """
+        try:
+            _, nat_w = self.get_preferred_width()
+            _, nat_h = self.get_preferred_height()
+            w = max(WIN_W, nat_w)
+            h = max(WIN_H, nat_h)
+            if self.get_size() == (w, h):
+                return
+            geo = Gdk.Geometry()
+            geo.min_width = geo.max_width = w
+            geo.min_height = 1
+            geo.max_height = 4096
+            self.set_geometry_hints(
+                None, geo,
+                Gdk.WindowHints.MIN_SIZE | Gdk.WindowHints.MAX_SIZE,
+            )
+            # Keep _width_locked set: _lock_width must not re-freeze the
+            # hints from a subsequent allocation, or a single bad frame
+            # would pin the wrong width again.
+            self._width_locked = True
+            self.resize(w, h)
+        except Exception:
+            pass
+
     def _place_top_center(self):
         x, y = self._target_xy()
         self._move(x, y)
@@ -1283,6 +1329,70 @@ class Dropzone(Gtk.Window):
         except Exception:
             pass
 
+    def _raise_above_all(self):
+        # Keep qdrop floating and on top.
+        #
+        # FLOATING half: floating_layout has had Match(wm_class="qdrop")
+        # for a while and it does match -- verified live, both
+        # config.floating_layout.match() and the group's own clone return
+        # True for this window. Despite that, qtile was observed holding
+        # it at FloatStates.NOT_FLOATING, i.e. as a regular tiled client:
+        # monadtall then gave it a column and *resized every other window*
+        # to make room, which is the "layout affects qdrop" bug. The state
+        # is transient (it reads FLOATING at other times), so the rule is
+        # applied and then lost again somewhere in the hide()+togroup()+
+        # remap dance this window does on every cross-group show.
+        #
+        # Rather than chase where it gets dropped, assert it on each show:
+        # the rule is declarative and one-shot, this is idempotent.
+        #
+        # Guarded on the current state on purpose. enable_floating() ends
+        # up in _enablefloating(), which place()s the window at its stored
+        # float geometry -- calling it unconditionally mid-reveal would
+        # snap the window out of the slide. Only the already-broken case
+        # pays for the correction.
+        try:
+            from libqtile.command.client import InteractiveCommandClient
+            gdk_win = self.get_window()
+            if gdk_win is not None:
+                c = InteractiveCommandClient()
+                win = c.window[gdk_win.get_xid()]
+                if not win.info().get("floating", False):
+                    win.enable_floating()
+                    # enable_floating() places the window at the float
+                    # geometry qtile stored for it -- which, coming out of
+                    # a tiled state, is the tiled size. Undo that here or
+                    # the correction above would itself leave qdrop the
+                    # wrong shape.
+                    self._restore_natural_size()
+        except Exception:
+            pass
+
+        # Restack qdrop to the top, so a fullscreen window underneath does
+        # not swallow it.
+        #
+        # GTK's set_keep_above() (applied at construction) only sets the
+        # _NET_WM_STATE_ABOVE hint, and qtile does not implement an
+        # always-on-top layer for it. Meanwhile a client going fullscreen
+        # is raised to the top of the X stack, so it ends up above qdrop.
+        # Focus does not help either: qtile's X11 Window.focus() is just
+        # _do_focus(), with no restacking at all -- which is why qdrop
+        # appeared to "not open" over a fullscreen video or browser while
+        # working fine everywhere else.
+        #
+        # bring_to_front() is deliberately the *only* thing done here. It
+        # restacks this one window and touches nothing else: the window
+        # underneath keeps its fullscreen state, and the tiling layout is
+        # not re-run -- so every other window behaves exactly as it did.
+        try:
+            from libqtile.command.client import InteractiveCommandClient
+            gdk_win = self.get_window()
+            if gdk_win is None:
+                return
+            InteractiveCommandClient().window[gdk_win.get_xid()].bring_to_front()
+        except Exception:
+            pass
+
     def _sync_to_current_qtile_group(self):
         # qdrop is a persistent daemon window that stays mapped forever
         # (see hide_animated()), so it's permanently attached to whatever
@@ -1345,6 +1455,7 @@ class Dropzone(Gtk.Window):
                 self._reversed_duration(cur_y, target_y, height, REVEAL_MS),
             )
             self.present()
+            self._raise_above_all()
             self._reset_hide_timer()
             return
 
@@ -1367,6 +1478,10 @@ class Dropzone(Gtk.Window):
             # auto-hide countdown, which is the useful half of the
             # request.
             self.present()
+            # Still re-raise: something may have gone fullscreen (or just
+            # been raised) while qdrop sat open, burying it. A SHOW in
+            # that state has to bring it back to the top.
+            self._raise_above_all()
             self._reset_hide_timer()
             return
 
@@ -1381,6 +1496,11 @@ class Dropzone(Gtk.Window):
         self._refresh()
         self.revealer.set_reveal_child(True)  # content visible immediately;
         # the window's own Y position is what slides now, not the revealer.
+
+        # After the content is built and revealed (so GTK's preferred size
+        # reflects the real item count), and before _target_xy() reads the
+        # width to center on.
+        self._restore_natural_size()
 
         x, target_y = self._target_xy()
 
@@ -1407,6 +1527,11 @@ class Dropzone(Gtk.Window):
             # before only because the old code unmapped on hide).
             start_y = -height
             self._slide_move(x, start_y, target_y, REVEAL_MS)
+            # This is the common path (every show after the first), and
+            # the one where a fullscreen window underneath would otherwise
+            # hide the whole reveal -- present() is only a GTK-level
+            # activation request and does not restack under qtile.
+            self._raise_above_all()
             self._reset_hide_timer()
             return
 
@@ -1448,6 +1573,7 @@ class Dropzone(Gtk.Window):
         self.show_all()
         self.present()
         self._force_qtile_focus()
+        self._raise_above_all()
         self._mapped = True
         self._show_pending = True
 

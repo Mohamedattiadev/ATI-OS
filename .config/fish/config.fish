@@ -26,8 +26,16 @@ end
 ### ADDING TO THE PATH
 # First line removes the path; second line sets it.  Without the first line,
 # your path gets massive and fish becomes very slow.
+#
+# -g, not -U. Universal variables live in ~/.config/fish/fish_variables, and
+# assigning one re-serializes that whole file to disk -- so setting it here,
+# in a file that runs on every single shell launch, meant every new terminal
+# did a pointless write (confirmed: fish_variables' mtime changed on each
+# launch). It is also a race: two shells starting at once both rewrite the
+# same file. A global is rebuilt from this line on every start anyway, which
+# is exactly the intent, and it does not touch the disk.
 set -e fish_user_paths
-set -U fish_user_paths $HOME/.bin $HOME/.local/bin $HOME/.config/emacs/bin $HOME/Applications /var/lib/flatpak/exports/bin/ $HOME/Desktop $fish_user_paths
+set -g fish_user_paths $HOME/.bin $HOME/.local/bin $HOME/.config/emacs/bin $HOME/Applications /var/lib/flatpak/exports/bin/ $HOME/Desktop $fish_user_paths
 
 ### EXPORT ###
 
@@ -40,7 +48,12 @@ if not set -q TERM; or not infocmp "$TERM" >/dev/null 2>&1
 end
 set -gx VISUAL nvim # $VISUAL use nvim in GUI mode
 set -gx EDITOR nvim # $EDITOR use nvim in terminal
-set -Ux SUDO_EDITOR nvim
+# -gx, not -Ux -- see the fish_user_paths note above for why universals are
+# the wrong scope for anything assigned from config.fish. The -eU clears a
+# stale universal left by the previous version; it is a silent no-op (status
+# 4) once gone, so it costs nothing on later launches.
+set -eU SUDO_EDITOR
+set -gx SUDO_EDITOR nvim
 
 ### SET MANPAGER
 ### Uncomment only one of these!
@@ -584,7 +597,10 @@ end
 
 # Set default fzf options for a large, borderless popup UI
 
-set -Ux FZF_DEFAULT_OPTS "\
+# -gx, not -Ux (see the fish_user_paths note above). This one was the worst
+# offender: a ~600-byte string rewritten into fish_variables on every launch.
+set -eU FZF_DEFAULT_OPTS
+set -gx FZF_DEFAULT_OPTS "\
 --height=60% \
 --layout=reverse \
 --multi \

@@ -958,25 +958,19 @@ if pgrep -x qutebrowser >/dev/null; then
     timeout 30 qutebrowser ":restart"       >/dev/null 2>&1 || true
   ' >/dev/null 2>&1 </dev/null || true
 fi
-# Regenerate a Chromium theme extension so brave/chrome UI colors track
-# the wallpaper. --load-extension=<dir> in *-flags.conf keeps it loaded
-# across launches. Extension is a bare theme manifest; each apply
-# rewrites the manifest with new palette RGB triples, then restarts
-# each running browser so the theme swap takes effect.
-BROWSER_EXT="$HOME/.config/qtile/browser-theme"
-mkdir -p "$BROWSER_EXT"
-# Skip regeneration if wal fast path already wrote a fresh manifest.
-if [[ "${PRECOMPILED_APPLIED:-0}" != 1 ]]; then
-python3 - "$BROWSER_EXT/manifest.json" "$MODE" <<'PYEOF' 2>/dev/null || true
-import json, os, sys, colorsys, time
-outp, mode = sys.argv[1], sys.argv[2]
-def hx(s): return [int(s[i:i+2],16) for i in (1,3,5)]
-def hls(s):
-    r,g,b = [int(s[i:i+2],16)/255 for i in (1,3,5)]
-    return colorsys.rgb_to_hls(r,g,b)
-def hex_from_hls(h,l,s):
-    r,g,b = colorsys.hls_to_rgb(h,l,s)
-    return "#{:02x}{:02x}{:02x}".format(int(r*255),int(g*255),int(b*255))
+# Resolve the four palette roles (background / foreground / alt-surface /
+# accent) for the active $MODE, as four space-separated #rrggbb values.
+#
+# Single source of truth on purpose: both the Chromium theme extension
+# below and the Firefox userChrome block further down need the exact same
+# palette, and when the preset table lived inline in the Chromium
+# generator the only way to add a second consumer was to copy all 21
+# entries -- which then silently drifts the first time a preset is
+# retuned in one copy and not the other.
+resolve_palette() {
+  python3 - "$1" <<'PYPALETTE'
+import json, os, sys
+mode = sys.argv[1]
 if mode == "wal":
     d = json.load(open(os.path.expanduser("~/.cache/wal/colors.json")))
     bg = d["special"]["background"]; fg = d["special"]["foreground"]
@@ -1008,7 +1002,29 @@ else:
       "ayu-mirage":("#1f2430","#cbccc6","#171b24","#5ccfe6"),
     }
     bg, fg, alt, accent = presets.get(mode, presets["doomone"])
-def rgb(h): return hx(h)
+print(bg, fg, alt, accent)
+PYPALETTE
+}
+
+# Read once; every browser block below consumes these. Falls back to the
+# doomone palette if wal's colors.json is missing/corrupt so a broken
+# cache tints the browsers wrong rather than leaving them untouched.
+read -r PAL_BG PAL_FG PAL_ALT PAL_ACCENT < <(resolve_palette "$MODE" 2>/dev/null) || true
+: "${PAL_BG:=#282c34}" "${PAL_FG:=#dcdfe4}" "${PAL_ALT:=#1e222a}" "${PAL_ACCENT:=#51afef}"
+
+# Regenerate a Chromium theme extension so brave/chrome UI colors track
+# the wallpaper. --load-extension=<dir> in *-flags.conf keeps it loaded
+# across launches. Extension is a bare theme manifest; each apply
+# rewrites the manifest with new palette RGB triples, then restarts
+# each running browser so the theme swap takes effect.
+BROWSER_EXT="$HOME/.config/qtile/browser-theme"
+mkdir -p "$BROWSER_EXT"
+# Skip regeneration if wal fast path already wrote a fresh manifest.
+if [[ "${PRECOMPILED_APPLIED:-0}" != 1 ]]; then
+python3 - "$BROWSER_EXT/manifest.json" "$PAL_BG" "$PAL_FG" "$PAL_ALT" "$PAL_ACCENT" <<'PYEOF' 2>/dev/null || true
+import json, sys, time
+outp, bg, fg, alt, accent = sys.argv[1:6]
+def rgb(s): return [int(s[i:i+2],16) for i in (1,3,5)]
 manifest = {
   "manifest_version": 3,
   # Bump version each apply so Chromium detects an "update" and
@@ -1168,6 +1184,175 @@ PYPURGE
     ( DISPLAY="${DISPLAY:-:0}" setsid "$bin" >/dev/null 2>&1 </dev/null & disown ) &
     disown
   done
+fi
+
+# ---------------------------------------------------------------------
+# Firefox
+# ---------------------------------------------------------------------
+# Firefox cannot be themed the way the Chromium family is above. A theme
+# extension there must be a signed .xpi -- release Firefox hard-refuses
+# unsigned add-ons and `xpinstall.signatures.required=false` is ignored
+# outside Nightly/ESR/Developer -- so the .crx trick has no counterpart.
+#
+# The route that does work on a stock release build is userChrome.css:
+# Firefox maps its entire chrome UI onto a documented set of `--lwt-*` /
+# `--toolbar-*` custom properties (the same ones lightweight themes drive),
+# so overriding those on :root retints the whole browser without touching
+# add-on signing at all. It is gated behind one pref, which we write into
+# the profile's user.js.
+#
+# Two consequences worth knowing:
+#   - userChrome.css is read exactly once, at startup. Rewriting it under
+#     a running Firefox does nothing at all, which is why the restart
+#     below is not optional cosmetics -- without it an apply looks like a
+#     silent no-op until the next manual restart.
+#   - user.js is re-applied over prefs.js on every startup by design, so
+#     the pref cannot drift back off.
+if [[ "${THEME_APPLY_NO_BROWSER:-0}" != 1 ]]; then
+  # Both the native and flatpak profile roots; either may be absent.
+  FF_ROOTS=(
+    "$HOME/.mozilla/firefox"
+    "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox"
+  )
+
+  # Firefox's own built-in theme paints over the lwt variables unless a
+  # matching light/dark base is active, so pick the base from the
+  # palette's actual background luminance rather than assuming dark --
+  # mono-light is a real preset and would otherwise render black-on-black.
+  FF_THEME_ID=$(python3 -c "
+import sys
+bg = sys.argv[1]
+r, g, b = (int(bg[i:i+2], 16) for i in (1, 3, 5))
+# Rec.601 luma; >128 is a light background.
+print('firefox-compact-light@mozilla.org' if (0.299*r + 0.587*g + 0.114*b) > 128
+      else 'firefox-compact-dark@mozilla.org')
+" "$PAL_BG" 2>/dev/null || echo 'firefox-compact-dark@mozilla.org')
+
+  FF_PROFILES=()
+  for root in "${FF_ROOTS[@]}"; do
+    [[ -d "$root" ]] || continue
+    # profiles.ini is authoritative: globbing *.default* misses profiles
+    # created by `firefox -P` and picks up leftovers of deleted ones.
+    if [[ -f "$root/profiles.ini" ]]; then
+      while IFS= read -r rel; do
+        [[ -n "$rel" ]] || continue
+        # IsRelative=0 entries store an absolute Path.
+        if [[ "$rel" == /* ]]; then
+          [[ -d "$rel" ]] && FF_PROFILES+=("$rel")
+        else
+          [[ -d "$root/$rel" ]] && FF_PROFILES+=("$root/$rel")
+        fi
+      done < <(sed -n 's/^Path=//p' "$root/profiles.ini")
+    else
+      for p in "$root"/*.default*; do
+        [[ -d "$p" ]] && FF_PROFILES+=("$p")
+      done
+    fi
+  done
+
+  for prof in "${FF_PROFILES[@]}"; do
+    mkdir -p "$prof/chrome"
+
+    cat > "$prof/chrome/userChrome.css" <<EOF
+/* Generated by theme-apply -- mode: $MODE. Edits are overwritten. */
+@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+
+:root {
+  --lwt-accent-color: $PAL_ALT !important;
+  --lwt-accent-color-inactive: $PAL_ALT !important;
+  --lwt-text-color: $PAL_FG !important;
+
+  --toolbar-bgcolor: $PAL_ALT !important;
+  --toolbar-color: $PAL_FG !important;
+  --toolbarbutton-icon-fill: $PAL_FG !important;
+
+  --tab-selected-bgcolor: $PAL_BG !important;
+  --tab-selected-textcolor: $PAL_FG !important;
+
+  --toolbar-field-background-color: $PAL_BG !important;
+  --toolbar-field-color: $PAL_FG !important;
+  --toolbar-field-focus-background-color: $PAL_BG !important;
+  --toolbar-field-focus-color: $PAL_FG !important;
+  --toolbar-field-border-color: $PAL_ALT !important;
+  --toolbar-field-focus-border-color: $PAL_ACCENT !important;
+
+  --arrowpanel-background: $PAL_ALT !important;
+  --arrowpanel-color: $PAL_FG !important;
+  --arrowpanel-border-color: $PAL_BG !important;
+
+  --lwt-sidebar-background-color: $PAL_ALT !important;
+  --lwt-sidebar-text-color: $PAL_FG !important;
+
+  --focus-outline-color: $PAL_ACCENT !important;
+  --link-color: $PAL_ACCENT !important;
+}
+
+#navigator-toolbox,
+#TabsToolbar,
+#nav-bar,
+#PersonalToolbar {
+  background-color: $PAL_ALT !important;
+  color: $PAL_FG !important;
+}
+
+/* Accent underline on the active tab -- the one place the palette's
+   accent shows up as more than a focus ring. */
+.tabbrowser-tab[selected] .tab-background {
+  background: $PAL_BG !important;
+  box-shadow: inset 0 -2px 0 0 $PAL_ACCENT !important;
+}
+
+findbar,
+#sidebar-header,
+#sidebar-box {
+  background-color: $PAL_ALT !important;
+  color: $PAL_FG !important;
+}
+EOF
+
+    cat > "$prof/chrome/userContent.css" <<EOF
+/* Generated by theme-apply -- mode: $MODE. Edits are overwritten. */
+/* about: pages render as content, not chrome, so they need their own
+   rules or every new tab flashes default white between navigations. */
+@-moz-document url("about:blank"),
+               url("about:newtab"),
+               url("about:home"),
+               url("about:privatebrowsing") {
+  :root, body {
+    background-color: $PAL_BG !important;
+    color: $PAL_FG !important;
+  }
+}
+EOF
+
+    # user.js is merged over prefs.js at every startup, so these stick.
+    # Rewritten wholesale each apply -- appending would grow the file
+    # without bound and leave a stale activeThemeID ahead of the new one.
+    cat > "$prof/user.js" <<EOF
+// Generated by theme-apply -- mode: $MODE. Edits are overwritten.
+user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
+user_pref("extensions.activeThemeID", "$FF_THEME_ID");
+user_pref("browser.newtabpage.activity-stream.newNewtabExperience.colors", "$PAL_ACCENT");
+EOF
+  done
+
+  # Restart Firefox so the freshly written userChrome.css is actually
+  # read. SIGTERM (pkill's default), never -9: Firefox only writes its
+  # session-restore state on a clean shutdown, so KILL here would cost
+  # the user every open tab.
+  if [[ ${#FF_PROFILES[@]} -gt 0 ]] && pgrep -x firefox >/dev/null 2>&1; then
+    pkill -x firefox 2>/dev/null || true
+    # Firefox holds a profile lock briefly after the process exits;
+    # relaunching into it too early aborts with "already running".
+    for _ in $(seq 20); do
+      pgrep -x firefox >/dev/null 2>&1 || break
+      sleep 0.25
+    done
+    if FF_BIN=$(command -v firefox); then
+      ( DISPLAY="${DISPLAY:-:0}" setsid "$FF_BIN" >/dev/null 2>&1 </dev/null & disown ) &
+      disown
+    fi
+  fi
 fi
 
 notify-send "theme-apply" "Theme -> $MODE" 2>/dev/null || true
