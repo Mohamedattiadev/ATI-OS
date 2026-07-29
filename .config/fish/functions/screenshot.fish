@@ -5,7 +5,10 @@ function screenshot
     end
 
     set infile $argv[1]
-    set theme (or $argv[2] Dracula)
+    set theme $argv[2]
+    if test -z "$theme"
+        set theme Dracula
+    end
 
     if not test -f $infile
         echo "Error: File '$infile' not found."

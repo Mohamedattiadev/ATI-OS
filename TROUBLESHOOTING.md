@@ -1786,6 +1786,60 @@ that fix has been reverted — see the entry above.
 
 ---
 
+## Tmux
+
+### tmux plugins do nothing — no resurrect/continuum auto-save, `vim-tmux-navigator`'s `C-h/j/k/l` don't move panes
+- **Symptom:** `.tmux.conf` lists five `@plugin` entries and binds
+  `prefix C-s` / `prefix C-r` to tmux-resurrect's save/restore scripts,
+  but none of it works — sessions never restore after a reboot, manual
+  save/restore does nothing, and `C-h/j/k/l` don't move between
+  panes/vim splits the way vim-tmux-navigator is supposed to make them.
+- **Root cause:** TPM (the plugin manager) was never actually
+  bootstrapped — `~/.tmux/plugins/` didn't exist at all. `run
+  '<path>/tpm/tpm'` on a missing path is a silent no-op in tmux, not an
+  error, so this had no visible symptom beyond "the plugins just don't
+  do anything." Compounding it, the resurrect key binds and the `run`
+  line both pointed at `~/.config/tmux/.tmux/plugins/...`, a path that
+  was never right to begin with (the correct, TPM-conventional location
+  is `~/.tmux/plugins/...`).
+- **Fix:** fixed the paths in `.tmux.conf` to `~/.tmux/plugins/...`,
+  then one-time bootstrapped TPM:
+  ```
+  git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+  ~/.tmux/plugins/tpm/bin/install_plugins
+  ```
+  This isn't wired into `wizard.sh` — a fresh install needs this run
+  once by hand (or `prefix I` from inside tmux, TPM's normal install
+  keybind, once `~/.tmux/plugins/tpm` exists).
+
+### The number in the top-left of the tmux status bar never changes
+- **Symptom:** `status-left` always shows `0`, no matter how many
+  windows are opened or closed.
+- **Root cause:** it was rendering `#S` (session *name*), not a window
+  count. tmux auto-names an unnamed session by number starting at 0,
+  and the fish `tmux` wrapper always creates sessions unnamed
+  (`command tmux`, no `-s`) — with normally only one session alive at a
+  time, that name is always "0". It genuinely never changes; it isn't
+  stuck, it's just the wrong field for "does this move as I work."
+- **Fix:** `status-left` now shows `#I` (current window index) instead,
+  which increments/decrements as windows open and close — verified via
+  `tmux display-message -F '#{E:#{status-left}}'` before/after
+  `new-window`.
+
+### tmux panes open in zsh instead of fish
+- **Symptom:** occasionally a pane starts in zsh (Debian/Arch's default
+  new-user zsh prompt) instead of fish, even though fish is the
+  configured login shell.
+- **Root cause:** tmux's default new-pane shell is whatever `$SHELL`
+  was in the environment of the process that started the tmux
+  *server* — if that first launch happened from something with a
+  different `$SHELL` (a script, `su`, a cron job), every pane in that
+  server inherits it, not just the one process.
+- **Fix:** `.tmux.conf` now sets `default-shell` explicitly:
+  `set -g default-shell /usr/bin/fish`.
+
+---
+
 ## Adding new cases
 
 Append entries here as you hit them. Keep the same tri-format
