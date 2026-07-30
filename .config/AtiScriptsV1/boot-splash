@@ -15,6 +15,9 @@
 #   boot-splash preview     composite the real assets at this resolution and show it
 #   boot-splash preview --real   run plymouth for real on a spare VT
 #   boot-splash check       every pre-reboot safety check
+#   boot-splash sync        rebuild the initramfs so the boot screen matches
+#                           the CURRENT theme (generate alone cannot: the
+#                           theme is embedded in the initramfs)
 #   boot-splash enable      generate, then wire it into initramfs + cmdline
 #   boot-splash disable     reverse everything enable did
 #   boot-splash status      what is installed, hooked and set
@@ -31,6 +34,9 @@ PALETTE="$HOME/.cache/qtile/current_palette.json"
 MKINITCPIO="/etc/mkinitcpio.conf"
 KCMDLINE="/etc/kernel/cmdline"
 FONT="${BOOT_SPLASH_FONT:-/usr/share/fonts/TTF/FiraCodeNerdFontPropo-Bold.ttf}"
+# Records the palette + user the CURRENTLY BUILT initramfs contains, which
+# is not the same thing as what is in /usr/share right now. See do_sync.
+STAMP="/usr/share/plymouth/themes/$THEME_NAME/.built-stamp"
 
 r=$'\033[31m'; g=$'\033[32m'; y=$'\033[33m'; d=$'\033[90m'; o=$'\033[0m'
 say()  { printf '%s[boot-splash]%s %s\n' "$d" "$o" "$*"; }
@@ -101,6 +107,32 @@ do_generate() {
   magick -background none "${fontargs[@]}" -fill "$ACCENT" \
     -pointsize 140 label:"$title" -trim +repage "$tmp/title.png"
 
+  # Per-letter slices, so each glyph can rise and breathe independently.
+  #
+  # Rendered one at a time rather than cut out of title.png by pixel
+  # column: slicing a rendered word on transparency splits round letters
+  # and kerning pairs in the wrong places, and the seams show as soon as
+  # the letters move apart. Rendering each glyph on the same baseline and
+  # measuring its advance keeps the word identical when static.
+  local n=0 i ch
+  for (( i = 0; i < ${#title}; i++ )); do
+    ch="${title:i:1}"
+    # -trim would shift each glyph onto its own ink bounds and destroy the
+    # shared baseline, so pad to a fixed box instead and keep the metrics.
+    magick -background none "${fontargs[@]}" -fill "$ACCENT" \
+      -pointsize 140 -gravity center label:"$ch" \
+      -bordercolor none -border 2 "$tmp/letter_$n.png" 2>/dev/null || break
+    n=$((n+1))
+  done
+  # If any glyph failed to render, fall back to the single title image --
+  # a name that will not slice must still appear.
+  if (( n != ${#title} )); then
+    warn "per-letter slicing failed (${n}/${#title}) — using the single title image"
+    rm -f "$tmp"/letter_*.png
+    n=0
+  fi
+  LETTER_COUNT="$n"
+
   # Progress bar. Track is the foreground colour at low opacity, fill is
   # the accent. 520x8 is a deliberate ratio: wide enough to read as a bar,
   # thin enough not to compete with the name.
@@ -109,21 +141,79 @@ do_generate() {
   magick -size 520x8 xc:none -fill "$ACCENT" -draw "roundrectangle 0,0 519,7 4,4" \
     "$tmp/progress_bar.png"
 
+  # Leading-edge glow: a blurred dot that rides the end of the fill, so the
+  # bar has a head rather than a hard cut.
+  magick -size 26x26 xc:none -fill white -draw "circle 13,13 13,4" \
+    -blur 0x4 -fill "$ACCENT" -colorize 100 \
+    -alpha set -channel A -evaluate multiply 0.9 +channel "$tmp/progress_glow.png"
+
+  # Sweep: a soft band of light that travels across the name.
+  #
+  # A drawn rectangle + blur was the obvious construction and it was wrong:
+  # blurring an opaque rectangle on transparency leaves hard top and bottom
+  # edges, so it read as a grey BLOCK sliding over the text rather than a
+  # highlight. A radial gradient used as the alpha channel falls off in
+  # both axes, which is what makes it look like light.
+  #
+  # An ellipse INSET from every edge, then blurred, so the alpha reaches
+  # zero before the canvas boundary. `radial-gradient:` was tried first and
+  # still showed a rectangle: it is only fully black at the corners, so the
+  # edge midpoints keep enough alpha to draw a visible seam.
+  #
+  # 360px tall against ~179px letters, so the vertical falloff finishes
+  # above and below the word rather than being cut off at it.
+  magick -size 150x360 xc:none -fill "$FG" \
+    -draw "ellipse 75,180 34,120 0,360" -blur 0x28 \
+    -alpha set -channel A -evaluate multiply 0.85 +channel "$tmp/sweep.png"
+
+  # Pulsing dots under the bar -- the part that still moves when plymouth
+  # reports no progress at all, which is most of a fast boot.
+  magick -size 10x10 xc:none -fill "$ACCENT" -draw "circle 5,5 5,1" \
+    "$tmp/dot.png"
+
   # Substitute the colour floats into the script.
   read -r BR BG_ BB <<<"$(hex_to_float "$BG")"
   read -r FR FG_ FB <<<"$(hex_to_float "$FG")"
   sed -e "s/BG_R/$BR/g" -e "s/BG_G/$BG_/g" -e "s/BG_B/$BB/g" \
       -e "s/FG_R/$FR/g" -e "s/FG_G/$FG_/g" -e "s/FG_B/$FB/g" \
+      -e "s/LETTER_COUNT/$LETTER_COUNT/g" \
       "$SRC_DIR/$THEME_NAME.script" > "$tmp/$THEME_NAME.script"
 
   sudo install -d -m755 "$THEME_DIR"
-  sudo install -m644 "$tmp/title.png"        "$THEME_DIR/title.png"
-  sudo install -m644 "$tmp/progress_box.png" "$THEME_DIR/progress_box.png"
-  sudo install -m644 "$tmp/progress_bar.png" "$THEME_DIR/progress_bar.png"
+  # Clear old slices first: a shorter name would otherwise leave the tail
+  # of the previous one behind, and the script would animate letters that
+  # are no longer part of the word.
+  sudo rm -f "$THEME_DIR"/letter_*.png
+  sudo install -m644 "$tmp/title.png"         "$THEME_DIR/title.png"
+  sudo install -m644 "$tmp/progress_box.png"  "$THEME_DIR/progress_box.png"
+  sudo install -m644 "$tmp/progress_bar.png"  "$THEME_DIR/progress_bar.png"
+  sudo install -m644 "$tmp/progress_glow.png" "$THEME_DIR/progress_glow.png"
+  sudo install -m644 "$tmp/sweep.png"         "$THEME_DIR/sweep.png"
+  sudo install -m644 "$tmp/dot.png"           "$THEME_DIR/dot.png"
+  for ((i = 0; i < LETTER_COUNT; i++)); do
+    sudo install -m644 "$tmp/letter_$i.png" "$THEME_DIR/letter_$i.png"
+  done
   sudo install -m644 "$tmp/$THEME_NAME.script" "$THEME_DIR/$THEME_NAME.script"
   sudo install -m644 "$SRC_DIR/$THEME_NAME.plymouth" "$THEME_DIR/$THEME_NAME.plymouth"
 
-  ok "theme installed to $THEME_DIR"
+  ok "theme installed to $THEME_DIR (${LETTER_COUNT} animated letters)"
+
+  # The theme lives INSIDE the initramfs -- plymouth runs before / is
+  # mounted, so it cannot read /usr/share at boot. Regenerating here
+  # therefore does not change what you actually see until mkinitcpio runs
+  # again, and mkinitcpio takes about a minute: far too slow to run on
+  # every theme switch, which is exactly when this is called.
+  #
+  # So: record what was generated, and report the mismatch rather than
+  # either lying about it or burning a minute of CPU unasked.
+  if grep -q '^HOOKS=.*plymouth' "$MKINITCPIO" 2>/dev/null; then
+    local want="$USER|$BG|$FG|$ACCENT"
+    local have; have="$(sudo cat "$STAMP" 2>/dev/null || echo '')"
+    if [[ "$want" != "$have" ]]; then
+      warn "the initramfs still has the previous splash — run: boot-splash sync"
+      SPLASH_DIRTY=1
+    fi
+  fi
 }
 
 # ── preview ─────────────────────────────────────────────────────────
@@ -169,26 +259,117 @@ do_preview() {
   [[ -n "${W:-}" && -n "${H:-}" ]] || { W=1920; H=1080; warn "no xrandr — previewing at ${W}x${H}"; }
 
   read_palette
-  local out="${TMPDIR:-/tmp}/boot-splash-preview.png"
+  local out="${TMPDIR:-/tmp}/boot-splash-preview.gif"
+  local tmp; tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
 
-  # Same layout arithmetic as dotfiles.script: title centred and lifted by
-  # height/12, bar below it by height/20.
-  local title_h bar_w
-  title_h="$(magick identify -format '%h' "$THEME_DIR/title.png")"
+  # An ANIMATED preview, because the splash is now animated and a still
+  # frame cannot show whether the motion is right. Frames are computed with
+  # the same arithmetic dotfiles.script uses -- letter stagger, breathing
+  # sine, sweep pass, bar chase, dot pulse -- so what you see here is the
+  # layout and timing plymouth will produce, not an artist's impression.
+  local nletters=0
+  while [[ -f "$THEME_DIR/letter_$nletters.png" ]]; do nletters=$((nletters+1)); done
+
+  local lw=0 lh=0 i
+  if (( nletters > 0 )); then
+    for ((i=0; i<nletters; i++)); do
+      lw=$(( lw + $(magick identify -format '%w' "$THEME_DIR/letter_$i.png") ))
+    done
+    lh="$(magick identify -format '%h' "$THEME_DIR/letter_0.png")"
+  else
+    lw="$(magick identify -format '%w' "$THEME_DIR/title.png")"
+    lh="$(magick identify -format '%h' "$THEME_DIR/title.png")"
+  fi
+
+  local bar_w bar_h
   bar_w="$(magick identify -format '%w' "$THEME_DIR/progress_box.png")"
-  local title_off=$(( H / 12 ))
-  local bar_off=$(( title_h / 2 + H / 20 ))
-  local pct="${SPLASH_PREVIEW_PCT:-62}"
-  local fill=$(( bar_w * pct / 100 ))
+  bar_h="$(magick identify -format '%h' "$THEME_DIR/progress_box.png")"
 
-  magick -size "${W}x${H}" xc:"$BG" \
-    "$THEME_DIR/title.png"        -gravity center -geometry "+0-${title_off}" -composite \
-    "$THEME_DIR/progress_box.png" -gravity center -geometry "+0+${bar_off}"   -composite \
-    \( "$THEME_DIR/progress_bar.png" -crop "${fill}x100%+0+0" +repage \) \
-        -gravity center -geometry "-$(( (bar_w - fill) / 2 ))+${bar_off}" -composite \
-    "$out"
+  local title_y=$(( H / 2 - lh / 2 - H / 14 ))
+  local letters_x=$(( W / 2 - lw / 2 ))
+  local box_x=$(( W / 2 - bar_w / 2 ))
+  local box_y=$(( title_y + lh + H / 16 ))
+  local dots_y=$(( box_y + bar_h + H / 24 ))
+  local dot_w; dot_w="$(magick identify -format '%w' "$THEME_DIR/dot.png")"
 
-  ok "preview rendered at ${W}x${H} (progress shown at ${pct}%): $out"
+  local frames=48 f
+  for ((f=0; f<frames; f++)); do
+    local tick=$(( f * 4 ))
+    local -a args=(-size "${W}x${H}" xc:"$BG")
+
+    # letters
+    if (( nletters > 0 )); then
+      local x=$letters_x
+      for ((i=0; i<nletters; i++)); do
+        local iw; iw="$(magick identify -format '%w' "$THEME_DIR/letter_$i.png")"
+        local age=$(( tick - i * 6 ))
+        local op ly
+        if (( age < 0 )); then
+          op=0; ly=$title_y
+        elif (( age < 20 )); then
+          read -r op ly <<<"$(awk -v a="$age" -v ty="$title_y" -v th="$lh" 'BEGIN{
+            t=a/20; e=1-(1-t)*(1-t); printf "%.3f %d", e, ty + (1-e)*(th/2) }')"
+        else
+          read -r op ly <<<"$(awk -v t="$tick" -v i="$i" -v ty="$title_y" 'BEGIN{
+            w=sin((t+i*14)/26); printf "%.3f %d", 0.82+0.18*w, ty + w*1.5 }')"
+        fi
+        args+=( \( "$THEME_DIR/letter_$i.png" -alpha set -channel A -evaluate multiply "$op" +channel \)
+                -geometry "+${x}+${ly}" -composite )
+        x=$(( x + iw ))
+      done
+    else
+      args+=( "$THEME_DIR/title.png" -geometry "+${letters_x}+${title_y}" -composite )
+    fi
+
+    # bar: same drift formula as the script
+    local shown w
+    shown="$(awk -v t="$tick" 'BEGIN{ d=t/2600; if(d>0.75)d=0.75; p=t/900; if(p>1)p=1; s=(p>d)?p:d; printf "%.4f", s }')"
+    w="$(awk -v bw="$bar_w" -v s="$shown" 'BEGIN{ v=bw*s; if(v<2)v=2; printf "%d", v }')"
+    args+=( "$THEME_DIR/progress_box.png" -geometry "+${box_x}+${box_y}" -composite )
+    args+=( \( "$THEME_DIR/progress_bar.png" -crop "${w}x${bar_h}+0+0" +repage \)
+            -geometry "+${box_x}+${box_y}" -composite )
+    local gw gh gx gy
+    gw="$(magick identify -format '%w' "$THEME_DIR/progress_glow.png")"
+    gh="$(magick identify -format '%h' "$THEME_DIR/progress_glow.png")"
+    gx=$(( box_x + w - gw / 2 )); gy=$(( box_y - (gh - bar_h) / 2 ))
+    args+=( "$THEME_DIR/progress_glow.png" -geometry "+${gx}+${gy}" -composite )
+
+    # sweep
+    local intro=$(( nletters * 6 + 20 ))
+    if (( tick > intro )); then
+      local sw; sw="$(magick identify -format '%w' "$THEME_DIR/sweep.png")"
+      read -r sop sx <<<"$(awk -v t="$tick" -v it="$intro" -v tx="$letters_x" -v tw="$lw" -v sw="$sw" 'BEGIN{
+        pos=(t-it)%175
+        if (pos<70) { p=pos/70
+          o=(p<0.15)? p/0.15*0.45 : ((p>0.85)? (1-p)/0.15*0.45 : 0.45)
+          printf "%.3f %d", o, tx - sw + p*(tw + sw*2)
+        } else printf "0 0" }')"
+      if awk -v o="$sop" 'BEGIN{exit !(o>0.01)}'; then
+        local sh sy
+        sh="$(magick identify -format '%h' "$THEME_DIR/sweep.png")"
+        sy=$(( title_y - (sh - lh) / 2 ))
+        args+=( \( "$THEME_DIR/sweep.png" -alpha set -channel A -evaluate multiply "$sop" +channel \)
+                -geometry "+${sx}+${sy}" -composite )
+      fi
+    fi
+
+    # dots
+    for ((i=0; i<3; i++)); do
+      local dop dx
+      dop="$(awk -v t="$tick" -v i="$i" 'BEGIN{ d=sin((t+i*12)/9); printf "%.3f", 0.2+0.55*(d+1)/2 }')"
+      dx=$(( W / 2 - dot_w / 2 + (i - 1) * dot_w * 2 ))
+      args+=( \( "$THEME_DIR/dot.png" -alpha set -channel A -evaluate multiply "$dop" +channel \)
+              -geometry "+${dx}+${dots_y}" -composite )
+    done
+
+    magick "${args[@]}" "$tmp/frame_$(printf '%03d' "$f").png"
+  done
+
+  magick -delay 8 -loop 0 "$tmp"/frame_*.png -layers optimize "$out"
+
+  ok "animated preview rendered at ${W}x${H}, ${frames} frames: $out"
   if command -v imv >/dev/null 2>&1; then
     setsid imv "$out" >/dev/null 2>&1 &
   elif command -v xdg-open >/dev/null 2>&1; then
@@ -327,6 +508,7 @@ do_enable() {
   # 3. Rebuild. -P does every preset, which includes the UKI.
   say "rebuilding initramfs (this takes a minute)"
   sudo mkinitcpio -P || die "mkinitcpio failed — splash NOT active, nothing to recover"
+  write_stamp
 
   ok "enabled. The LTS entries stay verbose on purpose:"
   ok "if a splashed boot ever hangs, pick 'Arch Linux (LTS fallback)' to see why."
@@ -353,21 +535,50 @@ do_disable() {
   ok "disabled"
 }
 
+write_stamp() {
+  read_palette
+  printf '%s|%s|%s|%s\n' "$USER" "$BG" "$FG" "$ACCENT" | sudo tee "$STAMP" >/dev/null
+}
+
+# Push the current theme into the initramfs. Separate from `generate`
+# because it is the slow half, and because rebuilding the initramfs is not
+# something a colour change should do behind your back.
+do_sync() {
+  grep -q '^HOOKS=.*plymouth' "$MKINITCPIO" 2>/dev/null \
+    || die "splash is not enabled — nothing to sync (see: boot-splash enable)"
+  do_generate
+  say "rebuilding initramfs so the boot screen matches the current theme"
+  sudo mkinitcpio -P || die "mkinitcpio failed"
+  write_stamp
+  ok "initramfs now carries the current splash"
+}
+
 do_status() {
   printf 'plymouth pkg : %s\n' "$(pacman -Qq plymouth 2>/dev/null || echo 'not installed')"
   printf 'theme dir    : %s\n' "$( [[ -d "$THEME_DIR" ]] && echo "$THEME_DIR" || echo 'not generated' )"
   printf 'default theme: %s\n' "$(plymouth-set-default-theme 2>/dev/null || echo '-')"
   printf 'mkinitcpio   : %s\n' "$(grep '^HOOKS=' "$MKINITCPIO" | grep -q plymouth && echo 'plymouth hook present' || echo 'no plymouth hook')"
   printf 'cmdline      : %s\n' "$(sudo cat "$KCMDLINE" 2>/dev/null || cat /proc/cmdline)"
+  read_palette
+  local want="$USER|$BG|$FG|$ACCENT" have
+  have="$(sudo cat "$STAMP" 2>/dev/null || echo '(never synced)')"
+  printf 'in initramfs : %s\n' "$have"
+  printf 'current theme: %s\n' "$want"
+  if [[ "$want" == "$have" ]]; then
+    printf 'sync         : %sup to date%s\n' "$g" "$o"
+  else
+    printf 'sync         : %sout of date — run: boot-splash sync%s\n' "$y" "$o"
+  fi
 }
 
 case "${1:-status}" in
   generate) do_generate ;;
   preview)  do_preview "$@" ;;
   check)    do_check ;;
+  sync)     do_sync ;;
   enable)   do_enable ;;
   disable)  do_disable ;;
   status)   do_status ;;
   --help|-h) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) die "unknown command '${1}' (generate|preview|check|enable|disable|status)" ;;
+  *) die "unknown command '${1}' (generate|preview|check|sync|enable|disable|status)" ;;
 esac

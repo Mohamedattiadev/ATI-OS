@@ -1401,7 +1401,21 @@ fi
 if [[ -d /usr/share/plymouth/themes/dotfiles ]] \
    && command -v boot-splash >/dev/null 2>&1 \
    && sudo -n true 2>/dev/null; then
-  ( boot-splash generate >/dev/null 2>&1 & ) 2>/dev/null || true
+  # Regenerate (fast), then say whether the BOOT screen actually changed.
+  #
+  # It usually has not: the theme is embedded in the initramfs, so the boot
+  # screen only follows once mkinitcpio reruns -- about a minute, which is
+  # far too slow to do on a colour change. Saying so is better than either
+  # burning that minute unasked or letting the boot screen quietly drift
+  # out of sync with the desktop.
+  (
+    boot-splash generate >/dev/null 2>&1
+    if boot-splash status 2>/dev/null | grep -q 'out of date'; then
+      notify-send -a "theme-apply" "Boot splash needs a sync" \
+        "Desktop is $MODE. Run 'boot-splash sync' to match the boot screen (~1 min)." \
+        2>/dev/null || true
+    fi
+  ) >/dev/null 2>&1 &
 fi
 
 notify-send "theme-apply" "Theme -> $MODE" 2>/dev/null || true

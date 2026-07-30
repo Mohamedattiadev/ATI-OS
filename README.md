@@ -176,38 +176,69 @@ answers *"what can this thing do"*.
 | **Middle** | terminal *(where left-click used to go; `Mod+Return` also still works)* |
 | **Right** | `rofi -show drun` |
 
-Six sections, and **every one is generated from the live system** — a
+Seven sections, and **every one is generated from the live system** — a
 hand-written menu drifts the moment anything is added, and silently:
 
 | Section | What it lists | Where it comes from |
 |---|---|---|
 | **Keybindings** | 79 shortcuts, searchable | `config.py`, parsed by `qtile-keys` via Python's AST |
-| **Cheatsheets** | qtile · vim · fish popups | the existing `Super+Shift+K` chord |
-| **Documentation** | README · troubleshooting · packages · boot · the config itself | the files, opened at a line |
+| **Cheatsheets** | qtile · vim · fish popups | qtile IPC, not replayed keystrokes |
+| **Documentation** | README · troubleshooting · packages · boot · the config | rendered read-only; the config opens writable |
 | **Commands** | all 38 tools this repo installs | each script's own header comment |
+| **Espanso** | which snippet variables are set, and which are not | `match/*.yml` vs `/etc/environment` |
 | **Appearance** | theme · UI scale · wallpaper · splash | the existing pickers |
 | **System** | about · package audit · failed services · display + GPU | run live at open time |
+
+**Esc goes up, not out.** Every submenu returns to its parent; only Esc at
+the top level closes the menu. A menu you have to reopen from the bar after
+every glance is a menu you stop using.
 
 **Keybindings** uses the AST rather than a regex because bindings nest
 several `KeyChord` levels deep — a regex pass found 44 of 79 and lost every
 chord prefix. Mode keys read `Super+P , C`, not a bare `C`.
 
-**Troubleshooting** indexes all 126 headings and jumps to the line. Dumping
-144 KB into a pager and asking you to scroll is not documentation.
+**Cheatsheets** go through qtile's IPC (`open_cheatsheet()` in `config.py`),
+not xdotool. Replaying the chord could not work: entering `Super+Shift+K`
+auto-shows the qtile sheet, so the replayed `k` *toggled it back off* and it
+appeared for a single frame — and `v`/`f` showed the qtile sheet first, then
+replaced it.
 
-**Commands** reads each script's `# name — description` header, so adding a
-tool documents it here with no second edit.
+**Documentation is rendered and read-only.** Markdown opens through `glow`,
+so you read the document rather than its markup, and cannot edit the repo's
+own docs by accident. The qtile config is the single writable entry.
+Troubleshooting jumps open in `nvim -R` — readonly *mode*, not
+`set nomodifiable`, which blocks plugins that legitimately write to their
+own buffers and made fidget.nvim throw on every notification.
 
-Everything opens in **nvim inside a centred floating window**
-(`kitty --class docs-view`, matched by `float_rules` and centred by
-`_float_and_center_docs`) — 78% × 80% of the screen, so reading a doc never
-disturbs the tiling layout.
+**Troubleshooting** shows each entry's `**Symptom:**` line, not its heading.
+"Rofi" tells you nothing; *"yellow wallpaper but rofi selection shows
+blue/purple"* is what you would actually type when it happens. All 126
+entries, jumping to the line.
+
+**Commands** shows each script's header comment and **never runs it**. The
+first version called `<script> --help`, which was a genuine bug — most of
+these have no `--help`, so the flag fell through to their normal code path
+and the menu launched pickers and started dictation instead of documenting.
+
+Everything opens in a **centred floating window** (`kitty --class
+docs-view`, matched by `float_rules`, centred by `_float_and_center_docs`)
+at 78% × 80% of the screen, so reading a doc never disturbs the layout.
 
 ```bash
 rofi_docs               # the menu
 rofi_docs keys          # jump straight to a section
 qtile-keys              # the binding list on stdout
 ```
+
+#### Espanso snippets
+
+The snippets in `match/base.yml` hold no personal data — they shell out to
+`source /etc/environment; echo "$MY_NAME"`. That is the right design, and it
+has a sharp edge: on a machine where those variables are unset, every one of
+them expands to an **empty string**, with no error. This section lists which
+of the 26 variables are set and which are missing, scaffolds the missing
+keys into `/etc/environment` (commented, ready to fill), and opens it with
+`sudoedit`.
 
 ---
 
@@ -221,22 +252,34 @@ indistinguishable from a boot that has hung.
 bar, in the colours of whatever theme is currently active. The name is
 generated, never hardcoded: user `ati` gets "Ati", user `beko` gets "Beko".
 
-**It follows your theme.** `theme-apply` re-renders it on every switch, so
-going gruvbox → nord changes the boot screen too, instead of leaving it
-frozen in whatever palette was active when it was first generated.
+**It is animated.** Four things move, so a slow boot never looks like a hung
+one: the letters of your name rise into place one after another and then
+breathe with a per-letter phase offset, a soft glow sweeps across the word,
+the bar fills behind a brighter leading edge, and three dots pulse
+underneath — the dots matter because plymouth often reports no progress at
+all on a fast boot, and something still has to move.
+
+**It follows your theme.** `theme-apply` re-renders it on every switch. But
+the theme is *embedded in the initramfs* (plymouth runs before `/` is
+mounted), so the boot screen only changes once `mkinitcpio` reruns — about a
+minute, far too slow for a colour change. So `theme-apply` regenerates and
+then tells you the boot screen is out of date; `boot-splash sync` does the
+rebuild when you want it. `boot-splash status` shows both states.
 
 ```bash
 boot-splash generate       # render + install the theme (touches nothing about boot)
 boot-splash preview        # see exactly what will appear, at your resolution
 boot-splash preview --real # run plymouth for real on a spare VT
 boot-splash check          # 12 pre-reboot safety checks
+boot-splash sync           # rebuild the initramfs to match the current theme
 boot-splash enable         # wire into initramfs + kernel cmdline
 boot-splash disable        # reverse all of it
 boot-splash status         # what is installed, hooked and set
 ```
 
-`preview` composites the **real installed assets** at your actual screen
-resolution — not a mock-up of the design. Running `plymouthd` from a
+`preview` renders an **animated GIF** from the real installed assets at your
+actual screen resolution, using the same arithmetic the plymouth script
+uses — so the timing and layout you see are the ones it will produce. Running `plymouthd` from a
 desktop session shows nothing at all, because plymouth draws to the DRM
 console and X owns the display; that looks like a broken theme when it is
 fine, so `preview` does the honest thing instead.

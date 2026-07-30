@@ -1,45 +1,98 @@
-// dotfiles.script — plymouth boot splash: the user's name, and a progress bar.
+// dotfiles.script — animated plymouth boot splash.
 //
-// Replaces the wall of scrolling kernel and mirror-list text that Arch shows
-// by default. Nothing here is decorative-only: a boot with no visual feedback
-// is indistinguishable from a boot that has hung, and that is the actual
-// problem being solved.
+// Replaces the wall of scrolling kernel and mirror-list text Arch shows by
+// default. The animation is not decoration: a boot with no motion is
+// indistinguishable from a boot that has hung, which is the actual problem.
+// Motion that keeps moving says "still working"; a frozen bar says "stuck".
 //
-// Everything this draws is generated per-machine by `boot-splash` from the
-// current username and the active theme palette, so a user called `beko` gets
-// "Beko" in their own colours without editing this file.
+// Everything drawn here is generated per-machine by `boot-splash` from the
+// current username and the active theme palette, so a user called `beko`
+// gets "Beko" in their own colours without editing this file.
 //
-// Plymouth's script language is not JavaScript despite appearances: no `let`,
-// no closures over loop variables, and functions are declared with `fun`.
+// Four things move, all driven by the same refresh callback:
+//
+//   1. the letters of the name rise into place one after another, then
+//      keep breathing with a slow per-letter phase offset
+//   2. a sweep of light travels across the name, left to right
+//   3. the progress bar fills, with a brighter leading edge
+//   4. three dots pulse under the bar, so there is still motion even when
+//      plymouth reports no progress at all (the common case on a fast boot)
+//
+// Plymouth's script language is not JavaScript despite appearances: no
+// `let`, no closures, no arrays of sprites without building them by hand,
+// and `fun` declares a function. Integer division truncates.
 
-// ── background ──────────────────────────────────────────────────────
-// A flat fill, not an image: it has to be correct at every resolution
-// from a 1366x768 laptop to a 4K panel, and a scaled bitmap would band.
+// ── palette (substituted by boot-splash) ────────────────────────────
 Window.SetBackgroundTopColor(BG_R, BG_G, BG_B);
 Window.SetBackgroundBottomColor(BG_R, BG_G, BG_B);
 
 screen_width  = Window.GetWidth();
 screen_height = Window.GetHeight();
 
-// ── title ───────────────────────────────────────────────────────────
-title_image  = Image("title.png");
-title_sprite = Sprite(title_image);
-title_x = screen_width  / 2 - title_image.GetWidth()  / 2;
-title_y = screen_height / 2 - title_image.GetHeight() / 2 - screen_height / 12;
-title_sprite.SetX(title_x);
-title_sprite.SetY(title_y);
-title_sprite.SetZ(1);
+// ── assets ──────────────────────────────────────────────────────────
+// title.png is the whole name; letter_N.png are the same name sliced into
+// glyphs, so each can be animated on its own. boot-splash writes
+// letter_count.png-free metadata by simply not emitting slices it cannot
+// make -- if the slices are missing we fall back to the single title.
+title_image = Image("title.png");
+
+title_w = title_image.GetWidth();
+title_h = title_image.GetHeight();
+title_x = screen_width  / 2 - title_w / 2;
+title_y = screen_height / 2 - title_h / 2 - screen_height / 14;
+
+// ── letters ─────────────────────────────────────────────────────────
+// LETTER_COUNT is substituted by boot-splash: 0 means "no slices, use the
+// whole title as one sprite". Everything below is written to work either
+// way, because a name that fails to slice must still appear.
+letter_count = LETTER_COUNT;
+
+if (letter_count > 0) {
+  // Each glyph is rendered on its own, padded to keep a shared baseline,
+  // so the slices are collectively WIDER than the trimmed title.png. The
+  // layout therefore has to be centred on the sum of the slice widths --
+  // centring on title.png's width instead left the word visibly off-centre.
+  letters_w = 0;
+  for (i = 0; i < letter_count; i++) {
+    letter_image[i] = Image("letter_" + i + ".png");
+    letters_w = letters_w + letter_image[i].GetWidth();
+  }
+  letters_h = letter_image[0].GetHeight();
+  letters_x = screen_width  / 2 - letters_w / 2;
+  // Recentre vertically too: the padded glyphs are taller than the trim.
+  title_y = screen_height / 2 - letters_h / 2 - screen_height / 14;
+  title_h = letters_h;
+
+  for (i = 0; i < letter_count; i++) {
+    letter_sprite[i] = Sprite();
+    letter_sprite[i].SetZ(4);
+    letter_sprite[i].SetOpacity(0);
+    if (i == 0)
+      letter_x[i] = letters_x;
+    else
+      letter_x[i] = letter_x[i - 1] + letter_image[i - 1].GetWidth();
+  }
+  // The sweep travels across the letters, not the unused title image.
+  title_x = letters_x;
+  title_w = letters_w;
+} else {
+  title_sprite = Sprite(title_image);
+  title_sprite.SetX(title_x);
+  title_sprite.SetY(title_y);
+  title_sprite.SetZ(4);
+}
 
 // ── progress bar ────────────────────────────────────────────────────
-// Two images: a static track, and a fill scaled horizontally as progress
-// arrives. Drawn below the title with a gap proportional to the screen so
-// the layout holds at any resolution.
 box_image = Image("progress_box.png");
 bar_image = Image("progress_bar.png");
+glow_image = Image("progress_glow.png");
+
+bar_w = box_image.GetWidth();
+bar_h = box_image.GetHeight();
+box_x = screen_width / 2 - bar_w / 2;
+box_y = title_y + title_h + screen_height / 16;
 
 box_sprite = Sprite(box_image);
-box_x = screen_width / 2 - box_image.GetWidth() / 2;
-box_y = title_y + title_image.GetHeight() + screen_height / 20;
 box_sprite.SetX(box_x);
 box_sprite.SetY(box_y);
 box_sprite.SetZ(1);
@@ -49,54 +102,162 @@ bar_sprite.SetX(box_x);
 bar_sprite.SetY(box_y);
 bar_sprite.SetZ(2);
 
-fun progress_callback(duration, progress) {
-    // Clamp: plymouth's estimate can overshoot 1.0 on a boot faster than
-    // the last one it measured, and a bar wider than its track looks broken.
-    p = progress;
-    if (p > 1.0) p = 1.0;
-    if (p < 0.0) p = 0.0;
+glow_sprite = Sprite();
+glow_sprite.SetZ(3);
+glow_sprite.SetOpacity(0);
 
-    w = box_image.GetWidth() * p;
-    // Never scale to zero -- plymouth treats a 0-width image as invalid and
-    // the bar disappears entirely for the first frames of every boot.
-    if (w < 1) w = 1;
+// ── dots ────────────────────────────────────────────────────────────
+dot_image = Image("dot.png");
+dot_w = dot_image.GetWidth();
+dot_gap = dot_w * 2;
+dots_y = box_y + bar_h + screen_height / 24;
+for (i = 0; i < 3; i++) {
+  dot_sprite[i] = Sprite(dot_image);
+  dot_sprite[i].SetX(screen_width / 2 - dot_w / 2 + (i - 1) * dot_gap);
+  dot_sprite[i].SetY(dots_y);
+  dot_sprite[i].SetZ(2);
+  dot_sprite[i].SetOpacity(0.25);
+}
 
-    bar_sprite.SetImage(bar_image.Scale(w, bar_image.GetHeight()));
+// ── sweep ───────────────────────────────────────────────────────────
+// A soft vertical band that travels across the name. Drawn above the
+// letters with additive-looking opacity; plymouth has no blend modes, so
+// "additive" here is just a bright sprite at partial opacity.
+sweep_image = Image("sweep.png");
+sweep_sprite = Sprite(sweep_image);
+sweep_sprite.SetZ(5);
+// Centred on the letters, not aligned to their top: the sweep is taller
+// than the word so its falloff completes off the ends of the text.
+sweep_sprite.SetY(title_y - (sweep_image.GetHeight() - title_h) / 2);
+sweep_sprite.SetOpacity(0);
+
+// ── state ───────────────────────────────────────────────────────────
+tick = 0;
+progress = 0;
+target_progress = 0;
+
+// Plymouth calls the refresh function ~50x/second. Everything below is
+// phrased in ticks rather than seconds so the motion is frame-rate stable
+// on hardware that refreshes slower.
+fun refresh_callback() {
+  tick++;
+
+  // --- letters: stagger in, then breathe -----------------------------
+  if (letter_count > 0) {
+    for (i = 0; i < letter_count; i++) {
+      // Each letter starts 6 ticks after the previous one.
+      start = i * 6;
+      age = tick - start;
+
+      if (age < 0) {
+        letter_sprite[i].SetOpacity(0);
+      } else if (age < 20) {
+        // Rise: ease the last few pixels rather than moving linearly, so
+        // the letters settle instead of stopping dead.
+        t = age / 20;
+        ease = 1 - (1 - t) * (1 - t);
+        letter_sprite[i].SetOpacity(ease);
+        letter_sprite[i].SetX(letter_x[i]);
+        letter_sprite[i].SetY(title_y + (1 - ease) * (title_h / 2));
+        letter_sprite[i].SetImage(letter_image[i]);
+      } else {
+        // Breathe: a slow sine, phase-shifted per letter so the name
+        // ripples instead of pulsing as one block.
+        phase = (tick + i * 14) / 26;
+        wave = Math.Sin(phase);
+        letter_sprite[i].SetOpacity(0.82 + 0.18 * wave);
+        letter_sprite[i].SetY(title_y + wave * 1.5);
+      }
+    }
+  }
+
+  // --- sweep ---------------------------------------------------------
+  // One pass every ~3.5s, and only after the letters have arrived.
+  intro_ticks = letter_count * 6 + 20;
+  if (tick > intro_ticks) {
+    cycle = 175;
+    pos = (tick - intro_ticks) % cycle;
+    if (pos < 70) {
+      p = pos / 70;
+      sweep_sprite.SetX(title_x - sweep_image.GetWidth() + p * (title_w + sweep_image.GetWidth() * 2));
+      // Fade in and out at the edges so it does not pop.
+      if (p < 0.15)      sweep_sprite.SetOpacity(p / 0.15 * 0.45);
+      else if (p > 0.85) sweep_sprite.SetOpacity((1 - p) / 0.15 * 0.45);
+      else               sweep_sprite.SetOpacity(0.45);
+    } else {
+      sweep_sprite.SetOpacity(0);
+    }
+  }
+
+  // --- progress bar --------------------------------------------------
+  // Chase the target rather than jumping to it: plymouth reports progress
+  // in coarse steps, and a bar that teleports reads as broken.
+  if (progress < target_progress)
+    progress = progress + (target_progress - progress) / 12;
+
+  // Creep forward even with no reported progress, so a boot that never
+  // calls the progress callback (most of them) still shows motion. Capped
+  // below full so it cannot claim to have finished.
+  drift = tick / 2600;
+  if (drift > 0.75) drift = 0.75;
+  shown = progress;
+  if (drift > shown) shown = drift;
+  if (shown > 1) shown = 1;
+
+  w = bar_w * shown;
+  if (w < 2) w = 2;
+  bar_sprite.SetImage(bar_image.Scale(w, bar_h));
+
+  // Leading edge, brighter than the fill.
+  glow_sprite.SetImage(glow_image);
+  glow_sprite.SetX(box_x + w - glow_image.GetWidth() / 2);
+  glow_sprite.SetY(box_y - (glow_image.GetHeight() - bar_h) / 2);
+  glow_sprite.SetOpacity(0.85);
+
+  // --- dots ----------------------------------------------------------
+  for (i = 0; i < 3; i++) {
+    d = Math.Sin((tick + i * 12) / 9);
+    dot_sprite[i].SetOpacity(0.2 + 0.55 * (d + 1) / 2);
+  }
+}
+Plymouth.SetRefreshFunction(refresh_callback);
+
+fun progress_callback(duration, prog) {
+  p = prog;
+  if (p > 1.0) p = 1.0;
+  if (p < 0.0) p = 0.0;
+  target_progress = p;
 }
 Plymouth.SetBootProgressFunction(progress_callback);
 
 // ── password prompt ─────────────────────────────────────────────────
-// Only reached on an encrypted root. This config does not use one today,
-// but a themed splash that cannot ask for a passphrase would silently
-// brick a machine that later adds LUKS -- it would sit at the logo with
-// no prompt and no way in.
+// Only reached on an encrypted root. This config does not use one, but a
+// themed splash that cannot ask for a passphrase would brick a machine
+// that later adds LUKS: it would sit at the logo with no prompt and no way
+// in.
 prompt_sprite = Sprite();
 bullets_sprite = Sprite();
 
 fun display_password_callback(prompt, bullets) {
-    hint = Image.Text(prompt, FG_R, FG_G, FG_B);
-    prompt_sprite.SetImage(hint);
-    prompt_sprite.SetX(screen_width / 2 - hint.GetWidth() / 2);
-    prompt_sprite.SetY(box_y + box_image.GetHeight() + screen_height / 30);
-    prompt_sprite.SetZ(3);
+  hint = Image.Text(prompt, FG_R, FG_G, FG_B);
+  prompt_sprite.SetImage(hint);
+  prompt_sprite.SetX(screen_width / 2 - hint.GetWidth() / 2);
+  prompt_sprite.SetY(dots_y + screen_height / 24);
+  prompt_sprite.SetZ(6);
 
-    dots = "";
-    i = 0;
-    while (i < bullets) {
-        dots += "*";
-        i++;
-    }
-    dot_image = Image.Text(dots, FG_R, FG_G, FG_B);
-    bullets_sprite.SetImage(dot_image);
-    bullets_sprite.SetX(screen_width / 2 - dot_image.GetWidth() / 2);
-    bullets_sprite.SetY(box_y + box_image.GetHeight() + screen_height / 15);
-    bullets_sprite.SetZ(3);
+  dots = "";
+  for (i = 0; i < bullets; i++) dots += "*";
+  dot_text = Image.Text(dots, FG_R, FG_G, FG_B);
+  bullets_sprite.SetImage(dot_text);
+  bullets_sprite.SetX(screen_width / 2 - dot_text.GetWidth() / 2);
+  bullets_sprite.SetY(dots_y + screen_height / 14);
+  bullets_sprite.SetZ(6);
 }
 Plymouth.SetDisplayPasswordFunction(display_password_callback);
 
 fun display_normal_callback() {
-    prompt_sprite.SetImage(Image.Text("", 0, 0, 0));
-    bullets_sprite.SetImage(Image.Text("", 0, 0, 0));
+  prompt_sprite.SetImage(Image.Text("", 0, 0, 0));
+  bullets_sprite.SetImage(Image.Text("", 0, 0, 0));
 }
 Plymouth.SetDisplayNormalFunction(display_normal_callback);
 
@@ -105,12 +266,12 @@ Plymouth.SetDisplayNormalFunction(display_normal_callback);
 // splash that swallows "unexpected inconsistency, run fsck manually"
 // leaves the user staring at a logo forever.
 message_sprite = Sprite();
-message_sprite.SetZ(4);
+message_sprite.SetZ(7);
 
 fun message_callback(text) {
-    msg = Image.Text(text, FG_R, FG_G, FG_B);
-    message_sprite.SetImage(msg);
-    message_sprite.SetX(screen_width / 2 - msg.GetWidth() / 2);
-    message_sprite.SetY(screen_height - screen_height / 12);
+  msg = Image.Text(text, FG_R, FG_G, FG_B);
+  message_sprite.SetImage(msg);
+  message_sprite.SetX(screen_width / 2 - msg.GetWidth() / 2);
+  message_sprite.SetY(screen_height - screen_height / 12);
 }
 Plymouth.SetMessageFunction(message_callback);

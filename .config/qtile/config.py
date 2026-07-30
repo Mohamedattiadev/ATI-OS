@@ -2332,10 +2332,61 @@ def auto_enable_draw(chord_name):
 # --------------------------------------------------------------------------------------------------------
 
 
+# Entering CheatSheet-Mode always shows the qtile sheet. That is right when
+# the chord is entered from the keyboard, and wrong when rofi_docs asked
+# specifically for the vim or fish one -- the qtile sheet would flash up
+# first and then be replaced. This flag lets open_cheatsheet() suppress the
+# auto-show for exactly one chord entry.
+_SUPPRESS_CHEATSHEET_AUTOSHOW = False
+
+
 @hook.subscribe.enter_chord
 def auto_enable_cheatsheet(chord_name):
-    if chord_name == "CheatSheet-Mode":
-        show_qtile_cheatsheet(qtile)
+    global _SUPPRESS_CHEATSHEET_AUTOSHOW
+    if chord_name != "CheatSheet-Mode":
+        return
+    if _SUPPRESS_CHEATSHEET_AUTOSHOW:
+        _SUPPRESS_CHEATSHEET_AUTOSHOW = False
+        return
+    show_qtile_cheatsheet(qtile)
+
+
+def open_cheatsheet(which="qtile"):
+    """Open a cheatsheet from outside qtile (rofi_docs calls this over IPC).
+
+    Replaying the key chord with xdotool -- the obvious approach -- cannot
+    work here, and failed in three distinct ways:
+
+      * `super+shift+k` then `k` entered the chord (which auto-shows the
+        qtile sheet) and then the `k` TOGGLED it back off, so the sheet
+        appeared for a frame and vanished.
+      * for vim and fish the qtile sheet showed first and was then
+        replaced, which looked like a glitch.
+      * xdotool races rofi's keyboard grab, so it was timing-dependent.
+
+    Entering the chord properly instead means the sheet is dismissed the
+    same way it always was -- Esc or q -- rather than needing its own
+    close path.
+    """
+    global _SUPPRESS_CHEATSHEET_AUTOSHOW
+
+    chord = None
+    for k in keys:
+        if isinstance(k, KeyChord) and getattr(k, "name", "") == "CheatSheet-Mode":
+            chord = k
+            break
+    if chord is None:
+        return "no CheatSheet-Mode chord in config"
+
+    # Suppress the auto-show unless the qtile sheet is what was asked for.
+    _SUPPRESS_CHEATSHEET_AUTOSHOW = which != "qtile"
+    qtile.grab_chord(chord)
+
+    if which == "vim":
+        toggle_vim_cheatsheet(qtile)
+    elif which == "fish":
+        toggle_fish_kitty_cheatsheet(qtile)
+    return "ok"
 
 
 def exit_cheatsheet_mode(qtile):

@@ -484,7 +484,7 @@ _reg passwordless-sudo "Passwordless sudo"   System    "Add user to NOPASSWD sud
 _reg ownership         "Fix ownership"       System    "chown -R \$USER on ~/.dotfiles"                         "step_ownership"
 _reg disable-dm        "Disable display mgrs" System   "TTY + startx only"                                      "step_disable_dm"
 _reg candy-icons       "Candy icons"         Themes    "Install candy-icons theme"                              "step_candy"
-_reg wallpapers        "Wallpapers"          Themes    "Clone w3dg/wallpapers to ~/Pictures"                    "step_wallpapers"
+_reg wallpapers        "Wallpapers"          Themes    "Clone your wallpapers repo to ~/Pictures"                    "step_wallpapers"
 _reg speed             "Speed tweaks"        System    "sysctl + service trims (from speed_boost.sh)"           "step_speed"
 _reg themes            "Theme system"        Themes    "pywal + palette precompile + initial doom-one apply"    "step_themes"
 _reg dark-mode         "Dark preference"     Themes    "Advertise prefer-dark via portal so sites use their own dark theme" "step_dark_mode"
@@ -1172,8 +1172,14 @@ step_login_shell() {
 step_disable_dm()   { for dm in lightdm gdm sddm lxdm; do run "sudo systemctl disable $dm.service 2>/dev/null || true"; done; }
 step_candy()        { [[ -d /usr/share/icons/candy-icons ]] && { _OK "candy-icons present"; return; }
                       run "cd /tmp && rm -rf master.zip candy-icons-master && wget -q https://github.com/EliverLara/candy-icons/archive/refs/heads/master.zip && unzip -qo master.zip && sudo mv candy-icons-master /usr/share/icons/candy-icons"; }
+# Your own fork, not upstream. theme-apply's `wal` mode derives an entire
+# palette from the current wallpaper, so the wallpaper set is not
+# decoration -- it is an input to how the desktop looks. Pointing at
+# someone else's repo means they can add, remove or re-encode an image and
+# change your colours; a fork you control cannot move under you.
+WALLPAPERS_REPO="${WALLPAPERS_REPO:-https://github.com/Mohamedattiadev/wallpapers}"
 step_wallpapers()   { [[ -d $HOME/Pictures/Wallpapers/.git ]] && { _OK "wallpapers present"; return; }
-                      run "rm -rf $HOME/Pictures/Wallpapers && mkdir -p $HOME/Pictures && git clone https://github.com/w3dg/wallpapers.git $HOME/Pictures/Wallpapers"; }
+                      run "rm -rf $HOME/Pictures/Wallpapers && mkdir -p $HOME/Pictures && git clone $WALLPAPERS_REPO $HOME/Pictures/Wallpapers"; }
 step_speed()        { run "$DOTFILES_DIR/installScripts/speed_boost.sh"; }
 step_themes() {
   run "sudo pacman -S --needed --noconfirm python-pywal python-pillow papirus-icon-theme jq"
