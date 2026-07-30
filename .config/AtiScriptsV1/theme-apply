@@ -483,11 +483,120 @@ dump_palette_json() {
 EOF
 }
 
+gen_glow_style() {
+  # glow renders every markdown page rofi_docs opens -- README,
+  # TROUBLESHOOTING, the System panels -- and it was the last thing on this
+  # desktop still painting itself in its OWN colors. Switching the theme
+  # retinted the terminal around it and left the document inside reading
+  # dracula pink and blue, which is exactly the drift the rest of this
+  # script exists to prevent. nvim already follows theme_mode; now glow
+  # does too.
+  #
+  # This is a glamour style file (glow -s <path>). Only the fields that
+  # carry color are set from the palette; spacing and the marker glyphs are
+  # deliberately fixed, since those are layout, not theme.
+  local bg="$1" bg_alt="$2" fg="$3" red="$4" green="$5" yellow="$6" blue="$7" purple="$8" cyan="$9"
+  local out="$HOME/.cache/qtile/glow.json"
+  mkdir -p "$(dirname "$out")"
+
+  # De-emphasised text (rules, code comments, image captions) needs a colour
+  # that is dimmer than fg but still READABLE. bg_alt is the obvious-looking
+  # choice and is wrong in both directions: on the dark themes it is darker
+  # than bg, and on mono-light it is #e0e0e0 against a #ffffff page -- either
+  # way it is a near-invisible smear rather than muted text. Blend fg toward
+  # bg instead, which lands mid-contrast whichever side of the spectrum the
+  # theme sits on.
+  #
+  # 0.72, not an even mix: measured across the darkest and lightest palettes
+  # here, half-and-half bottoms out at 1.9:1 against the page (nord,
+  # mono-light), under the 3:1 floor for non-body text. 0.72 holds ~2.9:1 at
+  # worst while still sitting ~1.3:1 away from fg, so it reads as dimmed
+  # rather than as a second shade of body text.
+  local muted
+  muted="$(python3 - "$fg" "$bg" <<'PYEOF' 2>/dev/null || echo "$fg"
+import sys
+def rgb(h):
+    h = h.lstrip('#')
+    return [int(h[i:i+2], 16) for i in (0, 2, 4)]
+f, b = rgb(sys.argv[1]), rgb(sys.argv[2])
+print('#{:02x}{:02x}{:02x}'.format(*[round(c * 0.72 + d * 0.28) for c, d in zip(f, b)]))
+PYEOF
+)"
+  cat >"$out" <<EOF
+{
+  "document": { "block_prefix": "\n", "block_suffix": "\n", "color": "${fg}", "margin": 2 },
+  "block_quote": { "color": "${cyan}", "indent": 1, "indent_token": "│ " },
+  "paragraph": {},
+  "list": { "level_indent": 2 },
+  "heading": { "block_suffix": "\n", "color": "${blue}", "bold": true },
+  "h1": { "prefix": " ", "suffix": " ", "color": "${bg}", "background_color": "${blue}", "bold": true },
+  "h2": { "prefix": "▌ ", "color": "${yellow}", "bold": true },
+  "h3": { "prefix": "  ", "color": "${green}", "bold": true },
+  "h4": { "prefix": "   ", "color": "${cyan}" },
+  "h5": { "prefix": "    ", "color": "${purple}" },
+  "h6": { "prefix": "     ", "color": "${purple}", "bold": false },
+  "text": {},
+  "strikethrough": { "crossed_out": true },
+  "emph": { "color": "${yellow}", "italic": true },
+  "strong": { "color": "${fg}", "bold": true },
+  "hr": { "color": "${muted}", "format": "\n──────────────────────────────────────\n" },
+  "item": { "block_prefix": "• " },
+  "enumeration": { "block_prefix": ". " },
+  "task": { "ticked": "[✓] ", "unticked": "[ ] " },
+  "link": { "color": "${cyan}", "underline": true },
+  "link_text": { "color": "${purple}", "bold": true },
+  "image": { "color": "${cyan}", "underline": true },
+  "image_text": { "color": "${muted}", "format": "Image: {{.text}} →" },
+  "code": { "color": "${red}", "background_color": "${bg_alt}" },
+  "code_block": {
+    "color": "${fg}",
+    "margin": 2,
+    "chroma": {
+      "text": { "color": "${fg}" },
+      "error": { "color": "${red}" },
+      "comment": { "color": "${muted}", "italic": true },
+      "comment_preproc": { "color": "${purple}" },
+      "keyword": { "color": "${purple}" },
+      "keyword_reserved": { "color": "${purple}" },
+      "keyword_namespace": { "color": "${red}" },
+      "keyword_type": { "color": "${yellow}" },
+      "operator": { "color": "${cyan}" },
+      "punctuation": { "color": "${fg}" },
+      "name": { "color": "${fg}" },
+      "name_builtin": { "color": "${yellow}" },
+      "name_tag": { "color": "${red}" },
+      "name_attribute": { "color": "${green}" },
+      "name_class": { "color": "${yellow}", "bold": true },
+      "name_constant": { "color": "${purple}" },
+      "name_decorator": { "color": "${green}" },
+      "name_function": { "color": "${blue}" },
+      "literal_number": { "color": "${purple}" },
+      "literal_string": { "color": "${green}" },
+      "literal_string_escape": { "color": "${cyan}" },
+      "generic_deleted": { "color": "${red}" },
+      "generic_emph": { "italic": true },
+      "generic_inserted": { "color": "${green}" },
+      "generic_strong": { "bold": true },
+      "generic_subheading": { "color": "${blue}" },
+      "background": { "background_color": "${bg}" }
+    }
+  },
+  "table": { "center_separator": "┼", "column_separator": "│", "row_separator": "─" },
+  "definition_list": {},
+  "definition_term": {},
+  "definition_description": { "block_prefix": "\n🠶 " },
+  "html_block": {},
+  "html_span": {}
+}
+EOF
+}
+
 gen_all_theme_css() {
   gen_qb_css "$@"
   gen_eww_scss "$@"
   gen_btop_theme "$@"
   gen_qt_colors "$@"
+  gen_glow_style "$@"
   dump_palette_json "$@"
 }
 
@@ -1401,20 +1510,22 @@ fi
 if [[ -d /usr/share/plymouth/themes/dotfiles ]] \
    && command -v boot-splash >/dev/null 2>&1 \
    && sudo -n true 2>/dev/null; then
-  # Regenerate (fast), then say whether the BOOT screen actually changed.
+  # Regenerate (fast), then hand the BOOT screen to autosync.
   #
-  # It usually has not: the theme is embedded in the initramfs, so the boot
-  # screen only follows once mkinitcpio reruns -- about a minute, which is
-  # far too slow to do on a colour change. Saying so is better than either
-  # burning that minute unasked or letting the boot screen quietly drift
-  # out of sync with the desktop.
+  # The theme is embedded in the initramfs, so the boot screen only follows
+  # once mkinitcpio reruns -- about a minute. Doing that inline on every
+  # colour change would be intolerable while you are flicking through
+  # themes deciding, and the previous behaviour (notify and let the user
+  # remember) meant rebooting into last week's colours.
+  #
+  # `boot-splash autosync` waits out a debounce and then rebuilds ONCE, for
+  # whichever theme you settled on. It is a no-op when the boot screen is
+  # already current, when the splash is not enabled, or when passwordless
+  # sudo is unavailable, and it notifies on failure -- a silent failed sync
+  # would leave the initramfs holding the old splash with nothing to say so.
   (
     boot-splash generate >/dev/null 2>&1
-    if boot-splash status 2>/dev/null | grep -q 'out of date'; then
-      notify-send -a "theme-apply" "Boot splash needs a sync" \
-        "Desktop is $MODE. Run 'boot-splash sync' to match the boot screen (~1 min)." \
-        2>/dev/null || true
-    fi
+    boot-splash autosync >/dev/null 2>&1
   ) >/dev/null 2>&1 &
 fi
 

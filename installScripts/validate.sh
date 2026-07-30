@@ -33,6 +33,10 @@ FAIL=0
 pass() { (( QUIET )) || printf '  %s✓%s %s\n' "$g" "$o" "$*"; }
 fail() { printf '  %s✗%s %s\n' "$r" "$o" "$*" >&2; FAIL=1; }
 warn() { printf '  %s!%s %s\n' "$y" "$o" "$*"; }
+# Not a pass and not a failure: the check could not run here. Used for
+# things that need a package the container image deliberately lacks --
+# reporting them as passes would be a lie about what was verified.
+skip() { (( QUIET )) || printf '  %s-%s %s (skipped)\n' "$d" "$o" "$*"; }
 head_() { (( QUIET )) || printf '\n%s%s%s\n' "$d" "$*" "$o"; }
 
 cd "$REPO"
@@ -169,6 +173,29 @@ if ./installScripts/wizard.sh --yes --dry-run >/dev/null 2>&1; then
   pass "full dry-run completes"
 else
   fail "full dry-run failed"
+fi
+
+# ── 8. boot splash: the name matrix ──────────────────────────────────
+# The splash renders whatever the account is called, and three separate
+# bugs lived in that path unnoticed: characters the block face lacks were
+# silently dropped (josé -> "JOS"), long names were sized off the wrong row
+# of the art, and multi-word names were run onto one illegible line.
+# `boot-splash selftest` renders a matrix of awkward names and asserts each
+# one fits. It needs no root and writes only to a tempdir.
+#
+# Skipped, not failed, when ImageMagick or the block font is absent: this
+# has to pass in a container that has neither.
+head_ "boot splash"
+if [[ ! -x .config/AtiScriptsV1/boot-splash ]]; then
+  skip "boot-splash not present"
+elif ! command -v magick >/dev/null 2>&1; then
+  skip "no imagemagick — cannot render the name matrix"
+elif [[ ! -f /usr/share/fonts/TTF/FiraCodeNerdFontMono-Bold.ttf ]]; then
+  skip "block-art font not installed — cannot render the name matrix"
+elif .config/AtiScriptsV1/boot-splash selftest >/dev/null 2>&1; then
+  pass "every name in the matrix renders and fits on screen"
+else
+  fail "boot-splash selftest failed — run: boot-splash selftest"
 fi
 
 # ── result ───────────────────────────────────────────────────────────

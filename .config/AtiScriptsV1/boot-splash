@@ -24,6 +24,10 @@
 #   boot-splash preview     composite the real assets at this resolution and show it
 #   boot-splash preview --real   run plymouth for real on a spare VT
 #   boot-splash check       every pre-reboot safety check
+#   boot-splash selftest    render the name across a matrix of awkward
+#                           names and assert each one fits (no root)
+#   boot-splash autosync    wait, then sync IF the boot screen is still out
+#                           of date -- debounced, for theme-apply to call
 #   boot-splash sync        rebuild the initramfs so the boot screen matches
 #                           the CURRENT theme (generate alone cannot: the
 #                           theme is embedded in the initramfs)
@@ -171,6 +175,238 @@ render_blocks() {
     label:@"$art" -trim +repage -colorspace sRGB "$out"
 }
 
+# ── title ───────────────────────────────────────────────────────────
+# render_title <name> <outfile>
+#
+# The whole name pipeline in one place: block art if the face can set it,
+# stacked if it is more than one word, shrunk until it fits, and the
+# proportional font when block art cannot do the job. Extracted from
+# do_generate so `boot-splash selftest` can exercise it across a matrix of
+# awkward names WITHOUT installing anything or needing root.
+#
+# Sets TITLE_MODE to `blocks` or `font` for the caller to report.
+# Requires SCREEN_W/SCREEN_H (screen_geometry) and FG (read_palette).
+render_title() {
+  local title="$1" out="$2"
+  local tmp; tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+  local SRGB=(-colorspace sRGB)
+  local fontargs_p=()
+  [[ -n "${FONT:-}" && -f "${FONT:-}" ]] && fontargs_p=(-font "$FONT")
+  TITLE_MODE=blocks
+  # Title, as ANSI Shadow block art.
+  #
+  # Rendered from a vendored glyph table (plymouth/ansi-shadow.txt) rather
+  # than by shelling out to figlet: figlet is not installed here, and the
+  # ANSI Shadow face is a CONTRIBUTED font that does not ship with it, so
+  # using it would mean both a new package dependency and vendoring a font
+  # file of uncertain licence. The table is 40 glyphs of plain text and is
+  # verified against the wizard's own hardcoded ATI logo.
+  #
+  # Rendered SOLID: only the block characters are kept, and the face's
+  # box-drawing drop shadow is dropped on the floor. ANSI Shadow draws the
+  # letterform with █▀▄ and its shadow with ╗╝╚═║╔, and filling both in one
+  # colour -- which is all a single `magick label:` pass can do -- produces
+  # a hollow double outline trailing every letter. On a real screen that
+  # reads as a cheap 3D bevel, not as depth. Solid blocks are what the face
+  # is actually good at.
+  # The name has to survive anything a real account can be called: nine
+  # letters, two words, digits, a dot or a dash, an accent, a single
+  # character. The rules, in order:
+  #
+  #   1. every character must exist in the glyph table -- one that does not
+  #      used to be SILENTLY DROPPED, so `josé` rendered as "JOS" and
+  #      nothing said so
+  #   2. the art is shrunk until it fits the screen, by MEASURING the
+  #      render rather than predicting it from a column count
+  #   3. if it cannot fit at a legible size, the proportional font takes
+  #      over -- it is far more compact than six-row block art, so a name
+  #      that block art cannot hold still gets set properly
+  # Multi-word names are STACKED, one word per line, not run together on a
+  # single line. Six-row block art is wide: "Mohamed Attia Ibrahim" set on
+  # one line has to shrink to 66px tall to fit the screen, which is a thin
+  # illegible ribbon. Stacked, each word gets its own full height.
+  local -a words
+  read -ra words <<<"$title"
+  (( ${#words[@]} )) || words=("$title")
+
+  local art artmeta="" dropped="" wi
+  local -a arts=()
+  local maxcols=0 use_blocks=1 MISSING_CHARS=""
+  for wi in "${!words[@]}"; do
+    art="$tmp/art_$wi.txt"
+    arts+=("$art")
+    artmeta="$(python3 - "$SRC_DIR/ansi-shadow.txt" "${words[$wi]}" "$art" 2>/dev/null <<'PY' || true
+import sys
+
+table, name, out = sys.argv[1], sys.argv[2], sys.argv[3]
+
+glyphs, cur = {}, None
+for line in open(table, encoding="utf-8"):
+    line = line.rstrip("\n")
+    if line.startswith("#"):
+        continue
+    if line.startswith("@"):
+        cur = line[1:]
+        glyphs[cur] = []
+        continue
+    if cur is not None:
+        glyphs[cur].append(line)
+
+word = name.upper()
+# Report anything the table cannot set, rather than dropping it. A name
+# rendered with characters missing is a name the user cannot recognise as
+# theirs, and nothing on screen would say why.
+missing = sorted({c for c in word if c not in glyphs})
+if missing:
+    print("0 " + "".join(missing))
+    sys.exit(0)
+if not word:
+    sys.exit(1)
+
+BLOCK = set("█▀▄▌▐░▒▓")
+rows = []
+for r in range(6):
+    line = "".join(glyphs[c][r] for c in word)
+    # Keep only the letterform; the face's box-drawing drop shadow is
+    # discarded (see the comment above).
+    line = "".join(ch if ch in BLOCK or ch == " " else " " for ch in line)
+    # A row that is entirely shadow becomes empty; `magick label:` treats a
+    # zero-width line as the end of the text and silently truncates the
+    # art, so keep the row alive with a single space.
+    rows.append(line.rstrip() or " ")
+
+with open(out, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(rows) + "\n")
+
+# The WIDEST row, not row 0. Rows are right-stripped, so row 0 is often
+# narrower than the art actually is, and sizing off it under-counts.
+print("%d " % max(len(r) for r in rows))
+PY
+)"
+    dropped="${artmeta#* }"
+    [[ "$artmeta" == "$dropped" ]] && dropped=""
+    if [[ -z "$artmeta" || -n "$dropped" ]]; then
+      use_blocks=0; TITLE_MODE=font
+      MISSING_CHARS="$dropped"
+      break
+    fi
+    (( ${artmeta%% *} > maxcols )) && maxcols="${artmeta%% *}"
+  done
+
+  if (( ! use_blocks )); then
+    if [[ -n "${MISSING_CHARS:-}" ]]; then
+      # Deliberately a fallback, not a silent omission. Rendering a name
+      # with characters missing is worse than rendering it in a different
+      # face: the user is looking at someone else's name and has no way to
+      # tell why it is wrong.
+      warn "'$title' has characters the block face lacks ($MISSING_CHARS) — using the proportional font"
+    else
+      warn "no block art for '$title' — falling back to the proportional font"
+    fi
+  fi
+
+  # The name may occupy at most this much of the screen. The width bound is
+  # what long and multi-word names hit; the height bound stops six rows of
+  # block art from growing down into the Arch mark.
+  local MAXW=$(( SCREEN_W * 66 / 100 ))
+  local MAXH=$(( SCREEN_H * 40 / 100 ))
+
+  if (( use_blocks )); then
+    # Starting size from the widest row of the WIDEST WORD -- not row 1 of
+    # the whole art. Rows are right-stripped, so row 1 is frequently NOT
+    # the widest, and sizing off it under-counted long names badly.
+    local ps tw th i n gap stack_w stack_h
+    ps="$(awk -v s="$TITLE_SIZE" -v c="${maxcols:-20}" 'BEGIN{
+      # 20 columns is the width of a 3-letter name in this face.
+      v = s * 20 / (c < 20 ? 20 : c)
+      if (v < 12) v = 12
+      printf "%d", v }')"
+    n=${#arts[@]}
+
+    # Measure, then correct. The predicted size is only ever a starting
+    # guess: -kerning -1, the trim, and the font's own metrics all move the
+    # real width, and a name that overflows the screen is not a rounding
+    # error. Two passes converge for every name tried; the loop is bounded
+    # so a pathological one cannot spin.
+    for ((i = 0; i < 8; i++)); do
+      stack_w=0; stack_h=0; gap=0
+      for wi in "${!arts[@]}"; do
+        render_blocks "$ps" "$FG" "${arts[$wi]}" "$tmp/word_$wi.png"
+        tw="$(magick identify -format '%w' "$tmp/word_$wi.png")"
+        th="$(magick identify -format '%h' "$tmp/word_$wi.png")"
+        (( tw > stack_w )) && stack_w=$tw
+        stack_h=$(( stack_h + th ))
+        (( gap == 0 )) && gap=$(( th / 5 ))
+      done
+      (( n > 1 )) && stack_h=$(( stack_h + gap * (n - 1) ))
+      (( stack_w <= MAXW && stack_h <= MAXH )) && break
+      ps="$(awk -v p="$ps" -v w="$stack_w" -v h="$stack_h" -v mw="$MAXW" -v mh="$MAXH" 'BEGIN{
+        r = mw/w; if (mh/h < r) r = mh/h
+        v = int(p * r * 0.98)
+        if (v < 1) v = 1
+        printf "%d", v }')"
+      # Below this the block face stops being letters and starts being
+      # noise; hand over to the proportional font instead of shipping
+      # something illegible.
+      if (( ps < 8 )); then
+        warn "'$title' is too long for block art at this resolution — using the proportional font"
+        use_blocks=0; TITLE_MODE=font
+        break
+      fi
+    done
+  fi
+
+  if (( use_blocks )); then
+    if (( ${#arts[@]} == 1 )); then
+      # One word is already exactly the image we want. Compositing it onto
+      # a canvas and trimming again is not a no-op: the second -trim ate
+      # 31px off the right of "ATI", shrinking the name ~11% for no reason
+      # anyone would ever have looked for.
+      cp "$tmp/word_0.png" "$out"
+    else
+      # Stack the words, each centred on the one above. The canvas is
+      # already exactly the stack bounds, so there is nothing to trim.
+      local -a stack=( -size "${stack_w}x${stack_h}" xc:none "${SRGB[@]}" )
+      local y=0
+      for wi in "${!arts[@]}"; do
+        th="$(magick identify -format '%h' "$tmp/word_$wi.png")"
+        tw="$(magick identify -format '%w' "$tmp/word_$wi.png")"
+        stack+=( "$tmp/word_$wi.png" -geometry "+$(( stack_w / 2 - tw / 2 ))+${y}" -composite )
+        y=$(( y + th + gap ))
+      done
+      magick "${stack[@]}" +repage "${SRGB[@]}" "$out"
+    fi
+  fi
+
+  if (( ! use_blocks )); then
+    # Proportional font, scaled to the same bounds. Sized by measurement
+    # for the same reason: a 20-character name at a fixed pointsize runs
+    # off both edges of the screen.
+    local ps=120 tw th i
+    for ((i = 0; i < 6; i++)); do
+      magick -background none "${fontargs_p[@]}" -fill "$FG" \
+        -pointsize "$ps" -kerning 6 label:"$title" -trim +repage \
+        "${SRGB[@]}" "$out"
+      tw="$(magick identify -format '%w' "$out")"
+      th="$(magick identify -format '%h' "$out")"
+      (( tw <= MAXW && th <= MAXH )) && break
+      ps="$(awk -v p="$ps" -v w="$tw" -v h="$th" -v mw="$MAXW" -v mh="$MAXH" 'BEGIN{
+        r = mw/w; if (mh/h < r) r = mh/h
+        v = int(p * r * 0.98); if (v < 8) v = 8
+        printf "%d", v }')"
+    done
+  fi
+
+  # An empty or 1x1 title means every path above failed. The theme script
+  # loads title.png unconditionally, so a placeholder is not acceptable --
+  # better to stop here than to ship a boot screen with no name on it.
+  local finalw
+  finalw="$(magick identify -format '%w' "$out" 2>/dev/null || echo 0)"
+  (( finalw > 1 )) || die "could not render a title for '$title'"
+}
+
 # ── layout ──────────────────────────────────────────────────────────
 # THE arithmetic. dotfiles.script computes the same thing at boot from the
 # real Window dimensions; this is the copy used to composite the static
@@ -274,216 +510,7 @@ do_generate() {
   # accent-tinted title came out grey with no error anywhere.
   local SRGB=(-colorspace sRGB)
 
-  # Title, as ANSI Shadow block art.
-  #
-  # Rendered from a vendored glyph table (plymouth/ansi-shadow.txt) rather
-  # than by shelling out to figlet: figlet is not installed here, and the
-  # ANSI Shadow face is a CONTRIBUTED font that does not ship with it, so
-  # using it would mean both a new package dependency and vendoring a font
-  # file of uncertain licence. The table is 40 glyphs of plain text and is
-  # verified against the wizard's own hardcoded ATI logo.
-  #
-  # Rendered SOLID: only the block characters are kept, and the face's
-  # box-drawing drop shadow is dropped on the floor. ANSI Shadow draws the
-  # letterform with █▀▄ and its shadow with ╗╝╚═║╔, and filling both in one
-  # colour -- which is all a single `magick label:` pass can do -- produces
-  # a hollow double outline trailing every letter. On a real screen that
-  # reads as a cheap 3D bevel, not as depth. Solid blocks are what the face
-  # is actually good at.
-  # The name has to survive anything a real account can be called: nine
-  # letters, two words, digits, a dot or a dash, an accent, a single
-  # character. The rules, in order:
-  #
-  #   1. every character must exist in the glyph table -- one that does not
-  #      used to be SILENTLY DROPPED, so `josé` rendered as "JOS" and
-  #      nothing said so
-  #   2. the art is shrunk until it fits the screen, by MEASURING the
-  #      render rather than predicting it from a column count
-  #   3. if it cannot fit at a legible size, the proportional font takes
-  #      over -- it is far more compact than six-row block art, so a name
-  #      that block art cannot hold still gets set properly
-  # Multi-word names are STACKED, one word per line, not run together on a
-  # single line. Six-row block art is wide: "Mohamed Attia Ibrahim" set on
-  # one line has to shrink to 66px tall to fit the screen, which is a thin
-  # illegible ribbon. Stacked, each word gets its own full height.
-  local -a words
-  read -ra words <<<"$title"
-  (( ${#words[@]} )) || words=("$title")
-
-  local art artmeta="" dropped="" wi
-  local -a arts=()
-  local maxcols=0 use_blocks=1 MISSING_CHARS=""
-  for wi in "${!words[@]}"; do
-    art="$tmp/art_$wi.txt"
-    arts+=("$art")
-    artmeta="$(python3 - "$SRC_DIR/ansi-shadow.txt" "${words[$wi]}" "$art" 2>/dev/null <<'PY' || true
-import sys
-
-table, name, out = sys.argv[1], sys.argv[2], sys.argv[3]
-
-glyphs, cur = {}, None
-for line in open(table, encoding="utf-8"):
-    line = line.rstrip("\n")
-    if line.startswith("#"):
-        continue
-    if line.startswith("@"):
-        cur = line[1:]
-        glyphs[cur] = []
-        continue
-    if cur is not None:
-        glyphs[cur].append(line)
-
-word = name.upper()
-# Report anything the table cannot set, rather than dropping it. A name
-# rendered with characters missing is a name the user cannot recognise as
-# theirs, and nothing on screen would say why.
-missing = sorted({c for c in word if c not in glyphs})
-if missing:
-    print("0 " + "".join(missing))
-    sys.exit(0)
-if not word:
-    sys.exit(1)
-
-BLOCK = set("█▀▄▌▐░▒▓")
-rows = []
-for r in range(6):
-    line = "".join(glyphs[c][r] for c in word)
-    # Keep only the letterform; the face's box-drawing drop shadow is
-    # discarded (see the comment above).
-    line = "".join(ch if ch in BLOCK or ch == " " else " " for ch in line)
-    # A row that is entirely shadow becomes empty; `magick label:` treats a
-    # zero-width line as the end of the text and silently truncates the
-    # art, so keep the row alive with a single space.
-    rows.append(line.rstrip() or " ")
-
-with open(out, "w", encoding="utf-8") as fh:
-    fh.write("\n".join(rows) + "\n")
-
-# The WIDEST row, not row 0. Rows are right-stripped, so row 0 is often
-# narrower than the art actually is, and sizing off it under-counts.
-print("%d " % max(len(r) for r in rows))
-PY
-)"
-    dropped="${artmeta#* }"
-    [[ "$artmeta" == "$dropped" ]] && dropped=""
-    if [[ -z "$artmeta" || -n "$dropped" ]]; then
-      use_blocks=0
-      MISSING_CHARS="$dropped"
-      break
-    fi
-    (( ${artmeta%% *} > maxcols )) && maxcols="${artmeta%% *}"
-  done
-
-  if (( ! use_blocks )); then
-    if [[ -n "${MISSING_CHARS:-}" ]]; then
-      # Deliberately a fallback, not a silent omission. Rendering a name
-      # with characters missing is worse than rendering it in a different
-      # face: the user is looking at someone else's name and has no way to
-      # tell why it is wrong.
-      warn "'$title' has characters the block face lacks ($MISSING_CHARS) — using the proportional font"
-    else
-      warn "no block art for '$title' — falling back to the proportional font"
-    fi
-  fi
-
-  # The name may occupy at most this much of the screen. The width bound is
-  # what long and multi-word names hit; the height bound stops six rows of
-  # block art from growing down into the Arch mark.
-  local MAXW=$(( SCREEN_W * 66 / 100 ))
-  local MAXH=$(( SCREEN_H * 40 / 100 ))
-
-  if (( use_blocks )); then
-    # Starting size from the widest row of the WIDEST WORD -- not row 1 of
-    # the whole art. Rows are right-stripped, so row 1 is frequently NOT
-    # the widest, and sizing off it under-counted long names badly.
-    local ps tw th i n gap stack_w stack_h
-    ps="$(awk -v s="$TITLE_SIZE" -v c="${maxcols:-20}" 'BEGIN{
-      # 20 columns is the width of a 3-letter name in this face.
-      v = s * 20 / (c < 20 ? 20 : c)
-      if (v < 12) v = 12
-      printf "%d", v }')"
-    n=${#arts[@]}
-
-    # Measure, then correct. The predicted size is only ever a starting
-    # guess: -kerning -1, the trim, and the font's own metrics all move the
-    # real width, and a name that overflows the screen is not a rounding
-    # error. Two passes converge for every name tried; the loop is bounded
-    # so a pathological one cannot spin.
-    for ((i = 0; i < 8; i++)); do
-      stack_w=0; stack_h=0; gap=0
-      for wi in "${!arts[@]}"; do
-        render_blocks "$ps" "$FG" "${arts[$wi]}" "$tmp/word_$wi.png"
-        tw="$(magick identify -format '%w' "$tmp/word_$wi.png")"
-        th="$(magick identify -format '%h' "$tmp/word_$wi.png")"
-        (( tw > stack_w )) && stack_w=$tw
-        stack_h=$(( stack_h + th ))
-        (( gap == 0 )) && gap=$(( th / 5 ))
-      done
-      (( n > 1 )) && stack_h=$(( stack_h + gap * (n - 1) ))
-      (( stack_w <= MAXW && stack_h <= MAXH )) && break
-      ps="$(awk -v p="$ps" -v w="$stack_w" -v h="$stack_h" -v mw="$MAXW" -v mh="$MAXH" 'BEGIN{
-        r = mw/w; if (mh/h < r) r = mh/h
-        v = int(p * r * 0.98)
-        if (v < 1) v = 1
-        printf "%d", v }')"
-      # Below this the block face stops being letters and starts being
-      # noise; hand over to the proportional font instead of shipping
-      # something illegible.
-      if (( ps < 8 )); then
-        warn "'$title' is too long for block art at this resolution — using the proportional font"
-        use_blocks=0
-        break
-      fi
-    done
-  fi
-
-  if (( use_blocks )); then
-    if (( ${#arts[@]} == 1 )); then
-      # One word is already exactly the image we want. Compositing it onto
-      # a canvas and trimming again is not a no-op: the second -trim ate
-      # 31px off the right of "ATI", shrinking the name ~11% for no reason
-      # anyone would ever have looked for.
-      cp "$tmp/word_0.png" "$tmp/title.png"
-    else
-      # Stack the words, each centred on the one above. The canvas is
-      # already exactly the stack bounds, so there is nothing to trim.
-      local -a stack=( -size "${stack_w}x${stack_h}" xc:none "${SRGB[@]}" )
-      local y=0
-      for wi in "${!arts[@]}"; do
-        th="$(magick identify -format '%h' "$tmp/word_$wi.png")"
-        tw="$(magick identify -format '%w' "$tmp/word_$wi.png")"
-        stack+=( "$tmp/word_$wi.png" -geometry "+$(( stack_w / 2 - tw / 2 ))+${y}" -composite )
-        y=$(( y + th + gap ))
-      done
-      magick "${stack[@]}" +repage "${SRGB[@]}" "$tmp/title.png"
-    fi
-  fi
-
-  if (( ! use_blocks )); then
-    # Proportional font, scaled to the same bounds. Sized by measurement
-    # for the same reason: a 20-character name at a fixed pointsize runs
-    # off both edges of the screen.
-    local ps=120 tw th i
-    for ((i = 0; i < 6; i++)); do
-      magick -background none "${fontargs_p[@]}" -fill "$FG" \
-        -pointsize "$ps" -kerning 6 label:"$title" -trim +repage \
-        "${SRGB[@]}" "$tmp/title.png"
-      tw="$(magick identify -format '%w' "$tmp/title.png")"
-      th="$(magick identify -format '%h' "$tmp/title.png")"
-      (( tw <= MAXW && th <= MAXH )) && break
-      ps="$(awk -v p="$ps" -v w="$tw" -v h="$th" -v mw="$MAXW" -v mh="$MAXH" 'BEGIN{
-        r = mw/w; if (mh/h < r) r = mh/h
-        v = int(p * r * 0.98); if (v < 8) v = 8
-        printf "%d", v }')"
-    done
-  fi
-
-  # An empty or 1x1 title means every path above failed. The theme script
-  # loads title.png unconditionally, so a placeholder is not acceptable --
-  # better to stop here than to ship a boot screen with no name on it.
-  local finalw
-  finalw="$(magick identify -format '%w' "$tmp/title.png" 2>/dev/null || echo 0)"
-  (( finalw > 1 )) || die "could not render a title for '$title'"
+  render_title "$title" "$tmp/title.png"
 
   # The name is drawn in the FOREGROUND colour, not the accent. The accent
   # now has exactly one job on this screen -- marking progress through the
@@ -509,10 +536,51 @@ PY
   local DR=$(( SCREEN_H / 154 ))
   (( DR < 3 )) && DR=3
   local DD=$(( DR * 2 ))
+
+  # The progress colour has to be BRIGHTER than the wave, not merely
+  # different. The wave peaks at 0.77 opacity of the foreground, and a dot
+  # filling with progress is meant to read as lighting up.
+  #
+  # On some palettes the accent is darker than the foreground and the
+  # filled dots then read as dots going OUT, saying the opposite of what is
+  # happening. Where that is true, progress uses the foreground and the
+  # contrast comes from opacity alone, which always points the right way.
+  #
+  # The 0.62 line is drawn from the two palettes this repo actually ships,
+  # not from theory:
+  #
+  #   gruvbox  accent #83a598 / fg #ebdbb2  ratio 0.72  keep the accent
+  #   matrix   accent #008f11 / fg #00ff41  ratio 0.55  use the foreground
+  #
+  # gruvbox's teal is dimmer than its cream but a different hue, so it
+  # still reads as a state change. matrix's accent is the same hue as its
+  # foreground AND darker, which is the case that actually breaks. A
+  # threshold of 0.75 catches both and costs gruvbox its colour, so the
+  # line sits between the two measured ratios. If a future palette lands
+  # near 0.62 this will need a hue term rather than a brightness one.
+  local dot_accent="$ACCENT"
+  if awk -v a="$ACCENT" -v f="$FG" 'BEGIN{
+        # Rec.709 relative luminance. Hex is parsed from the INPUT strings,
+        # never from a rendered pixel: %[hex:p{0,0}] returns 16-bit
+        # channels, and slicing six characters off that is what once turned
+        # the whole splash purple.
+        n = "0123456789abcdef"
+        for (i = 0; i < 2; i++) {
+          s = tolower(i ? f : a); sub(/^#/, "", s)
+          r = (index(n, substr(s,1,1))-1)*16 + index(n, substr(s,2,1))-1
+          g = (index(n, substr(s,3,1))-1)*16 + index(n, substr(s,4,1))-1
+          b = (index(n, substr(s,5,1))-1)*16 + index(n, substr(s,6,1))-1
+          l[i] = 0.2126*r + 0.7152*g + 0.0722*b
+        }
+        exit !(l[0] < l[1] * 0.62) }'; then
+    warn "accent $ACCENT is darker than fg $FG — progress dots use the foreground"
+    dot_accent="$FG"
+  fi
+
   magick -size "${DD}x${DD}" xc:none "${SRGB[@]}" \
     -fill "$FG" -draw "circle $DR,$DR $DR,0" "$tmp/dot.png"
   magick -size "${DD}x${DD}" xc:none "${SRGB[@]}" \
-    -fill "$ACCENT" -draw "circle $DR,$DR $DR,0" "$tmp/dot_accent.png"
+    -fill "$dot_accent" -draw "circle $DR,$DR $DR,0" "$tmp/dot_accent.png"
 
   # ── Arch mark ──────────────────────────────────────────────────────
   # Small and quiet, sitting just above the dots. It is the distro's mark,
@@ -897,6 +965,144 @@ do_check() {
   printf '%sIf the splash misbehaves, pick the LTS entry at the menu -- it stays verbose.%s\n' "$d" "$o"
 }
 
+# ── deferred sync ───────────────────────────────────────────────────
+# `boot-splash autosync` is what theme-apply calls. It waits, then syncs
+# only if the boot screen is still out of date and no newer theme switch
+# has superseded it.
+#
+# Why deferred rather than immediate: sync reruns mkinitcpio, which is
+# about a minute of CPU. Switching themes is something you do repeatedly
+# while deciding, and paying a minute per switch -- five times over, for
+# four results nobody will ever boot into -- is worse than the problem it
+# solves. So: last write wins, once you have stopped.
+#
+# The debounce is a token file. Every call writes a new random token and
+# then sleeps; on waking, a call that no longer owns the token knows a
+# later one is already waiting and exits. No timers, no daemon, no state to
+# get wedged -- and if the machine goes down mid-wait, nothing is left
+# behind except a stale token that the next call overwrites.
+AUTOSYNC_TOKEN="${XDG_RUNTIME_DIR:-/tmp}/boot-splash-autosync.token"
+AUTOSYNC_LOCK="${XDG_RUNTIME_DIR:-/tmp}/boot-splash-autosync.lock"
+AUTOSYNC_DELAY="${BOOT_SPLASH_AUTOSYNC_DELAY:-300}"
+
+do_autosync() {
+  # Opt-out, for anyone who would rather run sync by hand.
+  [[ "${BOOT_SPLASH_AUTOSYNC:-1}" == 0 ]] && { say "autosync disabled"; return 0; }
+
+  # Nothing to sync into.
+  grep -q '^HOOKS=.*plymouth' "$MKINITCPIO" 2>/dev/null || return 0
+
+  # mkinitcpio needs root. A password prompt from a backgrounded job would
+  # block forever against a terminal that is not there, so require the
+  # passwordless path or do nothing at all.
+  sudo -n true 2>/dev/null || {
+    warn "autosync needs passwordless sudo — run 'boot-splash sync' by hand"
+    return 0
+  }
+
+  local token; token="$RANDOM$RANDOM$$"
+  printf '%s\n' "$token" > "$AUTOSYNC_TOKEN"
+  sleep "$AUTOSYNC_DELAY"
+
+  # Superseded: a later theme switch is already waiting its own delay.
+  [[ "$(cat "$AUTOSYNC_TOKEN" 2>/dev/null)" == "$token" ]] || return 0
+
+  # Someone ran sync by hand in the meantime, or the theme went back to
+  # what the initramfs already holds.
+  read_palette
+  local want="$USER|$BG|$FG|$ACCENT" have
+  have="$(sudo cat "$STAMP" 2>/dev/null || echo '')"
+  [[ "$want" == "$have" ]] && return 0
+
+  # One at a time. Two mkinitcpio runs writing the same UKI would race for
+  # the ESP, and the loser can leave a truncated kernel image -- which is
+  # an unbootable machine, not a cosmetic problem.
+  (
+    flock -n 9 || { say "another sync is already running"; exit 0; }
+    say "boot screen is out of date — syncing in the background"
+    if do_sync >/dev/null 2>&1; then
+      notify-send -a "boot-splash" "Boot screen updated" \
+        "The splash now matches your theme." 2>/dev/null || true
+    else
+      # Loud, because a failed sync leaves the initramfs holding the OLD
+      # splash and nothing else would ever say so.
+      notify-send -u critical -a "boot-splash" "Boot screen sync FAILED" \
+        "Run 'boot-splash sync' to see why." 2>/dev/null || true
+    fi
+  ) 9>"$AUTOSYNC_LOCK"
+}
+
+# ── selftest ────────────────────────────────────────────────────────
+# Render the name across a matrix of awkward inputs and assert every one
+# fits on screen. No root, no install, nothing written outside a tempdir --
+# which is what lets validate.sh run it on every commit.
+#
+# The matrix is not hypothetical. Every entry is a shape a real account has:
+# one character, nine, a dash, a dot, an underscore, digits, two words,
+# three words, an accented letter, and a name long enough that block art
+# cannot hold it. Three of these were BROKEN before the matrix existed --
+# accented characters were silently dropped, long names were sized off the
+# wrong row of the art, and multi-word names were run onto one illegible
+# line. Nothing would have caught a regression in any of them.
+do_selftest() {
+  need magick
+  need python3
+  [[ -f "$SRC_DIR/ansi-shadow.txt" ]] || die "glyph table missing at $SRC_DIR"
+
+  screen_geometry
+  read_palette
+
+  local out tmp fail=0 name w h mode
+  tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+  out="$tmp/t.png"
+
+  # Same bounds render_title enforces, written out again on purpose: a test
+  # that asks the code under test what "correct" means cannot fail.
+  local maxw=$(( SCREEN_W * 66 / 100 ))
+  local maxh=$(( SCREEN_H * 40 / 100 ))
+
+  say "name matrix at ${SCREEN_W}x${SCREEN_H} (bounds ${maxw}x${maxh})"
+  local -a matrix=(
+    "X"                          # single character
+    "Ati"                        # the common case
+    "Alexandra"                  # nine characters, one word
+    "Jean-Luc"                   # dash
+    "ati.attia"                  # dot
+    "ati_attia"                  # underscore
+    "User2024"                   # digits
+    "Ati Attia"                  # two words -> stacked
+    "Mohamed Attia Ibrahim"      # three words -> stacked
+    "José"                       # glyph the block face lacks -> font
+    "averyveryverylongusername"  # too long for blocks -> font
+  )
+
+  for name in "${matrix[@]}"; do
+    TITLE_MODE=""
+    if ! render_title "$name" "$out" >/dev/null 2>&1; then
+      printf '  %s✗%s %-26s render failed\n' "$r" "$o" "$name"; fail=1; continue
+    fi
+    w="$(magick identify -format '%w' "$out" 2>/dev/null || echo 0)"
+    h="$(magick identify -format '%h' "$out" 2>/dev/null || echo 0)"
+    mode="${TITLE_MODE:-?}"
+    if (( w < 2 || h < 2 )); then
+      printf '  %s✗%s %-26s empty render\n' "$r" "$o" "$name"; fail=1
+    elif (( w > maxw || h > maxh )); then
+      printf '  %s✗%s %-26s %sx%s overflows\n' "$r" "$o" "$name" "$w" "$h"; fail=1
+    else
+      printf '  %s✓%s %-26s %5sx%-5s %s\n' "$g" "$o" "$name" "$w" "$h" "$mode"
+    fi
+  done
+
+  echo
+  if (( fail )); then
+    printf '%s✗ selftest failed%s\n' "$r" "$o"
+    return 1
+  fi
+  printf '%s✓ every name fits%s\n' "$g" "$o"
+}
+
 # ── enable / disable ────────────────────────────────────────────────
 do_enable() {
   need mkinitcpio
@@ -1048,10 +1254,12 @@ case "${1:-status}" in
   generate) do_generate ;;
   preview)  do_preview "$@" ;;
   check)    do_check ;;
+  selftest) do_selftest ;;
+  autosync) do_autosync ;;
   sync)     do_sync ;;
   enable)   do_enable ;;
   disable)  do_disable ;;
   status)   do_status ;;
   --help|-h) sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) die "unknown command '${1}' (generate|preview|check|sync|enable|disable|status)" ;;
+  *) die "unknown command '${1}' (generate|preview|check|selftest|sync|autosync|enable|disable|status)" ;;
 esac
