@@ -4138,8 +4138,9 @@ class _SafeLengthMixin:
 
     libqtile's own _Widget.length wraps calculate_length() in a
     try/except and returns 0 on failure (widget/base.py). But
-    libqtile.widget.textbox.TextBox OVERRIDES `length` (via length_get)
-    without that guard, so any exception escapes the property, Python
+    qtile_extras' inject_decorations() REPLACES `length` on each concrete
+    widget class with its own unguarded length_get -- see
+    _guard_injected_length() below -- so any exception escapes the property, Python
     falls through to Configurable.__getattr__, and the caller sees
 
         AttributeError: <X> has no attribute: length
@@ -4239,6 +4240,92 @@ def _guard_widget_length():
 
 
 _guard_widget_length()
+
+
+def _guard_injected_length():
+    """Close the hole _guard_widget_length() cannot reach.
+
+    Patching _Widget.length is not enough, because qtile_extras does not
+    inherit that property -- it OVERWRITES it. decorations.py:1175:
+
+        classdef.length = property(length_get, length_set)
+
+    inject_decorations() runs that against every concrete widget class it
+    decorates, so libqtile.widget.textbox.TextBox ends up with its own
+    `length` in __dict__ that shadows the guarded one further up the MRO.
+    That is why this kept crashing the bar after the first guard went in,
+    once per reload_config:
+
+        bar.py:440 in _resize -> sum(w.length for w in widgets ...)
+        AttributeError: TextBox has no attribute: length
+
+    It is invisible from a plain `import libqtile` -- the injection happens
+    at runtime, not in libqtile's source -- which is what made the earlier
+    reading of this ("TextBox OVERRIDES length") look wrong when checked.
+
+    qtile_extras' length_get() reads self.length_type, self._length and
+    self.calculate_length() with no guard at all, and every one of those
+    needs _configure() to have run. The chips are safe already because
+    _SafeLengthMixin sits ahead of the qtile_extras class in their MRO;
+    what is left exposed is the plain widgets built directly, like the "|"
+    separator TextBoxes.
+
+    Both halves are needed: the sweep covers classes already injected by
+    the time this module is imported, and wrapping inject_decorations
+    covers anything imported afterwards.
+    """
+    from libqtile.widget import base as _wbase
+    from qtile_extras.widget import decorations as _dec
+
+    def _wrap_class(cls):
+        prop = cls.__dict__.get("length")
+        # __dict__, not getattr: an inherited guarded property must not
+        # count as this class being done, or a subclass that gets its own
+        # injection later would be skipped.
+        if prop is None or cls.__dict__.get("_length_guard_applied"):
+            return
+        fget = prop.fget
+
+        def _get(self):
+            try:
+                return fget(self)
+            except Exception:
+                from libqtile.log_utils import logger
+
+                # type(self).__name__, never self.name -- self.name is one
+                # of the attributes that may be missing here, and raising
+                # from inside the handler is the bug being fixed.
+                logger.warning(
+                    "widget %s could not compute length (configured=%s); "
+                    "treating as 0 so the bar still draws",
+                    type(self).__name__,
+                    getattr(self, "configured", "?"),
+                )
+                return 0
+
+        cls.length = property(_get, prop.fset, prop.fdel)
+        cls._length_guard_applied = True
+
+    def _sweep(cls):
+        for sub in cls.__subclasses__():
+            _wrap_class(sub)
+            _sweep(sub)
+
+    _sweep(_wbase._Widget)
+
+    if not getattr(_dec, "_length_guard_installed", False):
+        _orig_inject = _dec.inject_decorations
+
+        def _inject(classdef):
+            result = _orig_inject(classdef)
+            _wrap_class(classdef)
+            return result
+
+        _dec.inject_decorations = _inject
+        _dec._length_guard_installed = True
+
+
+_guard_injected_length()
 
 
 class _ChipFlashMixin(_SafeLengthMixin):
@@ -4466,7 +4553,16 @@ keys = [
     Key(
         [mod, "shift"],
         "s",
-        lazy.function(lambda qtile: toggle_or_spawn_sum(qtile, my2ndTerm, sum_file)),
+        # myTerm, not my2ndTerm. alacritty was the only reason my2ndTerm
+        # existed, and its font.size is 9.0 against kitty's 11.0 -- so this
+        # one window rendered ~18% smaller than every other terminal on the
+        # desktop, permanently, at every scale. It also could not follow a
+        # UI scale change: kitty re-derives its cell size from Xft.dpi while
+        # running (measured across a DPI change, minimized included),
+        # alacritty reads it once at startup, and this window is long-lived
+        # and only ever minimized -- so it kept whatever scale it was born
+        # at until something killed it.
+        lazy.function(lambda qtile: toggle_or_spawn_sum(qtile, myTerm, sum_file)),
         desc="Open or focus sum.md globally",
     ),
     # ---screenshot: select an area, straight to the clipboard---

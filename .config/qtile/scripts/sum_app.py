@@ -96,7 +96,14 @@ def toggle_or_spawn_sum(qtile, myTerm, sum_file):
     # 🚀 CASE 3: not running
     # --class gives this window its own WM_CLASS so the float rule matches on the
     # MapRequest itself; without it the window tiles for a frame before floating.
+    #
+    # --name AND --class, rather than alacritty's single `--class a,b`. kitty
+    # splits the WM_CLASS pair across two flags -- --name is the instance
+    # half, --class is the class half -- and silently ignores a comma-joined
+    # value, which would leave the window as ("kitty", "kitty") and drop it
+    # straight into the tiling layout. Both halves are set to SUM_WM_CLASS so
+    # is_sum_window() and the float rule match whichever they read.
     qtile.spawn(
-        f"{myTerm} --class {SUM_WM_CLASS},{SUM_WM_CLASS} --title sum.md "
+        f"{myTerm} --name {SUM_WM_CLASS} --class {SUM_WM_CLASS} --title sum.md "
         f"-e nvim -c':set nonumber norelativenumber' {sum_file}"
     )

@@ -175,6 +175,29 @@ fi
 } >> "$XRES"
 command -v xrdb >/dev/null 2>&1 && xrdb -merge "$XRES" 2>/dev/null || true
 
+# ── running terminals ────────────────────────────────────────────────
+# kitty watches RESOURCE_MANAGER and re-derives its cell size from Xft.dpi
+# on its own -- verified by measuring `kitty @ ls` columns across a DPI
+# change, including while the window was minimized. What it does NOT undo
+# is a font size that was set EXPLICITLY: ctrl+= / ctrl+- (and any
+# `kitty @ set-font-size`) pin an override on that OS window which then
+# ignores DPI entirely, in both directions. That is the state the summary
+# window (Mod+Shift+S) kept getting stuck in -- it is long-lived and only
+# ever minimized, never closed, so an override picked up once outlived
+# every later scale change and the font stayed wrong after going back.
+#
+# `set-font-size 0` means "the configured size", re-derived at the CURRENT
+# dpi, and it clears the override. Sending it to every live kitty makes a
+# scale change authoritative again. Same socket fan-out theme-apply uses
+# for colors; same 1s timeout so one wedged instance cannot hang this.
+if command -v kitty >/dev/null 2>&1; then
+  for sock in /tmp/kitty-*; do
+    [[ -S "$sock" ]] || continue
+    timeout 1 kitty @ --to "unix:$sock" set-font-size 0 >/dev/null 2>&1 &
+  done
+  wait 2>/dev/null || true
+fi
+
 printf 'ui scale : %s   (%s)\n' "$scale" "$source_note"
 printf 'Xft.dpi  : %s\n' "$xft_dpi"
 if [[ "$scale" != "1.00" ]]; then

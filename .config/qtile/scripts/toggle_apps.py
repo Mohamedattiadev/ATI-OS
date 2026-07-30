@@ -57,10 +57,56 @@ def _matches_class(wm_class, cls: str) -> bool:
     return any(needle in (c or "").lower() for c in wm_class)
 
 
-def _find_window_by_class(qtile, cls: str):
+def _matches_instance(wm_class, cls: str) -> bool:
+    """Exact, case-insensitive test against the INSTANCE field only.
+
+    WM_CLASS is a pair, (instance, class). _matches_class() tests a substring
+    against BOTH halves, which is right for apps that spell their class
+    inconsistently -- and catastrophic for Brave, because the scratchpad
+    dropdowns are Brave too:
+
+        main browser   ("brave-browser",   "Brave-browser")
+        WhatsApp       ("web.whatsapp.com","Brave-browser")
+        DeepSeek       ("chat.deepseek.com","Brave-browser")
+        ChatGPT        ("chat.openai.com", "Brave-browser")
+
+    "brave-browser" is a case-insensitive substring of "Brave-browser", so
+    the loose test matched all four. Only the instance half distinguishes
+    them, and it is exactly what the ScratchPad's own Match(wm_instance_class=)
+    rules key on -- so this is the same identity the rest of the config uses.
+    """
+    if not wm_class:
+        return False
+    return (wm_class[0] or "").lower() == cls.lower()
+
+
+def _is_scratchpad(win) -> bool:
+    """True for a window owned by the ScratchPad group.
+
+    A dropdown never belongs to a numbered workspace, so focusing one via
+    _focus_window_and_group() -- which switches to a group the window is not
+    in and then asks that group to focus it -- silently does nothing. That
+    is the "Mod+B sometimes just doesn't open Brave" report: whichever Brave
+    window happened to come first in windows_map won, and if that was the
+    WhatsApp or DeepSeek dropdown the keypress went nowhere at all.
+    """
+    group = getattr(win, "group", None)
+    return getattr(group, "name", None) == "scratchpad"
+
+
+def _find_window_by_class(qtile, cls: str, exact_instance: bool = False):
+    """Find a managed window by class.
+
+    windows_map is insertion-ordered, i.e. ordered by when each window was
+    created -- so with an ambiguous test the winner depended on the order
+    you happened to open things in that session. Hence the two guards:
+    scratchpad dropdowns are never candidates, and callers that need a
+    specific one of several same-class windows ask for exact_instance.
+    """
+    match = _matches_instance if exact_instance else _matches_class
     for w in qtile.windows_map.values():
-        if isinstance(w, Window):
-            if _matches_class(w.get_wm_class(), cls):
+        if isinstance(w, Window) and not _is_scratchpad(w):
+            if match(w.get_wm_class(), cls):
                 return w
     return None
 
@@ -248,12 +294,18 @@ def toggle_brave(qtile):
     current_group = qtile.current_group.name
     current_win = qtile.current_window
 
-    target_win = _find_window_by_class(qtile, brave_class)
+    # exact_instance: the ChatGPT/DeepSeek/WhatsApp dropdowns are Brave
+    # windows whose CLASS half is also "Brave-browser". See
+    # _matches_instance() -- matching loosely here is what made this
+    # binding intermittent.
+    target_win = _find_window_by_class(qtile, brave_class, exact_instance=True)
 
-    # Already in Anki group and on Anki → return back
-    if current_group == brave_group and current_win:
+    # Already in the browser group and on the browser → return back.
+    # The instance test also stops a focused WhatsApp/DeepSeek dropdown from
+    # reading as "you are already on Brave" and bouncing you elsewhere.
+    if current_group == brave_group and current_win and not _is_scratchpad(current_win):
         wm_class = current_win.get_wm_class()
-        if _matches_class(wm_class, brave_class):
+        if _matches_instance(wm_class, brave_class):
             if last_group[0]:
                 qtile.groups_map[last_group[0]].toscreen()
             return
