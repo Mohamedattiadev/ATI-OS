@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
-# boot-splash — a plymouth splash showing THIS user's name and a progress bar.
+# boot-splash — a plymouth splash showing THIS user's name and a progress ring.
 #
 # Arch boots with the kernel log on screen: a wall of scrolling text ending
 # in a mirror list. That is fine for a server and wrong for a desktop --
 # and worse, a boot with no feedback is indistinguishable from a boot that
-# has hung. This replaces it with the username, large, over a progress bar,
-# in the colours of the theme that is currently active.
+# has hung. This replaces it with the Arch mark inside a progress ring and
+# the username underneath, in the colours of the theme currently active.
 #
 # The name is generated, not hardcoded: user `ati` gets "Ati", user `beko`
 # gets "Beko". Nothing about this is specific to one machine.
+#
+# It also owns the frame BEFORE and AFTER plymouth. systemd-boot paints a
+# bitmap from the UKI's .splash section the moment you pick a boot entry,
+# and Arch ships its own logo there; plymouth then draws over it, and when
+# plymouth quits its buffer is torn down and that bitmap is revealed again.
+# The result is the distro logo bracketing your splash on both sides. So
+# `generate` also renders a STATIC frame of this same design as a BMP, and
+# `enable`/`sync` point the UKI at it -- one continuous image from the boot
+# menu to the login prompt.
 #
 # Commands:
 #   boot-splash generate    render assets + install the theme (no boot changes)
@@ -44,6 +53,25 @@ TITLE_SIZE="${BOOT_SPLASH_SIZE:-26}"
 # Records the palette + user the CURRENTLY BUILT initramfs contains, which
 # is not the same thing as what is in /usr/share right now. See do_sync.
 STAMP="/usr/share/plymouth/themes/$THEME_NAME/.built-stamp"
+
+# The Arch mark, from the archlinux-keyring/pixmaps the distro already
+# ships. Vendoring a copy would mean tracking a trademarked logo in the
+# repo; reading the installed one means it is always the current artwork
+# and the file simply does not exist on a non-Arch machine, which is the
+# correct behaviour there.
+ARCH_LOGO="${BOOT_SPLASH_LOGO:-/usr/share/pixmaps/archlinux-logo.svg}"
+
+# The static frame handed to systemd-boot. Deliberately NOT inside
+# THEME_DIR: the plymouth mkinitcpio hook copies the whole theme directory
+# into the initramfs, and this bitmap is several megabytes of something the
+# initramfs has no use for -- it is read once, at UKI build time.
+BOOT_BMP_DIR="/usr/share/arch-config"
+BOOT_BMP="$BOOT_BMP_DIR/boot-splash.bmp"
+# Every mkinitcpio preset on the box gets pointed at BOOT_BMP. The presets
+# are pacman-owned, so they are edited in place with a backup rather than
+# replaced -- the same approach .config/arch-config/boot/linux-lts.preset
+# documents for the fallback edit.
+PRESET_DIR="/etc/mkinitcpio.d"
 
 r=$'\033[31m'; g=$'\033[32m'; y=$'\033[33m'; d=$'\033[90m'; o=$'\033[0m'
 say()  { printf '%s[boot-splash]%s %s\n' "$d" "$o" "$*"; }
@@ -86,6 +114,87 @@ hex_to_float() {
     "$(awk -v v="$((16#${h:4:2}))" 'BEGIN{printf "%.4f", v/255}')"
 }
 
+# ── screen geometry ─────────────────────────────────────────────────
+# Sets SCREEN_W / SCREEN_H. Used to scale the ring and to size the static
+# BMP, which must match the resolution the FIRMWARE hands to systemd-boot
+# -- not the one X happens to be running.
+#
+# /sys/class/graphics/fb0/virtual_size is that resolution when the machine
+# booted on the EFI framebuffer, which is exactly the case a boot splash
+# cares about. xrandr is the fallback for a running desktop; the constant
+# is the last resort, and is only ever a wrong guess about SIZE, never
+# about layout -- the theme script positions everything from the real
+# Window dimensions at boot.
+screen_geometry() {
+  SCREEN_W=""; SCREEN_H=""
+  local fb=/sys/class/graphics/fb0/virtual_size
+  if [[ -r "$fb" ]]; then
+    IFS=, read -r SCREEN_W SCREEN_H < "$fb" || true
+  fi
+  if [[ -z "${SCREEN_W:-}" || -z "${SCREEN_H:-}" ]]; then
+    read -r SCREEN_W SCREEN_H <<<"$(xrandr --current 2>/dev/null \
+      | awk '/ connected primary/{split($4,a,"+"); split(a[1],b,"x"); print b[1], b[2]; exit}')"
+  fi
+  [[ "${SCREEN_W:-}" =~ ^[0-9]+$ && "${SCREEN_H:-}" =~ ^[0-9]+$ ]] || { SCREEN_W=1920; SCREEN_H=1080; }
+}
+
+# PNG24 forced on every raster write, not `-type TrueColor`.
+#
+# This is the same trap -colorspace sRGB exists for, one layer down: a
+# canvas built from a neutral colour is typed Grayscale, and the PNG
+# ENCODER then honours that and writes a greyscale file regardless of what
+# -colorspace or -type said. Every coloured sprite composited onto it
+# afterwards is silently desaturated -- the accent ring came out grey with
+# no warning anywhere. `PNG24:` is the only form that survives the write.
+
+# ── layout ──────────────────────────────────────────────────────────
+# THE arithmetic. dotfiles.script computes the same thing at boot from the
+# real Window dimensions; this is the copy used to composite the static
+# BMP and the preview. The two must agree exactly, or the handover from
+# systemd-boot's bitmap to plymouth's first frame is a visible jump.
+#
+# Sets L_RING_X/Y, L_TITLE_X/Y, L_MARK_X/Y from SCREEN_W/H and the assets
+# in the given directory.
+splash_layout() {
+  local d="$1" tw th rw rh mw mh gap group_h group_y
+  tw="$(magick identify -format '%w' "$d/title.png")"
+  th="$(magick identify -format '%h' "$d/title.png")"
+  rw="$(magick identify -format '%w' "$d/ring_track.png")"
+  rh="$(magick identify -format '%h' "$d/ring_track.png")"
+  mw="$(magick identify -format '%w' "$d/mark.png")"
+  mh="$(magick identify -format '%h' "$d/mark.png")"
+
+  # The ring and the name are ONE group: centred together, then lifted.
+  # Positioning each from the screen edges independently is what produced
+  # the old top-heavy stack with a lonely dot floating below it.
+  gap=$(( SCREEN_H / 16 ))
+  group_h=$(( rh + gap + th ))
+  group_y=$(( SCREEN_H / 2 - group_h / 2 - SCREEN_H / 22 ))
+
+  L_RING_X=$(( SCREEN_W / 2 - rw / 2 )); L_RING_Y=$group_y
+  L_TITLE_X=$(( SCREEN_W / 2 - tw / 2 )); L_TITLE_Y=$(( group_y + rh + gap ))
+  L_MARK_X=$(( SCREEN_W / 2 - mw / 2 ));  L_MARK_Y=$(( L_RING_Y + rh / 2 - mh / 2 ))
+}
+
+# Composite one full-screen frame from the assets in <dir>.
+#   compose_still <dir> <bg-hex> <prog-index> <spin-index|-> <title-opacity> <out>
+# A `-` spin index omits the comet, which is what the static BMP wants:
+# a frozen comet is a lie about a machine that is not doing anything yet.
+compose_still() {
+  local d="$1" bg="$2" pidx="$3" sidx="$4" topa="$5" out="$6"
+  local -a a
+  splash_layout "$d"
+  a=( -size "${SCREEN_W}x${SCREEN_H}" "xc:$bg" -colorspace sRGB )
+  a+=( \( "$d/ring_track.png" -alpha set -channel A -evaluate multiply 0.15 +channel \)
+       -geometry "+${L_RING_X}+${L_RING_Y}" -composite )
+  a+=( "$d/ring_prog_$pidx.png" -geometry "+${L_RING_X}+${L_RING_Y}" -composite )
+  [[ "$sidx" != "-" ]] && a+=( "$d/spin_$sidx.png" -geometry "+${L_RING_X}+${L_RING_Y}" -composite )
+  a+=( "$d/mark.png" -geometry "+${L_MARK_X}+${L_MARK_Y}" -composite )
+  a+=( \( "$d/title.png" -alpha set -channel A -evaluate multiply "$topa" +channel \)
+       -geometry "+${L_TITLE_X}+${L_TITLE_Y}" -composite )
+  magick "${a[@]}" -colorspace sRGB "$out"
+}
+
 # ── asset generation ────────────────────────────────────────────────
 do_generate() {
   need magick
@@ -103,10 +212,12 @@ do_generate() {
   [[ -n "$FONT" ]] && fontargs_p=(-font "$FONT")
 
   read_palette
+  screen_geometry
   local title
   # ${var^} uppercases only the first character: ati -> Ati, beko -> Beko.
   title="${USER^}"
   say "user '$USER' -> title '$title'   bg=$BG fg=$FG accent=$ACCENT"
+  say "screen ${SCREEN_W}x${SCREEN_H}"
 
   local tmp; tmp="$(mktemp -d)"
   # shellcheck disable=SC2064
@@ -128,6 +239,14 @@ do_generate() {
   # using it would mean both a new package dependency and vendoring a font
   # file of uncertain licence. The table is 40 glyphs of plain text and is
   # verified against the wizard's own hardcoded ATI logo.
+  #
+  # Rendered SOLID: only the block characters are kept, and the face's
+  # box-drawing drop shadow is dropped on the floor. ANSI Shadow draws the
+  # letterform with █▀▄ and its shadow with ╗╝╚═║╔, and filling both in one
+  # colour -- which is all a single `magick label:` pass can do -- produces
+  # a hollow double outline trailing every letter. On a real screen that
+  # reads as a cheap 3D bevel, not as depth. Solid blocks are what the face
+  # is actually good at.
   local art="$tmp/art.txt"
   if ! python3 - "$SRC_DIR/ansi-shadow.txt" "$title" > "$art" 2>/dev/null <<'PY'
 import sys
@@ -145,8 +264,14 @@ for line in open(sys.argv[1], encoding="utf-8"):
 word = [c for c in sys.argv[2].upper() if c in glyphs]
 if not word:
     sys.exit(1)
+BLOCK = set("█▀▄▌▐░▒▓")
 for row in range(6):
-    print("".join(glyphs[c][row] for c in word))
+    line = "".join(glyphs[c][row] for c in word)
+    line = "".join(ch if ch in BLOCK or ch == " " else " " for ch in line)
+    # A row that is entirely shadow becomes empty; `magick label:` treats a
+    # zero-width line as the end of the text and silently truncates the
+    # art, so keep the row alive with a single space.
+    print(line.rstrip() or " ")
 PY
   then
     warn "could not render block art for '$title' — falling back to plain text"
@@ -179,20 +304,20 @@ PY
     # -4 and beyond squash the A's crossbar into its bowl.
     local isp=$(( ps / 13 ))
     (( isp < 1 )) && isp=1
+    # -kerning -1 closes the seam. The mono advance is a hair wider than
+    # the ink of a █, so at this weight every letter is sliced by thin
+    # vertical gaps at the character-cell boundaries -- invisible in a
+    # mid-grey mock-up, obvious in cream on dark. -2 starts squashing the
+    # A's counter, so -1 is the whole usable range.
     magick -background none -font "$MONO_FONT" -pointsize "$ps" \
-      -interline-spacing "-$isp" -fill "$ACCENT" \
+      -interline-spacing "-$isp" -kerning -1 -fill "$FG" \
       label:@"$art" -trim +repage "${SRGB[@]}" "$tmp/title.png"
   fi
 
-  # Hairline rule between the name and the ring.
-  #
-  # Not decoration: with only two elements stacked in the middle of an
-  # empty screen there is nothing establishing where one ends and the
-  # other begins, and the pair floats. A single quiet line gives the
-  # composition a horizon.
-  local tw2; tw2="$(magick identify -format '%w' "$tmp/title.png")"
-  magick -size "$(( tw2 * 62 / 100 ))x1" xc:"$FG" "${SRGB[@]}" \
-    -alpha set -channel A -evaluate multiply 0.14 +channel "$tmp/rule.png"
+  # The name is drawn in the FOREGROUND colour, not the accent. The accent
+  # now has exactly one job on this screen -- the progress arc -- and a
+  # composition where the biggest element and the status indicator are the
+  # same colour has nothing to direct the eye with.
 
   # ── ring ───────────────────────────────────────────────────────────
   # Plymouth's script language cannot draw an arc, so the ring is shipped
@@ -202,12 +327,65 @@ PY
   #   ring_prog_NN  the fill, growing clockwise from 12 o'clock
   #   spin_NN       a short comet sweeping round, which is what keeps
   #                 moving when plymouth reports no progress at all
-  # Deliberately small and thin. The name is the subject; the ring is a
-  # status light under it, not a second focal point competing with it.
-  # The stroke came down with the name -- a 5px stroke around a 44px
-  # radius looked heavy next to block art that is no longer huge.
-  local RS=96 RC=48 RR=34 RW=4
+  #
+  # Sized from the SCREEN, not fixed at 96px. The previous ring was ~7% of
+  # a 1366px screen and, photographed off the actual panel, read as a stray
+  # dot rather than as a status light -- the comet was moving but there was
+  # not enough arc for the motion to be legible. At 26% of screen height it
+  # is a real element, which is also what lets the Arch mark live inside it
+  # instead of needing its own slot in the stack.
+  #
+  # The stroke stays hairline-thin. A ring this size with the old 4px
+  # stroke is a donut; the point is a drawn circle, not a gauge.
+  local RS RC RR RW
+  RS=$(( SCREEN_H * 26 / 100 ))
+  (( RS < 96 )) && RS=96
+  RW=$(( RS / 65 )); (( RW < 2 )) && RW=2
+  RC=$(( RS / 2 ))
+  RR=$(( RS / 2 - RW ))
   RING_CANVAS=$RS
+
+  # ── Arch mark ──────────────────────────────────────────────────────
+  # Sized against the RING, not the screen: it lives inside the ring, and
+  # what matters is how much of that circle it fills. At 52% it read as
+  # lost in the middle of the circle; 56% leaves a clear margin to the arc
+  # while still making the mark the thing you see.
+  local MARK_H=$(( RS * 56 / 100 ))
+  if [[ -f "$ARCH_LOGO" ]]; then
+    # Recoloured through the SVG's own alpha as a stencil rather than by
+    # tinting its pixels: the logo is flat cyan, and -colorize or -fill on
+    # a coloured raster leaves a halo at every antialiased edge.
+    #
+    # The connected-components pass drops the trademark glyph. It is a few
+    # unreadable pixels off the logo's bottom-right that would sit inside
+    # the ring as grit, and it is the only component in the artwork small
+    # enough for an area threshold to isolate -- cropping cannot reach it
+    # without also cutting the logo's feet.
+    #
+    # Rasterised at a fixed 512px and scaled down afterwards so that
+    # threshold is a constant rather than something that has to track the
+    # output size, and so the downscale does the antialiasing.
+    #
+    # -alpha copy before -alpha shape is load-bearing: connected-components
+    # returns a bilevel image with NO alpha channel, and -alpha shape on an
+    # image with no alpha silently yields nothing at all.
+    magick -background none -density 600 "$ARCH_LOGO" -resize x512 "${SRGB[@]}" \
+      -alpha extract \
+      -define connected-components:area-threshold=400 \
+      -define connected-components:mean-color=true \
+      -connected-components 8 \
+      -alpha copy -background "$FG" -alpha shape \
+      -resize "x$MARK_H" \
+      -channel A -evaluate multiply 0.92 +channel \
+      -trim +repage "${SRGB[@]}" "$tmp/mark.png"
+  else
+    # No Arch logo on this machine (or not Arch at all). The ring still
+    # works as a progress indicator with nothing in it, and a missing
+    # optional asset must not take the boot screen down -- the script
+    # unconditionally loads mark.png, so it has to exist.
+    warn "no logo at $ARCH_LOGO — the ring will be empty"
+    magick -size 1x1 xc:none "${SRGB[@]}" "$tmp/mark.png"
+  fi
 
   # Track: the faint full circle the other two ride on.
   magick -size ${RS}x${RS} xc:none "${SRGB[@]}" -fill none \
@@ -233,7 +411,7 @@ PY
   done
 
   # Comet: a 46-degree arc with a bright head, rotated round the circle.
-  # 48 frames = 7.5 degrees per step, which is smooth at the ~1.4s per
+  # 48 frames = 7.5 degrees per step, which is smooth at the ~2.9s per
   # revolution the script plays it at.
   SPIN_FRAMES=48
   local s e hx hy rad
@@ -274,13 +452,33 @@ PY
       -e "s/BGTOP_R/$TR/g" -e "s/BGTOP_G/$TG/g" -e "s/BGTOP_B/$TB/g" \
       "$SRC_DIR/$THEME_NAME.script" > "$tmp/$THEME_NAME.script"
 
+  # ── the frame BEFORE and AFTER plymouth ────────────────────────────
+  # systemd-boot paints this the moment a boot entry is chosen, and it is
+  # what reappears when plymouth's buffer is torn down at quit. Rendering
+  # the SAME composition, from the SAME assets, is what turns three
+  # separate screens into one continuous image.
+  #
+  # Progress index 0 and no comet: at the point this is on screen the
+  # kernel has not started. Anything else would be an animation frozen
+  # mid-stride, or a claim of progress that has not happened.
+  #
+  # BMP3 is not a stylistic choice -- systemd-boot reads uncompressed
+  # 24-bit BMP and nothing else. The default BMP writer emits BMP4 with an
+  # alpha mask, which it refuses.
+  compose_still "$tmp" "$BG" 0 - 0.94 "$tmp/still.png"
+  magick "$tmp/still.png" -alpha remove -alpha off -colorspace sRGB \
+    -type TrueColor BMP3:"$tmp/boot-splash.bmp"
+  sudo install -d -m755 "$BOOT_BMP_DIR"
+  sudo install -m644 "$tmp/boot-splash.bmp" "$BOOT_BMP"
+
   sudo install -d -m755 "$THEME_DIR"
   # Remove every image first, including any the PREVIOUS design used.
   # Leftovers are not merely untidy: they get baked into the initramfs and
   # are then impossible to tell apart from the assets actually in use.
+  # rule.png is one of these: the hairline the old design used is gone.
   sudo rm -f "$THEME_DIR"/*.png
   sudo install -m644 "$tmp/title.png"      "$THEME_DIR/title.png"
-  sudo install -m644 "$tmp/rule.png"       "$THEME_DIR/rule.png"
+  sudo install -m644 "$tmp/mark.png"       "$THEME_DIR/mark.png"
   sudo install -m644 "$tmp/ring_track.png" "$THEME_DIR/ring_track.png"
   for ((i = 0; i < PROG_FRAMES; i++)); do
     sudo install -m644 "$tmp/ring_prog_$i.png" "$THEME_DIR/ring_prog_$i.png"
@@ -295,6 +493,7 @@ PY
   sudo install -m644 "$tmp/$THEME_NAME.script"       "$THEME_DIR/$THEME_NAME.script"
   sudo install -m644 "$SRC_DIR/$THEME_NAME.plymouth" "$THEME_DIR/$THEME_NAME.plymouth"
   ok "theme installed to $THEME_DIR (${SPIN_FRAMES} spin + ${PROG_FRAMES} progress frames)"
+  ok "static boot frame: $BOOT_BMP (${SCREEN_W}x${SCREEN_H})"
 
   # The theme lives INSIDE the initramfs -- plymouth runs before / is
   # mounted, so it cannot read /usr/share at boot. Regenerating here
@@ -312,6 +511,66 @@ PY
       SPLASH_DIRTY=1
     fi
   fi
+}
+
+# ── the UKI splash section ──────────────────────────────────────────
+# Point every mkinitcpio preset that builds a Unified Kernel Image at our
+# static BMP instead of Arch's.
+#
+# This is the fix for the distro logo that bracketed the splash on both
+# sides. Arch's linux.preset ships:
+#
+#   default_options="--splash /usr/share/systemd/bootctl/splash-arch.bmp"
+#
+# which bakes that bitmap into the UKI as a PE .splash section.
+# systemd-boot draws it when the entry is picked, plymouth draws over it,
+# and when plymouth quits its buffer is released and the bitmap shows
+# through again until getty clears the console. Replacing the file it
+# points at fixes both ends with one edit.
+#
+# Presets are pacman-owned, so this is an in-place sed with a backup, the
+# same handling .config/arch-config/boot/linux-lts.preset documents for
+# the fallback edit. A pacman upgrade of the linux package will restore
+# Arch's line; `boot-splash sync` puts it back, and `status` reports it.
+#
+# Idempotent: safe to call from both enable and sync.
+patch_uki_splash() {
+  [[ -f "$BOOT_BMP" ]] || { warn "no $BOOT_BMP yet — run: boot-splash generate"; return 0; }
+  [[ -d "$PRESET_DIR" ]] || { say "no $PRESET_DIR — not a mkinitcpio-preset system"; return 0; }
+
+  local p changed=0
+  for p in "$PRESET_DIR"/*.preset; do
+    [[ -f "$p" ]] || continue
+    # Only presets that actually build a UKI have a splash to set. A
+    # preset producing a plain initramfs image ignores --splash entirely,
+    # and adding it there would be noise in a pacman-owned file.
+    sudo grep -qE '^[[:space:]]*[a-z_]+_uki=' "$p" || continue
+    sudo grep -q -- "--splash $BOOT_BMP" "$p" && continue
+
+    sudo cp -n "$p" "$p.bak-boot-splash" 2>/dev/null || true
+    # Rewrite an existing --splash argument in place, whether or not the
+    # line is commented out. Matching the path loosely (non-space run)
+    # rather than Arch's exact filename means a preset already pointing
+    # somewhere else is still corrected.
+    sudo sed -i -E "s|--splash[[:space:]]+[^\"[:space:]]+|--splash $BOOT_BMP|g" "$p"
+
+    # No --splash at all: add one to the UKI preset's options line, or
+    # create that line if the preset does not have one.
+    if ! sudo grep -q -- '--splash' "$p"; then
+      if sudo grep -qE '^[[:space:]]*default_options=' "$p"; then
+        sudo sed -i -E "s|^([[:space:]]*default_options=\")|\\1--splash $BOOT_BMP |" "$p"
+      else
+        printf 'default_options="--splash %s"\n' "$BOOT_BMP" | sudo tee -a "$p" >/dev/null
+      fi
+    fi
+    if sudo grep -q -- "--splash $BOOT_BMP" "$p"; then
+      ok "$(basename "$p") now boots our splash bitmap"
+      changed=1
+    else
+      warn "could not set --splash in $p — check it by hand"
+    fi
+  done
+  (( changed )) || say "UKI presets already point at $BOOT_BMP"
 }
 
 # ── preview ─────────────────────────────────────────────────────────
@@ -350,12 +609,9 @@ do_preview() {
     return 0
   fi
 
-  # Screen geometry, so the preview is the size the boot screen will be.
-  local W H
-  read -r W H <<<"$(xrandr --current 2>/dev/null \
-    | awk '/ connected primary/{split($4,a,"+"); split(a[1],b,"x"); print b[1], b[2]; exit}')"
-  [[ -n "${W:-}" && -n "${H:-}" ]] || { W=1920; H=1080; warn "no xrandr — previewing at ${W}x${H}"; }
-
+  # Same geometry the BMP was rendered at, so the preview is the size the
+  # boot screen will actually be.
+  screen_geometry
   read_palette
   local out="${TMPDIR:-/tmp}/boot-splash-preview.gif"
   local tmp; tmp="$(mktemp -d)"
@@ -363,80 +619,43 @@ do_preview() {
   trap "rm -rf '$tmp'" RETURN
 
   # An ANIMATED preview, because the splash is animated and a still frame
-  # cannot show whether the motion is right. Frames use the same arithmetic
-  # dotfiles.script does -- fade-in easing, breathing sines, comet index,
-  # progress drift -- so the timing and layout are the ones plymouth will
-  # produce, not an artist's impression.
+  # cannot show whether the motion is right. Frames go through the same
+  # compose_still the static BMP uses and reuse the script's arithmetic --
+  # breathing sine, comet index, progress drift -- so what you are looking
+  # at is the layout and timing plymouth will produce, not an artist's
+  # impression.
   local nspin=0 nprog=0
   while [[ -f "$THEME_DIR/spin_$nspin.png" ]]; do nspin=$((nspin+1)); done
   while [[ -f "$THEME_DIR/ring_prog_$nprog.png" ]]; do nprog=$((nprog+1)); done
   (( nspin > 0 && nprog > 0 )) || die "ring frames missing — run: boot-splash generate"
 
-  local tw th rw rh uw
-  tw="$(magick identify -format '%w' "$THEME_DIR/title.png")"
-  th="$(magick identify -format '%h' "$THEME_DIR/title.png")"
-  rw="$(magick identify -format '%w' "$THEME_DIR/ring_track.png")"
-  rh="$(magick identify -format '%h' "$THEME_DIR/ring_track.png")"
-  uw="$(magick identify -format '%w' "$THEME_DIR/rule.png")"
-
-  local title_x=$(( W / 2 - tw / 2 ))
-  # Same geometry the script computes, so preview and boot are one picture.
-  local title_y=$(( H / 2 - th / 2 - H / 9 ))
-  local rule_x=$(( W / 2 - uw / 2 ))
-  local rule_y=$(( title_y + th + H / 22 ))
-  local ring_x=$(( W / 2 - rw / 2 ))
-  local ring_y=$(( rule_y + H / 22 ))
-
-  # Background: the same vertical gradient plymouth draws, lifted ~7% at
-  # the top. sRGB forced -- a neutral #282828 canvas is otherwise typed as
-  # Gray and silently desaturates every coloured sprite composited onto it.
-  # Flat, matching the script: top and bottom are the same colour.
-  local BGTOP="$BG"
-  magick -size "${W}x${H}" "gradient:${BGTOP}-${BG}" -colorspace sRGB "$tmp/bg.png"
-
+  # Frame 0 is the static BMP, held for a beat, so the preview shows the
+  # handover this design is built around: the picture systemd-boot paints,
+  # then plymouth continuing it without a seam. If frame 0 and frame 1 do
+  # not line up here, they will not line up at boot either.
   local frames=60 f
-  for ((f = 0; f < frames; f++)); do
-    local tick=$(( f * 5 ))
-    local -a args=("$tmp/bg.png" -colorspace sRGB)
+  cp "$BOOT_BMP" "$tmp/_bmp.bmp" 2>/dev/null \
+    && magick "$tmp/_bmp.bmp" -colorspace sRGB "$tmp/frame_000.png" \
+    || compose_still "$THEME_DIR" "$BG" 0 - 0.94 "$tmp/frame_000.png"
 
-    # title, with the same easing and breathing sine the script uses
-    local top
-    if (( tick < 26 )); then
-      top="$(awk -v t="$tick" 'BEGIN{ x=t/26; printf "%.3f", 1-(1-x)*(1-x) }')"
-    else
-      top="$(awk -v t="$tick" 'BEGIN{ printf "%.3f", 0.86 + 0.14*sin(t/30) }')"
-    fi
-    args+=( \( "$THEME_DIR/title.png" -alpha set -channel A -evaluate multiply "$top" +channel \)
-            -geometry "+${title_x}+${title_y}" -composite )
-
-    # ring, fading in a beat after the name
-    local rop=0
-    (( tick > 14 )) && rop="$(awk -v t="$tick" 'BEGIN{ x=(t-14)/26; if(x>1)x=1; printf "%.3f", x }')"
-    if awk -v o="$rop" 'BEGIN{exit !(o>0.01)}'; then
-      args+=( \( "$THEME_DIR/rule.png" -alpha set -channel A -evaluate multiply "$rop" +channel \)
-              -geometry "+${rule_x}+${rule_y}" -composite )
-      local trop; trop="$(awk -v o="$rop" 'BEGIN{ printf "%.3f", o*0.16 }')"
-      args+=( \( "$THEME_DIR/ring_track.png" -alpha set -channel A -evaluate multiply "$trop" +channel \)
-              -geometry "+${ring_x}+${ring_y}" -composite )
-
-      local shown pidx
-      shown="$(awk -v t="$tick" 'BEGIN{
-        d=t/3000; if(d>0.7)d=0.7; p=t/1400; if(p>1)p=1; s=(p>d)?p:d; printf "%.4f", s }')"
-      pidx="$(awk -v s="$shown" -v n="$nprog" 'BEGIN{ i=int(s*(n-1)); if(i<0)i=0; if(i>n-1)i=n-1; print i }')"
-      args+=( \( "$THEME_DIR/ring_prog_$pidx.png" -alpha set -channel A -evaluate multiply "$rop" +channel \)
-              -geometry "+${ring_x}+${ring_y}" -composite )
-
-      local sidx=$(( (tick / 2) % nspin ))
-      args+=( \( "$THEME_DIR/spin_$sidx.png" -alpha set -channel A -evaluate multiply "$rop" +channel \)
-              -geometry "+${ring_x}+${ring_y}" -composite )
-    fi
-
-    magick "${args[@]}" -colorspace sRGB "$tmp/frame_$(printf '%03d' "$f").png"
+  for ((f = 1; f < frames; f++)); do
+    # ~4 ticks per preview frame at 50fps, so the GIF covers roughly the
+    # five seconds the splash is really on screen rather than a minute of
+    # motion nobody will ever witness.
+    local tick=$(( f * 4 ))
+    local top shown pidx sidx
+    top="$(awk -v t="$tick" 'BEGIN{ printf "%.3f", 0.94 + 0.06*sin(t/45) }')"
+    shown="$(awk -v t="$tick" 'BEGIN{
+      d=t/700; if(d>0.75)d=0.75; p=t/1400; if(p>1)p=1; s=(p>d)?p:d; printf "%.4f", s }')"
+    pidx="$(awk -v s="$shown" -v n="$nprog" 'BEGIN{ i=int(s*(n-1)); if(i<0)i=0; if(i>n-1)i=n-1; print i }')"
+    sidx=$(( (tick / 3) % nspin ))
+    compose_still "$THEME_DIR" "$BG" "$pidx" "$sidx" "$top" \
+      "$tmp/frame_$(printf '%03d' "$f").png"
   done
 
   magick -delay 7 -loop 0 "$tmp"/frame_*.png -colorspace sRGB -layers optimize "$out"
 
-  ok "animated preview rendered at ${W}x${H}, ${frames} frames: $out"
+  ok "animated preview rendered at ${SCREEN_W}x${SCREEN_H}, ${frames} frames: $out"
   if command -v imv >/dev/null 2>&1; then
     setsid imv "$out" >/dev/null 2>&1 &
   elif command -v xdg-open >/dev/null 2>&1; then
@@ -509,8 +728,32 @@ do_check() {
   st=0; [[ -n "$declared_prog" && "$n" == "$declared_prog" ]] || st=1
   _c $st "progress frames present (${n}/${declared_prog:-?})"
 
-  st=0; [[ -s "$THEME_DIR/ring_track.png" && -s "$THEME_DIR/rule.png" ]] || st=1
-  _c $st "ring track + rule present"
+  st=0; [[ -s "$THEME_DIR/ring_track.png" && -s "$THEME_DIR/mark.png" ]] || st=1
+  _c $st "ring track + centre mark present"
+
+  # The static frame systemd-boot shows before the kernel starts. Checked
+  # for FORMAT, not just existence: systemd-boot reads uncompressed 24-bit
+  # BMP and silently draws nothing for anything else, which would look
+  # exactly like the theme being broken.
+  st=0; [[ -s "$BOOT_BMP" ]] || st=1
+  _c $st "static boot frame rendered ($BOOT_BMP)"
+  if [[ "$st" == 0 ]]; then
+    st=0
+    [[ "$(magick identify -format '%m %[bit-depth]' "$BOOT_BMP" 2>/dev/null)" == "BMP3 8" ]] || st=1
+    _c $st "boot frame is uncompressed 24-bit BMP3 ($(magick identify -format '%m %wx%h' "$BOOT_BMP" 2>/dev/null || echo unreadable))"
+  fi
+
+  # If a UKI preset still points at the distro bitmap, the Arch logo will
+  # bookend the splash however good the theme is.
+  if [[ -d "$PRESET_DIR" ]]; then
+    local stale=0 p
+    for p in "$PRESET_DIR"/*.preset; do
+      [[ -f "$p" ]] || continue
+      sudo grep -qE '^[[:space:]]*[a-z_]+_uki=' "$p" || continue
+      sudo grep -q -- "--splash $BOOT_BMP" "$p" || stale=1
+    done
+    _c $stale "UKI presets point at our boot frame, not the distro logo"
+  fi
 
   st=0; sudo test -d /boot || st=1
   _c $st "/boot present"
@@ -544,6 +787,10 @@ do_enable() {
   need mkinitcpio
   pacman -Qq plymouth >/dev/null 2>&1 || die "plymouth not installed (modules/splash.yaml)"
   do_generate
+  # Before the check, not after: one of the checks is "the UKI presets point
+  # at our boot frame", and doing this afterwards would make enable refuse
+  # to run on the very condition it exists to create.
+  patch_uki_splash
   # Refuse rather than half-apply: a failed check here means a black screen
   # at boot, and the cost of finding out then is a machine you cannot see.
   do_check || die "pre-flight checks failed — nothing has been changed"
@@ -610,6 +857,15 @@ do_disable() {
     sudo sed -i 's/[[:space:]]*\bquiet\b//g; s/[[:space:]]*\bsplash\b//g' "$KCMDLINE"
     ok "quiet/splash removed from cmdline"
   fi
+  # Restore the preset backups, so the UKI goes back to whatever splash the
+  # distro shipped. Leaving our bitmap baked in would mean `disable` still
+  # left a boot screen on the machine.
+  local p
+  for p in "$PRESET_DIR"/*.preset.bak-boot-splash; do
+    [[ -f "$p" ]] || continue
+    sudo mv "$p" "${p%.bak-boot-splash}"
+    ok "$(basename "${p%.bak-boot-splash}") restored"
+  done
   say "rebuilding initramfs"
   sudo mkinitcpio -P || warn "mkinitcpio failed — check before rebooting"
   ok "disabled"
@@ -627,6 +883,9 @@ do_sync() {
   grep -q '^HOOKS=.*plymouth' "$MKINITCPIO" 2>/dev/null \
     || die "splash is not enabled — nothing to sync (see: boot-splash enable)"
   do_generate
+  # Re-asserted on every sync, not just at enable: a pacman upgrade of the
+  # linux package restores Arch's preset and with it Arch's splash bitmap.
+  patch_uki_splash
   say "rebuilding initramfs so the boot screen matches the current theme"
   sudo mkinitcpio -P || die "mkinitcpio failed"
   write_stamp
@@ -639,6 +898,25 @@ do_status() {
   printf 'default theme: %s\n' "$(plymouth-set-default-theme 2>/dev/null || echo '-')"
   printf 'mkinitcpio   : %s\n' "$(grep '^HOOKS=' "$MKINITCPIO" | grep -q plymouth && echo 'plymouth hook present' || echo 'no plymouth hook')"
   printf 'cmdline      : %s\n' "$(sudo cat "$KCMDLINE" 2>/dev/null || cat /proc/cmdline)"
+  # The frame before and after plymouth. Reported separately from the theme
+  # because it can go stale on its own: a pacman upgrade of the linux
+  # package restores Arch's preset and the distro logo comes back.
+  printf 'boot frame   : %s\n' \
+    "$( [[ -s "$BOOT_BMP" ]] && magick identify -format '%m %wx%h' "$BOOT_BMP" 2>/dev/null || echo 'not rendered' )"
+  local p stale=0 seen=0
+  for p in "$PRESET_DIR"/*.preset; do
+    [[ -f "$p" ]] || continue
+    sudo grep -qE '^[[:space:]]*[a-z_]+_uki=' "$p" || continue
+    seen=1
+    sudo grep -q -- "--splash $BOOT_BMP" "$p" || stale=1
+  done
+  if (( ! seen )); then
+    printf 'uki splash   : %s\n' 'no UKI presets on this system'
+  elif (( stale )); then
+    printf 'uki splash   : %sdistro logo still baked in — run: boot-splash sync%s\n' "$y" "$o"
+  else
+    printf 'uki splash   : %sours%s\n' "$g" "$o"
+  fi
   read_palette
   local want="$USER|$BG|$FG|$ACCENT" have
   have="$(sudo cat "$STAMP" 2>/dev/null || echo '(never synced)')"
@@ -659,6 +937,6 @@ case "${1:-status}" in
   enable)   do_enable ;;
   disable)  do_disable ;;
   status)   do_status ;;
-  --help|-h) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//' ;;
+  --help|-h) sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) die "unknown command '${1}' (generate|preview|check|sync|enable|disable|status)" ;;
 esac

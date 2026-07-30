@@ -248,10 +248,18 @@ Arch boots with the kernel log on screen — a wall of scrolling text ending
 in a mirror list. Worse than ugly: a boot with no feedback is
 indistinguishable from a boot that has hung.
 
-`boot-splash` replaces it with **your username as ANSI Shadow block art**,
-in the colours of whatever theme is currently active, over a small status
-ring. The name is generated, never hardcoded: user `ati` gets `ATI`, user
-`beko` gets `BEKO`.
+`boot-splash` replaces it with the **Arch mark inside a progress ring**,
+and **your username as ANSI Shadow block art** underneath, in the colours
+of whatever theme is currently active. The name is generated, never
+hardcoded: user `ati` gets `ATI`, user `beko` gets `BEKO`.
+
+The logo is not decoration sitting next to a spinner — it lives *inside*
+the progress indicator, so the one element that moves is also the one
+reporting state. It is read from the distro's own
+`/usr/share/pixmaps/archlinux-logo.svg` rather than vendored, recoloured
+through its alpha as a stencil, with the trademark glyph dropped by a
+connected-components pass (it is a few pixels of grit at this size, and
+cropping cannot reach it without cutting the logo's feet).
 
 The block art comes from a vendored glyph table
 ([`plymouth/ansi-shadow.txt`](.config/arch-config/plymouth/ansi-shadow.txt)),
@@ -261,26 +269,67 @@ both a new package dependency and vendoring a font file of uncertain
 licence. The table is 40 glyphs of plain text, and it reproduces the
 wizard's own hardcoded `ATI` logo character for character.
 
-**It is animated.** Three things move, so a slow boot never looks like a
-hung one:
+It is rendered **solid**. The face draws the letterform with `█▀▄` and its
+drop shadow with box-drawing characters, and a single `magick label:` pass
+can only fill both in one colour — which produces a hollow double outline
+trailing every letter that reads as a cheap 3D bevel. Only the block
+characters are kept. `-kerning -1` closes the seam the mono advance leaves
+down the middle of each letter: invisible in a mock-up, obvious in cream on
+dark.
 
-- the name fades up, then breathes gently on opacity
+**It is animated.** Two things move, so a slow boot never looks like a hung
+one:
+
 - a **comet sweeps continuously around the ring** — this is the liveness
   signal, and it keeps moving even when plymouth reports no progress at
   all, which is most of a fast boot
 - the ring **fills clockwise** with real progress when it is reported
 
-The background is flat and there is no glow: the name is the only subject
-on screen. A vignette and a halo were both tried and both made it look
-more generated and less designed.
+The name breathes on opacity, barely (a 0.06 swing). There is no fade-in:
+see *One continuous image* below.
+
+The background is flat and there is no glow. The accent colour has exactly
+one job on this screen — the progress arc — so the name is drawn in the
+foreground colour; a composition where the largest element and the status
+indicator are the same colour has nothing to direct the eye with.
 
 **Proportions.** A three-letter name sits at ~23% of screen width; longer
-names scale themselves down so the art never runs past a comfortable
-share of the screen. A single hairline rule separates the name from the
-ring — with only two elements on an empty screen there is nothing saying
-where one ends and the other begins, and the pair floats. The group is
-optically centred slightly above the geometric middle, because a
-dead-centre stack reads as low.
+names scale themselves down so the art never runs past a comfortable share
+of the screen. The ring is **26% of screen height**, sized from the screen
+rather than fixed: an earlier 96px ring was ~7% of a 1366px panel and,
+photographed off the real display, read as a stray dot — the comet was
+moving, but there was not enough arc for the motion to be legible. The ring
+and the name are laid out as **one group**, then centred and lifted;
+positioning each from the screen edges independently is what produced the
+old top-heavy stack with a lonely dot under it.
+
+#### One continuous image
+
+The splash used to be bookended by the Arch Linux logo — it appeared for
+~3s before, and again for ~4s after, on both sides of the five seconds of
+actual splash.
+
+Neither was plymouth's doing. Arch's `linux.preset` ships
+`--splash /usr/share/systemd/bootctl/splash-arch.bmp`, which bakes that
+bitmap into the UKI as a PE `.splash` section. systemd-boot paints it the
+moment a boot entry is picked; plymouth draws over it; and when plymouth
+quits, its buffer is released and the bitmap shows through again until
+getty clears the console.
+
+So `generate` also renders a **static BMP of the same composition** at the
+firmware's framebuffer resolution, and `enable`/`sync` point every
+UKI-building preset at it instead. One picture from the boot menu to the
+login prompt.
+
+That is also why there is no fade-in: plymouth takes the framebuffer the
+instant it starts, so fading up from zero would make the picture *already
+on screen* vanish and then reappear. The first plymouth frame is rendered
+to match the bitmap exactly — down to the name's opacity, which is 0.94 at
+tick 0 because that is where the breathing sine starts.
+
+The presets are pacman-owned, so this is an in-place edit with a backup. A
+`linux` package upgrade restores Arch's line; `boot-splash status` reports
+it and `sync` puts it back.
 
 ```bash
 BOOT_SPLASH_SIZE=32 boot-splash generate   # bigger, if you want it
@@ -302,7 +351,7 @@ rebuild when you want it. `boot-splash status` shows both states.
 boot-splash generate       # render + install the theme (touches nothing about boot)
 boot-splash preview        # see exactly what will appear, at your resolution
 boot-splash preview --real # run plymouth for real on a spare VT
-boot-splash check          # 12 pre-reboot safety checks
+boot-splash check          # 16 pre-reboot safety checks
 boot-splash sync           # rebuild the initramfs to match the current theme
 boot-splash enable         # wire into initramfs + kernel cmdline
 boot-splash disable        # reverse all of it
@@ -326,12 +375,16 @@ Two safety properties worth knowing:
   `quiet`/`splash` from their options. A rescue entry that inherited the
   splash would show a logo while hiding the kernel messages saying what
   broke — indistinguishable from the failed boot you are escaping.
-- **`enable` refuses unless `check` passes.** Twelve checks run first —
+- **`enable` refuses unless `check` passes.** Sixteen checks run first —
   plymouth installed, colour placeholders substituted, theme script braces
-  balanced, plymouth recognises the theme, a verbose LTS entry exists and
-  is not splashed, the LTS kernel is on the ESP. A failure changes nothing.
-- **Both config files are backed up** (`*.bak-boot-splash`), and `disable`
-  restores them and rebuilds.
+  balanced, plymouth recognises the theme, the static boot frame is
+  *uncompressed 24-bit BMP3* (systemd-boot reads nothing else and silently
+  draws blank for anything else, which looks exactly like a broken theme),
+  the UKI presets point at it, a verbose LTS entry exists and is not
+  splashed, the LTS kernel is on the ESP. A failure changes nothing.
+- **Every file edited is backed up** (`*.bak-boot-splash`) — mkinitcpio.conf,
+  the kernel cmdline, and each UKI preset — and `disable` restores them all
+  and rebuilds.
 
 ```bash
 ./wizard.sh --yes --only=boot-splash    # install plymouth + enable
