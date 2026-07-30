@@ -47,13 +47,29 @@ title_image = Image("title.png");
 title_w = title_image.GetWidth();
 title_h = title_image.GetHeight();
 title_x = screen_width  / 2 - title_w / 2;
-title_y = screen_height / 2 - title_h / 2 - screen_height / 16;
+// Optical centring: the group (name + rule + ring) is placed so its
+// visual mass sits slightly ABOVE the geometric middle. Dead-centre
+// stacks look low, because the eye reads the centre of a composition as
+// higher than its arithmetic centre.
+title_y = screen_height / 2 - title_h / 2 - screen_height / 9;
 
 title_sprite = Sprite(title_image);
 title_sprite.SetX(title_x);
 title_sprite.SetY(title_y);
 title_sprite.SetZ(3);
 title_sprite.SetOpacity(0);
+
+// ── rule ────────────────────────────────────────────────────────────
+// A single quiet hairline between the name and the ring. With only two
+// elements on an empty screen there is nothing to say where one ends and
+// the other begins, and the pair floats; the line gives them a horizon.
+rule_image  = Image("rule.png");
+rule_sprite = Sprite(rule_image);
+rule_sprite.SetX(screen_width / 2 - rule_image.GetWidth() / 2);
+rule_y = title_y + title_h + screen_height / 22;
+rule_sprite.SetY(rule_y);
+rule_sprite.SetZ(1);
+rule_sprite.SetOpacity(0);
 
 // ── ring ────────────────────────────────────────────────────────────
 // SPIN_FRAMES / PROG_FRAMES are substituted by boot-splash with the number
@@ -66,7 +82,7 @@ track_image = Image("ring_track.png");
 ring_w = track_image.GetWidth();
 ring_h = track_image.GetHeight();
 ring_x = screen_width / 2 - ring_w / 2;
-ring_y = title_y + title_h + screen_height / 12;
+ring_y = rule_y + screen_height / 22;
 
 track_sprite = Sprite(track_image);
 track_sprite.SetX(ring_x);
@@ -118,6 +134,7 @@ fun refresh_callback() {
   if (tick > 14) {
     t = (tick - 14) / 26;
     if (t > 1) t = 1;
+    rule_sprite.SetOpacity(t);
     track_sprite.SetOpacity(t * 0.16);
     spin_sprite.SetOpacity(t);
     prog_sprite.SetOpacity(t);

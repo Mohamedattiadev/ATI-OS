@@ -274,6 +274,18 @@ The background is flat and there is no glow: the name is the only subject
 on screen. A vignette and a halo were both tried and both made it look
 more generated and less designed.
 
+**Proportions.** A three-letter name sits at ~23% of screen width; longer
+names scale themselves down so the art never runs past a comfortable
+share of the screen. A single hairline rule separates the name from the
+ring — with only two elements on an empty screen there is nothing saying
+where one ends and the other begins, and the pair floats. The group is
+optically centred slightly above the geometric middle, because a
+dead-centre stack reads as low.
+
+```bash
+BOOT_SPLASH_SIZE=32 boot-splash generate   # bigger, if you want it
+```
+
 The ring ships as pre-rendered frames (48 for the comet, 41 for the fill,
 ~400 KB). Plymouth's script language cannot draw an arc, and rotating an
 image every frame at 50 fps during early boot is the kind of per-frame work

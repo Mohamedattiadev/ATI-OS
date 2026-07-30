@@ -37,6 +37,10 @@ FONT="${BOOT_SPLASH_FONT:-/usr/share/fonts/TTF/FiraCodeNerdFontPropo-Bold.ttf}"
 # Block art needs a MONOSPACE face with box-drawing glyphs; the proportional
 # one above staggers every row and the letters fall apart.
 MONO_FONT="${BOOT_SPLASH_MONO_FONT:-/usr/share/fonts/TTF/FiraCodeNerdFontMono-Bold.ttf}"
+# Block-art size. 26 puts a three-letter name at ~23% of a 1366px screen,
+# which is legible without dominating; 44 was ~39% and read as shouting.
+# Long names scale themselves down further (see do_generate).
+TITLE_SIZE="${BOOT_SPLASH_SIZE:-26}"
 # Records the palette + user the CURRENTLY BUILT initramfs contains, which
 # is not the same thing as what is in /usr/share right now. See do_sync.
 STAMP="/usr/share/plymouth/themes/$THEME_NAME/.built-stamp"
@@ -154,10 +158,41 @@ PY
     # cell is the same width. -interline-spacing closes the gap the font
     # leaves between rows, which would otherwise slice every letter into
     # six disconnected bands.
-    magick -background none -font "$MONO_FONT" -pointsize 44 \
-      -interline-spacing -8 -fill "$ACCENT" \
+    # Scale down for long names so the art never runs past a comfortable
+    # share of the screen. A three-letter name at 26 is ~23% of 1366px; a
+    # nine-letter one at the same size would be ~70%, which is the problem
+    # this whole change exists to fix.
+    local cols ps
+    cols="$(awk 'NR==1{print length($0)}' "$art")"
+    ps="$(awk -v s="$TITLE_SIZE" -v c="${cols:-20}" 'BEGIN{
+      # 20 columns is the width of a 3-letter name in this face.
+      v = s * 20 / (c < 20 ? 20 : c)
+      if (v < 12) v = 12
+      printf "%d", v }')"
+    # Interline spacing, calibrated by eye rather than from font metrics.
+    #
+    # The metrics lie here: measured ink height per row EXCEEDS the line
+    # advance, which says the rows already overlap at spacing 0 -- yet
+    # spacing 0 renders visible seams through every letter. Rendering a
+    # ladder of values and looking at them is the honest method, and -2 at
+    # 26pt is where the seams close while the letterforms stay intact.
+    # -4 and beyond squash the A's crossbar into its bowl.
+    local isp=$(( ps / 13 ))
+    (( isp < 1 )) && isp=1
+    magick -background none -font "$MONO_FONT" -pointsize "$ps" \
+      -interline-spacing "-$isp" -fill "$ACCENT" \
       label:@"$art" -trim +repage "${SRGB[@]}" "$tmp/title.png"
   fi
+
+  # Hairline rule between the name and the ring.
+  #
+  # Not decoration: with only two elements stacked in the middle of an
+  # empty screen there is nothing establishing where one ends and the
+  # other begins, and the pair floats. A single quiet line gives the
+  # composition a horizon.
+  local tw2; tw2="$(magick identify -format '%w' "$tmp/title.png")"
+  magick -size "$(( tw2 * 62 / 100 ))x1" xc:"$FG" "${SRGB[@]}" \
+    -alpha set -channel A -evaluate multiply 0.14 +channel "$tmp/rule.png"
 
   # ── ring ───────────────────────────────────────────────────────────
   # Plymouth's script language cannot draw an arc, so the ring is shipped
@@ -167,9 +202,11 @@ PY
   #   ring_prog_NN  the fill, growing clockwise from 12 o'clock
   #   spin_NN       a short comet sweeping round, which is what keeps
   #                 moving when plymouth reports no progress at all
-  # Deliberately small. The name is the subject; the ring is a status
-  # light under it, not a second focal point competing with the word.
-  local RS=120 RC=60 RR=44 RW=5
+  # Deliberately small and thin. The name is the subject; the ring is a
+  # status light under it, not a second focal point competing with it.
+  # The stroke came down with the name -- a 5px stroke around a 44px
+  # radius looked heavy next to block art that is no longer huge.
+  local RS=96 RC=48 RR=34 RW=4
   RING_CANVAS=$RS
 
   # Track: the faint full circle the other two ride on.
@@ -243,6 +280,7 @@ PY
   # are then impossible to tell apart from the assets actually in use.
   sudo rm -f "$THEME_DIR"/*.png
   sudo install -m644 "$tmp/title.png"      "$THEME_DIR/title.png"
+  sudo install -m644 "$tmp/rule.png"       "$THEME_DIR/rule.png"
   sudo install -m644 "$tmp/ring_track.png" "$THEME_DIR/ring_track.png"
   for ((i = 0; i < PROG_FRAMES; i++)); do
     sudo install -m644 "$tmp/ring_prog_$i.png" "$THEME_DIR/ring_prog_$i.png"
@@ -334,16 +372,20 @@ do_preview() {
   while [[ -f "$THEME_DIR/ring_prog_$nprog.png" ]]; do nprog=$((nprog+1)); done
   (( nspin > 0 && nprog > 0 )) || die "ring frames missing — run: boot-splash generate"
 
-  local tw th rw rh
+  local tw th rw rh uw
   tw="$(magick identify -format '%w' "$THEME_DIR/title.png")"
   th="$(magick identify -format '%h' "$THEME_DIR/title.png")"
   rw="$(magick identify -format '%w' "$THEME_DIR/ring_track.png")"
   rh="$(magick identify -format '%h' "$THEME_DIR/ring_track.png")"
+  uw="$(magick identify -format '%w' "$THEME_DIR/rule.png")"
 
   local title_x=$(( W / 2 - tw / 2 ))
-  local title_y=$(( H / 2 - th / 2 - H / 16 ))
+  # Same geometry the script computes, so preview and boot are one picture.
+  local title_y=$(( H / 2 - th / 2 - H / 9 ))
+  local rule_x=$(( W / 2 - uw / 2 ))
+  local rule_y=$(( title_y + th + H / 22 ))
   local ring_x=$(( W / 2 - rw / 2 ))
-  local ring_y=$(( title_y + th + H / 12 ))
+  local ring_y=$(( rule_y + H / 22 ))
 
   # Background: the same vertical gradient plymouth draws, lifted ~7% at
   # the top. sRGB forced -- a neutral #282828 canvas is otherwise typed as
@@ -371,6 +413,8 @@ do_preview() {
     local rop=0
     (( tick > 14 )) && rop="$(awk -v t="$tick" 'BEGIN{ x=(t-14)/26; if(x>1)x=1; printf "%.3f", x }')"
     if awk -v o="$rop" 'BEGIN{exit !(o>0.01)}'; then
+      args+=( \( "$THEME_DIR/rule.png" -alpha set -channel A -evaluate multiply "$rop" +channel \)
+              -geometry "+${rule_x}+${rule_y}" -composite )
       local trop; trop="$(awk -v o="$rop" 'BEGIN{ printf "%.3f", o*0.16 }')"
       args+=( \( "$THEME_DIR/ring_track.png" -alpha set -channel A -evaluate multiply "$trop" +channel \)
               -geometry "+${ring_x}+${ring_y}" -composite )
@@ -465,8 +509,8 @@ do_check() {
   st=0; [[ -n "$declared_prog" && "$n" == "$declared_prog" ]] || st=1
   _c $st "progress frames present (${n}/${declared_prog:-?})"
 
-  st=0; [[ -s "$THEME_DIR/ring_track.png" ]] || st=1
-  _c $st "ring track present"
+  st=0; [[ -s "$THEME_DIR/ring_track.png" && -s "$THEME_DIR/rule.png" ]] || st=1
+  _c $st "ring track + rule present"
 
   st=0; sudo test -d /boot || st=1
   _c $st "/boot present"
