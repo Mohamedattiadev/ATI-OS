@@ -252,12 +252,19 @@ indistinguishable from a boot that has hung.
 bar, in the colours of whatever theme is currently active. The name is
 generated, never hardcoded: user `ati` gets "Ati", user `beko` gets "Beko".
 
-**It is animated.** Four things move, so a slow boot never looks like a hung
-one: the letters of your name rise into place one after another and then
-breathe with a per-letter phase offset, a soft glow sweeps across the word,
-the bar fills behind a brighter leading edge, and three dots pulse
-underneath — the dots matter because plymouth often reports no progress at
-all on a fast boot, and something still has to move.
+**It is animated.** Three things move, so a slow boot never looks like a
+hung one:
+
+- a soft **halo** behind the name breathes, and the name fades up into it
+- a **comet sweeps continuously around a ring** — this is the liveness
+  signal, and it keeps moving even when plymouth reports no progress at
+  all, which is most of a fast boot
+- the ring **fills clockwise** with real progress when it is reported
+
+The ring ships as pre-rendered frames (48 for the comet, 41 for the fill,
+~400 KB). Plymouth's script language cannot draw an arc, and rotating an
+image every frame at 50 fps during early boot is the kind of per-frame work
+that makes a splash stutter on slow hardware.
 
 **It follows your theme.** `theme-apply` re-renders it on every switch. But
 the theme is *embedded in the initramfs* (plymouth runs before `/` is
