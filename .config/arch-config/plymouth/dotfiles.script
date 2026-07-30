@@ -1,5 +1,4 @@
-// dotfiles.script — animated plymouth boot splash: Arch mark in a
-// progress ring, name below.
+// dotfiles.script — animated plymouth boot splash: name, Arch mark, dots.
 //
 // Replaces the wall of scrolling kernel and mirror-list text Arch shows by
 // default. The motion is not decoration: a boot with no movement is
@@ -9,31 +8,27 @@
 // current username and the active theme palette, so a user called `beko`
 // gets "Beko" in their own colours without editing this file.
 //
-// The composition is a ring with the Arch mark at its centre, and the name
-// in block art underneath. The ring is not a spinner parked next to the
-// logo -- the logo sits INSIDE the progress indicator, so the one thing
-// that moves is also the thing that reports state. An earlier version put
-// a 96px ring on its own below a hairline; on a real screen it read as a
-// stray dot rather than a status light, which is why it is now ~26% of the
-// screen height and has something in it.
+// The composition, top to bottom:
 //
-// Three things move:
+//   the name, in ANSI Shadow block art, up in the upper third
+//   the Arch mark, small and quiet
+//   three dots
 //
-//   1. the name and the mark fade up
-//   2. a comet sweeps continuously around the ring -- this is the liveness
-//      signal, and it keeps moving even when plymouth reports no progress
-//      at all, which is most of a fast boot
-//   3. the ring FILLS clockwise with real progress when it is reported
+// The dots do two jobs at once, which is why there is no ring here any
+// more. A ring large enough to read its arc became a second focal point
+// competing with the name; a ring small enough not to read as a stray dot.
+// Three dots are legible at a size that stays subordinate.
 //
-// The name is ANSI Shadow block art, generated from the username, rendered
-// SOLID: the face ships a drop shadow drawn in box-drawing characters, and
-// filling those in the same colour as the letters produces a hollow double
-// outline that reads as a cheap bevel rather than as depth.
+//   liveness  a wave travels through them continuously -- this keeps
+//             moving even when plymouth reports no progress at all, which
+//             is most of a fast boot
+//   progress  they turn accent-coloured left to right as real progress
+//             arrives, smoothly rather than one whole dot at a time
 //
-// Both ring elements are pre-rendered frame sequences. Plymouth's script
-// language cannot draw an arc, and rotating an image every frame at 50fps
-// in early boot is exactly the kind of per-frame work that makes a splash
-// stutter on slow hardware. Frames are cheap to blit.
+// The name is rendered SOLID: the ANSI Shadow face ships a drop shadow
+// drawn in box-drawing characters, and filling those in the same colour as
+// the letters produces a hollow double outline that reads as a cheap bevel
+// rather than as depth.
 //
 // Plymouth's script language is not JavaScript despite appearances: no
 // `let`, no closures, `fun` declares a function, and integer division
@@ -56,44 +51,43 @@ screen_width  = Window.GetWidth();
 screen_height = Window.GetHeight();
 
 // ── assets ──────────────────────────────────────────────────────────
-// Sizes are read from the images rather than substituted in: the generator
-// scales the ring to the screen it was run on, and reading the real width
-// here means the two cannot drift apart.
+// Sizes are read from the images rather than substituted in: the
+// generator scales them to the screen it was run on, and reading the real
+// width here means the two cannot drift apart.
 title_image = Image("title.png");
 title_w = title_image.GetWidth();
 title_h = title_image.GetHeight();
-
-track_image = Image("ring_track.png");
-ring_w = track_image.GetWidth();
-ring_h = track_image.GetHeight();
 
 mark_image = Image("mark.png");
 mark_w = mark_image.GetWidth();
 mark_h = mark_image.GetHeight();
 
+dot_image = Image("dot.png");
+dot_ac_image = Image("dot_accent.png");
+dot_w = dot_image.GetWidth();
+
 // ── layout ──────────────────────────────────────────────────────────
-// The ring and the name are laid out as ONE group, then the group is
-// centred and lifted. Positioning each element from the screen edges
-// independently is what produced the old top-heavy stack with a lonely
-// dot floating under it.
+// The indicator is anchored to the BOTTOM of the screen rather than hung
+// underneath the name. Gluing it to the name is what produced the old
+// top-heavy stack; giving it its own home near the bottom edge is what
+// every boot screen that reads well actually does.
 //
-// Optical centring: the group sits slightly ABOVE the geometric middle,
-// because the eye reads the centre of a composition as higher than its
-// arithmetic centre.
-gap      = screen_height / 16;
-group_h  = ring_h + gap + title_h;
-group_y  = screen_height / 2 - group_h / 2 - screen_height / 22;
+// These fractions are mirrored exactly in boot-splash's splash_layout, so
+// the static BMP and this first frame are the same picture.
+dot_gap = screen_height / 35;
+dots_y  = screen_height * 81 / 100;
+dots_w  = dot_w * 3 + dot_gap * 2;
+dots_x  = screen_width / 2 - dots_w / 2;
 
-ring_x  = screen_width / 2 - ring_w / 2;
-ring_y  = group_y;
+mark_x = screen_width / 2 - mark_w / 2;
+mark_y = dots_y - mark_h - screen_height / 22;
+
 title_x = screen_width / 2 - title_w / 2;
-title_y = group_y + ring_h + gap;
-mark_x  = screen_width / 2 - mark_w / 2;
-mark_y  = ring_y + ring_h / 2 - mark_h / 2;
+title_y = screen_height * 38 / 100 - title_h / 2;
 
-// Every sprite starts at FULL opacity. There is no fade-in, and that is
-// deliberate: systemd-boot has already painted a static BMP of this exact
-// composition before the kernel started, and plymouth takes over the
+// Every sprite starts at its FINAL opacity. There is no fade-in, and that
+// is deliberate: systemd-boot has already painted a static BMP of this
+// exact composition before the kernel started, and plymouth takes over the
 // framebuffer the instant it starts. Fading up from zero would make the
 // picture already on screen vanish and then reappear -- strictly worse
 // than no transition at all. The handover is invisible only if the first
@@ -104,40 +98,29 @@ title_sprite.SetY(title_y);
 title_sprite.SetZ(3);
 title_sprite.SetOpacity(1);
 
-// ── ring ────────────────────────────────────────────────────────────
-// SPIN_FRAMES / PROG_FRAMES are substituted by boot-splash with the number
-// of frames it actually wrote. Reading them from the generator rather than
-// hardcoding here means the counts cannot drift apart.
-spin_frames = SPIN_FRAMES;
-prog_frames = PROG_FRAMES;
-
-track_sprite = Sprite(track_image);
-track_sprite.SetX(ring_x);
-track_sprite.SetY(ring_y);
-track_sprite.SetZ(1);
-track_sprite.SetOpacity(0.15);
-
 mark_sprite = Sprite(mark_image);
 mark_sprite.SetX(mark_x);
 mark_sprite.SetY(mark_y);
-mark_sprite.SetZ(4);
-mark_sprite.SetOpacity(1);
+mark_sprite.SetZ(3);
+mark_sprite.SetOpacity(0.80);
 
-for (i = 0; i < spin_frames; i++)
-  spin_image[i] = Image("spin_" + i + ".png");
-spin_sprite = Sprite();
-spin_sprite.SetX(ring_x);
-spin_sprite.SetY(ring_y);
-spin_sprite.SetZ(3);
-spin_sprite.SetOpacity(1);
+// Two sprites per dot, stacked: the foreground one carries the liveness
+// wave, the accent one on top fades in with progress. Cross-fading two
+// fixed images is the only way to get a colour transition here -- plymouth
+// script cannot tint an image, and pre-rendering a colour ramp would mean
+// shipping frames for something two sprites do for free.
+for (i = 0; i < 3; i++) {
+  dot_sprite[i] = Sprite(dot_image);
+  dot_sprite[i].SetX(dots_x + i * (dot_w + dot_gap));
+  dot_sprite[i].SetY(dots_y);
+  dot_sprite[i].SetZ(2);
 
-for (i = 0; i < prog_frames; i++)
-  prog_image[i] = Image("ring_prog_" + i + ".png");
-prog_sprite = Sprite();
-prog_sprite.SetX(ring_x);
-prog_sprite.SetY(ring_y);
-prog_sprite.SetZ(2);
-prog_sprite.SetOpacity(1);
+  dot_ac_sprite[i] = Sprite(dot_ac_image);
+  dot_ac_sprite[i].SetX(dots_x + i * (dot_w + dot_gap));
+  dot_ac_sprite[i].SetY(dots_y);
+  dot_ac_sprite[i].SetZ(3);
+  dot_ac_sprite[i].SetOpacity(0);
+}
 
 // ── state ───────────────────────────────────────────────────────────
 tick = 0;
@@ -155,45 +138,38 @@ target_progress = 0;
 fun refresh_callback() {
   tick++;
 
-  // --- name --------------------------------------------------------
-  // Breathe on opacity only, and only barely. Moving the name would fight
-  // the ring for attention, and at boot the eye is already hunting for
-  // something wrong -- two moving things read as a glitch. The old 0.14
-  // swing was visible as a pulse; 0.06 reads as the screen being alive
-  // rather than as an effect.
-  //
-  // Sin(0) is 0, so the first frame is 0.94. boot-splash renders the
-  // name in the static BMP at that same 0.94 rather than at full: the
-  // handover is only invisible if the first plymouth frame matches the
-  // bitmap exactly, and "close enough" here is a visible step.
-  title_sprite.SetOpacity(0.94 + 0.06 * Math.Sin(tick / 45));
-
-  // --- comet ---------------------------------------------------------
-  // One revolution every spin_frames * 3 ticks (~2.9s at 50fps). The ring
-  // is now twice the diameter it was, and at the old 2 ticks per frame the
-  // head covered enough screen distance per second to read as frantic.
-  spin_sprite.SetImage(spin_image[(tick / 3) % spin_frames]);
-
   // --- progress ------------------------------------------------------
   // Chase the target rather than jumping to it: plymouth reports progress
-  // in coarse steps, and an arc that teleports reads as broken.
+  // in coarse steps, and an indicator that teleports reads as broken.
   if (progress < target_progress)
     progress = progress + (target_progress - progress) / 14;
 
   // Creep forward even with no reported progress, capped below full so it
   // can never claim to have finished something it has not. Paced to the
-  // real splash duration: the previous tick/3000 reached 8% in the five
-  // seconds the splash is actually up, i.e. the fill never moved.
+  // real splash duration.
   drift = tick / 700;
   if (drift > 0.75) drift = 0.75;
   shown = progress;
   if (drift > shown) shown = drift;
   if (shown > 1) shown = 1;
 
-  idx = shown * (prog_frames - 1);
-  if (idx < 0) idx = 0;
-  if (idx > prog_frames - 1) idx = prog_frames - 1;
-  prog_sprite.SetImage(prog_image[idx]);
+  // --- dots ----------------------------------------------------------
+  for (i = 0; i < 3; i++) {
+    // Liveness wave. The phase offset per dot is what makes it travel
+    // rather than all three pulsing together, which reads as a blink.
+    // Sin() at tick 0 with i = 0 gives exactly the value boot-splash
+    // renders into the static BMP, so the handover does not step.
+    wave = 0.5 + 0.5 * Math.Sin(tick / 9 - i * 1.1);
+    dot_sprite[i].SetOpacity(0.22 + 0.55 * wave);
+
+    // Progress, spread across the three dots. Each dot takes a third, and
+    // fades in over its share rather than snapping on -- three hard steps
+    // over five seconds would read as three glitches.
+    fill = shown * 3 - i;
+    if (fill < 0) fill = 0;
+    if (fill > 1) fill = 1;
+    dot_ac_sprite[i].SetOpacity(fill);
+  }
 }
 Plymouth.SetRefreshFunction(refresh_callback);
 
@@ -217,7 +193,7 @@ fun display_password_callback(prompt, bullets) {
   hint = Image.Text(prompt, FG_R, FG_G, FG_B);
   prompt_sprite.SetImage(hint);
   prompt_sprite.SetX(screen_width / 2 - hint.GetWidth() / 2);
-  prompt_sprite.SetY(title_y + title_h + screen_height / 16);
+  prompt_sprite.SetY(title_y + title_h + screen_height / 12);
   prompt_sprite.SetZ(6);
 
   dots = "";
@@ -225,7 +201,7 @@ fun display_password_callback(prompt, bullets) {
   dot_text = Image.Text(dots, FG_R, FG_G, FG_B);
   bullets_sprite.SetImage(dot_text);
   bullets_sprite.SetX(screen_width / 2 - dot_text.GetWidth() / 2);
-  bullets_sprite.SetY(title_y + title_h + screen_height / 10);
+  bullets_sprite.SetY(title_y + title_h + screen_height / 8);
   bullets_sprite.SetZ(6);
 }
 Plymouth.SetDisplayPasswordFunction(display_password_callback);

@@ -147,6 +147,30 @@ screen_geometry() {
 # afterwards is silently desaturated -- the accent ring came out grey with
 # no warning anywhere. `PNG24:` is the only form that survives the write.
 
+# Render the block art at a given pointsize.
+#   render_blocks <pointsize> <fill> <art-file> <out>
+#
+# -interline-spacing closes the gap the font leaves between rows, which
+# would otherwise slice every letter into six disconnected bands. It is
+# calibrated by eye rather than from font metrics: the metrics lie here --
+# measured ink height per row EXCEEDS the line advance, which says the rows
+# already overlap at spacing 0, yet spacing 0 renders visible seams through
+# every letter.
+#
+# -kerning -1 closes the seam on the other axis. The mono advance is a hair
+# wider than the ink of a █, so at this weight every letter is sliced by
+# thin vertical gaps at the character-cell boundaries -- invisible in a
+# mid-grey mock-up, obvious in cream on dark. -2 starts squashing the A's
+# counter, so -1 is the whole usable range.
+render_blocks() {
+  local ps="$1" fill="$2" art="$3" out="$4"
+  local isp=$(( ps / 13 ))
+  (( isp < 1 )) && isp=1
+  magick -background none -font "$MONO_FONT" -pointsize "$ps" \
+    -interline-spacing "-$isp" -kerning -1 -fill "$fill" \
+    label:@"$art" -trim +repage -colorspace sRGB "$out"
+}
+
 # ── layout ──────────────────────────────────────────────────────────
 # THE arithmetic. dotfiles.script computes the same thing at boot from the
 # real Window dimensions; this is the copy used to composite the static
@@ -156,42 +180,57 @@ screen_geometry() {
 # Sets L_RING_X/Y, L_TITLE_X/Y, L_MARK_X/Y from SCREEN_W/H and the assets
 # in the given directory.
 splash_layout() {
-  local d="$1" tw th rw rh mw mh gap group_h group_y
+  local d="$1" tw th mw mh dw
   tw="$(magick identify -format '%w' "$d/title.png")"
   th="$(magick identify -format '%h' "$d/title.png")"
-  rw="$(magick identify -format '%w' "$d/ring_track.png")"
-  rh="$(magick identify -format '%h' "$d/ring_track.png")"
   mw="$(magick identify -format '%w' "$d/mark.png")"
   mh="$(magick identify -format '%h' "$d/mark.png")"
+  dw="$(magick identify -format '%w' "$d/dot.png")"
 
-  # The ring and the name are ONE group: centred together, then lifted.
-  # Positioning each from the screen edges independently is what produced
-  # the old top-heavy stack with a lonely dot floating below it.
-  gap=$(( SCREEN_H / 16 ))
-  group_h=$(( rh + gap + th ))
-  group_y=$(( SCREEN_H / 2 - group_h / 2 - SCREEN_H / 22 ))
+  # The indicator is anchored to the BOTTOM of the screen, not hung under
+  # the name. Gluing it to the name is what produced the old top-heavy
+  # stack; giving it its own home near the bottom edge is what every boot
+  # screen that reads well actually does.
+  L_DOT_W=$dw
+  L_DOT_GAP=$(( SCREEN_H / 35 ))
+  L_DOTS_Y=$(( SCREEN_H * 81 / 100 ))
+  local dots_w=$(( dw * 3 + L_DOT_GAP * 2 ))
+  L_DOTS_X=$(( SCREEN_W / 2 - dots_w / 2 ))
 
-  L_RING_X=$(( SCREEN_W / 2 - rw / 2 )); L_RING_Y=$group_y
-  L_TITLE_X=$(( SCREEN_W / 2 - tw / 2 )); L_TITLE_Y=$(( group_y + rh + gap ))
-  L_MARK_X=$(( SCREEN_W / 2 - mw / 2 ));  L_MARK_Y=$(( L_RING_Y + rh / 2 - mh / 2 ))
+  L_MARK_X=$(( SCREEN_W / 2 - mw / 2 ))
+  L_MARK_Y=$(( L_DOTS_Y - mh - SCREEN_H / 22 ))
+
+  L_TITLE_X=$(( SCREEN_W / 2 - tw / 2 ))
+  L_TITLE_Y=$(( SCREEN_H * 38 / 100 - th / 2 ))
 }
 
 # Composite one full-screen frame from the assets in <dir>.
-#   compose_still <dir> <bg-hex> <prog-index> <spin-index|-> <title-opacity> <out>
-# A `-` spin index omits the comet, which is what the static BMP wants:
-# a frozen comet is a lie about a machine that is not doing anything yet.
+#   compose_still <dir> <bg-hex> <tick> <progress 0-1> <out>
+#
+# The dot arithmetic here is the same arithmetic dotfiles.script runs at
+# boot. It is duplicated rather than shared because there is nowhere to
+# share it: one side is bash, the other is plymouth's script language. The
+# comments on both sides say so, and `check` compares the results.
 compose_still() {
-  local d="$1" bg="$2" pidx="$3" sidx="$4" topa="$5" out="$6"
+  local d="$1" bg="$2" tick="$3" prog="$4" out="$5"
   local -a a
+  local i x wave fill
   splash_layout "$d"
   a=( -size "${SCREEN_W}x${SCREEN_H}" "xc:$bg" -colorspace sRGB )
-  a+=( \( "$d/ring_track.png" -alpha set -channel A -evaluate multiply 0.15 +channel \)
-       -geometry "+${L_RING_X}+${L_RING_Y}" -composite )
-  a+=( "$d/ring_prog_$pidx.png" -geometry "+${L_RING_X}+${L_RING_Y}" -composite )
-  [[ "$sidx" != "-" ]] && a+=( "$d/spin_$sidx.png" -geometry "+${L_RING_X}+${L_RING_Y}" -composite )
-  a+=( "$d/mark.png" -geometry "+${L_MARK_X}+${L_MARK_Y}" -composite )
-  a+=( \( "$d/title.png" -alpha set -channel A -evaluate multiply "$topa" +channel \)
-       -geometry "+${L_TITLE_X}+${L_TITLE_Y}" -composite )
+  a+=( \( "$d/mark.png" -alpha set -channel A -evaluate multiply 0.80 +channel \)
+       -geometry "+${L_MARK_X}+${L_MARK_Y}" -composite )
+  a+=( "$d/title.png" -geometry "+${L_TITLE_X}+${L_TITLE_Y}" -composite )
+  for i in 0 1 2; do
+    x=$(( L_DOTS_X + i * (L_DOT_W + L_DOT_GAP) ))
+    wave="$(awk -v t="$tick" -v i="$i" 'BEGIN{
+      printf "%.4f", 0.22 + 0.55 * (0.5 + 0.5*sin(t/9 - i*1.1)) }')"
+    fill="$(awk -v p="$prog" -v i="$i" 'BEGIN{
+      f = p*3 - i; if (f<0) f=0; if (f>1) f=1; printf "%.4f", f }')"
+    a+=( \( "$d/dot.png" -alpha set -channel A -evaluate multiply "$wave" +channel \)
+         -geometry "+${x}+${L_DOTS_Y}" -composite )
+    a+=( \( "$d/dot_accent.png" -alpha set -channel A -evaluate multiply "$fill" +channel \)
+         -geometry "+${x}+${L_DOTS_Y}" -composite )
+  done
   magick "${a[@]}" -colorspace sRGB "$out"
 }
 
@@ -215,7 +254,11 @@ do_generate() {
   screen_geometry
   local title
   # ${var^} uppercases only the first character: ati -> Ati, beko -> Beko.
-  title="${USER^}"
+  # BOOT_SPLASH_NAME overrides it, which is both how the edge cases
+  # (long names, two words, accents) are tested without creating accounts,
+  # and how someone whose username is not what they want on screen sets
+  # something else.
+  title="${BOOT_SPLASH_NAME:-${USER^}}"
   say "user '$USER' -> title '$title'   bg=$BG fg=$FG accent=$ACCENT"
   say "screen ${SCREEN_W}x${SCREEN_H}"
 
@@ -247,11 +290,39 @@ do_generate() {
   # a hollow double outline trailing every letter. On a real screen that
   # reads as a cheap 3D bevel, not as depth. Solid blocks are what the face
   # is actually good at.
-  local art="$tmp/art.txt"
-  if ! python3 - "$SRC_DIR/ansi-shadow.txt" "$title" > "$art" 2>/dev/null <<'PY'
+  # The name has to survive anything a real account can be called: nine
+  # letters, two words, digits, a dot or a dash, an accent, a single
+  # character. The rules, in order:
+  #
+  #   1. every character must exist in the glyph table -- one that does not
+  #      used to be SILENTLY DROPPED, so `josé` rendered as "JOS" and
+  #      nothing said so
+  #   2. the art is shrunk until it fits the screen, by MEASURING the
+  #      render rather than predicting it from a column count
+  #   3. if it cannot fit at a legible size, the proportional font takes
+  #      over -- it is far more compact than six-row block art, so a name
+  #      that block art cannot hold still gets set properly
+  # Multi-word names are STACKED, one word per line, not run together on a
+  # single line. Six-row block art is wide: "Mohamed Attia Ibrahim" set on
+  # one line has to shrink to 66px tall to fit the screen, which is a thin
+  # illegible ribbon. Stacked, each word gets its own full height.
+  local -a words
+  read -ra words <<<"$title"
+  (( ${#words[@]} )) || words=("$title")
+
+  local art artmeta="" dropped="" wi
+  local -a arts=()
+  local maxcols=0 use_blocks=1 MISSING_CHARS=""
+  for wi in "${!words[@]}"; do
+    art="$tmp/art_$wi.txt"
+    arts+=("$art")
+    artmeta="$(python3 - "$SRC_DIR/ansi-shadow.txt" "${words[$wi]}" "$art" 2>/dev/null <<'PY' || true
 import sys
+
+table, name, out = sys.argv[1], sys.argv[2], sys.argv[3]
+
 glyphs, cur = {}, None
-for line in open(sys.argv[1], encoding="utf-8"):
+for line in open(table, encoding="utf-8"):
     line = line.rstrip("\n")
     if line.startswith("#"):
         continue
@@ -261,96 +332,195 @@ for line in open(sys.argv[1], encoding="utf-8"):
         continue
     if cur is not None:
         glyphs[cur].append(line)
-word = [c for c in sys.argv[2].upper() if c in glyphs]
+
+word = name.upper()
+# Report anything the table cannot set, rather than dropping it. A name
+# rendered with characters missing is a name the user cannot recognise as
+# theirs, and nothing on screen would say why.
+missing = sorted({c for c in word if c not in glyphs})
+if missing:
+    print("0 " + "".join(missing))
+    sys.exit(0)
 if not word:
     sys.exit(1)
+
 BLOCK = set("█▀▄▌▐░▒▓")
-for row in range(6):
-    line = "".join(glyphs[c][row] for c in word)
+rows = []
+for r in range(6):
+    line = "".join(glyphs[c][r] for c in word)
+    # Keep only the letterform; the face's box-drawing drop shadow is
+    # discarded (see the comment above).
     line = "".join(ch if ch in BLOCK or ch == " " else " " for ch in line)
     # A row that is entirely shadow becomes empty; `magick label:` treats a
     # zero-width line as the end of the text and silently truncates the
     # art, so keep the row alive with a single space.
-    print(line.rstrip() or " ")
+    rows.append(line.rstrip() or " ")
+
+with open(out, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(rows) + "\n")
+
+# The WIDEST row, not row 0. Rows are right-stripped, so row 0 is often
+# narrower than the art actually is, and sizing off it under-counts.
+print("%d " % max(len(r) for r in rows))
 PY
-  then
-    warn "could not render block art for '$title' — falling back to plain text"
-    magick -background none "${fontargs_p[@]}" -fill "$ACCENT" \
-      -pointsize 130 -kerning 12 label:"$title" -trim +repage \
-      "${SRGB[@]}" "$tmp/title.png"
-  else
-    # MONO font, not the proportional one: block art only lines up if every
-    # cell is the same width. -interline-spacing closes the gap the font
-    # leaves between rows, which would otherwise slice every letter into
-    # six disconnected bands.
-    # Scale down for long names so the art never runs past a comfortable
-    # share of the screen. A three-letter name at 26 is ~23% of 1366px; a
-    # nine-letter one at the same size would be ~70%, which is the problem
-    # this whole change exists to fix.
-    local cols ps
-    cols="$(awk 'NR==1{print length($0)}' "$art")"
-    ps="$(awk -v s="$TITLE_SIZE" -v c="${cols:-20}" 'BEGIN{
+)"
+    dropped="${artmeta#* }"
+    [[ "$artmeta" == "$dropped" ]] && dropped=""
+    if [[ -z "$artmeta" || -n "$dropped" ]]; then
+      use_blocks=0
+      MISSING_CHARS="$dropped"
+      break
+    fi
+    (( ${artmeta%% *} > maxcols )) && maxcols="${artmeta%% *}"
+  done
+
+  if (( ! use_blocks )); then
+    if [[ -n "${MISSING_CHARS:-}" ]]; then
+      # Deliberately a fallback, not a silent omission. Rendering a name
+      # with characters missing is worse than rendering it in a different
+      # face: the user is looking at someone else's name and has no way to
+      # tell why it is wrong.
+      warn "'$title' has characters the block face lacks ($MISSING_CHARS) — using the proportional font"
+    else
+      warn "no block art for '$title' — falling back to the proportional font"
+    fi
+  fi
+
+  # The name may occupy at most this much of the screen. The width bound is
+  # what long and multi-word names hit; the height bound stops six rows of
+  # block art from growing down into the Arch mark.
+  local MAXW=$(( SCREEN_W * 66 / 100 ))
+  local MAXH=$(( SCREEN_H * 40 / 100 ))
+
+  if (( use_blocks )); then
+    # Starting size from the widest row of the WIDEST WORD -- not row 1 of
+    # the whole art. Rows are right-stripped, so row 1 is frequently NOT
+    # the widest, and sizing off it under-counted long names badly.
+    local ps tw th i n gap stack_w stack_h
+    ps="$(awk -v s="$TITLE_SIZE" -v c="${maxcols:-20}" 'BEGIN{
       # 20 columns is the width of a 3-letter name in this face.
       v = s * 20 / (c < 20 ? 20 : c)
       if (v < 12) v = 12
       printf "%d", v }')"
-    # Interline spacing, calibrated by eye rather than from font metrics.
-    #
-    # The metrics lie here: measured ink height per row EXCEEDS the line
-    # advance, which says the rows already overlap at spacing 0 -- yet
-    # spacing 0 renders visible seams through every letter. Rendering a
-    # ladder of values and looking at them is the honest method, and -2 at
-    # 26pt is where the seams close while the letterforms stay intact.
-    # -4 and beyond squash the A's crossbar into its bowl.
-    local isp=$(( ps / 13 ))
-    (( isp < 1 )) && isp=1
-    # -kerning -1 closes the seam. The mono advance is a hair wider than
-    # the ink of a █, so at this weight every letter is sliced by thin
-    # vertical gaps at the character-cell boundaries -- invisible in a
-    # mid-grey mock-up, obvious in cream on dark. -2 starts squashing the
-    # A's counter, so -1 is the whole usable range.
-    magick -background none -font "$MONO_FONT" -pointsize "$ps" \
-      -interline-spacing "-$isp" -kerning -1 -fill "$FG" \
-      label:@"$art" -trim +repage "${SRGB[@]}" "$tmp/title.png"
+    n=${#arts[@]}
+
+    # Measure, then correct. The predicted size is only ever a starting
+    # guess: -kerning -1, the trim, and the font's own metrics all move the
+    # real width, and a name that overflows the screen is not a rounding
+    # error. Two passes converge for every name tried; the loop is bounded
+    # so a pathological one cannot spin.
+    for ((i = 0; i < 8; i++)); do
+      stack_w=0; stack_h=0; gap=0
+      for wi in "${!arts[@]}"; do
+        render_blocks "$ps" "$FG" "${arts[$wi]}" "$tmp/word_$wi.png"
+        tw="$(magick identify -format '%w' "$tmp/word_$wi.png")"
+        th="$(magick identify -format '%h' "$tmp/word_$wi.png")"
+        (( tw > stack_w )) && stack_w=$tw
+        stack_h=$(( stack_h + th ))
+        (( gap == 0 )) && gap=$(( th / 5 ))
+      done
+      (( n > 1 )) && stack_h=$(( stack_h + gap * (n - 1) ))
+      (( stack_w <= MAXW && stack_h <= MAXH )) && break
+      ps="$(awk -v p="$ps" -v w="$stack_w" -v h="$stack_h" -v mw="$MAXW" -v mh="$MAXH" 'BEGIN{
+        r = mw/w; if (mh/h < r) r = mh/h
+        v = int(p * r * 0.98)
+        if (v < 1) v = 1
+        printf "%d", v }')"
+      # Below this the block face stops being letters and starts being
+      # noise; hand over to the proportional font instead of shipping
+      # something illegible.
+      if (( ps < 8 )); then
+        warn "'$title' is too long for block art at this resolution — using the proportional font"
+        use_blocks=0
+        break
+      fi
+    done
   fi
 
-  # The name is drawn in the FOREGROUND colour, not the accent. The accent
-  # now has exactly one job on this screen -- the progress arc -- and a
-  # composition where the biggest element and the status indicator are the
-  # same colour has nothing to direct the eye with.
+  if (( use_blocks )); then
+    if (( ${#arts[@]} == 1 )); then
+      # One word is already exactly the image we want. Compositing it onto
+      # a canvas and trimming again is not a no-op: the second -trim ate
+      # 31px off the right of "ATI", shrinking the name ~11% for no reason
+      # anyone would ever have looked for.
+      cp "$tmp/word_0.png" "$tmp/title.png"
+    else
+      # Stack the words, each centred on the one above. The canvas is
+      # already exactly the stack bounds, so there is nothing to trim.
+      local -a stack=( -size "${stack_w}x${stack_h}" xc:none "${SRGB[@]}" )
+      local y=0
+      for wi in "${!arts[@]}"; do
+        th="$(magick identify -format '%h' "$tmp/word_$wi.png")"
+        tw="$(magick identify -format '%w' "$tmp/word_$wi.png")"
+        stack+=( "$tmp/word_$wi.png" -geometry "+$(( stack_w / 2 - tw / 2 ))+${y}" -composite )
+        y=$(( y + th + gap ))
+      done
+      magick "${stack[@]}" +repage "${SRGB[@]}" "$tmp/title.png"
+    fi
+  fi
 
-  # ── ring ───────────────────────────────────────────────────────────
-  # Plymouth's script language cannot draw an arc, so the ring is shipped
-  # as frames. Two sequences, both on the same canvas so they overlay
-  # exactly:
+  if (( ! use_blocks )); then
+    # Proportional font, scaled to the same bounds. Sized by measurement
+    # for the same reason: a 20-character name at a fixed pointsize runs
+    # off both edges of the screen.
+    local ps=120 tw th i
+    for ((i = 0; i < 6; i++)); do
+      magick -background none "${fontargs_p[@]}" -fill "$FG" \
+        -pointsize "$ps" -kerning 6 label:"$title" -trim +repage \
+        "${SRGB[@]}" "$tmp/title.png"
+      tw="$(magick identify -format '%w' "$tmp/title.png")"
+      th="$(magick identify -format '%h' "$tmp/title.png")"
+      (( tw <= MAXW && th <= MAXH )) && break
+      ps="$(awk -v p="$ps" -v w="$tw" -v h="$th" -v mw="$MAXW" -v mh="$MAXH" 'BEGIN{
+        r = mw/w; if (mh/h < r) r = mh/h
+        v = int(p * r * 0.98); if (v < 8) v = 8
+        printf "%d", v }')"
+    done
+  fi
+
+  # An empty or 1x1 title means every path above failed. The theme script
+  # loads title.png unconditionally, so a placeholder is not acceptable --
+  # better to stop here than to ship a boot screen with no name on it.
+  local finalw
+  finalw="$(magick identify -format '%w' "$tmp/title.png" 2>/dev/null || echo 0)"
+  (( finalw > 1 )) || die "could not render a title for '$title'"
+
+  # The name is drawn in the FOREGROUND colour, not the accent. The accent
+  # now has exactly one job on this screen -- marking progress through the
+  # dots -- and a composition where the biggest element and the status
+  # indicator are the same colour has nothing to direct the eye with.
+
+  # ── dots ───────────────────────────────────────────────────────────
+  # The indicator, in place of the ring earlier versions used. A ring big
+  # enough to read its arc became a second focal point competing with the
+  # name; a ring small enough not to, read as a stray dot on the real
+  # panel. Three dots stay legible at a size that stays subordinate.
   #
-  #   ring_prog_NN  the fill, growing clockwise from 12 o'clock
-  #   spin_NN       a short comet sweeping round, which is what keeps
-  #                 moving when plymouth reports no progress at all
+  # Shipped as TWO images rather than a frame sequence: the wave and the
+  # progress fill are both pure opacity, and plymouth can do opacity on a
+  # sprite. The ring needed pre-rendered frames only because its script
+  # language cannot draw an arc -- nothing here needs that, so the theme
+  # drops from ~90 images to four.
   #
-  # Sized from the SCREEN, not fixed at 96px. The previous ring was ~7% of
-  # a 1366px screen and, photographed off the actual panel, read as a stray
-  # dot rather than as a status light -- the comet was moving but there was
-  # not enough arc for the motion to be legible. At 26% of screen height it
-  # is a real element, which is also what lets the Arch mark live inside it
-  # instead of needing its own slot in the stack.
-  #
-  # The stroke stays hairline-thin. A ring this size with the old 4px
-  # stroke is a donut; the point is a drawn circle, not a gauge.
-  local RS RC RR RW
-  RS=$(( SCREEN_H * 26 / 100 ))
-  (( RS < 96 )) && RS=96
-  RW=$(( RS / 65 )); (( RW < 2 )) && RW=2
-  RC=$(( RS / 2 ))
-  RR=$(( RS / 2 - RW ))
-  RING_CANVAS=$RS
+  # Cross-fading a foreground dot and an accent dot is how the colour
+  # transition happens: plymouth script cannot tint an image, and
+  # pre-rendering a colour ramp would mean shipping frames for something
+  # two stacked sprites do for free.
+  local DR=$(( SCREEN_H / 154 ))
+  (( DR < 3 )) && DR=3
+  local DD=$(( DR * 2 ))
+  magick -size "${DD}x${DD}" xc:none "${SRGB[@]}" \
+    -fill "$FG" -draw "circle $DR,$DR $DR,0" "$tmp/dot.png"
+  magick -size "${DD}x${DD}" xc:none "${SRGB[@]}" \
+    -fill "$ACCENT" -draw "circle $DR,$DR $DR,0" "$tmp/dot_accent.png"
 
   # ── Arch mark ──────────────────────────────────────────────────────
-  # Sized against the RING, not the screen: it lives inside the ring, and
-  # what matters is how much of that circle it fills. At 52% it read as
-  # lost in the middle of the circle; 56% leaves a clear margin to the arc
-  # while still making the mark the thing you see.
-  local MARK_H=$(( RS * 56 / 100 ))
+  # Small and quiet, sitting just above the dots. It is the distro's mark,
+  # not the subject: the name is the subject. At 6% of screen height it
+  # is unmistakably the Arch logo without pulling the eye down from the
+  # name it sits below.
+  local MARK_H=$(( SCREEN_H * 6 / 100 ))
+  (( MARK_H < 24 )) && MARK_H=24
   if [[ -f "$ARCH_LOGO" ]]; then
     # Recoloured through the SVG's own alpha as a stencil rather than by
     # tinting its pixels: the logo is flat cyan, and -colorize or -fill on
@@ -379,61 +549,13 @@ PY
       -channel A -evaluate multiply 0.92 +channel \
       -trim +repage "${SRGB[@]}" "$tmp/mark.png"
   else
-    # No Arch logo on this machine (or not Arch at all). The ring still
-    # works as a progress indicator with nothing in it, and a missing
-    # optional asset must not take the boot screen down -- the script
-    # unconditionally loads mark.png, so it has to exist.
-    warn "no logo at $ARCH_LOGO — the ring will be empty"
+    # No Arch logo on this machine (or not Arch at all). The name and the
+    # dots still work with nothing between them, and a missing optional
+    # asset must not take the boot screen down -- the script loads
+    # mark.png unconditionally, so it has to exist.
+    warn "no logo at $ARCH_LOGO — the mark will be blank"
     magick -size 1x1 xc:none "${SRGB[@]}" "$tmp/mark.png"
   fi
-
-  # Track: the faint full circle the other two ride on.
-  magick -size ${RS}x${RS} xc:none "${SRGB[@]}" -fill none \
-    -stroke "$FG" -strokewidth $RW \
-    -draw "ellipse $RC,$RC $RR,$RR 0,360" \
-    "$tmp/ring_track.png"
-
-  # Progress fill. 41 frames is 2.5% per step -- fine enough that the
-  # growth looks continuous, coarse enough to stay small in the initramfs.
-  PROG_FRAMES=41
-  local i a
-  for ((i = 0; i < PROG_FRAMES; i++)); do
-    # -90 puts 0% at 12 o'clock; ImageMagick sweeps clockwise from there.
-    a=$(( -90 + (360 * i) / (PROG_FRAMES - 1) ))
-    if (( i == 0 )); then
-      magick -size ${RS}x${RS} xc:none "${SRGB[@]}" "$tmp/ring_prog_$i.png"
-    else
-      magick -size ${RS}x${RS} xc:none "${SRGB[@]}" -fill none \
-        -stroke "$ACCENT" -strokewidth $RW \
-        -draw "stroke-linecap round ellipse $RC,$RC $RR,$RR -90,$a" \
-        "$tmp/ring_prog_$i.png"
-    fi
-  done
-
-  # Comet: a 46-degree arc with a bright head, rotated round the circle.
-  # 48 frames = 7.5 degrees per step, which is smooth at the ~2.9s per
-  # revolution the script plays it at.
-  SPIN_FRAMES=48
-  local s e hx hy rad
-  for ((i = 0; i < SPIN_FRAMES; i++)); do
-    s=$(( (360 * i) / SPIN_FRAMES - 90 ))
-    e=$(( s + 46 ))
-    # Head position, so the comet has a bright leading dot rather than
-    # just stopping. bc is avoided: awk is already a dependency here.
-    read -r hx hy <<<"$(awk -v a="$e" -v c="$RC" -v r="$RR" 'BEGIN{
-      rad = a * 3.14159265 / 180
-      printf "%d %d", c + r * cos(rad), c + r * sin(rad) }')"
-    # The comet is drawn in the FOREGROUND colour, not the accent: the
-    # progress fill is already accent, and two accent-coloured arcs on the
-    # same circle are impossible to tell apart at a glance -- which defeats
-    # the point of having both.
-    magick -size ${RS}x${RS} xc:none "${SRGB[@]}" -fill none \
-      -stroke "$FG" -strokewidth $RW \
-      -draw "stroke-linecap round stroke-opacity 0.42 ellipse $RC,$RC $RR,$RR $s,$e" \
-      -stroke none -fill "$FG" \
-      -draw "circle $hx,$hy $hx,$(( hy - RW / 2 - 3 ))" \
-      "$tmp/spin_$i.png"
-  done
 
   # Substitute the colour floats into the script.
   read -r BR BG_ BB <<<"$(hex_to_float "$BG")"
@@ -447,8 +569,6 @@ PY
   read -r FR FG_ FB <<<"$(hex_to_float "$FG")"
   sed -e "s/BG_R/$BR/g" -e "s/BG_G/$BG_/g" -e "s/BG_B/$BB/g" \
       -e "s/FG_R/$FR/g" -e "s/FG_G/$FG_/g" -e "s/FG_B/$FB/g" \
-      -e "s/SPIN_FRAMES/$SPIN_FRAMES/g" \
-      -e "s/PROG_FRAMES/$PROG_FRAMES/g" \
       -e "s/BGTOP_R/$TR/g" -e "s/BGTOP_G/$TG/g" -e "s/BGTOP_B/$TB/g" \
       "$SRC_DIR/$THEME_NAME.script" > "$tmp/$THEME_NAME.script"
 
@@ -458,14 +578,15 @@ PY
   # the SAME composition, from the SAME assets, is what turns three
   # separate screens into one continuous image.
   #
-  # Progress index 0 and no comet: at the point this is on screen the
-  # kernel has not started. Anything else would be an animation frozen
-  # mid-stride, or a claim of progress that has not happened.
+  # Tick 0, progress 0: at the point this is on screen the kernel has not
+  # started. Anything else would be an animation frozen mid-stride, or a
+  # claim of progress that has not happened. Tick 0 is also exactly the
+  # frame plymouth draws first, so the handover does not step.
   #
   # BMP3 is not a stylistic choice -- systemd-boot reads uncompressed
   # 24-bit BMP and nothing else. The default BMP writer emits BMP4 with an
   # alpha mask, which it refuses.
-  compose_still "$tmp" "$BG" 0 - 0.94 "$tmp/still.png"
+  compose_still "$tmp" "$BG" 0 0 "$tmp/still.png"
   magick "$tmp/still.png" -alpha remove -alpha off -colorspace sRGB \
     -type TrueColor BMP3:"$tmp/boot-splash.bmp"
   sudo install -d -m755 "$BOOT_BMP_DIR"
@@ -475,24 +596,20 @@ PY
   # Remove every image first, including any the PREVIOUS design used.
   # Leftovers are not merely untidy: they get baked into the initramfs and
   # are then impossible to tell apart from the assets actually in use.
-  # rule.png is one of these: the hairline the old design used is gone.
+  # The ~90 ring frames earlier designs shipped are among them, as is
+  # rule.png, the hairline an older layout used.
   sudo rm -f "$THEME_DIR"/*.png
   sudo install -m644 "$tmp/title.png"      "$THEME_DIR/title.png"
   sudo install -m644 "$tmp/mark.png"       "$THEME_DIR/mark.png"
-  sudo install -m644 "$tmp/ring_track.png" "$THEME_DIR/ring_track.png"
-  for ((i = 0; i < PROG_FRAMES; i++)); do
-    sudo install -m644 "$tmp/ring_prog_$i.png" "$THEME_DIR/ring_prog_$i.png"
-  done
-  for ((i = 0; i < SPIN_FRAMES; i++)); do
-    sudo install -m644 "$tmp/spin_$i.png" "$THEME_DIR/spin_$i.png"
-  done
+  sudo install -m644 "$tmp/dot.png"        "$THEME_DIR/dot.png"
+  sudo install -m644 "$tmp/dot_accent.png" "$THEME_DIR/dot_accent.png"
   # The script and the theme descriptor. Omitting these once left the theme
-  # directory holding NEW images and the OLD script -- which indexes frame
-  # numbers that no longer exist, i.e. a black screen at boot. That is
+  # directory holding NEW images and the OLD script -- which referenced
+  # assets that no longer exist, i.e. a black screen at boot. That is
   # exactly what `boot-splash check` compares, and it caught it.
   sudo install -m644 "$tmp/$THEME_NAME.script"       "$THEME_DIR/$THEME_NAME.script"
   sudo install -m644 "$SRC_DIR/$THEME_NAME.plymouth" "$THEME_DIR/$THEME_NAME.plymouth"
-  ok "theme installed to $THEME_DIR (${SPIN_FRAMES} spin + ${PROG_FRAMES} progress frames)"
+  ok "theme installed to $THEME_DIR (4 images)"
   ok "static boot frame: $BOOT_BMP (${SCREEN_W}x${SCREEN_H})"
 
   # The theme lives INSIDE the initramfs -- plymouth runs before / is
@@ -624,32 +741,25 @@ do_preview() {
   # breathing sine, comet index, progress drift -- so what you are looking
   # at is the layout and timing plymouth will produce, not an artist's
   # impression.
-  local nspin=0 nprog=0
-  while [[ -f "$THEME_DIR/spin_$nspin.png" ]]; do nspin=$((nspin+1)); done
-  while [[ -f "$THEME_DIR/ring_prog_$nprog.png" ]]; do nprog=$((nprog+1)); done
-  (( nspin > 0 && nprog > 0 )) || die "ring frames missing — run: boot-splash generate"
+  [[ -s "$THEME_DIR/dot.png" ]] || die "dot images missing — run: boot-splash generate"
 
-  # Frame 0 is the static BMP, held for a beat, so the preview shows the
-  # handover this design is built around: the picture systemd-boot paints,
-  # then plymouth continuing it without a seam. If frame 0 and frame 1 do
-  # not line up here, they will not line up at boot either.
+  # Frame 0 is the static BMP, so the preview shows the handover this
+  # design is built around: the picture systemd-boot paints, then plymouth
+  # continuing it without a seam. If frame 0 and frame 1 do not line up
+  # here, they will not line up at boot either.
   local frames=60 f
   cp "$BOOT_BMP" "$tmp/_bmp.bmp" 2>/dev/null \
     && magick "$tmp/_bmp.bmp" -colorspace sRGB "$tmp/frame_000.png" \
-    || compose_still "$THEME_DIR" "$BG" 0 - 0.94 "$tmp/frame_000.png"
+    || compose_still "$THEME_DIR" "$BG" 0 0 "$tmp/frame_000.png"
 
   for ((f = 1; f < frames; f++)); do
     # ~4 ticks per preview frame at 50fps, so the GIF covers roughly the
     # five seconds the splash is really on screen rather than a minute of
     # motion nobody will ever witness.
-    local tick=$(( f * 4 ))
-    local top shown pidx sidx
-    top="$(awk -v t="$tick" 'BEGIN{ printf "%.3f", 0.94 + 0.06*sin(t/45) }')"
+    local tick=$(( f * 4 )) shown
     shown="$(awk -v t="$tick" 'BEGIN{
       d=t/700; if(d>0.75)d=0.75; p=t/1400; if(p>1)p=1; s=(p>d)?p:d; printf "%.4f", s }')"
-    pidx="$(awk -v s="$shown" -v n="$nprog" 'BEGIN{ i=int(s*(n-1)); if(i<0)i=0; if(i>n-1)i=n-1; print i }')"
-    sidx=$(( (tick / 3) % nspin ))
-    compose_still "$THEME_DIR" "$BG" "$pidx" "$sidx" "$top" \
+    compose_still "$THEME_DIR" "$BG" "$tick" "$shown" \
       "$tmp/frame_$(printf '%03d' "$f").png"
   done
 
@@ -695,9 +805,9 @@ do_check() {
 
   # A leftover placeholder means the colour substitution silently failed,
   # and plymouth cannot parse the script at boot -- a black screen.
-  st=0; grep -qE '\b(BG_R|BG_G|BG_B|BGTOP_R|BGTOP_G|BGTOP_B|FG_R|FG_G|FG_B|SPIN_FRAMES|PROG_FRAMES)\b' \
+  st=0; grep -qE '\b(BG_R|BG_G|BG_B|BGTOP_R|BGTOP_G|BGTOP_B|FG_R|FG_G|FG_B)\b' \
         "$THEME_DIR/$THEME_NAME.script" 2>/dev/null && st=1
-  _c $st "colour + frame-count placeholders substituted"
+  _c $st "colour placeholders substituted"
 
   # Balanced braces is a cheap proxy for "plymouth can parse this"; its
   # script language has no offline syntax checker.
@@ -716,20 +826,25 @@ do_check() {
   st=0; grep -q '^HOOKS=.*\budev\b' "$MKINITCPIO" || st=1
   _c $st "mkinitcpio has a udev hook to anchor to"
 
-  # The script loops over exactly these counts and indexes the arrays, so a
-  # missing frame is not a cosmetic problem -- it is a black screen at boot.
-  local declared_spin declared_prog n
-  declared_spin="$(sed -n 's/^spin_frames = \([0-9]*\);/\1/p' "$THEME_DIR/$THEME_NAME.script" 2>/dev/null)"
-  declared_prog="$(sed -n 's/^prog_frames = \([0-9]*\);/\1/p' "$THEME_DIR/$THEME_NAME.script" 2>/dev/null)"
-  n=0; while [[ -f "$THEME_DIR/spin_$n.png" ]]; do n=$((n+1)); done
-  st=0; [[ -n "$declared_spin" && "$n" == "$declared_spin" ]] || st=1
-  _c $st "spin frames present (${n}/${declared_spin:-?})"
-  n=0; while [[ -f "$THEME_DIR/ring_prog_$n.png" ]]; do n=$((n+1)); done
-  st=0; [[ -n "$declared_prog" && "$n" == "$declared_prog" ]] || st=1
-  _c $st "progress frames present (${n}/${declared_prog:-?})"
+  # Every image the script loads, by name. The script calls Image() on all
+  # of these unconditionally at startup, so a missing one is not a cosmetic
+  # problem -- it is a black screen at boot.
+  local img missing=""
+  for img in title.png mark.png dot.png dot_accent.png; do
+    [[ -s "$THEME_DIR/$img" ]] || missing+=" $img"
+  done
+  st=0; [[ -z "$missing" ]] || st=1
+  _c $st "every image the script loads is present${missing:+ (missing:$missing)}"
 
-  st=0; [[ -s "$THEME_DIR/ring_track.png" && -s "$THEME_DIR/mark.png" ]] || st=1
-  _c $st "ring track + centre mark present"
+  # Stale assets from an earlier design. Harmless on screen, but they get
+  # baked into the initramfs and make it impossible to tell which files are
+  # actually in use.
+  local extra
+  extra="$(find "$THEME_DIR" -maxdepth 1 -name '*.png' \
+    ! -name 'title.png' ! -name 'mark.png' ! -name 'dot.png' ! -name 'dot_accent.png' \
+    -printf '%f ' 2>/dev/null || true)"
+  st=0; [[ -z "$extra" ]] || st=1
+  _c $st "no leftover images from a previous design${extra:+ ($extra)}"
 
   # The static frame systemd-boot shows before the kernel starts. Checked
   # for FORMAT, not just existence: systemd-boot reads uncompressed 24-bit
