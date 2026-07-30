@@ -248,18 +248,31 @@ Arch boots with the kernel log on screen — a wall of scrolling text ending
 in a mirror list. Worse than ugly: a boot with no feedback is
 indistinguishable from a boot that has hung.
 
-`boot-splash` replaces it with **your username**, large, over a progress
-bar, in the colours of whatever theme is currently active. The name is
-generated, never hardcoded: user `ati` gets "Ati", user `beko` gets "Beko".
+`boot-splash` replaces it with **your username as ANSI Shadow block art**,
+in the colours of whatever theme is currently active, over a small status
+ring. The name is generated, never hardcoded: user `ati` gets `ATI`, user
+`beko` gets `BEKO`.
+
+The block art comes from a vendored glyph table
+([`plymouth/ansi-shadow.txt`](.config/arch-config/plymouth/ansi-shadow.txt)),
+not from `figlet` — figlet is not installed here, and the ANSI Shadow face
+is a *contributed* font that does not ship with it, so using it would mean
+both a new package dependency and vendoring a font file of uncertain
+licence. The table is 40 glyphs of plain text, and it reproduces the
+wizard's own hardcoded `ATI` logo character for character.
 
 **It is animated.** Three things move, so a slow boot never looks like a
 hung one:
 
-- a soft **halo** behind the name breathes, and the name fades up into it
-- a **comet sweeps continuously around a ring** — this is the liveness
+- the name fades up, then breathes gently on opacity
+- a **comet sweeps continuously around the ring** — this is the liveness
   signal, and it keeps moving even when plymouth reports no progress at
   all, which is most of a fast boot
 - the ring **fills clockwise** with real progress when it is reported
+
+The background is flat and there is no glow: the name is the only subject
+on screen. A vignette and a halo were both tried and both made it look
+more generated and less designed.
 
 The ring ships as pre-rendered frames (48 for the comet, 41 for the fill,
 ~400 KB). Plymouth's script language cannot draw an arc, and rotating an

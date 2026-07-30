@@ -34,6 +34,9 @@ PALETTE="$HOME/.cache/qtile/current_palette.json"
 MKINITCPIO="/etc/mkinitcpio.conf"
 KCMDLINE="/etc/kernel/cmdline"
 FONT="${BOOT_SPLASH_FONT:-/usr/share/fonts/TTF/FiraCodeNerdFontPropo-Bold.ttf}"
+# Block art needs a MONOSPACE face with box-drawing glyphs; the proportional
+# one above staggers every row and the letters fall apart.
+MONO_FONT="${BOOT_SPLASH_MONO_FONT:-/usr/share/fonts/TTF/FiraCodeNerdFontMono-Bold.ttf}"
 # Records the palette + user the CURRENTLY BUILT initramfs contains, which
 # is not the same thing as what is in /usr/share right now. See do_sync.
 STAMP="/usr/share/plymouth/themes/$THEME_NAME/.built-stamp"
@@ -88,6 +91,12 @@ do_generate() {
     warn "font not found: $FONT — falling back to whatever fontconfig picks"
     FONT=""
   }
+  [[ -f "$MONO_FONT" ]] || {
+    warn "mono font not found: $MONO_FONT — block art may not line up"
+    MONO_FONT="monospace"
+  }
+  local fontargs_p=()
+  [[ -n "$FONT" ]] && fontargs_p=(-font "$FONT")
 
   read_palette
   local title
@@ -107,27 +116,48 @@ do_generate() {
   # accent-tinted title came out grey with no error anywhere.
   local SRGB=(-colorspace sRGB)
 
-  # Title. Letter-spaced: at this size the default kerning reads as cramped,
-  # and the extra tracking is most of what separates "a word on a screen"
-  # from something that looks designed.
-  local fontargs=()
-  [[ -n "$FONT" ]] && fontargs=(-font "$FONT")
-  magick -background none "${fontargs[@]}" -fill "$ACCENT" \
-    -pointsize 130 -kerning 12 label:"$title" -trim +repage \
-    "${SRGB[@]}" "$tmp/title.png"
-
-  # Halo: a big soft glow behind the name. Centred and therefore
-  # resolution-independent, which a full-screen vignette bitmap would not
-  # be -- that would have to be regenerated per resolution and would be
-  # wrong the moment KMS changed the mode mid-boot.
-  local tw th
-  tw="$(magick identify -format '%w' "$tmp/title.png")"
-  th="$(magick identify -format '%h' "$tmp/title.png")"
-  magick -size "$(( tw + 420 ))x$(( th + 320 ))" xc:none "${SRGB[@]}" \
-    -fill "$ACCENT" \
-    -draw "ellipse $(( (tw + 420) / 2 )),$(( (th + 320) / 2 )) $(( tw / 2 + 60 )),$(( th / 2 + 40 )) 0,360" \
-    -blur 0x70 -alpha set -channel A -evaluate multiply 0.55 +channel \
-    "$tmp/halo.png"
+  # Title, as ANSI Shadow block art.
+  #
+  # Rendered from a vendored glyph table (plymouth/ansi-shadow.txt) rather
+  # than by shelling out to figlet: figlet is not installed here, and the
+  # ANSI Shadow face is a CONTRIBUTED font that does not ship with it, so
+  # using it would mean both a new package dependency and vendoring a font
+  # file of uncertain licence. The table is 40 glyphs of plain text and is
+  # verified against the wizard's own hardcoded ATI logo.
+  local art="$tmp/art.txt"
+  if ! python3 - "$SRC_DIR/ansi-shadow.txt" "$title" > "$art" 2>/dev/null <<'PY'
+import sys
+glyphs, cur = {}, None
+for line in open(sys.argv[1], encoding="utf-8"):
+    line = line.rstrip("\n")
+    if line.startswith("#"):
+        continue
+    if line.startswith("@"):
+        cur = line[1:]
+        glyphs[cur] = []
+        continue
+    if cur is not None:
+        glyphs[cur].append(line)
+word = [c for c in sys.argv[2].upper() if c in glyphs]
+if not word:
+    sys.exit(1)
+for row in range(6):
+    print("".join(glyphs[c][row] for c in word))
+PY
+  then
+    warn "could not render block art for '$title' — falling back to plain text"
+    magick -background none "${fontargs_p[@]}" -fill "$ACCENT" \
+      -pointsize 130 -kerning 12 label:"$title" -trim +repage \
+      "${SRGB[@]}" "$tmp/title.png"
+  else
+    # MONO font, not the proportional one: block art only lines up if every
+    # cell is the same width. -interline-spacing closes the gap the font
+    # leaves between rows, which would otherwise slice every letter into
+    # six disconnected bands.
+    magick -background none -font "$MONO_FONT" -pointsize 44 \
+      -interline-spacing -8 -fill "$ACCENT" \
+      label:@"$art" -trim +repage "${SRGB[@]}" "$tmp/title.png"
+  fi
 
   # ── ring ───────────────────────────────────────────────────────────
   # Plymouth's script language cannot draw an arc, so the ring is shipped
@@ -137,10 +167,9 @@ do_generate() {
   #   ring_prog_NN  the fill, growing clockwise from 12 o'clock
   #   spin_NN       a short comet sweeping round, which is what keeps
   #                 moving when plymouth reports no progress at all
-  # Bigger than it looks in a file listing: 76px radius on a 1366x768
-  # panel is a small circle, and the ring is the only thing on screen that
-  # proves the machine is still working.
-  local RS=260 RC=130 RR=104 RW=8
+  # Deliberately small. The name is the subject; the ring is a status
+  # light under it, not a second focal point competing with the word.
+  local RS=120 RC=60 RR=44 RW=5
   RING_CANVAS=$RS
 
   # Track: the faint full circle the other two ride on.
@@ -193,11 +222,13 @@ do_generate() {
 
   # Substitute the colour floats into the script.
   read -r BR BG_ BB <<<"$(hex_to_float "$BG")"
-  # A slightly lifted top for the background gradient. Plymouth's only
-  # built-in background is a vertical gradient, and lifting the top by ~7%
-  # does most of the work of a vignette without shipping a bitmap.
-  read -r TR TG TB <<<"$(awk -v r="$BR" -v g="$BG_" -v b="$BB" 'BEGIN{
-    printf "%.4f %.4f %.4f", (r<0.93?r+0.07:1), (g<0.93?g+0.07:1), (b<0.93?b+0.07:1) }')"
+  # FLAT background: top and bottom identical.
+  #
+  # There was a gradient here, lifted 7% at the top as a cheap vignette. It
+  # read as "designed" in the wrong way -- the reference this is modelled on
+  # is a flat dark field with one bright word on it, and every extra effect
+  # moved it further from that.
+  read -r TR TG TB <<<"$BR $BG_ $BB"
   read -r FR FG_ FB <<<"$(hex_to_float "$FG")"
   sed -e "s/BG_R/$BR/g" -e "s/BG_G/$BG_/g" -e "s/BG_B/$BB/g" \
       -e "s/FG_R/$FR/g" -e "s/FG_G/$FG_/g" -e "s/FG_B/$FB/g" \
@@ -212,7 +243,6 @@ do_generate() {
   # are then impossible to tell apart from the assets actually in use.
   sudo rm -f "$THEME_DIR"/*.png
   sudo install -m644 "$tmp/title.png"      "$THEME_DIR/title.png"
-  sudo install -m644 "$tmp/halo.png"       "$THEME_DIR/halo.png"
   sudo install -m644 "$tmp/ring_track.png" "$THEME_DIR/ring_track.png"
   for ((i = 0; i < PROG_FRAMES; i++)); do
     sudo install -m644 "$tmp/ring_prog_$i.png" "$THEME_DIR/ring_prog_$i.png"
@@ -304,33 +334,22 @@ do_preview() {
   while [[ -f "$THEME_DIR/ring_prog_$nprog.png" ]]; do nprog=$((nprog+1)); done
   (( nspin > 0 && nprog > 0 )) || die "ring frames missing — run: boot-splash generate"
 
-  local tw th hw hh rw rh
+  local tw th rw rh
   tw="$(magick identify -format '%w' "$THEME_DIR/title.png")"
   th="$(magick identify -format '%h' "$THEME_DIR/title.png")"
-  hw="$(magick identify -format '%w' "$THEME_DIR/halo.png")"
-  hh="$(magick identify -format '%h' "$THEME_DIR/halo.png")"
   rw="$(magick identify -format '%w' "$THEME_DIR/ring_track.png")"
   rh="$(magick identify -format '%h' "$THEME_DIR/ring_track.png")"
 
   local title_x=$(( W / 2 - tw / 2 ))
-  local title_y=$(( H / 2 - th / 2 - H / 10 ))
-  local halo_x=$(( W / 2 - hw / 2 ))
-  local halo_y=$(( title_y + th / 2 - hh / 2 ))
+  local title_y=$(( H / 2 - th / 2 - H / 16 ))
   local ring_x=$(( W / 2 - rw / 2 ))
-  local ring_y=$(( title_y + th + H / 14 ))
+  local ring_y=$(( title_y + th + H / 12 ))
 
   # Background: the same vertical gradient plymouth draws, lifted ~7% at
   # the top. sRGB forced -- a neutral #282828 canvas is otherwise typed as
   # Gray and silently desaturates every coloured sprite composited onto it.
-  # Lift the top ~7%, computed straight off the hex.
-  #
-  # The obvious `-format '%[hex:p{0,0}]'` returns SIXTEEN-bit channels --
-  # "3A143A143A14" for #3a3a3a -- so slicing the first six characters gave
-  # R=0x3A G=0x14 B=0x3A and rendered the whole splash PURPLE. Arithmetic
-  # on the input hex has no such trap.
-  local BGTOP _h="${BG#\#}"
-  BGTOP="$(awk -v r="$((16#${_h:0:2}))" -v g="$((16#${_h:2:2}))" -v b="$((16#${_h:4:2}))" 'BEGIN{
-    printf "#%02x%02x%02x", (r+18>255?255:r+18), (g+18>255?255:g+18), (b+18>255?255:b+18) }')"
+  # Flat, matching the script: top and bottom are the same colour.
+  local BGTOP="$BG"
   magick -size "${W}x${H}" "gradient:${BGTOP}-${BG}" -colorspace sRGB "$tmp/bg.png"
 
   local frames=60 f
@@ -338,16 +357,13 @@ do_preview() {
     local tick=$(( f * 5 ))
     local -a args=("$tmp/bg.png" -colorspace sRGB)
 
-    # halo + title, with the same easing and breathing sines
-    local hop top
-    hop="$(awk -v t="$tick" 'BEGIN{ printf "%.3f", 0.18 + 0.10*sin(t/44) }')"
+    # title, with the same easing and breathing sine the script uses
+    local top
     if (( tick < 26 )); then
       top="$(awk -v t="$tick" 'BEGIN{ x=t/26; printf "%.3f", 1-(1-x)*(1-x) }')"
     else
       top="$(awk -v t="$tick" 'BEGIN{ printf "%.3f", 0.86 + 0.14*sin(t/30) }')"
     fi
-    args+=( \( "$THEME_DIR/halo.png"  -alpha set -channel A -evaluate multiply "$hop" +channel \)
-            -geometry "+${halo_x}+${halo_y}" -composite )
     args+=( \( "$THEME_DIR/title.png" -alpha set -channel A -evaluate multiply "$top" +channel \)
             -geometry "+${title_x}+${title_y}" -composite )
 
@@ -449,8 +465,8 @@ do_check() {
   st=0; [[ -n "$declared_prog" && "$n" == "$declared_prog" ]] || st=1
   _c $st "progress frames present (${n}/${declared_prog:-?})"
 
-  st=0; [[ -s "$THEME_DIR/halo.png" && -s "$THEME_DIR/ring_track.png" ]] || st=1
-  _c $st "halo + ring track present"
+  st=0; [[ -s "$THEME_DIR/ring_track.png" ]] || st=1
+  _c $st "ring track present"
 
   st=0; sudo test -d /boot || st=1
   _c $st "/boot present"

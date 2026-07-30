@@ -10,11 +10,15 @@
 //
 // Three things move:
 //
-//   1. a soft halo behind the name breathes, and the name fades up into it
-//   2. a comet sweeps continuously around the ring -- this is the liveness
-//      signal, and it keeps moving even when plymouth reports no progress
-//      at all, which is most of a fast boot
+//   1. the name fades up, then breathes gently on opacity
+//   2. a comet sweeps continuously around a small ring -- this is the
+//      liveness signal, and it keeps moving even when plymouth reports no
+//      progress at all, which is most of a fast boot
 //   3. the ring FILLS clockwise with real progress when it is reported
+//
+// The name is ANSI Shadow block art, generated from the username. It is
+// the only subject on screen: flat background, no glow, no vignette. Every
+// effect tried on top of it made it look more generated and less designed.
 //
 // Both ring elements are pre-rendered frame sequences. Plymouth's script
 // language cannot draw an arc, and rotating an image every frame at 50fps
@@ -27,32 +31,23 @@
 // truncates.
 
 // ── palette (substituted by boot-splash) ────────────────────────────
-// A slightly lighter top than bottom: plymouth's only built-in background
-// is this vertical gradient, and it does most of the work of a vignette
-// for free. The rest comes from the halo sprite below, which is centred
-// and therefore resolution-independent -- a full-screen vignette bitmap
-// would have to be generated per resolution and would be wrong the moment
-// KMS changed the mode mid-boot.
+// Flat: top and bottom are the same colour. Plymouth's only built-in
+// background is this vertical gradient, and a lifted top was tried as a
+// cheap vignette -- it pulled the result away from the flat dark field
+// with one bright word on it that this is modelled on.
 Window.SetBackgroundTopColor(BGTOP_R, BGTOP_G, BGTOP_B);
 Window.SetBackgroundBottomColor(BG_R, BG_G, BG_B);
 
 screen_width  = Window.GetWidth();
 screen_height = Window.GetHeight();
 
-// ── name + halo ─────────────────────────────────────────────────────
+// ── name ────────────────────────────────────────────────────────────
 title_image = Image("title.png");
-halo_image  = Image("halo.png");
 
 title_w = title_image.GetWidth();
 title_h = title_image.GetHeight();
 title_x = screen_width  / 2 - title_w / 2;
-title_y = screen_height / 2 - title_h / 2 - screen_height / 10;
-
-halo_sprite = Sprite(halo_image);
-halo_sprite.SetX(screen_width / 2 - halo_image.GetWidth()  / 2);
-halo_sprite.SetY(title_y + title_h / 2 - halo_image.GetHeight() / 2);
-halo_sprite.SetZ(1);
-halo_sprite.SetOpacity(0);
+title_y = screen_height / 2 - title_h / 2 - screen_height / 16;
 
 title_sprite = Sprite(title_image);
 title_sprite.SetX(title_x);
@@ -71,7 +66,7 @@ track_image = Image("ring_track.png");
 ring_w = track_image.GetWidth();
 ring_h = track_image.GetHeight();
 ring_x = screen_width / 2 - ring_w / 2;
-ring_y = title_y + title_h + screen_height / 14;
+ring_y = title_y + title_h + screen_height / 12;
 
 track_sprite = Sprite(track_image);
 track_sprite.SetX(ring_x);
@@ -127,10 +122,6 @@ fun refresh_callback() {
     spin_sprite.SetOpacity(t);
     prog_sprite.SetOpacity(t);
   }
-
-  // The halo breathes on a slower, offset cycle than the name, so the two
-  // never pulse in lockstep -- that reads as flicker rather than glow.
-  halo_sprite.SetOpacity(0.18 + 0.10 * Math.Sin(tick / 44));
 
   // --- comet ---------------------------------------------------------
   // One revolution every spin_frames * 2 ticks (~1.4s at 50fps).
