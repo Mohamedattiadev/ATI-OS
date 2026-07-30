@@ -4,13 +4,26 @@ packages:
   # Core system (documented intent)
   - base
   - base-devel
-  # - linux
-  # - linux-firmware
-  # - intel-ucode
-  # - efibootmgr
-  # - zram-generator
+  # These were commented out as "documented intent" and so were never
+  # actually declared -- they are present on this host only because
+  # archinstall put them there. `dcli sync` on a machine that somehow
+  # lacked one would not have restored it, and the audit reported them as
+  # drift forever. They are not optional on any machine this repo targets.
+  - linux
+  - linux-firmware
+  - efibootmgr           # systemd-boot needs it to manage EFI boot entries
+  # intel-ucode is deliberately NOT here: it is CPU-vendor specific, and
+  # hardcoding it would install Intel microcode on an AMD machine and none
+  # of the right one. The wizard's `gpu` module reads /proc/cpuinfo and
+  # installs intel-ucode or amd-ucode accordingly. See step_gpu.
 
   # Documentation & basics
+  # Neither is in the `base` metapackage: archinstall installs sudo, and
+  # mkinitcpio only arrives as a dependency of a kernel. The wizard's
+  # boot-fallback module runs mkinitcpio directly to build the rescue
+  # initramfs, so declare it rather than lean on linux-lts pulling it in.
+  - sudo
+  - mkinitcpio
 
   # dcli itself + its deps
   - dcli-arch-git

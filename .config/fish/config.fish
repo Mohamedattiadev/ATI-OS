@@ -55,6 +55,46 @@ set -gx EDITOR nvim # $EDITOR use nvim in terminal
 set -eU SUDO_EDITOR
 set -gx SUDO_EDITOR nvim
 
+# ---------------------------------------------------------------------
+# Migrated out of fish_variables (2026-07-30)
+# ---------------------------------------------------------------------
+# These were universal variables, which live in .config/fish/fish_variables
+# -- a file fish REWRITES at runtime. Committing it meant shipping this
+# machine's state to every other machine: the tracked copy carried a PATH
+# with ~/.cargo/bin three times over and dead /run/user/1000/fnm_multishells
+# session paths that only ever existed on this laptop. Setting them here
+# instead makes them versioned, reviewable, and identical everywhere, and
+# lets fish_variables go back to being untracked runtime state.
+#
+# Each is guarded on the thing it points at, because the packages that
+# provide them are opt-in (modules/optional.yaml): exporting JAVA_HOME to a
+# path with no JDK behind it is worse than not exporting it.
+
+# ~/tmp, not /tmp: /tmp is a tmpfs sized from RAM, and image/video work
+# through it filled it on this machine. The wizard's image-envs module
+# creates the directory.
+set -gx TMPDIR $HOME/tmp
+test -d $TMPDIR; or mkdir -p $TMPDIR
+
+if test -d /usr/lib/jvm/default
+    set -gx JAVA_HOME /usr/lib/jvm/default
+end
+
+if test -d $HOME/Android/Sdk
+    set -gx ANDROID_HOME $HOME/Android/Sdk
+    set -gx ANDROID_SDK_ROOT $HOME/Android/Sdk
+    set -gx ADB_LIBUSB 0
+end
+
+if type -q google-chrome-stable
+    set -gx CHROME_EXECUTABLE (command -v google-chrome-stable)
+end
+
+# Shared preview command for fzf and television. bat/eza/file is a
+# deliberate fallback chain -- the first one present wins.
+set -gx FZF_PREVIEW_OPTS "bat --style=numbers,changes --color=always --line-range=:100 {} || eza -T --icons {} || file {}"
+set -gx TV_DEFAULT_OPTS "--height=60% --layout=reverse --multi --info=inline --tiebreak=begin,length --ansi --border=rounded --preview-window=right:55%:wrap --preview='bat --style=numbers,changes --color=always --paging=never {} || eza -T --icons {} || file {}'"
+
 ### SET MANPAGER
 ### Uncomment only one of these!
 
@@ -652,7 +692,7 @@ set -x SDL_IM_MODULE fcitx
 set -x XMODIFIERS '@im=fcitx'
 
 # pnpm
-set -gx PNPM_HOME "/home/ati/.local/share/pnpm"
+set -gx PNPM_HOME "$HOME/.local/share/pnpm"
 if not string match -q -- $PNPM_HOME $PATH
     set -gx PATH "$PNPM_HOME" $PATH
 end

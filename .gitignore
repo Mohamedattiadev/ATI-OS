@@ -49,3 +49,49 @@ brave-profiles
 .config/qt6ct/colors/
 .config/qt5ct/qt5ct.conf
 .config/qt6ct/qt6ct.conf
+
+# ======================================================================
+# Machine state -- never portable, actively harmful to ship (2026-07-30)
+# ======================================================================
+# qutebrowser's own runtime dirs: browser cache blobs, leveldb Local/
+# Session Storage, logs. ~92 tracked files, all regenerated on first
+# launch, none meaningful on another machine.
+.config/qutebrowser/qutebrowser-preview/cache/
+.config/qutebrowser/qutebrowser-preview/data/
+
+# fish REWRITES this file at runtime. The tracked copy carried a PATH with
+# ~/.cargo/bin three times and dead fnm_multishells session dirs from this
+# laptop. The settings that mattered now live in config.fish, versioned.
+.config/fish/fish_variables
+.config/fish/fishd.tmp.*
+
+# Editor/tooling backups. Snapshots of one machine mid-edit.
+*.bak
+*.bak-*
+
+# Written per-machine by the wizard's `gpu` module from the local PCI ids
+# (see step_gpu). Shipping one machine's answer to another is the bug this
+# whole mechanism exists to prevent.
+.config/picom/gpu.env
+
+# Rendered from the sibling .tmpl by the wizard's `paths` module, with
+# @HOME@ replaced by the real $HOME. These three formats cannot expand a
+# variable themselves (Chromium/Brave launchers pass flag lines verbatim;
+# GTK CSS @import takes a URL), so the path must be baked in per machine.
+.config/brave-flags.conf
+.config/chrome-flags.conf
+.config/chromium-flags.conf
+.config/gtk-3.0/gtk.css
+.config/gtk-4.0/gtk.css
+.config/gtk-3.0/bookmarks
+
+# Runtime state with this machine's paths baked in. nitrogen has no caller
+# anywhere in the repo (the wallpaper is set by xwallpaper from ~/.cache/wall
+# in .xinitrc), and these two files are just its window geometry and last
+# selection. QtProject.conf is Qt's file-dialog history.
+.config/nitrogen/nitrogen.cfg
+.config/nitrogen/bg-saved.cfg
+.config/qutebrowser/qsettings/
+
+# copyq's lock/geometry state, rewritten while it runs.
+.config/copyq/copyq_geometry.ini.lock

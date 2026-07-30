@@ -75,6 +75,7 @@ ONLY_LIST=""
 SKIP_LIST=""
 UNINSTALL=0
 SHOW_HELP=0
+AUDIT=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run|-n) DRY_RUN=1 ;;
@@ -82,6 +83,7 @@ for arg in "$@"; do
     --only=*)     ONLY_LIST="${arg#*=}" ;;
     --skip=*)     SKIP_LIST="${arg#*=}" ;;
     --uninstall)  UNINSTALL=1 ;;
+    --audit)      AUDIT=1 ;;
     # Deferred: the module id list is printed FROM MOD_ORDER, which is not
     # defined yet at argument-parse time. It used to be a hand-maintained
     # copy here and drifted -- dark-mode and browser-memory existed as real
@@ -149,7 +151,11 @@ _ERR()  { gum style --foreground "$URGENT" "$@"; }
 _LOGO=$'\n     █████╗ ████████╗██╗\n    ██╔══██╗╚══██╔══╝██║\n    ███████║   ██║   ██║\n    ██╔══██║   ██║   ██║\n    ██║  ██║   ██║   ██║\n    ╚═╝  ╚═╝   ╚═╝   ╚═╝\n           d o t f i l e s\n'
 
 _BOX_HEADER() {
-  clear
+  # `clear` exits non-zero when TERM is unset or unknown -- which under
+  # `set -e` plus the ERR trap aborted the whole install. That happens in a
+  # container, over a bare ssh exec, and from a CI runner: every
+  # non-interactive context where you would want an unattended run most.
+  clear 2>/dev/null || true
   gum style --align center --foreground "$ACCENT" "$_LOGO"
   gum style --align center --foreground "$MUTED" \
     "Arch · X11 · Qtile · wal-themed"
@@ -224,13 +230,163 @@ run() {
 # Group is only used for the picker header — keep display order stable.
 declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
-  sanity bootstrap yay dcli stow arch-config dcli-sync cargo ati-scripts
+  sanity bootstrap yay dcli stow arch-config paths dcli-sync gpu picom-pin cargo ati-scripts ui-scale githooks
   pacman-guard boot-fallback login-shell
   touchpad xinit xresources xmodmap lid image-envs flatpak piper whisper
   whisper-fast mic-gain
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes dark-mode browser-flags browser-memory chrome-policy
+  dcli-sync-extra boot-splash
 )
+
+# Opt-in modules: valid --only= targets, and listed (unchecked) in the
+# interactive picker, but never part of a default `./install.sh` run.
+#
+# install.sh's promise is a working DESKTOP -- qtile, themes, fonts,
+# widgets -- not a working workstation. Docker, a JDK, printing and qemu
+# are a second pass you run when you actually need them, on your own
+# schedule. Keeping them out of round one is what lets the first boot
+# stay short and stay predictable.
+OPTIN_MODS=(dcli-sync-extra boot-splash)
+_is_optin() {
+  local id m
+  id="$1"
+  for m in "${OPTIN_MODS[@]}"; do [[ "$m" == "$id" ]] && return 0; done
+  return 1
+}
+
+if (( AUDIT )); then
+  # Package drift audit. This exists because the audit was once run by hand
+  # and found 27 packages installed on this machine and declared in no
+  # module at all -- including `networkmanager`, whose absence would have
+  # given a fresh install the nm-applet tray icon with no daemon behind it
+  # and no working network GUI. Drift is silent by nature: you pacman -S
+  # something at 2am, it works, and the repo never hears about it. The only
+  # defence is to make the check cheap enough to run often.
+  #
+  # Read-only. Touches nothing, needs no sudo.
+  _mods="$DOTFILES_DIR/.config/arch-config/modules"
+  [[ -d "$_mods" ]] || { echo "wizard: no modules dir at $_mods" >&2; exit 2; }
+
+  _declared="$(mktemp)"; _explicit="$(mktemp)"; _present="$(mktemp)"
+  _core="$(mktemp)"
+
+  # Which module files count. The host's enabled_modules drive dcli, plus
+  # base (always), plus the sets installed at runtime by their own wizard
+  # modules -- optional.yaml (dcli-sync-extra) and graphics-*.yaml (gpu).
+  # Excluded: example.yaml and declared-packages.yaml (not modules), and
+  # system-packages-ati.yaml, which is NOT in enabled_modules -- counting
+  # it would declare nvidia, plasma and pulseaudio on an Intel qtile box.
+  _host="$(sed -n 's/^host:[[:space:]]*//p' \
+    "$DOTFILES_DIR/.config/arch-config/config.yaml" 2>/dev/null | head -1)"
+  _hostfile="$DOTFILES_DIR/.config/arch-config/hosts/${_host}.yaml"
+  # Split deliberately: _core is what a default ./install.sh must produce,
+  # so anything declared there and absent is a real gap. optional.yaml and
+  # the non-matching graphics-*.yaml sets are legitimately absent.
+  _optin_files=("$_mods/optional.yaml" "$_mods/splash.yaml" "$_mods"/graphics-*.yaml)
+  _core_files=("$_mods/base.yaml")
+  _files=("${_core_files[@]}" "${_optin_files[@]}")
+  if [[ -f "$_hostfile" ]]; then
+    while read -r _m; do
+      [[ -f "$_mods/$_m.yaml" ]] || continue
+      _files+=("$_mods/$_m.yaml"); _core_files+=("$_mods/$_m.yaml")
+    done < <(sed -n '/^enabled_modules:/,/^[a-z_]*:/p' "$_hostfile" \
+             | sed -n 's/^[[:space:]]*-[[:space:]]*\([A-Za-z0-9_-]*\).*/\1/p')
+  else
+    _WARN "no host file at $_hostfile — auditing every module file"
+    _files=("$_mods"/*.yaml)
+  fi
+
+  # Only the `packages:` block. A naive "^  - " grep also swallows the
+  # `conflicts:` list, which would report linux-zen and linux-hardened --
+  # packages we explicitly never want -- as missing.
+  awk '
+    /^packages:/          { inpkg=1; next }
+    /^[a-z_]+:/           { inpkg=0 }
+    inpkg && /^[ \t]*-[ \t]*[A-Za-z0-9]/ {
+      sub(/^[ \t]*-[ \t]*/, ""); sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, "")
+      if (length($0)) print
+    }
+  ' "${_files[@]}" | sort -u > "$_declared"
+  # Same extraction over the core-only file set.
+  awk '
+    /^packages:/          { inpkg=1; next }
+    /^[a-z_]+:/           { inpkg=0 }
+    inpkg && /^[ \t]*-[ \t]*[A-Za-z0-9]/ {
+      sub(/^[ \t]*-[ \t]*/, ""); sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, "")
+      if (length($0)) print
+    }
+  ' "${_core_files[@]}" | sort -u > "$_core"
+
+  # Deliberate non-declarations, each with a documented reason. Kept in its
+  # own list rather than folded into `declared`: these must not count as
+  # drift, but must not be reported as missing either -- amd-ucode is
+  # correctly absent on an Intel box, and declaring it would be the bug.
+  _ignorelist="$(mktemp)"
+  trap 'rm -f "$_declared" "$_explicit" "$_present" "$_core" "$_ignorelist"' EXIT
+  : > "$_ignorelist"
+  _ignore="$DOTFILES_DIR/.config/arch-config/audit-ignore.yaml"
+  if [[ -f "$_ignore" ]]; then
+    awk '
+      /^packages:/ { inpkg=1; next }
+      /^[a-z_]+:/  { inpkg=0 }
+      inpkg && /^[ \t]*-[ \t]*[A-Za-z0-9]/ {
+        sub(/^[ \t]*-[ \t]*/, ""); sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, "")
+        if (length($0)) print
+      }
+    ' "$_ignore" | sort -u > "$_ignorelist"
+  fi
+
+  pacman -Qqe | sort > "$_explicit"   # explicitly installed
+  pacman -Qq  | sort > "$_present"    # installed at all, deps included
+
+  # Drift is explicit-but-undeclared. A package pulled in as a dependency
+  # is not drift -- nobody chose it.
+  # `*-debug` packages are byproducts: makepkg splits debug symbols out
+  # whenever OPTIONS=debug is set, so every AUR or vendored build leaves
+  # one behind. Nobody chose them, they are never declared, and listing
+  # each one by name in audit-ignore would just be a chore that grows with
+  # every package built from source.
+  _drift="$(comm -13 "$_declared" "$_explicit" | comm -13 "$_ignorelist" - | grep -v -- '-debug$' || true)"
+  # Missing means absent entirely. Comparing against -Qqe instead would
+  # flag every declared package that happens to also be some other
+  # package's dependency, which is most of them.
+  _missing="$(comm -23 "$_core" "$_present")"
+  _missing_optin="$(comm -23 "$_declared" "$_present" | comm -13 "$_core" -)"
+
+  printf '\n  host: %s   ·   modules audited: %s\n' "${_host:-?}" "${#_files[@]}"
+  printf '  declared: %s   ·   explicitly installed: %s\n\n' \
+    "$(wc -l < "$_declared")" "$(wc -l < "$_explicit")"
+
+  if [[ -n "$_drift" ]]; then
+    printf '  \033[33mINSTALLED BUT NOT DECLARED\033[0m — absent on a fresh machine:\n'
+    printf '%s\n' "$_drift" | fmt -w 68 | sed 's/^/    /'
+    printf '\n    Fix: add each to the right modules/*.yaml, or accept it as\n'
+    printf '    deliberate and note it in optional.yaml'"'"'s exclusion list.\n\n'
+  else
+    printf '  \033[32m✔\033[0m nothing installed that is not declared\n\n'
+  fi
+
+  if [[ -n "$_missing" ]]; then
+    printf '  \033[31mDECLARED IN AN ENABLED MODULE BUT NOT INSTALLED\033[0m — a real gap:\n'
+    printf '  a default ./install.sh is supposed to produce these.\n'
+    printf '%s\n' "$_missing" | fmt -w 68 | sed 's/^/    /'
+    printf '\n    Fix: dcli sync --force\n\n'
+  else
+    printf '  \033[32m✔\033[0m every package in an enabled module is installed\n\n'
+  fi
+
+  if [[ -n "$_missing_optin" ]]; then
+    printf '  \033[90mnot installed, and correctly so\033[0m — optional.yaml plus the GPU\n'
+    printf '  \033[90mvendor sets that do not match this machine:\033[0m\n'
+    printf '%s\n' "$_missing_optin" | fmt -w 68 | sed 's/^/    /'
+    printf '\n'
+  fi
+
+  # Non-zero on either real problem, so this can gate a commit or a CI run.
+  if [[ -n "$_drift" || -n "$_missing" ]]; then exit 1; fi
+  exit 0
+fi
 
 if (( SHOW_HELP )); then
   sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
@@ -242,6 +398,22 @@ Filters (combine with --yes for scripted runs):
 
 Note: --only and --skip REQUIRE '='. `--only boot-fallback` is rejected
 rather than silently running the full install.
+
+Audit (read-only, no sudo, exits non-zero if anything is wrong):
+  ./wizard.sh --audit   Compare every declared package against what is
+                        actually installed. Catches the two failure modes
+                        that make a fresh machine differ from this one:
+                        something installed by hand and never declared, and
+                        something declared that never got installed.
+                        Deliberate exceptions live in
+                        .config/arch-config/audit-ignore.yaml.
+
+Opt-in modules run ONLY when named in --only= (or ticked in the picker).
+A default run leaves them out:
+  dcli-sync-extra    docker · jdk · qemu · printing -- none of it is
+                     needed for qtile, the themes, the fonts or the
+                     widgets. Install later with:
+                       ./wizard.sh --yes --only=dcli-sync-extra
 
 HELP
   printf 'Module ids (%d, generated from MOD_ORDER; unknown ids are rejected):\n' "${#MOD_ORDER[@]}"
@@ -287,6 +459,11 @@ _reg dcli              "dcli"                System    "Declarative package sync
 _reg stow              "Deploy dotfiles"     Dotfiles  "Symlink .config · .local · etc via GNU stow"            "step_stow"
 _reg arch-config       "Host arch-config"    Dotfiles  "Point arch-config at this host"                         "step_arch_config"
 _reg dcli-sync         "dcli sync (all pkgs)" System   "Install every declared pkg + flatpak (slow)"            "step_dcli_sync"
+_reg paths             "Expand @HOME@ paths"  Dotfiles  "Render browser flags · gtk.css · bookmarks for this user"  "step_paths"
+_reg ui-scale          "UI scale (DPI)"      Dotfiles  "Size bar/fonts to this display; ui-scale-toggle to override"  "step_ui_scale"
+_reg githooks          "Git pre-commit hook"  Dotfiles "Refuse commits that break the config or drift packages"  "step_githooks"
+_reg gpu               "GPU + microcode"     System    "Detect Intel/AMD/NVIDIA from PCI ids, install matching drivers" "step_gpu"
+_reg picom-pin         "picom (pinned)"      System    "Build the animation fork from a fixed commit, not branch HEAD"  "step_picom_pin"
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
 _reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"
@@ -314,6 +491,8 @@ _reg dark-mode         "Dark preference"     Themes    "Advertise prefer-dark vi
 _reg browser-flags     "Browser flags"       Browsers  "brave/chrome/chromium wal theme extension flags"        "step_browser_flags"
 _reg browser-memory    "Browser memory saver" Browsers "Policy: discard idle tabs, keep whatsapp/chatgpt live"  "step_browser_memory"
 _reg chrome-policy     "Chrome theme policy" Browsers  "Sign .pem + install /etc/opt/chrome force_installed"    "step_chrome_policy"
+_reg dcli-sync-extra   "Optional packages"   Optional  "docker · jdk · qemu · printing (opt-in, run later)"     "step_dcli_sync_extra"
+_reg boot-splash       "Boot splash"         Optional  "Your name + progress bar instead of kernel text (opt-in; edits cmdline)" "step_boot_splash"
 
 _validate_ids "$ONLY_LIST" --only
 _validate_ids "$SKIP_LIST" --skip
@@ -363,6 +542,243 @@ step_dcli_sync() {
     echo "dcli sync still has $pending package(s) uninstalled after retries — run 'dcli sync --force' manually later"
     return 1
   fi
+}
+step_paths() {
+  # Render every @HOME@ template to its real destination.
+  #
+  # These are the files where $HOME genuinely cannot be used, so the only
+  # alternative was a literal /home/ati baked into the repo:
+  #
+  #   *-flags.conf   Chromium's launcher documents "arguments are split on
+  #                  whitespace and shell quoting rules apply but no further
+  #                  parsing is performed", and Brave's wrapper mapfiles the
+  #                  lines straight into an argv array. Neither expands a
+  #                  variable. A wrong path here means --load-extension
+  #                  silently fails and the browser never picks up the
+  #                  generated wal theme -- the browser just looks untouched
+  #                  while every other app retints.
+  #   gtk.css        GTK's CSS @import takes a URL, not a shell expression.
+  #                  A wrong path means the wal overlay never loads and GTK
+  #                  apps keep the stock theme colors.
+  #   bookmarks      GTK's bookmark file is plain "URI  label" lines.
+  #
+  # Written as REAL files, replacing the stow symlink, exactly like
+  # theme-apply's render_dunstrc. That is what keeps a per-machine value
+  # from being written back into the repo through the link.
+  local src dst
+  for src in \
+    "$DOTFILES_DIR/.config/brave-flags.conf.tmpl" \
+    "$DOTFILES_DIR/.config/chrome-flags.conf.tmpl" \
+    "$DOTFILES_DIR/.config/chromium-flags.conf.tmpl" \
+    "$DOTFILES_DIR/.config/gtk-3.0/gtk.css.tmpl" \
+    "$DOTFILES_DIR/.config/gtk-4.0/gtk.css.tmpl" \
+    "$DOTFILES_DIR/.config/gtk-3.0/bookmarks.tmpl"
+  do
+    [[ -f "$src" ]] || { _WARN "missing template $src"; continue; }
+    dst="$HOME/.config/${src#"$DOTFILES_DIR"/.config/}"
+    dst="${dst%.tmpl}"
+    run "mkdir -p $(dirname "$dst") && rm -f $dst && sed 's|@HOME@|$HOME|g' $src > $dst"
+  done
+}
+
+_pkgs_from_module() {
+  # Shared by step_gpu and step_dcli_sync_extra: pull the package list out
+  # of a module yaml. Only lines of the exact form "  - name" count, so the
+  # commentary and the `exclude:`/`conflicts:` keys below it are ignored.
+  sed -n 's/^  - \([A-Za-z0-9._+-]*\).*/\1/p' "$1"
+}
+
+step_ui_scale() {
+  # Runs AFTER ati-scripts, which is what puts ui-scale on PATH.
+  #
+  # Every pixel value in the qtile config was tuned on a 1366x768 14"
+  # panel. Without this the bar is a sliver of unreadable text on a 4K
+  # laptop -- the one axis these dotfiles cannot keep identical by copying
+  # files, because the right answer depends on the glass.
+  local bin
+  bin="$(command -v ui-scale || echo "$DOTFILES_DIR/.config/AtiScriptsV1/ui-scale")"
+  [[ -x "$bin" ]] || { _WARN "ui-scale not found — run the ati-scripts module first"; return 0; }
+  if [[ -z "${DISPLAY:-}" ]]; then
+    # xrandr needs an X server. During a TTY install there is none yet, so
+    # defer rather than write a wrong factor: .xinitrc runs it at login.
+    _OK "no X session yet — ui-scale will run from .xinitrc on first startx"
+    return 0
+  fi
+  run "$bin"
+}
+
+step_picom_pin() {
+  # Build the animation-capable picom fork from a PINNED commit.
+  #
+  # The AUR package (picom-ftlabs-git) sources `#branch=next`, so it builds
+  # whatever the tip is on the day you install. picom is what renders the
+  # animations, rounded corners, shadows and blur this desktop is built
+  # around, so letting it float means two machines from the same repo can
+  # look and move differently with nothing in the config to explain it.
+  local dir="$DOTFILES_DIR/.config/arch-config/pkgbuilds/picom-ftlabs-pinned"
+  [[ -d "$dir" ]] || { _ERR "missing $dir"; return 1; }
+
+  if pacman -Qq picom-ftlabs-pinned >/dev/null 2>&1; then
+    _OK "picom-ftlabs-pinned present"
+    return 0
+  fi
+
+  # The floating AUR build conflicts (same provides). Remove it first, or
+  # makepkg fails at the install step after a full compile -- a slow way to
+  # discover a problem visible up front.
+  if pacman -Qq picom-ftlabs-git >/dev/null 2>&1; then
+    _WARN "removing floating picom-ftlabs-git in favour of the pinned build"
+    run "sudo pacman -Rdd --noconfirm picom-ftlabs-git"
+  fi
+
+  # -s installs build deps, -i installs the result, -r cleans them up.
+  # Built in a temp copy: makepkg writes src/ and pkg/ next to the PKGBUILD,
+  # and that directory is inside the git repo.
+  local tmp
+  tmp="$(mktemp -d)"
+  run "cp -r $dir/. $tmp/ && cd $tmp && makepkg -si --noconfirm --needed --clean"
+  rm -rf "$tmp"
+}
+
+step_githooks() {
+  # A symlink, not a copy: a copied hook silently keeps running the version
+  # from whenever the wizard last ran, which is the same drift problem the
+  # hook exists to catch.
+  local src="$DOTFILES_DIR/installScripts/hooks/pre-commit"
+  local dst="$DOTFILES_DIR/.git/hooks/pre-commit"
+  [[ -f "$src" ]] || { _WARN "no hook at $src"; return 0; }
+  [[ -d "$DOTFILES_DIR/.git" ]] || { _WARN "$DOTFILES_DIR is not a git repo — skipping"; return 0; }
+  run "ln -sfn $src $dst"
+}
+
+step_gpu() {
+  # The single most portability-critical module in the wizard.
+  #
+  # graphics.yaml used to hardcode the Intel driver set. Installing that on
+  # an AMD or NVIDIA machine leaves the real GPU with no driver, GLX falls
+  # back to llvmpipe, and picom -- which this repo configures with
+  # `backend = "glx"` and `vsync = true` -- either crawls or refuses to
+  # start. Either way the animations, rounded corners and shadows that the
+  # desktop is built around are gone, with nothing in the logs that points
+  # at a package list. So: detect, then install what this machine needs.
+  local mod_dir="$DOTFILES_DIR/.config/arch-config/modules"
+  local arch vendors="" ids
+  arch="$(uname -m)"
+
+  if [[ "$arch" != x86_64 ]]; then
+    # ARM boards have no PCI GPU to probe and no ucode package; mesa's
+    # KMS drivers in graphics.yaml are the whole story there.
+    _WARN "arch is $arch, not x86_64 -- skipping PCI GPU + microcode detection"
+    _WARN "graphics.yaml (vendor-neutral mesa) is installed; verify GL with vainfo"
+    return 0
+  fi
+
+  command -v lspci >/dev/null || run "sudo pacman -S --needed --noconfirm pciutils"
+
+  # Class 03xx is Display controller: VGA (0300), XGA, 3D (0302). A laptop
+  # with switchable graphics reports two, and genuinely needs both sets.
+  ids="$(lspci -mn 2>/dev/null | awk -F'"' '$2 ~ /^03/ {print tolower($4)}')"
+  [[ -n "$ids" ]] || { _ERR "no display controller found via lspci"; return 1; }
+
+  local id
+  for id in $ids; do
+    case "$id" in
+      8086) vendors+=" intel"  ;;   # Intel Corporation
+      1002|1022) vendors+=" amd" ;; # ATI/AMD, and AMD's own vendor id
+      10de) vendors+=" nvidia" ;;   # NVIDIA
+      1af4|15ad|1234|80ee)
+        # virtio-gpu / VMware SVGA / QEMU stdvga / VirtualBox. mesa's
+        # generic KMS driver covers these; there is no vendor package, and
+        # installing one would be wrong. vm-test.sh lands here.
+        _OK "virtual GPU ($id) -- vendor-neutral mesa is correct, nothing to add"
+        ;;
+      *) _WARN "unrecognised display controller vendor id: $id" ;;
+    esac
+  done
+
+  # Deduplicate: a dual-GPU laptop lists Intel twice on some firmware.
+  vendors="$(printf '%s\n' $vendors | sort -u | tr '\n' ' ')"
+  [[ -n "${vendors// /}" ]] || { _OK "no vendor driver set needed"; return 0; }
+  _OK "GPU vendor(s) detected:${vendors% }"
+
+  local v mod pkgs
+  for v in $vendors; do
+    mod="$mod_dir/graphics-$v.yaml"
+    [[ -f "$mod" ]] || { _ERR "missing $mod"; return 1; }
+    pkgs="$(_pkgs_from_module "$mod" | tr '\n' ' ')"
+    [[ -n "${pkgs// /}" ]] || { _ERR "no packages parsed from $mod"; return 1; }
+    run "yay -S --needed --noconfirm $pkgs"
+  done
+
+  # NVIDIA: nvidia-open-dkms only supports Turing (2018) and newer. On an
+  # older card it builds and installs happily, then fails to bind at boot
+  # -- you get a black screen or a fallback to modesetting with no
+  # acceleration, which reads as "the dotfiles broke my machine".
+  if [[ " $vendors " == *" nvidia "* ]]; then
+    if ! lspci -d 10de: -k 2>/dev/null | grep -qiE 'TU[0-9]|GA[0-9]|AD[0-9]|GB[0-9]'; then
+      _WARN "NVIDIA card may predate Turing; nvidia-open-dkms supports Turing+ only"
+      _WARN "if X fails to start, swap it: sudo pacman -S nvidia-dkms"
+    fi
+  fi
+
+  # Per-GPU picom flags. NVIDIA's proprietary GLX is the one stack where
+  # picom's use-damage optimisation smears during animations; disabling it
+  # costs a little GPU time and makes the motion match Intel and AMD.
+  # Written per-machine and gitignored -- never committed.
+  local gpu_env="$HOME/.config/picom/gpu.env"
+  if [[ " $vendors " == *" nvidia "* ]]; then
+    run "mkdir -p $(dirname "$gpu_env") && printf 'PICOM_GPU_FLAGS=\"--no-use-damage\"\\n' > $gpu_env"
+  else
+    run "mkdir -p $(dirname "$gpu_env") && printf 'PICOM_GPU_FLAGS=\"\"\\n' > $gpu_env"
+  fi
+
+  # CPU microcode. Not graphics, but the same "detected once, hardcoded
+  # forever" bug: base.yaml has intel-ucode commented out, so a fresh
+  # machine of either vendor got no microcode at all. Missing microcode is
+  # the cause of hangs and errata that look like random instability.
+  local cpu_vendor ucode
+  cpu_vendor="$(awk -F': ' '/^vendor_id/{print $2; exit}' /proc/cpuinfo)"
+  case "$cpu_vendor" in
+    GenuineIntel) ucode=intel-ucode ;;
+    AuthenticAMD) ucode=amd-ucode   ;;
+    *) ucode="" ; _WARN "unknown CPU vendor '$cpu_vendor' -- no microcode installed" ;;
+  esac
+  [[ -n "$ucode" ]] && run "sudo pacman -S --needed --noconfirm $ucode"
+}
+
+step_boot_splash() {
+  # Opt-in, and deliberately so: this edits /etc/mkinitcpio.conf and the
+  # kernel cmdline and rebuilds the initramfs. Getting it wrong costs a
+  # boot, which is a different category of risk from every other module
+  # here -- so it never runs as part of a default install.
+  local mod="$DOTFILES_DIR/.config/arch-config/modules/splash.yaml"
+  local bs="$DOTFILES_DIR/.config/AtiScriptsV1/boot-splash"
+  [[ -f "$mod" ]] || { _ERR "missing $mod"; return 1; }
+  [[ -x "$bs" ]] || { _ERR "missing $bs"; return 1; }
+
+  local pkgs; pkgs="$(_pkgs_from_module "$mod" | tr '\n' ' ')"
+  run "sudo pacman -S --needed --noconfirm $pkgs"
+
+  # The LTS rescue entries are rewritten WITHOUT quiet/splash (see the
+  # token filter in step_boot_fallback), so a splashed boot that hangs can
+  # always be diagnosed from the fallback entry.
+  run "$bs enable"
+}
+
+step_dcli_sync_extra() {
+  # modules/optional.yaml is deliberately NOT in hosts/*.yaml's
+  # enabled_modules, so `dcli sync` ignores it entirely -- and dcli has no
+  # per-module sync flag (see `dcli sync --help`). So read the package
+  # list straight out of the yaml and hand it to the AUR helper. Keeping
+  # the list in the yaml means it is still declared and reviewable in one
+  # place, rather than duplicated into this script.
+  local mod="$DOTFILES_DIR/.config/arch-config/modules/optional.yaml"
+  [[ -f "$mod" ]] || { _ERR "missing $mod"; return 1; }
+  local -a pkgs=()
+  mapfile -t pkgs < <(_pkgs_from_module "$mod")
+  (( ${#pkgs[@]} )) || { _ERR "no packages parsed from optional.yaml"; return 1; }
+  # --needed so a re-run is a no-op instead of a reinstall.
+  run "yay -S --needed --noconfirm ${pkgs[*]}"
 }
 step_cargo() {
   # rustup installs the stable toolchain but doesn't activate it as the
@@ -431,6 +847,18 @@ step_boot_fallback() {
 
   # Options straight off the running kernel. Anything else is a guess.
   local opts; opts="$(tr -d '\n' < /proc/cmdline)"
+  # ...except quiet/splash, which are stripped deliberately.
+  #
+  # These entries exist to be picked when the normal boot has failed. A
+  # rescue entry that inherits the boot splash shows a logo and a progress
+  # bar while hiding the kernel messages that say what is wrong -- it looks
+  # identical to the broken boot you are trying to escape. The boot-splash
+  # module puts quiet+splash on the primary UKI entry only, and this is the
+  # other half of that decision.
+  # Filter tokens rather than pattern-delete: a single sed pass consumes the
+  # separator, so adjacent options ("quiet splash") left the second one
+  # behind and the rescue entry was still silent.
+  opts="$(tr ' ' '\n' <<<"$opts" | grep -vxE 'quiet|splash' | paste -sd' ' -)"
   # Microcode is vendor-specific and optional; only reference what exists.
   local ucode_line=""
   local u
@@ -528,6 +956,11 @@ export QT_QPA_PLATFORMTHEME=qt6ct
 # Cursor size + theme for X apps (Xcursor honors both env vars).
 export XCURSOR_SIZE=24
 export XCURSOR_THEME=breeze_cursors
+# Size the UI to whatever display is actually attached, BEFORE xrdb merges
+# .Xresources (ui-scale writes Xft.dpi into it) and before qtile reads
+# ~/.cache/qtile/ui_scale. Docking to an external monitor between sessions
+# changes the answer, so this runs every login rather than once at install.
+command -v ui-scale >/dev/null 2>&1 && ui-scale >/dev/null 2>&1
 [ -f "$HOME/.Xresources" ] && xrdb -merge "$HOME/.Xresources"
 command -v xsetroot >/dev/null 2>&1 && xsetroot -cursor_name left_ptr
 xset s off -dpms
@@ -537,7 +970,12 @@ if [ -f "$HOME/.cache/wall" ] && command -v xwallpaper >/dev/null 2>&1; then
 fi
 if command -v picom >/dev/null 2>&1; then
   pkill -x picom 2>/dev/null
-  picom &
+  # Per-GPU flags written by the wizard's `gpu` module; see step_gpu.
+  # Absent file = no flags, which is correct for Intel and AMD.
+  PICOM_GPU_FLAGS=""
+  [ -f "$HOME/.config/picom/gpu.env" ] && . "$HOME/.config/picom/gpu.env"
+  # shellcheck disable=SC2086
+  picom $PICOM_GPU_FLAGS &
 fi
 # Tray icons -- Systray widget is passive, needs something to register.
 command -v blueman-applet >/dev/null 2>&1 && blueman-applet &
@@ -1010,7 +1448,24 @@ preflight() {
   _check "HOME writable"               "[[ -w $HOME ]]"                            "fix HOME permissions"
   _check "dotfiles clone at $DOTFILES_DIR" "[[ -d $DOTFILES_DIR ]]"                "git clone the repo to $DOTFILES_DIR"
   _check "internet reachable"          "curl -fsS --max-time 5 https://archlinux.org >/dev/null" "network down or firewall blocks HTTPS"
-  _check "disk free > 10 GB on \$HOME" "[[ $(df -Pk $HOME | awk 'NR==2{print $4}') -gt 10485760 ]]" "wizard needs ~10GB (piper 60MB + whisper models+fast-build ~1GB + dcli pkgs + wallpapers)"
+  # Scale the requirement to what was actually asked for. The 10 GB figure
+  # is whisper models + the fast rebuild + wallpapers + a full dcli sync;
+  # `--only=stow,paths` downloads none of that, and demanding 10 GB for it
+  # blocked the container smoke test and any config-only re-run on a full
+  # disk. Refusing for a reason that does not apply to this run is just a
+  # false negative, and false negatives are how safety checks get bypassed.
+  local _need_gb=1 _heavy _heavy_sel=0
+  for _heavy in dcli-sync dcli-sync-extra whisper whisper-fast piper wallpapers candy-icons speed; do
+    if [[ -n "$ONLY_LIST" ]]; then
+      _id_in_csv "$ONLY_LIST" "$_heavy" && _heavy_sel=1
+    elif [[ -n "$SKIP_LIST" ]]; then
+      _id_in_csv "$SKIP_LIST" "$_heavy" || _heavy_sel=1
+    else
+      _heavy_sel=1
+    fi
+  done
+  (( _heavy_sel )) && _need_gb=10
+  _check "disk free > ${_need_gb} GB on \$HOME" "[[ $(df -Pk $HOME | awk 'NR==2{print $4}') -gt $((_need_gb * 1048576)) ]]" "this run needs ~${_need_gb}GB (10GB covers piper 60MB + whisper models+fast-build ~1GB + dcli pkgs + wallpapers; 1GB when none of those are selected)"
   _check "RAM ≥ 2 GB"                  "[[ $(awk '/MemTotal/{print $2}' /proc/meminfo) -gt 2000000 ]]" "wizard pulls 500MB+ concurrently — <2GB risks OOM/freeze"
   _check "pacman db lock clear"        "_pacman_lock_check"                        "another pacman may be running"
   if (( fatal )); then
@@ -1134,6 +1589,26 @@ uninstall_bootstrap()         { :; }  # do NOT pacman -R base-devel
 uninstall_yay()               { :; }
 uninstall_dcli()              { :; }
 uninstall_dcli_sync()         { :; }
+uninstall_dcli_sync_extra()   { :; }  # never removes packages, same as dcli_sync
+uninstall_boot_splash() {
+  # This one MUST really reverse: leaving the plymouth hook in the
+  # initramfs after removing the theme boots to a black screen.
+  local bs
+  bs="$(command -v boot-splash || echo "$DOTFILES_DIR/.config/AtiScriptsV1/boot-splash")"
+  [[ -x "$bs" ]] && run "$bs disable" || _WARN "boot-splash not found — cmdline may still say quiet splash"
+}
+uninstall_paths()             { :; }  # removing them would leave the browser theme and GTK overlay with no config at all
+uninstall_ui_scale() {
+  run "rm -f $HOME/.cache/qtile/ui_scale $HOME/.cache/qtile/ui_scale.pinned"
+  run "sed -i '/^! BEGIN-UI-SCALE\$/,/^! END-UI-SCALE\$/d' $HOME/.Xresources 2>/dev/null || true"
+}
+uninstall_picom_pin()         { :; }  # removing the compositor mid-session leaves a bare desktop
+uninstall_githooks() { run "rm -f $DOTFILES_DIR/.git/hooks/pre-commit"; }
+uninstall_gpu() {
+  # Removing a GPU driver mid-session is how you end up with no X on next
+  # boot, so packages stay. Only the generated picom override is reversed.
+  run "rm -f $HOME/.config/picom/gpu.env"
+}
 uninstall_cargo()             { :; }
 uninstall_arch_config()       { :; }
 uninstall_flatpak()           { :; }
@@ -1184,6 +1659,13 @@ UMOD_CMD[dark-mode]="uninstall_dark_mode"
 UMOD_CMD[browser-flags]="uninstall_browser_flags"
 UMOD_CMD[browser-memory]="uninstall_browser_memory"
 UMOD_CMD[chrome-policy]="uninstall_chrome_policy"
+UMOD_CMD[paths]="uninstall_paths"
+UMOD_CMD[ui-scale]="uninstall_ui_scale"
+UMOD_CMD[picom-pin]="uninstall_picom_pin"
+UMOD_CMD[githooks]="uninstall_githooks"
+UMOD_CMD[gpu]="uninstall_gpu"
+UMOD_CMD[dcli-sync-extra]="uninstall_dcli_sync_extra"
+UMOD_CMD[boot-splash]="uninstall_boot_splash"
 
 # Every module must have a reversal, even if that reversal is a documented
 # no-op. Without this check a module added to MOD_ORDER but not to UMOD_CMD
@@ -1225,11 +1707,15 @@ page_module_picker() {
   _BOX_HEADER "select modules · all pre-checked · space to toggle"
   # Options are just clean module lines (no commas anywhere) so gum's
   # CSV --selected can preselect everything by default.
-  local options=() csv
+  local options=() preselect=() csv line
   for id in "${MOD_ORDER[@]}"; do
-    options+=("$(printf '%-22s [%-8s] %s' "$id" "${MOD_GROUP[$id]}" "${MOD_DESC[$id]}")")
+    line="$(printf '%-22s [%-8s] %s' "$id" "${MOD_GROUP[$id]}" "${MOD_DESC[$id]}")"
+    options+=("$line")
+    # Opt-in modules are offered but start UNCHECKED, so the habit of
+    # hitting enter on this screen still gives you the desktop-only run.
+    _is_optin "$id" || preselect+=("$line")
   done
-  csv="$(printf '%s\n' "${options[@]}" | paste -sd, -)"
+  csv="$(printf '%s\n' "${preselect[@]}" | paste -sd, -)"
   local picked
   picked=$(printf '%s\n' "${options[@]}" | gum choose --no-limit \
     --cursor.foreground "$ACCENT" \
@@ -1442,7 +1928,19 @@ main() {
     _start_sudo_keepalive || true
   fi
   if (( ASSUME_YES )); then
-    PICKED_IDS=("${MOD_ORDER[@]}")
+    if [[ -n "$ONLY_LIST" ]]; then
+      # --only= is an explicit request for exactly these ids, so it must be
+      # able to reach an opt-in module. Start from everything and let the
+      # filter below narrow it; otherwise `--yes --only=dcli-sync-extra`
+      # would filter an already-pruned list down to nothing and exit 0 as
+      # if it had worked.
+      PICKED_IDS=("${MOD_ORDER[@]}")
+    else
+      PICKED_IDS=()
+      for id in "${MOD_ORDER[@]}"; do
+        _is_optin "$id" || PICKED_IDS+=("$id")
+      done
+    fi
   else
     page_module_picker
   fi

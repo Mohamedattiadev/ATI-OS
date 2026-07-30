@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Dotfiles
+Description=Username and progress bar, coloured from the active theme palette
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/dotfiles
+ScriptFile=/usr/share/plymouth/themes/dotfiles/dotfiles.script

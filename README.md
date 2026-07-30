@@ -23,7 +23,33 @@ git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
   && ./install.sh
 ```
 
-Then `startx`. That's it — 34 modules run end to end, nothing to follow up on.
+Then `startx`. That's it — 39 modules run end to end, and you land on a
+complete desktop: qtile, all 22 themes, every font, every widget.
+
+### Optional extras — you do not need these
+
+The command above deliberately leaves out packages that have nothing to do
+with the desktop. **Skipping them changes nothing about qtile, the themes,
+the fonts or the widgets** — they are tools for work you may simply not do
+on this machine. Run this whenever you actually want them, days later is
+fine:
+
+```bash
+~/.dotfiles/installScripts/wizard.sh --yes --only=dcli-sync-extra
+```
+
+| | |
+|---|---|
+| **Containers** | `docker` · `docker-buildx` · `docker-compose` |
+| **Dev extras** | `github-cli` · `git-lfs` · `clang` · `jdk17-openjdk` · `uv` · `ruff` |
+| **Virtualisation** | `qemu-desktop` · `edk2-ovmf` — only `vm-test.sh` needs these |
+| **Printing** | `cups` · `cups-pk-helper` · `system-config-printer` |
+| **Diagnostics** | `xorg-server-xephyr` (test a qtile config in a nested X) · `mesa-utils` (`glxinfo`, for picom trouble on unfamiliar graphics) |
+
+The list lives in
+[`.config/arch-config/modules/optional.yaml`](.config/arch-config/modules/optional.yaml)
+— add to it and the command above picks the addition up. It is re-runnable:
+already-installed packages are skipped, not reinstalled.
 
 > Want to pick modules or preview first? See [Install options](#install-options).
 > Something broken? [TROUBLESHOOTING.md](TROUBLESHOOTING.md) logs real cases
@@ -137,6 +163,108 @@ passthrough.</sub>
 
 ---
 
+### The logo, and finding out what any of this does
+
+**Left-click the logo in the bar.** A desktop with 79 documented
+keybindings, 22 themes and a dozen custom tools has a discovery problem,
+not a terminal-launching problem — so the most prominent click in the bar
+answers *"what can this thing do"*.
+
+| | |
+|---|---|
+| **Left** | documentation menu |
+| **Middle** | terminal *(where left-click used to go; `Mod+Return` also still works)* |
+| **Right** | `rofi -show drun` |
+
+Six sections, and **every one is generated from the live system** — a
+hand-written menu drifts the moment anything is added, and silently:
+
+| Section | What it lists | Where it comes from |
+|---|---|---|
+| **Keybindings** | 79 shortcuts, searchable | `config.py`, parsed by `qtile-keys` via Python's AST |
+| **Cheatsheets** | qtile · vim · fish popups | the existing `Super+Shift+K` chord |
+| **Documentation** | README · troubleshooting · packages · boot · the config itself | the files, opened at a line |
+| **Commands** | all 38 tools this repo installs | each script's own header comment |
+| **Appearance** | theme · UI scale · wallpaper · splash | the existing pickers |
+| **System** | about · package audit · failed services · display + GPU | run live at open time |
+
+**Keybindings** uses the AST rather than a regex because bindings nest
+several `KeyChord` levels deep — a regex pass found 44 of 79 and lost every
+chord prefix. Mode keys read `Super+P , C`, not a bare `C`.
+
+**Troubleshooting** indexes all 126 headings and jumps to the line. Dumping
+144 KB into a pager and asking you to scroll is not documentation.
+
+**Commands** reads each script's `# name — description` header, so adding a
+tool documents it here with no second edit.
+
+Everything opens in **nvim inside a centred floating window**
+(`kitty --class docs-view`, matched by `float_rules` and centred by
+`_float_and_center_docs`) — 78% × 80% of the screen, so reading a doc never
+disturbs the tiling layout.
+
+```bash
+rofi_docs               # the menu
+rofi_docs keys          # jump straight to a section
+qtile-keys              # the binding list on stdout
+```
+
+---
+
+### Boot splash *(opt-in)*
+
+Arch boots with the kernel log on screen — a wall of scrolling text ending
+in a mirror list. Worse than ugly: a boot with no feedback is
+indistinguishable from a boot that has hung.
+
+`boot-splash` replaces it with **your username**, large, over a progress
+bar, in the colours of whatever theme is currently active. The name is
+generated, never hardcoded: user `ati` gets "Ati", user `beko` gets "Beko".
+
+**It follows your theme.** `theme-apply` re-renders it on every switch, so
+going gruvbox → nord changes the boot screen too, instead of leaving it
+frozen in whatever palette was active when it was first generated.
+
+```bash
+boot-splash generate       # render + install the theme (touches nothing about boot)
+boot-splash preview        # see exactly what will appear, at your resolution
+boot-splash preview --real # run plymouth for real on a spare VT
+boot-splash check          # 12 pre-reboot safety checks
+boot-splash enable         # wire into initramfs + kernel cmdline
+boot-splash disable        # reverse all of it
+boot-splash status         # what is installed, hooked and set
+```
+
+`preview` composites the **real installed assets** at your actual screen
+resolution — not a mock-up of the design. Running `plymouthd` from a
+desktop session shows nothing at all, because plymouth draws to the DRM
+console and X owns the display; that looks like a broken theme when it is
+fine, so `preview` does the honest thing instead.
+
+It is **opt-in and not part of a default install**, because `enable` edits
+`/etc/mkinitcpio.conf` and the kernel cmdline and rebuilds the initramfs —
+a different category of risk from every other module here.
+
+Two safety properties worth knowing:
+
+- **The LTS rescue entries stay verbose.** `boot-fallback` strips
+  `quiet`/`splash` from their options. A rescue entry that inherited the
+  splash would show a logo while hiding the kernel messages saying what
+  broke — indistinguishable from the failed boot you are escaping.
+- **`enable` refuses unless `check` passes.** Twelve checks run first —
+  plymouth installed, colour placeholders substituted, theme script braces
+  balanced, plymouth recognises the theme, a verbose LTS entry exists and
+  is not splashed, the LTS kernel is on the ESP. A failure changes nothing.
+- **Both config files are backed up** (`*.bak-boot-splash`), and `disable`
+  restores them and rebuilds.
+
+```bash
+./wizard.sh --yes --only=boot-splash    # install plymouth + enable
+./wizard.sh --uninstall --only=boot-splash
+```
+
+---
+
 ## Videos
 
 **System overview** — the GIF at the top of this page is a 33s cut of it.
@@ -192,6 +320,66 @@ already forces. Without it the TTY drops to bash and `letsgo` is
 
 Systems that don't match may need manual intervention.
 
+### Any screen size
+
+Every pixel value in the qtile config was tuned on a 1366×768 14" panel.
+Copied unchanged to a 15" 4K laptop, that is a sliver of a bar with
+unreadable text — the one thing these dotfiles cannot keep identical by
+copying files, because the right answer depends on the glass.
+
+`ui-scale` computes a factor from the primary display's real DPI and
+writes it to `~/.cache/qtile/ui_scale` (per-machine, untracked). qtile
+multiplies every font size, bar height, icon and margin by it; `Xft.dpi`
+carries the same factor into GTK, Qt, rofi and dunst. It runs from
+`.xinitrc` on every login, so docking to an external monitor re-scales.
+
+| Screen | DPI | scale |
+|---|---|---|
+| 14" 1366×768 *(reference)* | 125 | 1.00 |
+| 24" 1080p | 92 | 1.00 |
+| 27" 1440p | 109 | 1.00 |
+| 15" 1080p | 142 | 1.15 |
+| 14" 1080p | 158 | 1.25 |
+| 13" 1440p | 227 | 1.80 |
+| 15" 4K | 284 | 2.25 |
+
+Physical size, not resolution: a 24" 1080p monitor sits further away and
+has larger pixels, so it correctly stays at 1.00 rather than shrinking.
+The factor never goes below the reference — that panel is already small.
+
+Disagree with the result? It is two clicks, not a config edit:
+
+```bash
+ui-scale-toggle        # rofi picker  (also: docs menu → UI scale)
+ui-scale --set 1.25    # pin a value; survives re-detection
+ui-scale --auto        # back to detection
+ui-scale --show        # detected vs pinned vs active
+```
+
+### Any x86_64 machine — Intel, AMD or NVIDIA
+
+Nothing about the GPU is hardcoded. The `gpu` module reads the display
+controller's PCI vendor id and installs the matching driver set
+(`graphics-intel.yaml` / `-amd.yaml` / `-nvidia.yaml`), then reads
+`/proc/cpuinfo` and installs `intel-ucode` or `amd-ucode` to match. A
+laptop with switchable graphics gets both sets; a VM gets neither, because
+mesa's generic KMS driver is already correct there.
+
+This matters more than it sounds. `picom.conf` asks for `backend = "glx"`
+with `vsync = true`, so a machine with no driver for its actual GPU falls
+back to llvmpipe software rendering — the animations, rounded corners and
+shadows the desktop is built around either crawl or vanish, with nothing in
+the logs pointing at a package list. NVIDIA additionally gets
+`--no-use-damage` written to a per-machine `picom/gpu.env`, because its
+proprietary GLX is the one stack where that optimisation smears during
+animations. The result is that the motion looks the same on all three.
+
+**ARM (aarch64) is not supported.** The `gpu` module detects a non-x86_64
+architecture, warns, and skips PCI and microcode detection rather than
+installing something wrong — but the AUR packages this repo depends on
+(`picom-ftlabs-git`, `qtile-extras`, `brave-bin`, `google-chrome`) are not
+all built for ARM, so a full install will not complete.
+
 > Based on [Distrotube's](https://www.youtube.com/c/DistroTube/videos) Qtile
 > configuration, extended with my own customization and workflow. It follows the
 > general structure and philosophy of the original; the final implementation
@@ -213,6 +401,8 @@ Systems that don't match may need manual intervention.
 ./wizard.sh --yes           # same as ./install.sh
 ./wizard.sh --only=stow,themes,browser-flags   # subset
 ./wizard.sh --skip=whisper,whisper-fast,piper               # skip heavy downloads
+./wizard.sh --yes --only=dcli-sync-extra    # opt-in extras (docker, jdk, qemu, printing)
+./wizard.sh --audit         # package drift check (read-only, no sudo)
 ./wizard.sh --uninstall     # reverse wizard writes (safe: never
                             #   touches packages or downloaded models)
 ./wizard.sh --uninstall --dry-run  # preview reversals
@@ -223,7 +413,7 @@ ignored — because an ignored filter means the full live install runs instead,
 and its second module is `pacman -Syu`. Unknown flags and unknown module ids
 fail the same way: exit 2, nothing touched.
 
-Every one of the 34 modules has a reversal, even where that reversal is a
+Every one of the 41 modules has a reversal, even where that reversal is a
 deliberate no-op (`dcli-sync`, `piper`, `whisper`, `whisper-fast`,
 `wallpapers` — removing those would delete packages, multi-hundred-MB
 downloads, or a ~13x-faster build the uninstaller has no business
@@ -234,7 +424,7 @@ uninstall, with earlier modules already reversed.
 **What `./install.sh` does**
 
 - Auto-bootstraps `gum` via pacman (~2 s)
-- Runs all 34 modules end-to-end
+- Runs all 39 modules end-to-end
 - Keeps `sudo` alive for the whole run (primed once, refreshed in the
   background) so long AUR builds don't silently drop package installs when the
   credential cache would otherwise expire mid-run
@@ -247,7 +437,7 @@ Themes / Browsers / Apps / Media), spinners, progress bars and colored badges.
 On failure it shows a red-bordered error tail and prompts **retry · skip ·
 quit** (unless `--yes`, which auto-skips).
 
-**The 34 modules**
+**The 39 default modules**
 
 | # | id | What |
 | - | -- | ---- |
@@ -285,6 +475,8 @@ quit** (unless `--yes`, which auto-skips).
 | 32 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
 | 33 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
 | 34 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| — | `dcli-sync-extra` | **Opt-in, never in a default run.** docker · jdk · qemu · printing — see [Optional extras](#optional-extras--you-do-not-need-these) |
+| — | `boot-splash` | **Opt-in, never in a default run.** plymouth splash with your username + progress bar; edits kernel cmdline + initramfs |
 
 **Optional post-install tuning** — two interactive scripts, not wired into
 `install.sh` because they need a reboot, are per-machine, and prompt before
@@ -306,6 +498,53 @@ bash ~/.dotfiles/installScripts/vm-test.sh --check   # creates nothing
 bash ~/.dotfiles/installScripts/vm-test.sh --smoke   # 2-min headless boot check
 bash ~/.dotfiles/installScripts/vm-test.sh           # fetch ISO, boot
 ```
+
+**The 3-minute version** — `container-test.sh` runs the config-only modules
+on a throw-away Arch container. It cannot test X11, systemd, the GPU or
+theme rendering, so it does not replace `vm-test.sh`. What it does catch,
+fast enough to run on every change:
+
+- a config path that only resolved because `$HOME` happened to be `/home/ati`
+  (it installs as a user called `tester` and greps the deployed result)
+- a `@HOME@` template that never got rendered
+- a step that is not idempotent — it runs the wizard twice and diffs
+- a module yaml that no longer parses
+
+It populates the container from `git ls-files`, not from the directory and
+not from a clone: that is exactly what a fresh clone receives, so anything
+gitignored is correctly absent, and staged work is tested before it is
+committed.
+
+```bash
+bash ~/.dotfiles/installScripts/container-test.sh --check  # verify runtime
+bash ~/.dotfiles/installScripts/container-test.sh          # full run
+bash ~/.dotfiles/installScripts/container-test.sh --keep   # leave it to poke at
+```
+
+**The 5-second version** — `validate.sh` needs no container and no root:
+
+```bash
+bash ~/.dotfiles/installScripts/validate.sh
+```
+
+It parses every tracked shell, Python, fish and YAML file, **loads the
+qtile config for real** (qtile falls back to its stock config on an error,
+so the failure mode is a desktop that looks like a stranger's rather than
+an error anyone sees), greps for hardcoded home paths, checks every
+`.tmpl` has a renderer, and runs a full wizard dry-run.
+
+The `githooks` module symlinks a pre-commit hook that runs `validate.sh`
+plus `--audit` — the two fast layers only, because a hook that takes three
+minutes gets `--no-verify`'d within a week.
+
+**The four layers, cheapest first.** Each catches what the one above cannot:
+
+| | time | catches |
+|---|---|---|
+| `validate.sh` | seconds | syntax, qtile config load, hardcoded paths, unrendered templates |
+| `wizard.sh --audit` | seconds | declared packages vs installed, both directions |
+| `container-test.sh` | ~3 min | a real install as a user who is **not** you; idempotency |
+| `vm-test.sh` | ~40 min | X11, systemd, GPU, boot — the parts nothing else can reach |
 
 </details>
 

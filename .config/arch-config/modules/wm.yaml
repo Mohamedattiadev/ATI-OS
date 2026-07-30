@@ -7,7 +7,16 @@ packages:
   - qtile-extras
   - qt6ct            # Qt apps (telegram) ignore the GTK theme; qt6ct reads
   - qt5ct            # the palette theme-apply writes, so they follow the mode
-  - picom-ftlabs-git  # animation-capable fork -- vanilla picom has no animation support at all
+  # picom is NOT declared here. The animation-capable fork is built from a
+  # PINNED commit by the wizard's `picom-pin` module, from
+  # arch-config/pkgbuilds/picom-ftlabs-pinned/.
+  #
+  # The AUR package picom-ftlabs-git tracks `#branch=next`, so it rebuilds
+  # from whatever the branch tip is at install time. Two machines set up
+  # from this repo months apart would get two different compositors from
+  # the same declared name -- and picom decides whether animations, rounded
+  # corners, shadows and blur look right. Declaring it here would have dcli
+  # install the floating AUR build and conflict with the pinned one.
   - light
   - betterlockscreen
   - gromit-mpx

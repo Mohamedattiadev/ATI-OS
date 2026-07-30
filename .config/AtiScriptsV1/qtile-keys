@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""qtile-keys — print every documented qtile keybinding, parsed from the
+live config.
+
+Why parse instead of maintaining a list: a hand-written cheatsheet drifts
+the moment someone adds a binding, and silently. This reads the config
+qtile is actually running, so `desc=` is the single source of truth --
+add a binding with a description and it shows up here with no second edit.
+
+AST, not regex: bindings are nested inside KeyChord(...) lists several
+levels deep, and a chord's prefix has to survive that nesting or every
+mode key prints as a bare letter. A regex pass got 44 of them and lost
+every chord prefix; this gets all of them with the prefix attached.
+
+Usage:
+  qtile-keys                 aligned "combo   description" lines
+  qtile-keys --config PATH   parse a different config
+"""
+import ast, os, sys
+
+MODMAP = {"mod": "Super", "mod4": "Super", "shift": "Shift",
+          "control": "Ctrl", "mod1": "Alt", "alt": "Alt"}
+KEYMAP = {"Return": "Enter", "space": "Space", "grave": "`", "slash": "/",
+          "period": ".", "comma": ",", "minus": "-", "equal": "+",
+          "bracketleft": "[", "bracketright": "]", "Tab": "Tab", "Escape": "Esc"}
+
+def const(n):
+    return n.value if isinstance(n, ast.Constant) else None
+
+def keyname(v):
+    if not isinstance(v, str) or not v:
+        return ""
+    return KEYMAP.get(v, v if len(v) > 1 else v.upper())
+
+def mods(node, modvar):
+    out = []
+    if isinstance(node, (ast.List, ast.Tuple)):
+        for e in node.elts:
+            if isinstance(e, ast.Name):
+                out.append(MODMAP.get(modvar.get(e.id, e.id), e.id))
+            else:
+                v = const(e)
+                if isinstance(v, str):
+                    out.append(MODMAP.get(v, v.title()))
+    return out
+
+def callname(n):
+    f = n.func
+    return f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+
+cfg = os.path.expanduser("~/.config/qtile/config.py")
+args = sys.argv[1:]
+if args and args[0] == "--config" and len(args) > 1:
+    cfg = args[1]
+elif args and args[0].startswith("--config="):
+    cfg = args[0].split("=", 1)[1]
+
+try:
+    src = open(cfg, encoding="utf-8").read()
+except OSError as e:
+    sys.exit(f"qtile-keys: cannot read {cfg}: {e}")
+tree = ast.parse(src)
+
+MODVAR = {}
+for n in ast.walk(tree):
+    if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+        v = const(n.value)
+        if isinstance(v, str):
+            MODVAR[n.targets[0].id] = v
+
+rows = []
+
+def emit_key(call, prefix):
+    if len(call.args) < 2:
+        return
+    m = mods(call.args[0], MODVAR)
+    k = keyname(const(call.args[1]))
+    if not k:
+        return
+    combo = "+".join(m + [k]) if m else k
+    if prefix:
+        combo = f"{prefix} , {combo}"
+    for kw in call.keywords:
+        if kw.arg == "desc":
+            d = const(kw.value)
+            if isinstance(d, str) and d:
+                rows.append((combo, d))
+
+def descend(node, prefix):
+    """Walk a subtree, attributing every Key to `prefix`, recursing into
+    nested KeyChords so a chord inside a chord keeps both levels."""
+    for n in ast.iter_child_nodes(node):
+        if isinstance(n, ast.Call):
+            nm = callname(n)
+            if nm == "KeyChord" and len(n.args) >= 3:
+                m = mods(n.args[0], MODVAR)
+                k = keyname(const(n.args[1]))
+                sub = "+".join(m + [k]) if k else "+".join(m)
+                if prefix:
+                    sub = f"{prefix} , {sub}"
+                descend(n.args[2], sub)
+                for extra in n.args[3:]:
+                    descend(extra, prefix)
+                for kw in n.keywords:
+                    descend(kw.value, prefix)
+                continue
+            if nm == "Key":
+                emit_key(n, prefix)
+                continue
+        descend(n, prefix)
+
+descend(tree, None)
+
+seen, uniq = set(), []
+for c, d in rows:
+    if (c, d) not in seen:
+        seen.add((c, d)); uniq.append((c, d))
+uniq.sort(key=lambda r: (" , " in r[0], r[0].lower()))
+
+if not uniq:
+    print("no bindings with a desc= found")
+else:
+    w = max(len(c) for c, _ in uniq)
+    for c, d in uniq:
+        print(f"{c.ljust(w)}   {d}")

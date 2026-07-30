@@ -680,6 +680,7 @@ render_dunstrc() {
       -e "s|{{ACCENT}}|$accent|g" \
       -e "s|{{OK}}|$ok|g" \
       -e "s|{{URGENT}}|$urgent|g" \
+      -e "s|@HOME@|$HOME|g" \
       "$DUNST_TMPL" >"$DUNSTRC"
 }
 
@@ -1380,6 +1381,27 @@ EOF
       disown
     fi
   fi
+fi
+
+# ---------------------------------------------------------------------
+# Boot splash
+# ---------------------------------------------------------------------
+# Re-render the plymouth splash in the new palette, so the boot screen
+# matches the desktop instead of being frozen in whatever theme happened
+# to be active when it was first generated. Without this, switching from
+# gruvbox to nord leaves you booting into a gruvbox-coloured splash.
+#
+# Guarded three ways, because a theme switch must never block:
+#   * skipped entirely unless the theme is already installed -- generating
+#     it here would be a surprising side effect of changing colours
+#   * `sudo -n` only: writing to /usr/share needs root, and a password
+#     prompt in the middle of a theme switch would hang it with no
+#     terminal to type into
+#   * backgrounded and silenced, so a failure costs nothing
+if [[ -d /usr/share/plymouth/themes/dotfiles ]] \
+   && command -v boot-splash >/dev/null 2>&1 \
+   && sudo -n true 2>/dev/null; then
+  ( boot-splash generate >/dev/null 2>&1 & ) 2>/dev/null || true
 fi
 
 notify-send "theme-apply" "Theme -> $MODE" 2>/dev/null || true

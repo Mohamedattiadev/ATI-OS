@@ -1,5 +1,10 @@
-#!/home/ati/.config/GptScript/venv/bin/python
+#!/usr/bin/env -S sh -c 'exec "$(dirname "$0")/venv/bin/python" "$0" "$@"'
 # -*- coding: utf-8 -*-
+# The shebang resolves the venv relative to THIS file rather than naming
+# /home/ati, so it works for any user. The venv is still required (dotenv,
+# openai are not system packages). `env -S` splits the argument string, and
+# `sh -c CMD name args...` sets $0 to the script path -- which is what
+# dirname reads to find the sibling venv/.
 
 import os
 import subprocess

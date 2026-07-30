@@ -131,12 +131,40 @@ fi
 # =====================================================
 info "[4/9] auto-cpufreq"
 
+# power-profiles-daemon drives the same CPU governor auto-cpufreq does.
+# With both enabled they fight, and which one wins is a race decided at
+# boot -- so the CPU behaves differently between boots for no visible
+# reason. archinstall installs PPD by default, so a fresh machine hits
+# this without anyone choosing it. auto-cpufreq is this repo's declared
+# choice (system-tools.yaml), so PPD loses.
+if systemctl is-enabled power-profiles-daemon.service &>/dev/null; then
+  sudo systemctl disable --now power-profiles-daemon.service
+  ok "power-profiles-daemon disabled (conflicts with auto-cpufreq)"
+fi
+
 if pacman -Q auto-cpufreq &>/dev/null; then
-  if ! systemctl is-enabled auto-cpufreq.service &>/dev/null; then
-    sudo systemctl enable --now auto-cpufreq.service
-    ok "auto-cpufreq enabled"
+  # Check enabled AND active, not just enabled.
+  #
+  # This used to test is-enabled alone and `skip` on success -- which is
+  # how this machine ended up with auto-cpufreq enabled-but-dead for an
+  # unknown length of time. The unit was enabled, so every run reported
+  # "already enabled" and moved on, while power-profiles-daemon quietly
+  # did the governor work instead. An enabled unit that is not running is
+  # the failure this branch exists to catch, so it has to look for it.
+  _acf_enabled=0; _acf_active=0
+  systemctl is-enabled auto-cpufreq.service &>/dev/null && _acf_enabled=1
+  systemctl is-active  auto-cpufreq.service &>/dev/null && _acf_active=1
+  if (( _acf_enabled && _acf_active )); then
+    skip "auto-cpufreq already enabled and running"
   else
-    skip "auto-cpufreq already enabled"
+    (( _acf_enabled )) && (( ! _acf_active )) \
+      && warn "auto-cpufreq was enabled but NOT running — starting it"
+    sudo systemctl enable --now auto-cpufreq.service
+    if systemctl is-active auto-cpufreq.service &>/dev/null; then
+      ok "auto-cpufreq enabled and running"
+    else
+      warn "auto-cpufreq still not active — check: systemctl status auto-cpufreq"
+    fi
   fi
 else
   warn "auto-cpufreq not installed (add to dcli or: yay -S auto-cpufreq)"

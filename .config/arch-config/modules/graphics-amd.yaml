@@ -1,0 +1,19 @@
+description: GPU vendor set -- AMD (selected at runtime by wizard step_gpu)
+
+# NOT in enabled_modules -- see graphics-intel.yaml for why.
+
+packages:
+  - vulkan-radeon        # RADV, the Mesa Vulkan driver for GCN and later
+  - libva-mesa-driver    # VA-API backend for AMD (the Intel equivalent of
+                         # intel-media-driver)
+  - mesa-vdpau           # VDPAU -- mpv still prefers it on some AMD parts
+  - radeontop            # the AMD counterpart to intel_gpu_top
+
+# xf86-video-amdgpu is deliberately NOT here. Modern amdgpu is handled by
+# the kernel + the modesetting DDX built into xorg-server; installing the
+# separate DDX is a known source of tearing and of picom's glx backend
+# misbehaving on current hardware. Arch's own wiki recommends leaving it
+# out unless something specific requires it.
+
+exclude: []
+conflicts: []

@@ -16,9 +16,18 @@
 
 # Touchpad scroll speed: pixels of finger travel per scroll unit (default 15).
 # Higher = slower, smoother two-finger scrolling. Device id is not stable across
-# boots, so resolve it by name.
-touchpad_id=$(xinput list --id-only "AlpsPS/2 ALPS GlidePoint" 2>/dev/null)
-[ -n "$touchpad_id" ] && xinput set-prop "$touchpad_id" "libinput Scrolling Pixel Distance" 40 2>/dev/null
+# boots, so resolve it dynamically.
+#
+# This used to match the literal name "AlpsPS/2 ALPS GlidePoint" -- this
+# laptop's touchpad. The lookup is guarded, so on any other machine it just
+# found nothing and the tuning silently never applied: scrolling felt
+# different on a new PC with no error to explain why. Match on the libinput
+# property instead, which every touchpad has and no mouse does.
+for touchpad_id in $(xinput list --id-only 2>/dev/null); do
+  xinput list-props "$touchpad_id" 2>/dev/null \
+    | grep -q "libinput Scrolling Pixel Distance" || continue
+  xinput set-prop "$touchpad_id" "libinput Scrolling Pixel Distance" 40 2>/dev/null
+done
 
 # ---------------------------------------------------------
 # 2. Core environment (ESSENTIAL FAST START)
@@ -26,8 +35,17 @@ touchpad_id=$(xinput list --id-only "AlpsPS/2 ALPS GlidePoint" 2>/dev/null)
 # These should start IMMEDIATELY without delays.
 # Avoid slow apps here — keep this section lightweight.
 
+# Per-GPU picom flags, written by the wizard's `gpu` module from the PCI
+# IDs of this machine (see step_gpu). Untracked and per-host: NVIDIA needs
+# use-damage off or animations smear, Intel and AMD do not. Absent file =
+# no flags, which is the correct default.
+PICOM_GPU_FLAGS=""
+# shellcheck source=/dev/null
+[ -f "$HOME/.config/picom/gpu.env" ] && . "$HOME/.config/picom/gpu.env"
+
 (
-  picom &          # Compositor (transparency, shadows, animations)
+  # shellcheck disable=SC2086  # deliberate word splitting: flags or nothing
+  picom $PICOM_GPU_FLAGS &   # Compositor (transparency, shadows, animations)
   dunst &          # Notification daemon
   nm-applet &      # Network tray icon
   blueman-applet & # Bluetooth tray icon

@@ -170,8 +170,15 @@ c.scrolling.smooth = True
 # -----------------------------------------------------------------------------
 # Startup Pages
 # -----------------------------------------------------------------------------
-c.url.default_page = "file:///home/ati/.config/qutebrowser/html/homepage.html"
-c.url.start_pages = ["file:///home/ati/.config/qutebrowser/html/homepage.html"]
+# Hardcoding /home/ati here meant every other machine opened a blank page
+# instead of the themed homepage theme-apply generates.
+import os as _os
+
+_homepage = "file://" + _os.path.expanduser(
+    "~/.config/qutebrowser/html/homepage.html"
+)
+c.url.default_page = _homepage
+c.url.start_pages = [_homepage]
 
 # -----------------------------------------------------------------------------
 # Editor & Clipboard

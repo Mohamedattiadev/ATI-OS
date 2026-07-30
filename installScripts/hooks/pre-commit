@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# pre-commit — refuse a commit that breaks the desktop or its portability.
+#
+# Installed by the wizard's `githooks` module into .git/hooks/pre-commit.
+#
+# Deliberately runs only the two FAST layers (validate.sh + --audit,
+# together a few seconds). A pre-commit hook that takes three minutes gets
+# bypassed with --no-verify within a week, and a bypassed hook protects
+# nothing. The container and VM layers stay manual.
+#
+# Bypass when you genuinely need to:  git commit --no-verify
+
+set -Eeuo pipefail
+
+REPO="$(git rev-parse --show-toplevel)"
+d=$'\033[90m'; r=$'\033[31m'; g=$'\033[32m'; o=$'\033[0m'
+
+printf '%s[pre-commit]%s validating…\n' "$d" "$o"
+
+if ! "$REPO/installScripts/validate.sh" --quiet; then
+  printf '%s[pre-commit] validate.sh failed — commit refused%s\n' "$r" "$o" >&2
+  printf '%s             run ./installScripts/validate.sh to see details%s\n' "$d" "$o" >&2
+  printf '%s             or: git commit --no-verify%s\n' "$d" "$o" >&2
+  exit 1
+fi
+
+# The audit reads the LIVE system, so it is only meaningful on the machine
+# the repo is deployed to. On a checkout that is not deployed (a CI box, a
+# worktree, a fresh clone) it would fail for reasons that have nothing to
+# do with the commit -- so treat a non-Arch or non-deployed host as "not
+# applicable" rather than as a failure.
+if [[ -f /etc/arch-release ]] && command -v pacman >/dev/null 2>&1 \
+   && [[ "$(readlink -f "$HOME/.dotfiles" 2>/dev/null)" == "$REPO" ]]; then
+  if ! "$REPO/installScripts/wizard.sh" --audit >/dev/null 2>&1; then
+    printf '%s[pre-commit] package drift or a missing declared package%s\n' "$r" "$o" >&2
+    "$REPO/installScripts/wizard.sh" --audit 2>&1 | sed 's/^/    /' >&2 || true
+    printf '%s             fix the module yaml, or: git commit --no-verify%s\n' "$d" "$o" >&2
+    exit 1
+  fi
+else
+  printf '%s[pre-commit]%s not the deployed machine — package audit skipped\n' "$d" "$o"
+fi
+
+printf '%s[pre-commit]%s %s✓%s ok\n' "$d" "$o" "$g" "$o"

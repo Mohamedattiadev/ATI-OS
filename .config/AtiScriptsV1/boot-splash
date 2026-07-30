@@ -1,0 +1,373 @@
+#!/usr/bin/env bash
+# boot-splash — a plymouth splash showing THIS user's name and a progress bar.
+#
+# Arch boots with the kernel log on screen: a wall of scrolling text ending
+# in a mirror list. That is fine for a server and wrong for a desktop --
+# and worse, a boot with no feedback is indistinguishable from a boot that
+# has hung. This replaces it with the username, large, over a progress bar,
+# in the colours of the theme that is currently active.
+#
+# The name is generated, not hardcoded: user `ati` gets "Ati", user `beko`
+# gets "Beko". Nothing about this is specific to one machine.
+#
+# Commands:
+#   boot-splash generate    render assets + install the theme (no boot changes)
+#   boot-splash preview     composite the real assets at this resolution and show it
+#   boot-splash preview --real   run plymouth for real on a spare VT
+#   boot-splash check       every pre-reboot safety check
+#   boot-splash enable      generate, then wire it into initramfs + cmdline
+#   boot-splash disable     reverse everything enable did
+#   boot-splash status      what is installed, hooked and set
+#
+# `generate` and `preview` are safe. `enable` edits mkinitcpio.conf and the
+# kernel cmdline and rebuilds the initramfs -- see the guards in do_enable.
+
+set -Eeuo pipefail
+
+THEME_NAME="dotfiles"
+THEME_DIR="/usr/share/plymouth/themes/$THEME_NAME"
+SRC_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}/.config/arch-config/plymouth"
+PALETTE="$HOME/.cache/qtile/current_palette.json"
+MKINITCPIO="/etc/mkinitcpio.conf"
+KCMDLINE="/etc/kernel/cmdline"
+FONT="${BOOT_SPLASH_FONT:-/usr/share/fonts/TTF/FiraCodeNerdFontPropo-Bold.ttf}"
+
+r=$'\033[31m'; g=$'\033[32m'; y=$'\033[33m'; d=$'\033[90m'; o=$'\033[0m'
+say()  { printf '%s[boot-splash]%s %s\n' "$d" "$o" "$*"; }
+ok()   { printf '%s[boot-splash]%s %s✓%s %s\n' "$d" "$o" "$g" "$o" "$*"; }
+warn() { printf '%s[boot-splash]%s %s!%s %s\n' "$d" "$o" "$y" "$o" "$*"; }
+die()  { printf '%s[boot-splash]%s %s✗%s %s\n' "$d" "$o" "$r" "$o" "$*" >&2; exit 1; }
+
+need() { command -v "$1" >/dev/null 2>&1 || die "missing '$1'"; }
+
+# ── colours ─────────────────────────────────────────────────────────
+# Read the palette theme-apply wrote so the splash matches the desktop the
+# user actually sees. Falls back to doom-one, which is the repo default.
+read_palette() {
+  BG="#1c2028"; FG="#bbc2cf"; ACCENT="#51afef"
+  [[ -f "$PALETTE" ]] || return 0
+  local out
+  out="$(python3 - "$PALETTE" <<'PY' 2>/dev/null || true
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+# blue is the accent in every palette this repo ships; fall back through
+# the keys that always exist rather than guessing a hex value.
+print(d.get("bg")     or "#1c2028")
+print(d.get("fg")     or "#bbc2cf")
+print(d.get("blue")   or d.get("accent") or "#51afef")
+PY
+)"
+  [[ -n "$out" ]] && { BG="$(sed -n 1p <<<"$out")"; FG="$(sed -n 2p <<<"$out")"; ACCENT="$(sed -n 3p <<<"$out")"; }
+}
+
+# plymouth's script module wants colour components as 0.0-1.0 floats, not
+# hex, and it has no parsing helpers -- so substitute them into the script.
+hex_to_float() {
+  local h="${1#\#}"
+  printf '%s %s %s' \
+    "$(awk -v v="$((16#${h:0:2}))" 'BEGIN{printf "%.4f", v/255}')" \
+    "$(awk -v v="$((16#${h:2:2}))" 'BEGIN{printf "%.4f", v/255}')" \
+    "$(awk -v v="$((16#${h:4:2}))" 'BEGIN{printf "%.4f", v/255}')"
+}
+
+# ── asset generation ────────────────────────────────────────────────
+do_generate() {
+  need magick
+  need python3
+  [[ -d "$SRC_DIR" ]] || die "theme source not found at $SRC_DIR"
+  [[ -f "$FONT" ]] || {
+    warn "font not found: $FONT — falling back to whatever fontconfig picks"
+    FONT=""
+  }
+
+  read_palette
+  local title
+  # ${var^} uppercases only the first character: ati -> Ati, beko -> Beko.
+  title="${USER^}"
+  say "user '$USER' -> title '$title'   bg=$BG fg=$FG accent=$ACCENT"
+
+  local tmp; tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+
+  # Title. Rendered at a fixed large point size against a transparent
+  # background; the script centres it, so the size only has to look right
+  # relative to the screen, which -trim guarantees.
+  local fontargs=()
+  [[ -n "$FONT" ]] && fontargs=(-font "$FONT")
+  magick -background none "${fontargs[@]}" -fill "$ACCENT" \
+    -pointsize 140 label:"$title" -trim +repage "$tmp/title.png"
+
+  # Progress bar. Track is the foreground colour at low opacity, fill is
+  # the accent. 520x8 is a deliberate ratio: wide enough to read as a bar,
+  # thin enough not to compete with the name.
+  magick -size 520x8 xc:none -fill "$FG" -draw "roundrectangle 0,0 519,7 4,4" \
+    -alpha set -channel A -evaluate multiply 0.18 +channel "$tmp/progress_box.png"
+  magick -size 520x8 xc:none -fill "$ACCENT" -draw "roundrectangle 0,0 519,7 4,4" \
+    "$tmp/progress_bar.png"
+
+  # Substitute the colour floats into the script.
+  read -r BR BG_ BB <<<"$(hex_to_float "$BG")"
+  read -r FR FG_ FB <<<"$(hex_to_float "$FG")"
+  sed -e "s/BG_R/$BR/g" -e "s/BG_G/$BG_/g" -e "s/BG_B/$BB/g" \
+      -e "s/FG_R/$FR/g" -e "s/FG_G/$FG_/g" -e "s/FG_B/$FB/g" \
+      "$SRC_DIR/$THEME_NAME.script" > "$tmp/$THEME_NAME.script"
+
+  sudo install -d -m755 "$THEME_DIR"
+  sudo install -m644 "$tmp/title.png"        "$THEME_DIR/title.png"
+  sudo install -m644 "$tmp/progress_box.png" "$THEME_DIR/progress_box.png"
+  sudo install -m644 "$tmp/progress_bar.png" "$THEME_DIR/progress_bar.png"
+  sudo install -m644 "$tmp/$THEME_NAME.script" "$THEME_DIR/$THEME_NAME.script"
+  sudo install -m644 "$SRC_DIR/$THEME_NAME.plymouth" "$THEME_DIR/$THEME_NAME.plymouth"
+
+  ok "theme installed to $THEME_DIR"
+}
+
+# ── preview ─────────────────────────────────────────────────────────
+# Composites the REAL installed theme assets at THIS screen's resolution
+# and opens the result. Not a mock-up of the design -- the same title.png,
+# progress_box.png and progress_bar.png plymouth will use, laid out by the
+# same rules dotfiles.script applies.
+#
+# Why not just run plymouthd: plymouth draws to the DRM console, and X owns
+# the display while you are looking at it. Running plymouthd from a desktop
+# session shows nothing at all -- which is exactly what happens if you try,
+# and looks like the theme is broken when it is fine.
+#
+# `--real` does run it, on a spare VT, for when you want the actual thing.
+do_preview() {
+  need magick
+  [[ -d "$THEME_DIR" ]] || die "theme not generated yet — run: boot-splash generate"
+
+  if [[ "${2:-}" == "--real" || "${1:-}" == "--real" ]]; then
+    need plymouthd
+    warn "this switches to VT 3 and takes over the screen for ~8s."
+    warn "it returns to VT 1 automatically; if it does not, press Ctrl+Alt+F1."
+    read -rp "continue? [y/N] " a; [[ "$a" == [yY] ]] || { say "cancelled"; return 0; }
+    sudo plymouth-set-default-theme "$THEME_NAME" >/dev/null 2>&1 || true
+    sudo chvt 3
+    sudo plymouthd --tty=/dev/tty3 >/dev/null 2>&1 || true
+    sudo plymouth show-splash >/dev/null 2>&1 || true
+    local i=0
+    while (( i < 8 )); do
+      sudo plymouth system-update --progress=$(( i * 12 )) >/dev/null 2>&1 || true
+      sleep 0.8; i=$((i+1))
+    done
+    sudo plymouth quit >/dev/null 2>&1 || true
+    sudo chvt 1
+    ok "real preview done"
+    return 0
+  fi
+
+  # Screen geometry, so the preview is the size the boot screen will be.
+  local W H
+  read -r W H <<<"$(xrandr --current 2>/dev/null \
+    | awk '/ connected primary/{split($4,a,"+"); split(a[1],b,"x"); print b[1], b[2]; exit}')"
+  [[ -n "${W:-}" && -n "${H:-}" ]] || { W=1920; H=1080; warn "no xrandr — previewing at ${W}x${H}"; }
+
+  read_palette
+  local out="${TMPDIR:-/tmp}/boot-splash-preview.png"
+
+  # Same layout arithmetic as dotfiles.script: title centred and lifted by
+  # height/12, bar below it by height/20.
+  local title_h bar_w
+  title_h="$(magick identify -format '%h' "$THEME_DIR/title.png")"
+  bar_w="$(magick identify -format '%w' "$THEME_DIR/progress_box.png")"
+  local title_off=$(( H / 12 ))
+  local bar_off=$(( title_h / 2 + H / 20 ))
+  local pct="${SPLASH_PREVIEW_PCT:-62}"
+  local fill=$(( bar_w * pct / 100 ))
+
+  magick -size "${W}x${H}" xc:"$BG" \
+    "$THEME_DIR/title.png"        -gravity center -geometry "+0-${title_off}" -composite \
+    "$THEME_DIR/progress_box.png" -gravity center -geometry "+0+${bar_off}"   -composite \
+    \( "$THEME_DIR/progress_bar.png" -crop "${fill}x100%+0+0" +repage \) \
+        -gravity center -geometry "-$(( (bar_w - fill) / 2 ))+${bar_off}" -composite \
+    "$out"
+
+  ok "preview rendered at ${W}x${H} (progress shown at ${pct}%): $out"
+  if command -v imv >/dev/null 2>&1; then
+    setsid imv "$out" >/dev/null 2>&1 &
+  elif command -v xdg-open >/dev/null 2>&1; then
+    setsid xdg-open "$out" >/dev/null 2>&1 &
+  else
+    say "open it with any image viewer"
+  fi
+  say "this is composited from the installed theme assets, not a mock-up"
+  say "for the real thing on a spare VT: boot-splash preview --real"
+}
+
+# ── pre-flight check ────────────────────────────────────────────────
+# Everything that can be verified WITHOUT rebooting. Run before enable.
+do_check() {
+  local fail=0 st esp themes ob cb
+
+  # `st=0; <test> || st=1` rather than a bare `[[ ... ]]` on its own line:
+  # under `set -e` a bare failing test aborts the script, so the FIRST
+  # failing check would end the run and hide every check after it. A
+  # pre-flight that stops at the first problem is the opposite of useful.
+  _c() {
+    if [[ "$1" == 0 ]]; then
+      printf '  %s✓%s %s\n' "$g" "$o" "$2"
+    else
+      printf '  %s✗%s %s\n' "$r" "$o" "$2"; fail=1
+    fi
+  }
+
+  st=0; pacman -Qq plymouth >/dev/null 2>&1 || st=1
+  _c $st "plymouth installed"
+
+  st=0; [[ -f "$THEME_DIR/$THEME_NAME.script" ]] || st=1
+  _c $st "theme script installed"
+
+  st=0; [[ -s "$THEME_DIR/title.png" ]] || st=1
+  _c $st "title image rendered and non-empty"
+
+  st=0; [[ -s "$THEME_DIR/progress_bar.png" && -s "$THEME_DIR/progress_box.png" ]] || st=1
+  _c $st "progress bar images present"
+
+  # A leftover placeholder means the colour substitution silently failed,
+  # and plymouth cannot parse the script at boot -- a black screen.
+  st=0; grep -qE '\b(BG_R|BG_G|BG_B|FG_R|FG_G|FG_B)\b' "$THEME_DIR/$THEME_NAME.script" 2>/dev/null && st=1
+  _c $st "colour placeholders substituted"
+
+  # Balanced braces is a cheap proxy for "plymouth can parse this"; its
+  # script language has no offline syntax checker.
+  ob="$(tr -cd '{' < "$THEME_DIR/$THEME_NAME.script" 2>/dev/null | wc -c || echo 0)"
+  cb="$(tr -cd '}' < "$THEME_DIR/$THEME_NAME.script" 2>/dev/null | wc -c || echo 0)"
+  st=0; [[ "$ob" == "$cb" && "$ob" != 0 ]] || st=1
+  _c $st "theme script braces balanced ($ob/$cb)"
+
+  # Captured, not piped into grep -q: under `set -o pipefail`, grep exiting
+  # early on a match closes the pipe and the producer dies with SIGPIPE,
+  # aborting the run at the first PASSING test.
+  themes="$(plymouth-set-default-theme --list 2>/dev/null || true)"
+  st=0; grep -qx "$THEME_NAME" <<<"$themes" || st=1
+  _c $st "plymouth recognises the theme"
+
+  st=0; grep -q '^HOOKS=.*\budev\b' "$MKINITCPIO" || st=1
+  _c $st "mkinitcpio has a udev hook to anchor to"
+
+  st=0; sudo test -d /boot || st=1
+  _c $st "/boot present"
+
+  # The recovery path. Without a verbose fallback entry, a splash that
+  # hangs leaves nothing to boot into that shows why.
+  esp="$(sudo bootctl --print-esp-path 2>/dev/null || echo /boot)"
+  st=0; sudo test -f "$esp/loader/entries/arch-lts.conf" || st=1
+  _c $st "verbose LTS fallback entry exists (recovery path)"
+  if [[ "$st" == 0 ]]; then
+    st=0
+    sudo grep -qE '^options .*(quiet|splash)' "$esp/loader/entries/arch-lts.conf" && st=1
+    _c $st "fallback entry is NOT splashed"
+  fi
+
+  st=0; sudo test -f "$esp/vmlinuz-linux-lts" || st=1
+  _c $st "LTS kernel present on the ESP"
+
+  echo
+  if (( fail )); then
+    printf '%s✗ not safe to enable — fix the above%s\n' "$r" "$o"
+    return 1
+  fi
+  printf '%s✓ all pre-flight checks passed%s\n' "$g" "$o"
+  printf '%sremaining risk: plymouth cannot be fully proven without a reboot.%s\n' "$d" "$o"
+  printf '%sIf the splash misbehaves, pick the LTS entry at the menu -- it stays verbose.%s\n' "$d" "$o"
+}
+
+# ── enable / disable ────────────────────────────────────────────────
+do_enable() {
+  need mkinitcpio
+  pacman -Qq plymouth >/dev/null 2>&1 || die "plymouth not installed (modules/splash.yaml)"
+  do_generate
+  # Refuse rather than half-apply: a failed check here means a black screen
+  # at boot, and the cost of finding out then is a machine you cannot see.
+  do_check || die "pre-flight checks failed — nothing has been changed"
+
+  # 1. mkinitcpio hook. Must sit directly after `udev` (or `systemd`):
+  #    plymouth needs the device manager running to find the framebuffer,
+  #    and must come before `autodetect` trims modules it depends on.
+  local hooks
+  hooks="$(grep '^HOOKS=' "$MKINITCPIO")"
+  if grep -q 'plymouth' <<<"$hooks"; then
+    say "plymouth hook already present"
+  else
+    sudo cp "$MKINITCPIO" "$MKINITCPIO.bak-boot-splash"
+    sudo sed -i 's/^\(HOOKS=([^)]*\)\budev\b/\1udev plymouth/' "$MKINITCPIO"
+    grep '^HOOKS=' "$MKINITCPIO" | grep -q plymouth \
+      || die "could not add the plymouth hook — restore $MKINITCPIO.bak-boot-splash"
+    ok "plymouth hook added (backup: $MKINITCPIO.bak-boot-splash)"
+  fi
+
+  # 2. Kernel cmdline. `quiet` silences the log, `splash` tells plymouth to
+  #    draw. Without BOTH you get either a splash fighting kernel text, or
+  #    silence with no splash at all.
+  if [[ -f "$KCMDLINE" ]]; then
+    local cur; cur="$(sudo cat "$KCMDLINE")"
+    local add=""
+    grep -qw quiet  <<<"$cur" || add+=" quiet"
+    grep -qw splash <<<"$cur" || add+=" splash"
+    if [[ -n "$add" ]]; then
+      sudo cp "$KCMDLINE" "$KCMDLINE.bak-boot-splash"
+      printf '%s%s\n' "$cur" "$add" | sudo tee "$KCMDLINE" >/dev/null
+      ok "cmdline now:$(printf '%s' " $(sudo cat "$KCMDLINE")")"
+    else
+      say "cmdline already has quiet + splash"
+    fi
+  else
+    warn "$KCMDLINE not found — this system may not build a UKI."
+    warn "Add 'quiet splash' to your bootloader's options line by hand."
+  fi
+
+  sudo plymouth-set-default-theme "$THEME_NAME"
+
+  # 3. Rebuild. -P does every preset, which includes the UKI.
+  say "rebuilding initramfs (this takes a minute)"
+  sudo mkinitcpio -P || die "mkinitcpio failed — splash NOT active, nothing to recover"
+
+  ok "enabled. The LTS entries stay verbose on purpose:"
+  ok "if a splashed boot ever hangs, pick 'Arch Linux (LTS fallback)' to see why."
+}
+
+do_disable() {
+  say "reversing"
+  if [[ -f "$MKINITCPIO.bak-boot-splash" ]]; then
+    sudo mv "$MKINITCPIO.bak-boot-splash" "$MKINITCPIO"
+    ok "mkinitcpio.conf restored"
+  else
+    sudo sed -i 's/^\(HOOKS=([^)]*\)[[:space:]]*\bplymouth\b/\1/' "$MKINITCPIO"
+    ok "plymouth hook removed"
+  fi
+  if [[ -f "$KCMDLINE.bak-boot-splash" ]]; then
+    sudo mv "$KCMDLINE.bak-boot-splash" "$KCMDLINE"
+    ok "kernel cmdline restored"
+  elif [[ -f "$KCMDLINE" ]]; then
+    sudo sed -i 's/[[:space:]]*\bquiet\b//g; s/[[:space:]]*\bsplash\b//g' "$KCMDLINE"
+    ok "quiet/splash removed from cmdline"
+  fi
+  say "rebuilding initramfs"
+  sudo mkinitcpio -P || warn "mkinitcpio failed — check before rebooting"
+  ok "disabled"
+}
+
+do_status() {
+  printf 'plymouth pkg : %s\n' "$(pacman -Qq plymouth 2>/dev/null || echo 'not installed')"
+  printf 'theme dir    : %s\n' "$( [[ -d "$THEME_DIR" ]] && echo "$THEME_DIR" || echo 'not generated' )"
+  printf 'default theme: %s\n' "$(plymouth-set-default-theme 2>/dev/null || echo '-')"
+  printf 'mkinitcpio   : %s\n' "$(grep '^HOOKS=' "$MKINITCPIO" | grep -q plymouth && echo 'plymouth hook present' || echo 'no plymouth hook')"
+  printf 'cmdline      : %s\n' "$(sudo cat "$KCMDLINE" 2>/dev/null || cat /proc/cmdline)"
+}
+
+case "${1:-status}" in
+  generate) do_generate ;;
+  preview)  do_preview "$@" ;;
+  check)    do_check ;;
+  enable)   do_enable ;;
+  disable)  do_disable ;;
+  status)   do_status ;;
+  --help|-h) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command '${1}' (generate|preview|check|enable|disable|status)" ;;
+esac

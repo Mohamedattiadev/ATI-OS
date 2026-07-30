@@ -1,6 +1,12 @@
 description: System utilities
 
 packages:
+  # Rescue editors. Small, and the thing you need at a TTY when the nvim
+  # config is exactly what broke -- so they belong in the first pass, not
+  # the optional one.
+  - vim
+  - nano
+  - ufw
   - acpi
   - brightnessctl
   - powertop
@@ -17,6 +23,8 @@ packages:
   - gtkmm
   - libwnck3
   - auto-cpufreq
+  - glow             # markdown renderer -- rofi_docs' fallback viewer when
+                     # nvim is unavailable, and nicer than bat for prose
   - didyoumean
   - dmscripts-git
   - shell-color-scripts-git

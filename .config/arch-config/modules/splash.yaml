@@ -1,0 +1,12 @@
+description: Boot splash -- installed only by the wizard's boot-splash module
+
+# NOT in enabled_modules. `dcli sync` must never install this: plymouth is
+# inert until it is hooked into the initramfs and the kernel cmdline, and
+# doing that is a decision about how the machine boots, not a package
+# choice. The wizard's opt-in `boot-splash` module installs it.
+
+packages:
+  - plymouth
+
+exclude: []
+conflicts: []

@@ -1,0 +1,116 @@
+// dotfiles.script — plymouth boot splash: the user's name, and a progress bar.
+//
+// Replaces the wall of scrolling kernel and mirror-list text that Arch shows
+// by default. Nothing here is decorative-only: a boot with no visual feedback
+// is indistinguishable from a boot that has hung, and that is the actual
+// problem being solved.
+//
+// Everything this draws is generated per-machine by `boot-splash` from the
+// current username and the active theme palette, so a user called `beko` gets
+// "Beko" in their own colours without editing this file.
+//
+// Plymouth's script language is not JavaScript despite appearances: no `let`,
+// no closures over loop variables, and functions are declared with `fun`.
+
+// ── background ──────────────────────────────────────────────────────
+// A flat fill, not an image: it has to be correct at every resolution
+// from a 1366x768 laptop to a 4K panel, and a scaled bitmap would band.
+Window.SetBackgroundTopColor(BG_R, BG_G, BG_B);
+Window.SetBackgroundBottomColor(BG_R, BG_G, BG_B);
+
+screen_width  = Window.GetWidth();
+screen_height = Window.GetHeight();
+
+// ── title ───────────────────────────────────────────────────────────
+title_image  = Image("title.png");
+title_sprite = Sprite(title_image);
+title_x = screen_width  / 2 - title_image.GetWidth()  / 2;
+title_y = screen_height / 2 - title_image.GetHeight() / 2 - screen_height / 12;
+title_sprite.SetX(title_x);
+title_sprite.SetY(title_y);
+title_sprite.SetZ(1);
+
+// ── progress bar ────────────────────────────────────────────────────
+// Two images: a static track, and a fill scaled horizontally as progress
+// arrives. Drawn below the title with a gap proportional to the screen so
+// the layout holds at any resolution.
+box_image = Image("progress_box.png");
+bar_image = Image("progress_bar.png");
+
+box_sprite = Sprite(box_image);
+box_x = screen_width / 2 - box_image.GetWidth() / 2;
+box_y = title_y + title_image.GetHeight() + screen_height / 20;
+box_sprite.SetX(box_x);
+box_sprite.SetY(box_y);
+box_sprite.SetZ(1);
+
+bar_sprite = Sprite();
+bar_sprite.SetX(box_x);
+bar_sprite.SetY(box_y);
+bar_sprite.SetZ(2);
+
+fun progress_callback(duration, progress) {
+    // Clamp: plymouth's estimate can overshoot 1.0 on a boot faster than
+    // the last one it measured, and a bar wider than its track looks broken.
+    p = progress;
+    if (p > 1.0) p = 1.0;
+    if (p < 0.0) p = 0.0;
+
+    w = box_image.GetWidth() * p;
+    // Never scale to zero -- plymouth treats a 0-width image as invalid and
+    // the bar disappears entirely for the first frames of every boot.
+    if (w < 1) w = 1;
+
+    bar_sprite.SetImage(bar_image.Scale(w, bar_image.GetHeight()));
+}
+Plymouth.SetBootProgressFunction(progress_callback);
+
+// ── password prompt ─────────────────────────────────────────────────
+// Only reached on an encrypted root. This config does not use one today,
+// but a themed splash that cannot ask for a passphrase would silently
+// brick a machine that later adds LUKS -- it would sit at the logo with
+// no prompt and no way in.
+prompt_sprite = Sprite();
+bullets_sprite = Sprite();
+
+fun display_password_callback(prompt, bullets) {
+    hint = Image.Text(prompt, FG_R, FG_G, FG_B);
+    prompt_sprite.SetImage(hint);
+    prompt_sprite.SetX(screen_width / 2 - hint.GetWidth() / 2);
+    prompt_sprite.SetY(box_y + box_image.GetHeight() + screen_height / 30);
+    prompt_sprite.SetZ(3);
+
+    dots = "";
+    i = 0;
+    while (i < bullets) {
+        dots += "*";
+        i++;
+    }
+    dot_image = Image.Text(dots, FG_R, FG_G, FG_B);
+    bullets_sprite.SetImage(dot_image);
+    bullets_sprite.SetX(screen_width / 2 - dot_image.GetWidth() / 2);
+    bullets_sprite.SetY(box_y + box_image.GetHeight() + screen_height / 15);
+    bullets_sprite.SetZ(3);
+}
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+
+fun display_normal_callback() {
+    prompt_sprite.SetImage(Image.Text("", 0, 0, 0));
+    bullets_sprite.SetImage(Image.Text("", 0, 0, 0));
+}
+Plymouth.SetDisplayNormalFunction(display_normal_callback);
+
+// ── messages ────────────────────────────────────────────────────────
+// fsck progress and emergency text arrive here. Showing them matters: a
+// splash that swallows "unexpected inconsistency, run fsck manually"
+// leaves the user staring at a logo forever.
+message_sprite = Sprite();
+message_sprite.SetZ(4);
+
+fun message_callback(text) {
+    msg = Image.Text(text, FG_R, FG_G, FG_B);
+    message_sprite.SetImage(msg);
+    message_sprite.SetX(screen_width / 2 - msg.GetWidth() / 2);
+    message_sprite.SetY(screen_height - screen_height / 12);
+}
+Plymouth.SetMessageFunction(message_callback);

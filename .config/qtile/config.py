@@ -69,6 +69,40 @@ from libqtile.config import (
 )
 from libqtile.lazy import lazy
 
+
+# ---------------------------------------------------------------------
+# UI scale
+# ---------------------------------------------------------------------
+# Every pixel dimension below -- font sizes, bar heights, margins, icon
+# sizes -- was tuned on a 1366x768 14" panel at ~125 DPI. On a 15" 4K
+# laptop that same config renders a sliver of a bar with unreadable text,
+# and nothing warns you: the desktop just looks wrong on the one axis
+# these dotfiles are supposed to keep identical across machines.
+#
+# `ui-scale` (AtiScriptsV1) computes a factor from the primary display's
+# real DPI and writes it here. It is per-machine and untracked, so the
+# repo stays identical while the rendering adapts. A missing file means
+# 1.0, which is exactly the reference machine's behaviour -- so qtile
+# still starts correctly if ui-scale has never been run.
+def _load_ui_scale():
+    try:
+        with open(os.path.expanduser("~/.cache/qtile/ui_scale")) as f:
+            v = float(f.read().strip())
+        # Refuse absurd values rather than rendering a 40px bar as 4px and
+        # leaving the user with no way to read the menu that fixes it.
+        return v if 0.5 <= v <= 4.0 else 1.0
+    except (OSError, ValueError):
+        return 1.0
+
+
+UI_SCALE = _load_ui_scale()
+
+
+def _s(px):
+    """Scale a pixel dimension. Floor of 1 so nothing rounds away to zero."""
+    return max(1, int(round(px * UI_SCALE)))
+
+
 from popups.VimCheatsheet import toggle_vim_cheatsheet, close_vim_cheatsheet
 from popups.FishCheatsheet import (
     toggle_fish_kitty_cheatsheet,
@@ -232,6 +266,7 @@ HOMEROW_MODE_LABELS = {
     "scroll": "   SCROLL",
     "search": "   SEARCH",
     "caret": "   CARET",
+    "caret-search": "   CARET/",
 }
 
 
@@ -1542,6 +1577,52 @@ FILE_CHOOSER_H_RATIO = 0.55
 FILE_CHOOSER_W_MIN = 700
 FILE_CHOOSER_H_MIN = 350
 
+# Documentation viewer (rofi_docs opens README/TROUBLESHOOTING/nvim in
+# `kitty --class docs-view`). Larger than the file chooser because it holds
+# prose and code, but still inset so the desktop stays visible behind it --
+# reading a doc should not feel like leaving what you were doing.
+DOCS_W_RATIO = 0.78
+DOCS_H_RATIO = 0.80
+DOCS_W_MIN = 720
+DOCS_H_MIN = 420
+
+
+@hook.subscribe.client_managed
+def _float_and_center_docs(client):
+    """Centre the documentation viewer.
+
+    float_rules already carries Match(wm_class="docs-view"), so it floats
+    on its own -- but a floating terminal maps wherever the WM last felt
+    like putting it, which for a doc you opened deliberately is usually
+    half off-screen. Same shrink-and-centre approach as the file chooser
+    above."""
+    try:
+        if (client.window.get_wm_class() or ("", ""))[0] != "docs-view":
+            return
+    except Exception:
+        return
+    try:
+        group = getattr(client, "group", None)
+        screen = group.screen if group and group.screen else None
+        if screen is None:
+            return
+        w = max(DOCS_W_MIN, int(screen.width * DOCS_W_RATIO))
+        h = max(DOCS_H_MIN, int(screen.height * DOCS_H_RATIO))
+        # Never wider or taller than the screen: DOCS_*_MIN would otherwise
+        # push the window off a small panel, which is the exact machine
+        # this repo was tuned on.
+        w = min(w, screen.width)
+        h = min(h, screen.height)
+        client._enablefloating(
+            x=screen.x + (screen.width - w) // 2,
+            y=screen.y + (screen.height - h) // 2,
+            w=w,
+            h=h,
+        )
+        client.bring_to_front()
+    except Exception:
+        pass
+
 
 def _is_gtk_file_chooser(client):
     """GTK sets WM_WINDOW_ROLE to this for its file open/save dialog,
@@ -2184,6 +2265,15 @@ def open_launcher(qtile):
     )
 
 
+def open_docs(qtile):
+    # Left-clicking the logo used to open a terminal -- which Mod+Return
+    # and several other bindings already do. A desktop with 79 documented
+    # keybindings, 22 themes and a dozen custom tools has a discovery
+    # problem, not a terminal-launching problem, so the most prominent
+    # click in the bar now answers "what can this thing do".
+    set_icon_temporarily(qtile, "󰋗", "rofi_docs")
+
+
 # ╔────────────────────────────────────────────────────────────────╗
 # │░▄█▄█▄░█▄█░█▀█░█▀▄░█▀▀░█▀▀░░░█▀▀░█░█░█▀█░█▀▀░▀█▀░▀█▀░█▀█░█▀█░█▀▀│
 # │░▄█▄█▄░█░█░█░█░█░█░█▀▀░▀▀█░░░█▀▀░█░█░█░█░█░░░░█░░░█░░█░█░█░█░▀▀█│
@@ -2730,7 +2820,7 @@ def normal_user_bar():
         widget.TextBox(
             name="main_icon_chip_nu",
             text=ARCH_ICON_MAIN,
-            fontsize=19,
+            fontsize=_s(19),
             padding=16,
             foreground=colors[7],
             mouse_callbacks={
@@ -2743,7 +2833,7 @@ def normal_user_bar():
             font="Ubuntu Mono",
             foreground=colors[1],
             padding=3,
-            fontsize=14,
+            fontsize=_s(14),
         ),
         widget.LaunchBar(
             progs=[
@@ -2753,14 +2843,14 @@ def normal_user_bar():
                 ("", "pcmanfm", "File Manager"),
                 ("󰨞", "code", "VS Code"),
             ],
-            fontsize=14,
+            fontsize=_s(14),
             padding=12,
             foreground=colors[1],
         ),
         widget.TextBox(
             name="screenshot_chip_nu",
             text="󰹑",
-            fontsize=16,
+            fontsize=_s(16),
             padding=10,
             foreground=colors[1],
             mouse_callbacks={
@@ -2769,9 +2859,9 @@ def normal_user_bar():
         ),
         ewidget.Spacer(length=bar.STRETCH),
         widget.GroupBox(
-            fontsize=12,
-            margin_y=2,
-            margin_x=8,
+            fontsize=_s(12),
+            margin_y=_s(2),
+            margin_x=_s(8),
             padding_y=2,
             padding_x=8,
             borderwidth=4,
@@ -2866,12 +2956,12 @@ def normal_user_bar():
             font="Ubuntu Mono",
             foreground=colors[1],
             padding=0,
-            fontsize=14,
+            fontsize=_s(14),
         ),
         widget.Battery(
             name="w_battery_nu",
             format="  {char}{percent:2.0%}",
-            fontsize=11,
+            fontsize=_s(11),
             padding=4,
             foreground=colors[6],
             low_foreground=colors[3],
@@ -2892,12 +2982,12 @@ def normal_user_bar():
             font="Ubuntu Mono",
             foreground=colors[1],
             padding=4,
-            fontsize=14,
+            fontsize=_s(14),
         ),
         widget.CPU(
             name="w_cpu_nu",
             format="  {load_percent}%",
-            fontsize=10,
+            fontsize=_s(10),
             padding=4,
             foreground=colors[5],
             mouse_callbacks={
@@ -2911,13 +3001,13 @@ def normal_user_bar():
             font="Ubuntu Mono",
             foreground=colors[1],
             padding=4,
-            fontsize=14,
+            fontsize=_s(14),
         ),
         widget.Memory(
             name="w_mem_nu",
             format="{MemUsed: .0f}{mm}",
             fmt="🖥  {} ",
-            fontsize=10,
+            fontsize=_s(10),
             padding=4,
             foreground=colors[8],
             mouse_callbacks={
@@ -2929,12 +3019,12 @@ def normal_user_bar():
             font="Ubuntu Mono",
             foreground=colors[1],
             padding=0,
-            fontsize=14,
+            fontsize=_s(14),
         ),
         widget.Clock(
             format=" %a, %b %d - %H:%M",
             padding=14,
-            fontsize=11,
+            fontsize=_s(11),
             foreground=colors[1],
             mouse_callbacks={"Button1": lambda: qtile.spawn("clock_popup")},
         ),
@@ -2947,9 +3037,9 @@ def normal_user_bar():
 def groupbox_widget():
     return chip(
         ewidget.GroupBox,
-        fontsize=10,
-        margin_y=2,
-        margin_x=8,
+        fontsize=_s(10),
+        margin_y=_s(2),
+        margin_x=_s(8),
         padding_y=2,
         padding_x=8,
         borderwidth=4,
@@ -2988,12 +3078,15 @@ def left_side_widgets():
             ewidget.TextBox,
             name="main_icon_chip",
             text=ARCH_ICON_MAIN,
-            fontsize=15,
+            fontsize=_s(15),
             padding=11,
             foreground=colors[7],
             mouse_callbacks={
-                "Button1": lazy.function(open_terminal),  # left click
-                "Button3": lazy.function(open_launcher),  # right click
+                # Terminal moves to middle-click rather than being dropped:
+                # muscle memory is real, and Mod+Return still does it too.
+                "Button1": lazy.function(open_docs),  # left   — docs menu
+                "Button2": lazy.function(open_terminal),  # middle — terminal
+                "Button3": lazy.function(open_launcher),  # right  — drun
             },
         ),
         # Current Layout — original padding, text mode; right-click cycles layout
@@ -3015,14 +3108,14 @@ def left_side_widgets():
             font="Ubuntu Mono",
             foreground=colors[1],
             padding=3,
-            fontsize=14,
+            fontsize=_s(14),
         ),
         # task list
         widget.TaskList(
             font="JetBrainsMono Nerd Font",
-            fontsize=11,
+            fontsize=_s(11),
             # icons
-            icon_size=16,
+            icon_size=_s(16),
             markup=True,
             # markup styles — use the active palette so TaskList retints
             # on theme swap. colors[2]=bg-alt, colors[0]=bg, colors[6]=blue,
@@ -3035,8 +3128,8 @@ def left_side_widgets():
             max_title_width=120,
             padding_x=3,
             padding_y=2,
-            margin_x=3,
-            margin_y=4,
+            margin_x=_s(3),
+            margin_y=_s(4),
             spacing=2,
             parse_text=parse_task_name,
             window_name_location_offset=1,
@@ -3113,7 +3206,7 @@ def right_side_widgets():
             name="tooltip_widgetbox",
             widgets=[],
             padding=11,
-            fontsize=13,
+            fontsize=_s(13),
             text_closed="󰌶",
             text_open="󰌵",
             close_button_location="right",
@@ -3142,7 +3235,7 @@ def right_side_widgets():
             # starts, so scroll=True/scroll_chars above were dead config.
             width=220,
             padding=10,
-            fontsize=15,
+            fontsize=_s(15),
             foreground=colors[4],
             mouse_callbacks={
                 "Button1": lambda: qtile.spawn("playerctl play-pause"),
@@ -3161,7 +3254,7 @@ def right_side_widgets():
             SmartWidgetBox,
             name="system_widgetbox",
             insert_before_name="tooltip_widgetbox",
-            fontsize=14,
+            fontsize=_s(14),
             padding=10,
             close_button_location="right",
             start_opened=False,
@@ -3173,7 +3266,7 @@ def right_side_widgets():
                     ewidget.CPU,
                     name="w_cpu",
                     format="  {load_percent}%",
-                    fontsize=10,
+                    fontsize=_s(10),
                     padding=11,
                     foreground=colors[5],
                     mouse_callbacks={
@@ -3188,7 +3281,7 @@ def right_side_widgets():
                     name="w_mem",
                     format="{MemUsed: .0f}{mm}",
                     fmt="🖥  {} ",
-                    fontsize=10,
+                    fontsize=_s(10),
                     padding=11,
                     foreground=colors[8],
                     mouse_callbacks={
@@ -3206,7 +3299,7 @@ def right_side_widgets():
             name="wallpaper_toggle",
             widgets=[],
             padding=11,
-            fontsize=12,
+            fontsize=_s(12),
             text_closed="✖",
             text_open="󰍜",
             close_button_location="right",
@@ -3220,7 +3313,7 @@ def right_side_widgets():
             SmartWidgetBox,
             name="2nd_system_widgetbox",
             insert_before_name="tooltip_widgetbox",
-            fontsize=14,
+            fontsize=_s(14),
             padding=10,
             close_button_location="right",
             start_opened=False,
@@ -3247,7 +3340,7 @@ def right_side_widgets():
                     name="w_disk",
                     func=_disk_combined_text,
                     update_interval=60,
-                    fontsize=10,
+                    fontsize=_s(10),
                     padding=11,
                     foreground=colors[1],
                     mouse_callbacks={"Button1": lambda: qtile.spawn("disk_notify")},
@@ -3268,7 +3361,7 @@ def right_side_widgets():
             ewidget.Battery,
             name="w_battery",
             format="  {char}{percent:2.0%}",
-            fontsize=10,
+            fontsize=_s(10),
             padding=12,
             foreground=colors[6],
             low_foreground=colors[3],
@@ -3338,7 +3431,7 @@ def right_side_widgets():
         chip(
             SmartWidgetBox,
             name="systray_widgetbox",
-            fontsize=11,
+            fontsize=_s(11),
             padding=11,
             text_closed="△",
             text_open="",
@@ -3346,7 +3439,7 @@ def right_side_widgets():
             close_button_location="right",
             widgets=[
                 ewidget.Systray(
-                    icon_size=14,
+                    icon_size=_s(14),
                     padding=6,
                     hide_crash=True,
                 ),
@@ -3356,7 +3449,7 @@ def right_side_widgets():
                     func=_nightlight_text,
                     update_interval=5,
                     padding=11,
-                    fontsize=11,
+                    fontsize=_s(11),
                     foreground=colors[6],
                     mouse_callbacks={
                         "Button1": lambda: _nightlight_on(),
@@ -4257,6 +4350,12 @@ keys = [
         lazy.spawn(HOMEROW + " --caret"),
         desc="Homerow: caret mode",
     ),
+    Key(
+        [mod2, "shift"],
+        "c",
+        lazy.spawn(HOMEROW + " --caret-search"),
+        desc="Homerow: caret search (type to find a word, land the caret there)",
+    ),
     # FIX: try to make a speach to text app
     # ---------------------
     # Key([mod], "s", lazy.spawn("bash -c \"notify-send '🎤 STT' 'Speak now…' && ~/.config/qtile/scripts/stt_script.sh\"")),
@@ -4517,7 +4616,10 @@ keys = [
                 [],
                 "e",
                 lazy.spawn(
-                    "python3 /home/ati/.config/rofi_translator/wordreference.py"
+                    "python3 "
+                    + os.path.expanduser(
+                        "~/.config/rofi_translator/wordreference.py"
+                    )
                 ),
                 desc="Translate text",
             ),
@@ -4790,6 +4892,12 @@ keys = [
                 lazy.spawn(HOMEROW + " --caret"),
                 lazy.ungrab_chord(),
                 desc="caret mode: vim motions over real text, v selects, y yanks",
+            ),
+            Key(
+                ["shift"], "v",
+                lazy.spawn(HOMEROW + " --caret-search"),
+                lazy.ungrab_chord(),
+                desc="caret search: type to find a word, land the caret there",
             ),
             # --- warpd (pixel grid: works where accessibility does not) ---
             Key([], "n", lazy.spawn("warpd --normal"), lazy.ungrab_chord()),
@@ -5367,13 +5475,13 @@ layouts = [
         **layout_theme,
     ),
     layout.Max(
-        border_width=0,
+        border_width=_s(0),
         margin=0,
     ),
     layout.TreeTab(
         font="Ubuntu Bold",
-        fontsize=11,
-        border_width=8,
+        fontsize=_s(11),
+        border_width=_s(8),
         border_focus=colors[0],
         border_normal=colors[0],
         margin_left=8,
@@ -5400,7 +5508,7 @@ layouts = [
 # from having to type these out for each individual widget.
 widget_defaults = dict(
     font="Ubuntu Bold",
-    fontsize=10,
+    fontsize=_s(10),
     padding=0,
 )
 
@@ -5602,15 +5710,15 @@ def init_screens():
         Screen(
             top=bar.Bar(
                 widgets=init_widgets_screen1(),
-                size=28,
-                margin=[5, 10, 5, 10],  # top, right, bottom, left
+                size=_s(28),
+                margin=[_s(5), _s(10), _s(5), _s(10)],  # top, right, bottom, left
                 # IMP: this is the background color of the bar
                 background="#11111b00",  # transparent
             ),
             bottom=bar.Bar(
                 widgets=init_widgets_list_normaluserbar(),
-                size=40,
-                margin=[5, 10, 5, 10],  # top, right, bottom, left
+                size=_s(40),
+                margin=[_s(5), _s(10), _s(5), _s(10)],  # top, right, bottom, left
                 # IMP: this is the background color of the bar
                 background=colors[2],  # transparent
             ),
@@ -5621,8 +5729,8 @@ def init_screens():
             Screen(
                 top=bar.Bar(
                     widgets=init_widgets_screen2(),
-                    size=28,
-                    margin=[5, 10, 5, 10],  # top, right, bottom, left
+                    size=_s(28),
+                    margin=[_s(5), _s(10), _s(5), _s(10)],  # top, right, bottom, left
                     # IMP: this is the background color of the bar
                     background="#11111b00",  # transparent
                 ),
@@ -5681,7 +5789,7 @@ bring_front_click = False
 cursor_warp = False
 floating_layout = layout.Floating(
     border_focus=colors[7],
-    border_width=2,
+    border_width=_s(2),
     float_rules=[
         # Run the utility of `xprop` to see the wm class and name of an X client.
         *layout.Floating.default_float_rules,
@@ -5713,6 +5821,10 @@ floating_layout = layout.Floating(
         Match(wm_class="satty"),  # satty
         Match(wm_class="emacs"),  # emacs
         Match(title="link-preview"),  # preview of nvim (qutebrowser edit link)
+        # rofi_docs viewer: README / TROUBLESHOOTING / nvim, centred by
+        # _float_and_center_docs. wm_class, not title, so the rule wins at
+        # group.add() before the window can enter the tiling layout.
+        Match(wm_class="docs-view"),
         Match(wm_class="clip-view"),  # copyq_rofi alt+w full-text preview
         Match(wm_class="imv"),  # copyq_rofi alt+w image preview
         Match(wm_class="org.gnome.NautilusPreviewer"),  # make the preview float

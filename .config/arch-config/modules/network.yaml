@@ -1,6 +1,11 @@
 description: Networking and wireless stack
 
 packages:
+  # The daemon behind wm.yaml's network-manager-applet. It was never
+  # declared -- it is present on this host only because archinstall put it
+  # there, so a fresh machine got the tray applet with nothing to talk to
+  # and no network GUI at all.
+  - networkmanager
   - iwd
   - wpa_supplicant
   - wireless_tools

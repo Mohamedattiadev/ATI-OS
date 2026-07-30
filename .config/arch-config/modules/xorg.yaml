@@ -11,6 +11,15 @@ packages:
                      # guarded, so without this the cursor silently stayed
                      # the X11 default X on a fresh install
   - xorg-fonts-misc
+  # All three arrive today only as dependencies of arandr / betterlockscreen
+  # / xorg-xinit. That is the same fragility wm.yaml documents for qtile:
+  # an upstream packaging change drops the dep and the desktop loses a
+  # piece with no other warning. xrdb is the sharpest -- .xinitrc loads
+  # .Xresources through it, and that is what sets cursor size and theme, so
+  # losing it means every cursor silently reverts on a fresh install.
+  - xorg-xrandr
+  - xorg-xrdb
+  - xorg-xset
   - wmctrl
   - xwallpaper
 

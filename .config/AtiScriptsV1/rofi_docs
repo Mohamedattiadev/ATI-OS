@@ -1,0 +1,309 @@
+#!/usr/bin/env bash
+# rofi_docs — the system documentation menu, behind the bar's logo chip.
+#
+# Left-clicking the logo used to open a terminal, which four other bindings
+# already do. A desktop with 79 documented keybindings, 22 themes, 126
+# troubleshooting entries and 38 custom commands has a discovery problem,
+# not a terminal-launching problem.
+#
+# Everything here is GENERATED from the live system, never hand-listed:
+#
+#   Keybindings   parsed from config.py by qtile-keys (AST, not regex)
+#   Commands      every executable in AtiScriptsV1, with its own header
+#                 comment as the description
+#   Troubleshoot  the 126 headings of TROUBLESHOOTING.md, jumping to the line
+#   Docs          README/TROUBLESHOOTING/module docs, opened in a float
+#
+# A hand-written menu drifts the moment anything is added, and silently.
+# None of these can, because each reads its source at open time.
+#
+# Viewers open in a centred floating window (kitty --class docs-view, which
+# qtile's float_rules and _float_and_center_docs match) so reading a doc
+# never disturbs the tiling layout.
+#
+# Usage:
+#   rofi_docs                the menu
+#   rofi_docs <section>      jump straight to a section (also how it is tested)
+#                            keys|cheats|docs|commands|appearance|system
+#
+# NOTE: never use a shell var named DISPLAY in this script — it shadows the
+# X11 $DISPLAY env var and every downstream tool then fails silently.
+
+set -uo pipefail
+
+DOTFILES="${DOTFILES_DIR:-$HOME/.dotfiles}"
+QTILE_CFG="$HOME/.config/qtile/config.py"
+VIEW_CLASS="docs-view"
+
+# ── viewer ───────────────────────────────────────────────────────────
+# One place decides how a document is shown, so every entry behaves the
+# same and every one of them floats centred.
+#
+# nvim, not a pager: it is the editor this repo configures, it follows the
+# active theme, and it can open at a line for the troubleshooting jumps.
+view_file() {
+  local f="$1" line="${2:-1}"
+  [[ -f "$f" ]] || { rofi -e "not found: $f"; return 1; }
+  if command -v nvim >/dev/null 2>&1; then
+    setsid kitty --class "$VIEW_CLASS" --title "docs" \
+      -e nvim "+${line}" "+set nomodifiable" "$f" >/dev/null 2>&1 &
+  elif command -v glow >/dev/null 2>&1; then
+    setsid kitty --class "$VIEW_CLASS" --title "docs" -e glow -p "$f" >/dev/null 2>&1 &
+  else
+    setsid kitty --class "$VIEW_CLASS" --title "docs" \
+      -e bat --style=plain --paging=always "$f" >/dev/null 2>&1 &
+  fi
+}
+
+# Show generated text (audit output, status dumps) in the same float.
+view_text() {
+  local title="$1" body="$2" tmp
+  tmp="$(mktemp --suffix=.md)"
+  printf '%s\n' "$body" > "$tmp"
+  setsid kitty --class "$VIEW_CLASS" --title "docs" \
+    -e sh -c "\${PAGER:-less} -R '$tmp'; rm -f '$tmp'" >/dev/null 2>&1 &
+}
+
+pick() { rofi -dmenu -i -p "$1" ${2:+-mesg "$2"}; }
+
+BACK="◂  back"
+
+# ── keybindings ──────────────────────────────────────────────────────
+sec_keys() {
+  if ! command -v qtile-keys >/dev/null 2>&1; then
+    rofi -e "qtile-keys not installed — run: ./wizard.sh --yes --only=ati-scripts"
+    return
+  fi
+  qtile-keys | rofi -dmenu -i -p "Keys" \
+    -mesg "$(qtile-keys | wc -l) bindings, parsed live from config.py · Esc closes" >/dev/null
+}
+
+# ── cheatsheets ──────────────────────────────────────────────────────
+# These popups live inside qtile and are only reachable through their key
+# chord, so replay it. The chord is in every label, so the entry still
+# teaches you something even when xdotool is missing.
+sec_cheats() {
+  local c
+  c="$(printf '%s\n' \
+    "󰘳  Qtile cheatsheet      Super+Shift+K then K" \
+    "󰕷  Vim cheatsheet        Super+Shift+K then V" \
+    "󰈺  Fish / kitty          Super+Shift+K then F" \
+    "$BACK" | pick "Cheatsheets")"
+  case "$c" in
+    *Qtile*) send_chord k ;;
+    *Vim*)   send_chord v ;;
+    *Fish*)  send_chord f ;;
+    "$BACK") main_menu ;;
+  esac
+}
+
+send_chord() {
+  if ! command -v xdotool >/dev/null 2>&1; then
+    rofi -e "xdotool not installed — press the chord shown in the menu instead"
+    return
+  fi
+  # rofi must be fully gone before the chord is sent, or qtile delivers the
+  # keys to rofi's grab instead of its own.
+  sleep 0.35
+  xdotool key --clearmodifiers super+shift+k
+  sleep 0.2
+  xdotool key --clearmodifiers "$1"
+}
+
+# ── documentation ────────────────────────────────────────────────────
+sec_docs() {
+  local c
+  c="$(printf '%s\n' \
+    "󰈙  README                 install, features, reference" \
+    "󰋗  Troubleshooting        126 entries — search by symptom" \
+    "󰏗  Packages (dcli)        what is declared, and why" \
+    "󰃤  Boot entries           LTS fallback + rescue" \
+    "󰅱  qtile config           the 5700-line source" \
+    "$BACK" | pick "Documentation")"
+  case "$c" in
+    *README*)          view_file "$DOTFILES/README.md" ;;
+    *Troubleshooting*) sec_trouble ;;
+    *Packages*)        view_file "$DOTFILES/.config/arch-config/README.md" ;;
+    *"Boot entries"*)  view_file "$DOTFILES/.config/arch-config/boot/README.md" ;;
+    *"qtile config"*)  view_file "$QTILE_CFG" ;;
+    "$BACK")           main_menu ;;
+  esac
+}
+
+# TROUBLESHOOTING.md is 144k. Dumping it in a pager and asking someone to
+# scroll is not documentation. Index the headings, jump to the line.
+sec_trouble() {
+  local f="$DOTFILES/TROUBLESHOOTING.md"
+  [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
+  local sel
+  # "heading   :line" — the line number goes last so the selection can be
+  # parsed back with a single awk, and `column -t` is deliberately not used:
+  # it pads every row to the longest heading, which in a 126-entry file is
+  # wider than the screen.
+  sel="$(grep -nE '^#{2,3} ' "$f" \
+        | sed -E 's/^([0-9]+):## +/\1\t/; s/^([0-9]+):### +/\1\t    · /' \
+        | awk -F'\t' '{ h=$2; if (length(h) > 76) h = substr(h,1,73) "..."; printf "%-78s :%s\n", h, $1 }' \
+        | rofi -dmenu -i -p "Troubleshooting" \
+               -mesg "$(grep -cE '^#{2,3} ' "$f") entries · type a symptom · Esc closes")"
+  [[ -z "$sel" ]] && return
+  local line; line="${sel##*:}"
+  [[ "$line" =~ ^[0-9]+$ ]] && view_file "$f" "$line"
+}
+
+# ── commands ─────────────────────────────────────────────────────────
+# Every tool this repo installs, described by its OWN header comment --
+# the "# name — description" line each of these scripts already starts
+# with. Add a script with that header and it documents itself here.
+# Pull a one-line description out of a script's own header.
+#
+# The convention in this directory is "# name — what it does" on line 2,
+# but not every script follows it, and a naive "first comment line" grab
+# returns "========= CONFIG =========", a shellcheck directive, or a coding
+# declaration. So: prefer the conventional form, then fall back to the
+# first comment line that actually reads like a sentence.
+script_desc() {
+  local f="$1" base="$2" d
+  # Preferred: the "name — description" header. Allow a leading # (shell)
+  # or """ (the python tools open with a module docstring instead), and
+  # allow the .py extension to be absent from the header.
+  local stem="${base%.py}"
+  d="$(head -12 "$f" \
+       | grep -m1 -E "^(#+ *|\"\"\")${stem}(\.py)?[[:space:]]+[—–-][[:space:]]*." \
+       | sed -E "s/^(#+ *|\"\"\")${stem}(\.py)?[[:space:]]+[—–-][[:space:]]*//")"
+  if [[ -z "$d" ]]; then
+    # Fallback: first comment line with at least three words and no
+    # separator-art, directives, or encoding lines.
+    d="$(head -14 "$f" \
+      | sed -E '1d' \
+      | grep -E '^#' \
+      | sed -E 's/^#+ *//' \
+      | grep -vE '^(shellcheck|pylint|noqa|-\*-|!)' \
+      | grep -vE '^[[:punct:][:space:]]*$' \
+      | grep -vE '^(Script name|Author|Maintainer|Usage|CONFIG)\b' \
+      | grep -E '[A-Za-z].*[[:space:]][A-Za-z]+[[:space:]][A-Za-z]+' \
+      | head -1)"
+  fi
+  # The dmscripts-derived tools write "Description: ...", and a few open
+  # with a bare "- ". Neither adds anything in a menu already labelled with
+  # the command name.
+  d="$(sed -E 's/^(Description|DESCRIPTION)[[:space:]]*:[[:space:]]*//; s/^-[[:space:]]+//' <<<"$d")"
+  d="${d#"${d%%[![:space:]]*}"}"          # ltrim
+  [[ -z "$d" ]] && d="(no description)"
+  printf '%s' "$d"
+}
+
+sec_commands() {
+  local dir="$DOTFILES/.config/AtiScriptsV1" list="" f base desc
+  for f in "$dir"/*; do
+    [[ -f "$f" && -x "$f" ]] || continue
+    base="$(basename "$f")"
+    case "$base" in *.sh|rofi_common*|rofi_shared*|__pycache__*) continue ;; esac
+    desc="$(script_desc "$f" "$base")"
+    list+="$(printf '%-22s %s' "$base" "${desc:0:78}")"$'\n'
+  done
+  local sel
+  sel="$(printf '%s%s\n' "$list" "$BACK" | pick "Commands" "$(wc -l <<<"$list") tools · Enter shows full help")"
+  [[ -z "$sel" ]] && return
+  [[ "$sel" == "$BACK" ]] && { main_menu; return; }
+  local cmd; cmd="$(awk '{print $1}' <<<"$sel")"
+  [[ -z "$cmd" ]] && return
+  local help
+  help="$("$dir/$cmd" --help 2>&1 | head -60)"
+  [[ -z "$help" ]] && help="$(sed -n '1,40p' "$dir/$cmd")"
+  view_text "$cmd" "$help"
+}
+
+# ── appearance ───────────────────────────────────────────────────────
+sec_appearance() {
+  local c
+  c="$(printf '%s\n' \
+    "󰸌  Theme                  22 palettes, retints everything" \
+    "󰍹  UI scale               size the desktop to this screen" \
+    "󰸉  Wallpaper              picker" \
+    "󰇥  Boot splash            your name on the boot screen" \
+    "$BACK" | pick "Appearance")"
+  case "$c" in
+    *Theme*)      setsid theme-toggle >/dev/null 2>&1 & ;;
+    *"UI scale"*) setsid ui-scale-toggle >/dev/null 2>&1 & ;;
+    *Wallpaper*)  setsid dm-setbg >/dev/null 2>&1 & ;;
+    *"Boot splash"*) view_text "boot-splash" "$(boot-splash status 2>&1)" ;;
+    "$BACK")      main_menu ;;
+  esac
+}
+
+# ── system ───────────────────────────────────────────────────────────
+sec_system() {
+  local c
+  c="$(printf '%s\n' \
+    "󰋼  About                  user · theme · scale · gpu · kernel" \
+    "󰏗  Package audit          declared vs installed" \
+    "󰓅  Services               what is running and what failed" \
+    "󰍛  Display + GPU          resolution, DPI, driver" \
+    "$BACK" | pick "System")"
+  case "$c" in
+    *About*)     view_text "about" "$(about_text)" ;;
+    *"Package audit"*)
+      view_text "audit" "$("$DOTFILES/installScripts/wizard.sh" --audit 2>&1 | sed 's/\x1b\[[0-9;]*m//g')" ;;
+    *Services*)
+      view_text "services" "$(systemctl --failed --no-pager 2>&1; echo; systemctl list-units --type=service --state=running --no-pager 2>&1 | head -40)" ;;
+    *"Display + GPU"*)
+      view_text "display" "$(xrandr --current 2>&1 | grep -E ' connected|\*'; echo; ui-scale --show 2>&1; echo; lspci -k 2>/dev/null | grep -A3 -E 'VGA|3D')" ;;
+    "$BACK")     main_menu ;;
+  esac
+}
+
+about_text() {
+  local gpu res
+  gpu="$(lspci -mn 2>/dev/null | awk -F'"' '$2 ~ /^03/ {print $4}' | head -1)"
+  case "$gpu" in
+    8086) gpu="Intel" ;; 1002|1022) gpu="AMD" ;; 10de) gpu="NVIDIA" ;;
+    *) gpu="${gpu:-unknown}" ;;
+  esac
+  res="$(xrandr --current 2>/dev/null | awk '/ connected primary/{print $4}' | cut -d+ -f1)"
+  printf 'user       %s\n' "$USER"
+  printf 'host       %s\n' "$(hostnamectl hostname 2>/dev/null || hostname)"
+  printf 'theme      %s\n' "$(cat "$HOME/.cache/qtile/theme_mode" 2>/dev/null || echo unknown)"
+  printf 'ui scale   %s\n' "$(cat "$HOME/.cache/qtile/ui_scale" 2>/dev/null || echo 1.00)"
+  printf 'display    %s\n' "${res:-unknown}"
+  printf 'gpu        %s\n' "$gpu"
+  printf 'kernel     %s\n' "$(uname -r)"
+  printf 'qtile      %s\n' "$(qtile --version 2>/dev/null | head -1)"
+  printf 'picom      %s\n' "$(pacman -Qq picom-ftlabs-pinned picom-ftlabs-git 2>/dev/null | paste -sd' ' -)"
+  printf 'uptime     %s\n' "$(uptime -p 2>/dev/null | sed 's/^up //')"
+  printf 'dotfiles   %s\n' "$(git -C "$DOTFILES" rev-parse --short HEAD 2>/dev/null || echo '-')"
+}
+
+# ── main ─────────────────────────────────────────────────────────────
+main_menu() {
+  local c
+  c="$(printf '%s\n' \
+    "󰌌  Keybindings          ▸ every shortcut, searchable" \
+    "󰘳  Cheatsheets          ▸ qtile · vim · fish" \
+    "󰈙  Documentation        ▸ README · troubleshooting · packages" \
+    "󰞌  Commands             ▸ every tool this desktop installs" \
+    "󰏘  Appearance           ▸ theme · scale · wallpaper · splash" \
+    "󰒓  System               ▸ about · audit · services · gpu" \
+    | pick "Docs")"
+  case "$c" in
+    *Keybindings*)   sec_keys ;;
+    *Cheatsheets*)   sec_cheats ;;
+    *Documentation*) sec_docs ;;
+    *Commands*)      sec_commands ;;
+    *Appearance*)    sec_appearance ;;
+    *System*)        sec_system ;;
+  esac
+}
+
+case "${1:-}" in
+  "")          main_menu ;;
+  keys)        sec_keys ;;
+  cheats)      sec_cheats ;;
+  docs)        sec_docs ;;
+  trouble)     sec_trouble ;;
+  commands)    sec_commands ;;
+  appearance)  sec_appearance ;;
+  system)      sec_system ;;
+  about)       about_text ;;
+  --help|-h)   sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) echo "rofi_docs: unknown section '$1'" >&2; exit 2 ;;
+esac
