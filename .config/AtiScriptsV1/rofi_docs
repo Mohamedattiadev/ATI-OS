@@ -28,6 +28,13 @@ QTILE_CFG="$HOME/.config/qtile/config.py"
 VIEW_CLASS="docs-view"
 ESPANSO_DIR="$HOME/.config/espanso"
 
+# theme-apply writes this from the active 9-slot palette. Without it glow
+# renders in its own built-in colors, which is why a themed desktop still
+# showed dracula pink and blue inside every document it opened. "auto" is
+# the honest fallback on a machine where theme-apply has not run yet.
+GLOW_STYLE="$HOME/.cache/qtile/glow.json"
+[[ -f "$GLOW_STYLE" ]] || GLOW_STYLE="auto"
+
 # rofi -dmenu exits 1 on Escape and 0 on a selection. That difference is
 # the whole navigation model, so it gets its own wrapper: RC is the caller's
 # signal to go back up rather than act.
@@ -39,7 +46,33 @@ pick() {
   printf '%s' "$out"
 }
 
+# Set by every function that actually opens something. The menu is a
+# LAUNCHER, so once it has launched, it is done: sections used to return
+# into main_menu's loop, which re-drew the top-level rofi on top of the
+# window you had just asked for. You then had to Esc it away every single
+# time. Checked once in main_menu, after the dispatch.
+LAUNCHED=0
+
 # ── viewers ──────────────────────────────────────────────────────────
+# `kitty -e sh -c '<pager> ...'`: if <pager> is not installed, kitty maps a
+# window, sh prints "command not found" and exits, and the window vanishes
+# after ~0.2s -- no error anywhere you can read it. That is not theoretical:
+# `less` is not in the `base` group and nothing else on this system pulls it
+# in, and BOTH `glow -p` and `bat --paging=always` exec less rather than
+# paging themselves, so every text view in this menu died that way.
+#
+# So: never launch a terminal for a binary that is not there. Check first,
+# say so in rofi, and fall back to nvim -- which is the one viewer this
+# repo can actually guarantee, since editing the config is the whole point.
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# A pager that exists. less if installed (best defaults for this), else
+# nvim in read-only mode, which pages fine and is never absent here.
+term_view() {  # term_view <shell-command>
+  setsid kitty --class "$VIEW_CLASS" --title "docs" -e sh -c "$1" >/dev/null 2>&1 &
+  LAUNCHED=1
+}
+
 # Markdown is RENDERED and read-only. Opening README.md in a writable nvim
 # was wrong twice over: it showed raw markup instead of the document, and
 # it invited edits to a file that is the repo's own documentation. It also
@@ -48,12 +81,13 @@ pick() {
 view_md() {
   local f="$1"
   [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
-  if command -v glow >/dev/null 2>&1; then
-    setsid kitty --class "$VIEW_CLASS" --title "docs" \
-      -e sh -c "glow -p -w 100 '$f'" >/dev/null 2>&1 &
+  if have glow && have less; then
+    term_view "glow -s '$GLOW_STYLE' -p -w 100 '$f'"
   else
-    setsid kitty --class "$VIEW_CLASS" --title "docs" \
-      -e sh -c "bat --style=plain --paging=always -l md '$f'" >/dev/null 2>&1 &
+    # `glow -p` IS less -- without it glow dumps the whole document and
+    # exits, which is a flash, not a viewer. nvim shows raw markup instead
+    # of rendered prose, but it scrolls, searches and stays open.
+    view_at_line "$f" 1
   fi
 }
 
@@ -66,6 +100,7 @@ view_at_line() {
   [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
   setsid kitty --class "$VIEW_CLASS" --title "docs" \
     -e nvim -R "+${line}" "+normal zz" "$f" >/dev/null 2>&1 &
+  LAUNCHED=1
 }
 
 # The one writable target. Editing your own config is the point.
@@ -73,14 +108,66 @@ view_edit() {
   local f="$1"
   [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
   setsid kitty --class "$VIEW_CLASS" --title "docs" -e nvim "$f" >/dev/null 2>&1 &
+  LAUNCHED=1
 }
 
 view_text() {
   local title="$1" body="$2" tmp
   tmp="$(mktemp --suffix=.txt)"
   printf '%s\n' "$body" > "$tmp"
-  setsid kitty --class "$VIEW_CLASS" --title "docs" \
-    -e sh -c "less -R '$tmp'; rm -f '$tmp'" >/dev/null 2>&1 &
+  if have less; then
+    term_view "less -R '$tmp'; rm -f '$tmp'"
+  else
+    # -R would make the buffer read-only anyway; +set nomodified stops the
+    # "no write since last change" prompt on :q for a throwaway file.
+    term_view "nvim -R '+set nomodified' '$tmp'; rm -f '$tmp'"
+  fi
+}
+
+# A generated PAGE, not a dump. About/services/gpu/audit used to arrive as
+# raw command output in a bare pager -- correct information, presented as a
+# wall of monospace with no title, no grouping and no relationship to the
+# themed documents sitting one menu entry away. They are markdown now and
+# go through the same themed glow renderer, so a generated panel and a
+# committed README look like the same product.
+#
+# The body is markdown. Command output belongs in a fenced block inside it,
+# which is what panel_block below is for.
+view_panel() {
+  local title="$1" body="$2" tmp
+  tmp="$(mktemp --suffix=.md)"
+  { printf '# %s\n\n' "$title"; printf '%s\n' "$body"; } > "$tmp"
+  if have glow && have less; then
+    term_view "glow -s '$GLOW_STYLE' -p -w 100 '$tmp'; rm -f '$tmp'"
+  else
+    view_text "$title" "$body"
+    rm -f "$tmp"
+  fi
+}
+
+# Wrap command output as a fenced block. Alignment matters in `systemctl`
+# and `xrandr` output, so it must not be reflowed as prose.
+panel_block() {  # panel_block <language> <text>
+  printf '```%s\n%s\n```\n' "$1" "$2"
+}
+
+# "key   value" lines -> a markdown table. Two columns, because that is
+# what every one of these panels actually is.
+panel_table() {  # panel_table <col1> <col2> <"key<TAB>value" lines>
+  printf '| %s | %s |\n| --- | --- |\n' "$1" "$2"
+  printf '%s\n' "$3" | while IFS=$'\t' read -r k v; do
+    [[ -z "$k" ]] && continue
+    printf '| %s | %s |\n' "$k" "$v"
+  done
+}
+
+# Launch a detached GUI/rofi tool. Same LAUNCHED bookkeeping, plus the
+# missing-binary check the terminal viewers get -- `setsid theme-toggle &`
+# on a host without it failed completely silently.
+run_tool() {
+  have "$1" || { rofi -e "not installed: $1\nrun: ./wizard.sh --yes --only=ati-scripts"; return; }
+  setsid "$@" >/dev/null 2>&1 &
+  LAUNCHED=1
 }
 
 # ── qtile IPC ────────────────────────────────────────────────────────
@@ -210,7 +297,12 @@ sec_trouble() {
 # code path and the menu launched rofi pickers, toggled themes and started
 # dictation instead of documenting anything.
 script_desc() {
-  local f="$1" base="$2" d stem="${base%.py}"
+  # Two statements, not one: in `local a=$2 b=${a%.py}` the expansion of $a
+  # happens BEFORE local has assigned it, so stem was silently always empty
+  # and the precise "<name> — <description>" header match below could never
+  # fire. Every entry came from the loose fallback heuristic instead.
+  local f="$1" base="$2" d
+  local stem="${base%.py}"
   d="$(head -12 "$f" \
        | grep -m1 -E "^(#+ *|\"\"\")${stem}(\.py)?[[:space:]]+[—–-][[:space:]]*." \
        | sed -E "s/^(#+ *|\"\"\")${stem}(\.py)?[[:space:]]+[—–-][[:space:]]*//")"
@@ -246,7 +338,14 @@ sec_commands() {
     # The leading comment block: everything from line 2 until the first
     # line that is not a comment. That is where these scripts document
     # themselves, and reading it cannot have side effects.
-    view_text "$cmd" "$(awk 'NR==1 {next} /^#/ {sub(/^#+ ?/,""); print; next} /^$/ {print; next} {exit}' "$dir/$cmd")"
+    #
+    # Fenced, not prose: these headers are hand-wrapped and full of literal
+    # command lines and ASCII diagrams, all of which markdown would happily
+    # reflow into nonsense.
+    view_panel "$cmd" "$(
+      printf '`%s`\n\n' "$dir/$cmd"
+      panel_block "" "$(awk 'NR==1 {next} /^#/ {sub(/^#+ ?/,""); print; next} /^$/ {print; next} {exit}' "$dir/$cmd")"
+    )"
     return
   done
 }
@@ -263,10 +362,16 @@ sec_appearance() {
       | pick "Appearance" "Esc goes back")"
     (( RC != 0 )) && return
     case "$c" in
-      *Theme*)      setsid theme-toggle    >/dev/null 2>&1 & return ;;
-      *"UI scale"*) setsid ui-scale-toggle >/dev/null 2>&1 & return ;;
-      *Wallpaper*)  setsid dm-setbg        >/dev/null 2>&1 & return ;;
-      *"Boot splash"*) view_text "boot-splash" "$(boot-splash status 2>&1)"; return ;;
+      *Theme*)      run_tool theme-toggle;    return ;;
+      *"UI scale"*) run_tool ui-scale-toggle; return ;;
+      *Wallpaper*)  run_tool dm-setbg;        return ;;
+      *"Boot splash"*)
+        view_panel "Boot splash" "$(
+          printf 'What plymouth is configured to show while this machine boots.\n\n'
+          panel_block "" "$(boot-splash status 2>&1)"
+          printf '\nChange the name on it with `boot-splash set-name "<name>"`.\n'
+        )"
+        return ;;
       *) return ;;
     esac
   done
@@ -285,6 +390,15 @@ sec_espanso() {
   local match_dir="$ESPANSO_DIR/match"
   local envfile="/etc/environment"
 
+  # Reading /etc/environment needs no privilege -- it is 0644, because
+  # pam_env has to read it as every user at login. The `sudo grep` this
+  # used to run was pure downside: rofi_docs is spawned from the bar with
+  # no controlling terminal, so on a host where the sudo timestamp has
+  # expired that grep cannot prompt and simply fails, and EVERY variable
+  # was then reported missing. sudo is kept for the WRITE below, which
+  # genuinely needs it.
+  env_has() { grep -qE "^[[:space:]]*${1}=" "$envfile" 2>/dev/null; }
+
   while :; do
     # Which variables the snippets reference, and which are actually set.
     local wanted set_count missing_count
@@ -293,7 +407,7 @@ sec_espanso() {
     set_count=0; missing_count=0
     local v missing=""
     for v in $wanted; do
-      if sudo grep -qE "^[[:space:]]*${v}=" "$envfile" 2>/dev/null; then
+      if env_has "$v"; then
         set_count=$((set_count+1))
       else
         missing_count=$((missing_count+1)); missing+="$v"$'\n'
@@ -310,36 +424,53 @@ sec_espanso() {
     (( RC != 0 )) && return
     case "$c" in
       *"Personal variables"*)
-        local body
-        body="$(printf 'espanso snippets reference %s variables.\n\n' "$(wc -w <<<"$wanted")")"
-        body+="$(printf 'SET (%s):\n' "$set_count")"
+        local body v
+        # Every `body+="$(...)"` here loses the command substitution's
+        # trailing newlines, so each chunk ends with an explicit $'\n'.
+        body="$(printf 'espanso snippets reference **%s** variables, read from `%s`.' \
+                  "$(wc -w <<<"$wanted")" "$envfile")"$'\n\n'
+        body+="$(printf '## Set (%s)' "$set_count")"$'\n\n'
         for v in $wanted; do
-          sudo grep -qE "^[[:space:]]*${v}=" "$envfile" 2>/dev/null && body+="  $v"$'\n'
+          env_has "$v" && body+="- \`$v\`"$'\n'
         done
-        body+=$'\n'"$(printf 'MISSING (%s) — snippets using these expand to nothing:\n' "$missing_count")"
-        body+="$(sed 's/^/  /' <<<"$missing")"
-        body+=$'\n\n'"Add them to $envfile as KEY=value, one per line, then:"$'\n'
-        body+="  espanso restart"$'\n'
-        view_text "espanso variables" "$body"
+        (( set_count == 0 )) && body+=$'_none_\n'
+        body+=$'\n'"$(printf '## Missing (%s)' "$missing_count")"$'\n'
+        body+=$'\nSnippets using these expand to an empty string — no error, no warning.\n\n'
+        body+="$(sed '/^$/d; s/^/- `/; s/$/`/' <<<"$missing")"
+        body+=$'\n\n---\n\n'"Add them to \`$envfile\` as \`KEY=value\`, one per line, then run:"$'\n\n'
+        body+=$'```\nespanso restart\n```\n'
+        view_panel "Espanso variables" "$body"
         return ;;
       *"Edit /etc/environment"*)
         # Scaffold the missing keys first, commented out, so the file
         # documents what espanso is looking for instead of being an empty
         # page you have to guess at.
-        if [[ -n "${missing// /}" ]]; then
+        #
+        # Guarded by the marker line, because the scaffold writes the keys
+        # COMMENTED OUT -- so they still read as "missing" on the next open,
+        # and the unguarded version appended the whole block again every
+        # single time this entry was selected.
+        #
+        # Both the scaffold and sudoedit run INSIDE the terminal, not out
+        # here: this script has no controlling terminal (the bar spawned
+        # it), so a sudo password prompt had nowhere to appear and the
+        # append silently did nothing.
+        local scaffold="" sf
+        if [[ -n "${missing// /}" ]] && ! grep -q 'added by rofi_docs' "$envfile" 2>/dev/null; then
+          sf="$(mktemp --suffix=.env)"
           {
             echo ""
             echo "# --- espanso snippet variables (added by rofi_docs) ---"
             echo "# Fill in the value after '=' and remove the leading '#'."
             echo "# Snippets that use an unset variable expand to nothing."
             sed 's/^/#/; s/$/=/' <<<"$missing"
-          } | sudo tee -a "$envfile" >/dev/null
+          } > "$sf"
+          scaffold="sudo tee -a '$envfile' < '$sf' >/dev/null; rm -f '$sf';"
         fi
         # sudoedit, not `sudo nvim`: it edits a copy as you and installs it
         # afterwards, so a crashed editor cannot leave a root-owned mess in
         # /etc, and your own nvim config is used rather than root's.
-        setsid kitty --class "$VIEW_CLASS" --title "docs" \
-          -e sh -c "SUDO_EDITOR=nvim sudoedit '$envfile'" >/dev/null 2>&1 &
+        term_view "$scaffold SUDO_EDITOR=nvim sudoedit '$envfile'"
         return ;;
       *"Snippet files"*)
         local f list=""
@@ -371,6 +502,7 @@ YML
       *"Restart espanso"*)
         if espanso restart >/dev/null 2>&1; then
           notify-send -a espanso "espanso restarted" "snippets reloaded" 2>/dev/null
+          LAUNCHED=1
         else
           rofi -e "espanso restart failed — is espanso running?"
         fi
@@ -392,19 +524,42 @@ sec_system() {
       | pick "System" "Esc goes back")"
     (( RC != 0 )) && return
     case "$c" in
-      *About*) view_text "about" "$(about_text)"; return ;;
+      *About*)
+        view_panel "About this machine" "$(panel_table "" "value" "$(about_rows)")"
+        return ;;
       *"Package audit"*)
-        view_text "audit" "$("$DOTFILES/installScripts/wizard.sh" --audit 2>&1 | sed 's/\x1b\[[0-9;]*m//g')"; return ;;
+        view_panel "Package audit" "$(
+          printf 'Declared in `.config/arch-config/modules/*.yaml` versus what pacman\nactually has installed.\n\n'
+          panel_block "" "$("$DOTFILES/installScripts/wizard.sh" --audit 2>&1 | sed 's/\x1b\[[0-9;]*m//g')"
+        )"
+        return ;;
       *Services*)
-        view_text "services" "$(systemctl --failed --no-pager 2>&1; echo; systemctl list-units --type=service --state=running --no-pager 2>&1 | head -40)"; return ;;
+        view_panel "Services" "$(
+          printf '## Failed\n\n'
+          panel_block "" "$(systemctl --failed --no-pager 2>&1)"
+          printf '\n## Running\n\n'
+          panel_block "" "$(systemctl list-units --type=service --state=running --no-pager 2>&1 | head -40)"
+        )"
+        return ;;
       *"Display + GPU"*)
-        view_text "display" "$(xrandr --current 2>&1 | grep -E ' connected|\*'; echo; ui-scale --show 2>&1; echo; lspci -k 2>/dev/null | grep -A3 -E 'VGA|3D')"; return ;;
+        view_panel "Display + GPU" "$(
+          printf '## Outputs and modes\n\n'
+          panel_block "" "$(xrandr --current 2>&1 | grep -E ' connected|\*')"
+          printf '\n## UI scale\n\n'
+          panel_block "" "$(ui-scale --show 2>&1)"
+          printf '\n## Graphics driver\n\n'
+          panel_block "" "$(lspci -k 2>/dev/null | grep -A3 -E 'VGA|3D')"
+        )"
+        return ;;
       *) return ;;
     esac
   done
 }
 
-about_text() {
+# Tab-separated key/value rows. panel_table turns these into markdown; the
+# `about` CLI subcommand still prints them as plain aligned text, since a
+# markdown table piped into another program helps nobody.
+about_rows() {
   local gpu res
   gpu="$(lspci -mn 2>/dev/null | awk -F'"' '$2 ~ /^03/ {print $4}' | head -1)"
   case "$gpu" in
@@ -412,18 +567,20 @@ about_text() {
     *) gpu="${gpu:-unknown}" ;;
   esac
   res="$(xrandr --current 2>/dev/null | awk '/ connected primary/{print $4}' | cut -d+ -f1)"
-  printf 'user       %s\n' "$USER"
-  printf 'host       %s\n' "$(hostnamectl hostname 2>/dev/null || hostname)"
-  printf 'theme      %s\n' "$(cat "$HOME/.cache/qtile/theme_mode" 2>/dev/null || echo unknown)"
-  printf 'ui scale   %s\n' "$(cat "$HOME/.cache/qtile/ui_scale" 2>/dev/null || echo 1.00)"
-  printf 'display    %s\n' "${res:-unknown}"
-  printf 'gpu        %s\n' "$gpu"
-  printf 'kernel     %s\n' "$(uname -r)"
-  printf 'qtile      %s\n' "$(qtile --version 2>/dev/null | head -1)"
-  printf 'picom      %s\n' "$(pacman -Qq picom-ftlabs-pinned picom-ftlabs-git 2>/dev/null | paste -sd' ' -)"
-  printf 'uptime     %s\n' "$(uptime -p 2>/dev/null | sed 's/^up //')"
-  printf 'dotfiles   %s\n' "$(git -C "$DOTFILES" rev-parse --short HEAD 2>/dev/null || echo '-')"
+  printf 'user\t%s\n'     "$USER"
+  printf 'host\t%s\n'     "$(hostnamectl hostname 2>/dev/null || hostname)"
+  printf 'theme\t%s\n'    "$(cat "$HOME/.cache/qtile/theme_mode" 2>/dev/null || echo unknown)"
+  printf 'ui scale\t%s\n' "$(cat "$HOME/.cache/qtile/ui_scale" 2>/dev/null || echo 1.00)"
+  printf 'display\t%s\n'  "${res:-unknown}"
+  printf 'gpu\t%s\n'      "$gpu"
+  printf 'kernel\t%s\n'   "$(uname -r)"
+  printf 'qtile\t%s\n'    "$(qtile --version 2>/dev/null | head -1)"
+  printf 'picom\t%s\n'    "$(pacman -Qq picom-ftlabs-pinned picom-ftlabs-git 2>/dev/null | sort -u | paste -sd' ' -)"
+  printf 'uptime\t%s\n'   "$(uptime -p 2>/dev/null | sed 's/^up //')"
+  printf 'dotfiles\t%s\n' "$(git -C "$DOTFILES" rev-parse --short HEAD 2>/dev/null || echo '-')"
 }
+
+about_text() { about_rows | column -t -s $'\t'; }
 
 # ── main ─────────────────────────────────────────────────────────────
 # Loops: a submenu returning (its Esc) lands back here rather than exiting,
@@ -451,6 +608,12 @@ main_menu() {
       *System*)        sec_system ;;
       *) return ;;
     esac
+    # A section that OPENED something is the end of the interaction: falling
+    # back into this loop redrew the top-level menu directly on top of the
+    # window you had just asked for, so every single lookup ended with an
+    # extra Esc. A section that came back empty-handed (its own Esc) still
+    # lands here, which is what makes Esc read as "up one level".
+    (( LAUNCHED )) && return
   done
 }
 

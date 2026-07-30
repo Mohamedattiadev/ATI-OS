@@ -25,6 +25,12 @@ packages:
   - auto-cpufreq
   - glow             # markdown renderer -- rofi_docs' fallback viewer when
                      # nvim is unavailable, and nicer than bat for prose
+  - less             # NOT in the `base` group, and nothing else pulls it in.
+                     # Every pager path in rofi_docs went through it -- `glow
+                     # -p` and `bat --paging` both EXEC less rather than
+                     # scrolling themselves, so on a host without it the
+                     # viewer terminal opened and died in ~0.2s with
+                     # "less: command not found". Declared, not assumed.
   - didyoumean
   - dmscripts-git
   - shell-color-scripts-git
