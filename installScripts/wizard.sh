@@ -230,7 +230,7 @@ run() {
 # Group is only used for the picker header — keep display order stable.
 declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
-  sanity bootstrap yay dcli stow arch-config paths dcli-sync gpu picom-pin cargo ati-scripts ui-scale githooks
+  sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts ui-scale githooks
   pacman-guard boot-fallback login-shell
   touchpad xinit xresources xmodmap lid image-envs flatpak piper whisper
   whisper-fast mic-gain
@@ -462,6 +462,7 @@ _reg dcli-sync         "dcli sync (all pkgs)" System   "Install every declared p
 _reg paths             "Expand @HOME@ paths"  Dotfiles  "Render browser flags · gtk.css · bookmarks for this user"  "step_paths"
 _reg ui-scale          "UI scale (DPI)"      Dotfiles  "Size bar/fonts to this display; ui-scale-toggle to override"  "step_ui_scale"
 _reg githooks          "Git pre-commit hook"  Dotfiles "Refuse commits that break the config or drift packages"  "step_githooks"
+_reg radios            "Network + Bluetooth" System    "Enable NetworkManager + bluetooth so the Mod+P popups have a daemon" "step_radios"
 _reg gpu               "GPU + microcode"     System    "Detect Intel/AMD/NVIDIA from PCI ids, install matching drivers" "step_gpu"
 _reg picom-pin         "picom (pinned)"      System    "Build the animation fork from a fixed commit, not branch HEAD"  "step_picom_pin"
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
@@ -1137,6 +1138,33 @@ step_whisper_fast() {
   run "sudo install -Dm755 $build/bin/whisper-stream /usr/local/bin/whisper-stream"
 }
 
+step_radios() {
+  # Declaring a package installs a binary, not a running daemon. dcli puts
+  # networkmanager and bluez on the disk; nothing until now started either,
+  # and archinstall is what enabled them on the machine this repo was
+  # written on -- so a fresh install got nm-applet and blueman-applet in
+  # the tray with no daemon behind them, and both qtile popups (Mod+P then
+  # n / b) failing with "NetworkManager is not running".
+  #
+  # Two managers on one interface is how you get a link that flaps between
+  # them, so archinstall's alternative is stood down first. iwd is NOT
+  # touched: no wifi.backend is shipped, which means NetworkManager drives
+  # wpa_supplicant -- but if this machine has been pointed at iwd by hand,
+  # disabling it would take the wifi with it. Left to the operator.
+  local svc
+  if systemctl is-enabled systemd-networkd.service &>/dev/null; then
+    run "sudo systemctl disable --now systemd-networkd.service"
+  fi
+
+  for svc in NetworkManager.service bluetooth.service; do
+    if systemctl is-enabled "$svc" &>/dev/null; then
+      _OK "$svc already enabled"
+    else
+      run "sudo systemctl enable --now $svc"
+    fi
+  done
+}
+
 step_mic_gain() {
   # WirePlumber applies its own default ALSA mixer levels to hardware
   # nodes on every session start -- Capture + Internal Mic Boost both
@@ -1618,6 +1646,11 @@ uninstall_gpu() {
   run "rm -f $HOME/.config/picom/gpu.env"
 }
 uninstall_cargo()             { :; }
+# Deliberately a no-op. Disabling NetworkManager to "reverse" an install is
+# how you end up on a machine with no way to reach the internet and no GUI
+# to fix it; bluetooth follows the same reasoning. Turn either off by hand
+# (or with service_trim.sh) if you really do not want it.
+uninstall_radios()            { :; }
 uninstall_arch_config()       { :; }
 uninstall_flatpak()           { :; }
 uninstall_piper()             { :; }  # models may be shared
@@ -1640,6 +1673,7 @@ UMOD_CMD[dcli]="uninstall_dcli"
 UMOD_CMD[stow]="uninstall_stow"
 UMOD_CMD[arch-config]="uninstall_arch_config"
 UMOD_CMD[dcli-sync]="uninstall_dcli_sync"
+UMOD_CMD[radios]="uninstall_radios"
 UMOD_CMD[cargo]="uninstall_cargo"
 UMOD_CMD[ati-scripts]="uninstall_ati_scripts"
 UMOD_CMD[pacman-guard]="uninstall_pacman_guard"
