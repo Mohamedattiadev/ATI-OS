@@ -123,6 +123,26 @@ kdeconnectd & # Phone integration
 ) &
 
 # ---------------------------------------------------------
+# 6b. First-run onboarding tour
+# ---------------------------------------------------------
+# No-op unless wizard.sh armed it, so this costs one file test on every
+# other login. It does its own waiting for the eww daemon started in
+# section 2 -- backgrounded here so a slow daemon never holds up the rest
+# of autostart.
+#
+# Absolute path fallback: on a very first login the ati-scripts step may
+# not have symlinked into /usr/local/bin yet (or PATH is not populated for
+# a non-interactive shell), and this is precisely the login that has a
+# tour to show.
+(
+  if command -v onboarding-first-run >/dev/null 2>&1; then
+    onboarding-first-run
+  else
+    "$HOME/.config/AtiScriptsV1/onboarding-first-run"
+  fi
+) &
+
+# ---------------------------------------------------------
 # 7. Neovim Daemon (IMPORTANT)
 # ---------------------------------------------------------
 # Creates a tmux session that hosts Neovim as a server.

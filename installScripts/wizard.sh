@@ -1904,7 +1904,31 @@ _finale_summary() {
   fi
 }
 
+# Arm (or disarm) the onboarding tour for the next graphical login.
+#
+# The install ends in a TTY; the tour is an eww window that can only exist
+# inside a qtile session, i.e. after `letsgo` -- usually after a reboot.
+# This stamp is the handoff between the two. autostart.sh calls
+# onboarding-first-run on every login, which consumes the stamp and shows
+# the tour exactly once.
+#
+# Written directly rather than via `onboarding-first-run --arm`: the
+# ati-scripts module symlinks that script into /usr/local/bin, and it is
+# perfectly legal to run the wizard with that module skipped. The stamp
+# format is an empty file, so there is nothing to get out of step.
+arm_onboarding() {
+  local state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/atidots"
+  if (( UNINSTALL )); then
+    rm -f "$state_dir/onboarding.pending"
+    return
+  fi
+  mkdir -p "$state_dir" || return
+  rm -f "$state_dir/onboarding.done"
+  : >"$state_dir/onboarding.pending"
+}
+
 page_finale() {
+  (( DRY_RUN )) || arm_onboarding
   echo
   if (( UNINSTALL )); then
     # Telling someone who just uninstalled to "run letsgo" would send them
@@ -1921,6 +1945,9 @@ page_finale() {
   _INFO "  · Log out to TTY and run:  letsgo   (or: startx)"
   _INFO "  · Reload qtile any time:   qtile cmd-obj -o cmd -f reload_config"
   _INFO "  · Update system:           dcli sync"
+  echo
+  _OK   "  · A short tour opens by itself the first time the desktop starts."
+  _DIM "    Skip it with Cancel; reopen it any time from the 💡 tray icon."
   echo
   _DIM "TROUBLESHOOTING.md documents every common failure + fix."
   echo
