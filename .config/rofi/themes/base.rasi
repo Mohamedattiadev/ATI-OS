@@ -7,10 +7,22 @@
 
 @import "current-palette.rasi"
 
+/* "FiraCode Nerd" was NOT AN INSTALLED FAMILY. fontconfig does not warn
+   about that -- it silently substitutes -- and `fc-match "FiraCode Nerd"`
+   on this machine answered NotoSansCJK-Regular.ttc, so every rofi menu on
+   the system has been rendering in a proportional CJK face.
+
+   That is why no space-padded column in any of these menus ever lined up:
+   rofi_docs pads its first column to a fixed width (`%-38s`) to align the
+   second, and padding only aligns in a MONOSPACE font. rofi-kill and
+   rofi_todo do the same thing.
+
+   `fc-list : family | grep -i fira` gives the real names. Check any font
+   set in this repo with fc-match before trusting it. */
 * {
     background-color: transparent;
     text-color:       @foreground;
-    font:             "FiraCode Nerd 12";
+    font:             "FiraCode Nerd Font Mono 12";
 }
 
 window {
