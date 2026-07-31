@@ -2449,20 +2449,76 @@ def open_cheatsheet(which="qtile"):
     return "ok"
 
 
-def page_cheatsheet(qtile, step=1):
-    """Tab inside CheatSheet-Mode: page whichever sheet is on screen.
+def _close_other_cheatsheets(keep):
+    """Close every cheatsheet except `keep`.
 
-    The qtile and vim sheets run to two pages at a readable size -- 90 and
-    64 bindings do not fit one 1366x768 screen at 12pt, and the previous
-    answer to that was a 9pt sheet whose bottom rows were drawn off the
-    edge of the popup. Only one sheet is ever open at a time (k / v / f
-    each toggle their own, and leaving the chord closes all three), so
-    "the open one" is unambiguous. Does nothing on a single-page sheet.
+    auto_enable_cheatsheet() shows the qtile sheet on every chord entry,
+    unconditionally. Pressing v or f used to just toggle_*_cheatsheet() on
+    top of that -- which opened the new sheet without closing the qtile
+    one still sitting underneath it. Both stayed "open" as far as
+    is_open() was concerned, and since page/scroll_cheatsheet() check
+    (Qtile, Vim, Fish) in that order and act on the first match, j/k/Tab
+    kept driving the invisible qtile sheet no matter which one was on
+    screen. Only close_*_cheatsheet() actually closes a sheet -- this is
+    what open_vim_cheatsheet()/open_fish_cheatsheet() call before opening
+    theirs, so the "one sheet open at a time" every other function here
+    assumes is actually true.
+    """
+    for sheet, closer in (
+        (QtileCheatsheet, close_qtile_cheatsheet),
+        (VimCheatsheet, close_vim_cheatsheet),
+        (FishCheatsheet, close_fish_kitty_cheatsheet),
+    ):
+        if sheet is not keep and sheet.is_open():
+            closer()
+
+
+def open_vim_cheatsheet(qtile):
+    """v inside CheatSheet-Mode: switch to the vim sheet, closing whatever
+    else is open first. If vim is already the one open, this is a toggle
+    (closes it) same as before."""
+    if not VimCheatsheet.is_open():
+        _close_other_cheatsheets(VimCheatsheet)
+    toggle_vim_cheatsheet(qtile)
+
+
+def open_fish_cheatsheet(qtile):
+    """f inside CheatSheet-Mode: same as open_vim_cheatsheet() but fish."""
+    if not FishCheatsheet.is_open():
+        _close_other_cheatsheets(FishCheatsheet)
+    toggle_fish_kitty_cheatsheet(qtile)
+
+
+def page_cheatsheet(qtile, step=1):
+    """Tab inside CheatSheet-Mode: move a screenful in whichever sheet is on
+    screen. Only one sheet is ever open at a time (k / v / f each toggle
+    their own, and leaving the chord closes all three), so "the open one"
+    is unambiguous. Does nothing when nothing is open.
     """
     for sheet in (QtileCheatsheet, VimCheatsheet, FishCheatsheet):
         if sheet.is_open():
             sheet.next_page(qtile, step)
             return
+
+
+def scroll_cheatsheet(qtile):
+    """j inside CheatSheet-Mode: scroll whichever sheet is on screen down by
+    its default step. Does nothing when nothing is open."""
+    for sheet in (QtileCheatsheet, VimCheatsheet, FishCheatsheet):
+        if sheet.is_open():
+            sheet.scroll(qtile)
+            return
+
+
+def cheatsheet_k(qtile):
+    """k inside CheatSheet-Mode is overloaded: with nothing open it opens
+    the qtile sheet (its original job); with a sheet already open, k is
+    vim's "up", so it scrolls up instead of re-toggling the sheet closed."""
+    for sheet in (QtileCheatsheet, VimCheatsheet, FishCheatsheet):
+        if sheet.is_open():
+            sheet.scroll(qtile, rows=-sheet.SCROLL_ROWS)
+            return
+    toggle_cheatsheet(qtile)
 
 
 def exit_cheatsheet_mode(qtile):
@@ -3086,7 +3142,7 @@ def normal_user_bar():
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
                 "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
-                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , TAB , ESC ",
+                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , j/k scroll , TAB , ESC ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC",
                 "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
@@ -3380,7 +3436,7 @@ def right_side_widgets():
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
                 "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
-                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , TAB , ESC ",
+                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , j/k scroll , TAB , ESC ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC",
                 "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
@@ -5590,34 +5646,40 @@ keys = [
             Key(
                 [],
                 "k",
-                lazy.function(toggle_cheatsheet),
-                desc="Show cheatsheet",
+                lazy.function(cheatsheet_k),
+                desc="Show cheatsheet / scroll up",
+            ),
+            Key(
+                [],
+                "j",
+                lazy.function(scroll_cheatsheet),
+                desc="Scroll down",
             ),
             Key(
                 [],
                 "v",
-                lazy.function(toggle_vim_cheatsheet),
-                desc="Test popup widget scrolling",
+                lazy.function(open_vim_cheatsheet),
+                desc="Show vim cheatsheet",
             ),
             Key(
                 [],
                 "f",
-                lazy.function(toggle_fish_kitty_cheatsheet),
-                desc="Test popup widget scrolling",
+                lazy.function(open_fish_cheatsheet),
+                desc="Show fish cheatsheet",
             ),
-            # PAGING. The qtile and vim sheets are two pages at a size you
-            # can actually read; Tab cycles, and wraps at the end.
+            # Tab moves a screenful in whichever sheet is open; j/k above
+            # move by a few rows for fine scrolling.
             Key(
                 [],
                 "Tab",
                 lazy.function(page_cheatsheet),
-                desc="Next cheatsheet page",
+                desc="Next cheatsheet screenful",
             ),
             Key(
                 ["shift"],
                 "Tab",
                 lazy.function(lambda q: page_cheatsheet(q, -1)),
-                desc="Previous cheatsheet page",
+                desc="Previous cheatsheet screenful",
             ),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
             *group_keys(),
