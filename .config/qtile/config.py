@@ -234,6 +234,38 @@ colorsW = [
 
 ARCH_ICON_MAIN = "󰕰"
 
+
+def chip_icon(glyph, rise=7000):
+    """Optically centre a single glyph vertically inside its chip.
+
+    qtile centres a TextBox's text by the font's ADVANCE box, not by where
+    the ink actually sits, and nerd font icons routinely park their ink off
+    to one side of that box. Measured on the logo chip against its own
+    plate: the ink sat 1.5px low, which on a 24px plate is plainly visible
+    and was the "icon isn't centred" complaint.
+
+    Pango is the only lever qtile exposes for this, and TextBox has
+    markup=True by default, so the glyph carries its own correction via
+    `rise`. Do NOT reason about the value from Pango's nominal 1024-units-
+    to-the-point: qtile re-centres the layout after Pango has applied the
+    rise, which cancels most of it, and the measured response here is about
+    4000 units per pixel. Swept it against the real chip -- 0-5000 moved
+    nothing, 6000-7000 gave +0.5px, 8000 overshot to -0.5px -- so 7000 is
+    as close to centred as a whole-pixel grid allows, down from 1.5px low.
+
+    Horizontal is deliberately NOT corrected. The residual there was 1px on
+    a 25px-wide plate, i.e. the rounding you get centring an 11px ink box in
+    an odd-width space, and the only lever is padding with a space character
+    whose width is a font property rather than a pixel count -- a less
+    predictable cure than the symptom.
+
+    Anything that swaps this chip's icon at runtime has to go through here
+    too, or the correction is dropped the first time the icon changes --
+    see set_icon_temporarily().
+    """
+    return f'<span rise="{rise}">{glyph}</span>'
+
+
 DEFAULT_CHIP_COLOR = colorsW[2]
 
 os.environ["GTK_IM_MODULE"] = "none"
@@ -2244,13 +2276,13 @@ def set_icon_temporarily(qtile, icon, cmd):
         return
 
     # update icon immediately
-    w.update(icon)
+    w.update(chip_icon(icon))
 
     # spawn app
     qtile.spawn(cmd)
 
     # qtile.call_later avoids spawning a thread per keypress.
-    qtile.call_later(0.3, lambda: w.update(ARCH_ICON_MAIN))
+    qtile.call_later(0.3, lambda: w.update(chip_icon(ARCH_ICON_MAIN)))
 
 
 def open_terminal(qtile):
@@ -2870,7 +2902,7 @@ def normal_user_bar():
     return [
         widget.TextBox(
             name="main_icon_chip_nu",
-            text=ARCH_ICON_MAIN,
+            text=chip_icon(ARCH_ICON_MAIN),
             fontsize=_s(19),
             padding=16,
             foreground=colors[7],
@@ -3136,7 +3168,7 @@ def left_side_widgets():
         chip(
             ewidget.TextBox,
             name="main_icon_chip",
-            text=ARCH_ICON_MAIN,
+            text=chip_icon(ARCH_ICON_MAIN),
             fontsize=_s(15),
             padding=11,
             foreground=colors[7],
@@ -4428,7 +4460,16 @@ def chip(WCls, chip_color=None, **kwargs):
     base_color = chip_color if chip_color is not None else DEFAULT_CHIP_COLOR
     deco = RectDecoration(
         colour=base_color,
-        radius=11,
+        # radius = half the plate's height, so the short sides are true
+        # semicircles: single-glyph chips come out round and wider ones come
+        # out as proper pills. It was a flat 11 against a plate that is
+        # _s(28) - 2*padding_y = 24 tall, which is one pixel short of the 12
+        # a full round needs -- leaving a 2px straight segment on each short
+        # side. Small, but it is the difference between "circle" and
+        # "squircle", and it was visible on the logo chip.
+        # Derived rather than hardcoded so it stays correct at any UI scale;
+        # keep the 28 in step with the bar's own size= below.
+        radius=(_s(28) - 2 * 2) / 2,
         filled=True,
         padding_x=3,
         padding_y=2,
