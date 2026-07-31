@@ -13,6 +13,15 @@ import doom_one
 # preset (gruvbox, dracula, ...) stuck on doom_one's hardcoded colors
 # while the rest of the desktop had already switched.
 # `:config-source` (fired by theme-apply) re-runs this.
+def _mix(a, b, t=0.5):
+    """Blend two hex colours; the 9-slot palette has no dim/muted slot."""
+    a, b = a.lstrip("#"), b.lstrip("#")
+    return "#%02x%02x%02x" % tuple(
+        round(int(a[i:i + 2], 16) * (1 - t) + int(b[i:i + 2], 16) * t)
+        for i in (0, 2, 4)
+    )
+
+
 def _apply_palette():
     import json, os
     try:
@@ -113,6 +122,20 @@ def _apply_palette():
         c.colors.tabs.pinned.selected.even.bg = acc
         c.colors.tabs.pinned.selected.odd.fg = bg
         c.colors.tabs.pinned.selected.even.fg = bg
+        # Right-click menu is a plain Qt widget: doom_one never touches it
+        # and qb leaves it at the Qt default, so it came up as a light-grey
+        # menu with dark text on top of every dark palette.
+        c.colors.contextmenu.menu.bg = bg_alt
+        c.colors.contextmenu.menu.fg = fg
+        c.colors.contextmenu.selected.bg = acc
+        c.colors.contextmenu.selected.fg = bg
+        c.colors.contextmenu.disabled.bg = bg_alt
+        # No "dim" slot in the 9-colour palette -- mix fg halfway into the
+        # menu bg so disabled entries read as greyed out and not invisible.
+        c.colors.contextmenu.disabled.fg = _mix(fg, bg_alt)
+        c.colors.keyhint.bg = bg_alt
+        c.colors.keyhint.fg = fg
+        c.colors.keyhint.suffix.fg = yellow
     except Exception:
         # Palette dump missing/corrupt -- keep doom_one's defaults rather
         # than a half-applied palette.
@@ -127,6 +150,10 @@ def _apply_palette():
 config.set("colors.webpage.darkmode.enabled", True)
 doom_one.setup(c, {"spacing": {"vertical": 5, "horizontal": 5}})
 
+# Fallback hint colours only. _apply_palette() runs *after* this block and
+# overwrites all four from the live palette, so these are what you get when
+# ~/.cache/qtile/current_palette.json is missing (fresh install, before the
+# first theme-apply) -- not the normal path.
 dark_mode = True  # Manually switch this or automate later
 
 
@@ -156,15 +183,40 @@ _apply_palette()
 
 c.hints.chars = "asdghjkl"
 
-c.fonts.default_family = "JetBrains Mono"
+# Family names must match what fontconfig actually has installed --
+# "JetBrains Mono" and "Source Code Pro" are neither installed nor
+# aliases here, so every one of these fell through to the Noto Sans CJK
+# fallback and the whole chrome rendered in a CJK face. "JetBrainsMono
+# Nerd Font" is the name the qtile bar already uses.
+c.fonts.default_family = "JetBrainsMono Nerd Font"
 c.fonts.default_size = "9pt"
 c.fonts.prompts = "default_size sans-serif"
-c.fonts.statusbar = '11pt "Source Code Pro"'
+c.fonts.statusbar = '11pt "JetBrainsMono Nerd Font"'
 
 c.content.blocking.method = "auto"
 c.keyhint.blacklist = ["*"]
 c.messages.timeout = 0
 c.scrolling.smooth = True
+
+# -----------------------------------------------------------------------------
+# Content
+# -----------------------------------------------------------------------------
+# qt6-webengine ships pdf.js; without this every PDF link is a download
+# instead of rendering in a tab.
+c.content.pdfjs = True
+# Videos that start themselves fight the mpv hint (M) below, which
+# exists precisely to watch things deliberately.
+c.content.autoplay = False
+
+# -----------------------------------------------------------------------------
+# Tabs, completion, downloads
+# -----------------------------------------------------------------------------
+# Closing the last tab left an empty window; go back to the homepage.
+c.tabs.last_close = "startpage"
+c.completion.height = "35%"
+# Finished downloads used to sit in the bar until qb was restarted.
+c.downloads.remove_finished = 10000
+c.downloads.position = "bottom"
 
 
 # -----------------------------------------------------------------------------
@@ -179,6 +231,12 @@ _homepage = "file://" + _os.path.expanduser(
 )
 c.url.default_page = _homepage
 c.url.start_pages = [_homepage]
+
+# The homepage already paints itself from the live palette (theme-apply
+# rewrites its :root). Running Chromium's dark-mode filter over it too
+# means a light preset gets force-inverted back to dark and the start
+# page ends up the one surface that ignores the theme.
+config.set("colors.webpage.darkmode.enabled", False, _homepage)
 
 # -----------------------------------------------------------------------------
 # Editor & Clipboard
@@ -248,7 +306,6 @@ config.unbind("<Ctrl+d>", mode="command")
 config.unbind("<Shift+Del>", mode="command")
 config.unbind("<Ctrl+c>", mode="command")
 config.unbind("<Ctrl+Shift+c>", mode="command")
-config.unbind("<Ctrl+Return>", mode="command")
 config.unbind("<Ctrl+Return>", mode="command")
 config.unbind("<Ctrl+b>")
 config.unbind("<Ctrl+a>", mode="command")
@@ -322,8 +379,7 @@ config.bind(
     mode="caret",
 )
 config.bind("s", "cmd-set-text /", mode="caret")
-config.bind("<space>f", "cmd-set-text :")
-config.bind("gS", "tab-give")  # go in seperate tab
+config.bind("gS", "tab-give")  # go in separate tab
 config.bind("<Ctrl-j>", "completion-item-focus next", mode="command")
 config.bind("<Ctrl-k>", "completion-item-focus prev", mode="command")
 config.bind("<Ctrl-n>", "completion-item-focus next-category", mode="command")

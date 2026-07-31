@@ -1,14 +1,31 @@
 #!/usr/bin/env bash
+# Pick a qutebrowser bookmark in rofi and open it.
+#
+# Colors come from ~/.cache/qtile/current_palette.json (same inline
+# python pattern as battery_notify) -- the hardcoded Dracula hexes this
+# used to carry stayed purple/orange over every gruvbox/wal desktop.
 set -euo pipefail
 
 ROFI_CMD="${ROFI_CMD:-rofi}"
 BOOKMARKS_FILE="$HOME/.config/qutebrowser/bookmarks/urls"
 
-TITLE_COLOR="#8BE9FD"
-ARROW_COLOR="#6272A4"
-URL_COLOR="#FFB86C"
+read -r TITLE_COLOR ARROW_COLOR URL_COLOR <<<"$(
+  python3 <<'PY' 2>/dev/null
+import json, os
+try:
+    d = json.load(open(os.path.expanduser("~/.cache/qtile/current_palette.json")))
+    print(d["cyan"], d["purple"], d["yellow"])
+except Exception:
+    print("#8BE9FD", "#6272A4", "#FFB86C")
+PY
+)"
+[[ -n "${URL_COLOR:-}" ]] || read -r TITLE_COLOR ARROW_COLOR URL_COLOR <<<"#8BE9FD #6272A4 #FFB86C"
 
 [[ -f "$BOOKMARKS_FILE" ]] || exit 0
+
+# -markup-rows means a title containing & < > blows up pango's parser
+# (bookmark titles routinely have "&"). Escape before interpolating.
+esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 
 lines=()
 urls=()
@@ -23,19 +40,23 @@ while IFS= read -r line; do
   title="$(printf '%s\n' "$line" | sed -E "s|^[^[:space:]]+[[:space:]]+||")"
 
   # Fallback if title is still empty
-  [[ -z "$title" ]] && title="(no title)"
+  [[ -z "$title" || "$title" == "$url" ]] && title="(no title)"
 
   lines+=(
-    "<span foreground=\"$TITLE_COLOR\">$title</span> \
+    "<span foreground=\"$TITLE_COLOR\">$(esc "$title")</span> \
 <span foreground=\"$ARROW_COLOR\">→</span> \
-<span foreground=\"$URL_COLOR\">$url</span>"
+<span foreground=\"$URL_COLOR\">$(esc "$url")</span>"
   )
   urls+=("$url")
 done <"$BOOKMARKS_FILE"
 
-choice=$(printf '%s\n' "${lines[@]}" |
-  "$ROFI_CMD" -dmenu -markup-rows -p "🔖 Bookmarks:") || exit 0
+[[ ${#lines[@]} -eq 0 ]] && exit 0
 
-for i in "${!lines[@]}"; do
-  [[ "${lines[$i]}" == "$choice" ]] && exec qutebrowser "${urls[$i]}"
-done
+# Ask rofi for the index instead of matching the chosen markup string
+# back against the list -- two bookmarks sharing a title+url always
+# resolved to the first one.
+idx=$(printf '%s\n' "${lines[@]}" |
+  "$ROFI_CMD" -dmenu -i -markup-rows -format i -p "🔖 Bookmarks:") || exit 0
+[[ -n "$idx" ]] || exit 0
+
+exec qutebrowser "${urls[$idx]}"

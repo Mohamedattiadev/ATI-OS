@@ -302,6 +302,17 @@ path = sys.argv[1]
 bg, bg_alt, fg, red, green, yellow, blue, purple, cyan = sys.argv[2:11]
 with open(path) as f:
     src = f.read()
+
+
+def mix(a, b, t=0.5):
+    """Blend two hexes -- the 9-slot palette has no dim/border slot."""
+    a, b = a.lstrip("#"), b.lstrip("#")
+    return "#%02x%02x%02x" % tuple(
+        round(int(a[i:i + 2], 16) * (1 - t) + int(b[i:i + 2], 16) * t)
+        for i in (0, 2, 4)
+    )
+
+
 block = (
     "    <!-- BEGIN-THEME-VARS (rewritten by theme-apply) -->\n"
     "    <style id=\"theme-vars\">\n"
@@ -315,8 +326,19 @@ block = (
     f"        --blue: {blue};\n"
     f"        --purple: {purple};\n"
     f"        --cyan: {cyan};\n"
-    f"        --accent: {green};\n"
+    # Blue, not green: qutebrowser's config.py tints its own chrome
+    # (selected tab, hints, prompts) from the blue slot, and the
+    # homepage sits directly under that tab bar -- emitting green here
+    # meant the page and the chrome around it showed two unrelated
+    # accents on every palette.
+    f"        --accent: {blue};\n"
     f"        --urgent: {red};\n"
+    # homepage.css also references --dim / --highlight / --border,
+    # which had no slot here and so silently fell back to the
+    # stylesheet's hardcoded Doom One values on every other theme.
+    f"        --dim: {mix(fg, bg, 0.45)};\n"
+    f"        --highlight: {mix(bg_alt, fg, 0.14)};\n"
+    f"        --border: {mix(bg_alt, fg, 0.22)};\n"
     "      }\n"
     "    </style>\n"
     "    <!-- END-THEME-VARS -->"

@@ -1,50 +1,79 @@
 #!/usr/bin/env bash
+# Pick a recently visited page in rofi and reopen it.
+#
+# Colors from ~/.cache/qtile/current_palette.json so the picker tracks
+# the active theme instead of the Dracula hexes it used to hardcode.
 set -euo pipefail
 
 ROFI_CMD="${ROFI_CMD:-rofi}"
-# shellcheck disable=SC2034  # reserved for extra rofi flags
-ROFI_ARGS=""
-
 DB="$HOME/.local/share/qutebrowser/history.sqlite"
+LIMIT="${QB_HISTORY_LIMIT:-500}"
 
-TITLE_COLOR="#8BE9FD"
-ARROW_COLOR="#6272A4"
-URL_COLOR="#FFB86C"
+read -r TITLE_COLOR ARROW_COLOR URL_COLOR <<<"$(
+  python3 <<'PY' 2>/dev/null
+import json, os
+try:
+    d = json.load(open(os.path.expanduser("~/.cache/qtile/current_palette.json")))
+    print(d["cyan"], d["purple"], d["yellow"])
+except Exception:
+    print("#8BE9FD", "#6272A4", "#FFB86C")
+PY
+)"
+[[ -n "${URL_COLOR:-}" ]] || read -r TITLE_COLOR ARROW_COLOR URL_COLOR <<<"#8BE9FD #6272A4 #FFB86C"
 
 command -v sqlite3 >/dev/null || exit 1
 [[ -f "$DB" ]] || exit 1
 
+# Read the db copy, not the live file: qutebrowser holds history.sqlite
+# open and a query against it during a write returns "database is
+# locked" and the picker just never appears.
+TMPDB="$(mktemp -u --tmpdir qb-history-XXXXXX.sqlite)"
+cleanup() { rm -f "$TMPDB"; }
+trap cleanup EXIT
+cp "$DB" "$TMPDB" 2>/dev/null || TMPDB="$DB"
+
+# One row per url (most recent visit wins) -- the old query listed the
+# same page a dozen times and pushed everything else off the list.
+# ASCII US as the field separator: titles and urls legitimately contain
+# "|", which silently truncated the url with IFS='|'.
 mapfile -t rows < <(
-  sqlite3 "$DB" "
+  sqlite3 -separator $'\x1f' "$TMPDB" "
     SELECT title, url
     FROM History
-    WHERE url IS NOT NULL
+    WHERE url IS NOT NULL AND url != ''
+    GROUP BY url
+    HAVING atime = MAX(atime)
     ORDER BY atime DESC
-    LIMIT 500;
-  "
+    LIMIT $LIMIT;
+  " 2>/dev/null
 )
 
 [[ ${#rows[@]} -eq 0 ]] && exit 0
+
+# -markup-rows means an unescaped & or < in a page title is a pango
+# parse error, and page titles are full of "&".
+esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 
 lines=()
 urls=()
 
 for row in "${rows[@]}"; do
-  IFS='|' read -r title url <<< "$row"
+  IFS=$'\x1f' read -r title url <<<"$row"
+  [[ -z "$url" ]] && continue
   title=${title:-"(no title)"}
 
   lines+=(
-    "<span foreground=\"$TITLE_COLOR\">$title</span> \
+    "<span foreground=\"$TITLE_COLOR\">$(esc "$title")</span> \
 <span foreground=\"$ARROW_COLOR\">→</span> \
-<span foreground=\"$URL_COLOR\">$url</span>"
+<span foreground=\"$URL_COLOR\">$(esc "$url")</span>"
   )
   urls+=("$url")
 done
 
-choice=$(printf '%s\n' "${lines[@]}" \
-  | "$ROFI_CMD" -dmenu -markup-rows -p "🕘 History:") || exit 0
+[[ ${#lines[@]} -eq 0 ]] && exit 0
 
-for i in "${!lines[@]}"; do
-  [[ "${lines[$i]}" == "$choice" ]] && exec qutebrowser "${urls[$i]}"
-done
+idx=$(printf '%s\n' "${lines[@]}" |
+  "$ROFI_CMD" -dmenu -i -markup-rows -format i -p "🕘 History:") || exit 0
+[[ -n "$idx" ]] || exit 0
 
+exec qutebrowser "${urls[$idx]}"

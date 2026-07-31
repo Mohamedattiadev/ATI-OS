@@ -1,71 +1,137 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""Show every config.py keybinding in rofi.
+
+Parses config.py statically (never imports it -- config.py only makes
+sense inside qutebrowser's own `config`/`c` namespace).
+"""
 
 import ast
 import os
 import subprocess
+import sys
 
-# --- Configuration ---
 CONFIG_FILE = os.path.expanduser("~/.config/qutebrowser/config.py")
+PALETTE = os.path.expanduser("~/.cache/qtile/current_palette.json")
+
+# Mode ordering for the list; anything unlisted sorts last.
+MODE_ORDER = ["normal", "insert", "command", "caret", "prompt", "passthrough"]
+
+
+def _const(node):
+    """Return a str literal's value, or None if the node isn't one.
+
+    ast.Str was removed in Python 3.12, which made the old isinstance
+    checks here raise AttributeError -- the `K` binding died outright.
+    ast.Constant covers every literal on 3.8+.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
 
 def parse_qute_keymaps(config_path):
-    """Parse config.py and return a list of keymaps (mode, key, command). Only bind entries."""
+    """Return [(mode, key, command)] for every config.bind() call."""
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             tree = ast.parse(f.read())
-    except Exception as e:
-        print(f"Error reading config: {e}")
+    except OSError as e:
+        subprocess.run(["notify-send", "Qute Keymaps", f"Can't read config: {e}"])
+        return []
+    except SyntaxError as e:
+        subprocess.run(["notify-send", "Qute Keymaps", f"config.py won't parse: {e}"])
         return []
 
     keymaps = []
-
     for node in ast.walk(tree):
-        # Only look for function calls
-        if isinstance(node, ast.Call) and hasattr(node.func, "attr"):
-            func_name = node.func.attr
-            if func_name != "bind":
-                continue  # skip unbind
+        if not isinstance(node, ast.Call):
+            continue
+        if getattr(node.func, "attr", None) != "bind":
+            continue
 
-            # Default mode
-            mode = "normal"
-            for kw in node.keywords:
-                if kw.arg == "mode":
-                    if isinstance(kw.value, ast.Str):
-                        mode = kw.value.s
-                    elif isinstance(kw.value, ast.Constant):
-                        mode = kw.value.value
+        key = _const(node.args[0]) if node.args else None
+        cmd = _const(node.args[1]) if len(node.args) > 1 else None
+        if key is None or cmd is None:
+            # Non-literal bind (built from a variable) -- nothing useful
+            # to show without executing the config.
+            continue
 
-            # Key
-            key = ""
-            if node.args and isinstance(node.args[0], (ast.Str, ast.Constant)):
-                key = node.args[0].s if isinstance(node.args[0], ast.Str) else node.args[0].value
+        mode = "normal"
+        for kw in node.keywords:
+            if kw.arg == "mode":
+                mode = _const(kw.value) or mode
 
-            # Command
-            cmd = ""
-            if len(node.args) > 1 and isinstance(node.args[1], (ast.Str, ast.Constant)):
-                cmd = node.args[1].s if isinstance(node.args[1], ast.Str) else node.args[1].value
+        keymaps.append((mode, key, cmd))
 
-            keymaps.append((mode, key, cmd))
+    def sort_key(item):
+        mode, key, _ = item
+        rank = MODE_ORDER.index(mode) if mode in MODE_ORDER else len(MODE_ORDER)
+        return (rank, key.lower())
 
-    return keymaps
+    return sorted(keymaps, key=sort_key)
+
+
+def palette():
+    """Live theme colours, or Doom One if the palette dump isn't there."""
+    fallback = {"fg": "#dcdfe4", "blue": "#51afef", "yellow": "#ecbe7b"}
+    try:
+        import json
+
+        with open(PALETTE) as f:
+            d = json.load(f)
+        return {k: d.get(k, v) for k, v in fallback.items()}
+    except (OSError, ValueError):
+        return fallback
+
 
 def show_rofi(keymaps):
-    """Show keymaps in Rofi dmenu."""
     if not keymaps:
         subprocess.run(["notify-send", "Qute Keymaps", "No keymaps found."])
         return
 
-    # Format lines: [mode] key → command
-    lines = [f"[{mode}] {key.ljust(12)} → {cmd}" for mode, key, cmd in keymaps]
+    from html import escape
 
-    rofi_cmd = [
-        "rofi", "-dmenu", "-i", "-p", "Qute Keymaps",
-        "-theme-str", "window {width: 50%;}",
-        "-theme-str", "listview {lines: 10;}"
+    p = palette()
+    width = max(len(key) for _, key, _ in keymaps)
+    lines = [
+        '<span foreground="{y}">[{m}]</span> '
+        '<span foreground="{b}">{k}</span> → '
+        '<span foreground="{f}">{c}</span>'.format(
+            y=p["yellow"],
+            b=p["blue"],
+            f=p["fg"],
+            m=escape(mode),
+            # Escape first, then pad with non-breaking spaces: "&amp;" is
+            # 5 chars to ljust but one glyph on screen, so padding after
+            # escaping would misalign the column.
+            k=escape(key) + "&#160;" * (width - len(key)),
+            c=escape(cmd),
+        )
+        for mode, key, cmd in keymaps
     ]
 
-    subprocess.run(rofi_cmd, input="\n".join(lines), text=True)
+    subprocess.run(
+        [
+            "rofi",
+            "-dmenu",
+            "-i",
+            "-markup-rows",
+            "-p",
+            "Qute Keymaps",
+            # 10 lines, matching the sibling rofi_keymaps picker (12) and
+            # copyq_rofi (8) rather than the 16 this used to ask for --
+            # with 56 bindings that filled most of the screen height.
+            # fixed-height: 0 lets it shrink further as you type instead
+            # of holding ten empty rows open under a single match.
+            "-theme-str",
+            "window {width: 55%;}",
+            "-theme-str",
+            "listview {lines: 10; fixed-height: 0;}",
+        ],
+        input="\n".join(lines),
+        text=True,
+    )
+
 
 if __name__ == "__main__":
-    keymaps = parse_qute_keymaps(CONFIG_FILE)
-    show_rofi(keymaps)
+    sys.exit(show_rofi(parse_qute_keymaps(CONFIG_FILE)) or 0)
