@@ -1109,26 +1109,53 @@ subsystem. Each entry: **symptom → root cause → fix**.
 
   Every column in Vim and Fish was also ~40px wider than its cell, so all
   of them wrapped as well, which made them taller still.
-- **Fix:** `popups/_cheatsheet_grid.py` — one shared packer, since the
-  copy-paste is what let one bug become three. Sections stack top to
+- **Fix:** `popups/_cheatsheet_grid.py` — one shared layout module, since
+  the copy-paste is what let one bug become three. Cards stack top to
   bottom, each placed at the height the ones above it actually need, and
-  a column is closed when the next section will not fit. Running out of
-  columns logs a warning naming the section, instead of dropping it.
-- **Sizes are measured, not guessed.** Each sheet's `BODY_PX` /
-  `TITLE_PX` / `NOTE_PX` are pango extents at its `BODY_SIZE`, so
-  **changing `BODY_SIZE` without re-measuring them invalidates every
-  position.** It is also why `fontsize=BODY_SIZE` is passed explicitly to
-  every `PopupText` — inheriting the default of 12 would do exactly that.
-- **Why the sheets use different sizes** (Qtile 9pt/5 cols, Vim 10pt/5,
-  Fish 11pt/4): on a 1366×768 panel the two constraints fight. A larger
-  font needs more columns to fit the height, and more columns are too
-  narrow for the widest line, so it wraps — which makes sections taller,
-  which needs more columns again. Each sheet gets the largest size that
-  clears both, and they have different amounts of content.
+  a column is closed when the next section will not fit. Sections are
+  placed **first fit** rather than strictly in sequence: filling one
+  column at a time left a card-sized hole under any section that missed
+  the bottom of its column by a few pixels.
+- **Sizes are exact, not estimated.** The face is monospace, so a card is
+  `(2 + rows) × LINE_PX` tall and `(2 + cols) × CHAR_PX` wide and that is
+  the end of it. `LINE_PX` / `CHAR_PX` are pango extents at `BODY_SIZE`,
+  so **changing `BODY_SIZE` without re-measuring them invalidates every
+  position.** It is also why `font=` and `fontsize=` are passed explicitly
+  to every `PopupText` — inheriting the defaults would do exactly that.
+- **When there is genuinely too much, it paginates.** 90 qtile bindings do
+  not fit one 1366×768 screen at a readable size, and the old answer to
+  that was a 9pt sheet with its bottom rows off the edge. `Tab` inside
+  `Mod+Shift+K` turns the page.
 - **Check a change without a running qtile** — this is what `validate.sh`
-  runs, and it names the section and the fix:
+  runs, and it names the card and the fix:
   ```sh
   cd ~/.config/qtile && python3 -m popups._cheatsheet_grid
+  ```
+  It fails on four separate things, all of which have actually happened:
+  text wider or taller than its card, a card past the footer or the popup
+  edge, a **row clipped** (`z 'file/folderna…` is not a thing you can
+  type), and a **glyph the font does not have**.
+
+### Cheatsheet columns do not line up / the popups render in a CJK face
+- **Symptom:** the key column in a cheatsheet is ragged instead of flush
+  right, or the whole popup renders in a font that is visibly not the one
+  the rest of the desktop uses.
+- **Root cause:** `PopupText`'s default font is **`sans`**, and on this
+  machine `fc-match sans` answers **Noto Sans CJK KR**. Same trap as
+  242b8ff, which fixed it for rofi and not for these. It is also
+  proportional, so no amount of space-padding will align a column in it.
+- **Fix:** every cheatsheet control names `_cheatsheet_grid.FONT`
+  (`JetBrainsMono Nerd Font`) explicitly. The right-aligned key column
+  only works because every glyph is exactly `CHAR_PX` wide.
+- **A missing *glyph* has the same effect as a missing font**, and is
+  harder to spot: pango silently falls back for that one character, at
+  that other font's width, and the row it is in stops lining up. `↵`
+  (U+21B5) is the obvious symbol for Enter and **is not in
+  JetBrainsMono**; `⏎` (U+23CE) is. The selftest checks every glyph the
+  popups draw — headers and footers included, which is where a hardcoded
+  `↵` slipped past a cards-only version of the check.
+  ```sh
+  fc-match "JetBrainsMono Nerd Font"      # is the family even installed
   ```
 
 ### Popup labels are washed out / unreadable on some themes

@@ -6,15 +6,7 @@ from popups import _cheatsheet_grid as _grid
 # GLOBAL STATE
 # =============================================================================
 _FISH_KITTY_CHEATSHEET = None
-
-
-def escape_markup(text: str) -> str:
-    return (
-        text.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-    )
-
+_PAGE = 0            # which page is on screen; Tab cycles
 
 # =============================================================================
 # COLORS — wal-derived (dominant = green slot). Re-read at each toggle so
@@ -22,8 +14,21 @@ def escape_markup(text: str) -> str:
 # =============================================================================
 from popups._wal_colors import load_colors as _load_colors
 from popups._wal_colors import fade_in_popup
-COLORS = _load_colors()
+from popups._wal_colors import _mix, ensure_contrast
 
+
+def _colors():
+    """Palette, adjusted for text drawn on cards rather than on `bg`."""
+    base = _load_colors()
+    base["line"] = _mix(base["bg"], base["fg"], 0.22)
+    base["surface"] = _mix(base["bg"], base["fg"], 0.07)
+    surface, fg = base["surface"], base["fg"]
+    for key in ("muted", "green", "red", "blue", "purple", "line"):
+        base[key] = ensure_contrast(base[key], surface, fg, minimum=3.0)
+    return base
+
+
+COLORS = _colors()
 
 # =============================================================================
 # CHEATSHEET DATA (Fish + Kitty)
@@ -34,7 +39,7 @@ CHEATSHEET = {
         ("Exit", "ex"),
         ("Reload config", "src"),
         ("Reset terminal", "reset"),
-        ("vim+tmux (remote)", "vim 'filename'"),
+        ("vim in tmux", "vim 'filename'"),
         ("nvim (normal)", "nvim 'filename'"),
     ],
 
@@ -54,7 +59,7 @@ CHEATSHEET = {
         ("Up 4 levels", ".4"),
         ("Up 5 levels", ".5"),
         ("zoxide", "zi"),
-        ("zoxide history", "z 'file/foldername'"),
+        ("zoxide history", "z 'path'"),
     ],
 
     "Clipboard": [
@@ -93,7 +98,7 @@ CHEATSHEET = {
 
     "Danger Zone": [
         ("Exit shell", "Ctrl + d"),
-        ("Kill tmux server", "tmux kill-server"),
+        ("Kill server", "tmux kill-server"),
         ("Cleanup orphans", "cleanup"),
     ],
 }
@@ -102,139 +107,119 @@ COLUMNS = list(CHEATSHEET.items())
 
 
 # =============================================================================
-# GEOMETRY -- see popups/_cheatsheet_grid.py for why this is not a grid
+# GEOMETRY -- see popups/_cheatsheet_grid.py
 # =============================================================================
-# Sized for the 1366x768 reference panel with a little air on each side.
-POPUP_W = 1300
-POPUP_H = 730
+POPUP_W = 1330
+POPUP_H = 750
 
-# 11, not the PopupText default of 12. At 12 every column was ~40px wider
-# than the cell it was given, so all nine wrapped, and Danger Zone ran 32px
-# past the footer. This sheet is the smallest of the three, so it can
-# afford the largest type: swept with pango, 11pt in 4 columns fits with
-# room to spare.
-BODY_SIZE = 11
+# 12pt, up from 11. The right-hand column of this sheet is shell COMMANDS,
+# not key combos ("tmux kill-server"), so `compact()` has nothing to shorten
+# and the rows are long. Four columns still fits every one of them on a
+# single page -- three columns did not, and spilled two lonely cards onto a
+# second page.
+BODY_SIZE = 12
 N_COLS = 4
 
-# Measured pango extents at "sans 11". Every section renders a divider rule
-# under its title, so NOTE_PX is one body line and has_note is always true.
-BODY_PX, TITLE_PX, NOTE_PX = 23, 27, 23
+# Measured pango extents for "JetBrainsMono Nerd Font 12". Monospace, so
+# exact: every row is one LINE_PX line, every glyph CHAR_PX wide.
+LINE_PX = 22
+CHAR_PX = 10
 
 FOOTER_Y = _grid.FOOTER_Y
+FONT = _grid.FONT
 
 
-def layout_sections():
-    """Place every section. See _cheatsheet_grid.pack()."""
+def layout_pages():
+    """Every card, grouped into pages. See _cheatsheet_grid.pack()."""
     return _grid.pack(
         COLUMNS,
         n_cols=N_COLS,
+        popup_w=POPUP_W,
         popup_h=POPUP_H,
-        body_px=BODY_PX,
-        title_px=TITLE_PX,
-        note_px=NOTE_PX,
-        has_note=lambda title: True,
+        line_px=LINE_PX,
+        char_px=CHAR_PX,
         name="FishCheatsheet",
     )
 
 
-# =============================================================================
-# TEXT RENDERER
-# =============================================================================
-def render_section(title, items):
-    lines = [
-        f'<span size="large" weight="bold" foreground="{COLORS["purple"]}">{title}</span>',
-        f'<span foreground="{COLORS["muted"]}">────────────────</span>',
-    ]
-
-    for label, combo in items:
-        is_danger = any(k in label.lower() for k in ("kill", "exit", "cleanup"))
-        combo_color = COLORS["red"] if is_danger else COLORS["green"]
-
-        lines.append(
-            f'<span foreground="{COLORS["muted"]}">•</span> '
-            f'<span foreground="{COLORS["fg"]}">{escape_markup(label)} :</span> '
-            f'<b><span foreground="{combo_color}">{escape_markup(combo)}</span></b>'
-        )
-
-    return "\n".join(lines)
-
-
-# =============================================================================
-# TOGGLE FUNCTION
-# =============================================================================
-def toggle_fish_kitty_cheatsheet(qtile):
-    global _FISH_KITTY_CHEATSHEET
-
-    if _FISH_KITTY_CHEATSHEET:
-        # kill(), not hide(): hide() only unmaps the window and leaves its
-        # cairo drawer and pango layouts allocated, while the show path
-        # below builds a brand new layout every time -- ~2.7MB leaked per
-        # open at this popup's size.
-        _FISH_KITTY_CHEATSHEET.kill()
-        _FISH_KITTY_CHEATSHEET = None
-        return
-
-    COLORS.update(_load_colors())
-    controls = []
-
-    # ---------------- TITLE ----------------
-    controls.append(
-        PopupText(
-            text=(
-                f'<span size="xx-large" weight="bold" foreground="{COLORS["blue"]}">'
-                f'󰈺  FISH + KITTY</span>\n'
-                f'<span foreground="{COLORS["green"]}">'
-                f'Vi-mode<span foreground="{COLORS["blue"]}"><b>  |  </b></span> '
-                f'<b><span foreground="{COLORS["blue"]}">Meow</span></b> '
-                f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span> '
-                f'<b><span foreground="{COLORS["purple"]}">Termianl</span></b>'
-                f'</span>'
-            ),
-            markup=True,
-            pos_x=0.0,
-            pos_y=0.03,
-            width=1.0,
-            height=0.08,
-            h_align="center",
-            v_align="middle",
-        )
+def render_card(title, items, note, cols):
+    return _grid.card_markup(
+        title, items, cols=cols, colors=COLORS, note=note,
+        danger=("kill", "exit", "cleanup", "delete"),
     )
 
-    # ---------------- SECTIONS ----------------
-    # fontsize is passed explicitly: BODY_PX/TITLE_PX are measured at
-    # BODY_SIZE, so inheriting PopupText's default of 12 would invalidate
-    # every position the packer computed.
-    for title, items, px, py, pw, ph in layout_sections():
+
+# =============================================================================
+# BUILD
+# =============================================================================
+def _header(page_no, pages):
+    counter = (
+        f'<span foreground="{COLORS["muted"]}">   page </span>'
+        f'<span foreground="{COLORS["green"]}" weight="bold">{page_no + 1}</span>'
+        f'<span foreground="{COLORS["muted"]}">/{len(pages)}</span>'
+        if len(pages) > 1 else ""
+    )
+    return (
+        f'<span size="x-large" weight="bold" foreground="{COLORS["blue"]}">'
+        f"  FISH + KITTY CHEATSHEET</span>{counter}\n"
+        f'<span foreground="{COLORS["muted"]}">'
+        f'⇧ Shift   ⌃ Ctrl   ␣ Space   ·   the right column is what you type'
+        f"</span>"
+    )
+
+
+def _footer(pages):
+    keys = [("Esc", "close")]
+    if len(pages) > 1:
+        keys.insert(0, ("Tab", "next page"))
+    parts = [
+        f'<span foreground="{COLORS["green"]}" weight="bold">{k}</span>'
+        f'<span foreground="{COLORS["muted"]}"> {v}</span>'
+        for k, v in keys
+    ]
+    sep = f'<span foreground="{COLORS["line"]}">   ·   </span>'
+    return sep.join(parts)
+
+
+def _build(qtile):
+    global _FISH_KITTY_CHEATSHEET
+
+    COLORS.update(_colors())
+    pages = layout_pages()
+    page = pages[_PAGE % len(pages)]
+
+    controls = [
+        PopupText(
+            text=_header(_PAGE % len(pages), pages),
+            markup=True, font=FONT, fontsize=BODY_SIZE,
+            pos_x=0.0, pos_y=0.02, width=1.0, height=0.09,
+            h_align="center", v_align="middle",
+        )
+    ]
+
+    # font and fontsize on every card: LINE_PX/CHAR_PX are measured for
+    # THIS family at THIS size, and PopupText would otherwise default to
+    # `sans` 12 -- Noto Sans CJK here, proportional, misaligning every key.
+    for title, items, note, cols, px, py, pw, ph in page:
         controls.append(
             PopupText(
-                text=render_section(title, items),
+                text=render_card(title, items, note, cols),
                 markup=True,
+                font=FONT,
                 fontsize=BODY_SIZE,
-                pos_x=px,
-                pos_y=py,
-                width=pw,
-                height=ph,
-                h_align="left",
-                v_align="top",
+                background=COLORS["surface"],
+                highlight_radius=_grid.CARD_RADIUS,
+                pos_x=px, pos_y=py, width=pw, height=ph,
+                h_align="left", v_align="top",
             )
         )
 
-    # ---------------- FOOTER ----------------
     controls.append(
         PopupText(
-            text=(
-                f'<span size="small" foreground="{COLORS["muted"]}">'
-                f' · <b><span foreground="{COLORS["blue"]}">Esc to close ·</span></b> '
-                f' <span> the  Fish + Kitty workflow Cheatsheet · </span>'
-                f'</span>'
-            ),
-            markup=True,
-            pos_x=0.0,
-            pos_y=FOOTER_Y,
-            width=1.0,
-            height=0.05,
-            h_align="center",
-            v_align="middle",
+            text=_footer(pages),
+            markup=True, font=FONT, fontsize=BODY_SIZE,
+            pos_x=0.0, pos_y=FOOTER_Y, width=1.0, height=0.05,
+            h_align="center", v_align="middle",
         )
     )
 
@@ -247,9 +232,43 @@ def toggle_fish_kitty_cheatsheet(qtile):
         close_on_click=False,
         controls=controls,
     )
-
     _FISH_KITTY_CHEATSHEET.show(centered=True)
+
+
+def toggle_fish_kitty_cheatsheet(qtile):
+    global _FISH_KITTY_CHEATSHEET, _PAGE
+
+    if _FISH_KITTY_CHEATSHEET:
+        # kill(), not hide(): hide() leaves the window, its cairo drawer
+        # and every pango layout allocated, and the show path builds a new
+        # layout every time.
+        _FISH_KITTY_CHEATSHEET.kill()
+        _FISH_KITTY_CHEATSHEET = None
+        return
+
+    _PAGE = 0
+    _build(qtile)
     fade_in_popup(_FISH_KITTY_CHEATSHEET)
+
+
+def next_page(qtile, step=1):
+    """Tab: show the next page."""
+    global _PAGE
+
+    if _FISH_KITTY_CHEATSHEET is None or len(layout_pages()) < 2:
+        return
+    _PAGE += step
+    close_fish_kitty_cheatsheet()
+    _build(qtile)
+
+
+def is_open():
+    """Whether this sheet is the one currently on screen.
+
+    Only one of the three is ever open at a time, so config.py uses
+    this to route Tab to whichever it is.
+    """
+    return _FISH_KITTY_CHEATSHEET is not None
 
 
 def close_fish_kitty_cheatsheet():
@@ -258,9 +277,11 @@ def close_fish_kitty_cheatsheet():
         _FISH_KITTY_CHEATSHEET.kill()
         _FISH_KITTY_CHEATSHEET = None
 
+
 def show_fish_kitty_cheatsheet(qtile):
-    global _FISH_KITTY_CHEATSHEET
+    global _PAGE
     if _FISH_KITTY_CHEATSHEET:
         return  # already open
-    toggle_fish_kitty_cheatsheet(qtile)
-    
+    _PAGE = 0
+    _build(qtile)
+    fade_in_popup(_FISH_KITTY_CHEATSHEET)

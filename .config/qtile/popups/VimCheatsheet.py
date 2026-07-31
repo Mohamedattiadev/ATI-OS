@@ -6,15 +6,7 @@ from popups import _cheatsheet_grid as _grid
 # GLOBAL STATE
 # =============================================================================
 _VIM_CHEATSHEET = None
-
-
-def escape_markup(text: str) -> str:
-    return (
-        text
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+_PAGE = 0            # which page is on screen; Tab cycles
 
 # =============================================================================
 # COLORS — wal-derived (dominant = green slot). Re-read at each toggle so
@@ -22,7 +14,21 @@ def escape_markup(text: str) -> str:
 # =============================================================================
 from popups._wal_colors import load_colors as _load_colors
 from popups._wal_colors import fade_in_popup
-COLORS = _load_colors()
+from popups._wal_colors import _mix, ensure_contrast
+
+
+def _colors():
+    """Palette, adjusted for text drawn on cards rather than on `bg`."""
+    base = _load_colors()
+    base["line"] = _mix(base["bg"], base["fg"], 0.22)
+    base["surface"] = _mix(base["bg"], base["fg"], 0.07)
+    surface, fg = base["surface"], base["fg"]
+    for key in ("muted", "green", "red", "blue", "purple", "line"):
+        base[key] = ensure_contrast(base[key], surface, fg, minimum=3.0)
+    return base
+
+
+COLORS = _colors()
 
 # =============================================================================
 # CHEATSHEET DATA
@@ -42,7 +48,7 @@ CHEATSHEET = {
     ("Redo", "Ctrl + r"),
 
     ],
-"Basic 2": [
+"Basics 2": [
 
     # --- Line navigation ---
     ("Start of line", "0"),
@@ -57,12 +63,12 @@ CHEATSHEET = {
     ("Scroll line up", "Ctrl + y"),
     ],
 
-"Basic 3": [
+"Basics 3": [
 
     # --- Editing basics ---
     ("Insert mode", "i"),
     ("Append after cursor", "a"),
-    ("Append end of line", "Shift + a "),
+    ("Append end of line", "Shift + a"),
     ("Delete char", "x"),
     ("Delete line", "dd"),
     ("Delete word", "dw"),
@@ -70,21 +76,21 @@ CHEATSHEET = {
 ],
 
     "Movement + Extras": [
-        ("Fast move (x5)", "<tab> + h j k l"),
+        ("Fast move (x5)", "<tab> h j k l"),
         ("Next tab", "L"),
         ("Prev tab", "H"),
-        ("Split Terminal", "<leader> + tt"),
+        ("Split Terminal", "<leader> tt"),
     ],
 
     "Editing": [
         ("Copy (yanking)", "y"),
         ("Copy line", "Shift + y"),
-        ("Paste ", "p"),
-        ("Move line down (v) ", "Shift + J "),
+        ("Paste", "p"),
+        ("Move line down (v)", "Shift + J"),
         ("Move line up (v)", "Shift + K"),
-        ("replace cururent word", "c + i + w"),
-        ("replace inside parn. ()", "c + i + b"),
-        ("replace inside quo. '' ", "c + i + q")
+        ("replace current word", "c + i + w"),
+        ("replace in parens ()", "c + i + b"),
+        ("replace in quotes ''", "c + i + q")
     ],
 
     "Buffers / Tabs": [
@@ -94,13 +100,13 @@ CHEATSHEET = {
     ],
 
     "Search / Telescope": [
-        ("Find files", "<leader> + ff"),
+        ("Find files", "<leader> ff"),
         ("Find files 2", "<leader> <leader>"),
-        ("Find recent files", "<leader> + oo"),
-        ("Live grep", "<leader> + fg"),
-        ("Word under cursor", "<leader> + fw"),
-        ("Find Todos", "<leader> + ft"), 
-        ("Find recent Buffers", "<leader> + bb"),
+        ("Find recent files", "<leader> oo"),
+        ("Live grep", "<leader> fg"),
+        ("Word under cursor", "<leader> fw"),
+        ("Find Todos", "<leader> ft"), 
+        ("Find recent Buffers", "<leader> bb"),
         ("LazyGit", "<leader> gg"),
     ],
 
@@ -132,161 +138,129 @@ CHEATSHEET = {
     ],
 
     "Exit / Save": [
-        ("Save file", "<leader> + w"),
+        ("Save file", "<leader> w"),
         ("Quit", "<leader> q"),
         ("Quit all", "<leader> <leader> q"),
         ("Close buffer", "<leader> bd"),
-        ("Clear search ", "Escape"),
+        ("Clear search", "Escape"),
     ],
 }
 
 COLUMNS = list(CHEATSHEET.items())
 
 # =============================================================================
-# GEOMETRY -- see popups/_cheatsheet_grid.py for why this is not a grid
+# GEOMETRY -- see popups/_cheatsheet_grid.py
 # =============================================================================
-# Sized for the 1366x768 reference panel with a little air on each side.
-POPUP_W = 1300
-POPUP_H = 730
+POPUP_W = 1330
+POPUP_H = 750
 
-# 10, not the PopupText default of 12. At 12 the four bottom-row sections
-# ran past the popup's own edge -- Screenshots and Exit / Save lost 28px of
-# their tails, and every column was ~40px wider than the cell it was given,
-# so it wrapped as well. Swept with pango: 10pt in 5 columns is the largest
-# that fits the panel with no wrapping and no overflow.
-BODY_SIZE = 10
-N_COLS = 5
+# 12pt, up from 10. Vim's rows are the longest of the three sheets
+# ("Left/Down/Up/Right" against "⇥ h j k l"), so it gets 3 wide columns
+# rather than 4 narrow ones, and runs to two pages.
+BODY_SIZE = 12
+N_COLS = 3
 
-# Measured pango extents at "sans 10". Every section here renders a divider
-# rule under its title, so NOTE_PX is one body line and has_note is always
-# true -- unlike the Qtile sheet, where only the mode sections get one.
-BODY_PX, TITLE_PX, NOTE_PX = 20, 24, 20
+# Measured pango extents for "JetBrainsMono Nerd Font 12". Monospace, so
+# exact: every row is one LINE_PX line, every glyph CHAR_PX wide.
+LINE_PX = 22
+CHAR_PX = 10
 
 FOOTER_Y = _grid.FOOTER_Y
+FONT = _grid.FONT
 
 
-def layout_sections():
-    """Place every section. See _cheatsheet_grid.pack()."""
+def layout_pages():
+    """Every card, grouped into pages. See _cheatsheet_grid.pack()."""
     return _grid.pack(
         COLUMNS,
         n_cols=N_COLS,
+        popup_w=POPUP_W,
         popup_h=POPUP_H,
-        body_px=BODY_PX,
-        title_px=TITLE_PX,
-        note_px=NOTE_PX,
-        has_note=lambda title: True,
+        line_px=LINE_PX,
+        char_px=CHAR_PX,
         name="VimCheatsheet",
     )
 
 
-# =============================================================================
-# TEXT RENDERER
-# =============================================================================
-def render_section(title, items):
-    lines = [
-        f'<span size="large" weight="bold" foreground="{COLORS["purple"]}">{title}</span>',
-        f'<span foreground="{COLORS["muted"]}">────────────────</span>',
-    ]
-
-    for label, combo in items:
-        is_exit = any(k in label.lower() for k in ("quit", "close", "delete"))
-        combo_color = COLORS["red"] if is_exit else COLORS["green"]
-
-        safe_label = escape_markup(label)
-        safe_combo = escape_markup(combo)
-
-        lines.append(
-            f'<span foreground="{COLORS["muted"]}">•</span> '
-            f'<span foreground="{COLORS["fg"]}">{safe_label} :</span> '
-            f'<b><span foreground="{combo_color}">{safe_combo}</span></b>'
-        )
-
-    return "\n".join(lines)
-
-# =============================================================================
-# TOGGLE FUNCTION
-# =============================================================================
-def toggle_vim_cheatsheet(qtile):
-    global _VIM_CHEATSHEET
-
-    if _VIM_CHEATSHEET:
-        # kill(), not hide(): hide() only unmaps the window and leaves its
-        # cairo drawer and pango layouts allocated, while the show path
-        # below builds a brand new layout every time -- ~2.7MB leaked per
-        # open at this popup's size.
-        _VIM_CHEATSHEET.kill()
-        _VIM_CHEATSHEET = None
-        return
-
-    COLORS.update(_load_colors())
-    controls = []
-
-    # ---------------- TITLE ----------------
-    controls.append(
-        PopupText(
-            text=(
-                f'<span size="xx-large" weight="bold" foreground="{COLORS["blue"]}">'
-                f'  VIM CHEATSHEET</span>\n'
-            #     f'<span foreground="{COLORS["muted"]}">'
-            #     f'Leader = <b><span foreground="{COLORS["green"]}">Space</span></b>'
-            #     f'<b><span foreground="{COLORS["green"]}">|</span></b>'
-            #     f'Visual mode = <b><span foreground="{COLORS["green"]}">(v)</span></b>'
-            #     f'Normal mode = <b><span foreground="{COLORS["green"]}">(n)</span></b>'
-            #     f'</span>'
-            # ),
-
-                f'<span foreground="{COLORS["muted"]}">'
-                f'Leader = <b><span foreground="{COLORS["green"]}">Space</span></b> '
-                f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span> '
-                f'Visual Mode = <b><span foreground="{COLORS["purple"]}">(v)</span></b>'
-                f'</span>'
-            ),
-
-            markup=True,
-            pos_x=0.0,
-            pos_y=0.03,
-            width=1.0,
-            height=0.08,
-            h_align="center",
-            v_align="middle",
-        )
+def render_card(title, items, note, cols):
+    return _grid.card_markup(
+        title, items, cols=cols, colors=COLORS, note=note,
+        danger=("quit", "close", "delete", "clear"),
     )
 
-    # ---------------- SECTIONS ----------------
-    # fontsize is passed explicitly: BODY_PX/TITLE_PX are measured at
-    # BODY_SIZE, so inheriting PopupText's default of 12 would invalidate
-    # every position the packer computed.
-    for title, items, px, py, pw, ph in layout_sections():
+
+# =============================================================================
+# BUILD
+# =============================================================================
+def _header(page_no, pages):
+    counter = (
+        f'<span foreground="{COLORS["muted"]}">   page </span>'
+        f'<span foreground="{COLORS["green"]}" weight="bold">{page_no + 1}</span>'
+        f'<span foreground="{COLORS["muted"]}">/{len(pages)}</span>'
+        if len(pages) > 1 else ""
+    )
+    return (
+        f'<span size="x-large" weight="bold" foreground="{COLORS["blue"]}">'
+        f"  VIM CHEATSHEET</span>{counter}\n"
+        f'<span foreground="{COLORS["muted"]}">'
+        f'␣ Leader <span foreground="{COLORS["green"]}">Space</span>'
+        f'   (v) visual mode   ⇧ Shift   ⌃ Ctrl   ⇥ Tab'
+        f"</span>"
+    )
+
+
+def _footer(pages):
+    keys = [("Esc", "close")]
+    if len(pages) > 1:
+        keys.insert(0, ("Tab", "next page"))
+    parts = [
+        f'<span foreground="{COLORS["green"]}" weight="bold">{k}</span>'
+        f'<span foreground="{COLORS["muted"]}"> {v}</span>'
+        for k, v in keys
+    ]
+    sep = f'<span foreground="{COLORS["line"]}">   ·   </span>'
+    return sep.join(parts)
+
+
+def _build(qtile):
+    global _VIM_CHEATSHEET
+
+    COLORS.update(_colors())
+    pages = layout_pages()
+    page = pages[_PAGE % len(pages)]
+
+    controls = [
+        PopupText(
+            text=_header(_PAGE % len(pages), pages),
+            markup=True, font=FONT, fontsize=BODY_SIZE,
+            pos_x=0.0, pos_y=0.02, width=1.0, height=0.09,
+            h_align="center", v_align="middle",
+        )
+    ]
+
+    # font and fontsize on every card: LINE_PX/CHAR_PX are measured for
+    # THIS family at THIS size, and PopupText would otherwise default to
+    # `sans` 12 -- Noto Sans CJK here, proportional, misaligning every key.
+    for title, items, note, cols, px, py, pw, ph in page:
         controls.append(
             PopupText(
-                text=render_section(title, items),
+                text=render_card(title, items, note, cols),
                 markup=True,
+                font=FONT,
                 fontsize=BODY_SIZE,
-                pos_x=px,
-                pos_y=py,
-                width=pw,
-                height=ph,
-                h_align="left",
-                v_align="top",
+                background=COLORS["surface"],
+                highlight_radius=_grid.CARD_RADIUS,
+                pos_x=px, pos_y=py, width=pw, height=ph,
+                h_align="left", v_align="top",
             )
         )
 
-    # ---------------- FOOTER ----------------
     controls.append(
         PopupText(
-            text=(
-                f'<span size="small" foreground="{COLORS["muted"]}">'
-                f' · <b><span foreground="{COLORS["blue"]}">Esc to close ·</span></b> '
-                f' <span> the  Vim Cheatsheet · </span>'
-                f'</span>'
-            ),
-            markup=True,
-            pos_x=0.0,
-            pos_y=FOOTER_Y,
-            width=1.0,
-            height=0.05,
-            h_align="center",
-            v_align="middle",
+            text=_footer(pages),
+            markup=True, font=FONT, fontsize=BODY_SIZE,
+            pos_x=0.0, pos_y=FOOTER_Y, width=1.0, height=0.05,
+            h_align="center", v_align="middle",
         )
     )
 
@@ -299,9 +273,45 @@ def toggle_vim_cheatsheet(qtile):
         close_on_click=False,
         controls=controls,
     )
-
     _VIM_CHEATSHEET.show(centered=True)
+
+
+def toggle_vim_cheatsheet(qtile):
+    global _VIM_CHEATSHEET, _PAGE
+
+    if _VIM_CHEATSHEET:
+        # kill(), not hide(): hide() leaves the window, its cairo drawer
+        # and every pango layout allocated, and the show path builds a new
+        # layout every time.
+        _VIM_CHEATSHEET.kill()
+        _VIM_CHEATSHEET = None
+        return
+
+    _PAGE = 0
+    _build(qtile)
     fade_in_popup(_VIM_CHEATSHEET)
+
+
+def next_page(qtile, step=1):
+    """Tab: show the next page. A rebuild -- the control list is fixed at
+    construction, and the next page is a different set of cards."""
+    global _PAGE
+
+    if _VIM_CHEATSHEET is None or len(layout_pages()) < 2:
+        return
+    _PAGE += step
+    close_vim_cheatsheet()
+    _build(qtile)
+
+
+def is_open():
+    """Whether this sheet is the one currently on screen.
+
+    Only one of the three is ever open at a time, so config.py uses
+    this to route Tab to whichever it is.
+    """
+    return _VIM_CHEATSHEET is not None
+
 
 def close_vim_cheatsheet():
     global _VIM_CHEATSHEET
@@ -309,8 +319,11 @@ def close_vim_cheatsheet():
         _VIM_CHEATSHEET.kill()
         _VIM_CHEATSHEET = None
 
+
 def show_vim_cheatsheet(qtile):
-    global _VIM_CHEATSHEET
+    global _PAGE
     if _VIM_CHEATSHEET:
         return  # already open
-    toggle_vim_cheatsheet(qtile)
+    _PAGE = 0
+    _build(qtile)
+    fade_in_popup(_VIM_CHEATSHEET)

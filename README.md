@@ -166,9 +166,16 @@ applets stay in the tray as icons only.
 
 ![draw mode chip in the bar](IMGS/draw.gif)
 
-**`Mod+Shift+K` — cheatsheet**
+**`Mod+Shift+K` — cheatsheets** (`k` qtile, `v` vim, `f` fish+kitty)
 
 ![cheatsheet chip in the bar](IMGS/cheatsheet.gif)
+
+Every binding on a card, the key hard against the card's right edge, in the
+same monospace face the rest of the popups use. The qtile and vim sheets run
+to two pages — 90 and 64 bindings do not fit one 1366×768 screen at a size
+worth reading — so **`Tab`** turns the page and `Esc` closes. Modifier names
+are symbols (`⇧` Shift, `⌃` Ctrl, `⏎` Enter, `␣` Space); the header carries
+the legend.
 
 <sub>Clips are cropped to the bar's right section — that's where the mode chip
 appears. Also available: `Mod+/` media, `Alt+F` mouse mode, `Mod+F12`

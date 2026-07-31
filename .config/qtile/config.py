@@ -103,6 +103,7 @@ def _s(px):
     return max(1, int(round(px * UI_SCALE)))
 
 
+from popups import VimCheatsheet, FishCheatsheet, QtileCheatsheet
 from popups.VimCheatsheet import toggle_vim_cheatsheet, close_vim_cheatsheet
 from popups.FishCheatsheet import (
     toggle_fish_kitty_cheatsheet,
@@ -2448,6 +2449,22 @@ def open_cheatsheet(which="qtile"):
     return "ok"
 
 
+def page_cheatsheet(qtile, step=1):
+    """Tab inside CheatSheet-Mode: page whichever sheet is on screen.
+
+    The qtile and vim sheets run to two pages at a readable size -- 90 and
+    64 bindings do not fit one 1366x768 screen at 12pt, and the previous
+    answer to that was a 9pt sheet whose bottom rows were drawn off the
+    edge of the popup. Only one sheet is ever open at a time (k / v / f
+    each toggle their own, and leaving the chord closes all three), so
+    "the open one" is unambiguous. Does nothing on a single-page sheet.
+    """
+    for sheet in (QtileCheatsheet, VimCheatsheet, FishCheatsheet):
+        if sheet.is_open():
+            sheet.next_page(qtile, step)
+            return
+
+
 def exit_cheatsheet_mode(qtile):
     close_qtile_cheatsheet()
     close_vim_cheatsheet()
@@ -3069,7 +3086,7 @@ def normal_user_bar():
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
                 "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
-                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
+                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , TAB , ESC ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC",
                 "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
@@ -3363,7 +3380,7 @@ def right_side_widgets():
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
                 "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
-                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
+                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , TAB , ESC ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC",
                 "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
@@ -5587,6 +5604,20 @@ keys = [
                 "f",
                 lazy.function(toggle_fish_kitty_cheatsheet),
                 desc="Test popup widget scrolling",
+            ),
+            # PAGING. The qtile and vim sheets are two pages at a size you
+            # can actually read; Tab cycles, and wraps at the end.
+            Key(
+                [],
+                "Tab",
+                lazy.function(page_cheatsheet),
+                desc="Next cheatsheet page",
+            ),
+            Key(
+                ["shift"],
+                "Tab",
+                lazy.function(lambda q: page_cheatsheet(q, -1)),
+                desc="Previous cheatsheet page",
             ),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
             *group_keys(),

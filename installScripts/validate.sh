@@ -19,8 +19,9 @@
 #   * a @HOME@ template with no renderer, or a renderer with no template
 #   * a module yaml that stopped parsing
 #   * a wizard module with no uninstaller (fails mid-uninstall otherwise)
-#   * a cheatsheet entry drawn past the edge of its popup. PopupText does
-#     not clip, so the entry is simply absent -- no error anywhere.
+#   * a cheatsheet entry drawn past the edge of its popup, clipped mid-key,
+#     or using a glyph the font lacks. PopupText does not clip and pango
+#     falls back silently, so all three are invisible -- no error anywhere.
 #
 # Usage: ./validate.sh [--quiet]
 
@@ -210,19 +211,22 @@ fi
 # was losing the last four entries of its biggest column, and four Vim
 # sections lost their tails.
 #
-# The selftest asks pango for the real extents of every section at its real
-# font size and asserts it fits. Cheap, and it is the only thing standing
-# between "added one entry" and "silently dropped a different one".
+# The selftest asks pango for the real extents of every card at its real
+# font size and asserts it fits, that no row is clipped mid-key, and that
+# every glyph drawn exists in the font -- a missing one falls back to
+# another family at another width and un-aligns the whole key column.
+# Cheap, and the only thing standing between "added one entry" and
+# "silently dropped a different one".
 head_ "cheatsheet popups"
 if ! python3 -c "import gi, cairo" 2>/dev/null; then
   skip "no pygobject/cairo — cannot measure text"
 elif ! python3 -c "import qtile_extras" 2>/dev/null; then
   skip "qtile-extras not importable"
 elif _cs_out="$(cd .config/qtile && python3 -m popups._cheatsheet_grid 2>&1)"; then
-  pass "every cheatsheet section fits its popup"
+  pass "every cheatsheet card fits, nothing clipped, every glyph present"
 else
   printf '%s\n' "$_cs_out" | sed 's/^/    /'
-  fail "a cheatsheet section is drawn off-screen or wraps"
+  fail "a cheatsheet card is off-screen, clipped, or missing a glyph"
 fi
 
 # ── result ───────────────────────────────────────────────────────────

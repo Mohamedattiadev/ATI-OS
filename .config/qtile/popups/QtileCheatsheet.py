@@ -3,9 +3,10 @@ from qtile_extras.popup import PopupRelativeLayout, PopupText
 from popups import _cheatsheet_grid as _grid
 
 # =============================================================================
-# GLOBAL STATE (toggle)
+# GLOBAL STATE
 # =============================================================================
 _CHEATSHEET_LAYOUT = None
+_PAGE = 0            # which page is on screen; Tab cycles
 
 # =============================================================================
 # COLORS — wal-derived (dominant = green slot). Re-read at each toggle so
@@ -13,14 +14,27 @@ _CHEATSHEET_LAYOUT = None
 # =============================================================================
 from popups._wal_colors import load_colors as _load_colors
 from popups._wal_colors import fade_in_popup
-COLORS = _load_colors()
+from popups._wal_colors import _mix, ensure_contrast
 
-MODE_NOTE_TEMPLATE = (
-    '<span size="small" foreground="{muted}" style="italic">'
-    'Press <b><span foreground="{key_color}">{key}</span></b> '
-    "to activate the mode"
-    "</span>"
-)
+
+def _colors():
+    """Palette, adjusted for text drawn on cards rather than on `bg`.
+
+    Same correction the WiFi and Bluetooth popups make: the shared loader
+    derives `muted` against the background, but every row here is painted
+    on a `surface` card sitting 7% closer to `fg`, which is enough to drop
+    muted text and two of the accents under 3:1 on the preset themes.
+    """
+    base = _load_colors()
+    base["line"] = _mix(base["bg"], base["fg"], 0.22)
+    base["surface"] = _mix(base["bg"], base["fg"], 0.07)
+    surface, fg = base["surface"], base["fg"]
+    for key in ("muted", "green", "red", "blue", "purple", "line"):
+        base[key] = ensure_contrast(base[key], surface, fg, minimum=3.0)
+    return base
+
+
+COLORS = _colors()
 
 # =============================================================================
 # MODE ENTRY KEYS (explicit, source of truth)
@@ -32,7 +46,7 @@ MODE_KEYS = {
     "DRAW MODE": "Super + Shift + W",
     "ROFI MODE": "Mod + P",
     "ROFI MODE · pickers": "Mod + P",
-    "LANUAGE SWITCH MODE": "Super + Space",
+    "LANGUAGE MODE": "Super + Space",
 }
 
 # =============================================================================
@@ -45,7 +59,7 @@ CHEATSHEET = {
         ("Reload Qtile", "Mod + Shift + r"),
         ("Kill window", "Mod + Shift + c"),
         ("Passthrough Mode", "Win + F12"),
-        ("Toggle Normal bar ", "Mod + Shift + z"),
+        ("Toggle normal bar", "Mod + Shift + z"),
         ("Logout menu", "Mod + Shift + q"),
         ("Close notification", "Super + n"),
         ("Refresh PC", "Mod + Shift + F5"),
@@ -70,11 +84,11 @@ CHEATSHEET = {
         ("Toggle fullscreen", "Mod + f"),
         ("Maximize window", "Mod + x"),
     ],
-    "session / Toggles": [
+    "Session / Toggles": [
         ("Terminal toggle", "Mod + n"),
         ("File manager", "Mod + m"),
-        ("Brave browser (Browsing)", "Mod + b"),
-        ("Qutebrowser (Video)", "Mod + v"),
+        ("Brave (browsing)", "Mod + b"),
+        ("Qutebrowser (video)", "Mod + v"),
         ("Obsidian session", "Super + Shift + o"),
         ("Anki session", "Super + Shift + a"),
         ("Todos Preview", "Super + p"),
@@ -85,7 +99,7 @@ CHEATSHEET = {
         ("Terminal 1", "Super + 1"),
         ("Terminal 2", "Super + 2"),
         ("Mixer", "Super + 3"),
-        ("2nd screen manager", "Super + 4"),
+        ("2nd screen mgr", "Super + 4"),
         ("Calculator", "Super + 5"),
         ("WhatsApp", "Super + 8"),
         ("DeepSeek", "Super + 9"),
@@ -118,8 +132,8 @@ CHEATSHEET = {
         ("Notes", "o"),
         ("Documents", "d"),
         ("Video recorder", "r"),
-        ("Close All notifications", "x"),
-        ("Light / Britness", "l"),
+        ("Close all notifs", "x"),
+        ("Light / brightness", "l"),
         ("Config editor", "f"),
         ("dmscripts hub", "h"),
         ("Password menu", "p"),
@@ -153,7 +167,7 @@ CHEATSHEET = {
         ("MPV PiP", "Shift + p"),
         ("Exit mode", "q / Esc"),
     ],
-    "LANUAGE SWITCH MODE": [
+    "LANGUAGE MODE": [
         ("Arabic", "a"),
         ("English", "e"),
         ("Turkish", "t"),
@@ -166,155 +180,136 @@ COLUMNS = list(CHEATSHEET.items())
 
 
 # =============================================================================
-# GEOMETRY -- see popups/_cheatsheet_grid.py for why this is not a grid
+# GEOMETRY -- see popups/_cheatsheet_grid.py
 # =============================================================================
 # Sized for the 1366x768 reference panel with a little air on each side.
-# It cannot grow much: this popup is already most of that screen.
-POPUP_W = 1300
-POPUP_H = 730
+POPUP_W = 1330
+POPUP_H = 750
 
-# 9, not the PopupText default of 12. The content is 12 sections / 90
-# bindings, and on a 1366px-wide screen the two constraints fight: a bigger
-# font needs more columns to fit the height, and more columns are too
-# narrow for the widest line ("Launcher (Rofi) : Mod + Shift + Enter"), so
-# it wraps -- which makes sections taller, which needs more columns again.
-# Swept with pango over every size/column split that fits the panel; 9pt in
-# 5 columns is the largest that clears both. At 10pt nothing fits.
-BODY_SIZE = 9
-N_COLS = 5
+# 12pt, up from 9. The old size was not a design choice, it was what the
+# broken layout needed to pretend 90 bindings fit on one screen -- and they
+# did not, the bottom of the biggest column was drawn off the edge. Two
+# pages at a readable size beats one page nobody can read.
+BODY_SIZE = 12
+N_COLS = 4
 
-# Measured pango extents at "sans 9": a body line is 18px, the "large"
-# title 22px, and the mode note plus its divider rule 33px together.
-BODY_PX, TITLE_PX, NOTE_PX = 18, 22, 33
+# Measured pango extents for "JetBrainsMono Nerd Font 12". Monospace, so
+# these are exact rather than estimates: every row is one LINE_PX line and
+# every glyph is CHAR_PX wide, which is what lets the key column align.
+LINE_PX = 22
+CHAR_PX = 10
 
-MARGIN = _grid.MARGIN
 FOOTER_Y = _grid.FOOTER_Y
+FONT = _grid.FONT
 
 
-def layout_sections():
-    """Place every section. See _cheatsheet_grid.pack()."""
+def mode_note(title):
+    """The 'press X to activate' line, for sections that are modes."""
+    key = MODE_KEYS.get(title)
+    return f"press {_grid.compact(key)}" if key else None
+
+
+def layout_pages():
+    """Every card, grouped into pages. See _cheatsheet_grid.pack()."""
     return _grid.pack(
         COLUMNS,
         n_cols=N_COLS,
+        popup_w=POPUP_W,
         popup_h=POPUP_H,
-        body_px=BODY_PX,
-        title_px=TITLE_PX,
-        note_px=NOTE_PX,
-        has_note=lambda title: title in MODE_KEYS,
+        line_px=LINE_PX,
+        char_px=CHAR_PX,
+        has_note=mode_note,
         name="QtileCheatsheet",
     )
 
 
+def render_card(title, items, note, cols):
+    """Markup for one section card."""
+    return _grid.card_markup(
+        title, items, cols=cols, colors=COLORS, note=note,
+        danger=("exit", "kill", "logout"),
+    )
+
+
 # =============================================================================
-# TEXT RENDERER
+# BUILD
 # =============================================================================
-def render_section(title, items):
-    lines = [
-        f'<span size="large" weight="bold" foreground="{COLORS["purple"]}">{title}</span>'
+def _header(page_no, pages):
+    """Title block: what this is, plus the legend the compact keys need."""
+    counter = (
+        f'<span foreground="{COLORS["muted"]}">   page </span>'
+        f'<span foreground="{COLORS["green"]}" weight="bold">{page_no + 1}</span>'
+        f'<span foreground="{COLORS["muted"]}">/{len(pages)}</span>'
+        if len(pages) > 1 else ""
+    )
+    return (
+        f'<span size="x-large" weight="bold" foreground="{COLORS["blue"]}">'
+        f"󰆍  QTILE CHEATSHEET</span>{counter}\n"
+        f'<span foreground="{COLORS["muted"]}">'
+        f'Mod <span foreground="{COLORS["green"]}">Win</span>'
+        f'   Sup <span foreground="{COLORS["purple"]}">Alt</span>'
+        f'   ⇧ Shift   ⌃ Ctrl   ⏎ Enter   ␣ Space'
+        f"</span>"
+    )
+
+
+def _footer(pages):
+    keys = [("Esc", "close")]
+    if len(pages) > 1:
+        keys.insert(0, ("Tab", "next page"))
+    parts = [
+        f'<span foreground="{COLORS["green"]}" weight="bold">{k}</span>'
+        f'<span foreground="{COLORS["muted"]}"> {v}</span>'
+        for k, v in keys
     ]
-
-    # ---------------- MODE NOTE ----------------
-    if title in MODE_KEYS:
-        lines.append(
-            MODE_NOTE_TEMPLATE.format(
-                muted=COLORS["muted"],
-                key_color=COLORS["blue"],
-                key=MODE_KEYS[title],
-            )
-        )
-        lines.append(f'<span foreground="{COLORS["muted"]}">────────────────</span>')
-
-    # ---------------- ITEMS ----------------
-    for label, combo in items:
-        combo_color = COLORS["red"] if "Exit" in label else COLORS["green"]
-
-        lines.append(
-            f'<span foreground="{COLORS["muted"]}">•</span> '
-            f'<span foreground="{COLORS["fg"]}">{label} :</span> '
-            f'<b><span foreground="{combo_color}">{combo}</span></b>'
-        )
-
-    return "\n".join(lines)
+    sep = f'<span foreground="{COLORS["line"]}">   ·   </span>'
+    return sep.join(parts)
 
 
-# =============================================================================
-# TOGGLE FUNCTION
-# =============================================================================
-def toggle_cheatsheet(qtile):
+def _build(qtile):
+    """(Re)draw the popup at the current page."""
     global _CHEATSHEET_LAYOUT
 
-    if _CHEATSHEET_LAYOUT:
-        # kill(), not hide(): hide() only unmaps the window and leaves its
-        # cairo drawer and pango layouts allocated, while the show path
-        # below builds a brand new layout every time -- ~2.7MB leaked per
-        # open at this popup's size.
-        _CHEATSHEET_LAYOUT.kill()
-        _CHEATSHEET_LAYOUT = None
-        return
+    COLORS.update(_colors())
+    pages = layout_pages()
+    page = pages[_PAGE % len(pages)]
 
-    COLORS.update(_load_colors())
-    controls = []
-
-    # ---------------- TITLE ----------------
-    controls.append(
+    controls = [
         PopupText(
-            text=(
-                f'<span size="xx-large" weight="bold" foreground="{COLORS["blue"]}">'
-                f"󰆍  QTILE CHEATSHEET</span>\n"
-                f'<span foreground="{COLORS["muted"]}">'
-                f'Mod = <b><span foreground="{COLORS["green"]}">Win</span></b> '
-                f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span> '
-                f'Super = <b><span foreground="{COLORS["purple"]}">Alt</span></b>'
-                f"</span>"
-            ),
-            markup=True,
-            pos_x=0.0,
-            pos_y=0.03,
-            width=1.0,
-            height=0.08,
-            h_align="center",
-            v_align="middle",
+            text=_header(_PAGE % len(pages), pages),
+            markup=True, font=FONT, fontsize=BODY_SIZE,
+            pos_x=0.0, pos_y=0.02, width=1.0, height=0.10,
+            h_align="center", v_align="middle",
         )
-    )
+    ]
 
-    # ---------------- SECTIONS ----------------
-    # fontsize is passed explicitly: the LINE_FRAC constants that place
-    # these are measured at BODY_SIZE, so inheriting PopupText's default of
-    # 12 would silently invalidate every position above.
-    for title, items, px, py, pw, ph in layout_sections():
+    # font and fontsize are passed explicitly on every card: LINE_PX and
+    # CHAR_PX are measured for THIS family at THIS size, and PopupText
+    # would otherwise default to `sans` 12 -- which on this machine is
+    # Noto Sans CJK, proportional, and would misalign every key column.
+    for title, items, note, cols, px, py, pw, ph in page:
         controls.append(
             PopupText(
-                text=render_section(title, items),
+                text=render_card(title, items, note, cols),
                 markup=True,
+                font=FONT,
                 fontsize=BODY_SIZE,
-                pos_x=px,
-                pos_y=py,
-                width=pw,
-                height=ph,
-                h_align="left",
-                v_align="top",
+                background=COLORS["surface"],
+                highlight_radius=_grid.CARD_RADIUS,
+                pos_x=px, pos_y=py, width=pw, height=ph,
+                h_align="left", v_align="top",
             )
         )
 
-    # ---------------- FOOTER ----------------
     controls.append(
         PopupText(
-            text=(
-                f'<span size="small" foreground="{COLORS["muted"]}">'
-                f' · <b><span foreground="{COLORS["blue"]}">Esc to close ·</span></b> '
-                f" the Qtile Cheatsheet · </span>"
-            ),
-            markup=True,
-            pos_x=0.0,
-            pos_y=FOOTER_Y,
-            width=1.0,
-            height=0.05,
-            h_align="center",
-            v_align="middle",
+            text=_footer(pages),
+            markup=True, font=FONT, fontsize=BODY_SIZE,
+            pos_x=0.0, pos_y=FOOTER_Y, width=1.0, height=0.05,
+            h_align="center", v_align="middle",
         )
     )
 
-    # ---------------- POPUP ----------------
     _CHEATSHEET_LAYOUT = PopupRelativeLayout(
         qtile,
         width=POPUP_W,
@@ -324,9 +319,53 @@ def toggle_cheatsheet(qtile):
         close_on_click=False,
         controls=controls,
     )
-
     _CHEATSHEET_LAYOUT.show(centered=True)
+
+
+def toggle_cheatsheet(qtile):
+    global _CHEATSHEET_LAYOUT, _PAGE
+
+    if _CHEATSHEET_LAYOUT:
+        # kill(), not hide(): hide() only unmaps the window and leaves its
+        # cairo drawer and pango layouts allocated, while the show path
+        # builds a brand new layout every time -- ~2.7MB leaked per open at
+        # this popup's size.
+        _CHEATSHEET_LAYOUT.kill()
+        _CHEATSHEET_LAYOUT = None
+        return
+
+    _PAGE = 0
+    _build(qtile)
     fade_in_popup(_CHEATSHEET_LAYOUT)
+
+
+def next_page(qtile, step=1):
+    """Tab / n / p: show the next page.
+
+    A rebuild, not an update: the cards on the next page are a different
+    number of controls at different sizes, and PopupRelativeLayout fixes
+    its control list at construction. No fade -- at 8 frames it reads as a
+    flicker when you are paging, rather than as an entrance.
+    """
+    global _PAGE
+
+    if _CHEATSHEET_LAYOUT is None:
+        return
+    if len(layout_pages()) < 2:
+        return
+
+    _PAGE += step
+    close_qtile_cheatsheet()
+    _build(qtile)
+
+
+def is_open():
+    """Whether this sheet is the one currently on screen.
+
+    Only one of the three is ever open at a time, so config.py uses
+    this to route Tab to whichever it is.
+    """
+    return _CHEATSHEET_LAYOUT is not None
 
 
 def close_qtile_cheatsheet():
@@ -337,9 +376,11 @@ def close_qtile_cheatsheet():
 
 
 def show_qtile_cheatsheet(qtile):
-    global _CHEATSHEET_LAYOUT
+    global _PAGE
 
     if _CHEATSHEET_LAYOUT:
         return  # already open
 
-    toggle_cheatsheet(qtile)
+    _PAGE = 0
+    _build(qtile)
+    fade_in_popup(_CHEATSHEET_LAYOUT)
