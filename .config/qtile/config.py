@@ -3364,15 +3364,13 @@ def right_side_widgets():
             widgets=[],
             padding=11,
             fontsize=_s(12),
-            # 󰸉/󰅖, not ✖/󰍜. "✖" is U+2716 HEAVY MULTIPLICATION X, which is
-            # NOT in JetBrainsMono Nerd Font -- fc-match resolves it to
-            # AdwaitaMono, so this one chip rendered in a different family at
-            # a different weight and read as a stray letter X next to icons.
-            # It was also backwards: ✖ says "close" but it was the CLOSED
-            # state. Now closed shows the wallpaper glyph (the same one the
-            # docs menu uses for Wallpaper) and open shows a close icon.
-            text_closed="󰸉",
-            text_open="󰅖",
+            # ✖/󰍜 is deliberate -- keep it. U+2716 is not in
+            # JetBrainsMono Nerd Font, so fc-match falls back to AdwaitaMono
+            # and this chip draws in a different family from its neighbours.
+            # That is a known, accepted trade: the heavier X is the shape
+            # wanted here. Do not "correct" it to a nerd font glyph again.
+            text_closed="✖",
+            text_open="󰍜",
             close_button_location="right",
             start_opened=False,
             foreground=colors[8],
@@ -3504,13 +3502,12 @@ def right_side_widgets():
             name="systray_widgetbox",
             fontsize=_s(11),
             padding=11,
-            # Chevrons, not △/. U+25B3 is a plain geometric shape
-            # rather than an icon from the set every other chip draws from,
-            # and it said nothing about what the chip does. The tray expands
-            # to the left, so the arrow now points the way it opens and
-            # reverses once it is open.
-            text_closed="󰅁",
-            text_open="󰅂",
+            # △/ is deliberate -- keep it. U+25B3 is a plain
+            # geometric shape rather than an icon from the nerd font set,
+            # chosen for its silhouette rather than for consistency with
+            # the others. Do not "correct" it to a chevron again.
+            text_closed="△",
+            text_open="",
             start_opened=False,
             close_button_location="right",
             widgets=[
