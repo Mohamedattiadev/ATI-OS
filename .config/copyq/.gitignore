@@ -2,3 +2,8 @@ copyq_tab_*.dat
 copyq_geometry.ini
 copyq-monitor.ini
 copyq.lock
+# Per-machine runtime state, not config: a collapsed-tabs flag and a live
+# item counter that copyq rewrites as you copy things. The tab layout that
+# matters lives in copyq.conf (tabs=, clipboard_tab=). Tracking it meant
+# the working tree went dirty just from using the clipboard.
+copyq_tabs.ini
