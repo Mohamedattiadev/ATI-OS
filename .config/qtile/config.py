@@ -2965,7 +2965,7 @@ def normal_user_bar():
             background=None,
             name_transform=lambda name: {
                 "Resize-Mode": "󰩨   RESIZE : H, J, N",
-                "Rofi-Mode": "󰍉   ROFI : i , o , p , u , w , z , b , e , r , t , y , f , s , n , h ",
+                "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
                 "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
                 "Scratch-Mode": "󰈆   SCRATCH",
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
@@ -2979,7 +2979,7 @@ def normal_user_bar():
                 # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
                 # NOTE: Audio popup will be used later
                 # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , r , / ",
+                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , r , / ",
             }.get(name, name.upper()),
         ),
         # Homerow mode chip — see the matching one in right_side_widgets()
@@ -3163,7 +3163,7 @@ def left_side_widgets():
         # task list
         widget.TaskList(
             font="JetBrainsMono Nerd Font",
-            fontsize=_s(11),
+            fontsize=_s(10),
             # icons
             icon_size=_s(16),
             markup=True,
@@ -3182,7 +3182,12 @@ def left_side_widgets():
             # every other dimension here; _center_groupbox already caps the
             # widget's TOTAL width, so this only governs per-title
             # truncation and cannot push the groupbox off centre.
-            max_title_width=_s(210),
+            # 210 let a title run most of the way to the groupbox. The point
+            # of the strip is telling three windows apart, not reading the
+            # whole title -- the first few words already do that, and the
+            # rest just crowds the bar. Narrower, and a point smaller, so
+            # more of the name survives inside the smaller box.
+            max_title_width=_s(150),
             padding_x=3,
             padding_y=2,
             margin_x=_s(3),
@@ -3219,7 +3224,7 @@ def right_side_widgets():
             background=None,
             name_transform=lambda name: {
                 "Resize-Mode": "󰩨   RESIZE : H, J, N",
-                "Rofi-Mode": "󰍉   ROFI : i , o , p , u , w , z , b , e , r , t , y , f , s , n , h ",
+                "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
                 "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
                 "Scratch-Mode": "󰈆   SCRATCH",
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
@@ -3233,7 +3238,7 @@ def right_side_widgets():
                 # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
                 # NOTE: Audio popup will be used later
                 # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , r , / ",
+                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , r , / ",
                 # NOTE: updates popup  will be used later
                 # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
             }.get(name, name.upper()),
@@ -3262,7 +3267,7 @@ def right_side_widgets():
             name="tooltip_widgetbox",
             widgets=[],
             padding=11,
-            fontsize=_s(13),
+            fontsize=_s(12),  # bulb ink was 12px tall, tallest of the set
             text_closed="󰌶",
             text_open="󰌵",
             close_button_location="right",
@@ -3310,7 +3315,7 @@ def right_side_widgets():
             SmartWidgetBox,
             name="system_widgetbox",
             insert_before_name="tooltip_widgetbox",
-            fontsize=_s(14),
+            fontsize=_s(15),  # window ink was 10px, shortest
             padding=10,
             close_button_location="right",
             start_opened=False,
@@ -3355,7 +3360,7 @@ def right_side_widgets():
             name="wallpaper_toggle",
             widgets=[],
             padding=11,
-            fontsize=_s(12),
+            fontsize=_s(13),  # heavy X ink was 10px
             # ✖/󰍜 is deliberate -- keep it. U+2716 is not in
             # JetBrainsMono Nerd Font, so fc-match falls back to AdwaitaMono
             # and this chip draws in a different family from its neighbours.
@@ -3494,27 +3499,52 @@ def right_side_widgets():
             name="systray_widgetbox",
             # text_closed carries pango markup; see _apply_raw_markup().
             raw_markup=True,
-            # Bigger than its neighbours on purpose. U+25B3 is a hairline
-            # outline and, unlike a real icon glyph, it does not respond to
-            # weight at all -- JetBrainsMono draws it with identical ink at
-            # Thin, SemiBold and Bold, so <b> and weight="900" are both
-            # no-ops on it (measured). Size is the only lever the font
-            # leaves, so the triangle is scaled up to carry the same visual
-            # weight as the icons either side of it.
-            fontsize=_s(15),
+            # Back to 11: this sizes the CLOSE chevron, which is an ordinary
+            # nerd font glyph. The triangle carries its own size in its
+            # markup below, so the two states no longer have to share one
+            # number -- which is what made the chevron balloon when the
+            # triangle was scaled up.
+            fontsize=_s(11),
             padding=11,
             # △/ is deliberate -- keep it. U+25B3 is a plain
             # geometric shape rather than an icon from the nerd font set,
             # chosen for its silhouette rather than for consistency with
             # the others. Do not "correct" it to a chevron again.
-            # rise: U+25B3 is a geometric character, not an icon glyph, so
-            # its ink sits low in the advance box the way a capital does
-            # rather than filling it like the nerd font icons either side.
-            # Scaling it up scaled that offset too (+1.5px at this size).
-            # This one IS per-glyph, unlike the global +1 removed in
-            # _centre_textbox_vertically(). Value swept against the live
-            # chip: 0-4000 no movement, 6000 -> +0.5, 8000 -> -0.5.
-            text_closed='<span rise="7000">△</span>',
+            # Adwaita Mono Bold, not JetBrainsMono. The ask was a BOLDER
+            # triangle of the same shape, and JetBrainsMono cannot give one:
+            # rendered at matched ink height it draws U+25B3 with identical
+            # ink at Thin, SemiBold and Bold alike, so <b> and weight="900"
+            # are measurably no-ops. Surveying every installed font that has
+            # the codepoint, normalised to a 12px ink height and scored on
+            # ink-per-perimeter (i.e. stroke thickness, independent of size):
+            #
+            #   AdwaitaMono-Bold      1.63   <- same outline shape, thickest
+            #   AdwaitaMono-Regular   1.51
+            #   AdwaitaSans-Regular   1.36
+            #   JetBrainsMono (any)   1.24
+            #
+            # 31% more stroke than the old one at the same size, and Adwaita
+            # Mono is already on this bar anyway -- the wallpaper chip's ✖
+            # falls back to it.
+            #
+            # size and rise live here rather than on the widget so the close
+            # chevron keeps its own metrics -- sharing one number is what
+            # made the chevron balloon when the triangle was scaled up.
+            #
+            # size is in 1024ths of a point and was swept against the live
+            # chip for INK height, since that is what the eye compares:
+            # 14000 -> 11x10, 16000 -> 12x10, 18000 -> 14x11, 20000 -> 16x13.
+            # 14000 puts it on the same 10-11px line as the rest of the
+            # cluster, and it carries 50 ink pixels in that box against the
+            # old glyph's 46 in a much larger 15x13 -- so it is smaller and
+            # visibly heavier at once, which was the point.
+            #
+            # rise swept the same way: 0-4000 no movement, 6000 -> +0.5px,
+            # 8000 -> -0.5px.
+            text_closed=(
+                '<span font_family="Adwaita Mono" weight="bold" '
+                'size="14000" rise="7000">△</span>'
+            ),
             text_open="",
             start_opened=False,
             close_button_location="right",
@@ -4964,11 +4994,12 @@ keys = [
             ),
             # --- a Special mode for "WiFi" ---
             # --- WiFi MODE ---
-            # `u` because every mnemonic letter in this chord is taken: w is
-            # dm-weather, i is dm-satty, n is dm-note.
+            # `w` for wifi. dm-weather owned this letter and is commented out
+            # below; put the weather binding back on a free letter (g, j, o,
+            # u, v, y) if you want it again.
             KeyChord(
                 [],
-                "u",
+                "w",
                 [
                     # NAVIGATE
                     Key([], "j", lazy.function(lambda _: WifiPopup.move(1))),
@@ -4980,6 +5011,7 @@ keys = [
                     Key([], "d", lazy.function(lambda _: WifiPopup.disconnect())),
                     Key([], "x", lazy.function(lambda _: WifiPopup.forget())),
                     Key([], "n", lazy.function(lambda _: WifiPopup.connect_hidden())),
+                    Key([], "t", lazy.function(lambda _: WifiPopup.toggle_radio())),
                     Key([], "r", lazy.function(lambda _: WifiPopup.rescan())),
                     Key([], "slash", lazy.function(lambda _: WifiPopup.search())),
                     # EXIT. Passed as separate positional commands --
@@ -5039,7 +5071,8 @@ keys = [
             # ---  Spell check menu ---
             Key([], "s", lazy.spawn("dm-spellcheck -r"), desc="Spell check menu"),
             # --- Search weather ---
-            Key([], "w", lazy.spawn("dm-weather -r"), desc="Search weather"),
+            # Disabled: `w` now opens the WiFi picker (chord above).
+            # Key([], "w", lazy.spawn("dm-weather -r"), desc="Search weather"),
             # --- Open todo manager ---
             Key([], "t", lazy.spawn("rofi_todo"), desc="Open todo manager"),
             # --- screen light ---
