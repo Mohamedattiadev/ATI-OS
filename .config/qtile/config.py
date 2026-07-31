@@ -2894,6 +2894,14 @@ def normal_user_bar():
                 ("", "pcmanfm", "File Manager"),
                 ("󰨞", "code", "VS Code"),
             ],
+            # The first field of each tuple is a NERD FONT GLYPH, not an app
+            # name -- so LaunchBar's icon lookup was always going to miss,
+            # fall back to text mode, and log a warning while doing exactly
+            # what we wanted. 105 lines of
+            #     No icon found for application "󰨞" (None) switch to text mode
+            # per boot, all of them noise hiding the warnings that matter.
+            # text_only says the quiet part out loud and skips the lookup.
+            text_only=True,
             fontsize=_s(14),
             padding=12,
             foreground=colors[1],
@@ -3153,14 +3161,12 @@ def left_side_widgets():
                 "Button3": lazy.next_layout(),
             },
         ),
-        # separator |
-        widget.TextBox(
-            text="|",
-            font="Ubuntu Mono",
-            foreground=colors[1],
-            padding=3,
-            fontsize=_s(14),
-        ),
+        # No "|" separator here. The bottom bar is built from bare widgets
+        # and uses pipes to group them; this bar is built from chips, where
+        # every element already carries its own rounded background. The one
+        # pipe left on it was the sole flat element among them, sitting
+        # between the layout chip and the tasklist and reading as a stray
+        # mark rather than a divider. Chip padding does the separating.
         # task list
         widget.TaskList(
             font="JetBrainsMono Nerd Font",
@@ -3176,7 +3182,14 @@ def left_side_widgets():
             markup_floating=f'<span background="{colors[0][0]}EE" foreground="{colors[5][0]}">V {{}}</span>',
             markup_focused_floating=f'<span background="{colors[0][0]}EE" foreground="{colors[5][0]}" weight="bold">VF {{}}</span>',
             markup_minimized=f'<span background="{colors[0][0]}EE" foreground="{colors[3][0]}">↓ {{}}</span>',
-            max_title_width=120,
+            # 120px at fontsize 11 is about fourteen characters, which
+            # truncated every real window title to "Fix Qt…" / "Upgr…" --
+            # three open windows and no way to tell them apart, which is the
+            # one job a tasklist has. _s() so it tracks the UI scale like
+            # every other dimension here; _center_groupbox already caps the
+            # widget's TOTAL width, so this only governs per-title
+            # truncation and cannot push the groupbox off centre.
+            max_title_width=_s(210),
             padding_x=3,
             padding_y=2,
             margin_x=_s(3),
@@ -3351,8 +3364,15 @@ def right_side_widgets():
             widgets=[],
             padding=11,
             fontsize=_s(12),
-            text_closed="✖",
-            text_open="󰍜",
+            # 󰸉/󰅖, not ✖/󰍜. "✖" is U+2716 HEAVY MULTIPLICATION X, which is
+            # NOT in JetBrainsMono Nerd Font -- fc-match resolves it to
+            # AdwaitaMono, so this one chip rendered in a different family at
+            # a different weight and read as a stray letter X next to icons.
+            # It was also backwards: ✖ says "close" but it was the CLOSED
+            # state. Now closed shows the wallpaper glyph (the same one the
+            # docs menu uses for Wallpaper) and open shows a close icon.
+            text_closed="󰸉",
+            text_open="󰅖",
             close_button_location="right",
             start_opened=False,
             foreground=colors[8],
@@ -3484,8 +3504,13 @@ def right_side_widgets():
             name="systray_widgetbox",
             fontsize=_s(11),
             padding=11,
-            text_closed="△",
-            text_open="",
+            # Chevrons, not △/. U+25B3 is a plain geometric shape
+            # rather than an icon from the set every other chip draws from,
+            # and it said nothing about what the chip does. The tray expands
+            # to the left, so the arrow now points the way it opens and
+            # reverses once it is open.
+            text_closed="󰅁",
+            text_open="󰅂",
             start_opened=False,
             close_button_location="right",
             widgets=[
