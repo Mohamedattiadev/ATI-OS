@@ -615,6 +615,7 @@ CHORD_CHIP_COLORS = {
     "PASSTHROUGH": colors[8],
     "PASSTHROUGH-CONFIRM": colors[1],  # urgent/warm -- it is asking to quit
     "Wifi-Mode": colors[6],
+    "Wifi-QR": colors[6],
 }
 
 # ╔──────────────────────────────────────────╗
@@ -2360,11 +2361,12 @@ def remember_chord(chord_name):
 # --------------------------------------------------------------
 # 6- Hint-Mode deliberately launches nothing on entry
 # --------------------------------------------------------------
-# The old Mouse-Mode spawned `warpd --normal` from an enter_chord hook. That
-# cannot stay: warpd grabs the keyboard as soon as it starts, so h/s/f would
-# never reach qtile and the chord would appear dead. warpd is still one
-# keypress away inside the chord -- `n` for normal mode, `w` for its hints --
-# it just is not started for you.
+# The old Mouse-Mode spawned `warpd --normal` from an enter_chord hook, which
+# could not stay: warpd grabbed the keyboard the moment it started, so h/s/f
+# never reached qtile and the chord looked dead. warpd itself is gone now --
+# it segfaulted in x_input_wait on every boot, so its `n`/`w` bindings had
+# been dead for a while without anyone noticing. Homerow covers the same
+# ground (h hint, s scroll, f search, v caret) and does not grab the keyboard.
 
 
 # ---------------------------------------------------------------------------------------
@@ -2576,6 +2578,13 @@ def cleanup_on_leave():
 
     elif ACTIVE_CHORD == "Wifi-Mode":
         WifiPopup.close(qtile)
+
+    elif ACTIVE_CHORD == WifiQR.CHORD_NAME:
+        # The QR popup grabs an Escape-only chord while it is up (it is
+        # opened by a bar click, so nothing else routes keys to it).
+        # KeyChord appends its own bare Escape over any binding, so this
+        # hook -- not a Key command -- is what actually closes it.
+        WifiQR.on_chord_left()
 
     # NOTE : updates popup  will be used later
     # elif ACTIVE_CHORD == "Updates-Mode":
@@ -3062,7 +3071,7 @@ def normal_user_bar():
                 "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
                 "Scratch-Mode": "󰈆   SCRATCH",
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
-                "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret , n/w warpd ",
+                "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
@@ -3073,6 +3082,7 @@ def normal_user_bar():
                 # NOTE: Audio popup will be used later
                 # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
                 "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , r , / ",
+                "Wifi-QR": "   WIFI QR : ESC to close ",
             }.get(name, name.upper()),
         ),
         # Homerow mode chip — see the matching one in right_side_widgets()
@@ -3356,7 +3366,7 @@ def right_side_widgets():
                 "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
                 "Scratch-Mode": "󰈆   SCRATCH",
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
-                "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret , n/w warpd ",
+                "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
@@ -3367,6 +3377,7 @@ def right_side_widgets():
                 # NOTE: Audio popup will be used later
                 # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
                 "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , r , / ",
+                "Wifi-QR": "   WIFI QR : ESC to close ",
                 # NOTE: updates popup  will be used later
                 # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
             }.get(name, name.upper()),
@@ -5390,9 +5401,6 @@ keys = [
                 lazy.ungrab_chord(),
                 desc="caret search: type to find a word, land the caret there",
             ),
-            # --- warpd (pixel grid: works where accessibility does not) ---
-            Key([], "n", lazy.spawn("warpd --normal"), lazy.ungrab_chord()),
-            Key([], "w", lazy.spawn("warpd --hint"), lazy.ungrab_chord()),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
             *group_keys(),
             Key([], "q", lazy.ungrab_chord()),

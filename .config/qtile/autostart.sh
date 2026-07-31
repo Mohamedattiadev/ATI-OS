@@ -47,10 +47,13 @@ PICOM_GPU_FLAGS=""
   # shellcheck disable=SC2086  # deliberate word splitting: flags or nothing
   picom $PICOM_GPU_FLAGS &   # Compositor (transparency, shadows, animations)
   dunst &          # Notification daemon
-  nm-applet &      # Network tray icon
+  # --no-agent: keep the tray icon, drop the secret-agent role. Without it
+  # nm-applet answers NetworkManager's password requests, so a wrong PSK
+  # typed into the WiFi popup (Mod+p w) pops nm-applet's own GTK dialog on
+  # top of it. With it, the popup owns the whole flow and re-asks itself.
+  nm-applet --no-agent &  # Network tray icon (no password dialogs)
   blueman-applet & # Bluetooth tray icon
   copyq &          # Clipboard manager
-  warpd &          # warpd daemon
   eww daemon       # EWW daemon
 ) &
 

@@ -30,7 +30,6 @@ packages:
   - imv
   - qalculate-gtk
   - piper
-  - warpd
   - eww
   - ani-cli
   - yt-x-git
