@@ -2,9 +2,14 @@
 # onboarding-cheatsheet — open the qtile cheatsheet from the eww tour, then
 # hand the tour back its last page once you close the sheet again.
 #
-# The keybindings page of the tour promises "the cheatsheet will open
-# automatically in 5 seconds". It never did, for three separate reasons, all
-# of which came from doing it inline in the eww button:
+# The tour used to open the sheet on a five second timer from the previous
+# page. That is gone -- a full-screen popup arriving over someone who is
+# still reading is not a feature -- and the keybindings page now has a
+# button that calls this with no delay. The delay argument is kept because
+# it costs nothing and a scheduled open may be wanted again.
+#
+# It never worked as a timer either, for three separate reasons, all of
+# which came from doing it inline in the eww button:
 #
 #   1. REPLAYED KEYSTROKES. The button ran `xdotool key Super_L+Shift+k`.
 #      config.py documents at length why that cannot be relied on -- it races
@@ -28,7 +33,7 @@
 
 set -uo pipefail
 
-DELAY="${1:-5}"
+DELAY="${1:-0}"
 PAGE="onboarding-keybindings"
 NEXT_PAGE="onboarding-finish"
 

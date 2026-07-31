@@ -23,13 +23,16 @@
     ;; ----------------------------
     (label
       :class "onb-title"
-      :text "You're all set ✨")
+      :halign "start"
+      :text "You're all set")
 
     ;; ----------------------------
     ;; Message
     ;; ----------------------------
     (label
       :class "onb-text"
+      :halign "start"
+      :xalign 0
       :wrap true
       :unindent true
       :text
@@ -49,16 +52,28 @@ Take your time, explore, and make it yours.
     ;; ----------------------------
     ;; Tip
     ;; ----------------------------
+    ;; :wrap -- the card is 420px and this line is wider than it; without
+    ;; wrapping pango ellipsised the tip mid-sentence.
     (label
       :class "onb-text"
+      :halign "start"
+      :xalign 0
+      :wrap true
       :markup
-"<b>Tip:</b> Press <b><span foreground=\"#46d9ff\">Win + Shift + k</span></b> anytime to open the cheatsheet.")
+"<b>Tip:</b> <b><span foreground='${palette.cyan}'>Win + Shift + K</span></b> then <b><span foreground='${palette.cyan}'>k</span></b> opens the cheatsheet, anytime.")
 
     ;; ----------------------------
     ;; Actions
     ;; ----------------------------
     (box
       :class "onb-footer"
+      :orientation "h"
+      :space-evenly false
+
+      (onb-steps :current 5)
+      (box :hexpand true)
+
+      (box
       :halign "end"
       :spacing 10
 
@@ -72,7 +87,7 @@ Take your time, explore, and make it yours.
         :class "onb-btn onb-btn-Apply"
         :timeout "3000ms"
         :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; qtile cmd-obj -o widget tooltip_widgetbox -f close 2>/dev/null; true'"
-        "Enjoy 🚀")
-    )
+        "Finish")
+    ))
   )
 )

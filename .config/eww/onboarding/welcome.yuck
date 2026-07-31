@@ -20,20 +20,31 @@
 
   (box :class "onboarding"
        :orientation "v"
+       :space-evenly false
 
     (label
       :class "onb-title"
+      :halign "start"
       :text "Welcome")
 
     (label
       :class "onb-text"
+      :halign "start"
+      :xalign 0
       :wrap true
       :text
 "This short tour will walk you through
-the essentials and get you ready to work..")
+the essentials and get you ready to work.")
 
     (box
       :class "onb-footer"
+      :orientation "h"
+      :space-evenly false
+
+      (onb-steps :current 1)
+      (box :hexpand true)
+
+      (box
       :halign "end"
       :spacing 10
 
@@ -49,6 +60,6 @@ the essentials and get you ready to work..")
         :timeout "3000ms"
         :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open bar-tooltip'"
         "Next")
-    )
+    ))
   ))
 )

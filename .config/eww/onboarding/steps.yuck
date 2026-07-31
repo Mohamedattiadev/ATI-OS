@@ -1,0 +1,24 @@
+;; Step indicator for the tour footer.
+;;
+;; Five pages with Back/Next on each and no sense of how many are left is
+;; the thing that made this read as a dialog chain rather than a tour.
+;; The dots answer "how much more of this is there" without spending a
+;; line of copy on it.
+;;
+;; Kept as one widget rather than five hand-written rows so a sixth page
+;; means editing one file. `current` is 1-based; pass 0 for a page that
+;; sits outside the sequence.
+(defwidget onb-steps [current]
+  (box
+    :class "onb-dots"
+    :orientation "h"
+    :halign "start"
+    :valign "center"
+    :space-evenly false
+    :spacing 6
+
+    (box :class {current == 1 ? "onb-dot onb-dot-on" : "onb-dot"})
+    (box :class {current == 2 ? "onb-dot onb-dot-on" : "onb-dot"})
+    (box :class {current == 3 ? "onb-dot onb-dot-on" : "onb-dot"})
+    (box :class {current == 4 ? "onb-dot onb-dot-on" : "onb-dot"})
+    (box :class {current == 5 ? "onb-dot onb-dot-on" : "onb-dot"})))

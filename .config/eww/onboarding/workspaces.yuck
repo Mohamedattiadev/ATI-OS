@@ -28,27 +28,43 @@
     ;; ----------------------------
     (label
       :class "onb-title"
+      :halign "start"
       :text "Workspaces")
 
     ;; ----------------------------
     ;; Description
     ;; ----------------------------
+    ;; Win, not Alt: mod is mod4 in config.py, and Alt (mod2) is bound to
+    ;; the scratchpads instead. Sending a new user to Alt+1 dropped a
+    ;; terminal on them rather than switching workspace.
     (label
       :class "onb-text"
+      :halign "start"
+      :xalign 0
       :unindent true
       :text
 "Workspaces help you organize your windows.
-• Alt + 1–9 — switch workspaces
+• Win + 1–9 — switch workspaces
+• Win + Shift + 1–9 — move the focused window there
 
 ")
 
+;; Apps land on a workspace by themselves -- these are the wm_class
+;; matches in config.py's `groups`, so keep the two in step. The tour
+;; used to claim 2 and 4 were both video and that 1 and 6 were free;
+;; 2 is the browser/vlc group, 4 is editors and kitty, 1 is ticktick
+;; and 6 is chrome. Colour doubles as a legend -- the browsers share
+;; one hue.
 (label
 :class "onb-text"
+:halign "start"
+:xalign 0
 :unindent true
-:markup "<b>Tip :</b>
-Workspaces ( 1,6,7,8 ) are  <b><span foreground=\"#98be65\">Free</span></b> , workspace 2 for <b><span foreground=\"#ff6c6b\">Video</span></b>,
-3 for <b><span foreground=\"#51afef\">File Manager</span></b> , 4 for <b><span foreground=\"#46d9ff\">Video</span></b> , 5 for <b><span foreground=\"#c678dd\">Browser</span></b>
-9 for <b><span foreground=\"#51afef\">Chat</span></b>, and the `S` <b><span foreground=\"#51afef\">Obsidain , anki </span></b>  "
+:markup "<b>Tip:</b>
+Apps open where they belong: 1 <b><span foreground='${palette.yellow}'>Tasks</span></b>, 2 <b><span foreground='${palette.purple}'>Web &amp; Video</span></b>,
+3 <b><span foreground='${palette.blue}'>Files</span></b>, 4 <b><span foreground='${palette.cyan}'>Code &amp; Terminal</span></b>, 5 <b><span foreground='${palette.purple}'>Brave</span></b>,
+6 <b><span foreground='${palette.purple}'>Chrome</span></b>, 9 <b><span foreground='${palette.red}'>Chat</span></b>, S <b><span foreground='${palette.green}'>Obsidian &amp; Anki</span></b>.
+7 and 8 are free."
 )
 
     ;; ----------------------------
@@ -56,6 +72,13 @@ Workspaces ( 1,6,7,8 ) are  <b><span foreground=\"#98be65\">Free</span></b> , wo
     ;; ----------------------------
     (box
       :class "onb-footer"
+      :orientation "h"
+      :space-evenly false
+
+      (onb-steps :current 3)
+      (box :hexpand true)
+
+      (box
       :halign "end"
       :spacing 10
 
@@ -65,12 +88,16 @@ Workspaces ( 1,6,7,8 ) are  <b><span foreground=\"#98be65\">Free</span></b> , wo
         :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open bar-tooltip'"
         "Back")
 
+      ;; This used to also fire `setsid -f onboarding-cheatsheet 5`, so the
+      ;; cheatsheet took over the screen five seconds into the next page --
+      ;; hence the warning that page had to carry. The next page opens it
+      ;; on demand instead, so nothing is scheduled here.
       (button
         :class "onb-btn onb-btn-Apply"
         :timeout "3000ms"
-        :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open onboarding-keybindings; (sleep 5; xdotool key Super_L+Shift+k) &'"
+        :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open onboarding-keybindings'"
         "Next")
-    )
+    ))
   ))
 )
 
