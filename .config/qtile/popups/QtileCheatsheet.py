@@ -186,7 +186,11 @@ def toggle_cheatsheet(qtile):
     global _CHEATSHEET_LAYOUT
 
     if _CHEATSHEET_LAYOUT:
-        _CHEATSHEET_LAYOUT.hide()
+        # kill(), not hide(): hide() only unmaps the window and leaves its
+        # cairo drawer and pango layouts allocated, while the show path
+        # below builds a brand new layout every time -- ~2.7MB leaked per
+        # open at this popup's size.
+        _CHEATSHEET_LAYOUT.kill()
         _CHEATSHEET_LAYOUT = None
         return
 
@@ -278,7 +282,7 @@ def toggle_cheatsheet(qtile):
 def close_qtile_cheatsheet():
     global _CHEATSHEET_LAYOUT
     if _CHEATSHEET_LAYOUT:
-        _CHEATSHEET_LAYOUT.hide()
+        _CHEATSHEET_LAYOUT.kill()
         _CHEATSHEET_LAYOUT = None
 
 

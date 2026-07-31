@@ -128,7 +128,11 @@ def toggle_fish_kitty_cheatsheet(qtile):
     global _FISH_KITTY_CHEATSHEET
 
     if _FISH_KITTY_CHEATSHEET:
-        _FISH_KITTY_CHEATSHEET.hide()
+        # kill(), not hide(): hide() only unmaps the window and leaves its
+        # cairo drawer and pango layouts allocated, while the show path
+        # below builds a brand new layout every time -- ~2.7MB leaked per
+        # open at this popup's size.
+        _FISH_KITTY_CHEATSHEET.kill()
         _FISH_KITTY_CHEATSHEET = None
         return
 
@@ -220,7 +224,7 @@ def toggle_fish_kitty_cheatsheet(qtile):
 def close_fish_kitty_cheatsheet():
     global _FISH_KITTY_CHEATSHEET
     if _FISH_KITTY_CHEATSHEET:
-        _FISH_KITTY_CHEATSHEET.hide()
+        _FISH_KITTY_CHEATSHEET.kill()
         _FISH_KITTY_CHEATSHEET = None
 
 def show_fish_kitty_cheatsheet(qtile):

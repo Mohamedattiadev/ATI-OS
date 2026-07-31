@@ -71,7 +71,7 @@ MAX_NAME_LEN = 17
 from popups._wal_colors import load_colors as _load_wal_colors
 from popups._wal_colors import fade_in_popup, fade_out_popup
 from popups._wal_colors import current_theme_mode
-from popups._wal_colors import _mix
+from popups._wal_colors import _mix, ensure_contrast
 
 def _load_colors():
     base = _load_wal_colors()
@@ -85,6 +85,16 @@ def _load_colors():
     # in both dark and light palettes (wal presets ship either).
     base["surface"] = _mix(base["bg"], base["fg"], 0.07)
     base["surface_alt"] = _mix(base["bg"], base["fg"], 0.14)
+
+    # Text on those cards needs re-checking: the shared loader derives
+    # `muted` against `bg`, and the cards sit 7% closer to `fg`, which is
+    # enough to drop muted labels under 3:1 on every preset theme-apply
+    # ships. highlight_bg keeps the theme's raw accent -- it is a block
+    # fill, not text.
+    surface, fg = base["surface"], base["fg"]
+    for key in ("muted", "green", "red", "blue", "purple"):
+        base[key] = ensure_contrast(base[key], surface, fg, minimum=3.0)
+
     return base
 
 COLORS = _load_colors()
@@ -684,7 +694,12 @@ def close_wallpaper_picker():
     def _teardown():
         global _WALLPAPER_LAYOUT, _CLOSING
         try:
-            layout.hide()
+            # kill(), not hide() -- same reason apply_wallpaper() already
+            # kills: hide() leaves the window, its cairo drawer and every
+            # control's pango layout allocated, and show_wallpaper_picker()
+            # builds a brand new layout on the next open. At 1120x680 that
+            # is ~3MB of ARGB surface abandoned per Escape.
+            layout.kill()
         except Exception:
             pass
         _WALLPAPER_LAYOUT = None
