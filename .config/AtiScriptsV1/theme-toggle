@@ -9,6 +9,11 @@
 
 set -euo pipefail
 
+# readlink -f: this script is reached through a /usr/local/bin symlink, so
+# a plain $0 dirname resolves to the symlink's directory, not the repo.
+# shellcheck source=rofi_common.sh
+source "$(dirname "$(readlink -f "$0")")/rofi_common.sh"
+
 STATE_FILE="$HOME/.cache/qtile/theme_mode"
 CURRENT="doomone"
 [[ -f "$STATE_FILE" ]] && CURRENT="$(cat "$STATE_FILE")"
@@ -50,7 +55,8 @@ for e in "${ENTRIES[@]}"; do
   fi
 done
 
-CHOICE="$(printf '%s' "$LIST" | rofi -dmenu -i -p "Theme")"
+CHOICE="$(printf '%s' "$LIST" | rofi -dmenu -i -p "Theme" \
+  -mesg "$(rofi_hint "↵ retint everything" "Esc cancels" "● is active" "${#ENTRIES[@]} palettes")")"
 [[ -z "$CHOICE" ]] && exit 0
 
 # Strip marker prefix ("● " or "○ ") — display name only.

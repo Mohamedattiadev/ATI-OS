@@ -108,6 +108,37 @@ rofi_confirm() {
     [[ "$answer" == "Yes" ]]
 }
 
+# Standard hint line for the -mesg footer.
+#
+# Every rofi menu here had grown its own idea of what the strip under the
+# prompt is for. rofi-kill and rofi_todo listed keybindings in bold;
+# rofi_light showed a value; rofi_docs explained navigation; theme-toggle
+# and ui-scale-toggle had no footer at all, so the two menus that CHANGE
+# THE WHOLE DESKTOP were also the two that said nothing about what Enter
+# was about to do. Same markup, same separator, same order everywhere now:
+# actions first, then context.
+#
+#   rofi_hint "↵ apply" "Esc cancels" "22 palettes"
+#     ->  <b>↵</b> apply  ·  <b>Esc</b> cancels  ·  22 palettes
+#
+# A leading token of the form "KEY text" gets its key emboldened; anything
+# without a recognised key prefix is passed through as plain context.
+rofi_hint() {
+    local out="" part key rest
+    for part in "$@"; do
+        [[ -z "$part" ]] && continue
+        key="${part%% *}"
+        rest="${part#* }"
+        case "$key" in
+            ↵|Esc|Tab|Alt+*|Ctrl+*|Shift+*|Super+*)
+                part="<b>${key}</b> ${rest}" ;;
+        esac
+        [[ -n "$out" ]] && out+="  ·  "
+        out+="$part"
+    done
+    printf '%s' "$out"
+}
+
 # Guaranteed kill: SIGTERM + 0.8s grace + SIGKILL if still alive.
 # Second arg 'force' skips SIGTERM path. Sends both direct kill(2)
 # via bash builtin (fast, no fork) and falls back to /usr/bin/kill

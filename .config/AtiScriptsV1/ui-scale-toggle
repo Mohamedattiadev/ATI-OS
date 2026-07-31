@@ -14,6 +14,11 @@
 
 set -euo pipefail
 
+# readlink -f: reached through a /usr/local/bin symlink, so a plain $0
+# dirname resolves to the symlink's directory rather than the repo.
+# shellcheck source=rofi_common.sh
+source "$(dirname "$(readlink -f "$0")")/rofi_common.sh"
+
 SCALE_FILE="$HOME/.cache/qtile/ui_scale"
 PIN_FILE="$HOME/.cache/qtile/ui_scale.pinned"
 UI_SCALE_BIN="$(command -v ui-scale || echo "$HOME/.dotfiles/.config/AtiScriptsV1/ui-scale")"
@@ -54,7 +59,8 @@ for e in "${ENTRIES[@]}"; do
   fi
 done
 
-CHOICE="$(printf '%s' "$LIST" | rofi -dmenu -i -p "UI scale")"
+CHOICE="$(printf '%s' "$LIST" | rofi -dmenu -i -p "UI scale" \
+  -mesg "$(rofi_hint "↵ resize the desktop" "Esc cancels" "● is active" "picking one pins it")")"
 [[ -z "$CHOICE" ]] && exit 0
 
 LABEL="${CHOICE#* }"

@@ -35,6 +35,12 @@ ESPANSO_DIR="$HOME/.config/espanso"
 GLOW_STYLE="$HOME/.cache/qtile/glow.json"
 [[ -f "$GLOW_STYLE" ]] || GLOW_STYLE="auto"
 
+# rofi_hint() -- one hint-line format across every rofi menu here, instead
+# of each script inventing its own. readlink -f because this is reached
+# through a /usr/local/bin symlink.
+# shellcheck source=rofi_common.sh
+source "$(dirname "$(readlink -f "$0")")/rofi_common.sh"
+
 # rofi -dmenu exits 1 on Escape and 0 on a selection. That difference is
 # the whole navigation model, so it gets its own wrapper: RC is the caller's
 # signal to go back up rather than act.
@@ -192,7 +198,7 @@ sec_keys() {
     return
   fi
   local n; n="$(qtile-keys | wc -l)"
-  qtile-keys | pick "Keys" "$n bindings, parsed live from config.py · Esc goes back" >/dev/null
+  qtile-keys | pick "Keys" "$(rofi_hint "Esc back" "$n bindings" "parsed live from config.py")" >/dev/null
 }
 
 # ── cheatsheets ──────────────────────────────────────────────────────
@@ -203,7 +209,7 @@ sec_cheats() {
       "󰘳  Qtile cheatsheet      every mode and binding" \
       "󰕷  Vim cheatsheet        motions, text objects, registers" \
       "󰈺  Fish / kitty          shell and terminal shortcuts" \
-      | pick "Cheatsheets" "Esc goes back · in the sheet, Esc or q closes it")"
+      | pick "Cheatsheets" "$(rofi_hint "↵ open the sheet" "Esc back" "in the sheet, Esc or q closes it")")"
     (( RC != 0 )) && return
     case "$c" in
       *Qtile*) open_cheatsheet qtile; return ;;
@@ -224,7 +230,7 @@ sec_docs() {
       "󰏗  Packages               how packages are declared and installed" \
       "󰃤  Boot entries           the rescue kernel, and why it exists" \
       "󰅱  qtile config           the source — the only writable entry" \
-      | pick "Documentation" "rendered read-only · Esc goes back")"
+      | pick "Documentation" "$(rofi_hint "↵ open" "Esc back" "rendered read-only")")"
     (( RC != 0 )) && return
     case "$c" in
       *README*)          view_md "$DOTFILES/README.md"; return ;;
@@ -282,7 +288,7 @@ sec_trouble() {
       printf "%s%-46s  %-90s :%s\n", pad, substr(heading, 1, 46), ctx, line
       heading = ""
     }
-  ' "$f" | pick "Troubleshooting" "$(grep -cE '^#{2,3} ' "$f") fixes · type the symptom you are seeing · Esc goes back")"
+  ' "$f" | pick "Troubleshooting" "$(rofi_hint "↵ jump to the entry" "Esc back" "$(grep -cE '^#{2,3} ' "$f") fixes" "type the symptom you are seeing")")"
   (( RC != 0 )) && return
   [[ -z "$sel" ]] && return
   local line="${sel##*:}"
@@ -330,7 +336,7 @@ sec_commands() {
       list+="$(printf '%-24s %s' "$base" "$(script_desc "$f" "$base" | cut -c1-74)")"$'\n'
     done
     local sel
-    sel="$(printf '%s' "$list" | pick "Commands" "Enter shows the script's documentation — nothing is run · Esc goes back")"
+    sel="$(printf '%s' "$list" | pick "Commands" "$(rofi_hint "↵ show its documentation" "Esc back" "nothing is run")")"
     (( RC != 0 )) && return
     [[ -z "$sel" ]] && return
     local cmd; cmd="$(awk '{print $1}' <<<"$sel")"
@@ -359,7 +365,7 @@ sec_appearance() {
       "󰍹  UI scale               size the desktop to this screen" \
       "󰸉  Wallpaper              picker" \
       "󰇥  Boot splash            your name on the boot screen" \
-      | pick "Appearance" "Esc goes back")"
+      | pick "Appearance" "$(rofi_hint "↵ open" "Esc back")")"
     (( RC != 0 )) && return
     case "$c" in
       *Theme*)      run_tool theme-toggle;    return ;;
@@ -420,7 +426,7 @@ sec_espanso() {
       "󰏫  Edit /etc/environment   where the values live" \
       "󰝒  Snippet files           $(ls -1 "$match_dir"/*.yml 2>/dev/null | wc -l) file(s) in match/" \
       "󰑓  Restart espanso         apply changes" \
-      | pick "Espanso" "snippets read personal data from /etc/environment · Esc goes back")"
+      | pick "Espanso" "$(rofi_hint "↵ open" "Esc back" "snippets read personal data from /etc/environment")")"
     (( RC != 0 )) && return
     case "$c" in
       *"Personal variables"*)
@@ -481,7 +487,7 @@ sec_espanso() {
         done
         list+="＋  new snippet file…"
         local sel
-        sel="$(printf '%s\n' "$list" | pick "Snippets" "Esc goes back")"
+        sel="$(printf '%s\n' "$list" | pick "Snippets" "$(rofi_hint "↵ edit" "Esc back")")"
         (( RC != 0 )) && continue
         [[ -z "$sel" ]] && continue
         if [[ "$sel" == "＋"* ]]; then
@@ -521,7 +527,7 @@ sec_system() {
       "󰏗  Package audit          declared vs actually installed" \
       "󰓅  Services               what failed, what is running" \
       "󰍛  Display + GPU          resolution, DPI, driver" \
-      | pick "System" "Esc goes back")"
+      | pick "System" "$(rofi_hint "↵ open" "Esc back")")"
     (( RC != 0 )) && return
     case "$c" in
       *About*)
@@ -596,7 +602,7 @@ main_menu() {
       "󰛄  Espanso              ▸ text expansion snippets" \
       "󰏘  Appearance           ▸ theme · scale · wallpaper · splash" \
       "󰒓  System               ▸ about · audit · services · gpu" \
-      | pick "Docs" "Esc closes · inside a section, Esc comes back here")"
+      | pick "Docs" "$(rofi_hint "↵ open the section" "Esc closes" "inside a section, Esc comes back here")")"
     (( RC != 0 )) && return
     case "$c" in
       *Keybindings*)   sec_keys ;;
