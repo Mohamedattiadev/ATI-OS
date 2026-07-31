@@ -120,16 +120,7 @@ from popups.WallpaperPopup import (
     close_wallpaper_picker,
 )
 
-# NOTE: Bluetooth popup will be used later
-# from popups.BluetoothPopup import (
-#     show as show_bluetooth_popup,
-#     close as close_bluetooth_popup,
-#     move as bluetooth_move,
-#     toggle_device as bluetooth_toggle,
-#     request_disconnect,
-#     confirm_disconnect,
-#     reload_devices,
-# )
+from popups import BluetoothPopup
 
 
 # NOTE : Audio popup will be used later
@@ -616,6 +607,7 @@ CHORD_CHIP_COLORS = {
     "PASSTHROUGH-CONFIRM": colors[1],  # urgent/warm -- it is asking to quit
     "Wifi-Mode": colors[6],
     "Wifi-QR": colors[6],
+    "Bluetooth-Mode": colors[6],
 }
 
 # ╔──────────────────────────────────────────╗
@@ -2568,9 +2560,10 @@ def cleanup_on_leave():
         else:
             _disable_passthrough(qtile)
 
-    # NOTE: Bluetooth popup will be used later
-    # elif ACTIVE_CHORD == "Bluetooth-Mode":
-    #     close_bluetooth_popup(qtile)
+    elif ACTIVE_CHORD == "Bluetooth-Mode":
+        # close() also stops the discovery child process -- leaving the chord
+        # without it would keep the radio scanning indefinitely.
+        BluetoothPopup.close(qtile)
 
     # NOTE : Audio popup will be used later
     # elif ACTIVE_CHORD == "Audio-Mode":
@@ -2751,11 +2744,10 @@ def auto_enable_passthrough(chord_name):
 # --------------------------------------------------------------------
 # 14- Function to lanuch the Bluetooth popup when it's mode activated
 # --------------------------------------------------------------------
-# NOTE: Bluetooth popup will be used later
-# @hook.subscribe.enter_chord
-# def auto_enable_bluetooth_popup(chord_name):
-#     if chord_name == "Bluetooth-Mode":
-#         show_bluetooth_popup(qtile)
+@hook.subscribe.enter_chord
+def auto_enable_bluetooth_popup(chord_name):
+    if chord_name == "Bluetooth-Mode":
+        BluetoothPopup.show(qtile)
 
 
 # ------------------------------------------------------------------------------
@@ -3081,11 +3073,10 @@ def normal_user_bar():
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC",
                 "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
-                # NOTE: Bluetooth popup will be used later
-                # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
+                "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , ENTER , d , x , t , c , r , / ",
                 # NOTE: Audio popup will be used later
                 # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , s , r , / ",
+                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , s , c , r , / ",
                 "Wifi-QR": "   WIFI QR : ESC to close ",
             }.get(name, name.upper()),
         ),
@@ -3376,11 +3367,10 @@ def right_side_widgets():
                 "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC",
                 "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
-                # NOTE: Bluetooth popup will be used later
-                # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
+                "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , ENTER , d , x , t , c , r , / ",
                 # NOTE: Audio popup will be used later
                 # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , s , r , / ",
+                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , s , c , r , / ",
                 "Wifi-QR": "   WIFI QR : ESC to close ",
                 # NOTE: updates popup  will be used later
                 # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
@@ -5243,6 +5233,48 @@ keys = [
                 name="WallpaperPicker",
                 desc="Wallpaper picker mode",
             ),
+            # --- a Special mode for "Bluetooth" ---
+            # --- Bluetooth MODE ---
+            # b for bluetooth. Everything happens in the popup: scan, pair,
+            # trust, connect, disconnect, remove -- blueman's window is not
+            # involved.
+            KeyChord(
+                [],
+                "b",
+                [
+                    # NAVIGATE
+                    Key([], "j", lazy.function(lambda _: BluetoothPopup.move(1))),
+                    Key([], "k", lazy.function(lambda _: BluetoothPopup.move(-1))),
+                    Key([], "g", lazy.function(lambda _: BluetoothPopup.jump("top"))),
+                    Key(
+                        ["shift"],
+                        "g",
+                        lazy.function(lambda _: BluetoothPopup.jump("bottom")),
+                    ),
+                    # ACTIONS
+                    Key([], "Return", lazy.function(lambda _: BluetoothPopup.connect())),
+                    Key([], "d", lazy.function(lambda _: BluetoothPopup.disconnect())),
+                    Key([], "x", lazy.function(lambda _: BluetoothPopup.remove())),
+                    Key([], "t", lazy.function(lambda _: BluetoothPopup.toggle_power())),
+                    Key([], "r", lazy.function(lambda _: BluetoothPopup.scan())),
+                    # Abort a pair/connect that is hanging. bluetoothctl
+                    # connect never returns for an out-of-range device.
+                    Key([], "c", lazy.function(lambda _: BluetoothPopup.cancel())),
+                    Key([], "slash", lazy.function(lambda _: BluetoothPopup.search())),
+                    # EXIT. No Escape binding: KeyChord appends its own after
+                    # these and later grabs win, so Escape closes via
+                    # cleanup_on_leave. Same as the WiFi chord.
+                    Key(
+                        [],
+                        "q",
+                        lazy.function(lambda qtile: BluetoothPopup.close(qtile)),
+                        lazy.ungrab_chord(),
+                    ),
+                ],
+                mode=True,
+                name="Bluetooth-Mode",
+                desc="Bluetooth device picker",
+            ),
             # --- a Special mode for "WiFi" ---
             # --- WiFi MODE ---
             # n for network. (Was w, which now opens the wallpaper picker.)
@@ -5262,6 +5294,10 @@ keys = [
                     Key([], "n", lazy.function(lambda _: WifiPopup.connect_hidden())),
                     Key([], "t", lazy.function(lambda _: WifiPopup.toggle_radio())),
                     Key([], "s", lazy.function(lambda q: WifiPopup.share_qr(q))),
+                    # Abort a connect that is taking too long. Advertised in
+                    # the footer while busy rather than as a permanent hint
+                    # chip -- that bar is at 808px of its 874px.
+                    Key([], "c", lazy.function(lambda _: WifiPopup.cancel())),
                     Key([], "r", lazy.function(lambda _: WifiPopup.rescan())),
                     Key([], "slash", lazy.function(lambda _: WifiPopup.search())),
                     # EXIT. Passed as separate positional commands --
@@ -5578,29 +5614,6 @@ keys = [
         swallow=False,
         name="PASSTHROUGH",
     ),
-    # NOTE : Bluetooth popup will be used later
-    # KeyChord(
-    #     [mod],
-    #     "u",
-    #     [
-    #         Key([], "j", lazy.function(lambda _: bluetooth_move(1))),
-    #         Key([], "k", lazy.function(lambda _: bluetooth_move(-1))),
-    #         Key([], "Return", lazy.function(lambda _: bluetooth_toggle())),
-    #         Key([], "x", lazy.function(lambda _: request_disconnect())),
-    #         Key([], "y", lazy.function(lambda _: confirm_disconnect(True))),
-    #         Key([], "n", lazy.function(lambda _: confirm_disconnect(False))),
-    #         Key([], "r", lazy.function(lambda _: reload_devices())),
-    #         Key(
-    #             [],
-    #             "Escape",
-    #             lazy.function(lambda qtile: close_bluetooth_popup(qtile)),
-    #             lazy.ungrab_chord(),
-    #         ),
-    #     ],
-    #     mode=True,
-    #     name="Bluetooth-Mode",
-    #     desc="Bluetooth device picker",
-    # ),
     # NOTE : Audio popup will be used later
     # KeyChord(
     #     [mod],
