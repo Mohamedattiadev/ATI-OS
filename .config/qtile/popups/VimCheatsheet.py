@@ -1,5 +1,7 @@
 from qtile_extras.popup import PopupRelativeLayout, PopupText
 
+from popups import _cheatsheet_grid as _grid
+
 # =============================================================================
 # GLOBAL STATE
 # =============================================================================
@@ -141,6 +143,43 @@ CHEATSHEET = {
 COLUMNS = list(CHEATSHEET.items())
 
 # =============================================================================
+# GEOMETRY -- see popups/_cheatsheet_grid.py for why this is not a grid
+# =============================================================================
+# Sized for the 1366x768 reference panel with a little air on each side.
+POPUP_W = 1300
+POPUP_H = 730
+
+# 10, not the PopupText default of 12. At 12 the four bottom-row sections
+# ran past the popup's own edge -- Screenshots and Exit / Save lost 28px of
+# their tails, and every column was ~40px wider than the cell it was given,
+# so it wrapped as well. Swept with pango: 10pt in 5 columns is the largest
+# that fits the panel with no wrapping and no overflow.
+BODY_SIZE = 10
+N_COLS = 5
+
+# Measured pango extents at "sans 10". Every section here renders a divider
+# rule under its title, so NOTE_PX is one body line and has_note is always
+# true -- unlike the Qtile sheet, where only the mode sections get one.
+BODY_PX, TITLE_PX, NOTE_PX = 20, 24, 20
+
+FOOTER_Y = _grid.FOOTER_Y
+
+
+def layout_sections():
+    """Place every section. See _cheatsheet_grid.pack()."""
+    return _grid.pack(
+        COLUMNS,
+        n_cols=N_COLS,
+        popup_h=POPUP_H,
+        body_px=BODY_PX,
+        title_px=TITLE_PX,
+        note_px=NOTE_PX,
+        has_note=lambda title: True,
+        name="VimCheatsheet",
+    )
+
+
+# =============================================================================
 # TEXT RENDERER
 # =============================================================================
 def render_section(title, items):
@@ -213,27 +252,20 @@ def toggle_vim_cheatsheet(qtile):
         )
     )
 
-    # ---------------- GRID ----------------
-    column_width = 0.21
-    gap_x = 0.03
-    gap_y = 0.03
-    start_x = 0.05
-    start_y = 0.16
-    MAX_COLS = 4
-    ROW_HEIGHT = 0.25
-
-    for i, (title, items) in enumerate(COLUMNS):
-        col = i % MAX_COLS
-        row = i // MAX_COLS
-
+    # ---------------- SECTIONS ----------------
+    # fontsize is passed explicitly: BODY_PX/TITLE_PX are measured at
+    # BODY_SIZE, so inheriting PopupText's default of 12 would invalidate
+    # every position the packer computed.
+    for title, items, px, py, pw, ph in layout_sections():
         controls.append(
             PopupText(
                 text=render_section(title, items),
                 markup=True,
-                pos_x=start_x + col * (column_width + gap_x),
-                pos_y=start_y + row * (ROW_HEIGHT + gap_y),
-                width=column_width,
-                height=ROW_HEIGHT,
+                fontsize=BODY_SIZE,
+                pos_x=px,
+                pos_y=py,
+                width=pw,
+                height=ph,
                 h_align="left",
                 v_align="top",
             )
@@ -250,7 +282,7 @@ def toggle_vim_cheatsheet(qtile):
             ),
             markup=True,
             pos_x=0.0,
-            pos_y=0.93,
+            pos_y=FOOTER_Y,
             width=1.0,
             height=0.05,
             h_align="center",
@@ -260,8 +292,8 @@ def toggle_vim_cheatsheet(qtile):
 
     _VIM_CHEATSHEET = PopupRelativeLayout(
         qtile,
-        width=1050,
-        height=680,
+        width=POPUP_W,
+        height=POPUP_H,
         background=COLORS["bg"].lstrip("#") + "ee",
         initial_focus=None,
         close_on_click=False,

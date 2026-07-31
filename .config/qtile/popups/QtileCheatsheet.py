@@ -1,5 +1,7 @@
 from qtile_extras.popup import PopupRelativeLayout, PopupText
 
+from popups import _cheatsheet_grid as _grid
+
 # =============================================================================
 # GLOBAL STATE (toggle)
 # =============================================================================
@@ -29,6 +31,7 @@ MODE_KEYS = {
     "RESIZE MODE": "Super + R",
     "DRAW MODE": "Super + Shift + W",
     "ROFI MODE": "Mod + P",
+    "ROFI MODE · pickers": "Mod + P",
     "LANUAGE SWITCH MODE": "Super + Space",
 }
 
@@ -104,15 +107,21 @@ CHEATSHEET = {
         ("Toggle visibility", "v"),
         ("Exit mode", "q / Esc"),
     ],
+    # Mod+P is by far the biggest menu, so it is split in two: the scripts
+    # it spawns, and the sub-chords / pickers it opens. One 22-item column
+    # did not fit on screen -- see the layout notes further down.
     "ROFI MODE": [
         ("Translate text", "e"),
         ("Add Anki note", "a"),
         ("Screenshots", "i"),
         ("man pages", "m"),
+        ("Notes", "o"),
+        ("Documents", "d"),
         ("Video recorder", "r"),
         ("Close All notifications", "x"),
         ("Light / Britness", "l"),
         ("Config editor", "f"),
+        ("dmscripts hub", "h"),
         ("Password menu", "p"),
         ("YouTube menu", "y"),
         ("Kill process", "k"),
@@ -120,12 +129,16 @@ CHEATSHEET = {
         # "Weather / w" used to sit here. dm-weather has been commented out
         # in config.py for a while, and w is the wallpaper picker now.
         ("Todo manager", "t"),
+        ("Saved Links", "z"),
+        ("Logout menu", "q"),
+    ],
+    "ROFI MODE · pickers": [
+        ("Theme picker", "c"),
         # These three moved when Bluetooth landed: wallpaper b -> w,
         # WiFi w -> n, and b became Bluetooth.
         ("Wallpaper picker", "w"),
         ("WiFi picker", "n"),
         ("Bluetooth picker", "b"),
-        ("Saved Links", "z"),
     ],
     "RESIZE MODE": [
         ("Shrink window", "Shift + h"),
@@ -150,6 +163,46 @@ CHEATSHEET = {
 }
 
 COLUMNS = list(CHEATSHEET.items())
+
+
+# =============================================================================
+# GEOMETRY -- see popups/_cheatsheet_grid.py for why this is not a grid
+# =============================================================================
+# Sized for the 1366x768 reference panel with a little air on each side.
+# It cannot grow much: this popup is already most of that screen.
+POPUP_W = 1300
+POPUP_H = 730
+
+# 9, not the PopupText default of 12. The content is 12 sections / 90
+# bindings, and on a 1366px-wide screen the two constraints fight: a bigger
+# font needs more columns to fit the height, and more columns are too
+# narrow for the widest line ("Launcher (Rofi) : Mod + Shift + Enter"), so
+# it wraps -- which makes sections taller, which needs more columns again.
+# Swept with pango over every size/column split that fits the panel; 9pt in
+# 5 columns is the largest that clears both. At 10pt nothing fits.
+BODY_SIZE = 9
+N_COLS = 5
+
+# Measured pango extents at "sans 9": a body line is 18px, the "large"
+# title 22px, and the mode note plus its divider rule 33px together.
+BODY_PX, TITLE_PX, NOTE_PX = 18, 22, 33
+
+MARGIN = _grid.MARGIN
+FOOTER_Y = _grid.FOOTER_Y
+
+
+def layout_sections():
+    """Place every section. See _cheatsheet_grid.pack()."""
+    return _grid.pack(
+        COLUMNS,
+        n_cols=N_COLS,
+        popup_h=POPUP_H,
+        body_px=BODY_PX,
+        title_px=TITLE_PX,
+        note_px=NOTE_PX,
+        has_note=lambda title: title in MODE_KEYS,
+        name="QtileCheatsheet",
+    )
 
 
 # =============================================================================
@@ -224,28 +277,20 @@ def toggle_cheatsheet(qtile):
         )
     )
 
-    # ---------------- GRID ----------------
-    column_width = 0.21
-
-    gap_x = 0.03
-    gap_y = 0.03
-    start_x = 0.05
-    start_y = 0.16
-    MAX_COLS = 4
-    ROW_HEIGHT = 0.25
-
-    for i, (title, items) in enumerate(COLUMNS):
-        col = i % MAX_COLS
-        row = i // MAX_COLS
-
+    # ---------------- SECTIONS ----------------
+    # fontsize is passed explicitly: the LINE_FRAC constants that place
+    # these are measured at BODY_SIZE, so inheriting PopupText's default of
+    # 12 would silently invalidate every position above.
+    for title, items, px, py, pw, ph in layout_sections():
         controls.append(
             PopupText(
                 text=render_section(title, items),
                 markup=True,
-                pos_x=start_x + col * (column_width + gap_x),
-                pos_y=start_y + row * (ROW_HEIGHT + gap_y),
-                width=column_width,
-                height=ROW_HEIGHT,
+                fontsize=BODY_SIZE,
+                pos_x=px,
+                pos_y=py,
+                width=pw,
+                height=ph,
                 h_align="left",
                 v_align="top",
             )
@@ -261,7 +306,7 @@ def toggle_cheatsheet(qtile):
             ),
             markup=True,
             pos_x=0.0,
-            pos_y=0.93,
+            pos_y=FOOTER_Y,
             width=1.0,
             height=0.05,
             h_align="center",
@@ -272,8 +317,8 @@ def toggle_cheatsheet(qtile):
     # ---------------- POPUP ----------------
     _CHEATSHEET_LAYOUT = PopupRelativeLayout(
         qtile,
-        width=1050,
-        height=680,
+        width=POPUP_W,
+        height=POPUP_H,
         background=COLORS["bg"].lstrip("#") + "ee",
         initial_focus=None,
         close_on_click=False,

@@ -19,6 +19,8 @@
 #   * a @HOME@ template with no renderer, or a renderer with no template
 #   * a module yaml that stopped parsing
 #   * a wizard module with no uninstaller (fails mid-uninstall otherwise)
+#   * a cheatsheet entry drawn past the edge of its popup. PopupText does
+#     not clip, so the entry is simply absent -- no error anywhere.
 #
 # Usage: ./validate.sh [--quiet]
 
@@ -198,6 +200,29 @@ elif .config/AtiScriptsV1/boot-splash selftest >/dev/null 2>&1; then
   pass "every name in the matrix renders and fits on screen"
 else
   fail "boot-splash selftest failed — run: boot-splash selftest"
+fi
+
+# ── 9. cheatsheet popups: everything fits on screen ──────────────────
+# PopupText does not clip to its height -- text longer than the box just
+# keeps drawing downward until the popup window edge cuts it off. All three
+# cheatsheets overflowed for a long time with nothing to show for it: the
+# entries were simply not on screen, no error, no log line. The Qtile sheet
+# was losing the last four entries of its biggest column, and four Vim
+# sections lost their tails.
+#
+# The selftest asks pango for the real extents of every section at its real
+# font size and asserts it fits. Cheap, and it is the only thing standing
+# between "added one entry" and "silently dropped a different one".
+head_ "cheatsheet popups"
+if ! python3 -c "import gi, cairo" 2>/dev/null; then
+  skip "no pygobject/cairo — cannot measure text"
+elif ! python3 -c "import qtile_extras" 2>/dev/null; then
+  skip "qtile-extras not importable"
+elif _cs_out="$(cd .config/qtile && python3 -m popups._cheatsheet_grid 2>&1)"; then
+  pass "every cheatsheet section fits its popup"
+else
+  printf '%s\n' "$_cs_out" | sed 's/^/    /'
+  fail "a cheatsheet section is drawn off-screen or wraps"
 fi
 
 # ── result ───────────────────────────────────────────────────────────

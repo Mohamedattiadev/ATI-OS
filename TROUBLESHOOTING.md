@@ -1088,6 +1088,49 @@ subsystem. Each entry: **symptom → root cause → fix**.
   object is shown again later. If the show path constructs a new layout,
   the close path must `kill()`.
 
+### Entries at the bottom of a cheatsheet column are missing, and nothing errors
+- **Symptom:** a cheatsheet popup is missing the last few entries of its
+  longest section. No exception, no log line — the entries are right there
+  in `CHEATSHEET`, they just are not on screen. Adding one more makes a
+  different one disappear.
+- **Root cause:** `PopupText` **neither clips nor wraps to its `height`.**
+  The `height` you pass only positions the control; text longer than that
+  keeps drawing downward, over whatever is below it, until the popup
+  *window* edge cuts it off. All three cheatsheets carried the same
+  copy-pasted 4×3 grid of equal `0.25`-height cells, and every section in
+  every one of them overflowed its cell. Where there was empty space
+  below, the overflow was invisible; where there was not, the window
+  cropped it:
+  - **Qtile** — the ROFI MODE column ended **101px below the bottom
+    edge**; its last four entries had never rendered.
+  - **Vim** — `Screenshots` and `Exit / Save` lost 28px each, `Markdown`
+    4px, and `LSP` ran into the footer.
+  - **Fish** — `Danger Zone` ran 32px past the footer.
+
+  Every column in Vim and Fish was also ~40px wider than its cell, so all
+  of them wrapped as well, which made them taller still.
+- **Fix:** `popups/_cheatsheet_grid.py` — one shared packer, since the
+  copy-paste is what let one bug become three. Sections stack top to
+  bottom, each placed at the height the ones above it actually need, and
+  a column is closed when the next section will not fit. Running out of
+  columns logs a warning naming the section, instead of dropping it.
+- **Sizes are measured, not guessed.** Each sheet's `BODY_PX` /
+  `TITLE_PX` / `NOTE_PX` are pango extents at its `BODY_SIZE`, so
+  **changing `BODY_SIZE` without re-measuring them invalidates every
+  position.** It is also why `fontsize=BODY_SIZE` is passed explicitly to
+  every `PopupText` — inheriting the default of 12 would do exactly that.
+- **Why the sheets use different sizes** (Qtile 9pt/5 cols, Vim 10pt/5,
+  Fish 11pt/4): on a 1366×768 panel the two constraints fight. A larger
+  font needs more columns to fit the height, and more columns are too
+  narrow for the widest line, so it wraps — which makes sections taller,
+  which needs more columns again. Each sheet gets the largest size that
+  clears both, and they have different amounts of content.
+- **Check a change without a running qtile** — this is what `validate.sh`
+  runs, and it names the section and the fix:
+  ```sh
+  cd ~/.config/qtile && python3 -m popups._cheatsheet_grid
+  ```
+
 ### Popup labels are washed out / unreadable on some themes
 - **Symptom:** on nord, rose-pine and the other presets, the `muted`
   labels inside a popup card are barely legible, and one accent (nord's

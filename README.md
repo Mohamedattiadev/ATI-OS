@@ -178,7 +178,7 @@ passthrough.</sub>
 
 ### The logo, and finding out what any of this does
 
-**Left-click the logo in the bar.** A desktop with 85 documented
+**Left-click the logo in the bar.** A desktop with 90 documented
 keybindings, 22 themes and a dozen custom tools has a discovery problem,
 not a terminal-launching problem — so the most prominent click in the bar
 answers *"what can this thing do"*.
