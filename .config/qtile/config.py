@@ -523,25 +523,64 @@ def apply_palette_live():
 # colors = colors.TomorrowNight
 
 
+class FittedChord(ewidget.Chord):
+    """Chord widget that re-fits the bar BEFORE it repaints it.
+
+    Entering a chord makes this widget go from zero width to the width of a
+    whole mode legend -- 225px for Rofi-Mode -- and _TextBox.update() reacts
+    by calling bar.draw() immediately. The pass that shrinks the TaskList to
+    make room is driven off the enter_chord hook, and hooks run to
+    completion before that draw, so for one frame the bar was laid out with
+    the new chip and the old TaskList and the right-hand chips sat past the
+    edge of the screen.
+
+    Caught on camera rather than guessed at: sampling the bar at 29fps
+    across a chord entry, the last chip's right edge sat at x=1355 instead
+    of 1351 for two frames, then snapped back. Dropping the debounce delay
+    to 0 removed one of them; this removes the other, by doing the re-fit
+    between setting the text and asking for the repaint, so the only frame
+    that ever reaches the screen is the settled one.
+
+    Overrides update() rather than draw(): draw() runs per repaint, and the
+    width only changes when the text does.
+    """
+
+    def update(self, text):
+        if text is None:
+            text = ""
+        if self.text == text:
+            return
+        # The setter stores the text and re-lays the pango layout, so the
+        # widget's length is already the NEW one below -- but it does not
+        # draw, which is the whole point.
+        self.text = text
+        try:
+            _center_top_groupbox()
+        except Exception:
+            pass
+        if getattr(self, "bar", None):
+            self.bar.draw()
+
+
+# Indices into `colors`, the ACTIVE theme palette, not colorsW. colorsW is
+# the static doom-one set baked into this file, so every mode badge stayed
+# doom-one blue/orange/purple on all 22 themes while the rest of the bar
+# retinted around it. The index semantics line up between the two lists --
+# 3 red, 4 green, 5 orange/yellow, 6 blue, 7 purple, 8 cyan/bright -- so the
+# hue each mode was chosen for survives the move.
 CHORD_CHIP_COLORS = {
-    "Resize-Mode": colorsW[5],  # orange
-    "Rofi-Mode": colorsW[6],  # blue
-    "Media-Mode": colorsW[4],  # cyan
-    "Scratch-Mode": colorsW[8],
-    "Draw-Mode": colorsW[3],
-    "Hint-Mode": colorsW[7],
-    "Lang-Switch": colorsW[1],
-    "CheatSheet-Mode": colorsW[3],
-    "WallpaperPicker": colorsW[3],
-    "PASSTHROUGH": colorsW[8],
-    "PASSTHROUGH-CONFIRM": colorsW[1],  # urgent/warm -- it is asking to quit
-    # NOTE: Bluetooth popup will be used later
-    # "Bluetooth-Mode": colorsW[4],
-    # NOTE: Audio popup will be used later
-    # "Audio-Mode": colorsW[4],
-    "Wifi-Mode": colorsW[6],
-    # NOTE: updates popup  will be used later
-    # "Updates-Mode": colorsW[4],
+    "Resize-Mode": colors[5],  # orange
+    "Rofi-Mode": colors[6],  # blue
+    "Media-Mode": colors[8],  # cyan
+    "Scratch-Mode": colors[8],
+    "Draw-Mode": colors[3],
+    "Hint-Mode": colors[7],
+    "Lang-Switch": colors[1],
+    "CheatSheet-Mode": colors[3],
+    "WallpaperPicker": colors[3],
+    "PASSTHROUGH": colors[8],
+    "PASSTHROUGH-CONFIRM": colors[1],  # urgent/warm -- it is asking to quit
+    "Wifi-Mode": colors[6],
 }
 
 # ╔──────────────────────────────────────────╗
@@ -2542,7 +2581,7 @@ def chord_chip_enter(chord_name):
     for deco in w.decorations:
         if isinstance(deco, RectDecoration):
             # deco.colour = CHORD_CHIP_COLORS.get(chord_name, colorsW[2])
-            setattr(deco, "colour", CHORD_CHIP_COLORS.get(chord_name, colorsW[2]))
+            setattr(deco, "colour", CHORD_CHIP_COLORS.get(chord_name, DEFAULT_CHIP_COLOR))
 
     if w.bar:
         w.bar.draw()
@@ -2556,8 +2595,7 @@ def chord_chip_leave():
 
     for deco in w.decorations:
         if isinstance(deco, RectDecoration):
-            # deco.colour = colorsW[2]  # default chip color
-            setattr(deco, "colour", colorsW[2])
+            setattr(deco, "colour", DEFAULT_CHIP_COLOR)
 
     w.bar.draw()
 
@@ -3266,11 +3304,17 @@ def right_side_widgets():
     return [
         # Chord (Modes) Chip
         chip(
-            ewidget.Chord,
+            FittedChord,
             name="chord_chip",
             fmt=" {} ",
             padding=11,
-            foreground=colors[2],
+            # The theme's BACKGROUND colour as the text colour: the chip
+            # behind it is a theme accent, so bg-on-accent is legible by
+            # construction on light and dark palettes alike. colors[2] was a
+            # hardcoded #000000, which only worked because every theme here
+            # happened to be dark -- on mono-light it is black text on a dark
+            # accent.
+            foreground=colors[0],
             background=None,
             name_transform=lambda name: {
                 "Resize-Mode": "󰩨   RESIZE : H, J, N",
@@ -6011,7 +6055,16 @@ def _schedule_center_groupbox(*_args, **_kwargs):
         _center_top_groupbox()
 
     try:
-        qtile.call_later(0.05, _run)
+        # Delay 0, not 0.05. The debounce is about COALESCING -- these hooks
+        # fire several times per event and the flag above already collapses
+        # them -- not about waiting. The 50ms wait was visible: entering a
+        # chord draws the chip at full width first, and the bar stays
+        # over-full until this runs. Captured it at 29fps: the last chip's
+        # right edge sat at x=1355 instead of 1351 for two frames, then
+        # snapped back. call_later(0) runs on the next pass of the event
+        # loop, after the widget that grew has updated but before the bar
+        # settles, so there is no intermediate frame to see.
+        qtile.call_later(0, _run)
     except Exception:
         _GB_CENTER_PENDING = False
 
