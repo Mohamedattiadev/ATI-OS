@@ -2,9 +2,6 @@
 config.load_autoconfig()
 
 
-# Import the theme module (doom_one.py should be in ~/.config/qutebrowser/)
-import doom_one
-
 # ---- theme_mode integration ---------------------------------------------
 # Retint qb's whole chrome (tabs / statusbar / completion / messages /
 # prompts / downloads) from the active palette. Applies to EVERY mode,
@@ -136,19 +133,49 @@ def _apply_palette():
         c.colors.keyhint.bg = bg_alt
         c.colors.keyhint.fg = fg
         c.colors.keyhint.suffix.fg = yellow
+        # Absorbed from doom_one, which is no longer imported. These were
+        # the last nine slots still painted with hardcoded Doom One hexes
+        # over every other palette -- exactly what this function exists to
+        # stop. The scrollbar and the "private command" bar are surfaces
+        # you only notice when they are the wrong colour.
+        c.colors.completion.item.selected.match.fg = yellow
+        c.colors.completion.scrollbar.bg = bg_alt
+        c.colors.completion.scrollbar.fg = _mix(fg, bg_alt)
+        c.colors.statusbar.command.private.bg = bg_alt
+        c.colors.statusbar.command.private.fg = fg
+        c.colors.tabs.indicator.error = red
+        # Not carried over: colors.downloads.system.{bg,fg} and
+        # colors.tabs.indicator.system. Those are ColorSystem enums (how
+        # to interpolate the progress gradient), not colours, and
+        # doom_one set all three to "rgb" -- already the qutebrowser
+        # default, so setting them here would be pure noise.
     except Exception:
-        # Palette dump missing/corrupt -- keep doom_one's defaults rather
-        # than a half-applied palette.
+        # Palette dump missing/corrupt -- fall back to the dark_mode block
+        # below plus qutebrowser's own defaults, rather than leaving a
+        # half-applied palette.
         pass
-# Called after doom_one.setup() below (not here) -- doom_one sets ~90
-# c.colors.* properties and would silently clobber every palette override
-# if _apply_palette() ran first.
+# Called further down, after the dark_mode fallback block -- that block
+# writes four of these same options and would clobber them if
+# _apply_palette() ran first.
 
 # -----------------------------------------------------------------------------
 # Theme & UI
 # -----------------------------------------------------------------------------
 config.set("colors.webpage.darkmode.enabled", True)
-doom_one.setup(c, {"spacing": {"vertical": 5, "horizontal": 5}})
+
+# Spacing and non-colour chrome, absorbed from doom_one.setup() so the
+# vendored theme package (and its 3.2 MB source zip) could be dropped.
+# Everything else doom_one set was either a hardcoded Doom One hex that
+# _apply_palette() immediately overwrote, or one of the nine it missed --
+# those are now palette-driven in _apply_palette() instead.
+c.statusbar.padding = {"top": 5, "right": 5, "bottom": 5, "left": 5}
+c.tabs.padding = {"top": 5, "right": 5, "bottom": 5, "left": 5}
+c.tabs.indicator.width = 3
+c.tabs.favicons.scale = 1
+# doom_one asked for "bold 11pt 'Fira Mono'", which is not installed --
+# hint labels were rendering in the Noto Sans CJK fallback, the same bug
+# as the c.fonts.default_family one below.
+c.fonts.hints = "bold 11pt 'JetBrainsMono Nerd Font'"
 
 # Fallback hint colours only. _apply_palette() runs *after* this block and
 # overwrites all four from the live palette, so these are what you get when
@@ -173,9 +200,9 @@ else:
 
 
 # Retint the whole browser UI (hints, statusbar, completion, tabs,
-# messages, prompts, downloads, webpage bg) from the active palette on
-# top of the doom_one base -- must run after doom_one.setup() AND the
-# dark_mode block above, or those clobber it right back. Runs for every
+# messages, prompts, downloads, webpage bg) from the active palette --
+# must run after the dark_mode block above, or that clobbers it right
+# back. Runs for every
 # mode (preset or wal). `:config-source` (fired by theme-apply) re-runs
 # this whole file, so switching theme or wallpaper re-applies live.
 _apply_palette()

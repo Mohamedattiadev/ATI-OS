@@ -135,19 +135,21 @@ head_ "portability"
 # Exclusions, each for a reason rather than to make the check pass:
 # - *.md          prose about the problem, not the problem
 # - comment lines the explanation of why a path was de-hardcoded
-# - bookmarks/urls user data (a bookmark list), not config
 # - the test scripts they contain "/home/ati" as the pattern they SEARCH
 #   for; matching them here would mean the check can never pass
+#
+# The bookmarks/urls exclusion that used to sit here is gone: that file is
+# personal browsing data and is no longer tracked at all, so the check now
+# covers every tracked file without a data carve-out.
 hits="$(git ls-files -z | xargs -0 grep -In "/home/ati" 2>/dev/null \
   | grep -vE '\.md:' \
   | grep -vE '^[^:]+:[0-9]+:\s*(#|//|--|\*)' \
-  | grep -vE '^\.config/qutebrowser/bookmarks/urls:' \
   | grep -vE '^installScripts/(container-test|validate)\.sh:' || true)"
 if [[ -n "$hits" ]]; then
   fail "hardcoded /home/ati in tracked files:"
   printf '%s\n' "$hits" | sed 's/^/      /' >&2
 else
-  pass "no hardcoded home paths (bookmarks + comments excluded)"
+  pass "no hardcoded home paths (comments excluded)"
 fi
 
 # Every @HOME@ template needs something that renders it, or it ships a

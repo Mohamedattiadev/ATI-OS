@@ -59,6 +59,14 @@ brave-profiles
 .config/qutebrowser/qutebrowser-preview/cache/
 .config/qutebrowser/qutebrowser-preview/data/
 
+# Personal browsing data, not configuration -- these are saved links, and
+# one tracked bookmark was a file:///home/ati/... path that is dead on any
+# other machine (validate.sh had to special-case the file to keep its
+# hardcoded-home check green). qutebrowser creates both on demand, so a
+# fresh clone just starts with an empty list.
+.config/qutebrowser/bookmarks/urls
+.config/qutebrowser/quickmarks
+
 # fish REWRITES this file at runtime. The tracked copy carried a PATH with
 # ~/.cargo/bin three times and dead fnm_multishells session dirs from this
 # laptop. The settings that mattered now live in config.fish, versioned.
