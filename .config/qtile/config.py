@@ -145,6 +145,7 @@ from popups.WallpaperPopup import (
 
 
 from popups import WifiPopup
+from popups import WifiQR
 
 # NOTE: updates popup  will be used later
 # from popups.UpdatesPopup import (
@@ -227,7 +228,34 @@ colorsW = [
 ARCH_ICON_MAIN = "󰕰"
 
 
-DEFAULT_CHIP_COLOR = colorsW[2]
+def _chip_plate(bg_hex):
+    """The plate colour every chip sits on, derived from the active theme.
+
+    This was colorsW[2] -- "#1c1f24", a literal from the static doom-one
+    palette baked into this file -- so it stayed the same on all 22 themes.
+    Invisible on the dark ones, and plainly wrong on mono-light, where
+    near-black chips sat on a white desktop.
+
+    Derived rather than pointed at colors[2], because colors[2] is #000000 on
+    every dark theme here: correct in the sense that it tracks, but it would
+    turn every chip pure black and change how the bar looks on the themes
+    actually in use. Darkening the theme's own background instead keeps the
+    plate a shade below whatever the desktop is, which is the relationship
+    the hardcoded value had.
+
+    Two factors, chosen by lightness: 30% on a dark background lands gruvbox
+    on #1c1c1c, indistinguishable from the #1c1f24 it replaces, while the
+    same 30% on white would give mid-grey. 12% on a light background lands
+    mono-light on #e0e0e0 -- which is exactly what that theme's own alt slot
+    holds, so the derivation agrees with the palette where the palette has an
+    opinion.
+    """
+    r, g, b = (int(bg_hex.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    light = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.5
+    f = 0.88 if light else 0.70
+    return "#{:02x}{:02x}{:02x}".format(*(round(c * f) for c in (r, g, b)))
+
+
 
 os.environ["GTK_IM_MODULE"] = "none"
 os.environ["QT_IM_MODULE"] = "none"
@@ -308,6 +336,12 @@ PASSTHROUGH_CONFIRM_CHORD = None
 FLOAT_STATES = {}
 
 colors: list[list[str]] = color_schemes.active_palette()
+
+# Must follow `colors`: _chip_plate() reads the active background, and this
+# module previously set DEFAULT_CHIP_COLOR eighty lines earlier from a
+# literal, where no palette existed yet.
+_plate = _chip_plate(colors[0][0])
+DEFAULT_CHIP_COLOR = [_plate, _plate]
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -3659,6 +3693,20 @@ def right_side_widgets():
                     mouse_callbacks={
                         "Button1": lambda: _nightlight_on(),
                         "Button3": lambda: _nightlight_off(),
+                    },
+                ),
+                # Share the current wifi as a QR code. A plain TextBox, not a
+                # poll widget: it has no state to track, so it costs nothing
+                # sitting here, and everything it needs is read on click.
+                chip(
+                    ewidget.TextBox,
+                    name="w_wifi_qr",
+                    text="\uf029",
+                    padding=11,
+                    fontsize=_s(11),
+                    foreground=colors[5],
+                    mouse_callbacks={
+                        "Button1": lazy.function(WifiQR.toggle),
                     },
                 ),
             ],
