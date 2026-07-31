@@ -2578,6 +2578,10 @@ def cleanup_on_leave():
 
     elif ACTIVE_CHORD == "Wifi-Mode":
         WifiPopup.close(qtile)
+        # `s` can put the QR popup on top of the picker without a chord of
+        # its own (Wifi-Mode already owns Escape), so leaving this chord has
+        # to take both down or the QR is left stranded with no way to close.
+        WifiQR.close(qtile)
 
     elif ACTIVE_CHORD == WifiQR.CHORD_NAME:
         # The QR popup grabs an Escape-only chord while it is up (it is
@@ -3081,7 +3085,7 @@ def normal_user_bar():
                 # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
                 # NOTE: Audio popup will be used later
                 # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , r , / ",
+                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , s , r , / ",
                 "Wifi-QR": "   WIFI QR : ESC to close ",
             }.get(name, name.upper()),
         ),
@@ -3376,7 +3380,7 @@ def right_side_widgets():
                 # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
                 # NOTE: Audio popup will be used later
                 # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , r , / ",
+                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , s , r , / ",
                 "Wifi-QR": "   WIFI QR : ESC to close ",
                 # NOTE: updates popup  will be used later
                 # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
@@ -4605,6 +4609,14 @@ def _centre_textbox_vertically():
 
     def draw(self):
         layout = self.layout
+        # Upstream's draw() opens with `if not self.can_draw(): return`, and
+        # can_draw() is exactly `self.layout is not None`. Reaching for
+        # layout.draw before delegating stepped in front of that guard, so an
+        # unconfigured widget -- which is every widget for a moment during a
+        # reload -- raised "'NoneType' object has no attribute 'draw'" out of
+        # here instead of being skipped. Hand those straight back.
+        if layout is None:
+            return _orig_draw(self)
         real_draw = layout.draw
 
         def shifted(x, y, *a, **k):
@@ -4627,6 +4639,82 @@ def _centre_textbox_vertically():
 
 
 _centre_textbox_vertically()
+
+
+def _guard_x11_layering():
+    """Stop a stale window reference taking the whole session down.
+
+    This is the bug that ended the session on 2026-07-31 at 04:37:53. The
+    fatal traceback, from the log:
+
+        core.py:947  check_stacking   -> self.last_focused.change_layer()
+        window.py:1167 change_layer   -> self.qtile.windows_map[wid].window...
+        KeyError: 31457294
+
+    Core.check_stacking keeps `last_focused` as a direct reference to a
+    Window and never clears it when that window stops being managed. During
+    a restart or a config reload, qtile tears down and rebuilds
+    windows_map, so `last_focused` routinely points at a window that no
+    longer exists -- and check_stacking calls change_layer() on it anyway.
+    change_layer then looks the wid up in windows_map and raises KeyError,
+    out of an event handler, which is fatal.
+
+    Two guards, because there are two ways in:
+
+    check_stacking gets the missing membership test. It is six lines
+    upstream and is reimplemented here rather than wrapped, since the point
+    is a condition in the middle of it.
+
+    change_layer gets a blanket catch, which is the right shape for this
+    one: its entire job is deciding which window sits above which, so the
+    cost of giving up on a single call is one frame of possibly-wrong
+    stacking order, corrected by the next focus event. The cost of NOT
+    giving up is the session dying. The same function also does
+    `group_bar.window.get_layering_information()` without checking that the
+    bar HAS a window yet -- that is the AttributeError that fired thirteen
+    times on toggle_fullscreen in the previous log -- so the catch covers
+    both rather than guessing at every unbuilt object it might touch.
+    """
+    from libqtile.backend.x11 import core as _x11core
+    from libqtile.backend.x11 import window as _x11window
+
+    if getattr(_x11core.Core, "_layering_guarded", False):
+        return
+
+    def check_stacking(self, win):
+        last = self.last_focused
+        if win is last:
+            return
+        # The added test: only restack a window qtile still manages.
+        if (
+            last is not None
+            and getattr(last, "wid", None) in self.qtile.windows_map
+            and last.fullscreen
+        ):
+            last.change_layer()
+        self.last_focused = win
+
+    _x11core.Core.check_stacking = check_stacking
+
+    _orig_change_layer = _x11window._Window.change_layer
+
+    def change_layer(self, *a, **k):
+        try:
+            return _orig_change_layer(self, *a, **k)
+        except (KeyError, AttributeError):
+            from libqtile.log_utils import logger
+
+            logger.warning(
+                "change_layer failed for %s; leaving the stacking order alone "
+                "rather than raising out of an event handler",
+                getattr(self, "wid", "?"),
+            )
+
+    _x11window._Window.change_layer = change_layer
+    _x11core.Core._layering_guarded = True
+
+
+_guard_x11_layering()
 
 
 class _ChipFlashMixin(_SafeLengthMixin):
@@ -5100,9 +5188,10 @@ keys = [
             Key([], "z", lazy.spawn("rofi_shared"), desc="shared link-preview"),
             # --- a Special mode for "Wallpaper Picker" ---
             # --- Wallpaper MODE ---
+            # w for wallpaper. (Was b, which now opens Bluetooth.)
             KeyChord(
                 [],
-                "b",
+                "w",
                 [
                     # NAVIGATE LEFT / RIGHT
                     Key([], "h", lazy.function(lambda _: WallpaperPopup.move(0, -1))),
@@ -5156,12 +5245,10 @@ keys = [
             ),
             # --- a Special mode for "WiFi" ---
             # --- WiFi MODE ---
-            # `w` for wifi. dm-weather owned this letter and is commented out
-            # below; put the weather binding back on a free letter (g, j, o,
-            # u, v, y) if you want it again.
+            # n for network. (Was w, which now opens the wallpaper picker.)
             KeyChord(
                 [],
-                "w",
+                "n",
                 [
                     # NAVIGATE
                     Key([], "j", lazy.function(lambda _: WifiPopup.move(1))),
@@ -5174,6 +5261,7 @@ keys = [
                     Key([], "x", lazy.function(lambda _: WifiPopup.forget())),
                     Key([], "n", lazy.function(lambda _: WifiPopup.connect_hidden())),
                     Key([], "t", lazy.function(lambda _: WifiPopup.toggle_radio())),
+                    Key([], "s", lazy.function(lambda q: WifiPopup.share_qr(q))),
                     Key([], "r", lazy.function(lambda _: WifiPopup.rescan())),
                     Key([], "slash", lazy.function(lambda _: WifiPopup.search())),
                     # EXIT. Passed as separate positional commands --
@@ -5216,7 +5304,9 @@ keys = [
             # --- View manpages ---
             Key([], "m", lazy.spawn("dm-man -r"), desc="View manpages"),
             # --- Store and copy notes ---
-            Key([], "n", lazy.spawn("dm-note -r"), desc="Store and copy notes"),
+            # Moved off n (now the WiFi picker) to o -- "nOte". g/j/u/v/y are
+            # the other free letters in this chord.
+            Key([], "o", lazy.spawn("dm-note -r"), desc="Store and copy notes"),
             # --- rofi password menu ---
             Key([], "p", lazy.spawn("rofi-pass"), desc="Password menu"),
             # --- youtube menu ---
