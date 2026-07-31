@@ -184,10 +184,10 @@ hand-written menu drifts the moment anything is added, and silently:
 | **Keybindings** | 79 shortcuts, searchable | `config.py`, parsed by `qtile-keys` via Python's AST |
 | **Cheatsheets** | qtile · vim · fish popups | qtile IPC, not replayed keystrokes |
 | **Documentation** | README · troubleshooting · packages · boot · the config | rendered read-only; the config opens writable |
-| **Commands** | all 38 tools this repo installs | each script's own header comment |
 | **Espanso** | which snippet variables are set, and which are not | `match/*.yml` vs `/etc/environment` |
 | **Appearance** | theme · UI scale · wallpaper · splash | the existing pickers |
 | **System** | about · package audit · failed services · display + GPU | run live at open time |
+| **Maintenance** | merges · orphans · boot errors · package cache | `pacdiff`, `pacman -Qtdq`, `journalctl`, `paccache` |
 
 **Esc goes up, not out.** Every submenu returns to its parent; only Esc at
 the top level closes the menu. A menu you have to reopen from the bar after
@@ -215,10 +215,25 @@ own buffers and made fidget.nvim throw on every notification.
 blue/purple"* is what you would actually type when it happens. All 126
 entries, jumping to the line.
 
-**Commands** shows each script's header comment and **never runs it**. The
-first version called `<script> --help`, which was a genuine bug — most of
-these have no `--help`, so the flag fell through to their normal code path
-and the menu launched pickers and started dictation instead of documenting.
+**Maintenance** is the only section that is not documentation, and the only
+one that *acts*. It replaced a Commands section that listed all 38 tools in
+`AtiScriptsV1` with their header comments and deliberately never ran any of
+them — correct, and a reading exercise nobody opened twice, when the scripts
+are all on `$PATH` anyway.
+
+What nothing surfaced was the slow rot: `.pacnew` files never merged,
+orphaned dependencies, units that failed while you were looking at a splash
+screen, a package cache growing without bound. So that is what is here, with
+a live count on every entry — `pacdiff -o`, `pacman -Qtdq`, `journalctl -p 3
+-b`, `paccache -d` — and selecting one merges, removes, prunes or upgrades.
+
+Two deliberate omissions. Pending updates come from the **bar's** cache
+(`~/.cache/qupdate.json`), never from `checkupdates`, which syncs a private
+copy of the package databases over the network and would turn a menu draw
+into a multi-second stall — or a hang with no connection. And the orphan
+entry opens the **list**, not a bare confirm: *"remove 21 packages?"* with no
+names is a prompt you either rubber-stamp or cancel, and neither is a
+decision.
 
 Everything opens in a **centred floating window** (`kitty --class
 docs-view`, matched by `float_rules`, centred by `_float_and_center_docs`)

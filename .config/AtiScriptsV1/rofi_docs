@@ -2,17 +2,18 @@
 # rofi_docs — the system documentation menu, behind the bar's logo chip.
 #
 # Left-clicking the logo used to open a terminal, which four other bindings
-# already do. A desktop with 79 keybindings, 22 themes, 126 troubleshooting
-# entries and 38 custom commands has a discovery problem instead.
+# already do. A desktop with 79 keybindings, 22 themes and 126 troubleshooting
+# entries has a discovery problem instead.
 #
 # Everything is GENERATED from the live system, never hand-listed, so no
 # section can drift out of date:
 #
 #   Keybindings   parsed from config.py by qtile-keys (AST, not regex)
-#   Commands      each script's own header comment -- READ, never executed
 #   Troubleshoot  the headings of TROUBLESHOOTING.md, with their first line
 #                 of context, jumping to the right line
 #   Docs          rendered read-only; only the qtile config opens writable
+#   Maintenance   probed live from pacman and the journal, and the one
+#                 section that ACTS: merge, prune, remove, upgrade
 #
 # Navigation: Esc goes UP one level, not out. Every submenu returns to its
 # parent, and only Esc at the top level closes the menu -- a menu you have
@@ -44,10 +45,46 @@ source "$(dirname "$(readlink -f "$0")")/rofi_common.sh"
 # rofi -dmenu exits 1 on Escape and 0 on a selection. That difference is
 # the whole navigation model, so it gets its own wrapper: RC is the caller's
 # signal to go back up rather than act.
+#
+# ONE geometry for every menu in this script, applied here rather than by
+# each caller, so a new section cannot forget it and drift.
+#
+# Left to itself rofi draws these at whatever `~/.config/rofi/config.rasi`
+# points to, which is current.rasi -> dtos-center.rasi: the drun LAUNCHER's
+# theme, 45% wide with 8 lines. That is right for a column of application
+# names and wrong for everything here, and worse, it was not even wrong
+# consistently -- the window changed shape on every navigation, so going
+# Docs -> Troubleshooting -> back re-drew three different rectangles in the
+# same spot. A menu whose frame moves under you is a menu you stop reading.
+#
+# Both dimensions are fixed and `dynamic` is off, which is the whole point:
+# the frame is nailed down, and only the rows inside it change. That costs
+# the shorter menus some empty space at the bottom, which is the correct
+# trade -- a stable frame is worth more than a snug one.
+#
+# The width is set by the WIDEST content, which is the keybinding list at
+# 91 columns; qtile-keys generates that and this script does not get to
+# reformat it. 76% of a 1366px screen leaves ~102 columns of usable text
+# after padding, so the one row format that did not fit -- troubleshooting,
+# at 147 columns -- was brought down to 99 instead of the window being
+# stretched off-screen for it.
+#
+# No font here: base.rasi now names a real monospace family, so the padded
+# columns throughout this script line up on their own.
+DOCS_GEO='window { width: 76%; height: 70%; } listview { dynamic: false; }'
+
+# rofi -dmenu exits 1 on Escape and 0 on a selection. That difference is
+# the whole navigation model, so it gets its own wrapper: RC is the caller's
+# signal to go back up rather than act.
+#
+# The `"$2"` inside ${2:+...} is load-bearing: bash does quote removal on
+# the alternate value but does NOT word-split the quoted part, so a message
+# full of spaces still arrives as ONE argument. Dropping those inner quotes
+# silently shatters it into a dozen bogus argv entries.
 RC=0
 pick() {
   local out
-  out="$(rofi -dmenu -i -p "$1" ${2:+-mesg "$2"})"
+  out="$(rofi -dmenu -i -p "$1" ${2:+-mesg "$2"} -theme-str "$DOCS_GEO")"
   RC=$?
   printf '%s' "$out"
 }
@@ -285,12 +322,36 @@ sec_trouble() {
       gsub(/[`*_]/, "", firstprose)
     }
     END { if (heading != "") emit() }
+    # 38 + 44 columns, not 46 + 90. Every menu in this script is drawn at
+    # one fixed width now (DOCS_GEO), and at 147 columns these rows were
+    # the only content in the file that could not fit inside it -- on a
+    # 1366px screen 147 monospace columns is wider than the screen itself,
+    # so sizing the window to them was never an option.
+    #
+    # The budget is 96 columns, measured off the rendered window rather
+    # than guessed: 1035px of window, less 32px window padding and 20px
+    # element padding, over a 9.95px advance for FiraCode Nerd Font Mono
+    # at 12. A first pass at 40 + 48 came to 99 and rofi quietly ellipsized
+    # the tail of every row, which showed up as a doubled ellipsis: the
+    # truncation below, and then the one rofi adds, on the same line.
+    #
+    # NOTE: no apostrophes anywhere in this comment block. The whole awk
+    # program is one SINGLE-QUOTED shell string, so a lone apostrophe in a
+    # comment closes it and hands the rest of the program to the shell.
+    # That is not a hypothetical -- writing "this function-apostrophe-s own
+    # truncation" here silently emptied the entire menu, and `bash -n` still
+    # passed because the stray quotes happened to re-balance.
+    #
+    # 3 (depth pad) + 38 + 2 + 44 + 1 + 5 (":1536") = 93, inside the 96.
+    # The heading is what you scroll by and the symptom is what you SEARCH
+    # by, and rofi filters on the whole line either way, so trimming the
+    # tail of a symptom costs display, not findability.
     function emit(   pad, ctx) {
       ctx = (sym != "") ? sym : firstprose
       if (ctx == "") ctx = "(section)"
-      if (length(ctx) > 88) ctx = substr(ctx, 1, 85) "..."
+      if (length(ctx) > 44) ctx = substr(ctx, 1, 41) "..."
       pad = (depth == 3) ? "   " : ""
-      printf "%s%-46s  %-90s :%s\n", pad, substr(heading, 1, 46), ctx, line
+      printf "%s%-38s  %-44s :%s\n", pad, substr(heading, 1, 38), ctx, line
       heading = ""
     }
   ' "$f" | pick "Troubleshooting" "$(rofi_hint "↵ jump to the entry" "Esc back" "$(grep -cE '^#{2,3} ' "$f") fixes" "type the symptom you are seeing")")"
@@ -300,64 +361,219 @@ sec_trouble() {
   [[ "$line" =~ ^[0-9]+$ ]] && view_at_line "$f" "$line"
 }
 
-# ── commands ─────────────────────────────────────────────────────────
-# Shows each script's header comment. It never RUNS the script.
+# ── maintenance ──────────────────────────────────────────────────────
+# The one section that is not documentation. Every other section answers
+# "how does this work"; this one answers "what does this machine need from
+# me right now", and each entry acts instead of explaining.
 #
-# The first version called `<script> --help`, which was a genuine bug: most
-# of these tools have no --help, so the flag fell through to their normal
-# code path and the menu launched rofi pickers, toggled themes and started
-# dictation instead of documenting anything.
-script_desc() {
-  # Two statements, not one: in `local a=$2 b=${a%.py}` the expansion of $a
-  # happens BEFORE local has assigned it, so stem was silently always empty
-  # and the precise "<name> — <description>" header match below could never
-  # fire. Every entry came from the loose fallback heuristic instead.
-  local f="$1" base="$2" d
-  local stem="${base%.py}"
-  d="$(head -12 "$f" \
-       | grep -m1 -E "^(#+ *|\"\"\")${stem}(\.py)?[[:space:]]+[—–-][[:space:]]*." \
-       | sed -E "s/^(#+ *|\"\"\")${stem}(\.py)?[[:space:]]+[—–-][[:space:]]*//")"
-  if [[ -z "$d" ]]; then
-    d="$(head -14 "$f" | sed -E '1d' | grep -E '^#' | sed -E 's/^#+ *//' \
-      | grep -vE '^(shellcheck|pylint|noqa|-\*-|!)' \
-      | grep -vE '^[[:punct:][:space:]]*$' \
-      | grep -vE '^(Script name|Author|Maintainer|Usage|CONFIG)\b' \
-      | grep -E '[A-Za-z].*[[:space:]][A-Za-z]+[[:space:]][A-Za-z]+' | head -1)"
-  fi
-  d="$(sed -E 's/^(Description|DESCRIPTION)[[:space:]]*:[[:space:]]*//; s/^-[[:space:]]+//' <<<"$d")"
-  d="${d#"${d%%[![:space:]]*}"}"
-  [[ -z "$d" ]] && d="(no description)"
-  printf '%s' "$d"
+# This slot used to be Commands: the 38 scripts in AtiScriptsV1, each shown
+# with its own header comment and deliberately never run. It was correct
+# and nobody opened it twice -- a list of things you cannot do anything
+# with is a reading exercise, and the scripts are all on $PATH anyway.
+#
+# It is deliberately NOT an updates panel either; the bar already owns
+# pending updates. What nothing surfaced was the slow rot: .pacnew files
+# never merged, orphaned dependencies, units that failed while you were
+# looking at a splash screen, a package cache growing without bound. None
+# of that announces itself, and all of it costs you later.
+
+# Installed size of a package list, in bytes. `pacman -Qi` prints "12.34
+# MiB", not a number, so the unit has to be folded back in -- summing the
+# bare numbers would rank a 900 KiB package above a 2 GiB one.
+pkg_bytes() {  # pkg_bytes <newline-separated package names>
+  [[ -z "${1//[[:space:]]/}" ]] && { printf '0'; return; }
+  printf '%s\n' "$1" | xargs -r pacman -Qi 2>/dev/null | awk -F': +' '
+    /^Installed Size/ {
+      n = $2 + 0
+      if      ($2 ~ /KiB/) n *= 1024
+      else if ($2 ~ /MiB/) n *= 1048576
+      else if ($2 ~ /GiB/) n *= 1073741824
+      total += n
+    }
+    END { printf "%d", total + 0 }'
 }
 
-sec_commands() {
-  local dir="$DOTFILES/.config/AtiScriptsV1"
-  while :; do
-    local list="" f base
-    for f in "$dir"/*; do
-      [[ -f "$f" && -x "$f" ]] || continue
-      base="$(basename "$f")"
-      case "$base" in *.sh|rofi_common*|rofi_shared*|__pycache__*) continue ;; esac
-      list+="$(printf '%-24s %s' "$base" "$(script_desc "$f" "$base" | cut -c1-74)")"$'\n'
-    done
-    local sel
-    sel="$(printf '%s' "$list" | pick "Commands" "$(rofi_hint "↵ show its documentation" "Esc back" "nothing is run")")"
-    (( RC != 0 )) && return
-    [[ -z "$sel" ]] && return
-    local cmd; cmd="$(awk '{print $1}' <<<"$sel")"
-    [[ -f "$dir/$cmd" ]] || return
-    # The leading comment block: everything from line 2 until the first
-    # line that is not a comment. That is where these scripts document
-    # themselves, and reading it cannot have side effects.
-    #
-    # Fenced, not prose: these headers are hand-wrapped and full of literal
-    # command lines and ASCII diagrams, all of which markdown would happily
-    # reflow into nonsense.
-    view_panel "$cmd" "$(
-      printf '`%s`\n\n' "$dir/$cmd"
-      panel_block "" "$(awk 'NR==1 {next} /^#/ {sub(/^#+ ?/,""); print; next} /^$/ {print; next} {exit}' "$dir/$cmd")"
-    )"
+human() { numfmt --to=iec-i --suffix=B "${1:-0}" 2>/dev/null || printf '%sB' "${1:-0}"; }
+
+# Geometry is global (DOCS_GEO, at the top) -- these menus deliberately do
+# not carry their own. They did briefly, sized to their own content, and
+# that is exactly what made the window jump between sections.
+
+# How many packages a paccache prune would actually remove. `-d` is a dry
+# run; its summary reads "finished dry run: N candidates (...)", and when
+# there is nothing to do it says so in prose instead, hence the :-0.
+paccache_count() {
+  local n
+  n="$(paccache -d "$@" 2>&1 | sed -nE 's/.*dry run: ([0-9]+) candidates.*/\1/p' | head -1)"
+  printf '%s' "${n:-0}"
+}
+
+sec_maintenance() {
+  have pacdiff || {
+    rofi -e "pacman-contrib not installed\nrun: sudo pacman -S pacman-contrib"
     return
+  }
+  while :; do
+    # Probed on every draw, never cached: a stale "0 orphans" is worse
+    # than no number at all, since the whole point of the section is that
+    # you can trust the counts without opening anything.
+    #
+    # `pacdiff -o` is the slow one (~2s -- it reads every package's backup
+    # list out of the pacman database) and it is why this menu takes a
+    # beat to appear. It stays, because it is the exact scan the merge
+    # entry below performs: the count cannot disagree with what you are
+    # then shown. A `find /etc` shortcut is no faster here and misses
+    # everything pacman tracks outside /etc.
+    local merges orphans errs
+    merges="$(pacdiff -o 2>/dev/null)"
+    orphans="$(pacman -Qtdq 2>/dev/null)"
+    errs="$(journalctl -p 3 -b -q --no-pager 2>/dev/null)"
+
+    local n_merge n_orph n_err orph_h cache_h prunable n_upd
+    n_merge="$(grep -c . <<<"$merges")"
+    n_orph="$(grep -c . <<<"$orphans")"
+    n_err="$(grep -c . <<<"$errs")"
+    orph_h="$(human "$(pkg_bytes "$orphans")")"
+    # 2>/dev/null: pacman's in-flight download-* directories are root-only
+    # and du warns on every one of them. They are transient and tiny.
+    cache_h="$(du -sh /var/cache/pacman/pkg 2>/dev/null | cut -f1)"
+    prunable=$(( $(paccache_count -k2) + $(paccache_count -u -k0) ))
+    # From qupdate's cache, not from `checkupdates`: checkupdates syncs a
+    # private copy of the package databases over the network, which is a
+    # multi-second stall on a menu draw and an outright hang with no
+    # connection. The bar's updates chip refreshes that cache already.
+    n_upd="$(grep -o '"name"' "$HOME/.cache/qupdate.json" 2>/dev/null | wc -l)"
+
+    local c
+    c="$(printf '%s\n' \
+      "󰅚  Config merges          ${n_merge} .pacnew waiting to be merged" \
+      "󰩹  Orphan packages        ${n_orph} · ${orph_h} reclaimable" \
+      "󰈸  Boot errors            ${n_err} since this boot" \
+      "󰋊  Package cache          ${cache_h:-?} · ${prunable} prunable" \
+      "󰑓  Safe update            ${n_upd} pending · guarded upgrade" \
+      | pick "Maintenance" "$(rofi_hint "↵ act on it" "Esc back" "every count is probed live")")"
+    (( RC != 0 )) && return
+    case "$c" in
+      *"Config merges"*)
+        if (( n_merge == 0 )); then
+          view_panel "Config merges" "$(
+            printf 'Nothing to merge — every package config on this system is the one you\nhave, with no `.pacnew` sitting beside it.\n\n'
+            printf 'pacman writes a `.pacnew` when it ships a new default for a file you\nhave edited, and then leaves it alone. Ignore enough of them and your\nconfig drifts years behind what the package expects, which is how a\nservice starts failing after an update that "changed nothing".\n'
+          )"
+        else
+          # `pacdiff -s`, not `sudo pacdiff`: -s makes pacdiff use sudo for
+          # the privileged file operations and sudoedit for the merge
+          # itself, so the editor runs as YOU -- your nvim, your config --
+          # and only the install step is root.
+          #
+          # In a terminal because it is a conversation: it asks per file,
+          # and the sudo prompt has nowhere to appear out here, since the
+          # bar spawned this script with no controlling terminal.
+          term_view "DIFFPROG='nvim -d' pacdiff -s; printf '\nEnter to close '; read -r _"
+        fi
+        return ;;
+
+      *"Orphan packages"*)
+        if (( n_orph == 0 )); then
+          view_panel "Orphan packages" "$(
+            printf 'No orphans. Every installed package is either something you asked for\nor something a package you asked for still needs.\n'
+          )"
+          return
+        fi
+        # A list, not a bare confirm: "remove 21 packages?" with no names
+        # is a prompt you either rubber-stamp or cancel, and neither is a
+        # decision. The names are here with their sizes, any one of them
+        # opens its own `pacman -Qi`, and the removal is the first row so
+        # it is still a single keystroke.
+        #
+        # One `pacman -Qi` over the whole list, not one per package: 21
+        # separate invocations to fill in a menu is half a second of
+        # nothing happening.
+        # The explicit $'\n' is load-bearing: command substitution strips
+        # trailing newlines, so without it the "Remove all" row and the
+        # first package end up on the same line -- one unselectable row.
+        local rows sel
+        rows="$(printf '󰩹  Remove all %s orphans      frees %s' "$n_orph" "$orph_h")"$'\n'
+        rows+="$(printf '%s\n' "$orphans" | xargs -r pacman -Qi 2>/dev/null | awk -F': +' '
+          /^Name/           { n = $2 }
+          /^Installed Size/ { printf "%-34s %s\n", n, $2 }')"
+        sel="$(printf '%s\n' "$rows" | pick "Orphans" \
+          "$(rofi_hint "↵ remove all" "Esc back" "or pick one to inspect")")"
+        (( RC != 0 )) && continue
+        [[ -z "$sel" ]] && continue
+        if [[ "$sel" == "󰩹"* ]]; then
+          rofi_confirm "Remove $n_orph orphaned packages?" "frees $orph_h  ·  pacman -Rns" || continue
+          # -Rns: also drop dependencies that only these packages needed
+          # (n) and their system config files (s). Package names are bare
+          # tokens, so flattening the list onto the command line is safe.
+          local list; list="$(tr '\n' ' ' <<<"$orphans")"
+          term_view "sudo pacman -Rns $list; printf '\nEnter to close '; read -r _"
+          return
+        fi
+        view_panel "$(awk '{print $1}' <<<"$sel")" \
+          "$(panel_block "" "$(pacman -Qi "$(awk '{print $1}' <<<"$sel")" 2>&1)")"
+        return ;;
+
+      *"Boot errors"*)
+        view_panel "Boot errors" "$(
+          if (( n_err == 0 )); then
+            printf 'Nothing at priority `err` or worse since this boot.\n'
+          else
+            printf 'Priority `err` and above, this boot only — the failures that happened\nwhile you were looking at a splash screen.\n\n'
+            panel_block "" "$(head -60 <<<"$errs")"
+            (( n_err > 60 )) && printf '\n_%s more._\n' "$(( n_err - 60 ))"
+            printf '\nThe full log is `journalctl -p 3 -b`.\n'
+          fi
+        )"
+        return ;;
+
+      *"Package cache"*)
+        # Two prunes, counting two different things: -k2 drops old versions
+        # of packages you still have, -uk0 drops every version of packages
+        # you no longer have installed at all. Only the second is pure dead
+        # weight; the first two versions of what IS installed are the
+        # rollback material that lets you downgrade a package that breaks.
+        if (( prunable == 0 )); then
+          view_panel "Package cache" "$(
+            printf 'Nothing to prune. The `%s` in `/var/cache/pacman/pkg` is all current:\nat most two versions of each installed package, and nothing left behind\nby packages you have removed.\n\n' "${cache_h:-?}"
+            printf 'That cache is not waste — it is what lets you downgrade a package that\nbreaks, offline, without hunting for the old file.\n'
+          )"
+          return
+        fi
+        rofi_confirm "Prune the package cache?" \
+          "$prunable candidate(s)  ·  keeps the last 2 versions of installed packages" || continue
+        term_view "sudo paccache -rk2; sudo paccache -ruk0; printf '\nEnter to close '; read -r _"
+        return ;;
+
+      *"Safe update"*)
+        have safe-update || {
+          rofi -e "safe-update not installed\nrun: ./wizard.sh --yes --only=ati-scripts"
+          return
+        }
+        # Asked here, before the terminal opens, and not left to pacman's
+        # own [Y/n]. This is the only entry in the menu that rewrites the
+        # running system, it sits one arrow-key below "Boot errors", and
+        # every other row in this list is safe to press out of curiosity --
+        # so a single stray Return should not begin a full system upgrade.
+        #
+        # safe-update's own refusal points all come LATER (news gate,
+        # snapshot check), by which time it has already synced databases
+        # and taken the sudo password. This is the cheap one to say no to.
+        #
+        # Short strings on purpose: rofi_confirm is the SHARED compact
+        # dialog (22% wide, ~26 columns), used by rofi_todo and rofi-kill
+        # too, so it is not this script's to widen. "Run a full system
+        # upgrade?" overflowed it and rendered clipped mid-word.
+        rofi_confirm "Upgrade the system?" \
+          "$n_upd pending · snapshot + news gate first" || continue
+        # term_view, not run_tool: safe-update is a conversation. It asks
+        # for the sudo password, gates on the Arch news feed, and asks
+        # before continuing without a verified snapshot. Detached it would
+        # block forever on a prompt nobody can see.
+        term_view "safe-update; printf '\nEnter to close '; read -r _"
+        return ;;
+      *) return ;;
+    esac
   done
 }
 
@@ -603,20 +819,20 @@ main_menu() {
       "󰌌  Keybindings          ▸ every shortcut, searchable" \
       "󰘳  Cheatsheets          ▸ qtile · vim · fish" \
       "󰈙  Documentation        ▸ README · troubleshooting · packages" \
-      "󰞌  Commands             ▸ every tool this desktop installs" \
       "󰛄  Espanso              ▸ text expansion snippets" \
       "󰏘  Appearance           ▸ theme · scale · wallpaper · splash" \
       "󰒓  System               ▸ about · audit · services · gpu" \
+      "󰃢  Maintenance          ▸ merges · orphans · errors · cache" \
       | pick "Docs" "$(rofi_hint "↵ open the section" "Esc closes" "inside a section, Esc comes back here")")"
     (( RC != 0 )) && return
     case "$c" in
       *Keybindings*)   sec_keys ;;
       *Cheatsheets*)   sec_cheats; return ;;
       *Documentation*) sec_docs ;;
-      *Commands*)      sec_commands ;;
       *Espanso*)       sec_espanso ;;
       *Appearance*)    sec_appearance ;;
       *System*)        sec_system ;;
+      *Maintenance*)   sec_maintenance ;;
       *) return ;;
     esac
     # A section that OPENED something is the end of the interaction: falling
@@ -634,11 +850,11 @@ case "${1:-}" in
   cheats)      sec_cheats ;;
   docs)        sec_docs ;;
   trouble)     sec_trouble ;;
-  commands)    sec_commands ;;
   espanso)     sec_espanso ;;
   appearance)  sec_appearance ;;
   system)      sec_system ;;
+  maintenance) sec_maintenance ;;
   about)       about_text ;;
-  --help|-h)   sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' ;;
+  --help|-h)   sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "rofi_docs: unknown section '$1'" >&2; exit 2 ;;
 esac
