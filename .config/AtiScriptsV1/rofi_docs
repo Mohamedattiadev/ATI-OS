@@ -10,8 +10,10 @@
 #
 #   Keybindings   parsed from config.py by qtile-keys (AST, not regex)
 #   Troubleshoot  the headings of TROUBLESHOOTING.md, with their first line
-#                 of context, jumping to the right line
-#   Docs          rendered read-only; only the qtile config opens writable
+#                 of context, jumping to the right entry
+#   Docs          every document opens on a searchable index of its own
+#                 headings, and is then RENDERED read-only in a pager --
+#                 only the qtile config opens writable
 #   Maintenance   probed live from pacman and the journal, and the one
 #                 section that ACTS: merge, prune, remove, upgrade
 #
@@ -129,17 +131,94 @@ term_view() {  # term_view <shell-command>
 # it invited edits to a file that is the repo's own documentation. It also
 # tripped fidget.nvim, which writes into the buffer and raised
 # "Buffer is not 'modifiable'" on every notification.
-view_md() {
-  local f="$1"
+#
+# less is what makes it read-only, and it is a STRONGER guarantee than the
+# `nvim -R` this used to use for troubleshooting: -R is a read-only mode you
+# can override from inside the editor, while less has no write path at all.
+# `/` searches, `n`/`N` step the matches, `q` quits.
+#
+# The optional <source-line> is the hard part. glow reflows and restyles, so
+# a line number from the SOURCE file means nothing in the rendered output,
+# and the heading text cannot simply be searched for afterwards either:
+# backticks become code spans, quotes get restyled, and -w 100 wraps the long
+# ones. Measured over TROUBLESHOOTING.md, only 91 of its 126 headings were
+# still findable as literal text in the output.
+#
+# So the position is carried THROUGH the renderer instead of reconstructed
+# after it: a sentinel is injected into the one heading being jumped to, the
+# file is rendered, the sentinel is found in the output, and then deleted.
+# Deleting it rewrites that line without changing the line COUNT, so the
+# number stays valid. That is 126 of 126.
+#
+# The sentinel is a ZERO-WIDTH space, written as an escape because a literal
+# invisible character in a source file is a trap for whoever edits it next.
+# Zero-width is what makes the trick free: a visible marker occupies columns,
+# and glow wraps to -w 100, so on the two longest headings in
+# TROUBLESHOOTING.md it pushed a line to wrap one word early and the reader
+# got a subtly different document depending on how they had arrived at it.
+# With this the rendered bytes are identical to an unmarked render.
+JUMP_MARK=$'\u200b'
+
+view_md_at() {  # view_md_at <file> [source-line]
+  local f="$1" line="${2:-0}"
   [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
-  if have glow && have less; then
-    term_view "glow -s '$GLOW_STYLE' -p -w 100 '$f'"
-  else
-    # `glow -p` IS less -- without it glow dumps the whole document and
-    # exits, which is a flash, not a viewer. nvim shows raw markup instead
-    # of rendered prose, but it scrolls, searches and stays open.
-    view_at_line "$f" 1
+
+  # `glow -p` IS less -- without it glow dumps the whole document and exits,
+  # which is a flash, not a viewer. With neither, nvim shows raw markup
+  # instead of rendered prose, but it scrolls, searches and stays open.
+  if ! have glow || ! have less; then
+    view_at_line "$f" "$(( line > 0 ? line : 1 ))"
+    return
   fi
+
+  local src ansi n
+  src="$(mktemp --suffix=.md)"
+  ansi="$(mktemp --suffix=.ansi)"
+  if (( line > 0 )); then
+    awk -v L="$line" -v M="$JUMP_MARK" '
+      NR == L && /^#+ +/ { sub(/^#+ +/, "&" M) } { print }' "$f" > "$src"
+  else
+    cp -- "$f" "$src"
+  fi
+
+  # </dev/null is load-bearing. Rendering happens HERE rather than inside the
+  # terminal, and this script is spawned by the bar with no controlling
+  # terminal, so glow finds a stdin that is neither a tty nor closed and
+  # blocks on it forever instead of rendering the file it was handed -- no
+  # output, no error, 0% CPU. Everywhere else in this script glow runs inside
+  # kitty, where it has a tty and the question never comes up.
+  glow -s "$GLOW_STYLE" -w 100 "$src" </dev/null >"$ansi" 2>/dev/null
+  rm -f "$src"
+
+  # Renderer failed or produced nothing: fall back rather than open an empty
+  # pager, which looks exactly like a document with no content in it.
+  if [[ ! -s "$ansi" ]]; then
+    rm -f "$ansi"
+    view_at_line "$f" "$(( line > 0 ? line : 1 ))"
+    return
+  fi
+
+  n=1
+  if (( line > 0 )); then
+    n="$(grep -n -m1 -F -- "$JUMP_MARK" "$ansi" | cut -d: -f1)"
+    [[ "$n" =~ ^[0-9]+$ ]] || n=1
+    # Scoped to the one line, so a stray sentinel anywhere else in the
+    # document cannot be eaten as collateral. Nothing else has to be matched
+    # around it -- the sentinel is injected with no padding of its own, so
+    # deleting the character is the whole job. An earlier visible marker had
+    # to be written as "<mark> " with a trailing space, and that space is NOT
+    # where you expect at every heading level: glow emits "<mark> text" for
+    # `###` but "<mark>\e[0m\e[;1m text" for `##`, so the naive pattern
+    # matched the h3 headings and silently left the marker on screen at h2.
+    sed -i "${n}s/${JUMP_MARK}//" "$ansi"
+  fi
+  # -Ps names the DOCUMENT in the status line. Without it less shows the path
+  # it was actually handed, which is the rendered temp file -- so every
+  # document announced itself as "/home/ati/tmp/tmp.XDORgdJVDq.ansi". The
+  # apostrophe strip keeps a filename from closing the quoting around it.
+  local label="${f##*/}"
+  label="${label//\'/}"
+  term_view "less -R +${n} -Ps'${label}  ·  / search  ·  q quit' '$ansi'; rm -f '$ansi'"
 }
 
 # Read-only nvim at a line, for jumping into a specific troubleshooting
@@ -235,10 +314,21 @@ run_tool() {
 qtile_eval() {
   qtile cmd-obj -o cmd -f eval -a "$1" 2>&1
 }
+# Sets LAUNCHED on success like every other viewer here. It opens a window
+# just as term_view and view_at_line do -- it just does it through qtile
+# rather than by spawning a process, which is exactly why it was missed.
+# Without it, main_menu's `(( LAUNCHED )) && return` never fired for this
+# section and the top menu redrew on top of the sheet; the `; return` that
+# used to sit on the Cheatsheets dispatch arm papered over that, at the
+# cost of making Esc out of this ONE submenu close the whole menu.
 open_cheatsheet() {
   local out
   out="$(qtile_eval "__import__('sys').modules['config'].open_cheatsheet('$1')")"
-  [[ "$out" == '"ok"' ]] || rofi -e "could not open the $1 cheatsheet:\n$out"
+  if [[ "$out" == '"ok"' ]]; then
+    LAUNCHED=1
+  else
+    rofi -e "could not open the $1 cheatsheet:\n$out"
+  fi
 }
 
 # ── keybindings ──────────────────────────────────────────────────────
@@ -288,6 +378,68 @@ sec_cheats() {
   done
 }
 
+# The searchable index the other documents never had. Troubleshooting has
+# had one since it was written -- 126 entries is unusable without it -- and
+# the same argument holds at smaller scale everywhere else: you arrive at a
+# README knowing the word you are looking for, not the page it is on. Now
+# every document opens on its own headings, you type to filter them, and
+# the pick lands you at that heading in the rendered text.
+#
+# Deliberately generic -- headings and line numbers, nothing document-
+# specific -- so a new README needs no code here. Troubleshooting keeps its
+# OWN builder (sec_trouble) because its entries carry a Symptom line, which
+# is a far better search key than the terse heading above it.
+#
+# The whole document is still one keystroke away, as the first row, because
+# an index is a way in and not a wall.
+doc_index() {  # doc_index <file> <prompt>
+  local f="$1" title="$2" n sel
+  [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
+  n="$(grep -cE '^#{2,3} ' "$f")"
+  # A flat document has nothing to index, and a one-row menu in front of it
+  # is a keystroke that buys you nothing.
+  if (( n == 0 )); then view_md_at "$f" 0; return; fi
+  sel="$({
+      printf '󰈙  %-42s :1\n' "the whole document"
+      # Same 52-column budget and the same indent-by-depth shape as the
+      # troubleshooting index, so the two read as one thing.
+      awk '
+        /^#{2,3} / {
+          line = FNR
+          depth = (substr($0,1,3) == "###") ? 3 : 2
+          sub(/^#+ +/, "")
+          h = $0
+          # Backticks and asterisks only. Stripping underscores too -- the
+          # obvious reading of "remove markdown punctuation" -- silently ate
+          # them out of the MIDDLE of identifiers, so x86_64 indexed as
+          # x8664 and voice_dictate as voicedictate. In this repo that is
+          # pure loss: across all four documents there are 336 identifier
+          # underscores and not one use of _emphasis_.
+          gsub(/[`*]/, "", h)
+          if (depth == 2) {
+            if (length(h) > 46) h = substr(h, 1, 45) "…"
+            printf "%-46s :%s\n", h, line
+          } else {
+            if (length(h) > 44) h = substr(h, 1, 43) "…"
+            printf "  %-44s :%s\n", h, line
+          }
+        }' "$f"
+    # The hint line has a width budget of its own, and it is TIGHTER than the
+    # 52 columns the rows get: rofi wraps -mesg rather than ellipsizing it, and
+    # the second line is drawn straight through the first row of the list.
+    # "…/ searches inside" came to 51 characters and did exactly that. The
+    # longest hint that renders on one line here is 48, which is what the
+    # troubleshooting menu happens to use; this stays under it even with a
+    # three-digit heading count.
+    } | pick "$title" "$(rofi_hint "↵ jump" "Esc back" "$n headings" "/ searches")")"
+  (( RC != 0 )) && return
+  [[ -z "$sel" ]] && return
+  # The line number is the last colon-separated field, so a heading that
+  # contains its own colon cannot be mistaken for one.
+  local line="${sel##*:}"
+  [[ "$line" =~ ^[0-9]+$ ]] && view_md_at "$f" "$line"
+}
+
 # ── documentation ────────────────────────────────────────────────────
 sec_docs() {
   while :; do
@@ -301,13 +453,20 @@ sec_docs() {
       | pick "Documentation" "$(rofi_hint "↵ open" "Esc back" "rendered read-only")")"
     (( RC != 0 )) && return
     case "$c" in
-      *README*)          view_md "$DOTFILES/README.md"; return ;;
+      *README*)          doc_index "$DOTFILES/README.md" "README" ;;
       *Troubleshooting*) sec_trouble ;;
-      *Packages*)        view_md "$DOTFILES/.config/arch-config/README.md"; return ;;
-      *"Boot entries"*)  view_md "$DOTFILES/.config/arch-config/boot/README.md"; return ;;
-      *"qtile config"*)  view_edit "$QTILE_CFG"; return ;;
+      *Packages*)        doc_index "$DOTFILES/.config/arch-config/README.md" "Packages" ;;
+      *"Boot entries"*)  doc_index "$DOTFILES/.config/arch-config/boot/README.md" "Boot entries" ;;
+      *"qtile config"*)  view_edit "$QTILE_CFG" ;;
       *) return ;;
     esac
+    # Same rule as main_menu: an entry that OPENED something ends the
+    # interaction, and one that came back empty-handed (its own Esc) falls
+    # through to redraw this menu. That is what lets Esc out of an index go
+    # back to Documentation instead of closing everything -- these arms used
+    # to `return` unconditionally, which predates there being anything here
+    # you could Esc out of.
+    (( LAUNCHED )) && return
   done
 }
 
@@ -339,13 +498,13 @@ sec_trouble() {
     heading != "" && sym == "" && /\*\*Symptom:?\*\*/ {
       sym = $0
       sub(/^.*\*\*Symptom:?\*\*[[:space:]]*/, "", sym)
-      gsub(/[`*_]/, "", sym)
+      gsub(/[`*]/, "", sym)
       next
     }
     heading != "" && firstprose == "" && NF > 0 && $0 !~ /^[#`|<>]/ {
       firstprose = $0
       sub(/^-[[:space:]]*/, "", firstprose)
-      gsub(/[`*_]/, "", firstprose)
+      gsub(/[`*]/, "", firstprose)
     }
     END { if (heading != "") emit() }
     # Symptom-first, one column. This was a 46 + 90 two-column layout, 147
@@ -388,7 +547,7 @@ sec_trouble() {
   (( RC != 0 )) && return
   [[ -z "$sel" ]] && return
   local line="${sel##*:}"
-  [[ "$line" =~ ^[0-9]+$ ]] && view_at_line "$f" "$line"
+  [[ "$line" =~ ^[0-9]+$ ]] && view_md_at "$f" "$line"
 }
 
 # ── maintenance ──────────────────────────────────────────────────────
@@ -857,7 +1016,7 @@ main_menu() {
     (( RC != 0 )) && return
     case "$c" in
       *Keybindings*)   sec_keys ;;
-      *Cheatsheets*)   sec_cheats; return ;;
+      *Cheatsheets*)   sec_cheats ;;
       *Documentation*) sec_docs ;;
       *Espanso*)       sec_espanso ;;
       *Appearance*)    sec_appearance ;;
