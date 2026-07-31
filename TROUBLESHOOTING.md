@@ -1071,6 +1071,150 @@ subsystem. Each entry: **symptom → root cause → fix**.
   `command -v <cmd> >/dev/null && <cmd> &`, which is the pattern the rest
   of that file already uses.
 
+### Qtile RAM climbs every time a popup is opened and closed
+- **Symptom:** memory used by the qtile process only ever goes up. Opening
+  and closing the wallpaper picker or a cheatsheet ten times costs tens of
+  MB that never comes back. Nothing looks wrong on screen.
+- **Root cause:** the popups closed with `layout.hide()`. `hide()` only
+  **unmaps the X window** — the window, its cairo drawer and every
+  control's pango layout stay allocated. Every `show_*` path in this repo
+  builds a **brand new** `PopupRelativeLayout`, so the old one is
+  orphaned, not reused: ~3MB of ARGB surface per wallpaper-picker close
+  (1120×680), ~2.7MB per cheatsheet, ~2.2MB per WiFi/Bluetooth close.
+  It was measured as five live 940×600 popups in one running qtile.
+- **Fix:** `layout.kill()` on every teardown path. `apply_wallpaper()`
+  already did this on its own exit; the rest now match.
+- **Rule of thumb:** `hide()` is only correct when the *same* layout
+  object is shown again later. If the show path constructs a new layout,
+  the close path must `kill()`.
+
+### Popup labels are washed out / unreadable on some themes
+- **Symptom:** on nord, rose-pine and the other presets, the `muted`
+  labels inside a popup card are barely legible, and one accent (nord's
+  red, rose-pine's green) sits at roughly the same brightness as the card
+  behind it. The same colours are perfectly readable in the terminal.
+- **Root cause:** the shared loader derives `muted` against `bg`, but the
+  popups paint text on `surface` — a card blended 7% of the way toward
+  `fg`. That is enough to drop those colours under a 3:1 contrast ratio
+  against what they are actually drawn on. Themes are chosen for how they
+  look in a terminal, where text sits on `bg`.
+- **Fix:** `ensure_contrast()` in `popups/_wal_colors.py`. It nudges a
+  colour toward the palette's **foreground** until it clears the ratio,
+  and returns it untouched when it already passes — so themes with
+  healthy contrast keep their exact accents. Mixing toward `fg` always
+  moves *away* from the surface, which is why it works unchanged on light
+  presets (mono-light) as well as dark ones.
+- **Do not apply it to block fills.** `highlight_bg` is the selection
+  block, not text; adjusting it would drift the theme's accent for no
+  gain.
+
+---
+
+## Network & Bluetooth
+
+### Fresh install: WiFi/Bluetooth popups say the daemon is not running
+- **Symptom:** on a machine installed from this repo, `Mod+P` then `n`
+  or `b` opens the popup and immediately errors — `NetworkManager is not
+  running`, or an empty Bluetooth list that never fills. `nm-applet` and
+  `blueman-applet` are visible in the tray and do nothing. On the machine
+  this repo was developed on, everything works.
+- **Root cause:** **declaring a package installs a binary, not a running
+  daemon.** `networkmanager` and `bluez` are declared (network.yaml) and
+  dcli installs them, but nothing enabled the units. They are enabled on
+  the development machine only because **archinstall** did it — which is
+  exactly the kind of difference a package audit cannot see.
+- **Fix:** the wizard's `radios` module (`step_radios`, runs after
+  `dcli-sync`) enables `NetworkManager.service` and `bluetooth.service`.
+  Idempotent — prints "already enabled" and changes nothing on a
+  configured machine.
+  ```sh
+  ./wizard.sh --yes --only=radios       # on an already-installed box
+  systemctl is-enabled NetworkManager.service bluetooth.service
+  ```
+- **Its uninstaller is a deliberate no-op.** Disabling NetworkManager to
+  "reverse" an install leaves a machine with no network and no GUI to fix
+  it with. Turn either off by hand, or with `service_trim.sh`.
+- **Watch out for `service_trim.sh`.** It offers to disable
+  `bluetooth.service`; say yes and the `Mod+P b` picker goes dead with no
+  other symptom.
+
+### Typing a WiFi password pops nm-applet's own GTK dialog on top of the popup
+- **Symptom:** the WiFi popup asks for a password via rofi, you get it
+  wrong, and a **second** password prompt appears — a GTK one, from
+  nm-applet, stealing focus over a popup that is mid-flow.
+- **Root cause:** `nm-applet` registers itself as NetworkManager's
+  **secret agent** by default. When `nmcli` fails to authenticate, NM asks
+  the registered agent for the secret, and the agent is a GUI dialog.
+- **Fix:** `nm-applet --no-agent` in both start paths
+  (`.config/qtile/autostart.sh` and the `.xinitrc` the wizard writes). It
+  keeps the tray icon and drops the secret-agent role, so the popup owns
+  the whole flow and re-asks itself.
+
+### A network stays marked "saved" with a password that can never work
+- **Symptom:** you fat-finger a PSK, the connect fails, and the network
+  now shows as saved. Pressing Enter on it fails instantly forever. Retry
+  a few times and `nmcli connection show` has `SSID`, `SSID 1`, `SSID 2`
+  sitting beside each other.
+- **Root cause:** `nmcli dev wifi connect <ssid> password <psk>` **writes
+  the profile before it knows the key is rejected**, and adds a new one
+  (suffixed) on each attempt rather than correcting the existing one.
+- **Fix:** `connect()` in `popups/WifiPopup.py` re-keys the existing
+  profile (`connection modify … wifi-sec.psk`) instead of adding beside
+  it, deletes anything an attempt saved that was not there before, and
+  re-asks up to `MAX_PASSWORD_TRIES` with the try count in the footer.
+  `connect_hidden()` has the same trap and the same cleanup.
+- **Clean up profiles left by an older build:**
+  ```sh
+  nmcli -t -f NAME connection show | grep -E ' [0-9]+$'
+  nmcli connection delete id 'SSID 1'
+  ```
+
+### Connecting to an out-of-range network or device hangs forever
+- **Symptom:** the busy bar spins and never stops. Escape closes the
+  popup but the worker is still running; the status is stuck on
+  "Connecting…" the next time it opens.
+- **Root cause:** two separate ones with the same shape.
+  `bluetoothctl connect <mac>` against a device that is out of range
+  **never returns** — no timeout of its own, no error. `nmcli` can sit for
+  a long time on a marginal AP.
+- **Fix:** every command carries a timeout and is killed when it expires,
+  and the handle of whatever slow action is in flight is published so `c`
+  can kill it by hand. In WiFi that offer is advertised **in the footer
+  while busy**, not as a permanent hint chip — that bar is already at
+  808px of its 874px.
+
+### Bluetooth list fills up, then empties itself a few seconds later
+- **Symptom:** scan finds devices, they render, and then most of them
+  vanish while the popup is still open.
+- **Root cause:** **bluez forgets unpaired devices as soon as discovery
+  stops.** A scan-then-list design therefore shows a list with a
+  half-life.
+- **Fix:** discovery runs as a child process for as long as the popup is
+  open, and is killed on close — including from `cleanup_on_leave()`, so
+  leaving the chord with Escape stops it too. Without that path the radio
+  keeps discovering forever after the popup is gone.
+- **Related bluez traps in the same file:** `bluetoothctl devices` embeds
+  **ANSI colour escapes even when its output is piped** (every line is
+  stripped before parsing), and `info <mac>` costs one process per
+  device — so the list is built from the four cheap
+  `devices [Paired|Connected|Trusted]` queries and `info` is only asked
+  for the paired rows and the selected one.
+
+### The QR code from the WiFi popup will not scan
+- **Symptom:** `s` on a saved network draws a code, and the phone camera
+  ignores it.
+- **Root cause:** almost always one of two things. **Inverted codes**
+  (light modules on a dark background) are out of spec and plenty of
+  cameras refuse them — which is why the code is rendered black on white
+  on its own white card whatever the desktop theme is. **Fractional
+  scaling** blurs the module edges the decoder needs, which is why
+  `qrencode` is run twice: once at one pixel per module to learn the
+  symbol size, then again at an integer scale that fills the card.
+- **If it draws "qrencode not found"** the package is missing —
+  `qrencode`, declared in `modules/wm.yaml`.
+- **If it says the network is not saved**, there is no stored PSK to
+  encode. Connect to it once first.
+
 ---
 
 ## Voice dictation

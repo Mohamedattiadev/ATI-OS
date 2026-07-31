@@ -21,7 +21,7 @@ CANDIDATES=(
   "tailscaled.service|Tailscale VPN (600ms). Enable when needed"
   "NetworkManager-wait-online.service|Blocks boot until online; usually not needed"
   "sshd.service|SSH daemon; disable if you never ssh IN to this laptop"
-  "bluetooth.service|Bluetooth stack; disable if never used"
+  "bluetooth.service|Bluetooth stack; disable if never used — this is what the Mod+P b picker talks to, it goes dead without it"
   "nvidia-hibernate.service|NVIDIA hibernate hook; disable on Intel-only"
   "nvidia-resume.service|NVIDIA resume hook; disable on Intel-only"
   "nvidia-suspend.service|NVIDIA suspend hook; disable on Intel-only"

@@ -137,13 +137,26 @@ chip in the bar, listing the keys it accepts. `Esc` leaves.
 
 ![lang mode chip in the bar](IMGS/lang.gif)
 
-**`Mod+P` — rofi mode** (launchers, `c` theme picker, `b` wallpaper picker)
+**`Mod+P` — rofi mode** (launchers, `c` theme picker, `w` wallpaper picker,
+`n` WiFi, `b` Bluetooth)
 
 ![rofi mode chip in the bar](IMGS/rofi.gif)
 
-**`Mod+P` then `b` — wallpaper picker**
+**`Mod+P` then `w` — wallpaper picker**
 
 ![wallpaper picker chip in the bar](IMGS/wallpaper.gif)
+
+**`Mod+P` then `n` — WiFi**, `b` — **Bluetooth**
+
+Two keyboard-driven pickers over `nmcli` and `bluetoothctl`. `j`/`k` to
+move, `Enter` connects, `d` disconnects, `x` forgets or removes, `t`
+toggles the radio, `/` searches, `r` rescans, `c` aborts an action that is
+hanging. WiFi adds `n` for a hidden network and `s` to hand the selected
+saved network to a phone as a QR code. A wrong password re-asks instead of
+leaving a saved profile that can never connect.
+
+Neither one opens `nm-connection-editor` or the blueman window — the
+applets stay in the tray as icons only.
 
 **`Mod+R` — resize mode**
 
@@ -165,7 +178,7 @@ passthrough.</sub>
 
 ### The logo, and finding out what any of this does
 
-**Left-click the logo in the bar.** A desktop with 79 documented
+**Left-click the logo in the bar.** A desktop with 85 documented
 keybindings, 22 themes and a dozen custom tools has a discovery problem,
 not a terminal-launching problem — so the most prominent click in the bar
 answers *"what can this thing do"*.

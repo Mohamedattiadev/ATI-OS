@@ -117,9 +117,14 @@ CHEATSHEET = {
         ("YouTube menu", "y"),
         ("Kill process", "k"),
         ("Spell check", "s"),
-        ("Weather", "w"),
+        # "Weather / w" used to sit here. dm-weather has been commented out
+        # in config.py for a while, and w is the wallpaper picker now.
         ("Todo manager", "t"),
-        ("Wallpaper picker", "b"),
+        # These three moved when Bluetooth landed: wallpaper b -> w,
+        # WiFi w -> n, and b became Bluetooth.
+        ("Wallpaper picker", "w"),
+        ("WiFi picker", "n"),
+        ("Bluetooth picker", "b"),
         ("Saved Links", "z"),
     ],
     "RESIZE MODE": [
