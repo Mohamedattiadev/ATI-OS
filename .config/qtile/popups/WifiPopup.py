@@ -32,7 +32,8 @@ from libqtile.log_utils import logger
 
 from popups._wal_colors import load_colors as _load_wal_colors
 from popups._wal_colors import fade_in_popup, fade_out_popup
-from popups._wal_colors import _mix
+from popups._wal_colors import _mix, ensure_contrast
+from popups import WifiQR
 
 # =============================================================================
 # GLOBAL STATE
@@ -64,6 +65,11 @@ _PENDING_FORGET = None   # ssid awaiting a confirming second `x`
 
 _TIMERS = []
 
+# The nmcli process of whatever long-running action is in flight, plus the
+# flag its worker polls. Together they make a connect abortable.
+_PROC = None
+_CANCEL = threading.Event()
+
 # =============================================================================
 # CONFIG & STYLING
 # =============================================================================
@@ -82,17 +88,46 @@ FOOT_SIZE = 14
 ROWS_VISIBLE = 17
 MAX_SSID_LEN = 34
 
-SCAN_INTERVAL = 20    # seconds between idle background refreshes
+# Left inset for the details card, in literal spaces (monospace, so two
+# spaces is 14px at HINT_SIZE -- a touch more than the list card's one-space
+# 8px inset, which reads right because the details text has no icon column
+# to sit behind).
+DETAIL_PAD = "  "
+
+# Background refresh cadence while the popup is OPEN. Nothing polls once it
+# is closed: close() cancels the timers and bumps the session, so the module
+# costs exactly zero until it is opened again.
+SCAN_INTERVAL = 30    # seconds between idle background refreshes
 SPIN_INTERVAL = 0.12  # seconds per frame of the busy bar
 
 
 def _load_colors():
+    """The active theme palette, adjusted for text drawn on cards.
+
+    The palette comes from theme-apply (~/.cache/qtile/current_palette.json,
+    rewritten for every preset and for wal), so the popup follows the theme
+    with no restart -- show() re-reads it on every open.
+
+    What needs adjusting: the shared loader derives `muted` against `bg`,
+    but this popup paints on `surface`, which is already 7% of the way to
+    `fg`. That costs enough contrast to put muted labels under 3:1 on every
+    preset theme-apply ships. The accents used as *text* get the same
+    treatment (nord's red and rose-pine's green are the ones that need it);
+    accents used as block fills keep the theme's exact colour.
+    """
     base = _load_wal_colors()
     base["line"] = _mix(base["bg"], base["fg"], 0.22)
-    base["highlight_bg"] = base["green"]
-    base["highlight_fg"] = base["bg"]
     base["surface"] = _mix(base["bg"], base["fg"], 0.07)
     base["surface_alt"] = _mix(base["bg"], base["fg"], 0.14)
+
+    # Selection block: the theme's green as-is, with bg as its text colour.
+    base["highlight_bg"] = base["green"]
+    base["highlight_fg"] = base["bg"]
+
+    surface, fg = base["surface"], base["fg"]
+    for key in ("muted", "green", "red", "blue", "purple"):
+        base[key] = ensure_contrast(base[key], surface, fg, minimum=3.0)
+
     return base
 
 
@@ -145,24 +180,47 @@ def terse_split(line):
     return fields
 
 
-def run(cmd, timeout=25):
-    """Run a command, returning (ok, output). Never raises."""
+def run(cmd, timeout=25, track=False):
+    """Run a command, returning (ok, output). Never raises.
+
+    `track` publishes the process handle so cancel() can kill it mid-flight.
+    Only the slow ones (connect, disconnect, forget) need it -- the queries
+    all finish in tens of milliseconds.
+    """
+    global _PROC
+
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            timeout=timeout,
         )
-        return proc.returncode == 0, (proc.stdout or "").strip()
-    except subprocess.TimeoutExpired:
-        return False, "timed out"
     except FileNotFoundError:
         return False, f"{cmd[0]} not found"
     except Exception as e:
         logger.warning("WifiPopup: %s failed: %s", cmd[0], e)
         return False, str(e)
+
+    if track:
+        _PROC = proc
+
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+        return proc.returncode == 0, (out or "").strip()
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.communicate(timeout=5)
+        except Exception:
+            pass
+        return False, "timed out"
+    except Exception as e:
+        logger.warning("WifiPopup: %s failed: %s", cmd[0], e)
+        return False, str(e)
+    finally:
+        if track:
+            _PROC = None
 
 
 def on_ui(session, fn):
@@ -454,10 +512,16 @@ def render_list():
 
 
 def render_details():
-    """Right-hand panel describing the selected network."""
+    """Right-hand panel describing the selected network.
+
+    Every line is indented by DETAIL_PAD and the block starts one blank line
+    down. A PopupText draws at (0, 0) of its own rect and its background *is*
+    the card, so there is no padding to set: moving the control just moves
+    the card with it. The inset has to come from the markup.
+    """
     net = selected_network()
     if net is None:
-        return f'<span foreground="{COLORS["muted"]}">No network selected</span>'
+        return f'{DETAIL_PAD}<span foreground="{COLORS["muted"]}">No network selected</span>'
 
     def field(label, value, colour=None):
         return (
@@ -469,7 +533,7 @@ def render_details():
     filled = max(1, round(bar_len * net["signal"] / 100))
     strength = (
         f'<span foreground="{COLORS["muted"]}">{"signal":<10}</span>'
-        f'<span foreground="{COLORS["highlight_bg"]}">{"━" * filled}</span>'
+        f'<span foreground="{COLORS["green"]}">{"━" * filled}</span>'
         f'<span foreground="{COLORS["line"]}">{"━" * (bar_len - filled)}</span>'
         f'<span foreground="{COLORS["fg"]}"> {net["signal"]}%</span>'
     )
@@ -507,7 +571,9 @@ def render_details():
         if _ACTIVE_PROFILE:
             rows.append(field("profile", fit(_ACTIVE_PROFILE, 22).strip()))
 
-    return "\n".join(rows)
+    # Leading blank line = top inset; the card is v_align="top", so without
+    # it the SSID heading sits on the card's edge.
+    return "\n".join([""] + [DETAIL_PAD + r if r else r for r in rows])
 
 
 def render_header():
@@ -541,15 +607,20 @@ def _key(label):
 
 
 def render_hints():
-    gap = f'<span foreground="{COLORS["line"]}">   </span>'
+    # One space between chips. Ten of them at two spaces overflow the 874px
+    # bar by 6px, and nothing clips a control -- it would spill over the
+    # cards below. Drop a pair before widening the gap again.
+    gap = f'<span foreground="{COLORS["line"]}"> </span>'
     pairs = [
         ("jk", "move"),
         ("↵", "connect"),
-        ("d", "disconnect"),
+        ("d", "drop"),
         ("x", "forget"),
         ("n", "hidden"),
+        ("t", "radio"),
+        ("s", "QR"),
         ("r", "rescan"),
-        ("/", "search"),
+        ("/", "find"),
         ("Esc", "close"),
     ]
     return gap.join(
@@ -573,13 +644,34 @@ def render_footer():
         track, window = 24, 4
         pos = _BUSY_PHASE % (track + window)
         cells = [
-            (COLORS["highlight_bg"] if pos - window < i <= pos else COLORS["line"])
+            (COLORS["green"] if pos - window < i <= pos else COLORS["line"])
             for i in range(track)
         ]
         bar = "".join(f'<span foreground="{c}">━</span>' for c in cells)
         prefix = f"{bar}   "
 
-    return f'{prefix}<span foreground="{colour}" weight="bold">{esc(_STATUS)}</span>'
+    suffix = ""
+    if _BUSY:
+        # The only place this can be advertised without a permanent chip: the
+        # hint bar is already at 808px of its 874px.
+        suffix = f'<span foreground="{COLORS["muted"]}">   ·   c to stop</span>'
+
+    return (
+        f'{prefix}<span foreground="{colour}" weight="bold">{esc(_STATUS)}</span>'
+        f"{suffix}"
+    )
+
+
+def update_footer():
+    """Redraw just the status bar.
+
+    The busy animation ticks eight times a second; a full update() would
+    rebuild and re-layout all six controls (including 17 rows of markup)
+    every frame to animate twenty-four characters.
+    """
+    if _LAYOUT is None:
+        return
+    _LAYOUT.update_controls(footer=render_footer())
 
 
 def update():
@@ -597,11 +689,20 @@ def update():
 # =============================================================================
 # SCANNING
 # =============================================================================
-def start_scan(rescan=False, reason=None, then=None):
-    """Refresh device / radio / saved / scan state in one worker pass."""
+def start_scan(rescan=False, reason=None, then=None, full=None):
+    """Refresh device / radio / saved / scan state in one worker pass.
+
+    `full` re-reads the saved-profile map, which costs one nmcli call per
+    stored wifi profile and is the only expensive part of a pass. Saved
+    profiles only change when *we* connect or forget, so the 30-second
+    background tick skips it and re-uses the cached map: a tick is three
+    short-lived nmcli processes, not three plus one per saved network.
+    """
     global _BUSY
 
     session = _SESSION
+    if full is None:
+        full = rescan
     if rescan:
         _BUSY = True
         set_status(reason or "Scanning for networks…", "busy")
@@ -611,7 +712,10 @@ def start_scan(rescan=False, reason=None, then=None):
     def worker():
         iface, state, connection = query_iface()
         radio = query_radio()
-        saved = query_saved()
+        # `or not _SAVED` so a cheap tick on a cold module still fills the
+        # map: show() always does a full pass first, but nothing should
+        # depend on that ordering to know which networks are saved.
+        saved = query_saved() if (full or not _SAVED) else _SAVED
         nets, err = query_networks(rescan=rescan) if (radio and iface) else ([], "")
         details = query_details(iface) if state == "connected" else {}
 
@@ -664,7 +768,7 @@ def spin(session):
         if not _BUSY:
             return
         _BUSY_PHASE += 1
-        update()
+        update_footer()
         add_timer(SPIN_INTERVAL, session, tick)
 
     add_timer(SPIN_INTERVAL, session, tick)
@@ -679,6 +783,39 @@ def schedule_autoscan(session):
     add_timer(SCAN_INTERVAL, session, tick)
 
 
+def toggle_radio():
+    """t: turn the WiFi radio on or off.
+
+    Without this the "radio is off" state is a dead end -- the popup can see
+    it and say so, but you would have to leave and run nmcli by hand.
+    """
+    global _BUSY, _PENDING_FORGET
+    _PENDING_FORGET = None
+
+    if _BUSY:
+        return
+
+    session = _SESSION
+    turning_on = not _RADIO
+
+    _BUSY = True
+    set_status("Turning WiFi on…" if turning_on else "Turning WiFi off…", "busy")
+    spin(session)
+    update()
+
+    def worker():
+        ok, out = run(["nmcli", "radio", "wifi", "on" if turning_on else "off"], 30)
+        # Coming back up, the device needs a moment before a scan returns
+        # anything, so the follow-up pass in _finish is a forced rescan.
+        _finish(
+            session, ok,
+            ("WiFi on" if turning_on else "WiFi off") if ok else _nmcli_error(out),
+            rescan_after=turning_on,
+        )
+
+    in_thread(worker)
+
+
 def rescan():
     """r: force a fresh scan."""
     if _BUSY:
@@ -689,7 +826,7 @@ def rescan():
 # =============================================================================
 # ACTIONS
 # =============================================================================
-def _finish(session, ok, message, level=None):
+def _finish(session, ok, message, level=None, rescan_after=False):
     """Land a worker's result on the UI and re-read the real state."""
     def apply():
         global _BUSY
@@ -698,7 +835,9 @@ def _finish(session, ok, message, level=None):
         update()
         # Re-read so the row, the badge and the details panel all agree with
         # what NetworkManager actually did, rather than what we asked for.
-        start_scan(rescan=False)
+        # full=True: connecting or forgetting is exactly what changes the
+        # saved-profile map the background ticks otherwise re-use.
+        start_scan(rescan=rescan_after, full=True)
 
     on_ui(session, apply)
 
@@ -722,10 +861,20 @@ def _nmcli_error(output):
 
 
 def rofi_prompt(prompt, password=False):
-    """Blocking rofi prompt -- callers must already be on a worker thread."""
+    """Blocking rofi prompt -- callers must already be on a worker thread.
+
+    Sized generously on purpose: the prompt label ("Password for
+    <SSID>") sits on the same line as the input, so a narrow window leaves
+    almost nothing to type into once the SSID is long. The entry is also
+    given its own line via `-theme-str`, so the label can never squeeze it.
+    """
     cmd = [
         "rofi", "-dmenu", "-l", "0", "-p", prompt,
-        "-theme-str", "window {width: 32%;}",
+        "-theme-str",
+        "window { width: 52%; }"
+        " inputbar { children: [prompt, entry]; padding: 12px; spacing: 12px; }"
+        " prompt { text-color: inherit; }"
+        " entry { placeholder: \"type here, Enter to confirm\"; }",
     ]
     if password:
         cmd.append("-password")
@@ -740,8 +889,95 @@ def rofi_prompt(prompt, password=False):
         return None
 
 
+# Fragments of nmcli/NetworkManager failure text that mean "the password was
+# wrong or missing" rather than "the network is gone" or "the device is busy".
+_SECRET_ERROR_HINTS = (
+    "secrets were required",
+    "no secrets provided",
+    "802-11-wireless-security",
+    "psk",
+    "password",
+    "authentication",
+    "auth",
+)
+
+MAX_PASSWORD_TRIES = 3
+
+
+def _is_secret_error(output):
+    low = (output or "").lower()
+    return any(hint in low for hint in _SECRET_ERROR_HINTS)
+
+
+def _profiles_for(ssid):
+    """Live saved-profile names for one SSID (not the cached map)."""
+    return query_saved().get(ssid) or []
+
+
+def _drop_profiles(names):
+    """Delete profiles a failed attempt created.
+
+    `nmcli dev wifi connect` writes the profile before it knows whether the
+    password works, so a typo otherwise leaves a saved network whose stored
+    PSK is wrong -- the row shows "saved", the next Enter skips the prompt,
+    and it fails forever with no way back except forgetting it by hand.
+    """
+    for name in names:
+        run(["nmcli", "connection", "delete", "id", name], 30)
+
+
+def cancel():
+    """c: abort whatever action is in flight.
+
+    Killing nmcli is only half of it -- nmcli is a D-Bus client, so
+    NetworkManager carries on activating the connection after its client is
+    gone. The counter-command (`device disconnect`) is what actually stops
+    the attempt, and it is issued on a worker thread because it blocks too.
+    """
+    global _BUSY
+
+    if not _BUSY:
+        set_status("Nothing to cancel", "idle")
+        update()
+        return
+
+    session = _SESSION
+    iface = _IFACE
+    _CANCEL.set()
+
+    proc = _PROC
+    if proc is not None:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+    _BUSY = False
+    set_status("Cancelling…", "idle")
+    update()
+
+    def worker():
+        if iface:
+            run(["nmcli", "device", "disconnect", iface], 20)
+
+        def done():
+            set_status("Cancelled", "idle")
+            update()
+            start_scan(rescan=False, full=True)
+
+        on_ui(session, done)
+
+    in_thread(worker)
+
+
 def connect():
-    """Enter: connect to the selected network."""
+    """Enter: connect to the selected network.
+
+    Owns the whole password flow, including retries. nm-applet is started
+    with --no-agent (see autostart.sh) precisely so NetworkManager has no
+    other agent to ask: a wrong PSK comes back to us as an error instead of
+    raising nm-applet's GTK dialog over this popup.
+    """
     global _BUSY, _PENDING_FORGET
     _PENDING_FORGET = None
 
@@ -756,30 +992,79 @@ def connect():
 
     session = _SESSION
     ssid = net["ssid"]
-    profiles = _SAVED.get(ssid) or []
+    known = list(_SAVED.get(ssid) or [])
     secured = bool(net["security"])
 
+    _CANCEL.clear()
     _BUSY = True
     set_status(f"Connecting to {ssid}…", "busy")
     spin(session)
     update()
 
     def worker():
-        if profiles:
-            # Known network: bring the stored profile up, no password needed.
-            ok, out = run(["nmcli", "connection", "up", "id", profiles[0]], 60)
-        elif secured:
-            password = rofi_prompt(f"Password for {ssid}", password=True)
-            if not password:
-                on_ui(session, lambda: _cancel("Cancelled"))
-                return
-            ok, out = run(
-                ["nmcli", "dev", "wifi", "connect", ssid, "password", password], 60
-            )
-        else:
-            ok, out = run(["nmcli", "dev", "wifi", "connect", ssid], 60)
+        profiles = known
+        prompt = f"Password for {ssid}"
 
-        _finish(session, ok, f"Connected to {ssid}" if ok else _nmcli_error(out))
+        for attempt in range(MAX_PASSWORD_TRIES):
+            if _CANCEL.is_set():
+                return
+            if profiles:
+                # Known network: bring the stored profile up, no password
+                # needed -- unless the stored one turns out to be wrong.
+                ok, out = run(["nmcli", "connection", "up", "id", profiles[0]], 60, track=True)
+            elif secured:
+                password = rofi_prompt(prompt, password=True)
+                if not password:
+                    on_ui(session, lambda: _cancel("Cancelled"))
+                    return
+                if known:
+                    # Re-key the existing profile instead of letting nmcli add
+                    # "SSID 1", "SSID 2", ... beside it on every retry.
+                    run(
+                        ["nmcli", "connection", "modify", "id", known[0],
+                         "wifi-sec.psk", password], 30
+                    )
+                    ok, out = run(
+                        ["nmcli", "connection", "up", "id", known[0]], 60, track=True
+                    )
+                else:
+                    ok, out = run(
+                        ["nmcli", "dev", "wifi", "connect", ssid,
+                         "password", password], 60, track=True
+                    )
+            else:
+                ok, out = run(["nmcli", "dev", "wifi", "connect", ssid], 60, track=True)
+
+            if _CANCEL.is_set():
+                # The kill made nmcli look like a failure; it was us.
+                return
+
+            if ok:
+                _finish(session, True, f"Connected to {ssid}")
+                return
+
+            if not secured or not _is_secret_error(out):
+                _finish(session, False, _nmcli_error(out))
+                return
+
+            # Wrong password. Bin whatever this attempt saved, so the network
+            # doesn't come back marked "saved" with a PSK that can't work.
+            _drop_profiles([n for n in _profiles_for(ssid) if n not in known])
+            profiles = []
+            prompt = f"Wrong password — try again for {ssid}"
+
+            on_ui(
+                session,
+                lambda a=attempt: set_status(
+                    f"Wrong password for {ssid}"
+                    f"  ({a + 1}/{MAX_PASSWORD_TRIES})", "error"
+                ),
+            )
+            on_ui(session, update_footer)
+
+        # Out of tries: leave nothing saved behind and say so plainly.
+        _drop_profiles([n for n in _profiles_for(ssid) if n not in known])
+        _finish(session, False, f"Wrong password for {ssid} — gave up")
 
     in_thread(worker)
 
@@ -799,13 +1084,14 @@ def disconnect():
     session = _SESSION
     profile, iface = _ACTIVE_PROFILE, _IFACE
 
+    _CANCEL.clear()
     _BUSY = True
     set_status(f"Disconnecting from {_ACTIVE_SSID or profile}…", "busy")
     spin(session)
     update()
 
     def worker():
-        ok, out = run(["nmcli", "connection", "down", "id", profile], 30)
+        ok, out = run(["nmcli", "connection", "down", "id", profile], 30, track=True)
         if not ok and iface:
             # Fall back to the device: a profile can go down underneath us
             # between the last scan and the keypress.
@@ -853,7 +1139,7 @@ def forget():
     def worker():
         ok, out = True, ""
         for profile in profiles:
-            good, output = run(["nmcli", "connection", "delete", "id", profile], 30)
+            good, output = run(["nmcli", "connection", "delete", "id", profile], 30, track=True)
             if not good:
                 ok, out = False, output
         _finish(session, ok, f"Forgot {ssid}" if ok else _nmcli_error(out))
@@ -886,13 +1172,49 @@ def connect_hidden():
 
         on_ui(session, begin)
 
+        before = _profiles_for(ssid)
         cmd = ["nmcli", "dev", "wifi", "connect", ssid, "hidden", "yes"]
         if password:
             cmd[5:5] = ["password", password]
         ok, out = run(cmd, 60)
+
+        if not ok:
+            # Same trap as connect(): a rejected password still leaves a
+            # saved profile behind unless it is cleaned up here.
+            _drop_profiles([n for n in _profiles_for(ssid) if n not in before])
+
         _finish(session, ok, f"Connected to {ssid}" if ok else _nmcli_error(out))
 
     in_thread(worker)
+
+
+def share_qr(qtile):
+    """s: show the selected network as a QR code.
+
+    Shares the row you are on rather than the live connection, so you can
+    hand over a saved network you are not currently joined to. Only saved
+    (or connected) networks have a password to encode -- for anything else
+    there is nothing to put in the code, and saying so beats an empty popup.
+    """
+    global _PENDING_FORGET
+    _PENDING_FORGET = None
+
+    net = selected_network()
+    if net is None:
+        return
+
+    profiles = _SAVED.get(net["ssid"]) or []
+    if not profiles and not net["active"]:
+        set_status(f"{net['ssid']} is not saved — nothing to share", "idle")
+        update()
+        return
+
+    # grab=True: the QR takes its own chord *on top of* Wifi-Mode, so Escape
+    # peels off one layer at a time -- first the QR, then the picker.
+    # qtile's ungrab_chord pops only the innermost chord and re-grabs the one
+    # beneath it (firing enter_chord for it), so Wifi-Mode comes back live
+    # underneath with the picker still on screen.
+    WifiQR.show(qtile, profile=profiles[0] if profiles else None, grab=True)
 
 
 def search():
@@ -1124,7 +1446,12 @@ def close(qtile=None):
     def teardown():
         global _CLOSING
         try:
-            layout.hide()
+            # kill(), not hide(). hide() only unmaps the X window: the window,
+            # its cairo drawer and the controls' pango layouts all stay
+            # allocated. show() builds a *new* PopupRelativeLayout every time,
+            # so hiding leaked a window and ~2.2MB of ARGB surface per open --
+            # measured as five live 940x600 popups in a running qtile.
+            layout.kill()
         except Exception:
             pass
         _CLOSING = False

@@ -979,7 +979,9 @@ if command -v picom >/dev/null 2>&1; then
 fi
 # Tray icons -- Systray widget is passive, needs something to register.
 command -v blueman-applet >/dev/null 2>&1 && blueman-applet &
-command -v nm-applet >/dev/null 2>&1 && nm-applet &
+# --no-agent so nm-applet stays a tray icon and never shows its own
+# password dialog -- the qtile WiFi popup (Mod+p n) does the asking.
+command -v nm-applet >/dev/null 2>&1 && nm-applet --no-agent &
 # copyq_rofi needs copyq's background server running to have any
 # clipboard history to query -- --start-server avoids popping its
 # window open on every login.

@@ -23,5 +23,9 @@ packages:
   - screenkey
   - espanso-x11
   - network-manager-applet
+  # qrencode: the WiFi popup's QR share (Mod+p n, then s on a saved
+  # network). The popup still runs without it -- the QR panel is the one
+  # thing that says "qrencode not found" instead of drawing a code.
+  - qrencode
   - blueman
   - syncthing

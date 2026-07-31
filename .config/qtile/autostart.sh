@@ -49,7 +49,7 @@ PICOM_GPU_FLAGS=""
   dunst &          # Notification daemon
   # --no-agent: keep the tray icon, drop the secret-agent role. Without it
   # nm-applet answers NetworkManager's password requests, so a wrong PSK
-  # typed into the WiFi popup (Mod+p w) pops nm-applet's own GTK dialog on
+  # typed into the WiFi popup (Mod+p n) pops nm-applet's own GTK dialog on
   # top of it. With it, the popup owns the whole flow and re-asks itself.
   nm-applet --no-agent &  # Network tray icon (no password dialogs)
   blueman-applet & # Bluetooth tray icon
