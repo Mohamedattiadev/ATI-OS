@@ -193,6 +193,17 @@ hand-written menu drifts the moment anything is added, and silently:
 the top level closes the menu. A menu you have to reopen from the bar after
 every glance is a menu you stop using.
 
+**One frame, every section.** All of them draw at 614×432 — the same shape
+`dtos-center.rasi` gives every other rofi on this system (`rofi_light`,
+`dm-satty`, the drun launcher), applied inside `pick()` so a new section
+cannot forget it. They used to inherit the launcher's theme *loosely* and
+re-shape on every navigation, which is worse than being the wrong size: a
+menu whose frame moves under you is one you stop reading.
+
+That frame fixes a **52-column budget** and every row builder is cut to fit
+it — measured from what rendered, not derived, because the arithmetic says
+56 and 56 visibly clipped.
+
 **Keybindings** uses the AST rather than a regex because bindings nest
 several `KeyChord` levels deep — a regex pass found 44 of 79 and lost every
 chord prefix. Mode keys read `Super+P , C`, not a bare `C`.
@@ -210,10 +221,17 @@ Troubleshooting jumps open in `nvim -R` — readonly *mode*, not
 `set nomodifiable`, which blocks plugins that legitimately write to their
 own buffers and made fidget.nvim throw on every notification.
 
-**Troubleshooting** shows each entry's `**Symptom:**` line, not its heading.
-"Rofi" tells you nothing; *"yellow wallpaper but rofi selection shows
-blue/purple"* is what you would actually type when it happens. All 126
-entries, jumping to the line.
+**Troubleshooting** shows each entry's `**Symptom:**` line *instead of* its
+heading — the heading is dropped from entry rows entirely. "Rofi" tells you
+nothing; *"yellow wallpaper but rofi selection shows blue/purple"* is what
+you would actually type when it happens. Section rows (`##`) keep their
+heading, since they have no symptom of their own and a bare "(section)" is
+not a landmark you can scroll by. All 126 entries, jumping to the line.
+
+It was a two-column heading + symptom layout at 147 columns — wider than the
+screen itself. Two columns do not survive the cut to 52: at ~24 each, both
+halves are shredded and neither is readable. One column, and it is the one
+you search by.
 
 **Maintenance** is the only section that is not documentation, and the only
 one that *acts*. It replaced a Commands section that listed all 38 tools in

@@ -42,10 +42,6 @@ GLOW_STYLE="$HOME/.cache/qtile/glow.json"
 # shellcheck source=rofi_common.sh
 source "$(dirname "$(readlink -f "$0")")/rofi_common.sh"
 
-# rofi -dmenu exits 1 on Escape and 0 on a selection. That difference is
-# the whole navigation model, so it gets its own wrapper: RC is the caller's
-# signal to go back up rather than act.
-#
 # ONE geometry for every menu in this script, applied here rather than by
 # each caller, so a new section cannot forget it and drift.
 #
@@ -62,16 +58,28 @@ source "$(dirname "$(readlink -f "$0")")/rofi_common.sh"
 # the shorter menus some empty space at the bottom, which is the correct
 # trade -- a stable frame is worth more than a snug one.
 #
-# The width is set by the WIDEST content, which is the keybinding list at
-# 91 columns; qtile-keys generates that and this script does not get to
-# reformat it. 76% of a 1366px screen leaves ~102 columns of usable text
-# after padding, so the one row format that did not fit -- troubleshooting,
-# at 147 columns -- was brought down to 99 instead of the window being
-# stretched off-screen for it.
+# 45% / 8 lines is not an arbitrary shape: it is exactly what dtos-center
+# gives every OTHER rofi on this system -- rofi_light, dm-satty, the drun
+# launcher -- measured at 614x432 on this screen. The docs menu is not a
+# special case that earns its own dimensions, so it matches them, and
+# `lines` is pinned with dynamic off only so it does not breathe between
+# sections the way the others are free to.
 #
-# No font here: base.rasi now names a real monospace family, so the padded
-# columns throughout this script line up on their own.
-DOCS_GEO='window { width: 76%; height: 70%; } listview { dynamic: false; }'
+# THE BUDGET THAT FALLS OUT OF THIS IS 52 COLUMNS. Every row builder below
+# is cut to fit it. Nothing here can be widened without widening the
+# window, and the window is now fixed by something outside this script.
+#
+# 52 is measured, not derived. The arithmetic -- 614px less 32px window
+# padding and 20px element padding, over a ~9.9px advance -- says 56, and
+# 56 visibly clipped: rofi ellipsized the tail of every troubleshooting
+# row, eating the ":123" line number that makes the entry jumpable. The
+# remaining few columns go to element borders and inter-widget spacing
+# that are tedious to account for and easy to get wrong, so the number is
+# taken from what actually rendered, with margin.
+#
+# No font declared here: base.rasi now names a real monospace family, so
+# the padded columns throughout this script line up on their own.
+DOCS_GEO='window { width: 45%; } listview { lines: 8; dynamic: false; }'
 
 # rofi -dmenu exits 1 on Escape and 0 on a selection. That difference is
 # the whole navigation model, so it gets its own wrapper: RC is the caller's
@@ -240,7 +248,25 @@ sec_keys() {
     return
   fi
   local n; n="$(qtile-keys | wc -l)"
-  qtile-keys | pick "Keys" "$(rofi_hint "Esc back" "$n bindings" "parsed live from config.py")" >/dev/null
+  # qtile-keys pads its key field to 26 columns and lets the description run
+  # to 65, which is 91 total and half again wider than the 56 this window
+  # gives. Re-cut here rather than in qtile-keys: that tool also prints to
+  # stdout for humans at a terminal, where the wide form is the better one.
+  #
+  # The key field keeps its full 23 columns (the longest is a chord,
+  # "Super+Shift+F , Shift+V") and the description absorbs the loss. In a
+  # list you search by pressing keys, the key is the part that must not be
+  # truncated.
+  qtile-keys \
+    | awk -v w=23 '
+        {
+          k = substr($0, 1, 26); sub(/ +$/, "", k)
+          d = substr($0, 27)
+          # 23 + 2 + 27 = 52.
+          if (length(d) > 27) d = substr(d, 1, 26) "…"
+          printf "%-*s  %s\n", w, k, d
+        }' \
+    | pick "Keys" "$(rofi_hint "Esc back" "$n bindings" "live from config.py")" >/dev/null
 }
 
 # ── cheatsheets ──────────────────────────────────────────────────────
@@ -248,10 +274,10 @@ sec_cheats() {
   while :; do
     local c
     c="$(printf '%s\n' \
-      "󰘳  Qtile cheatsheet      every mode and binding" \
-      "󰕷  Vim cheatsheet        motions, text objects, registers" \
-      "󰈺  Fish / kitty          shell and terminal shortcuts" \
-      | pick "Cheatsheets" "$(rofi_hint "↵ open the sheet" "Esc back" "in the sheet, Esc or q closes it")")"
+      "󰘳  Qtile cheatsheet   every mode and binding" \
+      "󰕷  Vim cheatsheet     motions, text objects" \
+      "󰈺  Fish / kitty       shell and terminal keys" \
+      | pick "Cheatsheets" "$(rofi_hint "↵ open the sheet" "Esc back" "q closes it")")"
     (( RC != 0 )) && return
     case "$c" in
       *Qtile*) open_cheatsheet qtile; return ;;
@@ -267,11 +293,11 @@ sec_docs() {
   while :; do
     local c
     c="$(printf '%s\n' \
-      "󰈙  README                 what this desktop is and how to install it" \
-      "󰋗  Troubleshooting        126 fixes, searchable by symptom" \
-      "󰏗  Packages               how packages are declared and installed" \
-      "󰃤  Boot entries           the rescue kernel, and why it exists" \
-      "󰅱  qtile config           the source — the only writable entry" \
+      "󰈙  README            what this desktop is" \
+      "󰋗  Troubleshooting   126 fixes, by symptom" \
+      "󰏗  Packages          how packages are declared" \
+      "󰃤  Boot entries      the rescue kernel" \
+      "󰅱  qtile config      the source — writable" \
       | pick "Documentation" "$(rofi_hint "↵ open" "Esc back" "rendered read-only")")"
     (( RC != 0 )) && return
     case "$c" in
@@ -322,18 +348,21 @@ sec_trouble() {
       gsub(/[`*_]/, "", firstprose)
     }
     END { if (heading != "") emit() }
-    # 38 + 44 columns, not 46 + 90. Every menu in this script is drawn at
-    # one fixed width now (DOCS_GEO), and at 147 columns these rows were
-    # the only content in the file that could not fit inside it -- on a
-    # 1366px screen 147 monospace columns is wider than the screen itself,
-    # so sizing the window to them was never an option.
+    # Symptom-first, one column. This was a 46 + 90 two-column layout, 147
+    # columns wide -- wider than the screen itself, never mind the 56 this
+    # window gives. Two columns do not survive that cut: at ~24 each, the
+    # heading and the symptom are both shredded and neither is readable.
     #
-    # The budget is 96 columns, measured off the rendered window rather
-    # than guessed: 1035px of window, less 32px window padding and 20px
-    # element padding, over a 9.95px advance for FiraCode Nerd Font Mono
-    # at 12. A first pass at 40 + 48 came to 99 and rofi quietly ellipsized
-    # the tail of every row, which showed up as a doubled ellipsis: the
-    # truncation below, and then the one rofi adds, on the same line.
+    # So the heading is dropped from ENTRY rows and the symptom carries
+    # them alone. That is the column worth keeping: the heading is terse
+    # and internal ("Rofi", "Theming"), while the symptom is written in the
+    # words you would actually use when the thing goes wrong, which is what
+    # the hint under the prompt tells you to type. rofi filters on the line
+    # it is given, so this is also what you search.
+    #
+    # SECTION rows (##) keep their heading instead -- they have no symptom
+    # of their own, and a bare "(section)" is not a landmark you can scroll
+    # by. They stay flush left; entries indent under them.
     #
     # NOTE: no apostrophes anywhere in this comment block. The whole awk
     # program is one SINGLE-QUOTED shell string, so a lone apostrophe in a
@@ -341,20 +370,21 @@ sec_trouble() {
     # That is not a hypothetical -- writing "this function-apostrophe-s own
     # truncation" here silently emptied the entire menu, and `bash -n` still
     # passed because the stray quotes happened to re-balance.
-    #
-    # 3 (depth pad) + 38 + 2 + 44 + 1 + 5 (":1536") = 93, inside the 96.
-    # The heading is what you scroll by and the symptom is what you SEARCH
-    # by, and rofi filters on the whole line either way, so trimming the
-    # tail of a symptom costs display, not findability.
-    function emit(   pad, ctx) {
-      ctx = (sym != "") ? sym : firstprose
-      if (ctx == "") ctx = "(section)"
-      if (length(ctx) > 44) ctx = substr(ctx, 1, 41) "..."
-      pad = (depth == 3) ? "   " : ""
-      printf "%s%-38s  %-44s :%s\n", pad, substr(heading, 1, 38), ctx, line
+    function emit(   ctx) {
+      if (depth == 2) {
+        # 46 + 1 + 5 (":1536") = 52.
+        if (length(heading) > 46) heading = substr(heading, 1, 45) "…"
+        printf "%-46s :%s\n", heading, line
+      } else {
+        ctx = (sym != "") ? sym : firstprose
+        if (ctx == "") ctx = heading
+        # 2 + 44 + 1 + 5 = 52.
+        if (length(ctx) > 44) ctx = substr(ctx, 1, 43) "…"
+        printf "  %-44s :%s\n", ctx, line
+      }
       heading = ""
     }
-  ' "$f" | pick "Troubleshooting" "$(rofi_hint "↵ jump to the entry" "Esc back" "$(grep -cE '^#{2,3} ' "$f") fixes" "type the symptom you are seeing")")"
+  ' "$f" | pick "Troubleshooting" "$(rofi_hint "↵ jump" "Esc back" "$(grep -cE '^#{2,3} ' "$f") fixes" "type the symptom")")"
   (( RC != 0 )) && return
   [[ -z "$sel" ]] && return
   local line="${sel##*:}"
@@ -446,11 +476,11 @@ sec_maintenance() {
 
     local c
     c="$(printf '%s\n' \
-      "󰅚  Config merges          ${n_merge} .pacnew waiting to be merged" \
-      "󰩹  Orphan packages        ${n_orph} · ${orph_h} reclaimable" \
-      "󰈸  Boot errors            ${n_err} since this boot" \
-      "󰋊  Package cache          ${cache_h:-?} · ${prunable} prunable" \
-      "󰑓  Safe update            ${n_upd} pending · guarded upgrade" \
+      "󰅚  Config merges     ${n_merge} .pacnew to merge" \
+      "󰩹  Orphan packages   ${n_orph} · ${orph_h} reclaimable" \
+      "󰈸  Boot errors       ${n_err} since this boot" \
+      "󰋊  Package cache     ${cache_h:-?} · ${prunable} prunable" \
+      "󰑓  Safe update       ${n_upd} pending · guarded" \
       | pick "Maintenance" "$(rofi_hint "↵ act on it" "Esc back" "every count is probed live")")"
     (( RC != 0 )) && return
     case "$c" in
@@ -493,10 +523,10 @@ sec_maintenance() {
         # trailing newlines, so without it the "Remove all" row and the
         # first package end up on the same line -- one unselectable row.
         local rows sel
-        rows="$(printf '󰩹  Remove all %s orphans      frees %s' "$n_orph" "$orph_h")"$'\n'
+        rows="$(printf '󰩹  Remove all %s orphans   frees %s' "$n_orph" "$orph_h")"$'\n'
         rows+="$(printf '%s\n' "$orphans" | xargs -r pacman -Qi 2>/dev/null | awk -F': +' '
           /^Name/           { n = $2 }
-          /^Installed Size/ { printf "%-34s %s\n", n, $2 }')"
+          /^Installed Size/ { printf "%-32s %s\n", n, $2 }')"
         sel="$(printf '%s\n' "$rows" | pick "Orphans" \
           "$(rofi_hint "↵ remove all" "Esc back" "or pick one to inspect")")"
         (( RC != 0 )) && continue
@@ -582,10 +612,10 @@ sec_appearance() {
   while :; do
     local c
     c="$(printf '%s\n' \
-      "󰸌  Theme                  22 palettes, retints every app at once" \
-      "󰍹  UI scale               size the desktop to this screen" \
-      "󰸉  Wallpaper              picker" \
-      "󰇥  Boot splash            your name on the boot screen" \
+      "󰸌  Theme             22 palettes, retints all" \
+      "󰍹  UI scale          size the desktop to this" \
+      "󰸉  Wallpaper         picker" \
+      "󰇥  Boot splash       your name on boot" \
       | pick "Appearance" "$(rofi_hint "↵ open" "Esc back")")"
     (( RC != 0 )) && return
     case "$c" in
@@ -643,11 +673,11 @@ sec_espanso() {
 
     local c
     c="$(printf '%s\n' \
-      "󰉺  Personal variables      ${set_count} set · ${missing_count} missing" \
-      "󰏫  Edit /etc/environment   where the values live" \
+      "󰉺  Variables         ${set_count} set · ${missing_count} missing" \
+      "󰏫  Edit environment  where the values live" \
       "󰝒  Snippet files           $(ls -1 "$match_dir"/*.yml 2>/dev/null | wc -l) file(s) in match/" \
-      "󰑓  Restart espanso         apply changes" \
-      | pick "Espanso" "$(rofi_hint "↵ open" "Esc back" "snippets read personal data from /etc/environment")")"
+      "󰑓  Restart espanso   apply changes" \
+      | pick "Espanso" "$(rofi_hint "↵ open" "Esc back" "values from /etc/environment")")"
     (( RC != 0 )) && return
     case "$c" in
       *"Personal variables"*)
@@ -744,10 +774,10 @@ sec_system() {
   while :; do
     local c
     c="$(printf '%s\n' \
-      "󰋼  About                  user · theme · scale · gpu · kernel" \
-      "󰏗  Package audit          declared vs actually installed" \
-      "󰓅  Services               what failed, what is running" \
-      "󰍛  Display + GPU          resolution, DPI, driver" \
+      "󰋼  About             user · theme · gpu · kernel" \
+      "󰏗  Package audit     declared vs installed" \
+      "󰓅  Services          what failed, what runs" \
+      "󰍛  Display + GPU     resolution, DPI, driver" \
       | pick "System" "$(rofi_hint "↵ open" "Esc back")")"
     (( RC != 0 )) && return
     case "$c" in
@@ -816,14 +846,14 @@ main_menu() {
   while :; do
     local c
     c="$(printf '%s\n' \
-      "󰌌  Keybindings          ▸ every shortcut, searchable" \
-      "󰘳  Cheatsheets          ▸ qtile · vim · fish" \
-      "󰈙  Documentation        ▸ README · troubleshooting · packages" \
-      "󰛄  Espanso              ▸ text expansion snippets" \
-      "󰏘  Appearance           ▸ theme · scale · wallpaper · splash" \
-      "󰒓  System               ▸ about · audit · services · gpu" \
-      "󰃢  Maintenance          ▸ merges · orphans · errors · cache" \
-      | pick "Docs" "$(rofi_hint "↵ open the section" "Esc closes" "inside a section, Esc comes back here")")"
+      "󰌌  Keybindings       ▸ every shortcut" \
+      "󰘳  Cheatsheets       ▸ qtile · vim · fish" \
+      "󰈙  Documentation     ▸ README · troubleshooting" \
+      "󰛄  Espanso           ▸ text expansion snippets" \
+      "󰏘  Appearance        ▸ theme · scale · wallpaper" \
+      "󰒓  System            ▸ about · audit · services" \
+      "󰃢  Maintenance       ▸ merges · orphans · cache" \
+      | pick "Docs" "$(rofi_hint "↵ open" "Esc closes" "Esc in a section goes back")")"
     (( RC != 0 )) && return
     case "$c" in
       *Keybindings*)   sec_keys ;;
