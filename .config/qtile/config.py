@@ -2824,13 +2824,34 @@ def parse_task_name(text):
         " — Settings",
         " — Preferences",
         " — System Settings",
-        # Generic separators
-        " — ",
-        " - ",
     ]
 
     for s in REMOVE:
         text = text.replace(s, "")
+
+    # The list above used to end with two GENERIC separator entries, " - "
+    # and " \u2014 ", removed with str.replace -- which deletes every
+    # occurrence, not just the one before an application name. So
+    # "Ati's Homepage - qutebrowser" came out as "Ati's Homepagequtebrowser",
+    # two words welded together, on any title containing a dash at all.
+    #
+    # Strip a TRAILING " - <name>" instead, and only when the tail looks like
+    # an application name: no further separator inside it, and short. A real
+    # subtitle ("Chapter 3 - The Long Way Home") is left alone.
+    for sep in (" \u2014 ", " - "):
+        head, found, tail = text.rpartition(sep)
+        if found and head and len(tail) <= 25 and sep.strip() not in tail:
+            text = head
+
+    # Leading status glyph. The terminal sessions in here set their title to
+    # a spinner frame plus the task -- "\u2802 Fix ...", "\u2733 Upgrade ..." --
+    # and the frame changes several times a second. In a bar that is a
+    # character of pure noise in the highest-value column, and it repaints
+    # the widget every time it ticks. Braille block U+2800-U+28FF is the
+    # spinner; the rest are the done/busy marks that replace it.
+    text = text.lstrip()
+    while text and (0x2800 <= ord(text[0]) <= 0x28FF or text[0] in "\u2733\u2713\u2717\u25b6\u23f8"):
+        text = text[1:].lstrip()
 
     return text
 
@@ -3170,11 +3191,29 @@ def left_side_widgets():
             # markup styles — use the active palette so TaskList retints
             # on theme swap. colors[2]=bg-alt, colors[0]=bg, colors[6]=blue,
             # colors[5]=purple, colors[3]=red.
-            markup_normal=f'<span background="{colors[2][0]}55">{{}}</span>',
-            markup_focused=f'<span background="{colors[0][0]}EE" foreground="{colors[6][0]}" weight="bold">F {{}}</span>',
-            markup_floating=f'<span background="{colors[0][0]}EE" foreground="{colors[5][0]}">V {{}}</span>',
-            markup_focused_floating=f'<span background="{colors[0][0]}EE" foreground="{colors[5][0]}" weight="bold">VF {{}}</span>',
-            markup_minimized=f'<span background="{colors[0][0]}EE" foreground="{colors[3][0]}">↓ {{}}</span>',
+            # State is carried by COLOUR and WEIGHT, not by letters. Every
+            # entry used to be prefixed with a private code -- "F" focused,
+            # "V" floating, "VF" both -- in the one widget whose entire job is
+            # showing window names, and those characters cost width the name
+            # then lost to truncation. Focus already reads from the accent
+            # colour and the bold; nothing needs spelling out.
+            #
+            # The two states that are NOT otherwise visible keep a mark, and
+            # it has to live in the markup string. txt_minimized / txt_floating
+            # look like the right home for it and are DEAD config the moment a
+            # markup_* string is set: tasklist.py:245 returns
+            # markup_str.format(name) and never interpolates `state` at all --
+            # it is only used on the no-markup path below it. That is why the
+            # original spelled the arrow out here too.
+            #
+            # The leading/trailing spaces are the padding: they sit INSIDE the
+            # span, so the highlight becomes a rounded-ish block around the
+            # title instead of ending flush against the first letter.
+            markup_normal=f'<span background="{colors[2][0]}44" foreground="{colors[1][0]}"> {{}} </span>',
+            markup_focused=f'<span background="{colors[0][0]}EE" foreground="{colors[6][0]}" weight="bold"> {{}} </span>',
+            markup_floating=f'<span background="{colors[0][0]}CC" foreground="{colors[5][0]}"> 󰊔 {{}} </span>',
+            markup_focused_floating=f'<span background="{colors[0][0]}EE" foreground="{colors[5][0]}" weight="bold"> 󰊔 {{}} </span>',
+            markup_minimized=f'<span background="{colors[0][0]}66" foreground="{colors[3][0]}"> 󰖰 {{}} </span>',
             # 120px at fontsize 11 is about fourteen characters, which
             # truncated every real window title to "Fix Qt…" / "Upgr…" --
             # three open windows and no way to tell them apart, which is the
@@ -3194,14 +3233,25 @@ def left_side_widgets():
             margin_y=_s(4),
             spacing=2,
             parse_text=parse_task_name,
-            window_name_location_offset=1,
-            window_name_location="left",
+            # window_name_location prepends "[n] ", the window's index within
+            # its group -- and TaskList adds it BEFORE parse_text runs, which
+            # is why the spinner strip in parse_task_name has to work anywhere
+            # in the string rather than only at the front. Off now: it cost
+            # four characters of a roughly fourteen character budget, nearly a
+            # third of the visible width, to say something the app icon beside
+            # it already distinguishes, and nothing here binds a window by
+            # that index.
+            window_name_location=False,
             foreground=colors[1],
             background=None,
             highlight_method="text",
             border=colors[7],
             borderwidth=0,
-            txt_minimized="↓  ",
+            # Kept only for the no-markup fallback path; see the note above
+            # the markup_* block for why these are otherwise inert.
+            txt_minimized="󰖰 ",
+            txt_floating="󰊔 ",
+            txt_maximized="",
             stretch=False,
         ),
     ]
@@ -3543,7 +3593,7 @@ def right_side_widgets():
             # 8000 -> -0.5px.
             text_closed=(
                 '<span font_family="Adwaita Mono" weight="bold" '
-                'size="17000" rise="7000">△</span>'
+                'size="15500" rise="7000">△</span>'
             ),
             text_open="",
             start_opened=False,
