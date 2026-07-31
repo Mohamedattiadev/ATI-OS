@@ -144,15 +144,7 @@ from popups.WallpaperPopup import (
 # )
 
 
-# NOTE : WiFi popup will be used later
-# from popups.WifiPopup import (
-#     show as show_wifi_popup,
-#     close as close_wifi_popup,
-#     move_vertical as wifi_move,
-#     move_horizontal as wifi_move_col,
-#     select as wifi_select,
-#     manual_refresh as wifi_manual_refresh,
-# )
+from popups import WifiPopup
 
 # NOTE: updates popup  will be used later
 # from popups.UpdatesPopup import (
@@ -233,37 +225,6 @@ colorsW = [
 ]
 
 ARCH_ICON_MAIN = "󰕰"
-
-
-def chip_icon(glyph, rise=7000):
-    """Optically centre a single glyph vertically inside its chip.
-
-    qtile centres a TextBox's text by the font's ADVANCE box, not by where
-    the ink actually sits, and nerd font icons routinely park their ink off
-    to one side of that box. Measured on the logo chip against its own
-    plate: the ink sat 1.5px low, which on a 24px plate is plainly visible
-    and was the "icon isn't centred" complaint.
-
-    Pango is the only lever qtile exposes for this, and TextBox has
-    markup=True by default, so the glyph carries its own correction via
-    `rise`. Do NOT reason about the value from Pango's nominal 1024-units-
-    to-the-point: qtile re-centres the layout after Pango has applied the
-    rise, which cancels most of it, and the measured response here is about
-    4000 units per pixel. Swept it against the real chip -- 0-5000 moved
-    nothing, 6000-7000 gave +0.5px, 8000 overshot to -0.5px -- so 7000 is
-    as close to centred as a whole-pixel grid allows, down from 1.5px low.
-
-    Horizontal is deliberately NOT corrected. The residual there was 1px on
-    a 25px-wide plate, i.e. the rounding you get centring an 11px ink box in
-    an odd-width space, and the only lever is padding with a space character
-    whose width is a font property rather than a pixel count -- a less
-    predictable cure than the symptom.
-
-    Anything that swaps this chip's icon at runtime has to go through here
-    too, or the correction is dropped the first time the icon changes --
-    see set_icon_temporarily().
-    """
-    return f'<span rise="{rise}">{glyph}</span>'
 
 
 DEFAULT_CHIP_COLOR = colorsW[2]
@@ -578,8 +539,7 @@ CHORD_CHIP_COLORS = {
     # "Bluetooth-Mode": colorsW[4],
     # NOTE: Audio popup will be used later
     # "Audio-Mode": colorsW[4],
-    # NOTE: Wifi popup will be used later
-    # "Wifi-Mode": colorsW[4],
+    "Wifi-Mode": colorsW[6],
     # NOTE: updates popup  will be used later
     # "Updates-Mode": colorsW[4],
 }
@@ -2276,13 +2236,13 @@ def set_icon_temporarily(qtile, icon, cmd):
         return
 
     # update icon immediately
-    w.update(chip_icon(icon))
+    w.update(icon)
 
     # spawn app
     qtile.spawn(cmd)
 
     # qtile.call_later avoids spawning a thread per keypress.
-    qtile.call_later(0.3, lambda: w.update(chip_icon(ARCH_ICON_MAIN)))
+    qtile.call_later(0.3, lambda: w.update(ARCH_ICON_MAIN))
 
 
 def open_terminal(qtile):
@@ -2541,9 +2501,8 @@ def cleanup_on_leave():
     # elif ACTIVE_CHORD == "Audio-Mode":
     #     close_audio_popup(qtile)
 
-    # NOTE : Wifi popup will be used later
-    # elif ACTIVE_CHORD == "Wifi-Mode":
-    #     close_wifi_popup(qtile)
+    elif ACTIVE_CHORD == "Wifi-Mode":
+        WifiPopup.close(qtile)
 
     # NOTE : updates popup  will be used later
     # elif ACTIVE_CHORD == "Updates-Mode":
@@ -2730,11 +2689,14 @@ def auto_enable_passthrough(chord_name):
 # -----------------------------------------------------------
 
 
-# NOTE : Wifi popup will be used later
-# @hook.subscribe.enter_chord
-# def auto_enable_wifi_popup(chord_name):
-#     if chord_name == "Wifi-Mode":
-#         show_wifi_popup(qtile)
+@hook.subscribe.enter_chord
+def auto_enable_wifi_popup(chord_name):
+    if chord_name == "Wifi-Mode":
+        # Cheap to build (no image loading, no per-file work) and it draws
+        # its own "Scanning…" state, so unlike the wallpaper picker there is
+        # nothing to order around a widget redraw here.
+        WifiPopup.show(qtile)
+
 
 # -----------------------------------------------------------
 # 17 - Function to launch Updates popup when mode is activated
@@ -2902,7 +2864,7 @@ def normal_user_bar():
     return [
         widget.TextBox(
             name="main_icon_chip_nu",
-            text=chip_icon(ARCH_ICON_MAIN),
+            text=ARCH_ICON_MAIN,
             fontsize=_s(19),
             padding=16,
             foreground=colors[7],
@@ -3003,7 +2965,7 @@ def normal_user_bar():
             background=None,
             name_transform=lambda name: {
                 "Resize-Mode": "󰩨   RESIZE : H, J, N",
-                "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
+                "Rofi-Mode": "󰍉   ROFI : i , o , p , u , w , z , b , e , r , t , y , f , s , n , h ",
                 "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
                 "Scratch-Mode": "󰈆   SCRATCH",
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
@@ -3017,8 +2979,7 @@ def normal_user_bar():
                 # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
                 # NOTE: Audio popup will be used later
                 # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                # NOTE: Wifi popup will be used later
-                # "Wifi-Mode": "󰤨   WIFI : j , k , Enter , x , r",
+                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , r , / ",
             }.get(name, name.upper()),
         ),
         # Homerow mode chip — see the matching one in right_side_widgets()
@@ -3168,7 +3129,7 @@ def left_side_widgets():
         chip(
             ewidget.TextBox,
             name="main_icon_chip",
-            text=chip_icon(ARCH_ICON_MAIN),
+            text=ARCH_ICON_MAIN,
             fontsize=_s(15),
             padding=11,
             foreground=colors[7],
@@ -3258,7 +3219,7 @@ def right_side_widgets():
             background=None,
             name_transform=lambda name: {
                 "Resize-Mode": "󰩨   RESIZE : H, J, N",
-                "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
+                "Rofi-Mode": "󰍉   ROFI : i , o , p , u , w , z , b , e , r , t , y , f , s , n , h ",
                 "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
                 "Scratch-Mode": "󰈆   SCRATCH",
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
@@ -3272,8 +3233,7 @@ def right_side_widgets():
                 # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
                 # NOTE: Audio popup will be used later
                 # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                # NOTE: Wifi popup will be used later
-                # "Wifi-Mode": "󰤨   WIFI : j , k , Enter , x , r",
+                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , r , / ",
                 # NOTE: updates popup  will be used later
                 # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
             }.get(name, name.upper()),
@@ -3532,13 +3492,29 @@ def right_side_widgets():
         chip(
             SmartWidgetBox,
             name="systray_widgetbox",
-            fontsize=_s(11),
+            # text_closed carries pango markup; see _apply_raw_markup().
+            raw_markup=True,
+            # Bigger than its neighbours on purpose. U+25B3 is a hairline
+            # outline and, unlike a real icon glyph, it does not respond to
+            # weight at all -- JetBrainsMono draws it with identical ink at
+            # Thin, SemiBold and Bold, so <b> and weight="900" are both
+            # no-ops on it (measured). Size is the only lever the font
+            # leaves, so the triangle is scaled up to carry the same visual
+            # weight as the icons either side of it.
+            fontsize=_s(15),
             padding=11,
             # △/ is deliberate -- keep it. U+25B3 is a plain
             # geometric shape rather than an icon from the nerd font set,
             # chosen for its silhouette rather than for consistency with
             # the others. Do not "correct" it to a chevron again.
-            text_closed="△",
+            # rise: U+25B3 is a geometric character, not an icon glyph, so
+            # its ink sits low in the advance box the way a capital does
+            # rather than filling it like the nerd font icons either side.
+            # Scaling it up scaled that offset too (+1.5px at this size).
+            # This one IS per-glyph, unlike the global +1 removed in
+            # _centre_textbox_vertically(). Value swept against the live
+            # chip: 0-4000 no movement, 6000 -> +0.5, 8000 -> -0.5.
+            text_closed='<span rise="7000">△</span>',
             text_open="",
             start_opened=False,
             close_button_location="right",
@@ -3983,12 +3959,33 @@ class SmartWidgetBox(ewidget.WidgetBox):
     # live bar and crashed the draw (see _SafeLengthMixin).
     _instances = weakref.WeakSet()
 
-    def __init__(self, *a, insert_before_name=None, **k):
+    def __init__(self, *a, insert_before_name=None, raw_markup=False, **k):
+        # raw_markup opts this box out of WidgetBox's label escaping -- see
+        # _apply_raw_markup().
+        self.raw_markup = raw_markup
         self.insert_before_name = insert_before_name
         super().__init__(*a, **k)
 
+    def _apply_raw_markup(self):
+        """Re-apply the label without WidgetBox's pango escaping.
+
+        WidgetBox runs markup_escape_text() over text_closed/text_open
+        (widgetbox.py:68 and :99), and it is right to by default -- its own
+        default label is "[<]", which pango would otherwise read as a broken
+        tag. But it also means a box label can never carry markup, and the
+        systray chip needs a <span rise> to sit on the centre line.
+
+        Both call sites are inside methods this class already overrides, so
+        the escaped value is simply replaced afterwards. Only for boxes that
+        asked for it: every other one keeps upstream's escaping.
+        """
+        if not getattr(self, "raw_markup", False):
+            return
+        self.text = self.text_open if self.box_is_open else self.text_closed
+
     def _configure(self, qtile, bar):
         super()._configure(qtile, bar)
+        self._apply_raw_markup()
         # Register on _configure, not __init__: only boxes that actually
         # belong to a live bar should ever be reachable from here.
         SmartWidgetBox._instances.add(self)
@@ -4013,6 +4010,7 @@ class SmartWidgetBox(ewidget.WidgetBox):
         if not was_open:
             SmartWidgetBox.close_all(except_self=self)
         res = super().toggle(*a, **k)
+        self._apply_raw_markup()
         try:
             qtile.call_later(0.1, install_bar_tooltips)
         except Exception:
@@ -4380,6 +4378,63 @@ def _guard_injected_length():
 
 
 _guard_injected_length()
+
+
+def _centre_textbox_vertically():
+    """Undo libqtile's hardcoded one-pixel downward nudge on widget text.
+
+    libqtile/widget/base.py, _TextBox.draw():
+
+        y = (self.bar.size - self.layout.height) / 2 + 1
+
+    That `+ 1` is not a rounding correction, it is a constant, and it puts
+    EVERY text widget in the bar one pixel below true centre. Measured by
+    cropping each chip and comparing its plate's bounding box against its
+    glyph's ink box: the tooltip, system, wallpaper and systray chips all
+    sat at dy = +1.0, and the clock at +1.5. It reads as "the icons are not
+    centred" because that is precisely what it is.
+
+    Correcting each glyph with its own pango rise was the wrong SHAPE of
+    fix -- it treats a global constant as though it were per-glyph ink
+    offsets, and every chip added later would need its own magic number.
+    One pixel comes off the draw position instead, once, for everything.
+
+    Done by shifting the layout at the point of use rather than
+    reimplementing draw(): that method is long, handles scroll clipping and
+    rotation, and copying it here would drift from upstream on the next
+    qtile release. Wrapping the single call whose y we care about leaves
+    the rest of it upstream's problem.
+    """
+    from libqtile.widget import base as _wbase
+
+    if getattr(_wbase._TextBox, "_vcentre_patched", False):
+        return
+    _orig_draw = _wbase._TextBox.draw
+
+    def draw(self):
+        layout = self.layout
+        real_draw = layout.draw
+
+        def shifted(x, y, *a, **k):
+            return real_draw(x, y - 1, *a, **k)
+
+        layout.draw = shifted
+        try:
+            _orig_draw(self)
+        finally:
+            # Drop the instance attribute so the class method is visible
+            # again. The layout can be rebuilt underneath us, so tolerate
+            # it having already gone.
+            try:
+                del layout.draw
+            except AttributeError:
+                pass
+
+    _wbase._TextBox.draw = draw
+    _wbase._TextBox._vcentre_patched = True
+
+
+_centre_textbox_vertically()
 
 
 class _ChipFlashMixin(_SafeLengthMixin):
@@ -4907,6 +4962,48 @@ keys = [
                 name="WallpaperPicker",
                 desc="Wallpaper picker mode",
             ),
+            # --- a Special mode for "WiFi" ---
+            # --- WiFi MODE ---
+            # `u` because every mnemonic letter in this chord is taken: w is
+            # dm-weather, i is dm-satty, n is dm-note.
+            KeyChord(
+                [],
+                "u",
+                [
+                    # NAVIGATE
+                    Key([], "j", lazy.function(lambda _: WifiPopup.move(1))),
+                    Key([], "k", lazy.function(lambda _: WifiPopup.move(-1))),
+                    Key([], "g", lazy.function(lambda _: WifiPopup.jump("top"))),
+                    Key(["shift"], "g", lazy.function(lambda _: WifiPopup.jump("bottom"))),
+                    # ACTIONS
+                    Key([], "Return", lazy.function(lambda _: WifiPopup.connect())),
+                    Key([], "d", lazy.function(lambda _: WifiPopup.disconnect())),
+                    Key([], "x", lazy.function(lambda _: WifiPopup.forget())),
+                    Key([], "n", lazy.function(lambda _: WifiPopup.connect_hidden())),
+                    Key([], "r", lazy.function(lambda _: WifiPopup.rescan())),
+                    Key([], "slash", lazy.function(lambda _: WifiPopup.search())),
+                    # EXIT. Passed as separate positional commands --
+                    # `lazy.function(...) and lazy.ungrab_chord()` evaluates
+                    # to the second one alone and silently drops the close.
+                    Key(
+                        [],
+                        "q",
+                        lazy.function(lambda qtile: WifiPopup.close(qtile)),
+                        lazy.ungrab_chord(),
+                    ),
+                    # No Escape binding on purpose. KeyChord.__init__ appends
+                    # its own bare Key([], "Escape") *after* the submappings,
+                    # and grab_chord binds them in order with later ones
+                    # overriding earlier -- so a hand-written Escape here is
+                    # dead code that only logs "Key spec duplicated".
+                    # Escape still works: process_key_event ungrabs the chord
+                    # for any key named Escape, which fires leave_chord, and
+                    # cleanup_on_leave closes this popup.
+                ],
+                mode=True,
+                name="Wifi-Mode",
+                desc="WiFi network picker",
+            ),
             # --- show documents ---
             Key([], "d", lazy.spawn("dm-documents -r"), desc="Show documents"),
             # Theme picker (rofi).
@@ -5237,23 +5334,6 @@ keys = [
     #     ],
     #     mode=True,
     #     name="Audio-Mode",
-    # ),
-    # NOTE: Wifi popup will be used later
-    # KeyChord(
-    #     [mod],
-    #     "i",
-    #     [
-    #         Key([], "j", lazy.function(lambda _: wifi_move(1))),
-    #         Key([], "k", lazy.function(lambda _: wifi_move(-1))),
-    #         Key([], "h", lazy.function(lambda _: wifi_move_col(-1))),
-    #         Key([], "l", lazy.function(lambda _: wifi_move_col(1))),
-    #         Key([], "Return", lazy.function(lambda _: wifi_select())),
-    #         Key([], "r", lazy.function(lambda _: wifi_manual_refresh())),
-    #         Key([], "Escape", lazy.function(lambda qtile: close_wifi_popup(qtile))),
-    #     ],
-    #     mode=True,
-    #     name="Wifi-Mode",
-    #     desc="WiFi network picker",
     # ),
     # NOTE: updates popup  will be used later
     # KeyChord(
