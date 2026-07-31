@@ -157,13 +157,18 @@ panel_block() {  # panel_block <language> <text>
   printf '```%s\n%s\n```\n' "$1" "$2"
 }
 
-# "key   value" lines -> a markdown table. Two columns, because that is
-# what every one of these panels actually is.
-panel_table() {  # panel_table <col1> <col2> <"key<TAB>value" lines>
-  printf '| %s | %s |\n| --- | --- |\n' "$1" "$2"
-  printf '%s\n' "$3" | while IFS=$'\t' read -r k v; do
+# "key<TAB>value" lines -> a bold-key list.
+#
+# This was a markdown table, and glamour renders those badly at panel
+# widths: it stretches columns to fill the terminal, so a two-column
+# key/value pair ended up with the value marooned 40 characters from its
+# key, and it drew the header rule as two disjoint segments of different
+# lengths. A bold key with the value beside it says the same thing, scans
+# in one column, and cannot be stretched out of shape.
+panel_rows() {  # panel_rows <"key<TAB>value" lines>
+  printf '%s\n' "$1" | while IFS=$'\t' read -r k v; do
     [[ -z "$k" ]] && continue
-    printf '| %s | %s |\n' "$k" "$v"
+    printf -- '- **%s**  %s\n' "$k" "$v"
   done
 }
 
@@ -531,7 +536,7 @@ sec_system() {
     (( RC != 0 )) && return
     case "$c" in
       *About*)
-        view_panel "About this machine" "$(panel_table "" "value" "$(about_rows)")"
+        view_panel "About this machine" "$(panel_rows "$(about_rows)")"
         return ;;
       *"Package audit"*)
         view_panel "Package audit" "$(

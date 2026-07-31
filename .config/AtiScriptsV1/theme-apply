@@ -524,7 +524,7 @@ PYEOF
 )"
   cat >"$out" <<EOF
 {
-  "document": { "block_prefix": "\n", "block_suffix": "\n", "color": "${fg}", "margin": 2 },
+  "document": { "block_prefix": "\n", "block_suffix": "\n", "color": "${fg}", "margin": 1 },
   "block_quote": { "color": "${cyan}", "indent": 1, "indent_token": "│ " },
   "paragraph": {},
   "list": { "level_indent": 2 },
@@ -550,7 +550,7 @@ PYEOF
   "code": { "color": "${red}", "background_color": "${bg_alt}" },
   "code_block": {
     "color": "${fg}",
-    "margin": 2,
+    "margin": 1,
     "chroma": {
       "text": { "color": "${fg}" },
       "error": { "color": "${red}" },
@@ -578,7 +578,7 @@ PYEOF
       "generic_inserted": { "color": "${green}" },
       "generic_strong": { "bold": true },
       "generic_subheading": { "color": "${blue}" },
-      "background": { "background_color": "${bg}" }
+      "background": { "background_color": "${bg_alt}" }
     }
   },
   "table": { "center_separator": "┼", "column_separator": "│", "row_separator": "─" },
