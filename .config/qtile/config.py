@@ -3187,7 +3187,7 @@ def left_side_widgets():
             # whole title -- the first few words already do that, and the
             # rest just crowds the bar. Narrower, and a point smaller, so
             # more of the name survives inside the smaller box.
-            max_title_width=_s(150),
+            max_title_width=_s(115),
             padding_x=3,
             padding_y=2,
             margin_x=_s(3),
@@ -3543,7 +3543,7 @@ def right_side_widgets():
             # 8000 -> -0.5px.
             text_closed=(
                 '<span font_family="Adwaita Mono" weight="bold" '
-                'size="14000" rise="7000">△</span>'
+                'size="17000" rise="7000">△</span>'
             ),
             text_open="",
             start_opened=False,
@@ -4041,6 +4041,15 @@ class SmartWidgetBox(ewidget.WidgetBox):
             SmartWidgetBox.close_all(except_self=self)
         res = super().toggle(*a, **k)
         self._apply_raw_markup()
+        # Opening a box changes how much room the right-hand side needs, and
+        # the centring pass is subscribed to CLIENT hooks only -- nothing
+        # about a window changed here, so none of them fire. Without this the
+        # tasklist keeps its old width and the surplus pushes the last chip
+        # off the bar.
+        try:
+            _schedule_center_groupbox()
+        except Exception:
+            pass
         try:
             qtile.call_later(0.1, install_bar_tooltips)
         except Exception:
@@ -5887,6 +5896,25 @@ def _center_top_groupbox():
             # holding it STATIC here is not fighting the widget.
             if tl is not None:
                 cap = max(0, target - others)
+                # Centring alone is not enough. The spacer to the RIGHT of the
+                # GroupBox is the only STRETCH widget, so it is the only thing
+                # that can absorb growth on that side -- and a SmartWidgetBox
+                # opening inserts its contents there. Once those exceed the
+                # spacer's slack (189px with everything closed), the surplus
+                # runs off the end of the bar and the systray chip, being
+                # last, is what disappears.
+                #
+                # So the TaskList is also capped by what is actually left over
+                # once the right-hand side has been paid for. STRETCH widgets
+                # are excluded from that sum: the spacer collapsing to zero is
+                # exactly the slack being counted here, and counting it twice
+                # would shrink the tasklist for no reason.
+                right = widgets[gb_i + 1:]
+                right_w = sum(
+                    w.length for w in right if w.length_type != bar.STRETCH
+                )
+                fits = b.width - others - widgets[gb_i].length - right_w
+                cap = min(cap, max(0, fits))
                 if tl.length_type != bar.STATIC or tl.length != cap:
                     tl.length_type = bar.STATIC
                     tl.length = cap
@@ -5894,6 +5922,17 @@ def _center_top_groupbox():
 
             left_w = others + (tl.length if tl is not None else 0)
             new_len = max(0, target - left_w)
+            # Centring must yield to fitting. This spacer is pure padding
+            # placed to push the GroupBox to the middle, so when the bar is
+            # over-full it simply re-eats whatever the TaskList just gave up
+            # and the surplus still runs off the right-hand end. Capped by the
+            # room genuinely left after the right-hand side is paid for: the
+            # GroupBox drifts off-centre only once there is no alternative,
+            # which is the better failure -- an off-centre GroupBox is
+            # visible, a chip past the edge of the screen is not.
+            room = b.width - others - (tl.length if tl is not None else 0) \
+                - widgets[gb_i].length - right_w
+            new_len = min(new_len, max(0, room))
             # Guard the assignment: draw() redraws widgets and can re-enter this,
             # so an unconditional set would loop.
             if new_len != sp.length:
@@ -5927,6 +5966,12 @@ def _schedule_center_groupbox(*_args, **_kwargs):
         _GB_CENTER_PENDING = False
 
 
+# Chord enter/leave included: the chord chip appears and disappears with the
+# mode, and that changes the bar's total width by its whole length without any
+# client event happening. Same class of problem as a widget box opening, which
+# SmartWidgetBox.toggle() now handles directly -- anything that resizes a
+# widget without touching a window has to say so, or the surplus silently runs
+# off the right-hand end of the bar.
 for _gb_hook in (
     "startup_complete",
     "client_managed",
@@ -5935,6 +5980,8 @@ for _gb_hook in (
     "setgroup",
     "changegroup",
     "focus_change",
+    "enter_chord",
+    "leave_chord",
 ):
     try:
         getattr(hook.subscribe, _gb_hook)(_schedule_center_groupbox)
