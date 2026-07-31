@@ -265,6 +265,68 @@ subsystem. Each entry: **symptom → root cause → fix**.
   print('invalid:', [x for x in n if x not in configdata.DATA] or 'none')"
   ```
 
+### A font the UI names is missing, so everything renders in CJK
+- **Symptom:** on a fresh install, the qtile bar, every qtile popup and
+  the notifications come up in a wrong-looking proportional face, and
+  every column that was supposed to line up is ragged — the cheatsheet
+  key columns, the wifi/bluetooth rows, `rofi_docs`. Nothing errors and
+  no log line mentions fonts. It reads like the layout code is broken.
+- **Root cause:** **fontconfig never errors on a missing family.** It
+  substitutes, silently, and on this system `fc-match` answers Noto Sans
+  CJK KR for anything it does not have. Every padded column in this repo
+  is aligned with *spaces*, and spaces only align in a monospace font.
+- **The instance:** `ttf-jetbrains-mono-nerd` was installed on the
+  author's machine and declared in **no** module, while the qtile bar,
+  all seven popups and dunst name `JetBrainsMono Nerd Font` explicitly.
+  Every one of those surfaces would have come up in CJK on a new
+  machine. It is now declared in `modules/fonts.yaml`.
+- **Check it:**
+  ```bash
+  fc-match "JetBrainsMono Nerd Font"   # must answer itself, not Noto
+  ./installScripts/validate.sh         # "UI fonts installed" section
+  ```
+  `validate.sh` now asserts that every family the UI names as *its* font
+  resolves to itself, so this fails loudly instead of shipping.
+- **Adding a font to any config:** declare the package in
+  `modules/fonts.yaml` **and** add the family to the list in
+  `validate.sh`'s *UI fonts installed* check. `fc-list : family` gives
+  the real names — they are rarely what you would guess
+  (`ttf-firacode-nerd` installs *FiraCode Nerd Font*, not *FiraCode
+  Nerd*, a trap this repo has fallen into twice).
+- **Not every mentioned family needs installing:** CSS stacks and
+  qutebrowser's fallback lists name plenty of fonts on purpose that are
+  not expected to be present. The check covers only families a config
+  sets as *the* font for a surface.
+
+### Cheatsheet cards are the wrong size: points vs pixels
+- **Symptom:** cards drawn much larger than the text inside them — a
+  dead band under the last row of every card, and a gap between the key
+  column and the card's right edge. Card *heights* too tall as well, so
+  fewer rows fit per screen than the geometry claimed.
+- **Root cause:** the layout is computed from `CHAR_PX`/`LINE_PX`, which
+  had been measured with `Pango.FontDescription("Family 14")` — a
+  description string, which is in **points**. qtile's drawer sizes fonts
+  with `set_absolute_size()`, i.e. **device pixels**
+  (`libqtile/backend/base/drawer.py`). At 96dpi points are 4/3 larger, so
+  every card was built ~30% bigger than its content.
+- **Why nothing caught it:** `selftest()` measured in points too, so it
+  agreed with itself and stayed green the whole time. A check that shares
+  the bug with the code under test proves nothing.
+- **Fix:** measure with `desc.set_absolute_size(size * Pango.SCALE)`.
+  `selftest()` now does that *and* asserts each sheet's
+  `CHAR_PX`/`LINE_PX`/`LABEL_CHAR_PX` match what pango really draws, so
+  the constants cannot drift from reality again.
+- **Consequence for markup:** never write a numeric `size=` in pango
+  markup in these popups — it is in points and reintroduces the same
+  mismatch. Use the relative keywords (`size="smaller"`), which scale
+  whatever absolute size the layout was given; `_cheatsheet_grid.py`'s
+  `LABEL_SIZE` is exactly that.
+- **`BODY_SIZE` is in pixels,** so `BODY_SIZE = 15` is roughly 11pt.
+  Changing it changes how wide the cards need to be, so `POPUP_W` has to
+  move with it — as does `ROW_GAP_CHARS`. `python3 -m
+  popups._cheatsheet_grid` prints the numbers to size from, and fails
+  rather than silently clipping if the popup ends up too narrow.
+
 ### dunst and eww render in a different font than the qtile popups
 - **Symptom:** notifications and the eww onboarding/tooltips showed a
   monospace face, while the qtile popups right next to them (wallpaper

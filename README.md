@@ -171,11 +171,22 @@ applets stay in the tray as icons only.
 ![cheatsheet chip in the bar](IMGS/cheatsheet.gif)
 
 Every binding on a card, the key hard against the card's right edge, in the
-same monospace face the rest of the popups use. The qtile and vim sheets run
-to two pages — 90 and 64 bindings do not fit one 1366×768 screen at a size
-worth reading — so **`Tab`** turns the page and `Esc` closes. Modifier names
-are symbols (`⇧` Shift, `⌃` Ctrl, `⏎` Enter, `␣` Space); the header carries
-the legend.
+same monospace face the rest of the popups use. The sheets **scroll** rather
+than page: **`j`/`k`** move a few rows, **`Tab`**/`Shift+Tab` a screenful,
+`Esc` closes, and the header shows how far down you are. Modifier names are
+symbols (`⇧` Shift, `⌃` Ctrl, `⏎` Enter, `␣` Space); the header carries the
+legend.
+
+Scrolling is also why the sheets are an ordinary popup size rather than
+nearly full-screen. Paging tied *capacity* to *size* — the only way to show
+more bindings was to be bigger, and they had grown to 1330×750 on a 1366×768
+screen, covering the very window you opened them to ask about. With a
+viewport that moves, the size only decides how much you see at once.
+
+`k` does double duty: it opens the qtile sheet when none is up, and scrolls
+up when one is. Only one sheet is ever open at a time — `v`/`f` close
+whichever is showing before opening theirs, which is what makes "the open
+one" unambiguous for `j`/`k`/`Tab`.
 
 <sub>Clips are cropped to the bar's right section — that's where the mode chip
 appears. Also available: `Mod+/` media, `Alt+F` mouse mode, `Mod+F12`

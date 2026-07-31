@@ -6,8 +6,20 @@ packages:
   - otf-font-awesome
   - ttf-material-icons
   - ttf-material-symbols-variable
-  - ttf-firacode-nerd
+  - ttf-firacode-nerd   # kitty, and the family rofi's base.rasi mis-names
+  # LOAD-BEARING. The qtile bar, all seven qtile popups and dunst name
+  # "JetBrainsMono Nerd Font" explicitly. It was installed on the author's
+  # machine but declared nowhere, so a fresh install got no such family --
+  # and fontconfig does not error on a missing one, it substitutes. Every
+  # one of those surfaces would have come up in Noto Sans CJK: proportional,
+  # so the cheatsheets' key columns and the popups' padded columns would not
+  # line up, with nothing anywhere saying why. validate.sh now checks the
+  # families the UI actually names, so this cannot go missing again.
+  - ttf-jetbrains-mono-nerd
   - ttf-amiri
   - ttf-cairo
+  # Also the face rofi renders in: base.rasi deliberately names a family
+  # that does not exist so fontconfig substitutes this one. See the comment
+  # there -- if this package goes, rofi's look changes with it.
   - noto-fonts-cjk
   - noto-fonts-emoji   # flag glyphs for qtile KeyboardLayout widget

@@ -229,6 +229,49 @@ else
   fail "a cheatsheet card is off-screen, clipped, or missing a glyph"
 fi
 
+# ── 10. the UI's fonts are actually installed ────────────────────────
+# fontconfig NEVER errors on a missing family. It substitutes, silently,
+# and on this system `fc-match` answers Noto Sans CJK KR for anything it
+# does not have -- a proportional face. Every padded column in this repo
+# (the cheatsheet key columns, the wifi/bluetooth rows, rofi_docs) is
+# aligned with spaces, and spaces only align in a monospace font, so a
+# substituted family does not look like a missing font. It looks like the
+# layout code is broken.
+#
+# ttf-jetbrains-mono-nerd was exactly this: installed on the author's
+# machine, declared in no module, so a fresh install would have rendered
+# the whole qtile UI in CJK with nothing to say why. These are the
+# families the UI names as ITS font, so each must resolve to itself.
+#
+# NOT a list of every family mentioned anywhere: CSS stacks and
+# qutebrowser's fallback lists name plenty of fonts on purpose that are
+# not expected to be present.
+head_ "UI fonts installed"
+if ! command -v fc-match >/dev/null 2>&1; then
+  skip "no fontconfig — cannot check families"
+else
+  _font_bad=0
+  while IFS='|' read -r _fam _who; do
+    [[ -z "$_fam" ]] && continue
+    _got="$(fc-match -f '%{family}' "$_fam" 2>/dev/null)"
+    # Compare case- and space-insensitively: fc-match answers the full
+    # family list ("FiraCode Nerd Font Mono,FiraCode NFM").
+    if [[ "${_got,,}" != *"${_fam,,}"* ]]; then
+      printf '    %s -> %s  (wanted by %s)\n' "$_fam" "${_got:-nothing}" "$_who"
+      _font_bad=1
+    fi
+  done <<'FONTS'
+JetBrainsMono Nerd Font|qtile bar, all qtile popups, dunst
+FiraCode Nerd Font|kitty
+Noto Sans CJK KR|rofi (base.rasi substitutes to it on purpose)
+FONTS
+  if (( _font_bad )); then
+    fail "a font the UI names is missing — fontconfig is silently substituting it; install the fonts module"
+  else
+    pass "every family the UI names resolves to itself, no silent substitution"
+  fi
+fi
+
 # ── result ───────────────────────────────────────────────────────────
 echo
 if (( FAIL )); then
