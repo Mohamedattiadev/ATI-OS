@@ -18,8 +18,8 @@ packages:
   - ttf-jetbrains-mono-nerd
   - ttf-amiri
   - ttf-cairo
-  # Also the face rofi renders in: base.rasi deliberately names a family
-  # that does not exist so fontconfig substitutes this one. See the comment
-  # there -- if this package goes, rofi's look changes with it.
+  # Also the face rofi renders in -- base.rasi names this family directly
+  # and deliberately (it wants the proportional look). If this package goes,
+  # rofi's look goes with it.
   - noto-fonts-cjk
   - noto-fonts-emoji   # flag glyphs for qtile KeyboardLayout widget

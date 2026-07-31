@@ -263,7 +263,7 @@ else
   done <<'FONTS'
 JetBrainsMono Nerd Font|qtile bar, all qtile popups, dunst
 FiraCode Nerd Font|kitty
-Noto Sans CJK KR|rofi (base.rasi substitutes to it on purpose)
+Noto Sans CJK KR|rofi (base.rasi names it directly, on purpose)
 FONTS
   if (( _font_bad )); then
     fail "a font the UI names is missing — fontconfig is silently substituting it; install the fonts module"

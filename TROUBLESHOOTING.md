@@ -522,9 +522,13 @@ subsystem. Each entry: **symptom → root cause → fix**.
 
 ### rofi-kill vertical dividers misaligned
 - **Symptom:** `│` between columns shifts left on some rows.
-- **Root cause:** rofi base font `FiraCode Nerd 12` resolves to Noto
-  Sans (proportional) via fontconfig fallback. Different glyph widths
-  in the same row throw padding off.
+- **Root cause:** rofi's base font is **proportional** (Noto Sans CJK KR
+  — see `base.rasi`, it is deliberate). Different glyph widths in the
+  same row throw space padding off. This used to be reached by accident:
+  the theme asked for `FiraCode Nerd 12`, a family that is not installed,
+  and fontconfig substituted silently. The face is the same today but the
+  name is now honest, so the cause reads as a design choice rather than a
+  typo.
 - **Fix:** wrap each row in `<span face="monospace">...</span>`. Pango
   substitutes a monospace family only inside rows; prompt / mesg keep
   the base proportional font so rofi UI stays consistent with other

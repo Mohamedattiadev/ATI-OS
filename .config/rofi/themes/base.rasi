@@ -7,18 +7,24 @@
 
 @import "current-palette.rasi"
 
-/* DELIBERATE, and not the family it appears to name. Leave it alone.
+/* PROPORTIONAL, and deliberately so. Leave it alone.
 
-   "FiraCode Nerd" is NOT an installed family. fontconfig does not warn
-   about a missing family -- it silently substitutes -- and
-   `fc-match "FiraCode Nerd"` on this machine answers
-   NotoSansCJK-Regular.ttc. So this line renders every rofi menu in
-   Noto Sans CJK KR, a PROPORTIONAL face.
+   This used to read "FiraCode Nerd 12", which is NOT an installed family.
+   fontconfig does not warn about a missing family -- it substitutes,
+   silently -- and `fc-match "FiraCode Nerd"` answers NotoSansCJK, so the
+   menus rendered in Noto Sans CJK KR by accident for their whole life.
 
-   242b8ff "corrected" this to "FiraCode Nerd Font Mono 12" on the
-   reasoning that the padded columns below want a monospace font. That is
-   true, and the look was still wrong: this is the face these menus are
-   wanted in, so the substitution stays.
+   242b8ff "corrected" the string to "FiraCode Nerd Font Mono", the real
+   family, on the reasoning that the padded columns below want a monospace
+   font. The reasoning is sound; the look was wrong. These menus are wanted
+   in the proportional face.
+
+   So the face is kept and the NAME is now honest: this asks for the family
+   it actually renders in, instead of relying on a lookup miss. Same
+   pixels, but pinned -- a substitution depends on the whole installed font
+   set, so adding an unrelated font could silently have changed what rofi
+   looked like. noto-fonts-cjk is declared in modules/fonts.yaml and
+   validate.sh asserts this family resolves to itself.
 
    The cost is real and accepted: rofi_docs pads its first column to a
    fixed width (`%-38s`) to align the second, and padding only aligns in a
@@ -28,7 +34,7 @@
 * {
     background-color: transparent;
     text-color:       @foreground;
-    font:             "FiraCode Nerd 12";
+    font:             "Noto Sans CJK KR 12";
 }
 
 window {
