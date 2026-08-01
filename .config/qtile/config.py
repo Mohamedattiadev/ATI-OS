@@ -1680,10 +1680,19 @@ def _float_and_center_sum(client):
     float_center_sum(client)
 
 
-FILE_CHOOSER_W_RATIO = 0.62
-FILE_CHOOSER_H_RATIO = 0.55
-FILE_CHOOSER_W_MIN = 700
-FILE_CHOOSER_H_MIN = 350
+# Was 0.62 x 0.55, which on this 1366x768 panel is 847x422 -- and the file
+# LIST inside it got maybe a third of that, because the chooser spends the
+# rest on the name field, the shortcut sidebar, the path bar and the
+# button row. Picking a download folder meant scrolling a six-row viewport.
+#
+# The height matters more than the width here: the sidebar is a fixed column,
+# so every pixel of height goes to the list, while extra width mostly
+# stretches the (already legible) filename column. Hence H is raised
+# proportionally further than W.
+FILE_CHOOSER_W_RATIO = 0.74
+FILE_CHOOSER_H_RATIO = 0.74
+FILE_CHOOSER_W_MIN = 820
+FILE_CHOOSER_H_MIN = 480
 
 # Documentation viewer (rofi_docs opens README/TROUBLESHOOTING/nvim in
 # `kitty --class docs-view`). Larger than the file chooser because it holds
@@ -1759,6 +1768,13 @@ def _float_and_center_file_chooser(client):
             return
         w = max(FILE_CHOOSER_W_MIN, int(screen.width * FILE_CHOOSER_W_RATIO))
         h = max(FILE_CHOOSER_H_MIN, int(screen.height * FILE_CHOOSER_H_RATIO))
+        # Never larger than the screen. The docs viewer has carried this clamp
+        # since it was written; the chooser did not, and raising the minimums
+        # is exactly what makes it reachable -- on a panel narrower than
+        # FILE_CHOOSER_W_MIN the dialog would hang off the edge, taking its
+        # Cancel/Save buttons with it.
+        w = min(w, screen.width)
+        h = min(h, screen.height)
         client._enablefloating(
             x=screen.x + (screen.width - w) // 2,
             y=screen.y + (screen.height - h) // 2,
