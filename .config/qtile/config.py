@@ -6083,9 +6083,24 @@ groups = [
     # away -- it is where you end up.
     Group(
         "8",
-        label="8",
+        # U+F02D (book). Checked with fc-match before use, like every other
+        # label here: the GroupBox inherits widget_defaults' "Ubuntu Bold",
+        # which has no Font Awesome range at all, so these all arrive by
+        # fontconfig fallback -- silently, and as a blank box when the glyph
+        # is not actually there. This one resolves to FiraCode Nerd Font, the
+        # same family already serving groups 1, 2, 4 and 5, and was rendered
+        # to confirm it is a book and not tofu.
+        #
+        # Written as an escape, not as the literal glyph the other labels use:
+        # a bare PUA character does not survive every editor and tool that
+        # touches this file, and it arrived here once already as an empty
+        # string -- which renders as a blank slot in the bar, not as an error.
+        label="",
         matches=[Match(wm_class=c) for c in DOCUMENT_APP_CLASSES],
-        layout="monadtall",
+        # max, not monadtall: a document is one thing you read at a time, and
+        # monadtall's side column would hand half the width to whatever else
+        # happened to be open on the group. Full width is the point here.
+        layout="max",
     ),
     Group(
         "S",
