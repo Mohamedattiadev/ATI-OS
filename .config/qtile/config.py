@@ -1823,6 +1823,33 @@ def _is_document_app(client):
         return False
 
 
+def _is_secondary_window(client):
+    """A dialog, splash or transient -- not the window an app IS.
+
+    LibreOffice is the reason this exists. Launching Writer maps the document
+    window first and then, a second later, a "Tip of the Day" dialog
+    (wm_class soffice/Soffice, so it matches DOCUMENT_APP_CLASSES too). The
+    focus hook fired for both, and the second one won -- so you arrived on
+    group 8 looking at a tip box instead of your document. Same shape as any
+    splash or progress window an app puts up while it loads.
+
+    Type and transient_for both, because toolkits are inconsistent about
+    which they set -- a dialog normally carries WM_TRANSIENT_FOR back to its
+    parent, a bare splash usually only sets the type, and either alone would
+    miss half the cases. Checked against the live window list: every ordinary
+    window classifies False and qdrop's dropdown classifies True.
+    """
+    try:
+        if (client.window.get_wm_type() or "normal") != "normal":
+            return True
+    except Exception:
+        pass
+    try:
+        return bool(client.window.get_wm_transient_for())
+    except Exception:
+        return False
+
+
 @hook.subscribe.client_managed
 def _focus_document_app(client):
     """Opening a document app takes you to it.
@@ -1840,7 +1867,7 @@ def _focus_document_app(client):
     new window is what makes a group switch feel like it grabbed the mouse out
     of your hand, and this config disables cursor warping everywhere else too.
     """
-    if not _is_document_app(client):
+    if not _is_document_app(client) or _is_secondary_window(client):
         return
     try:
         group = getattr(client, "group", None)
