@@ -5196,17 +5196,37 @@ keys = [
         lazy.widget["2nd_system_widgetbox"].toggle(),
         desc="Toggle 2nd system widget box",
     ),
-    # --- voice dictation, live (whisper.cpp stream, VAD-triggered per-phrase typing) ---
+    # --- voice dictation ---
+    # Bare F8/F9, moved off Super+Shift+V/B. Dictation is a hold-a-thought
+    # action: the whole value is being able to start it before the sentence
+    # goes, and a three-key chord is long enough to lose it. F8 and F9 stay
+    # adjacent the way V and B were, so the live/batch pair is still one
+    # finger apart.
+    #
+    # F8/F9 and not F6/F7, which is where these first landed. A bare binding
+    # is a GLOBAL grab -- qtile takes the key from every application, for
+    # good -- so the only question that matters is which keys nothing else
+    # wants. Across the row:
+    #
+    #   F1 help   F2 rename   F3 find-next   F5 reload
+    #   F6 address bar        F7 caret browsing (Firefox)
+    #   F10 menu bar   F11 fullscreen   F12 devtools
+    #   F8, F9 -- claimed by essentially nothing
+    #
+    # F6 and F7 were the two genuinely contested keys in the row; F8 and F9
+    # cost nothing to take. Same single keystroke, no conflict traded for it.
+    #
+    # Inside qtile the whole row was free either way: only Super+F12
+    # (passthrough) and Super+Shift+F5 (refresh) are bound anywhere in it.
     Key(
-        [mod, "shift"],
-        "v",
+        [],
+        "F8",
         lazy.spawn("voice_dictate_live"),
         desc="Start/stop live voice dictation (types each phrase as you pause)",
     ),
-    # --- voice dictation, batch (whisper.cpp small.en, one shot at manual stop) ---
     Key(
-        [mod, "shift"],
-        "b",
+        [],
+        "F9",
         lazy.spawn("voice_dictate"),
         desc="Start/stop batch voice dictation (whisper.cpp -> xdotool type)",
     ),
