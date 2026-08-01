@@ -942,6 +942,11 @@ def _restore_layout_state():
 _WINDOW_GROUP_FILE = os.path.expanduser("~/.cache/qtile/window_group_state.json")
 _RESTORED_WIN_MAP = {}   # wid(str) -> group_name; consulted by client_new
 _RESTORED_FOCUS = {}     # group_name -> [wid, ...] focus order
+# True only for the brief window between startup_complete and the end of the
+# restore passes. _override_match_from_saved consults it; see the comment on
+# _finish_window_group_restore() for why honouring the saved map after that
+# point actively teleports NEW windows to the wrong group.
+_RESTORE_ARMED = False
 # wid(str) set that was minimized at save time. qtile's restart pickle does not
 # carry minimized state, so a reload used to un-minimize everything -- most
 # visibly the Mod+Shift+S summary, which client_managed then re-floated centre
@@ -1560,17 +1565,61 @@ def _restore_window_group_state():
         pass
 
 
+def _finish_window_group_restore():
+    """Disarm the saved map, and drop every entry that is not a live window.
+
+    THE SAVED MAP IS A RESTORE MECHANISM, NOT LIVE BOOKKEEPING, and leaving
+    it armed afterwards is a bug with a long fuse. It is loaded off disk
+    holding the PREVIOUS session's wids. The restore passes hand the windows
+    that came back to their groups; every remaining entry belongs to a window
+    that did not come back, and client_killed cannot clear those -- that hook
+    only ever fires for windows alive in THIS session.
+
+    So they sit in the map forever, armed. X11 recycles window ids, so the
+    moment a brand-new window is handed a dead one's number,
+    _override_match_from_saved teleports it -- 50ms after it maps, silently,
+    to a group chosen by a window that no longer exists.
+
+    Reproduced exactly: current group 4, a docs viewer opened and closed to
+    free its wid, that wid armed to group "9", the next viewer handed the
+    same wid -- and it opened on 9. The documentation viewer is the worst
+    affected because it is opened and closed constantly and so churns the
+    same recycled range, but nothing about this is specific to it.
+
+    Pruning alone would not be enough either: _track_window_group keeps
+    refilling the map for live windows (that is what gets saved on exit), and
+    those wids are just as reusable. The map must stop being CONSULTED for
+    new windows once the restore is over, which is what the flag does.
+    """
+    global _RESTORE_ARMED
+    _RESTORE_ARMED = False
+    try:
+        for wid_str in [k for k in _RESTORED_WIN_MAP if int(k) not in qtile.windows_map]:
+            _RESTORED_WIN_MAP.pop(wid_str, None)
+    except Exception:
+        pass
+
+
 @hook.subscribe.startup_complete
 def _init_window_group_state():
+    global _RESTORE_ARMED
     _veil_stage(0.80, "Restoring windows")
     _load_window_group_state()
+    _RESTORE_ARMED = True
     qtile.call_later(_RESTORE_PASS_1, _restore_window_group_state)
     qtile.call_later(_RESTORE_PASS_2, _restore_window_group_state)
+    # Margin over PASS_2 so a window still being adopted as that pass runs is
+    # covered; after this, new windows are genuinely new and belong wherever
+    # you opened them.
+    qtile.call_later(_RESTORE_PASS_2 + 1.0, _finish_window_group_restore)
     qtile.call_later(_VEIL_SIGNAL_DELAY, _veil_signal_done)
 
 
 @hook.subscribe.client_new
 def _override_match_from_saved(client):
+    # Only while the restore is in flight -- see _finish_window_group_restore.
+    if not _RESTORE_ARMED:
+        return
     # Runs before Match assignment completes; schedule after so we win.
     try:
         wid_str = str(client.wid)
