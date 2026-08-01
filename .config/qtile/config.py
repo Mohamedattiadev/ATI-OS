@@ -1770,6 +1770,73 @@ def _float_and_center_file_chooser(client):
         pass
 
 
+# Reading/writing apps -- LibreOffice and the document readers. They are
+# assigned to group 8 (see `groups`) and opening one takes you there.
+#
+# Every value is the REAL WM_CLASS, read off a live window rather than
+# guessed: the libreoffice-* names are what its .desktop files declare as
+# StartupWMClass, and okular/zathura were launched and inspected because they
+# declare none. zathura in particular is "org.pwmt.zathura", not "zathura",
+# which is the sort of thing a plausible guess gets wrong silently -- the app
+# just keeps opening on whatever group you happened to be on.
+#
+# qtile's Match(wm_class=...) tests the instance AND the class, so one entry
+# covers both halves of a WM_CLASS pair.
+DOCUMENT_APP_CLASSES = [
+    "libreoffice-writer",
+    "libreoffice-calc",
+    "libreoffice-impress",
+    "libreoffice-draw",
+    "libreoffice-base",
+    "libreoffice-math",
+    "libreoffice-startcenter",
+    "soffice",  # the instance name every LibreOffice window also carries
+    "okular",
+    "org.pwmt.zathura",
+]
+_DOCUMENT_APP_CLASS_SET = {c.lower() for c in DOCUMENT_APP_CLASSES}
+
+
+def _is_document_app(client):
+    try:
+        return bool(
+            {c.lower() for c in (client.get_wm_class() or ()) if c}
+            & _DOCUMENT_APP_CLASS_SET
+        )
+    except Exception:
+        return False
+
+
+@hook.subscribe.client_managed
+def _focus_document_app(client):
+    """Opening a document app takes you to it.
+
+    The Match entries on group 8 only decide WHERE the window lands; they do
+    not move you. Without this, opening a PDF from a browser or a file manager
+    put okular on another group and left you looking at the window you started
+    from, with no sign anything had happened.
+
+    Both halves of the ask fall out of the same two calls: toscreen() is a
+    no-op when group 8 is already current, so being there already just means
+    the focus() runs -- which is the "focus the app that opened" case.
+
+    warp=False deliberately: the pointer stays where it is. Warping it to the
+    new window is what makes a group switch feel like it grabbed the mouse out
+    of your hand, and this config disables cursor warping everywhere else too.
+    """
+    if not _is_document_app(client):
+        return
+    try:
+        group = getattr(client, "group", None)
+        if group is None:
+            return
+        group.toscreen()
+        group.focus(client, warp=False)
+        client.bring_to_front()
+    except Exception:
+        pass
+
+
 @hook.subscribe.client_managed
 def _keep_qdrop_floating(client):
     """Force qdrop out of the tiling layout.
@@ -5995,7 +6062,15 @@ groups = [
         layout="monadtall",
     ),
     Group("7", label="7", layout="monadtall"),
-    Group("8", label="8", layout="monadtall"),
+    # Documents: LibreOffice + the PDF/ebook readers. _focus_document_app()
+    # takes you here when one opens, so this is not just where they are filed
+    # away -- it is where you end up.
+    Group(
+        "8",
+        label="8",
+        matches=[Match(wm_class=c) for c in DOCUMENT_APP_CLASSES],
+        layout="monadtall",
+    ),
     Group(
         "S",
         layout="max",
