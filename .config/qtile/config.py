@@ -6706,6 +6706,72 @@ wl_input_rules = None
 # ╚───────────────────────────────────────────────────────╝
 
 
+# ╔───────────────────────────────────────────────────────╗
+# │  ORPHANED POPUP SWEEP                                 │
+# ╚───────────────────────────────────────────────────────╝
+# Every popup in popups/ (wallpaper, wifi, bluetooth, audio, updates, the
+# three cheatsheets, the QR) is an Internal window held by ONE module-level
+# handle. Lose that handle while the window is still mapped and the popup is
+# stranded: on screen, referenced by nothing, and unclosable -- its close()
+# takes the "nothing is open" early return forever after.
+#
+# The wallpaper picker's version of this is fixed at source (see the _CLOSING
+# guard in WallpaperPopup.show_wallpaper_picker), but that fix is one module's.
+# Nine modules share the pattern, the handle is dropped on any teardown that
+# raises, and a reload while a popup is open is a whole extra way to lose one.
+# So this is the backstop: whatever the cause, a stranded popup does not
+# survive a config load.
+#
+# Config load is the right moment for it. reload_config re-executes this file
+# with the bar and every keybinding rebuilt, so no popup on screen at that
+# point is one you can still drive -- it is debris by definition.
+
+
+def sweep_orphan_popups():
+    """Kill Internal windows that are not part of a bar. Returns a count.
+
+    FAIL-SAFE: if no bar window can be identified, this does NOTHING rather
+    than guess. Bars are Internal windows too, so an empty "keep" set would
+    mean sweeping the bars off the screen -- the one outcome worse than the
+    orphan it is cleaning up.
+    """
+    try:
+        keep = set()
+        for screen in getattr(qtile, "screens", None) or []:
+            for pos in ("top", "bottom", "left", "right"):
+                win = getattr(getattr(screen, pos, None), "window", None)
+                wid = getattr(win, "wid", None)
+                if wid is not None:
+                    keep.add(wid)
+        if not keep:
+            return 0
+        killed = 0
+        for wid, win in list(getattr(qtile, "windows_map", {}).items()):
+            if wid in keep or type(win).__name__ != "Internal":
+                continue
+            try:
+                win.kill()
+                killed += 1
+            except Exception:
+                pass
+        if killed:
+            # Local import, matching _SafeLengthMixin -- logger is not a
+            # module-level name in this config.
+            from libqtile.log_utils import logger
+
+            logger.warning("swept %s orphaned popup window(s)", killed)
+        return killed
+    except Exception:
+        return 0
+
+
+# At import time, so it covers reload_config -- which fires no startup hook.
+# qtile is None during the very first config load, when there is nothing to
+# sweep anyway.
+if qtile is not None:
+    sweep_orphan_popups()
+
+
 # XXX: Gasp! We're lying here. In fact, nobody really uses or cares about this
 # string besides java UI toolkits; you can see several discussions on the
 # mailing lists, GitHub issues, and other WM documentation that suggest setting

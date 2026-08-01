@@ -493,7 +493,15 @@ def show_wallpaper_picker(qtile):
     # the picker may already be open when the search is invoked.
     _QTILE = qtile
 
-    if _WALLPAPER_LAYOUT:
+    # _CLOSING as well as the handle. close_wallpaper_picker() clears
+    # _WALLPAPER_LAYOUT up front but the window lives on for the length of the
+    # fade (~140ms), so for that stretch the handle says "nothing is open"
+    # while a popup is very much still on screen. Reopening inside that window
+    # built a SECOND popup, and the first one's _teardown then set the handle
+    # back to None -- clobbering the handle to the new one and stranding it:
+    # visible, unreferenced, and unclosable, because every later close() takes
+    # the `not _WALLPAPER_LAYOUT` early return. That is the orphan.
+    if _WALLPAPER_LAYOUT or _CLOSING:
         return
 
     # Refresh from wal cache so popup retints after wallpaper switch
@@ -702,7 +710,12 @@ def close_wallpaper_picker():
             layout.kill()
         except Exception:
             pass
-        _WALLPAPER_LAYOUT = None
+        # Only clear the handle if it still refers to the layout THIS teardown
+        # was started for. Belt-and-braces next to the _CLOSING guard in
+        # show_wallpaper_picker(): an unconditional `= None` here is what turned
+        # a second popup into an unreachable one.
+        if _WALLPAPER_LAYOUT is layout:
+            _WALLPAPER_LAYOUT = None
         _CLOSING = False
 
     # Clear the module handle up front so a keypress during the fade
