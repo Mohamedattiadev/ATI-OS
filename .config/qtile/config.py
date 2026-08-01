@@ -3252,7 +3252,7 @@ def normal_user_bar():
                 ("", "brave", "Brave Browser"),
                 ("", "qutebrowser", "Qutebrowser"),
                 ("", "kitty", "Kitty Terminal"),
-                ("", "pcmanfm", "File Manager"),
+                ("", "pcmanfm-qt", "File Manager"),
                 ("󰨞", "code", "VS Code"),
             ],
             # The first field of each tuple is a NERD FONT GLYPH, not an app
@@ -5173,6 +5173,12 @@ keys = [
         lazy.spawn(HOMEROW + " --caret-search"),
         desc="Homerow: caret search (type to find a word, land the caret there)",
     ),
+    Key(
+        [mod2],
+        "e",
+        lazy.spawn(HOMEROW + " --edit"),
+        desc="Homerow: edit a field in nvim, in place",
+    ),
     # FIX: try to make a speach to text app
     # ---------------------
     # Key([mod], "s", lazy.spawn("bash -c \"notify-send '🎤 STT' 'Speak now…' && ~/.config/qtile/scripts/stt_script.sh\"")),
@@ -5838,6 +5844,12 @@ keys = [
                 lazy.ungrab_chord(),
                 desc="caret search: type to find a word, land the caret there",
             ),
+            Key(
+                [], "e",
+                lazy.spawn(HOMEROW + " --edit"),
+                lazy.ungrab_chord(),
+                desc="edit a field in nvim, in place; :wq puts it back",
+            ),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
             *group_keys(),
             Key([], "q", lazy.ungrab_chord()),
@@ -6084,7 +6096,16 @@ groups = [
     Group(
         "3",
         label="",
-        matches=[Match(wm_class="org.gnome.Nautilus"), Match(wm_class="pcmanfm")],
+        # pcmanfm-qt reports WM_CLASS ("pcmanfm-qt", "pcmanfm-qt"). Match is an
+        # exact test, not a substring one, so the old "pcmanfm" entry does NOT
+        # catch it -- a Qt window would have stayed on whatever group spawned
+        # it. Both are listed: the GTK build is still installed as an LXDE
+        # dependency and can still be launched by hand.
+        matches=[
+            Match(wm_class="org.gnome.Nautilus"),
+            Match(wm_class="pcmanfm-qt"),
+            Match(wm_class="pcmanfm"),
+        ],
         layout="monadtall",
     ),
     Group(

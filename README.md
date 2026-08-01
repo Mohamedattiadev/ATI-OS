@@ -800,7 +800,9 @@ Upstream: https://gitlab.com/theblackdon/dcli
   current theme marked with `●`.
 - **Light mode**: `mono-light` flips the base GTK theme to `Breeze` +
   `Papirus-Light` (dark themes stay on `Sweet-Dark` + `Papirus-Dark`) so
-  pcmanfm/gtk apps render properly light-on-white.
+  gtk apps render properly light-on-white. The file manager
+  (`pcmanfm-qt`) is Qt, so it follows the generated `qt6ct`/`qt5ct`
+  palette instead — same colors, different path.
 - **Instant preemption**: rapid picker clicks kill the in-flight `theme-apply`
   and start the newer one — no silent lock skips.
 - **Concurrency**: `theme-apply` holds `flock` on

@@ -78,7 +78,7 @@ kdeconnectd & # Phone integration
 # (
 # sleep 10
 # kitty & # Terminal
-# pcmanfm & # File manager
+# pcmanfm-qt & # File manager
 # ) &
 
 # ---------------------------------------------------------

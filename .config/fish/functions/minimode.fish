@@ -2,7 +2,7 @@ function minimode
     echo "🟡 Entering Minimode (pausing heavy processes)..."
 
     # apps to manage
-    set apps nvim google-chrome firefox zen-browser brave alacritty pcmanfm org.gnome.nautilus ticktick qutebrowser obsidian
+    set apps nvim google-chrome firefox zen-browser brave alacritty pcmanfm-qt pcmanfm org.gnome.nautilus ticktick qutebrowser obsidian
     set current_ws (xdotool get_desktop)
 
     # collect all PIDs of windows in the current workspace

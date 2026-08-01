@@ -47,7 +47,8 @@ packages:
 #   yay-bin-debug   debug symbols, pulled in by a yay-bin build. Junk.
 #   spirv-headers   nothing requires them (pactree -r is empty); leftovers
 #   vulkan-headers  from a build that has since gone away.
-#   pcmanfm-qt      duplicate -- apps.yaml already declares pcmanfm.
+#   pcmanfm         superseded by pcmanfm-qt, which apps.yaml declares. Still
+#                   installed on the ati host; nothing launches it.
 #   power-profiles-daemon
 #                   conflicts with auto-cpufreq (system-tools.yaml). Both
 #                   are enabled on the ati host right now and both drive

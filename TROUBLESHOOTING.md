@@ -1244,6 +1244,67 @@ subsystem. Each entry: **symptom → root cause → fix**.
   block, not text; adjusting it would drift the theme's accent for no
   gain.
 
+### File manager opens on the wrong group after switching to pcmanfm-qt
+- **Symptom:** swapped the GTK `pcmanfm` for `pcmanfm-qt`; `Mod + M`
+  launches it, but the window stays wherever it spawned instead of
+  landing on group `3` with the rest of the file-manager session, and
+  a second `Mod + M` opens *another* copy instead of focusing the
+  first.
+- **Root cause:** two different matchers, only one of which is
+  substring-based.
+  - `config.py`'s group rule uses qtile's `Match(wm_class=...)`, which
+    is an **exact** string test against each WM_CLASS field.
+    `pcmanfm-qt` reports `("pcmanfm-qt", "pcmanfm-qt")`, so a rule
+    written as `Match(wm_class="pcmanfm")` never fires.
+  - `scripts/toggle_apps.py`'s `_matches_class()` is a case-insensitive
+    **substring** test, so `file_manager_class = "pcmanfm"` *does*
+    still find the Qt window. That asymmetry is why the toggle looked
+    half-broken: the "already open?" lookup worked, but only once the
+    window had been placed on group 3, which the group rule wasn't
+    doing.
+- **Fix:** group `3` now lists `Match(wm_class="pcmanfm-qt")`
+  explicitly (the GTK `pcmanfm` entry is kept alongside it — the
+  package is still installed as an LXDE dependency). `toggle_apps.py`
+  spawns `pcmanfm-qt`; its `file_manager_class` stays the substring
+  `"pcmanfm"` on purpose so either build is recognised.
+- **Verify:** `xprop WM_CLASS` and click the window — must print
+  `"pcmanfm-qt", "pcmanfm-qt"`. Then `Mod + M` twice: second press
+  focuses, does not spawn.
+
+### Folder icons don't retint after a theme change (pcmanfm-qt)
+- **Symptom:** `theme-apply <preset>` recolors everything else, but the
+  open file-manager window keeps the old folder color. Window colors
+  *do* update.
+- **Root cause:** `qt6ct` installs a config watcher that live-swaps a
+  running Qt app's `QPalette`, which is why the window chrome retints —
+  but it does not touch `QIcon::themeName()`. The icon theme is
+  resolved once at process start and cached for the process lifetime.
+  Same underlying limitation the GTK build had, different toolkit.
+- **Fix:** `theme-apply`'s `_restart_fm()` helper kills and relaunches
+  the file manager after `papirus-folders` swaps the color symlink. It
+  is called twice, once per build, because the two disagree on flags
+  and window class: `pcmanfm-qt -d` / WM_CLASS `pcmanfm-qt`, versus
+  `pcmanfm --daemon-mode` / WM_CLASS `Pcmanfm`. Passing GTK's
+  `--daemon-mode` to the Qt binary makes it exit with an unknown-option
+  error and the daemon never comes back.
+- **Known cost:** relaunched windows reopen at `$HOME`, not their
+  previous cwd. Deliberate — X gives no portable way to read a file
+  manager's current directory back out.
+
+### pcmanfm-qt ignores the GTK theme entirely
+- **Symptom:** every GTK app follows `Sweet-Dark` / `Breeze` as
+  documented, the file manager doesn't.
+- **Root cause:** not a bug. `pcmanfm-qt` is Qt, so the GTK overlay
+  `theme-apply` writes (`gtk.css` `@define-color`, `settings.ini`) is
+  irrelevant to it. It reads the 21-entry positional `QPalette` that
+  the same script generates into `~/.config/qt6ct/` and
+  `~/.config/qt5ct/`, picked up because `.xinitrc` exports
+  `QT_QPA_PLATFORMTHEME=qt6ct`.
+- **If it renders unstyled anyway:** check that export first —
+  `echo $QT_QPA_PLATFORMTHEME` from a shell **inside the X session**,
+  not a fresh TTY. Empty means the app fell back to Qt's built-in
+  Fusion palette and no amount of re-running `theme-apply` will help.
+
 ---
 
 ## Network & Bluetooth

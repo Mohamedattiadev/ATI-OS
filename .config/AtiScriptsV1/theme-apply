@@ -1018,21 +1018,31 @@ print(int(colorsys.rgb_to_hsv(r,g,b)[0]*360))
   disown
 fi
 
-# pcmanfm caches icons per-process — GTK provides no hot-reload API.
-# Kill every pcmanfm (windows + daemon) and relaunch each visible
-# window at $HOME. Preserves the "file manager is open" state at the
-# cost of losing per-window cwd. Daemon restarts for desktop icons.
-if pgrep -x pcmanfm >/dev/null 2>&1; then
-  had_windows=0
-  xdotool search --class "Pcmanfm" >/dev/null 2>&1 && had_windows=1
-  pkill -x pcmanfm 2>/dev/null || true
+# The file manager caches its icon theme per-process, and neither GTK nor
+# Qt exposes a hot-reload API for it — qt6ct live-swaps the *palette* of a
+# running app but not QIcon::themeName. So: kill every file-manager process
+# (windows + daemon) and relaunch each visible window at $HOME. Preserves
+# the "file manager is open" state at the cost of losing per-window cwd.
+# Daemon restarts for desktop icons.
+#
+# pcmanfm-qt is the declared file manager (arch-config/modules/apps.yaml);
+# the GTK pcmanfm is still installed as an LXDE dep, so handle both. Note
+# the flags differ: `-d` vs `--daemon-mode`, and the WM_CLASS xdotool wants
+# is "pcmanfm-qt" (lowercase, both fields) vs GTK's "Pcmanfm".
+_restart_fm() {  # $1=binary  $2=WM_CLASS for xdotool  $3=daemon flag
+  pgrep -x "$1" >/dev/null 2>&1 || return 0
+  local had_windows=0
+  xdotool search --class "$2" >/dev/null 2>&1 && had_windows=1
+  pkill -x "$1" 2>/dev/null || true
   ( sleep 0.3
-    DISPLAY="${DISPLAY:-:0}" pcmanfm --daemon-mode >/dev/null 2>&1 &
+    DISPLAY="${DISPLAY:-:0}" "$1" "$3" >/dev/null 2>&1 &
     if [[ "$had_windows" == 1 ]]; then
-      DISPLAY="${DISPLAY:-:0}" pcmanfm "$HOME" >/dev/null 2>&1 &
+      DISPLAY="${DISPLAY:-:0}" "$1" "$HOME" >/dev/null 2>&1 &
     fi ) &
   disown
-fi
+}
+_restart_fm pcmanfm-qt "pcmanfm-qt" -d
+_restart_fm pcmanfm    "Pcmanfm"    --daemon-mode
 
 # Try LIVE palette swap first (no restart). Walks bar widgets +
 # decorations, remaps slot-matched hexes, redraws. Config.py exposes

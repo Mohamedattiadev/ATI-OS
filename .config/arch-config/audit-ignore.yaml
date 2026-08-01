@@ -28,7 +28,11 @@ packages:
                      # is installed, it is intentional.
 
   # --- duplicates of something already declared ---
-  - pcmanfm-qt       # apps.yaml declares pcmanfm
+  - pcmanfm          # superseded by pcmanfm-qt (apps.yaml). The GTK build is
+                     # still installed on the ati host and still pulled in as a
+                     # dependency by parts of the LXDE stack; nothing in the
+                     # config launches it any more. Harmless to leave, not
+                     # worth reproducing on a fresh machine.
 
   # --- conflicts with a declared package; must NOT be reproduced ---
   - power-profiles-daemon

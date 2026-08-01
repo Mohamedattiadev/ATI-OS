@@ -8,6 +8,8 @@ obsidian_class = "obsidian"
 anki_group = "S"
 qute_group = "2"
 anki_class = "Anki"
+# Substring-matched by _matches_class(), so this also catches the plain
+# GTK "pcmanfm" if one is somehow open -- but the spawn below is the Qt one.
 file_manager_class = "pcmanfm"
 qute_class = "qutebrowser"
 brave_group = "5"
@@ -185,7 +187,7 @@ def toggle_file_manager(qtile):
 
     # Not open → spawn it
     qtile.groups_map[file_manager_group].toscreen()
-    qtile.spawn("pcmanfm")
+    qtile.spawn("pcmanfm-qt")
 
 
 @lazy.function
