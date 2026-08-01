@@ -1938,6 +1938,47 @@ def _drop_window_group(client):
 # doing it from underneath.
 
 
+def _rescale_then_restart(q):
+    """Re-derive the UI scale for the new display set, then restart.
+
+    UI_SCALE is read once, at config import, from ~/.cache/qtile/ui_scale --
+    and nothing wrote that file except a manual `ui-scale` run or the rofi
+    picker. So docking a 1366x768 laptop to a 4K monitor restarted qtile
+    (below) and rebuilt every bar at the LAPTOP's scale: a sliver of a bar
+    with unreadable text on the display you just plugged in, until you
+    remembered the command. Undocking had the mirror-image problem.
+
+    A pinned scale is safe: ui-scale reads ~/.cache/qtile/ui_scale.pinned
+    first and a pin always wins, so "the formula disagrees with my eyes"
+    still survives a hotplug.
+
+    Synchronous on purpose, despite being in the event loop. The file has
+    to be on disk BEFORE the config re-imports, and this callback's whole
+    remaining job is os.execv() -- there is nothing left to be responsive
+    for. The timeout is the guard: a wedged xrandr or xrdb costs a few
+    seconds of stale bar, never the restart itself, which happens either
+    way.
+    """
+    try:
+        import shutil
+
+        exe = shutil.which("ui-scale") or os.path.expanduser(
+            "~/.dotfiles/.config/AtiScriptsV1/ui-scale"
+        )
+        if os.path.exists(exe):
+            subprocess.run(
+                [exe],
+                timeout=8,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+    except Exception:
+        # Never let a scale probe cost the restart -- a bar at the old
+        # scale beats a second screen with no bar at all.
+        pass
+    _smooth_restart(q)
+
+
 @hook.subscribe.screens_reconfigured
 def apply_bar_on_reconfigure():
     apply_bar_mode()
@@ -1957,7 +1998,7 @@ def apply_bar_on_reconfigure():
             # and replacing the process image from in there re-enters the
             # event loop mid-teardown. A 1s tick also coalesces the burst
             # of events a single hotplug emits into one restart.
-            qtile.call_later(1, lambda: _smooth_restart(qtile))
+            qtile.call_later(1, lambda: _rescale_then_restart(qtile))
     except Exception:
         # Never let a failed monitor probe take the hook (and with it
         # apply_bar_mode) down -- a missing bar mode is worse than a
@@ -4857,6 +4898,115 @@ def _guard_injected_length():
 _guard_injected_length()
 
 
+def _requeue_bar_draw(w, delay=0.2):
+    """Ask the bar to draw again shortly, once `w` is configured.
+
+    The companion to skipping a draw: without this the widget would stay
+    blank until something else happened to repaint the bar. Guarded by a
+    per-widget flag so a bar full of not-yet-ready widgets queues one
+    retry, not one per widget per frame.
+
+    Everything is getattr()-ed because the whole point is that this runs on
+    a widget that has NOT been _configure()d -- `self.bar` and `self.qtile`
+    are among the attributes that do not exist yet.
+    """
+    b = getattr(w, "bar", None)
+    q = getattr(w, "qtile", None) or qtile
+    if b is None or q is None or getattr(w, "_draw_requeued", False):
+        return
+    w._draw_requeued = True
+
+    def _again():
+        w._draw_requeued = False
+        try:
+            if getattr(w, "layout", None) is not None and getattr(w, "configured", False):
+                b.draw()
+        except Exception:
+            pass
+
+    try:
+        q.call_later(delay, _again)
+    except Exception:
+        w._draw_requeued = False
+
+
+def _guard_groupbox_draw():
+    """Stop an unconfigured GroupBox from throwing out of the bar draw.
+
+    Same defect as _SafeLengthMixin, one method further along. A bar can be
+    asked to draw while its widgets are still configured=False, and every
+    one of the ~20 occurrences in qtile.log looks identical: a burst of
+
+        widget <X> could not compute length (configured=False)
+
+    for the whole bottom-bar widget list -- TextBox, CurrentLayout,
+    GroupBox, the SmartWidgetBoxes, Battery, KeyboardLayout, Clock -- and
+    then, one millisecond later,
+
+        bar.py:_actual_draw  Widget failed to draw
+        groupbox.py:72 in drawbox -> self.layout.text = ...
+        AttributeError: 'NoneType' object has no attribute 'text'
+
+    _TextBox.__init__ sets self.layout = None and only _GroupBase._configure()
+    builds the real one, so every other widget in that list degrades to
+    length 0 (thanks to the length guard) while the GroupBox is the one
+    that actually raises. _Widget.finalize() puts it back to None too, so a
+    screen being reconfigured -- plugging or unplugging the second monitor
+    -- reaches the same state from the other direction.
+
+    Bar._actual_draw() catches the exception, so this was never fatal: the
+    cost is the workspace icons missing from that frame and a traceback in
+    the log. Skipping the draw and queueing a retry is the same bargain the
+    length guard already makes -- degrade, log nothing, repaint when ready.
+
+    drawbox() is patched on _GroupBase, which both GroupBox and AGroupBox
+    inherit without overriding, and draw() on the concrete classes.
+    qtile_extras' GroupBox is not a separate class -- it re-exports
+    libqtile's with decorations injected (checked: __module__ is
+    libqtile.widget.groupbox) -- so both bars' widgets are covered, as are
+    the _derive()d chip subclasses, which inherit draw() rather than
+    defining their own.
+    """
+    from libqtile.widget import groupbox as _gb
+
+    # Reloading the config re-imports this module; without the flag each
+    # reload would wrap the previous wrapper.
+    if getattr(_gb._GroupBase, "_draw_guarded", False):
+        return
+
+    def _ready(w):
+        return getattr(w, "layout", None) is not None and getattr(w, "configured", False)
+
+    _orig_drawbox = _gb._GroupBase.drawbox
+
+    def drawbox(self, *args, **kwargs):
+        if getattr(self, "layout", None) is None:
+            _requeue_bar_draw(self)
+            return
+        return _orig_drawbox(self, *args, **kwargs)
+
+    _gb._GroupBase.drawbox = drawbox
+
+    def _guarded_draw(orig):
+        def draw(self):
+            if not _ready(self):
+                _requeue_bar_draw(self)
+                return
+            return orig(self)
+
+        return draw
+
+    for _cls in (_gb.GroupBox, _gb.AGroupBox):
+        _own = _cls.__dict__.get("draw")
+        if _own is not None:
+            _cls.draw = _guarded_draw(_own)
+
+    _gb._GroupBase._draw_guarded = True
+
+
+_guard_groupbox_draw()
+
+
 def _centre_textbox_vertically():
     """Undo libqtile's hardcoded one-pixel downward nudge on widget text.
 
@@ -6500,6 +6650,17 @@ def _center_top_groupbox():
         b = getattr(screen, "top", None)
         widgets = getattr(b, "widgets", None) if b else None
         if not widgets:
+            continue
+        # Only touch a bar that is actually live. This runs from nine hooks,
+        # several of which (setgroup, focus_change, client_managed) fire
+        # during the screen churn a monitor hotplug causes -- and in that
+        # window Bar.finalize() has killed the bar's window and finalized
+        # its widgets while screen.top still points at it. Measuring a
+        # half-torn-down bar gives nonsense lengths, and the b.draw() below
+        # would be a draw on finalized widgets.
+        if not getattr(b, "_configured", False) or getattr(b, "window", None) is None:
+            continue
+        if any(not getattr(w, "configured", False) for w in widgets):
             continue
         gb_i = next(
             (i for i, w in enumerate(widgets) if isinstance(w, ewidget.GroupBox)), None

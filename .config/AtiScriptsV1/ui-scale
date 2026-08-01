@@ -68,9 +68,30 @@ die() { echo "ui-scale: $*" >&2; exit 1; }
 # multi-monitor setup gets the primary's scale: qtile has one config, and
 # guessing per-monitor scales it cannot apply would be worse than picking
 # the display the user called primary.
+# "connected" is not the same as "switched on". An output that is plugged
+# in but has no mode assigned prints no WxH+X+Y at all:
+#
+#     HDMI-1 connected (normal left inverted right x axis y axis) 0mm x 0mm
+#
+# That is the normal state for the first seconds after a hotplug, for a
+# lid-closed laptop panel while docked, and for any output nothing has
+# configured yet. The old test matched such a line, compute() then found no
+# resolution, and the whole thing silently fell back to 1.00 -- in exactly
+# the case where the scale matters most, because the display actually being
+# looked at is the 4K one further down the list.
+#
+# So both passes require a real geometry now. The pattern is deliberately
+# loose about what precedes it: a primary line reads
+# "connected primary 3840x2160+0+0", a secondary "connected 3840x2160+1366+0".
+HAS_MODE='[0-9]+x[0-9]+\+[0-9]+\+[0-9]+'
+
 read_geometry() {
   local line
-  line="$(xrandr --current 2>/dev/null | grep " connected primary" | head -1)"
+  line="$(xrandr --current 2>/dev/null | grep -E " connected primary .*$HAS_MODE" | head -1)"
+  [[ -n "$line" ]] || line="$(xrandr --current 2>/dev/null | grep -E " connected .*$HAS_MODE" | head -1)"
+  # Last resort: nothing has a mode (X mid-reconfiguration). Fall back to
+  # the old behaviour so this still reports something; compute() turns a
+  # modeless line into 1.00 either way.
   [[ -n "$line" ]] || line="$(xrandr --current 2>/dev/null | grep " connected" | head -1)"
   [[ -n "$line" ]] || return 1
   printf '%s\n' "$line"
