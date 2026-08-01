@@ -2460,6 +2460,23 @@ def auto_enable_cheatsheet(chord_name):
     show_qtile_cheatsheet(qtile)
 
 
+def _find_chord(name, mappings=None):
+    """Find a KeyChord by name, at ANY depth.
+
+    Not every chord is top-level: WallpaperPicker is nested under Rofi-Mode
+    (mod+p, then b), so the flat scan over `keys` that this function replaces
+    would walk straight past it and report the chord as missing.
+    """
+    for k in (keys if mappings is None else mappings):
+        if isinstance(k, KeyChord):
+            if getattr(k, "name", "") == name:
+                return k
+            found = _find_chord(name, k.submappings)
+            if found is not None:
+                return found
+    return None
+
+
 def open_cheatsheet(which="qtile"):
     """Open a cheatsheet from outside qtile (rofi_docs calls this over IPC).
 
@@ -2479,11 +2496,7 @@ def open_cheatsheet(which="qtile"):
     """
     global _SUPPRESS_CHEATSHEET_AUTOSHOW
 
-    chord = None
-    for k in keys:
-        if isinstance(k, KeyChord) and getattr(k, "name", "") == "CheatSheet-Mode":
-            chord = k
-            break
+    chord = _find_chord("CheatSheet-Mode")
     if chord is None:
         return "no CheatSheet-Mode chord in config"
 
@@ -2629,20 +2642,44 @@ def toggle_wallpaper_picker(qtile):
     if w and w.box_is_open:
         close_wallpaper_mode(qtile)
     else:
-        SmartWidgetBox.close_all()
-        # Flip the icon here, synchronously with the click, rather than
-        # waiting on auto_enable_wallpaper_picker's enter_chord hook below.
-        # simulate_keypress() feeds fake events back through the X server,
-        # so that hook only fires once qtile's event loop gets them back --
-        # a real (if usually short) round trip, during which the icon sat
-        # on "closed" and only flipped once that landed. auto_enable_
-        # wallpaper_picker's own `not w.box_is_open` guard makes toggling
-        # again once the chord actually opens a no-op, so this can't double
-        # -toggle.
-        if w and not w.box_is_open:
-            w.toggle()
-        qtile.simulate_keypress([mod], "p")
-        qtile.simulate_keypress([], "b")
+        # THIS CHIP WAS OPENING THE BLUETOOTH POPUP. It entered the chord by
+        # replaying mod+p then "b" as fake keypresses, and under Rofi-Mode
+        # "b" is Bluetooth-Mode -- the wallpaper picker is "w". Whichever way
+        # round it once was, a hardcoded key replay cannot survive the keymap
+        # being rearranged, and it silently opened the wrong popup instead of
+        # failing.
+        #
+        # open_wallpaper_picker() grabs the chord OBJECT, found by name, so
+        # there is no key to get wrong and no round trip through the X server
+        # to race. That also retires the reason the icon was flipped early
+        # here: grab_chord() fires enter_chord synchronously, so
+        # auto_enable_wallpaper_picker() flips the chip before this returns.
+        open_wallpaper_picker()
+
+
+def open_wallpaper_picker():
+    """Open the wallpaper picker from outside qtile (rofi_docs calls this
+    over IPC), the same way open_cheatsheet() opens a sheet.
+
+    NOT toggle_wallpaper_picker(): that enters the chord with
+    simulate_keypress([mod], "p") then "b", which feeds fake events back
+    through the X server. The caller here is a rofi menu that is holding a
+    keyboard grab as it exits, which is the exact race open_cheatsheet()
+    documents xdotool losing. grab_chord() installs the keymap directly, with
+    no round trip and nothing to race.
+
+    Entering the chord is also what makes the picker usable rather than just
+    visible: /, hjkl, r and Enter are the chord's own keys, and
+    auto_enable_wallpaper_picker() fires off enter_chord to build the popup
+    and flip the bar chip. Calling show_wallpaper_picker() alone would put a
+    picker on screen that no key could drive.
+    """
+    chord = _find_chord("WallpaperPicker")
+    if chord is None:
+        return "no WallpaperPicker chord in config"
+    SmartWidgetBox.close_all()
+    qtile.grab_chord(chord)
+    return "ok"
 
 
 # ----------------------------------------------------------------

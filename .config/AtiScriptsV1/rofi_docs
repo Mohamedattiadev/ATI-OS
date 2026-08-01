@@ -2,8 +2,10 @@
 # rofi_docs — the system documentation menu, behind the bar's logo chip.
 #
 # Left-clicking the logo used to open a terminal, which four other bindings
-# already do. A desktop with 79 keybindings, 22 themes and 126 troubleshooting
-# entries has a discovery problem instead.
+# already do. A desktop with eighty-odd keybindings, 22 themes and well over a
+# hundred troubleshooting entries has a discovery problem instead. (No exact
+# counts in this header on purpose: every one of them is computed at the point
+# it is displayed, and the two that were spelled out here had both drifted.)
 #
 # Everything is GENERATED from the live system, never hand-listed, so no
 # section can drift out of date:
@@ -12,8 +14,9 @@
 #   Troubleshoot  the headings of TROUBLESHOOTING.md, with their first line
 #                 of context, jumping to the right entry
 #   Docs          every document opens on a searchable index of its own
-#                 headings, and is then RENDERED read-only in a pager --
-#                 only the qtile config opens writable
+#                 headings, and is then RENDERED read-only in nvim, where
+#                 v/V still select and y still copies -- only the qtile
+#                 config and the espanso snippets open writable
 #   Maintenance   probed live from pacman and the journal, and the one
 #                 section that ACTS: merge, prune, remove, upgrade
 #
@@ -31,12 +34,10 @@ QTILE_CFG="$HOME/.config/qtile/config.py"
 VIEW_CLASS="docs-view"
 ESPANSO_DIR="$HOME/.config/espanso"
 
-# theme-apply writes this from the active 9-slot palette. Without it glow
-# renders in its own built-in colors, which is why a themed desktop still
-# showed dracula pink and blue inside every document it opened. "auto" is
-# the honest fallback on a machine where theme-apply has not run yet.
-GLOW_STYLE="$HOME/.cache/qtile/glow.json"
-[[ -f "$GLOW_STYLE" ]] || GLOW_STYLE="auto"
+# Every document this menu opens is viewed in nvim. See the viewers section
+# below for why; theming comes free with it, since nvim already follows
+# ~/.cache/qtile/theme_mode the same way glow followed glow.json.
+VIEWER=nvim
 
 # rofi_hint() -- one hint-line format across every rofi menu here, instead
 # of each script inventing its own. readlink -f because this is reached
@@ -114,123 +115,71 @@ LAUNCHED=0
 # in, and BOTH `glow -p` and `bat --paging=always` exec less rather than
 # paging themselves, so every text view in this menu died that way.
 #
-# So: never launch a terminal for a binary that is not there. Check first,
-# say so in rofi, and fall back to nvim -- which is the one viewer this
-# repo can actually guarantee, since editing the config is the whole point.
+# So: never launch a terminal for a binary that is not there. That is now
+# one binary, nvim, which this repo can actually guarantee -- editing the
+# config is the whole point of it.
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# A pager that exists. less if installed (best defaults for this), else
-# nvim in read-only mode, which pages fine and is never absent here.
 term_view() {  # term_view <shell-command>
   setsid kitty --class "$VIEW_CLASS" --title "docs" -e sh -c "$1" >/dev/null 2>&1 &
   LAUNCHED=1
 }
 
-# Markdown is RENDERED and read-only. Opening README.md in a writable nvim
-# was wrong twice over: it showed raw markup instead of the document, and
-# it invited edits to a file that is the repo's own documentation. It also
-# tripped fidget.nvim, which writes into the buffer and raised
-# "Buffer is not 'modifiable'" on every notification.
+# EVERY document opens in nvim, read-only, rendered by render-markdown.nvim.
 #
-# less is what makes it read-only, and it is a STRONGER guarantee than the
-# `nvim -R` this used to use for troubleshooting: -R is a read-only mode you
-# can override from inside the editor, while less has no write path at all.
-# `/` searches, `n`/`N` step the matches, `q` quits.
+# This was glow piped into `less -R`, and the argument for it was that less
+# has no write path at all while `nvim -R` is a mode you can override with
+# :w!. That is true and it is the wrong trade, because less also has no
+# SELECTION: `v` in less does not start a visual selection, it launches
+# $EDITOR on the file. So the one thing you actually want to do with a
+# troubleshooting entry -- select the command in it and paste it into a
+# shell -- was the one thing the viewer could not do.
 #
-# The optional <source-line> is the hard part. glow reflows and restyles, so
-# a line number from the SOURCE file means nothing in the rendered output,
-# and the heading text cannot simply be searched for afterwards either:
-# backticks become code spans, quotes get restyled, and -w 100 wraps the long
-# ones. Measured over TROUBLESHOOTING.md, only 91 of its 126 headings were
-# still findable as literal text in the output.
+# nvim gives all four of the things asked of a doc viewer at once:
 #
-# So the position is carried THROUGH the renderer instead of reconstructed
-# after it: a sentinel is injected into the one heading being jumped to, the
-# file is rendered, the sentinel is found in the output, and then deleted.
-# Deleting it rewrites that line without changing the line COUNT, so the
-# number stays valid. That is 126 of 126.
+#   read-only   -R, plus q mapped to :q so it still behaves like a pager
+#   copy        v / V then y. options.lua sets clipboard=unnamedplus, so
+#               that lands in the SYSTEM clipboard with no "+ prefix
+#   rendered    render-markdown.nvim, on .md
+#   themed      nvim already follows ~/.cache/qtile/theme_mode, which is
+#               the same file theme-apply wrote glow.json from
 #
-# The sentinel is a ZERO-WIDTH space, written as an escape because a literal
-# invisible character in a source file is a trap for whoever edits it next.
-# Zero-width is what makes the trick free: a visible marker occupies columns,
-# and glow wraps to -w 100, so on the two longest headings in
-# TROUBLESHOOTING.md it pushed a line to wrap one word early and the reader
-# got a subtly different document depending on how they had arrived at it.
-# With this the rendered bytes are identical to an unmarked render.
-JUMP_MARK=$'\u200b'
+# And it deletes the entire reason glow was hard: glow reflowed and
+# restyled, so a line number from the SOURCE file meant nothing in the
+# rendered output, and jumping to a heading needed a zero-width sentinel
+# injected before rendering and deleted after. nvim renders the source
+# buffer in place, so a source line number IS the line you land on. That
+# machinery is gone; do not reintroduce it.
+#
+# `q` is mapped buffer-locally rather than globally: these are throwaway
+# viewer instances, but the mapping still costs you macro recording inside
+# them, so it is scoped to the one buffer being read.
+NVIM_VIEW_OPTS=(-R "+nnoremap <buffer> q <cmd>q!<cr>")
 
-view_md_at() {  # view_md_at <file> [source-line]
-  local f="$1" line="${2:-0}"
-  [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
-
-  # `glow -p` IS less -- without it glow dumps the whole document and exits,
-  # which is a flash, not a viewer. With neither, nvim shows raw markup
-  # instead of rendered prose, but it scrolls, searches and stays open.
-  if ! have glow || ! have less; then
-    view_at_line "$f" "$(( line > 0 ? line : 1 ))"
-    return
-  fi
-
-  local src ansi n
-  src="$(mktemp --suffix=.md)"
-  ansi="$(mktemp --suffix=.ansi)"
-  if (( line > 0 )); then
-    awk -v L="$line" -v M="$JUMP_MARK" '
-      NR == L && /^#+ +/ { sub(/^#+ +/, "&" M) } { print }' "$f" > "$src"
-  else
-    cp -- "$f" "$src"
-  fi
-
-  # </dev/null is load-bearing. Rendering happens HERE rather than inside the
-  # terminal, and this script is spawned by the bar with no controlling
-  # terminal, so glow finds a stdin that is neither a tty nor closed and
-  # blocks on it forever instead of rendering the file it was handed -- no
-  # output, no error, 0% CPU. Everywhere else in this script glow runs inside
-  # kitty, where it has a tty and the question never comes up.
-  glow -s "$GLOW_STYLE" -w 100 "$src" </dev/null >"$ansi" 2>/dev/null
-  rm -f "$src"
-
-  # Renderer failed or produced nothing: fall back rather than open an empty
-  # pager, which looks exactly like a document with no content in it.
-  if [[ ! -s "$ansi" ]]; then
-    rm -f "$ansi"
-    view_at_line "$f" "$(( line > 0 ? line : 1 ))"
-    return
-  fi
-
-  n=1
-  if (( line > 0 )); then
-    n="$(grep -n -m1 -F -- "$JUMP_MARK" "$ansi" | cut -d: -f1)"
-    [[ "$n" =~ ^[0-9]+$ ]] || n=1
-    # Scoped to the one line, so a stray sentinel anywhere else in the
-    # document cannot be eaten as collateral. Nothing else has to be matched
-    # around it -- the sentinel is injected with no padding of its own, so
-    # deleting the character is the whole job. An earlier visible marker had
-    # to be written as "<mark> " with a trailing space, and that space is NOT
-    # where you expect at every heading level: glow emits "<mark> text" for
-    # `###` but "<mark>\e[0m\e[;1m text" for `##`, so the naive pattern
-    # matched the h3 headings and silently left the marker on screen at h2.
-    sed -i "${n}s/${JUMP_MARK}//" "$ansi"
-  fi
-  # -Ps names the DOCUMENT in the status line. Without it less shows the path
-  # it was actually handed, which is the rendered temp file -- so every
-  # document announced itself as "/home/ati/tmp/tmp.XDORgdJVDq.ansi". The
-  # apostrophe strip keeps a filename from closing the quoting around it.
-  local label="${f##*/}"
-  label="${label//\'/}"
-  term_view "less -R +${n} -Ps'${label}  ·  / search  ·  q quit' '$ansi'; rm -f '$ansi'"
-}
-
-# Read-only nvim at a line, for jumping into a specific troubleshooting
-# entry. `-R` (readonly MODE), not `+set nomodifiable`: nomodifiable blocks
-# plugins that legitimately write to their own buffers, which is what
-# produced the fidget.nvim traceback. -R only stops YOU writing the file.
-view_at_line() {
+view_at_line() {  # view_at_line <file> [line]
   local f="$1" line="${2:-1}"
   [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
+  (( line > 0 )) || line=1
   setsid kitty --class "$VIEW_CLASS" --title "docs" \
-    -e nvim -R "+${line}" "+normal zz" "$f" >/dev/null 2>&1 &
+    -e "$VIEWER" "${NVIM_VIEW_OPTS[@]}" "+${line}" "+normal zz" "$f" \
+    >/dev/null 2>&1 &
   LAUNCHED=1
+}
+
+# The markdown entry point. Now just view_at_line -- kept as its own name
+# because every caller reads better for saying what it is opening, and
+# because the two were genuinely different functions until the renderer
+# stopped needing to be worked around.
+view_md_at() {  # view_md_at <file> [source-line]
+  view_at_line "$1" "${2:-1}"
+}
+
+# Same viewer, on a temp file that has to be cleaned up afterwards. The rm
+# runs INSIDE the terminal, after nvim exits, because nothing out here knows
+# when the window is closed.
+view_tmp() {  # view_tmp <tmpfile>
+  local q="${1//\'/\'\\\'\'}"
+  term_view "$VIEWER $(printf '%q ' "${NVIM_VIEW_OPTS[@]}")'$q'; rm -f '$q'"
 }
 
 # The one writable target. Editing your own config is the point.
@@ -241,25 +190,12 @@ view_edit() {
   LAUNCHED=1
 }
 
-view_text() {
-  local title="$1" body="$2" tmp
-  tmp="$(mktemp --suffix=.txt)"
-  printf '%s\n' "$body" > "$tmp"
-  if have less; then
-    term_view "less -R '$tmp'; rm -f '$tmp'"
-  else
-    # -R would make the buffer read-only anyway; +set nomodified stops the
-    # "no write since last change" prompt on :q for a throwaway file.
-    term_view "nvim -R '+set nomodified' '$tmp'; rm -f '$tmp'"
-  fi
-}
-
 # A generated PAGE, not a dump. About/services/gpu/audit used to arrive as
 # raw command output in a bare pager -- correct information, presented as a
 # wall of monospace with no title, no grouping and no relationship to the
 # themed documents sitting one menu entry away. They are markdown now and
-# go through the same themed glow renderer, so a generated panel and a
-# committed README look like the same product.
+# go through the same viewer as the committed documents, so a generated
+# panel and a README look like the same product.
 #
 # The body is markdown. Command output belongs in a fenced block inside it,
 # which is what panel_block below is for.
@@ -267,12 +203,7 @@ view_panel() {
   local title="$1" body="$2" tmp
   tmp="$(mktemp --suffix=.md)"
   { printf '# %s\n\n' "$title"; printf '%s\n' "$body"; } > "$tmp"
-  if have glow && have less; then
-    term_view "glow -s '$GLOW_STYLE' -p -w 100 '$tmp'; rm -f '$tmp'"
-  else
-    view_text "$title" "$body"
-    rm -f "$tmp"
-  fi
+  view_tmp "$tmp"
 }
 
 # Wrap command output as a fenced block. Alignment matters in `systemctl`
@@ -328,6 +259,24 @@ open_cheatsheet() {
     LAUNCHED=1
   else
     rofi -e "could not open the $1 cheatsheet:\n$out"
+  fi
+}
+
+# The wallpaper picker lives inside qtile too (popups/WallpaperPopup.py), and
+# is reached the same way the cheatsheets are.
+#
+# This entry used to run `dm-setbg`, the OLD rofi-list picker, which is a
+# different program from the one the rest of the desktop uses -- the bar chip
+# and the mod+p,b chord both open the popup. So the one place that advertises
+# itself as the wallpaper entry point was the one place that did not open the
+# actual wallpaper picker.
+open_wallpaper() {
+  local out
+  out="$(qtile_eval "__import__('sys').modules['config'].open_wallpaper_picker()")"
+  if [[ "$out" == '"ok"' ]]; then
+    LAUNCHED=1
+  else
+    rofi -e "could not open the wallpaper picker:\n$out"
   fi
 }
 
@@ -443,10 +392,14 @@ doc_index() {  # doc_index <file> <prompt>
 # ── documentation ────────────────────────────────────────────────────
 sec_docs() {
   while :; do
-    local c
+    local c n_fix
+    # Counted here, not written here. This row said "126 fixes" and the file
+    # had grown to 139 -- the one hand-typed number in a script whose whole
+    # claim is that nothing is hand-listed, and it had already drifted by 13.
+    n_fix="$(grep -cE '^#{2,3} ' "$DOTFILES/TROUBLESHOOTING.md" 2>/dev/null || echo 0)"
     c="$(printf '%s\n' \
       "󰈙  README            what this desktop is" \
-      "󰋗  Troubleshooting   126 fixes, by symptom" \
+      "󰋗  Troubleshooting   ${n_fix} fixes, by symptom" \
       "󰏗  Packages          how packages are declared" \
       "󰃤  Boot entries      the rescue kernel" \
       "󰅱  qtile config      the source — writable" \
@@ -780,7 +733,7 @@ sec_appearance() {
     case "$c" in
       *Theme*)      run_tool theme-toggle;    return ;;
       *"UI scale"*) run_tool ui-scale-toggle; return ;;
-      *Wallpaper*)  run_tool dm-setbg;        return ;;
+      *Wallpaper*)  open_wallpaper;           return ;;
       *"Boot splash"*)
         view_panel "Boot splash" "$(
           printf 'What plymouth is configured to show while this machine boots.\n\n'
@@ -838,8 +791,16 @@ sec_espanso() {
       "󰑓  Restart espanso   apply changes" \
       | pick "Espanso" "$(rofi_hint "↵ open" "Esc back" "values from /etc/environment")")"
     (( RC != 0 )) && return
+    # These patterns MUST be text that appears in the rows printed just above.
+    # Both of the first two arms were stale -- the rows had been renamed to
+    # "Variables" and "Edit environment" to fit the 52-column budget, and the
+    # arms still read "Personal variables" and "Edit /etc/environment". Neither
+    # matched, so both fell through to the `*)` catch-all and the menu simply
+    # closed: the two entries that carry this whole section did nothing at all,
+    # with no error to say why. That is the failure mode a catch-all `*) return`
+    # always has, so keep the labels and the patterns edited together.
     case "$c" in
-      *"Personal variables"*)
+      *Variables*)
         local body v
         # Every `body+="$(...)"` here loses the command substitution's
         # trailing newlines, so each chunk ends with an explicit $'\n'.
@@ -857,7 +818,7 @@ sec_espanso() {
         body+=$'```\nespanso restart\n```\n'
         view_panel "Espanso variables" "$body"
         return ;;
-      *"Edit /etc/environment"*)
+      *"Edit environment"*)
         # Scaffold the missing keys first, commented out, so the file
         # documents what espanso is looking for instead of being an empty
         # page you have to guess at.
@@ -879,7 +840,12 @@ sec_espanso() {
             echo "# --- espanso snippet variables (added by rofi_docs) ---"
             echo "# Fill in the value after '=' and remove the leading '#'."
             echo "# Snippets that use an unset variable expand to nothing."
-            sed 's/^/#/; s/$/=/' <<<"$missing"
+            # /^$/d first. $missing is accumulated as "NAME"$'\n' per entry, so
+            # it ends with a trailing newline, and <<< adds one more -- the
+            # empty final line then came out as a bare `#=`, which is in
+            # /etc/environment twice over from earlier runs. Same guard the
+            # Variables panel already uses on this variable.
+            sed '/^$/d; s/^/#/; s/$/=/' <<<"$missing"
           } > "$sf"
           scaffold="sudo tee -a '$envfile' < '$sf' >/dev/null; rm -f '$sf';"
         fi
@@ -1044,6 +1010,11 @@ case "${1:-}" in
   system)      sec_system ;;
   maintenance) sec_maintenance ;;
   about)       about_text ;;
-  --help|-h)   sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' ;;
+  # The header block, minus the shebang and minus the internal "NOTE:" that
+  # is addressed to whoever edits this file rather than to whoever runs it.
+  # Bounded by content, not by a line number: this was `sed -n '2,23p'`, and
+  # editing three lines into the header silently truncated --help mid-sentence.
+  --help|-h)   awk 'NR>1 && /^#/ && !/^# NOTE:/ { sub(/^# ?/, ""); print; next }
+                    NR>1 { exit }' "$0" ;;
   *) echo "rofi_docs: unknown section '$1'" >&2; exit 2 ;;
 esac
