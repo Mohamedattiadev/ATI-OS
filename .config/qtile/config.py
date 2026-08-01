@@ -122,18 +122,8 @@ from popups.WallpaperPopup import (
 )
 
 from popups import BluetoothPopup
-
-
-# NOTE : Audio popup will be used later
-# from popups.AudioPopup import (
-#     show as show_audio_popup,
-#     close as close_audio_popup,
-#     move as audio_move,
-#     left as audio_left,
-#     right as audio_right,
-#     select as audio_select,
-#     refresh as audio_refresh,
-# )
+from popups import AudioPopup
+from popups import DisplayPopup
 
 
 from popups import WifiPopup
@@ -609,6 +599,9 @@ CHORD_CHIP_COLORS = {
     "Wifi-Mode": colors[6],
     "Wifi-QR": colors[6],
     "Bluetooth-Mode": colors[6],
+    # Purple, so audio reads as its own mode beside the blue radios.
+    "Audio-Mode": colors[7],
+    "Display-Mode": colors[6],
 }
 
 # ╔──────────────────────────────────────────╗
@@ -2875,9 +2868,14 @@ def cleanup_on_leave():
         # without it would keep the radio scanning indefinitely.
         BluetoothPopup.close(qtile)
 
-    # NOTE : Audio popup will be used later
-    # elif ACTIVE_CHORD == "Audio-Mode":
-    #     close_audio_popup(qtile)
+    elif ACTIVE_CHORD == "Audio-Mode":
+        AudioPopup.close(qtile)
+
+    elif ACTIVE_CHORD == "Display-Mode":
+        # close() also reverts a change still inside its confirmation
+        # countdown -- leaving the chord must never strand a layout that
+        # nobody has confirmed is visible.
+        DisplayPopup.close(qtile)
 
     elif ACTIVE_CHORD == "Wifi-Mode":
         WifiPopup.close(qtile)
@@ -3063,13 +3061,16 @@ def auto_enable_bluetooth_popup(chord_name):
 # ------------------------------------------------------------------------------
 # 15 - Function to lanuch the Audio popup when it's mode activated
 # ------------------------------------------------------------------------------
+@hook.subscribe.enter_chord
+def auto_enable_audio_popup(chord_name):
+    if chord_name == "Audio-Mode":
+        AudioPopup.show(qtile)
 
 
-# NOTE : Audio popup will be used later
-# @hook.subscribe.enter_chord
-# def auto_enable_audio_popup(chord_name):
-#     if chord_name == "Audio-Mode":
-#         show_audio_popup(qtile)
+@hook.subscribe.enter_chord
+def auto_enable_display_popup(chord_name):
+    if chord_name == "Display-Mode":
+        DisplayPopup.show(qtile)
 
 # -----------------------------------------------------------
 # 16 - Function to launch WiFi popup when mode is activated
@@ -3371,6 +3372,11 @@ def normal_user_bar():
             padding=11,
             foreground=colors[7],
             background=None,
+            # The five popup-backed modes show only their name here: each
+            # of those popups draws its own hint bar listing the same keys,
+            # and the chip repeating them just made the bar 200px wider for
+            # nothing. The modes below that have no popup keep their letters
+            # -- for those, this chip is the only place the keys are shown.
             name_transform=lambda name: {
                 "Resize-Mode": "󰩨   RESIZE : H, J, N",
                 "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
@@ -3380,13 +3386,13 @@ def normal_user_bar():
                 "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , j/k scroll , TAB , ESC ",
-                "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
+                "WallpaperPicker": "󰸉   WALLPAPERS",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC",
                 "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
-                "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , ENTER , d , x , t , c , r , / ",
-                # NOTE: Audio popup will be used later
-                # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , s , c , r , / ",
+                "Bluetooth-Mode": "󰂯   BLUETOOTH",
+                "Audio-Mode": "󰕾   AUDIO",
+                "Display-Mode": "󰍹   DISPLAY",
+                "Wifi-Mode": "󰤨   WIFI",
                 "Wifi-QR": "   WIFI QR : ESC to close ",
             }.get(name, name.upper()),
         ),
@@ -3674,13 +3680,13 @@ def right_side_widgets():
                 "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
                 "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , j/k scroll , TAB , ESC ",
-                "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
+                "WallpaperPicker": "󰸉   WALLPAPERS",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC",
                 "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
-                "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , ENTER , d , x , t , c , r , / ",
-                # NOTE: Audio popup will be used later
-                # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                "Wifi-Mode": "󰤨   WIFI : j , k , ENTER , d , x , n , t , s , c , r , / ",
+                "Bluetooth-Mode": "󰂯   BLUETOOTH",
+                "Audio-Mode": "󰕾   AUDIO",
+                "Display-Mode": "󰍹   DISPLAY",
+                "Wifi-Mode": "󰤨   WIFI",
                 "Wifi-QR": "   WIFI QR : ESC to close ",
                 # NOTE: updates popup  will be used later
                 # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
@@ -5742,6 +5748,171 @@ keys = [
                 name="Bluetooth-Mode",
                 desc="Bluetooth device picker",
             ),
+            # --- a Special mode for "Audio" ---
+            # --- AUDIO MODE ---
+            # v for volume: a is taken (rofi_anki), and g/j/u/v were the only
+            # free letters left in this chord. Everything happens in the
+            # popup -- output, mic, per-app volume and card profiles -- so
+            # pavucontrol is not involved.
+            KeyChord(
+                [],
+                "v",
+                [
+                    # NAVIGATE
+                    Key([], "j", lazy.function(lambda _: AudioPopup.move(1))),
+                    Key([], "k", lazy.function(lambda _: AudioPopup.move(-1))),
+                    Key([], "g", lazy.function(lambda _: AudioPopup.jump("top"))),
+                    Key(
+                        ["shift"],
+                        "g",
+                        lazy.function(lambda _: AudioPopup.jump("bottom")),
+                    ),
+                    # VIEWS. Tab cycles; the direct letters are for jumping
+                    # straight to one.
+                    Key([], "Tab", lazy.function(lambda _: AudioPopup.cycle_view(1))),
+                    Key(
+                        ["shift"],
+                        "Tab",
+                        lazy.function(lambda _: AudioPopup.cycle_view(-1)),
+                    ),
+                    Key([], "o", lazy.function(lambda _: AudioPopup.set_view("outputs"))),
+                    Key([], "i", lazy.function(lambda _: AudioPopup.set_view("inputs"))),
+                    Key([], "a", lazy.function(lambda _: AudioPopup.set_view("playback"))),
+                    Key(
+                        [],
+                        "s",
+                        lazy.function(lambda _: AudioPopup.set_view("recording")),
+                    ),
+                    Key([], "p", lazy.function(lambda _: AudioPopup.show_profiles())),
+                    # Every card at once -- pavucontrol's Configuration tab.
+                    Key(["shift"], "c", lazy.function(lambda _: AudioPopup.show_cards())),
+                    # Enter on a stream opens the device picker; d is the
+                    # shortcut for "just put it on the default".
+                    Key([], "d", lazy.function(lambda _: AudioPopup.send_to_default())),
+                    # Shift+p for the jack/port dropdown -- the thing that
+                    # picks Headphones over Speakers on one card.
+                    Key(["shift"], "p", lazy.function(lambda _: AudioPopup.show_ports())),
+                    # Balance, stereo devices only. 0 re-centres.
+                    Key(
+                        [],
+                        "b",
+                        lazy.function(
+                            lambda _: AudioPopup.change_balance(-AudioPopup.BALANCE_STEP)
+                        ),
+                    ),
+                    Key(
+                        ["shift"],
+                        "b",
+                        lazy.function(
+                            lambda _: AudioPopup.change_balance(AudioPopup.BALANCE_STEP)
+                        ),
+                    ),
+                    Key([], "0", lazy.function(lambda _: AudioPopup.change_balance(0))),
+                    # ACTIONS. Enter on an output also drags the running
+                    # streams over -- setting the default alone only affects
+                    # what starts playing afterwards.
+                    Key([], "Return", lazy.function(lambda _: AudioPopup.activate())),
+                    Key(
+                        [],
+                        "l",
+                        lazy.function(
+                            lambda _: AudioPopup.change_volume(AudioPopup.VOLUME_STEP)
+                        ),
+                    ),
+                    Key(
+                        [],
+                        "h",
+                        lazy.function(
+                            lambda _: AudioPopup.change_volume(-AudioPopup.VOLUME_STEP)
+                        ),
+                    ),
+                    Key([], "m", lazy.function(lambda _: AudioPopup.toggle_mute())),
+                    Key([], "r", lazy.function(lambda _: AudioPopup.refresh(True))),
+                    # Abort a card-profile switch: a bluez renegotiation can
+                    # sit there for seconds.
+                    Key([], "c", lazy.function(lambda _: AudioPopup.cancel())),
+                    # EXIT. No Escape binding: KeyChord appends its own after
+                    # these and later grabs win, so Escape closes via
+                    # cleanup_on_leave. Same as the WiFi and Bluetooth chords.
+                    Key(
+                        [],
+                        "q",
+                        lazy.function(lambda qtile: AudioPopup.close(qtile)),
+                        lazy.ungrab_chord(),
+                    ),
+                ],
+                mode=True,
+                name="Audio-Mode",
+                desc="Audio output / input / per-app volume picker",
+            ),
+            # --- a Special mode for "Displays" ---
+            # --- DISPLAY MODE ---
+            # g for graphics. No autorandr on this system, so this is the
+            # only keyboard path to a second monitor.
+            KeyChord(
+                [],
+                "g",
+                [
+                    # NAVIGATE. In arrange mode j/k/h/l move the picked
+                    # monitor instead of the cursor -- see DisplayPopup.nav
+                    # and .place, which branch on the active view.
+                    Key([], "j", lazy.function(lambda _: DisplayPopup.nav(1))),
+                    Key([], "k", lazy.function(lambda _: DisplayPopup.nav(-1))),
+                    Key([], "Tab", lazy.function(lambda _: DisplayPopup.pick_next(1))),
+                    Key([], "a", lazy.function(lambda _: DisplayPopup.start_arrange())),
+                    Key([], "g", lazy.function(lambda _: DisplayPopup.jump("top"))),
+                    Key(
+                        ["shift"],
+                        "g",
+                        lazy.function(lambda _: DisplayPopup.jump("bottom")),
+                    ),
+                    # Enter opens the resolution / refresh list for the
+                    # selected output, and applies the mode from inside it.
+                    Key([], "Return", lazy.function(lambda _: DisplayPopup.activate())),
+                    Key([], "BackSpace", lazy.function(lambda _: DisplayPopup.back())),
+                    # ONE-KEY LAYOUTS -- the 95% cases.
+                    Key([], "i", lazy.function(lambda _: DisplayPopup.preset("internal"))),
+                    Key([], "e", lazy.function(lambda _: DisplayPopup.preset("external"))),
+                    Key([], "m", lazy.function(lambda _: DisplayPopup.preset("mirror"))),
+                    # Placement. u/d rather than j/k: those are the cursor.
+                    Key([], "h", lazy.function(lambda _: DisplayPopup.place("left"))),
+                    Key([], "l", lazy.function(lambda _: DisplayPopup.place("right"))),
+                    Key([], "u", lazy.function(lambda _: DisplayPopup.preset("above"))),
+                    Key([], "d", lazy.function(lambda _: DisplayPopup.preset("below"))),
+                    # PER-OUTPUT
+                    Key([], "p", lazy.function(lambda _: DisplayPopup.set_primary())),
+                    Key([], "t", lazy.function(lambda _: DisplayPopup.rotate())),
+                    Key([], "f", lazy.function(lambda _: DisplayPopup.reflect())),
+                    Key([], "o", lazy.function(lambda _: DisplayPopup.toggle_output())),
+                    Key([], "r", lazy.function(lambda _: DisplayPopup.refresh(True))),
+                    # SAVED LAYOUTS -- what autorandr would do, except this
+                    # machine does not have autorandr.
+                    Key([], "v", lazy.function(lambda _: DisplayPopup.show_layouts())),
+                    Key([], "s", lazy.function(lambda _: DisplayPopup.save_current())),
+                    Key([], "x", lazy.function(lambda _: DisplayPopup.delete_layout())),
+                    # A change that could blank the screen stays provisional
+                    # until `y`; `c` reverts it now, and doing nothing reverts
+                    # it when the countdown runs out.
+                    Key([], "y", lazy.function(lambda _: DisplayPopup.keep())),
+                    # Cross-axis alignment while arranging: tops / centres /
+                    # bottoms. The one thing arandr could do that this could
+                    # not.
+                    Key([], "equal", lazy.function(lambda _: DisplayPopup.cycle_align())),
+                    Key([], "c", lazy.function(lambda _: DisplayPopup.cancel())),
+                    # EXIT. No Escape binding, same reason as above -- and
+                    # cleanup_on_leave reverts any pending change on the way
+                    # out.
+                    Key(
+                        [],
+                        "q",
+                        lazy.function(lambda qtile: DisplayPopup.close(qtile)),
+                        lazy.ungrab_chord(),
+                    ),
+                ],
+                mode=True,
+                name="Display-Mode",
+                desc="Display / xrandr layout picker",
+            ),
             # --- a Special mode for "WiFi" ---
             # --- WiFi MODE ---
             # n for network. (Was w, which now opens the wallpaper picker.)
@@ -6107,22 +6278,6 @@ keys = [
         swallow=False,
         name="PASSTHROUGH",
     ),
-    # NOTE : Audio popup will be used later
-    # KeyChord(
-    #     [mod],
-    #     "o",
-    #     [
-    #         Key([], "j", lazy.function(lambda _: audio_move(1))),
-    #         Key([], "k", lazy.function(lambda _: audio_move(-1))),
-    #         Key([], "h", lazy.function(lambda _: audio_left())),
-    #         Key([], "l", lazy.function(lambda _: audio_right())),
-    #         Key([], "Return", lazy.function(lambda _: audio_select())),
-    #         Key([], "r", lazy.function(lambda _: audio_refresh())),
-    #         Key([], "Escape", lazy.function(lambda qtile: close_audio_popup(qtile))),
-    #     ],
-    #     mode=True,
-    #     name="Audio-Mode",
-    # ),
     # NOTE: updates popup  will be used later
     # KeyChord(
     #     [mod],
