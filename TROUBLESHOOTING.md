@@ -1305,6 +1305,68 @@ subsystem. Each entry: **symptom → root cause → fix**.
   not a fresh TTY. Empty means the app fell back to Qt's built-in
   Fusion palette and no amount of re-running `theme-apply` will help.
 
+### Extract Here / Open Terminal Here / Open as Root do nothing at all
+- **Symptom:** right-click a `.tar.gz` in `pcmanfm-qt`, pick **Extract
+  Here** or **Extract To** — no dialog, no error, no extracted folder,
+  nothing in the notification area. The same silence hits *Open Terminal
+  Here* and *Open as Root*.
+- **Root cause:** four `[System]` keys in `settings.conf` each name a
+  program by hand, and every one named something this repo has never
+  installed. libfm-qt fires the configured command without checking that
+  it exists, so a missing binary is indistinguishable from a menu entry
+  that was never wired up.
+
+  | key | upstream default | what is actually here |
+  |---|---|---|
+  | `Archiver` | `file-roller` | `ark` (declared in `apps.yaml`) |
+  | `Terminal` | `xterm` | `kitty` |
+  | `SuCommand` | `lxqt-sudo %s` | neither `lxqt-sudo` nor `kdesu` |
+  | `FallbackIconThemeName` | `oxygen` | `breeze` (Papirus is primary) |
+
+  The archive itself is almost never at fault — `tar tzf file.tar.gz`
+  lists it cleanly.
+- **Fix:** `.config/pcmanfm-qt/default/settings.conf` is tracked here
+  with all four pointed at installed programs. The archiver must be one
+  of the ids in `/usr/share/libfm-qt6/archivers.list`; an arbitrary
+  binary is ignored. `ark` is listed there with `extract`, `extract_to`
+  and a mime list covering `.tar.gz`.
+- **Edit it with the app closed.** pcmanfm-qt rewrites `settings.conf`
+  from memory on exit, so a hand edit made while a window is open gets
+  reverted when that window closes. `killall pcmanfm-qt` first, or use
+  Edit → Preferences → Advanced.
+- **Verify:** `grep -E '^(Archiver|Terminal|SuCommand)'
+  ~/.config/pcmanfm-qt/default/settings.conf`, then right-click →
+  Extract Here and watch for ark's progress dialog.
+
+### Mounting a partition from the Places pane is refused, with no password prompt
+- **Symptom:** click an internal drive in the sidebar and nothing
+  mounts. No authentication dialog, no error. USB sticks may still work
+  — `udisks2` allows those unprivileged for the active session.
+- **Root cause:** `polkitd` runs as a system service but cannot ask the
+  user anything on its own; that is an *authentication agent*'s job, and
+  a bare qtile session starts none. Desktop environments ship one, a
+  WM-only setup has to launch it.
+- **Fix:** `lxqt-policykit` (in `apps.yaml`), started from
+  `autostart.sh`'s light-background-apps block as
+  `lxqt-policykit-agent &`.
+- **Verify:** `pgrep -af 'lxqt-policykit-agent$'` prints a pid, after
+  which the same click raises a password dialog.
+
+### Opening a folder from another app launches a terminal
+- **Symptom:** "open containing folder" from a browser download, or
+  `xdg-open ~/Downloads`, spawns kitty at that path instead of the file
+  manager.
+- **Root cause:** `kitty-open.desktop` registers `inode/directory`, and
+  with no user `mimeapps.list` entry to outrank it that becomes the
+  system default. Nobody chose it; it is what wins when the question is
+  never answered.
+- **Fix:** `.config/mimeapps.list` is tracked here and pins
+  `inode/directory=pcmanfm-qt.desktop`, plus the archive mimetypes to
+  `org.kde.ark.desktop` so double-clicking an archive opens it.
+- **If you prefer the terminal:**
+  `xdg-mime default kitty-open.desktop inode/directory`.
+- **Verify:** `xdg-mime query default inode/directory`.
+
 ---
 
 ## Network & Bluetooth

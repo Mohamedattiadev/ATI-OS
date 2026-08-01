@@ -103,3 +103,9 @@ brave-profiles
 
 # copyq's lock/geometry state, rewritten while it runs.
 .config/copyq/copyq_geometry.ini.lock
+
+# pcmanfm-qt's recent-files list -- personal paths from one machine, and
+# settings.conf sets RecentFilesNumber=0 anyway. settings.conf itself IS
+# tracked; note pcmanfm-qt rewrites LastWindow{Width,Height} into it on
+# exit, so an occasional one-line diff there is the file manager, not you.
+.config/pcmanfm-qt/default/recent-files.conf

@@ -64,6 +64,11 @@ PICOM_GPU_FLAGS=""
 # No sleeps needed.
 
 kdeconnectd & # Phone integration
+# polkitd runs as a system service but has no way to ask the user anything on
+# its own -- that is an authentication agent's job, and a bare qtile session
+# ships none. Without this, mounting an internal partition from pcmanfm-qt's
+# Places pane is refused with no password prompt and no error.
+lxqt-policykit-agent &
 # pamac-tray-icon-plasma was the update notifier here. It is a Manjaro
 # package, has never been installed on this Arch box, and was failing
 # silently into the background on every login. The update notifier is

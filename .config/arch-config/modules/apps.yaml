@@ -13,6 +13,15 @@ packages:
   - zathura-pdf-poppler
   - okular
   - pcmanfm-qt
+  # pcmanfm-qt's config names ark as its Archiver: with no archiver from
+  # libfm-qt's archivers.list installed, "Extract Here" is a menu entry that
+  # silently does nothing. ark is declared below for its own sake too.
+  - ffmpegthumbnailer   # video thumbnails in the file manager (XDG thumbnailer)
+  - lxqt-policykit      # polkit auth agent -- without one, mounting an
+                        # internal partition from the Places pane fails with
+                        # no dialog and no error
+  - gvfs-smb            # network shares in the file manager
+  - gvfs-gphoto2        # cameras / MTP-less phones
   - dolphin
   - kate
   - copyq
