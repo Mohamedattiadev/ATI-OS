@@ -4225,16 +4225,37 @@ class SmartWidgetBox(ewidget.WidgetBox):
         tag. But it also means a box label can never carry markup, and the
         systray chip needs a <span rise> to sit on the centre line.
 
-        Both call sites are inside methods this class already overrides, so
-        the escaped value is simply replaced afterwards. Only for boxes that
-        asked for it: every other one keeps upstream's escaping.
+        Only for boxes that asked for it: every other one keeps upstream's
+        escaping.
         """
         if not getattr(self, "raw_markup", False):
             return
         self.text = self.text_open if self.box_is_open else self.text_closed
 
+    def set_box_label(self):
+        """Every label write goes through here, so the un-escaping does too.
+
+        This used to be re-applied only after the two calls this class
+        overrides (_configure and toggle), on the reading that those were the
+        only two places upstream sets the label. They are not: close_all()
+        deliberately calls `super(SmartWidgetBox, wb).toggle()` to close a
+        sibling WITHOUT recursing back into our toggle, and upstream's toggle
+        calls set_box_label() -- so the systray chip was re-escaped every time
+        a different box was opened, and the bar then drew the literal string
+        `<span font_family="Adwaita Mono" ...>` where the triangle belongs.
+        Clicking the chip fixed it, which is why it looked intermittent.
+
+        Overriding the one method that writes the label closes that hole for
+        every path into it, including upstream's open()/close() and anything
+        added later, instead of leaving each new caller to remember.
+        """
+        super().set_box_label()
+        self._apply_raw_markup()
+
     def _configure(self, qtile, bar):
         super()._configure(qtile, bar)
+        # Not covered by the set_box_label() override: WidgetBox._configure
+        # assigns self.text directly rather than going through it.
         self._apply_raw_markup()
         # Register on _configure, not __init__: only boxes that actually
         # belong to a live bar should ever be reachable from here.
@@ -4259,8 +4280,9 @@ class SmartWidgetBox(ewidget.WidgetBox):
         was_open = getattr(self, "box_is_open", False)
         if not was_open:
             SmartWidgetBox.close_all(except_self=self)
+        # No _apply_raw_markup() here: upstream's toggle() calls
+        # set_box_label(), which this class overrides to do it.
         res = super().toggle(*a, **k)
-        self._apply_raw_markup()
         # Opening a box changes how much room the right-hand side needs, and
         # the centring pass is subscribed to CLIENT hooks only -- nothing
         # about a window changed here, so none of them fire. Without this the
