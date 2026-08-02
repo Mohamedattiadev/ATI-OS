@@ -240,6 +240,29 @@ Outstanding:
    semantics, never seen on a laptop that names them that way.
 4. **A HiDPI panel** — see §1.3.
 
+### Nothing validates boot entries against the real root device
+
+Found on the author's own machine while preparing the first reboot after
+this pass: `/boot/loader/entries/arch.conf` — hand-written, not repo-managed
+— carried `root=PARTUUID=…d325af267740`, one character off the real root
+(`…d326af267740`, `/dev/sda2`), and omitted the rest of the cmdline.
+
+It had been inert for months only because systemd-boot auto-discovers the
+UKI as a Type #2 entry and boots *that* by default. But `arch.conf` still
+listed a second, almost identically titled "Arch Linux" in the menu, and
+systemd-boot passes a Type #1 entry's `options` in place of the UKI's baked
+cmdline — so choosing it handed the kernel a root device that does not
+exist. Precisely the entry someone would pick while trying to escape a bad
+boot. Corrected in place, with a backup, and a comment in the file saying
+why.
+
+`boot-splash check` runs sixteen checks and `boot-fallback` writes two
+entries, and neither compares any `root=` against
+`blkid -o value -s PARTUUID $(findmnt -no SOURCE /)`. That check is three
+lines, it is read-only, and it catches a class of failure whose only
+symptom is an unbootable machine. It belongs in `boot-splash check` and in
+`validate.sh`.
+
 ### `validate.sh`'s font list is hand-maintained
 
 It is now exhaustive (8 families) and the regenerating query is recorded next
