@@ -65,6 +65,17 @@ packages:
   - ueberzugpp
   - zed
   - kdeconnect
+  # Android screen on this desktop, with mouse + keyboard control back to
+  # the phone. kdeconnect above shares notifications and files but never
+  # the screen -- different problem, different tool. Pulls android-tools
+  # (adb) as a hard dependency, so that is not declared separately.
+  - scrcpy
+  # Without these udev rules the phone enumerates as a root-owned USB
+  # device and `adb devices` prints "no permissions" with the device
+  # listed but unusable -- the failure looks like a broken cable. The
+  # rules hand the node to the `adbusers` group; the wizard's `scrcpy`
+  # module is what puts you in it.
+  - android-udev
   - anki
   - google-chrome
   - chromium        # qtile pins it to group 6 alongside chrome; also the

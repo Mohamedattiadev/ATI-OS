@@ -3162,6 +3162,71 @@ def close_widgetboxes_on_chord(chord_name):
                 pass
 
 
+def _clamp_phone_mirror(*_args):
+    """Drag the scrcpy window back on screen after the phone rotates.
+
+    scrcpy sizes its window to the device's real framebuffer, so turning
+    the phone sideways -- opening a video fullscreen, say -- makes it
+    swap width and height on its own. phone_screen parks it flush against
+    the right edge in portrait (~307x684 here), and the rotated window is
+    then ~684 wide from the same left edge: most of it hangs off the
+    screen, controls included, with no way to reach them.
+
+    Only floating windows can be repositioned like this, and only scrcpy
+    is touched: clamping every float would fight anyone deliberately
+    dragging a window half off-screen.
+
+    Stays a no-op whenever the window already fits, so it can never fight
+    a window that is already where it should be.
+    """
+    # Every window, not qtile.current_window: the rotation happens in the
+    # phone's hand, so the mirror is usually NOT the focused window when
+    # it resizes itself. Keying off focus meant the clamp simply never
+    # ran at the one moment it was needed.
+    scr = qtile.current_screen
+    margin = 8
+
+    for group in qtile.groups:
+        for win in list(group.windows):
+            if not getattr(win, "floating", False):
+                continue
+            classes = win.get_wm_class() or []
+            if not any("scrcpy" in c.lower() for c in classes):
+                continue
+
+            bw = win.borderwidth * 2
+            w, h = win.width, win.height
+
+            # MOVE ONLY -- never resize. scrcpy locks its window to the
+            # device aspect ratio and re-applies that lock immediately
+            # after any external resize, so setting a size here starts a
+            # fight it wins: clamping a 684-wide landscape window once
+            # produced a 136-wide sliver, because scrcpy kept the height
+            # and pulled the width back to the portrait ratio.
+            #
+            # dx/dy/dwidth/dheight are what is left once the bar is
+            # subtracted -- clamping to width/height tucks it under the bar.
+            x = min(max(win.x, scr.dx + margin), scr.dx + scr.dwidth - w - bw - margin)
+            y = min(max(win.y, scr.dy + margin), scr.dy + scr.dheight - h - bw - margin)
+
+            if (x, y) == (win.x, win.y):
+                continue
+            win.set_position_floating(x, y)
+
+
+# client_managed ONLY. float_change was subscribed here too, on the
+# assumption it covered later rotations -- it does not. Probed directly:
+# a floating window resized and moved from outside qtile fired the hook
+# zero times. float_change tracks floating STATE, not geometry, so an app
+# resizing its own window is invisible to it.
+#
+# That leaves this hook covering exactly one case: the phone is already
+# sideways when the mirror opens. Rotation DURING a session is handled by
+# the bounds watcher in phone_screen, which is the only thing that can
+# see it.
+hook.subscribe.client_managed(_clamp_phone_mirror)
+
+
 @hook.subscribe.leave_chord
 def restore_widgetboxes_on_chord_leave():
     global _SAVED_WIDGETBOX_NAMES
@@ -5588,6 +5653,23 @@ keys = [
         lazy.function(lambda qtile: toggle_or_spawn_sum(qtile, myTerm, sum_file)),
         desc="Open or focus sum.md globally",
     ),
+    # --- Android phone screen (scrcpy over Wi-Fi) ---
+    Key(
+        [mod, "shift"],
+        "F6",
+        # Next to Super+Shift+F5 (Refresh PC) on purpose: both are
+        # whole-machine actions rather than window management, and this
+        # keeps that pair adjacent. The F6/F7 contention noted above
+        # applies to the BARE keys; under Super+Shift the row is free.
+        #
+        # phone_screen does the discovery adb cannot: Arch's android-tools
+        # is built without mDNS, so it never finds a wirelessly-debugging
+        # phone by itself and the address+port have to be copied off the
+        # phone by hand every session. The script reads the same mDNS
+        # announcement through avahi-browse and hands adb a host:port.
+        lazy.spawn("phone_screen"),
+        desc="Mirror the Android phone (scrcpy, USB or Wi-Fi)",
+    ),
     # ---screenshot: select an area, straight to the clipboard---
     Key(
         [],
@@ -5610,7 +5692,12 @@ keys = [
         desc="clock popup (today & week: plans-todos)",
     ),
     # ---close notifications---
-    Key([mod2], "n", lazy.spawn("dunstctl close")),
+    Key(
+        [mod2],
+        "n",
+        lazy.spawn("dunstctl close"),
+        desc="Dismiss the top notification",
+    ),
     # ---copyq clipboard popup---
     Key([mod2], "v", lazy.spawn(os.path.expanduser("~/.config/AtiScriptsV1/copyq_rofi")), desc="CopyQ clipboard rofi picker (ctrl+j/k nav, thumbnails)"),
     # ---gptscript-inline---
@@ -7309,6 +7396,16 @@ floating_layout = layout.Floating(
         Match(title="tastytrade"),  # tastytrade pop-out side gutter
         Match(title="tastytrade - Portfolio Report"),  # tastytrade pop-out allocation
         Match(wm_class="tasty.javafx.launcher.LauncherFxApp"),  # tastytrade settings
+        # scrcpy renders the phone's real framebuffer, so a tiled window
+        # letterboxes a ~9:20 portrait panel into a landscape tile and
+        # wastes most of it. Floating keeps the phone's aspect ratio,
+        # which is the whole point of looking at it.
+        Match(wm_class="scrcpy"),
+        # phone_screen's pairing QR. It asks feh for a small centred
+        # geometry, and a tiled window discards that request and stretches
+        # a 260px code across a whole tile. The Match(title="feh") below
+        # does not cover it: this window sets its own title.
+        Match(title="Phone pairing QR"),
         Match(title="imv"),  # Match the imv window
         Match(title="feh"),  # Match feh
         Match(wm_class="mpv"),  # mpv

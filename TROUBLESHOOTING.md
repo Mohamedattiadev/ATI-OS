@@ -3203,3 +3203,137 @@ reports real progress.
   the Xephyr sandbox; recipe in `qtile-veil-HANDOFF.md`. Note the sandbox
   understates real timings by ~2.5x — good for behaviour, useless for
   numbers.
+
+---
+
+## Android screen mirroring (`Super+Shift+F6`)
+
+### "No phone found" but Wireless debugging is on
+
+Check the phone is actually announcing:
+
+```sh
+avahi-browse -rpt _adb-tls-connect._tcp
+```
+
+A resolved line starts with `=` and ends in `address;port`. If nothing
+comes back:
+
+- **`avahi-daemon` is not running.** `sudo systemctl enable --now
+  avahi-daemon` — nothing else on this desktop needs it, so it is easy to
+  end up disabled.
+- **ufw is eating the replies.** mDNS answers arrive as fresh inbound
+  multicast UDP, not as a reply to a tracked flow, so a default-deny
+  firewall drops them silently — no error, no log line.
+  `sudo ufw allow 5353/udp`.
+- **Different networks.** The phone on mobile data, or on a guest SSID
+  with client isolation, cannot be seen at all.
+
+Both fixes are what `./wizard.sh --yes --only=scrcpy` does.
+
+### The QR opens but scanning does nothing
+
+The phone must be on **Wireless debugging → Pair device with QR code**,
+not the plain camera app. A generic scanner reads the payload as a
+meaningless `WIFI:` string and offers to join a network.
+
+If the camera will not focus, type the 6 digits instead — the same window
+takes them. Pairing codes are always 6 digits on every Android 11+
+device; that is AOSP, not a vendor choice.
+
+### It pairs, then says "Paired, but not connected"
+
+The pairing dialog is still open on the phone. The pairing port dies with
+that dialog and the connect port is a *different* one that is only
+announced once pairing is finished. Close it and press the key again.
+
+### The mirror is laggy
+
+Almost always the Wi-Fi link, not the machine. Measure it:
+
+```sh
+ping -c 8 <phone-ip>
+```
+
+Anything over ~20ms average, or with double-digit jitter, is felt
+immediately: it is already a frame or two of delay before a single pixel
+is encoded. **Plug in a USB cable** — `phone_screen` prefers it
+automatically and raises the quality ceiling when it gets one.
+
+scrcpy decodes in *software*; there is no hardware-decode option in
+scrcpy 4.1, so a busy CPU shows up as dropped frames. If the picture
+stutters rather than trailing your finger, `--video-buffer=50` trades
+50ms of delay for absorbing jitter.
+
+Two cheap wins before blaming the link. **Check you have only one mirror
+running** — `pgrep -cx scrcpy` should say `1`; two decoders and two audio
+streams against one phone is indistinguishable from a slow network.
+And **audio costs latency**: `--no-audio` drops a whole second stream
+that the video otherwise waits on.
+
+### `adb devices` shows the phone with `no permissions`
+
+You are not in the `adbusers` group that android-udev's rules assign the
+USB node to. `./wizard.sh --yes --only=scrcpy` adds you — then **log out
+and back in**, because group membership is fixed at login and the running
+shell keeps the old set no matter what `/etc/group` now says.
+
+### It worked yesterday, today it does nothing
+
+The wireless port changes on every phone reboot. That is handled — the
+script re-reads it from mDNS each run. What is *not* automatic is a stale
+`offline` entry left behind by the old port; `phone_screen` prunes those
+on every run, but by hand it is `adb disconnect`.
+
+A stale entry matters because scrcpy aborts outright when `adb devices`
+lists more than one device — which is also why plugging in a cable to a
+phone already paired over Wi-Fi used to break it.
+
+### The window goes off screen when the phone rotates
+
+scrcpy resizes its own window to match the device shape and keeps the
+top-left corner fixed, so a right-anchored window grows off the right
+edge. A watcher started alongside scrcpy pulls it back once a second.
+
+If it stays off screen, the watcher is not running. It needs `xdotool`,
+and it exits when `pgrep -x scrcpy` finds nothing — so a scrcpy launched
+by hand under a different process name has no watcher. Check:
+
+```sh
+pgrep -x scrcpy && command -v xdotool
+```
+
+Note that qtile cannot do this job: its `float_change` hook does not fire
+for a window an application resizes itself (verified by probe), so the
+poll is not redundant with the `client_managed` clamp in `config.py`.
+
+### No sound from the mirror
+
+Audio is on by default via `--audio-source=output`, which also **mutes
+playback on the phone** — that is the flag working, not a fault.
+
+It needs Android 11+. If the video plays but the laptop is silent, check
+the phone is not on a call or otherwise holding the audio device, and
+that scrcpy did not print `--audio-source=output requires Android 11`.
+
+For the lowest-latency picture, `--no-audio` drops the second stream. If
+the sound crackles rather than being absent, raise `--audio-buffer`.
+
+### Pressing the key does nothing
+
+If a mirror is already open, the key **focuses it** instead of starting a
+second one — that is deliberate. Two scrcpy processes against one phone
+means two decoders and two audio streams fighting over the same Wi-Fi
+budget, which looks exactly like a slow link.
+
+The check looks for a window with class `scrcpy` **and** title `Phone`.
+It deliberately does not use `pgrep -f`, which reads whole command lines
+and matched the very terminal running the test while this was being
+written.
+
+### The window opens somewhere useless
+
+It is placed from live geometry: qtile's screen size and *current* bar
+height, plus the phone's real resolution from `adb shell wm size`. If any
+of that cannot be read the script emits no geometry flags and scrcpy
+places itself. Check `qtile cmd-obj -o bar top -f info` returns something.

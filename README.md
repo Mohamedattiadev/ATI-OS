@@ -23,7 +23,7 @@ git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
   && ./install.sh
 ```
 
-Then `startx`. That's it — 41 modules run end to end, and you land on a
+Then `startx`. That's it — 42 modules run end to end, and you land on a
 complete desktop: qtile, all 22 themes, every font, every widget.
 
 ### Optional extras — you do not need these
@@ -622,6 +622,123 @@ changes.
 
 ---
 
+## Android screen on the desktop
+
+`Super+Shift+F6` puts the phone on screen, with mouse and keyboard control
+back to it. Works over USB or Wi-Fi; the script picks whichever is
+available and prefers the cable.
+
+### The first time
+
+Turn on **Wireless debugging** on the phone once — Settings → Developer
+options → Wireless debugging. It survives reboots, so this is genuinely
+one time.
+
+Then press `Super+Shift+F6`. A rofi window opens with a QR code and a text
+field:
+
+- **Scan the QR** with the phone (Wireless debugging → *Pair device with
+  QR code*), or
+- tap *Pair device with pairing code* instead and **type the 6 digits**
+  into the same window.
+
+Whichever finishes first wins. After that, pairing is remembered and the
+key goes straight to the mirror.
+
+### Why the script exists
+
+Arch's `android-tools` is built **without mDNS**. `adb mdns services`
+answers `unknown host service`, so adb cannot find a wirelessly-debugging
+phone by itself — every guide that says "adb just finds it" is wrong on
+this distro. The address and port are also both random, and the connect
+port changes on every phone reboot, so doing it by hand is a per-session
+chore, not a one-off.
+
+`phone_screen` reads the phone's own mDNS announcement through
+`avahi-browse` and hands adb a plain `host:port`. That is the whole trick,
+and it is why the `scrcpy` module enables `avahi-daemon` and opens
+`5353/udp` in ufw.
+
+### Speed
+
+**Wi-Fi is the bottleneck, not the laptop.** Measured on this machine,
+ping to the phone averaged 53ms with 16ms of jitter — worse than two
+frames at 30fps before anything is encoded. Over Wi-Fi the script caps
+the stream (`-m 720 --max-fps=30 -b 3M`) to spend what headroom exists on
+latency rather than detail; over USB it raises the ceiling
+(`-m 1280 --max-fps=60 -b 12M`) because that limit is gone.
+
+**Plug in a cable if the picture matters.** It is not a marginal upgrade.
+
+**Sound comes out of the laptop.** `--audio-source=output` forwards the
+whole device output and mutes playback on the handset, so a video watched
+in the mirror plays through these speakers. It is a second,
+separately-buffered stream and costs some latency — `--no-audio` is the
+way back to the lowest-latency picture, and `--audio-buffer` is the knob
+if it crackles.
+
+**Pressing the key again focuses the existing mirror** rather than
+starting a second one. Two scrcpy processes against one phone means two
+decoders and two audio streams competing for the same Wi-Fi budget, which
+looks exactly like the link being slow.
+
+### Window size
+
+`PHONE_SIZE` (percent of usable height, default 92) tunes it:
+`PHONE_SIZE=100 phone_screen`.
+
+Portrait has no slack to give: a ~9:20 handset at full height is only
+~325px wide on a 1366x768 panel, and it cannot be wider without being
+taller than the screen. 100 is the ceiling there. Landscape is capped
+separately at 60% of screen width — sized from height it would be ~1350px,
+the whole panel, burying everything behind it the moment a video goes
+fullscreen.
+
+### Rotation, and staying on screen
+
+Turn the phone sideways — open a video fullscreen, say — and scrcpy
+resizes **its own window** to the new shape, keeping the top-left corner
+fixed while it grows. Anchored to the right edge, that walks the window
+straight off the screen, controls included.
+
+Two things stop it:
+
+- **At launch**, placement reads the *current* rotation from
+  `dumpsys window displays` (`cur=WxH`). `wm size` reports the physical
+  panel and never changes, so sizing from it opened a portrait-shaped box
+  for a phone that was already sideways.
+- **Mid-session**, a small watcher started alongside scrcpy samples the
+  window geometry once a second and nudges it back inside the usable
+  area.
+
+The watcher is a poll because there is no alternative. qtile's
+`float_change` hook was the obvious home and was tried first; probing it
+directly showed it fires **zero** times for a floating window resized
+from outside qtile, because it tracks floating *state*, not geometry. The
+qtile hook that remains covers only window creation.
+
+It ends itself when the scrcpy process does — `pgrep -x scrcpy`, not the
+window id, because X recycles ids and a lookup on a closed window happily
+answers for whatever inherited the number.
+
+### Controls
+
+Caps Lock is the scrcpy modifier — `--shortcut-mod=lalt`, and `.Xmodmap`
+puts Alt on Caps. Super would collide with qtile's global grabs.
+
+| Action | Key |
+|---|---|
+| Tap / back / home | left / right / middle click |
+| App switcher | `Caps+S` |
+| Fullscreen | `Caps+F` |
+| Turn phone screen back on | `Caps+O` (it starts dark, by `-S`) |
+| Quit | `Caps+Q` |
+
+Drag a file onto the window to push it to `/sdcard/Download`; drag an APK
+to install it.
+
+---
+
 ## Requirements
 
 1. **Arch Linux**, clean base install
@@ -724,7 +841,7 @@ ignored — because an ignored filter means the full live install runs instead,
 and its second module is `pacman -Syu`. Unknown flags and unknown module ids
 fail the same way: exit 2, nothing touched.
 
-Every one of the 41 modules has a reversal, even where that reversal is a
+Every one of the 42 modules has a reversal, even where that reversal is a
 deliberate no-op (`dcli-sync`, `piper`, `whisper`, `whisper-fast`,
 `wallpapers` — removing those would delete packages, multi-hundred-MB
 downloads, or a ~13x-faster build the uninstaller has no business
@@ -735,7 +852,7 @@ uninstall, with earlier modules already reversed.
 **What `./install.sh` does**
 
 - Auto-bootstraps `gum` via pacman (~2 s)
-- Runs all 41 modules end-to-end
+- Runs all 42 modules end-to-end
 - Keeps `sudo` alive for the whole run (primed once, refreshed in the
   background) so long AUR builds don't silently drop package installs when the
   credential cache would otherwise expire mid-run
@@ -776,17 +893,18 @@ quit** (unless `--yes`, which auto-skips).
 | 22 | `whisper` | Download Whisper `base.en` (live dictation) + `small.en` (batch) models |
 | 23 | `whisper-fast` | Rebuild `whisper-cli`/`whisper-stream` optimized + patched, shadow via `/usr/local` (AUR package is ~13x slower unoptimized, and doesn't build `whisper-stream` at all) |
 | 24 | `mic-gain` | Enable `fix-mic-gain.service` — reasserts mic capture gain WirePlumber resets to clipping levels on every login |
-| 25 | `passwordless-sudo` | Passwordless sudo |
-| 26 | `ownership` | Fix dotfiles ownership |
-| 27 | `disable-dm` | Disable all display managers |
-| 28 | `candy-icons` | Install candy-icons theme |
-| 29 | `wallpapers` | Clone wallpaper collection |
-| 30 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
-| 31 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
-| 32 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
-| 33 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
-| 34 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
-| 35 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| 25 | `scrcpy` | Android screen mirroring — joins `adbusers` (android-udev's rules), enables `avahi-daemon` and opens mDNS in ufw so `phone_screen` (Super+Shift+F6) can find the phone without typing an address |
+| 26 | `passwordless-sudo` | Passwordless sudo |
+| 27 | `ownership` | Fix dotfiles ownership |
+| 28 | `disable-dm` | Disable all display managers |
+| 29 | `candy-icons` | Install candy-icons theme |
+| 30 | `wallpapers` | Clone wallpaper collection |
+| 31 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
+| 32 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
+| 33 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
+| 34 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
+| 35 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
+| 36 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
 | — | `dcli-sync-extra` | **Opt-in, never in a default run.** docker · jdk · qemu · printing — see [Optional extras](#optional-extras--you-do-not-need-these) |
 | — | `boot-splash` | **Opt-in, never in a default run.** plymouth splash with your username + progress bar; edits kernel cmdline + initramfs |
 

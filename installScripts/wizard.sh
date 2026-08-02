@@ -233,7 +233,7 @@ MOD_ORDER=(
   sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts simplenote ui-scale githooks
   pacman-guard boot-fallback login-shell
   touchpad xinit xresources xmodmap lid image-envs flatpak piper ankiconnect vaultwarden vaultwarden-phone tmux-tpm whisper
-  whisper-fast mic-gain
+  whisper-fast mic-gain scrcpy
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes dark-mode browser-flags browser-memory chrome-policy
   dcli-sync-extra boot-splash
@@ -486,6 +486,7 @@ _reg tmux-tpm          "tmux plugins (TPM)"  Dotfiles  "Clone TPM + install plug
 _reg whisper           "Whisper models"      Media     "base.en (live dictation) + small.en (batch) STT (~630MB)" "step_whisper"
 _reg whisper-fast      "Whisper fast build"  Media     "Rebuild whisper-cli/-stream Release (AUR pkg is ~13x slower unoptimized)" "step_whisper_fast"
 _reg mic-gain          "Mic gain fix"        System    "Reassert mic capture gain WirePlumber resets on login"  "step_mic_gain"
+_reg scrcpy            "Android screen"      Apps      "adbusers + avahi + mDNS through ufw, so Super+Shift+F6 finds the phone" "step_scrcpy"
 _reg passwordless-sudo "Passwordless sudo"   System    "Add user to NOPASSWD sudoers"                           "step_nopasswd"
 _reg ownership         "Fix ownership"       System    "chown -R \$USER on ~/.dotfiles"                         "step_ownership"
 _reg disable-dm        "Disable display mgrs" System   "TTY + startx only"                                      "step_disable_dm"
@@ -1433,6 +1434,78 @@ step_mic_gain() {
   run "systemctl --user daemon-reload"
   run "systemctl --user enable --now fix-mic-gain.service"
 }
+step_scrcpy() {
+  # scrcpy mirrors the Android screen over adb. Declaring the package is
+  # not enough: android-udev's rules assign the phone's USB node to the
+  # `adbusers` group, and an account outside that group gets `adb devices`
+  # listing the serial with "no permissions" next to it -- the device is
+  # visible, so it reads as a bad cable or a bad phone rather than a
+  # missing group. Same shape as radios: the package installs a tool, this
+  # makes the tool usable.
+  if ! getent group adbusers >/dev/null; then
+    # android-udev creates the group in its post_install. If it is absent,
+    # the rules are absent too, and adding the user to a group nothing
+    # references would be a silent no-op that looks like success.
+    _WARN "no adbusers group — install android-udev first (dcli-sync)"
+    return 0
+  fi
+
+  if id -nG "$(id -un)" | grep -qw adbusers; then
+    _OK "already in adbusers"
+  else
+    run "sudo gpasswd -a $(id -un) adbusers"
+    # Group membership is baked into the login session's credentials, so
+    # the shell that ran this still has the old set no matter what the
+    # group file now says.
+    _WARN "log out and back in before adb can see the phone"
+  fi
+
+  # ─── mDNS, which is what makes the wireless path automatic ─────────
+  # phone_screen (Mod+Shift+A) finds the phone's wireless-debugging
+  # host:port from its own mDNS announcement rather than making you copy
+  # a fresh random port off the phone every session. Arch's android-tools
+  # is built without mDNS, so avahi does that lookup -- and an installed
+  # but stopped avahi-daemon looks exactly like "no phone on the network".
+  if systemctl is-enabled avahi-daemon.service &>/dev/null; then
+    _OK "avahi-daemon already enabled"
+  else
+    run "sudo systemctl enable --now avahi-daemon.socket avahi-daemon.service"
+  fi
+
+  # ufw is enabled by system-tools, and it drops inbound by default. mDNS
+  # replies arrive as fresh inbound UDP on 5353 (multicast, not a reply to
+  # a tracked flow), so without this the browse simply returns nothing --
+  # no error, no log line, just a phone that is never found.
+  if command -v ufw >/dev/null && sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
+    if sudo ufw status 2>/dev/null | grep -q '5353'; then
+      _OK "ufw already allows mDNS"
+    else
+      run "sudo ufw allow 5353/udp comment 'mDNS - adb wireless discovery'"
+    fi
+  fi
+
+  # ─── the pieces phone_screen leans on ──────────────────────────────
+  # All four are declared in modules dcli-sync already installed, so this
+  # is a check rather than an install -- but each one fails in a way that
+  # is hard to read from the outside: no qrencode and the pairing dialog
+  # has no QR, no rofi and it has no window at all, no xdotool and both
+  # the "focus the mirror I already have" shortcut and the rotation
+  # watcher quietly do nothing.
+  local miss=() bin
+  for bin in scrcpy adb avahi-browse qrencode rofi xdotool; do
+    command -v "$bin" >/dev/null || miss+=("$bin")
+  done
+  if (( ${#miss[@]} )); then
+    _WARN "missing for phone_screen: ${miss[*]} — run dcli sync"
+  else
+    _OK "phone_screen has everything it needs"
+  fi
+
+  _DIM "  phone: Settings > About > tap Build number 7x > Developer options"
+  _DIM "  then turn on Wireless debugging (stays on across reboots)"
+  _DIM "  then press Super+Shift+F6 — it pairs itself (QR or 6 digits), once ever"
+}
+
 step_nopasswd()     { run "echo \"$(id -un) ALL=(ALL) NOPASSWD: ALL\" | sudo tee /etc/sudoers.d/zz-$(id -un)-nopasswd >/dev/null && sudo chmod 440 /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
 step_ownership()    { run "sudo chown -R $(id -un):$(id -un) $DOTFILES_DIR"; }
 step_login_shell() {
@@ -1951,6 +2024,18 @@ uninstall_whisper_fast()      { :; }  # leave the fast binaries in place -- reve
 uninstall_mic_gain() {
   run "systemctl --user disable --now fix-mic-gain.service" || true
 }
+# Drops the group membership and the mDNS firewall rule. android-udev's
+# rules stay (pacman owns those files), and avahi-daemon stays running:
+# it is a general network service that cups and chromium also use, not
+# something this module owns.
+uninstall_scrcpy() {
+  if getent group adbusers >/dev/null; then
+    run "sudo gpasswd -d $(id -un) adbusers" || true
+  fi
+  if command -v ufw >/dev/null; then
+    run "sudo ufw delete allow 5353/udp" || true
+  fi
+}
 uninstall_wallpapers()        { :; }  # user's picture collection
 uninstall_ownership()         { :; }
 uninstall_disable_dm()        { :; }
@@ -1987,6 +2072,7 @@ UMOD_CMD[tmux-tpm]="uninstall_tmux_tpm"
 UMOD_CMD[whisper]="uninstall_whisper"
 UMOD_CMD[whisper-fast]="uninstall_whisper_fast"
 UMOD_CMD[mic-gain]="uninstall_mic_gain"
+UMOD_CMD[scrcpy]="uninstall_scrcpy"
 UMOD_CMD[passwordless-sudo]="uninstall_passwordless_sudo"
 UMOD_CMD[ownership]="uninstall_ownership"
 UMOD_CMD[disable-dm]="uninstall_disable_dm"

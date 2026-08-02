@@ -12,6 +12,15 @@ packages:
   # for the *.ts.net name -- the only practical way to satisfy the
   # Bitwarden app, since Android does not trust user-installed CAs.
   - tailscale
+  # mDNS. Present on this host only as a chromium/cups dependency, which
+  # is the same accident networkmanager above was -- and it is load
+  # bearing now: phone_screen finds the phone's wireless-debugging
+  # host:port by reading its _adb-tls-connect._tcp announcement through
+  # avahi-browse. Arch's android-tools is built WITHOUT mDNS (`adb mdns
+  # services` answers "unknown host service"), so adb cannot do that
+  # lookup itself. Drop avahi and the phone mirror goes back to copying
+  # a fresh random port off the phone by hand every session.
+  - avahi
   - iwd
   - wpa_supplicant
   - wireless_tools
