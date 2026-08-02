@@ -267,7 +267,17 @@ MOD_ORDER=(
 # quiet/splash on purpose) always exist before anything touches the
 # cmdline of the primary one. A splashed boot that hangs is then one menu
 # pick away from a boot that tells you why.
-OPTIN_MODS=(dcli-sync-extra)
+#
+# xmodmap is opt-in for a different reason: it is correct for exactly one
+# machine. It repurposes Caps Lock as a third Alt because Alt is dead in
+# hardware on the author's laptop -- which nothing can detect at runtime,
+# so it cannot be conditionalised. On any other machine the remap is not
+# wrong so much as unwanted: `clear mod1` is immediately followed by
+# `add mod1 = Alt_L Alt_R`, so the real Alt keys keep working and the only
+# actual loss is Caps Lock itself, silently and with no tap-to-Caps
+# fallback. A stranger installing this repo should get a normal keyboard.
+# On the laptop that needs it:  ./wizard.sh --only=xmodmap
+OPTIN_MODS=(dcli-sync-extra xmodmap)
 _is_optin() {
   local id m
   id="$1"
@@ -294,9 +304,10 @@ if (( AUDIT )); then
   # Which module files count. The host's enabled_modules drive dcli, plus
   # base (always), plus the sets installed at runtime by their own wizard
   # modules -- optional.yaml (dcli-sync-extra) and graphics-*.yaml (gpu).
-  # Excluded: example.yaml and declared-packages.yaml (not modules), and
-  # system-packages-ati.yaml, which is NOT in enabled_modules -- counting
-  # it would declare nvidia, plasma and pulseaudio on an Intel qtile box.
+  # Excluded: example.yaml and declared-packages.yaml, which are not
+  # modules. (system-packages-ati.yaml used to need excluding here too --
+  # a dcli-merge snapshot that declared nvidia, plasma and pulseaudio. It
+  # has since been deleted outright.)
   _host="$(sed -n 's/^host:[[:space:]]*//p' \
     "$DOTFILES_DIR/.config/arch-config/config.yaml" 2>/dev/null | head -1)"
   _hostfile="$DOTFILES_DIR/.config/arch-config/hosts/${_host}.yaml"
@@ -500,7 +511,7 @@ _reg boot-fallback     "LTS boot entries"    System    "systemd-boot entries for
 _reg login-shell       "Fish login shell"    System    "chsh to fish so the TTY matches kitty (letsgo, aliases)" "step_login_shell"
 _reg xinit             ".xinitrc"            Dotfiles  "Auto-start qtile + picom + cursor size"                 "step_xinit"
 _reg xresources        ".Xresources"         Dotfiles  "Xcursor size 24 + Breeze theme (load via xrdb)"         "step_xresources"
-_reg xmodmap           ".Xmodmap"            Dotfiles  "Caps fully repurposed as Alt (no tap-Caps fallback)"    "step_xmodmap"
+_reg xmodmap           ".Xmodmap"            Optional  "Caps fully repurposed as Alt · opt-in · one broken-Alt laptop" "step_xmodmap"
 _reg lid               "Lid = ignore"        System    "Never sleep on lid close"                               "step_lid"
 _reg image-envs        "Image env"           Dotfiles  "Suppress VIPS warnings + ensure ~/tmp (fish TMPDIR)"    "step_image_envs"
 _reg flatpak           "Flatpak (legacy)"    Apps      "Uninstall-only: qdrop replaced flathub/collector"       "step_flatpak"
@@ -1176,6 +1187,10 @@ step_xmodmap() {
 ! Caps physical key acts purely as Alt_L -- no tap-to-Caps-Lock fallback,
 ! by design (Alt is broken in hardware on this laptop, see config.py's
 ! `mod = "mod4"` comment; Caps is fully repurposed as the only working Alt).
+!
+! This module is OPT-IN and is not part of a default ./install.sh run:
+! it is right for one machine and merely surprising on every other.
+! Undo with: ./wizard.sh --uninstall --only=xmodmap
 clear lock
 clear mod1
 keycode 66 = Alt_L

@@ -17,12 +17,12 @@ enabled_modules:
   - media
   - fonts
   - system-tools
-  # system-packages-ati is dcli merge's captured snapshot of this machine,
-  # deliberately NOT enabled -- see README. Enabling it would try to install
-  # PulseAudio onto a PipeWire system, plus Plasma and NVIDIA onto an Intel
-  # qtile box. Left commented rather than deleted so the reason is visible
-  # at the place someone would be tempted to uncomment it.
-  # - system-packages-ati
+  # system-packages-ati was here, commented out. It was dcli merge's
+  # captured snapshot of this machine, and uncommenting it would have
+  # installed PulseAudio onto a PipeWire system (directly contradicting
+  # media.yaml's conflicts: list) plus Plasma, NVIDIA and GRUB onto an
+  # Intel qtile box. A file that inert and that destructive is not worth
+  # keeping for reference; deleted rather than left one keystroke away.
   - graphics
   - network
   - xorg

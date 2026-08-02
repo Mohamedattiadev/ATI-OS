@@ -234,10 +234,14 @@
     foreground = "{{FG}}"
     frame_color = "{{ACCENT}}"
 
-[logall]
-    summary = "*"
-    script = @HOME@/.config/dunst/scripts/log-all.sh
-
+# [logall] removed. It matched summary "*" -- every notification -- and
+# ran scripts/log-all.sh, which was executable and zero bytes. Unlike the
+# [copy] rule below the file did exist, so nothing failed and nothing was
+# logged: it was a fork-and-exec of an empty script for every notification
+# the desktop ever showed. Deleted along with the empty script rather than
+# finished, because nothing had ever consumed its output. If per-rule
+# notification logging is wanted later, scripts/log-notification.sh is the
+# working pattern to copy.
 
 # [copy] used to live here, matching summary ".*" -- i.e. every notification
 # -- and running scripts/do-copy.sh. That script has never existed in this

@@ -123,7 +123,11 @@
 }
 
 .keys {
-  font-family: BebasNeue;
+  // Was BebasNeue, which is installed nowhere here and which fontconfig
+  // silently answered with Noto Sans CJK -- a proportional face for a
+  // column of key names that is aligned with spaces. $display-font is the
+  // one knob in fonts.scss and resolves to a real monospace family.
+  font-family: $display-font;
   font-size: 1rem;
   color: $fg;
 }
