@@ -19,11 +19,36 @@ ROFI_CMD="rofi -dmenu -i -p"
 SEPARATOR=""
 
 # Main directories to browse.
+#
+# This used to hardcode Documents/Downloads/Pictures/Desktop. Two of
+# those (~/Documents, ~/Desktop) do not exist on this machine, so the
+# browser offered dead entries that opened an empty listing. Ask
+# xdg-user-dir where it can, fall back to the conventional name, and
+# only offer what is actually on disk.
 declare -A MAIN_DIR_MAP
-MAIN_DIR_MAP["Documents"]="$HOME/Documents"
-MAIN_DIR_MAP["Downloads"]="$HOME/Downloads"
-MAIN_DIR_MAP["Pictures"]="$HOME/Pictures"
-MAIN_DIR_MAP["Desktop"]="$HOME/Desktop"
+add_dir() {
+	local label="$1" dir="$2"
+	[[ -d "$dir" ]] && MAIN_DIR_MAP["$label"]="$dir"
+	return 0
+}
+xdg_or() {
+	local key="$1" fallback="$2" got=""
+	command -v xdg-user-dir >/dev/null 2>&1 && got="$(xdg-user-dir "$key" 2>/dev/null)"
+	[[ -n "$got" && "$got" != "$HOME" ]] && { printf '%s' "$got"; return; }
+	printf '%s' "$fallback"
+}
+add_dir "Documents"   "$(xdg_or DOCUMENTS "$HOME/Documents")"
+add_dir "Downloads"   "$(xdg_or DOWNLOAD  "$HOME/Downloads")"
+add_dir "Pictures"    "$(xdg_or PICTURES  "$HOME/Pictures")"
+add_dir "Desktop"     "$(xdg_or DESKTOP   "$HOME/Desktop")"
+add_dir "Screenshots" "$HOME/Screenshots"
+add_dir "Videos"      "$(xdg_or VIDEOS    "$HOME/Videos")"
+add_dir "Converted"   "$BASE_DIR"
+
+if (( ${#MAIN_DIR_MAP[@]} == 0 )); then
+	notify_safe "iLovePDF" "No browsable folders found in $HOME"
+	exit 1
+fi
 
 # --- Main Logic in a function ---
 main() {

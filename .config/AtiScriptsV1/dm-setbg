@@ -15,7 +15,11 @@
 # get hidden bugs that are hard to discover.
 set -euo pipefail
 
-setbg_dir="$HOME/Pictures/Wallpaper"
+# Wallpaper*s*, plural. This said "Wallpaper" while the directory the
+# wallpapers module clones into -- and that wal-precompile and wal-audit
+# both read -- is ~/Pictures/Wallpapers, so this menu listed nothing at
+# all on a machine where every other wallpaper tool worked fine.
+setbg_dir="$HOME/Pictures/Wallpapers"
 # shellcheck disable=SC1091
 source ./_dm-helper.sh 2>/dev/null || source _dm-helper.sh 2>/dev/null
 

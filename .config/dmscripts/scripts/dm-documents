@@ -25,26 +25,54 @@ if configs_are_different; then
 fi
 
 main() {
-    # PDF_VIEWER=zathura
-    files="$(find "$HOME" -maxdepth 4 -iname "*.pdf")"
-    choice=$(printf '%s\n' "${files[@]}" \
-        | cut -d '/' -f4- \
-        | sed -e 's/Documents/Dcs/g' \
-            -e 's/Downloads/Dwn/g' \
-            -e 's/Pictures/Pic/g' \
-            -e 's/Images/Img/g' \
-            -e 's/.pdf//g' \
-        | sort -g \
-        | ${MENU} "File: ") || exit 1
-    if [ "$choice" ]; then
-        file=$(
-            printf '%s' "$choice" \
-                | sed -e 's/Dcs/Documents/g' \
-                    -e 's/Dwn/Downloads/g' \
-                    -e 's/Pic/Pictures/g' \
-                    -e 's/Img/Images/g'
-        )
-        "${PDF_VIEWER}" "$HOME/${file}.pdf"
+    # The menu label used to be reconstructed back into a path with a
+    # second set of sed substitutions, which lost files three ways:
+    #
+    #   * 's/.pdf//g' has an UNESCAPED dot, so it ate the character
+    #     before the extension too. "Mohamed Attia(CV) .pdf" came back as
+    #     "Mohamed Attia(CV).pdf" -- a file that does not exist. Two of
+    #     the ten PDFs in this home directory failed exactly this way.
+    #   * The abbreviations are not reversible. Any path merely
+    #     CONTAINING "Pic" was expanded to "Pictures" on the way back.
+    #   * 'sort -g' is a numeric sort applied to filenames, so the
+    #     ordering was arbitrary.
+    #
+    # Keep the real path next to the label instead of trying to compute
+    # it back from the display text. Abbreviations stay purely cosmetic.
+    local -a files=() labels=()
+    mapfile -d '' -t files < <(find "$HOME" -maxdepth 4 -iname '*.pdf' -print0 2>/dev/null)
+
+    if (( ${#files[@]} == 0 )); then
+        echo "No PDFs found under $HOME (maxdepth 4)." >&2
+        exit 0
+    fi
+
+    declare -A REAL_PATH=()
+    local f rel label
+    for f in "${files[@]}"; do
+        rel="${f#"$HOME"/}"
+        # Exact suffix removal -- a parameter expansion, not a regex.
+        label="${rel%.[Pp][Dd][Ff]}"
+        # Cosmetic only; nothing is ever parsed back out of these.
+        case "$label" in
+            Documents/*) label="Dcs/${label#Documents/}" ;;
+            Downloads/*) label="Dwn/${label#Downloads/}" ;;
+            Pictures/*)  label="Pic/${label#Pictures/}" ;;
+            Images/*)    label="Img/${label#Images/}" ;;
+        esac
+        # Two different files can abbreviate to the same label; keep both
+        # reachable rather than letting one shadow the other.
+        while [[ -n "${REAL_PATH[$label]:-}" ]]; do
+            label+=" "
+        done
+        REAL_PATH["$label"]="$f"
+        labels+=("$label")
+    done
+
+    choice=$(printf '%s\n' "${labels[@]}" | sort -f | ${MENU} "File: ") || exit 1
+
+    if [[ -n "$choice" && -n "${REAL_PATH[$choice]:-}" ]]; then
+        "${PDF_VIEWER}" "${REAL_PATH[$choice]}"
     else
         echo "Program Terminated." && exit 0
     fi

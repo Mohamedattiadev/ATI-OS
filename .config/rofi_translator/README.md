@@ -1,57 +1,41 @@
-# WR-translator
-A script to quickly translate words from/to english to your native language and vice versa inside Rofi launcher.
+# rofi translator
 
-# Disclaimer
-I am by no means a Python guru. The code can be improved for sure in some ways.
+Select any text on screen, hit the keybinding, and get a browsable
+dictionary in rofi. Bound to **Mod+p → e** in `qtile/config.py`.
 
-This is a home-made project I did to have quick access to translations from english to italian (my own language), and was further extended to support the main other languages available on Wordreference.
+## What it does
 
-Feel free to fork, modify and suggest improvements.
+1. Reads the current X primary selection (whatever you highlighted).
+2. Detects the source language and asks which language to translate to.
+3. Opens a rofi picker containing the translation, alternative
+   renderings, and part-of-speech tagged definitions with their
+   synonyms and usage examples.
+4. Enter copies the highlighted row to the clipboard and speaks the
+   translation.
 
-**No guarantees on keeping this project up to date are given** as this is done during my free time.
-
-# Requirements
+## Requirements
 
   + Rofi
   + Python 3
-  + BeautifulSoup 4
+  + `translate-shell` (the `trans` command) — the dictionary source
+  + `xclip` — reads the selection, writes the clipboard
 
-# Usage
-The script takes as input 3 parameters:
+Optional, each adding one feature rather than being required:
 
-  + *Language Interface*: it, en, fr, es, de
-  + *Source Language*: it, en, fr, es, de
-  + *Target Language:* en (if it/fr/es/de is chosen) or it/fr/es/de (if en is chosen)
+  + `gtts-cli` / `piper` / `espeak-ng` — text to speech
+  + `mpv` — plays what the above generate
+  + A Gemini API key in `~/.config/secrets.env` — adds AI-generated
+    synonyms and example sentences as a follow-up notification
 
-You can translate quickly, using **Rofi**, any word in the given language to the other target language.
+## Note on WordReference
 
-# Examples
-**Translate from spanish to english, spanish interface language:**
+This started life as a WordReference scraper, which is where the file
+name comes from. That source is gone: wordreference.com now answers this
+host with HTTP 418 for every request regardless of user-agent, headers,
+scheme, or HTTP client, so the scrape failed on every single lookup and
+silently degraded to dumping a one-word translation into the clipboard.
 
-    python3 wordreference.py es es en
-
-![Example 1](imgs/example1.png)
-
-And after you press Return:
-
-![Example 2](imgs/example2.png)
-
-**Translate from italian to spanish, italian interface language:**
-
-    python3 wordreference.py it it es
-
-This prints the help message because *non-english to non-english* language translation is not supported:
-
-    usage: wordreference.py [-h] {en,it,es,fr,de} {en,it,es,fr,de} {en,it,es,fr,de}
-
-    This is used to get a quick translation from italian, french or spanish to
-    english OR viceversa. NOTE: translation from non-english to non-english or
-    from same-language to same-language is forbidden
-
-    positional arguments:
-      {en,it,es,fr,de}  Interface language
-      {en,it,es,fr,de}  Source translation language
-      {en,it,es,fr,de}  Target translation language
-
-    optional arguments:
-      -h, --help     show this help message and exit
+`trans -d` replaced it. It needs no scraping, cannot be blocked, and
+returns richer data — definitions grouped by part of speech, per-sense
+synonyms, and real usage examples. BeautifulSoup is no longer a
+dependency.

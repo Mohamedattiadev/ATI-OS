@@ -69,17 +69,19 @@ JSEOF
 load_rows() { mapfile -t rows < <(fetch_rows); }
 load_rows
 
-# Ephemeral theme: inherit user base (matches other rofi scripts), just enable thumbs.
+# Ephemeral theme. Inherits dtos-center.rasi -- the same theme rofi_light
+# and the plain launcher use -- so every picker in this setup is the same
+# 45%-wide, 8-row box. It used to import base.rasi directly, which skips
+# dtos-center's width and lines and left this menu wider than the rest.
 THEME_FILE=/tmp/copyq-rofi-theme.rasi
 cat > "$THEME_FILE" <<'RASI'
-@import "~/.config/rofi/themes/base.rasi"
+@import "~/.config/rofi/themes/dtos-center.rasi"
 
 mainbox      { children: [inputbar, message, listview]; }
 message      { padding: 4px 6px; border: 0; }
 textbox      { text-color: inherit; }
-listview     { lines: 8; fixed-height: 1; scrollbar: true; spacing: 3px; }
+listview     { fixed-height: 1; scrollbar: true; }
 scrollbar    { width: 4px; }
-element      { padding: 4px 8px; spacing: 10px; }
 element-icon { size: 48px; expand: false; }
 RASI
 

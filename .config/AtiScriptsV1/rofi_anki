@@ -12,26 +12,23 @@ MODEL_NAME="Basic (and reversed card)"
 DECK_EN="English"
 DECK_DE="German"
 
-# ####################################################################
-# ## CRITICAL STEP: PATH TO PIPER ##
-# ####################################################################
-# Use the 'find ~ -type f -name piper' command to find the correct path
-PIPER_CMD="$(command -v piper)"
+# --- Piper ---
+# `command -v` returns non-zero when piper is absent, and under `set -e`
+# a failing command substitution in an assignment kills the script right
+# here — which made the friendly "Piper TTS command not found" message
+# further down unreachable. The `|| true` keeps the error reportable.
+PIPER_CMD="$(command -v piper || true)"
 
 # --- Voice Customization ---
 PIPER_SPEED="1.8"
-# VESTIGIAL -- nothing reads this. The engine is hardcoded per language:
-# English always goes through gtts-cli, German through piper. Setting it
-# to "gtts" changes nothing. Left in place rather than silently rewiring
-# the audio; make the call and either wire it up or delete it.
-# shellcheck disable=SC2034
-SPELL_ENGINE="piper" # or "gtts"
 
-# Paths to your Piper voice models
-# Also unused: English TTS calls gtts-cli, never piper. The wizard's
-# `piper` module still downloads this voice (~30MB) for nothing.
-# shellcheck disable=SC2034
-PIPER_VOICE_EN="$HOME/.config/piper-voices/en_US-ryan-high.onnx"
+# Paths to your Piper voice models.
+#
+# SPELL_ENGINE and PIPER_VOICE_EN used to live here doing nothing: the
+# engine is hardcoded per language (English through gtts-cli, German
+# through piper), so neither was ever read. Both are gone rather than
+# left as decoration — see the wizard's `piper` module if you want to
+# stop it downloading the unused ~30MB English voice too.
 PIPER_VOICE_DE="$HOME/.config/piper-voices/de_DE-thorsten-high.onnx"
 # ------------------------------------------------
 
@@ -40,26 +37,25 @@ cleanup() { rm -f ${TMP_DIR}/anki_tts_temp_*; }
 trap cleanup EXIT
 
 # --- Read Gemini API Key ---
-GEMINI_API_KEY=""
-if [ -f /etc/environment ]; then
-  GEMINI_API_KEY=$(grep -E '^GEMINI_API_KEY=' /etc/environment | cut -d'=' -f2- | sed -e 's/^"//' -e 's/"$//')
-fi
-if [[ -z "$GEMINI_API_KEY" ]]; then
-  echo "Error: GEMINI_API_KEY not found." >&2
-  exit 1
-fi
+#
+# This used to grep /etc/environment for ^GEMINI_API_KEY=. Both lines
+# there are commented out AND empty (`#GEMINI_API_KEY=`), so the grep
+# matched nothing, the guard below fired, and the script exited before
+# drawing a single menu. That — not any of the card logic — is why this
+# never appeared to work.
+#
+# The key is now optional. Without it the card is still built: the
+# translation comes from translate-shell and the synonym/example fields
+# are simply omitted, rather than the whole run aborting.
+load_secrets
+HAVE_GEMINI=0
+[[ -n "${GEMINI_API_KEY:-}" ]] && HAVE_GEMINI=1
 
 # --- Check required commands ---
-for cmd in rofi jq curl gtts-cli piper ffmpeg file python3; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "Missing required command: $cmd" >&2
-    exit 1
-  fi
-done
-if ! [ -x "$PIPER_CMD" ]; then
-  echo "Piper TTS command not found or not executable at: $PIPER_CMD" >&2
-  exit 1
-fi
+# piper is NOT hard-required: it only matters for German audio, which is
+# opt-in per card. Requiring it up front meant a missing optional TTS
+# engine blocked plain text cards.
+require_cmd rofi jq curl ffmpeg file python3 || exit 1
 
 # =================== Helper Functions ===================
 html_escape() { python3 -c 'import html, sys; print(html.escape(sys.argv[1]))' "$1"; }
@@ -72,12 +68,22 @@ generate_main_wav() {
 
   if [[ "$lang" == "en" ]]; then
     # Use gTTS for English, which requires an mp3->wav conversion
+    if ! command -v gtts-cli >/dev/null 2>&1; then
+      notify_safe "Anki Rofi" "gtts-cli missing — card will have no audio"
+      touch "$output_wav"
+      return
+    fi
     local temp_mp3="${output_wav%.wav}.mp3"
     gtts-cli "$text" -l en -o "$temp_mp3"
     ffmpeg -i "$temp_mp3" "$output_wav" -y >/dev/null 2>&1
   else
     # Use Piper for German
     local voice_model="$PIPER_VOICE_DE"
+    if [[ ! -x "$PIPER_CMD" ]]; then
+      notify_safe "Anki Rofi" "piper missing — card will have no German audio"
+      touch "$output_wav"
+      return
+    fi
     if [[ ! -f "$voice_model" ]]; then
       echo "Piper voice model not found: $voice_model" >&2
       touch "$output_wav"
@@ -87,41 +93,27 @@ generate_main_wav() {
   fi
 }
 
+# Ask Gemini for translation + synonyms + examples as one JSON object.
+# The model list and transport now live in rofi_common.sh's gemini(),
+# shared with both translators, so there is one place to update when
+# Google retires a model again.
 get_gemini_data() {
-  local text="$1"
-  local source_lang_name="$2"
-  local target_lang_name="$3"
-  local payload
-  # Use a valid name for the fallback model
-  local models_to_try=(
-    "gemini-1.0-flash"
-    "gemini-1.5-flash"
-    "gemini-1.5-flash-latest"
-    "gemini-2.0-flash-exp"
-    "gemini-2.5-flash"
-    "gemini-2.5-flash-latest"
-  )
+  local text="$1" source_lang_name="$2" target_lang_name="$3"
+  local prompt result
+  prompt="You are an API providing linguistic info. For the word \"${text}\" in ${source_lang_name}, generate a JSON object with three keys: \"translation\" (a string translated to ${target_lang_name}), \"synonyms\" (an array of 5 strings), and \"examples\" (an array of 3 diverse, natural example sentences). Return raw JSON only, no markdown."
+  result="$(gemini "$prompt")" || return 1
+  # Models still wrap JSON in a ```json fence often enough to strip it.
+  printf '%s' "$result" | sed 's/```json//g; s/```//g'
+}
 
-  payload=$(jq -n --arg user_text "$text" --arg source_lang "$source_lang_name" --arg target_lang "$target_lang_name" \
-    '{"contents": [{"parts": [{"text": "You are an API providing linguistic info. For the word \"\($user_text)\" in \($source_lang), generate a JSON object with three keys: \"translation\" (a string translated to \($target_lang)), \"synonyms\" (an array of 5 strings), and \"examples\" (an array of 3 diverse, natural example sentences). Do not include markdown."}]}]}')
-
-  for model in "${models_to_try[@]}"; do
-    local response
-    response=$(curl -sS -X POST "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}" -H "Content-Type: application/json" -d "$payload")
-
-    # FIX #2: More robust check. The `jq -e` command will fail (return a non-zero exit code)
-    # if the path `.candidates[0]...` does not exist in the JSON response.
-    if echo "$response" | jq -e '.candidates[0].content.parts[0].text' >/dev/null 2>&1; then
-      local result
-      result=$(echo "$response" | jq -r '.candidates[0].content.parts[0].text' | sed 's/```json//g; s/```//g')
-      echo "$result"
-      # FIX #1: This line has been re-typed to ensure no invisible characters are present.
-      return 0 # Exit the function with success
-    fi
-    # If we're here, the request failed or the JSON was invalid; the loop will try the next model.
-  done
-
-  return 1 # Return with failure if all models failed
+# Fallback when there is no API key (or Gemini is unreachable): build the
+# same JSON shape from translate-shell so the rest of the script is
+# unchanged. Synonyms and examples come back empty and their rows are
+# skipped when the card is assembled.
+get_offline_data() {
+  local text="$1" target_code="$2" tr=""
+  command -v trans >/dev/null 2>&1 && tr="$(trans -b ":${target_code}" "$text" 2>/dev/null || true)"
+  jq -n --arg t "$tr" '{translation:$t, synonyms:[], examples:[]}'
 }
 
 #
@@ -129,17 +121,59 @@ get_gemini_data() {
 
 # --- Ensure Anki is running ---
 
-# --- Check if AnkiConnect is available ---
-if ! curl -sS "$ANKI_URL" >/dev/null 2>&1; then
-  notify-send "AnkiConnect" "Cannot reach AnkiConnect." || true
+# --- Talk to AnkiConnect ---
+anki_call() {
+  local payload="$1"
+  curl -sS --max-time 15 "$ANKI_URL" -d "$payload" 2>/dev/null
+}
 
-  if ! pgrep -x "anki" >/dev/null 2>&1 && ! pgrep -x "Anki" >/dev/null 2>&1; then
-    notify-send "AnkiConnect" "Anki not running. Starting Anki... just a moment..."
-    anki >/dev/null 2>&1 &
-    sleep 4
-    "$0" >/dev/null 2>&1 &
+# --- Ensure AnkiConnect is reachable, starting Anki if needed ---
+#
+# The old version slept a flat 4 seconds and then re-exec'd itself in the
+# background while the parent exited 1. Anki 26.05 takes closer to 12
+# seconds to open its collection here, so that respawn raced the startup
+# and usually lost — you got "Cannot reach AnkiConnect" and nothing else.
+# Poll for the port instead, and stay in this process so there is exactly
+# one menu.
+wait_for_ankiconnect() {
+  local tries="$1" i
+  for ((i = 0; i < tries; i++)); do
+    if curl -sS --max-time 2 "$ANKI_URL" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+if ! curl -sS --max-time 3 "$ANKI_URL" >/dev/null 2>&1; then
+  if ! pgrep -x anki >/dev/null 2>&1 && ! pgrep -x Anki >/dev/null 2>&1; then
+    notify_safe "AnkiConnect" "Starting Anki…"
+    (anki >/dev/null 2>&1 &)
+  else
+    notify_safe "AnkiConnect" "Anki is running — waiting for AnkiConnect…"
   fi
+  if ! wait_for_ankiconnect 45; then
+    notify_safe "❌ AnkiConnect unreachable" \
+      "Anki is not answering on ${ANKI_URL}. Is the AnkiConnect addon enabled?"
+    exit 1
+  fi
+fi
 
+# --- Ensure the decks and note type this script writes to exist ---
+#
+# addNote fails outright on an unknown deck, and a fresh Anki profile has
+# only "Default" — so every card added before the decks were hand-made
+# was rejected. createDeck is idempotent, so this just makes the script
+# self-provisioning.
+for _deck in "$DECK_EN" "$DECK_DE"; do
+  anki_call "$(jq -n --arg d "$_deck" \
+    '{action:"createDeck",version:6,params:{deck:$d}}')" >/dev/null
+done
+
+if ! anki_call '{"action":"modelNames","version":6}' |
+     jq -e --arg m "$MODEL_NAME" '.result | index($m)' >/dev/null 2>&1; then
+  notify_safe "❌ Anki note type missing" "\"$MODEL_NAME\" not found in this profile"
   exit 1
 fi
 
@@ -161,9 +195,9 @@ else
   FRONT_LANG_NAME="German"
   BACK_LANG_NAME="English"
 fi
-TEXT=$(rofi -dmenu -p "Enter word / sentence (front)")
+TEXT=$(rofi_input "Enter word / sentence (front)")
 [ -z "$TEXT" ] && exit 0
-TAGS_INPUT=$(rofi -dmenu -p "Tags (space separated) — optional")
+TAGS_INPUT=$(rofi_input "Tags (space separated) — optional")
 TAGS_JSON="[]"
 if [[ -n "$TAGS_INPUT" ]]; then
   read -r -a tagsarr <<<"$TAGS_INPUT"
@@ -177,18 +211,28 @@ WANT_VOICE_SPELL=$(echo -e "yes\nno" | rofi -dmenu -i -p "Include 'Spelling' aud
 WANT_IMAGE=$(echo -e "yes\nno" | rofi -dmenu -i -p "Add an image?")
 TS=$(date +%s)
 
-# 3. Get AI data
-notify-send "Anki Rofi" "Asking Gemini for definitions and examples..." || true
-GEMINI_JSON=$(get_gemini_data "$TEXT" "$FRONT_LANG_NAME" "$BACK_LANG_NAME")
-if [[ -z "$GEMINI_JSON" ]] || ! jq -e . >/dev/null 2>&1 <<<"$GEMINI_JSON"; then
-  notify-send "Anki Rofi Error" "Gemini returned invalid data after trying all models." || true
-  exit 1
+# 3. Get AI data (optional — never fatal)
+GEMINI_JSON=""
+if (( HAVE_GEMINI )); then
+  notify-send "Anki Rofi" "Asking Gemini for definitions and examples..." || true
+  GEMINI_JSON="$(get_gemini_data "$TEXT" "$FRONT_LANG_NAME" "$BACK_LANG_NAME" || true)"
 fi
-SYN_LIST=$(echo "$GEMINI_JSON" | jq -r '.synonyms | join(", ")' 2>/dev/null || echo "N/A")
-TR=$(echo "$GEMINI_JSON" | jq -r '.translation' 2>/dev/null || echo "N/A")
-EX1=$(echo "$GEMINI_JSON" | jq -r '.examples[0]' 2>/dev/null || echo "N/A")
-EX2=$(echo "$GEMINI_JSON" | jq -r '.examples[1]' 2>/dev/null || echo "N/A")
-EX3=$(echo "$GEMINI_JSON" | jq -r '.examples[2]' 2>/dev/null || echo "N/A")
+# Fall back rather than abort. Previously any Gemini failure — including
+# the permanent one of having no key at all — exited here and the card
+# was never created.
+if [[ -z "$GEMINI_JSON" ]] || ! jq -e . >/dev/null 2>&1 <<<"$GEMINI_JSON"; then
+  (( HAVE_GEMINI )) && notify-send "Anki Rofi" "Gemini unavailable — using translate-shell." || true
+  GEMINI_JSON="$(get_offline_data "$TEXT" "$BACK_LANG")"
+fi
+
+# `jq -r` prints the string "null" for a missing key and still exits 0,
+# so the old `|| echo "N/A"` guards never fired and fields were literally
+# filled with "null". `// empty` gives a real empty string instead.
+SYN_LIST=$(jq -r '(.synonyms // []) | join(", ")' <<<"$GEMINI_JSON" 2>/dev/null || echo "")
+TR=$(jq -r '.translation // empty' <<<"$GEMINI_JSON" 2>/dev/null || echo "")
+EX1=$(jq -r '.examples[0] // empty' <<<"$GEMINI_JSON" 2>/dev/null || echo "")
+EX2=$(jq -r '.examples[1] // empty' <<<"$GEMINI_JSON" 2>/dev/null || echo "")
+EX3=$(jq -r '.examples[2] // empty' <<<"$GEMINI_JSON" 2>/dev/null || echo "")
 IPA=""
 if command -v espeak-ng >/dev/null 2>&1; then IPA=$(espeak-ng -v "$FRONT_LANG" --ipa -q "$TEXT" 2>/dev/null | tr -d '\n' | sed 's/[[:space:]]\+/ /g' | sed 's/^ *//;s/ *$//'); fi
 
@@ -238,10 +282,13 @@ if [[ "$WANT_VOICE_SPELL" == "yes" ]]; then
         char_audio_mp3="${TMP_DIR}/anki_tts_temp_char_${i}_${TS}.mp3"
         gtts-cli "$char" -l en -o "$char_audio_mp3"
         ffmpeg -i "$char_audio_mp3" "$char_audio_wav" -y >/dev/null 2>&1
-      else
+      elif [[ -x "$PIPER_CMD" && -f "$PIPER_VOICE_DE" ]]; then
         # Use Piper for German spelling
         echo "$char" | "$PIPER_CMD" --model "$PIPER_VOICE_DE" --output_file "$char_audio_wav" >/dev/null 2>&1
       fi
+      # No engine produced a clip for this character — skip it rather than
+      # feeding ffmpeg's concat list a path that does not exist.
+      [[ -s "$char_audio_wav" ]] || continue
 
       echo "file '$char_audio_wav'"
       echo "file '$WAV_SILENCE_SHORT'"
@@ -255,7 +302,7 @@ fi
 # 5. Get image
 IMG_FILE=""
 if [[ "$WANT_IMAGE" == "yes" ]]; then
-  IMG_URL_INPUT=$(rofi -dmenu -p "Paste image URL (or leave blank)")
+  IMG_URL_INPUT=$(rofi_input "Paste image URL (or leave blank)")
   if [[ -n "$IMG_URL_INPUT" ]]; then
     notify-send "Anki Rofi" "Downloading image..." || true
     IMG_FILE_TMP="${TMP_DIR}/anki_tts_temp_img_${TS}"
@@ -274,25 +321,33 @@ fi
 # 6. Build card and send to Anki
 BACK_FINAL_HTML=""
 # BACK_FINAL_HTML+="<b>Word:</b> $(html_escape "$TEXT")<br>"
-BACK_FINAL_HTML+="<b>Synonyms:</b> $(html_escape "$SYN_LIST")<br>"
+# Every row is conditional now. With no Gemini key the synonym and
+# example sections are absent rather than printed as the word "null".
+if [[ -n "$SYN_LIST" ]]; then BACK_FINAL_HTML+="<b>Synonyms:</b> $(html_escape "$SYN_LIST")<br>"; fi
 if [[ -n "$IPA" ]]; then BACK_FINAL_HTML+="<b>IPA:</b> /$(html_escape "$IPA")/<br>"; fi
-BACK_FINAL_HTML+="<b>Translation:</b> <span style=\"background-color:#52007b; color:white; padding: 2px 5px; border-radius: 3px;\">$(html_escape "$TR")</span><br>"
+if [[ -n "$TR" ]]; then BACK_FINAL_HTML+="<b>Translation:</b> <span style=\"background-color:#52007b; color:white; padding: 2px 5px; border-radius: 3px;\">$(html_escape "$TR")</span><br>"; fi
 if [[ -n "$IMG_FILE" ]]; then BACK_FINAL_HTML+="<br><img src=\"$(basename "$IMG_FILE")\" style=\"width:300px;height:300px;object-fit:cover;\"><br>"; fi
-BACK_FINAL_HTML+="<br><b>Examples</b><br>"
-BACK_FINAL_HTML+="$(html_escape "$EX1")<br>"
-BACK_FINAL_HTML+="$(html_escape "$EX2")<br>"
-BACK_FINAL_HTML+="$(html_escape "$EX3")<br>"
+if [[ -n "$EX1$EX2$EX3" ]]; then
+  BACK_FINAL_HTML+="<br><b>Examples</b><br>"
+  for ex in "$EX1" "$EX2" "$EX3"; do
+    [[ -n "$ex" ]] && BACK_FINAL_HTML+="$(html_escape "$ex")<br>"
+  done
+fi
 
+# Only attach clips that actually got produced. Any TTS step can fail
+# quietly (missing engine, missing voice model, ffmpeg error), and
+# AnkiConnect rejects the whole note if it is handed a path that is not
+# there — so one silent audio failure used to cost the entire card.
 audio_json_parts=()
-if [[ "$WANT_VOICE_NORMAL" == "yes" ]]; then
-  audio_json_parts+=("$(jq -n --arg filename "$(basename "$AUDIO_NORMAL")" --arg path "$AUDIO_NORMAL" '{filename: $filename, path: $path, fields: ["Back"]}')")
-fi
-if [[ "$WANT_VOICE_REPEAT" == "yes" ]]; then
-  audio_json_parts+=("$(jq -n --arg filename "$(basename "$AUDIO_REPEAT")" --arg path "$AUDIO_REPEAT" '{filename: $filename, path: $path, fields: ["Back"]}')")
-fi
-if [[ "$WANT_VOICE_SPELL" == "yes" ]]; then
-  audio_json_parts+=("$(jq -n --arg filename "$(basename "$AUDIO_SPELL")" --arg path "$AUDIO_SPELL" '{filename: $filename, path: $path, fields: ["Back"]}')")
-fi
+add_audio() {
+  local path="$1"
+  [[ -s "$path" ]] || { notify_safe "Anki Rofi" "skipping missing audio: $(basename "$path")"; return 0; }
+  audio_json_parts+=("$(jq -n --arg filename "$(basename "$path")" --arg path "$path" \
+    '{filename: $filename, path: $path, fields: ["Back"]}')")
+}
+if [[ "$WANT_VOICE_NORMAL" == "yes" ]]; then add_audio "$AUDIO_NORMAL"; fi
+if [[ "$WANT_VOICE_REPEAT" == "yes" ]]; then add_audio "$AUDIO_REPEAT"; fi
+if [[ "$WANT_VOICE_SPELL"  == "yes" ]]; then add_audio "$AUDIO_SPELL"; fi
 joined_parts=$(printf "%s," "${audio_json_parts[@]}")
 audio_json_array="[${joined_parts%,}]"
 

@@ -867,7 +867,7 @@ sec_espanso() {
         (( RC != 0 )) && continue
         [[ -z "$sel" ]] && continue
         if [[ "$sel" == "＋"* ]]; then
-          local name; name="$(printf '' | rofi -dmenu -p "new file name (no .yml)")"
+          local name; name="$(rofi_input "new file name (no .yml)")"
           [[ -z "$name" ]] && continue
           local new_f="$match_dir/${name%.yml}.yml"
           [[ -f "$new_f" ]] || cat > "$new_f" <<'YML'
