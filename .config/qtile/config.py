@@ -5552,6 +5552,177 @@ def chip(WCls, chip_color=None, **kwargs):
 # ╚──────────────────────────────────╝
 
 
+# Audio-Mode and Display-Mode live on alt+3 / alt+4, where the pavucontrol
+# and arandr scratchpads used to sit. Their submappings are long enough to
+# bury the keys list they are attached to, so they are defined out here.
+#
+# Each list rebinds its OWN entry key to close-and-ungrab, which is what
+# makes alt+3 / alt+4 toggles rather than one-way doors: while a chord is
+# active qtile grabs only that chord's keys, so alt+3 is not otherwise seen
+# again until the chord is left.
+def _audio_mode_keys():
+    """Submappings for Audio-Mode (see popups/AudioPopup.py)."""
+    return [
+        # NAVIGATE
+        Key([], "j", lazy.function(lambda _: AudioPopup.move(1))),
+        Key([], "k", lazy.function(lambda _: AudioPopup.move(-1))),
+        Key([], "g", lazy.function(lambda _: AudioPopup.jump("top"))),
+        Key(
+            ["shift"],
+            "g",
+            lazy.function(lambda _: AudioPopup.jump("bottom")),
+        ),
+        # VIEWS. Tab cycles; the direct letters are for jumping
+        # straight to one.
+        Key([], "Tab", lazy.function(lambda _: AudioPopup.cycle_view(1))),
+        Key(
+            ["shift"],
+            "Tab",
+            lazy.function(lambda _: AudioPopup.cycle_view(-1)),
+        ),
+        Key([], "o", lazy.function(lambda _: AudioPopup.set_view("outputs"))),
+        Key([], "i", lazy.function(lambda _: AudioPopup.set_view("inputs"))),
+        Key([], "a", lazy.function(lambda _: AudioPopup.set_view("playback"))),
+        Key(
+            [],
+            "s",
+            lazy.function(lambda _: AudioPopup.set_view("recording")),
+        ),
+        Key([], "p", lazy.function(lambda _: AudioPopup.show_profiles())),
+        # Every card at once -- pavucontrol's Configuration tab.
+        Key(["shift"], "c", lazy.function(lambda _: AudioPopup.show_cards())),
+        # Enter on a stream opens the device picker; d is the
+        # shortcut for "just put it on the default".
+        Key([], "d", lazy.function(lambda _: AudioPopup.send_to_default())),
+        # Shift+p for the jack/port dropdown -- the thing that
+        # picks Headphones over Speakers on one card.
+        Key(["shift"], "p", lazy.function(lambda _: AudioPopup.show_ports())),
+        # Balance, stereo devices only. 0 re-centres.
+        Key(
+            [],
+            "b",
+            lazy.function(
+                lambda _: AudioPopup.change_balance(-AudioPopup.BALANCE_STEP)
+            ),
+        ),
+        Key(
+            ["shift"],
+            "b",
+            lazy.function(
+                lambda _: AudioPopup.change_balance(AudioPopup.BALANCE_STEP)
+            ),
+        ),
+        Key([], "0", lazy.function(lambda _: AudioPopup.change_balance(0))),
+        # ACTIONS. Enter on an output also drags the running
+        # streams over -- setting the default alone only affects
+        # what starts playing afterwards.
+        Key([], "Return", lazy.function(lambda _: AudioPopup.activate())),
+        Key(
+            [],
+            "l",
+            lazy.function(
+                lambda _: AudioPopup.change_volume(AudioPopup.VOLUME_STEP)
+            ),
+        ),
+        Key(
+            [],
+            "h",
+            lazy.function(
+                lambda _: AudioPopup.change_volume(-AudioPopup.VOLUME_STEP)
+            ),
+        ),
+        Key([], "m", lazy.function(lambda _: AudioPopup.toggle_mute())),
+        Key([], "r", lazy.function(lambda _: AudioPopup.refresh(True))),
+        # Abort a card-profile switch: a bluez renegotiation can
+        # sit there for seconds.
+        Key([], "c", lazy.function(lambda _: AudioPopup.cancel())),
+        # EXIT. No Escape binding: KeyChord appends its own after
+        # these and later grabs win, so Escape closes via
+        # cleanup_on_leave. Same as the WiFi and Bluetooth chords.
+        Key(
+            [],
+            "q",
+            lazy.function(lambda qtile: AudioPopup.close(qtile)),
+            lazy.ungrab_chord(),
+        ),
+        # The entry key again, so alt+3 toggles.
+        Key(
+            [mod2],
+            "3",
+            lazy.function(lambda qtile: AudioPopup.close(qtile)),
+            lazy.ungrab_chord(),
+        ),
+    ]
+
+
+def _display_mode_keys():
+    """Submappings for Display-Mode (see popups/DisplayPopup.py)."""
+    return [
+        # NAVIGATE. In arrange mode j/k/h/l move the picked
+        # monitor instead of the cursor -- see DisplayPopup.nav
+        # and .place, which branch on the active view.
+        Key([], "j", lazy.function(lambda _: DisplayPopup.nav(1))),
+        Key([], "k", lazy.function(lambda _: DisplayPopup.nav(-1))),
+        Key([], "Tab", lazy.function(lambda _: DisplayPopup.pick_next(1))),
+        Key([], "a", lazy.function(lambda _: DisplayPopup.start_arrange())),
+        Key([], "g", lazy.function(lambda _: DisplayPopup.jump("top"))),
+        Key(
+            ["shift"],
+            "g",
+            lazy.function(lambda _: DisplayPopup.jump("bottom")),
+        ),
+        # Enter opens the resolution / refresh list for the
+        # selected output, and applies the mode from inside it.
+        Key([], "Return", lazy.function(lambda _: DisplayPopup.activate())),
+        Key([], "BackSpace", lazy.function(lambda _: DisplayPopup.back())),
+        # ONE-KEY LAYOUTS -- the 95% cases.
+        Key([], "i", lazy.function(lambda _: DisplayPopup.preset("internal"))),
+        Key([], "e", lazy.function(lambda _: DisplayPopup.preset("external"))),
+        Key([], "m", lazy.function(lambda _: DisplayPopup.preset("mirror"))),
+        # Placement. u/d rather than j/k: those are the cursor.
+        Key([], "h", lazy.function(lambda _: DisplayPopup.place("left"))),
+        Key([], "l", lazy.function(lambda _: DisplayPopup.place("right"))),
+        Key([], "u", lazy.function(lambda _: DisplayPopup.preset("above"))),
+        Key([], "d", lazy.function(lambda _: DisplayPopup.preset("below"))),
+        # PER-OUTPUT
+        Key([], "p", lazy.function(lambda _: DisplayPopup.set_primary())),
+        Key([], "t", lazy.function(lambda _: DisplayPopup.rotate())),
+        Key([], "f", lazy.function(lambda _: DisplayPopup.reflect())),
+        Key([], "o", lazy.function(lambda _: DisplayPopup.toggle_output())),
+        Key([], "r", lazy.function(lambda _: DisplayPopup.refresh(True))),
+        # SAVED LAYOUTS -- what autorandr would do, except this
+        # machine does not have autorandr.
+        Key([], "v", lazy.function(lambda _: DisplayPopup.show_layouts())),
+        Key([], "s", lazy.function(lambda _: DisplayPopup.save_current())),
+        Key([], "x", lazy.function(lambda _: DisplayPopup.delete_layout())),
+        # A change that could blank the screen stays provisional
+        # until `y`; `c` reverts it now, and doing nothing reverts
+        # it when the countdown runs out.
+        Key([], "y", lazy.function(lambda _: DisplayPopup.keep())),
+        # Cross-axis alignment while arranging: tops / centres /
+        # bottoms. The one thing arandr could do that this could
+        # not.
+        Key([], "equal", lazy.function(lambda _: DisplayPopup.cycle_align())),
+        Key([], "c", lazy.function(lambda _: DisplayPopup.cancel())),
+        # EXIT. No Escape binding, same reason as above -- and
+        # cleanup_on_leave reverts any pending change on the way
+        # out.
+        Key(
+            [],
+            "q",
+            lazy.function(lambda qtile: DisplayPopup.close(qtile)),
+            lazy.ungrab_chord(),
+        ),
+        # The entry key again, so alt+4 toggles.
+        Key(
+            [mod2],
+            "4",
+            lazy.function(lambda qtile: DisplayPopup.close(qtile)),
+            lazy.ungrab_chord(),
+        ),
+    ]
+
+
 keys = [
     # Hint mode is bound directly, not only in the chord. It is the action
     # you take constantly, and a chord costs a keystroke plus remembering you
@@ -6040,171 +6211,10 @@ keys = [
                 name="Bluetooth-Mode",
                 desc="Bluetooth device picker",
             ),
-            # --- a Special mode for "Audio" ---
-            # --- AUDIO MODE ---
-            # v for volume: a is taken (rofi_anki), and g/j/u/v were the only
-            # free letters left in this chord. Everything happens in the
-            # popup -- output, mic, per-app volume and card profiles -- so
-            # pavucontrol is not involved.
-            KeyChord(
-                [],
-                "v",
-                [
-                    # NAVIGATE
-                    Key([], "j", lazy.function(lambda _: AudioPopup.move(1))),
-                    Key([], "k", lazy.function(lambda _: AudioPopup.move(-1))),
-                    Key([], "g", lazy.function(lambda _: AudioPopup.jump("top"))),
-                    Key(
-                        ["shift"],
-                        "g",
-                        lazy.function(lambda _: AudioPopup.jump("bottom")),
-                    ),
-                    # VIEWS. Tab cycles; the direct letters are for jumping
-                    # straight to one.
-                    Key([], "Tab", lazy.function(lambda _: AudioPopup.cycle_view(1))),
-                    Key(
-                        ["shift"],
-                        "Tab",
-                        lazy.function(lambda _: AudioPopup.cycle_view(-1)),
-                    ),
-                    Key([], "o", lazy.function(lambda _: AudioPopup.set_view("outputs"))),
-                    Key([], "i", lazy.function(lambda _: AudioPopup.set_view("inputs"))),
-                    Key([], "a", lazy.function(lambda _: AudioPopup.set_view("playback"))),
-                    Key(
-                        [],
-                        "s",
-                        lazy.function(lambda _: AudioPopup.set_view("recording")),
-                    ),
-                    Key([], "p", lazy.function(lambda _: AudioPopup.show_profiles())),
-                    # Every card at once -- pavucontrol's Configuration tab.
-                    Key(["shift"], "c", lazy.function(lambda _: AudioPopup.show_cards())),
-                    # Enter on a stream opens the device picker; d is the
-                    # shortcut for "just put it on the default".
-                    Key([], "d", lazy.function(lambda _: AudioPopup.send_to_default())),
-                    # Shift+p for the jack/port dropdown -- the thing that
-                    # picks Headphones over Speakers on one card.
-                    Key(["shift"], "p", lazy.function(lambda _: AudioPopup.show_ports())),
-                    # Balance, stereo devices only. 0 re-centres.
-                    Key(
-                        [],
-                        "b",
-                        lazy.function(
-                            lambda _: AudioPopup.change_balance(-AudioPopup.BALANCE_STEP)
-                        ),
-                    ),
-                    Key(
-                        ["shift"],
-                        "b",
-                        lazy.function(
-                            lambda _: AudioPopup.change_balance(AudioPopup.BALANCE_STEP)
-                        ),
-                    ),
-                    Key([], "0", lazy.function(lambda _: AudioPopup.change_balance(0))),
-                    # ACTIONS. Enter on an output also drags the running
-                    # streams over -- setting the default alone only affects
-                    # what starts playing afterwards.
-                    Key([], "Return", lazy.function(lambda _: AudioPopup.activate())),
-                    Key(
-                        [],
-                        "l",
-                        lazy.function(
-                            lambda _: AudioPopup.change_volume(AudioPopup.VOLUME_STEP)
-                        ),
-                    ),
-                    Key(
-                        [],
-                        "h",
-                        lazy.function(
-                            lambda _: AudioPopup.change_volume(-AudioPopup.VOLUME_STEP)
-                        ),
-                    ),
-                    Key([], "m", lazy.function(lambda _: AudioPopup.toggle_mute())),
-                    Key([], "r", lazy.function(lambda _: AudioPopup.refresh(True))),
-                    # Abort a card-profile switch: a bluez renegotiation can
-                    # sit there for seconds.
-                    Key([], "c", lazy.function(lambda _: AudioPopup.cancel())),
-                    # EXIT. No Escape binding: KeyChord appends its own after
-                    # these and later grabs win, so Escape closes via
-                    # cleanup_on_leave. Same as the WiFi and Bluetooth chords.
-                    Key(
-                        [],
-                        "q",
-                        lazy.function(lambda qtile: AudioPopup.close(qtile)),
-                        lazy.ungrab_chord(),
-                    ),
-                ],
-                mode=True,
-                name="Audio-Mode",
-                desc="Audio output / input / per-app volume picker",
-            ),
-            # --- a Special mode for "Displays" ---
-            # --- DISPLAY MODE ---
-            # g for graphics. No autorandr on this system, so this is the
-            # only keyboard path to a second monitor.
-            KeyChord(
-                [],
-                "g",
-                [
-                    # NAVIGATE. In arrange mode j/k/h/l move the picked
-                    # monitor instead of the cursor -- see DisplayPopup.nav
-                    # and .place, which branch on the active view.
-                    Key([], "j", lazy.function(lambda _: DisplayPopup.nav(1))),
-                    Key([], "k", lazy.function(lambda _: DisplayPopup.nav(-1))),
-                    Key([], "Tab", lazy.function(lambda _: DisplayPopup.pick_next(1))),
-                    Key([], "a", lazy.function(lambda _: DisplayPopup.start_arrange())),
-                    Key([], "g", lazy.function(lambda _: DisplayPopup.jump("top"))),
-                    Key(
-                        ["shift"],
-                        "g",
-                        lazy.function(lambda _: DisplayPopup.jump("bottom")),
-                    ),
-                    # Enter opens the resolution / refresh list for the
-                    # selected output, and applies the mode from inside it.
-                    Key([], "Return", lazy.function(lambda _: DisplayPopup.activate())),
-                    Key([], "BackSpace", lazy.function(lambda _: DisplayPopup.back())),
-                    # ONE-KEY LAYOUTS -- the 95% cases.
-                    Key([], "i", lazy.function(lambda _: DisplayPopup.preset("internal"))),
-                    Key([], "e", lazy.function(lambda _: DisplayPopup.preset("external"))),
-                    Key([], "m", lazy.function(lambda _: DisplayPopup.preset("mirror"))),
-                    # Placement. u/d rather than j/k: those are the cursor.
-                    Key([], "h", lazy.function(lambda _: DisplayPopup.place("left"))),
-                    Key([], "l", lazy.function(lambda _: DisplayPopup.place("right"))),
-                    Key([], "u", lazy.function(lambda _: DisplayPopup.preset("above"))),
-                    Key([], "d", lazy.function(lambda _: DisplayPopup.preset("below"))),
-                    # PER-OUTPUT
-                    Key([], "p", lazy.function(lambda _: DisplayPopup.set_primary())),
-                    Key([], "t", lazy.function(lambda _: DisplayPopup.rotate())),
-                    Key([], "f", lazy.function(lambda _: DisplayPopup.reflect())),
-                    Key([], "o", lazy.function(lambda _: DisplayPopup.toggle_output())),
-                    Key([], "r", lazy.function(lambda _: DisplayPopup.refresh(True))),
-                    # SAVED LAYOUTS -- what autorandr would do, except this
-                    # machine does not have autorandr.
-                    Key([], "v", lazy.function(lambda _: DisplayPopup.show_layouts())),
-                    Key([], "s", lazy.function(lambda _: DisplayPopup.save_current())),
-                    Key([], "x", lazy.function(lambda _: DisplayPopup.delete_layout())),
-                    # A change that could blank the screen stays provisional
-                    # until `y`; `c` reverts it now, and doing nothing reverts
-                    # it when the countdown runs out.
-                    Key([], "y", lazy.function(lambda _: DisplayPopup.keep())),
-                    # Cross-axis alignment while arranging: tops / centres /
-                    # bottoms. The one thing arandr could do that this could
-                    # not.
-                    Key([], "equal", lazy.function(lambda _: DisplayPopup.cycle_align())),
-                    Key([], "c", lazy.function(lambda _: DisplayPopup.cancel())),
-                    # EXIT. No Escape binding, same reason as above -- and
-                    # cleanup_on_leave reverts any pending change on the way
-                    # out.
-                    Key(
-                        [],
-                        "q",
-                        lazy.function(lambda qtile: DisplayPopup.close(qtile)),
-                        lazy.ungrab_chord(),
-                    ),
-                ],
-                mode=True,
-                name="Display-Mode",
-                desc="Display / xrandr layout picker",
-            ),
+            # NOTE: Audio-Mode (v) and Display-Mode (g) used to be nested here
+            # alongside the other pickers. They are on alt+3 / alt+4 now --
+            # one keystroke, and toggleable -- so the duplicates are gone; v
+            # and g are free again in this chord.
             # --- a Special mode for "WiFi" ---
             # --- WiFi MODE ---
             # n for network. (Was w, which now opens the wallpaper picker.)
@@ -6850,15 +6860,6 @@ groups.append(
                 opacity=1,
             ),
             DropDown(
-                "2ndScreen",
-                "arandr",
-                width=0.6,
-                height=0.6,
-                x=0.2,
-                y=0.1,
-                opacity=1,
-            ),
-            DropDown(
                 "term2",
                 "kitty",
                 width=0.6,
@@ -6867,15 +6868,9 @@ groups.append(
                 y=0.1,
                 opacity=1,
             ),
-            DropDown(
-                "mixer",
-                "env GTK_THEME=Adwaita:dark pavucontrol",
-                width=0.4,
-                height=0.6,
-                x=0.3,
-                y=0.1,
-                opacity=1,
-            ),
+            # NOTE: the "mixer" (pavucontrol) and "2ndScreen" (arandr)
+            # dropdowns lived here until AudioPopup and DisplayPopup replaced
+            # them. alt+3 / alt+4 now open those popups instead.
             DropDown(
                 "calc",
                 "env GTK_THEME=Adwaita:dark qalculate-gtk",
@@ -6981,8 +6976,27 @@ keys.extend(
     [
         Key([mod2], "1", lazy.group["scratchpad"].dropdown_toggle("term1")),
         Key([mod2], "2", lazy.group["scratchpad"].dropdown_toggle("term2")),
-        Key([mod2], "3", lazy.group["scratchpad"].dropdown_toggle("mixer")),
-        Key([mod2], "4", lazy.group["scratchpad"].dropdown_toggle("2ndScreen")),
+        # 3 and 4 were the pavucontrol and arandr scratchpads. Both are now
+        # popups (AudioPopup / DisplayPopup) that cover everything those two
+        # windows did, so the keys keep their meaning -- audio and displays --
+        # and open the chord instead of a GTK window. Same chords as
+        # win+shift+f → v / g; see _audio_mode_keys / _display_mode_keys.
+        KeyChord(
+            [mod2],
+            "3",
+            _audio_mode_keys(),
+            mode=True,
+            name="Audio-Mode",
+            desc="Audio output / input / per-app volume picker",
+        ),
+        KeyChord(
+            [mod2],
+            "4",
+            _display_mode_keys(),
+            mode=True,
+            name="Display-Mode",
+            desc="Display / xrandr layout picker",
+        ),
         Key([mod2], "5", lazy.group["scratchpad"].dropdown_toggle("calc")),
         Key([mod2], "8", lazy.group["scratchpad"].dropdown_toggle("whats")),
         Key([mod2], "9", lazy.group["scratchpad"].dropdown_toggle("deepseek")),

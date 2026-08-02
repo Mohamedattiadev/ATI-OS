@@ -52,6 +52,13 @@ MODE_KEYS = {
     "ROFI MODE": "Mod + P",
     "ROFI MODE · pickers": "Mod + P",
     "LANGUAGE MODE": "Super + Space",
+    # These two took over the alt keys the pavucontrol and arandr scratchpads
+    # used to own, and the key toggles: press it again to close. They were
+    # also nested under Mod+P as v / g; that duplicate is gone.
+    "AUDIO MODE": "Alt + 3",
+    "AUDIO MODE · views": "Alt + 3",
+    "DISPLAY MODE": "Alt + 4",
+    "DISPLAY MODE · layouts": "Alt + 4",
 }
 
 # =============================================================================
@@ -101,6 +108,13 @@ CHEATSHEET = {
         ("Todos Preview", "Alt + p"),
         ("Cpu-Memo widget", "Super + `"),
         ("Lang-Volume widget", "Alt + `"),
+        ("Terminal drop 1", "Alt + 1"),
+        ("Terminal drop 2", "Alt + 2"),
+        # 3 and 4 were the pavucontrol / arandr scratchpads; both are popups
+        # now, and the keys kept their subject.
+        ("Audio popup", "Alt + 3"),
+        ("Display popup", "Alt + 4"),
+        ("Calculator", "Alt + 5"),
     ],
     "MOUSE MODE": [
         ("Hint mode", "f"),
@@ -149,6 +163,8 @@ CHEATSHEET = {
         ("Wallpaper picker", "w"),
         ("WiFi picker", "n"),
         ("Bluetooth picker", "b"),
+        # Audio (v) and Display (g) used to live here too. They are on
+        # Alt + 3 / Alt + 4 now -- see their own cards below.
     ],
     "RESIZE MODE": [
         ("Shrink window", "Shift + h"),
@@ -162,6 +178,59 @@ CHEATSHEET = {
         ("Mute", "Shift + m"),
         ("MPV PiP", "Shift + p"),
         ("Exit mode", "q / Esc"),
+    ],
+    # Everything pavucontrol's four tabs plus its Configuration tab could
+    # do, minus the window. Split in two so neither card runs off the grid.
+    "AUDIO MODE": [
+        ("Down / up", "j / k"),
+        ("Volume down / up", "h / l"),
+        ("Mute", "m"),
+        ("Apply + move streams", "Enter"),
+        ("Send to default", "d"),
+        ("Balance L / R", "b / Shift + b"),
+        ("Centre balance", "0"),
+        ("Refresh", "r"),
+        ("Cancel action", "c"),
+        ("Exit mode", "Alt + 3 / q / Esc"),
+    ],
+    "AUDIO MODE · views": [
+        ("Outputs", "o"),
+        ("Inputs", "i"),
+        ("Playback apps", "a"),
+        ("Recording apps", "s"),
+        ("Card profiles", "p"),
+        ("All cards", "Shift + c"),
+        ("Ports (jacks)", "Shift + p"),
+        ("Cycle views", "Tab"),
+        ("Top / bottom", "g / Shift + g"),
+    ],
+    # arandr's whole feature set: enable, resolution, refresh, rotate,
+    # reflect, position, primary, and saved layouts.
+    "DISPLAY MODE": [
+        ("Down / up", "j / k"),
+        ("Modes (res + rate)", "Enter"),
+        ("Back a view", "Backspace"),
+        ("Enable / disable", "o"),
+        ("Set primary", "p"),
+        ("Rotate", "t"),
+        ("Reflect (mirror axis)", "f"),
+        ("Refresh", "r"),
+        ("Keep change", "y"),
+        ("Revert / cancel", "c"),
+        ("Exit mode", "Alt + 4 / q / Esc"),
+    ],
+    "DISPLAY MODE · layouts": [
+        ("Internal only", "i"),
+        ("External only", "e"),
+        ("Mirror", "m"),
+        ("Extend left / right", "h / l"),
+        ("Extend above / below", "u / d"),
+        ("Free arrange", "a"),
+        ("Pick monitor", "Tab"),
+        ("Cycle alignment", "="),
+        ("Saved layouts", "v"),
+        ("Save current", "s"),
+        ("Delete saved", "x"),
     ],
     "LANGUAGE MODE": [
         ("Arabic", "a"),
