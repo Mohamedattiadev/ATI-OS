@@ -89,7 +89,6 @@ Files in `modules/` that are *not* listed there are inert:
 | `xorg.yaml` | X server and input/display utilities |
 | `system-tools.yaml` | CLI utilities |
 | `python-lib.yaml` | Python packages qtile's config and scripts import |
-| `system-packages-ati.yaml` | *not enabled* — a captured snapshot of manually-installed packages, kept for reference |
 | `declared-packages.yaml` | *not enabled* — scratch list written by `dcli install`/`dcli search` |
 | `graphics-intel.yaml`, `graphics-amd.yaml`, `graphics-nvidia.yaml` | *not enabled* — the wizard's `gpu` module picks one at install time from the PCI vendor id |
 | `optional.yaml` | *not enabled* — docker/jdk/qemu/printing, installed only by `wizard.sh --only=dcli-sync-extra` |

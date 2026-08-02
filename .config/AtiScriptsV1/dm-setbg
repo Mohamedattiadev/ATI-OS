@@ -20,8 +20,23 @@ set -euo pipefail
 # both read -- is ~/Pictures/Wallpapers, so this menu listed nothing at
 # all on a machine where every other wallpaper tool worked fine.
 setbg_dir="$HOME/Pictures/Wallpapers"
+# The dmscripts helper library. Tried in three places, in order: the
+# current directory (upstream's own convention), $PATH, then the path the
+# dmscripts package actually installs it to.
+#
+# The explicit failure is the point. This used to be two `2>/dev/null`
+# attempts and nothing else, so when both missed, `set -e` killed the
+# script on the next undefined function with no message whatsoever -- a
+# keybinding that did nothing at all, and no way to tell why.
 # shellcheck disable=SC1091
-source ./_dm-helper.sh 2>/dev/null || source _dm-helper.sh 2>/dev/null
+if ! { source ./_dm-helper.sh 2>/dev/null \
+    || source _dm-helper.sh 2>/dev/null \
+    || source /usr/bin/_dm-helper.sh 2>/dev/null; }; then
+  msg="${0##*/}: cannot find _dm-helper.sh (install the dmscripts package)"
+  command -v notify-send >/dev/null 2>&1 && notify-send "${0##*/}" "$msg"
+  printf '%s\n' "$msg" >&2
+  exit 1
+fi
 
 source_dmscripts_configs
 

@@ -67,7 +67,12 @@ import urllib.parse
 import urllib.request
 
 # ---------------- Configuration ----------------
-TMP_DIR = "/tmp/translator"
+# Per-user, matching AtiScriptsV1/rofi_translator. A fixed /tmp path is
+# owned by whichever account ran first; every other account's write to
+# gemini.log below then fails with EACCES.
+TMP_DIR = os.path.join(
+    os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/rofi-{os.getuid()}", "translator"
+)
 os.makedirs(TMP_DIR, exist_ok=True)
 
 CACHE_DIR = os.path.expanduser("~/.cache/rofi_translator")

@@ -210,9 +210,11 @@ command -v xrdb >/dev/null 2>&1 && xrdb -merge "$XRES" 2>/dev/null || true
 # `set-font-size 0` means "the configured size", re-derived at the CURRENT
 # dpi, and it clears the override. Sending it to every live kitty makes a
 # scale change authoritative again. Same socket fan-out theme-apply uses
-# for colors; same 1s timeout so one wedged instance cannot hang this.
+# for colors; same 1s timeout so one wedged instance cannot hang this --
+# including globbing /tmp alongside $XDG_RUNTIME_DIR, for kitties started
+# before kitty.conf moved the socket off a world-traversable directory.
 if command -v kitty >/dev/null 2>&1; then
-  for sock in /tmp/kitty-*; do
+  for sock in "${XDG_RUNTIME_DIR:-/nonexistent}"/kitty-* /tmp/kitty-*; do
     [[ -S "$sock" ]] || continue
     timeout 1 kitty @ --to "unix:$sock" set-font-size 0 >/dev/null 2>&1 &
   done

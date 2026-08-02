@@ -13,7 +13,10 @@ set -euo pipefail
 #
 
 # -------------------------- Configuration --------------------------
-TMP_DIR="/tmp/translator"
+# Per-user, matching AtiScriptsV1/rofi_translator. A fixed /tmp path is
+# owned by whichever account ran first, and every other account's TTS
+# write then fails with EACCES.
+TMP_DIR="${XDG_RUNTIME_DIR:-/tmp/rofi-$(id -u)}/translator"
 PIPER_CMD="$HOME/.local/bin/piper"
 PIPER_VOICE_DE="$HOME/.config/piper-voices/de_DE-thorsten-high.onnx"
 

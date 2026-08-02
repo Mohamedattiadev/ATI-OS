@@ -15,7 +15,9 @@ load_palette
 # plain launcher use, so every menu here is one 45%-wide, 8-row box. This
 # one was on the big process-killer theme; then on base.rasi, which skips
 # dtos-center's width and lines and came out wider than rofi_light.
-ROFI_THEME="/tmp/rofi-shared-theme.rasi"
+# Per-user, not a fixed /tmp path — rewritten every run, so a shared path
+# locks every account but the first out of it. See rofi_common.sh.
+ROFI_THEME="$ROFI_RUNTIME_DIR/rofi-shared-theme.rasi"
 cat >"$ROFI_THEME" <<'RASI'
 @import "~/.config/rofi/themes/dtos-center.rasi"
 
@@ -28,7 +30,7 @@ element-icon { size: 48px; expand: false; }
 RASI
 
 VIDEO_FILE="$HOME/.config/rofi/Todo_files/Shared_Links.md"
-THUMB_DIR="/tmp/link-thumbs"
+THUMB_DIR="$ROFI_RUNTIME_DIR/link-thumbs"
 mkdir -p "$THUMB_DIR" "$(dirname "$VIDEO_FILE")"
 touch "$VIDEO_FILE"
 

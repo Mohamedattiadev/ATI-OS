@@ -13,4 +13,11 @@ $ui-font: sans-serif;
 
 // Display face for oversized decorative headings only (cheatsheet
 // splash title). Not body text -- leave it out of $ui-font.
-$display-font: fira-code;
+//
+// "FiraCode Nerd Font", not "fira-code": the latter is not a family name
+// fontconfig knows, and fc-match answers Noto Sans CJK for anything it
+// cannot resolve -- a proportional face, so the space-aligned key columns
+// in the cheatsheet would have rendered ragged with nothing in any log to
+// say why. This name resolves to itself, is what kitty already uses, and
+// is one validate.sh already asserts.
+$display-font: "FiraCode Nerd Font";

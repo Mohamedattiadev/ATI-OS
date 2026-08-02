@@ -17,7 +17,13 @@ source "$SCRIPT_DIR/rofi_common.sh"
 #
 
 # -------------------------- Configuration --------------------------
-TMP_DIR="/tmp/translator"
+# Per-user. /tmp/translator was shared, so the second account to run this
+# hit EACCES writing the TTS audio and got a silent translation. The three
+# files that use this directory (here, dunst/scripts/rofi-translator.sh,
+# rofi_translator/wordreference.py) each write only their own scratch --
+# nothing is handed between them -- but they resolve the same path so the
+# directory stays one concept.
+TMP_DIR="$ROFI_RUNTIME_DIR/translator"
 # Resolved at runtime: this pointed at ~/.local/bin/piper while piper is
 # installed at /usr/bin/piper, so the German TTS branch below never once
 # ran. Same bug that was in wordreference.py.

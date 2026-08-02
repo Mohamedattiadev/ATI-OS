@@ -26,6 +26,8 @@
 #   boot-splash check       every pre-reboot safety check
 #   boot-splash selftest    render the name across a matrix of awkward
 #                           names and assert each one fits (no root)
+#   boot-splash verify-root check every boot entry's root= against the
+#                           device this system actually booted from
 #   boot-splash autosync    wait, then sync IF the boot screen is still out
 #                           of date -- debounced, for theme-apply to call
 #   boot-splash catchup     the same check at LOGIN, for autostart.sh to
@@ -899,6 +901,114 @@ do_preview() {
 
 # ── pre-flight check ────────────────────────────────────────────────
 # Everything that can be verified WITHOUT rebooting. Run before enable.
+# ── boot entries vs the real root device ────────────────────────────
+# Found on the author's own machine, months after it was written: a
+# hand-edited /boot/loader/entries/arch.conf carrying
+# root=PARTUUID=...d325af267740 -- one character off the real root
+# (...d326af267740). It matched no partition on the disk.
+#
+# It had been inert only because systemd-boot auto-discovers the UKI as a
+# Type #2 entry and boots that by default. But arch.conf still listed a
+# second, almost identically titled "Arch Linux" in the menu, and
+# systemd-boot passes a Type #1 entry's `options` to the kernel IN PLACE OF
+# the UKI's baked-in cmdline. So choosing it handed the kernel a root device
+# that does not exist -- precisely the entry someone reaches for while
+# trying to escape a bad boot.
+#
+# Nothing checked this. `check` ran sixteen checks and boot-fallback writes
+# two entries, and not one of them compared any root= against the running
+# system. The check is read-only, it is a handful of lines, and the failure
+# it catches has exactly one symptom: an unbootable machine.
+#
+# Exit codes are three-valued because "could not look" must not read as
+# "looked and it was fine":
+#   0  every entry that overrides the cmdline names the real root
+#   1  at least one entry does not  -- the machine has a bad menu line
+#   2  could not read the ESP (no privilege, or no entries dir)
+check_root_entries() {
+  local rc=0 src real_partuuid real_uuid real_dev esp entries=() e
+  local sudo_cmd="${BOOT_SPLASH_SUDO:-sudo}"
+
+  _e() {
+    if [[ "$1" == 0 ]]; then printf '  %s✓%s %s\n' "$g" "$o" "$2"
+    else printf '  %s✗%s %s\n' "$r" "$o" "$2"; rc=1; fi
+  }
+
+  src="$(findmnt -no SOURCE / 2>/dev/null || true)"
+  if [[ -z "$src" ]]; then
+    printf '  %s!%s cannot determine the running root device\n' "$y" "$o"
+    return 2
+  fi
+  real_dev="$(readlink -f "$src" 2>/dev/null || echo "$src")"
+  # lsblk, not blkid: lsblk reads the udev database and answers correctly
+  # for an unprivileged user, while unprivileged blkid depends on a cache
+  # that is not guaranteed to be populated.
+  real_partuuid="$(lsblk -no PARTUUID "$real_dev" 2>/dev/null | head -1 | tr -d '[:space:]')"
+  real_uuid="$(lsblk -no UUID "$real_dev" 2>/dev/null | head -1 | tr -d '[:space:]')"
+
+  esp="$($sudo_cmd bootctl --print-esp-path 2>/dev/null || echo /boot)"
+  $sudo_cmd test -d "$esp/loader/entries" 2>/dev/null || return 2
+  while IFS= read -r e; do
+    [[ -n "$e" ]] && entries+=("$e")
+  done < <($sudo_cmd find "$esp/loader/entries" -maxdepth 1 -name '*.conf' 2>/dev/null | sort || true)
+  (( ${#entries[@]} )) || return 2
+
+  for e in "${entries[@]}"; do
+    local body opts declared name
+    name="${e##*/}"
+    body="$($sudo_cmd cat "$e" 2>/dev/null || true)"
+    # Only entries that actually carry an `options` line matter. One
+    # without it inherits the UKI's baked cmdline (correct by
+    # construction), and a chainload entry for another OS has no business
+    # naming a Linux root at all.
+    opts="$(grep -m1 '^[[:space:]]*options[[:space:]]' <<<"$body" || true)"
+    [[ -n "$opts" ]] || continue
+
+    # `|| true` is load-bearing twice over: grep exits 1 when the entry has
+    # no root= at all -- the case immediately below is written to report --
+    # and `head -1` can close the pipe under the file's own `pipefail`. The
+    # first draft of this had neither, so an entry with `options` and no
+    # `root=` aborted the whole function mid-loop and every entry after it
+    # went unchecked, silently.
+    declared="$(grep -oE '(^|[[:space:]])root=[^[:space:]]+' <<<"$opts" | head -1 | tr -d '[:space:]' || true)"
+    declared="${declared#root=}"
+    if [[ -z "$declared" ]]; then
+      _e 1 "$name overrides the cmdline but declares no root="
+      continue
+    fi
+
+    case "$declared" in
+      PARTUUID=*|partuuid=*)
+        if [[ -z "$real_partuuid" ]]; then
+          printf '  %s!%s %s names a PARTUUID but this root has none to compare\n' "$y" "$o" "$name"
+        elif [[ "${declared#*=}" == "$real_partuuid" ]]; then
+          _e 0 "$name root=PARTUUID matches $real_dev"
+        else
+          _e 1 "$name root=PARTUUID=${declared#*=} is NOT $real_dev (${real_partuuid})"
+        fi ;;
+      UUID=*|uuid=*)
+        if [[ "${declared#*=}" == "$real_uuid" ]]; then
+          _e 0 "$name root=UUID matches $real_dev"
+        else
+          _e 1 "$name root=UUID=${declared#*=} is NOT $real_dev (${real_uuid})"
+        fi ;;
+      /dev/*)
+        # Compared through readlink so /dev/disk/by-id/... and /dev/sda2
+        # are recognised as the same device. Still worth flagging as
+        # fragile: kernel device names are not stable across boots.
+        if [[ "$(readlink -f "$declared" 2>/dev/null || echo "$declared")" == "$real_dev" ]]; then
+          _e 0 "$name root=$declared resolves to $real_dev (fragile, but correct)"
+        else
+          _e 1 "$name root=$declared is NOT the running root ($real_dev)"
+        fi ;;
+      *)
+        printf '  %s!%s %s uses root=%s — not a form this check understands\n' \
+          "$y" "$o" "$name" "$declared" ;;
+    esac
+  done
+  return $rc
+}
+
 do_check() {
   local fail=0 st esp themes ob cb
 
@@ -1006,6 +1116,16 @@ do_check() {
 
   st=0; sudo test -f "$esp/vmlinuz-linux-lts" || st=1
   _c $st "LTS kernel present on the ESP"
+
+  # Every menu entry that overrides the cmdline must name the root device
+  # this system actually booted from. See check_root_entries for the bug
+  # that went unnoticed for months because nothing compared the two.
+  st=0; check_root_entries || st=$?
+  case "$st" in
+    1) fail=1 ;;
+    2) printf '  %s!%s could not read %s/loader/entries — boot entries unverified\n' \
+         "$y" "$o" "$esp" ;;
+  esac
 
   echo
   if (( fail )); then
@@ -1351,12 +1471,17 @@ case "${1:-status}" in
   preview)  do_preview "$@" ;;
   check)    do_check ;;
   selftest) do_selftest ;;
+  # Standalone so validate.sh can run this one check without the fifteen
+  # that need plymouth installed. `sudo -n` because validate.sh promises to
+  # need no root: with no cached credential this returns 2 (unverified) and
+  # validate.sh reports a skip, rather than blocking on a password prompt.
+  verify-root) BOOT_SPLASH_SUDO="sudo -n" check_root_entries ;;
   autosync) do_autosync ;;
   catchup)  do_catchup ;;
   sync)     do_sync ;;
   enable)   do_enable ;;
   disable)  do_disable ;;
   status)   do_status ;;
-  --help|-h) sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) die "unknown command '${1}' (generate|preview|check|selftest|sync|autosync|catchup|enable|disable|status)" ;;
+  --help|-h) sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command '${1}' (generate|preview|check|selftest|verify-root|sync|autosync|catchup|enable|disable|status)" ;;
 esac

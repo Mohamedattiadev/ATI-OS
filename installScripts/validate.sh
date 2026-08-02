@@ -227,6 +227,32 @@ else
   fail "boot-splash selftest failed — run: boot-splash selftest"
 fi
 
+# Every boot menu entry that overrides the kernel cmdline must name the root
+# device this machine actually booted from. A hand-edited arch.conf on the
+# author's machine carried a PARTUUID one character off the real one and sat
+# there for months: systemd-boot boots the auto-discovered UKI by default,
+# so the broken entry was only ever reached by someone picking it out of the
+# menu -- which is exactly what you do when a boot has already gone wrong.
+#
+# Needs to read the ESP, which is root-only (dmask=0077), so this uses
+# `sudo -n` and reports a skip rather than a pass when there is no cached
+# credential. validate.sh does not prompt for a password.
+boot_root_out=""
+if [[ ! -x .config/AtiScriptsV1/boot-splash ]]; then
+  :
+elif ! command -v findmnt >/dev/null 2>&1; then
+  skip "no findmnt — cannot resolve the running root device"
+else
+  boot_root_rc=0
+  boot_root_out="$(.config/AtiScriptsV1/boot-splash verify-root 2>&1)" || boot_root_rc=$?
+  case "$boot_root_rc" in
+    0) pass "every boot entry's root= matches the running root device" ;;
+    2) skip "ESP not readable without a password — boot entries unverified" ;;
+    *) fail "a boot entry names the wrong root device:"
+       printf '%s\n' "$boot_root_out" >&2 ;;
+  esac
+fi
+
 # ── 9. cheatsheet popups: everything fits on screen ──────────────────
 # PopupText does not clip to its height -- text longer than the box just
 # keeps drawing downward until the popup window edge cuts it off. All three
