@@ -151,6 +151,25 @@ lxqt-policykit-agent &
 ) &
 
 # ---------------------------------------------------------
+# 6c. Boot splash catch-up
+# ---------------------------------------------------------
+# theme-apply hands the boot screen to `boot-splash autosync`, which waits
+# out a debounce before rerunning mkinitcpio. That waiting call is a
+# backgrounded child of theme-apply and the only thing that knows a sync is
+# owed -- so a reboot inside the window loses it silently and permanently.
+# Which is the normal case, not the unlucky one: you change the theme, then
+# reboot to look at the new boot screen.
+#
+# `catchup` re-derives the same question from disk (what the initramfs was
+# built from vs what the palette says now) instead of remembering it, so a
+# lost sync costs one login rather than being lost for good. It is two file
+# reads and an exit when the boot screen is already current, which is every
+# login but the one after a theme change.
+(
+  command -v boot-splash >/dev/null 2>&1 && boot-splash catchup
+) >/dev/null 2>&1 &
+
+# ---------------------------------------------------------
 # 7. Neovim Daemon (IMPORTANT)
 # ---------------------------------------------------------
 # Creates a tmux session that hosts Neovim as a server.

@@ -28,6 +28,9 @@
 #                           names and assert each one fits (no root)
 #   boot-splash autosync    wait, then sync IF the boot screen is still out
 #                           of date -- debounced, for theme-apply to call
+#   boot-splash catchup     the same check at LOGIN, for autostart.sh to
+#                           call -- repairs a sync that a reboot or logout
+#                           cut short while autosync was still waiting
 #   boot-splash sync        rebuild the initramfs so the boot screen matches
 #                           the CURRENT theme (generate alone cannot: the
 #                           theme is embedded in the initramfs)
@@ -979,13 +982,25 @@ do_check() {
 # The debounce is a token file. Every call writes a new random token and
 # then sleeps; on waking, a call that no longer owns the token knows a
 # later one is already waiting and exits. No timers, no daemon, no state to
-# get wedged -- and if the machine goes down mid-wait, nothing is left
-# behind except a stale token that the next call overwrites.
+# get wedged.
+#
+# What this deliberately does NOT do is survive the session. The waiting
+# call is a backgrounded child of theme-apply and its intent lives only in
+# that `sleep` -- a logout, a preemption kill, or a reboot inside the
+# window takes it with them and the sync is simply lost, silently. See
+# do_catchup for why that is not a rare corner and what closes it.
 AUTOSYNC_TOKEN="${XDG_RUNTIME_DIR:-/tmp}/boot-splash-autosync.token"
 AUTOSYNC_LOCK="${XDG_RUNTIME_DIR:-/tmp}/boot-splash-autosync.lock"
 AUTOSYNC_DELAY="${BOOT_SPLASH_AUTOSYNC_DELAY:-300}"
+# Login-time catch-up waits far less: the debounce exists to absorb a
+# burst of theme picks, and by the next login the picking is long over.
+# It is not zero only so it lands after the rest of autostart, rather than
+# putting a minute of mkinitcpio up against the desktop coming up.
+CATCHUP_DELAY="${BOOT_SPLASH_CATCHUP_DELAY:-90}"
 
 do_autosync() {
+  local delay="${1:-$AUTOSYNC_DELAY}"
+
   # Opt-out, for anyone who would rather run sync by hand.
   [[ "${BOOT_SPLASH_AUTOSYNC:-1}" == 0 ]] && { say "autosync disabled"; return 0; }
 
@@ -1002,7 +1017,7 @@ do_autosync() {
 
   local token; token="$RANDOM$RANDOM$$"
   printf '%s\n' "$token" > "$AUTOSYNC_TOKEN"
-  sleep "$AUTOSYNC_DELAY"
+  sleep "$delay"
 
   # Superseded: a later theme switch is already waiting its own delay.
   [[ "$(cat "$AUTOSYNC_TOKEN" 2>/dev/null)" == "$token" ]] || return 0
@@ -1031,6 +1046,33 @@ do_autosync() {
     fi
   ) 9>"$AUTOSYNC_LOCK"
 }
+
+# ── login catch-up ──────────────────────────────────────────────────
+# `boot-splash catchup` is what autostart.sh calls, once per login.
+#
+# autosync alone is not enough, because it carries its intent in a `sleep`
+# inside a backgrounded child of theme-apply and nowhere else. Anything
+# that ends the session inside the debounce window destroys that intent
+# with no record: a logout, theme-apply's own process-GROUP preemption
+# kill, and above all a reboot.
+#
+# The reboot is not the unlikely case, it is the LIKELY one. You change
+# the theme, and then you reboot to look at the new boot screen -- which
+# lands inside the 300s window by construction. That is exactly how this
+# machine spent two days booting a dracula splash under a mono-dark
+# desktop: the theme switched at 01:56, the reboot came at 01:57, and the
+# only thing that knew a sync was owed was a sleeping shell that went with
+# it. `generate` had already written the right assets to /usr/share, so
+# every file on disk looked correct; only .built-stamp -- which records
+# what the INITRAMFS holds -- disagreed, and nothing was reading it.
+#
+# The fix is to stop relying on the session remembering anything. The
+# drift is already fully described on disk: .built-stamp says what the
+# initramfs was built from, the palette says what the desktop wants. So
+# re-derive it at login instead of carrying it. A login that is already
+# current costs two file reads and exits; a login that is not repairs
+# itself and says so. Losing the sync now costs one login, not forever.
+do_catchup() { do_autosync "$CATCHUP_DELAY"; }
 
 # ── selftest ────────────────────────────────────────────────────────
 # Render the name across a matrix of awkward inputs and assert every one
@@ -1256,10 +1298,11 @@ case "${1:-status}" in
   check)    do_check ;;
   selftest) do_selftest ;;
   autosync) do_autosync ;;
+  catchup)  do_catchup ;;
   sync)     do_sync ;;
   enable)   do_enable ;;
   disable)  do_disable ;;
   status)   do_status ;;
-  --help|-h) sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) die "unknown command '${1}' (generate|preview|check|selftest|sync|autosync|enable|disable|status)" ;;
+  --help|-h) sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command '${1}' (generate|preview|check|selftest|sync|autosync|catchup|enable|disable|status)" ;;
 esac
