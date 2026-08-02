@@ -37,6 +37,17 @@ step() { printf '\n%s──%s %s\n' "$c_dim" "$c_off" "$*"; }
 
 free_gb() { df -BG --output=avail "$1" 2>/dev/null | tail -1 | tr -dc '0-9'; }
 
+# ---------------------------------------------------------------- 0
+# Every mutating step here is pacman. Off Arch the script used to get as
+# far as step 4 -- taking a real Timeshift snapshot, which is slow and
+# not free -- before step 5's `sudo pacman -Syuw` died as "command not
+# found" and was reported as "download failed", a message that says
+# nothing about the actual problem.
+if ! command -v pacman >/dev/null 2>&1; then
+  die "pacman not found — safe-update only manages Arch-family systems.
+     Use your distribution's own updater."
+fi
+
 # ---------------------------------------------------------------- 1
 step "Checking free space"
 root_free=$(free_gb /)

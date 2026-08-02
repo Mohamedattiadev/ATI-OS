@@ -208,12 +208,16 @@ w(os.path.expanduser("~/.cache/qtile/gtk-wal.css"), cons["gtk_css"])
 PYEOF
     # Skip wal -R: precompiled templates already cover kitty+rofi+brave+gtk.
     # Alacritty wal palette from precompiled consumers.alacritty_toml
+    # Both paths as argv rather than spliced into the source: $PRECOMPILED
+    # carries a wallpaper filename and $HOME an arbitrary username, and
+    # either containing an apostrophe closed the string literal and made
+    # this a silent no-op behind the 2>/dev/null.
     python3 -c "
 import json, sys
-d=json.load(open('$PRECOMPILED'))
+d=json.load(open(sys.argv[1]))
 t=d['consumers'].get('alacritty_toml','')
-open('$HOME/.cache/wal/colors-alacritty.toml','w').write(t)
-" 2>/dev/null || true
+open(sys.argv[2],'w').write(t)
+" "$PRECOMPILED" "$HOME/.cache/wal/colors-alacritty.toml" 2>/dev/null || true
     ln -sfn "$HOME/.cache/wal/colors-kitty.conf" "$KITTY_THEMES/current.conf"
     ln -sfn palette-wal.rasi "$ROFI_THEMES/current-palette.rasi"
     ln -sfn "$HOME/.cache/wal/colors-alacritty.toml" "$ALACRITTY_THEMES/current.toml"
@@ -259,6 +263,16 @@ PYEOF
     # No precompile — legacy path needs wal -R to regenerate kitty conf
     # then build rofi rasi from live wal cache.
     wal -R -q 2>/dev/null || true
+    # jq is not a declared dependency of anything else on this path, and
+    # it is the only thing that reads the palette here. Without it every
+    # assignment below came back empty and the rasi was written with bare
+    # `background: ;` lines -- which rofi refuses to parse, so every menu
+    # on the desktop stopped opening after a wallpaper change, with the
+    # theme switch itself reporting success.
+    if ! command -v jq >/dev/null 2>&1; then
+      notify-send -u critical "theme-apply" "jq is not installed — cannot build the wal rofi palette"
+      exit 1
+    fi
     BG="$(jq -r .special.background ~/.cache/wal/colors.json)"
     FG="$(jq -r .special.foreground ~/.cache/wal/colors.json)"
     BG_ALT="$(jq -r .colors.color0 ~/.cache/wal/colors.json)"
@@ -970,26 +984,44 @@ if command -v papirus-folders >/dev/null; then
       # Precompile JSON stores the mapped papirus_color directly; use
       # that when available. Fallback to hue-from-color9 for wallpapers
       # without a precompile cache entry.
+      #
+      # Seeded first so neither lookup below is load-bearing: with `set -u`
+      # in force, a run where both come back empty reached
+      # `papirus-folders -C "$ICON_COLOR"` with ICON_COLOR never assigned
+      # at all, and an unbound-variable abort here takes the qtile restart
+      # with it.
+      ICON_COLOR="blue"
       WSTEM="$(basename "$(readlink -f "$HOME/.cache/wall" 2>/dev/null)" 2>/dev/null)"
       WSTEM="${WSTEM%.*}"
+      # The stem goes in as argv, never spliced into the python source. It
+      # comes from a wallpaper FILENAME, and one containing an apostrophe
+      # closed the string literal and turned the whole block into a syntax
+      # error -- which, being 2>/dev/null'd, looked exactly like "this
+      # wallpaper has no precompiled colour".
       ICON_COLOR_OVERRIDE=$(python3 -c "
-import json,os
-p=os.path.expanduser('~/.cache/qtile/palettes/$WSTEM.json')
+import json,os,sys
+p=os.path.expanduser('~/.cache/qtile/palettes/%s.json' % sys.argv[1])
 if os.path.exists(p):
     pc = json.load(open(p)).get('papirus_color')
     if pc: print(pc)
-" 2>/dev/null)
+" "$WSTEM" 2>/dev/null || true)
       if [[ -n "$ICON_COLOR_OVERRIDE" ]]; then
         ICON_COLOR="$ICON_COLOR_OVERRIDE"
         HUE=""
       else
+        # `|| true`, because this runs under `set -e` and an assignment
+        # takes the substitution's exit status. A missing or truncated
+        # ~/.cache/wal/colors.json therefore did not merely skip the
+        # folder colour -- it killed theme-apply outright, right before
+        # the qtile restart, so the palette was half applied and the
+        # desktop never reloaded.
         HUE=$(python3 -c "
 import json,colorsys,os
 d=json.load(open(os.path.expanduser('~/.cache/wal/colors.json')))
 c=d['colors']['color9']
 r,g,b=int(c[1:3],16)/255,int(c[3:5],16)/255,int(c[5:7],16)/255
 print(int(colorsys.rgb_to_hsv(r,g,b)[0]*360))
-")
+" 2>/dev/null || true)
       fi
       if [[ -n "$HUE" ]]; then
         if   (( HUE < 15 || HUE >= 345 )); then ICON_COLOR="red"
@@ -1291,7 +1323,14 @@ if [[ "${THEME_APPLY_NO_BROWSER:-0}" != 1 ]]; then
   # into deleting the entire Extensions directory.
   if [[ -f "$BROWSER_PEM" ]] && [[ -n "$EXT_ID" ]] && [[ -n "${CHROME_BIN:-}" ]]; then
     "$CHROME_BIN" --pack-extension="$BROWSER_EXT" --pack-extension-key="$BROWSER_PEM" --no-message-box >/dev/null 2>&1 || true
-    VER=$(python3 -c "import json;print(json.load(open('$BROWSER_EXT/manifest.json'))['version'])" 2>/dev/null)
+    # Path as argv, and `|| true`: the manifest write above is itself
+    # `|| true`, so this can legitimately find no file -- and under
+    # `set -e` the failing substitution aborted the whole apply here,
+    # after the browsers had already been killed. Splicing $HOME into the
+    # python source also broke outright for any home directory containing
+    # an apostrophe.
+    VER=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['version'])" \
+      "$BROWSER_EXT/manifest.json" 2>/dev/null || true)
     if [[ -n "$VER" ]]; then
       cat > "$BROWSER_UPDATES" <<EOF
 <?xml version='1.0' encoding='UTF-8'?>

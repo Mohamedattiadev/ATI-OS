@@ -49,6 +49,10 @@ SRC_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}/.config/arch-config/plymouth"
 PALETTE="$HOME/.cache/qtile/current_palette.json"
 MKINITCPIO="/etc/mkinitcpio.conf"
 KCMDLINE="/etc/kernel/cmdline"
+# Preferred faces, as Arch's paths for the package the wizard installs.
+# These are a PREFERENCE, not a requirement: resolve_fonts() falls back to
+# whatever fontconfig has when the file is absent, which is every machine
+# that does not happen to have ttf-firacode-nerd.
 FONT="${BOOT_SPLASH_FONT:-/usr/share/fonts/TTF/FiraCodeNerdFontPropo-Bold.ttf}"
 # Block art needs a MONOSPACE face with box-drawing glyphs; the proportional
 # one above staggers every row and the letters fall apart.
@@ -154,6 +158,46 @@ screen_geometry() {
 # afterwards is silently desaturated -- the accent ring came out grey with
 # no warning anywhere. `PNG24:` is the only form that survives the write.
 
+# Resolve FONT / MONO_FONT to files that actually exist on THIS machine.
+#
+# Both defaults are the paths Arch's ttf-firacode-nerd installs to, and on
+# any machine without that package they simply are not there. The old
+# fallback set MONO_FONT to the family name "monospace" -- which does not
+# work: this ImageMagick is not built against fontconfig for name lookup,
+# so `-font monospace` fails with "unable to read font", render_blocks
+# dies, and `generate` aborts with "could not render a title". The warning
+# said "block art may not line up", which is not what happened at all.
+#
+# So resolve a real FILE through fc-match instead. ":spacing=100" asks
+# fontconfig for a monospace face by property rather than by the family
+# name "monospace", whose alias resolves to Noto Sans CJK here -- the
+# silent-fallback trap this repo has hit before. A face that still cannot
+# set the block characters is handled downstream: render_title falls back
+# to the proportional font rather than failing.
+resolve_fonts() {
+  local f
+  if [[ ! -f "$FONT" ]]; then
+    f="$(fc-match -f '%{file}' 'sans-serif:weight=bold' 2>/dev/null || true)"
+    if [[ -n "$f" && -f "$f" ]]; then
+      warn "font not found: $FONT — using $f"
+      FONT="$f"
+    else
+      warn "font not found: $FONT — falling back to ImageMagick's built-in face"
+      FONT=""
+    fi
+  fi
+  if [[ ! -f "$MONO_FONT" ]]; then
+    f="$(fc-match -f '%{file}' ':spacing=100:weight=bold' 2>/dev/null || true)"
+    if [[ -n "$f" && -f "$f" ]]; then
+      warn "mono font not found: $MONO_FONT — using $f (block art may not line up)"
+      MONO_FONT="$f"
+    else
+      warn "no monospace font found — the name will be set in the proportional font"
+      MONO_FONT=""
+    fi
+  fi
+}
+
 # Render the block art at a given pointsize.
 #   render_blocks <pointsize> <fill> <art-file> <out>
 #
@@ -173,7 +217,9 @@ render_blocks() {
   local ps="$1" fill="$2" art="$3" out="$4"
   local isp=$(( ps / 13 ))
   (( isp < 1 )) && isp=1
-  magick -background none -font "$MONO_FONT" -pointsize "$ps" \
+  local -a fontargs=()
+  [[ -n "$MONO_FONT" ]] && fontargs=(-font "$MONO_FONT")
+  magick -background none "${fontargs[@]}" -pointsize "$ps" \
     -interline-spacing "-$isp" -kerning -1 -fill "$fill" \
     label:@"$art" -trim +repage -colorspace sRGB "$out"
 }
@@ -336,7 +382,17 @@ PY
     for ((i = 0; i < 8; i++)); do
       stack_w=0; stack_h=0; gap=0
       for wi in "${!arts[@]}"; do
-        render_blocks "$ps" "$FG" "${arts[$wi]}" "$tmp/word_$wi.png"
+        # A render failure here is a FACE problem, not a size problem: the
+        # only mono face fontconfig offered cannot set the block
+        # characters, or has no usable file at all. Hand over to the
+        # proportional font instead of aborting -- under `set -e` this
+        # took the whole of `generate` down with "could not render a
+        # title", on any machine lacking the preferred font.
+        if ! render_blocks "$ps" "$FG" "${arts[$wi]}" "$tmp/word_$wi.png" 2>/dev/null; then
+          warn "the monospace face cannot set block art — using the proportional font"
+          use_blocks=0; TITLE_MODE=font
+          break 2
+        fi
         tw="$(magick identify -format '%w' "$tmp/word_$wi.png")"
         th="$(magick identify -format '%h' "$tmp/word_$wi.png")"
         (( tw > stack_w )) && stack_w=$tw
@@ -478,14 +534,7 @@ do_generate() {
   need magick
   need python3
   [[ -d "$SRC_DIR" ]] || die "theme source not found at $SRC_DIR"
-  [[ -f "$FONT" ]] || {
-    warn "font not found: $FONT — falling back to whatever fontconfig picks"
-    FONT=""
-  }
-  [[ -f "$MONO_FONT" ]] || {
-    warn "mono font not found: $MONO_FONT — block art may not line up"
-    MONO_FONT="monospace"
-  }
+  resolve_fonts
   local fontargs_p=()
   [[ -n "$FONT" ]] && fontargs_p=(-font "$FONT")
 
@@ -1091,6 +1140,11 @@ do_selftest() {
   need python3
   [[ -f "$SRC_DIR/ansi-shadow.txt" ]] || die "glyph table missing at $SRC_DIR"
 
+  # Same resolution do_generate does. Without it the matrix ran against the
+  # hardcoded preferred font paths, so on any machine that lacks them every
+  # single name reported "render failed" -- a selftest that fails for a
+  # reason it does not name is worse than no selftest.
+  resolve_fonts
   screen_geometry
   read_palette
 

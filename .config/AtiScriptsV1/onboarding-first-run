@@ -68,6 +68,18 @@ esac
 
 [[ -e "$PENDING" ]] || exit 0
 
+# eww absent is a different thing from eww not up yet, and the loop below
+# cannot tell them apart: it spent 30 seconds printing "eww: command not
+# found" to a stderr nobody reads, then claimed the tour was "postponed"
+# and would retry next login -- which was never going to be true. Say so
+# once instead, and leave the stamp armed so installing eww still gets the
+# tour.
+if ! command -v eww >/dev/null 2>&1; then
+  notify-send -a onboarding "Tour unavailable" \
+    "eww is not installed — the tour needs it." 2>/dev/null
+  exit 1
+fi
+
 # Wait for the daemon before claiming anything (see header).
 for _ in $(seq "$EWW_WAIT_ATTEMPTS"); do
   eww ping >/dev/null 2>&1 && break

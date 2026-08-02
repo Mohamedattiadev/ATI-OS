@@ -4,7 +4,21 @@
 
 ROFI_PALETTE_FILE="${ROFI_PALETTE_FILE:-$HOME/.config/rofi/themes/current-palette.rasi}"
 ROFI_SECRETS_FILE="${ROFI_SECRETS_FILE:-$HOME/.config/secrets.env}"
-GEMINI_LOG="${GEMINI_LOG:-/tmp/rofi-gemini.log}"
+
+# Scratch files go in a PER-USER directory, not at a fixed path in /tmp.
+#
+# /tmp is shared. The first account to run one of these scripts creates
+# /tmp/rofi-gemini.log and /tmp/rofi-confirm.err owned by itself and mode
+# 644, and for every other account on the machine the redirect into them
+# then fails with EACCES. For the log that costs the error message; for
+# rofi-confirm.err it costs the whole call, because a failed redirect
+# means the rofi command never runs at all -- so every confirmation
+# dialog on the desktop silently answered "cancel". XDG_RUNTIME_DIR is
+# already per-user and mode 700; the /tmp fallback is namespaced by UID
+# for the sessions that do not set it.
+ROFI_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/rofi-$(id -u)}"
+mkdir -p "$ROFI_RUNTIME_DIR" 2>/dev/null || true
+GEMINI_LOG="${GEMINI_LOG:-$ROFI_RUNTIME_DIR/rofi-gemini.log}"
 
 # Model fallback chain for gemini(). First one that answers wins.
 #
@@ -178,16 +192,16 @@ rofi_confirm() {
     answer=$(printf 'Yes\nNo\n' | rofi -dmenu -i \
         -theme "$HOME/.config/rofi/themes/base.rasi" \
         -theme-str 'window { width: 22%; } listview { lines: 2; dynamic: false; } element { padding: 6px 12px; }' \
-        -p "$prompt" ${msg:+-mesg "$msg"} -selected-row 0 2>/tmp/rofi-confirm.err)
+        -p "$prompt" ${msg:+-mesg "$msg"} -selected-row 0 2>"$ROFI_RUNTIME_DIR/rofi-confirm.err")
     local rc=$?
     # rofi failed to launch (still-running lock, no display, etc).
     # Notify the user so silent no-op is not confused with cancel.
     if [[ -z "$answer" && $rc -ne 0 ]]; then
         local err
-        err="$(head -1 /tmp/rofi-confirm.err 2>/dev/null)"
+        err="$(head -1 "$ROFI_RUNTIME_DIR/rofi-confirm.err" 2>/dev/null)"
         printf '[%s] rofi_confirm launch failed rc=%s err=%s\n' \
-            "$(date +%H:%M:%S)" "$rc" "$err" >>/tmp/rofi-confirm.log
-        notify_safe "❌ confirm dialog failed" "${err:-check /tmp/rofi-confirm.log}"
+            "$(date +%H:%M:%S)" "$rc" "$err" >>"$ROFI_RUNTIME_DIR/rofi-confirm.log"
+        notify_safe "❌ confirm dialog failed" "${err:-check $ROFI_RUNTIME_DIR/rofi-confirm.log}"
         return 1
     fi
     [[ "$answer" == "Yes" ]]

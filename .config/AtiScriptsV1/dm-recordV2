@@ -74,12 +74,37 @@ stop_recording() {
   convert_pending_gif
 }
 
+# Full-screen capture geometry.
+#
+# Was an inline `xdpyinfo | awk` substitution. xdpyinfo lives in
+# xorg-xdpyinfo, which is not pulled in by anything else here, and when it
+# is absent the substitution yields an empty string -- so ffmpeg was
+# handed a bare `-s` followed by the next flag and died with a parse error
+# that says nothing about a missing package. xrandr covers the machines
+# that have it instead.
+screen_geometry() {
+  local geo=""
+  if command -v xdpyinfo >/dev/null 2>&1; then
+    geo="$(xdpyinfo 2>/dev/null | awk '/dimensions/ {print $2; exit}')"
+  fi
+  if [[ -z "$geo" ]] && command -v xrandr >/dev/null 2>&1; then
+    geo="$(xrandr --current 2>/dev/null | awk '/ connected primary/{split($4,a,"+"); print a[1]; exit}')"
+  fi
+  [[ -n "$geo" ]] || return 1
+  printf '%s\n' "$geo"
+}
+
 # Record full screen + audio
 record_screen_audio() {
+  local geo
+  if ! geo="$(screen_geometry)"; then
+    notify "Error: cannot read the screen size (install xorg-xdpyinfo or xorg-xrandr)"
+    exit 1
+  fi
   output="$record_dir/screen-audio-$(date '+%y%m%d-%H%M-%S').mp4"
   ffmpeg -nostdin -y -f x11grab -framerate 30 \
-    -s "$(xdpyinfo | awk '/dimensions/ {print $2;}')" \
-    -i "$DISPLAY" \
+    -s "$geo" \
+    -i "${DISPLAY:-:0}" \
     -f pulse -i default \
     -c:v libx264 -crf 23 -preset fast \
     -c:a aac "$output" </dev/null &
@@ -89,10 +114,15 @@ record_screen_audio() {
 
 # Record full screen (video only)
 record_screen() {
+  local geo
+  if ! geo="$(screen_geometry)"; then
+    notify "Error: cannot read the screen size (install xorg-xdpyinfo or xorg-xrandr)"
+    exit 1
+  fi
   output="$record_dir/screen-only-$(date '+%y%m%d-%H%M-%S').mp4"
   ffmpeg -nostdin -y -f x11grab -framerate 30 \
-    -s "$(xdpyinfo | awk '/dimensions/ {print $2;}')" \
-    -i "$DISPLAY" \
+    -s "$geo" \
+    -i "${DISPLAY:-:0}" \
     -c:v libx264 -crf 23 -preset fast "$output" </dev/null &
   echo $! >/tmp/recordingpid
   notify "Screen recording started → $output"
@@ -119,7 +149,7 @@ record_area() {
 
   output="$record_dir/screen-area-$(date '+%y%m%d-%H%M-%S').mp4"
   ffmpeg -nostdin -y -f x11grab -framerate 30 \
-    -video_size "${W}x${H}" -i "${DISPLAY}+${X},${Y}" \
+    -video_size "${W}x${H}" -i "${DISPLAY:-:0}+${X},${Y}" \
     -c:v libx264 -crf 23 -preset fast "$output" </dev/null &
   echo $! >/tmp/recordingpid
   notify "Screen area recording started → $output"
@@ -167,7 +197,7 @@ record_area_gif() {
   local source="/tmp/dm-record-gif-$$.mp4"
 
   ffmpeg -nostdin -y -f x11grab -framerate "$GIF_FPS" \
-    -video_size "${W}x${H}" -i "${DISPLAY}+${X},${Y}" \
+    -video_size "${W}x${H}" -i "${DISPLAY:-:0}+${X},${Y}" \
     -c:v libx264 -crf 18 -preset ultrafast "$source" </dev/null &
 
   echo $! >/tmp/recordingpid
@@ -214,14 +244,41 @@ record_audio() {
   notify "Audio recording started → $output"
 }
 
+# The first /dev/video* node that can actually CAPTURE.
+#
+# /dev/video0 was hardcoded, and on a lot of machines it is not the camera:
+# a single UVC webcam registers several nodes, and drivers that expose a
+# metadata or statistics node claim video0 while the image stream sits on
+# video1 or video2. ffmpeg then fails with "Not a video capture device" and
+# the recording silently never starts. v4l2-ctl reports the capability
+# when it is installed; without it, fall back to the first node that
+# exists, which is the old behaviour and no worse.
+webcam_device() {
+  local dev
+  for dev in /dev/video*; do
+    [[ -c "$dev" ]] || continue
+    if command -v v4l2-ctl >/dev/null 2>&1; then
+      v4l2-ctl -d "$dev" --all 2>/dev/null | grep -q 'Video Capture' || continue
+    fi
+    printf '%s\n' "$dev"
+    return 0
+  done
+  return 1
+}
+
 # Record webcam (low resolution)
 record_webcam_low() {
-  if [[ ! -e /dev/video0 ]]; then
-    notify "Error: No webcam found at /dev/video0"
+  local cam
+  if ! cam="$(webcam_device)"; then
+    notify "Error: no capture-capable webcam found under /dev/video*"
     exit 1
   fi
   output="$record_dir/webcam-low-$(date '+%y%m%d-%H%M-%S').mp4"
-  ffmpeg -nostdin -y -f v4l2 -i /dev/video0 -video_size 640x480 \
+  # -video_size is an INPUT option for the v4l2 demuxer, so it has to come
+  # before -i. After -i, ffmpeg parses it as an output option and the
+  # request is quietly dropped -- both webcam modes recorded at whatever
+  # the camera's default happened to be, and the menu labels lied.
+  ffmpeg -nostdin -y -f v4l2 -video_size 640x480 -i "$cam" \
     -c:v libx264 "$output" </dev/null &
   echo $! >/tmp/recordingpid
   notify "Webcam (low-res) recording started → $output"
@@ -229,12 +286,13 @@ record_webcam_low() {
 
 # Record webcam (HD)
 record_webcam_hd() {
-  if [[ ! -e /dev/video0 ]]; then
-    notify "Error: No webcam found at /dev/video0"
+  local cam
+  if ! cam="$(webcam_device)"; then
+    notify "Error: no capture-capable webcam found under /dev/video*"
     exit 1
   fi
   output="$record_dir/webcam-hd-$(date '+%y%m%d-%H%M-%S').mp4"
-  ffmpeg -nostdin -y -f v4l2 -i /dev/video0 -video_size 1920x1080 \
+  ffmpeg -nostdin -y -f v4l2 -video_size 1920x1080 -i "$cam" \
     -c:v libx264 "$output" </dev/null &
   echo $! >/tmp/recordingpid
   notify "Webcam (HD) recording started → $output"
