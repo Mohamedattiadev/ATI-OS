@@ -55,6 +55,9 @@ already-installed packages are skipped, not reinstalled.
 > Want to pick modules or preview first? See [Install options](#install-options).
 > Something broken? [TROUBLESHOOTING.md](TROUBLESHOOTING.md) logs real cases
 > with symptom → root cause → fix.
+> Known rough edges are listed openly in
+> [plan_found-but-not-fixed.md](plan_found-but-not-fixed.md), including what
+> has and has not actually been tested.
 
 There are no manual follow-up commands. tmux's plugins (TPM) used to need
 a one-time bootstrap by hand; that is now the `tmux-tpm` module and runs
