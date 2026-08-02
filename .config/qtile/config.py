@@ -1779,6 +1779,68 @@ def _float_and_center_file_chooser(client):
         pass
 
 
+# pinentry -- the master-password prompt rbw pops for Mod+p p.
+#
+# It maps as _NET_WM_WINDOW_TYPE_NORMAL, not DIALOG (read off a live
+# window with xprop, not assumed), so nothing in default_float_rules
+# catches it and qtile tiled it into the layout like an ordinary app. A
+# password prompt that rearranges your windows -- and that you can tab
+# into by accident -- is the wrong shape for what it is.
+#
+# Matched on the class prefix rather than an exact name because the
+# binary varies by flavour: pinentry-gtk here, with -gnome3 and -qt as
+# drop-in alternatives (TROUBLESHOOTING suggests switching if the GTK one
+# misbehaves under qtile).
+#
+# 480x300 against its natural 531x354 -- smaller, but not so small that
+# GTK clips the entry field or the OK/Cancel row.
+PINENTRY_W = 480
+PINENTRY_H = 300
+
+
+def _is_pinentry(client):
+    try:
+        return any(
+            c and c.lower().startswith("pinentry")
+            for c in (client.get_wm_class() or ())
+        )
+    except Exception:
+        return False
+
+
+@hook.subscribe.client_managed
+def _float_and_center_pinentry(client):
+    """Float the password prompt, centred and compact."""
+    if not _is_pinentry(client):
+        return
+    try:
+        group = getattr(client, "group", None)
+        screen = group.screen if group and group.screen else None
+        if screen is None:
+            screen = getattr(qtile, "current_screen", None)
+        if screen is None:
+            return
+        w = min(PINENTRY_W, screen.width)
+        h = min(PINENTRY_H, screen.height)
+        client._enablefloating(
+            x=screen.x + (screen.width - w) // 2,
+            y=screen.y + (screen.height - h) // 2,
+            w=w,
+            h=h,
+        )
+        client.bring_to_front()
+        # Focus it explicitly -- you are about to type a password into
+        # it. warp=False keeps the pointer where it was, as everywhere
+        # else in this config.
+        if group is not None:
+            try:
+                group.focus(client, warp=False)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 # Reading/writing apps -- LibreOffice and the document readers. They are
 # assigned to group 8 (see `groups`) and opening one takes you there.
 #
@@ -1866,9 +1928,94 @@ def _focus_document_app(client):
         group = getattr(client, "group", None)
         if group is None:
             return
+
+        # Remember where the jump came FROM, so closing the document can
+        # put you back (see _return_from_document_group). Only recorded
+        # when this actually changes group: opening a second PDF while
+        # already on 8 must not overwrite the origin with "8" itself.
+        global _DOCUMENT_RETURN_GROUP
+        current = getattr(qtile, "current_group", None)
+        if current is not None and current.name != group.name:
+            _DOCUMENT_RETURN_GROUP = current.name
+
+        try:
+            _DOCUMENT_APP_WIDS.add(client.window.wid)
+        except Exception:
+            pass
+
         group.toscreen()
         group.focus(client, warp=False)
         client.bring_to_front()
+    except Exception:
+        pass
+
+
+# Group the document jump came from. None means "we never jumped", in
+# which case closing a document must not move you anywhere.
+_DOCUMENT_RETURN_GROUP = None
+
+# Window ids of the document windows we sent to the document group.
+#
+# client_killed cannot ask X what class a window had -- the window is
+# already gone, so get_wm_class() raises and _is_document_app() would
+# answer False for every window it is handed. Recording the ids on the
+# way in is what makes the close side of this work at all.
+_DOCUMENT_APP_WIDS = set()
+
+
+@hook.subscribe.client_killed
+def _return_from_document_group(client):
+    """Closing the last document window returns you where you came from.
+
+    The counterpart to _focus_document_app. Opening a PDF or a Writer
+    document moves you to the document group; without this you were then
+    stranded there staring at an empty group, and had to navigate back by
+    hand every single time.
+
+    Two deliberate restrictions. It fires only when the LAST document
+    window goes away -- closing one of three open PDFs should leave you
+    reading the other two. And it fires only while you are still on the
+    document group, so closing a background document never yanks the
+    group out from under whatever you moved on to.
+    """
+    global _DOCUMENT_RETURN_GROUP
+    try:
+        wid = client.window.wid
+    except Exception:
+        return
+
+    if wid not in _DOCUMENT_APP_WIDS:
+        return
+    _DOCUMENT_APP_WIDS.discard(wid)
+
+    if _DOCUMENT_RETURN_GROUP is None:
+        return
+
+    try:
+        group = getattr(client, "group", None)
+        if group is None:
+            return
+
+        # This hook can fire before the window leaves group.windows, so
+        # exclude it by id rather than trusting the list to be current.
+        for w in group.windows:
+            try:
+                other = w.window.wid
+            except Exception:
+                continue
+            if other != wid and other in _DOCUMENT_APP_WIDS:
+                return  # another document is still open here
+
+        current = getattr(qtile, "current_group", None)
+        target_name = _DOCUMENT_RETURN_GROUP
+        _DOCUMENT_RETURN_GROUP = None
+
+        if current is None or current.name != group.name:
+            return  # you already navigated away; leave you where you are
+
+        target = qtile.groups_map.get(target_name)
+        if target is not None:
+            target.toscreen()
     except Exception:
         pass
 
@@ -5628,7 +5775,12 @@ keys = [
             # Key([], "c", lazy.spawn("dtos-colorscheme"), desc='Choose color scheme'),
             # Key([], "e", lazy.spawn("dm-confedit"), desc='Choose a config file to edit'),
             # Key([], "o", lazy.spawn("dm-bookman -r"), desc='Browser bookmarks'),
-            # Key([], "p", lazy.spawn('passmenu -p "Pass: "'), desc="pass menu"),
+            # --- passwords ---
+            # Was a commented-out `passmenu` line for years. rofi_pass
+            # replaces it: a rofi picker over Vaultwarden (local, on
+            # 127.0.0.1:8222) via rbw, so the same vault the Bitwarden
+            # phone app syncs from is the one this reads.
+            Key([], "p", lazy.spawn("rofi_pass"), desc="Passwords (Vaultwarden)"),
             # Key([], "u", lazy.spawn("dm-music -r"), desc='Toggle music mpc/mpd')
             # Key([], "r", lazy.spawn("dm-record -r"), desc='record'),
             # Key([], "s", lazy.spawn("dm-websearch -r"), desc='Search various engines'),
@@ -5997,7 +6149,12 @@ keys = [
             # the other free letters in this chord.
             Key([], "o", lazy.spawn("dm-note -r"), desc="Store and copy notes"),
             # --- rofi password menu ---
-            Key([], "p", lazy.spawn("rofi-pass"), desc="Password menu"),
+            # Removed: a second Key([], "p") in this same chord, so it
+            # duplicated the binding above and only one could ever win.
+            # It spawned `rofi-pass`, the frontend for pass(1) -- both
+            # are installed, but ~/.password-store does not exist, so it
+            # had no vault to read either way. Passwords now go through
+            # rofi_pass (Vaultwarden via rbw), bound above.
             # --- youtube menu ---
             Key(
                 [],
@@ -7165,6 +7322,16 @@ floating_layout = layout.Floating(
         Match(wm_class="docs-view"),
         Match(wm_class="clip-view"),  # copyq_rofi alt+w full-text preview
         Match(wm_class="imv"),  # copyq_rofi alt+w image preview
+        # Master-password prompt (rbw / gpg). Sized and centred by
+        # _float_and_center_pinentry; this rule is what stops it entering
+        # the tiling layout in the first place, since it maps as
+        # wm_type=normal and so misses default_float_rules entirely.
+        # One entry per flavour: qtile matches the literal class, and
+        # unlike the hook there is no prefix matching here.
+        Match(wm_class="pinentry-gtk"),
+        Match(wm_class="pinentry-gnome3"),
+        Match(wm_class="pinentry-qt"),
+        Match(wm_class="pinentry"),
         Match(wm_class="org.gnome.NautilusPreviewer"),  # make the preview float
         Match(wm_class="qdrop"),  # qdrop drop-stash
         # TODOS summary (Mod+Shift+S), centered by _float_and_center_sum.
