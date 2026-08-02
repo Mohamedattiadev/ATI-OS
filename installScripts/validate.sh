@@ -63,7 +63,12 @@ fi
 
 # ── 2. python ────────────────────────────────────────────────────────
 head_ "python syntax"
-if python3 - <<'PY'
+# The count used to travel through a fixed /tmp/.validate_pycount. On a
+# machine with a second account that file is owned by whoever ran the
+# validator first, the write raises PermissionError, and the whole block
+# exits non-zero -- reporting "python syntax errors" for code that parses
+# fine. It rides back on stdout instead; nothing is written anywhere.
+if _py_out="$(python3 - <<'PY'
 import ast, subprocess, sys
 files = subprocess.run(["git","ls-files","*.py"], capture_output=True, text=True).stdout.split()
 bad = []
@@ -74,10 +79,12 @@ for f in files:
         bad.append(f"{f}:{e.lineno}: {e.msg}")
 if bad:
     print("\n".join(bad)); sys.exit(1)
-open("/tmp/.validate_pycount", "w").write(str(len(files)))
+print(len(files))
 PY
-then pass "$(cat /tmp/.validate_pycount 2>/dev/null || echo '?') python files parse"
-else fail "python syntax errors above"
+)"; then pass "${_py_out:-?} python files parse"
+else
+  printf '%s\n' "$_py_out" | sed 's/^/      /' >&2
+  fail "python syntax errors above"
 fi
 
 # ── 3. fish ──────────────────────────────────────────────────────────
@@ -175,7 +182,10 @@ head_ "AtiScriptsV1 python"
 py_bad=0
 while IFS= read -r f; do
   head -1 "$f" | grep -q 'python' || continue
-  if ! python3 -m py_compile "$f" 2>/dev/null; then
+  # ast.parse, not py_compile: py_compile drops a __pycache__/ directory
+  # next to every file it touches, so the one script in this repo that is
+  # supposed to read the working tree and change nothing was littering it.
+  if ! python3 -c 'import ast,sys; ast.parse(open(sys.argv[1],encoding="utf-8").read())' "$f" 2>/dev/null; then
     fail "python syntax error: $f"; py_bad=1
   fi
 done < <(git ls-files '.config/AtiScriptsV1/*')
@@ -274,10 +284,23 @@ else
       printf '    %s -> %s  (wanted by %s)\n' "$_fam" "${_got:-nothing}" "$_who"
       _font_bad=1
     fi
+  # Hand-maintained, and it must stay exhaustive: this list is the only thing
+  # standing between a fresh install and a desktop that renders in the wrong
+  # face with nothing in any log. It was three entries and claimed to cover
+  # "every family the UI names" -- two of the families below were missing from
+  # it, and one of those ("Noto Sans", asked for by both GTK settings files)
+  # was silently substituted on the author's own machine for exactly as long
+  # as the check has existed. Anything a tracked config names goes here:
+  #   git grep -ohiE 'font[-_ ]?(name|family)?[ =:"]+[A-Z][A-Za-z ]+'
   done <<'FONTS'
 JetBrainsMono Nerd Font|qtile bar, all qtile popups, dunst
 FiraCode Nerd Font|kitty
 Noto Sans CJK KR|rofi (base.rasi names it directly, on purpose)
+Noto Sans|gtk-3.0/settings.ini, gtk-4.0/settings.ini
+Adwaita Mono|qtile systray triangle, wallpaper chip ✖
+Ubuntu|qtile bar widgets ("Ubuntu Bold" -- pango parses the weight off)
+Cairo|fontconfig sans-serif Arabic fallback
+Amiri|fontconfig serif Arabic fallback
 FONTS
   if (( _font_bad )); then
     fail "a font the UI names is missing — fontconfig is silently substituting it; install the fonts module"

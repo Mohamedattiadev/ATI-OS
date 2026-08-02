@@ -37,7 +37,10 @@ for arg in "$@"; do
   case "$arg" in
     --keep)  KEEP=1 ;;
     --check) CHECK_ONLY=1 ;;
-    --help|-h) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    # 26 is the last comment line of the header. It used to say 30, so
+    # --help spilled `set -Eeuo pipefail` and the first variables into the
+    # help text.
+    --help|-h) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "container-test: unknown argument '$arg'" >&2; exit 2 ;;
   esac
 done
@@ -173,9 +176,20 @@ say "running the package audit ..."
 # Expected to report plenty missing: this container installed almost
 # nothing. Run it for the parse path -- a malformed module yaml or a broken
 # awk block shows up here rather than on a real machine.
-cexec "su tester -c 'HOME=/home/tester /home/tester/.dotfiles/installScripts/wizard.sh --audit'" \
-  >/dev/null 2>&1 || true
-ok "audit ran without a parse error"
+#
+# The exit status is deliberately ignored -- --audit exits 1 whenever
+# anything declared is not installed, which in here is nearly everything.
+# But `|| true` with the output thrown away meant the line below announced
+# a pass even when the audit died on the first yaml it could not parse,
+# i.e. the one thing this step exists to catch. Assert on the verdict line
+# instead, which only gets printed once every module file has been read.
+_audit_out="$(cexec "su tester -c 'HOME=/home/tester /home/tester/.dotfiles/installScripts/wizard.sh --audit'" 2>&1 || true)"
+if grep -q 'modules audited:' <<<"$_audit_out"; then
+  ok "audit ran without a parse error"
+else
+  printf '%s\n' "$_audit_out" | tail -20 | sed 's/^/    /'
+  die "audit never reached its verdict — a module yaml no longer parses"
+fi
 
 printf '\n%s[container-test]%s %sall checks passed%s\n' "$d" "$o" "$g" "$o"
 say "reminder: X11, systemd, GPU and theme rendering are NOT covered here"

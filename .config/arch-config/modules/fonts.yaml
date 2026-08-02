@@ -23,3 +23,14 @@ packages:
   # rofi's look goes with it.
   - noto-fonts-cjk
   - noto-fonts-emoji   # flag glyphs for qtile KeyboardLayout widget
+  # Same silent-substitution class as ttf-jetbrains-mono-nerd above, found by
+  # fc-match'ing every family the tracked configs actually name:
+  #   adwaita-fonts -- config.py names "Adwaita Mono" for the systray triangle
+  #     and the wallpaper chip's ✖. Installed on the author's machine, declared
+  #     nowhere, so a fresh install drew both in a substituted proportional face.
+  #   noto-fonts    -- gtk-3.0/settings.ini and gtk-4.0/settings.ini ask for
+  #     "Noto Sans" (NOT the CJK family, which is a different package). It is
+  #     not installed here either, which is why every GTK app on this machine
+  #     is already rendering in something other than what its config requests.
+  - adwaita-fonts
+  - noto-fonts
