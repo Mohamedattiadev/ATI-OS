@@ -13,7 +13,13 @@ import statistics
 
 WALL_DIR = os.path.expanduser("~/Pictures/Wallpapers")
 CACHE = os.path.expanduser("~/.cache/wal/colors.json")
-OUT_MD = "/tmp/wal_audit_report.md"
+# Per-user: a fixed /tmp path is owned by whichever account ran the audit
+# first, and every later account's write fails with EACCES.
+OUT_MD = os.path.join(
+    os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/rofi-{os.getuid()}",
+    "wal_audit_report.md",
+)
+os.makedirs(os.path.dirname(OUT_MD), exist_ok=True)
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else 100
 
 

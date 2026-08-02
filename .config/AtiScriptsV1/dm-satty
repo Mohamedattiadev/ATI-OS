@@ -131,7 +131,12 @@ main() {
 		# to Screenshots and announced "Screenshot Saved". Every annotation
 		# ever made here was silently discarded -- which is why the folder
 		# contains screenshot-full-* files and not one screenshot-satty-*.
-		temp_file="/tmp/satty-$(get_timestamp).png"
+		# Per-user: the timestamp makes a same-second collision unlikely
+		# rather than impossible, and a screenshot is the last thing that
+		# should land world-readable in /tmp for other accounts to open.
+		temp_dir="${XDG_RUNTIME_DIR:-/tmp/rofi-$(id -u)}"
+		mkdir -p "${temp_dir}" 2>/dev/null || true
+		temp_file="${temp_dir}/satty-$(get_timestamp).png"
 		maim ${maim_args} >"${temp_file}" || show_error "Failed to capture screenshot"
 
 		output_file="${MAIM_DIR}/${MAIM_PREFIX}-satty-$(get_timestamp).png"

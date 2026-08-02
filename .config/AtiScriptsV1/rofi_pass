@@ -28,7 +28,10 @@ load_secrets
 
 CLEAR_AFTER="${RBW_CLIPBOARD_CLEAR:-30}"
 
-ROFI_THEME="/tmp/rofi-pass-theme.rasi"
+# $ROFI_RUNTIME_DIR, not a fixed /tmp path: this file is rewritten on every
+# run, so under the old path a second account on the machine hit EACCES and
+# could not restyle its own picker at all. See rofi_common.sh.
+ROFI_THEME="$ROFI_RUNTIME_DIR/rofi-pass-theme.rasi"
 # Inherit dtos-center.rasi, which is what rofi_light and the plain
 # launcher already use: base.rasi plus `window { width: 45% }` and
 # `listview { lines: 8 }`. That is the whole point -- importing base.rasi

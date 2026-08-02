@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 
-STATE_FILE="/tmp/qtile_gg_state"
+# Per-user: /tmp is shared, so a fixed path here is owned by whichever
+# account pressed gg first and every other account's write fails with
+# EACCES -- leaving the double-tap detection permanently stuck.
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/rofi-$(id -u)}"
+mkdir -p "$RUNTIME_DIR" 2>/dev/null || true
+STATE_FILE="$RUNTIME_DIR/qtile_gg_state"
 TIMEOUT=0.5
 
 NOW=$(date +%s.%N)

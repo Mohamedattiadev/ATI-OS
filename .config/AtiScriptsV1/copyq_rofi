@@ -6,7 +6,14 @@ set -euo pipefail
 
 MAX=${1:-15}
 TAB='&clipboard'
-THUMBS=/tmp/copyq-thumbs
+# Per-user scratch. Both of these were fixed paths in /tmp, which is shared:
+# the first account to open the picker owns them mode 644, and every other
+# account's write fails with EACCES -- no thumbnails, and an unstyled menu.
+# XDG_RUNTIME_DIR is already per-user and mode 700; the fallback is
+# namespaced by UID for sessions that do not set it.
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/rofi-$(id -u)}"
+mkdir -p "$RUNTIME_DIR" 2>/dev/null || true
+THUMBS="$RUNTIME_DIR/copyq-thumbs"
 mkdir -p "$THUMBS"
 rm -f "$THUMBS"/*.png 2>/dev/null || true
 
@@ -73,7 +80,7 @@ load_rows
 # and the plain launcher use -- so every picker in this setup is the same
 # 45%-wide, 8-row box. It used to import base.rasi directly, which skips
 # dtos-center's width and lines and left this menu wider than the rest.
-THEME_FILE=/tmp/copyq-rofi-theme.rasi
+THEME_FILE="$RUNTIME_DIR/copyq-rofi-theme.rasi"
 cat > "$THEME_FILE" <<'RASI'
 @import "~/.config/rofi/themes/dtos-center.rasi"
 

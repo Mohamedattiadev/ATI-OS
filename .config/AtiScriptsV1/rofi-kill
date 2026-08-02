@@ -11,12 +11,17 @@ require_cmd rofi ps awk || exit 1
 load_palette
 
 ROFI_THEME="$HOME/.config/rofi/themes/kill-large.rasi"
-STATE_FILE="/tmp/rofi-kill-sort-mode"
-ROW_STATE_FILE="/tmp/rofi-kill-selected-row"
+# $ROFI_RUNTIME_DIR (from rofi_common.sh), not a fixed path in /tmp: these
+# are shared-namespace files, so on a machine with two accounts whichever
+# one runs this first creates them mode 644 and every subsequent account's
+# write fails with EACCES.
+STATE_FILE="$ROFI_RUNTIME_DIR/rofi-kill-sort-mode"
+ROW_STATE_FILE="$ROFI_RUNTIME_DIR/rofi-kill-selected-row"
 # Row → PID map, rebuilt each invocation. Solves pid-extraction
 # problem: rofi -format 's' with -markup-rows returns raw pango so
 # regex against the visible line is unreliable.
-PID_MAP_FILE="/tmp/rofi-kill-pidmap"
+PID_MAP_FILE="$ROFI_RUNTIME_DIR/rofi-kill-pidmap"
+KILL_LOG="$ROFI_RUNTIME_DIR/rofi-kill.log"
 
 SORT_MODE="${1:-$(cat "$STATE_FILE" 2>/dev/null || echo 'mem_desc')}"
 LAST_ROW="${2:-$(cat "$ROW_STATE_FILE" 2>/dev/null || echo 1)}"
@@ -276,7 +281,7 @@ case "$ret" in
     0) # Enter — regular kill, guaranteed
         printf '[%s] Enter sel_row=%s pid=%s sel_line=%s\n' \
             "$(date +%H:%M:%S)" "$sel_row" "$pid" "${sel_line:0:80}" \
-            >>/tmp/rofi-kill.log
+            >>"$KILL_LOG"
         if [[ -n "$pid" ]]; then
             proc_name="$(ps -p "$pid" -o comm= 2>/dev/null)"
             if [[ -z "$proc_name" ]]; then
@@ -288,7 +293,7 @@ case "$ret" in
             fi
             reexec
         else
-            notify_safe "❌ No PID (row $sel_row)" "check /tmp/rofi-kill.log"
+            notify_safe "❌ No PID (row $sel_row)" "check $KILL_LOG"
             reexec
         fi
         ;;

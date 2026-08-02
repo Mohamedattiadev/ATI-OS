@@ -792,12 +792,18 @@ fi
 echo "$MODE" >"$STATE_FILE"
 
 # Live-reload all running kitty instances. kitty listens on
-# unix:/tmp/kitty-<pid>, one socket per top-level kitty. SIGUSR1 alone
-# rereads the config but the include'd palette file often stays cached,
-# so push the palette explicitly via `kitty @ set-colors --all`.
+# $XDG_RUNTIME_DIR/kitty-<pid>, one socket per top-level kitty. SIGUSR1
+# alone rereads the config but the include'd palette file often stays
+# cached, so push the palette explicitly via `kitty @ set-colors --all`.
 # Fan out to every live kitty in parallel so one hung instance doesn't
 # serialize the rest at 1s each. wait ensures we still see if all fired.
-for sock in /tmp/kitty-*; do
+#
+# /tmp is globbed too, for two reasons: a kitty started before kitty.conf
+# moved the socket is still listening there, and a session with no
+# XDG_RUNTIME_DIR never got the new path at all. The `-S` test is what
+# makes globbing a shared directory safe here -- and other accounts'
+# sockets showing up in it is exactly why the default moved off /tmp.
+for sock in "${XDG_RUNTIME_DIR:-/nonexistent}"/kitty-* /tmp/kitty-*; do
   [[ -S "$sock" ]] || continue
   timeout 1 kitty @ --to "unix:$sock" set-colors --all --configured \
     "$KITTY_THEMES/current.conf" 2>/dev/null &

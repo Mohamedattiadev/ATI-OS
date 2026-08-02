@@ -21,8 +21,11 @@ main() {
   _location="$(printf '%s\n' "${weather_locations}" | ${MENU} "Where do you want to see the weather?")"
   [[ -z "$_location" ]] && exit 0
 
-  # Cache config
-  cache_dir="/tmp/dm-weather"
+  # Cache config. Per-user: a fixed /tmp path is created mode 644 by
+  # whichever account runs first, and every other account's cache write
+  # then fails with EACCES -- so the cache never hits and every lookup
+  # goes to the network.
+  cache_dir="${XDG_RUNTIME_DIR:-/tmp/rofi-$(id -u)}/dm-weather"
   mkdir -p "$cache_dir"
 
   cache_file="$cache_dir/${_location// /_}"

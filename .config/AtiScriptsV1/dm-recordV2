@@ -10,6 +10,17 @@ set -euo pipefail
 record_dir="${record_dir:-$HOME/Videos/Recordings}"
 mkdir -p "$record_dir"
 
+# Per-user state. The recording PID and the pending-GIF handoff were fixed
+# paths in /tmp, which is shared: the first account to record owns them
+# mode 644 and every other account's write fails with EACCES. For the PID
+# file that is not cosmetic -- `stop` reads it to find the ffmpeg to
+# signal, so a second account could start a recording it had no way to
+# stop, and ffmpeg would keep writing until something filled up.
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp/rofi-$(id -u)}"
+mkdir -p "$runtime_dir" 2>/dev/null || true
+recording_pid_file="$runtime_dir/recordingpid"
+recording_gif_file="$runtime_dir/recordinggif"
+
 # Notification wrapper
 notify() {
   if command -v notify-send >/dev/null 2>&1; then
@@ -45,13 +56,13 @@ MENU="$(get_menu_command)"
 STOP_GRACE_SECONDS=60
 
 stop_recording() {
-  if [[ ! -f /tmp/recordingpid ]]; then
+  if [[ ! -f "$recording_pid_file" ]]; then
     notify "No active recording found"
     return
   fi
 
   local recpid waited
-  recpid="$(cat /tmp/recordingpid)"
+  recpid="$(cat "$recording_pid_file")"
   kill -15 "$recpid" 2>/dev/null || true
 
   waited=0
@@ -67,7 +78,7 @@ stop_recording() {
   else
     notify "Recording stopped"
   fi
-  rm -f /tmp/recordingpid
+  rm -f "$recording_pid_file"
 
   # GIF captures land as h264 and are converted once the capture is
   # closed; see record_area_gif.
@@ -108,7 +119,7 @@ record_screen_audio() {
     -f pulse -i default \
     -c:v libx264 -crf 23 -preset fast \
     -c:a aac "$output" </dev/null &
-  echo $! >/tmp/recordingpid
+  echo $! >"$recording_pid_file"
   notify "Screen + Audio recording started → $output"
 }
 
@@ -124,7 +135,7 @@ record_screen() {
     -s "$geo" \
     -i "${DISPLAY:-:0}" \
     -c:v libx264 -crf 23 -preset fast "$output" </dev/null &
-  echo $! >/tmp/recordingpid
+  echo $! >"$recording_pid_file"
   notify "Screen recording started → $output"
 }
 
@@ -151,7 +162,7 @@ record_area() {
   ffmpeg -nostdin -y -f x11grab -framerate 30 \
     -video_size "${W}x${H}" -i "${DISPLAY:-:0}+${X},${Y}" \
     -c:v libx264 -crf 23 -preset fast "$output" </dev/null &
-  echo $! >/tmp/recordingpid
+  echo $! >"$recording_pid_file"
   notify "Screen area recording started → $output"
 }
 
@@ -194,25 +205,27 @@ record_area_gif() {
   fi
 
   output="$record_dir/screen-area-$(date '+%y%m%d-%H%M-%S').gif"
-  local source="/tmp/dm-record-gif-$$.mp4"
+  # $$ kept it from colliding by name, but a screen capture has no business
+  # sitting world-readable in /tmp for the length of the recording.
+  local source="$runtime_dir/dm-record-gif-$$.mp4"
 
   ffmpeg -nostdin -y -f x11grab -framerate "$GIF_FPS" \
     -video_size "${W}x${H}" -i "${DISPLAY:-:0}+${X},${Y}" \
     -c:v libx264 -crf 18 -preset ultrafast "$source" </dev/null &
 
-  echo $! >/tmp/recordingpid
+  echo $! >"$recording_pid_file"
   # Read back by stop_recording, which does the conversion.
-  printf '%s\n%s\n' "$source" "$output" >/tmp/recordinggif
+  printf '%s\n%s\n' "$source" "$output" >"$recording_gif_file"
   notify "GIF recording started → press the key again to stop"
 }
 
 # Turn the captured h264 into a GIF with a palette built from the footage.
 convert_pending_gif() {
-  [[ -f /tmp/recordinggif ]] || return 0
+  [[ -f "$recording_gif_file" ]] || return 0
 
   local source output
-  { read -r source; read -r output; } </tmp/recordinggif
-  rm -f /tmp/recordinggif
+  { read -r source; read -r output; } <"$recording_gif_file"
+  rm -f "$recording_gif_file"
 
   if [[ ! -s "$source" ]]; then
     notify "GIF capture produced nothing"
@@ -240,7 +253,7 @@ record_audio() {
   # else already holds it.
   ffmpeg -nostdin -y -f pulse -i default \
     -c:a libmp3lame -qscale:a 2 "$output" </dev/null &
-  echo $! >/tmp/recordingpid
+  echo $! >"$recording_pid_file"
   notify "Audio recording started → $output"
 }
 
@@ -280,7 +293,7 @@ record_webcam_low() {
   # the camera's default happened to be, and the menu labels lied.
   ffmpeg -nostdin -y -f v4l2 -video_size 640x480 -i "$cam" \
     -c:v libx264 "$output" </dev/null &
-  echo $! >/tmp/recordingpid
+  echo $! >"$recording_pid_file"
   notify "Webcam (low-res) recording started → $output"
 }
 
@@ -294,7 +307,7 @@ record_webcam_hd() {
   output="$record_dir/webcam-hd-$(date '+%y%m%d-%H%M-%S').mp4"
   ffmpeg -nostdin -y -f v4l2 -video_size 1920x1080 -i "$cam" \
     -c:v libx264 "$output" </dev/null &
-  echo $! >/tmp/recordingpid
+  echo $! >"$recording_pid_file"
   notify "Webcam (HD) recording started → $output"
 }
 
@@ -348,7 +361,7 @@ main() {
   fi
 
   # If recording already active → stop immediately
-  if [[ -f /tmp/recordingpid ]] && ps -p "$(cat /tmp/recordingpid)" >/dev/null 2>&1; then
+  if [[ -f "$recording_pid_file" ]] && ps -p "$(cat "$recording_pid_file")" >/dev/null 2>&1; then
     stop_recording
   else
     askrecording
