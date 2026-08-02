@@ -27,7 +27,18 @@ warn() { echo -e "${YELLOW}⚠${RESET} $*"; }
 skip() { echo -e "${YELLOW}○${RESET} $*"; }
 
 [[ $EUID -ne 0 ]] || { echo "Run as your user (not root). Uses sudo internally."; exit 1; }
-[[ -f /etc/arch-release ]] || { echo "Arch only."; exit 1; }
+
+# Every step below is pacman/systemd specific. On anything else this is not a
+# failure, it is simply not applicable -- exit 0 so a wrapper running the whole
+# module set on a non-Arch box does not treat "wrong distro" as a broken run.
+# /etc/arch-release alone is not enough: some Arch derivatives drop it, and a
+# stray copy of it proves nothing without the package manager it implies.
+if ! command -v pacman >/dev/null 2>&1; then
+  skip "not an Arch-based system (no pacman) — speed boost skipped"
+  exit 0
+fi
+command -v systemctl >/dev/null 2>&1 || { skip "systemd not present — speed boost skipped"; exit 0; }
+command -v sudo >/dev/null 2>&1 || { echo "sudo is required but not installed."; exit 1; }
 
 info "Refreshing sudo credentials"
 sudo -v
@@ -179,7 +190,14 @@ sudo sed -i 's/^#\?ParallelDownloads.*/ParallelDownloads = 5/' /etc/pacman.conf
 sudo sed -i 's/^#\?Color/Color/' /etc/pacman.conf
 
 if ! grep -q '^ILoveCandy' /etc/pacman.conf; then
-  sudo sed -i '/^# Misc options/a ILoveCandy' /etc/pacman.conf 2>/dev/null || true
+  # Anchored on the stock "# Misc options" comment, which a hand-edited
+  # pacman.conf may not have — fall back to [options] so the append is not a
+  # silent no-op that we then report as success.
+  if grep -q '^# Misc options' /etc/pacman.conf; then
+    sudo sed -i '/^# Misc options/a ILoveCandy' /etc/pacman.conf
+  else
+    sudo sed -i '0,/^\[options\]/s//[options]\nILoveCandy/' /etc/pacman.conf
+  fi
 fi
 ok "ParallelDownloads=5, Color, ILoveCandy set"
 
@@ -220,7 +238,15 @@ fi
 # =====================================================
 info "[8/9] GPU drivers"
 
-GPU_INFO="$(lspci | grep -iE 'vga|3d|display' || true)"
+# pciutils is not part of a minimal install (and does not exist at all inside a
+# container), so lspci missing has to mean "cannot detect" rather than a stderr
+# splat followed by silently installing nothing.
+if command -v lspci >/dev/null 2>&1; then
+  GPU_INFO="$(lspci | grep -iE 'vga|3d|display' || true)"
+else
+  GPU_INFO=""
+  warn "  lspci not found (install pciutils) — skipping GPU driver detection"
+fi
 echo "  detected: $GPU_INFO"
 
 install_if_missing() {

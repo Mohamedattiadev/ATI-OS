@@ -16,12 +16,33 @@ ok()   { echo -e "${GREEN}✔${RESET} $*"; }
 warn() { echo -e "${YELLOW}⚠${RESET} $*"; }
 
 [[ $EUID -ne 0 ]] || { echo "Run as your user (uses sudo)."; exit 1; }
-[[ -f /etc/default/grub ]] || { echo "GRUB not detected (/etc/default/grub missing)."; exit 1; }
+
+# A machine booted by systemd-boot, rEFInd or a UKI has no /etc/default/grub —
+# that is "nothing to do here", not a failure, so a wrapper running every module
+# does not stop on it. Same for the rebuild binary: Arch/Debian call it
+# grub-mkconfig, Fedora/openSUSE grub2-mkconfig. Resolve it BEFORE editing
+# anything, otherwise we rewrite the cmdline and then die before regenerating
+# grub.cfg — leaving a config that says one thing and a boot that does another.
+[[ -f /etc/default/grub ]] || { echo "GRUB not in use (/etc/default/grub missing) — skipped."; exit 0; }
+command -v sudo >/dev/null 2>&1 || { echo "sudo is required but not installed."; exit 1; }
+
+MKCONFIG=""
+for c in grub-mkconfig grub2-mkconfig; do
+  command -v "$c" >/dev/null 2>&1 && { MKCONFIG="$c"; break; }
+done
+[[ -n "$MKCONFIG" ]] || { echo "grub-mkconfig/grub2-mkconfig not found — refusing to edit the cmdline."; exit 1; }
 
 sudo -v
 
 # --------- Detect GPU for i915.enable_guc=3 ---------
-GPU_INFO="$(lspci | grep -iE 'vga|3d|display' || true)"
+# lspci lives in pciutils, which a minimal install may not have; without it we
+# just skip the Intel-only flag rather than erroring.
+if command -v lspci >/dev/null 2>&1; then
+  GPU_INFO="$(lspci | grep -iE 'vga|3d|display' || true)"
+else
+  GPU_INFO=""
+  warn "lspci not found (install pciutils) — skipping Intel GPU detection"
+fi
 INTEL=false
 grep -qi intel <<<"$GPU_INFO" && INTEL=true
 
@@ -37,7 +58,11 @@ warn "SKIPPED (opt-in, less secure): mitigations=off  (10-30% CPU, disables Spec
 echo "  To add it later, edit /etc/default/grub manually."
 echo
 
-read -rp "Proceed? [y/N] " ans
+# `read` returns 1 at EOF, which under `set -e` kills the script before the
+# default-to-no below ever runs. Piped/CI/non-tty invocations must fall through
+# to "no", not die halfway with a bare exit code.
+ans=""
+read -rp "Proceed? [y/N] " ans || true
 [[ "$ans" == "y" || "$ans" == "Y" ]] || { echo "aborted."; exit 0; }
 
 # --------- Backup ---------
@@ -47,11 +72,26 @@ sudo cp /etc/default/grub "$BAK"
 ok "Backed up: $BAK"
 
 # --------- Read current line ---------
-CURRENT="$(grep '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub | head -1)"
+CURRENT="$(grep '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub | head -1 || true)"
 [[ -n "$CURRENT" ]] || { echo "GRUB_CMDLINE_LINUX_DEFAULT not found."; exit 1; }
 
-# Extract quoted contents
-INNER="$(sed -E 's/GRUB_CMDLINE_LINUX_DEFAULT="([^"]*)"/\1/' <<<"$CURRENT")"
+# Extract the quoted contents, accepting single quotes as well.
+#
+# The old sed only matched the double-quoted form and, on no match, passed the
+# WHOLE line through unchanged — so a single-quoted or unquoted cmdline ended up
+# written back as GRUB_CMDLINE_LINUX_DEFAULT="GRUB_CMDLINE_LINUX_DEFAULT='quiet'
+# nowatchdog ...", i.e. an unbootable-looking config produced silently. Anything
+# we cannot parse with confidence must abort before the write, not be guessed at.
+if [[ "$CURRENT" =~ ^GRUB_CMDLINE_LINUX_DEFAULT=\"([^\"]*)\"[[:space:]]*$ ]]; then
+  INNER="${BASH_REMATCH[1]}"
+elif [[ "$CURRENT" =~ ^GRUB_CMDLINE_LINUX_DEFAULT=\'([^\']*)\'[[:space:]]*$ ]]; then
+  INNER="${BASH_REMATCH[1]}"
+else
+  echo "Could not parse GRUB_CMDLINE_LINUX_DEFAULT — edit /etc/default/grub by hand:"
+  echo "  $CURRENT"
+  echo "(backup left at $BAK)"
+  exit 1
+fi
 
 # Append missing flags
 NEW="$INNER"
@@ -72,15 +112,24 @@ ok "GRUB_CMDLINE_LINUX_DEFAULT = \"$NEW\""
 
 # --------- Rebuild ---------
 info "Rebuilding grub.cfg"
-if [[ -d /boot/grub ]]; then
-  sudo grub-mkconfig -o /boot/grub/grub.cfg
-elif [[ -d /boot/grub2 ]]; then
-  sudo grub-mkconfig -o /boot/grub2/grub.cfg
+CFG=""
+[[ -d /boot/grub  ]] && CFG=/boot/grub/grub.cfg
+[[ -z "$CFG" && -d /boot/grub2 ]] && CFG=/boot/grub2/grub.cfg
+
+if [[ -n "$CFG" ]]; then
+  # A failed regeneration leaves /etc/default/grub edited but grub.cfg stale.
+  # Say so and hand back the exact revert command instead of dying on set -e
+  # with nothing on screen but a non-zero status.
+  if ! sudo "$MKCONFIG" -o "$CFG"; then
+    warn "$MKCONFIG failed — /etc/default/grub was edited but grub.cfg was NOT regenerated"
+    echo "  revert: sudo cp $BAK /etc/default/grub"
+    exit 1
+  fi
 else
-  warn "grub.cfg location not found; rebuild manually"
+  warn "grub.cfg location not found; rebuild manually with: sudo $MKCONFIG -o <path>"
 fi
 
 ok "DONE. Reboot to apply."
 echo
 echo "Revert with:"
-echo "  sudo cp $BAK /etc/default/grub && sudo grub-mkconfig -o /boot/grub/grub.cfg && sudo reboot"
+echo "  sudo cp $BAK /etc/default/grub && sudo $MKCONFIG -o ${CFG:-/boot/grub/grub.cfg} && sudo reboot"
