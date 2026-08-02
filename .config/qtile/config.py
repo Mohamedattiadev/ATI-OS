@@ -37,7 +37,7 @@ import sys
 import time
 import threading
 import weakref
-from libqtile import bar, hook, layout, qtile, widget
+from libqtile import bar, hook, layout, pangocffi, qtile, widget
 from qtile_extras.widget.decorations import RectDecoration
 from qtile_extras import widget as ewidget
 from qtile_extras.widget.mixins import TooltipMixin
@@ -2170,7 +2170,7 @@ TOOLTIP_BY_NAME = {
     "w_volume": "Volume · scroll to change",
     "w_battery": "Battery · click → status",
     "w_lang": "Keyboard layout",
-    "w_clock": "Next prayer",
+    "w_clock": "Next prayer · USD/EUR rates",
     "w_mpris": "L: play/pause · M: album art · R: prev · scroll: next/prev",
     "w_nightlight": "Nightlight · L: on · R: off",
 }
@@ -2286,6 +2286,20 @@ def _install_tooltip(widget_, text):
                 return
             tt = _w._tooltip
             tt.layout.text = _w.tooltip_text
+
+            # Opt-in centring (w_clock: prayer line over the FX lines).
+            # Popup fixes its alignment once, in __init__, from
+            # text_alignment="left" -- so it has to be re-set on the pango
+            # layout here. Alignment is also a no-op while the layout width
+            # is -1 (each line just starts at x=0), hence: measure the
+            # natural width first, then pin the layout to it so the short
+            # lines have a box to centre inside.
+            if getattr(_w, "tooltip_center", False):
+                tt.layout.reset_width()
+                text_w = tt.layout.width
+                tt.layout.layout.set_alignment(pangocffi.ALIGN_CENTER)
+                tt.layout.width = text_w
+
             tt.width = tt.layout.width + 2 * tt.horizontal_padding
             tt.height = tt.layout.height + 2 * tt.vertical_padding
             # clamp x within screen and add small vertical margin below bar
@@ -2399,7 +2413,10 @@ def install_bar_tooltips():
                         if getattr(w, "name", "") == "w_mpris":
                             _make_tooltip_dynamic(w, _player_title_text, "No player")
                         if getattr(w, "name", "") == "w_clock":
-                            _make_tooltip_dynamic(w, _prayer_text, "No prayer data")
+                            w.tooltip_center = True
+                            _make_tooltip_dynamic(
+                                w, _clock_tooltip_text, "No prayer data"
+                            )
                         if getattr(w, "name", "") == "w_cpu":
                             _make_tooltip_dynamic(w, _cpu_top_text)
                         if getattr(w, "name", "") == "w_mem":
@@ -2457,7 +2474,7 @@ def _make_tooltip_dynamic(widget_, text_func, fallback=""):
     subprocess.run -- so hovering a chip froze the whole WM (keyboard,
     focus, bar, everything) for as long as the command took:
 
-        w_clock  _prayer_text       -> prayer_next.sh, timeout=8
+        w_clock  _clock_tooltip_text-> prayer_next.sh + fx_rates.sh, timeout=8
         w_disk   _disk_parts_text   -> _sh(timeout=1.5)
         w_cpu    _cpu_top_text      -> _sh(timeout=1.5)
         w_mem    _mem_top_text      -> _sh(timeout=1.5)
@@ -4618,8 +4635,9 @@ def _battery_detail_text():
     return "\n".join(lines)
 
 
-# -------- Prayer countdown --------
+# -------- Prayer countdown + FX --------
 _PRAYER_SCRIPT = os.path.expanduser("~/.config/qtile/scripts/prayer_next.sh")
+_FX_SCRIPT = os.path.expanduser("~/.config/qtile/scripts/fx_rates.sh")
 
 
 def _prayer_text():
@@ -4630,6 +4648,26 @@ def _prayer_text():
         return r.stdout.strip() if r.returncode == 0 else ""
     except Exception:
         return ""
+
+
+def _fx_text():
+    try:
+        r = subprocess.run([_FX_SCRIPT], capture_output=True, text=True, timeout=8)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _clock_tooltip_text():
+    """Next prayer, with USD/EUR in TL and EGP under it.
+
+    The two halves are independent: whichever one comes back empty (dead
+    network, missing cache) just drops its block instead of blanking the
+    tooltip. Runs in the tooltip worker thread (see _make_tooltip_dynamic),
+    so the two subprocesses being serial is harmless -- both read caches.
+    """
+    blocks = [b for b in (_prayer_text(), _fx_text()) if b]
+    return "\n\n".join(blocks)
 
 
 class HideablePollText(ewidget.GenPollText):
