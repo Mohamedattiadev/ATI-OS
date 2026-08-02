@@ -1473,10 +1473,14 @@ step_themes() {
   local eww_out="$HOME/.config/eww/colors.scss"
   [[ -f "$eww_tmpl" && ! -f "$eww_out" ]] && run "cp $eww_tmpl $eww_out"
   # Seed qutebrowser homepage.html from .tmpl (gitignored — regenerated
-  # per palette by theme-apply, needs a stable skeleton first).
+  # per palette by theme-apply, needs a stable skeleton first). The greeting
+  # says "Welcome, <you>": the page is served over file://, so JS can't read
+  # the login name — the only place it can be filled in is here, at seed time.
   local qb_tmpl="$HOME/.config/qutebrowser/html/homepage.html.tmpl"
   local qb_out="$HOME/.config/qutebrowser/html/homepage.html"
-  [[ -f "$qb_tmpl" && ! -f "$qb_out" ]] && run "cp $qb_tmpl $qb_out"
+  local qb_user="${USER:-$(id -un)}"
+  [[ -f "$qb_tmpl" && ! -f "$qb_out" ]] && \
+    run "sed 's/@@USER@@/${qb_user^}/' $qb_tmpl > $qb_out"
   # Seed default wallpaper if none set.
   if [[ ! -f "$HOME/.cache/wall" ]]; then
     local first
@@ -2245,14 +2249,22 @@ _finale_summary() {
 # ati-scripts module symlinks that script into /usr/local/bin, and it is
 # perfectly legal to run the wizard with that module skipped. The stamp
 # format is an empty file, so there is nothing to get out of step.
+#
+# "Once" means once per machine, not once per wizard run. This is a
+# dotfiles repo: ./install.sh is re-run all the time to apply a change or
+# a single --only= module, and each of those runs used to clear the .done
+# stamp and re-arm, so the tour reappeared at the next reboot -- exactly
+# the behaviour it exists to avoid. A consumed stamp is therefore final
+# here; uninstall clears it, so a genuine reinstall gets the tour again,
+# and `onboarding-first-run --arm` still forces it back on demand.
 arm_onboarding() {
   local state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/atidots"
   if (( UNINSTALL )); then
-    rm -f "$state_dir/onboarding.pending"
+    rm -f "$state_dir/onboarding.pending" "$state_dir/onboarding.done"
     return
   fi
+  [[ -e "$state_dir/onboarding.done" ]] && return
   mkdir -p "$state_dir" || return
-  rm -f "$state_dir/onboarding.done"
   : >"$state_dir/onboarding.pending"
 }
 
