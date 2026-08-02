@@ -6,24 +6,19 @@ Preserved from `config.py` cleanup. Re-enable by moving each block into
 later` comments in `lib/constants.py` (CHORD_CHIP_COLORS) and inside the
 widget bar builders when re-wiring.
 
-## Bluetooth popup
+## ~~Bluetooth popup~~ — DONE, live on `Mod+P` then `b`
 
-```python
-from popups.BluetoothPopup import (
-    show as show_bluetooth_popup,
-    close as close_bluetooth_popup,
-    move as bluetooth_move,
-    toggle_device as bluetooth_toggle,
-    request_disconnect,
-    confirm_disconnect,
-    reload_devices,
-)
+Wired up in `config.py`: `from popups import BluetoothPopup`, the
+`auto_enable_bluetooth_popup` enter_chord hook, the `Bluetooth-Mode` chord
+itself, its `CHORD_CHIP_COLORS` entry and the hint line on both bars. The
+`cleanup_on_leave` branch is **not** optional — `close()` is what stops the
+discovery child process, and without it the radio keeps scanning after the
+chord is gone.
 
-@hook.subscribe.enter_chord
-def auto_enable_bluetooth_popup(chord_name):
-    if chord_name == "Bluetooth-Mode":
-        show_bluetooth_popup(qtile)
-```
+The API this file used to describe (`toggle_device`, `request_disconnect`,
+`confirm_disconnect`, `reload_devices`) no longer exists. The module is
+called by name now: `BluetoothPopup.connect / disconnect / remove /
+toggle_power / scan / cancel / search / move / jump`.
 
 ## Audio popup
 
@@ -84,6 +79,9 @@ def auto_enable_updates_popup(chord_name):
 
 ## Related re-wire points
 
-- `lib/constants.py` — uncomment `CHORD_CHIP_COLORS` entries for `Bluetooth-Mode` / `Audio-Mode` / `Wifi-Mode` / `Updates-Mode`.
-- widget bar builders (currently inline in `config.py`) — chord label strings for BLUETOOTH / AUDIO / WIFI / UPDATES modes are already commented near the `chord_chip` Chord widget block.
-- `lib/hooks.py` — extend `cleanup_on_leave` to call the popup close funcs when leaving each mode (stubs already commented in place).
+Wifi-Mode and Bluetooth-Mode are done; what is left below applies to Audio
+and Updates only.
+
+- `lib/constants.py` — uncomment `CHORD_CHIP_COLORS` entries for `Audio-Mode` / `Updates-Mode`.
+- widget bar builders (currently inline in `config.py`) — chord label strings for AUDIO / UPDATES modes are already commented near the `chord_chip` Chord widget block.
+- `lib/hooks.py` — extend `cleanup_on_leave` to call the popup close funcs when leaving each mode (stubs already commented in place). Not optional for anything that starts a child process: the Bluetooth popup's discovery would otherwise outlive the chord.

@@ -12,13 +12,22 @@ set -euo pipefail
 
 MODEL="${WHISPER_MODEL:-$HOME/.local/share/whisper/ggml-small.en.bin}"
 LANG="${WHISPER_LANG:-en}"
-TMPDIR="/tmp/voice_dictate"
-PIDFILE="$TMPDIR/rec.pid"
-TIMER_PIDFILE="$TMPDIR/timer.pid"
-WAV="$TMPDIR/rec.wav"
+# Deliberately NOT named TMPDIR. Assigning to a variable that is already
+# exported keeps the export attribute, so this quietly handed
+# TMPDIR=/tmp/voice_dictate to sox, whisper-cli and notify-send as their
+# scratch directory on every session that exports TMPDIR at all.
+#
+# Per-user as well: /tmp/voice_dictate is a fixed path in a shared
+# directory, so on a machine with a second account the `mkdir -p` below
+# fails against the first user's directory -- and under `set -e` that
+# ended the run before any of the "missing binary" feedback was reached.
+WORK_DIR="${XDG_RUNTIME_DIR:-/tmp}/voice_dictate-$(id -u)"
+PIDFILE="$WORK_DIR/rec.pid"
+TIMER_PIDFILE="$WORK_DIR/timer.pid"
+WAV="$WORK_DIR/rec.wav"
 NOTIFY_TAG="voice_dictate"
 
-mkdir -p "$TMPDIR"
+mkdir -p "$WORK_DIR"
 
 # In-place notification (same tag = replaces prior one).
 pill() {

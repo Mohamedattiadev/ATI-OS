@@ -18,7 +18,10 @@ source "$SCRIPT_DIR/rofi_common.sh"
 
 # -------------------------- Configuration --------------------------
 TMP_DIR="/tmp/translator"
-PIPER_CMD="$HOME/.local/bin/piper"
+# Resolved at runtime: this pointed at ~/.local/bin/piper while piper is
+# installed at /usr/bin/piper, so the German TTS branch below never once
+# ran. Same bug that was in wordreference.py.
+PIPER_CMD="$(command -v piper || echo "$HOME/.local/bin/piper")"
 PIPER_VOICE_DE="$HOME/.config/piper-voices/de_DE-thorsten-high.onnx"
 
 NOTIFY_TIMEOUT=25000 # Milliseconds to show notification
@@ -27,48 +30,42 @@ NOTIFY_TIMEOUT=25000 # Milliseconds to show notification
 TTS_SPEED="0.8"        # Slower mpv playback for better understanding
 TTS_LENGTH_SCALE="1.3" # Piper-specific setting for slower voice
 
-# Gemini API Key
-API_KEY="${GEMINI_API_KEY:-}"
+# Gemini API key — optional. Sourced from ~/.config/secrets.env via
+# rofi_common.sh. It was previously read straight from the environment,
+# which nothing ever set, so call_gemini() returned "" on every call and
+# the synonym/example sections rendered blank with no explanation.
+load_secrets
+HAVE_GEMINI=0
+[[ -n "${GEMINI_API_KEY:-}" ]] && HAVE_GEMINI=1
 
 # -------------------------- Pre-flight Checks --------------------------
-for cmd in xclip rofi trans espeak-ng jq mpv; do
-	if ! command -v "$cmd" &>/dev/null; then
-		notify-send -u critical "Translator Error" "Required command not found: '$cmd'. Please install it."
-		exit 1
-	fi
-done
+# espeak-ng and mpv are only needed for IPA and playback respectively, so
+# they are no longer hard requirements — a missing optional tool should
+# cost you that one feature, not the whole translation.
+require_cmd xclip rofi trans || exit 1
 mkdir -p "$TMP_DIR"
 
 # -------------------------- Check if word is selected --------------------------
 WORD=$(xclip -o -selection primary 2>/dev/null | tr -d '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
+# Nothing highlighted is a normal way to reach this, not an error — you
+# often want a word you are thinking of rather than one on screen. Ask
+# for it instead of bailing out.
 if [ -z "$WORD" ]; then
-	notify-send -u normal -t 5000 "Translator" "⚠ No word selected! Please highlight a word first."
-	exit 0
+	WORD=$(rofi_input "Translate" "nothing selected — type a word" |
+		tr -d '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 fi
+[ -z "$WORD" ] && exit 0
 
 # -------------------------- Helper Functions --------------------------
+# Thin wrapper over rofi_common.sh's gemini(). The model list, transport
+# and error logging are shared with rofi_anki now; this script used to
+# carry its own list containing "gemini-flash-1.5-8b", a name that was
+# never a real model, plus two retired 1.5 entries ahead of the only
+# live one — four wasted round trips per lookup.
 call_gemini() {
-	local prompt="$1"
-	[ -z "$API_KEY" ] && echo "" && return
-
-	local models=("gemini-1.5-flash" "gemini-1.5-flash-8b" "gemini-flash-1.5-8b" "gemini-2.0-flash" "gemini-2.0-flash-latest")
-	for model in "${models[@]}"; do
-		local json_payload
-		json_payload=$(jq -n --arg p "$prompt" '{contents:[{parts:[{text:$p}]}]}')
-		local api_url="https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}"
-		local response
-		response=$(curl -s -H "Content-Type: application/json" -d "$json_payload" "$api_url")
-		local text
-		text=$(echo "$response" | jq -r '.candidates[0].content.parts[0].text // ""' 2>/dev/null)
-		if [ -n "$text" ]; then
-			echo "$text"
-			return
-		fi
-	done
-
-	# If all models fail
-	echo ""
+	(( HAVE_GEMINI )) || return 0
+	gemini "$1" || true
 }
 
 # -------------------------- Main Script Logic --------------------------
@@ -121,8 +118,12 @@ else
 	[ -n "$EXAMPLES" ] && BODY+="\n<b><span color='#87CEEB'>Examples:</span></b>\n$EXAMPLES"
 fi
 
-notify-send -t $NOTIFY_TIMEOUT -u normal "$TITLE" "<span font='13'>$BODY</span>"
-copy_to_clipboard "$(printf '%s' "$BODY" | sed 's/<[^>]*>//g')"
+# BODY is assembled with "\n" inside double quotes, i.e. literal
+# backslash-n. Expand it with %b so the notification and the clipboard
+# both get real line breaks instead of the two-character escape.
+BODY_EXPANDED="$(printf '%b' "$BODY")"
+notify-send -t "$NOTIFY_TIMEOUT" -u normal "$TITLE" "<span font='13'>$BODY_EXPANDED</span>"
+copy_to_clipboard "$(printf '%s' "$BODY_EXPANDED" | sed 's/<[^>]*>//g')"
 
 # -------------------------- TTS Logic --------------------------
 OUT_FILE="$TMP_DIR/tts_audio"

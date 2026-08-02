@@ -20,7 +20,11 @@ get_timestamp() {
 }
 
 copy_to_clipboard() {
-	case "$XDG_SESSION_TYPE" in
+	# Defaulted rather than read bare: under `set -u` an unset
+	# XDG_SESSION_TYPE aborts the script instead of reaching the error
+	# message below, and a session started outside a display manager does
+	# not always set it.
+	case "${XDG_SESSION_TYPE:-x11}" in
 	'x11') xclip -selection clipboard -t image/png ;;
 	'wayland') wl-copy -t image/png ;;
 	*)
@@ -107,30 +111,51 @@ main() {
 		;;
 	esac
 
-	# Prompt for delay
+	# Prompt for delay. Anything that is not a number counts as none:
+	# the old test ran `[ ! "" -eq 0 ]` when the prompt came back empty,
+	# which is an "integer expression expected" error and, under `set -e`,
+	# killed the script with nothing on screen to explain it.
 	delay=$(printf '%s\n' "$(seq 0 5)" | ${RMENU} "Delay (in seconds):") || exit 0
-	if [ ! "${delay}" -eq "0" ]; then
+	if [[ "${delay}" =~ ^[0-9]+$ ]] && [ "${delay}" -gt 0 ]; then
 		maim_args="${maim_args} --delay=${delay}"
 	fi
 
 	maim_args="${maim_args} -qd 0.5"
 
 	if $use_satty; then
-		# Capture and edit with satty
+		# Capture and edit with satty.
+		#
+		# satty was previously started with --filename only. Its save
+		# action needs --output-filename to have anywhere to write, so the
+		# edit went nowhere; the script then moved the *unedited* capture
+		# to Screenshots and announced "Screenshot Saved". Every annotation
+		# ever made here was silently discarded -- which is why the folder
+		# contains screenshot-full-* files and not one screenshot-satty-*.
 		temp_file="/tmp/satty-$(get_timestamp).png"
 		maim ${maim_args} >"${temp_file}" || show_error "Failed to capture screenshot"
 
-		# Check satty version and use appropriate syntax
-		if satty --help | grep -q '\--filename'; then
+		output_file="${MAIM_DIR}/${MAIM_PREFIX}-satty-$(get_timestamp).png"
+
+		if satty --help | grep -q '\--output-filename'; then
+			satty --filename "${temp_file}" --output-filename "${output_file}" ||
+				show_error "Failed to open satty"
+		elif satty --help | grep -q '\--filename'; then
+			# Older satty: no output flag, so the original is all there is.
 			satty --filename "${temp_file}" || show_error "Failed to open satty"
+			mv "${temp_file}" "${output_file}"
 		else
 			satty "${temp_file}" || show_error "Failed to open satty"
+			mv "${temp_file}" "${output_file}"
 		fi
 
-		# Save edited screenshot to permanent location
-		output_file="${MAIM_DIR}/${MAIM_PREFIX}-satty-$(get_timestamp).png"
-		mv "${temp_file}" "${output_file}"
-		notify-send "Screenshot Saved" "${output_file}"
+		rm -f "${temp_file}"
+		# Only claim a save if satty actually wrote one: closing the editor
+		# without saving is a legitimate "no thanks", not a failure.
+		if [ -s "${output_file}" ]; then
+			notify-send "Screenshot Saved" "${output_file}"
+		else
+			notify-send "Screenshot Discarded" "satty closed without saving"
+		fi
 
 	else
 		# Regular screenshot options

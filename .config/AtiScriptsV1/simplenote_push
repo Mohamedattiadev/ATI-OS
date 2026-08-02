@@ -1,0 +1,417 @@
+#!/usr/bin/env python3
+"""Sync TODOS.md with a single Simplenote note, so Mod+Shift+S reaches the phone.
+
+Two directions, two entry points:
+
+  simplenote_push          push  -- local file wins, run from nvim's BufWritePost
+  simplenote_push --pull   pull  -- remote note wins, run before the window opens
+
+The state dir keeps `last_sync`, a copy of the content at the moment the two
+sides last agreed. That common ancestor is what makes this safe: it can tell
+"the phone edited it" from "I edited it" from "both edited it", instead of
+guessing by timestamp and silently eating a day of notes.
+
+  remote == local          nothing to do
+  local == last_sync       only the phone moved   -> take remote
+  remote == last_sync      only the desktop moved -> push it (this is also the
+                                                     retry path for an offline :w)
+  all three differ         real conflict -> park remote beside the file, touch nothing
+
+Merging is never automatic. Whenever both sides moved you get a
+`TODOS.md.remote-<timestamp>` to reconcile by hand.
+
+Failures are deliberately quiet -- log and exit 0. This runs from BufWritePost,
+and a dropped wifi connection is not a reason for :w to print a stack trace.
+
+Simplenote's API is email+password (no OAuth); the optional `token` in the
+credentials file exists for networks that block the login host. See
+TROUBLESHOOTING.md -> Simplenote.
+"""
+import os
+import sys
+import time
+import fcntl
+import errno
+import socket
+import configparser
+
+# The simplenote lib builds its own urllib openers with no timeout, so a stalled
+# connection hangs forever. Detached or not, that leaves a process per :w.
+socket.setdefaulttimeout(15)
+
+
+def _username():
+    """USER is not guaranteed. qtile.spawn, systemd units and cron all pass a
+    trimmed environment, and an empty value here silently retargets the whole
+    script at ~/TODOS/TODOS.md -- a path that does not exist, so every run would
+    no-op with 'cannot read'. Fall back to the passwd database, which is always
+    there."""
+    name = os.environ.get("USER") or os.environ.get("LOGNAME")
+    if not name:
+        try:
+            import pwd
+
+            name = pwd.getpwuid(os.getuid()).pw_name
+        except Exception:
+            name = ""
+    return name.upper()
+
+
+# Mirrors config.py's todos_dir: ~/<USER-UPPERCASED>TODOS.
+NOTE_FILE = os.path.expanduser(f"~/{_username()}TODOS/TODOS.md")
+CRED_FILE = os.path.expanduser("~/.config/simplenote/credentials")
+STATE_DIR = os.path.expanduser("~/.local/state/simplenote-push")
+KEY_FILE = os.path.join(STATE_DIR, "note_key")
+SYNC_FILE = os.path.join(STATE_DIR, "last_sync")
+LOG_FILE = os.path.join(STATE_DIR, "push.log")
+LOCK_FILE = os.path.join(STATE_DIR, "lock")
+
+# The tag is what makes the note findable again if the key file is ever lost --
+# without it a wiped state dir means a duplicate note instead of a recovery.
+TAG = "atitodos"
+
+# Log rotation. This file is appended to on every single :w; unbounded it would
+# quietly grow forever in a directory nobody ever looks at.
+LOG_MAX_BYTES = 256 * 1024
+
+# Everything is read and written as UTF-8 explicitly. Python otherwise picks the
+# locale encoding, and a spawned process can easily inherit LANG=C -- which turns
+# any non-ASCII character in the notes into a crash on read and mojibake on write.
+ENC = "utf-8"
+
+MODE = "pull" if "--pull" in sys.argv[1:] else "push"
+
+
+def log(msg):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    try:
+        if os.path.getsize(LOG_FILE) > LOG_MAX_BYTES:
+            # Keep the tail, drop the rest. Simpler than logrotate for one file,
+            # and the recent lines are the only ones ever worth reading.
+            with open(LOG_FILE, encoding=ENC, errors="replace") as fh:
+                tail = fh.readlines()[-200:]
+            with open(LOG_FILE, "w", encoding=ENC) as fh:
+                fh.writelines(tail)
+    except OSError:
+        pass
+    with open(LOG_FILE, "a", encoding=ENC) as fh:
+        fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} [{MODE}] {msg}\n")
+
+
+def die(msg):
+    log(msg)
+    print(f"simplenote_{MODE}: {msg}", file=sys.stderr)
+    sys.exit(0)  # never fail the :w, never block the window opening
+
+
+def acquire_lock():
+    """Refuse to run two syncs at once.
+
+    Mod+Shift+S fires a pull, and a fast :w fires a push -- they overlap easily,
+    and both read-modify-write the same three files. Two concurrent runs with a
+    missing key file can even create two notes and leave the tag pointing at the
+    wrong one. Non-blocking: if another run holds the lock it is doing the same
+    work anyway, so exiting is correct, not a failure.
+
+    The handle is returned and deliberately kept alive for the process lifetime;
+    letting it be garbage collected would close the fd and drop the lock.
+    """
+    os.makedirs(STATE_DIR, exist_ok=True)
+    fh = open(LOCK_FILE, "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        if exc.errno in (errno.EACCES, errno.EAGAIN):
+            log("another sync is already running -- skipped")
+            sys.exit(0)
+        raise
+    return fh
+
+
+def credentials():
+    if not os.path.exists(CRED_FILE):
+        die(f"no credentials at {CRED_FILE}")
+    cp = configparser.ConfigParser()
+    try:
+        cp.read(CRED_FILE, encoding=ENC)
+    except configparser.Error as exc:
+        die(f"{CRED_FILE} is malformed: {exc}")
+    try:
+        sec = cp["simplenote"]
+    except KeyError:
+        die(f"{CRED_FILE} needs a [simplenote] section")
+    email = sec.get("email", "").strip()
+    password = sec.get("password", "").strip()
+    # An optional pre-obtained Simperium access token. This exists because some
+    # networks blackhole auth.simperium.com (the login host) while leaving
+    # api.simperium.com -- where every actual note read/write goes -- reachable.
+    # With a token we skip the login handshake entirely and never touch the
+    # blocked host. See TROUBLESHOOTING.md for how to read it out of the web app.
+    token = sec.get("token", "").strip()
+    if token:
+        return email, password, token
+    # Blank values otherwise reach the API and stall there rather than 401ing.
+    if not email or not password:
+        die(f"{CRED_FILE} is still a stub -- fill in email and password (or token)")
+    return email, password, None
+
+
+def _read(path, default=None):
+    try:
+        with open(path, encoding=ENC) as fh:
+            return fh.read()
+    except FileNotFoundError:
+        return default
+    except UnicodeDecodeError as exc:
+        die(f"{path} is not valid UTF-8: {exc}")
+    except OSError as exc:
+        die(f"cannot read {path}: {exc}")
+
+
+def _write_atomic(path, content):
+    """Write via a temp file in the same directory, then rename.
+
+    A plain open(path, 'w') truncates first: crash or lose power in the middle
+    and the notes file is destroyed with nothing to recover from. rename(2) is
+    atomic within a filesystem, so a reader sees either the old file or the new
+    one -- never a half-written one.
+    """
+    tmp = f"{path}.tmp.{os.getpid()}"
+    with open(tmp, "w", encoding=ENC) as fh:
+        fh.write(content)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+
+
+def stored_key():
+    return (_read(KEY_FILE, "") or "").strip() or None
+
+
+def remember(key, content):
+    """Record the agreed state: which note, and exactly what both sides now hold."""
+    os.makedirs(STATE_DIR, exist_ok=True)
+    _write_atomic(SYNC_FILE, content)
+    # Key last: if this process dies between the two writes, a stale last_sync
+    # with no key is harmless (the key is re-found by tag), whereas a key with a
+    # stale last_sync would mis-classify the next comparison as a conflict.
+    _write_atomic(KEY_FILE, key)
+
+
+def connect():
+    import simplenote
+
+    email, password, token = credentials()
+    sn = simplenote.Simplenote(email, password)
+
+    if token:
+        # Assigning .token short-circuits get_token(), so authenticate() never
+        # runs and the blocked auth host is never contacted at all.
+        sn.token = token
+        return sn
+
+    # Pre-flight the login. Without this a bad password surfaces further down as
+    # "expected string or bytes-like object, got 'NoneType'" -- the lib stores a
+    # None token and only trips over it inside the request.
+    # authenticate() raises only on an HTTP error; on any connection problem it
+    # returns None and lets the caller trip over it later, so check both.
+    try:
+        token = sn.get_token()
+    except simplenote.simplenote.SimplenoteLoginFailed:
+        die("login rejected -- check email/password in " + CRED_FILE)
+    except Exception as exc:
+        die(f"cannot reach Simplenote: {exc}")
+    if not token:
+        die(
+            "cannot reach auth.simperium.com -- offline, or your network blocks "
+            "that host. If the web app works but this does not, use a token: "
+            "see TROUBLESHOOTING.md (Simplenote)"
+        )
+    return sn
+
+
+def find_tagged_note(sn):
+    """Recover the note by tag when the key file is gone (fresh machine, cleared state).
+
+    Filters trashed notes and picks deterministically. get_note_list returns
+    entries in no guaranteed order and *includes notes in the trash*: taking
+    notes[0] blindly could adopt a note you deleted months ago and then overwrite
+    the live one's content with it. Newest surviving note wins, ties broken by
+    key so two machines racing land on the same choice.
+    """
+    try:
+        notes, status = sn.get_note_list(tags=[TAG])
+    except Exception as exc:
+        die(f"cannot list notes: {exc}")
+    if status != 0 or not notes:
+        return None
+    alive = [n for n in notes if not n.get("deleted")]
+    if not alive:
+        return None
+    alive.sort(key=lambda n: (n.get("modificationDate", 0), n.get("key", "")), reverse=True)
+    if len(alive) > 1:
+        log(f"warning: {len(alive)} notes tagged '{TAG}' -- using {alive[0].get('key')}")
+    return alive[0]["key"]
+
+
+def fetch(sn, key):
+    """Return (content, deleted) for a note key, or (None, False) if it is gone."""
+    try:
+        note, status = sn.get_note(key)
+    except Exception as exc:
+        die(f"cannot read the note: {exc}")
+    if status != 0:
+        # The key is stale -- the note was deleted outright, or belongs to
+        # another account after a credentials change.
+        return None, False
+    return note.get("content", ""), bool(note.get("deleted"))
+
+
+def save_remote_copy(remote):
+    """Park a remote version we are about to lose next to the file, never in place."""
+    side = f"{NOTE_FILE}.remote-{time.strftime('%Y%m%d-%H%M%S')}"
+    _write_atomic(side, remote)
+    return side
+
+
+def do_push(sn, local):
+    key = stored_key()
+    if key is None:
+        key = find_tagged_note(sn)
+
+    # Look before overwriting. A blind update is fine while the desktop is the
+    # only writer, but both sides can now edit offline: come back online and :w
+    # before the window is ever opened, and an unchecked push would erase the
+    # phone's work from the server with no copy kept anywhere.
+    if key:
+        remote, deleted = fetch(sn, key)
+        if remote is None:
+            # The stored key is dead. Fall back to the tag before giving up:
+            # creating a new note here would leave two notes carrying the tag,
+            # and the next recovery would have to pick between them.
+            recovered = find_tagged_note(sn)
+            if recovered and recovered != key:
+                log(f"note {key} is gone -- recovered {recovered} by tag")
+                key = recovered
+                remote, deleted = fetch(sn, key)
+            else:
+                log(f"note {key} no longer exists -- creating a fresh one")
+                key = None
+        if key and remote is not None:
+            last = _read(SYNC_FILE)
+            if remote == local and not deleted:
+                remember(key, local)  # already identical; nothing to send
+                return
+            if last is not None and remote != last:
+                side = save_remote_copy(remote)
+                log(f"CONFLICT -- remote moved too; saved to {side} before pushing")
+            elif last is None and remote.strip() and remote != local:
+                # No ancestor to judge by (fresh state dir on a machine that
+                # already has a note). Never overwrite unseen remote content.
+                side = save_remote_copy(remote)
+                log(f"no sync history -- saved existing note to {side} before pushing")
+            # Pushing an empty file over a note with content is almost always an
+            # accident (a truncated file, a bad edit) rather than an intentional
+            # clear, and it is unrecoverable once sent. Keep a copy either way.
+            if not local.strip() and remote.strip() and last == remote:
+                side = save_remote_copy(remote)
+                log(f"local file is empty -- saved remote to {side} before clearing")
+
+    payload = {"content": local, "tags": [TAG]}
+    if key:
+        # deleted=0 also lifts the note out of the trash if it was thrown away
+        # on the phone; otherwise every future push would write into a trashed
+        # note that never shows up in the app again.
+        payload.update({"key": key, "deleted": 0})
+    try:
+        note, status = sn.update_note(payload) if key else sn.add_note(payload)
+    except Exception as exc:  # network down, auth revoked, API change
+        die(f"push failed: {exc}")
+
+    if status != 0:
+        die(f"push rejected: {note}")
+
+    remember(note["key"], local)
+    log(f"pushed {len(local)} bytes to {note['key']}")
+
+
+def do_pull(sn, local):
+    key = stored_key()
+    if key is None:
+        key = find_tagged_note(sn)
+    if key is None:
+        log("nothing to pull -- no note exists yet")
+        return
+
+    remote, deleted = fetch(sn, key)
+    if remote is None:
+        log(f"note {key} no longer exists -- clearing the stale key")
+        try:
+            os.remove(KEY_FILE)
+        except OSError:
+            pass
+        return
+    if deleted:
+        # Trashed on the phone. Do not mirror that onto the file -- a deletion is
+        # not an edit, and re-creating the note is what the next push does.
+        log("note is in the Simplenote trash -- leaving the local file alone")
+        return
+
+    if remote == local:
+        remember(key, local)  # sides agree; refresh the ancestor
+        return
+
+    last = _read(SYNC_FILE)
+
+    if last is not None and local == last:
+        # Only the phone moved. Safe to take the remote wholesale.
+        _write_atomic(NOTE_FILE, remote)
+        remember(key, remote)
+        log(f"pulled {len(remote)} bytes from {key}")
+        return
+
+    if last is not None and remote == last:
+        # Only the desktop moved -- and it is still sitting here unsent, which
+        # is exactly what an offline :w leaves behind (the push failed, and
+        # nothing retries it). Opening the window is the natural retry point, so
+        # send it now instead of waiting for a write that may never come.
+        log("local ahead of remote -- pushing it now")
+        do_push(sn, local)
+        return
+
+    # Both sides moved (or there is no ancestor to judge by, e.g. first run on a
+    # machine that already has a note). Refuse to guess: the remote copy is
+    # written beside the file so nothing is lost, and the local file is untouched.
+    side = save_remote_copy(remote)
+    log(f"CONFLICT -- both sides changed; remote saved to {side}, local untouched")
+
+
+def main():
+    lock = acquire_lock()  # noqa: F841 -- must outlive main(), see acquire_lock
+
+    local = _read(NOTE_FILE)
+    if local is None:
+        # A pull can legitimately run before the file exists; a push cannot.
+        if MODE == "push":
+            die(f"cannot read {NOTE_FILE}")
+        local = ""
+
+    # Nothing to send means no reason to open a connection at all. Every request
+    # costs a full TLS handshake (urllib keeps nothing alive) plus the round
+    # trip, so a no-op push is ~0.7s of pure latency -- on a keybind that fires
+    # on every single :w, including the ones that changed nothing. Comparing
+    # against the ancestor first makes those free. Only push is short-circuited:
+    # a pull with an unchanged local file is exactly when the phone's edits
+    # arrive, so it must still go and look.
+    if MODE == "push" and local == _read(SYNC_FILE) and stored_key():
+        sys.exit(0)
+
+    sn = connect()
+    if MODE == "pull":
+        do_pull(sn, local)
+    else:
+        do_push(sn, local)
+
+
+if __name__ == "__main__":
+    main()

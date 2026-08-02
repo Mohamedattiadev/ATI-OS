@@ -10,7 +10,10 @@ USER_NAME="$(whoami | tr '[:lower:]' '[:upper:]')"
 # Folder → ATITODOS, SUSUTODOS, etc.
 TODOS_DIR="$HOME/${USER_NAME}TODOS"
 
-TODO_FILE="$TODOS_DIR/todos.md"
+# Same single store rofi_todo uses. This read todos.md while rofi_todo
+# has moved to the Simplenote-synced TODOS.md; left alone it would have
+# gone permanently blank once rofi_todo retired the old file.
+TODO_FILE="$TODOS_DIR/TODOS.md"
 
 # Create directory & file if missing
 mkdir -p "$TODOS_DIR"

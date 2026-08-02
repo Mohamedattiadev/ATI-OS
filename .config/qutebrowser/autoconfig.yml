@@ -84,7 +84,7 @@ settings:
         V: hint links spawn --userscript ~/.config/qutebrowser/scripts/download_video
           {hint-url}
         Y: hint links yank
-        Zp: hint links userscript ~/.config/qutebrowser/userscripts/zen_link_preview
+        Zp: hint links userscript ~/.config/qutebrowser/userscripts/zen_preview
         b: null
         d: null
         gD: null
@@ -129,4 +129,4 @@ settings:
   statusbar.show:
     global: always
   tabs.show:
-    global: never
+    global: always

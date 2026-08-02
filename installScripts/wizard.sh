@@ -75,6 +75,7 @@ ONLY_LIST=""
 SKIP_LIST=""
 UNINSTALL=0
 SHOW_HELP=0
+AUDIT=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run|-n) DRY_RUN=1 ;;
@@ -82,6 +83,7 @@ for arg in "$@"; do
     --only=*)     ONLY_LIST="${arg#*=}" ;;
     --skip=*)     SKIP_LIST="${arg#*=}" ;;
     --uninstall)  UNINSTALL=1 ;;
+    --audit)      AUDIT=1 ;;
     # Deferred: the module id list is printed FROM MOD_ORDER, which is not
     # defined yet at argument-parse time. It used to be a hand-maintained
     # copy here and drifted -- dark-mode and browser-memory existed as real
@@ -149,7 +151,11 @@ _ERR()  { gum style --foreground "$URGENT" "$@"; }
 _LOGO=$'\n     █████╗ ████████╗██╗\n    ██╔══██╗╚══██╔══╝██║\n    ███████║   ██║   ██║\n    ██╔══██║   ██║   ██║\n    ██║  ██║   ██║   ██║\n    ╚═╝  ╚═╝   ╚═╝   ╚═╝\n           d o t f i l e s\n'
 
 _BOX_HEADER() {
-  clear
+  # `clear` exits non-zero when TERM is unset or unknown -- which under
+  # `set -e` plus the ERR trap aborted the whole install. That happens in a
+  # container, over a bare ssh exec, and from a CI runner: every
+  # non-interactive context where you would want an unattended run most.
+  clear 2>/dev/null || true
   gum style --align center --foreground "$ACCENT" "$_LOGO"
   gum style --align center --foreground "$MUTED" \
     "Arch · X11 · Qtile · wal-themed"
@@ -219,18 +225,188 @@ run() {
   fi
 }
 
+# Read-only privileged probes -- `sudo test -e`, `sudo bootctl --print-esp-path`
+# and friends. A --dry-run is supposed to be free: it changes nothing and it
+# should need nothing. These probes were plain `sudo`, so previewing an install
+# on a machine with no cached credentials stopped dead on a password prompt for
+# a run that was never going to write anything. Under --dry-run they degrade to
+# non-interactive sudo and simply report "unknown", which at worst makes the
+# preview show a skip.
+sudo_probe() {
+  if (( DRY_RUN )); then sudo -n "$@" 2>/dev/null; else sudo "$@"; fi
+}
+
 # ─── MODULE DEFINITIONS ──────────────────────────────────────────────
 # Each module: id | group | title | 1-line desc | shell to execute
 # Group is only used for the picker header — keep display order stable.
 declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
-  sanity bootstrap yay dcli stow arch-config dcli-sync cargo ati-scripts
-  pacman-guard boot-fallback login-shell
-  touchpad xinit xresources xmodmap lid image-envs flatpak piper whisper
-  whisper-fast mic-gain
+  sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts simplenote ui-scale githooks
+  pacman-guard boot-fallback boot-splash login-shell
+  touchpad xinit xresources xmodmap lid image-envs flatpak piper ankiconnect vaultwarden vaultwarden-phone tmux-tpm whisper
+  whisper-fast mic-gain scrcpy
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes dark-mode browser-flags browser-memory chrome-policy
+  dcli-sync-extra
 )
+
+# Opt-in modules: valid --only= targets, and listed (unchecked) in the
+# interactive picker, but never part of a default `./install.sh` run.
+#
+# install.sh's promise is a working DESKTOP -- qtile, themes, fonts,
+# widgets -- not a working workstation. Docker, a JDK, printing and qemu
+# are a second pass you run when you actually need them, on your own
+# schedule. Keeping them out of round one is what lets the first boot
+# stay short and stay predictable.
+#
+# boot-splash used to be here. It is part of the default run now: the boot
+# screen is as much of the look as the bar is, and leaving it out meant a
+# machine installed from this repo still booted to a wall of kernel log.
+# What made it safe to promote is ORDERING -- it sits immediately after
+# boot-fallback in MOD_ORDER, so the verbose LTS entries (written without
+# quiet/splash on purpose) always exist before anything touches the
+# cmdline of the primary one. A splashed boot that hangs is then one menu
+# pick away from a boot that tells you why.
+OPTIN_MODS=(dcli-sync-extra)
+_is_optin() {
+  local id m
+  id="$1"
+  for m in "${OPTIN_MODS[@]}"; do [[ "$m" == "$id" ]] && return 0; done
+  return 1
+}
+
+if (( AUDIT )); then
+  # Package drift audit. This exists because the audit was once run by hand
+  # and found 27 packages installed on this machine and declared in no
+  # module at all -- including `networkmanager`, whose absence would have
+  # given a fresh install the nm-applet tray icon with no daemon behind it
+  # and no working network GUI. Drift is silent by nature: you pacman -S
+  # something at 2am, it works, and the repo never hears about it. The only
+  # defence is to make the check cheap enough to run often.
+  #
+  # Read-only. Touches nothing, needs no sudo.
+  _mods="$DOTFILES_DIR/.config/arch-config/modules"
+  [[ -d "$_mods" ]] || { echo "wizard: no modules dir at $_mods" >&2; exit 2; }
+
+  _declared="$(mktemp)"; _explicit="$(mktemp)"; _present="$(mktemp)"
+  _core="$(mktemp)"
+
+  # Which module files count. The host's enabled_modules drive dcli, plus
+  # base (always), plus the sets installed at runtime by their own wizard
+  # modules -- optional.yaml (dcli-sync-extra) and graphics-*.yaml (gpu).
+  # Excluded: example.yaml and declared-packages.yaml (not modules), and
+  # system-packages-ati.yaml, which is NOT in enabled_modules -- counting
+  # it would declare nvidia, plasma and pulseaudio on an Intel qtile box.
+  _host="$(sed -n 's/^host:[[:space:]]*//p' \
+    "$DOTFILES_DIR/.config/arch-config/config.yaml" 2>/dev/null | head -1)"
+  _hostfile="$DOTFILES_DIR/.config/arch-config/hosts/${_host}.yaml"
+  # Split deliberately: _core is what a default ./install.sh must produce,
+  # so anything declared there and absent is a real gap. optional.yaml and
+  # the non-matching graphics-*.yaml sets are legitimately absent.
+  _optin_files=("$_mods/optional.yaml" "$_mods/splash.yaml" "$_mods"/graphics-*.yaml)
+  _core_files=("$_mods/base.yaml")
+  _files=("${_core_files[@]}" "${_optin_files[@]}")
+  if [[ -f "$_hostfile" ]]; then
+    while read -r _m; do
+      [[ -f "$_mods/$_m.yaml" ]] || continue
+      _files+=("$_mods/$_m.yaml"); _core_files+=("$_mods/$_m.yaml")
+    done < <(sed -n '/^enabled_modules:/,/^[a-z_]*:/p' "$_hostfile" \
+             | sed -n 's/^[[:space:]]*-[[:space:]]*\([A-Za-z0-9_-]*\).*/\1/p')
+  else
+    _WARN "no host file at $_hostfile — auditing every module file"
+    _files=("$_mods"/*.yaml)
+  fi
+
+  # Only the `packages:` block. A naive "^  - " grep also swallows the
+  # `conflicts:` list, which would report linux-zen and linux-hardened --
+  # packages we explicitly never want -- as missing.
+  awk '
+    /^packages:/          { inpkg=1; next }
+    /^[a-z_]+:/           { inpkg=0 }
+    inpkg && /^[ \t]*-[ \t]*[A-Za-z0-9]/ {
+      sub(/^[ \t]*-[ \t]*/, ""); sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, "")
+      if (length($0)) print
+    }
+  ' "${_files[@]}" | sort -u > "$_declared"
+  # Same extraction over the core-only file set.
+  awk '
+    /^packages:/          { inpkg=1; next }
+    /^[a-z_]+:/           { inpkg=0 }
+    inpkg && /^[ \t]*-[ \t]*[A-Za-z0-9]/ {
+      sub(/^[ \t]*-[ \t]*/, ""); sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, "")
+      if (length($0)) print
+    }
+  ' "${_core_files[@]}" | sort -u > "$_core"
+
+  # Deliberate non-declarations, each with a documented reason. Kept in its
+  # own list rather than folded into `declared`: these must not count as
+  # drift, but must not be reported as missing either -- amd-ucode is
+  # correctly absent on an Intel box, and declaring it would be the bug.
+  _ignorelist="$(mktemp)"
+  trap 'rm -f "$_declared" "$_explicit" "$_present" "$_core" "$_ignorelist"' EXIT
+  : > "$_ignorelist"
+  _ignore="$DOTFILES_DIR/.config/arch-config/audit-ignore.yaml"
+  if [[ -f "$_ignore" ]]; then
+    awk '
+      /^packages:/ { inpkg=1; next }
+      /^[a-z_]+:/  { inpkg=0 }
+      inpkg && /^[ \t]*-[ \t]*[A-Za-z0-9]/ {
+        sub(/^[ \t]*-[ \t]*/, ""); sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, "")
+        if (length($0)) print
+      }
+    ' "$_ignore" | sort -u > "$_ignorelist"
+  fi
+
+  pacman -Qqe | sort > "$_explicit"   # explicitly installed
+  pacman -Qq  | sort > "$_present"    # installed at all, deps included
+
+  # Drift is explicit-but-undeclared. A package pulled in as a dependency
+  # is not drift -- nobody chose it.
+  # `*-debug` packages are byproducts: makepkg splits debug symbols out
+  # whenever OPTIONS=debug is set, so every AUR or vendored build leaves
+  # one behind. Nobody chose them, they are never declared, and listing
+  # each one by name in audit-ignore would just be a chore that grows with
+  # every package built from source.
+  _drift="$(comm -13 "$_declared" "$_explicit" | comm -13 "$_ignorelist" - | grep -v -- '-debug$' || true)"
+  # Missing means absent entirely. Comparing against -Qqe instead would
+  # flag every declared package that happens to also be some other
+  # package's dependency, which is most of them.
+  _missing="$(comm -23 "$_core" "$_present")"
+  _missing_optin="$(comm -23 "$_declared" "$_present" | comm -13 "$_core" -)"
+
+  printf '\n  host: %s   ·   modules audited: %s\n' "${_host:-?}" "${#_files[@]}"
+  printf '  declared: %s   ·   explicitly installed: %s\n\n' \
+    "$(wc -l < "$_declared")" "$(wc -l < "$_explicit")"
+
+  if [[ -n "$_drift" ]]; then
+    printf '  \033[33mINSTALLED BUT NOT DECLARED\033[0m — absent on a fresh machine:\n'
+    printf '%s\n' "$_drift" | fmt -w 68 | sed 's/^/    /'
+    printf '\n    Fix: add each to the right modules/*.yaml, or accept it as\n'
+    printf '    deliberate and note it in optional.yaml'"'"'s exclusion list.\n\n'
+  else
+    printf '  \033[32m✔\033[0m nothing installed that is not declared\n\n'
+  fi
+
+  if [[ -n "$_missing" ]]; then
+    printf '  \033[31mDECLARED IN AN ENABLED MODULE BUT NOT INSTALLED\033[0m — a real gap:\n'
+    printf '  a default ./install.sh is supposed to produce these.\n'
+    printf '%s\n' "$_missing" | fmt -w 68 | sed 's/^/    /'
+    printf '\n    Fix: dcli sync --force\n\n'
+  else
+    printf '  \033[32m✔\033[0m every package in an enabled module is installed\n\n'
+  fi
+
+  if [[ -n "$_missing_optin" ]]; then
+    printf '  \033[90mnot installed, and correctly so\033[0m — optional.yaml plus the GPU\n'
+    printf '  \033[90mvendor sets that do not match this machine:\033[0m\n'
+    printf '%s\n' "$_missing_optin" | fmt -w 68 | sed 's/^/    /'
+    printf '\n'
+  fi
+
+  # Non-zero on either real problem, so this can gate a commit or a CI run.
+  if [[ -n "$_drift" || -n "$_missing" ]]; then exit 1; fi
+  exit 0
+fi
 
 if (( SHOW_HELP )); then
   sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
@@ -242,6 +418,28 @@ Filters (combine with --yes for scripted runs):
 
 Note: --only and --skip REQUIRE '='. `--only boot-fallback` is rejected
 rather than silently running the full install.
+
+Audit (read-only, no sudo, exits non-zero if anything is wrong):
+  ./wizard.sh --audit   Compare every declared package against what is
+                        actually installed. Catches the two failure modes
+                        that make a fresh machine differ from this one:
+                        something installed by hand and never declared, and
+                        something declared that never got installed.
+                        Deliberate exceptions live in
+                        .config/arch-config/audit-ignore.yaml.
+
+Opt-in modules run ONLY when named in --only= (or ticked in the picker).
+A default run leaves them out:
+  dcli-sync-extra    docker · jdk · qemu · printing -- none of it is
+                     needed for qtile, the themes, the fonts or the
+                     widgets. Install later with:
+                       ./wizard.sh --yes --only=dcli-sync-extra
+
+Everything else, boot-splash included, runs in a default `./install.sh`.
+boot-splash edits the kernel cmdline and rebuilds the initramfs; it runs
+straight after boot-fallback, so the verbose LTS rescue entries exist
+before the splash is ever switched on. Opt out with:
+  ./install.sh --skip=boot-splash        (reverse: ./wizard.sh --uninstall --only=boot-splash)
 
 HELP
   printf 'Module ids (%d, generated from MOD_ORDER; unknown ids are rejected):\n' "${#MOD_ORDER[@]}"
@@ -287,8 +485,15 @@ _reg dcli              "dcli"                System    "Declarative package sync
 _reg stow              "Deploy dotfiles"     Dotfiles  "Symlink .config · .local · etc via GNU stow"            "step_stow"
 _reg arch-config       "Host arch-config"    Dotfiles  "Point arch-config at this host"                         "step_arch_config"
 _reg dcli-sync         "dcli sync (all pkgs)" System   "Install every declared pkg + flatpak (slow)"            "step_dcli_sync"
+_reg paths             "Expand @HOME@ paths"  Dotfiles  "Render browser flags · gtk.css · bookmarks for this user"  "step_paths"
+_reg ui-scale          "UI scale (DPI)"      Dotfiles  "Size bar/fonts to this display; ui-scale-toggle to override"  "step_ui_scale"
+_reg githooks          "Git pre-commit hook"  Dotfiles "Refuse commits that break the config or drift packages"  "step_githooks"
+_reg radios            "Network + Bluetooth" System    "Enable NetworkManager + bluetooth so the Mod+P popups have a daemon" "step_radios"
+_reg gpu               "GPU + microcode"     System    "Detect Intel/AMD/NVIDIA from PCI ids, install matching drivers" "step_gpu"
+_reg picom-pin         "picom (pinned)"      System    "Build the animation fork from a fixed commit, not branch HEAD"  "step_picom_pin"
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
 _reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
+_reg simplenote        "Simplenote push"     Apps      "Mirror the Mod+Shift+S TODOS note to your phone (asks for login at the end)" "step_simplenote"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"
 _reg pacman-guard      "Pacman safety hook"  System    "PreTransaction gate: refuse upgrades when / is too full"  "step_pacman_guard"
 _reg boot-fallback     "LTS boot entries"    System    "systemd-boot entries for linux-lts + a rescue initramfs"  "step_boot_fallback"
@@ -300,20 +505,30 @@ _reg lid               "Lid = ignore"        System    "Never sleep on lid close
 _reg image-envs        "Image env"           Dotfiles  "Suppress VIPS warnings + ensure ~/tmp (fish TMPDIR)"    "step_image_envs"
 _reg flatpak           "Flatpak (legacy)"    Apps      "Uninstall-only: qdrop replaced flathub/collector"       "step_flatpak"
 _reg piper             "Piper voices"        Media     "EN + DE TTS voices (~60MB)"                             "step_piper"
+_reg ankiconnect       "AnkiConnect"         Media     "Anki addon rofi_anki talks to on :8765 (~26KB)"          "step_ankiconnect"
+_reg vaultwarden       "Vaultwarden"         Apps      "Local password server on :8222 + rbw for Mod+p p"        "step_vaultwarden"
+_reg vaultwarden-phone "Vaultwarden on phone" Apps     "Tailscale proxy so the Bitwarden app can reach it"        "step_vaultwarden_phone"
+_reg tmux-tpm          "tmux plugins (TPM)"  Dotfiles  "Clone TPM + install plugins (was a manual README step)"   "step_tmux_tpm"
 _reg whisper           "Whisper models"      Media     "base.en (live dictation) + small.en (batch) STT (~630MB)" "step_whisper"
 _reg whisper-fast      "Whisper fast build"  Media     "Rebuild whisper-cli/-stream Release (AUR pkg is ~13x slower unoptimized)" "step_whisper_fast"
 _reg mic-gain          "Mic gain fix"        System    "Reassert mic capture gain WirePlumber resets on login"  "step_mic_gain"
+_reg scrcpy            "Android screen"      Apps      "adbusers + avahi + mDNS through ufw, so Super+Shift+F6 finds the phone" "step_scrcpy"
 _reg passwordless-sudo "Passwordless sudo"   System    "Add user to NOPASSWD sudoers"                           "step_nopasswd"
 _reg ownership         "Fix ownership"       System    "chown -R \$USER on ~/.dotfiles"                         "step_ownership"
 _reg disable-dm        "Disable display mgrs" System   "TTY + startx only"                                      "step_disable_dm"
 _reg candy-icons       "Candy icons"         Themes    "Install candy-icons theme"                              "step_candy"
-_reg wallpapers        "Wallpapers"          Themes    "Clone w3dg/wallpapers to ~/Pictures"                    "step_wallpapers"
+_reg wallpapers        "Wallpapers"          Themes    "Clone your wallpapers repo to ~/Pictures"                    "step_wallpapers"
 _reg speed             "Speed tweaks"        System    "sysctl + service trims (from speed_boost.sh)"           "step_speed"
 _reg themes            "Theme system"        Themes    "pywal + palette precompile + initial doom-one apply"    "step_themes"
 _reg dark-mode         "Dark preference"     Themes    "Advertise prefer-dark via portal so sites use their own dark theme" "step_dark_mode"
 _reg browser-flags     "Browser flags"       Browsers  "brave/chrome/chromium wal theme extension flags"        "step_browser_flags"
 _reg browser-memory    "Browser memory saver" Browsers "Policy: discard idle tabs, keep whatsapp/chatgpt live"  "step_browser_memory"
 _reg chrome-policy     "Chrome theme policy" Browsers  "Sign .pem + install /etc/opt/chrome force_installed"    "step_chrome_policy"
+# No comma in the desc: page_module_picker hands gum a CSV of preselected
+# option LINES, and a comma inside one splits it into two entries that match
+# nothing -- silently unchecking whatever followed it.
+_reg dcli-sync-extra   "Optional packages"   Optional  "docker · jdk · qemu · printing (opt-in · run later)"    "step_dcli_sync_extra"
+_reg boot-splash       "Boot splash"         System    "Your name + progress ring instead of kernel text at boot" "step_boot_splash"
 
 _validate_ids "$ONLY_LIST" --only
 _validate_ids "$SKIP_LIST" --skip
@@ -338,7 +553,7 @@ step_bootstrap() {
 step_yay()          { command -v yay >/dev/null && { _OK "yay present"; return; }
                       run "rm -rf /tmp/yay-bin && cd /tmp && git clone https://aur.archlinux.org/yay-bin.git yay-bin && cd yay-bin && makepkg -si --noconfirm"; }
 step_dcli()         { command -v dcli >/dev/null && { _OK "dcli present"; return; }
-                      run "yay -S --noconfirm dcli-arch-git"; }
+                      run "yay -S --needed --noconfirm dcli-arch-git"; }
 step_stow()         { run "$DOTFILES_DIR/installScripts/stow_script.sh"; }
 step_arch_config()  { run "$DOTFILES_DIR/installScripts/arch-config.sh"; }
 step_dcli_sync() {
@@ -364,15 +579,305 @@ step_dcli_sync() {
     return 1
   fi
 }
+step_paths() {
+  # Render every @HOME@ template to its real destination.
+  #
+  # These are the files where $HOME genuinely cannot be used, so the only
+  # alternative was a literal /home/ati baked into the repo:
+  #
+  #   *-flags.conf   Chromium's launcher documents "arguments are split on
+  #                  whitespace and shell quoting rules apply but no further
+  #                  parsing is performed", and Brave's wrapper mapfiles the
+  #                  lines straight into an argv array. Neither expands a
+  #                  variable. A wrong path here means --load-extension
+  #                  silently fails and the browser never picks up the
+  #                  generated wal theme -- the browser just looks untouched
+  #                  while every other app retints.
+  #   gtk.css        GTK's CSS @import takes a URL, not a shell expression.
+  #                  A wrong path means the wal overlay never loads and GTK
+  #                  apps keep the stock theme colors.
+  #   bookmarks      GTK's bookmark file is plain "URI  label" lines.
+  #
+  # Written as REAL files, replacing the stow symlink, exactly like
+  # theme-apply's render_dunstrc. That is what keeps a per-machine value
+  # from being written back into the repo through the link.
+  local src dst
+  for src in \
+    "$DOTFILES_DIR/.config/brave-flags.conf.tmpl" \
+    "$DOTFILES_DIR/.config/chrome-flags.conf.tmpl" \
+    "$DOTFILES_DIR/.config/chromium-flags.conf.tmpl" \
+    "$DOTFILES_DIR/.config/gtk-3.0/gtk.css.tmpl" \
+    "$DOTFILES_DIR/.config/gtk-4.0/gtk.css.tmpl" \
+    "$DOTFILES_DIR/.config/gtk-3.0/bookmarks.tmpl"
+  do
+    [[ -f "$src" ]] || { _WARN "missing template $src"; continue; }
+    dst="$HOME/.config/${src#"$DOTFILES_DIR"/.config/}"
+    dst="${dst%.tmpl}"
+    run "mkdir -p $(dirname "$dst") && rm -f $dst && sed 's|@HOME@|$HOME|g' $src > $dst"
+  done
+}
+
+_pkgs_from_module() {
+  # Shared by step_gpu and step_dcli_sync_extra: pull the package list out
+  # of a module yaml. Only lines of the exact form "  - name" count, so the
+  # commentary and the `exclude:`/`conflicts:` keys below it are ignored.
+  sed -n 's/^  - \([A-Za-z0-9._+-]*\).*/\1/p' "$1"
+}
+
+step_ui_scale() {
+  # Runs AFTER ati-scripts, which is what puts ui-scale on PATH.
+  #
+  # Every pixel value in the qtile config was tuned on a 1366x768 14"
+  # panel. Without this the bar is a sliver of unreadable text on a 4K
+  # laptop -- the one axis these dotfiles cannot keep identical by copying
+  # files, because the right answer depends on the glass.
+  local bin
+  bin="$(command -v ui-scale || echo "$DOTFILES_DIR/.config/AtiScriptsV1/ui-scale")"
+  [[ -x "$bin" ]] || { _WARN "ui-scale not found — run the ati-scripts module first"; return 0; }
+  if [[ -z "${DISPLAY:-}" ]]; then
+    # xrandr needs an X server. During a TTY install there is none yet, so
+    # defer rather than write a wrong factor: .xinitrc runs it at login.
+    _OK "no X session yet — ui-scale will run from .xinitrc on first startx"
+    return 0
+  fi
+  run "$bin"
+}
+
+step_picom_pin() {
+  # Build the animation-capable picom fork from a PINNED commit.
+  #
+  # The AUR package (picom-ftlabs-git) sources `#branch=next`, so it builds
+  # whatever the tip is on the day you install. picom is what renders the
+  # animations, rounded corners, shadows and blur this desktop is built
+  # around, so letting it float means two machines from the same repo can
+  # look and move differently with nothing in the config to explain it.
+  local dir="$DOTFILES_DIR/.config/arch-config/pkgbuilds/picom-ftlabs-pinned"
+  [[ -d "$dir" ]] || { _ERR "missing $dir"; return 1; }
+
+  if pacman -Qq picom-ftlabs-pinned >/dev/null 2>&1; then
+    _OK "picom-ftlabs-pinned present"
+    return 0
+  fi
+
+  # The floating AUR build conflicts (same provides). Remove it first, or
+  # makepkg fails at the install step after a full compile -- a slow way to
+  # discover a problem visible up front.
+  if pacman -Qq picom-ftlabs-git >/dev/null 2>&1; then
+    _WARN "removing floating picom-ftlabs-git in favour of the pinned build"
+    run "sudo pacman -Rdd --noconfirm picom-ftlabs-git"
+  fi
+
+  # -s installs build deps, -i installs the result, -r cleans them up.
+  # Built in a temp copy: makepkg writes src/ and pkg/ next to the PKGBUILD,
+  # and that directory is inside the git repo.
+  local tmp
+  if (( DRY_RUN )); then
+    # mktemp -d creates a real directory, which a preview has no business
+    # doing. Name one instead so the printed command still reads correctly.
+    _DIM "  [dry] cp -r $dir/. <tmpdir>/ && cd <tmpdir> && makepkg -si --noconfirm --needed --clean"
+    return 0
+  fi
+  tmp="$(mktemp -d)"
+  run "cp -r $dir/. $tmp/ && cd $tmp && makepkg -si --noconfirm --needed --clean"
+  rm -rf "$tmp"
+}
+
+step_githooks() {
+  # A symlink, not a copy: a copied hook silently keeps running the version
+  # from whenever the wizard last ran, which is the same drift problem the
+  # hook exists to catch.
+  local src="$DOTFILES_DIR/installScripts/hooks/pre-commit"
+  local dst="$DOTFILES_DIR/.git/hooks/pre-commit"
+  [[ -f "$src" ]] || { _WARN "no hook at $src"; return 0; }
+  [[ -d "$DOTFILES_DIR/.git" ]] || { _WARN "$DOTFILES_DIR is not a git repo — skipping"; return 0; }
+  run "ln -sfn $src $dst"
+}
+
+step_gpu() {
+  # The single most portability-critical module in the wizard.
+  #
+  # graphics.yaml used to hardcode the Intel driver set. Installing that on
+  # an AMD or NVIDIA machine leaves the real GPU with no driver, GLX falls
+  # back to llvmpipe, and picom -- which this repo configures with
+  # `backend = "glx"` and `vsync = true` -- either crawls or refuses to
+  # start. Either way the animations, rounded corners and shadows that the
+  # desktop is built around are gone, with nothing in the logs that points
+  # at a package list. So: detect, then install what this machine needs.
+  local mod_dir="$DOTFILES_DIR/.config/arch-config/modules"
+  local arch vendors="" ids
+  arch="$(uname -m)"
+
+  if [[ "$arch" != x86_64 ]]; then
+    # ARM boards have no PCI GPU to probe and no ucode package; mesa's
+    # KMS drivers in graphics.yaml are the whole story there.
+    _WARN "arch is $arch, not x86_64 -- skipping PCI GPU + microcode detection"
+    _WARN "graphics.yaml (vendor-neutral mesa) is installed; verify GL with vainfo"
+    return 0
+  fi
+
+  command -v lspci >/dev/null || run "sudo pacman -S --needed --noconfirm pciutils"
+
+  # Class 03xx is Display controller: VGA (0300), XGA, 3D (0302). A laptop
+  # with switchable graphics reports two, and genuinely needs both sets.
+  ids="$(lspci -mn 2>/dev/null | awk -F'"' '$2 ~ /^03/ {print tolower($4)}')"
+  [[ -n "$ids" ]] || { _ERR "no display controller found via lspci"; return 1; }
+
+  local id
+  for id in $ids; do
+    case "$id" in
+      8086) vendors+=" intel"  ;;   # Intel Corporation
+      1002|1022) vendors+=" amd" ;; # ATI/AMD, and AMD's own vendor id
+      10de) vendors+=" nvidia" ;;   # NVIDIA
+      1af4|15ad|1234|80ee)
+        # virtio-gpu / VMware SVGA / QEMU stdvga / VirtualBox. mesa's
+        # generic KMS driver covers these; there is no vendor package, and
+        # installing one would be wrong. vm-test.sh lands here.
+        _OK "virtual GPU ($id) -- vendor-neutral mesa is correct, nothing to add"
+        ;;
+      *) _WARN "unrecognised display controller vendor id: $id" ;;
+    esac
+  done
+
+  # Deduplicate: a dual-GPU laptop lists Intel twice on some firmware.
+  vendors="$(printf '%s\n' $vendors | sort -u | tr '\n' ' ')"
+  [[ -n "${vendors// /}" ]] || { _OK "no vendor driver set needed"; return 0; }
+  _OK "GPU vendor(s) detected:${vendors% }"
+
+  local v mod pkgs
+  for v in $vendors; do
+    mod="$mod_dir/graphics-$v.yaml"
+    [[ -f "$mod" ]] || { _ERR "missing $mod"; return 1; }
+    pkgs="$(_pkgs_from_module "$mod" | tr '\n' ' ')"
+    [[ -n "${pkgs// /}" ]] || { _ERR "no packages parsed from $mod"; return 1; }
+    run "yay -S --needed --noconfirm $pkgs"
+  done
+
+  # NVIDIA: nvidia-open-dkms only supports Turing (2018) and newer. On an
+  # older card it builds and installs happily, then fails to bind at boot
+  # -- you get a black screen or a fallback to modesetting with no
+  # acceleration, which reads as "the dotfiles broke my machine".
+  if [[ " $vendors " == *" nvidia "* ]]; then
+    if ! lspci -d 10de: -k 2>/dev/null | grep -qiE 'TU[0-9]|GA[0-9]|AD[0-9]|GB[0-9]'; then
+      _WARN "NVIDIA card may predate Turing; nvidia-open-dkms supports Turing+ only"
+      _WARN "if X fails to start, swap it: sudo pacman -S nvidia-dkms"
+    fi
+  fi
+
+  # Per-GPU picom flags. NVIDIA's proprietary GLX is the one stack where
+  # picom's use-damage optimisation smears during animations; disabling it
+  # costs a little GPU time and makes the motion match Intel and AMD.
+  # Written per-machine and gitignored -- never committed.
+  local gpu_env="$HOME/.config/picom/gpu.env"
+  if [[ " $vendors " == *" nvidia "* ]]; then
+    run "mkdir -p $(dirname "$gpu_env") && printf 'PICOM_GPU_FLAGS=\"--no-use-damage\"\\n' > $gpu_env"
+  else
+    run "mkdir -p $(dirname "$gpu_env") && printf 'PICOM_GPU_FLAGS=\"\"\\n' > $gpu_env"
+  fi
+
+  # CPU microcode. Not graphics, but the same "detected once, hardcoded
+  # forever" bug: base.yaml has intel-ucode commented out, so a fresh
+  # machine of either vendor got no microcode at all. Missing microcode is
+  # the cause of hangs and errata that look like random instability.
+  local cpu_vendor ucode
+  cpu_vendor="$(awk -F': ' '/^vendor_id/{print $2; exit}' /proc/cpuinfo)"
+  case "$cpu_vendor" in
+    GenuineIntel) ucode=intel-ucode ;;
+    AuthenticAMD) ucode=amd-ucode   ;;
+    *) ucode="" ; _WARN "unknown CPU vendor '$cpu_vendor' -- no microcode installed" ;;
+  esac
+  [[ -n "$ucode" ]] && run "sudo pacman -S --needed --noconfirm $ucode"
+}
+
+step_boot_splash() {
+  # Part of the default run, but the riskiest thing in it: this edits
+  # /etc/mkinitcpio.conf and the kernel cmdline and rebuilds the initramfs.
+  # What makes that acceptable is the module ORDER -- boot-fallback runs
+  # immediately before this and leaves behind LTS entries that carry
+  # neither quiet nor splash, so the worst case is one menu pick away from
+  # a fully verbose boot. Do not move this above boot-fallback.
+  #
+  # `boot-splash enable` refuses rather than half-applies (do_check ||
+  # die), so a machine it cannot handle -- no /etc/kernel/cmdline, no
+  # plymouth, an unsupported bootloader -- ends with the module marked
+  # failed and the boot path untouched, not with a system that comes up
+  # black.
+  local mod="$DOTFILES_DIR/.config/arch-config/modules/splash.yaml"
+  local bs="$DOTFILES_DIR/.config/AtiScriptsV1/boot-splash"
+  [[ -f "$mod" ]] || { _ERR "missing $mod"; return 1; }
+  [[ -x "$bs" ]] || { _ERR "missing $bs"; return 1; }
+
+  local pkgs; pkgs="$(_pkgs_from_module "$mod" | tr '\n' ' ')"
+  run "sudo pacman -S --needed --noconfirm $pkgs"
+
+  # The LTS rescue entries are rewritten WITHOUT quiet/splash (see the
+  # token filter in step_boot_fallback), so a splashed boot that hangs can
+  # always be diagnosed from the fallback entry.
+  run "$bs enable"
+}
+
+step_dcli_sync_extra() {
+  # modules/optional.yaml is deliberately NOT in hosts/*.yaml's
+  # enabled_modules, so `dcli sync` ignores it entirely -- and dcli has no
+  # per-module sync flag (see `dcli sync --help`). So read the package
+  # list straight out of the yaml and hand it to the AUR helper. Keeping
+  # the list in the yaml means it is still declared and reviewable in one
+  # place, rather than duplicated into this script.
+  local mod="$DOTFILES_DIR/.config/arch-config/modules/optional.yaml"
+  [[ -f "$mod" ]] || { _ERR "missing $mod"; return 1; }
+  local -a pkgs=()
+  mapfile -t pkgs < <(_pkgs_from_module "$mod")
+  (( ${#pkgs[@]} )) || { _ERR "no packages parsed from optional.yaml"; return 1; }
+  # --needed so a re-run is a no-op instead of a reinstall.
+  run "yay -S --needed --noconfirm ${pkgs[*]}"
+}
 step_cargo() {
   # rustup installs the stable toolchain but doesn't activate it as the
   # default -- every cargo/rustup invocation (this step, and any AUR
   # package built with cargo, e.g. paru/didyoumean) fails with "rustup
   # could not choose a version of cargo to run" until this is set once.
   command -v rustup >/dev/null && run "rustup default stable"
-  command -v cargo >/dev/null && run "cargo install pomodoro-tui" || _WARN "cargo missing, skip"
+  # if/else, not `a && b || c`: written as a chain, a FAILED build ran the
+  # `|| _WARN "cargo missing"` arm -- reporting the one thing that was not
+  # true, swallowing the real compiler error, and leaving the module exit
+  # status at 0 so the wizard ticked it off as ✔ ok.
+  if command -v cargo >/dev/null; then
+    run "cargo install pomodoro-tui"
+  else
+    _WARN "cargo missing, skip"
+  fi
 }
 step_ati_scripts()  { run "cd $DOTFILES_DIR/.config/AtiScriptsV1 && ./install.sh"; }
+step_simplenote() {
+  # Prepares the Simplenote mirror for the Mod+Shift+S TODOS note: package,
+  # credentials file, state dir. The account login itself is NOT asked here --
+  # _run_module captures a step's stdout into /tmp/wizard-<id>.log behind a
+  # spinner, so a gum prompt in here would render into a file and read as a
+  # hang. page_simplenote_creds() asks at the end of the run instead.
+  #
+  # python-simplenote is also declared in arch-config's python-lib module, so a
+  # full `dcli sync` covers it; installed here too because this module is
+  # legitimately runnable on its own via --only=simplenote.
+  run "yay -S --needed --noconfirm python-simplenote"
+
+  local cred_dir="$HOME/.config/simplenote"
+  local cred="$cred_dir/credentials"
+  run "mkdir -p $cred_dir '${XDG_STATE_HOME:-$HOME/.local/state}/simplenote-push'"
+  # Never clobber a filled-in credentials file on a re-run.
+  if (( DRY_RUN )); then
+    _DIM "  [dry] write $cred (stub, mode 600) if absent"
+  elif [[ ! -f "$cred" ]]; then
+    printf '[simplenote]\nemail = \npassword = \n' >"$cred"
+  fi
+  # Reassert 600 unconditionally: this file holds a plaintext account password
+  # (Simplenote's API has no tokens), and a stray umask on a re-run is enough
+  # to leave it world-readable.
+  run "chmod 600 $cred"
+
+  # The push script rides along with the stowed AtiScriptsV1 tree, so there is
+  # nothing to copy -- but say so plainly if stow has not run yet.
+  [[ -x "$HOME/.config/AtiScriptsV1/simplenote_push" ]] \
+    || _WARN "simplenote_push not on disk yet — run the stow module first"
+}
 step_pacman_guard() {
   # Installs the PreTransaction hook that refuses a package operation when
   # / is too full to unpack safely. This has to be a pacman hook rather
@@ -419,24 +924,55 @@ step_boot_fallback() {
     _WARN "bootctl missing — not a systemd-boot system, skipping LTS entries"; return 0
   fi
   local esp
-  esp="$(sudo bootctl --print-esp-path 2>/dev/null)" || esp=""
+  esp="$(sudo_probe bootctl --print-esp-path 2>/dev/null)" || esp=""
   [[ -n "$esp" ]] || esp=/boot
-  if ! sudo test -d "$esp/loader/entries"; then
+  if ! sudo_probe test -d "$esp/loader/entries"; then
     _WARN "$esp/loader/entries missing — systemd-boot not installed here, skipping"; return 0
   fi
-  if ! sudo test -e "$esp/vmlinuz-linux-lts"; then
+  if ! sudo_probe test -e "$esp/vmlinuz-linux-lts"; then
     _WARN "linux-lts not installed (no $esp/vmlinuz-linux-lts) — run the dcli-sync module first"
     return 0
   fi
 
   # Options straight off the running kernel. Anything else is a guess.
   local opts; opts="$(tr -d '\n' < /proc/cmdline)"
+  # ...except quiet/splash, which are stripped deliberately.
+  #
+  # These entries exist to be picked when the normal boot has failed. A
+  # rescue entry that inherits the boot splash shows a logo and a progress
+  # bar while hiding the kernel messages that say what is wrong -- it looks
+  # identical to the broken boot you are trying to escape. The boot-splash
+  # module puts quiet+splash on the primary UKI entry only, and this is the
+  # other half of that decision.
+  # Filter tokens rather than pattern-delete: a single sed pass consumes the
+  # separator, so adjacent options ("quiet splash") left the second one
+  # behind and the rescue entry was still silent.
+  #
+  # initrd= and BOOT_IMAGE= go too, and that one is not cosmetic. This
+  # machine boots a UKI, whose cmdline carries neither -- but a plain
+  # systemd-boot or GRUB install puts `initrd=\initramfs-linux.img` (the
+  # STOCK kernel's image) right there in /proc/cmdline. Copying it into an
+  # LTS entry hands the LTS kernel the stock kernel's modules alongside the
+  # `initrd` line below, and the rescue entry you finally reach for panics
+  # on a module version mismatch. BOOT_IMAGE= is the same shape of stale
+  # self-reference, pointing at whichever kernel booted this time.
+  opts="$(tr ' ' '\n' <<<"$opts" \
+    | grep -vxE 'quiet|splash' \
+    | grep -vE '^(initrd|BOOT_IMAGE)=' \
+    | paste -sd' ' -)"
   # Microcode is vendor-specific and optional; only reference what exists.
-  local ucode_line=""
-  local u
-  for u in intel-ucode.img amd-ucode.img; do
-    sudo test -e "$esp/$u" && ucode_line="initrd  /$u"
-  done
+  # Match it to the CPU, not to whatever image happens to be on the ESP: a
+  # machine that once ran the other vendor's ucode package (or installed
+  # both) left amd-ucode.img sitting there, and the unconditional loop below
+  # took the last hit -- so an Intel box got an AMD microcode image and no
+  # errata fixes at all on the entry it boots when things are already wrong.
+  local ucode_line="" ucode_img=""
+  case "$(awk -F': ' '/^vendor_id/{print $2; exit}' /proc/cpuinfo)" in
+    GenuineIntel) ucode_img=intel-ucode.img ;;
+    AuthenticAMD) ucode_img=amd-ucode.img   ;;
+  esac
+  [[ -n "$ucode_img" ]] && sudo_probe test -e "$esp/$ucode_img" \
+    && ucode_line="initrd  /$ucode_img"
 
   _DIM "  ESP $esp · options from /proc/cmdline"
   local ent="$esp/loader/entries"
@@ -455,22 +991,22 @@ EOF"
   # pacman owns this file, so edit in place rather than overwriting it --
   # an overwrite would fight every linux-lts upgrade with a .pacnew.
   local preset=/etc/mkinitcpio.d/linux-lts.preset
-  if sudo test -f "$preset"; then
-    if sudo grep -q "^PRESETS=.*fallback" "$preset"; then
+  if sudo_probe test -f "$preset"; then
+    if sudo_probe grep -q "^PRESETS=.*fallback" "$preset"; then
       _DIM "  fallback preset already enabled"
     else
       run "sudo sed -i \"s/^PRESETS=.*/PRESETS=('default' 'fallback')/\" $preset"
     fi
     # -S autodetect drops the autodetect hook: every module ships, not just
     # the ones probed on this machine. ~205MB, and worth it.
-    sudo grep -q "^fallback_options" "$preset" \
+    sudo_probe grep -q "^fallback_options" "$preset" \
       || run "echo \"fallback_options=\\\"-S autodetect\\\"\" | sudo tee -a $preset >/dev/null"
     run "sudo mkinitcpio -p linux-lts"
   else
     _WARN "$preset missing — skipping rescue initramfs"
   fi
 
-  if (( DRY_RUN )) || sudo test -e "$esp/initramfs-linux-lts-fallback.img"; then
+  if (( DRY_RUN )) || sudo_probe test -e "$esp/initramfs-linux-lts-fallback.img"; then
     run "sudo tee $ent/arch-lts-fallback.conf >/dev/null << EOF
 # Last-resort rescue entry. Same LTS kernel as arch-lts.conf, but paired
 # with the -fallback initramfs built WITHOUT autodetect, so it carries
@@ -489,12 +1025,18 @@ EOF"
   # A fallback entry you cannot select is not a fallback: systemd-boot
   # ships loader.conf with timeout commented out, which hides the menu.
   local lc="$esp/loader/loader.conf"
-  if sudo test -f "$lc" && ! sudo grep -qE '^timeout[[:space:]]+[0-9]+' "$lc"; then
+  if sudo_probe test -f "$lc" && ! sudo_probe grep -qE '^timeout[[:space:]]+[0-9]+' "$lc"; then
     run "echo 'timeout 5' | sudo tee -a $lc >/dev/null"
   fi
   (( DRY_RUN )) || _DIM "  verify with: bootctl list"
 }
-step_touchpad()     { run "sudo tee /etc/X11/xorg.conf.d/30-touchpad.conf > /dev/null << 'EOF'
+# mkdir first: `tee` cannot create the directory it writes into, and
+# /etc/X11/xorg.conf.d is not guaranteed to exist -- it ships with
+# xorg-server, so on a machine where X is installed later (or where the
+# module runs with --only before bootstrap) tee failed with "No such file
+# or directory" and tap-to-click was silently never configured.
+step_touchpad()     { run "sudo mkdir -p /etc/X11/xorg.conf.d"
+                      run "sudo tee /etc/X11/xorg.conf.d/30-touchpad.conf > /dev/null << 'EOF'
 Section \"InputClass\"
     Identifier \"Touchpad\"
     MatchIsTouchpad \"on\"
@@ -528,6 +1070,11 @@ export QT_QPA_PLATFORMTHEME=qt6ct
 # Cursor size + theme for X apps (Xcursor honors both env vars).
 export XCURSOR_SIZE=24
 export XCURSOR_THEME=breeze_cursors
+# Size the UI to whatever display is actually attached, BEFORE xrdb merges
+# .Xresources (ui-scale writes Xft.dpi into it) and before qtile reads
+# ~/.cache/qtile/ui_scale. Docking to an external monitor between sessions
+# changes the answer, so this runs every login rather than once at install.
+command -v ui-scale >/dev/null 2>&1 && ui-scale >/dev/null 2>&1
 [ -f "$HOME/.Xresources" ] && xrdb -merge "$HOME/.Xresources"
 command -v xsetroot >/dev/null 2>&1 && xsetroot -cursor_name left_ptr
 xset s off -dpms
@@ -537,11 +1084,18 @@ if [ -f "$HOME/.cache/wall" ] && command -v xwallpaper >/dev/null 2>&1; then
 fi
 if command -v picom >/dev/null 2>&1; then
   pkill -x picom 2>/dev/null
-  picom &
+  # Per-GPU flags written by the wizard's `gpu` module; see step_gpu.
+  # Absent file = no flags, which is correct for Intel and AMD.
+  PICOM_GPU_FLAGS=""
+  [ -f "$HOME/.config/picom/gpu.env" ] && . "$HOME/.config/picom/gpu.env"
+  # shellcheck disable=SC2086
+  picom $PICOM_GPU_FLAGS &
 fi
 # Tray icons -- Systray widget is passive, needs something to register.
 command -v blueman-applet >/dev/null 2>&1 && blueman-applet &
-command -v nm-applet >/dev/null 2>&1 && nm-applet &
+# --no-agent so nm-applet stays a tray icon and never shows its own
+# password dialog -- the qtile WiFi popup (Mod+p n) does the asking.
+command -v nm-applet >/dev/null 2>&1 && nm-applet --no-agent &
 # copyq_rofi needs copyq's background server running to have any
 # clipboard history to query -- --start-server avoids popping its
 # window open on every login.
@@ -591,7 +1145,31 @@ keycode 66 = Alt_L
 add mod1 = Alt_L Alt_R
 XMM_EOF
 }
-step_lid()          { run "sudo sed -i 's/^#\\?HandleLidSwitch=.*/HandleLidSwitch=ignore/' /etc/systemd/logind.conf && sudo systemctl restart systemd-logind"; }
+step_lid() {
+  # A drop-in, not `sed -i` on /etc/systemd/logind.conf.
+  #
+  # The sed depended on a commented `#HandleLidSwitch=` line being present
+  # to rewrite. That is true of the logind.conf this machine was installed
+  # with and false in general -- current systemd ships the file with the
+  # defaults documented elsewhere, and a machine whose logind.conf has been
+  # tidied or replaced simply had no line to match. sed then exited 0
+  # having changed nothing, the module reported ✔ ok, and the laptop still
+  # suspended the moment you shut the lid. A drop-in always applies, needs
+  # no line to already exist, survives systemd upgrades without a .pacnew,
+  # and is reversed by deleting one file.
+  if [[ ! -d /etc/systemd ]]; then
+    _WARN "no /etc/systemd — not a systemd machine, skipping lid setting"; return 0
+  fi
+  run "sudo install -d -m 755 /etc/systemd/logind.conf.d"
+  run "sudo tee /etc/systemd/logind.conf.d/90-wizard-lid.conf >/dev/null << 'EOF'
+# Never sleep on lid close. Written by wizard.sh (lid module).
+[Login]
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+HandleLidSwitchDocked=ignore
+EOF"
+  run "sudo systemctl restart systemd-logind"
+}
                     # VIPS_WARNING now ships as a tracked fish conf.d snippet
                     # (.config/fish/conf.d/vips.fish) instead of being appended
                     # to ~/.profile: that line was fish syntax in a POSIX file,
@@ -618,6 +1196,225 @@ step_piper() {
     retry_net 3 5 curl -fsSL -o "$dir/$fname" "https://huggingface.co/rhasspy/piper-voices/resolve/main/$f" || \
       { _ERR "piper $fname failed after 3 retries"; return 1; }
   done
+}
+
+# AnkiConnect: the HTTP bridge rofi_anki (Mod+p a) posts cards to.
+#
+# Without it, rofi_anki reaches a fully built card and then fails on the
+# last step, because nothing is listening on :8765 -- and the addon is
+# the one piece of that flow that cannot be stowed, since Anki loads
+# addons from its own data dir rather than from ~/.config.
+#
+# 2055492159 is the AnkiWeb id. The v/p query pair is the API version and
+# Anki point version the addon manager would normally send; the endpoint
+# 400s without them and 404s with "your version of Anki is too old" if p
+# is omitted entirely.
+step_ankiconnect() {
+  local id=2055492159
+  local dir="$HOME/.local/share/Anki2/addons21/$id"
+  local url="https://ankiweb.net/shared/download/${id}?v=2.1&p=50"
+
+  (( DRY_RUN )) && { _DIM "  [dry] install AnkiConnect -> $dir"; return 0; }
+  [[ -f "$dir/__init__.py" ]] && return 0
+
+  command -v unzip >/dev/null 2>&1 || { _ERR "ankiconnect needs unzip"; return 1; }
+
+  local tmp; tmp="$(mktemp -d)" || return 1
+  retry_net 3 5 curl -fsSL -o "$tmp/ankiconnect.zip" "$url" || {
+    _ERR "AnkiConnect download failed after 3 retries"; rm -rf "$tmp"; return 1; }
+
+  run "mkdir -p $dir"
+  unzip -o -q "$tmp/ankiconnect.zip" -d "$dir" || {
+    _ERR "AnkiConnect unzip failed"; rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+
+  # Anki only treats a directory as an installed addon when meta.json is
+  # present; without it the addon loads but shows as untracked in the UI.
+  cat >"$dir/meta.json" <<'EOF'
+{
+  "name": "AnkiConnect",
+  "mod": 0,
+  "min_point_version": 0,
+  "max_point_version": 0,
+  "branch_index": 0,
+  "disabled": false
+}
+EOF
+  # Decks and the note type are created by rofi_anki itself on first run,
+  # so nothing else is needed here. Anki must be restarted to pick this up.
+}
+
+# Vaultwarden: the password server behind Mod+p p (rofi_pass -> rbw).
+#
+# The packages come from arch-config (apps.yaml); this module does the
+# part packages cannot: bind the server to loopback, point it at the web
+# vault, start it, and aim rbw at it.
+#
+# Settings live in /etc/vaultwarden.local.env, referenced from a systemd
+# drop-in, rather than in /etc/vaultwarden.env. Two separate reasons:
+#
+#   * That file is 32KB of commented upstream defaults owned by the
+#     package, so local edits get clobbered on upgrade or leave a
+#     .pacnew to merge by hand.
+#   * It must be EnvironmentFile=, not Environment=. systemd applies
+#     EnvironmentFile= AFTER Environment=, so the packaged file (which
+#     sets WEB_VAULT_ENABLED=false) beats any Environment= line a
+#     drop-in adds -- verified the hard way: ROCKET_* took effect
+#     because the packaged file does not set them, while the web vault
+#     stayed off and served 404 until this was an EnvironmentFile.
+#
+# Deliberately loopback-only. Reaching this from the phone is a Tailscale
+# job (see README) -- never an open port. And the account itself is not
+# created here: that needs a master password, which is yours to choose.
+step_vaultwarden() {
+  if ! command -v vaultwarden >/dev/null 2>&1; then
+    _WARN "vaultwarden not installed -- skipping (check arch-config apps.yaml)"
+    return 0
+  fi
+
+  local dropin=/etc/systemd/system/vaultwarden.service.d/10-local.conf
+  local envfile=/etc/vaultwarden.local.env
+  (( DRY_RUN )) && { _DIM "  [dry] write $envfile + $dropin, enable vaultwarden.service"; return 0; }
+
+  # TLS is not optional here. The Bitwarden web vault hard-checks the
+  # URL prefix in its bundle:
+  #   if (!url.startsWith("https://") && !isDev()) throw "Insecure URL"
+  # There is no localhost or 127.0.0.1 exception, so over plain http the
+  # signup page dies with "Insecure URL not allowed" before you can
+  # create the account.
+  #
+  # mkcert rather than a bare openssl self-signed cert: it installs its
+  # local CA into the system trust store AND the browser's NSS store, so
+  # Brave shows no warning page and rbw's TLS verification passes. A
+  # self-signed cert would need --insecure-style workarounds in both.
+  local tlsdir=/var/lib/vaultwarden/tls
+  if command -v mkcert >/dev/null 2>&1; then
+    if [[ ! -s "$tlsdir/cert.pem" ]]; then
+      run "mkcert -install"
+      local tmpc; tmpc="$(mktemp -d)"
+      ( cd "$tmpc" && mkcert -cert-file vw.crt -key-file vw.key 127.0.0.1 localhost ::1 >/dev/null 2>&1 )
+      run "sudo install -d -m 750 -o vaultwarden -g vaultwarden $tlsdir"
+      run "sudo install -o vaultwarden -g vaultwarden -m 644 $tmpc/vw.crt $tlsdir/cert.pem"
+      run "sudo install -o vaultwarden -g vaultwarden -m 640 $tmpc/vw.key $tlsdir/key.pem"
+      rm -rf "$tmpc"
+    fi
+  else
+    _WARN "mkcert missing -- vaultwarden will run on http, and the web vault"
+    _WARN "signup page will refuse to load (\"Insecure URL not allowed\")."
+  fi
+
+  sudo tee "$envfile" >/dev/null <<'EOF'
+# Local Vaultwarden overrides, written by the dotfiles wizard.
+ROCKET_ADDRESS=127.0.0.1
+ROCKET_PORT=8222
+WEB_VAULT_ENABLED=true
+WEB_VAULT_FOLDER=/usr/share/webapps/vaultwarden-web
+EOF
+  if [[ -s "$tlsdir/cert.pem" ]]; then
+    printf 'ROCKET_TLS={certs="%s/cert.pem",key="%s/key.pem"}\n' "$tlsdir" "$tlsdir" |
+      sudo tee -a "$envfile" >/dev/null
+  fi
+  run "sudo chmod 640 $envfile"
+  run "sudo install -d -m 755 /etc/systemd/system/vaultwarden.service.d"
+  sudo tee "$dropin" >/dev/null <<'EOF'
+# Local Vaultwarden setup, written by the dotfiles wizard.
+# EnvironmentFile, not Environment: see /etc/vaultwarden.local.env.
+[Service]
+EnvironmentFile=/etc/vaultwarden.local.env
+EOF
+  run "sudo systemctl daemon-reload"
+  run "sudo systemctl enable --now vaultwarden.service"
+
+  # Aim rbw at the local server. Email stays unset: rofi_pass asks for it
+  # on first run, because it is per-person rather than per-machine.
+  if command -v rbw >/dev/null 2>&1; then
+    run "rbw config set base_url https://127.0.0.1:8222"
+    run "rbw config set pinentry pinentry-gtk"
+    run "rbw config set lock_timeout 900"
+  fi
+}
+
+# tmux plugin manager + the plugins .tmux.conf declares.
+#
+# This was the one step the README told you to run by hand. Without it
+# vim-tmux-navigator's pane navigation and resurrect/continuum's
+# save-on-interval and restore-on-start all silently do nothing -- tmux
+# starts fine and simply ignores every `set -g @plugin` line, which is
+# the kind of failure nobody notices until they need the feature.
+step_tmux_tpm() {
+  local tpm="$HOME/.tmux/plugins/tpm"
+
+  (( DRY_RUN )) && { _DIM "  [dry] clone TPM + install_plugins"; return 0; }
+
+  if [[ ! -d "$tpm/.git" ]]; then
+    run "mkdir -p $HOME/.tmux/plugins"
+    retry_net 3 5 git clone --depth 1 https://github.com/tmux-plugins/tpm "$tpm" || {
+      _ERR "TPM clone failed after 3 retries"; return 1; }
+  fi
+
+  # install_plugins is idempotent: already-cloned plugins are skipped.
+  # It does not need a running server, but it does need $HOME set, which
+  # is why it runs here rather than from a tmux hook.
+  if [[ -x "$tpm/bin/install_plugins" ]]; then
+    run "$tpm/bin/install_plugins" || _WARN "TPM install_plugins reported a problem"
+  fi
+}
+
+# Phone access to the local Vaultwarden, over Tailscale.
+#
+# Everything here is idempotent and safe to re-run: it enables the
+# daemon, and once you are logged in it publishes the proxy. It cannot
+# log you in -- that needs a browser and your account -- so on a fresh
+# machine it prints the URL and stops, and you re-run it (or just run
+# ./wizard.sh --yes --only=vaultwarden-phone) afterwards.
+#
+# `tailscale serve` rather than rebinding vaultwarden to the tailnet IP:
+# one process can only bind one address, so rebinding would take
+# 127.0.0.1 away and break rofi_pass and the browser extension. The
+# proxy terminates TLS with the tailnet's own publicly-trusted cert and
+# forwards to the local https listener, so both paths keep working and
+# nothing is exposed to the LAN.
+step_vaultwarden_phone() {
+  if ! command -v tailscale >/dev/null 2>&1; then
+    _WARN "tailscale not installed -- skipping (check arch-config network.yaml)"
+    return 0
+  fi
+
+  (( DRY_RUN )) && { _DIM "  [dry] enable tailscaled + tailscale serve -> 127.0.0.1:8222"; return 0; }
+
+  run "sudo systemctl enable --now tailscaled"
+
+  # Logged in? `tailscale status` says "Logged out." and exits non-zero.
+  local dnsname=""
+  dnsname="$(tailscale status --json 2>/dev/null |
+    sed -n 's/.*"DNSName"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+  dnsname="${dnsname%.}"
+
+  if [[ -z "$dnsname" ]]; then
+    _WARN "tailscale is not logged in yet. Run:"
+    _WARN "    sudo tailscale up"
+    _WARN "then re-run:  ./wizard.sh --yes --only=vaultwarden-phone"
+    return 0
+  fi
+
+  # Publish the proxy. Do NOT pre-flight this with `tailscale cert`:
+  # that command refuses to write to /dev/null, so a probe using it
+  # reports failure even when certificates work perfectly -- which is
+  # exactly what an earlier version of this module did. Run the real
+  # thing and read its exit status.
+  #
+  # It fails while MagicDNS and HTTPS Certificates are off in the admin
+  # console ("your Tailscale account does not support getting TLS
+  # certs"). Nothing local can enable those, hence the hint.
+  if sudo tailscale serve --bg "https+insecure://127.0.0.1:8222" >/dev/null 2>&1; then
+    _DIM "  phone URL:  https://${dnsname}"
+    _DIM "  set that as Bitwarden's self-hosted server, before logging in."
+  else
+    _WARN "Could not publish the Vaultwarden proxy for $dnsname."
+    _WARN "Enable BOTH at https://login.tailscale.com/admin/dns :"
+    _WARN "    MagicDNS   ·   HTTPS Certificates"
+    _WARN "then re-run:  ./wizard.sh --yes --only=vaultwarden-phone"
+  fi
 }
 
 step_whisper() {
@@ -697,6 +1494,33 @@ step_whisper_fast() {
   run "sudo install -Dm755 $build/bin/whisper-stream /usr/local/bin/whisper-stream"
 }
 
+step_radios() {
+  # Declaring a package installs a binary, not a running daemon. dcli puts
+  # networkmanager and bluez on the disk; nothing until now started either,
+  # and archinstall is what enabled them on the machine this repo was
+  # written on -- so a fresh install got nm-applet and blueman-applet in
+  # the tray with no daemon behind them, and both qtile popups (Mod+P then
+  # n / b) failing with "NetworkManager is not running".
+  #
+  # Two managers on one interface is how you get a link that flaps between
+  # them, so archinstall's alternative is stood down first. iwd is NOT
+  # touched: no wifi.backend is shipped, which means NetworkManager drives
+  # wpa_supplicant -- but if this machine has been pointed at iwd by hand,
+  # disabling it would take the wifi with it. Left to the operator.
+  local svc
+  if systemctl is-enabled systemd-networkd.service &>/dev/null; then
+    run "sudo systemctl disable --now systemd-networkd.service"
+  fi
+
+  for svc in NetworkManager.service bluetooth.service; do
+    if systemctl is-enabled "$svc" &>/dev/null; then
+      _OK "$svc already enabled"
+    else
+      run "sudo systemctl enable --now $svc"
+    fi
+  done
+}
+
 step_mic_gain() {
   # WirePlumber applies its own default ALSA mixer levels to hardware
   # nodes on every session start -- Capture + Internal Mic Boost both
@@ -710,8 +1534,102 @@ step_mic_gain() {
   run "systemctl --user daemon-reload"
   run "systemctl --user enable --now fix-mic-gain.service"
 }
-step_nopasswd()     { run "echo \"$(id -un) ALL=(ALL) NOPASSWD: ALL\" | sudo tee /etc/sudoers.d/zz-$(id -un)-nopasswd >/dev/null && sudo chmod 440 /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
-step_ownership()    { run "sudo chown -R $(id -un):$(id -un) $DOTFILES_DIR"; }
+step_scrcpy() {
+  # scrcpy mirrors the Android screen over adb. Declaring the package is
+  # not enough: android-udev's rules assign the phone's USB node to the
+  # `adbusers` group, and an account outside that group gets `adb devices`
+  # listing the serial with "no permissions" next to it -- the device is
+  # visible, so it reads as a bad cable or a bad phone rather than a
+  # missing group. Same shape as radios: the package installs a tool, this
+  # makes the tool usable.
+  if ! getent group adbusers >/dev/null; then
+    # android-udev creates the group in its post_install. If it is absent,
+    # the rules are absent too, and adding the user to a group nothing
+    # references would be a silent no-op that looks like success.
+    _WARN "no adbusers group — install android-udev first (dcli-sync)"
+    return 0
+  fi
+
+  if id -nG "$(id -un)" | grep -qw adbusers; then
+    _OK "already in adbusers"
+  else
+    run "sudo gpasswd -a $(id -un) adbusers"
+    # Group membership is baked into the login session's credentials, so
+    # the shell that ran this still has the old set no matter what the
+    # group file now says.
+    _WARN "log out and back in before adb can see the phone"
+  fi
+
+  # ─── mDNS, which is what makes the wireless path automatic ─────────
+  # phone_screen (Mod+Shift+A) finds the phone's wireless-debugging
+  # host:port from its own mDNS announcement rather than making you copy
+  # a fresh random port off the phone every session. Arch's android-tools
+  # is built without mDNS, so avahi does that lookup -- and an installed
+  # but stopped avahi-daemon looks exactly like "no phone on the network".
+  if systemctl is-enabled avahi-daemon.service &>/dev/null; then
+    _OK "avahi-daemon already enabled"
+  else
+    run "sudo systemctl enable --now avahi-daemon.socket avahi-daemon.service"
+  fi
+
+  # ufw is enabled by system-tools, and it drops inbound by default. mDNS
+  # replies arrive as fresh inbound UDP on 5353 (multicast, not a reply to
+  # a tracked flow), so without this the browse simply returns nothing --
+  # no error, no log line, just a phone that is never found.
+  if command -v ufw >/dev/null && sudo_probe ufw status 2>/dev/null | grep -q '^Status: active'; then
+    if sudo_probe ufw status 2>/dev/null | grep -q '5353'; then
+      _OK "ufw already allows mDNS"
+    else
+      run "sudo ufw allow 5353/udp comment 'mDNS - adb wireless discovery'"
+    fi
+  fi
+
+  # ─── the pieces phone_screen leans on ──────────────────────────────
+  # All four are declared in modules dcli-sync already installed, so this
+  # is a check rather than an install -- but each one fails in a way that
+  # is hard to read from the outside: no qrencode and the pairing dialog
+  # has no QR, no rofi and it has no window at all, no xdotool and both
+  # the "focus the mirror I already have" shortcut and the rotation
+  # watcher quietly do nothing.
+  local miss=() bin
+  for bin in scrcpy adb avahi-browse qrencode rofi xdotool; do
+    command -v "$bin" >/dev/null || miss+=("$bin")
+  done
+  if (( ${#miss[@]} )); then
+    _WARN "missing for phone_screen: ${miss[*]} — run dcli sync"
+  else
+    _OK "phone_screen has everything it needs"
+  fi
+
+  _DIM "  phone: Settings > About > tap Build number 7x > Developer options"
+  _DIM "  then turn on Wireless debugging (stays on across reboots)"
+  _DIM "  then press Super+Shift+F6 — it pairs itself (QR or 6 digits), once ever"
+}
+
+# sudo(8): files in sudoers.d "whose names end in ~ or contain a . character
+# are ignored". The filename was built straight from the login name, so an
+# account like `john.doe` -- anything LDAP/AD-joined, which is most machines
+# that are not this one -- got a drop-in sudo silently never reads. The module
+# reported ✔ ok and sudo went on asking for a password with nothing on disk to
+# explain why. Same transform on both sides so uninstall still finds the file.
+_nopasswd_file()    { printf '/etc/sudoers.d/zz-%s-nopasswd' "$(id -un | tr '.' '_')"; }
+step_nopasswd() {
+  local f; f="$(_nopasswd_file)"
+  run "echo \"$(id -un) ALL=(ALL) NOPASSWD: ALL\" | sudo tee $f >/dev/null && sudo chmod 440 $f"
+  # A sudoers file sudo refuses to parse breaks EVERY sudo invocation on the
+  # box, including the one that would delete it. Check, and take it back out
+  # ourselves while we still can.
+  if (( ! DRY_RUN )) && ! sudo visudo -cf "$f" >/dev/null 2>&1; then
+    sudo rm -f "$f"
+    _ERR "generated sudoers file was rejected by visudo — removed it again"
+    return 1
+  fi
+}
+# $(id -gn), not a second $(id -un): a user-private group of the same name is
+# an Arch default, not a guarantee. On an account whose primary group is
+# `users` (or a domain group), `chown ati:ati` fails outright with "invalid
+# group" and the whole ownership fix-up never happens.
+step_ownership()    { run "sudo chown -R $(id -un):$(id -gn) $DOTFILES_DIR"; }
 step_login_shell() {
   # kitty.conf hardcodes `shell /usr/bin/fish`, so inside X you always got
   # fish -- but the TTY kept the account's login shell (bash by default).
@@ -734,8 +1652,14 @@ step_login_shell() {
 step_disable_dm()   { for dm in lightdm gdm sddm lxdm; do run "sudo systemctl disable $dm.service 2>/dev/null || true"; done; }
 step_candy()        { [[ -d /usr/share/icons/candy-icons ]] && { _OK "candy-icons present"; return; }
                       run "cd /tmp && rm -rf master.zip candy-icons-master && wget -q https://github.com/EliverLara/candy-icons/archive/refs/heads/master.zip && unzip -qo master.zip && sudo mv candy-icons-master /usr/share/icons/candy-icons"; }
+# Your own fork, not upstream. theme-apply's `wal` mode derives an entire
+# palette from the current wallpaper, so the wallpaper set is not
+# decoration -- it is an input to how the desktop looks. Pointing at
+# someone else's repo means they can add, remove or re-encode an image and
+# change your colours; a fork you control cannot move under you.
+WALLPAPERS_REPO="${WALLPAPERS_REPO:-https://github.com/Mohamedattiadev/wallpapers}"
 step_wallpapers()   { [[ -d $HOME/Pictures/Wallpapers/.git ]] && { _OK "wallpapers present"; return; }
-                      run "rm -rf $HOME/Pictures/Wallpapers && mkdir -p $HOME/Pictures && git clone https://github.com/w3dg/wallpapers.git $HOME/Pictures/Wallpapers"; }
+                      run "rm -rf $HOME/Pictures/Wallpapers && mkdir -p $HOME/Pictures && git clone $WALLPAPERS_REPO $HOME/Pictures/Wallpapers"; }
 step_speed()        { run "$DOTFILES_DIR/installScripts/speed_boost.sh"; }
 step_themes() {
   run "sudo pacman -S --needed --noconfirm python-pywal python-pillow papirus-icon-theme jq"
@@ -744,10 +1668,14 @@ step_themes() {
   local eww_out="$HOME/.config/eww/colors.scss"
   [[ -f "$eww_tmpl" && ! -f "$eww_out" ]] && run "cp $eww_tmpl $eww_out"
   # Seed qutebrowser homepage.html from .tmpl (gitignored — regenerated
-  # per palette by theme-apply, needs a stable skeleton first).
+  # per palette by theme-apply, needs a stable skeleton first). The greeting
+  # says "Welcome, <you>": the page is served over file://, so JS can't read
+  # the login name — the only place it can be filled in is here, at seed time.
   local qb_tmpl="$HOME/.config/qutebrowser/html/homepage.html.tmpl"
   local qb_out="$HOME/.config/qutebrowser/html/homepage.html"
-  [[ -f "$qb_tmpl" && ! -f "$qb_out" ]] && run "cp $qb_tmpl $qb_out"
+  local qb_user="${USER:-$(id -un)}"
+  [[ -f "$qb_tmpl" && ! -f "$qb_out" ]] && \
+    run "sed 's/@@USER@@/${qb_user^}/' $qb_tmpl > $qb_out"
   # Seed default wallpaper if none set.
   if [[ ! -f "$HOME/.cache/wall" ]]; then
     local first
@@ -1010,9 +1938,35 @@ preflight() {
   _check "HOME writable"               "[[ -w $HOME ]]"                            "fix HOME permissions"
   _check "dotfiles clone at $DOTFILES_DIR" "[[ -d $DOTFILES_DIR ]]"                "git clone the repo to $DOTFILES_DIR"
   _check "internet reachable"          "curl -fsS --max-time 5 https://archlinux.org >/dev/null" "network down or firewall blocks HTTPS"
-  _check "disk free > 10 GB on \$HOME" "[[ $(df -Pk $HOME | awk 'NR==2{print $4}') -gt 10485760 ]]" "wizard needs ~10GB (piper 60MB + whisper models+fast-build ~1GB + dcli pkgs + wallpapers)"
+  # Scale the requirement to what was actually asked for. The 10 GB figure
+  # is whisper models + the fast rebuild + wallpapers + a full dcli sync;
+  # `--only=stow,paths` downloads none of that, and demanding 10 GB for it
+  # blocked the container smoke test and any config-only re-run on a full
+  # disk. Refusing for a reason that does not apply to this run is just a
+  # false negative, and false negatives are how safety checks get bypassed.
+  local _need_gb=1 _heavy _heavy_sel=0
+  for _heavy in dcli-sync dcli-sync-extra whisper whisper-fast piper wallpapers candy-icons speed; do
+    if [[ -n "$ONLY_LIST" ]]; then
+      _id_in_csv "$ONLY_LIST" "$_heavy" && _heavy_sel=1
+    elif [[ -n "$SKIP_LIST" ]]; then
+      _id_in_csv "$SKIP_LIST" "$_heavy" || _heavy_sel=1
+    else
+      _heavy_sel=1
+    fi
+  done
+  (( _heavy_sel )) && _need_gb=10
+  _check "disk free > ${_need_gb} GB on \$HOME" "[[ $(df -Pk "$HOME" | awk 'NR==2{print $4}') -gt $((_need_gb * 1048576)) ]]" "this run needs ~${_need_gb}GB (10GB covers piper 60MB + whisper models+fast-build ~1GB + dcli pkgs + wallpapers; 1GB when none of those are selected)"
   _check "RAM ≥ 2 GB"                  "[[ $(awk '/MemTotal/{print $2}' /proc/meminfo) -gt 2000000 ]]" "wizard pulls 500MB+ concurrently — <2GB risks OOM/freeze"
-  _check "pacman db lock clear"        "_pacman_lock_check"                        "another pacman may be running"
+  # Not run through _check: _check swallows stdout AND stdin. The swallowed
+  # stdout hid the "pacman is running — waiting up to 60s" line, so a
+  # legitimate wait was indistinguishable from a frozen wizard; the swallowed
+  # stdin left the interactive "remove the stale lock?" confirm blocking on a
+  # prompt that had been redirected out of existence.
+  if _pacman_lock_check; then
+    _OK "  ✔ pacman db lock clear"
+  else
+    _ERR "  ✖ pacman db lock"; _DIM "      → another pacman may be running"; fatal=1
+  fi
   if (( fatal )); then
     echo
     _ERR "Preflight failed. Fix the above and re-run."
@@ -1053,8 +2007,19 @@ uninstall_boot_fallback() {
   # be a strictly worse system, and it is not exclusively ours.
   return 0
 }
-uninstall_login_shell()      { run "sudo chsh -s /usr/bin/bash $(id -un)"; }
-uninstall_passwordless_sudo(){ run "sudo rm -f /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
+uninstall_login_shell() {
+  # Pick a shell that exists on THIS machine rather than assuming Arch's
+  # /usr/bin/bash. chsh refuses a path it cannot find, so on a box where
+  # bash lives only at /bin/bash the reversal failed and left the account
+  # logging into fish -- an uninstall that reports success and undoes
+  # nothing is worse than one that never ran.
+  local sh fallback=/bin/sh
+  for sh in /usr/bin/bash /bin/bash /usr/bin/zsh /bin/sh; do
+    [[ -x "$sh" ]] && { fallback="$sh"; break; }
+  done
+  run "sudo chsh -s $fallback $(id -un)"
+}
+uninstall_passwordless_sudo(){ run "sudo rm -f $(_nopasswd_file)"; }
 uninstall_browser_flags() {
   for f in brave-flags.conf chromium-flags.conf chrome-flags.conf; do
     run "sed -i '/--load-extension=.*browser-theme/d' $HOME/.config/$f 2>/dev/null || true"
@@ -1112,14 +2077,27 @@ uninstall_ati_scripts() {
     run "sudo rm -f /usr/local/bin/$n"
   done
 }
+uninstall_simplenote() {
+  # Removes the credentials and the pushed-note bookkeeping. The note itself
+  # lives in your Simplenote account and is deliberately left alone -- an
+  # uninstaller has no business deleting notes off a remote service.
+  run "rm -f $HOME/.config/simplenote/credentials"
+  run "rmdir --ignore-fail-on-non-empty $HOME/.config/simplenote 2>/dev/null || true"
+  run "rm -rf ${XDG_STATE_HOME:-$HOME/.local/state}/simplenote-push"
+  _DIM "  The Simplenote note itself was left in your account."
+}
 uninstall_stow() {
   # `stow -D` unlinks the symlinks stow deployed.
   run "cd $DOTFILES_DIR && stow -D -t $HOME . 2>/dev/null || true"
 }
 uninstall_candy_icons()      { run "sudo rm -rf /usr/share/icons/candy-icons"; }
 uninstall_lid() {
-  # Restore defaults (Handle*Switch commented out).
-  run "sudo sed -i 's/^HandleLidSwitch=ignore/#HandleLidSwitch=suspend/; s/^HandleLidSwitchExternalPower=ignore/#HandleLidSwitchExternalPower=suspend/; s/^HandleLidSwitchDocked=ignore/#HandleLidSwitchDocked=ignore/' /etc/systemd/logind.conf"
+  # Drop the drop-in, AND still undo the old in-place edit: a machine set up
+  # by an earlier wizard has `HandleLidSwitch=ignore` written into
+  # logind.conf itself, and removing only the new file would leave it
+  # ignoring the lid forever with nothing left to point at as the cause.
+  run "sudo rm -f /etc/systemd/logind.conf.d/90-wizard-lid.conf"
+  run "sudo sed -i 's/^HandleLidSwitch=ignore/#HandleLidSwitch=suspend/; s/^HandleLidSwitchExternalPower=ignore/#HandleLidSwitchExternalPower=suspend/; s/^HandleLidSwitchDocked=ignore/#HandleLidSwitchDocked=ignore/' /etc/systemd/logind.conf 2>/dev/null || true"
   run "sudo systemctl restart systemd-logind"
 }
 uninstall_themes() {
@@ -1134,14 +2112,83 @@ uninstall_bootstrap()         { :; }  # do NOT pacman -R base-devel
 uninstall_yay()               { :; }
 uninstall_dcli()              { :; }
 uninstall_dcli_sync()         { :; }
+uninstall_dcli_sync_extra()   { :; }  # never removes packages, same as dcli_sync
+uninstall_boot_splash() {
+  # This one MUST really reverse: leaving the plymouth hook in the
+  # initramfs after removing the theme boots to a black screen.
+  local bs
+  bs="$(command -v boot-splash || echo "$DOTFILES_DIR/.config/AtiScriptsV1/boot-splash")"
+  # if/else, because `A && B || C` here reported "boot-splash not found"
+  # whenever `boot-splash disable` FAILED, and returned 0 while doing it --
+  # so the uninstall ticked green on the one module whose whole point is
+  # that a half-reversal boots to a black screen.
+  if [[ -x "$bs" ]]; then
+    run "$bs disable"
+  else
+    _WARN "boot-splash not found — cmdline may still say quiet splash"
+  fi
+}
+uninstall_paths()             { :; }  # removing them would leave the browser theme and GTK overlay with no config at all
+uninstall_ui_scale() {
+  run "rm -f $HOME/.cache/qtile/ui_scale $HOME/.cache/qtile/ui_scale.pinned"
+  run "sed -i '/^! BEGIN-UI-SCALE\$/,/^! END-UI-SCALE\$/d' $HOME/.Xresources 2>/dev/null || true"
+}
+uninstall_picom_pin()         { :; }  # removing the compositor mid-session leaves a bare desktop
+uninstall_githooks() { run "rm -f $DOTFILES_DIR/.git/hooks/pre-commit"; }
+uninstall_gpu() {
+  # Removing a GPU driver mid-session is how you end up with no X on next
+  # boot, so packages stay. Only the generated picom override is reversed.
+  run "rm -f $HOME/.config/picom/gpu.env"
+}
 uninstall_cargo()             { :; }
+# Deliberately a no-op. Disabling NetworkManager to "reverse" an install is
+# how you end up on a machine with no way to reach the internet and no GUI
+# to fix it; bluetooth follows the same reasoning. Turn either off by hand
+# (or with service_trim.sh) if you really do not want it.
+uninstall_radios()            { :; }
 uninstall_arch_config()       { :; }
 uninstall_flatpak()           { :; }
 uninstall_piper()             { :; }  # models may be shared
+# Plugins are cheap to refetch, but removing them would break a running
+# tmux config for no benefit. Left in place, like the model downloads.
+uninstall_tmux_tpm()          { :; }
+# Drops the proxy only. Tailscale itself stays up -- it is a general
+# purpose network, not something this module owns.
+uninstall_vaultwarden_phone() {
+  run "sudo tailscale serve --https=443 off" || true
+}
+# Removes only the addon directory. Anki's collection, decks and cards
+# live elsewhere and are never touched by this.
+uninstall_ankiconnect() {
+  run "rm -rf $HOME/.local/share/Anki2/addons21/2055492159"
+}
+# Stops the server and drops the drop-in. /var/lib/vaultwarden -- the
+# actual vault -- is deliberately left alone: deleting someone's
+# passwords is not something an uninstaller should do quietly.
+uninstall_vaultwarden() {
+  run "sudo systemctl disable --now vaultwarden.service" || true
+  run "sudo rm -f /etc/systemd/system/vaultwarden.service.d/10-local.conf"
+  run "sudo rm -f /etc/vaultwarden.local.env"
+  run "sudo rm -rf /var/lib/vaultwarden/tls"
+  run "sudo systemctl daemon-reload" || true
+  _DIM "  vault data kept at /var/lib/vaultwarden (delete by hand if you mean it)"
+}
 uninstall_whisper()           { :; }  # models may be shared
 uninstall_whisper_fast()      { :; }  # leave the fast binaries in place -- reverting to the ~13x slower pacman ones helps no one
 uninstall_mic_gain() {
   run "systemctl --user disable --now fix-mic-gain.service" || true
+}
+# Drops the group membership and the mDNS firewall rule. android-udev's
+# rules stay (pacman owns those files), and avahi-daemon stays running:
+# it is a general network service that cups and chromium also use, not
+# something this module owns.
+uninstall_scrcpy() {
+  if getent group adbusers >/dev/null; then
+    run "sudo gpasswd -d $(id -un) adbusers" || true
+  fi
+  if command -v ufw >/dev/null; then
+    run "sudo ufw delete allow 5353/udp" || true
+  fi
 }
 uninstall_wallpapers()        { :; }  # user's picture collection
 uninstall_ownership()         { :; }
@@ -1157,8 +2204,10 @@ UMOD_CMD[dcli]="uninstall_dcli"
 UMOD_CMD[stow]="uninstall_stow"
 UMOD_CMD[arch-config]="uninstall_arch_config"
 UMOD_CMD[dcli-sync]="uninstall_dcli_sync"
+UMOD_CMD[radios]="uninstall_radios"
 UMOD_CMD[cargo]="uninstall_cargo"
 UMOD_CMD[ati-scripts]="uninstall_ati_scripts"
+UMOD_CMD[simplenote]="uninstall_simplenote"
 UMOD_CMD[pacman-guard]="uninstall_pacman_guard"
 UMOD_CMD[boot-fallback]="uninstall_boot_fallback"
 UMOD_CMD[login-shell]="uninstall_login_shell"
@@ -1170,9 +2219,14 @@ UMOD_CMD[lid]="uninstall_lid"
 UMOD_CMD[image-envs]="uninstall_image_envs"
 UMOD_CMD[flatpak]="uninstall_flatpak"
 UMOD_CMD[piper]="uninstall_piper"
+UMOD_CMD[ankiconnect]="uninstall_ankiconnect"
+UMOD_CMD[vaultwarden]="uninstall_vaultwarden"
+UMOD_CMD[vaultwarden-phone]="uninstall_vaultwarden_phone"
+UMOD_CMD[tmux-tpm]="uninstall_tmux_tpm"
 UMOD_CMD[whisper]="uninstall_whisper"
 UMOD_CMD[whisper-fast]="uninstall_whisper_fast"
 UMOD_CMD[mic-gain]="uninstall_mic_gain"
+UMOD_CMD[scrcpy]="uninstall_scrcpy"
 UMOD_CMD[passwordless-sudo]="uninstall_passwordless_sudo"
 UMOD_CMD[ownership]="uninstall_ownership"
 UMOD_CMD[disable-dm]="uninstall_disable_dm"
@@ -1184,6 +2238,13 @@ UMOD_CMD[dark-mode]="uninstall_dark_mode"
 UMOD_CMD[browser-flags]="uninstall_browser_flags"
 UMOD_CMD[browser-memory]="uninstall_browser_memory"
 UMOD_CMD[chrome-policy]="uninstall_chrome_policy"
+UMOD_CMD[paths]="uninstall_paths"
+UMOD_CMD[ui-scale]="uninstall_ui_scale"
+UMOD_CMD[picom-pin]="uninstall_picom_pin"
+UMOD_CMD[githooks]="uninstall_githooks"
+UMOD_CMD[gpu]="uninstall_gpu"
+UMOD_CMD[dcli-sync-extra]="uninstall_dcli_sync_extra"
+UMOD_CMD[boot-splash]="uninstall_boot_splash"
 
 # Every module must have a reversal, even if that reversal is a documented
 # no-op. Without this check a module added to MOD_ORDER but not to UMOD_CMD
@@ -1225,11 +2286,15 @@ page_module_picker() {
   _BOX_HEADER "select modules · all pre-checked · space to toggle"
   # Options are just clean module lines (no commas anywhere) so gum's
   # CSV --selected can preselect everything by default.
-  local options=() csv
+  local options=() preselect=() csv line
   for id in "${MOD_ORDER[@]}"; do
-    options+=("$(printf '%-22s [%-8s] %s' "$id" "${MOD_GROUP[$id]}" "${MOD_DESC[$id]}")")
+    line="$(printf '%-22s [%-8s] %s' "$id" "${MOD_GROUP[$id]}" "${MOD_DESC[$id]}")"
+    options+=("$line")
+    # Opt-in modules are offered but start UNCHECKED, so the habit of
+    # hitting enter on this screen still gives you the desktop-only run.
+    _is_optin "$id" || preselect+=("$line")
   done
-  csv="$(printf '%s\n' "${options[@]}" | paste -sd, -)"
+  csv="$(printf '%s\n' "${preselect[@]}" | paste -sd, -)"
   local picked
   picked=$(printf '%s\n' "${options[@]}" | gum choose --no-limit \
     --cursor.foreground "$ACCENT" \
@@ -1290,7 +2355,15 @@ _run_module() {
   # no-op if already cached; harmless no-op (no hang) if there's no
   # tty to prompt on at all.
   sudo -v 2>/dev/null || true
-  ( set +e; "$cmd" >"$logf" 2>"$errf" ) &
+  # stdin comes from /dev/null on purpose. A module's stdout and stderr are
+  # captured to files behind the spinner, so anything in there that reads a
+  # line -- a git credential prompt on a repo that moved, a makepkg question
+  # a missing --noconfirm let through, a helper's `read -rp` -- waits forever
+  # on a prompt nobody can see, and the spinner keeps turning as if work were
+  # happening. Closed stdin turns that infinite hang into an immediate,
+  # logged failure the retry/skip logic can act on. sudo is unaffected: it
+  # reads its password from /dev/tty, not stdin.
+  ( set +e; "$cmd" >"$logf" 2>"$errf" </dev/null ) &
   local pid=$! spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' i=0 last=""
   while kill -0 "$pid" 2>/dev/null; do
     last="$(tail -n1 "$logf" 2>/dev/null)"
@@ -1412,7 +2485,161 @@ _finale_summary() {
   fi
 }
 
+# Arm (or disarm) the onboarding tour for the next graphical login.
+#
+# The install ends in a TTY; the tour is an eww window that can only exist
+# inside a qtile session, i.e. after `letsgo` -- usually after a reboot.
+# This stamp is the handoff between the two. autostart.sh calls
+# onboarding-first-run on every login, which consumes the stamp and shows
+# the tour exactly once.
+#
+# Written directly rather than via `onboarding-first-run --arm`: the
+# ati-scripts module symlinks that script into /usr/local/bin, and it is
+# perfectly legal to run the wizard with that module skipped. The stamp
+# format is an empty file, so there is nothing to get out of step.
+#
+# "Once" means once per machine, not once per wizard run. This is a
+# dotfiles repo: ./install.sh is re-run all the time to apply a change or
+# a single --only= module, and each of those runs used to clear the .done
+# stamp and re-arm, so the tour reappeared at the next reboot -- exactly
+# the behaviour it exists to avoid. A consumed stamp is therefore final
+# here; uninstall clears it, so a genuine reinstall gets the tour again,
+# and `onboarding-first-run --arm` still forces it back on demand.
+arm_onboarding() {
+  local state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/atidots"
+  if (( UNINSTALL )); then
+    rm -f "$state_dir/onboarding.pending" "$state_dir/onboarding.done"
+    return
+  fi
+  [[ -e "$state_dir/onboarding.done" ]] && return
+  mkdir -p "$state_dir" || return
+  : >"$state_dir/onboarding.pending"
+}
+
+# Ask for the Simplenote login, once, after every module has run.
+#
+# Deliberately not inside step_simplenote: _run_module captures step output to a
+# log file behind a spinner, so a prompt there is invisible. Deliberately at the
+# end rather than up front: an install is long enough to walk away from, and a
+# password prompt that blocks the whole run for 40 minutes is worse than one
+# that waits for you at the finish.
+#
+# Gated on --yes as well as on a tty. This used to ask during `./install.sh`
+# on the grounds that install.sh is the interactive path -- but ./install.sh is
+# `wizard.sh --yes`, whose contract is that you can start it and walk away.
+# A password prompt at the end of a 40-minute run breaks that: the wizard sits
+# there indefinitely, and whether the install finished depends on someone being
+# in the chair. Simplenote is a phone convenience, not part of a working
+# desktop, so --yes prints how to set it up and finishes instead.
+page_simplenote_creds() {
+  local id found=0
+  for id in "${PICKED_IDS[@]}"; do [[ "$id" == simplenote ]] && found=1; done
+  (( found )) || return 0
+  (( DRY_RUN )) && return 0
+  [[ -t 0 ]] || return 0
+  if (( ASSUME_YES )); then
+    echo
+    _DIM "Simplenote (Mod+Shift+S note → phone) is installed but not logged in."
+    _DIM "  Connect it whenever you like:  ./wizard.sh --only=simplenote"
+    return 0
+  fi
+
+  local cred="$HOME/.config/simplenote/credentials"
+  [[ -f "$cred" ]] || return 0
+  # Already configured -- do not re-ask, and do not print the stored address.
+  if ! grep -qE '^[[:space:]]*(email|password)[[:space:]]*=[[:space:]]*$' "$cred"; then
+    return 0
+  fi
+
+  echo
+  _H1 "Simplenote"
+  _INFO "  Mirrors the Mod+Shift+S TODOS note to the Simplenote app on your phone."
+  _DIM  "  Leave the email blank to skip — you can set it up later with:"
+  _DIM  "    ./wizard.sh --only=simplenote"
+  echo
+
+  local email password
+  email="$(gum input --placeholder 'Simplenote email (blank = skip)')" || return 0
+  [[ -n "$email" ]] || { _DIM "  Skipped."; return 0; }
+  password="$(gum input --password --placeholder 'Simplenote password')" || return 0
+  if [[ -z "$password" ]]; then
+    _WARN "  No password entered — skipped."
+    return 0
+  fi
+
+  # Write via a 600 temp file rather than editing in place: a plaintext password
+  # must never exist, even briefly, at the default umask.
+  local tmp
+  tmp="$(mktemp)"; chmod 600 "$tmp"
+  printf '[simplenote]\nemail = %s\npassword = %s\n' "$email" "$password" >"$tmp"
+  mv "$tmp" "$cred"; chmod 600 "$cred"
+
+  # Verify immediately. The script exits 0 on every failure (it must never break
+  # :w), so its stderr is what says whether the login actually worked.
+  local out
+  out="$("$HOME/.config/AtiScriptsV1/simplenote_push" 2>&1)" || true
+  if [[ -z "$out" ]]; then
+    _OK "  Connected — check the Simplenote app on your phone."
+    return 0
+  fi
+
+  _WARN "  Saved, but the first push did not go through:"
+  _WARN "    $out"
+
+  # Some networks blackhole auth.simperium.com (login) while leaving
+  # api.simperium.com (every actual note read/write) reachable, which is why
+  # the web app keeps working when this does not. A token taken from the web
+  # app skips the login host entirely.
+  if [[ "$out" == *auth.simperium.com* ]]; then
+    local snippet='Object.entries(localStorage).forEach(([k,v])=>{if(/[0-9a-f]{32}/.test(v))console.log(k,v)})'
+    echo
+    _INFO "  Your network blocks auth.simperium.com — the login host."
+    _INFO "  The note API itself is reachable, so a token from the web app works."
+    echo
+    # A fresh install runs in a TTY, before startx: there is no browser to log
+    # in with and no X clipboard to paste into. Say so plainly and let them
+    # finish from the desktop rather than dead-ending in a prompt they cannot
+    # satisfy.
+    if [[ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+      _WARN "  No graphical session yet — you need a browser for this step."
+      _DIM  "  Finish it after your first login to the desktop:"
+      _DIM  "    ./wizard.sh --only=simplenote"
+      _DIM  "  Full walkthrough: TROUBLESHOOTING.md → Simplenote"
+      return 0
+    fi
+    _INFO "  1. Log in at:  https://app.simplenote.com"
+    _INFO "  2. Press F12 → Console tab"
+    if command -v xclip >/dev/null && printf '%s' "$snippet" | xclip -selection clipboard 2>/dev/null; then
+      _OK "  3. The snippet is already on your clipboard — just paste it (Ctrl+V) + Enter"
+      _DIM "     (Brave may ask you to type 'allow pasting' first)"
+    else
+      _INFO "  3. Paste this into the console, then Enter:"
+      _DIM  "       $snippet"
+    fi
+    _INFO "  4. Copy the 32-character hex value it prints (accessToken)"
+    echo
+    local token
+    token="$(gum input --placeholder 'Simperium token (blank = skip)')" || return 0
+    if [[ -n "$token" ]]; then
+      local tmp2
+      tmp2="$(mktemp)"; chmod 600 "$tmp2"
+      printf '[simplenote]\nemail = %s\npassword = %s\ntoken = %s\n' \
+        "$email" "$password" "$token" >"$tmp2"
+      mv "$tmp2" "$cred"; chmod 600 "$cred"
+      out="$("$HOME/.config/AtiScriptsV1/simplenote_push" 2>&1)" || true
+      if [[ -z "$out" ]]; then
+        _OK "  Connected via token — check the Simplenote app on your phone."
+        return 0
+      fi
+      _WARN "  Still failing:  $out"
+    fi
+  fi
+  _DIM  "  Retry any time:  ~/.config/AtiScriptsV1/simplenote_push"
+  _DIM  "  Details:         TROUBLESHOOTING.md → Simplenote"
+}
+
 page_finale() {
+  (( DRY_RUN )) || arm_onboarding
   echo
   if (( UNINSTALL )); then
     # Telling someone who just uninstalled to "run letsgo" would send them
@@ -1430,6 +2657,9 @@ page_finale() {
   _INFO "  · Reload qtile any time:   qtile cmd-obj -o cmd -f reload_config"
   _INFO "  · Update system:           dcli sync"
   echo
+  _OK   "  · A short tour opens by itself the first time the desktop starts."
+  _DIM "    Skip it with Cancel; reopen it any time from the 💡 tray icon."
+  echo
   _DIM "TROUBLESHOOTING.md documents every common failure + fix."
   echo
 }
@@ -1442,7 +2672,19 @@ main() {
     _start_sudo_keepalive || true
   fi
   if (( ASSUME_YES )); then
-    PICKED_IDS=("${MOD_ORDER[@]}")
+    if [[ -n "$ONLY_LIST" ]]; then
+      # --only= is an explicit request for exactly these ids, so it must be
+      # able to reach an opt-in module. Start from everything and let the
+      # filter below narrow it; otherwise `--yes --only=dcli-sync-extra`
+      # would filter an already-pruned list down to nothing and exit 0 as
+      # if it had worked.
+      PICKED_IDS=("${MOD_ORDER[@]}")
+    else
+      PICKED_IDS=()
+      for id in "${MOD_ORDER[@]}"; do
+        _is_optin "$id" || PICKED_IDS+=("$id")
+      done
+    fi
   else
     page_module_picker
   fi
@@ -1464,6 +2706,7 @@ main() {
   (( ${#PICKED_IDS[@]} )) || { _WARN "No modules left after filter."; exit 0; }
   page_summary || { _WARN "Cancelled by user."; exit 0; }
   page_execute
+  (( UNINSTALL )) || page_simplenote_creds
   page_finale
 }
 

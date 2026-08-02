@@ -208,12 +208,16 @@ w(os.path.expanduser("~/.cache/qtile/gtk-wal.css"), cons["gtk_css"])
 PYEOF
     # Skip wal -R: precompiled templates already cover kitty+rofi+brave+gtk.
     # Alacritty wal palette from precompiled consumers.alacritty_toml
+    # Both paths as argv rather than spliced into the source: $PRECOMPILED
+    # carries a wallpaper filename and $HOME an arbitrary username, and
+    # either containing an apostrophe closed the string literal and made
+    # this a silent no-op behind the 2>/dev/null.
     python3 -c "
 import json, sys
-d=json.load(open('$PRECOMPILED'))
+d=json.load(open(sys.argv[1]))
 t=d['consumers'].get('alacritty_toml','')
-open('$HOME/.cache/wal/colors-alacritty.toml','w').write(t)
-" 2>/dev/null || true
+open(sys.argv[2],'w').write(t)
+" "$PRECOMPILED" "$HOME/.cache/wal/colors-alacritty.toml" 2>/dev/null || true
     ln -sfn "$HOME/.cache/wal/colors-kitty.conf" "$KITTY_THEMES/current.conf"
     ln -sfn palette-wal.rasi "$ROFI_THEMES/current-palette.rasi"
     ln -sfn "$HOME/.cache/wal/colors-alacritty.toml" "$ALACRITTY_THEMES/current.toml"
@@ -259,6 +263,16 @@ PYEOF
     # No precompile — legacy path needs wal -R to regenerate kitty conf
     # then build rofi rasi from live wal cache.
     wal -R -q 2>/dev/null || true
+    # jq is not a declared dependency of anything else on this path, and
+    # it is the only thing that reads the palette here. Without it every
+    # assignment below came back empty and the rasi was written with bare
+    # `background: ;` lines -- which rofi refuses to parse, so every menu
+    # on the desktop stopped opening after a wallpaper change, with the
+    # theme switch itself reporting success.
+    if ! command -v jq >/dev/null 2>&1; then
+      notify-send -u critical "theme-apply" "jq is not installed — cannot build the wal rofi palette"
+      exit 1
+    fi
     BG="$(jq -r .special.background ~/.cache/wal/colors.json)"
     FG="$(jq -r .special.foreground ~/.cache/wal/colors.json)"
     BG_ALT="$(jq -r .colors.color0 ~/.cache/wal/colors.json)"
@@ -302,6 +316,17 @@ path = sys.argv[1]
 bg, bg_alt, fg, red, green, yellow, blue, purple, cyan = sys.argv[2:11]
 with open(path) as f:
     src = f.read()
+
+
+def mix(a, b, t=0.5):
+    """Blend two hexes -- the 9-slot palette has no dim/border slot."""
+    a, b = a.lstrip("#"), b.lstrip("#")
+    return "#%02x%02x%02x" % tuple(
+        round(int(a[i:i + 2], 16) * (1 - t) + int(b[i:i + 2], 16) * t)
+        for i in (0, 2, 4)
+    )
+
+
 block = (
     "    <!-- BEGIN-THEME-VARS (rewritten by theme-apply) -->\n"
     "    <style id=\"theme-vars\">\n"
@@ -315,8 +340,19 @@ block = (
     f"        --blue: {blue};\n"
     f"        --purple: {purple};\n"
     f"        --cyan: {cyan};\n"
-    f"        --accent: {green};\n"
+    # Blue, not green: qutebrowser's config.py tints its own chrome
+    # (selected tab, hints, prompts) from the blue slot, and the
+    # homepage sits directly under that tab bar -- emitting green here
+    # meant the page and the chrome around it showed two unrelated
+    # accents on every palette.
+    f"        --accent: {blue};\n"
     f"        --urgent: {red};\n"
+    # homepage.css also references --dim / --highlight / --border,
+    # which had no slot here and so silently fell back to the
+    # stylesheet's hardcoded Doom One values on every other theme.
+    f"        --dim: {mix(fg, bg, 0.45)};\n"
+    f"        --highlight: {mix(bg_alt, fg, 0.14)};\n"
+    f"        --border: {mix(bg_alt, fg, 0.22)};\n"
     "      }\n"
     "    </style>\n"
     "    <!-- END-THEME-VARS -->"
@@ -483,11 +519,120 @@ dump_palette_json() {
 EOF
 }
 
+gen_glow_style() {
+  # glow renders every markdown page rofi_docs opens -- README,
+  # TROUBLESHOOTING, the System panels -- and it was the last thing on this
+  # desktop still painting itself in its OWN colors. Switching the theme
+  # retinted the terminal around it and left the document inside reading
+  # dracula pink and blue, which is exactly the drift the rest of this
+  # script exists to prevent. nvim already follows theme_mode; now glow
+  # does too.
+  #
+  # This is a glamour style file (glow -s <path>). Only the fields that
+  # carry color are set from the palette; spacing and the marker glyphs are
+  # deliberately fixed, since those are layout, not theme.
+  local bg="$1" bg_alt="$2" fg="$3" red="$4" green="$5" yellow="$6" blue="$7" purple="$8" cyan="$9"
+  local out="$HOME/.cache/qtile/glow.json"
+  mkdir -p "$(dirname "$out")"
+
+  # De-emphasised text (rules, code comments, image captions) needs a colour
+  # that is dimmer than fg but still READABLE. bg_alt is the obvious-looking
+  # choice and is wrong in both directions: on the dark themes it is darker
+  # than bg, and on mono-light it is #e0e0e0 against a #ffffff page -- either
+  # way it is a near-invisible smear rather than muted text. Blend fg toward
+  # bg instead, which lands mid-contrast whichever side of the spectrum the
+  # theme sits on.
+  #
+  # 0.72, not an even mix: measured across the darkest and lightest palettes
+  # here, half-and-half bottoms out at 1.9:1 against the page (nord,
+  # mono-light), under the 3:1 floor for non-body text. 0.72 holds ~2.9:1 at
+  # worst while still sitting ~1.3:1 away from fg, so it reads as dimmed
+  # rather than as a second shade of body text.
+  local muted
+  muted="$(python3 - "$fg" "$bg" <<'PYEOF' 2>/dev/null || echo "$fg"
+import sys
+def rgb(h):
+    h = h.lstrip('#')
+    return [int(h[i:i+2], 16) for i in (0, 2, 4)]
+f, b = rgb(sys.argv[1]), rgb(sys.argv[2])
+print('#{:02x}{:02x}{:02x}'.format(*[round(c * 0.72 + d * 0.28) for c, d in zip(f, b)]))
+PYEOF
+)"
+  cat >"$out" <<EOF
+{
+  "document": { "block_prefix": "\n", "block_suffix": "\n", "color": "${fg}", "margin": 1 },
+  "block_quote": { "color": "${cyan}", "indent": 1, "indent_token": "│ " },
+  "paragraph": {},
+  "list": { "level_indent": 2 },
+  "heading": { "block_suffix": "\n", "color": "${blue}", "bold": true },
+  "h1": { "prefix": " ", "suffix": " ", "color": "${bg}", "background_color": "${blue}", "bold": true },
+  "h2": { "prefix": "▌ ", "color": "${yellow}", "bold": true },
+  "h3": { "prefix": "  ", "color": "${green}", "bold": true },
+  "h4": { "prefix": "   ", "color": "${cyan}" },
+  "h5": { "prefix": "    ", "color": "${purple}" },
+  "h6": { "prefix": "     ", "color": "${purple}", "bold": false },
+  "text": {},
+  "strikethrough": { "crossed_out": true },
+  "emph": { "color": "${yellow}", "italic": true },
+  "strong": { "color": "${fg}", "bold": true },
+  "hr": { "color": "${muted}", "format": "\n──────────────────────────────────────\n" },
+  "item": { "block_prefix": "• " },
+  "enumeration": { "block_prefix": ". " },
+  "task": { "ticked": "[✓] ", "unticked": "[ ] " },
+  "link": { "color": "${cyan}", "underline": true },
+  "link_text": { "color": "${purple}", "bold": true },
+  "image": { "color": "${cyan}", "underline": true },
+  "image_text": { "color": "${muted}", "format": "Image: {{.text}} →" },
+  "code": { "color": "${red}", "background_color": "${bg_alt}" },
+  "code_block": {
+    "color": "${fg}",
+    "margin": 1,
+    "chroma": {
+      "text": { "color": "${fg}" },
+      "error": { "color": "${red}" },
+      "comment": { "color": "${muted}", "italic": true },
+      "comment_preproc": { "color": "${purple}" },
+      "keyword": { "color": "${purple}" },
+      "keyword_reserved": { "color": "${purple}" },
+      "keyword_namespace": { "color": "${red}" },
+      "keyword_type": { "color": "${yellow}" },
+      "operator": { "color": "${cyan}" },
+      "punctuation": { "color": "${fg}" },
+      "name": { "color": "${fg}" },
+      "name_builtin": { "color": "${yellow}" },
+      "name_tag": { "color": "${red}" },
+      "name_attribute": { "color": "${green}" },
+      "name_class": { "color": "${yellow}", "bold": true },
+      "name_constant": { "color": "${purple}" },
+      "name_decorator": { "color": "${green}" },
+      "name_function": { "color": "${blue}" },
+      "literal_number": { "color": "${purple}" },
+      "literal_string": { "color": "${green}" },
+      "literal_string_escape": { "color": "${cyan}" },
+      "generic_deleted": { "color": "${red}" },
+      "generic_emph": { "italic": true },
+      "generic_inserted": { "color": "${green}" },
+      "generic_strong": { "bold": true },
+      "generic_subheading": { "color": "${blue}" },
+      "background": { "background_color": "${bg_alt}" }
+    }
+  },
+  "table": { "center_separator": "┼", "column_separator": "│", "row_separator": "─" },
+  "definition_list": {},
+  "definition_term": {},
+  "definition_description": { "block_prefix": "\n🠶 " },
+  "html_block": {},
+  "html_span": {}
+}
+EOF
+}
+
 gen_all_theme_css() {
   gen_qb_css "$@"
   gen_eww_scss "$@"
   gen_btop_theme "$@"
   gen_qt_colors "$@"
+  gen_glow_style "$@"
   dump_palette_json "$@"
 }
 
@@ -680,6 +825,7 @@ render_dunstrc() {
       -e "s|{{ACCENT}}|$accent|g" \
       -e "s|{{OK}}|$ok|g" \
       -e "s|{{URGENT}}|$urgent|g" \
+      -e "s|@HOME@|$HOME|g" \
       "$DUNST_TMPL" >"$DUNSTRC"
 }
 
@@ -838,26 +984,44 @@ if command -v papirus-folders >/dev/null; then
       # Precompile JSON stores the mapped papirus_color directly; use
       # that when available. Fallback to hue-from-color9 for wallpapers
       # without a precompile cache entry.
+      #
+      # Seeded first so neither lookup below is load-bearing: with `set -u`
+      # in force, a run where both come back empty reached
+      # `papirus-folders -C "$ICON_COLOR"` with ICON_COLOR never assigned
+      # at all, and an unbound-variable abort here takes the qtile restart
+      # with it.
+      ICON_COLOR="blue"
       WSTEM="$(basename "$(readlink -f "$HOME/.cache/wall" 2>/dev/null)" 2>/dev/null)"
       WSTEM="${WSTEM%.*}"
+      # The stem goes in as argv, never spliced into the python source. It
+      # comes from a wallpaper FILENAME, and one containing an apostrophe
+      # closed the string literal and turned the whole block into a syntax
+      # error -- which, being 2>/dev/null'd, looked exactly like "this
+      # wallpaper has no precompiled colour".
       ICON_COLOR_OVERRIDE=$(python3 -c "
-import json,os
-p=os.path.expanduser('~/.cache/qtile/palettes/$WSTEM.json')
+import json,os,sys
+p=os.path.expanduser('~/.cache/qtile/palettes/%s.json' % sys.argv[1])
 if os.path.exists(p):
     pc = json.load(open(p)).get('papirus_color')
     if pc: print(pc)
-" 2>/dev/null)
+" "$WSTEM" 2>/dev/null || true)
       if [[ -n "$ICON_COLOR_OVERRIDE" ]]; then
         ICON_COLOR="$ICON_COLOR_OVERRIDE"
         HUE=""
       else
+        # `|| true`, because this runs under `set -e` and an assignment
+        # takes the substitution's exit status. A missing or truncated
+        # ~/.cache/wal/colors.json therefore did not merely skip the
+        # folder colour -- it killed theme-apply outright, right before
+        # the qtile restart, so the palette was half applied and the
+        # desktop never reloaded.
         HUE=$(python3 -c "
 import json,colorsys,os
 d=json.load(open(os.path.expanduser('~/.cache/wal/colors.json')))
 c=d['colors']['color9']
 r,g,b=int(c[1:3],16)/255,int(c[3:5],16)/255,int(c[5:7],16)/255
 print(int(colorsys.rgb_to_hsv(r,g,b)[0]*360))
-")
+" 2>/dev/null || true)
       fi
       if [[ -n "$HUE" ]]; then
         if   (( HUE < 15 || HUE >= 345 )); then ICON_COLOR="red"
@@ -886,21 +1050,31 @@ print(int(colorsys.rgb_to_hsv(r,g,b)[0]*360))
   disown
 fi
 
-# pcmanfm caches icons per-process — GTK provides no hot-reload API.
-# Kill every pcmanfm (windows + daemon) and relaunch each visible
-# window at $HOME. Preserves the "file manager is open" state at the
-# cost of losing per-window cwd. Daemon restarts for desktop icons.
-if pgrep -x pcmanfm >/dev/null 2>&1; then
-  had_windows=0
-  xdotool search --class "Pcmanfm" >/dev/null 2>&1 && had_windows=1
-  pkill -x pcmanfm 2>/dev/null || true
+# The file manager caches its icon theme per-process, and neither GTK nor
+# Qt exposes a hot-reload API for it — qt6ct live-swaps the *palette* of a
+# running app but not QIcon::themeName. So: kill every file-manager process
+# (windows + daemon) and relaunch each visible window at $HOME. Preserves
+# the "file manager is open" state at the cost of losing per-window cwd.
+# Daemon restarts for desktop icons.
+#
+# pcmanfm-qt is the declared file manager (arch-config/modules/apps.yaml);
+# the GTK pcmanfm is still installed as an LXDE dep, so handle both. Note
+# the flags differ: `-d` vs `--daemon-mode`, and the WM_CLASS xdotool wants
+# is "pcmanfm-qt" (lowercase, both fields) vs GTK's "Pcmanfm".
+_restart_fm() {  # $1=binary  $2=WM_CLASS for xdotool  $3=daemon flag
+  pgrep -x "$1" >/dev/null 2>&1 || return 0
+  local had_windows=0
+  xdotool search --class "$2" >/dev/null 2>&1 && had_windows=1
+  pkill -x "$1" 2>/dev/null || true
   ( sleep 0.3
-    DISPLAY="${DISPLAY:-:0}" pcmanfm --daemon-mode >/dev/null 2>&1 &
+    DISPLAY="${DISPLAY:-:0}" "$1" "$3" >/dev/null 2>&1 &
     if [[ "$had_windows" == 1 ]]; then
-      DISPLAY="${DISPLAY:-:0}" pcmanfm "$HOME" >/dev/null 2>&1 &
+      DISPLAY="${DISPLAY:-:0}" "$1" "$HOME" >/dev/null 2>&1 &
     fi ) &
   disown
-fi
+}
+_restart_fm pcmanfm-qt "pcmanfm-qt" -d
+_restart_fm pcmanfm    "Pcmanfm"    --daemon-mode
 
 # Try LIVE palette swap first (no restart). Walks bar widgets +
 # decorations, remaps slot-matched hexes, redraws. Config.py exposes
@@ -1149,7 +1323,14 @@ if [[ "${THEME_APPLY_NO_BROWSER:-0}" != 1 ]]; then
   # into deleting the entire Extensions directory.
   if [[ -f "$BROWSER_PEM" ]] && [[ -n "$EXT_ID" ]] && [[ -n "${CHROME_BIN:-}" ]]; then
     "$CHROME_BIN" --pack-extension="$BROWSER_EXT" --pack-extension-key="$BROWSER_PEM" --no-message-box >/dev/null 2>&1 || true
-    VER=$(python3 -c "import json;print(json.load(open('$BROWSER_EXT/manifest.json'))['version'])" 2>/dev/null)
+    # Path as argv, and `|| true`: the manifest write above is itself
+    # `|| true`, so this can legitimately find no file -- and under
+    # `set -e` the failing substitution aborted the whole apply here,
+    # after the browsers had already been killed. Splicing $HOME into the
+    # python source also broke outright for any home directory containing
+    # an apostrophe.
+    VER=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['version'])" \
+      "$BROWSER_EXT/manifest.json" 2>/dev/null || true)
     if [[ -n "$VER" ]]; then
       cat > "$BROWSER_UPDATES" <<EOF
 <?xml version='1.0' encoding='UTF-8'?>
@@ -1380,6 +1561,43 @@ EOF
       disown
     fi
   fi
+fi
+
+# ---------------------------------------------------------------------
+# Boot splash
+# ---------------------------------------------------------------------
+# Re-render the plymouth splash in the new palette, so the boot screen
+# matches the desktop instead of being frozen in whatever theme happened
+# to be active when it was first generated. Without this, switching from
+# gruvbox to nord leaves you booting into a gruvbox-coloured splash.
+#
+# Guarded three ways, because a theme switch must never block:
+#   * skipped entirely unless the theme is already installed -- generating
+#     it here would be a surprising side effect of changing colours
+#   * `sudo -n` only: writing to /usr/share needs root, and a password
+#     prompt in the middle of a theme switch would hang it with no
+#     terminal to type into
+#   * backgrounded and silenced, so a failure costs nothing
+if [[ -d /usr/share/plymouth/themes/dotfiles ]] \
+   && command -v boot-splash >/dev/null 2>&1 \
+   && sudo -n true 2>/dev/null; then
+  # Regenerate (fast), then hand the BOOT screen to autosync.
+  #
+  # The theme is embedded in the initramfs, so the boot screen only follows
+  # once mkinitcpio reruns -- about a minute. Doing that inline on every
+  # colour change would be intolerable while you are flicking through
+  # themes deciding, and the previous behaviour (notify and let the user
+  # remember) meant rebooting into last week's colours.
+  #
+  # `boot-splash autosync` waits out a debounce and then rebuilds ONCE, for
+  # whichever theme you settled on. It is a no-op when the boot screen is
+  # already current, when the splash is not enabled, or when passwordless
+  # sudo is unavailable, and it notifies on failure -- a silent failed sync
+  # would leave the initramfs holding the old splash with nothing to say so.
+  (
+    boot-splash generate >/dev/null 2>&1
+    boot-splash autosync >/dev/null 2>&1
+  ) >/dev/null 2>&1 &
 fi
 
 notify-send "theme-apply" "Theme -> $MODE" 2>/dev/null || true

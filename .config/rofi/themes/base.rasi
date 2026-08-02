@@ -7,10 +7,34 @@
 
 @import "current-palette.rasi"
 
+/* PROPORTIONAL, and deliberately so. Leave it alone.
+
+   This used to read "FiraCode Nerd 12", which is NOT an installed family.
+   fontconfig does not warn about a missing family -- it substitutes,
+   silently -- and `fc-match "FiraCode Nerd"` answers NotoSansCJK, so the
+   menus rendered in Noto Sans CJK KR by accident for their whole life.
+
+   242b8ff "corrected" the string to "FiraCode Nerd Font Mono", the real
+   family, on the reasoning that the padded columns below want a monospace
+   font. The reasoning is sound; the look was wrong. These menus are wanted
+   in the proportional face.
+
+   So the face is kept and the NAME is now honest: this asks for the family
+   it actually renders in, instead of relying on a lookup miss. Same
+   pixels, but pinned -- a substitution depends on the whole installed font
+   set, so adding an unrelated font could silently have changed what rofi
+   looked like. noto-fonts-cjk is declared in modules/fonts.yaml and
+   validate.sh asserts this family resolves to itself.
+
+   The cost is real and accepted: rofi_docs pads its first column to a
+   fixed width (`%-38s`) to align the second, and padding only aligns in a
+   monospace font, so that column is ragged. If it ever needs to line up,
+   fix it in rofi_docs -- with a rofi table/markup column rather than
+   space padding -- and do NOT fix it by renaming the font here. */
 * {
     background-color: transparent;
     text-color:       @foreground;
-    font:             "FiraCode Nerd 12";
+    font:             "Noto Sans CJK KR 12";
 }
 
 window {
@@ -24,7 +48,14 @@ window {
 }
 
 mainbox {
-    children: [ inputbar, listview ];
+    /* `message` has to be listed here or rofi silently DROPS every -mesg it
+       is handed. It was styled forty lines further down but never packed,
+       so the hint line under the prompt has never once been drawn --
+       rofi-kill's "Alt+k force / Ctrl+y yank PID", rofi_todo's shortcuts,
+       rofi_docs' navigation: all written, all invisible. rofi only builds
+       the widget when there is a message to put in it, so menus that pass
+       no -mesg are unchanged and gain no empty box. */
+    children: [ inputbar, message, listview ];
     border:   0;
     padding:  0;
     spacing:  8px;

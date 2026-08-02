@@ -1,33 +1,52 @@
 #!/usr/bin/env bash
+# Pick a quickmark in rofi and open it.
+#
+# Colors from ~/.cache/qtile/current_palette.json so the picker tracks
+# the active theme instead of the Dracula hexes it used to hardcode.
 set -euo pipefail
 
 ROFI_CMD="${ROFI_CMD:-rofi}"
-
 FILE="$HOME/.config/qutebrowser/quickmarks"
 
-NAME_COLOR="#50FA7B"
-ARROW_COLOR="#6272A4"
-URL_COLOR="#BD93F9"
+read -r NAME_COLOR ARROW_COLOR URL_COLOR <<<"$(
+  python3 <<'PY' 2>/dev/null
+import json, os
+try:
+    d = json.load(open(os.path.expanduser("~/.cache/qtile/current_palette.json")))
+    print(d["green"], d["purple"], d["blue"])
+except Exception:
+    print("#50FA7B", "#6272A4", "#BD93F9")
+PY
+)"
+[[ -n "${URL_COLOR:-}" ]] || read -r NAME_COLOR ARROW_COLOR URL_COLOR <<<"#50FA7B #6272A4 #BD93F9"
 
 [[ -f "$FILE" ]] || exit 0
+
+esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 
 lines=()
 urls=()
 
-while read -r name url; do
-  [[ -z "$name" || -z "$url" ]] && continue
+# Quickmark names may contain spaces; the url is always the *last*
+# field, so `read name url` mangled every multi-word name.
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  url="${line##* }"
+  name="${line% *}"
+  [[ -z "$name" || -z "$url" || "$name" == "$url" ]] && continue
 
   lines+=(
-    "<span foreground=\"$NAME_COLOR\">$name</span> \
+    "<span foreground=\"$NAME_COLOR\">$(esc "$name")</span> \
 <span foreground=\"$ARROW_COLOR\">→</span> \
-<span foreground=\"$URL_COLOR\">$url</span>"
+<span foreground=\"$URL_COLOR\">$(esc "$url")</span>"
   )
   urls+=("$url")
-done < "$FILE"
+done <"$FILE"
 
-choice=$(printf '%s\n' "${lines[@]}" \
-  | "$ROFI_CMD" -dmenu -markup-rows -p "⚡ Quick Access:") || exit 0
+[[ ${#lines[@]} -eq 0 ]] && exit 0
 
-for i in "${!lines[@]}"; do
-  [[ "${lines[$i]}" == "$choice" ]] && exec qutebrowser "${urls[$i]}"
-done
+idx=$(printf '%s\n' "${lines[@]}" |
+  "$ROFI_CMD" -dmenu -i -markup-rows -format i -p "⚡ Quick Access:") || exit 0
+[[ -n "$idx" ]] || exit 0
+
+exec qutebrowser "${urls[$idx]}"

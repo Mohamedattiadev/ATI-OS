@@ -1,3 +1,3 @@
 function sikur
-    python3 /home/ati/Attia-Pro/Projectos/Sikur_tester/sikur.py $argv
+    python3 $HOME/Attia-Pro/Projectos/Sikur_tester/sikur.py $argv
 end

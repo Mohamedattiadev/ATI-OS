@@ -1,0 +1,75 @@
+# picom-ftlabs-pinned — the animation-capable picom fork, pinned to one commit.
+#
+# Derived from the AUR package picom-ftlabs-git (maintainer: Adam Perkowski),
+# with exactly one meaningful change: the source line.
+#
+#   AUR:  git+https://github.com/FT-Labs/picom.git#branch=next
+#   here: git+https://github.com/FT-Labs/picom.git#commit=df4c6a3...
+#
+# Why that matters more than it looks. A `-git` package rebuilds from
+# whatever the branch tip is AT INSTALL TIME. Two machines set up from this
+# repo three months apart get two different compositors from the same
+# declared package name -- and picom is the single component that decides
+# whether window animations, rounded corners, shadows and blur look right.
+# That is the exact failure these dotfiles exist to prevent: identical
+# configs, different desktop.
+#
+# The pinned commit is the one this repo's picom.conf was tuned against.
+# Upstream `next` has not moved since 2024-02-17, so pinning costs nothing
+# today -- which is precisely why it is cheap to do before it does move.
+#
+# To move the pin deliberately: update _commit and _pkgver together, then
+# re-test animations (theme switch, window open/close, workspace change)
+# before committing. That is a decision, not a side effect of reinstalling.
+
+pkgname=picom-ftlabs-pinned
+_gitname=picom
+_commit=df4c6a3d9b11e14ed7f3142540babea4c775ddb1
+pkgver=r2236_2024.02.17
+pkgrel=1
+pkgdesc="picom fork by FT-Labs including animations (pinned to ${_commit:0:12})"
+arch=('x86_64' 'i686')
+url="https://github.com/FT-Labs/${_gitname}"
+license=('MIT' 'MPL-2.0')
+depends=('libgl' 'libev' 'pcre2' 'libx11' 'xcb-util-renderutil' 'libxcb' 'libepoxy' 'xcb-util-image' 'libxext'
+         'pixman' 'libconfig' 'libdbus' 'hicolor-icon-theme')
+makedepends=('git' 'mesa' 'meson' 'asciidoc' 'uthash' 'xorgproto')
+optdepends=('dbus:          To control picom via D-Bus'
+            'xorg-xwininfo: For picom-trans'
+            'xorg-xprop:    For picom-trans'
+            'python:        For picom-convgen.py')
+provides=('compton' 'compton-git' 'picom' 'picom-ftlabs-git')
+conflicts=('compton' 'compton-git' 'picom' 'picom-ftlabs-git')
+replaces=('compton-git')
+source=(
+  git+"https://github.com/FT-Labs/${_gitname}.git#commit=${_commit}"
+  "fix_ewmh_fullscreen.patch"
+)
+md5sums=(
+  "SKIP"
+  "30ff0e25e4bc91563f2f68b27762c9e2"
+)
+
+# No pkgver() on purpose. The AUR package computes it from HEAD, which is
+# what makes the version float; here the version is a constant, because the
+# source is.
+
+prepare() {
+  cd "${srcdir}/${_gitname}"
+  patch -d src -p1 < "${srcdir}/fix_ewmh_fullscreen.patch"
+}
+
+build() {
+  cd "${srcdir}/${_gitname}"
+  meson setup --buildtype=release . build --prefix=/usr -Dwith_docs=true
+  ninja -C build
+}
+
+package() {
+  cd "${srcdir}/${_gitname}"
+
+  DESTDIR="${pkgdir}" ninja -C build install
+
+  install -D -m644 "LICENSES/MIT" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-MIT"
+  install -D -m644 "picom.sample.conf" "${pkgdir}/etc/xdg/picom.conf.example"
+}

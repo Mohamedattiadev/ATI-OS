@@ -33,6 +33,9 @@ _CLOSING = False  # True while the close fade is in flight
 # daemon thread (silently) and the selection was discarded.
 _QTILE = None
 
+# path -> '1920x1080 · JPG · 1.4 MB', filled lazily by image_meta().
+_META_CACHE = {}
+
 # =============================================================================
 # CONFIG & STYLING
 # =============================================================================
@@ -40,25 +43,58 @@ WALLPAPER_DIR = os.path.expanduser("~/Pictures/Wallpapers")
 CACHE_WALL = os.path.expanduser("~/.cache/wall")
 CACHE_THUMBS = os.path.expanduser("~/.cache/qtile_thumbs")
 
-ROWS_PER_COL = 21  # Adjusted for better vertical spacing
+# --- Geometry -----------------------------------------------------------
+# Rows/columns are sized against POPUP_W/POPUP_H below: a row is one line of
+# FONT at ROW_SIZE, and a name padded to MAX_NAME_LEN plus the
+# icon/indicator/padding columns has to fit inside one card. Nothing clips a
+# control's overflow, so text that outgrows its rect spills over its
+# neighbours -- change one of these and re-check the others.
+POPUP_W = 1120
+POPUP_H = 680
+
+FONT = "JetBrainsMono Nerd Font"  # monospace: the padded rows only line up
+ROW_SIZE = 14                     # in a fixed-width face
+HEAD_SIZE = 14
+HINT_SIZE = 13
+FOOT_SIZE = 14
+
+# qtile builds these layouts with a *pixel* font size ("<family> <n>px"), so
+# these are px, not points: a ROW_SIZE=14 line box is 20px tall and 20 rows
+# (400px) sit inside the 429px card with room to breathe.
+ROWS_PER_COL = 20
 COL_COUNT = 3
-MAX_NAME_LEN = 26
+MAX_NAME_LEN = 17
 
 # Wal-derived palette — refreshed each open via _load_wal_colors().
 # Extends the shared cheatsheet loader with popup-specific slots
-# (line, dark, highlight_bg, highlight_fg).
+# (line, dark, highlight_bg, highlight_fg, surface*).
 from popups._wal_colors import load_colors as _load_wal_colors
 from popups._wal_colors import fade_in_popup, fade_out_popup
 from popups._wal_colors import current_theme_mode
+from popups._wal_colors import _mix, ensure_contrast
 
 def _load_colors():
     base = _load_wal_colors()
     # highlight_bg = dominant accent (green slot = wal color10).
     # highlight_fg = bg so selected text pops against accent.
-    base["line"] = base["muted"]  # separator between rows
+    base["line"] = _mix(base["bg"], base["fg"], 0.22)  # separator / bar trough
     base["dark"] = base["bg"]     # borders
     base["highlight_bg"] = base["green"]  # dominant accent
     base["highlight_fg"] = base["bg"]
+    # Card surfaces, blended toward fg so they lift off the popup background
+    # in both dark and light palettes (wal presets ship either).
+    base["surface"] = _mix(base["bg"], base["fg"], 0.07)
+    base["surface_alt"] = _mix(base["bg"], base["fg"], 0.14)
+
+    # Text on those cards needs re-checking: the shared loader derives
+    # `muted` against `bg`, and the cards sit 7% closer to `fg`, which is
+    # enough to drop muted labels under 3:1 on every preset theme-apply
+    # ships. highlight_bg keeps the theme's raw accent -- it is a block
+    # fill, not text.
+    surface, fg = base["surface"], base["fg"]
+    for key in ("muted", "green", "red", "blue", "purple"):
+        base[key] = ensure_contrast(base[key], surface, fg, minimum=3.0)
+
     return base
 
 COLORS = _load_colors()
@@ -79,13 +115,28 @@ def load_images():
 
 
 def load_current_wallpaper():
-    if os.path.exists(CACHE_WALL):
+    """Absolute path of the applied wallpaper, or None.
+
+    apply_wallpaper() normally makes ~/.cache/wall a *symlink* to the image
+    and only falls back to writing the path as text when symlinking fails,
+    so the link has to be resolved first: reading a symlinked JPEG as text
+    raises UnicodeDecodeError, which is why this used to always come back
+    None and neither the check mark nor the opening position ever worked.
+    """
+    if not os.path.lexists(CACHE_WALL):
+        return None
+
+    if os.path.islink(CACHE_WALL):
         try:
-            with open(CACHE_WALL) as f:
-                return f.read().strip()
-        except Exception:
-            pass
-    return None
+            return os.path.realpath(CACHE_WALL)
+        except OSError:
+            return None
+
+    try:
+        with open(CACHE_WALL) as f:
+            return f.read().strip() or None
+    except Exception:
+        return None
 
 
 def get_thumbnail_path(original_path):
@@ -115,6 +166,17 @@ def generate_thumbnails_background():
                 pass
 
 
+def esc(name: str) -> str:
+    """Escape a filename for Pango markup.
+
+    A wallpaper called "black & white.jpg" makes the whole line malformed
+    markup, and pango then drops the entire row (or footer) rather than the
+    one bad character. Escaping happens after padding so the escapes don't
+    count toward the column width.
+    """
+    return name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def truncate(name: str) -> str:
     # Ensure name fills the space for the background color to look like a bar
     if len(name) > MAX_NAME_LEN:
@@ -132,6 +194,13 @@ def pos_to_index(row, col):
 
 
 def render_column(visible_col):
+    """One card's worth of rows, always ROWS_PER_COL lines tall.
+
+    Short columns are padded with blank lines rather than cut short: the
+    column controls are v_align="middle", so a ragged last column would
+    float its rows in the vertical centre of the card instead of sitting
+    flush with its neighbours.
+    """
     lines = []
     actual_col = visible_col + _COL_OFFSET
 
@@ -139,34 +208,44 @@ def render_column(visible_col):
         idx = pos_to_index(row, actual_col)
 
         if idx is None:
-            break
+            lines.append("")
+            continue
 
         path = _IMAGES[idx]
         filename = os.path.basename(path)
-        display_name = truncate(filename)
+        display_name = esc(truncate(filename))
 
         is_selected = idx == _INDEX
         is_current = path == _CURRENT_WALL
 
-        # --- ENHANCED STYLING LOGIC ---
+        # Every row is the same character count, so the selected row's block
+        # lands exactly where the unselected rows' text does: one space of
+        # padding OUTSIDE the span (the block is inset from the card edge
+        # rather than sitting flush against it), then space + icon + space +
+        # padded name + space inside it.
+        pad = f'<span foreground="{COLORS["surface"]}"> </span>'
+
         if is_selected:
-            # "Card" style: Solid background block
-            icon = "  "  # Circle icon
+            icon = "" if is_current else ""
+            body = f" {icon} {display_name} "
             text = (
-                f'<span background="{COLORS["highlight_bg"]}" foreground="{COLORS["highlight_fg"]}" weight="bold">'
-                f"{icon} {display_name}</span>"
+                f"{pad}"
+                f'<span background="{COLORS["highlight_bg"]}" '
+                f'foreground="{COLORS["highlight_fg"]}" weight="bold">{body}</span>'
             )
         elif is_current:
-            # Green checkmark for active
-            icon = "  "  # Checkmark
+            # Applied wallpaper: accent text + check, no block.
             text = (
+                f"{pad}"
                 f'<span foreground="{COLORS["green"]}" weight="bold">'
-                f"{icon} {display_name}</span>"
+                f"  {display_name} </span>"
             )
         else:
-            # Standard item
-            icon = "  "  # Empty circle
-            text = f'<span foreground="{COLORS["fg"]}">{icon} {display_name}</span>'
+            text = (
+                f"{pad}"
+                f'<span foreground="{COLORS["line"]}">  </span>'
+                f'<span foreground="{COLORS["fg"]}">{display_name} </span>'
+            )
 
         lines.append(text)
 
@@ -178,20 +257,104 @@ def render_footer():
     if not _IMAGES:
         return ""
 
-    current_img = _IMAGES[_INDEX]
-    filename = os.path.basename(current_img)
+    filename = esc(os.path.basename(_IMAGES[_INDEX]))
+    total = len(_IMAGES)
+    position = _INDEX + 1
+    percent = int((position / total) * 100)
 
-    # Calculate scroll percentage
-    percent = int(((_INDEX + 1) / len(_IMAGES)) * 100)
+    # Scroll bar: filled portion in the accent, trough in the divider tone.
+    bar_len = 20
+    filled = max(1, round(bar_len * position / total))
+    bar = (
+        f'<span foreground="{COLORS["highlight_bg"]}">{"━" * filled}</span>'
+        f'<span foreground="{COLORS["line"]}">{"━" * (bar_len - filled)}</span>'
+    )
 
-    count_str = f" {percent}% "
+    sep = f'<span foreground="{COLORS["line"]}">   ·   </span>'
 
     return (
-        f'<span foreground="{COLORS["highlight_bg"]}" weight="bold">   IMAGE: </span>'
-        f'<span foreground="{COLORS["fg"]}">{filename}</span>   '
-        f'<span foreground="{COLORS["muted"]}">│</span>   '
-        f'<span foreground="{COLORS["purple"]}" weight="bold">{count_str}</span>'
-        f'<span foreground="{COLORS["muted"]}">of {len(_IMAGES)}</span>'
+        f'<span foreground="{COLORS["highlight_bg"]}">  </span>'
+        f'<span foreground="{COLORS["fg"]}" weight="bold">{filename}</span>'
+        f"{sep}{bar}{sep}"
+        f'<span foreground="{COLORS["purple"]}" weight="bold">{position}</span>'
+        f'<span foreground="{COLORS["muted"]}"> / {total}   ({percent}%)</span>'
+    )
+
+
+def image_meta(path):
+    """'1920x1080  ·  JPG  ·  1.4 MB' for the preview strip.
+
+    Cached per path: this runs on the qtile event loop on every cursor
+    move, and PIL only reads the header, but a dict lookup beats even that
+    when you hold down `j`. Any failure degrades to a shorter string.
+    """
+    meta = _META_CACHE.get(path)
+    if meta is not None:
+        return meta
+
+    parts = []
+    if HAS_PIL and Image is not None:
+        try:
+            with Image.open(path) as im:
+                parts.append(f"{im.width}\u00d7{im.height}")
+        except Exception:
+            pass
+    ext = os.path.splitext(path)[1].lstrip(".").upper()
+    if ext:
+        parts.append(ext)
+    try:
+        size = os.path.getsize(path)
+        parts.append(
+            f"{size / 1048576:.1f} MB" if size >= 1048576 else f"{size // 1024} KB"
+        )
+    except OSError:
+        pass
+
+    meta = "  \u00b7  ".join(parts)
+    _META_CACHE[path] = meta
+    return meta
+
+
+def render_meta():
+    """Caption strip under the preview."""
+    if not _IMAGES:
+        return ""
+    return (
+        f'<span foreground="{COLORS["muted"]}">{image_meta(_IMAGES[_INDEX])}</span>'
+    )
+
+
+def render_header_badge():
+    """Right-hand header chip: what a pick will do to the palette."""
+    mode = esc(current_theme_mode() or "unknown")
+    follows = "palette follows wallpaper" if mode == "wal" else "palette pinned"
+    return (
+        f'<span foreground="{COLORS["muted"]}">{follows}  </span>'
+        f'<span background="{COLORS["surface_alt"]}" foreground="{COLORS["blue"]}" '
+        f'weight="bold"> 󰏘 {mode} </span>'
+    )
+
+
+def _key(label):
+    """A keycap chip for the hint bar."""
+    return (
+        f'<span background="{COLORS["surface_alt"]}" foreground="{COLORS["fg"]}" '
+        f'weight="bold"> {label} </span>'
+    )
+
+
+def render_hints():
+    gap = f'<span foreground="{COLORS["line"]}">     </span>'
+    pairs = [
+        ("hjkl", "move"),
+        ("/", "search"),
+        ("R", "random"),
+        ("↵", "apply"),
+        ("Esc", "close"),
+    ]
+    return gap.join(
+        f'{_key(k)}<span foreground="{COLORS["muted"]}"> {desc}</span>'
+        for k, desc in pairs
     )
 
 
@@ -330,7 +493,15 @@ def show_wallpaper_picker(qtile):
     # the picker may already be open when the search is invoked.
     _QTILE = qtile
 
-    if _WALLPAPER_LAYOUT:
+    # _CLOSING as well as the handle. close_wallpaper_picker() clears
+    # _WALLPAPER_LAYOUT up front but the window lives on for the length of the
+    # fade (~140ms), so for that stretch the handle says "nothing is open"
+    # while a popup is very much still on screen. Reopening inside that window
+    # built a SECOND popup, and the first one's _teardown then set the handle
+    # back to None -- clobbering the handle to the new one and stranding it:
+    # visible, unreferenced, and unclosable, because every later close() takes
+    # the `not _WALLPAPER_LAYOUT` early return. That is the orphan.
+    if _WALLPAPER_LAYOUT or _CLOSING:
         return
 
     # Refresh from wal cache so popup retints after wallpaper switch
@@ -340,83 +511,146 @@ def show_wallpaper_picker(qtile):
     if not _IMAGES:
         return
 
-    _INDEX = 0
     _COL_OFFSET = 0
     _CURRENT_WALL = load_current_wallpaper()
+
+    # Open on the wallpaper that's actually applied, not on the first file in
+    # the directory: the preview then shows what you're already looking at,
+    # and paging starts from where you are. Falls back to the top when the
+    # applied wallpaper isn't in the directory any more (or none is set).
+    _INDEX = 0
+    if _CURRENT_WALL in _IMAGES:
+        _INDEX = _IMAGES.index(_CURRENT_WALL)
+        ensure_visible()
 
     threading.Thread(target=generate_thumbnails_background, daemon=True).start()
 
     controls = []
 
+    # ---- Vertical rhythm (fractions of POPUP_H, kept as px comments) ----
+    head_y, head_h = 28 / POPUP_H, 54 / POPUP_H     # title block
+    hint_y, hint_h = 92 / POPUP_H, 30 / POPUP_H     # keycap bar
+    body_y, body_h = 138 / POPUP_H, 436 / POPUP_H   # list + preview cards
+    foot_y, foot_h = 588 / POPUP_H, 62 / POPUP_H    # status bar
+
     # ---------------- HEADER ----------------
     controls.append(
         PopupText(
             text=(
-                f'<span size="xx-large" weight="bold" foreground="{COLORS["blue"]}">'
-                f"󰸉  WALLPAPER SELECTOR</span>\n"
-                f'<span foreground="{COLORS["muted"]}">'
-                f'Navigate : <b><span foreground="{COLORS["green"]}">hjkl</span></b>'
-                f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
-                f'Search : <b><span foreground="{COLORS["purple"]}">/</span></b>'
-                f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
-                f'Random : <b><span foreground="{COLORS["green"]}">R</span></b>'
-                f'<span foreground="{COLORS["blue"]}"><b>  |  </b></span>'
-                f'Apply : <b><span foreground="{COLORS["purple"]}">Enter</span></b>'
-                f"</span>"
+                f'<span size="x-large" weight="bold" foreground="{COLORS["fg"]}">'
+                f"\U000f0e09  Wallpapers</span>\n"
+                f'<span size="small" foreground="{COLORS["muted"]}">'
+                f"~/Pictures/Wallpapers  ·  {len(_IMAGES)} images</span>"
             ),
             markup=True,
-            pos_x=0.05,
-            pos_y=0.05,
-            width=0.9,
-            height=0.1,
-            h_align="center",
+            font=FONT,
+            fontsize=HEAD_SIZE,
+            pos_x=0.035,
+            pos_y=head_y,
+            width=0.45,
+            height=head_h,
+            h_align="left",
+            v_align="middle",
         )
     )
 
-    # ---------------- LINE DIVIDER ----------------
+    # Right-hand chip: whether applying a wallpaper will retheme the desktop.
     controls.append(
         PopupText(
-            text=f'<span foreground="{COLORS["line"]}">{"━" * 80}</span>',
+            text=render_header_badge(),
             markup=True,
-            pos_x=0.05,
-            pos_y=0.13,
-            width=0.9,
-            height=0.05,
+            font=FONT,
+            fontsize=HINT_SIZE,
+            pos_x=0.52,
+            pos_y=head_y,
+            width=0.445,
+            height=head_h,
+            h_align="right",
+            v_align="middle",
+        )
+    )
+
+    # ---------------- KEY HINTS ----------------
+    controls.append(
+        PopupText(
+            text=render_hints(),
+            markup=True,
+            font=FONT,
+            fontsize=HINT_SIZE,
+            background=COLORS["surface"],
+            highlight_radius=8,
+            pos_x=0.035,
+            pos_y=hint_y,
+            width=0.93,
+            height=hint_h,
             h_align="center",
+            v_align="middle",
         )
     )
 
     # ---------------- COLUMNS ----------------
-    start_x = 0.05
-    col_width = 0.16  # Adjusted for layout
-    gap = 0.01
+    # Three cards side by side. Each control paints its own rounded surface,
+    # so the gaps between them are the popup background showing through --
+    # no separate panel control (which the columns would overpaint).
+    start_x = 0.035
+    col_width = 0.166  # 184px: one row's 176px of text + 8px of padding
+    gap = 0.009
 
     for c in range(COL_COUNT):
         controls.append(
             PopupText(
                 text=render_column(c),
                 markup=True,
+                font=FONT,
+                fontsize=ROW_SIZE,
+                background=COLORS["surface"],
+                highlight_radius=10,
                 pos_x=start_x + c * (col_width + gap),
-                pos_y=0.18,
+                pos_y=body_y,
                 width=col_width,
-                height=0.68,
+                height=body_h,
                 h_align="left",
-                v_align="top",
+                v_align="middle",
                 name=f"col{c}",
             )
         )
 
     # ---------------- PREVIEW IMAGE ----------------
+    # The card colour doubles as the letterbox for images whose aspect ratio
+    # doesn't match the frame, so the preview always reads as a framed panel.
     preview_img = get_thumbnail_path(_IMAGES[_INDEX])
     controls.append(
         PopupImage(
             filename=preview_img,
-            pos_x=0.58,
-            pos_y=0.18,
-            width=0.37,
-            height=0.68,
+            background=COLORS["surface"],
+            highlight_radius=10,
+            pos_x=0.565,
+            pos_y=body_y,
+            width=0.3995,  # right edge lines up with the hint/footer cards
+            height=380 / POPUP_H,
             preserve_aspect=True,
             name="preview",
+        )
+    )
+
+    # ---------------- PREVIEW META ----------------
+    # Sits in the gap left under the preview card; bottom edge is flush with
+    # the list cards.
+    controls.append(
+        PopupText(
+            text=render_meta(),
+            markup=True,
+            font=FONT,
+            fontsize=HINT_SIZE,
+            background=COLORS["surface"],
+            highlight_radius=10,
+            pos_x=0.565,
+            pos_y=526 / POPUP_H,
+            width=0.3995,
+            height=48 / POPUP_H,
+            h_align="center",
+            v_align="middle",
+            name="meta",
         )
     )
 
@@ -425,30 +659,37 @@ def show_wallpaper_picker(qtile):
         PopupText(
             text=render_footer(),
             markup=True,
-            pos_x=0.05,
-            pos_y=0.90,
-            width=0.9,
-            height=0.08,
+            font=FONT,
+            fontsize=FOOT_SIZE,
+            background=COLORS["surface"],
+            highlight_radius=10,
+            pos_x=0.035,
+            pos_y=foot_y,
+            width=0.93,
+            height=foot_h,
             h_align="center",
-            v_align="center",
+            v_align="middle",
             name="footer",
         )
     )
 
     _WALLPAPER_LAYOUT = PopupRelativeLayout(
         qtile,
-        width=1050,
-        height=680,
+        width=POPUP_W,
+        height=POPUP_H,
         background=COLORS["bg"] + "F2",  # F2 = High opacity but not 100%
+        border=COLORS["surface_alt"],
+        border_width=2,
         close_on_click=False,
         controls=controls,
     )
 
     _WALLPAPER_LAYOUT.show(centered=True)
-    # Longer/eased than the shared default: this popup is 1050x680, and
-    # a fade that reads fine on a small cheatsheet is over before the eye
+    # Longer/eased than the shared default: this popup is POPUP_W x POPUP_H,
+    # and a fade that reads fine on a small cheatsheet is over before the eye
     # tracks it on a panel this large.
     fade_in_popup(_WALLPAPER_LAYOUT, duration=0.28, steps=18)
+
 
 
 def close_wallpaper_picker():
@@ -461,10 +702,20 @@ def close_wallpaper_picker():
     def _teardown():
         global _WALLPAPER_LAYOUT, _CLOSING
         try:
-            layout.hide()
+            # kill(), not hide() -- same reason apply_wallpaper() already
+            # kills: hide() leaves the window, its cairo drawer and every
+            # control's pango layout allocated, and show_wallpaper_picker()
+            # builds a brand new layout on the next open. At 1120x680 that
+            # is ~3MB of ARGB surface abandoned per Escape.
+            layout.kill()
         except Exception:
             pass
-        _WALLPAPER_LAYOUT = None
+        # Only clear the handle if it still refers to the layout THIS teardown
+        # was started for. Belt-and-braces next to the _CLOSING guard in
+        # show_wallpaper_picker(): an unconditional `= None` here is what turned
+        # a second popup into an unreachable one.
+        if _WALLPAPER_LAYOUT is layout:
+            _WALLPAPER_LAYOUT = None
         _CLOSING = False
 
     # Clear the module handle up front so a keypress during the fade
@@ -511,6 +762,7 @@ def update_ui():
     updates = {}
     updates["preview"] = get_thumbnail_path(_IMAGES[_INDEX])
     updates["footer"] = render_footer()
+    updates["meta"] = render_meta()
 
     for c in range(COL_COUNT):
         updates[f"col{c}"] = render_column(c)

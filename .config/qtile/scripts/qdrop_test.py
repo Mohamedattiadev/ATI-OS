@@ -254,6 +254,64 @@ def t_dnd_probe():
     check(qdrop_watch.REQUIRE_DND, "payload gate on by default")
 
 
+def t_dnd_liveness():
+    """Ownership of XdndSelection outlives the drag that claimed it.
+
+    Toolkits acquire the selection at drag begin and never disown it, so
+    "somebody owns it" stays true for the rest of the session -- that is
+    what used to pop qdrop open on a plain window move. The gate must
+    accept ownership claimed *during* the current button press and
+    reject the identical ownership probed from a later press.
+    """
+    section("XDND liveness gate")
+
+    import ctypes
+    import threading
+
+    if not qdrop_watch._x_init():
+        check(True, "no X display -- liveness gate skipped")
+        return
+
+    threading.Thread(target=qdrop_watch._watch_selection, daemon=True).start()
+    time.sleep(0.4)
+    if not qdrop_watch._XFIXES_OK:
+        check(True, "XFixes unavailable -- liveness gate skipped")
+        return
+    check(True, "XFixes watcher armed")
+
+    x11 = qdrop_watch._X11
+    x11.XCreateSimpleWindow.restype = ctypes.c_ulong
+    x11.XCreateSimpleWindow.argtypes = (
+        [ctypes.c_void_p, ctypes.c_ulong] + [ctypes.c_int] * 4
+        + [ctypes.c_uint, ctypes.c_ulong, ctypes.c_ulong])
+    x11.XSetSelectionOwner.argtypes = [
+        ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
+    x11.XDestroyWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+    # Without this the Display* goes through as a C int and the pointer
+    # is truncated -- a segfault, not an X error.
+    x11.XFlush.argtypes = [ctypes.c_void_p]
+    dpy = qdrop_watch._DPY
+    root = x11.XDefaultRootWindow(dpy)
+    sel = qdrop_watch._atom("XdndSelection")
+
+    win = x11.XCreateSimpleWindow(dpy, root, 0, 0, 1, 1, 0, 0, 0)
+    press = time.time()  # button down, *then* the source picks something up
+    time.sleep(0.15)
+    x11.XSetSelectionOwner(dpy, sel, win, 0)
+    x11.XFlush(dpy)
+    time.sleep(0.5)
+    try:
+        live, why = qdrop_watch.dnd_payload(press)
+        check(live, f"claim during this press counts as a live drag: {why}")
+        stale, why = qdrop_watch.dnd_payload(time.time())
+        check(not stale and "stale" in why,
+              f"same ownership from a later press is stale: {why}")
+    finally:
+        x11.XSetSelectionOwner(dpy, sel, 0, 0)
+        x11.XDestroyWindow(dpy, win)
+        x11.XFlush(dpy)
+
+
 # --- show/hide animation state machine --------------------------------
 #
 # Drives the real Dropzone.show_animated()/hide_animated()/toggle() and
@@ -727,6 +785,7 @@ def main() -> int:
     t_state_roundtrip()
     t_shake_shape()
     t_dnd_probe()
+    t_dnd_liveness()
     t_anim_open_close()
     t_anim_show_while_open()
     t_anim_show_after_group_switch()

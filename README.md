@@ -23,21 +23,83 @@ git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
   && ./install.sh
 ```
 
-Then `startx`. That's it — 34 modules run end to end, nothing to follow up on.
+Then `startx`. That's it — 47 modules run end to end with no questions asked,
+and you land on a complete desktop: qtile, all 22 themes, every font, every
+widget, and a boot splash carrying your own username.
+
+### Optional extras — you do not need these
+
+The command above deliberately leaves out packages that have nothing to do
+with the desktop. **Skipping them changes nothing about qtile, the themes,
+the fonts or the widgets** — they are tools for work you may simply not do
+on this machine. Run this whenever you actually want them, days later is
+fine:
+
+```bash
+~/.dotfiles/installScripts/wizard.sh --yes --only=dcli-sync-extra
+```
+
+| | |
+|---|---|
+| **Containers** | `docker` · `docker-buildx` · `docker-compose` |
+| **Dev extras** | `github-cli` · `git-lfs` · `clang` · `jdk17-openjdk` · `uv` · `ruff` |
+| **Virtualisation** | `qemu-desktop` · `edk2-ovmf` — only `vm-test.sh` needs these |
+| **Printing** | `cups` · `cups-pk-helper` · `system-config-printer` |
+| **Diagnostics** | `xorg-server-xephyr` (test a qtile config in a nested X) · `mesa-utils` (`glxinfo`, for picom trouble on unfamiliar graphics) |
+
+The list lives in
+[`.config/arch-config/modules/optional.yaml`](.config/arch-config/modules/optional.yaml)
+— add to it and the command above picks the addition up. It is re-runnable:
+already-installed packages are skipped, not reinstalled.
 
 > Want to pick modules or preview first? See [Install options](#install-options).
 > Something broken? [TROUBLESHOOTING.md](TROUBLESHOOTING.md) logs real cases
 > with symptom → root cause → fix.
 
-One manual follow-up the installer doesn't do: tmux's plugins (TPM) need a
-one-time bootstrap —
-```bash
-git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
-~/.tmux/plugins/tpm/bin/install_plugins
-```
-Without it, `vim-tmux-navigator`'s pane navigation and
-resurrect/continuum's save-on-interval + restore-on-start all silently
-do nothing. See [TROUBLESHOOTING.md → Tmux](TROUBLESHOOTING.md#tmux).
+There are no manual follow-up commands. tmux's plugins (TPM) used to need
+a one-time bootstrap by hand; that is now the `tmux-tpm` module and runs
+as part of the install. Without it `vim-tmux-navigator`'s pane navigation
+and resurrect/continuum's save-on-interval + restore-on-start all
+silently do nothing — tmux starts fine and simply ignores every
+`set -g @plugin` line. See
+[TROUBLESHOOTING.md → Tmux](TROUBLESHOOTING.md#tmux).
+
+### `./install.sh` never asks you anything
+
+It runs start to finish unattended. That is a guarantee, not a
+description: `install.sh` is `wizard.sh --yes`, every module runs with
+`stdin` closed, and the wizard refuses to reach any prompt in that mode.
+It used to be untrue in two places — the run stopped dead at the very end
+on a Simplenote password prompt, and any module whose child process asked
+a question (a git credential, a `makepkg` confirmation) hung forever
+*behind the spinner*, showing nothing but an animation. Both are fixed;
+`--yes` now has no reachable prompt at all.
+
+So there is nothing to do afterwards to get a working desktop. What is
+left are three accounts, and only you can own an account:
+
+| | What it unlocks | Without it |
+|---|---|---|
+| **Simplenote** | The `Mod+Shift+S` TODOS note syncs to the phone app | The note still works — it is a local file. Only the phone mirror is missing |
+| **Vaultwarden** | `Mod+p` `p` password picker | No password menu |
+| **Gemini** *(optional)* | AI synonyms + example sentences in the translators and `rofi_anki` | All three tools still work; the AI section is omitted, not broken |
+
+Do them whenever you like, in any order, days later is fine:
+
+- **Simplenote** — `./wizard.sh --only=simplenote` (**without** `--yes`, so
+  it can ask). It wants your Simplenote email and password, then proves it
+  worked by pushing the TODOS note for real. Run it *after* your first
+  desktop login: on networks that block `auth.simperium.com` — the login
+  host, which is separate from the reachable note API — it falls back to
+  copying a one-line snippet to your clipboard for the browser console and
+  takes an access token instead, and that needs a browser.
+- **Vaultwarden** — the installer already started the server on
+  `127.0.0.1:8222` and pointed `rbw` at it; the account is yours to create.
+  Open <https://127.0.0.1:8222> (the `s` matters — the web vault refuses
+  plain http), pick a master password, then hit the binding and enter your
+  email once. See [Passwords](#passwords).
+- **Gemini** — put `GEMINI_API_KEY=…` in `~/.config/secrets.env`
+  (mode 600, never committed).
 
 ---
 
@@ -111,13 +173,26 @@ chip in the bar, listing the keys it accepts. `Esc` leaves.
 
 ![lang mode chip in the bar](IMGS/lang.gif)
 
-**`Mod+P` — rofi mode** (launchers, `c` theme picker, `b` wallpaper picker)
+**`Mod+P` — rofi mode** (launchers, `c` theme picker, `w` wallpaper picker,
+`n` WiFi, `b` Bluetooth)
 
 ![rofi mode chip in the bar](IMGS/rofi.gif)
 
-**`Mod+P` then `b` — wallpaper picker**
+**`Mod+P` then `w` — wallpaper picker**
 
 ![wallpaper picker chip in the bar](IMGS/wallpaper.gif)
+
+**`Mod+P` then `n` — WiFi**, `b` — **Bluetooth**
+
+Two keyboard-driven pickers over `nmcli` and `bluetoothctl`. `j`/`k` to
+move, `Enter` connects, `d` disconnects, `x` forgets or removes, `t`
+toggles the radio, `/` searches, `r` rescans, `c` aborts an action that is
+hanging. WiFi adds `n` for a hidden network and `s` to hand the selected
+saved network to a phone as a QR code. A wrong password re-asks instead of
+leaving a saved profile that can never connect.
+
+Neither one opens `nm-connection-editor` or the blueman window — the
+applets stay in the tray as icons only.
 
 **`Mod+R` — resize mode**
 
@@ -127,13 +202,315 @@ chip in the bar, listing the keys it accepts. `Esc` leaves.
 
 ![draw mode chip in the bar](IMGS/draw.gif)
 
-**`Mod+Shift+K` — cheatsheet**
+**`Mod+Shift+K` — cheatsheets** (`k` qtile, `v` vim, `f` fish+kitty)
 
 ![cheatsheet chip in the bar](IMGS/cheatsheet.gif)
+
+Every binding on a card, the key hard against the card's right edge, in the
+same monospace face the rest of the popups use. The sheets **scroll** rather
+than page: **`j`/`k`** move a few rows, **`Tab`**/`Shift+Tab` a screenful,
+`Esc` closes, and the header shows how far down you are. Modifier names are
+symbols (`⇧` Shift, `⌃` Ctrl, `⏎` Enter, `␣` Space); the header carries the
+legend.
+
+Scrolling is also why the sheets are an ordinary popup size rather than
+nearly full-screen. Paging tied *capacity* to *size* — the only way to show
+more bindings was to be bigger, and they had grown to 1330×750 on a 1366×768
+screen, covering the very window you opened them to ask about. With a
+viewport that moves, the size only decides how much you see at once.
+
+`k` does double duty: it opens the qtile sheet when none is up, and scrolls
+up when one is. Only one sheet is ever open at a time — `v`/`f` close
+whichever is showing before opening theirs, which is what makes "the open
+one" unambiguous for `j`/`k`/`Tab`.
 
 <sub>Clips are cropped to the bar's right section — that's where the mode chip
 appears. Also available: `Mod+/` media, `Alt+F` mouse mode, `Mod+F12`
 passthrough.</sub>
+
+---
+
+### The logo, and finding out what any of this does
+
+**Left-click the logo in the bar.** A desktop with 90 documented
+keybindings, 22 themes and a dozen custom tools has a discovery problem,
+not a terminal-launching problem — so the most prominent click in the bar
+answers *"what can this thing do"*.
+
+| | |
+|---|---|
+| **Left** | documentation menu |
+| **Middle** | terminal *(where left-click used to go; `Mod+Return` also still works)* |
+| **Right** | `rofi -show drun` |
+
+Seven sections, and **every one is generated from the live system** — a
+hand-written menu drifts the moment anything is added, and silently:
+
+| Section | What it lists | Where it comes from |
+|---|---|---|
+| **Keybindings** | 79 shortcuts, searchable | `config.py`, parsed by `qtile-keys` via Python's AST |
+| **Cheatsheets** | qtile · vim · fish popups | qtile IPC, not replayed keystrokes |
+| **Documentation** | README · troubleshooting · packages · boot · the config | rendered read-only; the config opens writable |
+| **Espanso** | which snippet variables are set, and which are not | `match/*.yml` vs `/etc/environment` |
+| **Appearance** | theme · UI scale · wallpaper · splash | the existing pickers |
+| **System** | about · package audit · failed services · display + GPU | run live at open time |
+| **Maintenance** | merges · orphans · boot errors · package cache | `pacdiff`, `pacman -Qtdq`, `journalctl`, `paccache` |
+
+**Esc goes up, not out.** Every submenu returns to its parent; only Esc at
+the top level closes the menu. A menu you have to reopen from the bar after
+every glance is a menu you stop using.
+
+**One frame, every section.** All of them draw at 614×432 — the same shape
+`dtos-center.rasi` gives every other rofi on this system (`rofi_light`,
+`dm-satty`, the drun launcher), applied inside `pick()` so a new section
+cannot forget it. They used to inherit the launcher's theme *loosely* and
+re-shape on every navigation, which is worse than being the wrong size: a
+menu whose frame moves under you is one you stop reading.
+
+That frame fixes a **52-column budget** and every row builder is cut to fit
+it — measured from what rendered, not derived, because the arithmetic says
+56 and 56 visibly clipped.
+
+**Keybindings** uses the AST rather than a regex because bindings nest
+several `KeyChord` levels deep — a regex pass found 44 of 79 and lost every
+chord prefix. Mode keys read `Super+P , C`, not a bare `C`.
+
+**Cheatsheets** go through qtile's IPC (`open_cheatsheet()` in `config.py`),
+not xdotool. Replaying the chord could not work: entering `Super+Shift+K`
+auto-shows the qtile sheet, so the replayed `k` *toggled it back off* and it
+appeared for a single frame — and `v`/`f` showed the qtile sheet first, then
+replaced it.
+
+**Documentation is rendered and read-only.** Markdown opens through `glow`,
+so you read the document rather than its markup, and cannot edit the repo's
+own docs by accident. The qtile config is the single writable entry.
+Troubleshooting jumps open in `nvim -R` — readonly *mode*, not
+`set nomodifiable`, which blocks plugins that legitimately write to their
+own buffers and made fidget.nvim throw on every notification.
+
+**Troubleshooting** shows each entry's `**Symptom:**` line *instead of* its
+heading — the heading is dropped from entry rows entirely. "Rofi" tells you
+nothing; *"yellow wallpaper but rofi selection shows blue/purple"* is what
+you would actually type when it happens. Section rows (`##`) keep their
+heading, since they have no symptom of their own and a bare "(section)" is
+not a landmark you can scroll by. All 126 entries, jumping to the line.
+
+It was a two-column heading + symptom layout at 147 columns — wider than the
+screen itself. Two columns do not survive the cut to 52: at ~24 each, both
+halves are shredded and neither is readable. One column, and it is the one
+you search by.
+
+**Maintenance** is the only section that is not documentation, and the only
+one that *acts*. It replaced a Commands section that listed all 38 tools in
+`AtiScriptsV1` with their header comments and deliberately never ran any of
+them — correct, and a reading exercise nobody opened twice, when the scripts
+are all on `$PATH` anyway.
+
+What nothing surfaced was the slow rot: `.pacnew` files never merged,
+orphaned dependencies, units that failed while you were looking at a splash
+screen, a package cache growing without bound. So that is what is here, with
+a live count on every entry — `pacdiff -o`, `pacman -Qtdq`, `journalctl -p 3
+-b`, `paccache -d` — and selecting one merges, removes, prunes or upgrades.
+
+Two deliberate omissions. Pending updates come from the **bar's** cache
+(`~/.cache/qupdate.json`), never from `checkupdates`, which syncs a private
+copy of the package databases over the network and would turn a menu draw
+into a multi-second stall — or a hang with no connection. And the orphan
+entry opens the **list**, not a bare confirm: *"remove 21 packages?"* with no
+names is a prompt you either rubber-stamp or cancel, and neither is a
+decision.
+
+Everything opens in a **centred floating window** (`kitty --class
+docs-view`, matched by `float_rules`, centred by `_float_and_center_docs`)
+at 78% × 80% of the screen, so reading a doc never disturbs the layout.
+
+```bash
+rofi_docs               # the menu
+rofi_docs keys          # jump straight to a section
+qtile-keys              # the binding list on stdout
+```
+
+#### Espanso snippets
+
+The snippets in `match/base.yml` hold no personal data — they shell out to
+`source /etc/environment; echo "$MY_NAME"`. That is the right design, and it
+has a sharp edge: on a machine where those variables are unset, every one of
+them expands to an **empty string**, with no error. This section lists which
+of the 26 variables are set and which are missing, scaffolds the missing
+keys into `/etc/environment` (commented, ready to fill), and opens it with
+`sudoedit`.
+
+---
+
+### Boot splash
+
+Arch boots with the kernel log on screen — a wall of scrolling text ending
+in a mirror list. Worse than ugly: a boot with no feedback is
+indistinguishable from a boot that has hung.
+
+`boot-splash` replaces it with the **Arch mark inside a progress ring**,
+and **your username as ANSI Shadow block art** underneath, in the colours
+of whatever theme is currently active. The name is generated, never
+hardcoded: user `ati` gets `ATI`, user `beko` gets `BEKO`.
+
+The logo is not decoration sitting next to a spinner — it lives *inside*
+the progress indicator, so the one element that moves is also the one
+reporting state. It is read from the distro's own
+`/usr/share/pixmaps/archlinux-logo.svg` rather than vendored, recoloured
+through its alpha as a stencil, with the trademark glyph dropped by a
+connected-components pass (it is a few pixels of grit at this size, and
+cropping cannot reach it without cutting the logo's feet).
+
+The block art comes from a vendored glyph table
+([`plymouth/ansi-shadow.txt`](.config/arch-config/plymouth/ansi-shadow.txt)),
+not from `figlet` — figlet is not installed here, and the ANSI Shadow face
+is a *contributed* font that does not ship with it, so using it would mean
+both a new package dependency and vendoring a font file of uncertain
+licence. The table is 40 glyphs of plain text, and it reproduces the
+wizard's own hardcoded `ATI` logo character for character.
+
+It is rendered **solid**. The face draws the letterform with `█▀▄` and its
+drop shadow with box-drawing characters, and a single `magick label:` pass
+can only fill both in one colour — which produces a hollow double outline
+trailing every letter that reads as a cheap 3D bevel. Only the block
+characters are kept. `-kerning -1` closes the seam the mono advance leaves
+down the middle of each letter: invisible in a mock-up, obvious in cream on
+dark.
+
+**It is animated.** Two things move, so a slow boot never looks like a hung
+one:
+
+- a **comet sweeps continuously around the ring** — this is the liveness
+  signal, and it keeps moving even when plymouth reports no progress at
+  all, which is most of a fast boot
+- the ring **fills clockwise** with real progress when it is reported
+
+The name breathes on opacity, barely (a 0.06 swing). There is no fade-in:
+see *One continuous image* below.
+
+The background is flat and there is no glow. The accent colour has exactly
+one job on this screen — the progress arc — so the name is drawn in the
+foreground colour; a composition where the largest element and the status
+indicator are the same colour has nothing to direct the eye with.
+
+**Proportions.** A three-letter name sits at ~23% of screen width; longer
+names scale themselves down so the art never runs past a comfortable share
+of the screen. The ring is **26% of screen height**, sized from the screen
+rather than fixed: an earlier 96px ring was ~7% of a 1366px panel and,
+photographed off the real display, read as a stray dot — the comet was
+moving, but there was not enough arc for the motion to be legible. The ring
+and the name are laid out as **one group**, then centred and lifted;
+positioning each from the screen edges independently is what produced the
+old top-heavy stack with a lonely dot under it.
+
+#### One continuous image
+
+The splash used to be bookended by the Arch Linux logo — it appeared for
+~3s before, and again for ~4s after, on both sides of the five seconds of
+actual splash.
+
+Neither was plymouth's doing. Arch's `linux.preset` ships
+`--splash /usr/share/systemd/bootctl/splash-arch.bmp`, which bakes that
+bitmap into the UKI as a PE `.splash` section. systemd-boot paints it the
+moment a boot entry is picked; plymouth draws over it; and when plymouth
+quits, its buffer is released and the bitmap shows through again until
+getty clears the console.
+
+So `generate` also renders a **static BMP of the same composition** at the
+firmware's framebuffer resolution, and `enable`/`sync` point every
+UKI-building preset at it instead. One picture from the boot menu to the
+login prompt.
+
+That is also why there is no fade-in: plymouth takes the framebuffer the
+instant it starts, so fading up from zero would make the picture *already
+on screen* vanish and then reappear. The first plymouth frame is rendered
+to match the bitmap exactly — down to the name's opacity, which is 0.94 at
+tick 0 because that is where the breathing sine starts.
+
+The presets are pacman-owned, so this is an in-place edit with a backup. A
+`linux` package upgrade restores Arch's line; `boot-splash status` reports
+it and `sync` puts it back.
+
+```bash
+BOOT_SPLASH_SIZE=32 boot-splash generate   # bigger, if you want it
+```
+
+The ring ships as pre-rendered frames (48 for the comet, 41 for the fill,
+~400 KB). Plymouth's script language cannot draw an arc, and rotating an
+image every frame at 50 fps during early boot is the kind of per-frame work
+that makes a splash stutter on slow hardware.
+
+**It follows your theme.** `theme-apply` re-renders it on every switch. But
+the theme is *embedded in the initramfs* (plymouth runs before `/` is
+mounted), so the boot screen only changes once `mkinitcpio` reruns — about a
+minute, far too slow for a colour change. So `theme-apply` regenerates and
+then tells you the boot screen is out of date; `boot-splash sync` does the
+rebuild when you want it. `boot-splash status` shows both states.
+
+```bash
+boot-splash generate       # render + install the theme (touches nothing about boot)
+boot-splash preview        # see exactly what will appear, at your resolution
+boot-splash preview --real # run plymouth for real on a spare VT
+boot-splash check          # 16 pre-reboot safety checks
+boot-splash sync           # rebuild the initramfs to match the current theme
+boot-splash enable         # wire into initramfs + kernel cmdline
+boot-splash disable        # reverse all of it
+boot-splash status         # what is installed, hooked and set
+```
+
+`preview` renders an **animated GIF** from the real installed assets at your
+actual screen resolution, using the same arithmetic the plymouth script
+uses — so the timing and layout you see are the ones it will produce. Running `plymouthd` from a
+desktop session shows nothing at all, because plymouth draws to the DRM
+console and X owns the display; that looks like a broken theme when it is
+fine, so `preview` does the honest thing instead.
+
+**It runs as part of a default `./install.sh`, and it needs nothing from
+you.** Install, reboot, and the splash is there with your own name on it —
+whatever your account is called. Nothing to configure, nothing to render by
+hand, no name to type in: the theme is built at install time from the
+account running the installer.
+
+It was opt-in until now, because `enable` edits `/etc/mkinitcpio.conf` and
+the kernel cmdline and rebuilds the initramfs — a different category of
+risk from every other module here. What makes it acceptable by default is
+the ordering plus the two properties below: it runs **immediately after**
+`boot-fallback`, so the verbose LTS rescue entry always exists *before*
+anything touches the primary cmdline, and `enable` refuses outright rather
+than half-applying. Don't want it: `./wizard.sh` (interactive) and uncheck
+it, or reverse it afterwards with the uninstall line below.
+
+Three safety properties worth knowing:
+
+- **The LTS rescue entries stay verbose.** `boot-fallback` strips
+  `quiet`/`splash` from their options. A rescue entry that inherited the
+  splash would show a logo while hiding the kernel messages saying what
+  broke — indistinguishable from the failed boot you are escaping.
+- **`enable` refuses unless `check` passes.** Sixteen checks run first —
+  plymouth installed, colour placeholders substituted, theme script braces
+  balanced, plymouth recognises the theme, the static boot frame is
+  *uncompressed 24-bit BMP3* (systemd-boot reads nothing else and silently
+  draws blank for anything else, which looks exactly like a broken theme),
+  the UKI presets point at it, a verbose LTS entry exists and is not
+  splashed, the LTS kernel is on the ESP. A failure changes nothing.
+- **Every file edited is backed up** (`*.bak-boot-splash`) — mkinitcpio.conf,
+  the kernel cmdline, and each UKI preset — and `disable` restores them all
+  and rebuilds.
+
+```bash
+./wizard.sh --yes --only=boot-splash       # re-run just this module
+./wizard.sh --uninstall --only=boot-splash # remove it, restore every backup
+boot-splash status                         # what is enabled, and from where
+```
+
+The name is not tied to the username if you don't want it to be — the
+generator reads `BOOT_SPLASH_NAME` first and falls back to `${USER^}`, which
+is also how the awkward cases (long names, two words, accents) are tested
+without creating accounts:
+
+```bash
+BOOT_SPLASH_NAME="Mohamed Attia" boot-splash generate && boot-splash preview
+```
 
 ---
 
@@ -183,6 +560,231 @@ already forces. Without it the TTY drops to bash and `letsgo` is
 
 ---
 
+## Passwords
+
+`Mod+p` `p` opens a rofi picker over your vault. **Enter copies the
+password** and wipes the clipboard 30 seconds later.
+
+The hint line only advertises the three you reach for — `↵` copy,
+`Alt+n` new, `Alt+x` delete — but the full set is bound:
+
+| key | action |
+|---|---|
+| `↵` | copy password (clipboard cleared after 30s) |
+| `Alt+u` | copy username |
+| `Alt+t` | copy TOTP code |
+| `Alt+o` | open the entry's website |
+| `Alt+a` | type the password into the window that had focus — never touches the clipboard |
+| `Alt+n` | new entry (generate a 24-char password, or type your own) |
+| `Alt+e` | edit — choose password or username |
+| `Alt+x` | delete an entry |
+| `Alt+s` | force a sync |
+
+Behind it is **Vaultwarden** — a Rust reimplementation of the Bitwarden
+server — running on `127.0.0.1:8222`, read through `rbw`. Vaultwarden
+speaks the Bitwarden API, which is the whole point: the **official
+Bitwarden phone apps** sync against it, so there is no bespoke mobile
+client to trust.
+
+The installer starts the server and points `rbw` at it. You create the
+account, once:
+
+1. Open <https://127.0.0.1:8222> and register. The master password is the
+   one thing nothing here can choose for you.
+2. Press `Mod+p` `p` and enter that email when asked. `rbw` prompts for
+   the master password through pinentry and keeps the vault unlocked for
+   15 minutes.
+
+### Browser extension
+
+This one needs nothing extra — the local cert is already trusted by the
+browser, because mkcert installs its CA into the NSS store too.
+
+1. Install the **Bitwarden** extension from the store.
+2. Open it and, **before logging in**, click the ⚙ cog (top-left of the
+   login screen) → *Self-hosted environment*.
+3. Server URL: `https://127.0.0.1:8222` — the `s` matters.
+4. Save, then log in with your email and master password.
+
+### Using it from your phone
+
+The server listens on loopback only, deliberately. **Do not open port
+8222 to your network or the internet.**
+
+Two things make a LAN address useless here, and both are worth knowing
+before you try it:
+
+- The Bitwarden app refuses plain HTTP outright — the web vault has a
+  hard `url.startsWith("https://")` check with no localhost exception.
+- Since Android API 24, apps do not trust user-installed CAs. So putting
+  the mkcert root certificate on the phone still leaves the app
+  rejecting the connection. This is the step that eats an evening.
+
+[Tailscale](https://tailscale.com) sidesteps both: `tailscale cert`
+issues a **publicly trusted** certificate for a `*.ts.net` name, so the
+app accepts it with nothing installed, and only your own devices can
+reach the server.
+
+**On the laptop**, all of it is automated except the login:
+
+```bash
+sudo tailscale up                                     # opens a login URL
+# enable MagicDNS + HTTPS Certificates in the admin console, then:
+./wizard.sh --yes --only=vaultwarden-phone
+```
+
+That module enables `tailscaled` and publishes the proxy. It uses
+`tailscale serve` rather than rebinding Vaultwarden, because one process
+can only bind one address — rebinding to the tailnet IP would take
+`127.0.0.1` away and break both `rofi_pass` and the browser extension.
+The proxy terminates TLS with the tailnet's own publicly-trusted
+certificate and forwards to the local listener, so **nothing is exposed
+to your LAN**.
+
+It stops with a hint if either piece is missing, because neither can be
+done from the machine:
+
+- `sudo tailscale up` — needs a browser and your account
+- **MagicDNS** and **HTTPS Certificates**, both on at
+  <https://login.tailscale.com/admin/dns> — without them `tailscale cert`
+  answers *"your Tailscale account does not support getting TLS certs"*
+
+**On the phone:**
+
+1. Install **Tailscale**, sign in with the same account.
+2. Install **Bitwarden**.
+3. Open Bitwarden and, **before logging in**, tap the ⚙ cog →
+   *Self-hosted environment*.
+4. Server URL: `https://<host>.<tailnet>.ts.net:8222`
+5. Log in with your email and master password.
+
+One honest limitation, since it is the usual reason people abandon this
+setup: **a laptop is not an always-on server.** With the lid shut, the
+phone can still read the vault it has already cached, but it cannot sync
+or save new entries until the laptop is back. If that matters, move
+Vaultwarden to something that stays on — a Raspberry Pi or a small VPS —
+and repoint `rbw config set base_url`. Nothing else in this setup
+changes.
+
+---
+
+## Android screen on the desktop
+
+`Super+Shift+F6` puts the phone on screen, with mouse and keyboard control
+back to it. Works over USB or Wi-Fi; the script picks whichever is
+available and prefers the cable.
+
+### The first time
+
+Turn on **Wireless debugging** on the phone once — Settings → Developer
+options → Wireless debugging. It survives reboots, so this is genuinely
+one time.
+
+Then press `Super+Shift+F6`. A rofi window opens with a QR code and a text
+field:
+
+- **Scan the QR** with the phone (Wireless debugging → *Pair device with
+  QR code*), or
+- tap *Pair device with pairing code* instead and **type the 6 digits**
+  into the same window.
+
+Whichever finishes first wins. After that, pairing is remembered and the
+key goes straight to the mirror.
+
+### Why the script exists
+
+Arch's `android-tools` is built **without mDNS**. `adb mdns services`
+answers `unknown host service`, so adb cannot find a wirelessly-debugging
+phone by itself — every guide that says "adb just finds it" is wrong on
+this distro. The address and port are also both random, and the connect
+port changes on every phone reboot, so doing it by hand is a per-session
+chore, not a one-off.
+
+`phone_screen` reads the phone's own mDNS announcement through
+`avahi-browse` and hands adb a plain `host:port`. That is the whole trick,
+and it is why the `scrcpy` module enables `avahi-daemon` and opens
+`5353/udp` in ufw.
+
+### Speed
+
+**Wi-Fi is the bottleneck, not the laptop.** Measured on this machine,
+ping to the phone averaged 53ms with 16ms of jitter — worse than two
+frames at 30fps before anything is encoded. Over Wi-Fi the script caps
+the stream (`-m 720 --max-fps=30 -b 3M`) to spend what headroom exists on
+latency rather than detail; over USB it raises the ceiling
+(`-m 1280 --max-fps=60 -b 12M`) because that limit is gone.
+
+**Plug in a cable if the picture matters.** It is not a marginal upgrade.
+
+**Sound comes out of the laptop.** `--audio-source=output` forwards the
+whole device output and mutes playback on the handset, so a video watched
+in the mirror plays through these speakers. It is a second,
+separately-buffered stream and costs some latency — `--no-audio` is the
+way back to the lowest-latency picture, and `--audio-buffer` is the knob
+if it crackles.
+
+**Pressing the key again focuses the existing mirror** rather than
+starting a second one. Two scrcpy processes against one phone means two
+decoders and two audio streams competing for the same Wi-Fi budget, which
+looks exactly like the link being slow.
+
+### Window size
+
+`PHONE_SIZE` (percent of usable height, default 92) tunes it:
+`PHONE_SIZE=100 phone_screen`.
+
+Portrait has no slack to give: a ~9:20 handset at full height is only
+~325px wide on a 1366x768 panel, and it cannot be wider without being
+taller than the screen. 100 is the ceiling there. Landscape is capped
+separately at 60% of screen width — sized from height it would be ~1350px,
+the whole panel, burying everything behind it the moment a video goes
+fullscreen.
+
+### Rotation, and staying on screen
+
+Turn the phone sideways — open a video fullscreen, say — and scrcpy
+resizes **its own window** to the new shape, keeping the top-left corner
+fixed while it grows. Anchored to the right edge, that walks the window
+straight off the screen, controls included.
+
+Two things stop it:
+
+- **At launch**, placement reads the *current* rotation from
+  `dumpsys window displays` (`cur=WxH`). `wm size` reports the physical
+  panel and never changes, so sizing from it opened a portrait-shaped box
+  for a phone that was already sideways.
+- **Mid-session**, a small watcher started alongside scrcpy samples the
+  window geometry once a second and nudges it back inside the usable
+  area.
+
+The watcher is a poll because there is no alternative. qtile's
+`float_change` hook was the obvious home and was tried first; probing it
+directly showed it fires **zero** times for a floating window resized
+from outside qtile, because it tracks floating *state*, not geometry. The
+qtile hook that remains covers only window creation.
+
+It ends itself when the scrcpy process does — `pgrep -x scrcpy`, not the
+window id, because X recycles ids and a lookup on a closed window happily
+answers for whatever inherited the number.
+
+### Controls
+
+Caps Lock is the scrcpy modifier — `--shortcut-mod=lalt`, and `.Xmodmap`
+puts Alt on Caps. Super would collide with qtile's global grabs.
+
+| Action | Key |
+|---|---|
+| Tap / back / home | left / right / middle click |
+| App switcher | `Caps+S` |
+| Fullscreen | `Caps+F` |
+| Turn phone screen back on | `Caps+O` (it starts dark, by `-S`) |
+| Quit | `Caps+Q` |
+
+Drag a file onto the window to push it to `/sdcard/Download`; drag an APK
+to install it.
+
+---
+
 ## Requirements
 
 1. **Arch Linux**, clean base install
@@ -190,7 +792,95 @@ already forces. Without it the TTY drops to bash and `letsgo` is
 3. **No display manager** — TTY + `startx`
 4. Packages managed declaratively via [dcli](https://gitlab.com/theblackdon/dcli)
 
-Systems that don't match may need manual intervention.
+### Arch specifically · Linux generally
+
+The repo splits cleanly in two, and it is worth knowing which half you are
+standing on:
+
+| | Portable? | |
+|---|---|---|
+| **The configs and tools** — everything under `.config/`, all ~50 `AtiScriptsV1` commands | **Any Linux** | Nothing is hardcoded to a distro, a username, a monitor, a GPU or a resolution. Paths come from `$HOME`, the battery and webcam are discovered from `/sys` and `v4l2`, screens from live `xrandr`, DPI from the panel, fonts from `fc-match` |
+| **The installer** — `wizard.sh` and everything that installs a package | **Arch only** | `pacman`, `yay`, the AUR, `dcli`, `mkinitcpio`, `systemd-boot` |
+
+That second row is a deliberate limit, not an oversight. Hand-writing
+`apt`/`dnf` equivalents for 263 declared packages that nobody has ever
+installed on those distros produces a config that *looks* portable and
+breaks on first contact — worse than saying no. So instead:
+
+- `wizard.sh` **fails immediately** on a non-Arch system, in `preflight`,
+  before touching anything.
+- Every standalone script — `speed_boost.sh`, `grub_boost.sh`,
+  `service_trim.sh`, `safe-update` — detects what it needs (`pacman`,
+  `systemd`, `/etc/default/grub`) and **exits 0 with a clear message**
+  rather than erroring or, much worse, half-applying. `grub_boost.sh` also
+  handles `grub2-mkconfig` for Fedora/openSUSE.
+- The desktop half deploys anywhere by hand: install the equivalent
+  packages your way, then run `installScripts/stow_script.sh`. It no longer
+  assumes the repo lives at `~/.dotfiles` (it derives its own location) and
+  it backs up anything it would overwrite into `~/DefaultConfig/<timestamp>/`.
+
+Systems that don't match the four points above need manual intervention for
+the package half; the config half should behave identically.
+
+### Any screen size
+
+Every pixel value in the qtile config was tuned on a 1366×768 14" panel.
+Copied unchanged to a 15" 4K laptop, that is a sliver of a bar with
+unreadable text — the one thing these dotfiles cannot keep identical by
+copying files, because the right answer depends on the glass.
+
+`ui-scale` computes a factor from the primary display's real DPI and
+writes it to `~/.cache/qtile/ui_scale` (per-machine, untracked). qtile
+multiplies every font size, bar height, icon and margin by it; `Xft.dpi`
+carries the same factor into GTK, Qt, rofi and dunst. It runs from
+`.xinitrc` on every login, so docking to an external monitor re-scales.
+
+| Screen | DPI | scale |
+|---|---|---|
+| 14" 1366×768 *(reference)* | 125 | 1.00 |
+| 24" 1080p | 92 | 1.00 |
+| 27" 1440p | 109 | 1.00 |
+| 15" 1080p | 142 | 1.15 |
+| 14" 1080p | 158 | 1.25 |
+| 13" 1440p | 227 | 1.80 |
+| 15" 4K | 284 | 2.25 |
+
+Physical size, not resolution: a 24" 1080p monitor sits further away and
+has larger pixels, so it correctly stays at 1.00 rather than shrinking.
+The factor never goes below the reference — that panel is already small.
+
+Disagree with the result? It is two clicks, not a config edit:
+
+```bash
+ui-scale-toggle        # rofi picker  (also: docs menu → UI scale)
+ui-scale --set 1.25    # pin a value; survives re-detection
+ui-scale --auto        # back to detection
+ui-scale --show        # detected vs pinned vs active
+```
+
+### Any x86_64 machine — Intel, AMD or NVIDIA
+
+Nothing about the GPU is hardcoded. The `gpu` module reads the display
+controller's PCI vendor id and installs the matching driver set
+(`graphics-intel.yaml` / `-amd.yaml` / `-nvidia.yaml`), then reads
+`/proc/cpuinfo` and installs `intel-ucode` or `amd-ucode` to match. A
+laptop with switchable graphics gets both sets; a VM gets neither, because
+mesa's generic KMS driver is already correct there.
+
+This matters more than it sounds. `picom.conf` asks for `backend = "glx"`
+with `vsync = true`, so a machine with no driver for its actual GPU falls
+back to llvmpipe software rendering — the animations, rounded corners and
+shadows the desktop is built around either crawl or vanish, with nothing in
+the logs pointing at a package list. NVIDIA additionally gets
+`--no-use-damage` written to a per-machine `picom/gpu.env`, because its
+proprietary GLX is the one stack where that optimisation smears during
+animations. The result is that the motion looks the same on all three.
+
+**ARM (aarch64) is not supported.** The `gpu` module detects a non-x86_64
+architecture, warns, and skips PCI and microcode detection rather than
+installing something wrong — but the AUR packages this repo depends on
+(`picom-ftlabs-git`, `qtile-extras`, `brave-bin`, `google-chrome`) are not
+all built for ARM, so a full install will not complete.
 
 > Based on [Distrotube's](https://www.youtube.com/c/DistroTube/videos) Qtile
 > configuration, extended with my own customization and workflow. It follows the
@@ -213,6 +903,8 @@ Systems that don't match may need manual intervention.
 ./wizard.sh --yes           # same as ./install.sh
 ./wizard.sh --only=stow,themes,browser-flags   # subset
 ./wizard.sh --skip=whisper,whisper-fast,piper               # skip heavy downloads
+./wizard.sh --yes --only=dcli-sync-extra    # opt-in extras (docker, jdk, qemu, printing)
+./wizard.sh --audit         # package drift check (read-only, no sudo)
 ./wizard.sh --uninstall     # reverse wizard writes (safe: never
                             #   touches packages or downloaded models)
 ./wizard.sh --uninstall --dry-run  # preview reversals
@@ -223,7 +915,7 @@ ignored — because an ignored filter means the full live install runs instead,
 and its second module is `pacman -Syu`. Unknown flags and unknown module ids
 fail the same way: exit 2, nothing touched.
 
-Every one of the 34 modules has a reversal, even where that reversal is a
+Every one of the 48 modules has a reversal, even where that reversal is a
 deliberate no-op (`dcli-sync`, `piper`, `whisper`, `whisper-fast`,
 `wallpapers` — removing those would delete packages, multi-hundred-MB
 downloads, or a ~13x-faster build the uninstaller has no business
@@ -234,7 +926,7 @@ uninstall, with earlier modules already reversed.
 **What `./install.sh` does**
 
 - Auto-bootstraps `gum` via pacman (~2 s)
-- Runs all 34 modules end-to-end
+- Runs all 47 default modules end-to-end, start to finish, without asking anything
 - Keeps `sudo` alive for the whole run (primed once, refreshed in the
   background) so long AUR builds don't silently drop package installs when the
   credential cache would otherwise expire mid-run
@@ -247,7 +939,12 @@ Themes / Browsers / Apps / Media), spinners, progress bars and colored badges.
 On failure it shows a red-bordered error tail and prompts **retry · skip ·
 quit** (unless `--yes`, which auto-skips).
 
-**The 34 modules**
+**The 47 default modules**
+
+Numbered in the order they actually run. This list is generated from
+`wizard.sh`'s own `MOD_ORDER`, not maintained by hand — it had drifted to 36
+rows against a wizard that ran 48, so eleven modules were installed on every
+machine and documented nowhere.
 
 | # | id | What |
 | - | -- | ---- |
@@ -255,36 +952,76 @@ quit** (unless `--yes`, which auto-skips).
 | 2 | `bootstrap` | Bootstrap pkgs (git, stow, xorg-server, base-devel) |
 | 3 | `yay` | Build `yay-bin` from AUR if absent |
 | 4 | `dcli` | Install `dcli-arch-git` |
-| 5 | `stow` | Stow dotfiles into `$HOME` |
+| 5 | `stow` | Stow dotfiles into `$HOME` — backs up anything already there to `~/DefaultConfig/<timestamp>/` |
 | 6 | `arch-config` | Sync `arch-config` host file to current username |
-| 7 | `dcli-sync` | **`dcli sync --force`** — installs every declared pkg (self-verifies + retries) |
-| 8 | `cargo` | Cargo tools (`rustup default stable` + `pomodoro-tui`) |
-| 9 | `ati-scripts` | Install AtiScriptsV1 to `/usr/local/bin` |
-| 10 | `pacman-guard` | PreTransaction hook: refuse any pacman/yay/dcli upgrade when `/` is too full |
-| 11 | `boot-fallback` | systemd-boot entries for `linux-lts` + a full-module rescue initramfs |
-| 12 | `login-shell` | `chsh` to fish so the TTY matches kitty |
-| 13 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
-| 14 | `xinit` | Write `~/.xinitrc` (qtile · picom · wallpaper · tray applets · copyq server · `QT_QPA_PLATFORMTHEME=qt6ct` · cursor) |
-| 15 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
-| 16 | `xmodmap` | Write `~/.Xmodmap` — Caps is repurposed as **Alt_L outright**, with no tap-to-Caps-Lock fallback (Alt is dead in hardware on this laptop) |
-| 17 | `lid` | Lid close = ignore (`systemd-logind`) |
-| 18 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
-| 19 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
-| 20 | `piper` | Download Piper voices (EN + DE) |
-| 21 | `whisper` | Download Whisper `base.en` (live dictation) + `small.en` (batch) models |
-| 22 | `whisper-fast` | Rebuild `whisper-cli`/`whisper-stream` optimized + patched, shadow via `/usr/local` (AUR package is ~13x slower unoptimized, and doesn't build `whisper-stream` at all) |
-| 23 | `mic-gain` | Enable `fix-mic-gain.service` — reasserts mic capture gain WirePlumber resets to clipping levels on every login |
-| 24 | `passwordless-sudo` | Passwordless sudo |
-| 25 | `ownership` | Fix dotfiles ownership |
-| 26 | `disable-dm` | Disable all display managers |
-| 27 | `candy-icons` | Install candy-icons theme |
-| 28 | `wallpapers` | Clone wallpaper collection |
-| 29 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
-| 30 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
-| 31 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
-| 32 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
-| 33 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
-| 34 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| 7 | `paths` | Expand `@HOME@` in browser flags · gtk.css · bookmarks for this user |
+| 8 | `dcli-sync` | **`dcli sync --force`** — installs every declared pkg (self-verifies + retries) |
+| 9 | `radios` | Enable NetworkManager + bluetooth so the `Mod+P` popups have a daemon behind them |
+| 10 | `gpu` | Detect Intel/AMD/NVIDIA from PCI ids, install the matching driver set + CPU microcode |
+| 11 | `picom-pin` | Build the picom animation fork from a fixed commit, not branch HEAD |
+| 12 | `cargo` | Cargo tools (`rustup default stable` + `pomodoro-tui`) |
+| 13 | `ati-scripts` | Install AtiScriptsV1 to `/usr/local/bin` |
+| 14 | `simplenote` | Two-way sync between the `Mod+Shift+S` TODOS note and the Simplenote phone app — pushes on every write, pulls when the window opens, parks a `.remote-*` copy rather than guessing a winner when both sides changed. Installs the package and a mode-600 credentials stub; **the login itself is not asked during `./install.sh`** (see below) |
+| 15 | `ui-scale` | Size bar/fonts/margins to this display's real DPI; `ui-scale-toggle` to override |
+| 16 | `githooks` | Install the pre-commit hook that refuses commits breaking the config or drifting packages |
+| 17 | `pacman-guard` | PreTransaction hook: refuse any pacman/yay/dcli upgrade when `/` is too full |
+| 18 | `boot-fallback` | systemd-boot entries for `linux-lts` + a full-module rescue initramfs, deliberately **without** `quiet`/`splash` |
+| 19 | `boot-splash` | plymouth splash: the Arch mark in a progress ring with **your** username under it. Runs immediately after `boot-fallback` so the verbose rescue entry always exists first |
+| 20 | `login-shell` | `chsh` to fish so the TTY matches kitty |
+| 21 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
+| 22 | `xinit` | Write `~/.xinitrc` (qtile · picom · wallpaper · tray applets · copyq server · `QT_QPA_PLATFORMTHEME=qt6ct` · cursor) |
+| 23 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
+| 24 | `xmodmap` | Write `~/.Xmodmap` — Caps is repurposed as **Alt_L outright**, with no tap-to-Caps-Lock fallback (Alt is dead in hardware on this laptop). Real Alt keys keep working, so on a normal machine this just gives you a third Alt |
+| 25 | `lid` | Lid close = ignore, via a `logind.conf.d/` drop-in (pacman-safe, and idempotent) |
+| 26 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
+| 27 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
+| 28 | `piper` | Download Piper voices (EN + DE, ~60 MB) |
+| 29 | `ankiconnect` | Anki addon `rofi_anki` talks to on `:8765` (~26 KB) |
+| 30 | `vaultwarden` | Local password server on `127.0.0.1:8222` + `rbw` for `Mod+p` `p` |
+| 31 | `vaultwarden-phone` | Tailscale proxy so the Bitwarden phone app can reach the same vault |
+| 32 | `tmux-tpm` | Clone TPM + install plugins (this used to be a manual README step) |
+| 33 | `whisper` | Download Whisper `base.en` (live dictation) + `small.en` (batch) models (~630 MB) |
+| 34 | `whisper-fast` | Rebuild `whisper-cli`/`whisper-stream` optimized + patched, shadow via `/usr/local` (AUR package is ~13x slower unoptimized, and doesn't build `whisper-stream` at all) |
+| 35 | `mic-gain` | Enable `fix-mic-gain.service` — reasserts mic capture gain WirePlumber resets to clipping levels on every login |
+| 36 | `scrcpy` | Android screen mirroring — joins `adbusers` (android-udev's rules), enables `avahi-daemon` and opens mDNS in ufw so `phone_screen` (Super+Shift+F6) can find the phone without typing an address |
+| 37 | `passwordless-sudo` | Passwordless sudo (validated with `visudo -c`, and rolled back if rejected) |
+| 38 | `ownership` | Fix dotfiles ownership |
+| 39 | `disable-dm` | Disable all display managers |
+| 40 | `candy-icons` | Install candy-icons theme |
+| 41 | `wallpapers` | Clone wallpaper collection |
+| 42 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
+| 43 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
+| 44 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
+| 45 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
+| 46 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
+| 47 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| — | `dcli-sync-extra` | **Opt-in, never in a default run.** docker · jdk · qemu · printing — see [Optional extras](#optional-extras--you-do-not-need-these) |
+
+**Run after your first desktop login** — the `simplenote` login needs a
+browser, and `install.sh` finishes in a TTY before `startx`. `./install.sh`
+therefore installs the package and the credentials stub but never asks for
+the account (an unattended run has no business stopping on a password
+prompt, which is exactly what it used to do). Log in to the desktop and run
+it **without** `--yes`, so it can ask:
+
+```bash
+cd ~/.dotfiles/installScripts && ./wizard.sh --only=simplenote
+```
+
+It asks for your Simplenote email and password, then verifies by pushing the
+`Mod+Shift+S` TODOS note for real. On networks that block
+`auth.simperium.com` — the login host, which is separate from the reachable
+note API — it detects that, copies a one-line snippet to your clipboard for
+the browser console, and takes an access token instead.
+
+Once configured, the note syncs **both ways**: every write pushes, and opening
+the window pulls anything typed on the phone. Editing offline on either side is
+safe — the pull doubles as the retry for an unsent write, and a push checks the
+note before overwriting it. Merging is the one thing that is never automatic:
+when both sides changed you get a `TODOS.md.remote-<timestamp>` to reconcile by
+hand rather than a silent guess. See
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md) → **Simplenote** for every case and
+what each log line means.
 
 **Optional post-install tuning** — two interactive scripts, not wired into
 `install.sh` because they need a reboot, are per-machine, and prompt before
@@ -306,6 +1043,53 @@ bash ~/.dotfiles/installScripts/vm-test.sh --check   # creates nothing
 bash ~/.dotfiles/installScripts/vm-test.sh --smoke   # 2-min headless boot check
 bash ~/.dotfiles/installScripts/vm-test.sh           # fetch ISO, boot
 ```
+
+**The 3-minute version** — `container-test.sh` runs the config-only modules
+on a throw-away Arch container. It cannot test X11, systemd, the GPU or
+theme rendering, so it does not replace `vm-test.sh`. What it does catch,
+fast enough to run on every change:
+
+- a config path that only resolved because `$HOME` happened to be `/home/ati`
+  (it installs as a user called `tester` and greps the deployed result)
+- a `@HOME@` template that never got rendered
+- a step that is not idempotent — it runs the wizard twice and diffs
+- a module yaml that no longer parses
+
+It populates the container from `git ls-files`, not from the directory and
+not from a clone: that is exactly what a fresh clone receives, so anything
+gitignored is correctly absent, and staged work is tested before it is
+committed.
+
+```bash
+bash ~/.dotfiles/installScripts/container-test.sh --check  # verify runtime
+bash ~/.dotfiles/installScripts/container-test.sh          # full run
+bash ~/.dotfiles/installScripts/container-test.sh --keep   # leave it to poke at
+```
+
+**The 5-second version** — `validate.sh` needs no container and no root:
+
+```bash
+bash ~/.dotfiles/installScripts/validate.sh
+```
+
+It parses every tracked shell, Python, fish and YAML file, **loads the
+qtile config for real** (qtile falls back to its stock config on an error,
+so the failure mode is a desktop that looks like a stranger's rather than
+an error anyone sees), greps for hardcoded home paths, checks every
+`.tmpl` has a renderer, and runs a full wizard dry-run.
+
+The `githooks` module symlinks a pre-commit hook that runs `validate.sh`
+plus `--audit` — the two fast layers only, because a hook that takes three
+minutes gets `--no-verify`'d within a week.
+
+**The four layers, cheapest first.** Each catches what the one above cannot:
+
+| | time | catches |
+|---|---|---|
+| `validate.sh` | seconds | syntax, qtile config load, hardcoded paths, unrendered templates |
+| `wizard.sh --audit` | seconds | declared packages vs installed, both directions |
+| `container-test.sh` | ~3 min | a real install as a user who is **not** you; idempotency |
+| `vm-test.sh` | ~40 min | X11, systemd, GPU, boot — the parts nothing else can reach |
 
 </details>
 
@@ -369,7 +1153,9 @@ Upstream: https://gitlab.com/theblackdon/dcli
   current theme marked with `●`.
 - **Light mode**: `mono-light` flips the base GTK theme to `Breeze` +
   `Papirus-Light` (dark themes stay on `Sweet-Dark` + `Papirus-Dark`) so
-  pcmanfm/gtk apps render properly light-on-white.
+  gtk apps render properly light-on-white. The file manager
+  (`pcmanfm-qt`) is Qt, so it follows the generated `qt6ct`/`qt5ct`
+  palette instead — same colors, different path.
 - **Instant preemption**: rapid picker clicks kill the in-flight `theme-apply`
   and start the newer one — no silent lock skips.
 - **Concurrency**: `theme-apply` holds `flock` on

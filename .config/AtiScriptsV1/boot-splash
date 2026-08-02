@@ -1,0 +1,1362 @@
+#!/usr/bin/env bash
+# boot-splash — a plymouth splash showing THIS user's name and a progress ring.
+#
+# Arch boots with the kernel log on screen: a wall of scrolling text ending
+# in a mirror list. That is fine for a server and wrong for a desktop --
+# and worse, a boot with no feedback is indistinguishable from a boot that
+# has hung. This replaces it with the Arch mark inside a progress ring and
+# the username underneath, in the colours of the theme currently active.
+#
+# The name is generated, not hardcoded: user `ati` gets "Ati", user `beko`
+# gets "Beko". Nothing about this is specific to one machine.
+#
+# It also owns the frame BEFORE and AFTER plymouth. systemd-boot paints a
+# bitmap from the UKI's .splash section the moment you pick a boot entry,
+# and Arch ships its own logo there; plymouth then draws over it, and when
+# plymouth quits its buffer is torn down and that bitmap is revealed again.
+# The result is the distro logo bracketing your splash on both sides. So
+# `generate` also renders a STATIC frame of this same design as a BMP, and
+# `enable`/`sync` point the UKI at it -- one continuous image from the boot
+# menu to the login prompt.
+#
+# Commands:
+#   boot-splash generate    render assets + install the theme (no boot changes)
+#   boot-splash preview     composite the real assets at this resolution and show it
+#   boot-splash preview --real   run plymouth for real on a spare VT
+#   boot-splash check       every pre-reboot safety check
+#   boot-splash selftest    render the name across a matrix of awkward
+#                           names and assert each one fits (no root)
+#   boot-splash autosync    wait, then sync IF the boot screen is still out
+#                           of date -- debounced, for theme-apply to call
+#   boot-splash catchup     the same check at LOGIN, for autostart.sh to
+#                           call -- repairs a sync that a reboot or logout
+#                           cut short while autosync was still waiting
+#   boot-splash sync        rebuild the initramfs so the boot screen matches
+#                           the CURRENT theme (generate alone cannot: the
+#                           theme is embedded in the initramfs)
+#   boot-splash enable      generate, then wire it into initramfs + cmdline
+#   boot-splash disable     reverse everything enable did
+#   boot-splash status      what is installed, hooked and set
+#
+# `generate` and `preview` are safe. `enable` edits mkinitcpio.conf and the
+# kernel cmdline and rebuilds the initramfs -- see the guards in do_enable.
+
+set -Eeuo pipefail
+
+THEME_NAME="dotfiles"
+THEME_DIR="/usr/share/plymouth/themes/$THEME_NAME"
+SRC_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}/.config/arch-config/plymouth"
+PALETTE="$HOME/.cache/qtile/current_palette.json"
+MKINITCPIO="/etc/mkinitcpio.conf"
+KCMDLINE="/etc/kernel/cmdline"
+# Preferred faces, as Arch's paths for the package the wizard installs.
+# These are a PREFERENCE, not a requirement: resolve_fonts() falls back to
+# whatever fontconfig has when the file is absent, which is every machine
+# that does not happen to have ttf-firacode-nerd.
+FONT="${BOOT_SPLASH_FONT:-/usr/share/fonts/TTF/FiraCodeNerdFontPropo-Bold.ttf}"
+# Block art needs a MONOSPACE face with box-drawing glyphs; the proportional
+# one above staggers every row and the letters fall apart.
+MONO_FONT="${BOOT_SPLASH_MONO_FONT:-/usr/share/fonts/TTF/FiraCodeNerdFontMono-Bold.ttf}"
+# Block-art size. 26 puts a three-letter name at ~23% of a 1366px screen,
+# which is legible without dominating; 44 was ~39% and read as shouting.
+# Long names scale themselves down further (see do_generate).
+TITLE_SIZE="${BOOT_SPLASH_SIZE:-26}"
+# Records the palette + user the CURRENTLY BUILT initramfs contains, which
+# is not the same thing as what is in /usr/share right now. See do_sync.
+STAMP="/usr/share/plymouth/themes/$THEME_NAME/.built-stamp"
+
+# The Arch mark, from the archlinux-keyring/pixmaps the distro already
+# ships. Vendoring a copy would mean tracking a trademarked logo in the
+# repo; reading the installed one means it is always the current artwork
+# and the file simply does not exist on a non-Arch machine, which is the
+# correct behaviour there.
+ARCH_LOGO="${BOOT_SPLASH_LOGO:-/usr/share/pixmaps/archlinux-logo.svg}"
+
+# The static frame handed to systemd-boot. Deliberately NOT inside
+# THEME_DIR: the plymouth mkinitcpio hook copies the whole theme directory
+# into the initramfs, and this bitmap is several megabytes of something the
+# initramfs has no use for -- it is read once, at UKI build time.
+BOOT_BMP_DIR="/usr/share/arch-config"
+BOOT_BMP="$BOOT_BMP_DIR/boot-splash.bmp"
+# Every mkinitcpio preset on the box gets pointed at BOOT_BMP. The presets
+# are pacman-owned, so they are edited in place with a backup rather than
+# replaced -- the same approach .config/arch-config/boot/linux-lts.preset
+# documents for the fallback edit.
+PRESET_DIR="/etc/mkinitcpio.d"
+
+r=$'\033[31m'; g=$'\033[32m'; y=$'\033[33m'; d=$'\033[90m'; o=$'\033[0m'
+say()  { printf '%s[boot-splash]%s %s\n' "$d" "$o" "$*"; }
+ok()   { printf '%s[boot-splash]%s %s✓%s %s\n' "$d" "$o" "$g" "$o" "$*"; }
+warn() { printf '%s[boot-splash]%s %s!%s %s\n' "$d" "$o" "$y" "$o" "$*"; }
+die()  { printf '%s[boot-splash]%s %s✗%s %s\n' "$d" "$o" "$r" "$o" "$*" >&2; exit 1; }
+
+need() { command -v "$1" >/dev/null 2>&1 || die "missing '$1'"; }
+
+# ── colours ─────────────────────────────────────────────────────────
+# Read the palette theme-apply wrote so the splash matches the desktop the
+# user actually sees. Falls back to doom-one, which is the repo default.
+read_palette() {
+  BG="#1c2028"; FG="#bbc2cf"; ACCENT="#51afef"
+  [[ -f "$PALETTE" ]] || return 0
+  local out
+  out="$(python3 - "$PALETTE" <<'PY' 2>/dev/null || true
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+# blue is the accent in every palette this repo ships; fall back through
+# the keys that always exist rather than guessing a hex value.
+print(d.get("bg")     or "#1c2028")
+print(d.get("fg")     or "#bbc2cf")
+print(d.get("blue")   or d.get("accent") or "#51afef")
+PY
+)"
+  [[ -n "$out" ]] && { BG="$(sed -n 1p <<<"$out")"; FG="$(sed -n 2p <<<"$out")"; ACCENT="$(sed -n 3p <<<"$out")"; }
+}
+
+# plymouth's script module wants colour components as 0.0-1.0 floats, not
+# hex, and it has no parsing helpers -- so substitute them into the script.
+hex_to_float() {
+  local h="${1#\#}"
+  printf '%s %s %s' \
+    "$(awk -v v="$((16#${h:0:2}))" 'BEGIN{printf "%.4f", v/255}')" \
+    "$(awk -v v="$((16#${h:2:2}))" 'BEGIN{printf "%.4f", v/255}')" \
+    "$(awk -v v="$((16#${h:4:2}))" 'BEGIN{printf "%.4f", v/255}')"
+}
+
+# ── screen geometry ─────────────────────────────────────────────────
+# Sets SCREEN_W / SCREEN_H. Used to scale the ring and to size the static
+# BMP, which must match the resolution the FIRMWARE hands to systemd-boot
+# -- not the one X happens to be running.
+#
+# /sys/class/graphics/fb0/virtual_size is that resolution when the machine
+# booted on the EFI framebuffer, which is exactly the case a boot splash
+# cares about. xrandr is the fallback for a running desktop; the constant
+# is the last resort, and is only ever a wrong guess about SIZE, never
+# about layout -- the theme script positions everything from the real
+# Window dimensions at boot.
+screen_geometry() {
+  SCREEN_W=""; SCREEN_H=""
+  local fb=/sys/class/graphics/fb0/virtual_size
+  if [[ -r "$fb" ]]; then
+    IFS=, read -r SCREEN_W SCREEN_H < "$fb" || true
+  fi
+  if [[ -z "${SCREEN_W:-}" || -z "${SCREEN_H:-}" ]]; then
+    read -r SCREEN_W SCREEN_H <<<"$(xrandr --current 2>/dev/null \
+      | awk '/ connected primary/{split($4,a,"+"); split(a[1],b,"x"); print b[1], b[2]; exit}')"
+  fi
+  [[ "${SCREEN_W:-}" =~ ^[0-9]+$ && "${SCREEN_H:-}" =~ ^[0-9]+$ ]] || { SCREEN_W=1920; SCREEN_H=1080; }
+}
+
+# PNG24 forced on every raster write, not `-type TrueColor`.
+#
+# This is the same trap -colorspace sRGB exists for, one layer down: a
+# canvas built from a neutral colour is typed Grayscale, and the PNG
+# ENCODER then honours that and writes a greyscale file regardless of what
+# -colorspace or -type said. Every coloured sprite composited onto it
+# afterwards is silently desaturated -- the accent ring came out grey with
+# no warning anywhere. `PNG24:` is the only form that survives the write.
+
+# Resolve FONT / MONO_FONT to files that actually exist on THIS machine.
+#
+# Both defaults are the paths Arch's ttf-firacode-nerd installs to, and on
+# any machine without that package they simply are not there. The old
+# fallback set MONO_FONT to the family name "monospace" -- which does not
+# work: this ImageMagick is not built against fontconfig for name lookup,
+# so `-font monospace` fails with "unable to read font", render_blocks
+# dies, and `generate` aborts with "could not render a title". The warning
+# said "block art may not line up", which is not what happened at all.
+#
+# So resolve a real FILE through fc-match instead. ":spacing=100" asks
+# fontconfig for a monospace face by property rather than by the family
+# name "monospace", whose alias resolves to Noto Sans CJK here -- the
+# silent-fallback trap this repo has hit before. A face that still cannot
+# set the block characters is handled downstream: render_title falls back
+# to the proportional font rather than failing.
+resolve_fonts() {
+  local f
+  if [[ ! -f "$FONT" ]]; then
+    f="$(fc-match -f '%{file}' 'sans-serif:weight=bold' 2>/dev/null || true)"
+    if [[ -n "$f" && -f "$f" ]]; then
+      warn "font not found: $FONT — using $f"
+      FONT="$f"
+    else
+      warn "font not found: $FONT — falling back to ImageMagick's built-in face"
+      FONT=""
+    fi
+  fi
+  if [[ ! -f "$MONO_FONT" ]]; then
+    f="$(fc-match -f '%{file}' ':spacing=100:weight=bold' 2>/dev/null || true)"
+    if [[ -n "$f" && -f "$f" ]]; then
+      warn "mono font not found: $MONO_FONT — using $f (block art may not line up)"
+      MONO_FONT="$f"
+    else
+      warn "no monospace font found — the name will be set in the proportional font"
+      MONO_FONT=""
+    fi
+  fi
+}
+
+# Render the block art at a given pointsize.
+#   render_blocks <pointsize> <fill> <art-file> <out>
+#
+# -interline-spacing closes the gap the font leaves between rows, which
+# would otherwise slice every letter into six disconnected bands. It is
+# calibrated by eye rather than from font metrics: the metrics lie here --
+# measured ink height per row EXCEEDS the line advance, which says the rows
+# already overlap at spacing 0, yet spacing 0 renders visible seams through
+# every letter.
+#
+# -kerning -1 closes the seam on the other axis. The mono advance is a hair
+# wider than the ink of a █, so at this weight every letter is sliced by
+# thin vertical gaps at the character-cell boundaries -- invisible in a
+# mid-grey mock-up, obvious in cream on dark. -2 starts squashing the A's
+# counter, so -1 is the whole usable range.
+render_blocks() {
+  local ps="$1" fill="$2" art="$3" out="$4"
+  local isp=$(( ps / 13 ))
+  (( isp < 1 )) && isp=1
+  local -a fontargs=()
+  [[ -n "$MONO_FONT" ]] && fontargs=(-font "$MONO_FONT")
+  magick -background none "${fontargs[@]}" -pointsize "$ps" \
+    -interline-spacing "-$isp" -kerning -1 -fill "$fill" \
+    label:@"$art" -trim +repage -colorspace sRGB "$out"
+}
+
+# ── title ───────────────────────────────────────────────────────────
+# render_title <name> <outfile>
+#
+# The whole name pipeline in one place: block art if the face can set it,
+# stacked if it is more than one word, shrunk until it fits, and the
+# proportional font when block art cannot do the job. Extracted from
+# do_generate so `boot-splash selftest` can exercise it across a matrix of
+# awkward names WITHOUT installing anything or needing root.
+#
+# Sets TITLE_MODE to `blocks` or `font` for the caller to report.
+# Requires SCREEN_W/SCREEN_H (screen_geometry) and FG (read_palette).
+render_title() {
+  local title="$1" out="$2"
+  local tmp; tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+  local SRGB=(-colorspace sRGB)
+  local fontargs_p=()
+  [[ -n "${FONT:-}" && -f "${FONT:-}" ]] && fontargs_p=(-font "$FONT")
+  TITLE_MODE=blocks
+  # Title, as ANSI Shadow block art.
+  #
+  # Rendered from a vendored glyph table (plymouth/ansi-shadow.txt) rather
+  # than by shelling out to figlet: figlet is not installed here, and the
+  # ANSI Shadow face is a CONTRIBUTED font that does not ship with it, so
+  # using it would mean both a new package dependency and vendoring a font
+  # file of uncertain licence. The table is 40 glyphs of plain text and is
+  # verified against the wizard's own hardcoded ATI logo.
+  #
+  # Rendered SOLID: only the block characters are kept, and the face's
+  # box-drawing drop shadow is dropped on the floor. ANSI Shadow draws the
+  # letterform with █▀▄ and its shadow with ╗╝╚═║╔, and filling both in one
+  # colour -- which is all a single `magick label:` pass can do -- produces
+  # a hollow double outline trailing every letter. On a real screen that
+  # reads as a cheap 3D bevel, not as depth. Solid blocks are what the face
+  # is actually good at.
+  # The name has to survive anything a real account can be called: nine
+  # letters, two words, digits, a dot or a dash, an accent, a single
+  # character. The rules, in order:
+  #
+  #   1. every character must exist in the glyph table -- one that does not
+  #      used to be SILENTLY DROPPED, so `josé` rendered as "JOS" and
+  #      nothing said so
+  #   2. the art is shrunk until it fits the screen, by MEASURING the
+  #      render rather than predicting it from a column count
+  #   3. if it cannot fit at a legible size, the proportional font takes
+  #      over -- it is far more compact than six-row block art, so a name
+  #      that block art cannot hold still gets set properly
+  # Multi-word names are STACKED, one word per line, not run together on a
+  # single line. Six-row block art is wide: "Mohamed Attia Ibrahim" set on
+  # one line has to shrink to 66px tall to fit the screen, which is a thin
+  # illegible ribbon. Stacked, each word gets its own full height.
+  local -a words
+  read -ra words <<<"$title"
+  (( ${#words[@]} )) || words=("$title")
+
+  local art artmeta="" dropped="" wi
+  local -a arts=()
+  local maxcols=0 use_blocks=1 MISSING_CHARS=""
+  for wi in "${!words[@]}"; do
+    art="$tmp/art_$wi.txt"
+    arts+=("$art")
+    artmeta="$(python3 - "$SRC_DIR/ansi-shadow.txt" "${words[$wi]}" "$art" 2>/dev/null <<'PY' || true
+import sys
+
+table, name, out = sys.argv[1], sys.argv[2], sys.argv[3]
+
+glyphs, cur = {}, None
+for line in open(table, encoding="utf-8"):
+    line = line.rstrip("\n")
+    if line.startswith("#"):
+        continue
+    if line.startswith("@"):
+        cur = line[1:]
+        glyphs[cur] = []
+        continue
+    if cur is not None:
+        glyphs[cur].append(line)
+
+word = name.upper()
+# Report anything the table cannot set, rather than dropping it. A name
+# rendered with characters missing is a name the user cannot recognise as
+# theirs, and nothing on screen would say why.
+missing = sorted({c for c in word if c not in glyphs})
+if missing:
+    print("0 " + "".join(missing))
+    sys.exit(0)
+if not word:
+    sys.exit(1)
+
+BLOCK = set("█▀▄▌▐░▒▓")
+rows = []
+for r in range(6):
+    line = "".join(glyphs[c][r] for c in word)
+    # Keep only the letterform; the face's box-drawing drop shadow is
+    # discarded (see the comment above).
+    line = "".join(ch if ch in BLOCK or ch == " " else " " for ch in line)
+    # A row that is entirely shadow becomes empty; `magick label:` treats a
+    # zero-width line as the end of the text and silently truncates the
+    # art, so keep the row alive with a single space.
+    rows.append(line.rstrip() or " ")
+
+with open(out, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(rows) + "\n")
+
+# The WIDEST row, not row 0. Rows are right-stripped, so row 0 is often
+# narrower than the art actually is, and sizing off it under-counts.
+print("%d " % max(len(r) for r in rows))
+PY
+)"
+    dropped="${artmeta#* }"
+    [[ "$artmeta" == "$dropped" ]] && dropped=""
+    if [[ -z "$artmeta" || -n "$dropped" ]]; then
+      use_blocks=0; TITLE_MODE=font
+      MISSING_CHARS="$dropped"
+      break
+    fi
+    (( ${artmeta%% *} > maxcols )) && maxcols="${artmeta%% *}"
+  done
+
+  if (( ! use_blocks )); then
+    if [[ -n "${MISSING_CHARS:-}" ]]; then
+      # Deliberately a fallback, not a silent omission. Rendering a name
+      # with characters missing is worse than rendering it in a different
+      # face: the user is looking at someone else's name and has no way to
+      # tell why it is wrong.
+      warn "'$title' has characters the block face lacks ($MISSING_CHARS) — using the proportional font"
+    else
+      warn "no block art for '$title' — falling back to the proportional font"
+    fi
+  fi
+
+  # The name may occupy at most this much of the screen. The width bound is
+  # what long and multi-word names hit; the height bound stops six rows of
+  # block art from growing down into the Arch mark.
+  local MAXW=$(( SCREEN_W * 66 / 100 ))
+  local MAXH=$(( SCREEN_H * 40 / 100 ))
+
+  if (( use_blocks )); then
+    # Starting size from the widest row of the WIDEST WORD -- not row 1 of
+    # the whole art. Rows are right-stripped, so row 1 is frequently NOT
+    # the widest, and sizing off it under-counted long names badly.
+    local ps tw th i n gap stack_w stack_h
+    ps="$(awk -v s="$TITLE_SIZE" -v c="${maxcols:-20}" 'BEGIN{
+      # 20 columns is the width of a 3-letter name in this face.
+      v = s * 20 / (c < 20 ? 20 : c)
+      if (v < 12) v = 12
+      printf "%d", v }')"
+    n=${#arts[@]}
+
+    # Measure, then correct. The predicted size is only ever a starting
+    # guess: -kerning -1, the trim, and the font's own metrics all move the
+    # real width, and a name that overflows the screen is not a rounding
+    # error. Two passes converge for every name tried; the loop is bounded
+    # so a pathological one cannot spin.
+    for ((i = 0; i < 8; i++)); do
+      stack_w=0; stack_h=0; gap=0
+      for wi in "${!arts[@]}"; do
+        # A render failure here is a FACE problem, not a size problem: the
+        # only mono face fontconfig offered cannot set the block
+        # characters, or has no usable file at all. Hand over to the
+        # proportional font instead of aborting -- under `set -e` this
+        # took the whole of `generate` down with "could not render a
+        # title", on any machine lacking the preferred font.
+        if ! render_blocks "$ps" "$FG" "${arts[$wi]}" "$tmp/word_$wi.png" 2>/dev/null; then
+          warn "the monospace face cannot set block art — using the proportional font"
+          use_blocks=0; TITLE_MODE=font
+          break 2
+        fi
+        tw="$(magick identify -format '%w' "$tmp/word_$wi.png")"
+        th="$(magick identify -format '%h' "$tmp/word_$wi.png")"
+        (( tw > stack_w )) && stack_w=$tw
+        stack_h=$(( stack_h + th ))
+        (( gap == 0 )) && gap=$(( th / 5 ))
+      done
+      (( n > 1 )) && stack_h=$(( stack_h + gap * (n - 1) ))
+      (( stack_w <= MAXW && stack_h <= MAXH )) && break
+      ps="$(awk -v p="$ps" -v w="$stack_w" -v h="$stack_h" -v mw="$MAXW" -v mh="$MAXH" 'BEGIN{
+        r = mw/w; if (mh/h < r) r = mh/h
+        v = int(p * r * 0.98)
+        if (v < 1) v = 1
+        printf "%d", v }')"
+      # Below this the block face stops being letters and starts being
+      # noise; hand over to the proportional font instead of shipping
+      # something illegible.
+      if (( ps < 8 )); then
+        warn "'$title' is too long for block art at this resolution — using the proportional font"
+        use_blocks=0; TITLE_MODE=font
+        break
+      fi
+    done
+  fi
+
+  if (( use_blocks )); then
+    if (( ${#arts[@]} == 1 )); then
+      # One word is already exactly the image we want. Compositing it onto
+      # a canvas and trimming again is not a no-op: the second -trim ate
+      # 31px off the right of "ATI", shrinking the name ~11% for no reason
+      # anyone would ever have looked for.
+      cp "$tmp/word_0.png" "$out"
+    else
+      # Stack the words, each centred on the one above. The canvas is
+      # already exactly the stack bounds, so there is nothing to trim.
+      local -a stack=( -size "${stack_w}x${stack_h}" xc:none "${SRGB[@]}" )
+      local y=0
+      for wi in "${!arts[@]}"; do
+        th="$(magick identify -format '%h' "$tmp/word_$wi.png")"
+        tw="$(magick identify -format '%w' "$tmp/word_$wi.png")"
+        stack+=( "$tmp/word_$wi.png" -geometry "+$(( stack_w / 2 - tw / 2 ))+${y}" -composite )
+        y=$(( y + th + gap ))
+      done
+      magick "${stack[@]}" +repage "${SRGB[@]}" "$out"
+    fi
+  fi
+
+  if (( ! use_blocks )); then
+    # Proportional font, scaled to the same bounds. Sized by measurement
+    # for the same reason: a 20-character name at a fixed pointsize runs
+    # off both edges of the screen.
+    local ps=120 tw th i
+    for ((i = 0; i < 6; i++)); do
+      magick -background none "${fontargs_p[@]}" -fill "$FG" \
+        -pointsize "$ps" -kerning 6 label:"$title" -trim +repage \
+        "${SRGB[@]}" "$out"
+      tw="$(magick identify -format '%w' "$out")"
+      th="$(magick identify -format '%h' "$out")"
+      (( tw <= MAXW && th <= MAXH )) && break
+      ps="$(awk -v p="$ps" -v w="$tw" -v h="$th" -v mw="$MAXW" -v mh="$MAXH" 'BEGIN{
+        r = mw/w; if (mh/h < r) r = mh/h
+        v = int(p * r * 0.98); if (v < 8) v = 8
+        printf "%d", v }')"
+    done
+  fi
+
+  # An empty or 1x1 title means every path above failed. The theme script
+  # loads title.png unconditionally, so a placeholder is not acceptable --
+  # better to stop here than to ship a boot screen with no name on it.
+  local finalw
+  finalw="$(magick identify -format '%w' "$out" 2>/dev/null || echo 0)"
+  (( finalw > 1 )) || die "could not render a title for '$title'"
+}
+
+# ── layout ──────────────────────────────────────────────────────────
+# THE arithmetic. dotfiles.script computes the same thing at boot from the
+# real Window dimensions; this is the copy used to composite the static
+# BMP and the preview. The two must agree exactly, or the handover from
+# systemd-boot's bitmap to plymouth's first frame is a visible jump.
+#
+# Sets L_RING_X/Y, L_TITLE_X/Y, L_MARK_X/Y from SCREEN_W/H and the assets
+# in the given directory.
+splash_layout() {
+  local d="$1" tw th mw mh dw
+  tw="$(magick identify -format '%w' "$d/title.png")"
+  th="$(magick identify -format '%h' "$d/title.png")"
+  mw="$(magick identify -format '%w' "$d/mark.png")"
+  mh="$(magick identify -format '%h' "$d/mark.png")"
+  dw="$(magick identify -format '%w' "$d/dot.png")"
+
+  # The indicator is anchored to the BOTTOM of the screen, not hung under
+  # the name. Gluing it to the name is what produced the old top-heavy
+  # stack; giving it its own home near the bottom edge is what every boot
+  # screen that reads well actually does.
+  L_DOT_W=$dw
+  L_DOT_GAP=$(( SCREEN_H / 35 ))
+  L_DOTS_Y=$(( SCREEN_H * 81 / 100 ))
+  local dots_w=$(( dw * 3 + L_DOT_GAP * 2 ))
+  L_DOTS_X=$(( SCREEN_W / 2 - dots_w / 2 ))
+
+  L_MARK_X=$(( SCREEN_W / 2 - mw / 2 ))
+  L_MARK_Y=$(( L_DOTS_Y - mh - SCREEN_H / 22 ))
+
+  L_TITLE_X=$(( SCREEN_W / 2 - tw / 2 ))
+  L_TITLE_Y=$(( SCREEN_H * 38 / 100 - th / 2 ))
+}
+
+# Composite one full-screen frame from the assets in <dir>.
+#   compose_still <dir> <bg-hex> <tick> <progress 0-1> <out>
+#
+# The dot arithmetic here is the same arithmetic dotfiles.script runs at
+# boot. It is duplicated rather than shared because there is nowhere to
+# share it: one side is bash, the other is plymouth's script language. The
+# comments on both sides say so, and `check` compares the results.
+compose_still() {
+  local d="$1" bg="$2" tick="$3" prog="$4" out="$5"
+  local -a a
+  local i x wave fill
+  splash_layout "$d"
+  a=( -size "${SCREEN_W}x${SCREEN_H}" "xc:$bg" -colorspace sRGB )
+  a+=( \( "$d/mark.png" -alpha set -channel A -evaluate multiply 0.80 +channel \)
+       -geometry "+${L_MARK_X}+${L_MARK_Y}" -composite )
+  a+=( "$d/title.png" -geometry "+${L_TITLE_X}+${L_TITLE_Y}" -composite )
+  for i in 0 1 2; do
+    x=$(( L_DOTS_X + i * (L_DOT_W + L_DOT_GAP) ))
+    wave="$(awk -v t="$tick" -v i="$i" 'BEGIN{
+      printf "%.4f", 0.22 + 0.55 * (0.5 + 0.5*sin(t/9 - i*1.1)) }')"
+    fill="$(awk -v p="$prog" -v i="$i" 'BEGIN{
+      f = p*3 - i; if (f<0) f=0; if (f>1) f=1; printf "%.4f", f }')"
+    a+=( \( "$d/dot.png" -alpha set -channel A -evaluate multiply "$wave" +channel \)
+         -geometry "+${x}+${L_DOTS_Y}" -composite )
+    a+=( \( "$d/dot_accent.png" -alpha set -channel A -evaluate multiply "$fill" +channel \)
+         -geometry "+${x}+${L_DOTS_Y}" -composite )
+  done
+  magick "${a[@]}" -colorspace sRGB "$out"
+}
+
+# ── asset generation ────────────────────────────────────────────────
+do_generate() {
+  need magick
+  need python3
+  [[ -d "$SRC_DIR" ]] || die "theme source not found at $SRC_DIR"
+  resolve_fonts
+  local fontargs_p=()
+  [[ -n "$FONT" ]] && fontargs_p=(-font "$FONT")
+
+  read_palette
+  screen_geometry
+  local title
+  # ${var^} uppercases only the first character: ati -> Ati, beko -> Beko.
+  # BOOT_SPLASH_NAME overrides it, which is both how the edge cases
+  # (long names, two words, accents) are tested without creating accounts,
+  # and how someone whose username is not what they want on screen sets
+  # something else.
+  title="${BOOT_SPLASH_NAME:-${USER^}}"
+  say "user '$USER' -> title '$title'   bg=$BG fg=$FG accent=$ACCENT"
+  say "screen ${SCREEN_W}x${SCREEN_H}"
+
+  local tmp; tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+
+  # Everything below forces -colorspace sRGB explicitly.
+  #
+  # Without it ImageMagick types a canvas built from a NEUTRAL colour --
+  # and #282828, the default background, is exactly that -- as Gray, then
+  # silently desaturates every coloured thing composited onto it. The
+  # accent-tinted title came out grey with no error anywhere.
+  local SRGB=(-colorspace sRGB)
+
+  render_title "$title" "$tmp/title.png"
+
+  # The name is drawn in the FOREGROUND colour, not the accent. The accent
+  # now has exactly one job on this screen -- marking progress through the
+  # dots -- and a composition where the biggest element and the status
+  # indicator are the same colour has nothing to direct the eye with.
+
+  # ── dots ───────────────────────────────────────────────────────────
+  # The indicator, in place of the ring earlier versions used. A ring big
+  # enough to read its arc became a second focal point competing with the
+  # name; a ring small enough not to, read as a stray dot on the real
+  # panel. Three dots stay legible at a size that stays subordinate.
+  #
+  # Shipped as TWO images rather than a frame sequence: the wave and the
+  # progress fill are both pure opacity, and plymouth can do opacity on a
+  # sprite. The ring needed pre-rendered frames only because its script
+  # language cannot draw an arc -- nothing here needs that, so the theme
+  # drops from ~90 images to four.
+  #
+  # Cross-fading a foreground dot and an accent dot is how the colour
+  # transition happens: plymouth script cannot tint an image, and
+  # pre-rendering a colour ramp would mean shipping frames for something
+  # two stacked sprites do for free.
+  local DR=$(( SCREEN_H / 154 ))
+  (( DR < 3 )) && DR=3
+  local DD=$(( DR * 2 ))
+
+  # The progress colour has to be BRIGHTER than the wave, not merely
+  # different. The wave peaks at 0.77 opacity of the foreground, and a dot
+  # filling with progress is meant to read as lighting up.
+  #
+  # On some palettes the accent is darker than the foreground and the
+  # filled dots then read as dots going OUT, saying the opposite of what is
+  # happening. Where that is true, progress uses the foreground and the
+  # contrast comes from opacity alone, which always points the right way.
+  #
+  # The 0.62 line is drawn from the two palettes this repo actually ships,
+  # not from theory:
+  #
+  #   gruvbox  accent #83a598 / fg #ebdbb2  ratio 0.72  keep the accent
+  #   matrix   accent #008f11 / fg #00ff41  ratio 0.55  use the foreground
+  #
+  # gruvbox's teal is dimmer than its cream but a different hue, so it
+  # still reads as a state change. matrix's accent is the same hue as its
+  # foreground AND darker, which is the case that actually breaks. A
+  # threshold of 0.75 catches both and costs gruvbox its colour, so the
+  # line sits between the two measured ratios. If a future palette lands
+  # near 0.62 this will need a hue term rather than a brightness one.
+  local dot_accent="$ACCENT"
+  if awk -v a="$ACCENT" -v f="$FG" 'BEGIN{
+        # Rec.709 relative luminance. Hex is parsed from the INPUT strings,
+        # never from a rendered pixel: %[hex:p{0,0}] returns 16-bit
+        # channels, and slicing six characters off that is what once turned
+        # the whole splash purple.
+        n = "0123456789abcdef"
+        for (i = 0; i < 2; i++) {
+          s = tolower(i ? f : a); sub(/^#/, "", s)
+          r = (index(n, substr(s,1,1))-1)*16 + index(n, substr(s,2,1))-1
+          g = (index(n, substr(s,3,1))-1)*16 + index(n, substr(s,4,1))-1
+          b = (index(n, substr(s,5,1))-1)*16 + index(n, substr(s,6,1))-1
+          l[i] = 0.2126*r + 0.7152*g + 0.0722*b
+        }
+        exit !(l[0] < l[1] * 0.62) }'; then
+    warn "accent $ACCENT is darker than fg $FG — progress dots use the foreground"
+    dot_accent="$FG"
+  fi
+
+  magick -size "${DD}x${DD}" xc:none "${SRGB[@]}" \
+    -fill "$FG" -draw "circle $DR,$DR $DR,0" "$tmp/dot.png"
+  magick -size "${DD}x${DD}" xc:none "${SRGB[@]}" \
+    -fill "$dot_accent" -draw "circle $DR,$DR $DR,0" "$tmp/dot_accent.png"
+
+  # ── Arch mark ──────────────────────────────────────────────────────
+  # Small and quiet, sitting just above the dots. It is the distro's mark,
+  # not the subject: the name is the subject. At 6% of screen height it
+  # is unmistakably the Arch logo without pulling the eye down from the
+  # name it sits below.
+  local MARK_H=$(( SCREEN_H * 6 / 100 ))
+  (( MARK_H < 24 )) && MARK_H=24
+  if [[ -f "$ARCH_LOGO" ]]; then
+    # Recoloured through the SVG's own alpha as a stencil rather than by
+    # tinting its pixels: the logo is flat cyan, and -colorize or -fill on
+    # a coloured raster leaves a halo at every antialiased edge.
+    #
+    # The connected-components pass drops the trademark glyph. It is a few
+    # unreadable pixels off the logo's bottom-right that would sit inside
+    # the ring as grit, and it is the only component in the artwork small
+    # enough for an area threshold to isolate -- cropping cannot reach it
+    # without also cutting the logo's feet.
+    #
+    # Rasterised at a fixed 512px and scaled down afterwards so that
+    # threshold is a constant rather than something that has to track the
+    # output size, and so the downscale does the antialiasing.
+    #
+    # -alpha copy before -alpha shape is load-bearing: connected-components
+    # returns a bilevel image with NO alpha channel, and -alpha shape on an
+    # image with no alpha silently yields nothing at all.
+    magick -background none -density 600 "$ARCH_LOGO" -resize x512 "${SRGB[@]}" \
+      -alpha extract \
+      -define connected-components:area-threshold=400 \
+      -define connected-components:mean-color=true \
+      -connected-components 8 \
+      -alpha copy -background "$FG" -alpha shape \
+      -resize "x$MARK_H" \
+      -channel A -evaluate multiply 0.92 +channel \
+      -trim +repage "${SRGB[@]}" "$tmp/mark.png"
+  else
+    # No Arch logo on this machine (or not Arch at all). The name and the
+    # dots still work with nothing between them, and a missing optional
+    # asset must not take the boot screen down -- the script loads
+    # mark.png unconditionally, so it has to exist.
+    warn "no logo at $ARCH_LOGO — the mark will be blank"
+    magick -size 1x1 xc:none "${SRGB[@]}" "$tmp/mark.png"
+  fi
+
+  # Substitute the colour floats into the script.
+  read -r BR BG_ BB <<<"$(hex_to_float "$BG")"
+  # FLAT background: top and bottom identical.
+  #
+  # There was a gradient here, lifted 7% at the top as a cheap vignette. It
+  # read as "designed" in the wrong way -- the reference this is modelled on
+  # is a flat dark field with one bright word on it, and every extra effect
+  # moved it further from that.
+  read -r TR TG TB <<<"$BR $BG_ $BB"
+  read -r FR FG_ FB <<<"$(hex_to_float "$FG")"
+  sed -e "s/BG_R/$BR/g" -e "s/BG_G/$BG_/g" -e "s/BG_B/$BB/g" \
+      -e "s/FG_R/$FR/g" -e "s/FG_G/$FG_/g" -e "s/FG_B/$FB/g" \
+      -e "s/BGTOP_R/$TR/g" -e "s/BGTOP_G/$TG/g" -e "s/BGTOP_B/$TB/g" \
+      "$SRC_DIR/$THEME_NAME.script" > "$tmp/$THEME_NAME.script"
+
+  # ── the frame BEFORE and AFTER plymouth ────────────────────────────
+  # systemd-boot paints this the moment a boot entry is chosen, and it is
+  # what reappears when plymouth's buffer is torn down at quit. Rendering
+  # the SAME composition, from the SAME assets, is what turns three
+  # separate screens into one continuous image.
+  #
+  # Tick 0, progress 0: at the point this is on screen the kernel has not
+  # started. Anything else would be an animation frozen mid-stride, or a
+  # claim of progress that has not happened. Tick 0 is also exactly the
+  # frame plymouth draws first, so the handover does not step.
+  #
+  # BMP3 is not a stylistic choice -- systemd-boot reads uncompressed
+  # 24-bit BMP and nothing else. The default BMP writer emits BMP4 with an
+  # alpha mask, which it refuses.
+  compose_still "$tmp" "$BG" 0 0 "$tmp/still.png"
+  magick "$tmp/still.png" -alpha remove -alpha off -colorspace sRGB \
+    -type TrueColor BMP3:"$tmp/boot-splash.bmp"
+  sudo install -d -m755 "$BOOT_BMP_DIR"
+  sudo install -m644 "$tmp/boot-splash.bmp" "$BOOT_BMP"
+
+  sudo install -d -m755 "$THEME_DIR"
+  # Remove every image first, including any the PREVIOUS design used.
+  # Leftovers are not merely untidy: they get baked into the initramfs and
+  # are then impossible to tell apart from the assets actually in use.
+  # The ~90 ring frames earlier designs shipped are among them, as is
+  # rule.png, the hairline an older layout used.
+  sudo rm -f "$THEME_DIR"/*.png
+  sudo install -m644 "$tmp/title.png"      "$THEME_DIR/title.png"
+  sudo install -m644 "$tmp/mark.png"       "$THEME_DIR/mark.png"
+  sudo install -m644 "$tmp/dot.png"        "$THEME_DIR/dot.png"
+  sudo install -m644 "$tmp/dot_accent.png" "$THEME_DIR/dot_accent.png"
+  # The script and the theme descriptor. Omitting these once left the theme
+  # directory holding NEW images and the OLD script -- which referenced
+  # assets that no longer exist, i.e. a black screen at boot. That is
+  # exactly what `boot-splash check` compares, and it caught it.
+  sudo install -m644 "$tmp/$THEME_NAME.script"       "$THEME_DIR/$THEME_NAME.script"
+  sudo install -m644 "$SRC_DIR/$THEME_NAME.plymouth" "$THEME_DIR/$THEME_NAME.plymouth"
+  ok "theme installed to $THEME_DIR (4 images)"
+  ok "static boot frame: $BOOT_BMP (${SCREEN_W}x${SCREEN_H})"
+
+  # The theme lives INSIDE the initramfs -- plymouth runs before / is
+  # mounted, so it cannot read /usr/share at boot. Regenerating here
+  # therefore does not change what you actually see until mkinitcpio runs
+  # again, and mkinitcpio takes about a minute: far too slow to run on
+  # every theme switch, which is exactly when this is called.
+  #
+  # So: record what was generated, and report the mismatch rather than
+  # either lying about it or burning a minute of CPU unasked.
+  if grep -q '^HOOKS=.*plymouth' "$MKINITCPIO" 2>/dev/null; then
+    local want="$USER|$BG|$FG|$ACCENT"
+    local have; have="$(sudo cat "$STAMP" 2>/dev/null || echo '')"
+    if [[ "$want" != "$have" ]]; then
+      warn "the initramfs still has the previous splash — run: boot-splash sync"
+      SPLASH_DIRTY=1
+    fi
+  fi
+}
+
+# ── the UKI splash section ──────────────────────────────────────────
+# Point every mkinitcpio preset that builds a Unified Kernel Image at our
+# static BMP instead of Arch's.
+#
+# This is the fix for the distro logo that bracketed the splash on both
+# sides. Arch's linux.preset ships:
+#
+#   default_options="--splash /usr/share/systemd/bootctl/splash-arch.bmp"
+#
+# which bakes that bitmap into the UKI as a PE .splash section.
+# systemd-boot draws it when the entry is picked, plymouth draws over it,
+# and when plymouth quits its buffer is released and the bitmap shows
+# through again until getty clears the console. Replacing the file it
+# points at fixes both ends with one edit.
+#
+# Presets are pacman-owned, so this is an in-place sed with a backup, the
+# same handling .config/arch-config/boot/linux-lts.preset documents for
+# the fallback edit. A pacman upgrade of the linux package will restore
+# Arch's line; `boot-splash sync` puts it back, and `status` reports it.
+#
+# Idempotent: safe to call from both enable and sync.
+patch_uki_splash() {
+  [[ -f "$BOOT_BMP" ]] || { warn "no $BOOT_BMP yet — run: boot-splash generate"; return 0; }
+  [[ -d "$PRESET_DIR" ]] || { say "no $PRESET_DIR — not a mkinitcpio-preset system"; return 0; }
+
+  local p changed=0
+  for p in "$PRESET_DIR"/*.preset; do
+    [[ -f "$p" ]] || continue
+    # Only presets that actually build a UKI have a splash to set. A
+    # preset producing a plain initramfs image ignores --splash entirely,
+    # and adding it there would be noise in a pacman-owned file.
+    sudo grep -qE '^[[:space:]]*[a-z_]+_uki=' "$p" || continue
+    sudo grep -q -- "--splash $BOOT_BMP" "$p" && continue
+
+    sudo cp -n "$p" "$p.bak-boot-splash" 2>/dev/null || true
+    # Rewrite an existing --splash argument in place, whether or not the
+    # line is commented out. Matching the path loosely (non-space run)
+    # rather than Arch's exact filename means a preset already pointing
+    # somewhere else is still corrected.
+    sudo sed -i -E "s|--splash[[:space:]]+[^\"[:space:]]+|--splash $BOOT_BMP|g" "$p"
+
+    # No --splash at all: add one to the UKI preset's options line, or
+    # create that line if the preset does not have one.
+    if ! sudo grep -q -- '--splash' "$p"; then
+      if sudo grep -qE '^[[:space:]]*default_options=' "$p"; then
+        sudo sed -i -E "s|^([[:space:]]*default_options=\")|\\1--splash $BOOT_BMP |" "$p"
+      else
+        printf 'default_options="--splash %s"\n' "$BOOT_BMP" | sudo tee -a "$p" >/dev/null
+      fi
+    fi
+    if sudo grep -q -- "--splash $BOOT_BMP" "$p"; then
+      ok "$(basename "$p") now boots our splash bitmap"
+      changed=1
+    else
+      warn "could not set --splash in $p — check it by hand"
+    fi
+  done
+  (( changed )) || say "UKI presets already point at $BOOT_BMP"
+}
+
+# ── preview ─────────────────────────────────────────────────────────
+# Composites the REAL installed theme assets at THIS screen's resolution
+# and opens the result. Not a mock-up of the design -- the same title.png,
+# progress_box.png and progress_bar.png plymouth will use, laid out by the
+# same rules dotfiles.script applies.
+#
+# Why not just run plymouthd: plymouth draws to the DRM console, and X owns
+# the display while you are looking at it. Running plymouthd from a desktop
+# session shows nothing at all -- which is exactly what happens if you try,
+# and looks like the theme is broken when it is fine.
+#
+# `--real` does run it, on a spare VT, for when you want the actual thing.
+do_preview() {
+  need magick
+  [[ -d "$THEME_DIR" ]] || die "theme not generated yet — run: boot-splash generate"
+
+  if [[ "${2:-}" == "--real" || "${1:-}" == "--real" ]]; then
+    need plymouthd
+    warn "this switches to VT 3 and takes over the screen for ~8s."
+    warn "it returns to VT 1 automatically; if it does not, press Ctrl+Alt+F1."
+    read -rp "continue? [y/N] " a; [[ "$a" == [yY] ]] || { say "cancelled"; return 0; }
+    sudo plymouth-set-default-theme "$THEME_NAME" >/dev/null 2>&1 || true
+    sudo chvt 3
+    sudo plymouthd --tty=/dev/tty3 >/dev/null 2>&1 || true
+    sudo plymouth show-splash >/dev/null 2>&1 || true
+    local i=0
+    while (( i < 8 )); do
+      sudo plymouth system-update --progress=$(( i * 12 )) >/dev/null 2>&1 || true
+      sleep 0.8; i=$((i+1))
+    done
+    sudo plymouth quit >/dev/null 2>&1 || true
+    sudo chvt 1
+    ok "real preview done"
+    return 0
+  fi
+
+  # Same geometry the BMP was rendered at, so the preview is the size the
+  # boot screen will actually be.
+  screen_geometry
+  read_palette
+  local out="${TMPDIR:-/tmp}/boot-splash-preview.gif"
+  local tmp; tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+
+  # An ANIMATED preview, because the splash is animated and a still frame
+  # cannot show whether the motion is right. Frames go through the same
+  # compose_still the static BMP uses and reuse the script's arithmetic --
+  # breathing sine, comet index, progress drift -- so what you are looking
+  # at is the layout and timing plymouth will produce, not an artist's
+  # impression.
+  [[ -s "$THEME_DIR/dot.png" ]] || die "dot images missing — run: boot-splash generate"
+
+  # Frame 0 is the static BMP, so the preview shows the handover this
+  # design is built around: the picture systemd-boot paints, then plymouth
+  # continuing it without a seam. If frame 0 and frame 1 do not line up
+  # here, they will not line up at boot either.
+  local frames=60 f
+  cp "$BOOT_BMP" "$tmp/_bmp.bmp" 2>/dev/null \
+    && magick "$tmp/_bmp.bmp" -colorspace sRGB "$tmp/frame_000.png" \
+    || compose_still "$THEME_DIR" "$BG" 0 0 "$tmp/frame_000.png"
+
+  for ((f = 1; f < frames; f++)); do
+    # ~4 ticks per preview frame at 50fps, so the GIF covers roughly the
+    # five seconds the splash is really on screen rather than a minute of
+    # motion nobody will ever witness.
+    local tick=$(( f * 4 )) shown
+    shown="$(awk -v t="$tick" 'BEGIN{
+      d=t/700; if(d>0.75)d=0.75; p=t/1400; if(p>1)p=1; s=(p>d)?p:d; printf "%.4f", s }')"
+    compose_still "$THEME_DIR" "$BG" "$tick" "$shown" \
+      "$tmp/frame_$(printf '%03d' "$f").png"
+  done
+
+  magick -delay 7 -loop 0 "$tmp"/frame_*.png -colorspace sRGB -layers optimize "$out"
+
+  ok "animated preview rendered at ${SCREEN_W}x${SCREEN_H}, ${frames} frames: $out"
+  if command -v imv >/dev/null 2>&1; then
+    setsid imv "$out" >/dev/null 2>&1 &
+  elif command -v xdg-open >/dev/null 2>&1; then
+    setsid xdg-open "$out" >/dev/null 2>&1 &
+  else
+    say "open it with any image viewer"
+  fi
+  say "this is composited from the installed theme assets, not a mock-up"
+  say "for the real thing on a spare VT: boot-splash preview --real"
+}
+
+# ── pre-flight check ────────────────────────────────────────────────
+# Everything that can be verified WITHOUT rebooting. Run before enable.
+do_check() {
+  local fail=0 st esp themes ob cb
+
+  # `st=0; <test> || st=1` rather than a bare `[[ ... ]]` on its own line:
+  # under `set -e` a bare failing test aborts the script, so the FIRST
+  # failing check would end the run and hide every check after it. A
+  # pre-flight that stops at the first problem is the opposite of useful.
+  _c() {
+    if [[ "$1" == 0 ]]; then
+      printf '  %s✓%s %s\n' "$g" "$o" "$2"
+    else
+      printf '  %s✗%s %s\n' "$r" "$o" "$2"; fail=1
+    fi
+  }
+
+  st=0; pacman -Qq plymouth >/dev/null 2>&1 || st=1
+  _c $st "plymouth installed"
+
+  st=0; [[ -f "$THEME_DIR/$THEME_NAME.script" ]] || st=1
+  _c $st "theme script installed"
+
+  st=0; [[ -s "$THEME_DIR/title.png" ]] || st=1
+  _c $st "title image rendered and non-empty"
+
+  # A leftover placeholder means the colour substitution silently failed,
+  # and plymouth cannot parse the script at boot -- a black screen.
+  st=0; grep -qE '\b(BG_R|BG_G|BG_B|BGTOP_R|BGTOP_G|BGTOP_B|FG_R|FG_G|FG_B)\b' \
+        "$THEME_DIR/$THEME_NAME.script" 2>/dev/null && st=1
+  _c $st "colour placeholders substituted"
+
+  # Balanced braces is a cheap proxy for "plymouth can parse this"; its
+  # script language has no offline syntax checker.
+  ob="$(tr -cd '{' < "$THEME_DIR/$THEME_NAME.script" 2>/dev/null | wc -c || echo 0)"
+  cb="$(tr -cd '}' < "$THEME_DIR/$THEME_NAME.script" 2>/dev/null | wc -c || echo 0)"
+  st=0; [[ "$ob" == "$cb" && "$ob" != 0 ]] || st=1
+  _c $st "theme script braces balanced ($ob/$cb)"
+
+  # Captured, not piped into grep -q: under `set -o pipefail`, grep exiting
+  # early on a match closes the pipe and the producer dies with SIGPIPE,
+  # aborting the run at the first PASSING test.
+  themes="$(plymouth-set-default-theme --list 2>/dev/null || true)"
+  st=0; grep -qx "$THEME_NAME" <<<"$themes" || st=1
+  _c $st "plymouth recognises the theme"
+
+  st=0; grep -q '^HOOKS=.*\budev\b' "$MKINITCPIO" || st=1
+  _c $st "mkinitcpio has a udev hook to anchor to"
+
+  # Every image the script loads, by name. The script calls Image() on all
+  # of these unconditionally at startup, so a missing one is not a cosmetic
+  # problem -- it is a black screen at boot.
+  local img missing=""
+  for img in title.png mark.png dot.png dot_accent.png; do
+    [[ -s "$THEME_DIR/$img" ]] || missing+=" $img"
+  done
+  st=0; [[ -z "$missing" ]] || st=1
+  _c $st "every image the script loads is present${missing:+ (missing:$missing)}"
+
+  # Stale assets from an earlier design. Harmless on screen, but they get
+  # baked into the initramfs and make it impossible to tell which files are
+  # actually in use.
+  local extra
+  extra="$(find "$THEME_DIR" -maxdepth 1 -name '*.png' \
+    ! -name 'title.png' ! -name 'mark.png' ! -name 'dot.png' ! -name 'dot_accent.png' \
+    -printf '%f ' 2>/dev/null || true)"
+  st=0; [[ -z "$extra" ]] || st=1
+  _c $st "no leftover images from a previous design${extra:+ ($extra)}"
+
+  # The static frame systemd-boot shows before the kernel starts. Checked
+  # for FORMAT, not just existence: systemd-boot reads uncompressed 24-bit
+  # BMP and silently draws nothing for anything else, which would look
+  # exactly like the theme being broken.
+  st=0; [[ -s "$BOOT_BMP" ]] || st=1
+  _c $st "static boot frame rendered ($BOOT_BMP)"
+  if [[ "$st" == 0 ]]; then
+    st=0
+    [[ "$(magick identify -format '%m %[bit-depth]' "$BOOT_BMP" 2>/dev/null)" == "BMP3 8" ]] || st=1
+    _c $st "boot frame is uncompressed 24-bit BMP3 ($(magick identify -format '%m %wx%h' "$BOOT_BMP" 2>/dev/null || echo unreadable))"
+  fi
+
+  # If a UKI preset still points at the distro bitmap, the Arch logo will
+  # bookend the splash however good the theme is.
+  if [[ -d "$PRESET_DIR" ]]; then
+    local stale=0 p
+    for p in "$PRESET_DIR"/*.preset; do
+      [[ -f "$p" ]] || continue
+      sudo grep -qE '^[[:space:]]*[a-z_]+_uki=' "$p" || continue
+      sudo grep -q -- "--splash $BOOT_BMP" "$p" || stale=1
+    done
+    _c $stale "UKI presets point at our boot frame, not the distro logo"
+  fi
+
+  st=0; sudo test -d /boot || st=1
+  _c $st "/boot present"
+
+  # The recovery path. Without a verbose fallback entry, a splash that
+  # hangs leaves nothing to boot into that shows why.
+  esp="$(sudo bootctl --print-esp-path 2>/dev/null || echo /boot)"
+  st=0; sudo test -f "$esp/loader/entries/arch-lts.conf" || st=1
+  _c $st "verbose LTS fallback entry exists (recovery path)"
+  if [[ "$st" == 0 ]]; then
+    st=0
+    sudo grep -qE '^options .*(quiet|splash)' "$esp/loader/entries/arch-lts.conf" && st=1
+    _c $st "fallback entry is NOT splashed"
+  fi
+
+  st=0; sudo test -f "$esp/vmlinuz-linux-lts" || st=1
+  _c $st "LTS kernel present on the ESP"
+
+  echo
+  if (( fail )); then
+    printf '%s✗ not safe to enable — fix the above%s\n' "$r" "$o"
+    return 1
+  fi
+  printf '%s✓ all pre-flight checks passed%s\n' "$g" "$o"
+  printf '%sremaining risk: plymouth cannot be fully proven without a reboot.%s\n' "$d" "$o"
+  printf '%sIf the splash misbehaves, pick the LTS entry at the menu -- it stays verbose.%s\n' "$d" "$o"
+}
+
+# ── deferred sync ───────────────────────────────────────────────────
+# `boot-splash autosync` is what theme-apply calls. It waits, then syncs
+# only if the boot screen is still out of date and no newer theme switch
+# has superseded it.
+#
+# Why deferred rather than immediate: sync reruns mkinitcpio, which is
+# about a minute of CPU. Switching themes is something you do repeatedly
+# while deciding, and paying a minute per switch -- five times over, for
+# four results nobody will ever boot into -- is worse than the problem it
+# solves. So: last write wins, once you have stopped.
+#
+# The debounce is a token file. Every call writes a new random token and
+# then sleeps; on waking, a call that no longer owns the token knows a
+# later one is already waiting and exits. No timers, no daemon, no state to
+# get wedged.
+#
+# What this deliberately does NOT do is survive the session. The waiting
+# call is a backgrounded child of theme-apply and its intent lives only in
+# that `sleep` -- a logout, a preemption kill, or a reboot inside the
+# window takes it with them and the sync is simply lost, silently. See
+# do_catchup for why that is not a rare corner and what closes it.
+AUTOSYNC_TOKEN="${XDG_RUNTIME_DIR:-/tmp}/boot-splash-autosync.token"
+AUTOSYNC_LOCK="${XDG_RUNTIME_DIR:-/tmp}/boot-splash-autosync.lock"
+AUTOSYNC_DELAY="${BOOT_SPLASH_AUTOSYNC_DELAY:-300}"
+# Login-time catch-up waits far less: the debounce exists to absorb a
+# burst of theme picks, and by the next login the picking is long over.
+# It is not zero only so it lands after the rest of autostart, rather than
+# putting a minute of mkinitcpio up against the desktop coming up.
+CATCHUP_DELAY="${BOOT_SPLASH_CATCHUP_DELAY:-90}"
+
+do_autosync() {
+  local delay="${1:-$AUTOSYNC_DELAY}"
+
+  # Opt-out, for anyone who would rather run sync by hand.
+  [[ "${BOOT_SPLASH_AUTOSYNC:-1}" == 0 ]] && { say "autosync disabled"; return 0; }
+
+  # Nothing to sync into.
+  grep -q '^HOOKS=.*plymouth' "$MKINITCPIO" 2>/dev/null || return 0
+
+  # mkinitcpio needs root. A password prompt from a backgrounded job would
+  # block forever against a terminal that is not there, so require the
+  # passwordless path or do nothing at all.
+  sudo -n true 2>/dev/null || {
+    warn "autosync needs passwordless sudo — run 'boot-splash sync' by hand"
+    return 0
+  }
+
+  local token; token="$RANDOM$RANDOM$$"
+  printf '%s\n' "$token" > "$AUTOSYNC_TOKEN"
+  sleep "$delay"
+
+  # Superseded: a later theme switch is already waiting its own delay.
+  [[ "$(cat "$AUTOSYNC_TOKEN" 2>/dev/null)" == "$token" ]] || return 0
+
+  # Someone ran sync by hand in the meantime, or the theme went back to
+  # what the initramfs already holds.
+  read_palette
+  local want="$USER|$BG|$FG|$ACCENT" have
+  have="$(sudo cat "$STAMP" 2>/dev/null || echo '')"
+  [[ "$want" == "$have" ]] && return 0
+
+  # One at a time. Two mkinitcpio runs writing the same UKI would race for
+  # the ESP, and the loser can leave a truncated kernel image -- which is
+  # an unbootable machine, not a cosmetic problem.
+  (
+    flock -n 9 || { say "another sync is already running"; exit 0; }
+    say "boot screen is out of date — syncing in the background"
+    if do_sync >/dev/null 2>&1; then
+      notify-send -a "boot-splash" "Boot screen updated" \
+        "The splash now matches your theme." 2>/dev/null || true
+    else
+      # Loud, because a failed sync leaves the initramfs holding the OLD
+      # splash and nothing else would ever say so.
+      notify-send -u critical -a "boot-splash" "Boot screen sync FAILED" \
+        "Run 'boot-splash sync' to see why." 2>/dev/null || true
+    fi
+  ) 9>"$AUTOSYNC_LOCK"
+}
+
+# ── login catch-up ──────────────────────────────────────────────────
+# `boot-splash catchup` is what autostart.sh calls, once per login.
+#
+# autosync alone is not enough, because it carries its intent in a `sleep`
+# inside a backgrounded child of theme-apply and nowhere else. Anything
+# that ends the session inside the debounce window destroys that intent
+# with no record: a logout, theme-apply's own process-GROUP preemption
+# kill, and above all a reboot.
+#
+# The reboot is not the unlikely case, it is the LIKELY one. You change
+# the theme, and then you reboot to look at the new boot screen -- which
+# lands inside the 300s window by construction. That is exactly how this
+# machine spent two days booting a dracula splash under a mono-dark
+# desktop: the theme switched at 01:56, the reboot came at 01:57, and the
+# only thing that knew a sync was owed was a sleeping shell that went with
+# it. `generate` had already written the right assets to /usr/share, so
+# every file on disk looked correct; only .built-stamp -- which records
+# what the INITRAMFS holds -- disagreed, and nothing was reading it.
+#
+# The fix is to stop relying on the session remembering anything. The
+# drift is already fully described on disk: .built-stamp says what the
+# initramfs was built from, the palette says what the desktop wants. So
+# re-derive it at login instead of carrying it. A login that is already
+# current costs two file reads and exits; a login that is not repairs
+# itself and says so. Losing the sync now costs one login, not forever.
+do_catchup() { do_autosync "$CATCHUP_DELAY"; }
+
+# ── selftest ────────────────────────────────────────────────────────
+# Render the name across a matrix of awkward inputs and assert every one
+# fits on screen. No root, no install, nothing written outside a tempdir --
+# which is what lets validate.sh run it on every commit.
+#
+# The matrix is not hypothetical. Every entry is a shape a real account has:
+# one character, nine, a dash, a dot, an underscore, digits, two words,
+# three words, an accented letter, and a name long enough that block art
+# cannot hold it. Three of these were BROKEN before the matrix existed --
+# accented characters were silently dropped, long names were sized off the
+# wrong row of the art, and multi-word names were run onto one illegible
+# line. Nothing would have caught a regression in any of them.
+do_selftest() {
+  need magick
+  need python3
+  [[ -f "$SRC_DIR/ansi-shadow.txt" ]] || die "glyph table missing at $SRC_DIR"
+
+  # Same resolution do_generate does. Without it the matrix ran against the
+  # hardcoded preferred font paths, so on any machine that lacks them every
+  # single name reported "render failed" -- a selftest that fails for a
+  # reason it does not name is worse than no selftest.
+  resolve_fonts
+  screen_geometry
+  read_palette
+
+  local out tmp fail=0 name w h mode
+  tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+  out="$tmp/t.png"
+
+  # Same bounds render_title enforces, written out again on purpose: a test
+  # that asks the code under test what "correct" means cannot fail.
+  local maxw=$(( SCREEN_W * 66 / 100 ))
+  local maxh=$(( SCREEN_H * 40 / 100 ))
+
+  say "name matrix at ${SCREEN_W}x${SCREEN_H} (bounds ${maxw}x${maxh})"
+  local -a matrix=(
+    "X"                          # single character
+    "Ati"                        # the common case
+    "Alexandra"                  # nine characters, one word
+    "Jean-Luc"                   # dash
+    "ati.attia"                  # dot
+    "ati_attia"                  # underscore
+    "User2024"                   # digits
+    "Ati Attia"                  # two words -> stacked
+    "Mohamed Attia Ibrahim"      # three words -> stacked
+    "José"                       # glyph the block face lacks -> font
+    "averyveryverylongusername"  # too long for blocks -> font
+  )
+
+  for name in "${matrix[@]}"; do
+    TITLE_MODE=""
+    if ! render_title "$name" "$out" >/dev/null 2>&1; then
+      printf '  %s✗%s %-26s render failed\n' "$r" "$o" "$name"; fail=1; continue
+    fi
+    w="$(magick identify -format '%w' "$out" 2>/dev/null || echo 0)"
+    h="$(magick identify -format '%h' "$out" 2>/dev/null || echo 0)"
+    mode="${TITLE_MODE:-?}"
+    if (( w < 2 || h < 2 )); then
+      printf '  %s✗%s %-26s empty render\n' "$r" "$o" "$name"; fail=1
+    elif (( w > maxw || h > maxh )); then
+      printf '  %s✗%s %-26s %sx%s overflows\n' "$r" "$o" "$name" "$w" "$h"; fail=1
+    else
+      printf '  %s✓%s %-26s %5sx%-5s %s\n' "$g" "$o" "$name" "$w" "$h" "$mode"
+    fi
+  done
+
+  echo
+  if (( fail )); then
+    printf '%s✗ selftest failed%s\n' "$r" "$o"
+    return 1
+  fi
+  printf '%s✓ every name fits%s\n' "$g" "$o"
+}
+
+# ── enable / disable ────────────────────────────────────────────────
+do_enable() {
+  need mkinitcpio
+  pacman -Qq plymouth >/dev/null 2>&1 || die "plymouth not installed (modules/splash.yaml)"
+  do_generate
+  # Before the check, not after: one of the checks is "the UKI presets point
+  # at our boot frame", and doing this afterwards would make enable refuse
+  # to run on the very condition it exists to create.
+  patch_uki_splash
+  # Refuse rather than half-apply: a failed check here means a black screen
+  # at boot, and the cost of finding out then is a machine you cannot see.
+  do_check || die "pre-flight checks failed — nothing has been changed"
+
+  # 1. mkinitcpio hook. Must sit directly after `udev` (or `systemd`):
+  #    plymouth needs the device manager running to find the framebuffer,
+  #    and must come before `autodetect` trims modules it depends on.
+  local hooks
+  hooks="$(grep '^HOOKS=' "$MKINITCPIO")"
+  if grep -q 'plymouth' <<<"$hooks"; then
+    say "plymouth hook already present"
+  else
+    sudo cp "$MKINITCPIO" "$MKINITCPIO.bak-boot-splash"
+    sudo sed -i 's/^\(HOOKS=([^)]*\)\budev\b/\1udev plymouth/' "$MKINITCPIO"
+    grep '^HOOKS=' "$MKINITCPIO" | grep -q plymouth \
+      || die "could not add the plymouth hook — restore $MKINITCPIO.bak-boot-splash"
+    ok "plymouth hook added (backup: $MKINITCPIO.bak-boot-splash)"
+  fi
+
+  # 2. Kernel cmdline. `quiet` silences the log, `splash` tells plymouth to
+  #    draw. Without BOTH you get either a splash fighting kernel text, or
+  #    silence with no splash at all.
+  if [[ -f "$KCMDLINE" ]]; then
+    local cur; cur="$(sudo cat "$KCMDLINE")"
+    local add=""
+    grep -qw quiet  <<<"$cur" || add+=" quiet"
+    grep -qw splash <<<"$cur" || add+=" splash"
+    if [[ -n "$add" ]]; then
+      sudo cp "$KCMDLINE" "$KCMDLINE.bak-boot-splash"
+      printf '%s%s\n' "$cur" "$add" | sudo tee "$KCMDLINE" >/dev/null
+      ok "cmdline now:$(printf '%s' " $(sudo cat "$KCMDLINE")")"
+    else
+      say "cmdline already has quiet + splash"
+    fi
+  else
+    warn "$KCMDLINE not found — this system may not build a UKI."
+    warn "Add 'quiet splash' to your bootloader's options line by hand."
+  fi
+
+  sudo plymouth-set-default-theme "$THEME_NAME"
+
+  # 3. Rebuild. -P does every preset, which includes the UKI.
+  say "rebuilding initramfs (this takes a minute)"
+  sudo mkinitcpio -P || die "mkinitcpio failed — splash NOT active, nothing to recover"
+  write_stamp
+
+  ok "enabled. The LTS entries stay verbose on purpose:"
+  ok "if a splashed boot ever hangs, pick 'Arch Linux (LTS fallback)' to see why."
+}
+
+do_disable() {
+  say "reversing"
+  if [[ -f "$MKINITCPIO.bak-boot-splash" ]]; then
+    sudo mv "$MKINITCPIO.bak-boot-splash" "$MKINITCPIO"
+    ok "mkinitcpio.conf restored"
+  else
+    sudo sed -i 's/^\(HOOKS=([^)]*\)[[:space:]]*\bplymouth\b/\1/' "$MKINITCPIO"
+    ok "plymouth hook removed"
+  fi
+  if [[ -f "$KCMDLINE.bak-boot-splash" ]]; then
+    sudo mv "$KCMDLINE.bak-boot-splash" "$KCMDLINE"
+    ok "kernel cmdline restored"
+  elif [[ -f "$KCMDLINE" ]]; then
+    sudo sed -i 's/[[:space:]]*\bquiet\b//g; s/[[:space:]]*\bsplash\b//g' "$KCMDLINE"
+    ok "quiet/splash removed from cmdline"
+  fi
+  # Restore the preset backups, so the UKI goes back to whatever splash the
+  # distro shipped. Leaving our bitmap baked in would mean `disable` still
+  # left a boot screen on the machine.
+  local p
+  for p in "$PRESET_DIR"/*.preset.bak-boot-splash; do
+    [[ -f "$p" ]] || continue
+    sudo mv "$p" "${p%.bak-boot-splash}"
+    ok "$(basename "${p%.bak-boot-splash}") restored"
+  done
+  say "rebuilding initramfs"
+  sudo mkinitcpio -P || warn "mkinitcpio failed — check before rebooting"
+  ok "disabled"
+}
+
+write_stamp() {
+  read_palette
+  printf '%s|%s|%s|%s\n' "$USER" "$BG" "$FG" "$ACCENT" | sudo tee "$STAMP" >/dev/null
+}
+
+# Push the current theme into the initramfs. Separate from `generate`
+# because it is the slow half, and because rebuilding the initramfs is not
+# something a colour change should do behind your back.
+do_sync() {
+  grep -q '^HOOKS=.*plymouth' "$MKINITCPIO" 2>/dev/null \
+    || die "splash is not enabled — nothing to sync (see: boot-splash enable)"
+  do_generate
+  # Re-asserted on every sync, not just at enable: a pacman upgrade of the
+  # linux package restores Arch's preset and with it Arch's splash bitmap.
+  patch_uki_splash
+  say "rebuilding initramfs so the boot screen matches the current theme"
+  sudo mkinitcpio -P || die "mkinitcpio failed"
+  write_stamp
+  ok "initramfs now carries the current splash"
+}
+
+do_status() {
+  printf 'plymouth pkg : %s\n' "$(pacman -Qq plymouth 2>/dev/null || echo 'not installed')"
+  printf 'theme dir    : %s\n' "$( [[ -d "$THEME_DIR" ]] && echo "$THEME_DIR" || echo 'not generated' )"
+  printf 'default theme: %s\n' "$(plymouth-set-default-theme 2>/dev/null || echo '-')"
+  printf 'mkinitcpio   : %s\n' "$(grep '^HOOKS=' "$MKINITCPIO" | grep -q plymouth && echo 'plymouth hook present' || echo 'no plymouth hook')"
+  printf 'cmdline      : %s\n' "$(sudo cat "$KCMDLINE" 2>/dev/null || cat /proc/cmdline)"
+  # The frame before and after plymouth. Reported separately from the theme
+  # because it can go stale on its own: a pacman upgrade of the linux
+  # package restores Arch's preset and the distro logo comes back.
+  printf 'boot frame   : %s\n' \
+    "$( [[ -s "$BOOT_BMP" ]] && magick identify -format '%m %wx%h' "$BOOT_BMP" 2>/dev/null || echo 'not rendered' )"
+  local p stale=0 seen=0
+  for p in "$PRESET_DIR"/*.preset; do
+    [[ -f "$p" ]] || continue
+    sudo grep -qE '^[[:space:]]*[a-z_]+_uki=' "$p" || continue
+    seen=1
+    sudo grep -q -- "--splash $BOOT_BMP" "$p" || stale=1
+  done
+  if (( ! seen )); then
+    printf 'uki splash   : %s\n' 'no UKI presets on this system'
+  elif (( stale )); then
+    printf 'uki splash   : %sdistro logo still baked in — run: boot-splash sync%s\n' "$y" "$o"
+  else
+    printf 'uki splash   : %sours%s\n' "$g" "$o"
+  fi
+  read_palette
+  local want="$USER|$BG|$FG|$ACCENT" have
+  have="$(sudo cat "$STAMP" 2>/dev/null || echo '(never synced)')"
+  printf 'in initramfs : %s\n' "$have"
+  printf 'current theme: %s\n' "$want"
+  if [[ "$want" == "$have" ]]; then
+    printf 'sync         : %sup to date%s\n' "$g" "$o"
+  else
+    printf 'sync         : %sout of date — run: boot-splash sync%s\n' "$y" "$o"
+  fi
+}
+
+case "${1:-status}" in
+  generate) do_generate ;;
+  preview)  do_preview "$@" ;;
+  check)    do_check ;;
+  selftest) do_selftest ;;
+  autosync) do_autosync ;;
+  catchup)  do_catchup ;;
+  sync)     do_sync ;;
+  enable)   do_enable ;;
+  disable)  do_disable ;;
+  status)   do_status ;;
+  --help|-h) sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command '${1}' (generate|preview|check|selftest|sync|autosync|catchup|enable|disable|status)" ;;
+esac

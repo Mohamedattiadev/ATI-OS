@@ -30,6 +30,48 @@ def _mix(hex_a, hex_b, t):
     return "#{:02x}{:02x}{:02x}".format(*m)
 
 
+def _relative_luminance(hex_c):
+    """WCAG relative luminance of a #rrggbb colour."""
+    def channel(i):
+        c = int(hex_c.lstrip("#")[i:i + 2], 16) / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = channel(0), channel(2), channel(4)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast_ratio(fg, bg):
+    """WCAG contrast ratio between two colours, 1.0 (same) .. 21.0 (b/w)."""
+    a, b = _relative_luminance(fg), _relative_luminance(bg)
+    hi, lo = max(a, b), min(a, b)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def ensure_contrast(colour, on, toward, minimum=3.0):
+    """Nudge `colour` toward `toward` until it clears `minimum` against `on`.
+
+    Themes are chosen for how they look in a terminal, where text sits on
+    the background. The popups paint text on *cards* -- surfaces blended a
+    little way toward the foreground -- which eats contrast that was already
+    thin: `muted` lands under 3:1 against the card on every preset
+    theme-apply ships, and nord's red and rose-pine's green go with it.
+
+    `toward` should be the palette's foreground: mixing toward it always
+    moves away from the surface, so this works for light themes
+    (mono-light) exactly as it does for dark ones. Returns `colour`
+    untouched when it already passes, so themes with healthy contrast keep
+    their exact accents.
+    """
+    if contrast_ratio(colour, on) >= minimum:
+        return colour
+
+    for step in range(1, 21):
+        candidate = _mix(colour, toward, step / 20)
+        if contrast_ratio(candidate, on) >= minimum:
+            return candidate
+    return toward
+
+
 def _from_preset_json():
     """Preferred source: ~/.cache/qtile/current_palette.json dumped by
     theme-apply on every preset AND wal apply. Guarantees the popup

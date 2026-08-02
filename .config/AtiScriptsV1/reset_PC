@@ -20,7 +20,7 @@ APPS=(
   code zed obsidian
   telegram-desktop discord anki
   vlc mpv thunderbird
-  pcmanfm nautilus
+  pcmanfm-qt pcmanfm nautilus
 )
 
 for app in "${APPS[@]}"; do

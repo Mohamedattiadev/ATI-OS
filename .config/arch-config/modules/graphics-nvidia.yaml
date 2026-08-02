@@ -1,0 +1,33 @@
+description: GPU vendor set -- NVIDIA (selected at runtime by wizard step_gpu)
+
+# NOT in enabled_modules -- see graphics-intel.yaml for why.
+#
+# DKMS, not the prebuilt `nvidia` package, because base.yaml declares
+# linux-lts as a rescue kernel. The prebuilt module is built against
+# `linux` only, so booting the LTS rescue entry would come up with no
+# NVIDIA driver at all -- i.e. the fallback you installed for emergencies
+# fails in exactly the emergency. DKMS builds against every installed
+# kernel, which is the whole point of having the second one.
+
+packages:
+  - nvidia-open-dkms     # Turing (RTX 20xx / GTX 16xx, 2018) and newer.
+                         # step_gpu warns if the detected card is older and
+                         # tells you to swap this for nvidia-dkms.
+  - nvidia-utils         # libGL / libEGL -- picom's glx backend links here
+  - nvidia-settings
+  - libva-nvidia-driver  # VA-API bridge over NVDEC, for mpv
+  - linux-headers        # DKMS build deps. linux-lts-headers is already in
+                         # base.yaml; the mainline one was never declared
+                         # because base.yaml has `linux` commented out.
+
+exclude: []
+conflicts: []
+
+# Note on picom: NVIDIA's proprietary GLX is the one stack where picom's
+# `use-damage` optimisation produces visible smearing. step_gpu drops a
+# vendor override into picom's config directory to disable it, so the
+# animations look the same here as they do on Intel and AMD.
+#
+# Nouveau is not offered. It cannot reclock most cards, so the GPU stays
+# pinned at its lowest power state and the compositor animations this repo
+# exists for run visibly slower than on the proprietary driver.

@@ -1,0 +1,59 @@
+description: Optional extras -- NOT needed for the desktop to work
+
+# This module is deliberately absent from `enabled_modules` in
+# hosts/*.yaml, so `dcli sync` never touches it. It is installed only by
+# the wizard's opt-in `dcli-sync-extra` module:
+#
+#   ./wizard.sh --only=dcli-sync-extra
+#
+# The rule for what belongs here: if leaving it out still gives you a
+# booting machine with qtile, the themes, the fonts and the widgets all
+# correct, it is optional. Everything below fails that test only for
+# work you might not do on a given machine -- containers, Java, printing,
+# VMs. A fresh laptop should reach a usable desktop without waiting on
+# any of it.
+
+packages:
+  # --- containers ---
+  - docker
+  - docker-buildx
+  - docker-compose
+
+  # --- git/dev extras beyond what dev.yaml already installs ---
+  - github-cli
+  - git-lfs
+  - clang            # base-devel's gcc already covers nvim-treesitter builds
+  - jdk17-openjdk    # fish sets JAVA_HOME to this path; harmless if absent
+  - uv
+  - ruff
+
+  # --- virtualisation. vm-test.sh needs both; nothing else does. ---
+  - qemu-desktop
+  - edk2-ovmf        # UEFI firmware for qemu -- required by qemu-system-x86
+
+  # --- printing. Pure dead weight on a machine with no printer. ---
+  - cups
+  - cups-pk-helper
+  - system-config-printer
+
+  # --- diagnostics ---
+  - xorg-server-xephyr  # nested X server: test a qtile config without
+                        # restarting the running session
+  - mesa-utils          # glxinfo/glxgears -- what you reach for when picom
+                        # animations misbehave on unfamiliar graphics
+
+# Deliberately NOT declared anywhere, though present on the ati host:
+#
+#   yay-bin-debug   debug symbols, pulled in by a yay-bin build. Junk.
+#   spirv-headers   nothing requires them (pactree -r is empty); leftovers
+#   vulkan-headers  from a build that has since gone away.
+#   pcmanfm         superseded by pcmanfm-qt, which apps.yaml declares. Still
+#                   installed on the ati host; nothing launches it.
+#   power-profiles-daemon
+#                   conflicts with auto-cpufreq (system-tools.yaml). Both
+#                   are enabled on the ati host right now and both drive
+#                   the CPU governor; auto-cpufreq is the declared choice,
+#                   so PPD must be disabled rather than reproduced.
+
+exclude: []
+conflicts: []

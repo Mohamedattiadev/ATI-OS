@@ -61,11 +61,15 @@ BEAM_SIZE="${WHISPER_BEAM_SIZE:-3}"
 # few hundred ms instead of up to 2s.
 POLL_MS="${WHISPER_POLL_MS:-800}"
 VAD_TAIL_MS="${WHISPER_VAD_TAIL_MS:-350}"
-TMPDIR="/tmp/voice_dictate_live"
-PIDFILE="$TMPDIR/stream.pid"
+# Deliberately NOT named TMPDIR, and per-user -- same two reasons
+# voice_dictate documents: assigning to an already-exported variable keeps
+# the export, so whisper-stream inherited this as its scratch directory,
+# and a fixed path in shared /tmp cannot be created by a second account.
+WORK_DIR="${XDG_RUNTIME_DIR:-/tmp}/voice_dictate_live-$(id -u)"
+PIDFILE="$WORK_DIR/stream.pid"
 NOTIFY_TAG="voice_dictate_live"
 
-mkdir -p "$TMPDIR"
+mkdir -p "$WORK_DIR"
 
 pill() {
   local urgency="$1" summary="$2" body="${3:-}"

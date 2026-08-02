@@ -7,9 +7,27 @@
 (defvar onb_open false)
 (defvar onb_step 0)
 
+;; Palette for inline pango markup.
+;;
+;; SCSS classes cover whole widgets, but the onboarding pages colour
+;; individual words inside a label -- and a <span foreground="..."> can
+;; only take a literal, so those hex values used to be hardcoded doomone
+;; and stayed doomone on all 21 palettes. theme-apply dumps the active
+;; 9-slot palette here for exactly this kind of consumer; poll it and
+;; interpolate, so the spans track the theme like everything else.
+;;
+;; The interval is a backstop only: theme-apply reloads (or restarts and
+;; reopens) eww after writing, which re-runs this poll immediately.
+;; Fallback is doomone, matching theme-apply's own default mode.
+(defpoll palette
+  :interval "30m"
+  :initial '{"fg":"#dcdfe4","red":"#ff6c6b","green":"#98be65","yellow":"#ecbe7b","blue":"#51afef","purple":"#c678dd","cyan":"#46d9ff"}'
+  `cat ~/.cache/qtile/current_palette.json 2>/dev/null || echo '{"fg":"#dcdfe4","red":"#ff6c6b","green":"#98be65","yellow":"#ecbe7b","blue":"#51afef","purple":"#c678dd","cyan":"#46d9ff"}'`)
+
 ;; ============================
 ;; Onboarding windows
 ;; ============================
+(include "onboarding/steps.yuck")
 (include "onboarding/welcome.yuck")
 (include "onboarding/bar_tooltip.yuck")
 (include "onboarding/workspaces.yuck")

@@ -50,6 +50,8 @@ function restoremode
                 end
             case org.gnome.nautilus
                 nautilus & disown
+            case pcmanfm-qt
+                pcmanfm-qt & disown
             case pcmanfm
                 pcmanfm & disown
             case ticktick

@@ -1,6 +1,13 @@
 configuration {
   modi: "window,drun,ssh,combi";
-  font: "hack 10";
+  // Was "hack 10", which is not an installed family and is not declared in
+  // arch-config/modules/fonts.yaml either; fc-match answers Noto Sans CJK KR.
+  // It has been invisible because every theme under themes/ reaches
+  // base.rasi, whose `* { font: }` overrides this one. That override is the
+  // only reason it never showed, so the moment a menu is launched with a
+  // theme that sets no font, the look would have depended on the installed
+  // font set. Same family base.rasi names, for the same reason it names it.
+  font: "Noto Sans CJK KR 10";
   combi-modi: "window,drun,ssh";
 
   kb-accept-entry: "Return";

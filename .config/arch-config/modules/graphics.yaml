@@ -1,26 +1,26 @@
-description: Graphics drivers and acceleration (Intel only)
+description: Graphics stack -- vendor-NEUTRAL base only
+
+# Everything here is installed on every machine regardless of GPU.
+#
+# The vendor-specific half is NOT here, and must not be: this file used to
+# hardcode the Intel driver set (vulkan-intel, intel-media-driver,
+# libva-intel-driver) with AMD commented out below it. On an AMD or NVIDIA
+# machine that installed Intel drivers and nothing for the actual GPU, so
+# GLX fell back to llvmpipe software rendering -- and picom.conf asks for
+# `backend = "glx"` with `vsync = true`. The visible result is not "a
+# missing package": it is the whole desktop animating at single-digit FPS,
+# or picom failing to start at all and every window losing its rounded
+# corners, shadows and transitions.
+#
+# The vendor half now lives in graphics-{intel,amd,nvidia}.yaml and is
+# chosen at install time by the wizard's `gpu` module, which reads the PCI
+# IDs of the machine it is actually running on. See step_gpu in wizard.sh.
 
 packages:
-  # Detected: Intel HD Graphics 520 (Skylake GT2)
-  - mesa
-  - vulkan-intel
-  - intel-media-driver
-  - intel-gpu-tools
-  - libva-intel-driver
-  - libva-utils
+  - mesa                 # OpenGL + the DRI drivers for Intel and AMD both
+  - vulkan-icd-loader    # dispatches to whichever vulkan-* driver is present
+  - libva                # VA-API frontend; the vendor backend is separate
+  - libva-utils          # vainfo -- verifies acceleration is actually live
 
 exclude: []
 conflicts: []
-
-# description: Graphics drivers and acceleration (AMD)
-#
-# packages:
-#   - vulkan-radeon
-#   - mesa
-#   - libva
-#   - libva-mesa-driver
-#   - mesa-vdpau
-#   - radeontop
-#
-# exclude: []
-# conflicts: []

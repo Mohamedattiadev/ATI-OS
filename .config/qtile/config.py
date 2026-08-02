@@ -37,7 +37,7 @@ import sys
 import time
 import threading
 import weakref
-from libqtile import bar, hook, layout, qtile, widget
+from libqtile import bar, hook, layout, pangocffi, qtile, widget
 from qtile_extras.widget.decorations import RectDecoration
 from qtile_extras import widget as ewidget
 from qtile_extras.widget.mixins import TooltipMixin
@@ -69,6 +69,41 @@ from libqtile.config import (
 )
 from libqtile.lazy import lazy
 
+
+# ---------------------------------------------------------------------
+# UI scale
+# ---------------------------------------------------------------------
+# Every pixel dimension below -- font sizes, bar heights, margins, icon
+# sizes -- was tuned on a 1366x768 14" panel at ~125 DPI. On a 15" 4K
+# laptop that same config renders a sliver of a bar with unreadable text,
+# and nothing warns you: the desktop just looks wrong on the one axis
+# these dotfiles are supposed to keep identical across machines.
+#
+# `ui-scale` (AtiScriptsV1) computes a factor from the primary display's
+# real DPI and writes it here. It is per-machine and untracked, so the
+# repo stays identical while the rendering adapts. A missing file means
+# 1.0, which is exactly the reference machine's behaviour -- so qtile
+# still starts correctly if ui-scale has never been run.
+def _load_ui_scale():
+    try:
+        with open(os.path.expanduser("~/.cache/qtile/ui_scale")) as f:
+            v = float(f.read().strip())
+        # Refuse absurd values rather than rendering a 40px bar as 4px and
+        # leaving the user with no way to read the menu that fixes it.
+        return v if 0.5 <= v <= 4.0 else 1.0
+    except (OSError, ValueError):
+        return 1.0
+
+
+UI_SCALE = _load_ui_scale()
+
+
+def _s(px):
+    """Scale a pixel dimension. Floor of 1 so nothing rounds away to zero."""
+    return max(1, int(round(px * UI_SCALE)))
+
+
+from popups import VimCheatsheet, FishCheatsheet, QtileCheatsheet
 from popups.VimCheatsheet import toggle_vim_cheatsheet, close_vim_cheatsheet
 from popups.FishCheatsheet import (
     toggle_fish_kitty_cheatsheet,
@@ -86,39 +121,13 @@ from popups.WallpaperPopup import (
     close_wallpaper_picker,
 )
 
-# NOTE: Bluetooth popup will be used later
-# from popups.BluetoothPopup import (
-#     show as show_bluetooth_popup,
-#     close as close_bluetooth_popup,
-#     move as bluetooth_move,
-#     toggle_device as bluetooth_toggle,
-#     request_disconnect,
-#     confirm_disconnect,
-#     reload_devices,
-# )
+from popups import BluetoothPopup
+from popups import AudioPopup
+from popups import DisplayPopup
 
 
-# NOTE : Audio popup will be used later
-# from popups.AudioPopup import (
-#     show as show_audio_popup,
-#     close as close_audio_popup,
-#     move as audio_move,
-#     left as audio_left,
-#     right as audio_right,
-#     select as audio_select,
-#     refresh as audio_refresh,
-# )
-
-
-# NOTE : WiFi popup will be used later
-# from popups.WifiPopup import (
-#     show as show_wifi_popup,
-#     close as close_wifi_popup,
-#     move_vertical as wifi_move,
-#     move_horizontal as wifi_move_col,
-#     select as wifi_select,
-#     manual_refresh as wifi_manual_refresh,
-# )
+from popups import WifiPopup
+from popups import WifiQR
 
 # NOTE: updates popup  will be used later
 # from popups.UpdatesPopup import (
@@ -200,7 +209,35 @@ colorsW = [
 
 ARCH_ICON_MAIN = "󰕰"
 
-DEFAULT_CHIP_COLOR = colorsW[2]
+
+def _chip_plate(bg_hex):
+    """The plate colour every chip sits on, derived from the active theme.
+
+    This was colorsW[2] -- "#1c1f24", a literal from the static doom-one
+    palette baked into this file -- so it stayed the same on all 22 themes.
+    Invisible on the dark ones, and plainly wrong on mono-light, where
+    near-black chips sat on a white desktop.
+
+    Derived rather than pointed at colors[2], because colors[2] is #000000 on
+    every dark theme here: correct in the sense that it tracks, but it would
+    turn every chip pure black and change how the bar looks on the themes
+    actually in use. Darkening the theme's own background instead keeps the
+    plate a shade below whatever the desktop is, which is the relationship
+    the hardcoded value had.
+
+    Two factors, chosen by lightness: 30% on a dark background lands gruvbox
+    on #1c1c1c, indistinguishable from the #1c1f24 it replaces, while the
+    same 30% on white would give mid-grey. 12% on a light background lands
+    mono-light on #e0e0e0 -- which is exactly what that theme's own alt slot
+    holds, so the derivation agrees with the palette where the palette has an
+    opinion.
+    """
+    r, g, b = (int(bg_hex.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    light = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.5
+    f = 0.88 if light else 0.70
+    return "#{:02x}{:02x}{:02x}".format(*(round(c * f) for c in (r, g, b)))
+
+
 
 os.environ["GTK_IM_MODULE"] = "none"
 os.environ["QT_IM_MODULE"] = "none"
@@ -211,7 +248,16 @@ mod2 = "mod1"  # Secondary mod = ALT
 
 # homerow client. A shell script that pokes the resident daemon over a socket,
 # so spawning it costs ~12ms rather than a Python interpreter start.
-HOMEROW = os.path.expanduser(
+#
+# PATH first. This was only the checkout path below, which lives outside this
+# repo -- so on a machine that keeps the project anywhere else, or installs the
+# client into ~/.local/bin like every other tool here, all six alt+ bindings
+# and the whole Hint-Mode chord spawned a path that does not exist. lazy.spawn
+# does not surface that: the key just does nothing. Same
+# shutil.which()-then-fall-back shape _rescale_then_restart uses for ui-scale.
+import shutil as _shutil  # noqa: E402  (kept next to its only use)
+
+HOMEROW = _shutil.which("homerow-hint") or os.path.expanduser(
     "~/Attia-Pro/Projects/Homerow_replika/homerow-hint"
 )
 
@@ -232,6 +278,7 @@ HOMEROW_MODE_LABELS = {
     "scroll": "   SCROLL",
     "search": "   SEARCH",
     "caret": "   CARET",
+    "caret-search": "   CARET/",
 }
 
 
@@ -280,6 +327,12 @@ PASSTHROUGH_CONFIRM_CHORD = None
 FLOAT_STATES = {}
 
 colors: list[list[str]] = color_schemes.active_palette()
+
+# Must follow `colors`: _chip_plate() reads the active background, and this
+# module previously set DEFAULT_CHIP_COLOR eighty lines earlier from a
+# literal, where no palette existed yet.
+_plate = _chip_plate(colors[0][0])
+DEFAULT_CHIP_COLOR = [_plate, _plate]
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -495,26 +548,69 @@ def apply_palette_live():
 # colors = colors.TomorrowNight
 
 
+class FittedChord(ewidget.Chord):
+    """Chord widget that re-fits the bar BEFORE it repaints it.
+
+    Entering a chord makes this widget go from zero width to the width of a
+    whole mode legend -- 225px for Rofi-Mode -- and _TextBox.update() reacts
+    by calling bar.draw() immediately. The pass that shrinks the TaskList to
+    make room is driven off the enter_chord hook, and hooks run to
+    completion before that draw, so for one frame the bar was laid out with
+    the new chip and the old TaskList and the right-hand chips sat past the
+    edge of the screen.
+
+    Caught on camera rather than guessed at: sampling the bar at 29fps
+    across a chord entry, the last chip's right edge sat at x=1355 instead
+    of 1351 for two frames, then snapped back. Dropping the debounce delay
+    to 0 removed one of them; this removes the other, by doing the re-fit
+    between setting the text and asking for the repaint, so the only frame
+    that ever reaches the screen is the settled one.
+
+    Overrides update() rather than draw(): draw() runs per repaint, and the
+    width only changes when the text does.
+    """
+
+    def update(self, text):
+        if text is None:
+            text = ""
+        if self.text == text:
+            return
+        # The setter stores the text and re-lays the pango layout, so the
+        # widget's length is already the NEW one below -- but it does not
+        # draw, which is the whole point.
+        self.text = text
+        try:
+            _center_top_groupbox()
+        except Exception:
+            pass
+        if getattr(self, "bar", None):
+            self.bar.draw()
+
+
+# Indices into `colors`, the ACTIVE theme palette, not colorsW. colorsW is
+# the static doom-one set baked into this file, so every mode badge stayed
+# doom-one blue/orange/purple on all 22 themes while the rest of the bar
+# retinted around it. The index semantics line up between the two lists --
+# 3 red, 4 green, 5 orange/yellow, 6 blue, 7 purple, 8 cyan/bright -- so the
+# hue each mode was chosen for survives the move.
 CHORD_CHIP_COLORS = {
-    "Resize-Mode": colorsW[5],  # orange
-    "Rofi-Mode": colorsW[6],  # blue
-    "Media-Mode": colorsW[4],  # cyan
-    "Scratch-Mode": colorsW[8],
-    "Draw-Mode": colorsW[3],
-    "Hint-Mode": colorsW[7],
-    "Lang-Switch": colorsW[1],
-    "CheatSheet-Mode": colorsW[3],
-    "WallpaperPicker": colorsW[3],
-    "PASSTHROUGH": colorsW[8],
-    "PASSTHROUGH-CONFIRM": colorsW[1],  # urgent/warm -- it is asking to quit
-    # NOTE: Bluetooth popup will be used later
-    # "Bluetooth-Mode": colorsW[4],
-    # NOTE: Audio popup will be used later
-    # "Audio-Mode": colorsW[4],
-    # NOTE: Wifi popup will be used later
-    # "Wifi-Mode": colorsW[4],
-    # NOTE: updates popup  will be used later
-    # "Updates-Mode": colorsW[4],
+    "Resize-Mode": colors[5],  # orange
+    "Rofi-Mode": colors[6],  # blue
+    "Media-Mode": colors[8],  # cyan
+    "Scratch-Mode": colors[8],
+    "Draw-Mode": colors[3],
+    "Hint-Mode": colors[7],
+    "Lang-Switch": colors[1],
+    "CheatSheet-Mode": colors[3],
+    "WallpaperPicker": colors[3],
+    "PASSTHROUGH": colors[8],
+    "PASSTHROUGH-CONFIRM": colors[1],  # urgent/warm -- it is asking to quit
+    "Wifi-Mode": colors[6],
+    "Wifi-QR": colors[6],
+    "Bluetooth-Mode": colors[6],
+    # Purple, so audio reads as its own mode beside the blue radios.
+    "Audio-Mode": colors[7],
+    "Display-Mode": colors[6],
 }
 
 # ╔──────────────────────────────────────────╗
@@ -848,6 +944,11 @@ def _restore_layout_state():
 _WINDOW_GROUP_FILE = os.path.expanduser("~/.cache/qtile/window_group_state.json")
 _RESTORED_WIN_MAP = {}   # wid(str) -> group_name; consulted by client_new
 _RESTORED_FOCUS = {}     # group_name -> [wid, ...] focus order
+# True only for the brief window between startup_complete and the end of the
+# restore passes. _override_match_from_saved consults it; see the comment on
+# _finish_window_group_restore() for why honouring the saved map after that
+# point actively teleports NEW windows to the wrong group.
+_RESTORE_ARMED = False
 # wid(str) set that was minimized at save time. qtile's restart pickle does not
 # carry minimized state, so a reload used to un-minimize everything -- most
 # visibly the Mod+Shift+S summary, which client_managed then re-floated centre
@@ -1466,17 +1567,61 @@ def _restore_window_group_state():
         pass
 
 
+def _finish_window_group_restore():
+    """Disarm the saved map, and drop every entry that is not a live window.
+
+    THE SAVED MAP IS A RESTORE MECHANISM, NOT LIVE BOOKKEEPING, and leaving
+    it armed afterwards is a bug with a long fuse. It is loaded off disk
+    holding the PREVIOUS session's wids. The restore passes hand the windows
+    that came back to their groups; every remaining entry belongs to a window
+    that did not come back, and client_killed cannot clear those -- that hook
+    only ever fires for windows alive in THIS session.
+
+    So they sit in the map forever, armed. X11 recycles window ids, so the
+    moment a brand-new window is handed a dead one's number,
+    _override_match_from_saved teleports it -- 50ms after it maps, silently,
+    to a group chosen by a window that no longer exists.
+
+    Reproduced exactly: current group 4, a docs viewer opened and closed to
+    free its wid, that wid armed to group "9", the next viewer handed the
+    same wid -- and it opened on 9. The documentation viewer is the worst
+    affected because it is opened and closed constantly and so churns the
+    same recycled range, but nothing about this is specific to it.
+
+    Pruning alone would not be enough either: _track_window_group keeps
+    refilling the map for live windows (that is what gets saved on exit), and
+    those wids are just as reusable. The map must stop being CONSULTED for
+    new windows once the restore is over, which is what the flag does.
+    """
+    global _RESTORE_ARMED
+    _RESTORE_ARMED = False
+    try:
+        for wid_str in [k for k in _RESTORED_WIN_MAP if int(k) not in qtile.windows_map]:
+            _RESTORED_WIN_MAP.pop(wid_str, None)
+    except Exception:
+        pass
+
+
 @hook.subscribe.startup_complete
 def _init_window_group_state():
+    global _RESTORE_ARMED
     _veil_stage(0.80, "Restoring windows")
     _load_window_group_state()
+    _RESTORE_ARMED = True
     qtile.call_later(_RESTORE_PASS_1, _restore_window_group_state)
     qtile.call_later(_RESTORE_PASS_2, _restore_window_group_state)
+    # Margin over PASS_2 so a window still being adopted as that pass runs is
+    # covered; after this, new windows are genuinely new and belong wherever
+    # you opened them.
+    qtile.call_later(_RESTORE_PASS_2 + 1.0, _finish_window_group_restore)
     qtile.call_later(_VEIL_SIGNAL_DELAY, _veil_signal_done)
 
 
 @hook.subscribe.client_new
 def _override_match_from_saved(client):
+    # Only while the restore is in flight -- see _finish_window_group_restore.
+    if not _RESTORE_ARMED:
+        return
     # Runs before Match assignment completes; schedule after so we win.
     try:
         wid_str = str(client.wid)
@@ -1537,10 +1682,65 @@ def _float_and_center_sum(client):
     float_center_sum(client)
 
 
-FILE_CHOOSER_W_RATIO = 0.62
-FILE_CHOOSER_H_RATIO = 0.55
-FILE_CHOOSER_W_MIN = 700
-FILE_CHOOSER_H_MIN = 350
+# Was 0.62 x 0.55, which on this 1366x768 panel is 847x422 -- and the file
+# LIST inside it got maybe a third of that, because the chooser spends the
+# rest on the name field, the shortcut sidebar, the path bar and the
+# button row. Picking a download folder meant scrolling a six-row viewport.
+#
+# The height matters more than the width here: the sidebar is a fixed column,
+# so every pixel of height goes to the list, while extra width mostly
+# stretches the (already legible) filename column. Hence H is raised
+# proportionally further than W.
+FILE_CHOOSER_W_RATIO = 0.74
+FILE_CHOOSER_H_RATIO = 0.74
+FILE_CHOOSER_W_MIN = 820
+FILE_CHOOSER_H_MIN = 480
+
+# Documentation viewer (rofi_docs opens README/TROUBLESHOOTING/nvim in
+# `kitty --class docs-view`). Larger than the file chooser because it holds
+# prose and code, but still inset so the desktop stays visible behind it --
+# reading a doc should not feel like leaving what you were doing.
+DOCS_W_RATIO = 0.78
+DOCS_H_RATIO = 0.80
+DOCS_W_MIN = 720
+DOCS_H_MIN = 420
+
+
+@hook.subscribe.client_managed
+def _float_and_center_docs(client):
+    """Centre the documentation viewer.
+
+    float_rules already carries Match(wm_class="docs-view"), so it floats
+    on its own -- but a floating terminal maps wherever the WM last felt
+    like putting it, which for a doc you opened deliberately is usually
+    half off-screen. Same shrink-and-centre approach as the file chooser
+    above."""
+    try:
+        if (client.window.get_wm_class() or ("", ""))[0] != "docs-view":
+            return
+    except Exception:
+        return
+    try:
+        group = getattr(client, "group", None)
+        screen = group.screen if group and group.screen else None
+        if screen is None:
+            return
+        w = max(DOCS_W_MIN, int(screen.width * DOCS_W_RATIO))
+        h = max(DOCS_H_MIN, int(screen.height * DOCS_H_RATIO))
+        # Never wider or taller than the screen: DOCS_*_MIN would otherwise
+        # push the window off a small panel, which is the exact machine
+        # this repo was tuned on.
+        w = min(w, screen.width)
+        h = min(h, screen.height)
+        client._enablefloating(
+            x=screen.x + (screen.width - w) // 2,
+            y=screen.y + (screen.height - h) // 2,
+            w=w,
+            h=h,
+        )
+        client.bring_to_front()
+    except Exception:
+        pass
 
 
 def _is_gtk_file_chooser(client):
@@ -1570,6 +1770,13 @@ def _float_and_center_file_chooser(client):
             return
         w = max(FILE_CHOOSER_W_MIN, int(screen.width * FILE_CHOOSER_W_RATIO))
         h = max(FILE_CHOOSER_H_MIN, int(screen.height * FILE_CHOOSER_H_RATIO))
+        # Never larger than the screen. The docs viewer has carried this clamp
+        # since it was written; the chooser did not, and raising the minimums
+        # is exactly what makes it reachable -- on a panel narrower than
+        # FILE_CHOOSER_W_MIN the dialog would hang off the edge, taking its
+        # Cancel/Save buttons with it.
+        w = min(w, screen.width)
+        h = min(h, screen.height)
         client._enablefloating(
             x=screen.x + (screen.width - w) // 2,
             y=screen.y + (screen.height - h) // 2,
@@ -1577,6 +1784,247 @@ def _float_and_center_file_chooser(client):
             h=h,
         )
         client.bring_to_front()
+    except Exception:
+        pass
+
+
+# pinentry -- the master-password prompt rbw pops for Mod+p p.
+#
+# It maps as _NET_WM_WINDOW_TYPE_NORMAL, not DIALOG (read off a live
+# window with xprop, not assumed), so nothing in default_float_rules
+# catches it and qtile tiled it into the layout like an ordinary app. A
+# password prompt that rearranges your windows -- and that you can tab
+# into by accident -- is the wrong shape for what it is.
+#
+# Matched on the class prefix rather than an exact name because the
+# binary varies by flavour: pinentry-gtk here, with -gnome3 and -qt as
+# drop-in alternatives (TROUBLESHOOTING suggests switching if the GTK one
+# misbehaves under qtile).
+#
+# 480x300 against its natural 531x354 -- smaller, but not so small that
+# GTK clips the entry field or the OK/Cancel row.
+PINENTRY_W = 480
+PINENTRY_H = 300
+
+
+def _is_pinentry(client):
+    try:
+        return any(
+            c and c.lower().startswith("pinentry")
+            for c in (client.get_wm_class() or ())
+        )
+    except Exception:
+        return False
+
+
+@hook.subscribe.client_managed
+def _float_and_center_pinentry(client):
+    """Float the password prompt, centred and compact."""
+    if not _is_pinentry(client):
+        return
+    try:
+        group = getattr(client, "group", None)
+        screen = group.screen if group and group.screen else None
+        if screen is None:
+            screen = getattr(qtile, "current_screen", None)
+        if screen is None:
+            return
+        w = min(PINENTRY_W, screen.width)
+        h = min(PINENTRY_H, screen.height)
+        client._enablefloating(
+            x=screen.x + (screen.width - w) // 2,
+            y=screen.y + (screen.height - h) // 2,
+            w=w,
+            h=h,
+        )
+        client.bring_to_front()
+        # Focus it explicitly -- you are about to type a password into
+        # it. warp=False keeps the pointer where it was, as everywhere
+        # else in this config.
+        if group is not None:
+            try:
+                group.focus(client, warp=False)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+# Reading/writing apps -- LibreOffice and the document readers. They are
+# assigned to group 8 (see `groups`) and opening one takes you there.
+#
+# Every value is the REAL WM_CLASS, read off a live window rather than
+# guessed: the libreoffice-* names are what its .desktop files declare as
+# StartupWMClass, and okular/zathura were launched and inspected because they
+# declare none. zathura in particular is "org.pwmt.zathura", not "zathura",
+# which is the sort of thing a plausible guess gets wrong silently -- the app
+# just keeps opening on whatever group you happened to be on.
+#
+# qtile's Match(wm_class=...) tests the instance AND the class, so one entry
+# covers both halves of a WM_CLASS pair.
+DOCUMENT_APP_CLASSES = [
+    "libreoffice-writer",
+    "libreoffice-calc",
+    "libreoffice-impress",
+    "libreoffice-draw",
+    "libreoffice-base",
+    "libreoffice-math",
+    "libreoffice-startcenter",
+    "soffice",  # the instance name every LibreOffice window also carries
+    "okular",
+    "org.pwmt.zathura",
+]
+_DOCUMENT_APP_CLASS_SET = {c.lower() for c in DOCUMENT_APP_CLASSES}
+
+
+def _is_document_app(client):
+    try:
+        return bool(
+            {c.lower() for c in (client.get_wm_class() or ()) if c}
+            & _DOCUMENT_APP_CLASS_SET
+        )
+    except Exception:
+        return False
+
+
+def _is_secondary_window(client):
+    """A dialog, splash or transient -- not the window an app IS.
+
+    LibreOffice is the reason this exists. Launching Writer maps the document
+    window first and then, a second later, a "Tip of the Day" dialog
+    (wm_class soffice/Soffice, so it matches DOCUMENT_APP_CLASSES too). The
+    focus hook fired for both, and the second one won -- so you arrived on
+    group 8 looking at a tip box instead of your document. Same shape as any
+    splash or progress window an app puts up while it loads.
+
+    Type and transient_for both, because toolkits are inconsistent about
+    which they set -- a dialog normally carries WM_TRANSIENT_FOR back to its
+    parent, a bare splash usually only sets the type, and either alone would
+    miss half the cases. Checked against the live window list: every ordinary
+    window classifies False and qdrop's dropdown classifies True.
+    """
+    try:
+        if (client.window.get_wm_type() or "normal") != "normal":
+            return True
+    except Exception:
+        pass
+    try:
+        return bool(client.window.get_wm_transient_for())
+    except Exception:
+        return False
+
+
+@hook.subscribe.client_managed
+def _focus_document_app(client):
+    """Opening a document app takes you to it.
+
+    The Match entries on group 8 only decide WHERE the window lands; they do
+    not move you. Without this, opening a PDF from a browser or a file manager
+    put okular on another group and left you looking at the window you started
+    from, with no sign anything had happened.
+
+    Both halves of the ask fall out of the same two calls: toscreen() is a
+    no-op when group 8 is already current, so being there already just means
+    the focus() runs -- which is the "focus the app that opened" case.
+
+    warp=False deliberately: the pointer stays where it is. Warping it to the
+    new window is what makes a group switch feel like it grabbed the mouse out
+    of your hand, and this config disables cursor warping everywhere else too.
+    """
+    if not _is_document_app(client) or _is_secondary_window(client):
+        return
+    try:
+        group = getattr(client, "group", None)
+        if group is None:
+            return
+
+        # Remember where the jump came FROM, so closing the document can
+        # put you back (see _return_from_document_group). Only recorded
+        # when this actually changes group: opening a second PDF while
+        # already on 8 must not overwrite the origin with "8" itself.
+        global _DOCUMENT_RETURN_GROUP
+        current = getattr(qtile, "current_group", None)
+        if current is not None and current.name != group.name:
+            _DOCUMENT_RETURN_GROUP = current.name
+
+        try:
+            _DOCUMENT_APP_WIDS.add(client.window.wid)
+        except Exception:
+            pass
+
+        group.toscreen()
+        group.focus(client, warp=False)
+        client.bring_to_front()
+    except Exception:
+        pass
+
+
+# Group the document jump came from. None means "we never jumped", in
+# which case closing a document must not move you anywhere.
+_DOCUMENT_RETURN_GROUP = None
+
+# Window ids of the document windows we sent to the document group.
+#
+# client_killed cannot ask X what class a window had -- the window is
+# already gone, so get_wm_class() raises and _is_document_app() would
+# answer False for every window it is handed. Recording the ids on the
+# way in is what makes the close side of this work at all.
+_DOCUMENT_APP_WIDS = set()
+
+
+@hook.subscribe.client_killed
+def _return_from_document_group(client):
+    """Closing the last document window returns you where you came from.
+
+    The counterpart to _focus_document_app. Opening a PDF or a Writer
+    document moves you to the document group; without this you were then
+    stranded there staring at an empty group, and had to navigate back by
+    hand every single time.
+
+    Two deliberate restrictions. It fires only when the LAST document
+    window goes away -- closing one of three open PDFs should leave you
+    reading the other two. And it fires only while you are still on the
+    document group, so closing a background document never yanks the
+    group out from under whatever you moved on to.
+    """
+    global _DOCUMENT_RETURN_GROUP
+    try:
+        wid = client.window.wid
+    except Exception:
+        return
+
+    if wid not in _DOCUMENT_APP_WIDS:
+        return
+    _DOCUMENT_APP_WIDS.discard(wid)
+
+    if _DOCUMENT_RETURN_GROUP is None:
+        return
+
+    try:
+        group = getattr(client, "group", None)
+        if group is None:
+            return
+
+        # This hook can fire before the window leaves group.windows, so
+        # exclude it by id rather than trusting the list to be current.
+        for w in group.windows:
+            try:
+                other = w.window.wid
+            except Exception:
+                continue
+            if other != wid and other in _DOCUMENT_APP_WIDS:
+                return  # another document is still open here
+
+        current = getattr(qtile, "current_group", None)
+        target_name = _DOCUMENT_RETURN_GROUP
+        _DOCUMENT_RETURN_GROUP = None
+
+        if current is None or current.name != group.name:
+            return  # you already navigated away; leave you where you are
+
+        target = qtile.groups_map.get(target_name)
+        if target is not None:
+            target.toscreen()
     except Exception:
         pass
 
@@ -1639,6 +2087,47 @@ def _drop_window_group(client):
 # doing it from underneath.
 
 
+def _rescale_then_restart(q):
+    """Re-derive the UI scale for the new display set, then restart.
+
+    UI_SCALE is read once, at config import, from ~/.cache/qtile/ui_scale --
+    and nothing wrote that file except a manual `ui-scale` run or the rofi
+    picker. So docking a 1366x768 laptop to a 4K monitor restarted qtile
+    (below) and rebuilt every bar at the LAPTOP's scale: a sliver of a bar
+    with unreadable text on the display you just plugged in, until you
+    remembered the command. Undocking had the mirror-image problem.
+
+    A pinned scale is safe: ui-scale reads ~/.cache/qtile/ui_scale.pinned
+    first and a pin always wins, so "the formula disagrees with my eyes"
+    still survives a hotplug.
+
+    Synchronous on purpose, despite being in the event loop. The file has
+    to be on disk BEFORE the config re-imports, and this callback's whole
+    remaining job is os.execv() -- there is nothing left to be responsive
+    for. The timeout is the guard: a wedged xrandr or xrdb costs a few
+    seconds of stale bar, never the restart itself, which happens either
+    way.
+    """
+    try:
+        import shutil
+
+        exe = shutil.which("ui-scale") or os.path.expanduser(
+            "~/.dotfiles/.config/AtiScriptsV1/ui-scale"
+        )
+        if os.path.exists(exe):
+            subprocess.run(
+                [exe],
+                timeout=8,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+    except Exception:
+        # Never let a scale probe cost the restart -- a bar at the old
+        # scale beats a second screen with no bar at all.
+        pass
+    _smooth_restart(q)
+
+
 @hook.subscribe.screens_reconfigured
 def apply_bar_on_reconfigure():
     apply_bar_mode()
@@ -1658,7 +2147,7 @@ def apply_bar_on_reconfigure():
             # and replacing the process image from in there re-enters the
             # event loop mid-teardown. A 1s tick also coalesces the burst
             # of events a single hotplug emits into one restart.
-            qtile.call_later(1, lambda: _smooth_restart(qtile))
+            qtile.call_later(1, lambda: _rescale_then_restart(qtile))
     except Exception:
         # Never let a failed monitor probe take the hook (and with it
         # apply_bar_mode) down -- a missing bar mode is worse than a
@@ -1690,7 +2179,7 @@ TOOLTIP_BY_NAME = {
     "w_volume": "Volume · scroll to change",
     "w_battery": "Battery · click → status",
     "w_lang": "Keyboard layout",
-    "w_clock": "Next prayer",
+    "w_clock": "Next prayer · USD/EUR rates",
     "w_mpris": "L: play/pause · M: album art · R: prev · scroll: next/prev",
     "w_nightlight": "Nightlight · L: on · R: off",
 }
@@ -1806,6 +2295,20 @@ def _install_tooltip(widget_, text):
                 return
             tt = _w._tooltip
             tt.layout.text = _w.tooltip_text
+
+            # Opt-in centring (w_clock: prayer line over the FX lines).
+            # Popup fixes its alignment once, in __init__, from
+            # text_alignment="left" -- so it has to be re-set on the pango
+            # layout here. Alignment is also a no-op while the layout width
+            # is -1 (each line just starts at x=0), hence: measure the
+            # natural width first, then pin the layout to it so the short
+            # lines have a box to centre inside.
+            if getattr(_w, "tooltip_center", False):
+                tt.layout.reset_width()
+                text_w = tt.layout.width
+                tt.layout.layout.set_alignment(pangocffi.ALIGN_CENTER)
+                tt.layout.width = text_w
+
             tt.width = tt.layout.width + 2 * tt.horizontal_padding
             tt.height = tt.layout.height + 2 * tt.vertical_padding
             # clamp x within screen and add small vertical margin below bar
@@ -1919,7 +2422,10 @@ def install_bar_tooltips():
                         if getattr(w, "name", "") == "w_mpris":
                             _make_tooltip_dynamic(w, _player_title_text, "No player")
                         if getattr(w, "name", "") == "w_clock":
-                            _make_tooltip_dynamic(w, _prayer_text, "No prayer data")
+                            w.tooltip_center = True
+                            _make_tooltip_dynamic(
+                                w, _clock_tooltip_text, "No prayer data"
+                            )
                         if getattr(w, "name", "") == "w_cpu":
                             _make_tooltip_dynamic(w, _cpu_top_text)
                         if getattr(w, "name", "") == "w_mem":
@@ -1977,7 +2483,7 @@ def _make_tooltip_dynamic(widget_, text_func, fallback=""):
     subprocess.run -- so hovering a chip froze the whole WM (keyboard,
     focus, bar, everything) for as long as the command took:
 
-        w_clock  _prayer_text       -> prayer_next.sh, timeout=8
+        w_clock  _clock_tooltip_text-> prayer_next.sh + fx_rates.sh, timeout=8
         w_disk   _disk_parts_text   -> _sh(timeout=1.5)
         w_cpu    _cpu_top_text      -> _sh(timeout=1.5)
         w_mem    _mem_top_text      -> _sh(timeout=1.5)
@@ -2184,6 +2690,15 @@ def open_launcher(qtile):
     )
 
 
+def open_docs(qtile):
+    # Left-clicking the logo used to open a terminal -- which Mod+Return
+    # and several other bindings already do. A desktop with 79 documented
+    # keybindings, 22 themes and a dozen custom tools has a discovery
+    # problem, not a terminal-launching problem, so the most prominent
+    # click in the bar now answers "what can this thing do".
+    set_icon_temporarily(qtile, "󰋗", "rofi_docs")
+
+
 # ╔────────────────────────────────────────────────────────────────╗
 # │░▄█▄█▄░█▄█░█▀█░█▀▄░█▀▀░█▀▀░░░█▀▀░█░█░█▀█░█▀▀░▀█▀░▀█▀░█▀█░█▀█░█▀▀│
 # │░▄█▄█▄░█░█░█░█░█░█░█▀▀░▀▀█░░░█▀▀░█░█░█░█░█░░░░█░░░█░░█░█░█░█░▀▀█│
@@ -2205,11 +2720,12 @@ def remember_chord(chord_name):
 # --------------------------------------------------------------
 # 6- Hint-Mode deliberately launches nothing on entry
 # --------------------------------------------------------------
-# The old Mouse-Mode spawned `warpd --normal` from an enter_chord hook. That
-# cannot stay: warpd grabs the keyboard as soon as it starts, so h/s/f would
-# never reach qtile and the chord would appear dead. warpd is still one
-# keypress away inside the chord -- `n` for normal mode, `w` for its hints --
-# it just is not started for you.
+# The old Mouse-Mode spawned `warpd --normal` from an enter_chord hook, which
+# could not stay: warpd grabbed the keyboard the moment it started, so h/s/f
+# never reached qtile and the chord looked dead. warpd itself is gone now --
+# it segfaulted in x_input_wait on every boot, so its `n`/`w` bindings had
+# been dead for a while without anyone noticing. Homerow covers the same
+# ground (h hint, s scroll, f search, v caret) and does not grab the keyboard.
 
 
 # ---------------------------------------------------------------------------------------
@@ -2242,10 +2758,146 @@ def auto_enable_draw(chord_name):
 # --------------------------------------------------------------------------------------------------------
 
 
+# Entering CheatSheet-Mode always shows the qtile sheet. That is right when
+# the chord is entered from the keyboard, and wrong when rofi_docs asked
+# specifically for the vim or fish one -- the qtile sheet would flash up
+# first and then be replaced. This flag lets open_cheatsheet() suppress the
+# auto-show for exactly one chord entry.
+_SUPPRESS_CHEATSHEET_AUTOSHOW = False
+
+
 @hook.subscribe.enter_chord
 def auto_enable_cheatsheet(chord_name):
-    if chord_name == "CheatSheet-Mode":
-        show_qtile_cheatsheet(qtile)
+    global _SUPPRESS_CHEATSHEET_AUTOSHOW
+    if chord_name != "CheatSheet-Mode":
+        return
+    if _SUPPRESS_CHEATSHEET_AUTOSHOW:
+        _SUPPRESS_CHEATSHEET_AUTOSHOW = False
+        return
+    show_qtile_cheatsheet(qtile)
+
+
+def _find_chord(name, mappings=None):
+    """Find a KeyChord by name, at ANY depth.
+
+    Not every chord is top-level: WallpaperPicker is nested under Rofi-Mode
+    (mod+p, then b), so the flat scan over `keys` that this function replaces
+    would walk straight past it and report the chord as missing.
+    """
+    for k in (keys if mappings is None else mappings):
+        if isinstance(k, KeyChord):
+            if getattr(k, "name", "") == name:
+                return k
+            found = _find_chord(name, k.submappings)
+            if found is not None:
+                return found
+    return None
+
+
+def open_cheatsheet(which="qtile"):
+    """Open a cheatsheet from outside qtile (rofi_docs calls this over IPC).
+
+    Replaying the key chord with xdotool -- the obvious approach -- cannot
+    work here, and failed in three distinct ways:
+
+      * `super+shift+k` then `k` entered the chord (which auto-shows the
+        qtile sheet) and then the `k` TOGGLED it back off, so the sheet
+        appeared for a frame and vanished.
+      * for vim and fish the qtile sheet showed first and was then
+        replaced, which looked like a glitch.
+      * xdotool races rofi's keyboard grab, so it was timing-dependent.
+
+    Entering the chord properly instead means the sheet is dismissed the
+    same way it always was -- Esc or q -- rather than needing its own
+    close path.
+    """
+    global _SUPPRESS_CHEATSHEET_AUTOSHOW
+
+    chord = _find_chord("CheatSheet-Mode")
+    if chord is None:
+        return "no CheatSheet-Mode chord in config"
+
+    # Suppress the auto-show unless the qtile sheet is what was asked for.
+    _SUPPRESS_CHEATSHEET_AUTOSHOW = which != "qtile"
+    qtile.grab_chord(chord)
+
+    if which == "vim":
+        toggle_vim_cheatsheet(qtile)
+    elif which == "fish":
+        toggle_fish_kitty_cheatsheet(qtile)
+    return "ok"
+
+
+def _close_other_cheatsheets(keep):
+    """Close every cheatsheet except `keep`.
+
+    auto_enable_cheatsheet() shows the qtile sheet on every chord entry,
+    unconditionally. Pressing v or f used to just toggle_*_cheatsheet() on
+    top of that -- which opened the new sheet without closing the qtile
+    one still sitting underneath it. Both stayed "open" as far as
+    is_open() was concerned, and since page/scroll_cheatsheet() check
+    (Qtile, Vim, Fish) in that order and act on the first match, j/k/Tab
+    kept driving the invisible qtile sheet no matter which one was on
+    screen. Only close_*_cheatsheet() actually closes a sheet -- this is
+    what open_vim_cheatsheet()/open_fish_cheatsheet() call before opening
+    theirs, so the "one sheet open at a time" every other function here
+    assumes is actually true.
+    """
+    for sheet, closer in (
+        (QtileCheatsheet, close_qtile_cheatsheet),
+        (VimCheatsheet, close_vim_cheatsheet),
+        (FishCheatsheet, close_fish_kitty_cheatsheet),
+    ):
+        if sheet is not keep and sheet.is_open():
+            closer()
+
+
+def open_vim_cheatsheet(qtile):
+    """v inside CheatSheet-Mode: switch to the vim sheet, closing whatever
+    else is open first. If vim is already the one open, this is a toggle
+    (closes it) same as before."""
+    if not VimCheatsheet.is_open():
+        _close_other_cheatsheets(VimCheatsheet)
+    toggle_vim_cheatsheet(qtile)
+
+
+def open_fish_cheatsheet(qtile):
+    """f inside CheatSheet-Mode: same as open_vim_cheatsheet() but fish."""
+    if not FishCheatsheet.is_open():
+        _close_other_cheatsheets(FishCheatsheet)
+    toggle_fish_kitty_cheatsheet(qtile)
+
+
+def page_cheatsheet(qtile, step=1):
+    """Tab inside CheatSheet-Mode: move a screenful in whichever sheet is on
+    screen. Only one sheet is ever open at a time (k / v / f each toggle
+    their own, and leaving the chord closes all three), so "the open one"
+    is unambiguous. Does nothing when nothing is open.
+    """
+    for sheet in (QtileCheatsheet, VimCheatsheet, FishCheatsheet):
+        if sheet.is_open():
+            sheet.next_page(qtile, step)
+            return
+
+
+def scroll_cheatsheet(qtile):
+    """j inside CheatSheet-Mode: scroll whichever sheet is on screen down by
+    its default step. Does nothing when nothing is open."""
+    for sheet in (QtileCheatsheet, VimCheatsheet, FishCheatsheet):
+        if sheet.is_open():
+            sheet.scroll(qtile)
+            return
+
+
+def cheatsheet_k(qtile):
+    """k inside CheatSheet-Mode is overloaded: with nothing open it opens
+    the qtile sheet (its original job); with a sheet already open, k is
+    vim's "up", so it scrolls up instead of re-toggling the sheet closed."""
+    for sheet in (QtileCheatsheet, VimCheatsheet, FishCheatsheet):
+        if sheet.is_open():
+            sheet.scroll(qtile, rows=-sheet.SCROLL_ROWS)
+            return
+    toggle_cheatsheet(qtile)
 
 
 def exit_cheatsheet_mode(qtile):
@@ -2307,20 +2959,44 @@ def toggle_wallpaper_picker(qtile):
     if w and w.box_is_open:
         close_wallpaper_mode(qtile)
     else:
-        SmartWidgetBox.close_all()
-        # Flip the icon here, synchronously with the click, rather than
-        # waiting on auto_enable_wallpaper_picker's enter_chord hook below.
-        # simulate_keypress() feeds fake events back through the X server,
-        # so that hook only fires once qtile's event loop gets them back --
-        # a real (if usually short) round trip, during which the icon sat
-        # on "closed" and only flipped once that landed. auto_enable_
-        # wallpaper_picker's own `not w.box_is_open` guard makes toggling
-        # again once the chord actually opens a no-op, so this can't double
-        # -toggle.
-        if w and not w.box_is_open:
-            w.toggle()
-        qtile.simulate_keypress([mod], "p")
-        qtile.simulate_keypress([], "b")
+        # THIS CHIP WAS OPENING THE BLUETOOTH POPUP. It entered the chord by
+        # replaying mod+p then "b" as fake keypresses, and under Rofi-Mode
+        # "b" is Bluetooth-Mode -- the wallpaper picker is "w". Whichever way
+        # round it once was, a hardcoded key replay cannot survive the keymap
+        # being rearranged, and it silently opened the wrong popup instead of
+        # failing.
+        #
+        # open_wallpaper_picker() grabs the chord OBJECT, found by name, so
+        # there is no key to get wrong and no round trip through the X server
+        # to race. That also retires the reason the icon was flipped early
+        # here: grab_chord() fires enter_chord synchronously, so
+        # auto_enable_wallpaper_picker() flips the chip before this returns.
+        open_wallpaper_picker()
+
+
+def open_wallpaper_picker():
+    """Open the wallpaper picker from outside qtile (rofi_docs calls this
+    over IPC), the same way open_cheatsheet() opens a sheet.
+
+    NOT toggle_wallpaper_picker(): that enters the chord with
+    simulate_keypress([mod], "p") then "b", which feeds fake events back
+    through the X server. The caller here is a rofi menu that is holding a
+    keyboard grab as it exits, which is the exact race open_cheatsheet()
+    documents xdotool losing. grab_chord() installs the keymap directly, with
+    no round trip and nothing to race.
+
+    Entering the chord is also what makes the picker usable rather than just
+    visible: /, hjkl, r and Enter are the chord's own keys, and
+    auto_enable_wallpaper_picker() fires off enter_chord to build the popup
+    and flip the bar chip. Calling show_wallpaper_picker() alone would put a
+    picker on screen that no key could drive.
+    """
+    chord = _find_chord("WallpaperPicker")
+    if chord is None:
+        return "no WallpaperPicker chord in config"
+    SmartWidgetBox.close_all()
+    qtile.grab_chord(chord)
+    return "ok"
 
 
 # ----------------------------------------------------------------
@@ -2360,17 +3036,33 @@ def cleanup_on_leave():
         else:
             _disable_passthrough(qtile)
 
-    # NOTE: Bluetooth popup will be used later
-    # elif ACTIVE_CHORD == "Bluetooth-Mode":
-    #     close_bluetooth_popup(qtile)
+    elif ACTIVE_CHORD == "Bluetooth-Mode":
+        # close() also stops the discovery child process -- leaving the chord
+        # without it would keep the radio scanning indefinitely.
+        BluetoothPopup.close(qtile)
 
-    # NOTE : Audio popup will be used later
-    # elif ACTIVE_CHORD == "Audio-Mode":
-    #     close_audio_popup(qtile)
+    elif ACTIVE_CHORD == "Audio-Mode":
+        AudioPopup.close(qtile)
 
-    # NOTE : Wifi popup will be used later
-    # elif ACTIVE_CHORD == "Wifi-Mode":
-    #     close_wifi_popup(qtile)
+    elif ACTIVE_CHORD == "Display-Mode":
+        # close() also reverts a change still inside its confirmation
+        # countdown -- leaving the chord must never strand a layout that
+        # nobody has confirmed is visible.
+        DisplayPopup.close(qtile)
+
+    elif ACTIVE_CHORD == "Wifi-Mode":
+        WifiPopup.close(qtile)
+        # `s` can put the QR popup on top of the picker without a chord of
+        # its own (Wifi-Mode already owns Escape), so leaving this chord has
+        # to take both down or the QR is left stranded with no way to close.
+        WifiQR.close(qtile)
+
+    elif ACTIVE_CHORD == WifiQR.CHORD_NAME:
+        # The QR popup grabs an Escape-only chord while it is up (it is
+        # opened by a bar click, so nothing else routes keys to it).
+        # KeyChord appends its own bare Escape over any binding, so this
+        # hook -- not a Key command -- is what actually closes it.
+        WifiQR.on_chord_left()
 
     # NOTE : updates popup  will be used later
     # elif ACTIVE_CHORD == "Updates-Mode":
@@ -2410,7 +3102,7 @@ def chord_chip_enter(chord_name):
     for deco in w.decorations:
         if isinstance(deco, RectDecoration):
             # deco.colour = CHORD_CHIP_COLORS.get(chord_name, colorsW[2])
-            setattr(deco, "colour", CHORD_CHIP_COLORS.get(chord_name, colorsW[2]))
+            setattr(deco, "colour", CHORD_CHIP_COLORS.get(chord_name, DEFAULT_CHIP_COLOR))
 
     if w.bar:
         w.bar.draw()
@@ -2424,8 +3116,7 @@ def chord_chip_leave():
 
     for deco in w.decorations:
         if isinstance(deco, RectDecoration):
-            # deco.colour = colorsW[2]  # default chip color
-            setattr(deco, "colour", colorsW[2])
+            setattr(deco, "colour", DEFAULT_CHIP_COLOR)
 
     w.bar.draw()
 
@@ -2497,6 +3188,71 @@ def close_widgetboxes_on_chord(chord_name):
                 pass
 
 
+def _clamp_phone_mirror(*_args):
+    """Drag the scrcpy window back on screen after the phone rotates.
+
+    scrcpy sizes its window to the device's real framebuffer, so turning
+    the phone sideways -- opening a video fullscreen, say -- makes it
+    swap width and height on its own. phone_screen parks it flush against
+    the right edge in portrait (~307x684 here), and the rotated window is
+    then ~684 wide from the same left edge: most of it hangs off the
+    screen, controls included, with no way to reach them.
+
+    Only floating windows can be repositioned like this, and only scrcpy
+    is touched: clamping every float would fight anyone deliberately
+    dragging a window half off-screen.
+
+    Stays a no-op whenever the window already fits, so it can never fight
+    a window that is already where it should be.
+    """
+    # Every window, not qtile.current_window: the rotation happens in the
+    # phone's hand, so the mirror is usually NOT the focused window when
+    # it resizes itself. Keying off focus meant the clamp simply never
+    # ran at the one moment it was needed.
+    scr = qtile.current_screen
+    margin = 8
+
+    for group in qtile.groups:
+        for win in list(group.windows):
+            if not getattr(win, "floating", False):
+                continue
+            classes = win.get_wm_class() or []
+            if not any("scrcpy" in c.lower() for c in classes):
+                continue
+
+            bw = win.borderwidth * 2
+            w, h = win.width, win.height
+
+            # MOVE ONLY -- never resize. scrcpy locks its window to the
+            # device aspect ratio and re-applies that lock immediately
+            # after any external resize, so setting a size here starts a
+            # fight it wins: clamping a 684-wide landscape window once
+            # produced a 136-wide sliver, because scrcpy kept the height
+            # and pulled the width back to the portrait ratio.
+            #
+            # dx/dy/dwidth/dheight are what is left once the bar is
+            # subtracted -- clamping to width/height tucks it under the bar.
+            x = min(max(win.x, scr.dx + margin), scr.dx + scr.dwidth - w - bw - margin)
+            y = min(max(win.y, scr.dy + margin), scr.dy + scr.dheight - h - bw - margin)
+
+            if (x, y) == (win.x, win.y):
+                continue
+            win.set_position_floating(x, y)
+
+
+# client_managed ONLY. float_change was subscribed here too, on the
+# assumption it covered later rotations -- it does not. Probed directly:
+# a floating window resized and moved from outside qtile fired the hook
+# zero times. float_change tracks floating STATE, not geometry, so an app
+# resizing its own window is invisible to it.
+#
+# That leaves this hook covering exactly one case: the phone is already
+# sideways when the mirror opens. Rotation DURING a session is handled by
+# the bounds watcher in phone_screen, which is the only thing that can
+# see it.
+hook.subscribe.client_managed(_clamp_phone_mirror)
+
+
 @hook.subscribe.leave_chord
 def restore_widgetboxes_on_chord_leave():
     global _SAVED_WIDGETBOX_NAMES
@@ -2534,34 +3290,39 @@ def auto_enable_passthrough(chord_name):
 # --------------------------------------------------------------------
 # 14- Function to lanuch the Bluetooth popup when it's mode activated
 # --------------------------------------------------------------------
-# NOTE: Bluetooth popup will be used later
-# @hook.subscribe.enter_chord
-# def auto_enable_bluetooth_popup(chord_name):
-#     if chord_name == "Bluetooth-Mode":
-#         show_bluetooth_popup(qtile)
+@hook.subscribe.enter_chord
+def auto_enable_bluetooth_popup(chord_name):
+    if chord_name == "Bluetooth-Mode":
+        BluetoothPopup.show(qtile)
 
 
 # ------------------------------------------------------------------------------
 # 15 - Function to lanuch the Audio popup when it's mode activated
 # ------------------------------------------------------------------------------
+@hook.subscribe.enter_chord
+def auto_enable_audio_popup(chord_name):
+    if chord_name == "Audio-Mode":
+        AudioPopup.show(qtile)
 
 
-# NOTE : Audio popup will be used later
-# @hook.subscribe.enter_chord
-# def auto_enable_audio_popup(chord_name):
-#     if chord_name == "Audio-Mode":
-#         show_audio_popup(qtile)
+@hook.subscribe.enter_chord
+def auto_enable_display_popup(chord_name):
+    if chord_name == "Display-Mode":
+        DisplayPopup.show(qtile)
 
 # -----------------------------------------------------------
 # 16 - Function to launch WiFi popup when mode is activated
 # -----------------------------------------------------------
 
 
-# NOTE : Wifi popup will be used later
-# @hook.subscribe.enter_chord
-# def auto_enable_wifi_popup(chord_name):
-#     if chord_name == "Wifi-Mode":
-#         show_wifi_popup(qtile)
+@hook.subscribe.enter_chord
+def auto_enable_wifi_popup(chord_name):
+    if chord_name == "Wifi-Mode":
+        # Cheap to build (no image loading, no per-file work) and it draws
+        # its own "Scanning…" state, so unlike the wallpaper picker there is
+        # nothing to order around a widget redraw here.
+        WifiPopup.show(qtile)
+
 
 # -----------------------------------------------------------
 # 17 - Function to launch Updates popup when mode is activated
@@ -2689,13 +3450,34 @@ def parse_task_name(text):
         " — Settings",
         " — Preferences",
         " — System Settings",
-        # Generic separators
-        " — ",
-        " - ",
     ]
 
     for s in REMOVE:
         text = text.replace(s, "")
+
+    # The list above used to end with two GENERIC separator entries, " - "
+    # and " \u2014 ", removed with str.replace -- which deletes every
+    # occurrence, not just the one before an application name. So
+    # "Ati's Homepage - qutebrowser" came out as "Ati's Homepagequtebrowser",
+    # two words welded together, on any title containing a dash at all.
+    #
+    # Strip a TRAILING " - <name>" instead, and only when the tail looks like
+    # an application name: no further separator inside it, and short. A real
+    # subtitle ("Chapter 3 - The Long Way Home") is left alone.
+    for sep in (" \u2014 ", " - "):
+        head, found, tail = text.rpartition(sep)
+        if found and head and len(tail) <= 25 and sep.strip() not in tail:
+            text = head
+
+    # Leading status glyph. The terminal sessions in here set their title to
+    # a spinner frame plus the task -- "\u2802 Fix ...", "\u2733 Upgrade ..." --
+    # and the frame changes several times a second. In a bar that is a
+    # character of pure noise in the highest-value column, and it repaints
+    # the widget every time it ticks. Braille block U+2800-U+28FF is the
+    # spinner; the rest are the done/busy marks that replace it.
+    text = text.lstrip()
+    while text and (0x2800 <= ord(text[0]) <= 0x28FF or text[0] in "\u2733\u2713\u2717\u25b6\u23f8"):
+        text = text[1:].lstrip()
 
     return text
 
@@ -2730,7 +3512,7 @@ def normal_user_bar():
         widget.TextBox(
             name="main_icon_chip_nu",
             text=ARCH_ICON_MAIN,
-            fontsize=19,
+            fontsize=_s(19),
             padding=16,
             foreground=colors[7],
             mouse_callbacks={
@@ -2743,24 +3525,32 @@ def normal_user_bar():
             font="Ubuntu Mono",
             foreground=colors[1],
             padding=3,
-            fontsize=14,
+            fontsize=_s(14),
         ),
         widget.LaunchBar(
             progs=[
                 ("", "brave", "Brave Browser"),
                 ("", "qutebrowser", "Qutebrowser"),
                 ("", "kitty", "Kitty Terminal"),
-                ("", "pcmanfm", "File Manager"),
+                ("", "pcmanfm-qt", "File Manager"),
                 ("󰨞", "code", "VS Code"),
             ],
-            fontsize=14,
+            # The first field of each tuple is a NERD FONT GLYPH, not an app
+            # name -- so LaunchBar's icon lookup was always going to miss,
+            # fall back to text mode, and log a warning while doing exactly
+            # what we wanted. 105 lines of
+            #     No icon found for application "󰨞" (None) switch to text mode
+            # per boot, all of them noise hiding the warnings that matter.
+            # text_only says the quiet part out loud and skips the lookup.
+            text_only=True,
+            fontsize=_s(14),
             padding=12,
             foreground=colors[1],
         ),
         widget.TextBox(
             name="screenshot_chip_nu",
             text="󰹑",
-            fontsize=16,
+            fontsize=_s(16),
             padding=10,
             foreground=colors[1],
             mouse_callbacks={
@@ -2769,9 +3559,9 @@ def normal_user_bar():
         ),
         ewidget.Spacer(length=bar.STRETCH),
         widget.GroupBox(
-            fontsize=12,
-            margin_y=2,
-            margin_x=8,
+            fontsize=_s(12),
+            margin_y=_s(2),
+            margin_x=_s(8),
             padding_y=2,
             padding_x=8,
             borderwidth=4,
@@ -2820,24 +3610,28 @@ def normal_user_bar():
             padding=11,
             foreground=colors[7],
             background=None,
+            # The five popup-backed modes show only their name here: each
+            # of those popups draws its own hint bar listing the same keys,
+            # and the chip repeating them just made the bar 200px wider for
+            # nothing. The modes below that have no popup keep their letters
+            # -- for those, this chip is the only place the keys are shown.
             name_transform=lambda name: {
                 "Resize-Mode": "󰩨   RESIZE : H, J, N",
                 "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
                 "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
                 "Scratch-Mode": "󰈆   SCRATCH",
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
-                "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret , n/w warpd ",
+                "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
-                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
-                "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
+                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , j/k scroll , TAB , ESC ",
+                "WallpaperPicker": "󰸉   WALLPAPERS",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC",
                 "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
-                # NOTE: Bluetooth popup will be used later
-                # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
-                # NOTE: Audio popup will be used later
-                # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                # NOTE: Wifi popup will be used later
-                # "Wifi-Mode": "󰤨   WIFI : j , k , Enter , x , r",
+                "Bluetooth-Mode": "󰂯   BLUETOOTH",
+                "Audio-Mode": "󰕾   AUDIO",
+                "Display-Mode": "󰍹   DISPLAY",
+                "Wifi-Mode": "󰤨   WIFI",
+                "Wifi-QR": "   WIFI QR : ESC to close ",
             }.get(name, name.upper()),
         ),
         # Homerow mode chip — see the matching one in right_side_widgets()
@@ -2866,38 +3660,43 @@ def normal_user_bar():
             font="Ubuntu Mono",
             foreground=colors[1],
             padding=0,
-            fontsize=14,
+            fontsize=_s(14),
         ),
-        widget.Battery(
-            name="w_battery_nu",
-            format="  {char}{percent:2.0%}",
-            fontsize=11,
-            padding=4,
-            foreground=colors[6],
-            low_foreground=colors[3],
-            low_percentage=0.2,
-            charge_char=" ↑ ",
-            discharge_char=" ↓ ",
-            full_char="✔ ",
-            show_percentage=True,
-            show_short_text=False,
-            mouse_callbacks={
-                "Button1": lambda: qtile.spawn(
-                    'battery_notify'
-                )
-            },
-        ),
-        widget.TextBox(
-            text="|",
-            font="Ubuntu Mono",
-            foreground=colors[1],
-            padding=4,
-            fontsize=14,
-        ),
+        # Battery and the separator that follows it are built only on
+        # hardware that has a battery -- see _has_battery(). The separator
+        # goes with it, or a desktop draws two pipes with nothing between.
+        *([
+            widget.Battery(
+                name="w_battery_nu",
+                format="  {char}{percent:2.0%}",
+                fontsize=_s(11),
+                padding=4,
+                foreground=colors[6],
+                low_foreground=colors[3],
+                low_percentage=0.2,
+                charge_char=" ↑ ",
+                discharge_char=" ↓ ",
+                full_char="✔ ",
+                show_percentage=True,
+                show_short_text=False,
+                mouse_callbacks={
+                    "Button1": lambda: qtile.spawn(
+                        'battery_notify'
+                    )
+                },
+            ),
+            widget.TextBox(
+                text="|",
+                font="Ubuntu Mono",
+                foreground=colors[1],
+                padding=4,
+                fontsize=_s(14),
+            ),
+        ] if _has_battery() else []),
         widget.CPU(
             name="w_cpu_nu",
             format="  {load_percent}%",
-            fontsize=10,
+            fontsize=_s(10),
             padding=4,
             foreground=colors[5],
             mouse_callbacks={
@@ -2911,13 +3710,13 @@ def normal_user_bar():
             font="Ubuntu Mono",
             foreground=colors[1],
             padding=4,
-            fontsize=14,
+            fontsize=_s(14),
         ),
         widget.Memory(
             name="w_mem_nu",
             format="{MemUsed: .0f}{mm}",
             fmt="🖥  {} ",
-            fontsize=10,
+            fontsize=_s(10),
             padding=4,
             foreground=colors[8],
             mouse_callbacks={
@@ -2929,12 +3728,12 @@ def normal_user_bar():
             font="Ubuntu Mono",
             foreground=colors[1],
             padding=0,
-            fontsize=14,
+            fontsize=_s(14),
         ),
         widget.Clock(
             format=" %a, %b %d - %H:%M",
             padding=14,
-            fontsize=11,
+            fontsize=_s(11),
             foreground=colors[1],
             mouse_callbacks={"Button1": lambda: qtile.spawn("clock_popup")},
         ),
@@ -2947,9 +3746,9 @@ def normal_user_bar():
 def groupbox_widget():
     return chip(
         ewidget.GroupBox,
-        fontsize=10,
-        margin_y=2,
-        margin_x=8,
+        fontsize=_s(10),
+        margin_y=_s(2),
+        margin_x=_s(8),
         padding_y=2,
         padding_x=8,
         borderwidth=4,
@@ -2988,12 +3787,15 @@ def left_side_widgets():
             ewidget.TextBox,
             name="main_icon_chip",
             text=ARCH_ICON_MAIN,
-            fontsize=15,
+            fontsize=_s(15),
             padding=11,
             foreground=colors[7],
             mouse_callbacks={
-                "Button1": lazy.function(open_terminal),  # left click
-                "Button3": lazy.function(open_launcher),  # right click
+                # Terminal moves to middle-click rather than being dropped:
+                # muscle memory is real, and Mod+Return still does it too.
+                "Button1": lazy.function(open_docs),  # left   — docs menu
+                "Button2": lazy.function(open_terminal),  # middle — terminal
+                "Button3": lazy.function(open_launcher),  # right  — drun
             },
         ),
         # Current Layout — original padding, text mode; right-click cycles layout
@@ -3009,44 +3811,83 @@ def left_side_widgets():
                 "Button3": lazy.next_layout(),
             },
         ),
-        # separator |
-        widget.TextBox(
-            text="|",
-            font="Ubuntu Mono",
-            foreground=colors[1],
-            padding=3,
-            fontsize=14,
-        ),
+        # No "|" separator here. The bottom bar is built from bare widgets
+        # and uses pipes to group them; this bar is built from chips, where
+        # every element already carries its own rounded background. The one
+        # pipe left on it was the sole flat element among them, sitting
+        # between the layout chip and the tasklist and reading as a stray
+        # mark rather than a divider. Chip padding does the separating.
         # task list
         widget.TaskList(
             font="JetBrainsMono Nerd Font",
-            fontsize=11,
+            fontsize=_s(10),
             # icons
-            icon_size=16,
+            icon_size=_s(16),
             markup=True,
             # markup styles — use the active palette so TaskList retints
             # on theme swap. colors[2]=bg-alt, colors[0]=bg, colors[6]=blue,
             # colors[5]=purple, colors[3]=red.
-            markup_normal=f'<span background="{colors[2][0]}55">{{}}</span>',
-            markup_focused=f'<span background="{colors[0][0]}EE" foreground="{colors[6][0]}" weight="bold">F {{}}</span>',
-            markup_floating=f'<span background="{colors[0][0]}EE" foreground="{colors[5][0]}">V {{}}</span>',
-            markup_focused_floating=f'<span background="{colors[0][0]}EE" foreground="{colors[5][0]}" weight="bold">VF {{}}</span>',
-            markup_minimized=f'<span background="{colors[0][0]}EE" foreground="{colors[3][0]}">↓ {{}}</span>',
-            max_title_width=120,
+            # State is carried by COLOUR and WEIGHT, not by letters. Every
+            # entry used to be prefixed with a private code -- "F" focused,
+            # "V" floating, "VF" both -- in the one widget whose entire job is
+            # showing window names, and those characters cost width the name
+            # then lost to truncation. Focus already reads from the accent
+            # colour and the bold; nothing needs spelling out.
+            #
+            # The two states that are NOT otherwise visible keep a mark, and
+            # it has to live in the markup string. txt_minimized / txt_floating
+            # look like the right home for it and are DEAD config the moment a
+            # markup_* string is set: tasklist.py:245 returns
+            # markup_str.format(name) and never interpolates `state` at all --
+            # it is only used on the no-markup path below it. That is why the
+            # original spelled the arrow out here too.
+            #
+            # The leading/trailing spaces are the padding: they sit INSIDE the
+            # span, so the highlight becomes a rounded-ish block around the
+            # title instead of ending flush against the first letter.
+            markup_normal=f'<span background="{colors[2][0]}44" foreground="{colors[1][0]}"> {{}} </span>',
+            markup_focused=f'<span background="{colors[0][0]}EE" foreground="{colors[6][0]}" weight="bold"> {{}} </span>',
+            markup_floating=f'<span background="{colors[0][0]}CC" foreground="{colors[5][0]}"> 󰊔 {{}} </span>',
+            markup_focused_floating=f'<span background="{colors[0][0]}EE" foreground="{colors[5][0]}" weight="bold"> 󰊔 {{}} </span>',
+            markup_minimized=f'<span background="{colors[0][0]}66" foreground="{colors[3][0]}"> 󰖰 {{}} </span>',
+            # 120px at fontsize 11 is about fourteen characters, which
+            # truncated every real window title to "Fix Qt…" / "Upgr…" --
+            # three open windows and no way to tell them apart, which is the
+            # one job a tasklist has. _s() so it tracks the UI scale like
+            # every other dimension here; _center_groupbox already caps the
+            # widget's TOTAL width, so this only governs per-title
+            # truncation and cannot push the groupbox off centre.
+            # 210 let a title run most of the way to the groupbox. The point
+            # of the strip is telling three windows apart, not reading the
+            # whole title -- the first few words already do that, and the
+            # rest just crowds the bar. Narrower, and a point smaller, so
+            # more of the name survives inside the smaller box.
+            max_title_width=_s(115),
             padding_x=3,
             padding_y=2,
-            margin_x=3,
-            margin_y=4,
+            margin_x=_s(3),
+            margin_y=_s(4),
             spacing=2,
             parse_text=parse_task_name,
-            window_name_location_offset=1,
-            window_name_location="left",
+            # window_name_location prepends "[n] ", the window's index within
+            # its group -- and TaskList adds it BEFORE parse_text runs, which
+            # is why the spinner strip in parse_task_name has to work anywhere
+            # in the string rather than only at the front. Off now: it cost
+            # four characters of a roughly fourteen character budget, nearly a
+            # third of the visible width, to say something the app icon beside
+            # it already distinguishes, and nothing here binds a window by
+            # that index.
+            window_name_location=False,
             foreground=colors[1],
             background=None,
             highlight_method="text",
             border=colors[7],
             borderwidth=0,
-            txt_minimized="↓  ",
+            # Kept only for the no-markup fallback path; see the note above
+            # the markup_* block for why these are otherwise inert.
+            txt_minimized="󰖰 ",
+            txt_floating="󰊔 ",
+            txt_maximized="",
             stretch=False,
         ),
     ]
@@ -3061,11 +3902,17 @@ def right_side_widgets():
     return [
         # Chord (Modes) Chip
         chip(
-            ewidget.Chord,
+            FittedChord,
             name="chord_chip",
             fmt=" {} ",
             padding=11,
-            foreground=colors[2],
+            # The theme's BACKGROUND colour as the text colour: the chip
+            # behind it is a theme accent, so bg-on-accent is legible by
+            # construction on light and dark palettes alike. colors[2] was a
+            # hardcoded #000000, which only worked because every theme here
+            # happened to be dark -- on mono-light it is black text on a dark
+            # accent.
+            foreground=colors[0],
             background=None,
             name_transform=lambda name: {
                 "Resize-Mode": "󰩨   RESIZE : H, J, N",
@@ -3073,18 +3920,17 @@ def right_side_widgets():
                 "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
                 "Scratch-Mode": "󰈆   SCRATCH",
                 "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
-                "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret , n/w warpd ",
+                "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
                 "Lang-Switch": "   LANG : a , e , t , d ",
-                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f ",
-                "WallpaperPicker": "󰸉   WALLPAPERS : / , h , j , k ,l , r , ENTER ",
+                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , j/k scroll , TAB , ESC ",
+                "WallpaperPicker": "󰸉   WALLPAPERS",
                 "PASSTHROUGH": "   PASSTHROUGH : ESC",
                 "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
-                # NOTE: Bluetooth popup will be used later
-                # "Bluetooth-Mode": "󰂯   BLUETOOTH : j , k , Enter , x , r",
-                # NOTE: Audio popup will be used later
-                # "Audio-Mode": "󰍬   AUDIO : j , k , h , l , Enter , r",
-                # NOTE: Wifi popup will be used later
-                # "Wifi-Mode": "󰤨   WIFI : j , k , Enter , x , r",
+                "Bluetooth-Mode": "󰂯   BLUETOOTH",
+                "Audio-Mode": "󰕾   AUDIO",
+                "Display-Mode": "󰍹   DISPLAY",
+                "Wifi-Mode": "󰤨   WIFI",
+                "Wifi-QR": "   WIFI QR : ESC to close ",
                 # NOTE: updates popup  will be used later
                 # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
             }.get(name, name.upper()),
@@ -3113,7 +3959,7 @@ def right_side_widgets():
             name="tooltip_widgetbox",
             widgets=[],
             padding=11,
-            fontsize=13,
+            fontsize=_s(12),  # bulb ink was 12px tall, tallest of the set
             text_closed="󰌶",
             text_open="󰌵",
             close_button_location="right",
@@ -3142,7 +3988,7 @@ def right_side_widgets():
             # starts, so scroll=True/scroll_chars above were dead config.
             width=220,
             padding=10,
-            fontsize=15,
+            fontsize=_s(15),
             foreground=colors[4],
             mouse_callbacks={
                 "Button1": lambda: qtile.spawn("playerctl play-pause"),
@@ -3161,7 +4007,7 @@ def right_side_widgets():
             SmartWidgetBox,
             name="system_widgetbox",
             insert_before_name="tooltip_widgetbox",
-            fontsize=14,
+            fontsize=_s(15),  # window ink was 10px, shortest
             padding=10,
             close_button_location="right",
             start_opened=False,
@@ -3173,7 +4019,7 @@ def right_side_widgets():
                     ewidget.CPU,
                     name="w_cpu",
                     format="  {load_percent}%",
-                    fontsize=10,
+                    fontsize=_s(10),
                     padding=11,
                     foreground=colors[5],
                     mouse_callbacks={
@@ -3188,7 +4034,7 @@ def right_side_widgets():
                     name="w_mem",
                     format="{MemUsed: .0f}{mm}",
                     fmt="🖥  {} ",
-                    fontsize=10,
+                    fontsize=_s(10),
                     padding=11,
                     foreground=colors[8],
                     mouse_callbacks={
@@ -3206,7 +4052,12 @@ def right_side_widgets():
             name="wallpaper_toggle",
             widgets=[],
             padding=11,
-            fontsize=12,
+            fontsize=_s(13),  # heavy X ink was 10px
+            # ✖/󰍜 is deliberate -- keep it. U+2716 is not in
+            # JetBrainsMono Nerd Font, so fc-match falls back to AdwaitaMono
+            # and this chip draws in a different family from its neighbours.
+            # That is a known, accepted trade: the heavier X is the shape
+            # wanted here. Do not "correct" it to a nerd font glyph again.
             text_closed="✖",
             text_open="󰍜",
             close_button_location="right",
@@ -3220,7 +4071,7 @@ def right_side_widgets():
             SmartWidgetBox,
             name="2nd_system_widgetbox",
             insert_before_name="tooltip_widgetbox",
-            fontsize=14,
+            fontsize=_s(14),
             padding=10,
             close_button_location="right",
             start_opened=False,
@@ -3247,7 +4098,7 @@ def right_side_widgets():
                     name="w_disk",
                     func=_disk_combined_text,
                     update_interval=60,
-                    fontsize=10,
+                    fontsize=_s(10),
                     padding=11,
                     foreground=colors[1],
                     mouse_callbacks={"Button1": lambda: qtile.spawn("disk_notify")},
@@ -3264,26 +4115,28 @@ def right_side_widgets():
             foreground=colors[5],
         ),
         # Battery
-        chip(
-            ewidget.Battery,
-            name="w_battery",
-            format="  {char}{percent:2.0%}",
-            fontsize=10,
-            padding=12,
-            foreground=colors[6],
-            low_foreground=colors[3],
-            low_percentage=0.2,
-            charge_char=" ↑ ",
-            discharge_char=" ↓ ",
-            full_char="✔ ",
-            show_percentage=True,
-            show_short_text=False,
-            mouse_callbacks={
-                "Button1": lambda: qtile.spawn(
-                    'battery_notify'
-                )
-            },
-        ),
+        *([
+            chip(
+                ewidget.Battery,
+                name="w_battery",
+                format="  {char}{percent:2.0%}",
+                fontsize=_s(10),
+                padding=12,
+                foreground=colors[6],
+                low_foreground=colors[3],
+                low_percentage=0.2,
+                charge_char=" ↑ ",
+                discharge_char=" ↓ ",
+                full_char="✔ ",
+                show_percentage=True,
+                show_short_text=False,
+                mouse_callbacks={
+                    "Button1": lambda: qtile.spawn(
+                        'battery_notify'
+                    )
+                },
+            ),
+        ] if _has_battery() else []),
         # Keyboard layout
         chip(
             ewidget.KeyboardLayout,
@@ -3338,15 +4191,60 @@ def right_side_widgets():
         chip(
             SmartWidgetBox,
             name="systray_widgetbox",
-            fontsize=11,
+            # text_closed carries pango markup; see _apply_raw_markup().
+            raw_markup=True,
+            # Back to 11: this sizes the CLOSE chevron, which is an ordinary
+            # nerd font glyph. The triangle carries its own size in its
+            # markup below, so the two states no longer have to share one
+            # number -- which is what made the chevron balloon when the
+            # triangle was scaled up.
+            fontsize=_s(11),
             padding=11,
-            text_closed="△",
+            # △/ is deliberate -- keep it. U+25B3 is a plain
+            # geometric shape rather than an icon from the nerd font set,
+            # chosen for its silhouette rather than for consistency with
+            # the others. Do not "correct" it to a chevron again.
+            # Adwaita Mono Bold, not JetBrainsMono. The ask was a BOLDER
+            # triangle of the same shape, and JetBrainsMono cannot give one:
+            # rendered at matched ink height it draws U+25B3 with identical
+            # ink at Thin, SemiBold and Bold alike, so <b> and weight="900"
+            # are measurably no-ops. Surveying every installed font that has
+            # the codepoint, normalised to a 12px ink height and scored on
+            # ink-per-perimeter (i.e. stroke thickness, independent of size):
+            #
+            #   AdwaitaMono-Bold      1.63   <- same outline shape, thickest
+            #   AdwaitaMono-Regular   1.51
+            #   AdwaitaSans-Regular   1.36
+            #   JetBrainsMono (any)   1.24
+            #
+            # 31% more stroke than the old one at the same size, and Adwaita
+            # Mono is already on this bar anyway -- the wallpaper chip's ✖
+            # falls back to it.
+            #
+            # size and rise live here rather than on the widget so the close
+            # chevron keeps its own metrics -- sharing one number is what
+            # made the chevron balloon when the triangle was scaled up.
+            #
+            # size is in 1024ths of a point and was swept against the live
+            # chip for INK height, since that is what the eye compares:
+            # 14000 -> 11x10, 16000 -> 12x10, 18000 -> 14x11, 20000 -> 16x13.
+            # 14000 puts it on the same 10-11px line as the rest of the
+            # cluster, and it carries 50 ink pixels in that box against the
+            # old glyph's 46 in a much larger 15x13 -- so it is smaller and
+            # visibly heavier at once, which was the point.
+            #
+            # rise swept the same way: 0-4000 no movement, 6000 -> +0.5px,
+            # 8000 -> -0.5px.
+            text_closed=(
+                '<span font_family="Adwaita Mono" weight="bold" '
+                'size="15500" rise="7000">△</span>'
+            ),
             text_open="",
             start_opened=False,
             close_button_location="right",
             widgets=[
                 ewidget.Systray(
-                    icon_size=14,
+                    icon_size=_s(14),
                     padding=6,
                     hide_crash=True,
                 ),
@@ -3356,11 +4254,25 @@ def right_side_widgets():
                     func=_nightlight_text,
                     update_interval=5,
                     padding=11,
-                    fontsize=11,
+                    fontsize=_s(11),
                     foreground=colors[6],
                     mouse_callbacks={
                         "Button1": lambda: _nightlight_on(),
                         "Button3": lambda: _nightlight_off(),
+                    },
+                ),
+                # Share the current wifi as a QR code. A plain TextBox, not a
+                # poll widget: it has no state to track, so it costs nothing
+                # sitting here, and everything it needs is read on click.
+                chip(
+                    ewidget.TextBox,
+                    name="w_wifi_qr",
+                    text="\uf029",
+                    padding=11,
+                    fontsize=_s(11),
+                    foreground=colors[5],
+                    mouse_callbacks={
+                        "Button1": lazy.function(WifiQR.toggle),
                     },
                 ),
             ],
@@ -3698,6 +4610,22 @@ def _disk_parts_text():
     return "\n".join(lines)
 
 
+def _has_battery():
+    """True on a machine that actually has one.
+
+    libqtile's Battery widget does not fail loudly on a desktop -- it builds
+    fine and then every poll returns the string
+    "Error: Unable to read status for status_file", which is what the bar
+    shows, permanently, in two places (the top bar's chip and the bottom
+    bar's). Nothing in the log says why. Building the chip only when
+    /sys/class/power_supply has a BAT* means a desktop simply has no battery
+    chip, which is the honest rendering.
+    """
+    import glob
+
+    return bool(glob.glob("/sys/class/power_supply/BAT*"))
+
+
 def _battery_detail_text():
     import glob
 
@@ -3739,8 +4667,9 @@ def _battery_detail_text():
     return "\n".join(lines)
 
 
-# -------- Prayer countdown --------
+# -------- Prayer countdown + FX --------
 _PRAYER_SCRIPT = os.path.expanduser("~/.config/qtile/scripts/prayer_next.sh")
+_FX_SCRIPT = os.path.expanduser("~/.config/qtile/scripts/fx_rates.sh")
 
 
 def _prayer_text():
@@ -3751,6 +4680,26 @@ def _prayer_text():
         return r.stdout.strip() if r.returncode == 0 else ""
     except Exception:
         return ""
+
+
+def _fx_text():
+    try:
+        r = subprocess.run([_FX_SCRIPT], capture_output=True, text=True, timeout=8)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _clock_tooltip_text():
+    """Next prayer, with USD/EUR in TL and EGP under it.
+
+    The two halves are independent: whichever one comes back empty (dead
+    network, missing cache) just drops its block instead of blanking the
+    tooltip. Runs in the tooltip worker thread (see _make_tooltip_dynamic),
+    so the two subprocesses being serial is harmless -- both read caches.
+    """
+    blocks = [b for b in (_prayer_text(), _fx_text()) if b]
+    return "\n\n".join(blocks)
 
 
 class HideablePollText(ewidget.GenPollText):
@@ -3785,12 +4734,54 @@ class SmartWidgetBox(ewidget.WidgetBox):
     # live bar and crashed the draw (see _SafeLengthMixin).
     _instances = weakref.WeakSet()
 
-    def __init__(self, *a, insert_before_name=None, **k):
+    def __init__(self, *a, insert_before_name=None, raw_markup=False, **k):
+        # raw_markup opts this box out of WidgetBox's label escaping -- see
+        # _apply_raw_markup().
+        self.raw_markup = raw_markup
         self.insert_before_name = insert_before_name
         super().__init__(*a, **k)
 
+    def _apply_raw_markup(self):
+        """Re-apply the label without WidgetBox's pango escaping.
+
+        WidgetBox runs markup_escape_text() over text_closed/text_open
+        (widgetbox.py:68 and :99), and it is right to by default -- its own
+        default label is "[<]", which pango would otherwise read as a broken
+        tag. But it also means a box label can never carry markup, and the
+        systray chip needs a <span rise> to sit on the centre line.
+
+        Only for boxes that asked for it: every other one keeps upstream's
+        escaping.
+        """
+        if not getattr(self, "raw_markup", False):
+            return
+        self.text = self.text_open if self.box_is_open else self.text_closed
+
+    def set_box_label(self):
+        """Every label write goes through here, so the un-escaping does too.
+
+        This used to be re-applied only after the two calls this class
+        overrides (_configure and toggle), on the reading that those were the
+        only two places upstream sets the label. They are not: close_all()
+        deliberately calls `super(SmartWidgetBox, wb).toggle()` to close a
+        sibling WITHOUT recursing back into our toggle, and upstream's toggle
+        calls set_box_label() -- so the systray chip was re-escaped every time
+        a different box was opened, and the bar then drew the literal string
+        `<span font_family="Adwaita Mono" ...>` where the triangle belongs.
+        Clicking the chip fixed it, which is why it looked intermittent.
+
+        Overriding the one method that writes the label closes that hole for
+        every path into it, including upstream's open()/close() and anything
+        added later, instead of leaving each new caller to remember.
+        """
+        super().set_box_label()
+        self._apply_raw_markup()
+
     def _configure(self, qtile, bar):
         super()._configure(qtile, bar)
+        # Not covered by the set_box_label() override: WidgetBox._configure
+        # assigns self.text directly rather than going through it.
+        self._apply_raw_markup()
         # Register on _configure, not __init__: only boxes that actually
         # belong to a live bar should ever be reachable from here.
         SmartWidgetBox._instances.add(self)
@@ -3814,7 +4805,33 @@ class SmartWidgetBox(ewidget.WidgetBox):
         was_open = getattr(self, "box_is_open", False)
         if not was_open:
             SmartWidgetBox.close_all(except_self=self)
+        # No _apply_raw_markup() here: upstream's toggle() calls
+        # set_box_label(), which this class overrides to do it.
         res = super().toggle(*a, **k)
+        # Opening a box changes how much room the right-hand side needs, and
+        # the centring pass is subscribed to CLIENT hooks only -- nothing
+        # about a window changed here, so none of them fire. Without this the
+        # tasklist keeps its old width and the surplus pushes the last chip
+        # off the bar.
+        #
+        # Synchronously, NOT via _schedule_center_groupbox(). That helper
+        # defers to call_later(0), and upstream's toggle() has already
+        # queued the repaint with call_soon() -- asyncio drains the
+        # call_soon ready queue before it promotes an expired timer, so
+        # the bar PAINTS ONCE at the stale widths and only then gets
+        # centred. That intermediate frame is the visible one: while
+        # something is playing, w_mpris is a STATIC 220px chip, and 220
+        # already exceeds the ~205px of slack the stretch spacer holds
+        # with every box closed. Opening a box (another ~140px) leaves
+        # the bar 155px over-full for that frame, so `_resize` clamps the
+        # spacer to zero and every chip from the player rightwards is
+        # drawn shifted, then snaps back when the tasklist gives the room
+        # up. Running the pass here means the tasklist is already capped
+        # when the single queued draw fires, so there is no frame to see.
+        try:
+            _center_top_groupbox()
+        except Exception:
+            pass
         try:
             qtile.call_later(0.1, install_bar_tooltips)
         except Exception:
@@ -3994,8 +5011,9 @@ class _SafeLengthMixin:
 
     libqtile's own _Widget.length wraps calculate_length() in a
     try/except and returns 0 on failure (widget/base.py). But
-    libqtile.widget.textbox.TextBox OVERRIDES `length` (via length_get)
-    without that guard, so any exception escapes the property, Python
+    qtile_extras' inject_decorations() REPLACES `length` on each concrete
+    widget class with its own unguarded length_get -- see
+    _guard_injected_length() below -- so any exception escapes the property, Python
     falls through to Configurable.__getattr__, and the caller sees
 
         AttributeError: <X> has no attribute: length
@@ -4097,6 +5115,342 @@ def _guard_widget_length():
 _guard_widget_length()
 
 
+def _guard_injected_length():
+    """Close the hole _guard_widget_length() cannot reach.
+
+    Patching _Widget.length is not enough, because qtile_extras does not
+    inherit that property -- it OVERWRITES it. decorations.py:1175:
+
+        classdef.length = property(length_get, length_set)
+
+    inject_decorations() runs that against every concrete widget class it
+    decorates, so libqtile.widget.textbox.TextBox ends up with its own
+    `length` in __dict__ that shadows the guarded one further up the MRO.
+    That is why this kept crashing the bar after the first guard went in,
+    once per reload_config:
+
+        bar.py:440 in _resize -> sum(w.length for w in widgets ...)
+        AttributeError: TextBox has no attribute: length
+
+    It is invisible from a plain `import libqtile` -- the injection happens
+    at runtime, not in libqtile's source -- which is what made the earlier
+    reading of this ("TextBox OVERRIDES length") look wrong when checked.
+
+    qtile_extras' length_get() reads self.length_type, self._length and
+    self.calculate_length() with no guard at all, and every one of those
+    needs _configure() to have run. The chips are safe already because
+    _SafeLengthMixin sits ahead of the qtile_extras class in their MRO;
+    what is left exposed is the plain widgets built directly, like the "|"
+    separator TextBoxes.
+
+    Both halves are needed: the sweep covers classes already injected by
+    the time this module is imported, and wrapping inject_decorations
+    covers anything imported afterwards.
+    """
+    from libqtile.widget import base as _wbase
+    from qtile_extras.widget import decorations as _dec
+
+    def _wrap_class(cls):
+        prop = cls.__dict__.get("length")
+        # __dict__, not getattr: an inherited guarded property must not
+        # count as this class being done, or a subclass that gets its own
+        # injection later would be skipped.
+        if prop is None or cls.__dict__.get("_length_guard_applied"):
+            return
+        fget = prop.fget
+
+        def _get(self):
+            try:
+                return fget(self)
+            except Exception:
+                from libqtile.log_utils import logger
+
+                # type(self).__name__, never self.name -- self.name is one
+                # of the attributes that may be missing here, and raising
+                # from inside the handler is the bug being fixed.
+                logger.warning(
+                    "widget %s could not compute length (configured=%s); "
+                    "treating as 0 so the bar still draws",
+                    type(self).__name__,
+                    getattr(self, "configured", "?"),
+                )
+                return 0
+
+        cls.length = property(_get, prop.fset, prop.fdel)
+        cls._length_guard_applied = True
+
+    def _sweep(cls):
+        for sub in cls.__subclasses__():
+            _wrap_class(sub)
+            _sweep(sub)
+
+    _sweep(_wbase._Widget)
+
+    if not getattr(_dec, "_length_guard_installed", False):
+        _orig_inject = _dec.inject_decorations
+
+        def _inject(classdef):
+            result = _orig_inject(classdef)
+            _wrap_class(classdef)
+            return result
+
+        _dec.inject_decorations = _inject
+        _dec._length_guard_installed = True
+
+
+_guard_injected_length()
+
+
+def _requeue_bar_draw(w, delay=0.2):
+    """Ask the bar to draw again shortly, once `w` is configured.
+
+    The companion to skipping a draw: without this the widget would stay
+    blank until something else happened to repaint the bar. Guarded by a
+    per-widget flag so a bar full of not-yet-ready widgets queues one
+    retry, not one per widget per frame.
+
+    Everything is getattr()-ed because the whole point is that this runs on
+    a widget that has NOT been _configure()d -- `self.bar` and `self.qtile`
+    are among the attributes that do not exist yet.
+    """
+    b = getattr(w, "bar", None)
+    q = getattr(w, "qtile", None) or qtile
+    if b is None or q is None or getattr(w, "_draw_requeued", False):
+        return
+    w._draw_requeued = True
+
+    def _again():
+        w._draw_requeued = False
+        try:
+            if getattr(w, "layout", None) is not None and getattr(w, "configured", False):
+                b.draw()
+        except Exception:
+            pass
+
+    try:
+        q.call_later(delay, _again)
+    except Exception:
+        w._draw_requeued = False
+
+
+def _guard_groupbox_draw():
+    """Stop an unconfigured GroupBox from throwing out of the bar draw.
+
+    Same defect as _SafeLengthMixin, one method further along. A bar can be
+    asked to draw while its widgets are still configured=False, and every
+    one of the ~20 occurrences in qtile.log looks identical: a burst of
+
+        widget <X> could not compute length (configured=False)
+
+    for the whole bottom-bar widget list -- TextBox, CurrentLayout,
+    GroupBox, the SmartWidgetBoxes, Battery, KeyboardLayout, Clock -- and
+    then, one millisecond later,
+
+        bar.py:_actual_draw  Widget failed to draw
+        groupbox.py:72 in drawbox -> self.layout.text = ...
+        AttributeError: 'NoneType' object has no attribute 'text'
+
+    _TextBox.__init__ sets self.layout = None and only _GroupBase._configure()
+    builds the real one, so every other widget in that list degrades to
+    length 0 (thanks to the length guard) while the GroupBox is the one
+    that actually raises. _Widget.finalize() puts it back to None too, so a
+    screen being reconfigured -- plugging or unplugging the second monitor
+    -- reaches the same state from the other direction.
+
+    Bar._actual_draw() catches the exception, so this was never fatal: the
+    cost is the workspace icons missing from that frame and a traceback in
+    the log. Skipping the draw and queueing a retry is the same bargain the
+    length guard already makes -- degrade, log nothing, repaint when ready.
+
+    drawbox() is patched on _GroupBase, which both GroupBox and AGroupBox
+    inherit without overriding, and draw() on the concrete classes.
+    qtile_extras' GroupBox is not a separate class -- it re-exports
+    libqtile's with decorations injected (checked: __module__ is
+    libqtile.widget.groupbox) -- so both bars' widgets are covered, as are
+    the _derive()d chip subclasses, which inherit draw() rather than
+    defining their own.
+    """
+    from libqtile.widget import groupbox as _gb
+
+    # Reloading the config re-imports this module; without the flag each
+    # reload would wrap the previous wrapper.
+    if getattr(_gb._GroupBase, "_draw_guarded", False):
+        return
+
+    def _ready(w):
+        return getattr(w, "layout", None) is not None and getattr(w, "configured", False)
+
+    _orig_drawbox = _gb._GroupBase.drawbox
+
+    def drawbox(self, *args, **kwargs):
+        if getattr(self, "layout", None) is None:
+            _requeue_bar_draw(self)
+            return
+        return _orig_drawbox(self, *args, **kwargs)
+
+    _gb._GroupBase.drawbox = drawbox
+
+    def _guarded_draw(orig):
+        def draw(self):
+            if not _ready(self):
+                _requeue_bar_draw(self)
+                return
+            return orig(self)
+
+        return draw
+
+    for _cls in (_gb.GroupBox, _gb.AGroupBox):
+        _own = _cls.__dict__.get("draw")
+        if _own is not None:
+            _cls.draw = _guarded_draw(_own)
+
+    _gb._GroupBase._draw_guarded = True
+
+
+_guard_groupbox_draw()
+
+
+def _centre_textbox_vertically():
+    """Undo libqtile's hardcoded one-pixel downward nudge on widget text.
+
+    libqtile/widget/base.py, _TextBox.draw():
+
+        y = (self.bar.size - self.layout.height) / 2 + 1
+
+    That `+ 1` is not a rounding correction, it is a constant, and it puts
+    EVERY text widget in the bar one pixel below true centre. Measured by
+    cropping each chip and comparing its plate's bounding box against its
+    glyph's ink box: the tooltip, system, wallpaper and systray chips all
+    sat at dy = +1.0, and the clock at +1.5. It reads as "the icons are not
+    centred" because that is precisely what it is.
+
+    Correcting each glyph with its own pango rise was the wrong SHAPE of
+    fix -- it treats a global constant as though it were per-glyph ink
+    offsets, and every chip added later would need its own magic number.
+    One pixel comes off the draw position instead, once, for everything.
+
+    Done by shifting the layout at the point of use rather than
+    reimplementing draw(): that method is long, handles scroll clipping and
+    rotation, and copying it here would drift from upstream on the next
+    qtile release. Wrapping the single call whose y we care about leaves
+    the rest of it upstream's problem.
+    """
+    from libqtile.widget import base as _wbase
+
+    if getattr(_wbase._TextBox, "_vcentre_patched", False):
+        return
+    _orig_draw = _wbase._TextBox.draw
+
+    def draw(self):
+        layout = self.layout
+        # Upstream's draw() opens with `if not self.can_draw(): return`, and
+        # can_draw() is exactly `self.layout is not None`. Reaching for
+        # layout.draw before delegating stepped in front of that guard, so an
+        # unconfigured widget -- which is every widget for a moment during a
+        # reload -- raised "'NoneType' object has no attribute 'draw'" out of
+        # here instead of being skipped. Hand those straight back.
+        if layout is None:
+            return _orig_draw(self)
+        real_draw = layout.draw
+
+        def shifted(x, y, *a, **k):
+            return real_draw(x, y - 1, *a, **k)
+
+        layout.draw = shifted
+        try:
+            _orig_draw(self)
+        finally:
+            # Drop the instance attribute so the class method is visible
+            # again. The layout can be rebuilt underneath us, so tolerate
+            # it having already gone.
+            try:
+                del layout.draw
+            except AttributeError:
+                pass
+
+    _wbase._TextBox.draw = draw
+    _wbase._TextBox._vcentre_patched = True
+
+
+_centre_textbox_vertically()
+
+
+def _guard_x11_layering():
+    """Stop a stale window reference taking the whole session down.
+
+    This is the bug that ended the session on 2026-07-31 at 04:37:53. The
+    fatal traceback, from the log:
+
+        core.py:947  check_stacking   -> self.last_focused.change_layer()
+        window.py:1167 change_layer   -> self.qtile.windows_map[wid].window...
+        KeyError: 31457294
+
+    Core.check_stacking keeps `last_focused` as a direct reference to a
+    Window and never clears it when that window stops being managed. During
+    a restart or a config reload, qtile tears down and rebuilds
+    windows_map, so `last_focused` routinely points at a window that no
+    longer exists -- and check_stacking calls change_layer() on it anyway.
+    change_layer then looks the wid up in windows_map and raises KeyError,
+    out of an event handler, which is fatal.
+
+    Two guards, because there are two ways in:
+
+    check_stacking gets the missing membership test. It is six lines
+    upstream and is reimplemented here rather than wrapped, since the point
+    is a condition in the middle of it.
+
+    change_layer gets a blanket catch, which is the right shape for this
+    one: its entire job is deciding which window sits above which, so the
+    cost of giving up on a single call is one frame of possibly-wrong
+    stacking order, corrected by the next focus event. The cost of NOT
+    giving up is the session dying. The same function also does
+    `group_bar.window.get_layering_information()` without checking that the
+    bar HAS a window yet -- that is the AttributeError that fired thirteen
+    times on toggle_fullscreen in the previous log -- so the catch covers
+    both rather than guessing at every unbuilt object it might touch.
+    """
+    from libqtile.backend.x11 import core as _x11core
+    from libqtile.backend.x11 import window as _x11window
+
+    if getattr(_x11core.Core, "_layering_guarded", False):
+        return
+
+    def check_stacking(self, win):
+        last = self.last_focused
+        if win is last:
+            return
+        # The added test: only restack a window qtile still manages.
+        if (
+            last is not None
+            and getattr(last, "wid", None) in self.qtile.windows_map
+            and last.fullscreen
+        ):
+            last.change_layer()
+        self.last_focused = win
+
+    _x11core.Core.check_stacking = check_stacking
+
+    _orig_change_layer = _x11window._Window.change_layer
+
+    def change_layer(self, *a, **k):
+        try:
+            return _orig_change_layer(self, *a, **k)
+        except (KeyError, AttributeError):
+            from libqtile.log_utils import logger
+
+            logger.warning(
+                "change_layer failed for %s; leaving the stacking order alone "
+                "rather than raising out of an event handler",
+                getattr(self, "wid", "?"),
+            )
+
+    _x11window._Window.change_layer = change_layer
+    _x11core.Core._layering_guarded = True
+
+
+_guard_x11_layering()
+
+
 class _ChipFlashMixin(_SafeLengthMixin):
     """Brief brighten-then-fade flash on click. Wraps button_press so
     whatever click behavior the underlying widget/mouse_callbacks already
@@ -4175,7 +5529,16 @@ def chip(WCls, chip_color=None, **kwargs):
     base_color = chip_color if chip_color is not None else DEFAULT_CHIP_COLOR
     deco = RectDecoration(
         colour=base_color,
-        radius=11,
+        # radius = half the plate's height, so the short sides are true
+        # semicircles: single-glyph chips come out round and wider ones come
+        # out as proper pills. It was a flat 11 against a plate that is
+        # _s(28) - 2*padding_y = 24 tall, which is one pixel short of the 12
+        # a full round needs -- leaving a 2px straight segment on each short
+        # side. Small, but it is the difference between "circle" and
+        # "squircle", and it was visible on the logo chip.
+        # Derived rather than hardcoded so it stays correct at any UI scale;
+        # keep the 28 in step with the bar's own size= below.
+        radius=(_s(28) - 2 * 2) / 2,
         filled=True,
         padding_x=3,
         padding_y=2,
@@ -4221,6 +5584,177 @@ def chip(WCls, chip_color=None, **kwargs):
 # ╚──────────────────────────────────╝
 
 
+# Audio-Mode and Display-Mode live on alt+3 / alt+4, where the pavucontrol
+# and arandr scratchpads used to sit. Their submappings are long enough to
+# bury the keys list they are attached to, so they are defined out here.
+#
+# Each list rebinds its OWN entry key to close-and-ungrab, which is what
+# makes alt+3 / alt+4 toggles rather than one-way doors: while a chord is
+# active qtile grabs only that chord's keys, so alt+3 is not otherwise seen
+# again until the chord is left.
+def _audio_mode_keys():
+    """Submappings for Audio-Mode (see popups/AudioPopup.py)."""
+    return [
+        # NAVIGATE
+        Key([], "j", lazy.function(lambda _: AudioPopup.move(1))),
+        Key([], "k", lazy.function(lambda _: AudioPopup.move(-1))),
+        Key([], "g", lazy.function(lambda _: AudioPopup.jump("top"))),
+        Key(
+            ["shift"],
+            "g",
+            lazy.function(lambda _: AudioPopup.jump("bottom")),
+        ),
+        # VIEWS. Tab cycles; the direct letters are for jumping
+        # straight to one.
+        Key([], "Tab", lazy.function(lambda _: AudioPopup.cycle_view(1))),
+        Key(
+            ["shift"],
+            "Tab",
+            lazy.function(lambda _: AudioPopup.cycle_view(-1)),
+        ),
+        Key([], "o", lazy.function(lambda _: AudioPopup.set_view("outputs"))),
+        Key([], "i", lazy.function(lambda _: AudioPopup.set_view("inputs"))),
+        Key([], "a", lazy.function(lambda _: AudioPopup.set_view("playback"))),
+        Key(
+            [],
+            "s",
+            lazy.function(lambda _: AudioPopup.set_view("recording")),
+        ),
+        Key([], "p", lazy.function(lambda _: AudioPopup.show_profiles())),
+        # Every card at once -- pavucontrol's Configuration tab.
+        Key(["shift"], "c", lazy.function(lambda _: AudioPopup.show_cards())),
+        # Enter on a stream opens the device picker; d is the
+        # shortcut for "just put it on the default".
+        Key([], "d", lazy.function(lambda _: AudioPopup.send_to_default())),
+        # Shift+p for the jack/port dropdown -- the thing that
+        # picks Headphones over Speakers on one card.
+        Key(["shift"], "p", lazy.function(lambda _: AudioPopup.show_ports())),
+        # Balance, stereo devices only. 0 re-centres.
+        Key(
+            [],
+            "b",
+            lazy.function(
+                lambda _: AudioPopup.change_balance(-AudioPopup.BALANCE_STEP)
+            ),
+        ),
+        Key(
+            ["shift"],
+            "b",
+            lazy.function(
+                lambda _: AudioPopup.change_balance(AudioPopup.BALANCE_STEP)
+            ),
+        ),
+        Key([], "0", lazy.function(lambda _: AudioPopup.change_balance(0))),
+        # ACTIONS. Enter on an output also drags the running
+        # streams over -- setting the default alone only affects
+        # what starts playing afterwards.
+        Key([], "Return", lazy.function(lambda _: AudioPopup.activate())),
+        Key(
+            [],
+            "l",
+            lazy.function(
+                lambda _: AudioPopup.change_volume(AudioPopup.VOLUME_STEP)
+            ),
+        ),
+        Key(
+            [],
+            "h",
+            lazy.function(
+                lambda _: AudioPopup.change_volume(-AudioPopup.VOLUME_STEP)
+            ),
+        ),
+        Key([], "m", lazy.function(lambda _: AudioPopup.toggle_mute())),
+        Key([], "r", lazy.function(lambda _: AudioPopup.refresh(True))),
+        # Abort a card-profile switch: a bluez renegotiation can
+        # sit there for seconds.
+        Key([], "c", lazy.function(lambda _: AudioPopup.cancel())),
+        # EXIT. No Escape binding: KeyChord appends its own after
+        # these and later grabs win, so Escape closes via
+        # cleanup_on_leave. Same as the WiFi and Bluetooth chords.
+        Key(
+            [],
+            "q",
+            lazy.function(lambda qtile: AudioPopup.close(qtile)),
+            lazy.ungrab_chord(),
+        ),
+        # The entry key again, so alt+3 toggles.
+        Key(
+            [mod2],
+            "3",
+            lazy.function(lambda qtile: AudioPopup.close(qtile)),
+            lazy.ungrab_chord(),
+        ),
+    ]
+
+
+def _display_mode_keys():
+    """Submappings for Display-Mode (see popups/DisplayPopup.py)."""
+    return [
+        # NAVIGATE. In arrange mode j/k/h/l move the picked
+        # monitor instead of the cursor -- see DisplayPopup.nav
+        # and .place, which branch on the active view.
+        Key([], "j", lazy.function(lambda _: DisplayPopup.nav(1))),
+        Key([], "k", lazy.function(lambda _: DisplayPopup.nav(-1))),
+        Key([], "Tab", lazy.function(lambda _: DisplayPopup.pick_next(1))),
+        Key([], "a", lazy.function(lambda _: DisplayPopup.start_arrange())),
+        Key([], "g", lazy.function(lambda _: DisplayPopup.jump("top"))),
+        Key(
+            ["shift"],
+            "g",
+            lazy.function(lambda _: DisplayPopup.jump("bottom")),
+        ),
+        # Enter opens the resolution / refresh list for the
+        # selected output, and applies the mode from inside it.
+        Key([], "Return", lazy.function(lambda _: DisplayPopup.activate())),
+        Key([], "BackSpace", lazy.function(lambda _: DisplayPopup.back())),
+        # ONE-KEY LAYOUTS -- the 95% cases.
+        Key([], "i", lazy.function(lambda _: DisplayPopup.preset("internal"))),
+        Key([], "e", lazy.function(lambda _: DisplayPopup.preset("external"))),
+        Key([], "m", lazy.function(lambda _: DisplayPopup.preset("mirror"))),
+        # Placement. u/d rather than j/k: those are the cursor.
+        Key([], "h", lazy.function(lambda _: DisplayPopup.place("left"))),
+        Key([], "l", lazy.function(lambda _: DisplayPopup.place("right"))),
+        Key([], "u", lazy.function(lambda _: DisplayPopup.preset("above"))),
+        Key([], "d", lazy.function(lambda _: DisplayPopup.preset("below"))),
+        # PER-OUTPUT
+        Key([], "p", lazy.function(lambda _: DisplayPopup.set_primary())),
+        Key([], "t", lazy.function(lambda _: DisplayPopup.rotate())),
+        Key([], "f", lazy.function(lambda _: DisplayPopup.reflect())),
+        Key([], "o", lazy.function(lambda _: DisplayPopup.toggle_output())),
+        Key([], "r", lazy.function(lambda _: DisplayPopup.refresh(True))),
+        # SAVED LAYOUTS -- what autorandr would do, except this
+        # machine does not have autorandr.
+        Key([], "v", lazy.function(lambda _: DisplayPopup.show_layouts())),
+        Key([], "s", lazy.function(lambda _: DisplayPopup.save_current())),
+        Key([], "x", lazy.function(lambda _: DisplayPopup.delete_layout())),
+        # A change that could blank the screen stays provisional
+        # until `y`; `c` reverts it now, and doing nothing reverts
+        # it when the countdown runs out.
+        Key([], "y", lazy.function(lambda _: DisplayPopup.keep())),
+        # Cross-axis alignment while arranging: tops / centres /
+        # bottoms. The one thing arandr could do that this could
+        # not.
+        Key([], "equal", lazy.function(lambda _: DisplayPopup.cycle_align())),
+        Key([], "c", lazy.function(lambda _: DisplayPopup.cancel())),
+        # EXIT. No Escape binding, same reason as above -- and
+        # cleanup_on_leave reverts any pending change on the way
+        # out.
+        Key(
+            [],
+            "q",
+            lazy.function(lambda qtile: DisplayPopup.close(qtile)),
+            lazy.ungrab_chord(),
+        ),
+        # The entry key again, so alt+4 toggles.
+        Key(
+            [mod2],
+            "4",
+            lazy.function(lambda qtile: DisplayPopup.close(qtile)),
+            lazy.ungrab_chord(),
+        ),
+    ]
+
+
 keys = [
     # Hint mode is bound directly, not only in the chord. It is the action
     # you take constantly, and a chord costs a keystroke plus remembering you
@@ -4257,6 +5791,18 @@ keys = [
         lazy.spawn(HOMEROW + " --caret"),
         desc="Homerow: caret mode",
     ),
+    Key(
+        [mod2, "shift"],
+        "c",
+        lazy.spawn(HOMEROW + " --caret-search"),
+        desc="Homerow: caret search (type to find a word, land the caret there)",
+    ),
+    Key(
+        [mod2],
+        "e",
+        lazy.spawn(HOMEROW + " --edit"),
+        desc="Homerow: edit a field in nvim, in place",
+    ),
     # FIX: try to make a speach to text app
     # ---------------------
     # Key([mod], "s", lazy.spawn("bash -c \"notify-send '🎤 STT' 'Speak now…' && ~/.config/qtile/scripts/stt_script.sh\"")),
@@ -4280,17 +5826,37 @@ keys = [
         lazy.widget["2nd_system_widgetbox"].toggle(),
         desc="Toggle 2nd system widget box",
     ),
-    # --- voice dictation, live (whisper.cpp stream, VAD-triggered per-phrase typing) ---
+    # --- voice dictation ---
+    # Bare F8/F9, moved off Super+Shift+V/B. Dictation is a hold-a-thought
+    # action: the whole value is being able to start it before the sentence
+    # goes, and a three-key chord is long enough to lose it. F8 and F9 stay
+    # adjacent the way V and B were, so the live/batch pair is still one
+    # finger apart.
+    #
+    # F8/F9 and not F6/F7, which is where these first landed. A bare binding
+    # is a GLOBAL grab -- qtile takes the key from every application, for
+    # good -- so the only question that matters is which keys nothing else
+    # wants. Across the row:
+    #
+    #   F1 help   F2 rename   F3 find-next   F5 reload
+    #   F6 address bar        F7 caret browsing (Firefox)
+    #   F10 menu bar   F11 fullscreen   F12 devtools
+    #   F8, F9 -- claimed by essentially nothing
+    #
+    # F6 and F7 were the two genuinely contested keys in the row; F8 and F9
+    # cost nothing to take. Same single keystroke, no conflict traded for it.
+    #
+    # Inside qtile the whole row was free either way: only Super+F12
+    # (passthrough) and Super+Shift+F5 (refresh) are bound anywhere in it.
     Key(
-        [mod, "shift"],
-        "v",
+        [],
+        "F8",
         lazy.spawn("voice_dictate_live"),
         desc="Start/stop live voice dictation (types each phrase as you pause)",
     ),
-    # --- voice dictation, batch (whisper.cpp small.en, one shot at manual stop) ---
     Key(
-        [mod, "shift"],
-        "b",
+        [],
+        "F9",
         lazy.spawn("voice_dictate"),
         desc="Start/stop batch voice dictation (whisper.cpp -> xdotool type)",
     ),
@@ -4316,8 +5882,34 @@ keys = [
     Key(
         [mod, "shift"],
         "s",
-        lazy.function(lambda qtile: toggle_or_spawn_sum(qtile, my2ndTerm, sum_file)),
+        # myTerm, not my2ndTerm. alacritty was the only reason my2ndTerm
+        # existed, and its font.size is 9.0 against kitty's 11.0 -- so this
+        # one window rendered ~18% smaller than every other terminal on the
+        # desktop, permanently, at every scale. It also could not follow a
+        # UI scale change: kitty re-derives its cell size from Xft.dpi while
+        # running (measured across a DPI change, minimized included),
+        # alacritty reads it once at startup, and this window is long-lived
+        # and only ever minimized -- so it kept whatever scale it was born
+        # at until something killed it.
+        lazy.function(lambda qtile: toggle_or_spawn_sum(qtile, myTerm, sum_file)),
         desc="Open or focus sum.md globally",
+    ),
+    # --- Android phone screen (scrcpy over Wi-Fi) ---
+    Key(
+        [mod, "shift"],
+        "F6",
+        # Next to Super+Shift+F5 (Refresh PC) on purpose: both are
+        # whole-machine actions rather than window management, and this
+        # keeps that pair adjacent. The F6/F7 contention noted above
+        # applies to the BARE keys; under Super+Shift the row is free.
+        #
+        # phone_screen does the discovery adb cannot: Arch's android-tools
+        # is built without mDNS, so it never finds a wirelessly-debugging
+        # phone by itself and the address+port have to be copied off the
+        # phone by hand every session. The script reads the same mDNS
+        # announcement through avahi-browse and hands adb a host:port.
+        lazy.spawn("phone_screen"),
+        desc="Mirror the Android phone (scrcpy, USB or Wi-Fi)",
     ),
     # ---screenshot: select an area, straight to the clipboard---
     Key(
@@ -4341,7 +5933,12 @@ keys = [
         desc="clock popup (today & week: plans-todos)",
     ),
     # ---close notifications---
-    Key([mod2], "n", lazy.spawn("dunstctl close")),
+    Key(
+        [mod2],
+        "n",
+        lazy.spawn("dunstctl close"),
+        desc="Dismiss the top notification",
+    ),
     # ---copyq clipboard popup---
     Key([mod2], "v", lazy.spawn(os.path.expanduser("~/.config/AtiScriptsV1/copyq_rofi")), desc="CopyQ clipboard rofi picker (ctrl+j/k nav, thumbnails)"),
     # ---gptscript-inline---
@@ -4506,7 +6103,12 @@ keys = [
             # Key([], "c", lazy.spawn("dtos-colorscheme"), desc='Choose color scheme'),
             # Key([], "e", lazy.spawn("dm-confedit"), desc='Choose a config file to edit'),
             # Key([], "o", lazy.spawn("dm-bookman -r"), desc='Browser bookmarks'),
-            # Key([], "p", lazy.spawn('passmenu -p "Pass: "'), desc="pass menu"),
+            # --- passwords ---
+            # Was a commented-out `passmenu` line for years. rofi_pass
+            # replaces it: a rofi picker over Vaultwarden (local, on
+            # 127.0.0.1:8222) via rbw, so the same vault the Bitwarden
+            # phone app syncs from is the one this reads.
+            Key([], "p", lazy.spawn("rofi_pass"), desc="Passwords (Vaultwarden)"),
             # Key([], "u", lazy.spawn("dm-music -r"), desc='Toggle music mpc/mpd')
             # Key([], "r", lazy.spawn("dm-record -r"), desc='record'),
             # Key([], "s", lazy.spawn("dm-websearch -r"), desc='Search various engines'),
@@ -4517,7 +6119,10 @@ keys = [
                 [],
                 "e",
                 lazy.spawn(
-                    "python3 /home/ati/.config/rofi_translator/wordreference.py"
+                    "python3 "
+                    + os.path.expanduser(
+                        "~/.config/rofi_translator/wordreference.py"
+                    )
                 ),
                 desc="Translate text",
             ),
@@ -4541,9 +6146,10 @@ keys = [
             Key([], "z", lazy.spawn("rofi_shared"), desc="shared link-preview"),
             # --- a Special mode for "Wallpaper Picker" ---
             # --- Wallpaper MODE ---
+            # w for wallpaper. (Was b, which now opens Bluetooth.)
             KeyChord(
                 [],
-                "b",
+                "w",
                 [
                     # NAVIGATE LEFT / RIGHT
                     Key([], "h", lazy.function(lambda _: WallpaperPopup.move(0, -1))),
@@ -4595,6 +6201,99 @@ keys = [
                 name="WallpaperPicker",
                 desc="Wallpaper picker mode",
             ),
+            # --- a Special mode for "Bluetooth" ---
+            # --- Bluetooth MODE ---
+            # b for bluetooth. Everything happens in the popup: scan, pair,
+            # trust, connect, disconnect, remove -- blueman's window is not
+            # involved.
+            KeyChord(
+                [],
+                "b",
+                [
+                    # NAVIGATE
+                    Key([], "j", lazy.function(lambda _: BluetoothPopup.move(1))),
+                    Key([], "k", lazy.function(lambda _: BluetoothPopup.move(-1))),
+                    Key([], "g", lazy.function(lambda _: BluetoothPopup.jump("top"))),
+                    Key(
+                        ["shift"],
+                        "g",
+                        lazy.function(lambda _: BluetoothPopup.jump("bottom")),
+                    ),
+                    # ACTIONS
+                    Key([], "Return", lazy.function(lambda _: BluetoothPopup.connect())),
+                    Key([], "d", lazy.function(lambda _: BluetoothPopup.disconnect())),
+                    Key([], "x", lazy.function(lambda _: BluetoothPopup.remove())),
+                    Key([], "t", lazy.function(lambda _: BluetoothPopup.toggle_power())),
+                    Key([], "r", lazy.function(lambda _: BluetoothPopup.scan())),
+                    # Abort a pair/connect that is hanging. bluetoothctl
+                    # connect never returns for an out-of-range device.
+                    Key([], "c", lazy.function(lambda _: BluetoothPopup.cancel())),
+                    Key([], "slash", lazy.function(lambda _: BluetoothPopup.search())),
+                    # EXIT. No Escape binding: KeyChord appends its own after
+                    # these and later grabs win, so Escape closes via
+                    # cleanup_on_leave. Same as the WiFi chord.
+                    Key(
+                        [],
+                        "q",
+                        lazy.function(lambda qtile: BluetoothPopup.close(qtile)),
+                        lazy.ungrab_chord(),
+                    ),
+                ],
+                mode=True,
+                name="Bluetooth-Mode",
+                desc="Bluetooth device picker",
+            ),
+            # NOTE: Audio-Mode (v) and Display-Mode (g) used to be nested here
+            # alongside the other pickers. They are on alt+3 / alt+4 now --
+            # one keystroke, and toggleable -- so the duplicates are gone; v
+            # and g are free again in this chord.
+            # --- a Special mode for "WiFi" ---
+            # --- WiFi MODE ---
+            # n for network. (Was w, which now opens the wallpaper picker.)
+            KeyChord(
+                [],
+                "n",
+                [
+                    # NAVIGATE
+                    Key([], "j", lazy.function(lambda _: WifiPopup.move(1))),
+                    Key([], "k", lazy.function(lambda _: WifiPopup.move(-1))),
+                    Key([], "g", lazy.function(lambda _: WifiPopup.jump("top"))),
+                    Key(["shift"], "g", lazy.function(lambda _: WifiPopup.jump("bottom"))),
+                    # ACTIONS
+                    Key([], "Return", lazy.function(lambda _: WifiPopup.connect())),
+                    Key([], "d", lazy.function(lambda _: WifiPopup.disconnect())),
+                    Key([], "x", lazy.function(lambda _: WifiPopup.forget())),
+                    Key([], "n", lazy.function(lambda _: WifiPopup.connect_hidden())),
+                    Key([], "t", lazy.function(lambda _: WifiPopup.toggle_radio())),
+                    Key([], "s", lazy.function(lambda q: WifiPopup.share_qr(q))),
+                    # Abort a connect that is taking too long. Advertised in
+                    # the footer while busy rather than as a permanent hint
+                    # chip -- that bar is at 808px of its 874px.
+                    Key([], "c", lazy.function(lambda _: WifiPopup.cancel())),
+                    Key([], "r", lazy.function(lambda _: WifiPopup.rescan())),
+                    Key([], "slash", lazy.function(lambda _: WifiPopup.search())),
+                    # EXIT. Passed as separate positional commands --
+                    # `lazy.function(...) and lazy.ungrab_chord()` evaluates
+                    # to the second one alone and silently drops the close.
+                    Key(
+                        [],
+                        "q",
+                        lazy.function(lambda qtile: WifiPopup.close(qtile)),
+                        lazy.ungrab_chord(),
+                    ),
+                    # No Escape binding on purpose. KeyChord.__init__ appends
+                    # its own bare Key([], "Escape") *after* the submappings,
+                    # and grab_chord binds them in order with later ones
+                    # overriding earlier -- so a hand-written Escape here is
+                    # dead code that only logs "Key spec duplicated".
+                    # Escape still works: process_key_event ungrabs the chord
+                    # for any key named Escape, which fires leave_chord, and
+                    # cleanup_on_leave closes this popup.
+                ],
+                mode=True,
+                name="Wifi-Mode",
+                desc="WiFi network picker",
+            ),
             # --- show documents ---
             Key([], "d", lazy.spawn("dm-documents -r"), desc="Show documents"),
             # Theme picker (rofi).
@@ -4613,9 +6312,16 @@ keys = [
             # --- View manpages ---
             Key([], "m", lazy.spawn("dm-man -r"), desc="View manpages"),
             # --- Store and copy notes ---
-            Key([], "n", lazy.spawn("dm-note -r"), desc="Store and copy notes"),
+            # Moved off n (now the WiFi picker) to o -- "nOte". g/j/u/v/y are
+            # the other free letters in this chord.
+            Key([], "o", lazy.spawn("dm-note -r"), desc="Store and copy notes"),
             # --- rofi password menu ---
-            Key([], "p", lazy.spawn("rofi-pass"), desc="Password menu"),
+            # Removed: a second Key([], "p") in this same chord, so it
+            # duplicated the binding above and only one could ever win.
+            # It spawned `rofi-pass`, the frontend for pass(1) -- both
+            # are installed, but ~/.password-store does not exist, so it
+            # had no vault to read either way. Passwords now go through
+            # rofi_pass (Vaultwarden via rbw), bound above.
             # --- youtube menu ---
             Key(
                 [],
@@ -4630,7 +6336,8 @@ keys = [
             # ---  Spell check menu ---
             Key([], "s", lazy.spawn("dm-spellcheck -r"), desc="Spell check menu"),
             # --- Search weather ---
-            Key([], "w", lazy.spawn("dm-weather -r"), desc="Search weather"),
+            # Disabled: `w` now opens the WiFi picker (chord above).
+            # Key([], "w", lazy.spawn("dm-weather -r"), desc="Search weather"),
             # --- Open todo manager ---
             Key([], "t", lazy.spawn("rofi_todo"), desc="Open todo manager"),
             # --- screen light ---
@@ -4791,9 +6498,18 @@ keys = [
                 lazy.ungrab_chord(),
                 desc="caret mode: vim motions over real text, v selects, y yanks",
             ),
-            # --- warpd (pixel grid: works where accessibility does not) ---
-            Key([], "n", lazy.spawn("warpd --normal"), lazy.ungrab_chord()),
-            Key([], "w", lazy.spawn("warpd --hint"), lazy.ungrab_chord()),
+            Key(
+                ["shift"], "v",
+                lazy.spawn(HOMEROW + " --caret-search"),
+                lazy.ungrab_chord(),
+                desc="caret search: type to find a word, land the caret there",
+            ),
+            Key(
+                [], "e",
+                lazy.spawn(HOMEROW + " --edit"),
+                lazy.ungrab_chord(),
+                desc="edit a field in nvim, in place; :wq puts it back",
+            ),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
             *group_keys(),
             Key([], "q", lazy.ungrab_chord()),
@@ -4840,20 +6556,40 @@ keys = [
             Key(
                 [],
                 "k",
-                lazy.function(toggle_cheatsheet),
-                desc="Show cheatsheet",
+                lazy.function(cheatsheet_k),
+                desc="Show cheatsheet / scroll up",
+            ),
+            Key(
+                [],
+                "j",
+                lazy.function(scroll_cheatsheet),
+                desc="Scroll down",
             ),
             Key(
                 [],
                 "v",
-                lazy.function(toggle_vim_cheatsheet),
-                desc="Test popup widget scrolling",
+                lazy.function(open_vim_cheatsheet),
+                desc="Show vim cheatsheet",
             ),
             Key(
                 [],
                 "f",
-                lazy.function(toggle_fish_kitty_cheatsheet),
-                desc="Test popup widget scrolling",
+                lazy.function(open_fish_cheatsheet),
+                desc="Show fish cheatsheet",
+            ),
+            # Tab moves a screenful in whichever sheet is open; j/k above
+            # move by a few rows for fine scrolling.
+            Key(
+                [],
+                "Tab",
+                lazy.function(page_cheatsheet),
+                desc="Next cheatsheet screenful",
+            ),
+            Key(
+                ["shift"],
+                "Tab",
+                lazy.function(lambda q: page_cheatsheet(q, -1)),
+                desc="Previous cheatsheet screenful",
             ),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
             *group_keys(),
@@ -4881,62 +6617,6 @@ keys = [
         swallow=False,
         name="PASSTHROUGH",
     ),
-    # NOTE : Bluetooth popup will be used later
-    # KeyChord(
-    #     [mod],
-    #     "u",
-    #     [
-    #         Key([], "j", lazy.function(lambda _: bluetooth_move(1))),
-    #         Key([], "k", lazy.function(lambda _: bluetooth_move(-1))),
-    #         Key([], "Return", lazy.function(lambda _: bluetooth_toggle())),
-    #         Key([], "x", lazy.function(lambda _: request_disconnect())),
-    #         Key([], "y", lazy.function(lambda _: confirm_disconnect(True))),
-    #         Key([], "n", lazy.function(lambda _: confirm_disconnect(False))),
-    #         Key([], "r", lazy.function(lambda _: reload_devices())),
-    #         Key(
-    #             [],
-    #             "Escape",
-    #             lazy.function(lambda qtile: close_bluetooth_popup(qtile)),
-    #             lazy.ungrab_chord(),
-    #         ),
-    #     ],
-    #     mode=True,
-    #     name="Bluetooth-Mode",
-    #     desc="Bluetooth device picker",
-    # ),
-    # NOTE : Audio popup will be used later
-    # KeyChord(
-    #     [mod],
-    #     "o",
-    #     [
-    #         Key([], "j", lazy.function(lambda _: audio_move(1))),
-    #         Key([], "k", lazy.function(lambda _: audio_move(-1))),
-    #         Key([], "h", lazy.function(lambda _: audio_left())),
-    #         Key([], "l", lazy.function(lambda _: audio_right())),
-    #         Key([], "Return", lazy.function(lambda _: audio_select())),
-    #         Key([], "r", lazy.function(lambda _: audio_refresh())),
-    #         Key([], "Escape", lazy.function(lambda qtile: close_audio_popup(qtile))),
-    #     ],
-    #     mode=True,
-    #     name="Audio-Mode",
-    # ),
-    # NOTE: Wifi popup will be used later
-    # KeyChord(
-    #     [mod],
-    #     "i",
-    #     [
-    #         Key([], "j", lazy.function(lambda _: wifi_move(1))),
-    #         Key([], "k", lazy.function(lambda _: wifi_move(-1))),
-    #         Key([], "h", lazy.function(lambda _: wifi_move_col(-1))),
-    #         Key([], "l", lazy.function(lambda _: wifi_move_col(1))),
-    #         Key([], "Return", lazy.function(lambda _: wifi_select())),
-    #         Key([], "r", lazy.function(lambda _: wifi_manual_refresh())),
-    #         Key([], "Escape", lazy.function(lambda qtile: close_wifi_popup(qtile))),
-    #     ],
-    #     mode=True,
-    #     name="Wifi-Mode",
-    #     desc="WiFi network picker",
-    # ),
     # NOTE: updates popup  will be used later
     # KeyChord(
     #     [mod],
@@ -5060,7 +6740,16 @@ groups = [
     Group(
         "3",
         label="",
-        matches=[Match(wm_class="org.gnome.Nautilus"), Match(wm_class="pcmanfm")],
+        # pcmanfm-qt reports WM_CLASS ("pcmanfm-qt", "pcmanfm-qt"). Match is an
+        # exact test, not a substring one, so the old "pcmanfm" entry does NOT
+        # catch it -- a Qt window would have stayed on whatever group spawned
+        # it. Both are listed: the GTK build is still installed as an LXDE
+        # dependency and can still be launched by hand.
+        matches=[
+            Match(wm_class="org.gnome.Nautilus"),
+            Match(wm_class="pcmanfm-qt"),
+            Match(wm_class="pcmanfm"),
+        ],
         layout="monadtall",
     ),
     Group(
@@ -5101,7 +6790,30 @@ groups = [
         layout="monadtall",
     ),
     Group("7", label="7", layout="monadtall"),
-    Group("8", label="8", layout="monadtall"),
+    # Documents: LibreOffice + the PDF/ebook readers. _focus_document_app()
+    # takes you here when one opens, so this is not just where they are filed
+    # away -- it is where you end up.
+    Group(
+        "8",
+        # U+F02D (book). Checked with fc-match before use, like every other
+        # label here: the GroupBox inherits widget_defaults' "Ubuntu Bold",
+        # which has no Font Awesome range at all, so these all arrive by
+        # fontconfig fallback -- silently, and as a blank box when the glyph
+        # is not actually there. This one resolves to FiraCode Nerd Font, the
+        # same family already serving groups 1, 2, 4 and 5, and was rendered
+        # to confirm it is a book and not tofu.
+        #
+        # Written as an escape, not as the literal glyph the other labels use:
+        # a bare PUA character does not survive every editor and tool that
+        # touches this file, and it arrived here once already as an empty
+        # string -- which renders as a blank slot in the bar, not as an error.
+        label="",
+        matches=[Match(wm_class=c) for c in DOCUMENT_APP_CLASSES],
+        # max, not monadtall: a document is one thing you read at a time, and
+        # monadtall's side column would hand half the width to whatever else
+        # happened to be open on the group. Full width is the point here.
+        layout="max",
+    ),
     Group(
         "S",
         layout="max",
@@ -5180,15 +6892,6 @@ groups.append(
                 opacity=1,
             ),
             DropDown(
-                "2ndScreen",
-                "arandr",
-                width=0.6,
-                height=0.6,
-                x=0.2,
-                y=0.1,
-                opacity=1,
-            ),
-            DropDown(
                 "term2",
                 "kitty",
                 width=0.6,
@@ -5197,15 +6900,9 @@ groups.append(
                 y=0.1,
                 opacity=1,
             ),
-            DropDown(
-                "mixer",
-                "env GTK_THEME=Adwaita:dark pavucontrol",
-                width=0.4,
-                height=0.6,
-                x=0.3,
-                y=0.1,
-                opacity=1,
-            ),
+            # NOTE: the "mixer" (pavucontrol) and "2ndScreen" (arandr)
+            # dropdowns lived here until AudioPopup and DisplayPopup replaced
+            # them. alt+3 / alt+4 now open those popups instead.
             DropDown(
                 "calc",
                 "env GTK_THEME=Adwaita:dark qalculate-gtk",
@@ -5311,8 +7008,27 @@ keys.extend(
     [
         Key([mod2], "1", lazy.group["scratchpad"].dropdown_toggle("term1")),
         Key([mod2], "2", lazy.group["scratchpad"].dropdown_toggle("term2")),
-        Key([mod2], "3", lazy.group["scratchpad"].dropdown_toggle("mixer")),
-        Key([mod2], "4", lazy.group["scratchpad"].dropdown_toggle("2ndScreen")),
+        # 3 and 4 were the pavucontrol and arandr scratchpads. Both are now
+        # popups (AudioPopup / DisplayPopup) that cover everything those two
+        # windows did, so the keys keep their meaning -- audio and displays --
+        # and open the chord instead of a GTK window. Same chords as
+        # win+shift+f → v / g; see _audio_mode_keys / _display_mode_keys.
+        KeyChord(
+            [mod2],
+            "3",
+            _audio_mode_keys(),
+            mode=True,
+            name="Audio-Mode",
+            desc="Audio output / input / per-app volume picker",
+        ),
+        KeyChord(
+            [mod2],
+            "4",
+            _display_mode_keys(),
+            mode=True,
+            name="Display-Mode",
+            desc="Display / xrandr layout picker",
+        ),
         Key([mod2], "5", lazy.group["scratchpad"].dropdown_toggle("calc")),
         Key([mod2], "8", lazy.group["scratchpad"].dropdown_toggle("whats")),
         Key([mod2], "9", lazy.group["scratchpad"].dropdown_toggle("deepseek")),
@@ -5367,13 +7083,13 @@ layouts = [
         **layout_theme,
     ),
     layout.Max(
-        border_width=0,
+        border_width=_s(0),
         margin=0,
     ),
     layout.TreeTab(
         font="Ubuntu Bold",
-        fontsize=11,
-        border_width=8,
+        fontsize=_s(11),
+        border_width=_s(8),
         border_focus=colors[0],
         border_normal=colors[0],
         margin_left=8,
@@ -5400,7 +7116,7 @@ layouts = [
 # from having to type these out for each individual widget.
 widget_defaults = dict(
     font="Ubuntu Bold",
-    fontsize=10,
+    fontsize=_s(10),
     padding=0,
 )
 
@@ -5433,6 +7149,17 @@ def _center_top_groupbox():
         widgets = getattr(b, "widgets", None) if b else None
         if not widgets:
             continue
+        # Only touch a bar that is actually live. This runs from nine hooks,
+        # several of which (setgroup, focus_change, client_managed) fire
+        # during the screen churn a monitor hotplug causes -- and in that
+        # window Bar.finalize() has killed the bar's window and finalized
+        # its widgets while screen.top still points at it. Measuring a
+        # half-torn-down bar gives nonsense lengths, and the b.draw() below
+        # would be a draw on finalized widgets.
+        if not getattr(b, "_configured", False) or getattr(b, "window", None) is None:
+            continue
+        if any(not getattr(w, "configured", False) for w in widgets):
+            continue
         gb_i = next(
             (i for i, w in enumerate(widgets) if isinstance(w, ewidget.GroupBox)), None
         )
@@ -5456,6 +7183,25 @@ def _center_top_groupbox():
             # holding it STATIC here is not fighting the widget.
             if tl is not None:
                 cap = max(0, target - others)
+                # Centring alone is not enough. The spacer to the RIGHT of the
+                # GroupBox is the only STRETCH widget, so it is the only thing
+                # that can absorb growth on that side -- and a SmartWidgetBox
+                # opening inserts its contents there. Once those exceed the
+                # spacer's slack (189px with everything closed), the surplus
+                # runs off the end of the bar and the systray chip, being
+                # last, is what disappears.
+                #
+                # So the TaskList is also capped by what is actually left over
+                # once the right-hand side has been paid for. STRETCH widgets
+                # are excluded from that sum: the spacer collapsing to zero is
+                # exactly the slack being counted here, and counting it twice
+                # would shrink the tasklist for no reason.
+                right = widgets[gb_i + 1:]
+                right_w = sum(
+                    w.length for w in right if w.length_type != bar.STRETCH
+                )
+                fits = b.width - others - widgets[gb_i].length - right_w
+                cap = min(cap, max(0, fits))
                 if tl.length_type != bar.STATIC or tl.length != cap:
                     tl.length_type = bar.STATIC
                     tl.length = cap
@@ -5463,6 +7209,17 @@ def _center_top_groupbox():
 
             left_w = others + (tl.length if tl is not None else 0)
             new_len = max(0, target - left_w)
+            # Centring must yield to fitting. This spacer is pure padding
+            # placed to push the GroupBox to the middle, so when the bar is
+            # over-full it simply re-eats whatever the TaskList just gave up
+            # and the surplus still runs off the right-hand end. Capped by the
+            # room genuinely left after the right-hand side is paid for: the
+            # GroupBox drifts off-centre only once there is no alternative,
+            # which is the better failure -- an off-centre GroupBox is
+            # visible, a chip past the edge of the screen is not.
+            room = b.width - others - (tl.length if tl is not None else 0) \
+                - widgets[gb_i].length - right_w
+            new_len = min(new_len, max(0, room))
             # Guard the assignment: draw() redraws widgets and can re-enter this,
             # so an unconditional set would loop.
             if new_len != sp.length:
@@ -5491,11 +7248,26 @@ def _schedule_center_groupbox(*_args, **_kwargs):
         _center_top_groupbox()
 
     try:
-        qtile.call_later(0.05, _run)
+        # Delay 0, not 0.05. The debounce is about COALESCING -- these hooks
+        # fire several times per event and the flag above already collapses
+        # them -- not about waiting. The 50ms wait was visible: entering a
+        # chord draws the chip at full width first, and the bar stays
+        # over-full until this runs. Captured it at 29fps: the last chip's
+        # right edge sat at x=1355 instead of 1351 for two frames, then
+        # snapped back. call_later(0) runs on the next pass of the event
+        # loop, after the widget that grew has updated but before the bar
+        # settles, so there is no intermediate frame to see.
+        qtile.call_later(0, _run)
     except Exception:
         _GB_CENTER_PENDING = False
 
 
+# Chord enter/leave included: the chord chip appears and disappears with the
+# mode, and that changes the bar's total width by its whole length without any
+# client event happening. Same class of problem as a widget box opening, which
+# SmartWidgetBox.toggle() now handles directly -- anything that resizes a
+# widget without touching a window has to say so, or the surplus silently runs
+# off the right-hand end of the bar.
 for _gb_hook in (
     "startup_complete",
     "client_managed",
@@ -5504,6 +7276,8 @@ for _gb_hook in (
     "setgroup",
     "changegroup",
     "focus_change",
+    "enter_chord",
+    "leave_chord",
 ):
     try:
         getattr(hook.subscribe, _gb_hook)(_schedule_center_groupbox)
@@ -5602,15 +7376,15 @@ def init_screens():
         Screen(
             top=bar.Bar(
                 widgets=init_widgets_screen1(),
-                size=28,
-                margin=[5, 10, 5, 10],  # top, right, bottom, left
+                size=_s(28),
+                margin=[_s(5), _s(10), _s(5), _s(10)],  # top, right, bottom, left
                 # IMP: this is the background color of the bar
                 background="#11111b00",  # transparent
             ),
             bottom=bar.Bar(
                 widgets=init_widgets_list_normaluserbar(),
-                size=40,
-                margin=[5, 10, 5, 10],  # top, right, bottom, left
+                size=_s(40),
+                margin=[_s(5), _s(10), _s(5), _s(10)],  # top, right, bottom, left
                 # IMP: this is the background color of the bar
                 background=colors[2],  # transparent
             ),
@@ -5621,8 +7395,8 @@ def init_screens():
             Screen(
                 top=bar.Bar(
                     widgets=init_widgets_screen2(),
-                    size=28,
-                    margin=[5, 10, 5, 10],  # top, right, bottom, left
+                    size=_s(28),
+                    margin=[_s(5), _s(10), _s(5), _s(10)],  # top, right, bottom, left
                     # IMP: this is the background color of the bar
                     background="#11111b00",  # transparent
                 ),
@@ -5681,7 +7455,7 @@ bring_front_click = False
 cursor_warp = False
 floating_layout = layout.Floating(
     border_focus=colors[7],
-    border_width=2,
+    border_width=_s(2),
     float_rules=[
         # Run the utility of `xprop` to see the wm class and name of an X client.
         *layout.Floating.default_float_rules,
@@ -5706,6 +7480,16 @@ floating_layout = layout.Floating(
         Match(title="tastytrade"),  # tastytrade pop-out side gutter
         Match(title="tastytrade - Portfolio Report"),  # tastytrade pop-out allocation
         Match(wm_class="tasty.javafx.launcher.LauncherFxApp"),  # tastytrade settings
+        # scrcpy renders the phone's real framebuffer, so a tiled window
+        # letterboxes a ~9:20 portrait panel into a landscape tile and
+        # wastes most of it. Floating keeps the phone's aspect ratio,
+        # which is the whole point of looking at it.
+        Match(wm_class="scrcpy"),
+        # phone_screen's pairing QR. It asks feh for a small centred
+        # geometry, and a tiled window discards that request and stretches
+        # a 260px code across a whole tile. The Match(title="feh") below
+        # does not cover it: this window sets its own title.
+        Match(title="Phone pairing QR"),
         Match(title="imv"),  # Match the imv window
         Match(title="feh"),  # Match feh
         Match(wm_class="mpv"),  # mpv
@@ -5713,8 +7497,22 @@ floating_layout = layout.Floating(
         Match(wm_class="satty"),  # satty
         Match(wm_class="emacs"),  # emacs
         Match(title="link-preview"),  # preview of nvim (qutebrowser edit link)
+        # rofi_docs viewer: README / TROUBLESHOOTING / nvim, centred by
+        # _float_and_center_docs. wm_class, not title, so the rule wins at
+        # group.add() before the window can enter the tiling layout.
+        Match(wm_class="docs-view"),
         Match(wm_class="clip-view"),  # copyq_rofi alt+w full-text preview
         Match(wm_class="imv"),  # copyq_rofi alt+w image preview
+        # Master-password prompt (rbw / gpg). Sized and centred by
+        # _float_and_center_pinentry; this rule is what stops it entering
+        # the tiling layout in the first place, since it maps as
+        # wm_type=normal and so misses default_float_rules entirely.
+        # One entry per flavour: qtile matches the literal class, and
+        # unlike the hook there is no prefix matching here.
+        Match(wm_class="pinentry-gtk"),
+        Match(wm_class="pinentry-gnome3"),
+        Match(wm_class="pinentry-qt"),
+        Match(wm_class="pinentry"),
         Match(wm_class="org.gnome.NautilusPreviewer"),  # make the preview float
         Match(wm_class="qdrop"),  # qdrop drop-stash
         # TODOS summary (Mod+Shift+S), centered by _float_and_center_sum.
@@ -5759,6 +7557,72 @@ wl_input_rules = None
 # │░▄█▄█▄░█▀▄░█░█░█░░░█▀▀░▀▀█░░░█▀▀░█░█░█░█░▀▀█░░░░░░░░░░░│
 # │░░▀░▀░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀▀▀░░░▀▀▀░▀░▀░▀▀░░▀▀▀░░░▀░░▀░░▀░│
 # ╚───────────────────────────────────────────────────────╝
+
+
+# ╔───────────────────────────────────────────────────────╗
+# │  ORPHANED POPUP SWEEP                                 │
+# ╚───────────────────────────────────────────────────────╝
+# Every popup in popups/ (wallpaper, wifi, bluetooth, audio, updates, the
+# three cheatsheets, the QR) is an Internal window held by ONE module-level
+# handle. Lose that handle while the window is still mapped and the popup is
+# stranded: on screen, referenced by nothing, and unclosable -- its close()
+# takes the "nothing is open" early return forever after.
+#
+# The wallpaper picker's version of this is fixed at source (see the _CLOSING
+# guard in WallpaperPopup.show_wallpaper_picker), but that fix is one module's.
+# Nine modules share the pattern, the handle is dropped on any teardown that
+# raises, and a reload while a popup is open is a whole extra way to lose one.
+# So this is the backstop: whatever the cause, a stranded popup does not
+# survive a config load.
+#
+# Config load is the right moment for it. reload_config re-executes this file
+# with the bar and every keybinding rebuilt, so no popup on screen at that
+# point is one you can still drive -- it is debris by definition.
+
+
+def sweep_orphan_popups():
+    """Kill Internal windows that are not part of a bar. Returns a count.
+
+    FAIL-SAFE: if no bar window can be identified, this does NOTHING rather
+    than guess. Bars are Internal windows too, so an empty "keep" set would
+    mean sweeping the bars off the screen -- the one outcome worse than the
+    orphan it is cleaning up.
+    """
+    try:
+        keep = set()
+        for screen in getattr(qtile, "screens", None) or []:
+            for pos in ("top", "bottom", "left", "right"):
+                win = getattr(getattr(screen, pos, None), "window", None)
+                wid = getattr(win, "wid", None)
+                if wid is not None:
+                    keep.add(wid)
+        if not keep:
+            return 0
+        killed = 0
+        for wid, win in list(getattr(qtile, "windows_map", {}).items()):
+            if wid in keep or type(win).__name__ != "Internal":
+                continue
+            try:
+                win.kill()
+                killed += 1
+            except Exception:
+                pass
+        if killed:
+            # Local import, matching _SafeLengthMixin -- logger is not a
+            # module-level name in this config.
+            from libqtile.log_utils import logger
+
+            logger.warning("swept %s orphaned popup window(s)", killed)
+        return killed
+    except Exception:
+        return 0
+
+
+# At import time, so it covers reload_config -- which fires no startup hook.
+# qtile is None during the very first config load, when there is nothing to
+# sweep anyway.
+if qtile is not None:
+    sweep_orphan_popups()
 
 
 # XXX: Gasp! We're lying here. In fact, nobody really uses or cares about this

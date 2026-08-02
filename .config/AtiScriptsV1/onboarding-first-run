@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# onboarding-first-run — show the eww tour once, on the first graphical
+# login after an install, and never again.
+#
+# wizard.sh arms this by writing a stamp file at the end of a successful
+# run (see page_finale). autostart.sh calls us on every login; without a
+# stamp we exit immediately, so the cost on all subsequent logins is one
+# `[[ -e ]]`.
+#
+# Why a stamp file and not "have they seen it?" heuristics: the install
+# finishes in a TTY, and the tour has to appear in a qtile session that
+# does not exist yet -- usually after a reboot. A file in XDG_STATE_HOME
+# is the only part of that handoff that survives both the reboot and the
+# session change.
+#
+# The stamp is claimed with mv, not rm, and only AFTER eww answers:
+#
+#   * claiming before eww is up would burn the tour on a login where it
+#     could never have been shown (eww crashed, X came up degraded) --
+#     the user installs, reboots, sees nothing, and there is no second
+#     chance. Waiting means a failed login leaves the stamp for the next.
+#
+#   * mv is atomic within a filesystem, so two sessions racing (fast
+#     re-login, a manual re-run alongside autostart) cannot both open the
+#     tour: the loser finds no stamp and exits.
+#
+#   * keeping the claimed stamp as .done rather than deleting it leaves a
+#     timestamped record of when the tour ran, which is the first thing
+#     worth knowing when someone reports it appearing twice or never.
+#
+# Usage:
+#   onboarding-first-run [settle-seconds]   # consume the stamp, show tour
+#   onboarding-first-run --arm              # re-arm for the next login
+#   onboarding-first-run --status           # report armed/consumed state
+
+set -uo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/atidots"
+PENDING="$STATE_DIR/onboarding.pending"
+CLAIMED="$STATE_DIR/onboarding.done"
+FIRST_PAGE="onboarding-welcome"
+
+# How long to keep asking eww whether it is up (0.5s per attempt). The
+# daemon is spawned by the same autostart.sh block that calls us, and on a
+# cold first boot it is competing with picom, dunst and the tray applets
+# for a slow disk, so this is generous on purpose.
+EWW_WAIT_ATTEMPTS=60
+
+case "${1:-}" in
+  --arm)
+    mkdir -p "$STATE_DIR"
+    rm -f "$CLAIMED"
+    : >"$PENDING"
+    echo "onboarding armed — the tour will open at the next login."
+    exit 0
+    ;;
+  --status)
+    if [[ -e "$PENDING" ]]; then
+      echo "armed: $PENDING"
+    elif [[ -e "$CLAIMED" ]]; then
+      echo "already shown: $CLAIMED ($(date -r "$CLAIMED" '+%F %T'))"
+    else
+      echo "never armed"
+    fi
+    exit 0
+    ;;
+esac
+
+[[ -e "$PENDING" ]] || exit 0
+
+# eww absent is a different thing from eww not up yet, and the loop below
+# cannot tell them apart: it spent 30 seconds printing "eww: command not
+# found" to a stderr nobody reads, then claimed the tour was "postponed"
+# and would retry next login -- which was never going to be true. Say so
+# once instead, and leave the stamp armed so installing eww still gets the
+# tour.
+if ! command -v eww >/dev/null 2>&1; then
+  notify-send -a onboarding "Tour unavailable" \
+    "eww is not installed — the tour needs it." 2>/dev/null
+  exit 1
+fi
+
+# Wait for the daemon before claiming anything (see header).
+for _ in $(seq "$EWW_WAIT_ATTEMPTS"); do
+  eww ping >/dev/null 2>&1 && break
+  sleep 0.5
+done
+if ! eww ping >/dev/null 2>&1; then
+  notify-send -a onboarding "Tour postponed" \
+    "eww is not running — the tour will try again at the next login." 2>/dev/null
+  exit 1
+fi
+
+mkdir -p "$STATE_DIR"
+mv -f "$PENDING" "$CLAIMED" 2>/dev/null || exit 0
+
+# Step 1 of the tour draws strips over the real bar and labels its three
+# regions, so it is only truthful once the bar has finished populating --
+# the systray and the widget boxes arrive last. This is also what keeps
+# the tour from landing on top of the boot veil.
+sleep "${1:-8}"
+
+eww open "$FIRST_PAGE" 2>/dev/null || {
+  notify-send -a onboarding "Tour unavailable" \
+    "Could not open the tour. Run it any time from the 💡 tray icon." 2>/dev/null
+  exit 1
+}

@@ -90,10 +90,13 @@
 
           (label
             :class "onb-title"
+            :halign "start"
             :text "Top Bar")
 
              (label
               :class "onb-text"
+              :halign "start"
+              :xalign 0
               :wrap true
               :unindent true
               :text "
@@ -103,29 +106,45 @@
          ")
 (label
   :class "onb-text"
+  :halign "start"
+  :xalign 0
   :wrap true
-  :markup "• <span foreground=\"#c678dd\">󰕰</span>  Main menu :                                                           
- - <b><span foreground=\"#ffffff\">Left-Click</span></b> to open Terminal
- - <b><span foreground=\"#ffffff\">Right-Click</span></b> to open Launcher (Rofi)
+  ;; main_icon_chip in config.py: Button1 open_docs, Button2 open_terminal,
+  ;; Button3 open_launcher. Left-click stopped being the terminal when the
+  ;; docs menu took the most prominent click in the bar -- the terminal
+  ;; moved to middle-click, and this page never followed.
+  :markup "• <span foreground='${palette.purple}'>󰕰</span>  Main menu:
+ - <b><span foreground='${palette.fg}'>Left-Click</span></b> to open the docs menu
+ - <b><span foreground='${palette.fg}'>Middle-Click</span></b> to open Terminal
+ - <b><span foreground='${palette.fg}'>Right-Click</span></b> to open Launcher (Rofi)
   "
 )
 (label
   :class "onb-text"
+  :halign "start"
+  :xalign 0
   :wrap true
   :markup
-"Right-side widgets:  (collapsed widgets) :
-• <span foreground=\"#98be65\">△</span>  : system tray 
-• <span foreground=\"#ff6c6b\">󰤂</span>   : CPU and  memory status
-• <span foreground=\"#c678dd\">󰖯</span>   : Update , Volume and Disk status
-• <b><span foreground=\"#46d9ff\">x</span></b>   : wallpaper launcher
-• <b><span foreground=\"#ffffff\">󰌶</span></b>   : Tooltip (current opened app)
+"Right-side widgets (collapsed):
+• <span foreground='${palette.green}'>△</span>  : system tray
+• <span foreground='${palette.red}'>󰤂</span>   : CPU and memory status
+• <span foreground='${palette.purple}'>󰖯</span>   : updates, volume and disk status
+• <b><span foreground='${palette.cyan}'>x</span></b>   : wallpaper launcher
+• <b><span foreground='${palette.fg}'>󰌶</span></b>   : tooltip (current opened app)
 "
 )
-            
 
+
+        ;; Mod keys as qtile binds them: mod = Win (config.py: "Alt broken
+        ;; on hardware"), mod2 = Alt. Alt+grave is system_widgetbox,
+        ;; Win+grave is 2nd_system_widgetbox -- this page had the two
+        ;; the wrong way round.
         (label
         :class "onb-text"
-        :markup "<b>Tip : </b>Press  <b><span foreground=\"#46d9ff\">Win + `</span></b> to open main widget , <b><span foreground=\"#46d9ff\">Alt + `</span></b> 2nd system widget. "
+        :halign "start"
+        :xalign 0
+        :wrap true
+        :markup "<b>Tip: </b><b><span foreground='${palette.cyan}'>Alt + `</span></b> opens the system widgets, <b><span foreground='${palette.cyan}'>Win + `</span></b> the second set, <b><span foreground='${palette.cyan}'>Alt + Tab</span></b> the tray."
 )
 
   ;; ============================
@@ -134,21 +153,27 @@
   (box
     :class "onb-footer"
     :orientation "h"
-    :halign "end"
-    :spacing 10
+    :space-evenly false
 
-    (button
-      :class "onb-btn"
-      :timeout "3000ms"
-      :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open onboarding-welcome'"
-      "Back")
+    (onb-steps :current 2)
+    (box :hexpand true)
 
-    (button
-      :class "onb-btn onb-btn-Apply"
-      :timeout "3000ms"
-      :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open onboarding-workspaces'"
-      "Next")
-  )
+    (box
+      :halign "end"
+      :spacing 10
+
+      (button
+        :class "onb-btn"
+        :timeout "3000ms"
+        :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open onboarding-welcome'"
+        "Back")
+
+      (button
+        :class "onb-btn onb-btn-Apply"
+        :timeout "3000ms"
+        :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open onboarding-workspaces'"
+        "Next")
+    ))
 
         )
       )

@@ -16,9 +16,18 @@
 
 # Touchpad scroll speed: pixels of finger travel per scroll unit (default 15).
 # Higher = slower, smoother two-finger scrolling. Device id is not stable across
-# boots, so resolve it by name.
-touchpad_id=$(xinput list --id-only "AlpsPS/2 ALPS GlidePoint" 2>/dev/null)
-[ -n "$touchpad_id" ] && xinput set-prop "$touchpad_id" "libinput Scrolling Pixel Distance" 40 2>/dev/null
+# boots, so resolve it dynamically.
+#
+# This used to match the literal name "AlpsPS/2 ALPS GlidePoint" -- this
+# laptop's touchpad. The lookup is guarded, so on any other machine it just
+# found nothing and the tuning silently never applied: scrolling felt
+# different on a new PC with no error to explain why. Match on the libinput
+# property instead, which every touchpad has and no mouse does.
+for touchpad_id in $(xinput list --id-only 2>/dev/null); do
+  xinput list-props "$touchpad_id" 2>/dev/null \
+    | grep -q "libinput Scrolling Pixel Distance" || continue
+  xinput set-prop "$touchpad_id" "libinput Scrolling Pixel Distance" 40 2>/dev/null
+done
 
 # ---------------------------------------------------------
 # 2. Core environment (ESSENTIAL FAST START)
@@ -26,13 +35,25 @@ touchpad_id=$(xinput list --id-only "AlpsPS/2 ALPS GlidePoint" 2>/dev/null)
 # These should start IMMEDIATELY without delays.
 # Avoid slow apps here — keep this section lightweight.
 
+# Per-GPU picom flags, written by the wizard's `gpu` module from the PCI
+# IDs of this machine (see step_gpu). Untracked and per-host: NVIDIA needs
+# use-damage off or animations smear, Intel and AMD do not. Absent file =
+# no flags, which is the correct default.
+PICOM_GPU_FLAGS=""
+# shellcheck source=/dev/null
+[ -f "$HOME/.config/picom/gpu.env" ] && . "$HOME/.config/picom/gpu.env"
+
 (
-  picom &          # Compositor (transparency, shadows, animations)
+  # shellcheck disable=SC2086  # deliberate word splitting: flags or nothing
+  picom $PICOM_GPU_FLAGS &   # Compositor (transparency, shadows, animations)
   dunst &          # Notification daemon
-  nm-applet &      # Network tray icon
+  # --no-agent: keep the tray icon, drop the secret-agent role. Without it
+  # nm-applet answers NetworkManager's password requests, so a wrong PSK
+  # typed into the WiFi popup (Mod+p n) pops nm-applet's own GTK dialog on
+  # top of it. With it, the popup owns the whole flow and re-asks itself.
+  nm-applet --no-agent &  # Network tray icon (no password dialogs)
   blueman-applet & # Bluetooth tray icon
   copyq &          # Clipboard manager
-  warpd &          # warpd daemon
   eww daemon       # EWW daemon
 ) &
 
@@ -43,6 +64,11 @@ touchpad_id=$(xinput list --id-only "AlpsPS/2 ALPS GlidePoint" 2>/dev/null)
 # No sleeps needed.
 
 kdeconnectd & # Phone integration
+# polkitd runs as a system service but has no way to ask the user anything on
+# its own -- that is an authentication agent's job, and a bare qtile session
+# ships none. Without this, mounting an internal partition from pcmanfm-qt's
+# Places pane is refused with no password prompt and no error.
+lxqt-policykit-agent &
 # pamac-tray-icon-plasma was the update notifier here. It is a Manjaro
 # package, has never been installed on this Arch box, and was failing
 # silently into the background on every login. The update notifier is
@@ -57,7 +83,7 @@ kdeconnectd & # Phone integration
 # (
 # sleep 10
 # kitty & # Terminal
-# pcmanfm & # File manager
+# pcmanfm-qt & # File manager
 # ) &
 
 # ---------------------------------------------------------
@@ -103,6 +129,45 @@ kdeconnectd & # Phone integration
   pgrep -f 'homerow-daemon$' >/dev/null || ~/Attia-Pro/Projects/Homerow_replika/homerow-daemon &
   # ~/.config/qtile/scripts/watch_todo_conflicts.sh &
 ) &
+
+# ---------------------------------------------------------
+# 6b. First-run onboarding tour
+# ---------------------------------------------------------
+# No-op unless wizard.sh armed it, so this costs one file test on every
+# other login. It does its own waiting for the eww daemon started in
+# section 2 -- backgrounded here so a slow daemon never holds up the rest
+# of autostart.
+#
+# Absolute path fallback: on a very first login the ati-scripts step may
+# not have symlinked into /usr/local/bin yet (or PATH is not populated for
+# a non-interactive shell), and this is precisely the login that has a
+# tour to show.
+(
+  if command -v onboarding-first-run >/dev/null 2>&1; then
+    onboarding-first-run
+  else
+    "$HOME/.config/AtiScriptsV1/onboarding-first-run"
+  fi
+) &
+
+# ---------------------------------------------------------
+# 6c. Boot splash catch-up
+# ---------------------------------------------------------
+# theme-apply hands the boot screen to `boot-splash autosync`, which waits
+# out a debounce before rerunning mkinitcpio. That waiting call is a
+# backgrounded child of theme-apply and the only thing that knows a sync is
+# owed -- so a reboot inside the window loses it silently and permanently.
+# Which is the normal case, not the unlucky one: you change the theme, then
+# reboot to look at the new boot screen.
+#
+# `catchup` re-derives the same question from disk (what the initramfs was
+# built from vs what the palette says now) instead of remembering it, so a
+# lost sync costs one login rather than being lost for good. It is two file
+# reads and an exit when the boot screen is already current, which is every
+# login but the one after a theme change.
+(
+  command -v boot-splash >/dev/null 2>&1 && boot-splash catchup
+) >/dev/null 2>&1 &
 
 # ---------------------------------------------------------
 # 7. Neovim Daemon (IMPORTANT)

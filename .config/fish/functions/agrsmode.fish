@@ -6,7 +6,7 @@ function agrsmode
 
     # apps we allow to be killed + restored later
     set apps google-chrome firefox obsidian nvim alacritty \
-        org.gnome.nautilus pcmanfm ticktick qutebrowser \
+        org.gnome.nautilus pcmanfm-qt pcmanfm ticktick qutebrowser \
         zen-browser
 
     # clear old log

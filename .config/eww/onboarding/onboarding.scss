@@ -1,84 +1,169 @@
-.onboarding {
+// Onboarding tour.
+//
+// Layout does the work here, not decoration: an accent rail down the
+// leading edge, left-aligned copy against it, and the footer split
+// between progress on one side and actions on the other. No gradients,
+// no glow, no filled titlebar -- the first two age badly and the third
+// is what made this look like a system dialog from 2004.
+//
+// Every colour comes from colors.scss, which theme-apply regenerates per
+// palette. Nothing here is a literal.
+//
+// GTK3 CSS: no flexbox, no line-height, no text-transform.
+
+// --- cards -------------------------------------------------------------
+//
+// The rail is a border, not a child widget, so it costs nothing in the
+// yuck and cannot fall out of sync with the card's height.
+
+@mixin onb-card {
   background-color: $bg;
+  border: 1px solid transparentize($fg, 0.88);
+  border-left: 3px solid $accent;
   border-radius: 10px;
-  padding: 1.2rem;
+  padding: 1.15rem 1.25rem 0.9rem;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
+}
+
+.onboarding {
+  @include onb-card;
   min-width: 400px;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
 }
 
 .onboarding-tooltip {
-  background-color: $bg;
-  border-radius: 10px;
-  padding: 1.2rem;
+  @include onb-card;
   min-width: 300px;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
 }
+
+// --- heading -----------------------------------------------------------
+
 .onb-title {
   font-family: $ui-font;
-  font-size: 1.1rem;
+  font-size: 1.2rem;
   font-weight: Bold;
-  color: $magenta;
+  color: $accent;
+  margin-bottom: 0.75rem;
 }
 
-.onb-text {
-  /* margin-top: 0.6rem; */
+// --- body --------------------------------------------------------------
 
+.onb-text {
   letter-spacing: 0.02em;
   font-family: $ui-font;
   font-size: 0.85rem;
-  color: $fg;
+  color: transparentize($fg, 0.12);
+  margin-bottom: 0.45rem;
 }
 
-.onb-footer {
-  margin-top: 1rem;
+// Inline <span>s carry the palette accents; the body is held just below
+// full strength so those highlights have somewhere to stand out from.
+.onb-text span {
+  transition: text-shadow 0.2s ease;
 }
+
+.onb-text span:hover {
+  text-shadow: 0 0 6px currentColor;
+}
+
+.tip-text {
+  letter-spacing: 0.02em;
+  font-family: $ui-font;
+  font-size: 0.85rem;
+  color: $cyan;
+}
+
+// --- footer ------------------------------------------------------------
+
+.onb-footer {
+  margin-top: 0.7rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid transparentize($fg, 0.9);
+}
+
+// Progress. The current step is a pill rather than a brighter dot: on the
+// mono palettes hue is not available to carry the distinction, so it has
+// to be shape.
+.onb-dot {
+  min-width: 5px;
+  min-height: 5px;
+  border-radius: 999px;
+  background-color: transparentize($fg, 0.78);
+  transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.onb-dot-on {
+  min-width: 18px;
+  background-color: $accent;
+}
+
+// --- buttons -----------------------------------------------------------
 
 .onb-btn {
   background-color: $bg-alt;
-  padding: 0.4rem 0.8rem;
+  border: 1px solid transparentize($fg, 0.82);
+  padding: 0.4rem 0.95rem;
   border-radius: 6px;
   font-family: $ui-font;
+  font-weight: Bold;
   font-size: 0.75rem;
-  color: $fg;
+  color: transparentize($fg, 0.15);
+  transition: background-color 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .onb-btn:hover {
   background-color: $blue;
+  border-color: $blue;
   color: $bg;
+}
+
+.onb-btn:active {
+  background-color: transparentize($blue, 0.25);
 }
 
 .onb-btn-danger:hover {
   background-color: $red;
+  border-color: $red;
+  color: $bg;
+}
+
+// The step-forward action, filled at rest. One solid button per page is
+// the whole colour budget of the footer, and it is always the one that
+// continues the tour -- so "where do I click" never needs a hover.
+.onb-btn-Apply {
+  background-color: $accent;
+  border-color: $accent;
   color: $bg;
 }
 
 .onb-btn-Apply:hover {
-  background-color: $green;
+  background-color: transparentize($accent, 0.2);
+  border-color: transparentize($accent, 0.2);
   color: $bg;
 }
 
+// --- step 1: strips over the real bar ----------------------------------
+
+.bar-overlay-container {
+  margin-top: 3rem;
+  margin-bottom: 1rem;
+}
+
 .bar-overlay {
-  background-color: rgba(28, 31, 36, 0.35);
+  background-color: transparentize($bg, 0.4);
+  border: 1px solid transparentize($accent, 0.82);
+  border-radius: 8px;
   margin: 0 12px;
   min-height: 36px;
 }
 
 .bar-overlay-text {
   font-family: $ui-font;
+  font-weight: Bold;
   background-color: $bg;
-  padding: 0.4rem 1.6rem 0.6rem;
+  border: 1px solid transparentize($cyan, 0.72);
+  padding: 0.35rem 1.4rem;
   border-radius: 6px;
   font-size: 0.75rem;
-  color: $cyan;
-}
-.bar-overlay-container {
-  margin-top: 3rem;
-  margin-bottom: 1rem;
-}
-.tip-text {
-  letter-spacing: 0.02em;
-  font-family: $ui-font;
-  font-size: 0.85rem;
-
   color: $cyan;
 }

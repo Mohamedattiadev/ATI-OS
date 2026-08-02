@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# onboarding-cheatsheet — open the qtile cheatsheet from the eww tour, then
+# hand the tour back its last page once you close the sheet again.
+#
+# The tour used to open the sheet on a five second timer from the previous
+# page. That is gone -- a full-screen popup arriving over someone who is
+# still reading is not a feature -- and the keybindings page now has a
+# button that calls this with no delay. The delay argument is kept because
+# it costs nothing and a scheduled open may be wanted again.
+#
+# It never worked as a timer either, for three separate reasons, all of
+# which came from doing it inline in the eww button:
+#
+#   1. REPLAYED KEYSTROKES. The button ran `xdotool key Super_L+Shift+k`.
+#      config.py documents at length why that cannot be relied on -- it races
+#      whatever holds the keyboard, and entering the chord by hand is the
+#      supported path. config.py exposes open_cheatsheet() for exactly this
+#      and rofi_docs already uses it. So does this.
+#
+#   2. `sleep 5` UNDER A 3000ms BUTTON TIMEOUT. eww buttons take
+#      `:timeout "3000ms"` and kill the command they spawned when it expires.
+#      A five second sleep inside a three second budget is a coin flip at
+#      best, and the whole point of `setsid -f` below is that this script is
+#      no longer eww's child at all -- nothing eww does to its own subprocess
+#      can reach it.
+#
+#   3. THE TOUR WINDOW WAS STILL UP. eww's onboarding windows are
+#      `:stacking "fg"`. The cheatsheet is a qtile popup, so even when it did
+#      open it came up UNDER the tour page that had just announced it. The
+#      page is closed here first, and reopened as the finish page after.
+#
+# Usage: onboarding-cheatsheet [delay-seconds]
+
+set -uo pipefail
+
+DELAY="${1:-0}"
+PAGE="onboarding-keybindings"
+NEXT_PAGE="onboarding-finish"
+
+qtile_eval() { qtile cmd-obj -o cmd -f eval -a "$1" 2>/dev/null; }
+
+sheet_is_open() {
+  [[ "$(qtile_eval "str(__import__('sys').modules['popups.QtileCheatsheet']._CHEATSHEET_LAYOUT is not None)")" == '"True"' ]]
+}
+
+page_is_open() {
+  eww active-windows 2>/dev/null | grep -q "^${PAGE}:"
+}
+
+sleep "$DELAY"
+
+# Bail out if the tour moved on while we were sleeping. Without this, hitting
+# "Done" or "Back" within the delay still got you a cheatsheet a few seconds
+# later, on top of whatever you had gone on to do.
+page_is_open || exit 0
+
+eww close "$PAGE" 2>/dev/null
+
+if [[ "$(qtile_eval "__import__('sys').modules['config'].open_cheatsheet('qtile')")" != '"ok"' ]]; then
+  notify-send -a onboarding "Cheatsheet unavailable" \
+    "qtile did not answer — press Win+Shift+k to open it yourself." 2>/dev/null
+  eww open "$NEXT_PAGE" 2>/dev/null
+  exit 1
+fi
+
+# Wait for Esc/q to dismiss it, then continue the tour where it left off.
+# Capped so a sheet left open all afternoon does not leave this polling
+# forever; the tour simply ends there, which is the same place "Done" leads.
+for _ in $(seq 1 600); do
+  sleep 0.5
+  sheet_is_open || { eww open "$NEXT_PAGE" 2>/dev/null; exit 0; }
+done

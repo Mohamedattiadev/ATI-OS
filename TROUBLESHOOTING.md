@@ -167,6 +167,52 @@ subsystem. Each entry: **symptom → root cause → fix**.
   fine as-is — they're already followed by `exit 1` on a genuine
   error.)
 
+### A wallpaper switch half-applies, and the desktop never reloads
+- **Symptom:** you pick a wallpaper and only some of the desktop follows
+  — the bar and the terminal retint, the folder icons and the qtile
+  popups stay on the old palette — and qtile never restarts, so nothing
+  that needs a reload comes back. On a worse run the browsers get killed
+  and never come back either. `theme-apply` prints no error; the run just
+  stops somewhere in the middle.
+- **Root cause:** `theme-apply` runs under `set -e`, and an assignment
+  takes the exit status of the command substitution on its right-hand
+  side. So a failing `python3 -c` inside `VAR=$(...)` is not "skip this
+  bit" — it is the end of the script. Two of them sat on the same
+  trigger, a `~/.cache/wal/colors.json` that is missing or truncated (a
+  killed `wal`, a full disk, a first run before wal has ever cached):
+  the hue-from-`color9` block that decides the papirus folder colour
+  died **immediately before the qtile restart**, and the manifest-version
+  read in the browser-extension repack died **after both browsers had
+  already been killed**.
+- **Second shape of the same bug:** `ICON_COLOR` was only ever assigned
+  inside those two branches, so with `set -u` in force a run where both
+  came back empty reached `papirus-folders -C "$ICON_COLOR"` with the
+  variable never set at all, and aborted on an unbound variable in the
+  same place.
+- **Fix:** both substitutions end in `|| true`, `ICON_COLOR` is seeded to
+  `blue` before either lookup, and the paths those `python3 -c` snippets
+  need are passed as **argv** instead of being spliced into the source. A
+  wallpaper filename or a `$HOME` containing an apostrophe closed the
+  string literal and turned the snippet into a syntax error which, being
+  `2>/dev/null`'d, looked exactly like "this wallpaper has no
+  precompiled colour".
+
+### Every rofi menu stops opening after a wallpaper change, and the theme switch said it worked
+- **Symptom:** switch wallpaper, and afterwards nothing bound to rofi
+  responds — the launcher, `rofi-kill`, the power menu, every
+  confirmation dialog. The keys do nothing at all, as if they were never
+  bound. `theme-apply` reported success.
+- **Root cause:** the legacy (no-precompile) path in `theme-apply` builds
+  the rofi palette by reading `~/.cache/wal/colors.json` through `jq`,
+  and `jq` is declared as a dependency by nothing on that path. Without
+  it every `BG=$(jq -r ...)` came back empty and the `.rasi` was written
+  with bare `background: ;` lines. rofi will not parse an empty property
+  value — it exits before drawing anything, which from the keyboard is
+  indistinguishable from a keybind that does not exist.
+- **Fix:** that path checks for `jq` up front and refuses with a critical
+  notification rather than writing a palette that breaks every menu on
+  the desktop.
+
 ### Folder icons never change color, regardless of preset
 - **Symptom:** every other theme-apply consumer (kitty, rofi, qutebrowser,
   eww, btop, gtk accent colors, base gtk theme) retints correctly, but
@@ -264,6 +310,110 @@ subsystem. Each entry: **symptom → root cause → fix**.
   n = set(re.findall(r'c\.((?:\w+\.)+\w+)\s*=', b))
   print('invalid:', [x for x in n if x not in configdata.DATA] or 'none')"
   ```
+
+### A font the UI names is missing, so everything renders in CJK
+- **Symptom:** on a fresh install, the qtile bar, every qtile popup and
+  the notifications come up in a wrong-looking proportional face, and
+  every column that was supposed to line up is ragged — the cheatsheet
+  key columns, the wifi/bluetooth rows, `rofi_docs`. Nothing errors and
+  no log line mentions fonts. It reads like the layout code is broken.
+- **Root cause:** **fontconfig never errors on a missing family.** It
+  substitutes, silently, and on this system `fc-match` answers Noto Sans
+  CJK KR for anything it does not have. Every padded column in this repo
+  is aligned with *spaces*, and spaces only align in a monospace font.
+- **The instance:** `ttf-jetbrains-mono-nerd` was installed on the
+  author's machine and declared in **no** module, while the qtile bar,
+  all seven popups and dunst name `JetBrainsMono Nerd Font` explicitly.
+  Every one of those surfaces would have come up in CJK on a new
+  machine. It is now declared in `modules/fonts.yaml`.
+- **Check it:**
+  ```bash
+  fc-match "JetBrainsMono Nerd Font"   # must answer itself, not Noto
+  ./installScripts/validate.sh         # "UI fonts installed" section
+  ```
+  `validate.sh` now asserts that every family the UI names as *its* font
+  resolves to itself, so this fails loudly instead of shipping.
+- **Adding a font to any config:** declare the package in
+  `modules/fonts.yaml` **and** add the family to the list in
+  `validate.sh`'s *UI fonts installed* check. `fc-list : family` gives
+  the real names — they are rarely what you would guess
+  (`ttf-firacode-nerd` installs *FiraCode Nerd Font*, not *FiraCode
+  Nerd*, a trap this repo has fallen into twice).
+- **Not every mentioned family needs installing:** CSS stacks and
+  qutebrowser's fallback lists name plenty of fonts on purpose that are
+  not expected to be present. The check covers only families a config
+  sets as *the* font for a surface.
+
+### The `fonts.conf` alias block never did anything, and GTK apps render in a face nobody chose
+- **Symptom:** nothing errors, which is the whole problem. Text across
+  the desktop is simply not in the font the configs ask for: eww, dunst
+  and the qtile popups disagree with each other about what "sans" looks
+  like, and GTK apps render in a face that *changes* when you install
+  some unrelated package.
+- **Root cause:** the same silent-substitution trap as the entry above,
+  one level down. `fontconfig/fonts.conf` aliased `sans-serif`, `serif`,
+  `Sans` and `monospace` to **Arimo / Tinos / Cousine / Noto Sans
+  Arabic** — `ttf-croscore` and `noto-fonts`, neither installed nor
+  declared in `modules/fonts.yaml`. fontconfig does not warn about a
+  family it cannot find, so the entire block was inert and every generic
+  alias fell back to fontconfig's own defaults. That is not cosmetic
+  here: `eww/fonts.scss` deliberately routes `$ui-font` through
+  `sans-serif` so eww, dunst and the popups share one typeface — which
+  typeface that was depended on whatever else happened to be installed.
+- **The other half:** two packages tracked configs actually name were
+  declared in no module at all. `adwaita-fonts` — `config.py` sets
+  *Adwaita Mono* for the systray triangle and the wallpaper chip's ✖ —
+  and `noto-fonts`, because both `gtk-3.0/settings.ini` and
+  `gtk-4.0/settings.ini` ask for *Noto Sans*, which is **not** the CJK
+  package. `rofi/config.rasi` asked for `hack 10`, also not installed;
+  that one stayed invisible only because every theme under
+  `rofi/themes/` reaches `base.rasi`, whose `* { font: }` overrides it —
+  so the look would have depended on the installed font set the moment a
+  menu was launched with a theme that sets no font.
+- **Fix:** the aliases name only families `fonts.yaml` guarantees (Noto
+  Sans / Serif / Mono CJK KR, with Cairo and Amiri after them for
+  Arabic, which the CJK families do not cover — fontconfig falls through
+  the list per codepoint). `adwaita-fonts` and `noto-fonts` are
+  declared. `config.rasi` names the family `base.rasi` already names.
+  The picks are the ones that were already winning on the reference
+  machine, so this pins the current rendering rather than restyling it.
+- **The check that was supposed to catch this had the same hole:**
+  `validate.sh`'s *UI fonts installed* list claimed to cover "every
+  family the UI names" and covered three of eight. *Noto Sans* — asked
+  for by both GTK settings files — had been silently substituted on the
+  author's own machine for as long as the check had existed. It is
+  exhaustive now, and it is hand-maintained: anything a tracked config
+  sets as *the* font for a surface has to be added to that list by hand,
+  or the next one goes just as quietly.
+
+### Cheatsheet cards are the wrong size: points vs pixels
+- **Symptom:** cards drawn much larger than the text inside them — a
+  dead band under the last row of every card, and a gap between the key
+  column and the card's right edge. Card *heights* too tall as well, so
+  fewer rows fit per screen than the geometry claimed.
+- **Root cause:** the layout is computed from `CHAR_PX`/`LINE_PX`, which
+  had been measured with `Pango.FontDescription("Family 14")` — a
+  description string, which is in **points**. qtile's drawer sizes fonts
+  with `set_absolute_size()`, i.e. **device pixels**
+  (`libqtile/backend/base/drawer.py`). At 96dpi points are 4/3 larger, so
+  every card was built ~30% bigger than its content.
+- **Why nothing caught it:** `selftest()` measured in points too, so it
+  agreed with itself and stayed green the whole time. A check that shares
+  the bug with the code under test proves nothing.
+- **Fix:** measure with `desc.set_absolute_size(size * Pango.SCALE)`.
+  `selftest()` now does that *and* asserts each sheet's
+  `CHAR_PX`/`LINE_PX`/`LABEL_CHAR_PX` match what pango really draws, so
+  the constants cannot drift from reality again.
+- **Consequence for markup:** never write a numeric `size=` in pango
+  markup in these popups — it is in points and reintroduces the same
+  mismatch. Use the relative keywords (`size="smaller"`), which scale
+  whatever absolute size the layout was given; `_cheatsheet_grid.py`'s
+  `LABEL_SIZE` is exactly that.
+- **`BODY_SIZE` is in pixels,** so `BODY_SIZE = 15` is roughly 11pt.
+  Changing it changes how wide the cards need to be, so `POPUP_W` has to
+  move with it — as does `ROW_GAP_CHARS`. `python3 -m
+  popups._cheatsheet_grid` prints the numbers to size from, and fails
+  rather than silently clipping if the popup ends up too narrow.
 
 ### dunst and eww render in a different font than the qtile popups
 - **Symptom:** notifications and the eww onboarding/tooltips showed a
@@ -449,6 +599,146 @@ subsystem. Each entry: **symptom → root cause → fix**.
 
 ## Rofi
 
+### Translator returns only one word, no dictionary popup
+- **Symptom:** highlight a word, `Mod+p` `e`, and a bare translation
+  lands in the clipboard with no rofi picker ever appearing.
+- **Root cause:** `wordreference.py` scraped wordreference.com, which now
+  answers **HTTP 418** to this host on every request. Verified across
+  http and https, bare UA / full Chrome UA / UA+Accept headers, from both
+  urllib and curl — twelve combinations, all 418 with a 115-byte body. It
+  is an IP/TLS-level block, not a header problem, so no request tweak
+  brings it back. Every lookup fell into the bare `except` at the bottom
+  of the script, whose fallback is exactly "dump `trans -b` to clipboard".
+- **Fix:** the dictionary source is now translate-shell's own `trans -d`
+  — part-of-speech tagged definitions, per-sense synonyms and usage
+  examples, nothing to block. BeautifulSoup is no longer a dependency.
+
+### Translator / rofi_anki show empty synonyms and examples
+- **Symptom:** those sections render with nothing under them. `rofi_anki`
+  is worse: it exits before drawing any menu at all.
+- **Root cause:** no `GEMINI_API_KEY` anywhere. Both lines in
+  `/etc/environment` were commented out **and** empty
+  (`#GEMINI_API_KEY=`, exactly 16 characters). `rofi_anki` grepped for
+  `^GEMINI_API_KEY=`, matched nothing and hit its `exit 1`; the
+  translators got `""` from `os.getenv` and rendered blank sections with
+  no error at all.
+- **Fix:** keys live in `~/.config/secrets.env` (mode 600, git-ignored),
+  loaded by `load_secrets()` in `rofi_common.sh`. The key is **optional
+  everywhere** — `rofi_anki` falls back to translate-shell for the
+  translation and omits the AI fields instead of aborting.
+- **Related:** `/etc/environment` is world-readable, and nothing qtile
+  spawns re-reads it without a full re-login. Wrong place for a secret
+  on both counts.
+
+### rofi_anki builds a whole card, then fails at the last step
+- **Symptom:** every prompt answered, then "Cannot reach AnkiConnect".
+- **Root cause:** two independent things. The AnkiConnect addon was not
+  installed (nothing listening on 8765), and the auto-start path slept a
+  flat 4 seconds before respawning itself in the background — Anki 26.05
+  needs ~12s to open its collection here, so the respawn raced startup
+  and lost.
+- **Fix:** `wizard.sh --yes --only=ankiconnect` installs the addon; the
+  script now polls the port for up to 45s in-process instead of sleeping.
+  It also creates its decks on every run (`createDeck` is idempotent) —
+  a fresh profile has only `Default`, and `addNote` rejects an unknown
+  deck outright.
+
+### Shared-links picker shows fewer links than the file holds
+- **Symptom:** you paste a URL into `Shared_Links.md` and it never shows
+  up in `Mod+p` `z`.
+- **Root cause:** the parser only matched `- [title](url)` lines. Bare
+  URLs on a line of their own were skipped silently — 10 of 25 links.
+- **Fix:** bare URLs are first-class now and get a title derived from the
+  URL itself. Retitling one promotes it to the markdown form.
+
+### Wallpaper picker (dm-setbg) lists nothing
+- **Symptom:** empty menu, while every other wallpaper tool works fine.
+- **Root cause:** `setbg_dir="$HOME/Pictures/Wallpaper"` — singular. The
+  directory is `~/Pictures/Wallpapers`, which is what the `wallpapers`
+  module clones into and what `wal-precompile` and `wal-audit` read.
+- **Fix:** corrected to the plural. The menu lists 363 wallpapers now.
+
+### dm-documents: "file not found" for some PDFs but not others
+- **Symptom:** `Mod+p` `d`, pick a PDF, okular reports a missing file —
+  only for certain entries.
+- **Root cause:** the real path was reconstructed from the *display
+  label* by reversing sed substitutions, and `s/.pdf//g` has an
+  **unescaped dot**, so it ate the character before the extension too.
+  `Mohamed Attia(CV) .pdf` came back as `Mohamed Attia(CV).pdf`. 2 of 10
+  PDFs failed this way. The abbreviations were not reversible either: any
+  path merely containing `Pic` became `Pictures` on the way back.
+- **Fix:** the real path is stored alongside the label rather than
+  recomputed from it. Abbreviations are cosmetic only.
+
+### rbw entries created with an empty password
+- **Symptom:** an entry added from `rofi_pass` exists with the right name
+  and username, but `rbw get` answers *"entry had no password"*.
+- **Root cause:** `rbw add --help` says the password comes from `$EDITOR`.
+  That is only true when **stdin is a terminal**. Given a pipe or a
+  redirect, rbw reads the password from stdin and never invokes the
+  editor at all — an instrumented `$EDITOR` wrapper logged nothing
+  whatsoever, while the entry was still created, empty.
+- **Fix:** `printf '%s\n' "$pw" | rbw add NAME USER`. Same for
+  `rbw edit`. This is also the safer route: the editor path would have
+  had to materialise the password in a temp file, whereas a pipe never
+  touches the disk and never appears in argv.
+
+### rbw refuses to read or delete an entry: "multiple entries found"
+- **Symptom:** `rbw get`/`remove`/`edit` fail with
+  `multiple entries found: user@Name, user@Name`, and the entry becomes
+  impossible to act on from the picker.
+- **Root cause:** `rbw add` happily creates a second entry with the same
+  name *and* username, and from then on any name-based lookup is
+  ambiguous. Trivial to hit while retrying a failed add.
+- **Fix:** address entries by **UUID**, which every rbw `NEEDLE` accepts:
+  `rbw ls --fields id,name,user`. `rofi_pass` now stores the id as the
+  first field of every row and uses it for get, code, edit and remove —
+  name+user is display text only. To clear existing duplicates, remove
+  them by id.
+
+### Pressing Enter in rofi_pass does nothing at all
+- **Symptom:** the picker opens, entries are listed, Enter closes it and
+  nothing is copied. No error, no notification, empty clipboard.
+- **Root cause:** `copy_to_clipboard()` in `rofi_common.sh` tested
+  `[[ -n "$WAYLAND_DISPLAY" ]]` with a bare reference. Every caller runs
+  under `set -u`, and on an X11 session that variable is not set, so bash
+  aborted the script mid-function. `wl-copy` being installed is what made
+  the branch reachable at all — with it absent the test short-circuits
+  and the bug never fires, which is why it looked X11-specific.
+- **Fix:** `${WAYLAND_DISPLAY:-}`. The same latent abort affected
+  `rofi_shared` and `rofi_translator`, which share the helper.
+- **Lesson:** under `set -u`, every optional environment variable needs
+  `:-`. A bare `$FOO` in a helper is a script-wide abort waiting for the
+  one machine where `FOO` is unset.
+
+### `tailscale cert` fails: "account does not support getting TLS certs"
+- **Symptom:** HTTP 500 from `tailscale cert <host>.<tailnet>.ts.net`.
+- **Root cause:** **MagicDNS** and **HTTPS Certificates** are both off in
+  the admin console. Neither can be switched on from the machine.
+- **Fix:** enable both at <https://login.tailscale.com/admin/dns>, then
+  re-run `./wizard.sh --yes --only=vaultwarden-phone`.
+- **Related trap:** do not pre-flight this with
+  `tailscale cert --cert-file /dev/null`. That command refuses to write
+  to `/dev/null`, so the probe reports failure even when certificates
+  work — the wizard module briefly did exactly that and printed the
+  admin-console warning on a perfectly healthy system.
+
+### Vaultwarden web vault 404s while the API works
+- **Symptom:** `http://127.0.0.1:8222/api/config` returns 200, but `/`
+  returns 404, so there is no page on which to create the account.
+- **Root cause:** settings were added as `Environment=` lines in a
+  systemd drop-in, but the packaged unit carries
+  `EnvironmentFile=/etc/vaultwarden.env`, and **systemd applies
+  `EnvironmentFile=` after `Environment=`**. That file sets
+  `WEB_VAULT_ENABLED=false`, so it won. Confusingly, `ROCKET_ADDRESS`
+  and `ROCKET_PORT` from the same drop-in *did* take effect — only
+  because the packaged file does not set those. `systemctl show` also
+  reports the drop-in values, so it looks correct; the truth is in
+  `/proc/$(systemctl show -p MainPID --value vaultwarden)/environ`.
+- **Fix:** put the overrides in `/etc/vaultwarden.local.env` and
+  reference it with `EnvironmentFile=` from the drop-in, so it is read
+  last and wins.
+
 ### rofi-kill takes 10-18 seconds to open
 - **Symptom:** Alt+Q (kill picker) freezes before menu appears.
 - **Root cause:** bash `while read` loop iterating 280+ processes with
@@ -460,9 +750,13 @@ subsystem. Each entry: **symptom → root cause → fix**.
 
 ### rofi-kill vertical dividers misaligned
 - **Symptom:** `│` between columns shifts left on some rows.
-- **Root cause:** rofi base font `FiraCode Nerd 12` resolves to Noto
-  Sans (proportional) via fontconfig fallback. Different glyph widths
-  in the same row throw padding off.
+- **Root cause:** rofi's base font is **proportional** (Noto Sans CJK KR
+  — see `base.rasi`, it is deliberate). Different glyph widths in the
+  same row throw space padding off. This used to be reached by accident:
+  the theme asked for `FiraCode Nerd 12`, a family that is not installed,
+  and fontconfig substituted silently. The face is the same today but the
+  name is now honest, so the cause reads as a design choice rather than a
+  typo.
 - **Fix:** wrap each row in `<span face="monospace">...</span>`. Pango
   substitutes a monospace family only inside rows; prompt / mesg keep
   the base proportional font so rofi UI stays consistent with other
@@ -534,6 +828,61 @@ subsystem. Each entry: **symptom → root cause → fix**.
   conversion) were used by the script but declared in **no** dcli
   module yaml — nothing would ever install them on a fresh setup.
 - **Fix:** added both to `apps.yaml`.
+
+### Every confirmation dialog answers "cancel" by itself — on a second account
+- **Symptom:** on a machine with more than one user, one account's rofi
+  Yes/No confirms work and another account's never appear at all.
+  `rofi-kill` asks nothing and kills nothing; the confirms in `dm-setbg`
+  and friends do nothing. Every action behaves exactly as though you had
+  pressed Escape.
+- **Root cause:** `rofi_common.sh`'s `rofi_confirm` sent rofi's stderr to
+  a fixed `/tmp/rofi-confirm.err`. `/tmp` is shared — the first account to
+  run any of these scripts created that file owned by itself and mode
+  644, and for every other account the redirect then failed with EACCES.
+  **A redirection that fails means the command never runs at all:** the
+  shell gives up before `exec`, so rofi never launched, `$answer` came
+  back empty, and the caller read empty as "No". The log line that was
+  supposed to explain it went to `/tmp/rofi-confirm.log`, unwritable for
+  precisely the same reason.
+- **Fix:** scratch files live in a per-user directory —
+  `$XDG_RUNTIME_DIR` (already per-user and mode 700), falling back to
+  `/tmp/rofi-$(id -u)` for sessions that do not set it. `GEMINI_LOG` moved
+  with it.
+- **Same class, same fix:** `voice_dictate` and `voice_dictate_live` used
+  fixed `/tmp/voice_dictate*` directories, whose `mkdir -p` failed against
+  the first user's copy — and under `set -e` that ended the run before any
+  of the "missing binary" feedback was ever reached. Both also called the
+  variable `TMPDIR`, which is *exported* in many sessions, so the
+  assignment quietly handed `TMPDIR=/tmp/voice_dictate` to `sox`,
+  `whisper-cli` and `notify-send` as their scratch directory. It is
+  `WORK_DIR` now.
+
+### Webcam recording ignores the resolution you picked, or records the wrong device
+- **Symptom:** `dm-recordV2` offers "Webcam (low-res) 640x480" and
+  "Webcam (HD) 1920x1080" and both produce a file at whatever the camera
+  felt like — the two menu entries are indistinguishable. On other
+  machines it is louder: the recording never starts and ffmpeg says
+  `Not a video capture device`.
+- **Root cause:** two mistakes in the same two ffmpeg lines.
+  `-video_size` sat **after** `-i`, and `-video_size` is an *input*
+  option for the v4l2 demuxer — after the input, ffmpeg parses it as an
+  output option and drops the request without complaint, so both labels
+  were untrue. And the device was hardcoded to `/dev/video0`, which on a
+  lot of hardware is not the camera: one UVC webcam registers several
+  nodes, and drivers that expose a metadata or statistics node claim
+  `video0` while the image stream sits on `video1` or `video2`.
+- **Fix:** `-video_size` moved in front of `-i`, and the device comes
+  from a `webcam_device()` helper that walks `/dev/video*` and takes the
+  first node `v4l2-ctl` reports as `Video Capture` — falling back to the
+  first node that exists when `v4l2-ctl` is not installed, which is the
+  old behaviour and no worse.
+- **Same script, adjacent:** full-screen capture read its geometry from
+  an inline `xdpyinfo | awk`. `xdpyinfo` ships in `xorg-xdpyinfo`, which
+  nothing else here pulls in; absent, the substitution was empty, ffmpeg
+  got a bare `-s` followed by the next flag, and died with a parse error
+  that says nothing about a missing package. There is an `xrandr`
+  fallback now, and a real message naming both packages when neither is
+  there.
 
 ---
 
@@ -1071,6 +1420,412 @@ subsystem. Each entry: **symptom → root cause → fix**.
   `command -v <cmd> >/dev/null && <cmd> &`, which is the pattern the rest
   of that file already uses.
 
+### dunst forks a child that fails, on every single notification
+- **Symptom:** nothing on screen — notifications look completely normal.
+  But every notification the desktop raises, and this config is chatty,
+  forks a process that immediately fails to exec.
+- **Root cause:** `dunstrc.tmpl` carried a `[copy]` rule with
+  `summary = ".*"` — i.e. *every* notification — and
+  `script = ~/.config/dunst/scripts/do-copy.sh`. That script has never
+  existed in this repo. dunst runs a rule's `script` once per matching
+  notification and does not care whether the exec succeeded, so the only
+  evidence was a fork nobody was counting.
+- **Why it looked plausible:** copy-the-last-notification *is*
+  implemented here — as `scripts/auto-copy-dunst.sh`, which is its own
+  `dbus-monitor` daemon and not a dunst script hook at all. It takes no
+  `(appname, summary, body, …)` argv and would do nothing if it were
+  wired in here, so the rule could never have worked even with the file
+  present.
+- **Fix:** the rule is gone, with that explanation written in where it
+  used to be so it does not get re-added.
+
+### Qtile RAM climbs every time a popup is opened and closed
+- **Symptom:** memory used by the qtile process only ever goes up. Opening
+  and closing the wallpaper picker or a cheatsheet ten times costs tens of
+  MB that never comes back. Nothing looks wrong on screen.
+- **Root cause:** the popups closed with `layout.hide()`. `hide()` only
+  **unmaps the X window** — the window, its cairo drawer and every
+  control's pango layout stay allocated. Every `show_*` path in this repo
+  builds a **brand new** `PopupRelativeLayout`, so the old one is
+  orphaned, not reused: ~3MB of ARGB surface per wallpaper-picker close
+  (1120×680), ~2.7MB per cheatsheet, ~2.2MB per WiFi/Bluetooth close.
+  It was measured as five live 940×600 popups in one running qtile.
+- **Fix:** `layout.kill()` on every teardown path. `apply_wallpaper()`
+  already did this on its own exit; the rest now match.
+- **Rule of thumb:** `hide()` is only correct when the *same* layout
+  object is shown again later. If the show path constructs a new layout,
+  the close path must `kill()`.
+
+### Entries at the bottom of a cheatsheet column are missing, and nothing errors
+- **Symptom:** a cheatsheet popup is missing the last few entries of its
+  longest section. No exception, no log line — the entries are right there
+  in `CHEATSHEET`, they just are not on screen. Adding one more makes a
+  different one disappear.
+- **Root cause:** `PopupText` **neither clips nor wraps to its `height`.**
+  The `height` you pass only positions the control; text longer than that
+  keeps drawing downward, over whatever is below it, until the popup
+  *window* edge cuts it off. All three cheatsheets carried the same
+  copy-pasted 4×3 grid of equal `0.25`-height cells, and every section in
+  every one of them overflowed its cell. Where there was empty space
+  below, the overflow was invisible; where there was not, the window
+  cropped it:
+  - **Qtile** — the ROFI MODE column ended **101px below the bottom
+    edge**; its last four entries had never rendered.
+  - **Vim** — `Screenshots` and `Exit / Save` lost 28px each, `Markdown`
+    4px, and `LSP` ran into the footer.
+  - **Fish** — `Danger Zone` ran 32px past the footer.
+
+  Every column in Vim and Fish was also ~40px wider than its cell, so all
+  of them wrapped as well, which made them taller still.
+- **Fix:** `popups/_cheatsheet_grid.py` — one shared layout module, since
+  the copy-paste is what let one bug become three. Cards stack top to
+  bottom, each placed at the height the ones above it actually need, and
+  a column is closed when the next section will not fit. Sections are
+  placed **first fit** rather than strictly in sequence: filling one
+  column at a time left a card-sized hole under any section that missed
+  the bottom of its column by a few pixels.
+- **Sizes are exact, not estimated.** The face is monospace, so a card is
+  `(2 + rows) × LINE_PX` tall and `(2 + cols) × CHAR_PX` wide and that is
+  the end of it. `LINE_PX` / `CHAR_PX` are pango extents at `BODY_SIZE`,
+  so **changing `BODY_SIZE` without re-measuring them invalidates every
+  position.** It is also why `font=` and `fontsize=` are passed explicitly
+  to every `PopupText` — inheriting the defaults would do exactly that.
+- **When there is genuinely too much, it paginates.** 90 qtile bindings do
+  not fit one 1366×768 screen at a readable size, and the old answer to
+  that was a 9pt sheet with its bottom rows off the edge. `Tab` inside
+  `Mod+Shift+K` turns the page.
+- **Check a change without a running qtile** — this is what `validate.sh`
+  runs, and it names the card and the fix:
+  ```sh
+  cd ~/.config/qtile && python3 -m popups._cheatsheet_grid
+  ```
+  It fails on four separate things, all of which have actually happened:
+  text wider or taller than its card, a card past the footer or the popup
+  edge, a **row clipped** (`z 'file/folderna…` is not a thing you can
+  type), and a **glyph the font does not have**.
+
+### Cheatsheet columns do not line up / the popups render in a CJK face
+- **Symptom:** the key column in a cheatsheet is ragged instead of flush
+  right, or the whole popup renders in a font that is visibly not the one
+  the rest of the desktop uses.
+- **Root cause:** `PopupText`'s default font is **`sans`**, and on this
+  machine `fc-match sans` answers **Noto Sans CJK KR**. Same trap as
+  242b8ff, which fixed it for rofi and not for these. It is also
+  proportional, so no amount of space-padding will align a column in it.
+- **Fix:** every cheatsheet control names `_cheatsheet_grid.FONT`
+  (`JetBrainsMono Nerd Font`) explicitly. The right-aligned key column
+  only works because every glyph is exactly `CHAR_PX` wide.
+- **A missing *glyph* has the same effect as a missing font**, and is
+  harder to spot: pango silently falls back for that one character, at
+  that other font's width, and the row it is in stops lining up. `↵`
+  (U+21B5) is the obvious symbol for Enter and **is not in
+  JetBrainsMono**; `⏎` (U+23CE) is. The selftest checks every glyph the
+  popups draw — headers and footers included, which is where a hardcoded
+  `↵` slipped past a cards-only version of the check.
+  ```sh
+  fc-match "JetBrainsMono Nerd Font"      # is the family even installed
+  ```
+
+### Popup labels are washed out / unreadable on some themes
+- **Symptom:** on nord, rose-pine and the other presets, the `muted`
+  labels inside a popup card are barely legible, and one accent (nord's
+  red, rose-pine's green) sits at roughly the same brightness as the card
+  behind it. The same colours are perfectly readable in the terminal.
+- **Root cause:** the shared loader derives `muted` against `bg`, but the
+  popups paint text on `surface` — a card blended 7% of the way toward
+  `fg`. That is enough to drop those colours under a 3:1 contrast ratio
+  against what they are actually drawn on. Themes are chosen for how they
+  look in a terminal, where text sits on `bg`.
+- **Fix:** `ensure_contrast()` in `popups/_wal_colors.py`. It nudges a
+  colour toward the palette's **foreground** until it clears the ratio,
+  and returns it untouched when it already passes — so themes with
+  healthy contrast keep their exact accents. Mixing toward `fg` always
+  moves *away* from the surface, which is why it works unchanged on light
+  presets (mono-light) as well as dark ones.
+- **Do not apply it to block fills.** `highlight_bg` is the selection
+  block, not text; adjusting it would drift the theme's accent for no
+  gain.
+
+### File manager opens on the wrong group after switching to pcmanfm-qt
+- **Symptom:** swapped the GTK `pcmanfm` for `pcmanfm-qt`; `Mod + M`
+  launches it, but the window stays wherever it spawned instead of
+  landing on group `3` with the rest of the file-manager session, and
+  a second `Mod + M` opens *another* copy instead of focusing the
+  first.
+- **Root cause:** two different matchers, only one of which is
+  substring-based.
+  - `config.py`'s group rule uses qtile's `Match(wm_class=...)`, which
+    is an **exact** string test against each WM_CLASS field.
+    `pcmanfm-qt` reports `("pcmanfm-qt", "pcmanfm-qt")`, so a rule
+    written as `Match(wm_class="pcmanfm")` never fires.
+  - `scripts/toggle_apps.py`'s `_matches_class()` is a case-insensitive
+    **substring** test, so `file_manager_class = "pcmanfm"` *does*
+    still find the Qt window. That asymmetry is why the toggle looked
+    half-broken: the "already open?" lookup worked, but only once the
+    window had been placed on group 3, which the group rule wasn't
+    doing.
+- **Fix:** group `3` now lists `Match(wm_class="pcmanfm-qt")`
+  explicitly (the GTK `pcmanfm` entry is kept alongside it — the
+  package is still installed as an LXDE dependency). `toggle_apps.py`
+  spawns `pcmanfm-qt`; its `file_manager_class` stays the substring
+  `"pcmanfm"` on purpose so either build is recognised.
+- **Verify:** `xprop WM_CLASS` and click the window — must print
+  `"pcmanfm-qt", "pcmanfm-qt"`. Then `Mod + M` twice: second press
+  focuses, does not spawn.
+
+### Folder icons don't retint after a theme change (pcmanfm-qt)
+- **Symptom:** `theme-apply <preset>` recolors everything else, but the
+  open file-manager window keeps the old folder color. Window colors
+  *do* update.
+- **Root cause:** `qt6ct` installs a config watcher that live-swaps a
+  running Qt app's `QPalette`, which is why the window chrome retints —
+  but it does not touch `QIcon::themeName()`. The icon theme is
+  resolved once at process start and cached for the process lifetime.
+  Same underlying limitation the GTK build had, different toolkit.
+- **Fix:** `theme-apply`'s `_restart_fm()` helper kills and relaunches
+  the file manager after `papirus-folders` swaps the color symlink. It
+  is called twice, once per build, because the two disagree on flags
+  and window class: `pcmanfm-qt -d` / WM_CLASS `pcmanfm-qt`, versus
+  `pcmanfm --daemon-mode` / WM_CLASS `Pcmanfm`. Passing GTK's
+  `--daemon-mode` to the Qt binary makes it exit with an unknown-option
+  error and the daemon never comes back.
+- **Known cost:** relaunched windows reopen at `$HOME`, not their
+  previous cwd. Deliberate — X gives no portable way to read a file
+  manager's current directory back out.
+
+### pcmanfm-qt ignores the GTK theme entirely
+- **Symptom:** every GTK app follows `Sweet-Dark` / `Breeze` as
+  documented, the file manager doesn't.
+- **Root cause:** not a bug. `pcmanfm-qt` is Qt, so the GTK overlay
+  `theme-apply` writes (`gtk.css` `@define-color`, `settings.ini`) is
+  irrelevant to it. It reads the 21-entry positional `QPalette` that
+  the same script generates into `~/.config/qt6ct/` and
+  `~/.config/qt5ct/`, picked up because `.xinitrc` exports
+  `QT_QPA_PLATFORMTHEME=qt6ct`.
+- **If it renders unstyled anyway:** check that export first —
+  `echo $QT_QPA_PLATFORMTHEME` from a shell **inside the X session**,
+  not a fresh TTY. Empty means the app fell back to Qt's built-in
+  Fusion palette and no amount of re-running `theme-apply` will help.
+
+### Extract Here / Open Terminal Here / Open as Root do nothing at all
+- **Symptom:** right-click a `.tar.gz` in `pcmanfm-qt`, pick **Extract
+  Here** or **Extract To** — no dialog, no error, no extracted folder,
+  nothing in the notification area. The same silence hits *Open Terminal
+  Here* and *Open as Root*.
+- **Root cause:** four `[System]` keys in `settings.conf` each name a
+  program by hand, and every one named something this repo has never
+  installed. libfm-qt fires the configured command without checking that
+  it exists, so a missing binary is indistinguishable from a menu entry
+  that was never wired up.
+
+  | key | upstream default | what is actually here |
+  |---|---|---|
+  | `Archiver` | `file-roller` | `ark` (declared in `apps.yaml`) |
+  | `Terminal` | `xterm` | `kitty` |
+  | `SuCommand` | `lxqt-sudo %s` | neither `lxqt-sudo` nor `kdesu` |
+  | `FallbackIconThemeName` | `oxygen` | `breeze` (Papirus is primary) |
+
+  The archive itself is almost never at fault — `tar tzf file.tar.gz`
+  lists it cleanly.
+- **Fix:** `.config/pcmanfm-qt/default/settings.conf` is tracked here
+  with all four pointed at installed programs. The archiver must be one
+  of the ids in `/usr/share/libfm-qt6/archivers.list`; an arbitrary
+  binary is ignored. `ark` is listed there with `extract`, `extract_to`
+  and a mime list covering `.tar.gz`.
+- **Edit it with the app closed.** pcmanfm-qt rewrites `settings.conf`
+  from memory on exit, so a hand edit made while a window is open gets
+  reverted when that window closes. `killall pcmanfm-qt` first, or use
+  Edit → Preferences → Advanced.
+- **Verify:** `grep -E '^(Archiver|Terminal|SuCommand)'
+  ~/.config/pcmanfm-qt/default/settings.conf`, then right-click →
+  Extract Here and watch for ark's progress dialog.
+
+### Mounting a partition from the Places pane is refused, with no password prompt
+- **Symptom:** click an internal drive in the sidebar and nothing
+  mounts. No authentication dialog, no error. USB sticks may still work
+  — `udisks2` allows those unprivileged for the active session.
+- **Root cause:** `polkitd` runs as a system service but cannot ask the
+  user anything on its own; that is an *authentication agent*'s job, and
+  a bare qtile session starts none. Desktop environments ship one, a
+  WM-only setup has to launch it.
+- **Fix:** `lxqt-policykit` (in `apps.yaml`), started from
+  `autostart.sh`'s light-background-apps block as
+  `lxqt-policykit-agent &`.
+- **Verify:** `pgrep -af 'lxqt-policykit-agent$'` prints a pid, after
+  which the same click raises a password dialog.
+
+### Opening a folder from another app launches a terminal
+- **Symptom:** "open containing folder" from a browser download, or
+  `xdg-open ~/Downloads`, spawns kitty at that path instead of the file
+  manager.
+- **Root cause:** `kitty-open.desktop` registers `inode/directory`, and
+  with no user `mimeapps.list` entry to outrank it that becomes the
+  system default. Nobody chose it; it is what wins when the question is
+  never answered.
+- **Fix:** `.config/mimeapps.list` is tracked here and pins
+  `inode/directory=pcmanfm-qt.desktop`, plus the archive mimetypes to
+  `org.kde.ark.desktop` so double-clicking an archive opens it.
+- **If you prefer the terminal:**
+  `xdg-mime default kitty-open.desktop inode/directory`.
+- **Verify:** `xdg-mime query default inode/directory`.
+
+### The bar shows `Error: Unable to read status for status_file` where the battery should be
+- **Symptom:** on a desktop, both bars permanently render that string in
+  place of a battery percentage — once in the top bar's chip row and once
+  in `normal_user_bar`. It never clears, and nothing in `qtile.log`
+  mentions it.
+- **Root cause:** libqtile's `Battery` widget does not fail loudly on a
+  machine with no battery. It constructs fine, and then every poll
+  returns that message **as its text**, which is what the bar dutifully
+  draws. Two `Battery` widgets were being built unconditionally.
+- **Fix:** `_has_battery()` — a `glob` of `/sys/class/power_supply/BAT*`
+  — gates both. The `|` separator that follows the top-bar one is gated
+  with it, or a desktop draws two pipes with nothing between them. A
+  machine with no battery now simply has no battery chip, which is the
+  honest rendering.
+
+### No plug/unplug popup and no low-battery warning, on a laptop that is not this one
+- **Symptom:** `battery-events` is running. It errors nothing, exits
+  nothing, and you never get a charger-connected popup and never get the
+  low-battery warning — right up to the point the machine dies.
+- **Root cause:** the paths were hardcoded to
+  `/sys/class/power_supply/BAT0` and `.../AC`. Those names come from
+  firmware, not from the kernel: plenty of machines expose `BAT1`, and
+  the mains adapter is just as often `ACAD`, `ADP0`, `ADP1` or `AC0`.
+  Reading a path that does not exist left `STATUS` and `PERCENT` empty,
+  every comparison in the loop then matched the previous (also empty)
+  value, and the watcher sat there deciding forever that nothing had
+  changed.
+- **Fix:** the battery and the adapter are found **by type** — walk
+  `/sys/class/power_supply/*` and match `type` = `Battery` (with a
+  readable `capacity`) or `Mains`. If there is genuinely no battery it
+  says so with a notification instead of running blind. It also checks
+  for `upower` up front: without it the `upower --monitor-detail`
+  pipeline exits immediately, the watcher dies at login, and the only
+  trace is a "command not found" on a stderr nobody is reading.
+
+### Six `alt+` bindings and the whole Hint-Mode chord do nothing
+- **Symptom:** the homerow hint keys are dead. No error, no
+  notification, nothing in `qtile.log` — the keys are bound, they just
+  have no effect.
+- **Root cause:** `HOMEROW` in `config.py` was a bare
+  `os.path.expanduser("~/Attia-Pro/Projects/Homerow_replika/homerow-hint")`
+  — a path into a project checkout that lives **outside this repo**. On
+  any machine that keeps that project somewhere else, or that installs
+  the client into `~/.local/bin` like every other tool here, all six
+  bindings and the entire Hint-Mode `KeyChord` spawned a path that does
+  not exist. `lazy.spawn` does not surface that anywhere.
+- **Fix:** `shutil.which("homerow-hint")` first, with the checkout path
+  kept only as a fallback — the same which-then-fall-back shape
+  `_rescale_then_restart` already uses for ui-scale.
+
+---
+
+## Network & Bluetooth
+
+### Fresh install: WiFi/Bluetooth popups say the daemon is not running
+- **Symptom:** on a machine installed from this repo, `Mod+P` then `n`
+  or `b` opens the popup and immediately errors — `NetworkManager is not
+  running`, or an empty Bluetooth list that never fills. `nm-applet` and
+  `blueman-applet` are visible in the tray and do nothing. On the machine
+  this repo was developed on, everything works.
+- **Root cause:** **declaring a package installs a binary, not a running
+  daemon.** `networkmanager` and `bluez` are declared (network.yaml) and
+  dcli installs them, but nothing enabled the units. They are enabled on
+  the development machine only because **archinstall** did it — which is
+  exactly the kind of difference a package audit cannot see.
+- **Fix:** the wizard's `radios` module (`step_radios`, runs after
+  `dcli-sync`) enables `NetworkManager.service` and `bluetooth.service`.
+  Idempotent — prints "already enabled" and changes nothing on a
+  configured machine.
+  ```sh
+  ./wizard.sh --yes --only=radios       # on an already-installed box
+  systemctl is-enabled NetworkManager.service bluetooth.service
+  ```
+- **Its uninstaller is a deliberate no-op.** Disabling NetworkManager to
+  "reverse" an install leaves a machine with no network and no GUI to fix
+  it with. Turn either off by hand, or with `service_trim.sh`.
+- **Watch out for `service_trim.sh`.** It offers to disable
+  `bluetooth.service`; say yes and the `Mod+P b` picker goes dead with no
+  other symptom.
+
+### Typing a WiFi password pops nm-applet's own GTK dialog on top of the popup
+- **Symptom:** the WiFi popup asks for a password via rofi, you get it
+  wrong, and a **second** password prompt appears — a GTK one, from
+  nm-applet, stealing focus over a popup that is mid-flow.
+- **Root cause:** `nm-applet` registers itself as NetworkManager's
+  **secret agent** by default. When `nmcli` fails to authenticate, NM asks
+  the registered agent for the secret, and the agent is a GUI dialog.
+- **Fix:** `nm-applet --no-agent` in both start paths
+  (`.config/qtile/autostart.sh` and the `.xinitrc` the wizard writes). It
+  keeps the tray icon and drops the secret-agent role, so the popup owns
+  the whole flow and re-asks itself.
+
+### A network stays marked "saved" with a password that can never work
+- **Symptom:** you fat-finger a PSK, the connect fails, and the network
+  now shows as saved. Pressing Enter on it fails instantly forever. Retry
+  a few times and `nmcli connection show` has `SSID`, `SSID 1`, `SSID 2`
+  sitting beside each other.
+- **Root cause:** `nmcli dev wifi connect <ssid> password <psk>` **writes
+  the profile before it knows the key is rejected**, and adds a new one
+  (suffixed) on each attempt rather than correcting the existing one.
+- **Fix:** `connect()` in `popups/WifiPopup.py` re-keys the existing
+  profile (`connection modify … wifi-sec.psk`) instead of adding beside
+  it, deletes anything an attempt saved that was not there before, and
+  re-asks up to `MAX_PASSWORD_TRIES` with the try count in the footer.
+  `connect_hidden()` has the same trap and the same cleanup.
+- **Clean up profiles left by an older build:**
+  ```sh
+  nmcli -t -f NAME connection show | grep -E ' [0-9]+$'
+  nmcli connection delete id 'SSID 1'
+  ```
+
+### Connecting to an out-of-range network or device hangs forever
+- **Symptom:** the busy bar spins and never stops. Escape closes the
+  popup but the worker is still running; the status is stuck on
+  "Connecting…" the next time it opens.
+- **Root cause:** two separate ones with the same shape.
+  `bluetoothctl connect <mac>` against a device that is out of range
+  **never returns** — no timeout of its own, no error. `nmcli` can sit for
+  a long time on a marginal AP.
+- **Fix:** every command carries a timeout and is killed when it expires,
+  and the handle of whatever slow action is in flight is published so `c`
+  can kill it by hand. In WiFi that offer is advertised **in the footer
+  while busy**, not as a permanent hint chip — that bar is already at
+  808px of its 874px.
+
+### Bluetooth list fills up, then empties itself a few seconds later
+- **Symptom:** scan finds devices, they render, and then most of them
+  vanish while the popup is still open.
+- **Root cause:** **bluez forgets unpaired devices as soon as discovery
+  stops.** A scan-then-list design therefore shows a list with a
+  half-life.
+- **Fix:** discovery runs as a child process for as long as the popup is
+  open, and is killed on close — including from `cleanup_on_leave()`, so
+  leaving the chord with Escape stops it too. Without that path the radio
+  keeps discovering forever after the popup is gone.
+- **Related bluez traps in the same file:** `bluetoothctl devices` embeds
+  **ANSI colour escapes even when its output is piped** (every line is
+  stripped before parsing), and `info <mac>` costs one process per
+  device — so the list is built from the four cheap
+  `devices [Paired|Connected|Trusted]` queries and `info` is only asked
+  for the paired rows and the selected one.
+
+### The QR code from the WiFi popup will not scan
+- **Symptom:** `s` on a saved network draws a code, and the phone camera
+  ignores it.
+- **Root cause:** almost always one of two things. **Inverted codes**
+  (light modules on a dark background) are out of spec and plenty of
+  cameras refuse them — which is why the code is rendered black on white
+  on its own white card whatever the desktop theme is. **Fractional
+  scaling** blurs the module edges the decoder needs, which is why
+  `qrencode` is run twice: once at one pixel per module to learn the
+  symbol size, then again at an integer scale that fills the card.
+- **If it draws "qrencode not found"** the package is missing —
+  `qrencode`, declared in `modules/wm.yaml`.
+- **If it says the network is not saved**, there is no stored PSK to
+  encode. Connect to it once first.
+
 ---
 
 ## Voice dictation
@@ -1485,6 +2240,117 @@ should come up cleanly.
   `dcli sync --dry-run` to see what's actually still missing (compare
   against what you'd expect), then `dcli sync --force` to catch it up.
 
+### `./install.sh` hangs forever near the end, spinner still turning
+- **Symptom:** the wizard sits on one module indefinitely. The spinner
+  keeps animating, the last log line never changes, nothing is using
+  CPU. Ctrl-C is the only way out, and that module's log ends
+  mid-sentence.
+- **Root cause:** two independent versions of the same thing — a prompt
+  nobody could see.
+  - `_run_module` ran every module with its **stdout and stderr captured
+    to files** behind the spinner, but with **stdin inherited**. So
+    anything a module's children read a line from — a `git` credential
+    prompt on a repo that has moved, a `makepkg` question a missing
+    `--noconfirm` let through, a helper's own `read -rp` — waited
+    forever on a question that had been redirected out of sight. The
+    spinner turns identically whether work is happening or not, which is
+    what makes this so hard to call: there is nothing to distinguish a
+    hang from a slow compile.
+  - `page_simplenote_creds` asked for a Simplenote password at the very
+    end of the run, gated only on there being a tty. `./install.sh`
+    **is** `wizard.sh --yes`, whose whole contract is that you start it
+    and walk away — so a 40-minute unattended install finished by
+    blocking on a `gum` password field, and whether it completed
+    depended on someone being in the chair.
+- **Fix:** modules run with `</dev/null`. A child that tries to read now
+  gets EOF and fails immediately and *visibly*, which the retry/skip
+  logic can act on, instead of hanging. `sudo` is unaffected — it reads
+  its password from `/dev/tty`, not stdin. And Simplenote is skipped
+  under `--yes` with a printed pointer instead: it is a phone
+  convenience, not part of a working desktop, so it can wait for
+  `./wizard.sh --only=simplenote` whenever you like.
+- **Related, same shape:** the preflight `pacman db lock` check ran
+  through `_check`, which swallows stdout **and** stdin. The swallowed
+  stdout hid the "pacman is running — waiting up to 60s" line, so a
+  legitimate wait was indistinguishable from a frozen wizard; the
+  swallowed stdin left the interactive "remove the stale lock?" confirm
+  blocking on a prompt that had been redirected out of existence. That
+  check runs inline now.
+
+### Passwordless sudo reports ✔ and `sudo` still asks for a password
+- **Symptom:** the `passwordless-sudo` module ticks green, the file is
+  there in `/etc/sudoers.d/`, its mode is 440 — and every `sudo` still
+  prompts. Nothing anywhere gives a reason.
+- **Root cause:** sudo(8), on `sudoers.d`: files "whose names end in `~`
+  or contain a `.` character are ignored". The filename was built
+  straight from the login name (`zz-$(id -un)-nopasswd`), so any account
+  with a dot in it — `john.doe`, i.e. essentially every LDAP/AD-joined
+  machine — got a drop-in that sudo silently never reads. There is no
+  warning; the file simply is not part of the policy.
+- **Fix:** the login name goes through `tr '.' '_'` when the filename is
+  built, via a shared `_nopasswd_file` helper so the uninstall path
+  still finds the same file. The generated file is then checked with
+  `visudo -cf` and removed again if it is rejected — a sudoers file sudo
+  refuses to parse breaks *every* sudo on the box, including the one you
+  would need to delete it with.
+- **Same neighbourhood:** `step_ownership` ran
+  `chown -R $(id -un):$(id -un)`. A user-private group of the same name
+  is an Arch default, not a guarantee; on an account whose primary group
+  is `users` or a domain group that fails outright with "invalid group"
+  and the entire ownership fix-up never happens. It is `$(id -gn)` now.
+
+### Laptop still suspends on lid close, and the module said ✔
+- **Symptom:** `--only=lid` completes cleanly, `systemd-logind`
+  restarts, and shutting the lid still puts the machine to sleep.
+- **Root cause:** the module was one
+  `sed -i 's/^#\?HandleLidSwitch=.*/HandleLidSwitch=ignore/'` against
+  `/etc/systemd/logind.conf`. That depends on a commented
+  `#HandleLidSwitch=` line already being in the file to rewrite — true
+  of the `logind.conf` this machine was installed with, and false in
+  general, since current systemd ships that file with its defaults
+  documented elsewhere and any tidied or replaced copy has no such line.
+  `sed` matched nothing, **exited 0**, and the module read that as
+  success.
+- **Fix:** a drop-in at `/etc/systemd/logind.conf.d/90-wizard-lid.conf`
+  setting `HandleLidSwitch`, `HandleLidSwitchExternalPower` and
+  `HandleLidSwitchDocked` to `ignore`. A drop-in always applies, needs no
+  line to already exist, survives systemd upgrades without a `.pacnew`,
+  and is reversed by deleting one file. The uninstall path deletes it
+  **and** still runs the old in-place edit in reverse, because a machine
+  set up by an earlier wizard has `HandleLidSwitch=ignore` written into
+  `logind.conf` itself and removing only the new file would leave it
+  ignoring the lid forever with nothing left to point at.
+
+### `boot-splash` cannot generate a splash on any machine without `ttf-firacode-nerd`
+- **Symptom:** the `boot-splash` module fails with `could not render a
+  title` and leaves the boot path untouched. `boot-splash selftest` is
+  worse: every single name in the matrix reports "render failed", for a
+  reason it never names. The one warning printed beforehand said "block
+  art may not line up", which is not remotely what happened.
+- **Root cause:** `FONT` and `MONO_FONT` default to the exact paths
+  `ttf-firacode-nerd` installs to, and the old fallback for a missing
+  file set `MONO_FONT="monospace"` — a **family name**. This ImageMagick
+  build is not linked against fontconfig for name lookup, so
+  `-font monospace` fails outright with "unable to read font";
+  `render_blocks` dies, and under `set -e` that takes the whole of
+  `generate` down with it.
+- **Fix:** `resolve_fonts()` resolves both to a real **file** via
+  `fc-match -f '%{file}'` — and asks for the monospace one by
+  `:spacing=100`, a *property*, rather than by the family name
+  `monospace`, whose alias resolves to Noto Sans CJK on this system:
+  the same silent-fallback trap the font entries under **Theming**
+  describe. A face that still cannot set the box-drawing characters is
+  handled instead of fatal — the renderer warns once and falls back to
+  the proportional font. `selftest` now calls the same resolver
+  `generate` does, so it stops failing for a reason it cannot explain.
+- **Note that `boot-splash` is no longer opt-in.** It runs in a default
+  `./install.sh`, immediately **after** `boot-fallback`, so the verbose
+  LTS rescue entries (which carry neither `quiet` nor `splash`) always
+  exist before anything touches the primary entry's cmdline — a splashed
+  boot that hangs is one menu pick away from a boot that tells you why.
+  Do not reorder those two. Opt out with
+  `./install.sh --skip=boot-splash`.
+
 ## Install / Bootstrap
 
 ### `dcli sync` fails on fresh Arch
@@ -1628,6 +2494,71 @@ should come up cleanly.
   `/etc/opt/chrome/policies/managed` and
   `/etc/chromium/policies/managed` before writing.
 
+### AMD machine: the desktop runs on llvmpipe and the GPU module "failed"
+- **Symptom:** on an AMD box the desktop crawls — animations stutter,
+  picom gives you no rounded corners and no shadows, everything feels
+  like software rendering. It is: `glxinfo | grep renderer` says
+  `llvmpipe`. The `gpu` module failed during the install, and nothing in
+  the output names a package.
+- **Root cause:** `modules/graphics-amd.yaml` declared
+  `libva-mesa-driver` and `mesa-vdpau`. Neither is a package any more —
+  Arch folded the VA-API driver into `mesa` (which now only *provides*
+  the old name) and dropped the VDPAU one outright, and neither is in the
+  AUR. Naming a package that does not exist is not a harmless leftover:
+  pacman's `target not found` aborts the **entire transaction**, so
+  `vulkan-radeon`, listed right beside them, never installed either. The
+  machine then falls back to llvmpipe — exactly the single-digit-FPS
+  desktop `graphics.yaml` exists to prevent.
+- **Fix:** both removed from the module, with the reason written in
+  beside the entries that remain. Same failure mode as *"Declared
+  package name doesn't exist: `shell-color-scripts`"* above: one dead
+  name costs you every package declared with it, not just itself.
+
+### `arch-config.sh` prints DONE and changes nothing
+- **Symptom:** the `arch-config` step reports success and the `host:`
+  field in `config.yaml` (or in the host YAML) is still the old
+  username. Run it again — same output, same result, forever.
+- **Root cause:** the reader and the writer disagreed about one space.
+  The reader accepted `host:value` with none (`[[:space:]]*`); the
+  writer's `sed -E "s/^host:[[:space:]]+.*/host: $USER_NAME/"` demanded
+  at least one. On a file written without the space the substitution
+  matched nothing, `sed` exited 0, and the script walked straight on to
+  its `DONE` banner. A file with no `host:` line at all was reported as
+  success too.
+- **Second bug, invisible until much later:** those YAMLs are **stow
+  symlinks into the repo**, and a plain `sed -i` writes a temp file and
+  renames it over the link — replacing the symlink with a regular file
+  and quietly detaching the deployed config from the checkout. From then
+  on `~/.config` and the repo disagree and neither side shows a diff.
+- **Fix:** a `set_host_field()` helper writes with
+  `sed -i --follow-symlinks` and then **reads the value back**, failing
+  loudly with the file path when it is not what was asked for. Neither
+  the no-space case nor the missing-`host:`-line case can pass silently
+  now.
+
+### `grub_boost.sh` writes a kernel cmdline that is visibly wrong
+- **Symptom:** after a run, `/etc/default/grub` contains something like
+  `GRUB_CMDLINE_LINUX_DEFAULT="GRUB_CMDLINE_LINUX_DEFAULT='quiet' nowatchdog ..."`
+  — the whole original line swallowed into the value of the new one.
+- **Root cause:** the value was extracted with
+  `sed -E 's/GRUB_CMDLINE_LINUX_DEFAULT="([^"]*)"/\1/'`, which only
+  matches the double-quoted form. **sed passes a non-matching line
+  through unchanged**, so on a single-quoted or unquoted cmdline `INNER`
+  came out holding the entire line, and the new flags were appended to
+  that.
+- **Fix:** the value is parsed with a bash regex that accepts both quote
+  styles, and anything it cannot parse with confidence **aborts before
+  the write** rather than being guessed at.
+- **Three more on the same script, all in the "edited but not applied"
+  family:** it exits 0 with "GRUB not in use" on a systemd-boot / rEFInd
+  / UKI machine instead of failing (this box is one — see *Bootloader:
+  this machine uses systemd-boot, not GRUB*); it resolves
+  `grub-mkconfig` / `grub2-mkconfig` **before** editing anything, so it
+  cannot rewrite the cmdline and then die before regenerating
+  `grub.cfg`; and a failed regeneration now says so and hands back the
+  exact revert command with the real backup path, instead of dying on
+  `set -e` with nothing on screen but an exit status.
+
 ---
 
 ## Symlink / stow
@@ -1646,6 +2577,51 @@ should come up cleanly.
   gets rewritten with new hex codes per palette.
 - **Fix:** tracked file, minor churn accepted (block is small).
   Do not `git add` the file unless you intended to change structure.
+
+### `stow` aborts the whole install on a machine that already has a `~/.tmux.conf`
+- **Symptom:** the `stow` module fails with a stow conflict on a
+  top-level dotfile, and because `stow` runs near the front of the
+  wizard, the install stops right there. Any pre-existing `~/.tmux.conf`
+  does it; so does any other repo-root dotfile the account already has.
+- **Root cause:** `stow_script.sh`'s backup pass only ever walked
+  `$DOTFILES/.config/*`. Everything under `~/.config` that would collide
+  was safely moved to `~/DefaultConfig/<timestamp>/` first — the repo's
+  **top-level** dotfiles were never looked at, so stow met them head-on
+  and refused. The conflict list stow prints scrolls past behind the
+  spinner and reads like a stow bug rather than a missing backup step.
+- **Fix:** a matching pass over `$DOTFILES/*` runs first. It moves
+  **regular files only**: an existing *directory* is not a conflict —
+  stow descends into it — and relocating a real `~/.claude` out from
+  under the user would be destructive rather than helpful. Existing
+  symlinks are left alone. The script now also fails with a real message
+  when `stow` itself is missing or the source tree is not where it
+  thinks, and reports conflicts with the backup directory's path
+  attached instead of letting `set -e` end the run in silence.
+- **`DOTFILES_DIR` is derived from the script's own location** rather
+  than hardcoded to `~/.dotfiles`, because the repo is routinely checked
+  out elsewhere (a clone under another name, a git worktree, `/tmp`
+  during container tests) and the hardcoded path made it silently stow a
+  *different* checkout than the one you ran it from.
+
+### Repo prose ends up as files in `$HOME`, and `~/.claude` gets a symlink back into the repo
+- **Symptom:** after a fresh install the home directory has
+  `~/TROUBLESHOOTING.md`, `~/plan_ui_ux_qtile.md`,
+  `~/qtile-veil-HANDOFF.md`, `~/THEME_AUDIT_REPORT.md` and the rest
+  sitting in it as top-level files. Separately,
+  `~/.claude/worktrees` is a symlink pointing into the dotfiles
+  checkout — inside the user's *global* Claude config.
+- **Root cause:** `.stow-local-ignore` listed `README.md` and stopped
+  there, so `stow .` cheerfully linked every other markdown file at the
+  repo root into `$HOME`. And `.dotfiles/.claude` is a **per-project**
+  state directory, not a dotfile — but it is a *directory*, so stow
+  **folds** it into the user's existing `~/.claude` instead of skipping
+  it, mixing repo state into global config.
+- **Fix:** the root prose and `.claude` are in `.stow-local-ignore` now.
+  Nothing ever read those files from `$HOME` anyway — `rofi_docs` opens
+  them out of `$DOTFILES`. `stow_script.sh` also folds
+  `.stow-local-ignore`'s entries into its own backup ignore list, so it
+  cannot "back up" (i.e. move) a file stow was never going to link in the
+  first place.
 
 ---
 
@@ -1826,6 +2802,27 @@ that fix has been reverted — see the entry above.
   which engine speaks your flashcards is a preference, not a lint fix.
   Decide one of: wire `SPELL_ENGINE` up, switch English to piper, or drop
   the unused voice from the `piper` module.
+
+### `systemctl --user status` shows `fix-mic-gain.service` failed, on every login
+- **Symptom:** a red **failed** unit on an otherwise healthy session, on
+  every machine that is not this laptop. Audio works fine, which is what
+  makes it look like a mystery rather than a mismatch.
+- **Root cause:** the unit runs two `amixer -c 0 sset` commands against
+  `Internal Mic Boost` and `Capture` — control names on *this* laptop's
+  codec. On a desktop, or with a USB mic, card 0 has no such control,
+  `amixer` exits non-zero, and a `Type=oneshot` unit whose `ExecStart`
+  fails is a failed unit. Nothing downstream depends on it succeeding;
+  the tuning simply does not apply there.
+- **Fix:** both lines are prefixed with `-`
+  (`ExecStart=-/usr/bin/amixer …`), which tells systemd to ignore the
+  exit status.
+- **And on any other account it was never enabled at all:** the tracked
+  enable symlink `default.target.wants/fix-mic-gain.service` pointed at
+  the **absolute** path
+  `/home/ati/.config/systemd/user/fix-mic-gain.service`. Under a
+  different username that target does not exist, so systemd saw a broken
+  symlink and the unit was never wanted by anything — no error, no unit,
+  no mic tuning. It is a relative `../fix-mic-gain.service` now.
 
 ---
 
@@ -2306,6 +3303,136 @@ something the dotfiles should decide.
 
 ---
 
+## Simplenote
+
+### The TODOS note stops reaching the phone
+
+`simplenote_push` mirrors `~/<USER>TODOS/TODOS.md` into a single Simplenote
+note on every write (a `BufWritePost` autocmd in
+`nvim/lua/config/autocmds.lua`, so `:w`, `:wa`, `:wq`, `:wqa` and `:x` all
+count). It is **deliberately silent**: it exits 0 on every failure, because a
+dropped wifi connection must never break `:w`.
+
+- **Where the failure actually shows up:** `~/.local/state/simplenote-push/push.log`.
+  Nothing surfaces inside nvim, by design.
+- **Test by hand:** `~/.config/AtiScriptsV1/simplenote_push` — silence means
+  it worked.
+
+### Edits made on the phone do not appear on the PC
+
+- **How the two directions differ:** the desktop pushes on every write
+  (`BufWritePost`), but the phone has no way to notify anything — so the
+  pull is triggered by **opening the window**. `Mod+Shift+S` runs
+  `simplenote_push --pull` before showing it.
+- **Why it can take a second:** the pull is fired with `qtile.spawn()` and
+  deliberately **not** waited on. qtile's event loop is single-threaded and
+  the script allows itself 15s on a stalled connection — blocking would
+  freeze the whole WM on a keybind you press dozens of times a day. So the
+  pull sometimes lands just after nvim has read the file; the
+  `autoread` + `:checktime` autocmd refreshes the open buffer when it does.
+- **If it still looks stale:** check `~/.local/state/simplenote-push/push.log`.
+  A `[pull]` line reports what happened.
+
+### Working offline
+
+Both sides can be edited with no network; nothing is lost either way.
+
+- **An offline `:w` fails and nothing retries it** — the note would stay stale
+  until the next write, which may never come. So the pull doubles as the
+  retry: if it finds the desktop ahead and the note unchanged, it pushes
+  there and then. Opening the window is what gets an offline edit sent.
+- **A push checks before it overwrites.** It fetches the note first and
+  compares against `last_sync`; if the remote moved too, that version is
+  saved to `TODOS.md.remote-<timestamp>` *before* the local copy is sent.
+  Without that check, coming back online and writing before ever opening the
+  window would erase the phone's work from the server with no copy kept.
+- **What is never automatic:** merging. Whenever both sides moved you get a
+  `.remote-*` file to reconcile by hand — see below.
+
+### Safety rails that fire on their own
+
+All of these log a line and keep going; none of them ever interrupt a save.
+
+| log line | what happened | why it is handled this way |
+| -- | -- | -- |
+| `another sync is already running — skipped` | a push and a pull overlapped | both read-modify-write the same three state files; concurrent runs with a missing key could create **two** notes. `flock`, non-blocking — the other run is doing the same work anyway |
+| `local file is empty — saved remote to …` | `TODOS.md` was empty at push time | almost always a truncated file rather than an intentional clear, and unrecoverable once sent. The note is still cleared; a copy is kept first |
+| `note … is gone — recovered … by tag` | the stored key pointed at a deleted note | the note is re-found by its `atitodos` tag. Creating a new one instead would leave two tagged notes and make the next recovery ambiguous |
+| `note is in the Simplenote trash — leaving the local file alone` | the note was trashed on the phone | a deletion is not an edit. The next push lifts it back out of the trash (`deleted: 0`) rather than mirroring the removal onto your file |
+| `no sync history — saved existing note to …` | fresh state dir, note already exists | with no ancestor there is no way to tell who is newer, so the existing note is preserved before the local file is pushed |
+| `warning: N notes tagged 'atitodos'` | duplicates exist | the newest surviving one wins, ties broken by key so two machines pick the same. Delete the extras in the app |
+
+**Other invariants worth knowing:**
+
+- **Everything is UTF-8 explicitly**, never the locale encoding. A spawned
+  process can inherit `LANG=C`, which would crash on read and produce
+  mojibake on write the moment a note contains non-ASCII.
+- **Every write is atomic** (temp file + `rename`). A plain truncating write
+  that is interrupted destroys the notes file with nothing to recover from.
+- **`push.log` self-rotates** at 256 KB, keeping the last 200 lines.
+
+### `CONFLICT — both sides changed`
+
+- **Symptom:** a `TODOS.md.remote-<timestamp>` file appears next to
+  `TODOS.md`, and the phone's text is not in `TODOS.md`.
+- **Cause:** the desktop file *and* the note both changed since they last
+  agreed. The state dir keeps `last_sync`, a copy of the content at the
+  moment both sides matched; with that common ancestor the script can tell
+  "only the phone moved" from "only the desktop moved" from "both moved".
+  Only the first case is safe to apply automatically.
+- **Why it does not merge:** guessing by timestamp is how a day of notes
+  gets silently eaten. Nothing is lost here — the remote copy is written
+  beside the file and the local file is untouched.
+- **Fix:** diff them and keep what you want, then delete the leftover:
+  ```bash
+  cd ~/*TODOS && nvim -d TODOS.md TODOS.md.remote-*
+  rm TODOS.md.remote-*        # after merging
+  ```
+  The next `:w` pushes the merged result and re-establishes the ancestor.
+
+### `cannot reach auth.simperium.com` — but the web app logs in fine
+
+- **Symptom:** the push always fails with a timeout after ~15s, while
+  <https://app.simplenote.com> logs in normally in the browser.
+- **Root cause:** Simplenote is two separate hosts, and only one of them
+  gets blocked. `auth.simperium.com` (`192.0.84.248`) handles *login only*;
+  `api.simperium.com` handles every actual note read and write. On some
+  networks the auth host is blackholed at the TCP level — ICMP ping still
+  answers, ports 80 and 443 both hang — while `api.simperium.com` and even
+  the adjacent `simperium.com` (`192.0.84.247`) respond fine. The web app
+  keeps working because it authenticates through `app.simplenote.com`, not
+  through the blocked host.
+- **Confirm it in one line:**
+  ```bash
+  curl -s -o /dev/null -w '%{http_code}\n' --max-time 10 https://auth.simperium.com/   # hangs = blocked
+  curl -s -o /dev/null -w '%{http_code}\n' --max-time 10 https://api.simperium.com/    # 200   = fine
+  ```
+  Pinning the auth hostname at the working IP does **not** help — that host
+  answers `403` from nginx for the auth vhost.
+- **Fix: skip the login entirely with a pre-obtained token.** Every note
+  operation goes to `api.simperium.com`, which is reachable; only the
+  handshake needs the blocked host. Log in at <https://app.simplenote.com>,
+  open devtools (F12) → Console, and dump the stored token:
+  ```js
+  Object.entries(localStorage).forEach(([k, v]) => {
+    if (/[0-9a-f]{32}/.test(v)) console.log(k, v);
+  });
+  ```
+  Copy the 32-character hex value into `~/.config/simplenote/credentials`:
+  ```ini
+  [simplenote]
+  email = you@example.com
+  password = yourpassword
+  token = <32-hex-token>
+  ```
+  With `token` set, the script assigns it directly and `authenticate()` is
+  never called, so the blocked host is never contacted. `email` and
+  `password` can stay — they are only used when no token is present.
+- **If the token later stops working** (`Login to Simplenote API failed!
+  Check Token.`), it was revoked — repeat the steps above for a fresh one.
+
+---
+
 ## System updates
 
 ### An update broke the system badly enough to need a reinstall
@@ -2488,6 +3615,42 @@ after `dcli-sync` has installed `linux-lts`:
   the trimmed image having fewer modules cannot cost us the root device.
   Actually confirming it boots requires a reboot.
 
+### The LTS rescue entry can panic at exactly the moment you need it
+- **Symptom:** you finally reach for *Arch Linux (LTS fallback)* in the
+  boot menu because the normal kernel is broken — and it panics, or it
+  comes up carrying the wrong vendor's microcode on a machine you
+  already do not trust. Nothing was ever visibly wrong with the entry
+  until the day you tried to boot it, which is the worst possible time
+  to find out.
+- **Root cause:** two ways of copying *this* machine's state into an
+  entry that is supposed to stand on its own.
+  - **The wrong initramfs.** `step_boot_fallback` takes its options from
+    `/proc/cmdline`, which is right (see *Bootloader* above) — but it
+    copied that line verbatim apart from stripping `quiet`/`splash`.
+    This machine boots a UKI, whose cmdline carries neither, so it never
+    showed up here; a plain systemd-boot or GRUB install puts
+    `initrd=\initramfs-linux.img` — the **stock** kernel's image — right
+    there in `/proc/cmdline`. Copied into the LTS entry that sits
+    alongside the entry's own `initrd` line and hands the LTS kernel the
+    stock kernel's modules: version mismatch, panic. `BOOT_IMAGE=` is
+    the same shape of stale self-reference, naming whichever kernel
+    happened to boot this time.
+  - **The wrong vendor's microcode.** The microcode `initrd` line was
+    chosen by looping over `intel-ucode.img amd-ucode.img` and taking
+    whichever existed on the ESP — so **last hit wins**. A box that once
+    ran the other vendor's ucode package, or has both images sitting
+    there, got the wrong one written into the entry it boots when things
+    have already gone wrong, and no errata fixes at all.
+- **Fix:** `initrd=` and `BOOT_IMAGE=` are filtered out of the copied
+  options alongside `quiet`/`splash`, and the microcode image is picked
+  from `vendor_id` in `/proc/cpuinfo` (`GenuineIntel` →
+  `intel-ucode.img`, `AuthenticAMD` → `amd-ucode.img`) and only then
+  checked for existence on the ESP.
+- **Check an entry you already have, before you need it:** the `options`
+  line in `/boot/loader/entries/arch-lts*.conf` must contain no
+  `initrd=` and no `BOOT_IMAGE=`, and the `initrd` lines above it must
+  name the LTS images plus *your* CPU's microcode.
+
 ### Reload shows every window piled up, or takes ~10s (the restart veil)
 `Super+Shift+R` used to show every window from every workspace stacked on
 top of each other for ~2s. A "veil" (`qtile/scripts/qtile-restart-veil.py`,
@@ -2530,3 +3693,137 @@ reports real progress.
   the Xephyr sandbox; recipe in `qtile-veil-HANDOFF.md`. Note the sandbox
   understates real timings by ~2.5x — good for behaviour, useless for
   numbers.
+
+---
+
+## Android screen mirroring (`Super+Shift+F6`)
+
+### "No phone found" but Wireless debugging is on
+
+Check the phone is actually announcing:
+
+```sh
+avahi-browse -rpt _adb-tls-connect._tcp
+```
+
+A resolved line starts with `=` and ends in `address;port`. If nothing
+comes back:
+
+- **`avahi-daemon` is not running.** `sudo systemctl enable --now
+  avahi-daemon` — nothing else on this desktop needs it, so it is easy to
+  end up disabled.
+- **ufw is eating the replies.** mDNS answers arrive as fresh inbound
+  multicast UDP, not as a reply to a tracked flow, so a default-deny
+  firewall drops them silently — no error, no log line.
+  `sudo ufw allow 5353/udp`.
+- **Different networks.** The phone on mobile data, or on a guest SSID
+  with client isolation, cannot be seen at all.
+
+Both fixes are what `./wizard.sh --yes --only=scrcpy` does.
+
+### The QR opens but scanning does nothing
+
+The phone must be on **Wireless debugging → Pair device with QR code**,
+not the plain camera app. A generic scanner reads the payload as a
+meaningless `WIFI:` string and offers to join a network.
+
+If the camera will not focus, type the 6 digits instead — the same window
+takes them. Pairing codes are always 6 digits on every Android 11+
+device; that is AOSP, not a vendor choice.
+
+### It pairs, then says "Paired, but not connected"
+
+The pairing dialog is still open on the phone. The pairing port dies with
+that dialog and the connect port is a *different* one that is only
+announced once pairing is finished. Close it and press the key again.
+
+### The mirror is laggy
+
+Almost always the Wi-Fi link, not the machine. Measure it:
+
+```sh
+ping -c 8 <phone-ip>
+```
+
+Anything over ~20ms average, or with double-digit jitter, is felt
+immediately: it is already a frame or two of delay before a single pixel
+is encoded. **Plug in a USB cable** — `phone_screen` prefers it
+automatically and raises the quality ceiling when it gets one.
+
+scrcpy decodes in *software*; there is no hardware-decode option in
+scrcpy 4.1, so a busy CPU shows up as dropped frames. If the picture
+stutters rather than trailing your finger, `--video-buffer=50` trades
+50ms of delay for absorbing jitter.
+
+Two cheap wins before blaming the link. **Check you have only one mirror
+running** — `pgrep -cx scrcpy` should say `1`; two decoders and two audio
+streams against one phone is indistinguishable from a slow network.
+And **audio costs latency**: `--no-audio` drops a whole second stream
+that the video otherwise waits on.
+
+### `adb devices` shows the phone with `no permissions`
+
+You are not in the `adbusers` group that android-udev's rules assign the
+USB node to. `./wizard.sh --yes --only=scrcpy` adds you — then **log out
+and back in**, because group membership is fixed at login and the running
+shell keeps the old set no matter what `/etc/group` now says.
+
+### It worked yesterday, today it does nothing
+
+The wireless port changes on every phone reboot. That is handled — the
+script re-reads it from mDNS each run. What is *not* automatic is a stale
+`offline` entry left behind by the old port; `phone_screen` prunes those
+on every run, but by hand it is `adb disconnect`.
+
+A stale entry matters because scrcpy aborts outright when `adb devices`
+lists more than one device — which is also why plugging in a cable to a
+phone already paired over Wi-Fi used to break it.
+
+### The window goes off screen when the phone rotates
+
+scrcpy resizes its own window to match the device shape and keeps the
+top-left corner fixed, so a right-anchored window grows off the right
+edge. A watcher started alongside scrcpy pulls it back once a second.
+
+If it stays off screen, the watcher is not running. It needs `xdotool`,
+and it exits when `pgrep -x scrcpy` finds nothing — so a scrcpy launched
+by hand under a different process name has no watcher. Check:
+
+```sh
+pgrep -x scrcpy && command -v xdotool
+```
+
+Note that qtile cannot do this job: its `float_change` hook does not fire
+for a window an application resizes itself (verified by probe), so the
+poll is not redundant with the `client_managed` clamp in `config.py`.
+
+### No sound from the mirror
+
+Audio is on by default via `--audio-source=output`, which also **mutes
+playback on the phone** — that is the flag working, not a fault.
+
+It needs Android 11+. If the video plays but the laptop is silent, check
+the phone is not on a call or otherwise holding the audio device, and
+that scrcpy did not print `--audio-source=output requires Android 11`.
+
+For the lowest-latency picture, `--no-audio` drops the second stream. If
+the sound crackles rather than being absent, raise `--audio-buffer`.
+
+### Pressing the key does nothing
+
+If a mirror is already open, the key **focuses it** instead of starting a
+second one — that is deliberate. Two scrcpy processes against one phone
+means two decoders and two audio streams fighting over the same Wi-Fi
+budget, which looks exactly like a slow link.
+
+The check looks for a window with class `scrcpy` **and** title `Phone`.
+It deliberately does not use `pgrep -f`, which reads whole command lines
+and matched the very terminal running the test while this was being
+written.
+
+### The window opens somewhere useless
+
+It is placed from live geometry: qtile's screen size and *current* bar
+height, plus the phone's real resolution from `adb shell wm size`. If any
+of that cannot be read the script emits no geometry flags and scrcpy
+places itself. Check `qtile cmd-obj -o bar top -f info` returns something.

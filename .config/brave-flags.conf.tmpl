@@ -1,0 +1,43 @@
+# Dark mode is NOT forced here on purpose.
+#
+# `--enable-features=WebContentsForceDark` used to live on this line. It is
+# Chromium's *algorithmic* dark mode: it re-tints already-rendered page pixels
+# with no knowledge of the design. On a site that ships no dark theme that is
+# better than nothing; on a site that ships a real one (Canva, WhatsApp Web,
+# ChatGPT) it darkens the already-dark palette a second time and blows out
+# gradients and accent text.
+#
+# Instead the desktop advertises a dark preference through xdg-desktop-portal
+# (`org.freedesktop.appearance color-scheme = 1`, set by wizard.sh's
+# `dark-mode` module). Chromium reads that key and reports
+# `prefers-color-scheme: dark` to every page, so sites serve the dark theme
+# their designers actually built.
+#
+# Verify:  busctl --user call org.freedesktop.portal.Desktop \
+#            /org/freedesktop/portal/desktop \
+#            org.freedesktop.portal.Settings ReadOne ss \
+#            org.freedesktop.appearance color-scheme      # -> v u 1
+#
+# For the rare site with no dark theme at all, turn force-dark on per-site
+# from the page menu rather than globally.
+
+--gtk-version=4
+--load-extension=@HOME@/.config/qtile/browser-theme
+
+# Interpolate between the coarse scroll events libinput sends on X11.
+# Without this Chromium jumps a whole step per event instead of animating.
+--enable-smooth-scrolling
+
+# Collapse every tab of the same site into one renderer process instead of
+# one process per tab. Cross-site isolation is untouched (Site Isolation
+# still applies); only same-site tabs share. This machine has 7.6G and runs
+# several Brave profiles at once, and renderer count was the thing pushing it
+# into earlyoom territory ("Aw, Snap!" on random tabs). Trade-off: one
+# renderer crash now takes every tab of that site with it.
+# Remove this line to go back to process-per-tab.
+--process-per-site
+
+# Exposes page content to AT-SPI so homerow can hint links and buttons.
+# Costs memory per open tab — if "Aw, Snap!" comes back after the zram and
+# swappiness changes in speed_boost.sh, this is the next line to drop.
+--force-renderer-accessibility

@@ -1,7 +1,25 @@
 #!/bin/bash
 
-BAT="/sys/class/power_supply/BAT0"
-AC="/sys/class/power_supply/AC"
+# Found by TYPE, never by name. "BAT0" and "AC" are what this one laptop
+# happens to call them; the kernel takes those names from firmware, so
+# other machines expose BAT1, and the mains adapter is just as often ACAD,
+# ADP0, ADP1 or AC0. Hardcoded, `cat "$BAT/status"` read a path that does
+# not exist on those machines: STATUS and PERCENT stayed empty, every
+# comparison below then matched the previous empty value, and the result
+# was no plug/unplug popup and no low-battery warning, silently.
+PS=/sys/class/power_supply
+BAT=""; AC=""
+for _d in "$PS"/*; do
+  [[ -r "$_d/type" ]] || continue
+  case "$(<"$_d/type")" in
+    Battery) [[ -z "$BAT" && -r "$_d/capacity" ]] && BAT="$_d" ;;
+    Mains)   [[ -z "$AC" ]] && AC="$_d" ;;
+  esac
+done
+if [[ -z "$BAT" ]]; then
+  notify-send -u critical "Battery" "No battery found under $PS" 2>/dev/null
+  exit 1
+fi
 
 LAST_STATUS=""
 LAST_PERCENT=""
@@ -27,7 +45,14 @@ LAST_STATUS="$STATUS"
 LAST_PERCENT="$PERCENT"
 LAST_AC="$AC_ONLINE"
 
-# Listen for EVENTS (UPower-based, no polling loop)
+# Listen for EVENTS (UPower-based, no polling loop).
+# Checked rather than assumed: without upower the pipeline below exits
+# immediately, this watcher dies at login, and the only trace is a
+# "command not found" on a stderr nobody is reading.
+if ! command -v upower >/dev/null 2>&1; then
+  notify-send -u critical "Battery" "upower is not installed — battery events disabled" 2>/dev/null
+  exit 1
+fi
 upower --monitor-detail | while read -r _; do
 
   # Small settle delay (does NOT poll)

@@ -120,7 +120,12 @@ fetch_iso() {
     if [[ -n "$want" && "$want" == "$got" ]]; then
       ok "checksum verified"
     elif [[ -n "$want" ]]; then
-      bad "checksum MISMATCH — delete $ISO and re-run"; exit 1
+      # Delete it here rather than telling you to. Leaving the bad file in
+      # place meant the next run hit the `[[ -f "$ISO" ]]` shortcut above,
+      # reported "ISO already present", and never re-checked -- so a single
+      # truncated download poisoned every run after it.
+      rm -f "$ISO"
+      bad "checksum MISMATCH — corrupt ISO deleted, re-run to download again"; exit 1
     fi
   else
     warn "could not fetch sha256sums.txt — ISO not verified"
@@ -170,9 +175,17 @@ INSTRUCTIONS
   )
   # UEFI when the firmware is installed: the boot-fallback module writes
   # systemd-boot entries, and testing that on a BIOS VM tests nothing.
-  if [[ -f /usr/share/edk2/x64/OVMF_CODE.4m.fd ]]; then
-    args+=(-drive "if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd")
-    ok "booting UEFI (matches the real install; boot-fallback is testable)"
+  if [[ -f /usr/share/edk2/x64/OVMF_CODE.4m.fd && -f /usr/share/edk2/x64/OVMF_VARS.4m.fd ]]; then
+    # BOTH halves, and the VARS half writable. Code-only was the bug: with
+    # no variable store the guest has no EFI NVRAM, so `bootctl install`
+    # and efibootmgr fail and nothing survives a reboot -- the VM looked
+    # like UEFI and could not test the one module UEFI was turned on for.
+    # Private copy in VM_DIR because qemu writes to it, and the packaged
+    # template is root-owned.
+    [[ -f "$VM_DIR/OVMF_VARS.fd" ]] || cp /usr/share/edk2/x64/OVMF_VARS.4m.fd "$VM_DIR/OVMF_VARS.fd"
+    args+=(-drive "if=pflash,unit=0,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd")
+    args+=(-drive "if=pflash,unit=1,format=raw,file=$VM_DIR/OVMF_VARS.fd")
+    ok "booting UEFI with a writable varstore (boot-fallback is testable)"
   else
     warn "edk2-ovmf not installed — booting BIOS, so the boot-fallback module cannot be validated"
   fi
@@ -202,7 +215,13 @@ smoke() {
       arch/boot/x86_64/vmlinuz-linux arch/boot/x86_64/initramfs-linux.img
   fi
   local label
-  label=$(blkid -o value -s LABEL "$ISO" 2>/dev/null || echo ARCH_202607)
+  # blkid also exits 0 with NOTHING on stdout when it cannot read a LABEL
+  # off the image, which `|| echo` does not catch. That produced an empty
+  # `archisolabel=`, and the guest then failed to find its own root device
+  # -- a boot failure that looks like a broken ISO rather than a broken
+  # kernel argument.
+  label=$(blkid -o value -s LABEL "$ISO" 2>/dev/null || true)
+  [[ -n "$label" ]] || label=ARCH_202607
   [[ -f "$DISK" ]] || create_disk
 
   say "booting headless (${SMOKE_RAM_MB}MB, 240s cap) — watching for the login prompt…"

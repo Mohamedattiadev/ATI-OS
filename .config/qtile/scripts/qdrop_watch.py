@@ -20,6 +20,23 @@ Two gates decide whether a wiggle counts as a shake:
    qdrop: none of those own the XdndSelection, so there is nothing to
    drop and nothing to show. See `dnd_payload()`.
 
+3. Not a window move -- qtile binds window move/resize to
+   Super+Button1/Button3 (`config.py` `mouse = [...]`), so a shake with
+   Super held is the user throwing a window around, never a file drag.
+   See `_wm_mods_held()`.
+
+Gate 2 has a sharp edge: toolkits acquire XdndSelection when a drag
+starts but do *not* disown it when the drag ends, so after the first
+real file drag of a session the selection stays owned forever. Bare
+ownership therefore answers "has anything ever been dragged", not "is
+something being dragged now" -- which is why moving a window could pop
+qdrop open. Liveness comes from XFixes instead: we subscribe to
+SetSelectionOwner notifications on XdndSelection and require the
+current ownership to have been claimed *after* the button went down.
+Every toolkit re-acquires the selection on each drag begin, so a real
+drag always re-arms it. Without XFixes the gate degrades to the old
+bare-ownership test.
+
 Because gate 2 does the false-positive filtering that the old
 horizontal-dominant heuristic (MIN_DX_DY_RATIO) used to do, that
 heuristic is gone -- it was the only reason up/down shakes were
@@ -39,6 +56,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 
 REVERSALS_NEEDED = 2  # was 3 -- reported needing a hard/deliberate shake to fire
@@ -46,6 +64,15 @@ TIME_WINDOW_S = 1.2  # was 1.0 -- more time to land fewer required reversals
 MIN_SEG_PX = 6  # was 8 -- smaller wiggles now count as a reversal segment
 DEBOUNCE_S = 1.2
 COOLDOWN_AFTER_RELEASE_S = 0.2
+
+# How far *before* the button press an XdndSelection claim may land and
+# still count as belonging to this drag. Covers the ordering slop
+# between xinput's line reaching us and the XFixes notify reaching the
+# watcher thread; anything older than this is a leftover from a
+# previous drag.
+CLAIM_SLACK_S = 0.3
+
+MOD4_MASK = 1 << 6  # Super -- qtile's `mod`, used for window move/resize
 
 QDROP = os.path.expanduser("~/.config/qtile/scripts/qdrop.py")
 
@@ -117,6 +144,16 @@ def _x_init() -> bool:
             ctypes.POINTER(ctypes.POINTER(ctypes.c_ubyte)),
         ]
         lib.XFree.argtypes = [ctypes.c_void_p]
+        lib.XDefaultRootWindow.restype = ctypes.c_ulong
+        lib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        lib.XQueryPointer.restype = ctypes.c_int
+        lib.XQueryPointer.argtypes = [
+            ctypes.c_void_p, ctypes.c_ulong,
+            ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_ulong),
+            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_uint),
+        ]
 
         dpy = lib.XOpenDisplay(None)
         if not dpy:
@@ -172,17 +209,127 @@ def _type_list(win: int) -> list:
     return names
 
 
-def dnd_payload():
+def _wm_mods_held() -> bool:
+    """True when Super is down -- i.e. this is a qtile window drag.
+
+    qtile binds move to Drag([mod], "Button1") and resize to
+    Drag([mod], "Button3") with mod = mod4, so Super being held while
+    the pointer wiggles means a window is being flung around, not a
+    file being carried.
+    """
+    if not _x_init():
+        return False
+    root = ctypes.c_ulong()
+    child = ctypes.c_ulong()
+    rx, ry, wx, wy = (ctypes.c_int() for _ in range(4))
+    mask = ctypes.c_uint()
+    ok = _X11.XQueryPointer(
+        _DPY, _X11.XDefaultRootWindow(_DPY),
+        ctypes.byref(root), ctypes.byref(child),
+        ctypes.byref(rx), ctypes.byref(ry),
+        ctypes.byref(wx), ctypes.byref(wy), ctypes.byref(mask),
+    )
+    return bool(ok) and bool(mask.value & MOD4_MASK)
+
+
+# --- XDND liveness (XFixes) --------------------------------------------
+# Bare selection ownership is sticky: sources acquire XdndSelection at
+# drag begin and never disown it, so it stays owned long after the drop.
+# Watching SetSelectionOwner notifications gives us the one thing
+# ownership alone can't: *when* the current owner took it.
+
+class _XFixesSelectionNotifyEvent(ctypes.Structure):
+    _fields_ = [
+        ("type", ctypes.c_int),
+        ("serial", ctypes.c_ulong),
+        ("send_event", ctypes.c_int),
+        ("display", ctypes.c_void_p),
+        ("window", ctypes.c_ulong),
+        ("subtype", ctypes.c_int),
+        ("owner", ctypes.c_ulong),
+        ("selection", ctypes.c_ulong),
+        ("timestamp", ctypes.c_ulong),
+        ("selection_timestamp", ctypes.c_ulong),
+    ]
+
+
+_XFIXES_OK = False
+_CLAIM_LOCK = threading.Lock()
+_CLAIM_AT = 0.0  # local clock time the current owner claimed XdndSelection
+
+
+def _claim_time() -> float:
+    with _CLAIM_LOCK:
+        return _CLAIM_AT
+
+
+def _watch_selection():
+    """Record when XdndSelection changes hands. Runs on its own display."""
+    global _XFIXES_OK, _CLAIM_AT
+    try:
+        xf = ctypes.CDLL(ctypes.util.find_library("Xfixes"))
+        x11 = ctypes.CDLL(ctypes.util.find_library("X11"))
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        x11.XInternAtom.restype = ctypes.c_ulong
+        x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        x11.XDefaultRootWindow.restype = ctypes.c_ulong
+        x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        x11.XNextEvent.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        x11.XFlush.argtypes = [ctypes.c_void_p]
+        xf.XFixesQueryExtension.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
+        xf.XFixesSelectSelectionInput.argtypes = [
+            ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
+
+        dpy = x11.XOpenDisplay(None)
+        if not dpy:
+            return
+        ev_base, err_base = ctypes.c_int(), ctypes.c_int()
+        if not xf.XFixesQueryExtension(dpy, ctypes.byref(ev_base), ctypes.byref(err_base)):
+            log("XFixes unavailable -- falling back to bare ownership test")
+            return
+        sel = x11.XInternAtom(dpy, b"XdndSelection", False)
+        SET_OWNER_MASK = 1 << 0
+        xf.XFixesSelectSelectionInput(dpy, x11.XDefaultRootWindow(dpy), sel, SET_OWNER_MASK)
+        x11.XFlush(dpy)
+        _XFIXES_OK = True
+        dlog("XFixes liveness gate armed")
+
+        notify_type = ev_base.value  # XFixesSelectionNotify == subcode 0
+        buf = (ctypes.c_char * 256)()
+        while True:
+            x11.XNextEvent(dpy, ctypes.byref(buf))
+            ev = ctypes.cast(ctypes.byref(buf),
+                             ctypes.POINTER(_XFixesSelectionNotifyEvent)).contents
+            if ev.type != notify_type or ev.selection != sel:
+                continue
+            with _CLAIM_LOCK:
+                _CLAIM_AT = time.time() if ev.owner else 0.0
+            dlog(f"XdndSelection -> 0x{ev.owner:x}")
+    except Exception as e:
+        _XFIXES_OK = False
+        dlog(f"selection watcher stopped: {e}")
+
+
+def dnd_payload(press_time: "float | None" = None):
     """(dragging, why) for the drag in flight right now.
 
-    dragging is True only when some window owns XdndSelection *and* the
-    types it advertises look droppable into qdrop.
+    dragging is True only when some window owns XdndSelection, took
+    that ownership as part of the button press that is still in
+    progress, and advertises types that look droppable into qdrop.
+    Pass press_time=None to skip the liveness half of the test.
     """
     if not _x_init():
         return True, "no X probe -- gate disabled"
     owner = _X11.XGetSelectionOwner(_DPY, _atom("XdndSelection"))
     if not owner:
         return False, "no XDND drag in flight"
+    if press_time is not None and _XFIXES_OK:
+        claimed = _claim_time()
+        if claimed < press_time - CLAIM_SLACK_S:
+            age = press_time - claimed
+            return False, f"XdndSelection owned since {age:.1f}s before this drag (stale)"
     types = _type_list(owner)
     if not types:
         # <= 3 offered types: list not published. Something is being
@@ -272,6 +419,9 @@ def fire():
 
 
 def main():
+    threading.Thread(target=_watch_selection, daemon=True).start()
+    time.sleep(0.2)  # let the watcher subscribe before the first drag
+
     proc = subprocess.Popen(
         ["xinput", "--test-xi2", "--root"],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
@@ -286,6 +436,8 @@ def main():
     axes = {"0": Axis("x"), "1": Axis("y")}
     last_fire = 0.0
     fired_for_drag = False
+    press_time = 0.0
+    wm_drag = False  # Super was down at press -> qtile window move/resize
 
     for line in proc.stdout:
         if not line:
@@ -305,6 +457,10 @@ def main():
                 if ev_type == "RawButtonPress":
                     button1_down = True
                     fired_for_drag = False
+                    press_time = time.time()
+                    wm_drag = _wm_mods_held()
+                    if wm_drag:
+                        dlog("press with Super held -- window drag, ignoring")
                     for ax in axes.values():
                         ax.reset()
                 else:
@@ -312,7 +468,7 @@ def main():
                     time.sleep(COOLDOWN_AFTER_RELEASE_S)
             continue
 
-        if ev_type != "RawMotion" or not button1_down or fired_for_drag:
+        if ev_type != "RawMotion" or not button1_down or fired_for_drag or wm_drag:
             continue
 
         m = axis_re.match(line)
@@ -328,7 +484,12 @@ def main():
             continue
 
         if REQUIRE_DND:
-            dragging, why = dnd_payload()
+            if _wm_mods_held():
+                # Super grabbed mid-drag: still a window move, not a drop.
+                dlog(f"{ax.name}-shake: Super held, window drag")
+                ax.reversals.clear()
+                continue
+            dragging, why = dnd_payload(press_time)
             dlog(f"{ax.name}-shake ({len(ax.reversals)} reversals): {why}")
             if not dragging:
                 # Not a real pick-up. Drop the counted reversals so the

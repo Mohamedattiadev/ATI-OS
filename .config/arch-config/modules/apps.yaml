@@ -12,12 +12,41 @@ packages:
   - zathura
   - zathura-pdf-poppler
   - okular
-  - pcmanfm
+  - pcmanfm-qt
+  # pcmanfm-qt's config names ark as its Archiver: with no archiver from
+  # libfm-qt's archivers.list installed, "Extract Here" is a menu entry that
+  # silently does nothing. ark is declared below for its own sake too.
+  - ffmpegthumbnailer   # video thumbnails in the file manager (XDG thumbnailer)
+  - lxqt-policykit      # polkit auth agent -- without one, mounting an
+                        # internal partition from the Places pane fails with
+                        # no dialog and no error
+  - gvfs-smb            # network shares in the file manager
+  - gvfs-gphoto2        # cameras / MTP-less phones
   - dolphin
   - kate
   - copyq
   - rofi
+  # rofi-pass drives pass(1) against ~/.password-store. The Mod+p p
+  # binding it served was a duplicate that could never fire, and no
+  # password store exists on this machine; passwords go through
+  # rofi_pass -> Vaultwarden instead. Kept declared only because pass
+  # itself is still useful standalone -- drop both if you never use it.
   - rofi-pass
+  # Password manager. Vaultwarden speaks the Bitwarden API, so the
+  # official Bitwarden phone apps sync against it -- no bespoke mobile
+  # client. rbw is the Rust CLI that the rofi_pass picker (Mod+p p)
+  # reads through; vaultwarden-web is only needed to create and manage
+  # the account from a browser.
+  - vaultwarden
+  - vaultwarden-web
+  - rbw
+  # The web vault refuses to load over plain http ("Insecure URL not
+  # allowed" -- a hard https:// prefix check in its bundle, with no
+  # localhost exception). mkcert issues a cert whose CA it installs into
+  # both the system trust store and the browser's NSS store, so there is
+  # no warning page and rbw's TLS verification passes.
+  - mkcert
+  - nss
   - dunst
   - feh
   - arandr
@@ -30,13 +59,23 @@ packages:
   - imv
   - qalculate-gtk
   - piper
-  - warpd
   - eww
   - ani-cli
   - yt-x-git
   - ueberzugpp
   - zed
   - kdeconnect
+  # Android screen on this desktop, with mouse + keyboard control back to
+  # the phone. kdeconnect above shares notifications and files but never
+  # the screen -- different problem, different tool. Pulls android-tools
+  # (adb) as a hard dependency, so that is not declared separately.
+  - scrcpy
+  # Without these udev rules the phone enumerates as a root-owned USB
+  # device and `adb devices` prints "no permissions" with the device
+  # listed but unusable -- the failure looks like a broken cable. The
+  # rules hand the node to the `adbusers` group; the wizard's `scrcpy`
+  # module is what puts you in it.
+  - android-udev
   - anki
   - google-chrome
   - chromium        # qtile pins it to group 6 alongside chrome; also the

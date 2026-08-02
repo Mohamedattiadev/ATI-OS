@@ -1,0 +1,1020 @@
+#!/usr/bin/env bash
+# rofi_docs — the system documentation menu, behind the bar's logo chip.
+#
+# Left-clicking the logo used to open a terminal, which four other bindings
+# already do. A desktop with eighty-odd keybindings, 22 themes and well over a
+# hundred troubleshooting entries has a discovery problem instead. (No exact
+# counts in this header on purpose: every one of them is computed at the point
+# it is displayed, and the two that were spelled out here had both drifted.)
+#
+# Everything is GENERATED from the live system, never hand-listed, so no
+# section can drift out of date:
+#
+#   Keybindings   parsed from config.py by qtile-keys (AST, not regex)
+#   Troubleshoot  the headings of TROUBLESHOOTING.md, with their first line
+#                 of context, jumping to the right entry
+#   Docs          every document opens on a searchable index of its own
+#                 headings, and is then RENDERED read-only in nvim, where
+#                 v/V still select and y still copies -- only the qtile
+#                 config and the espanso snippets open writable
+#   Maintenance   probed live from pacman and the journal, and the one
+#                 section that ACTS: merge, prune, remove, upgrade
+#
+# Navigation: Esc goes UP one level, not out. Every submenu returns to its
+# parent, and only Esc at the top level closes the menu -- a menu you have
+# to reopen from the bar after every glance is a menu you stop using.
+#
+# NOTE: never use a shell var named DISPLAY in this script — it shadows the
+# X11 $DISPLAY env var and every downstream tool then fails silently.
+
+set -uo pipefail
+
+DOTFILES="${DOTFILES_DIR:-$HOME/.dotfiles}"
+QTILE_CFG="$HOME/.config/qtile/config.py"
+VIEW_CLASS="docs-view"
+ESPANSO_DIR="$HOME/.config/espanso"
+
+# Every document this menu opens is viewed in nvim. See the viewers section
+# below for why; theming comes free with it, since nvim already follows
+# ~/.cache/qtile/theme_mode the same way glow followed glow.json.
+VIEWER=nvim
+
+# rofi_hint() -- one hint-line format across every rofi menu here, instead
+# of each script inventing its own. readlink -f because this is reached
+# through a /usr/local/bin symlink.
+# shellcheck source=rofi_common.sh
+source "$(dirname "$(readlink -f "$0")")/rofi_common.sh"
+
+# ONE geometry for every menu in this script, applied here rather than by
+# each caller, so a new section cannot forget it and drift.
+#
+# Left to itself rofi draws these at whatever `~/.config/rofi/config.rasi`
+# points to, which is current.rasi -> dtos-center.rasi: the drun LAUNCHER's
+# theme, 45% wide with 8 lines. That is right for a column of application
+# names and wrong for everything here, and worse, it was not even wrong
+# consistently -- the window changed shape on every navigation, so going
+# Docs -> Troubleshooting -> back re-drew three different rectangles in the
+# same spot. A menu whose frame moves under you is a menu you stop reading.
+#
+# Both dimensions are fixed and `dynamic` is off, which is the whole point:
+# the frame is nailed down, and only the rows inside it change. That costs
+# the shorter menus some empty space at the bottom, which is the correct
+# trade -- a stable frame is worth more than a snug one.
+#
+# 45% / 8 lines is not an arbitrary shape: it is exactly what dtos-center
+# gives every OTHER rofi on this system -- rofi_light, dm-satty, the drun
+# launcher -- measured at 614x432 on this screen. The docs menu is not a
+# special case that earns its own dimensions, so it matches them, and
+# `lines` is pinned with dynamic off only so it does not breathe between
+# sections the way the others are free to.
+#
+# THE BUDGET THAT FALLS OUT OF THIS IS 52 COLUMNS. Every row builder below
+# is cut to fit it. Nothing here can be widened without widening the
+# window, and the window is now fixed by something outside this script.
+#
+# 52 is measured, not derived. The arithmetic -- 614px less 32px window
+# padding and 20px element padding, over a ~9.9px advance -- says 56, and
+# 56 visibly clipped: rofi ellipsized the tail of every troubleshooting
+# row, eating the ":123" line number that makes the entry jumpable. The
+# remaining few columns go to element borders and inter-widget spacing
+# that are tedious to account for and easy to get wrong, so the number is
+# taken from what actually rendered, with margin.
+#
+# No font declared here: base.rasi now names a real monospace family, so
+# the padded columns throughout this script line up on their own.
+DOCS_GEO='window { width: 45%; } listview { lines: 8; dynamic: false; }'
+
+# rofi -dmenu exits 1 on Escape and 0 on a selection. That difference is
+# the whole navigation model, so it gets its own wrapper: RC is the caller's
+# signal to go back up rather than act.
+#
+# The `"$2"` inside ${2:+...} is load-bearing: bash does quote removal on
+# the alternate value but does NOT word-split the quoted part, so a message
+# full of spaces still arrives as ONE argument. Dropping those inner quotes
+# silently shatters it into a dozen bogus argv entries.
+RC=0
+pick() {
+  local out
+  out="$(rofi -dmenu -i -p "$1" ${2:+-mesg "$2"} -theme-str "$DOCS_GEO")"
+  RC=$?
+  printf '%s' "$out"
+}
+
+# Set by every function that actually opens something. The menu is a
+# LAUNCHER, so once it has launched, it is done: sections used to return
+# into main_menu's loop, which re-drew the top-level rofi on top of the
+# window you had just asked for. You then had to Esc it away every single
+# time. Checked once in main_menu, after the dispatch.
+LAUNCHED=0
+
+# ── viewers ──────────────────────────────────────────────────────────
+# `kitty -e sh -c '<pager> ...'`: if <pager> is not installed, kitty maps a
+# window, sh prints "command not found" and exits, and the window vanishes
+# after ~0.2s -- no error anywhere you can read it. That is not theoretical:
+# `less` is not in the `base` group and nothing else on this system pulls it
+# in, and BOTH `glow -p` and `bat --paging=always` exec less rather than
+# paging themselves, so every text view in this menu died that way.
+#
+# So: never launch a terminal for a binary that is not there. That is now
+# one binary, nvim, which this repo can actually guarantee -- editing the
+# config is the whole point of it.
+have() { command -v "$1" >/dev/null 2>&1; }
+
+term_view() {  # term_view <shell-command>
+  setsid kitty --class "$VIEW_CLASS" --title "docs" -e sh -c "$1" >/dev/null 2>&1 &
+  LAUNCHED=1
+}
+
+# EVERY document opens in nvim, read-only, rendered by render-markdown.nvim.
+#
+# This was glow piped into `less -R`, and the argument for it was that less
+# has no write path at all while `nvim -R` is a mode you can override with
+# :w!. That is true and it is the wrong trade, because less also has no
+# SELECTION: `v` in less does not start a visual selection, it launches
+# $EDITOR on the file. So the one thing you actually want to do with a
+# troubleshooting entry -- select the command in it and paste it into a
+# shell -- was the one thing the viewer could not do.
+#
+# nvim gives all four of the things asked of a doc viewer at once:
+#
+#   read-only   -R, plus q mapped to :q so it still behaves like a pager
+#   copy        v / V then y. options.lua sets clipboard=unnamedplus, so
+#               that lands in the SYSTEM clipboard with no "+ prefix
+#   rendered    render-markdown.nvim, on .md
+#   themed      nvim already follows ~/.cache/qtile/theme_mode, which is
+#               the same file theme-apply wrote glow.json from
+#
+# And it deletes the entire reason glow was hard: glow reflowed and
+# restyled, so a line number from the SOURCE file meant nothing in the
+# rendered output, and jumping to a heading needed a zero-width sentinel
+# injected before rendering and deleted after. nvim renders the source
+# buffer in place, so a source line number IS the line you land on. That
+# machinery is gone; do not reintroduce it.
+#
+# `q` is mapped buffer-locally rather than globally: these are throwaway
+# viewer instances, but the mapping still costs you macro recording inside
+# them, so it is scoped to the one buffer being read.
+NVIM_VIEW_OPTS=(-R "+nnoremap <buffer> q <cmd>q!<cr>")
+
+view_at_line() {  # view_at_line <file> [line]
+  local f="$1" line="${2:-1}"
+  [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
+  (( line > 0 )) || line=1
+  setsid kitty --class "$VIEW_CLASS" --title "docs" \
+    -e "$VIEWER" "${NVIM_VIEW_OPTS[@]}" "+${line}" "+normal zz" "$f" \
+    >/dev/null 2>&1 &
+  LAUNCHED=1
+}
+
+# The markdown entry point. Now just view_at_line -- kept as its own name
+# because every caller reads better for saying what it is opening, and
+# because the two were genuinely different functions until the renderer
+# stopped needing to be worked around.
+view_md_at() {  # view_md_at <file> [source-line]
+  view_at_line "$1" "${2:-1}"
+}
+
+# Same viewer, on a temp file that has to be cleaned up afterwards. The rm
+# runs INSIDE the terminal, after nvim exits, because nothing out here knows
+# when the window is closed.
+view_tmp() {  # view_tmp <tmpfile>
+  local q="${1//\'/\'\\\'\'}"
+  term_view "$VIEWER $(printf '%q ' "${NVIM_VIEW_OPTS[@]}")'$q'; rm -f '$q'"
+}
+
+# The one writable target. Editing your own config is the point.
+view_edit() {
+  local f="$1"
+  [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
+  setsid kitty --class "$VIEW_CLASS" --title "docs" -e nvim "$f" >/dev/null 2>&1 &
+  LAUNCHED=1
+}
+
+# A generated PAGE, not a dump. About/services/gpu/audit used to arrive as
+# raw command output in a bare pager -- correct information, presented as a
+# wall of monospace with no title, no grouping and no relationship to the
+# themed documents sitting one menu entry away. They are markdown now and
+# go through the same viewer as the committed documents, so a generated
+# panel and a README look like the same product.
+#
+# The body is markdown. Command output belongs in a fenced block inside it,
+# which is what panel_block below is for.
+view_panel() {
+  local title="$1" body="$2" tmp
+  tmp="$(mktemp --suffix=.md)"
+  { printf '# %s\n\n' "$title"; printf '%s\n' "$body"; } > "$tmp"
+  view_tmp "$tmp"
+}
+
+# Wrap command output as a fenced block. Alignment matters in `systemctl`
+# and `xrandr` output, so it must not be reflowed as prose.
+panel_block() {  # panel_block <language> <text>
+  printf '```%s\n%s\n```\n' "$1" "$2"
+}
+
+# "key<TAB>value" lines -> a bold-key list.
+#
+# This was a markdown table, and glamour renders those badly at panel
+# widths: it stretches columns to fill the terminal, so a two-column
+# key/value pair ended up with the value marooned 40 characters from its
+# key, and it drew the header rule as two disjoint segments of different
+# lengths. A bold key with the value beside it says the same thing, scans
+# in one column, and cannot be stretched out of shape.
+panel_rows() {  # panel_rows <"key<TAB>value" lines>
+  printf '%s\n' "$1" | while IFS=$'\t' read -r k v; do
+    [[ -z "$k" ]] && continue
+    printf -- '- **%s**  %s\n' "$k" "$v"
+  done
+}
+
+# Launch a detached GUI/rofi tool. Same LAUNCHED bookkeeping, plus the
+# missing-binary check the terminal viewers get -- `setsid theme-toggle &`
+# on a host without it failed completely silently.
+run_tool() {
+  have "$1" || { rofi -e "not installed: $1\nrun: ./wizard.sh --yes --only=ati-scripts"; return; }
+  setsid "$@" >/dev/null 2>&1 &
+  LAUNCHED=1
+}
+
+# ── qtile IPC ────────────────────────────────────────────────────────
+# The cheatsheets live inside qtile and used to be reached by replaying
+# their key chord with xdotool. That could not work: entering the chord
+# auto-shows the qtile sheet, so the replayed `k` toggled it straight back
+# off (it appeared for one frame), and `v`/`f` showed the qtile sheet first
+# and then replaced it. config.py now exposes open_cheatsheet() for this.
+qtile_eval() {
+  qtile cmd-obj -o cmd -f eval -a "$1" 2>&1
+}
+# Sets LAUNCHED on success like every other viewer here. It opens a window
+# just as term_view and view_at_line do -- it just does it through qtile
+# rather than by spawning a process, which is exactly why it was missed.
+# Without it, main_menu's `(( LAUNCHED )) && return` never fired for this
+# section and the top menu redrew on top of the sheet; the `; return` that
+# used to sit on the Cheatsheets dispatch arm papered over that, at the
+# cost of making Esc out of this ONE submenu close the whole menu.
+open_cheatsheet() {
+  local out
+  out="$(qtile_eval "__import__('sys').modules['config'].open_cheatsheet('$1')")"
+  if [[ "$out" == '"ok"' ]]; then
+    LAUNCHED=1
+  else
+    rofi -e "could not open the $1 cheatsheet:\n$out"
+  fi
+}
+
+# The wallpaper picker lives inside qtile too (popups/WallpaperPopup.py), and
+# is reached the same way the cheatsheets are.
+#
+# This entry used to run `dm-setbg`, the OLD rofi-list picker, which is a
+# different program from the one the rest of the desktop uses -- the bar chip
+# and the mod+p,b chord both open the popup. So the one place that advertises
+# itself as the wallpaper entry point was the one place that did not open the
+# actual wallpaper picker.
+open_wallpaper() {
+  local out
+  out="$(qtile_eval "__import__('sys').modules['config'].open_wallpaper_picker()")"
+  if [[ "$out" == '"ok"' ]]; then
+    LAUNCHED=1
+  else
+    rofi -e "could not open the wallpaper picker:\n$out"
+  fi
+}
+
+# ── keybindings ──────────────────────────────────────────────────────
+sec_keys() {
+  if ! command -v qtile-keys >/dev/null 2>&1; then
+    rofi -e "qtile-keys not installed — run: ./wizard.sh --yes --only=ati-scripts"
+    return
+  fi
+  local n; n="$(qtile-keys | wc -l)"
+  # qtile-keys pads its key field to 26 columns and lets the description run
+  # to 65, which is 91 total and half again wider than the 56 this window
+  # gives. Re-cut here rather than in qtile-keys: that tool also prints to
+  # stdout for humans at a terminal, where the wide form is the better one.
+  #
+  # The key field keeps its full 23 columns (the longest is a chord,
+  # "Super+Shift+F , Shift+V") and the description absorbs the loss. In a
+  # list you search by pressing keys, the key is the part that must not be
+  # truncated.
+  qtile-keys \
+    | awk -v w=23 '
+        {
+          k = substr($0, 1, 26); sub(/ +$/, "", k)
+          d = substr($0, 27)
+          # 23 + 2 + 27 = 52.
+          if (length(d) > 27) d = substr(d, 1, 26) "…"
+          printf "%-*s  %s\n", w, k, d
+        }' \
+    | pick "Keys" "$(rofi_hint "Esc back" "$n bindings" "live from config.py")" >/dev/null
+}
+
+# ── cheatsheets ──────────────────────────────────────────────────────
+sec_cheats() {
+  while :; do
+    local c
+    c="$(printf '%s\n' \
+      "󰘳  Qtile cheatsheet   every mode and binding" \
+      "󰕷  Vim cheatsheet     motions, text objects" \
+      "󰈺  Fish / kitty       shell and terminal keys" \
+      | pick "Cheatsheets" "$(rofi_hint "↵ open the sheet" "Esc back" "q closes it")")"
+    (( RC != 0 )) && return
+    case "$c" in
+      *Qtile*) open_cheatsheet qtile; return ;;
+      *Vim*)   open_cheatsheet vim;   return ;;
+      *Fish*)  open_cheatsheet fish;  return ;;
+      *) return ;;
+    esac
+  done
+}
+
+# The searchable index the other documents never had. Troubleshooting has
+# had one since it was written -- 126 entries is unusable without it -- and
+# the same argument holds at smaller scale everywhere else: you arrive at a
+# README knowing the word you are looking for, not the page it is on. Now
+# every document opens on its own headings, you type to filter them, and
+# the pick lands you at that heading in the rendered text.
+#
+# Deliberately generic -- headings and line numbers, nothing document-
+# specific -- so a new README needs no code here. Troubleshooting keeps its
+# OWN builder (sec_trouble) because its entries carry a Symptom line, which
+# is a far better search key than the terse heading above it.
+#
+# The whole document is still one keystroke away, as the first row, because
+# an index is a way in and not a wall.
+doc_index() {  # doc_index <file> <prompt>
+  local f="$1" title="$2" n sel
+  [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
+  n="$(grep -cE '^#{2,3} ' "$f")"
+  # A flat document has nothing to index, and a one-row menu in front of it
+  # is a keystroke that buys you nothing.
+  if (( n == 0 )); then view_md_at "$f" 0; return; fi
+  sel="$({
+      printf '󰈙  %-42s :1\n' "the whole document"
+      # Same 52-column budget and the same indent-by-depth shape as the
+      # troubleshooting index, so the two read as one thing.
+      awk '
+        /^#{2,3} / {
+          line = FNR
+          depth = (substr($0,1,3) == "###") ? 3 : 2
+          sub(/^#+ +/, "")
+          h = $0
+          # Backticks and asterisks only. Stripping underscores too -- the
+          # obvious reading of "remove markdown punctuation" -- silently ate
+          # them out of the MIDDLE of identifiers, so x86_64 indexed as
+          # x8664 and voice_dictate as voicedictate. In this repo that is
+          # pure loss: across all four documents there are 336 identifier
+          # underscores and not one use of _emphasis_.
+          gsub(/[`*]/, "", h)
+          if (depth == 2) {
+            if (length(h) > 46) h = substr(h, 1, 45) "…"
+            printf "%-46s :%s\n", h, line
+          } else {
+            if (length(h) > 44) h = substr(h, 1, 43) "…"
+            printf "  %-44s :%s\n", h, line
+          }
+        }' "$f"
+    # The hint line has a width budget of its own, and it is TIGHTER than the
+    # 52 columns the rows get: rofi wraps -mesg rather than ellipsizing it, and
+    # the second line is drawn straight through the first row of the list.
+    # "…/ searches inside" came to 51 characters and did exactly that. The
+    # longest hint that renders on one line here is 48, which is what the
+    # troubleshooting menu happens to use; this stays under it even with a
+    # three-digit heading count.
+    } | pick "$title" "$(rofi_hint "↵ jump" "Esc back" "$n headings" "/ searches")")"
+  (( RC != 0 )) && return
+  [[ -z "$sel" ]] && return
+  # The line number is the last colon-separated field, so a heading that
+  # contains its own colon cannot be mistaken for one.
+  local line="${sel##*:}"
+  [[ "$line" =~ ^[0-9]+$ ]] && view_md_at "$f" "$line"
+}
+
+# ── documentation ────────────────────────────────────────────────────
+sec_docs() {
+  while :; do
+    local c n_fix
+    # Counted here, not written here. This row said "126 fixes" and the file
+    # had grown to 139 -- the one hand-typed number in a script whose whole
+    # claim is that nothing is hand-listed, and it had already drifted by 13.
+    n_fix="$(grep -cE '^#{2,3} ' "$DOTFILES/TROUBLESHOOTING.md" 2>/dev/null || echo 0)"
+    c="$(printf '%s\n' \
+      "󰈙  README            what this desktop is" \
+      "󰋗  Troubleshooting   ${n_fix} fixes, by symptom" \
+      "󰏗  Packages          how packages are declared" \
+      "󰃤  Boot entries      the rescue kernel" \
+      "󰅱  qtile config      the source — writable" \
+      | pick "Documentation" "$(rofi_hint "↵ open" "Esc back" "rendered read-only")")"
+    (( RC != 0 )) && return
+    case "$c" in
+      *README*)          doc_index "$DOTFILES/README.md" "README" ;;
+      *Troubleshooting*) sec_trouble ;;
+      *Packages*)        doc_index "$DOTFILES/.config/arch-config/README.md" "Packages" ;;
+      *"Boot entries"*)  doc_index "$DOTFILES/.config/arch-config/boot/README.md" "Boot entries" ;;
+      *"qtile config"*)  view_edit "$QTILE_CFG" ;;
+      *) return ;;
+    esac
+    # Same rule as main_menu: an entry that OPENED something ends the
+    # interaction, and one that came back empty-handed (its own Esc) falls
+    # through to redraw this menu. That is what lets Esc out of an index go
+    # back to Documentation instead of closing everything -- these arms used
+    # to `return` unconditionally, which predates there being anything here
+    # you could Esc out of.
+    (( LAUNCHED )) && return
+  done
+}
+
+# TROUBLESHOOTING.md is 144 KB. Dumping it in a pager is not documentation,
+# and the headings alone are too terse to search by symptom -- "Rofi" tells
+# you nothing. Each entry therefore carries the first line of its own body
+# as context, which is where the actual symptom is written.
+sec_trouble() {
+  local f="$DOTFILES/TROUBLESHOOTING.md"
+  [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
+  local sel
+  # Every entry in this file follows the same shape:
+  #     ### Some terse heading
+  #     - **Symptom:** what you actually observed
+  # The heading alone is useless to search by -- "Rofi" and "Theming" tell
+  # you nothing -- but the Symptom line is written in exactly the words
+  # you would use when the thing goes wrong. So that is what is shown, and
+  # what rofi filters on.
+  sel="$(awk '
+    /^#{2,3} / {
+      if (heading != "") emit()
+      line = FNR
+      depth = (substr($0,1,3) == "###") ? 3 : 2
+      sub(/^#+ +/, "")
+      heading = $0
+      sym = ""; firstprose = ""
+      next
+    }
+    heading != "" && sym == "" && /\*\*Symptom:?\*\*/ {
+      sym = $0
+      sub(/^.*\*\*Symptom:?\*\*[[:space:]]*/, "", sym)
+      gsub(/[`*]/, "", sym)
+      next
+    }
+    heading != "" && firstprose == "" && NF > 0 && $0 !~ /^[#`|<>]/ {
+      firstprose = $0
+      sub(/^-[[:space:]]*/, "", firstprose)
+      gsub(/[`*]/, "", firstprose)
+    }
+    END { if (heading != "") emit() }
+    # Symptom-first, one column. This was a 46 + 90 two-column layout, 147
+    # columns wide -- wider than the screen itself, never mind the 56 this
+    # window gives. Two columns do not survive that cut: at ~24 each, the
+    # heading and the symptom are both shredded and neither is readable.
+    #
+    # So the heading is dropped from ENTRY rows and the symptom carries
+    # them alone. That is the column worth keeping: the heading is terse
+    # and internal ("Rofi", "Theming"), while the symptom is written in the
+    # words you would actually use when the thing goes wrong, which is what
+    # the hint under the prompt tells you to type. rofi filters on the line
+    # it is given, so this is also what you search.
+    #
+    # SECTION rows (##) keep their heading instead -- they have no symptom
+    # of their own, and a bare "(section)" is not a landmark you can scroll
+    # by. They stay flush left; entries indent under them.
+    #
+    # NOTE: no apostrophes anywhere in this comment block. The whole awk
+    # program is one SINGLE-QUOTED shell string, so a lone apostrophe in a
+    # comment closes it and hands the rest of the program to the shell.
+    # That is not a hypothetical -- writing "this function-apostrophe-s own
+    # truncation" here silently emptied the entire menu, and `bash -n` still
+    # passed because the stray quotes happened to re-balance.
+    function emit(   ctx) {
+      if (depth == 2) {
+        # 46 + 1 + 5 (":1536") = 52.
+        if (length(heading) > 46) heading = substr(heading, 1, 45) "…"
+        printf "%-46s :%s\n", heading, line
+      } else {
+        ctx = (sym != "") ? sym : firstprose
+        if (ctx == "") ctx = heading
+        # 2 + 44 + 1 + 5 = 52.
+        if (length(ctx) > 44) ctx = substr(ctx, 1, 43) "…"
+        printf "  %-44s :%s\n", ctx, line
+      }
+      heading = ""
+    }
+  ' "$f" | pick "Troubleshooting" "$(rofi_hint "↵ jump" "Esc back" "$(grep -cE '^#{2,3} ' "$f") fixes" "type the symptom")")"
+  (( RC != 0 )) && return
+  [[ -z "$sel" ]] && return
+  local line="${sel##*:}"
+  [[ "$line" =~ ^[0-9]+$ ]] && view_md_at "$f" "$line"
+}
+
+# ── maintenance ──────────────────────────────────────────────────────
+# The one section that is not documentation. Every other section answers
+# "how does this work"; this one answers "what does this machine need from
+# me right now", and each entry acts instead of explaining.
+#
+# This slot used to be Commands: the 38 scripts in AtiScriptsV1, each shown
+# with its own header comment and deliberately never run. It was correct
+# and nobody opened it twice -- a list of things you cannot do anything
+# with is a reading exercise, and the scripts are all on $PATH anyway.
+#
+# It is deliberately NOT an updates panel either; the bar already owns
+# pending updates. What nothing surfaced was the slow rot: .pacnew files
+# never merged, orphaned dependencies, units that failed while you were
+# looking at a splash screen, a package cache growing without bound. None
+# of that announces itself, and all of it costs you later.
+
+# Installed size of a package list, in bytes. `pacman -Qi` prints "12.34
+# MiB", not a number, so the unit has to be folded back in -- summing the
+# bare numbers would rank a 900 KiB package above a 2 GiB one.
+pkg_bytes() {  # pkg_bytes <newline-separated package names>
+  [[ -z "${1//[[:space:]]/}" ]] && { printf '0'; return; }
+  printf '%s\n' "$1" | xargs -r pacman -Qi 2>/dev/null | awk -F': +' '
+    /^Installed Size/ {
+      n = $2 + 0
+      if      ($2 ~ /KiB/) n *= 1024
+      else if ($2 ~ /MiB/) n *= 1048576
+      else if ($2 ~ /GiB/) n *= 1073741824
+      total += n
+    }
+    END { printf "%d", total + 0 }'
+}
+
+human() { numfmt --to=iec-i --suffix=B "${1:-0}" 2>/dev/null || printf '%sB' "${1:-0}"; }
+
+# Geometry is global (DOCS_GEO, at the top) -- these menus deliberately do
+# not carry their own. They did briefly, sized to their own content, and
+# that is exactly what made the window jump between sections.
+
+# How many packages a paccache prune would actually remove. `-d` is a dry
+# run; its summary reads "finished dry run: N candidates (...)", and when
+# there is nothing to do it says so in prose instead, hence the :-0.
+paccache_count() {
+  local n
+  n="$(paccache -d "$@" 2>&1 | sed -nE 's/.*dry run: ([0-9]+) candidates.*/\1/p' | head -1)"
+  printf '%s' "${n:-0}"
+}
+
+sec_maintenance() {
+  have pacdiff || {
+    rofi -e "pacman-contrib not installed\nrun: sudo pacman -S pacman-contrib"
+    return
+  }
+  while :; do
+    # Probed on every draw, never cached: a stale "0 orphans" is worse
+    # than no number at all, since the whole point of the section is that
+    # you can trust the counts without opening anything.
+    #
+    # `pacdiff -o` is the slow one (~2s -- it reads every package's backup
+    # list out of the pacman database) and it is why this menu takes a
+    # beat to appear. It stays, because it is the exact scan the merge
+    # entry below performs: the count cannot disagree with what you are
+    # then shown. A `find /etc` shortcut is no faster here and misses
+    # everything pacman tracks outside /etc.
+    local merges orphans errs
+    merges="$(pacdiff -o 2>/dev/null)"
+    orphans="$(pacman -Qtdq 2>/dev/null)"
+    errs="$(journalctl -p 3 -b -q --no-pager 2>/dev/null)"
+
+    local n_merge n_orph n_err orph_h cache_h prunable n_upd
+    n_merge="$(grep -c . <<<"$merges")"
+    n_orph="$(grep -c . <<<"$orphans")"
+    n_err="$(grep -c . <<<"$errs")"
+    orph_h="$(human "$(pkg_bytes "$orphans")")"
+    # 2>/dev/null: pacman's in-flight download-* directories are root-only
+    # and du warns on every one of them. They are transient and tiny.
+    cache_h="$(du -sh /var/cache/pacman/pkg 2>/dev/null | cut -f1)"
+    prunable=$(( $(paccache_count -k2) + $(paccache_count -u -k0) ))
+    # From qupdate's cache, not from `checkupdates`: checkupdates syncs a
+    # private copy of the package databases over the network, which is a
+    # multi-second stall on a menu draw and an outright hang with no
+    # connection. The bar's updates chip refreshes that cache already.
+    n_upd="$(grep -o '"name"' "$HOME/.cache/qupdate.json" 2>/dev/null | wc -l)"
+
+    local c
+    c="$(printf '%s\n' \
+      "󰅚  Config merges     ${n_merge} .pacnew to merge" \
+      "󰩹  Orphan packages   ${n_orph} · ${orph_h} reclaimable" \
+      "󰈸  Boot errors       ${n_err} since this boot" \
+      "󰋊  Package cache     ${cache_h:-?} · ${prunable} prunable" \
+      "󰑓  Safe update       ${n_upd} pending · guarded" \
+      | pick "Maintenance" "$(rofi_hint "↵ act on it" "Esc back" "every count is probed live")")"
+    (( RC != 0 )) && return
+    case "$c" in
+      *"Config merges"*)
+        if (( n_merge == 0 )); then
+          view_panel "Config merges" "$(
+            printf 'Nothing to merge — every package config on this system is the one you\nhave, with no `.pacnew` sitting beside it.\n\n'
+            printf 'pacman writes a `.pacnew` when it ships a new default for a file you\nhave edited, and then leaves it alone. Ignore enough of them and your\nconfig drifts years behind what the package expects, which is how a\nservice starts failing after an update that "changed nothing".\n'
+          )"
+        else
+          # `pacdiff -s`, not `sudo pacdiff`: -s makes pacdiff use sudo for
+          # the privileged file operations and sudoedit for the merge
+          # itself, so the editor runs as YOU -- your nvim, your config --
+          # and only the install step is root.
+          #
+          # In a terminal because it is a conversation: it asks per file,
+          # and the sudo prompt has nowhere to appear out here, since the
+          # bar spawned this script with no controlling terminal.
+          term_view "DIFFPROG='nvim -d' pacdiff -s; printf '\nEnter to close '; read -r _"
+        fi
+        return ;;
+
+      *"Orphan packages"*)
+        if (( n_orph == 0 )); then
+          view_panel "Orphan packages" "$(
+            printf 'No orphans. Every installed package is either something you asked for\nor something a package you asked for still needs.\n'
+          )"
+          return
+        fi
+        # A list, not a bare confirm: "remove 21 packages?" with no names
+        # is a prompt you either rubber-stamp or cancel, and neither is a
+        # decision. The names are here with their sizes, any one of them
+        # opens its own `pacman -Qi`, and the removal is the first row so
+        # it is still a single keystroke.
+        #
+        # One `pacman -Qi` over the whole list, not one per package: 21
+        # separate invocations to fill in a menu is half a second of
+        # nothing happening.
+        # The explicit $'\n' is load-bearing: command substitution strips
+        # trailing newlines, so without it the "Remove all" row and the
+        # first package end up on the same line -- one unselectable row.
+        local rows sel
+        rows="$(printf '󰩹  Remove all %s orphans   frees %s' "$n_orph" "$orph_h")"$'\n'
+        rows+="$(printf '%s\n' "$orphans" | xargs -r pacman -Qi 2>/dev/null | awk -F': +' '
+          /^Name/           { n = $2 }
+          /^Installed Size/ { printf "%-32s %s\n", n, $2 }')"
+        sel="$(printf '%s\n' "$rows" | pick "Orphans" \
+          "$(rofi_hint "↵ remove all" "Esc back" "or pick one to inspect")")"
+        (( RC != 0 )) && continue
+        [[ -z "$sel" ]] && continue
+        if [[ "$sel" == "󰩹"* ]]; then
+          rofi_confirm "Remove $n_orph orphaned packages?" "frees $orph_h  ·  pacman -Rns" || continue
+          # -Rns: also drop dependencies that only these packages needed
+          # (n) and their system config files (s). Package names are bare
+          # tokens, so flattening the list onto the command line is safe.
+          local list; list="$(tr '\n' ' ' <<<"$orphans")"
+          term_view "sudo pacman -Rns $list; printf '\nEnter to close '; read -r _"
+          return
+        fi
+        view_panel "$(awk '{print $1}' <<<"$sel")" \
+          "$(panel_block "" "$(pacman -Qi "$(awk '{print $1}' <<<"$sel")" 2>&1)")"
+        return ;;
+
+      *"Boot errors"*)
+        view_panel "Boot errors" "$(
+          if (( n_err == 0 )); then
+            printf 'Nothing at priority `err` or worse since this boot.\n'
+          else
+            printf 'Priority `err` and above, this boot only — the failures that happened\nwhile you were looking at a splash screen.\n\n'
+            panel_block "" "$(head -60 <<<"$errs")"
+            (( n_err > 60 )) && printf '\n_%s more._\n' "$(( n_err - 60 ))"
+            printf '\nThe full log is `journalctl -p 3 -b`.\n'
+          fi
+        )"
+        return ;;
+
+      *"Package cache"*)
+        # Two prunes, counting two different things: -k2 drops old versions
+        # of packages you still have, -uk0 drops every version of packages
+        # you no longer have installed at all. Only the second is pure dead
+        # weight; the first two versions of what IS installed are the
+        # rollback material that lets you downgrade a package that breaks.
+        if (( prunable == 0 )); then
+          view_panel "Package cache" "$(
+            printf 'Nothing to prune. The `%s` in `/var/cache/pacman/pkg` is all current:\nat most two versions of each installed package, and nothing left behind\nby packages you have removed.\n\n' "${cache_h:-?}"
+            printf 'That cache is not waste — it is what lets you downgrade a package that\nbreaks, offline, without hunting for the old file.\n'
+          )"
+          return
+        fi
+        rofi_confirm "Prune the package cache?" \
+          "$prunable candidate(s)  ·  keeps the last 2 versions of installed packages" || continue
+        term_view "sudo paccache -rk2; sudo paccache -ruk0; printf '\nEnter to close '; read -r _"
+        return ;;
+
+      *"Safe update"*)
+        have safe-update || {
+          rofi -e "safe-update not installed\nrun: ./wizard.sh --yes --only=ati-scripts"
+          return
+        }
+        # Asked here, before the terminal opens, and not left to pacman's
+        # own [Y/n]. This is the only entry in the menu that rewrites the
+        # running system, it sits one arrow-key below "Boot errors", and
+        # every other row in this list is safe to press out of curiosity --
+        # so a single stray Return should not begin a full system upgrade.
+        #
+        # safe-update's own refusal points all come LATER (news gate,
+        # snapshot check), by which time it has already synced databases
+        # and taken the sudo password. This is the cheap one to say no to.
+        #
+        # Short strings on purpose: rofi_confirm is the SHARED compact
+        # dialog (22% wide, ~26 columns), used by rofi_todo and rofi-kill
+        # too, so it is not this script's to widen. "Run a full system
+        # upgrade?" overflowed it and rendered clipped mid-word.
+        rofi_confirm "Upgrade the system?" \
+          "$n_upd pending · snapshot + news gate first" || continue
+        # term_view, not run_tool: safe-update is a conversation. It asks
+        # for the sudo password, gates on the Arch news feed, and asks
+        # before continuing without a verified snapshot. Detached it would
+        # block forever on a prompt nobody can see.
+        term_view "safe-update; printf '\nEnter to close '; read -r _"
+        return ;;
+      *) return ;;
+    esac
+  done
+}
+
+# ── appearance ───────────────────────────────────────────────────────
+sec_appearance() {
+  while :; do
+    local c
+    c="$(printf '%s\n' \
+      "󰸌  Theme             22 palettes, retints all" \
+      "󰍹  UI scale          size the desktop to this" \
+      "󰸉  Wallpaper         picker" \
+      "󰇥  Boot splash       your name on boot" \
+      | pick "Appearance" "$(rofi_hint "↵ open" "Esc back")")"
+    (( RC != 0 )) && return
+    case "$c" in
+      *Theme*)      run_tool theme-toggle;    return ;;
+      *"UI scale"*) run_tool ui-scale-toggle; return ;;
+      *Wallpaper*)  open_wallpaper;           return ;;
+      *"Boot splash"*)
+        view_panel "Boot splash" "$(
+          printf 'What plymouth is configured to show while this machine boots.\n\n'
+          panel_block "" "$(boot-splash status 2>&1)"
+          printf '\nChange the name on it with `boot-splash set-name "<name>"`.\n'
+        )"
+        return ;;
+      *) return ;;
+    esac
+  done
+}
+
+# ── espanso ─────────────────────────────────────────────────────────
+# espanso's snippets in match/base.yml do not contain personal data --
+# they shell out to `source /etc/environment; echo "$MY_NAME"` and friends.
+# That is the right design (nothing private is committed) but it has a
+# sharp edge: on a machine where those variables are not set, every one of
+# those snippets silently expands to an EMPTY STRING. No error, no warning
+# -- you type `:email` and nothing appears.
+#
+# So this section is built around the variables, not the files.
+sec_espanso() {
+  local match_dir="$ESPANSO_DIR/match"
+  local envfile="/etc/environment"
+
+  # Reading /etc/environment needs no privilege -- it is 0644, because
+  # pam_env has to read it as every user at login. The `sudo grep` this
+  # used to run was pure downside: rofi_docs is spawned from the bar with
+  # no controlling terminal, so on a host where the sudo timestamp has
+  # expired that grep cannot prompt and simply fails, and EVERY variable
+  # was then reported missing. sudo is kept for the WRITE below, which
+  # genuinely needs it.
+  env_has() { grep -qE "^[[:space:]]*${1}=" "$envfile" 2>/dev/null; }
+
+  while :; do
+    # Which variables the snippets reference, and which are actually set.
+    local wanted set_count missing_count
+    wanted="$(grep -ohE '\$[A-Z][A-Z0-9_]+' "$match_dir"/*.yml 2>/dev/null \
+              | tr -d '$' | sort -u)"
+    set_count=0; missing_count=0
+    local v missing=""
+    for v in $wanted; do
+      if env_has "$v"; then
+        set_count=$((set_count+1))
+      else
+        missing_count=$((missing_count+1)); missing+="$v"$'\n'
+      fi
+    done
+
+    local c
+    c="$(printf '%s\n' \
+      "󰉺  Variables         ${set_count} set · ${missing_count} missing" \
+      "󰏫  Edit environment  where the values live" \
+      "󰝒  Snippet files           $(ls -1 "$match_dir"/*.yml 2>/dev/null | wc -l) file(s) in match/" \
+      "󰑓  Restart espanso   apply changes" \
+      | pick "Espanso" "$(rofi_hint "↵ open" "Esc back" "values from /etc/environment")")"
+    (( RC != 0 )) && return
+    # These patterns MUST be text that appears in the rows printed just above.
+    # Both of the first two arms were stale -- the rows had been renamed to
+    # "Variables" and "Edit environment" to fit the 52-column budget, and the
+    # arms still read "Personal variables" and "Edit /etc/environment". Neither
+    # matched, so both fell through to the `*)` catch-all and the menu simply
+    # closed: the two entries that carry this whole section did nothing at all,
+    # with no error to say why. That is the failure mode a catch-all `*) return`
+    # always has, so keep the labels and the patterns edited together.
+    case "$c" in
+      *Variables*)
+        local body v
+        # Every `body+="$(...)"` here loses the command substitution's
+        # trailing newlines, so each chunk ends with an explicit $'\n'.
+        body="$(printf 'espanso snippets reference **%s** variables, read from `%s`.' \
+                  "$(wc -w <<<"$wanted")" "$envfile")"$'\n\n'
+        body+="$(printf '## Set (%s)' "$set_count")"$'\n\n'
+        for v in $wanted; do
+          env_has "$v" && body+="- \`$v\`"$'\n'
+        done
+        (( set_count == 0 )) && body+=$'_none_\n'
+        body+=$'\n'"$(printf '## Missing (%s)' "$missing_count")"$'\n'
+        body+=$'\nSnippets using these expand to an empty string — no error, no warning.\n\n'
+        body+="$(sed '/^$/d; s/^/- `/; s/$/`/' <<<"$missing")"
+        body+=$'\n\n---\n\n'"Add them to \`$envfile\` as \`KEY=value\`, one per line, then run:"$'\n\n'
+        body+=$'```\nespanso restart\n```\n'
+        view_panel "Espanso variables" "$body"
+        return ;;
+      *"Edit environment"*)
+        # Scaffold the missing keys first, commented out, so the file
+        # documents what espanso is looking for instead of being an empty
+        # page you have to guess at.
+        #
+        # Guarded by the marker line, because the scaffold writes the keys
+        # COMMENTED OUT -- so they still read as "missing" on the next open,
+        # and the unguarded version appended the whole block again every
+        # single time this entry was selected.
+        #
+        # Both the scaffold and sudoedit run INSIDE the terminal, not out
+        # here: this script has no controlling terminal (the bar spawned
+        # it), so a sudo password prompt had nowhere to appear and the
+        # append silently did nothing.
+        local scaffold="" sf
+        if [[ -n "${missing// /}" ]] && ! grep -q 'added by rofi_docs' "$envfile" 2>/dev/null; then
+          sf="$(mktemp --suffix=.env)"
+          {
+            echo ""
+            echo "# --- espanso snippet variables (added by rofi_docs) ---"
+            echo "# Fill in the value after '=' and remove the leading '#'."
+            echo "# Snippets that use an unset variable expand to nothing."
+            # /^$/d first. $missing is accumulated as "NAME"$'\n' per entry, so
+            # it ends with a trailing newline, and <<< adds one more -- the
+            # empty final line then came out as a bare `#=`, which is in
+            # /etc/environment twice over from earlier runs. Same guard the
+            # Variables panel already uses on this variable.
+            sed '/^$/d; s/^/#/; s/$/=/' <<<"$missing"
+          } > "$sf"
+          scaffold="sudo tee -a '$envfile' < '$sf' >/dev/null; rm -f '$sf';"
+        fi
+        # sudoedit, not `sudo nvim`: it edits a copy as you and installs it
+        # afterwards, so a crashed editor cannot leave a root-owned mess in
+        # /etc, and your own nvim config is used rather than root's.
+        term_view "$scaffold SUDO_EDITOR=nvim sudoedit '$envfile'"
+        return ;;
+      *"Snippet files"*)
+        local f list=""
+        for f in "$match_dir"/*.yml; do
+          [[ -f "$f" ]] || continue
+          list+="$(printf '%-24s %s triggers' "$(basename "$f")" \
+                   "$(grep -c '^[[:space:]]*-[[:space:]]*trigger' "$f" 2>/dev/null || echo 0)")"$'\n'
+        done
+        list+="＋  new snippet file…"
+        local sel
+        sel="$(printf '%s\n' "$list" | pick "Snippets" "$(rofi_hint "↵ edit" "Esc back")")"
+        (( RC != 0 )) && continue
+        [[ -z "$sel" ]] && continue
+        if [[ "$sel" == "＋"* ]]; then
+          local name; name="$(rofi_input "new file name (no .yml)")"
+          [[ -z "$name" ]] && continue
+          local new_f="$match_dir/${name%.yml}.yml"
+          [[ -f "$new_f" ]] || cat > "$new_f" <<'YML'
+# espanso snippets. Apply with:  espanso restart
+matches:
+  - trigger: ":example"
+    replace: "replaced text"
+YML
+          view_edit "$new_f"
+        else
+          view_edit "$match_dir/$(awk '{print $1}' <<<"$sel")"
+        fi
+        return ;;
+      *"Restart espanso"*)
+        if espanso restart >/dev/null 2>&1; then
+          notify-send -a espanso "espanso restarted" "snippets reloaded" 2>/dev/null
+          LAUNCHED=1
+        else
+          rofi -e "espanso restart failed — is espanso running?"
+        fi
+        return ;;
+      *) return ;;
+    esac
+  done
+}
+
+# ── system ───────────────────────────────────────────────────────────
+sec_system() {
+  while :; do
+    local c
+    c="$(printf '%s\n' \
+      "󰋼  About             user · theme · gpu · kernel" \
+      "󰏗  Package audit     declared vs installed" \
+      "󰓅  Services          what failed, what runs" \
+      "󰍛  Display + GPU     resolution, DPI, driver" \
+      | pick "System" "$(rofi_hint "↵ open" "Esc back")")"
+    (( RC != 0 )) && return
+    case "$c" in
+      *About*)
+        view_panel "About this machine" "$(panel_rows "$(about_rows)")"
+        return ;;
+      *"Package audit"*)
+        view_panel "Package audit" "$(
+          printf 'Declared in `.config/arch-config/modules/*.yaml` versus what pacman\nactually has installed.\n\n'
+          panel_block "" "$("$DOTFILES/installScripts/wizard.sh" --audit 2>&1 | sed 's/\x1b\[[0-9;]*m//g')"
+        )"
+        return ;;
+      *Services*)
+        view_panel "Services" "$(
+          printf '## Failed\n\n'
+          panel_block "" "$(systemctl --failed --no-pager 2>&1)"
+          printf '\n## Running\n\n'
+          panel_block "" "$(systemctl list-units --type=service --state=running --no-pager 2>&1 | head -40)"
+        )"
+        return ;;
+      *"Display + GPU"*)
+        view_panel "Display + GPU" "$(
+          printf '## Outputs and modes\n\n'
+          panel_block "" "$(xrandr --current 2>&1 | grep -E ' connected|\*')"
+          printf '\n## UI scale\n\n'
+          panel_block "" "$(ui-scale --show 2>&1)"
+          printf '\n## Graphics driver\n\n'
+          panel_block "" "$(lspci -k 2>/dev/null | grep -A3 -E 'VGA|3D')"
+        )"
+        return ;;
+      *) return ;;
+    esac
+  done
+}
+
+# Tab-separated key/value rows. panel_table turns these into markdown; the
+# `about` CLI subcommand still prints them as plain aligned text, since a
+# markdown table piped into another program helps nobody.
+about_rows() {
+  local gpu res
+  gpu="$(lspci -mn 2>/dev/null | awk -F'"' '$2 ~ /^03/ {print $4}' | head -1)"
+  case "$gpu" in
+    8086) gpu="Intel" ;; 1002|1022) gpu="AMD" ;; 10de) gpu="NVIDIA" ;;
+    *) gpu="${gpu:-unknown}" ;;
+  esac
+  res="$(xrandr --current 2>/dev/null | awk '/ connected primary/{print $4}' | cut -d+ -f1)"
+  printf 'user\t%s\n'     "$USER"
+  printf 'host\t%s\n'     "$(hostnamectl hostname 2>/dev/null || hostname)"
+  printf 'theme\t%s\n'    "$(cat "$HOME/.cache/qtile/theme_mode" 2>/dev/null || echo unknown)"
+  printf 'ui scale\t%s\n' "$(cat "$HOME/.cache/qtile/ui_scale" 2>/dev/null || echo 1.00)"
+  printf 'display\t%s\n'  "${res:-unknown}"
+  printf 'gpu\t%s\n'      "$gpu"
+  printf 'kernel\t%s\n'   "$(uname -r)"
+  printf 'qtile\t%s\n'    "$(qtile --version 2>/dev/null | head -1)"
+  printf 'picom\t%s\n'    "$(pacman -Qq picom-ftlabs-pinned picom-ftlabs-git 2>/dev/null | sort -u | paste -sd' ' -)"
+  printf 'uptime\t%s\n'   "$(uptime -p 2>/dev/null | sed 's/^up //')"
+  printf 'dotfiles\t%s\n' "$(git -C "$DOTFILES" rev-parse --short HEAD 2>/dev/null || echo '-')"
+}
+
+about_text() { about_rows | column -t -s $'\t'; }
+
+# ── main ─────────────────────────────────────────────────────────────
+# Loops: a submenu returning (its Esc) lands back here rather than exiting,
+# so Esc reads as "up one level" everywhere. Only Esc at THIS level closes.
+main_menu() {
+  while :; do
+    local c
+    c="$(printf '%s\n' \
+      "󰌌  Keybindings       ▸ every shortcut" \
+      "󰘳  Cheatsheets       ▸ qtile · vim · fish" \
+      "󰈙  Documentation     ▸ README · troubleshooting" \
+      "󰛄  Espanso           ▸ text expansion snippets" \
+      "󰏘  Appearance        ▸ theme · scale · wallpaper" \
+      "󰒓  System            ▸ about · audit · services" \
+      "󰃢  Maintenance       ▸ merges · orphans · cache" \
+      | pick "Docs" "$(rofi_hint "↵ open" "Esc closes" "Esc in a section goes back")")"
+    (( RC != 0 )) && return
+    case "$c" in
+      *Keybindings*)   sec_keys ;;
+      *Cheatsheets*)   sec_cheats ;;
+      *Documentation*) sec_docs ;;
+      *Espanso*)       sec_espanso ;;
+      *Appearance*)    sec_appearance ;;
+      *System*)        sec_system ;;
+      *Maintenance*)   sec_maintenance ;;
+      *) return ;;
+    esac
+    # A section that OPENED something is the end of the interaction: falling
+    # back into this loop redrew the top-level menu directly on top of the
+    # window you had just asked for, so every single lookup ended with an
+    # extra Esc. A section that came back empty-handed (its own Esc) still
+    # lands here, which is what makes Esc read as "up one level".
+    (( LAUNCHED )) && return
+  done
+}
+
+case "${1:-}" in
+  "")          main_menu ;;
+  keys)        sec_keys ;;
+  cheats)      sec_cheats ;;
+  docs)        sec_docs ;;
+  trouble)     sec_trouble ;;
+  espanso)     sec_espanso ;;
+  appearance)  sec_appearance ;;
+  system)      sec_system ;;
+  maintenance) sec_maintenance ;;
+  about)       about_text ;;
+  # The header block, minus the shebang and minus the internal "NOTE:" that
+  # is addressed to whoever edits this file rather than to whoever runs it.
+  # Bounded by content, not by a line number: this was `sed -n '2,23p'`, and
+  # editing three lines into the header silently truncated --help mid-sentence.
+  --help|-h)   awk 'NR>1 && /^#/ && !/^# NOTE:/ { sub(/^# ?/, ""); print; next }
+                    NR>1 { exit }' "$0" ;;
+  *) echo "rofi_docs: unknown section '$1'" >&2; exit 2 ;;
+esac

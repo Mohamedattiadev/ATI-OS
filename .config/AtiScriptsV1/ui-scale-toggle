@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# ui-scale-toggle — rofi picker for the UI scale factor. Active one is ●.
+#
+# `ui-scale` detects a factor from the display's real DPI, and that is
+# right most of the time. This exists for when it is not: "the formula
+# disagrees with my eyes" is a legitimate outcome, and the fix has to be
+# two clicks rather than an edit to a 5000-line qtile config.
+#
+# Picking a value pins it -- detection will not override it again until
+# you choose "Auto".
+#
+# NOTE: never use a shell var named DISPLAY in this script — it shadows
+# the X11 $DISPLAY env var and every downstream tool then fails silently.
+
+set -euo pipefail
+
+# readlink -f: reached through a /usr/local/bin symlink, so a plain $0
+# dirname resolves to the symlink's directory rather than the repo.
+# shellcheck source=rofi_common.sh
+source "$(dirname "$(readlink -f "$0")")/rofi_common.sh"
+
+SCALE_FILE="$HOME/.cache/qtile/ui_scale"
+PIN_FILE="$HOME/.cache/qtile/ui_scale.pinned"
+UI_SCALE_BIN="$(command -v ui-scale || echo "$HOME/.dotfiles/.config/AtiScriptsV1/ui-scale")"
+
+CURRENT="1.00"
+[[ -f "$SCALE_FILE" ]] && CURRENT="$(cat "$SCALE_FILE")"
+PINNED=0
+[[ -f "$PIN_FILE" ]] && PINNED=1
+
+DETECTED="$("$UI_SCALE_BIN" --show 2>/dev/null | awk '/^detected/{print $3}')"
+DETECTED="${DETECTED:-1.00}"
+
+# "<label>|<value>". Steps of 0.15-0.25 rather than 0.05: at one screen
+# distance the eye cannot tell 1.15 from 1.20, and a 20-row menu of
+# near-identical numbers is worse than eight distinguishable ones.
+ENTRIES=(
+  "Auto  (detected: $DETECTED)|auto"
+  "0.90  smaller than reference|0.90"
+  "1.00  reference (14in 1366x768)|1.00"
+  "1.15  15in 1080p|1.15"
+  "1.25  14in 1080p|1.25"
+  "1.50  in between|1.50"
+  "1.80  13in 1440p|1.80"
+  "2.25  15in 4K|2.25"
+  "2.50  large 4K|2.50"
+)
+
+LIST=""
+for e in "${ENTRIES[@]}"; do
+  label="${e%%|*}"
+  val="${e##*|}"
+  if [[ "$val" == "auto" ]]; then
+    (( PINNED )) && LIST+="○ $label"$'\n' || LIST+="● $label"$'\n'
+  elif (( PINNED )) && [[ "$val" == "$CURRENT" ]]; then
+    LIST+="● $label"$'\n'
+  else
+    LIST+="○ $label"$'\n'
+  fi
+done
+
+CHOICE="$(printf '%s' "$LIST" | rofi -dmenu -i -p "UI scale" \
+  -mesg "$(rofi_hint "↵ resize the desktop" "Esc cancels" "● is active" "picking one pins it")")"
+[[ -z "$CHOICE" ]] && exit 0
+
+LABEL="${CHOICE#* }"
+VALUE=""
+for e in "${ENTRIES[@]}"; do
+  [[ "${e%%|*}" == "$LABEL" ]] && { VALUE="${e##*|}"; break; }
+done
+[[ -z "$VALUE" ]] && exit 0
+
+if [[ "$VALUE" == "auto" ]]; then
+  "$UI_SCALE_BIN" --auto >/dev/null
+else
+  "$UI_SCALE_BIN" --set "$VALUE" >/dev/null
+fi
+
+NEW="$(cat "$SCALE_FILE" 2>/dev/null || echo 1.00)"
+
+# Reload rather than restart: reload_config re-reads the config (picking up
+# the new _s() results) without tearing down windows. Xft.dpi is already
+# merged by ui-scale, but GTK/Qt apps only read it at startup, so say so
+# instead of letting the user think it half-worked.
+if command -v qtile >/dev/null 2>&1; then
+  qtile cmd-obj -o cmd -f reload_config >/dev/null 2>&1 || true
+fi
+
+if command -v notify-send >/dev/null 2>&1; then
+  notify-send -a "UI scale" "Scale set to $NEW" \
+    "Bar and fonts reloaded.\nAlready-open GTK/Qt apps keep the old size until restarted."
+fi

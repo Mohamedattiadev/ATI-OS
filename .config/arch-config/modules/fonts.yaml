@@ -6,8 +6,31 @@ packages:
   - otf-font-awesome
   - ttf-material-icons
   - ttf-material-symbols-variable
-  - ttf-firacode-nerd
+  - ttf-firacode-nerd   # kitty, and the family rofi's base.rasi mis-names
+  # LOAD-BEARING. The qtile bar, all seven qtile popups and dunst name
+  # "JetBrainsMono Nerd Font" explicitly. It was installed on the author's
+  # machine but declared nowhere, so a fresh install got no such family --
+  # and fontconfig does not error on a missing one, it substitutes. Every
+  # one of those surfaces would have come up in Noto Sans CJK: proportional,
+  # so the cheatsheets' key columns and the popups' padded columns would not
+  # line up, with nothing anywhere saying why. validate.sh now checks the
+  # families the UI actually names, so this cannot go missing again.
+  - ttf-jetbrains-mono-nerd
   - ttf-amiri
   - ttf-cairo
+  # Also the face rofi renders in -- base.rasi names this family directly
+  # and deliberately (it wants the proportional look). If this package goes,
+  # rofi's look goes with it.
   - noto-fonts-cjk
   - noto-fonts-emoji   # flag glyphs for qtile KeyboardLayout widget
+  # Same silent-substitution class as ttf-jetbrains-mono-nerd above, found by
+  # fc-match'ing every family the tracked configs actually name:
+  #   adwaita-fonts -- config.py names "Adwaita Mono" for the systray triangle
+  #     and the wallpaper chip's ✖. Installed on the author's machine, declared
+  #     nowhere, so a fresh install drew both in a substituted proportional face.
+  #   noto-fonts    -- gtk-3.0/settings.ini and gtk-4.0/settings.ini ask for
+  #     "Noto Sans" (NOT the CJK family, which is a different package). It is
+  #     not installed here either, which is why every GTK app on this machine
+  #     is already rendering in something other than what its config requests.
+  - adwaita-fonts
+  - noto-fonts

@@ -1,0 +1,18 @@
+description: GPU vendor set -- Intel (selected at runtime by wizard step_gpu)
+
+# NOT in enabled_modules. `dcli sync` must never install this: it is
+# correct on exactly one class of machine. The wizard's `gpu` module reads
+# the live PCI IDs and installs whichever of the graphics-*.yaml sets
+# matches the hardware in front of it.
+
+packages:
+  - vulkan-intel         # Vulkan ICD. picom does not use Vulkan, but the
+                         # loader logs a hard error without any ICD present
+  - intel-media-driver   # VA-API for Broadwell/Gen8 and newer (iHD)
+  - libva-intel-driver   # VA-API for pre-Broadwell (i965). Harmless
+                         # alongside iHD -- libva picks by PCI ID.
+  - intel-gpu-tools      # intel_gpu_top: the tool that answers "is this
+                         # actually on the GPU" when animations feel wrong
+
+exclude: []
+conflicts: []

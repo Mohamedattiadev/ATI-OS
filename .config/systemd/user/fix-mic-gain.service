@@ -16,8 +16,14 @@ Type=oneshot
 # reassert -- otherwise this can win the race only for WirePlumber to
 # stomp it right back moments later.
 ExecStartPre=/usr/bin/sleep 3
-ExecStart=/usr/bin/amixer -c 0 sset 'Internal Mic Boost' 0
-ExecStart=/usr/bin/amixer -c 0 sset 'Capture' 75%%
+# Leading "-": ignore a failed exit status. Both control names and card 0 are
+# this laptop's codec, and amixer exits non-zero on a machine whose card has no
+# "Internal Mic Boost" (most desktops and every USB mic) -- which failed the
+# whole oneshot unit and left `systemctl --user status` showing a red failed
+# service on an otherwise healthy login, for a tuning that simply does not
+# apply there. Nothing downstream depends on this succeeding.
+ExecStart=-/usr/bin/amixer -c 0 sset 'Internal Mic Boost' 0
+ExecStart=-/usr/bin/amixer -c 0 sset 'Capture' 75%%
 
 [Install]
 WantedBy=default.target

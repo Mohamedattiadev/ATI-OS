@@ -17,165 +17,99 @@
         --blue: #008f11;
         --purple: #00b849;
         --cyan: #00ff9f;
-        --accent: #00ff41;
+        --accent: #008f11;
         --urgent: #ff0000;
+        --dim: #009c28;
+        --highlight: #0f2413;
+        --border: #16341c;
       }
     </style>
     <!-- END-THEME-VARS -->
   </head>
   <body>
-    <div id="search">
+    <div id="search" aria-hidden="true">
       <input
         id="search-field"
         type="text"
         name="search-field"
-        placeholder="Type to search..."
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="Search…"
       />
+      <div id="search-hint">
+        <kbd>Enter</kbd> search &nbsp;·&nbsp; <kbd>Esc</kbd> close &nbsp;·&nbsp;
+        prefix <kbd>!g</kbd> <kbd>!gh</kbd> <kbd>!yt</kbd> to jump
+      </div>
     </div>
 
     <div class="container">
-      <div id="clock"></div>
-      <div class="welcome-message">Welcome, Ati...</div>
+      <div id="clock">--:--:--</div>
+      <div id="date"></div>
+      <div class="welcome-message">
+        Welcome, @@USER@@<span class="cursor">_</span>
+      </div>
 
       <div class="bookmark-container">
         <div class="bookmark-set">
-          <div class="bookmark-title">🔧 Developer Tools</div>
+          <div class="bookmark-title">
+            <span class="icon">🔧</span> Developer Tools
+          </div>
           <div class="bookmark-inner-container">
-            <a class="bookmark" href="https://devdocs.io/" target="_blank"
-              >DevDocs</a
-            >
-            <a
-              class="bookmark"
-              href="https://developer.mozilla.org/"
-              target="_blank"
+            <a class="bookmark" href="https://devdocs.io/">DevDocs</a>
+            <a class="bookmark" href="https://developer.mozilla.org/"
               >MDN Web Docs</a
             >
-            <a class="bookmark" href="https://github.com/" target="_blank"
-              >GitHub</a
-            >
-            <a class="bookmark" href="https://gitlab.com" target="_blank"
-              >GitLab</a
-            >
-            <a class="bookmark" href="https://stackoverflow.com" target="_blank"
+            <a class="bookmark" href="https://github.com/">GitHub</a>
+            <a class="bookmark" href="https://gitlab.com">GitLab</a>
+            <a class="bookmark" href="https://stackoverflow.com"
               >Stack Overflow</a
             >
-            <a class="bookmark" href="https://onecompiler.com/" target="_blank"
-              >OneCompiler (Multi-language IDE)</a
+            <a class="bookmark" href="https://onecompiler.com/"
+              >OneCompiler — multi-language IDE</a
             >
-            <a class="bookmark" href="https://playcode.io/" target="_blank"
-              >PlayCode (Instant JS)</a
+            <a class="bookmark" href="https://playcode.io/"
+              >PlayCode — instant JS</a
             >
           </div>
         </div>
 
         <div class="bookmark-set">
-          <div class="bookmark-title">Most used</div>
+          <div class="bookmark-title"><span class="icon">⭐</span> Most used</div>
           <div class="bookmark-inner-container">
-            <!-- <a class="bookmark" href="https://youtube.com" target="_blank" -->
-            <!--   >Youtube</a -->
-            <!-- > -->
-
-            <a class="bookmark" href="https://yewtu.be/" target="_blank"
-              >youtube - (Invidious)
-            </a>
-            <a
-              class="bookmark"
-              href="https://mohamedattiaDev.github.io/AtiDocs"
-              target="_blank"
+            <a class="bookmark" href="https://yewtu.be/"
+              >YouTube — Invidious</a
+            >
+            <a class="bookmark" href="https://mohamedattiaDev.github.io/AtiDocs"
               >AtiDocs</a
             >
-
-            <a
-              class="bookmark"
-              href="https://Fa3elKheer.github.io/Fa3elKheer"
-              target="_blank"
+            <a class="bookmark" href="https://Fa3elKheer.github.io/Fa3elKheer"
               >Fa3elKheer</a
             >
-            <!-- <a class="bookmark" href="https://gemini.google.com/" target="_blank">Gemini</a> -->
-            <!-- <a class="bookmark" href="https://chat.openai.com/" target="_blank">ChatGPT</a> -->
-            <!-- <a class="bookmark" href="https://www.deepseek.com/" target="_blank">DeepSeek</a> -->
-            <a
-              class="bookmark"
-              href="https://www.instagram.com/mohmd_attia/"
-              target="_blank"
-              >My Instagram</a
+            <a class="bookmark" href="https://github.com/MohamedattiaDev"
+              >My GitHub</a
             >
-
-            <a class="bookmark" href="https://x.com/Mohmd_Attia" target="_blank"
-              >My X</a
-            >
-
-            <a
-              class="bookmark"
-              href="https://www.linkedin.com/in/mohmd-attia/"
-              target="_blank"
+            <a class="bookmark" href="https://www.linkedin.com/in/mohmd-attia/"
               >My LinkedIn</a
             >
-            <a
-              class="bookmark"
-              href="https://github.com/MohamedattiaDev"
-              target="_blank"
-              >My Github</a
+            <a class="bookmark" href="https://x.com/Mohmd_Attia">My X</a>
+            <a class="bookmark" href="https://www.instagram.com/mohmd_attia/"
+              >My Instagram</a
             >
-
-            <!-- <a -->
-            <!--   class="bookmark" -->
-            <!--   href="https://youtube.com/c/DistroTube" -->
-            <!--   target="_blank" -->
-            <!--   >DistroTube</a -->
-            <!-- > -->
-            <!-- <a -->
-            <!--   class="bookmark" -->
-            <!--   href="https://www.youtube.com/c/ThePrimeagen" -->
-            <!--   target="_blank" -->
-            <!--   >ThePrimeagen</a -->
-            <!-- > -->
-            <!-- <a -->
-            <!--   class="bookmark" -->
-            <!--   href="https://www.youtube.com/c/TraversyMedia" -->
-            <!--   target="_blank" -->
-            <!--   >Traversy Media</a -->
-            <!-- > -->
-            <!-- <a -->
-            <!--   class="bookmark" -->
-            <!--   href="https://www.youtube.com/c/Fireship" -->
-            <!--   target="_blank" -->
-            <!--   >Fireship</a -->
-            <!-- > -->
-            <!-- <a -->
-            <!--   class="bookmark" -->
-            <!--   href="https://www.youtube.com/c/Computerphile" -->
-            <!--   target="_blank" -->
-            <!--   >Computerphile</a -->
-            <!-- > -->
           </div>
         </div>
 
         <div class="bookmark-set">
-          <div class="bookmark-title">Uni</div>
+          <div class="bookmark-title"><span class="icon">🎓</span> Uni</div>
           <div class="bookmark-inner-container">
-            <a class="bookmark" href="https://obs.aybu.edu.tr/" target="_blank"
-              >AYBU OBS</a
+            <a class="bookmark" href="https://obs.aybu.edu.tr/">AYBU OBS</a>
+            <a class="bookmark" href="https://aybuzem.aybu.edu.tr/">AYBUZEM</a>
+            <a class="bookmark" href="https://aybu.edu.tr/aybu/tr/duyurular"
+              >AYBU — genel duyuru</a
             >
-
-            <a
-              class="bookmark"
-              href="https://aybuzem.aybu.edu.tr/"
-              target="_blank"
-              >AYBUZEM</a
-            >
-            <a
-              class="bookmark"
-              href="https://aybu.edu.tr/aybu/tr/duyurular"
-              target="_blank"
-              >AYBU GENEL DUYURU</a
-            >
-
             <a
               class="bookmark"
               href="https://aybu.edu.tr/yazilimMuh/tr/duyurular"
-              target="_blank"
-              >AYBU Yazilim DUYURU</a
+              >AYBU — yazılım duyuru</a
             >
           </div>
         </div>
@@ -183,58 +117,90 @@
     </div>
 
     <script>
-      const getTime = () => {
-        const date = new Date();
-        const hour = date.getHours().toString().padStart(2, "0");
-        const min = date.getMinutes().toString().padStart(2, "0");
-        const sec = date.getSeconds().toString().padStart(2, "0");
-        return `${hour}:${min}:${sec}`;
+      "use strict";
+
+      // ---- clock -------------------------------------------------------
+      const clock = document.getElementById("clock");
+      const dateEl = document.getElementById("date");
+      const pad = (n) => String(n).padStart(2, "0");
+
+      const tick = () => {
+        const d = new Date();
+        clock.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(
+          d.getSeconds(),
+        )}`;
+        dateEl.textContent = d.toLocaleDateString(undefined, {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        });
       };
 
-      const prefersDark = window.matchMedia(
-        "(prefers-color-scheme: dark)",
-      ).matches;
-      document.documentElement.setAttribute(
-        "data-theme",
-        prefersDark ? "dark" : "light",
-      );
+      // Ran on window.onload before, so the clock showed the placeholder
+      // until every subresource had settled. Nothing here needs images.
+      tick();
+      setInterval(tick, 1000);
 
-      // Optional: watch for changes
-      window
-        .matchMedia("(prefers-color-scheme: dark)")
-        .addEventListener("change", (e) => {
-          document.documentElement.setAttribute(
-            "data-theme",
-            e.matches ? "dark" : "light",
-          );
-        });
-      window.onload = () => {
-        const clock = document.getElementById("clock");
-        clock.innerHTML = getTime();
-        setInterval(() => {
-          clock.innerHTML = getTime();
-        }, 1000);
+      // ---- search overlay ----------------------------------------------
+      const search = document.getElementById("search");
+      const field = document.getElementById("search-field");
+
+      // DuckDuckGo, matching c.url.searchengines DEFAULT in config.py --
+      // this used to hardcode Google, so the start page and the :open
+      // bar disagreed about where a bare query goes.
+      const ENGINE = "https://duckduckgo.com/?q=";
+
+      const openSearch = () => {
+        search.classList.add("open");
+        search.setAttribute("aria-hidden", "false");
+        field.focus();
+        field.select();
+      };
+
+      const closeSearch = () => {
+        search.classList.remove("open");
+        search.setAttribute("aria-hidden", "true");
+        field.value = "";
+        field.blur();
+      };
+
+      const submit = () => {
+        const query = field.value.trim();
+        if (!query) return;
+        // Navigate this tab rather than window.open(): the overlay used
+        // to stay up behind a brand-new tab, so the next Escape landed
+        // on a page that was no longer in front of you.
+        closeSearch();
+        location.assign(ENGINE + encodeURIComponent(query));
       };
 
       document.addEventListener("keydown", (event) => {
-        const search = document.getElementById("search");
-        const field = document.getElementById("search-field");
+        const typing = document.activeElement === field;
 
-        if (event.key === " " && document.activeElement !== field) {
-          event.preventDefault();
-          search.style.display = "flex";
-          field.focus();
-        } else if (event.key === "Escape") {
-          field.value = "";
-          search.style.display = "none";
-        } else if (event.key === "Enter" && document.activeElement === field) {
-          const query = field.value.trim();
-          if (query) {
-            window.open(
-              `https://www.google.com/search?q=${encodeURIComponent(query)}`,
-            );
-          }
+        if (event.key === "Escape") {
+          closeSearch();
+          return;
         }
+
+        if (typing) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            submit();
+          }
+          return;
+        }
+
+        // Space or / opens the overlay. Both are swallowed so the page
+        // does not scroll / qutebrowser does not open its own find bar.
+        if (event.key === " " || event.key === "/") {
+          event.preventDefault();
+          openSearch();
+        }
+      });
+
+      // Clicking the dimmed backdrop (but not the input) dismisses it.
+      search.addEventListener("mousedown", (event) => {
+        if (event.target === search) closeSearch();
       });
     </script>
   </body>

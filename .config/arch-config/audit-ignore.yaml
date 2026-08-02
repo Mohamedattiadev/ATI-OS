@@ -1,0 +1,61 @@
+description: Packages `wizard.sh --audit` must not report as drift
+
+# Deliberately installed-but-undeclared. Every entry needs a reason, or it
+# is just a way to silence the audit and let real drift back in.
+#
+# NOT a module: this file lives outside modules/ so dcli never reads it.
+
+packages:
+  # --- chosen at runtime, cannot be declared statically ---
+  - intel-ucode      # CPU-vendor specific. step_gpu picks intel-ucode or
+  - amd-ucode        # amd-ucode from /proc/cpuinfo. Declaring either would
+                     # ship the wrong microcode to half of all machines.
+
+  # --- build artefacts, not things anyone chose ---
+  # Note: anything matching *-debug is filtered by the audit itself --
+  # makepkg emits one per source build, so naming them here would be a
+  # list that grows every time a package is built from source.
+  - spirv-headers    # `pactree -r` is empty for both: nothing requires
+  - vulkan-headers   # them, leftovers from a build that no longer exists
+
+  # --- built from a vendored, pinned PKGBUILD, not from a repo ---
+  - picom-ftlabs-git
+  - picom-ftlabs-pinned
+                     # wm.yaml deliberately declares neither: the AUR
+                     # package floats on branch `next`, so the wizard's
+                     # picom-pin module builds a commit-pinned copy from
+                     # arch-config/pkgbuilds/ instead. Whichever of the two
+                     # is installed, it is intentional.
+
+  # --- duplicates of something already declared ---
+  - pcmanfm          # superseded by pcmanfm-qt (apps.yaml). The GTK build is
+                     # still installed on the ati host and still pulled in as a
+                     # dependency by parts of the LXDE stack; nothing in the
+                     # config launches it any more. Harmless to leave, not
+                     # worth reproducing on a fresh machine.
+
+  # --- conflicts with a declared package; must NOT be reproduced ---
+  - power-profiles-daemon
+                     # fights auto-cpufreq (system-tools.yaml) for the CPU
+                     # governor; archinstall installs it by default, so a
+                     # fresh machine gets the conflict without choosing it.
+                     # speed_boost.sh now disables it explicitly. Left
+                     # installed but masked-off rather than removed -- it is
+                     # a dependency of some desktop tooling.
+
+  # --- superseded on this host; present only because archinstall added
+  #     them. Declaring them would push a display manager and a second
+  #     bootloader onto every fresh machine, which is the opposite of what
+  #     the wizard's disable-dm and boot-fallback modules do. ---
+  - grub
+  - lightdm
+  - lightdm-gtk-greeter
+
+  # --- legacy DDX drivers. Modern Intel/AMD/NVIDIA all use the kernel
+  #     driver plus xorg-server's built-in modesetting DDX; these separate
+  #     X drivers are a known source of tearing and of picom's glx backend
+  #     misbehaving, which is exactly the UI this repo cares about. ---
+  - xf86-video-amdgpu
+  - xf86-video-ati
+  - xf86-video-nouveau
+  - vulkan-nouveau
