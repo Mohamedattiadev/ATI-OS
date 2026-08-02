@@ -55,15 +55,26 @@ already-installed packages are skipped, not reinstalled.
 > Something broken? [TROUBLESHOOTING.md](TROUBLESHOOTING.md) logs real cases
 > with symptom → root cause → fix.
 
-One manual follow-up the installer doesn't do: tmux's plugins (TPM) need a
-one-time bootstrap —
-```bash
-git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
-~/.tmux/plugins/tpm/bin/install_plugins
-```
-Without it, `vim-tmux-navigator`'s pane navigation and
-resurrect/continuum's save-on-interval + restore-on-start all silently
-do nothing. See [TROUBLESHOOTING.md → Tmux](TROUBLESHOOTING.md#tmux).
+There are no manual follow-up commands. tmux's plugins (TPM) used to need
+a one-time bootstrap by hand; that is now the `tmux-tpm` module and runs
+as part of the install. Without it `vim-tmux-navigator`'s pane navigation
+and resurrect/continuum's save-on-interval + restore-on-start all
+silently do nothing — tmux starts fine and simply ignores every
+`set -g @plugin` line. See
+[TROUBLESHOOTING.md → Tmux](TROUBLESHOOTING.md#tmux).
+
+Two things still want a decision only you can make, because both come
+down to choosing a password:
+
+- **Passwords** (`Mod+p` `p`) — the installer starts Vaultwarden on
+  `127.0.0.1:8222` and points `rbw` at it, but the account is yours to
+  create: open <https://127.0.0.1:8222> (the `s` matters — the web vault
+  refuses plain http), pick a master password, then hit the binding and
+  enter your email once. See [Passwords](#passwords).
+- **Gemini** *(entirely optional)* — the translators and `rofi_anki`
+  gain AI synonyms and example sentences when `GEMINI_API_KEY` is set in
+  `~/.config/secrets.env` (mode 600, never committed). All three work
+  without it; the AI sections are omitted rather than the tool failing.
 
 ---
 
@@ -500,6 +511,114 @@ shell is set to fish (wizard step `login-shell`) so the TTY matches what kitty
 already forces. Without it the TTY drops to bash and `letsgo` is
 `command not found` — exactly when you need it, after X has died. Revert with
 `chsh -s /usr/bin/bash $USER`.
+
+---
+
+## Passwords
+
+`Mod+p` `p` opens a rofi picker over your vault. **Enter copies the
+password** and wipes the clipboard 30 seconds later.
+
+The hint line only advertises the three you reach for — `↵` copy,
+`Alt+n` new, `Alt+x` delete — but the full set is bound:
+
+| key | action |
+|---|---|
+| `↵` | copy password (clipboard cleared after 30s) |
+| `Alt+u` | copy username |
+| `Alt+t` | copy TOTP code |
+| `Alt+o` | open the entry's website |
+| `Alt+a` | type the password into the window that had focus — never touches the clipboard |
+| `Alt+n` | new entry (generate a 24-char password, or type your own) |
+| `Alt+e` | edit — choose password or username |
+| `Alt+x` | delete an entry |
+| `Alt+s` | force a sync |
+
+Behind it is **Vaultwarden** — a Rust reimplementation of the Bitwarden
+server — running on `127.0.0.1:8222`, read through `rbw`. Vaultwarden
+speaks the Bitwarden API, which is the whole point: the **official
+Bitwarden phone apps** sync against it, so there is no bespoke mobile
+client to trust.
+
+The installer starts the server and points `rbw` at it. You create the
+account, once:
+
+1. Open <https://127.0.0.1:8222> and register. The master password is the
+   one thing nothing here can choose for you.
+2. Press `Mod+p` `p` and enter that email when asked. `rbw` prompts for
+   the master password through pinentry and keeps the vault unlocked for
+   15 minutes.
+
+### Browser extension
+
+This one needs nothing extra — the local cert is already trusted by the
+browser, because mkcert installs its CA into the NSS store too.
+
+1. Install the **Bitwarden** extension from the store.
+2. Open it and, **before logging in**, click the ⚙ cog (top-left of the
+   login screen) → *Self-hosted environment*.
+3. Server URL: `https://127.0.0.1:8222` — the `s` matters.
+4. Save, then log in with your email and master password.
+
+### Using it from your phone
+
+The server listens on loopback only, deliberately. **Do not open port
+8222 to your network or the internet.**
+
+Two things make a LAN address useless here, and both are worth knowing
+before you try it:
+
+- The Bitwarden app refuses plain HTTP outright — the web vault has a
+  hard `url.startsWith("https://")` check with no localhost exception.
+- Since Android API 24, apps do not trust user-installed CAs. So putting
+  the mkcert root certificate on the phone still leaves the app
+  rejecting the connection. This is the step that eats an evening.
+
+[Tailscale](https://tailscale.com) sidesteps both: `tailscale cert`
+issues a **publicly trusted** certificate for a `*.ts.net` name, so the
+app accepts it with nothing installed, and only your own devices can
+reach the server.
+
+**On the laptop**, all of it is automated except the login:
+
+```bash
+sudo tailscale up                                     # opens a login URL
+# enable MagicDNS + HTTPS Certificates in the admin console, then:
+./wizard.sh --yes --only=vaultwarden-phone
+```
+
+That module enables `tailscaled` and publishes the proxy. It uses
+`tailscale serve` rather than rebinding Vaultwarden, because one process
+can only bind one address — rebinding to the tailnet IP would take
+`127.0.0.1` away and break both `rofi_pass` and the browser extension.
+The proxy terminates TLS with the tailnet's own publicly-trusted
+certificate and forwards to the local listener, so **nothing is exposed
+to your LAN**.
+
+It stops with a hint if either piece is missing, because neither can be
+done from the machine:
+
+- `sudo tailscale up` — needs a browser and your account
+- **MagicDNS** and **HTTPS Certificates**, both on at
+  <https://login.tailscale.com/admin/dns> — without them `tailscale cert`
+  answers *"your Tailscale account does not support getting TLS certs"*
+
+**On the phone:**
+
+1. Install **Tailscale**, sign in with the same account.
+2. Install **Bitwarden**.
+3. Open Bitwarden and, **before logging in**, tap the ⚙ cog →
+   *Self-hosted environment*.
+4. Server URL: `https://<host>.<tailnet>.ts.net:8222`
+5. Log in with your email and master password.
+
+One honest limitation, since it is the usual reason people abandon this
+setup: **a laptop is not an always-on server.** With the lid shut, the
+phone can still read the vault it has already cached, but it cannot sync
+or save new entries until the laptop is back. If that matters, move
+Vaultwarden to something that stays on — a Raspberry Pi or a small VPS —
+and repoint `rbw config set base_url`. Nothing else in this setup
+changes.
 
 ---
 

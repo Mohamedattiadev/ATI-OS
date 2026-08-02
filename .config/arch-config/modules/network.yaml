@@ -6,6 +6,12 @@ packages:
   # there, so a fresh machine got the tray applet with nothing to talk to
   # and no network GUI at all.
   - networkmanager
+  # Private mesh network. Two jobs here: it is how the phone reaches the
+  # local Vaultwarden (Mod+p p) without opening a port to the LAN or the
+  # internet, and `tailscale cert` issues a publicly-trusted certificate
+  # for the *.ts.net name -- the only practical way to satisfy the
+  # Bitwarden app, since Android does not trust user-installed CAs.
+  - tailscale
   - iwd
   - wpa_supplicant
   - wireless_tools

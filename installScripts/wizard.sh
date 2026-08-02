@@ -232,7 +232,7 @@ declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
   sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts simplenote ui-scale githooks
   pacman-guard boot-fallback login-shell
-  touchpad xinit xresources xmodmap lid image-envs flatpak piper whisper
+  touchpad xinit xresources xmodmap lid image-envs flatpak piper ankiconnect vaultwarden vaultwarden-phone tmux-tpm whisper
   whisper-fast mic-gain
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes dark-mode browser-flags browser-memory chrome-policy
@@ -479,6 +479,10 @@ _reg lid               "Lid = ignore"        System    "Never sleep on lid close
 _reg image-envs        "Image env"           Dotfiles  "Suppress VIPS warnings + ensure ~/tmp (fish TMPDIR)"    "step_image_envs"
 _reg flatpak           "Flatpak (legacy)"    Apps      "Uninstall-only: qdrop replaced flathub/collector"       "step_flatpak"
 _reg piper             "Piper voices"        Media     "EN + DE TTS voices (~60MB)"                             "step_piper"
+_reg ankiconnect       "AnkiConnect"         Media     "Anki addon rofi_anki talks to on :8765 (~26KB)"          "step_ankiconnect"
+_reg vaultwarden       "Vaultwarden"         Apps      "Local password server on :8222 + rbw for Mod+p p"        "step_vaultwarden"
+_reg vaultwarden-phone "Vaultwarden on phone" Apps     "Tailscale proxy so the Bitwarden app can reach it"        "step_vaultwarden_phone"
+_reg tmux-tpm          "tmux plugins (TPM)"  Dotfiles  "Clone TPM + install plugins (was a manual README step)"   "step_tmux_tpm"
 _reg whisper           "Whisper models"      Media     "base.en (live dictation) + small.en (batch) STT (~630MB)" "step_whisper"
 _reg whisper-fast      "Whisper fast build"  Media     "Rebuild whisper-cli/-stream Release (AUR pkg is ~13x slower unoptimized)" "step_whisper_fast"
 _reg mic-gain          "Mic gain fix"        System    "Reassert mic capture gain WirePlumber resets on login"  "step_mic_gain"
@@ -1093,6 +1097,225 @@ step_piper() {
   done
 }
 
+# AnkiConnect: the HTTP bridge rofi_anki (Mod+p a) posts cards to.
+#
+# Without it, rofi_anki reaches a fully built card and then fails on the
+# last step, because nothing is listening on :8765 -- and the addon is
+# the one piece of that flow that cannot be stowed, since Anki loads
+# addons from its own data dir rather than from ~/.config.
+#
+# 2055492159 is the AnkiWeb id. The v/p query pair is the API version and
+# Anki point version the addon manager would normally send; the endpoint
+# 400s without them and 404s with "your version of Anki is too old" if p
+# is omitted entirely.
+step_ankiconnect() {
+  local id=2055492159
+  local dir="$HOME/.local/share/Anki2/addons21/$id"
+  local url="https://ankiweb.net/shared/download/${id}?v=2.1&p=50"
+
+  (( DRY_RUN )) && { _DIM "  [dry] install AnkiConnect -> $dir"; return 0; }
+  [[ -f "$dir/__init__.py" ]] && return 0
+
+  command -v unzip >/dev/null 2>&1 || { _ERR "ankiconnect needs unzip"; return 1; }
+
+  local tmp; tmp="$(mktemp -d)" || return 1
+  retry_net 3 5 curl -fsSL -o "$tmp/ankiconnect.zip" "$url" || {
+    _ERR "AnkiConnect download failed after 3 retries"; rm -rf "$tmp"; return 1; }
+
+  run "mkdir -p $dir"
+  unzip -o -q "$tmp/ankiconnect.zip" -d "$dir" || {
+    _ERR "AnkiConnect unzip failed"; rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+
+  # Anki only treats a directory as an installed addon when meta.json is
+  # present; without it the addon loads but shows as untracked in the UI.
+  cat >"$dir/meta.json" <<'EOF'
+{
+  "name": "AnkiConnect",
+  "mod": 0,
+  "min_point_version": 0,
+  "max_point_version": 0,
+  "branch_index": 0,
+  "disabled": false
+}
+EOF
+  # Decks and the note type are created by rofi_anki itself on first run,
+  # so nothing else is needed here. Anki must be restarted to pick this up.
+}
+
+# Vaultwarden: the password server behind Mod+p p (rofi_pass -> rbw).
+#
+# The packages come from arch-config (apps.yaml); this module does the
+# part packages cannot: bind the server to loopback, point it at the web
+# vault, start it, and aim rbw at it.
+#
+# Settings live in /etc/vaultwarden.local.env, referenced from a systemd
+# drop-in, rather than in /etc/vaultwarden.env. Two separate reasons:
+#
+#   * That file is 32KB of commented upstream defaults owned by the
+#     package, so local edits get clobbered on upgrade or leave a
+#     .pacnew to merge by hand.
+#   * It must be EnvironmentFile=, not Environment=. systemd applies
+#     EnvironmentFile= AFTER Environment=, so the packaged file (which
+#     sets WEB_VAULT_ENABLED=false) beats any Environment= line a
+#     drop-in adds -- verified the hard way: ROCKET_* took effect
+#     because the packaged file does not set them, while the web vault
+#     stayed off and served 404 until this was an EnvironmentFile.
+#
+# Deliberately loopback-only. Reaching this from the phone is a Tailscale
+# job (see README) -- never an open port. And the account itself is not
+# created here: that needs a master password, which is yours to choose.
+step_vaultwarden() {
+  if ! command -v vaultwarden >/dev/null 2>&1; then
+    _WARN "vaultwarden not installed -- skipping (check arch-config apps.yaml)"
+    return 0
+  fi
+
+  local dropin=/etc/systemd/system/vaultwarden.service.d/10-local.conf
+  local envfile=/etc/vaultwarden.local.env
+  (( DRY_RUN )) && { _DIM "  [dry] write $envfile + $dropin, enable vaultwarden.service"; return 0; }
+
+  # TLS is not optional here. The Bitwarden web vault hard-checks the
+  # URL prefix in its bundle:
+  #   if (!url.startsWith("https://") && !isDev()) throw "Insecure URL"
+  # There is no localhost or 127.0.0.1 exception, so over plain http the
+  # signup page dies with "Insecure URL not allowed" before you can
+  # create the account.
+  #
+  # mkcert rather than a bare openssl self-signed cert: it installs its
+  # local CA into the system trust store AND the browser's NSS store, so
+  # Brave shows no warning page and rbw's TLS verification passes. A
+  # self-signed cert would need --insecure-style workarounds in both.
+  local tlsdir=/var/lib/vaultwarden/tls
+  if command -v mkcert >/dev/null 2>&1; then
+    if [[ ! -s "$tlsdir/cert.pem" ]]; then
+      run "mkcert -install"
+      local tmpc; tmpc="$(mktemp -d)"
+      ( cd "$tmpc" && mkcert -cert-file vw.crt -key-file vw.key 127.0.0.1 localhost ::1 >/dev/null 2>&1 )
+      run "sudo install -d -m 750 -o vaultwarden -g vaultwarden $tlsdir"
+      run "sudo install -o vaultwarden -g vaultwarden -m 644 $tmpc/vw.crt $tlsdir/cert.pem"
+      run "sudo install -o vaultwarden -g vaultwarden -m 640 $tmpc/vw.key $tlsdir/key.pem"
+      rm -rf "$tmpc"
+    fi
+  else
+    _WARN "mkcert missing -- vaultwarden will run on http, and the web vault"
+    _WARN "signup page will refuse to load (\"Insecure URL not allowed\")."
+  fi
+
+  sudo tee "$envfile" >/dev/null <<'EOF'
+# Local Vaultwarden overrides, written by the dotfiles wizard.
+ROCKET_ADDRESS=127.0.0.1
+ROCKET_PORT=8222
+WEB_VAULT_ENABLED=true
+WEB_VAULT_FOLDER=/usr/share/webapps/vaultwarden-web
+EOF
+  if [[ -s "$tlsdir/cert.pem" ]]; then
+    printf 'ROCKET_TLS={certs="%s/cert.pem",key="%s/key.pem"}\n' "$tlsdir" "$tlsdir" |
+      sudo tee -a "$envfile" >/dev/null
+  fi
+  run "sudo chmod 640 $envfile"
+  run "sudo install -d -m 755 /etc/systemd/system/vaultwarden.service.d"
+  sudo tee "$dropin" >/dev/null <<'EOF'
+# Local Vaultwarden setup, written by the dotfiles wizard.
+# EnvironmentFile, not Environment: see /etc/vaultwarden.local.env.
+[Service]
+EnvironmentFile=/etc/vaultwarden.local.env
+EOF
+  run "sudo systemctl daemon-reload"
+  run "sudo systemctl enable --now vaultwarden.service"
+
+  # Aim rbw at the local server. Email stays unset: rofi_pass asks for it
+  # on first run, because it is per-person rather than per-machine.
+  if command -v rbw >/dev/null 2>&1; then
+    run "rbw config set base_url https://127.0.0.1:8222"
+    run "rbw config set pinentry pinentry-gtk"
+    run "rbw config set lock_timeout 900"
+  fi
+}
+
+# tmux plugin manager + the plugins .tmux.conf declares.
+#
+# This was the one step the README told you to run by hand. Without it
+# vim-tmux-navigator's pane navigation and resurrect/continuum's
+# save-on-interval and restore-on-start all silently do nothing -- tmux
+# starts fine and simply ignores every `set -g @plugin` line, which is
+# the kind of failure nobody notices until they need the feature.
+step_tmux_tpm() {
+  local tpm="$HOME/.tmux/plugins/tpm"
+
+  (( DRY_RUN )) && { _DIM "  [dry] clone TPM + install_plugins"; return 0; }
+
+  if [[ ! -d "$tpm/.git" ]]; then
+    run "mkdir -p $HOME/.tmux/plugins"
+    retry_net 3 5 git clone --depth 1 https://github.com/tmux-plugins/tpm "$tpm" || {
+      _ERR "TPM clone failed after 3 retries"; return 1; }
+  fi
+
+  # install_plugins is idempotent: already-cloned plugins are skipped.
+  # It does not need a running server, but it does need $HOME set, which
+  # is why it runs here rather than from a tmux hook.
+  if [[ -x "$tpm/bin/install_plugins" ]]; then
+    run "$tpm/bin/install_plugins" || _WARN "TPM install_plugins reported a problem"
+  fi
+}
+
+# Phone access to the local Vaultwarden, over Tailscale.
+#
+# Everything here is idempotent and safe to re-run: it enables the
+# daemon, and once you are logged in it publishes the proxy. It cannot
+# log you in -- that needs a browser and your account -- so on a fresh
+# machine it prints the URL and stops, and you re-run it (or just run
+# ./wizard.sh --yes --only=vaultwarden-phone) afterwards.
+#
+# `tailscale serve` rather than rebinding vaultwarden to the tailnet IP:
+# one process can only bind one address, so rebinding would take
+# 127.0.0.1 away and break rofi_pass and the browser extension. The
+# proxy terminates TLS with the tailnet's own publicly-trusted cert and
+# forwards to the local https listener, so both paths keep working and
+# nothing is exposed to the LAN.
+step_vaultwarden_phone() {
+  if ! command -v tailscale >/dev/null 2>&1; then
+    _WARN "tailscale not installed -- skipping (check arch-config network.yaml)"
+    return 0
+  fi
+
+  (( DRY_RUN )) && { _DIM "  [dry] enable tailscaled + tailscale serve -> 127.0.0.1:8222"; return 0; }
+
+  run "sudo systemctl enable --now tailscaled"
+
+  # Logged in? `tailscale status` says "Logged out." and exits non-zero.
+  local dnsname=""
+  dnsname="$(tailscale status --json 2>/dev/null |
+    sed -n 's/.*"DNSName"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+  dnsname="${dnsname%.}"
+
+  if [[ -z "$dnsname" ]]; then
+    _WARN "tailscale is not logged in yet. Run:"
+    _WARN "    sudo tailscale up"
+    _WARN "then re-run:  ./wizard.sh --yes --only=vaultwarden-phone"
+    return 0
+  fi
+
+  # Publish the proxy. Do NOT pre-flight this with `tailscale cert`:
+  # that command refuses to write to /dev/null, so a probe using it
+  # reports failure even when certificates work perfectly -- which is
+  # exactly what an earlier version of this module did. Run the real
+  # thing and read its exit status.
+  #
+  # It fails while MagicDNS and HTTPS Certificates are off in the admin
+  # console ("your Tailscale account does not support getting TLS
+  # certs"). Nothing local can enable those, hence the hint.
+  if sudo tailscale serve --bg "https+insecure://127.0.0.1:8222" >/dev/null 2>&1; then
+    _DIM "  phone URL:  https://${dnsname}"
+    _DIM "  set that as Bitwarden's self-hosted server, before logging in."
+  else
+    _WARN "Could not publish the Vaultwarden proxy for $dnsname."
+    _WARN "Enable BOTH at https://login.tailscale.com/admin/dns :"
+    _WARN "    MagicDNS   ·   HTTPS Certificates"
+    _WARN "then re-run:  ./wizard.sh --yes --only=vaultwarden-phone"
+  fi
+}
+
 step_whisper() {
   local dir="$HOME/.local/share/whisper"
   run "mkdir -p $dir"
@@ -1695,6 +1918,30 @@ uninstall_radios()            { :; }
 uninstall_arch_config()       { :; }
 uninstall_flatpak()           { :; }
 uninstall_piper()             { :; }  # models may be shared
+# Plugins are cheap to refetch, but removing them would break a running
+# tmux config for no benefit. Left in place, like the model downloads.
+uninstall_tmux_tpm()          { :; }
+# Drops the proxy only. Tailscale itself stays up -- it is a general
+# purpose network, not something this module owns.
+uninstall_vaultwarden_phone() {
+  run "sudo tailscale serve --https=443 off" || true
+}
+# Removes only the addon directory. Anki's collection, decks and cards
+# live elsewhere and are never touched by this.
+uninstall_ankiconnect() {
+  run "rm -rf $HOME/.local/share/Anki2/addons21/2055492159"
+}
+# Stops the server and drops the drop-in. /var/lib/vaultwarden -- the
+# actual vault -- is deliberately left alone: deleting someone's
+# passwords is not something an uninstaller should do quietly.
+uninstall_vaultwarden() {
+  run "sudo systemctl disable --now vaultwarden.service" || true
+  run "sudo rm -f /etc/systemd/system/vaultwarden.service.d/10-local.conf"
+  run "sudo rm -f /etc/vaultwarden.local.env"
+  run "sudo rm -rf /var/lib/vaultwarden/tls"
+  run "sudo systemctl daemon-reload" || true
+  _DIM "  vault data kept at /var/lib/vaultwarden (delete by hand if you mean it)"
+}
 uninstall_whisper()           { :; }  # models may be shared
 uninstall_whisper_fast()      { :; }  # leave the fast binaries in place -- reverting to the ~13x slower pacman ones helps no one
 uninstall_mic_gain() {
@@ -1729,6 +1976,10 @@ UMOD_CMD[lid]="uninstall_lid"
 UMOD_CMD[image-envs]="uninstall_image_envs"
 UMOD_CMD[flatpak]="uninstall_flatpak"
 UMOD_CMD[piper]="uninstall_piper"
+UMOD_CMD[ankiconnect]="uninstall_ankiconnect"
+UMOD_CMD[vaultwarden]="uninstall_vaultwarden"
+UMOD_CMD[vaultwarden-phone]="uninstall_vaultwarden_phone"
+UMOD_CMD[tmux-tpm]="uninstall_tmux_tpm"
 UMOD_CMD[whisper]="uninstall_whisper"
 UMOD_CMD[whisper-fast]="uninstall_whisper_fast"
 UMOD_CMD[mic-gain]="uninstall_mic_gain"

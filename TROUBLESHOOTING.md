@@ -511,6 +511,146 @@ subsystem. Each entry: **symptom → root cause → fix**.
 
 ## Rofi
 
+### Translator returns only one word, no dictionary popup
+- **Symptom:** highlight a word, `Mod+p` `e`, and a bare translation
+  lands in the clipboard with no rofi picker ever appearing.
+- **Root cause:** `wordreference.py` scraped wordreference.com, which now
+  answers **HTTP 418** to this host on every request. Verified across
+  http and https, bare UA / full Chrome UA / UA+Accept headers, from both
+  urllib and curl — twelve combinations, all 418 with a 115-byte body. It
+  is an IP/TLS-level block, not a header problem, so no request tweak
+  brings it back. Every lookup fell into the bare `except` at the bottom
+  of the script, whose fallback is exactly "dump `trans -b` to clipboard".
+- **Fix:** the dictionary source is now translate-shell's own `trans -d`
+  — part-of-speech tagged definitions, per-sense synonyms and usage
+  examples, nothing to block. BeautifulSoup is no longer a dependency.
+
+### Translator / rofi_anki show empty synonyms and examples
+- **Symptom:** those sections render with nothing under them. `rofi_anki`
+  is worse: it exits before drawing any menu at all.
+- **Root cause:** no `GEMINI_API_KEY` anywhere. Both lines in
+  `/etc/environment` were commented out **and** empty
+  (`#GEMINI_API_KEY=`, exactly 16 characters). `rofi_anki` grepped for
+  `^GEMINI_API_KEY=`, matched nothing and hit its `exit 1`; the
+  translators got `""` from `os.getenv` and rendered blank sections with
+  no error at all.
+- **Fix:** keys live in `~/.config/secrets.env` (mode 600, git-ignored),
+  loaded by `load_secrets()` in `rofi_common.sh`. The key is **optional
+  everywhere** — `rofi_anki` falls back to translate-shell for the
+  translation and omits the AI fields instead of aborting.
+- **Related:** `/etc/environment` is world-readable, and nothing qtile
+  spawns re-reads it without a full re-login. Wrong place for a secret
+  on both counts.
+
+### rofi_anki builds a whole card, then fails at the last step
+- **Symptom:** every prompt answered, then "Cannot reach AnkiConnect".
+- **Root cause:** two independent things. The AnkiConnect addon was not
+  installed (nothing listening on 8765), and the auto-start path slept a
+  flat 4 seconds before respawning itself in the background — Anki 26.05
+  needs ~12s to open its collection here, so the respawn raced startup
+  and lost.
+- **Fix:** `wizard.sh --yes --only=ankiconnect` installs the addon; the
+  script now polls the port for up to 45s in-process instead of sleeping.
+  It also creates its decks on every run (`createDeck` is idempotent) —
+  a fresh profile has only `Default`, and `addNote` rejects an unknown
+  deck outright.
+
+### Shared-links picker shows fewer links than the file holds
+- **Symptom:** you paste a URL into `Shared_Links.md` and it never shows
+  up in `Mod+p` `z`.
+- **Root cause:** the parser only matched `- [title](url)` lines. Bare
+  URLs on a line of their own were skipped silently — 10 of 25 links.
+- **Fix:** bare URLs are first-class now and get a title derived from the
+  URL itself. Retitling one promotes it to the markdown form.
+
+### Wallpaper picker (dm-setbg) lists nothing
+- **Symptom:** empty menu, while every other wallpaper tool works fine.
+- **Root cause:** `setbg_dir="$HOME/Pictures/Wallpaper"` — singular. The
+  directory is `~/Pictures/Wallpapers`, which is what the `wallpapers`
+  module clones into and what `wal-precompile` and `wal-audit` read.
+- **Fix:** corrected to the plural. The menu lists 363 wallpapers now.
+
+### dm-documents: "file not found" for some PDFs but not others
+- **Symptom:** `Mod+p` `d`, pick a PDF, okular reports a missing file —
+  only for certain entries.
+- **Root cause:** the real path was reconstructed from the *display
+  label* by reversing sed substitutions, and `s/.pdf//g` has an
+  **unescaped dot**, so it ate the character before the extension too.
+  `Mohamed Attia(CV) .pdf` came back as `Mohamed Attia(CV).pdf`. 2 of 10
+  PDFs failed this way. The abbreviations were not reversible either: any
+  path merely containing `Pic` became `Pictures` on the way back.
+- **Fix:** the real path is stored alongside the label rather than
+  recomputed from it. Abbreviations are cosmetic only.
+
+### rbw entries created with an empty password
+- **Symptom:** an entry added from `rofi_pass` exists with the right name
+  and username, but `rbw get` answers *"entry had no password"*.
+- **Root cause:** `rbw add --help` says the password comes from `$EDITOR`.
+  That is only true when **stdin is a terminal**. Given a pipe or a
+  redirect, rbw reads the password from stdin and never invokes the
+  editor at all — an instrumented `$EDITOR` wrapper logged nothing
+  whatsoever, while the entry was still created, empty.
+- **Fix:** `printf '%s\n' "$pw" | rbw add NAME USER`. Same for
+  `rbw edit`. This is also the safer route: the editor path would have
+  had to materialise the password in a temp file, whereas a pipe never
+  touches the disk and never appears in argv.
+
+### rbw refuses to read or delete an entry: "multiple entries found"
+- **Symptom:** `rbw get`/`remove`/`edit` fail with
+  `multiple entries found: user@Name, user@Name`, and the entry becomes
+  impossible to act on from the picker.
+- **Root cause:** `rbw add` happily creates a second entry with the same
+  name *and* username, and from then on any name-based lookup is
+  ambiguous. Trivial to hit while retrying a failed add.
+- **Fix:** address entries by **UUID**, which every rbw `NEEDLE` accepts:
+  `rbw ls --fields id,name,user`. `rofi_pass` now stores the id as the
+  first field of every row and uses it for get, code, edit and remove —
+  name+user is display text only. To clear existing duplicates, remove
+  them by id.
+
+### Pressing Enter in rofi_pass does nothing at all
+- **Symptom:** the picker opens, entries are listed, Enter closes it and
+  nothing is copied. No error, no notification, empty clipboard.
+- **Root cause:** `copy_to_clipboard()` in `rofi_common.sh` tested
+  `[[ -n "$WAYLAND_DISPLAY" ]]` with a bare reference. Every caller runs
+  under `set -u`, and on an X11 session that variable is not set, so bash
+  aborted the script mid-function. `wl-copy` being installed is what made
+  the branch reachable at all — with it absent the test short-circuits
+  and the bug never fires, which is why it looked X11-specific.
+- **Fix:** `${WAYLAND_DISPLAY:-}`. The same latent abort affected
+  `rofi_shared` and `rofi_translator`, which share the helper.
+- **Lesson:** under `set -u`, every optional environment variable needs
+  `:-`. A bare `$FOO` in a helper is a script-wide abort waiting for the
+  one machine where `FOO` is unset.
+
+### `tailscale cert` fails: "account does not support getting TLS certs"
+- **Symptom:** HTTP 500 from `tailscale cert <host>.<tailnet>.ts.net`.
+- **Root cause:** **MagicDNS** and **HTTPS Certificates** are both off in
+  the admin console. Neither can be switched on from the machine.
+- **Fix:** enable both at <https://login.tailscale.com/admin/dns>, then
+  re-run `./wizard.sh --yes --only=vaultwarden-phone`.
+- **Related trap:** do not pre-flight this with
+  `tailscale cert --cert-file /dev/null`. That command refuses to write
+  to `/dev/null`, so the probe reports failure even when certificates
+  work — the wizard module briefly did exactly that and printed the
+  admin-console warning on a perfectly healthy system.
+
+### Vaultwarden web vault 404s while the API works
+- **Symptom:** `http://127.0.0.1:8222/api/config` returns 200, but `/`
+  returns 404, so there is no page on which to create the account.
+- **Root cause:** settings were added as `Environment=` lines in a
+  systemd drop-in, but the packaged unit carries
+  `EnvironmentFile=/etc/vaultwarden.env`, and **systemd applies
+  `EnvironmentFile=` after `Environment=`**. That file sets
+  `WEB_VAULT_ENABLED=false`, so it won. Confusingly, `ROCKET_ADDRESS`
+  and `ROCKET_PORT` from the same drop-in *did* take effect — only
+  because the packaged file does not set those. `systemctl show` also
+  reports the drop-in values, so it looks correct; the truth is in
+  `/proc/$(systemctl show -p MainPID --value vaultwarden)/environ`.
+- **Fix:** put the overrides in `/etc/vaultwarden.local.env` and
+  reference it with `EnvironmentFile=` from the drop-in, so it is read
+  last and wins.
+
 ### rofi-kill takes 10-18 seconds to open
 - **Symptom:** Alt+Q (kill picker) freezes before menu appears.
 - **Root cause:** bash `while read` loop iterating 280+ processes with

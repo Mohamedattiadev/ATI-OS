@@ -26,7 +26,27 @@ packages:
   - kate
   - copyq
   - rofi
+  # rofi-pass drives pass(1) against ~/.password-store. The Mod+p p
+  # binding it served was a duplicate that could never fire, and no
+  # password store exists on this machine; passwords go through
+  # rofi_pass -> Vaultwarden instead. Kept declared only because pass
+  # itself is still useful standalone -- drop both if you never use it.
   - rofi-pass
+  # Password manager. Vaultwarden speaks the Bitwarden API, so the
+  # official Bitwarden phone apps sync against it -- no bespoke mobile
+  # client. rbw is the Rust CLI that the rofi_pass picker (Mod+p p)
+  # reads through; vaultwarden-web is only needed to create and manage
+  # the account from a browser.
+  - vaultwarden
+  - vaultwarden-web
+  - rbw
+  # The web vault refuses to load over plain http ("Insecure URL not
+  # allowed" -- a hard https:// prefix check in its bundle, with no
+  # localhost exception). mkcert issues a cert whose CA it installs into
+  # both the system trust store and the browser's NSS store, so there is
+  # no warning page and rbw's TLS verification passes.
+  - mkcert
+  - nss
   - dunst
   - feh
   - arandr
