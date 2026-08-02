@@ -17,7 +17,12 @@ d=$'\033[90m'; r=$'\033[31m'; g=$'\033[32m'; o=$'\033[0m'
 
 printf '%s[pre-commit]%s validating…\n' "$d" "$o"
 
-if ! "$REPO/installScripts/validate.sh" --quiet; then
+# A commit that deletes/renames validate.sh, or a checkout where it lost its
+# +x bit, would otherwise abort the hook on "No such file" under set -e and
+# read as a validation failure. Missing validator = nothing to enforce.
+if [[ ! -x "$REPO/installScripts/validate.sh" ]]; then
+  printf '%s[pre-commit]%s validate.sh not present/executable — validation skipped\n' "$d" "$o"
+elif ! "$REPO/installScripts/validate.sh" --quiet; then
   printf '%s[pre-commit] validate.sh failed — commit refused%s\n' "$r" "$o" >&2
   printf '%s             run ./installScripts/validate.sh to see details%s\n' "$d" "$o" >&2
   printf '%s             or: git commit --no-verify%s\n' "$d" "$o" >&2
@@ -29,8 +34,9 @@ fi
 # worktree, a fresh clone) it would fail for reasons that have nothing to
 # do with the commit -- so treat a non-Arch or non-deployed host as "not
 # applicable" rather than as a failure.
-if [[ -f /etc/arch-release ]] && command -v pacman >/dev/null 2>&1 \
-   && [[ "$(readlink -f "$HOME/.dotfiles" 2>/dev/null)" == "$REPO" ]]; then
+if command -v pacman >/dev/null 2>&1 \
+   && [[ -x "$REPO/installScripts/wizard.sh" ]] \
+   && [[ "$(readlink -f "$HOME/.dotfiles" 2>/dev/null)" == "$(readlink -f "$REPO")" ]]; then
   if ! "$REPO/installScripts/wizard.sh" --audit >/dev/null 2>&1; then
     printf '%s[pre-commit] package drift or a missing declared package%s\n' "$r" "$o" >&2
     "$REPO/installScripts/wizard.sh" --audit 2>&1 | sed 's/^/    /' >&2 || true

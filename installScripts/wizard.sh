@@ -225,18 +225,29 @@ run() {
   fi
 }
 
+# Read-only privileged probes -- `sudo test -e`, `sudo bootctl --print-esp-path`
+# and friends. A --dry-run is supposed to be free: it changes nothing and it
+# should need nothing. These probes were plain `sudo`, so previewing an install
+# on a machine with no cached credentials stopped dead on a password prompt for
+# a run that was never going to write anything. Under --dry-run they degrade to
+# non-interactive sudo and simply report "unknown", which at worst makes the
+# preview show a skip.
+sudo_probe() {
+  if (( DRY_RUN )); then sudo -n "$@" 2>/dev/null; else sudo "$@"; fi
+}
+
 # ─── MODULE DEFINITIONS ──────────────────────────────────────────────
 # Each module: id | group | title | 1-line desc | shell to execute
 # Group is only used for the picker header — keep display order stable.
 declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
   sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts simplenote ui-scale githooks
-  pacman-guard boot-fallback login-shell
+  pacman-guard boot-fallback boot-splash login-shell
   touchpad xinit xresources xmodmap lid image-envs flatpak piper ankiconnect vaultwarden vaultwarden-phone tmux-tpm whisper
   whisper-fast mic-gain scrcpy
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes dark-mode browser-flags browser-memory chrome-policy
-  dcli-sync-extra boot-splash
+  dcli-sync-extra
 )
 
 # Opt-in modules: valid --only= targets, and listed (unchecked) in the
@@ -247,7 +258,16 @@ MOD_ORDER=(
 # are a second pass you run when you actually need them, on your own
 # schedule. Keeping them out of round one is what lets the first boot
 # stay short and stay predictable.
-OPTIN_MODS=(dcli-sync-extra boot-splash)
+#
+# boot-splash used to be here. It is part of the default run now: the boot
+# screen is as much of the look as the bar is, and leaving it out meant a
+# machine installed from this repo still booted to a wall of kernel log.
+# What made it safe to promote is ORDERING -- it sits immediately after
+# boot-fallback in MOD_ORDER, so the verbose LTS entries (written without
+# quiet/splash on purpose) always exist before anything touches the
+# cmdline of the primary one. A splashed boot that hangs is then one menu
+# pick away from a boot that tells you why.
+OPTIN_MODS=(dcli-sync-extra)
 _is_optin() {
   local id m
   id="$1"
@@ -415,6 +435,12 @@ A default run leaves them out:
                      widgets. Install later with:
                        ./wizard.sh --yes --only=dcli-sync-extra
 
+Everything else, boot-splash included, runs in a default `./install.sh`.
+boot-splash edits the kernel cmdline and rebuilds the initramfs; it runs
+straight after boot-fallback, so the verbose LTS rescue entries exist
+before the splash is ever switched on. Opt out with:
+  ./install.sh --skip=boot-splash        (reverse: ./wizard.sh --uninstall --only=boot-splash)
+
 HELP
   printf 'Module ids (%d, generated from MOD_ORDER; unknown ids are rejected):\n' "${#MOD_ORDER[@]}"
   printf '%s\n' "${MOD_ORDER[@]}" | fmt -w 72 | sed 's/^/  /'
@@ -498,8 +524,11 @@ _reg dark-mode         "Dark preference"     Themes    "Advertise prefer-dark vi
 _reg browser-flags     "Browser flags"       Browsers  "brave/chrome/chromium wal theme extension flags"        "step_browser_flags"
 _reg browser-memory    "Browser memory saver" Browsers "Policy: discard idle tabs, keep whatsapp/chatgpt live"  "step_browser_memory"
 _reg chrome-policy     "Chrome theme policy" Browsers  "Sign .pem + install /etc/opt/chrome force_installed"    "step_chrome_policy"
-_reg dcli-sync-extra   "Optional packages"   Optional  "docker · jdk · qemu · printing (opt-in, run later)"     "step_dcli_sync_extra"
-_reg boot-splash       "Boot splash"         Optional  "Your name + progress bar instead of kernel text (opt-in; edits cmdline)" "step_boot_splash"
+# No comma in the desc: page_module_picker hands gum a CSV of preselected
+# option LINES, and a comma inside one splits it into two entries that match
+# nothing -- silently unchecking whatever followed it.
+_reg dcli-sync-extra   "Optional packages"   Optional  "docker · jdk · qemu · printing (opt-in · run later)"    "step_dcli_sync_extra"
+_reg boot-splash       "Boot splash"         System    "Your name + progress ring instead of kernel text at boot" "step_boot_splash"
 
 _validate_ids "$ONLY_LIST" --only
 _validate_ids "$SKIP_LIST" --skip
@@ -524,7 +553,7 @@ step_bootstrap() {
 step_yay()          { command -v yay >/dev/null && { _OK "yay present"; return; }
                       run "rm -rf /tmp/yay-bin && cd /tmp && git clone https://aur.archlinux.org/yay-bin.git yay-bin && cd yay-bin && makepkg -si --noconfirm"; }
 step_dcli()         { command -v dcli >/dev/null && { _OK "dcli present"; return; }
-                      run "yay -S --noconfirm dcli-arch-git"; }
+                      run "yay -S --needed --noconfirm dcli-arch-git"; }
 step_stow()         { run "$DOTFILES_DIR/installScripts/stow_script.sh"; }
 step_arch_config()  { run "$DOTFILES_DIR/installScripts/arch-config.sh"; }
 step_dcli_sync() {
@@ -642,6 +671,12 @@ step_picom_pin() {
   # Built in a temp copy: makepkg writes src/ and pkg/ next to the PKGBUILD,
   # and that directory is inside the git repo.
   local tmp
+  if (( DRY_RUN )); then
+    # mktemp -d creates a real directory, which a preview has no business
+    # doing. Name one instead so the printed command still reads correctly.
+    _DIM "  [dry] cp -r $dir/. <tmpdir>/ && cd <tmpdir> && makepkg -si --noconfirm --needed --clean"
+    return 0
+  fi
   tmp="$(mktemp -d)"
   run "cp -r $dir/. $tmp/ && cd $tmp && makepkg -si --noconfirm --needed --clean"
   rm -rf "$tmp"
@@ -754,10 +789,18 @@ step_gpu() {
 }
 
 step_boot_splash() {
-  # Opt-in, and deliberately so: this edits /etc/mkinitcpio.conf and the
-  # kernel cmdline and rebuilds the initramfs. Getting it wrong costs a
-  # boot, which is a different category of risk from every other module
-  # here -- so it never runs as part of a default install.
+  # Part of the default run, but the riskiest thing in it: this edits
+  # /etc/mkinitcpio.conf and the kernel cmdline and rebuilds the initramfs.
+  # What makes that acceptable is the module ORDER -- boot-fallback runs
+  # immediately before this and leaves behind LTS entries that carry
+  # neither quiet nor splash, so the worst case is one menu pick away from
+  # a fully verbose boot. Do not move this above boot-fallback.
+  #
+  # `boot-splash enable` refuses rather than half-applies (do_check ||
+  # die), so a machine it cannot handle -- no /etc/kernel/cmdline, no
+  # plymouth, an unsupported bootloader -- ends with the module marked
+  # failed and the boot path untouched, not with a system that comes up
+  # black.
   local mod="$DOTFILES_DIR/.config/arch-config/modules/splash.yaml"
   local bs="$DOTFILES_DIR/.config/AtiScriptsV1/boot-splash"
   [[ -f "$mod" ]] || { _ERR "missing $mod"; return 1; }
@@ -793,7 +836,15 @@ step_cargo() {
   # package built with cargo, e.g. paru/didyoumean) fails with "rustup
   # could not choose a version of cargo to run" until this is set once.
   command -v rustup >/dev/null && run "rustup default stable"
-  command -v cargo >/dev/null && run "cargo install pomodoro-tui" || _WARN "cargo missing, skip"
+  # if/else, not `a && b || c`: written as a chain, a FAILED build ran the
+  # `|| _WARN "cargo missing"` arm -- reporting the one thing that was not
+  # true, swallowing the real compiler error, and leaving the module exit
+  # status at 0 so the wizard ticked it off as ✔ ok.
+  if command -v cargo >/dev/null; then
+    run "cargo install pomodoro-tui"
+  else
+    _WARN "cargo missing, skip"
+  fi
 }
 step_ati_scripts()  { run "cd $DOTFILES_DIR/.config/AtiScriptsV1 && ./install.sh"; }
 step_simplenote() {
@@ -873,12 +924,12 @@ step_boot_fallback() {
     _WARN "bootctl missing — not a systemd-boot system, skipping LTS entries"; return 0
   fi
   local esp
-  esp="$(sudo bootctl --print-esp-path 2>/dev/null)" || esp=""
+  esp="$(sudo_probe bootctl --print-esp-path 2>/dev/null)" || esp=""
   [[ -n "$esp" ]] || esp=/boot
-  if ! sudo test -d "$esp/loader/entries"; then
+  if ! sudo_probe test -d "$esp/loader/entries"; then
     _WARN "$esp/loader/entries missing — systemd-boot not installed here, skipping"; return 0
   fi
-  if ! sudo test -e "$esp/vmlinuz-linux-lts"; then
+  if ! sudo_probe test -e "$esp/vmlinuz-linux-lts"; then
     _WARN "linux-lts not installed (no $esp/vmlinuz-linux-lts) — run the dcli-sync module first"
     return 0
   fi
@@ -896,13 +947,32 @@ step_boot_fallback() {
   # Filter tokens rather than pattern-delete: a single sed pass consumes the
   # separator, so adjacent options ("quiet splash") left the second one
   # behind and the rescue entry was still silent.
-  opts="$(tr ' ' '\n' <<<"$opts" | grep -vxE 'quiet|splash' | paste -sd' ' -)"
+  #
+  # initrd= and BOOT_IMAGE= go too, and that one is not cosmetic. This
+  # machine boots a UKI, whose cmdline carries neither -- but a plain
+  # systemd-boot or GRUB install puts `initrd=\initramfs-linux.img` (the
+  # STOCK kernel's image) right there in /proc/cmdline. Copying it into an
+  # LTS entry hands the LTS kernel the stock kernel's modules alongside the
+  # `initrd` line below, and the rescue entry you finally reach for panics
+  # on a module version mismatch. BOOT_IMAGE= is the same shape of stale
+  # self-reference, pointing at whichever kernel booted this time.
+  opts="$(tr ' ' '\n' <<<"$opts" \
+    | grep -vxE 'quiet|splash' \
+    | grep -vE '^(initrd|BOOT_IMAGE)=' \
+    | paste -sd' ' -)"
   # Microcode is vendor-specific and optional; only reference what exists.
-  local ucode_line=""
-  local u
-  for u in intel-ucode.img amd-ucode.img; do
-    sudo test -e "$esp/$u" && ucode_line="initrd  /$u"
-  done
+  # Match it to the CPU, not to whatever image happens to be on the ESP: a
+  # machine that once ran the other vendor's ucode package (or installed
+  # both) left amd-ucode.img sitting there, and the unconditional loop below
+  # took the last hit -- so an Intel box got an AMD microcode image and no
+  # errata fixes at all on the entry it boots when things are already wrong.
+  local ucode_line="" ucode_img=""
+  case "$(awk -F': ' '/^vendor_id/{print $2; exit}' /proc/cpuinfo)" in
+    GenuineIntel) ucode_img=intel-ucode.img ;;
+    AuthenticAMD) ucode_img=amd-ucode.img   ;;
+  esac
+  [[ -n "$ucode_img" ]] && sudo_probe test -e "$esp/$ucode_img" \
+    && ucode_line="initrd  /$ucode_img"
 
   _DIM "  ESP $esp · options from /proc/cmdline"
   local ent="$esp/loader/entries"
@@ -921,22 +991,22 @@ EOF"
   # pacman owns this file, so edit in place rather than overwriting it --
   # an overwrite would fight every linux-lts upgrade with a .pacnew.
   local preset=/etc/mkinitcpio.d/linux-lts.preset
-  if sudo test -f "$preset"; then
-    if sudo grep -q "^PRESETS=.*fallback" "$preset"; then
+  if sudo_probe test -f "$preset"; then
+    if sudo_probe grep -q "^PRESETS=.*fallback" "$preset"; then
       _DIM "  fallback preset already enabled"
     else
       run "sudo sed -i \"s/^PRESETS=.*/PRESETS=('default' 'fallback')/\" $preset"
     fi
     # -S autodetect drops the autodetect hook: every module ships, not just
     # the ones probed on this machine. ~205MB, and worth it.
-    sudo grep -q "^fallback_options" "$preset" \
+    sudo_probe grep -q "^fallback_options" "$preset" \
       || run "echo \"fallback_options=\\\"-S autodetect\\\"\" | sudo tee -a $preset >/dev/null"
     run "sudo mkinitcpio -p linux-lts"
   else
     _WARN "$preset missing — skipping rescue initramfs"
   fi
 
-  if (( DRY_RUN )) || sudo test -e "$esp/initramfs-linux-lts-fallback.img"; then
+  if (( DRY_RUN )) || sudo_probe test -e "$esp/initramfs-linux-lts-fallback.img"; then
     run "sudo tee $ent/arch-lts-fallback.conf >/dev/null << EOF
 # Last-resort rescue entry. Same LTS kernel as arch-lts.conf, but paired
 # with the -fallback initramfs built WITHOUT autodetect, so it carries
@@ -955,12 +1025,18 @@ EOF"
   # A fallback entry you cannot select is not a fallback: systemd-boot
   # ships loader.conf with timeout commented out, which hides the menu.
   local lc="$esp/loader/loader.conf"
-  if sudo test -f "$lc" && ! sudo grep -qE '^timeout[[:space:]]+[0-9]+' "$lc"; then
+  if sudo_probe test -f "$lc" && ! sudo_probe grep -qE '^timeout[[:space:]]+[0-9]+' "$lc"; then
     run "echo 'timeout 5' | sudo tee -a $lc >/dev/null"
   fi
   (( DRY_RUN )) || _DIM "  verify with: bootctl list"
 }
-step_touchpad()     { run "sudo tee /etc/X11/xorg.conf.d/30-touchpad.conf > /dev/null << 'EOF'
+# mkdir first: `tee` cannot create the directory it writes into, and
+# /etc/X11/xorg.conf.d is not guaranteed to exist -- it ships with
+# xorg-server, so on a machine where X is installed later (or where the
+# module runs with --only before bootstrap) tee failed with "No such file
+# or directory" and tap-to-click was silently never configured.
+step_touchpad()     { run "sudo mkdir -p /etc/X11/xorg.conf.d"
+                      run "sudo tee /etc/X11/xorg.conf.d/30-touchpad.conf > /dev/null << 'EOF'
 Section \"InputClass\"
     Identifier \"Touchpad\"
     MatchIsTouchpad \"on\"
@@ -1069,7 +1145,31 @@ keycode 66 = Alt_L
 add mod1 = Alt_L Alt_R
 XMM_EOF
 }
-step_lid()          { run "sudo sed -i 's/^#\\?HandleLidSwitch=.*/HandleLidSwitch=ignore/' /etc/systemd/logind.conf && sudo systemctl restart systemd-logind"; }
+step_lid() {
+  # A drop-in, not `sed -i` on /etc/systemd/logind.conf.
+  #
+  # The sed depended on a commented `#HandleLidSwitch=` line being present
+  # to rewrite. That is true of the logind.conf this machine was installed
+  # with and false in general -- current systemd ships the file with the
+  # defaults documented elsewhere, and a machine whose logind.conf has been
+  # tidied or replaced simply had no line to match. sed then exited 0
+  # having changed nothing, the module reported ✔ ok, and the laptop still
+  # suspended the moment you shut the lid. A drop-in always applies, needs
+  # no line to already exist, survives systemd upgrades without a .pacnew,
+  # and is reversed by deleting one file.
+  if [[ ! -d /etc/systemd ]]; then
+    _WARN "no /etc/systemd — not a systemd machine, skipping lid setting"; return 0
+  fi
+  run "sudo install -d -m 755 /etc/systemd/logind.conf.d"
+  run "sudo tee /etc/systemd/logind.conf.d/90-wizard-lid.conf >/dev/null << 'EOF'
+# Never sleep on lid close. Written by wizard.sh (lid module).
+[Login]
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+HandleLidSwitchDocked=ignore
+EOF"
+  run "sudo systemctl restart systemd-logind"
+}
                     # VIPS_WARNING now ships as a tracked fish conf.d snippet
                     # (.config/fish/conf.d/vips.fish) instead of being appended
                     # to ~/.profile: that line was fish syntax in a POSIX file,
@@ -1476,8 +1576,8 @@ step_scrcpy() {
   # replies arrive as fresh inbound UDP on 5353 (multicast, not a reply to
   # a tracked flow), so without this the browse simply returns nothing --
   # no error, no log line, just a phone that is never found.
-  if command -v ufw >/dev/null && sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
-    if sudo ufw status 2>/dev/null | grep -q '5353'; then
+  if command -v ufw >/dev/null && sudo_probe ufw status 2>/dev/null | grep -q '^Status: active'; then
+    if sudo_probe ufw status 2>/dev/null | grep -q '5353'; then
       _OK "ufw already allows mDNS"
     else
       run "sudo ufw allow 5353/udp comment 'mDNS - adb wireless discovery'"
@@ -1506,8 +1606,30 @@ step_scrcpy() {
   _DIM "  then press Super+Shift+F6 — it pairs itself (QR or 6 digits), once ever"
 }
 
-step_nopasswd()     { run "echo \"$(id -un) ALL=(ALL) NOPASSWD: ALL\" | sudo tee /etc/sudoers.d/zz-$(id -un)-nopasswd >/dev/null && sudo chmod 440 /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
-step_ownership()    { run "sudo chown -R $(id -un):$(id -un) $DOTFILES_DIR"; }
+# sudo(8): files in sudoers.d "whose names end in ~ or contain a . character
+# are ignored". The filename was built straight from the login name, so an
+# account like `john.doe` -- anything LDAP/AD-joined, which is most machines
+# that are not this one -- got a drop-in sudo silently never reads. The module
+# reported ✔ ok and sudo went on asking for a password with nothing on disk to
+# explain why. Same transform on both sides so uninstall still finds the file.
+_nopasswd_file()    { printf '/etc/sudoers.d/zz-%s-nopasswd' "$(id -un | tr '.' '_')"; }
+step_nopasswd() {
+  local f; f="$(_nopasswd_file)"
+  run "echo \"$(id -un) ALL=(ALL) NOPASSWD: ALL\" | sudo tee $f >/dev/null && sudo chmod 440 $f"
+  # A sudoers file sudo refuses to parse breaks EVERY sudo invocation on the
+  # box, including the one that would delete it. Check, and take it back out
+  # ourselves while we still can.
+  if (( ! DRY_RUN )) && ! sudo visudo -cf "$f" >/dev/null 2>&1; then
+    sudo rm -f "$f"
+    _ERR "generated sudoers file was rejected by visudo — removed it again"
+    return 1
+  fi
+}
+# $(id -gn), not a second $(id -un): a user-private group of the same name is
+# an Arch default, not a guarantee. On an account whose primary group is
+# `users` (or a domain group), `chown ati:ati` fails outright with "invalid
+# group" and the whole ownership fix-up never happens.
+step_ownership()    { run "sudo chown -R $(id -un):$(id -gn) $DOTFILES_DIR"; }
 step_login_shell() {
   # kitty.conf hardcodes `shell /usr/bin/fish`, so inside X you always got
   # fish -- but the TTY kept the account's login shell (bash by default).
@@ -1833,9 +1955,18 @@ preflight() {
     fi
   done
   (( _heavy_sel )) && _need_gb=10
-  _check "disk free > ${_need_gb} GB on \$HOME" "[[ $(df -Pk $HOME | awk 'NR==2{print $4}') -gt $((_need_gb * 1048576)) ]]" "this run needs ~${_need_gb}GB (10GB covers piper 60MB + whisper models+fast-build ~1GB + dcli pkgs + wallpapers; 1GB when none of those are selected)"
+  _check "disk free > ${_need_gb} GB on \$HOME" "[[ $(df -Pk "$HOME" | awk 'NR==2{print $4}') -gt $((_need_gb * 1048576)) ]]" "this run needs ~${_need_gb}GB (10GB covers piper 60MB + whisper models+fast-build ~1GB + dcli pkgs + wallpapers; 1GB when none of those are selected)"
   _check "RAM ≥ 2 GB"                  "[[ $(awk '/MemTotal/{print $2}' /proc/meminfo) -gt 2000000 ]]" "wizard pulls 500MB+ concurrently — <2GB risks OOM/freeze"
-  _check "pacman db lock clear"        "_pacman_lock_check"                        "another pacman may be running"
+  # Not run through _check: _check swallows stdout AND stdin. The swallowed
+  # stdout hid the "pacman is running — waiting up to 60s" line, so a
+  # legitimate wait was indistinguishable from a frozen wizard; the swallowed
+  # stdin left the interactive "remove the stale lock?" confirm blocking on a
+  # prompt that had been redirected out of existence.
+  if _pacman_lock_check; then
+    _OK "  ✔ pacman db lock clear"
+  else
+    _ERR "  ✖ pacman db lock"; _DIM "      → another pacman may be running"; fatal=1
+  fi
   if (( fatal )); then
     echo
     _ERR "Preflight failed. Fix the above and re-run."
@@ -1876,8 +2007,19 @@ uninstall_boot_fallback() {
   # be a strictly worse system, and it is not exclusively ours.
   return 0
 }
-uninstall_login_shell()      { run "sudo chsh -s /usr/bin/bash $(id -un)"; }
-uninstall_passwordless_sudo(){ run "sudo rm -f /etc/sudoers.d/zz-$(id -un)-nopasswd"; }
+uninstall_login_shell() {
+  # Pick a shell that exists on THIS machine rather than assuming Arch's
+  # /usr/bin/bash. chsh refuses a path it cannot find, so on a box where
+  # bash lives only at /bin/bash the reversal failed and left the account
+  # logging into fish -- an uninstall that reports success and undoes
+  # nothing is worse than one that never ran.
+  local sh fallback=/bin/sh
+  for sh in /usr/bin/bash /bin/bash /usr/bin/zsh /bin/sh; do
+    [[ -x "$sh" ]] && { fallback="$sh"; break; }
+  done
+  run "sudo chsh -s $fallback $(id -un)"
+}
+uninstall_passwordless_sudo(){ run "sudo rm -f $(_nopasswd_file)"; }
 uninstall_browser_flags() {
   for f in brave-flags.conf chromium-flags.conf chrome-flags.conf; do
     run "sed -i '/--load-extension=.*browser-theme/d' $HOME/.config/$f 2>/dev/null || true"
@@ -1950,8 +2092,12 @@ uninstall_stow() {
 }
 uninstall_candy_icons()      { run "sudo rm -rf /usr/share/icons/candy-icons"; }
 uninstall_lid() {
-  # Restore defaults (Handle*Switch commented out).
-  run "sudo sed -i 's/^HandleLidSwitch=ignore/#HandleLidSwitch=suspend/; s/^HandleLidSwitchExternalPower=ignore/#HandleLidSwitchExternalPower=suspend/; s/^HandleLidSwitchDocked=ignore/#HandleLidSwitchDocked=ignore/' /etc/systemd/logind.conf"
+  # Drop the drop-in, AND still undo the old in-place edit: a machine set up
+  # by an earlier wizard has `HandleLidSwitch=ignore` written into
+  # logind.conf itself, and removing only the new file would leave it
+  # ignoring the lid forever with nothing left to point at as the cause.
+  run "sudo rm -f /etc/systemd/logind.conf.d/90-wizard-lid.conf"
+  run "sudo sed -i 's/^HandleLidSwitch=ignore/#HandleLidSwitch=suspend/; s/^HandleLidSwitchExternalPower=ignore/#HandleLidSwitchExternalPower=suspend/; s/^HandleLidSwitchDocked=ignore/#HandleLidSwitchDocked=ignore/' /etc/systemd/logind.conf 2>/dev/null || true"
   run "sudo systemctl restart systemd-logind"
 }
 uninstall_themes() {
@@ -1972,7 +2118,15 @@ uninstall_boot_splash() {
   # initramfs after removing the theme boots to a black screen.
   local bs
   bs="$(command -v boot-splash || echo "$DOTFILES_DIR/.config/AtiScriptsV1/boot-splash")"
-  [[ -x "$bs" ]] && run "$bs disable" || _WARN "boot-splash not found — cmdline may still say quiet splash"
+  # if/else, because `A && B || C` here reported "boot-splash not found"
+  # whenever `boot-splash disable` FAILED, and returned 0 while doing it --
+  # so the uninstall ticked green on the one module whose whole point is
+  # that a half-reversal boots to a black screen.
+  if [[ -x "$bs" ]]; then
+    run "$bs disable"
+  else
+    _WARN "boot-splash not found — cmdline may still say quiet splash"
+  fi
 }
 uninstall_paths()             { :; }  # removing them would leave the browser theme and GTK overlay with no config at all
 uninstall_ui_scale() {
@@ -2201,7 +2355,15 @@ _run_module() {
   # no-op if already cached; harmless no-op (no hang) if there's no
   # tty to prompt on at all.
   sudo -v 2>/dev/null || true
-  ( set +e; "$cmd" >"$logf" 2>"$errf" ) &
+  # stdin comes from /dev/null on purpose. A module's stdout and stderr are
+  # captured to files behind the spinner, so anything in there that reads a
+  # line -- a git credential prompt on a repo that moved, a makepkg question
+  # a missing --noconfirm let through, a helper's `read -rp` -- waits forever
+  # on a prompt nobody can see, and the spinner keeps turning as if work were
+  # happening. Closed stdin turns that infinite hang into an immediate,
+  # logged failure the retry/skip logic can act on. sudo is unaffected: it
+  # reads its password from /dev/tty, not stdin.
+  ( set +e; "$cmd" >"$logf" 2>"$errf" </dev/null ) &
   local pid=$! spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' i=0 last=""
   while kill -0 "$pid" 2>/dev/null; do
     last="$(tail -n1 "$logf" 2>/dev/null)"
@@ -2362,15 +2524,25 @@ arm_onboarding() {
 # password prompt that blocks the whole run for 40 minutes is worse than one
 # that waits for you at the finish.
 #
-# Gated on a tty, not on ASSUME_YES: ./install.sh IS `wizard.sh --yes`, and the
-# whole point is that it asks. A genuinely unattended run (container-test.sh,
-# CI) has no tty and falls through silently.
+# Gated on --yes as well as on a tty. This used to ask during `./install.sh`
+# on the grounds that install.sh is the interactive path -- but ./install.sh is
+# `wizard.sh --yes`, whose contract is that you can start it and walk away.
+# A password prompt at the end of a 40-minute run breaks that: the wizard sits
+# there indefinitely, and whether the install finished depends on someone being
+# in the chair. Simplenote is a phone convenience, not part of a working
+# desktop, so --yes prints how to set it up and finishes instead.
 page_simplenote_creds() {
   local id found=0
   for id in "${PICKED_IDS[@]}"; do [[ "$id" == simplenote ]] && found=1; done
   (( found )) || return 0
   (( DRY_RUN )) && return 0
   [[ -t 0 ]] || return 0
+  if (( ASSUME_YES )); then
+    echo
+    _DIM "Simplenote (Mod+Shift+S note → phone) is installed but not logged in."
+    _DIM "  Connect it whenever you like:  ./wizard.sh --only=simplenote"
+    return 0
+  fi
 
   local cred="$HOME/.config/simplenote/credentials"
   [[ -f "$cred" ]] || return 0

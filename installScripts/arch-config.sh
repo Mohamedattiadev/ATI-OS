@@ -15,6 +15,31 @@ CONFIG_FILE="$ARCH_CONFIG_DIR/config.yaml"
 : "${HOSTS_DIR:?HOSTS_DIR empty}"
 : "${CONFIG_FILE:?CONFIG_FILE empty}"
 
+# Rewrite the `host:` field in place and prove it took.
+#
+# Two bugs lived here. The reader below accepts `host:value` with zero spaces
+# ([[:space:]]*) but the writer demanded at least one ([[:space:]]+), so on a
+# file written without a space the sed matched nothing, the script printed
+# "DONE" and the host was never actually changed — and the next run repeated
+# the whole dance. And a file with no `host:` line at all was reported as
+# success too. Verify after writing so neither can pass silently.
+#
+# --follow-symlinks matters because these YAMLs are stow symlinks into the
+# repo; plain `sed -i` would replace the symlink with a regular file and
+# quietly detach the config from the checkout.
+set_host_field() {
+  local file="$1" want="$2"
+  sed -i --follow-symlinks -E "s/^host:[[:space:]]*.*/host: $want/" "$file"
+  local got
+  got="$(sed -n -E 's/^host:[[:space:]]*(.+)/\1/p' "$file" | head -n1 || true)"
+  if [[ "$got" != "$want" ]]; then
+    echo "ERROR: could not set 'host: $want' in:"
+    echo "  $file"
+    echo "  (no 'host:' line found — add one by hand)"
+    exit 1
+  fi
+}
+
 # =====================================================
 # SANITY CHECKS
 # =====================================================
@@ -51,6 +76,9 @@ fi
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$ARCH_CONFIG_DIR/.backup-$TIMESTAMP"
 mkdir -p "$BACKUP_DIR"
+# The strict-mode exits below can fire after the dir exists but before anything
+# is copied into it; don't leave a trail of empty .backup-* dirs behind.
+trap 'rmdir "$BACKUP_DIR" 2>/dev/null || true' EXIT
 
 echo "======================================"
 echo "arch-config host sync"
@@ -103,9 +131,7 @@ if [[ "$CURRENT_HOST_IN_HOST_FILE" != "$USER_NAME" ]]; then
 
   cp "$TARGET_HOST_FILE" "$BACKUP_DIR/$USER_NAME.yaml"
 
-  sed -i \
-    -E "s/^host:[[:space:]]+.*/host: $USER_NAME/" \
-    "$TARGET_HOST_FILE"
+  set_host_field "$TARGET_HOST_FILE" "$USER_NAME"
 fi
 
 # =====================================================
@@ -118,9 +144,7 @@ if [[ "$CURRENT_HOST_IN_CONFIG_FILE" != "$USER_NAME" ]]; then
 
   cp "$CONFIG_FILE" "$BACKUP_DIR/config.yaml"
 
-  sed -i \
-    -E "s/^host:[[:space:]]+.*/host: $USER_NAME/" \
-    "$CONFIG_FILE"
+  set_host_field "$CONFIG_FILE" "$USER_NAME"
 fi
 
 # =====================================================
