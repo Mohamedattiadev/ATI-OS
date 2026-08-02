@@ -960,6 +960,25 @@ step_boot_fallback() {
     | grep -vxE 'quiet|splash' \
     | grep -vE '^(initrd|BOOT_IMAGE)=' \
     | paste -sd' ' -)"
+
+  # /proc/cmdline is authoritative for root= on every normal install, but it
+  # is not guaranteed to CONTAIN one. A system booting under the discoverable
+  # partitions spec (systemd-gpt-auto-generator) finds its root from the GPT
+  # type GUID and carries no root= at all -- and the generator lives in the
+  # initramfs, so an LTS rescue image built without it gets a kernel with no
+  # idea where root is. That is an emergency shell on the one entry that
+  # exists for emergencies. Derive it from the running root instead.
+  local real_root_uuid=""
+  if ! grep -qE '(^|[[:space:]])root=' <<<"$opts"; then
+    local root_src; root_src="$(findmnt -no SOURCE / 2>/dev/null || true)"
+    [[ -n "$root_src" ]] && real_root_uuid="$(lsblk -no PARTUUID "$root_src" 2>/dev/null | head -1 | tr -d '[:space:]' || true)"
+    if [[ -n "$real_root_uuid" ]]; then
+      opts="root=PARTUUID=$real_root_uuid $opts"
+      _DIM "  no root= in /proc/cmdline (gpt-auto?) — derived root=PARTUUID=$real_root_uuid"
+    else
+      _WARN "no root= in /proc/cmdline and could not derive one — the LTS entries may not boot"
+    fi
+  fi
   # Microcode is vendor-specific and optional; only reference what exists.
   # Match it to the CPU, not to whatever image happens to be on the ESP: a
   # machine that once ran the other vendor's ucode package (or installed
@@ -1028,7 +1047,25 @@ EOF"
   if sudo_probe test -f "$lc" && ! sudo_probe grep -qE '^timeout[[:space:]]+[0-9]+' "$lc"; then
     run "echo 'timeout 5' | sudo tee -a $lc >/dev/null"
   fi
-  (( DRY_RUN )) || _DIM "  verify with: bootctl list"
+  # Verify what actually landed on disk, rather than trusting that the
+  # here-doc above said what we meant. An entry whose root= names a device
+  # that does not exist looks completely fine in the boot menu and drops to
+  # an emergency shell only when you finally need it -- the failure mode
+  # this module exists to prevent. boot-splash owns the comparison; it is
+  # read-only, and it checks every entry on the ESP, not just ours.
+  if (( ! DRY_RUN )); then
+    local bs="$DOTFILES_DIR/.config/AtiScriptsV1/boot-splash"
+    if [[ -x "$bs" ]]; then
+      local vout vrc=0
+      vout="$("$bs" verify-root 2>&1)" || vrc=$?
+      case "$vrc" in
+        0) _DIM "  every boot entry's root= matches $(findmnt -no SOURCE / 2>/dev/null)" ;;
+        2) _DIM "  boot entries not verified (ESP unreadable)" ;;
+        *) _WARN "a boot entry names the wrong root device:"; printf '%s\n' "$vout" ;;
+      esac
+    fi
+    _DIM "  verify with: bootctl list"
+  fi
 }
 # mkdir first: `tee` cannot create the directory it writes into, and
 # /etc/X11/xorg.conf.d is not guaranteed to exist -- it ships with
