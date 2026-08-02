@@ -1,55 +1,452 @@
-#!/usr/bin/env bash
-#
-# Script name: dm-dictionary
-# Description: Uses didyoumean as a spellchecker.
-# Dependencies: dmenu, fzf, rofi, didyoumean, xclip
-# GitLab: https://www.gitlab.com/dwt1/dmscripts
-# License: https://www.gitlab.com/dwt1/dmscripts/LICENSE
-# Contributors: Francesco Prem Solidoro
-#               Derek Taylor
-#               Gemini (for user input feature)
+#!/usr/bin/env python3
+"""Spell- and grammar-check a word or a whole sentence in a rofi table.
 
-# Set with the flags "-e", "-u","-o pipefail" cause the script to fail
-# if certain things happen, which is a good thing.  Otherwise, we can
-# get hidden bugs that are hard to discover.
-set -euo pipefail
+Why this is no longer a dmscripts bash script
+---------------------------------------------
+It used to run `dym` (didyoumean), which takes exactly one word, always
+answers with five fuzzy matches whether or not the word is spelt right,
+and knows nothing about context — `asdkjhq` came back as "askja,
+adachi, adah". There was no way to tell a correct word from a wrong one,
+and a sentence could not be checked at all.
 
-# shellcheck disable=SC1091
-source ./_dm-helper.sh 2>/dev/null || source _dm-helper.sh 2>/dev/null
+Everything now goes through LanguageTool, which reports each mistake
+with its position, a message and ranked replacements, and covers grammar
+as well as spelling ("She go" → "goes"). That means corrections can be
+applied in place and the whole sentence handed back fixed. The rendering
+(pango markup, measured column widths) is more than bash should be asked
+to do, hence Python.
 
-source_dmscripts_configs
+The `-r` / `-d` / `-f` flags are still accepted so the dmscripts-style
+invocation in qtile keeps working, but the picker is rofi-only: the rows
+are pango markup, which dmenu and fzf would print raw.
 
-if configs_are_different; then
-	echo "$(date): configs are different" >>"$DM_CONFIG_DIFF_LOGFILE"
-	sleep 1
-fi
+Language detection
+------------------
+LanguageTool's own `language=auto` is reliable on real sentences but
+wild on short input — it called `gelest` Dutch and `asdkjhq` Galician,
+then offered suggestions from those languages. Anything under four words
+is therefore detected with Google's endpoint first (the one the
+translator uses) and sent to LanguageTool as an explicit language, with
+en-US as the fallback.
+"""
 
-main() {
-	# 1. Try to get the highlighted word from the primary X selection.
-	#    - '2>/dev/null' hides errors if no text is selected.
-	#    - 'xargs' trims any leading/trailing whitespace (common with selections).
-	#    - '|| true' prevents the script from exiting (due to 'set -e') if xclip fails.
-	WORD="$(xclip -o -selection primary 2>/dev/null | xargs || true)"
+import html
+import json
+import os
+import subprocess as sp
+import sys
+import unicodedata
+import urllib.parse
+import urllib.request
 
-	# 2. Check if we actually got a word from selection. 
-	#    If not, prompt the user for a word using the menu program.
-	if ! [ "${WORD}" ]; then
-		# No word selected, so ask the user to type one.
-		# The menu program's input is captured back into the WORD variable.
-		WORD="$(${MENU} -p "Enter word to spell-check:")"
-	fi
+LT_API = "https://api.languagetool.org/v2/check"
+DETECT_API = "https://translate.googleapis.com/translate_a/single"
+UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/122.0 Safari/537.36"
+)
+TIMEOUT = 15
 
-	# 3. Final check: if the word is still empty (e.g., user hit ESC or cancelled the prompt) 
-    #    or is the 'quit' signal, then exit.
-	if ! [ "${WORD}" ] || [ "${WORD}" = "quit" ]; then
-		printf 'No word selected or user quit\n' >&2
-		exit 0
-	fi
-
-	# 4. Spell-check the selected or entered WORD and pipe suggestions back to the menu program.
-	#    The user-selected corrected word is copied to the clipboard.
-	dym -c "$WORD" | ${MENU} "Select Correct Spelling for: ${WORD}" | xclip -selection clipboard
+# LanguageTool wants a variant for some languages and rejects a bare
+# code for others; this maps what the detector returns onto what it
+# accepts.
+LT_LANG = {
+    "en": "en-US", "de": "de-DE", "pt": "pt-PT", "ca": "ca-ES",
+    "fr": "fr", "es": "es", "it": "it", "nl": "nl", "ar": "ar",
+    "tr": "tr", "ru": "ru", "pl": "pl", "uk": "uk", "sv": "sv",
+    "da": "da", "el": "el", "fa": "fa", "ga": "ga", "ro": "ro",
+    "sk": "sk", "sl": "sl", "ta": "ta", "ja": "ja", "zh": "zh-CN",
 }
+DEFAULT_LANG = "en-US"
+SHORT_INPUT_WORDS = 4
 
-MENU="$(get_menu_program "$@")"
-[[ "${BASH_SOURCE[0]}" == "${0}" ]] && main
+# Colours follow whichever palette theme-apply has symlinked as
+# themes/current-palette.rasi — pango markup cannot reference rofi theme
+# variables, so they are resolved here. Same helper as the translator.
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+try:
+    from rofi_palette import load as load_palette
+    PALETTE = load_palette()
+except Exception:  # noqa: BLE001 — a missing helper must not stop a check
+    PALETTE = {
+        "text": "#bbc2cf", "head": "#61afef", "good": "#98c379",
+        "bad": "#e06c75", "dim": "#727782",
+    }
+
+COLOR_BAD = PALETTE["bad"]     # what is wrong
+COLOR_GOOD = PALETTE["good"]   # what to put there
+COLOR_HEAD = PALETTE["head"]   # section rules
+COLOR_DIM = PALETTE["dim"]     # tags, separators, messages
+COLOR_TEXT = PALETTE["text"]
+
+COL_TAG = 5
+COL_MIN = 24
+COL_MAX = 96
+SEP = "│"
+# Wider than the shared theme's 45% so the table fits, capped at what
+# rofi/themes/kill-large.rasi uses rather than taking the whole screen.
+WIDE_WINDOW = "window {width: 75%;}"
+
+FSI, PDI = "⁨", "⁩"
+
+# Rofi exit codes for -kb-custom-N, N = code - 9.
+#
+# Ctrl first, Alt as an alias: this machine's Alt key is dead in hardware
+# and only exists as an xmodmap remap of Caps Lock (see the comment on
+# `mod2` in qtile's config.py), so an Alt-only binding is one xmodmap
+# hiccup away from doing nothing at all. Ctrl+n is taken by row-down,
+# hence r (replacements) and t (text).
+ROFI_MORE = 10   # Ctrl+r / Alt+m — other suggestions for this mistake
+ROFI_NEW = 11    # Ctrl+t / Alt+n — check something else
+CUSTOM_KEYS = [
+    "-kb-custom-1", "Control+r,Alt+m",
+    "-kb-custom-2", "Control+t,Alt+n",
+]
+
+# Ctrl+u and Ctrl+w both wipe the input line. rofi ships Ctrl+u as
+# remove-to-start-of-line, so it has to be unbound first or rofi refuses
+# to start on the duplicate binding.
+CLEAR_KEYS = [
+    "-kb-clear-line", "Control+u,Control+w",
+    "-kb-remove-to-sol", "",
+]
+
+
+# ---------------- Shell helpers ----------------
+def run_full(argv, stdin_text=None, timeout=600):
+    """Run argv (a list, never a shell string) → (exit code, stdout)."""
+    try:
+        p = sp.run(
+            argv,
+            input=stdin_text.encode() if stdin_text is not None else None,
+            stdout=sp.PIPE,
+            stderr=sp.DEVNULL,
+            timeout=timeout,
+        )
+        return p.returncode, p.stdout.decode("utf-8", "replace").strip()
+    except (sp.TimeoutExpired, FileNotFoundError, OSError):
+        return -1, ""
+
+
+def run(argv, stdin_text=None, timeout=600):
+    return run_full(argv, stdin_text, timeout)[1]
+
+
+def notify(title, msg, timeout=5000):
+    try:
+        sp.Popen(
+            ["notify-send", "-t", str(timeout), title, msg],
+            stdout=sp.DEVNULL, stderr=sp.DEVNULL,
+        )
+    except (FileNotFoundError, OSError):
+        pass
+
+
+def esc(text):
+    return html.escape(text, quote=False)
+
+
+def iso(text):
+    """Isolate a run so its direction can't flip the whole row — the same
+    reason the translator does it: one Arabic word otherwise reverses the
+    layout and throws the latin tags to the wrong side."""
+    return FSI + text + PDI
+
+
+def strip_bidi(text):
+    return text.replace(FSI, "").replace(PDI, "")
+
+
+# ---------------- Checking ----------------
+def detect_language(text):
+    """Google's detector, used only for short input (see module docstring)."""
+    if len(text.split()) >= SHORT_INPUT_WORDS:
+        return "auto"
+    params = urllib.parse.urlencode([
+        ("client", "gtx"), ("sl", "auto"), ("tl", "en"),
+        ("dj", "1"), ("dt", "t"), ("q", text),
+    ])
+    try:
+        req = urllib.request.Request(
+            f"{DETECT_API}?{params}", headers={"User-Agent": UA}
+        )
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            src = json.loads(r.read().decode("utf-8", "replace")).get("src", "")
+    except Exception:  # noqa: BLE001 — detection is a nicety, not a gate
+        return DEFAULT_LANG
+    return LT_LANG.get(src, DEFAULT_LANG)
+
+
+def lt_check(text, language):
+    """Return (matches, detected language name). Matches carry offset,
+    length, message and ranked replacements."""
+    payload = urllib.parse.urlencode({
+        "text": text,
+        "language": language,
+        "level": "default",
+    }).encode()
+    req = urllib.request.Request(
+        LT_API,
+        data=payload,
+        headers={"User-Agent": UA,
+                 "Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        data = json.loads(r.read().decode("utf-8", "replace"))
+    return data.get("matches", []), data.get("language", {}).get("name", "")
+
+
+def bad_text(text, match):
+    return text[match["offset"]:match["offset"] + match["length"]]
+
+
+def top_replacements(match, limit=None):
+    values = [r.get("value", "") for r in match.get("replacements", [])]
+    values = [v for v in values if v]
+    return values[:limit] if limit else values
+
+
+def apply_fix(text, match, replacement):
+    off, length = match["offset"], match["length"]
+    return text[:off] + replacement + text[off + length:]
+
+
+def apply_all(text, matches):
+    """Apply every top suggestion. Back to front, so each offset is still
+    valid when its turn comes — applying forwards shifts everything after
+    the first edit."""
+    for match in sorted(matches, key=lambda m: m["offset"], reverse=True):
+        best = top_replacements(match, 1)
+        if best:
+            text = apply_fix(text, match, best[0])
+    return text
+
+
+# ---------------- Table ----------------
+def width_of(text):
+    total = 0
+    for ch in text:
+        if unicodedata.combining(ch) or ch in (FSI, PDI):
+            continue
+        total += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return total
+
+
+def render_table(cells):
+    """tag │ content │ note, in a <tt> span so the separators line up
+    under rofi's proportional UI font. Column width is measured, never
+    truncated: a long sentence keeps every character and pushes its own
+    note column right."""
+    content = [c for c in cells if "head" not in c]
+    natural = max((width_of(c["plain"]) for c in content), default=COL_MIN)
+    width = max(COL_MIN, min(COL_MAX, natural))
+    notes = max((width_of(c["note"]) for c in content), default=0)
+    span = COL_TAG + 3 + width + (3 + min(notes, 40) if notes else 0)
+
+    rows = []
+    for c in cells:
+        if "head" in c:
+            title = f" {c['head']} "
+            fill = max(0, span - width_of(title) - 2)
+            rows.append(
+                f"<tt><span foreground='{COLOR_HEAD}'><b>──{esc(title)}"
+                f"{'─' * fill}</b></span></tt>"
+            )
+            continue
+        pad = " " * max(0, width - width_of(c["plain"]))
+        line = (
+            f"<span foreground='{COLOR_DIM}'>{esc(c['tag'].ljust(COL_TAG))}"
+            f"{SEP} </span>{c['markup']}{pad}"
+        )
+        if c["note"]:
+            line += (
+                f"<span foreground='{COLOR_DIM}'> {SEP} "
+                f"{iso(esc(c['note']))}</span>"
+            )
+        rows.append(f"<tt>{line}</tt>")
+    return rows
+
+
+# ---------------- Rofi steps ----------------
+def ask_text(prefill=""):
+    return run(
+        ["rofi", "-dmenu", "-i", "-p", "Spell-check", "-filter", prefill,
+         *CLEAR_KEYS,
+         "-mesg", "word or sentence · <b>Ctrl+u</b> clear · <b>↵</b> check"],
+        stdin_text="",
+    ).strip()
+
+
+def pick_replacement(word, options):
+    idx = run(
+        ["rofi", "-dmenu", "-i", "-format", "i",
+         "-p", f"Replace {word} with"],
+        stdin_text="\n".join(options),
+    )
+    return options[int(idx)] if idx.isdigit() and int(idx) < len(options) else ""
+
+
+def copy(text):
+    """xclip forks a daemon that holds the selection and inherits our
+    pipes, so capturing its stdout means waiting for an EOF that only
+    comes when another application takes the clipboard. That hang is
+    what made the translator's Ctrl+o look like a dead key. No pipe."""
+    try:
+        p = sp.Popen(
+            ["xclip", "-selection", "clipboard"],
+            stdin=sp.PIPE, stdout=sp.DEVNULL, stderr=sp.DEVNULL,
+        )
+        p.stdin.write(text.encode())
+        p.stdin.close()
+    except (FileNotFoundError, OSError, BrokenPipeError):
+        pass
+    notify("📋 Copied", esc(text), 4000)
+
+
+# ---------------- Screen ----------------
+def build_cells(text, matches, lang_name):
+    """Return (cells, actions), the two kept in step so the index rofi
+    reports back maps straight onto what that row does. Section rules get
+    a None action; selecting one is a no-op."""
+    cells, actions = [], []
+
+    def add(tag, markup, plain, note, action):
+        cells.append({"tag": tag, "markup": markup, "plain": plain,
+                      "note": note})
+        actions.append(action)
+
+    cells.append({"head": f"{lang_name} · {len(matches) or 'no'} mistake"
+                          f"{'' if len(matches) == 1 else 's'}"})
+    actions.append(None)
+
+    add(
+        "✓",
+        f"<span foreground='{COLOR_GOOD}'><b>{iso(esc(text))}</b></span>",
+        text,
+        "copy and close",
+        ("copy", None),
+    )
+    if len(matches) > 1:
+        add(
+            "⚡",
+            f"<span foreground='{COLOR_TEXT}'>fix all "
+            f"{len(matches)} mistakes</span>",
+            f"fix all {len(matches)} mistakes",
+            "apply every top suggestion",
+            ("all", None),
+        )
+
+    if matches:
+        cells.append({"head": "Mistakes"})
+        actions.append(None)
+
+    for i, match in enumerate(matches, 1):
+        bad = bad_text(text, match)
+        reps = top_replacements(match, 3)
+        best = reps[0] if reps else ""
+        arrow = (
+            f"  <span foreground='{COLOR_DIM}'>→</span>  "
+            f"<span foreground='{COLOR_GOOD}'>{iso(esc(best))}</span>"
+            if best else ""
+        )
+        extra = (
+            f"  <span foreground='{COLOR_DIM}'>"
+            f"({', '.join(esc(r) for r in reps[1:])})</span>"
+            if len(reps) > 1 else ""
+        )
+        plain = f"{bad}  →  {best}" + (
+            f"  ({', '.join(reps[1:])})" if len(reps) > 1 else ""
+        )
+        add(
+            f"{i}.",
+            f"<span foreground='{COLOR_BAD}'><b>{iso(esc(bad))}</b></span>"
+            + arrow + extra,
+            plain,
+            match.get("shortMessage") or match.get("message", ""),
+            ("fix", match),
+        )
+
+    return cells, actions
+
+
+# ---------------- Main ----------------
+def review(text):
+    """Show mistakes, apply fixes, repeat. Returns the next action:
+    "quit", or ("new", text) to check something else."""
+    language = detect_language(text)
+
+    while True:
+        try:
+            matches, lang_name = lt_check(text, language)
+        except Exception as e:  # noqa: BLE001 — offline is the common case
+            notify("Spell check", f"LanguageTool unreachable: {esc(str(e))}")
+            return "quit"
+
+        cells, actions = build_cells(text, matches, lang_name or language)
+
+        mesg = (
+            "<b>↵</b> apply · <b>Ctrl+r</b> other suggestions · "
+            "<b>Ctrl+t</b> new text · <b>Esc</b> quit"
+        )
+        code, chosen = run_full(
+            ["rofi", "-dmenu", "-i", "-markup-rows", "-format", "i",
+             "-p", "Spell-check", "-mesg", mesg,
+             "-theme-str", WIDE_WINDOW, *CUSTOM_KEYS],
+            stdin_text="\n".join(render_table(cells)),
+        )
+
+        if code == ROFI_NEW:
+            return "new", text
+        if code not in (0, ROFI_MORE):
+            return "quit"
+
+        action = (
+            actions[int(chosen)]
+            if chosen.isdigit() and int(chosen) < len(actions) else None
+        )
+        if action is None:          # a section rule; nothing to do
+            continue
+
+        kind, match = action
+        if kind == "copy":
+            copy(text)
+            return "quit"
+        if kind == "all":
+            text = apply_all(text, matches)
+            continue
+
+        options = top_replacements(match)
+        if not options:
+            notify("Spell check", match.get("message", "No suggestion"))
+            continue
+        if code == ROFI_MORE:
+            # Alt+m: the whole ranked list rather than the top one.
+            pick = pick_replacement(bad_text(text, match), options)
+            if not pick:
+                continue
+        else:
+            pick = options[0]
+        text = apply_fix(text, match, pick)
+
+
+def main():
+    # Accepted for dmscripts compatibility (qtile calls `dm-spellcheck -r`);
+    # the picker is rofi-only, so they change nothing.
+    args = [a for a in sys.argv[1:] if a not in ("-r", "-d", "-f")]
+
+    text = " ".join(args).strip()
+    if not text:
+        text = strip_bidi(run(["xclip", "-o", "-selection", "primary"])).strip()
+    # The selection is a prefill, not a decision: the box always opens.
+    text = ask_text(text)
+
+    while text:
+        result = review(text)
+        if result == "quit":
+            return 0
+        text = ask_text(result[1])
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
