@@ -4531,8 +4531,23 @@ class SmartWidgetBox(ewidget.WidgetBox):
         # about a window changed here, so none of them fire. Without this the
         # tasklist keeps its old width and the surplus pushes the last chip
         # off the bar.
+        #
+        # Synchronously, NOT via _schedule_center_groupbox(). That helper
+        # defers to call_later(0), and upstream's toggle() has already
+        # queued the repaint with call_soon() -- asyncio drains the
+        # call_soon ready queue before it promotes an expired timer, so
+        # the bar PAINTS ONCE at the stale widths and only then gets
+        # centred. That intermediate frame is the visible one: while
+        # something is playing, w_mpris is a STATIC 220px chip, and 220
+        # already exceeds the ~205px of slack the stretch spacer holds
+        # with every box closed. Opening a box (another ~140px) leaves
+        # the bar 155px over-full for that frame, so `_resize` clamps the
+        # spacer to zero and every chip from the player rightwards is
+        # drawn shifted, then snaps back when the tasklist gives the room
+        # up. Running the pass here means the tasklist is already capped
+        # when the single queued draw fires, so there is no frame to see.
         try:
-            _schedule_center_groupbox()
+            _center_top_groupbox()
         except Exception:
             pass
         try:
