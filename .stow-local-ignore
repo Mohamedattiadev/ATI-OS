@@ -6,6 +6,22 @@
 .gitignore
 README.md
 
+# The rest of the repo-root prose. README.md was already listed; these were
+# not, so `stow .` symlinked all seven into $HOME -- ~/TROUBLESHOOTING.md,
+# ~/plan_ui_ux_qtile.md, ~/qtile-veil-HANDOFF.md and the rest, as top-level
+# files in a fresh user's home directory. Nothing reads them from there:
+# rofi_docs opens them out of $DOTFILES.
+plan_ui_ux_qtile.md
+qtile-.*\.md
+THEME_AUDIT_REPORT.md
+TROUBLESHOOTING.md
+
+# Claude Code's PER-PROJECT state directory. It is not a dotfile, and it is a
+# directory stow will fold into the user's existing ~/.claude rather than skip
+# -- which is exactly what happened here: ~/.claude/worktrees is a symlink
+# back into this repo, inside the user's global Claude config.
+.claude
+
 # ======================
 # Images / assets
 # ======================

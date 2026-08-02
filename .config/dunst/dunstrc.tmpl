@@ -239,6 +239,10 @@
     script = @HOME@/.config/dunst/scripts/log-all.sh
 
 
-[copy]
-    summary = ".*"
-    script = @HOME@/.config/dunst/scripts/do-copy.sh
+# [copy] used to live here, matching summary ".*" -- i.e. every notification
+# -- and running scripts/do-copy.sh. That script has never existed in this
+# repo, so the rule only ever forked a child that failed exec, once per
+# notification, silently. Copy-the-last-notification is implemented by
+# scripts/auto-copy-dunst.sh instead, which is its own dbus-monitor daemon and
+# is not a dunst script hook at all: it takes no (appname, summary, body, ...)
+# argv and would do nothing if wired in here.

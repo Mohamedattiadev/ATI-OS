@@ -248,7 +248,16 @@ mod2 = "mod1"  # Secondary mod = ALT
 
 # homerow client. A shell script that pokes the resident daemon over a socket,
 # so spawning it costs ~12ms rather than a Python interpreter start.
-HOMEROW = os.path.expanduser(
+#
+# PATH first. This was only the checkout path below, which lives outside this
+# repo -- so on a machine that keeps the project anywhere else, or installs the
+# client into ~/.local/bin like every other tool here, all six alt+ bindings
+# and the whole Hint-Mode chord spawned a path that does not exist. lazy.spawn
+# does not surface that: the key just does nothing. Same
+# shutil.which()-then-fall-back shape _rescale_then_restart uses for ui-scale.
+import shutil as _shutil  # noqa: E402  (kept next to its only use)
+
+HOMEROW = _shutil.which("homerow-hint") or os.path.expanduser(
     "~/Attia-Pro/Projects/Homerow_replika/homerow-hint"
 )
 
@@ -3653,32 +3662,37 @@ def normal_user_bar():
             padding=0,
             fontsize=_s(14),
         ),
-        widget.Battery(
-            name="w_battery_nu",
-            format="  {char}{percent:2.0%}",
-            fontsize=_s(11),
-            padding=4,
-            foreground=colors[6],
-            low_foreground=colors[3],
-            low_percentage=0.2,
-            charge_char=" ↑ ",
-            discharge_char=" ↓ ",
-            full_char="✔ ",
-            show_percentage=True,
-            show_short_text=False,
-            mouse_callbacks={
-                "Button1": lambda: qtile.spawn(
-                    'battery_notify'
-                )
-            },
-        ),
-        widget.TextBox(
-            text="|",
-            font="Ubuntu Mono",
-            foreground=colors[1],
-            padding=4,
-            fontsize=_s(14),
-        ),
+        # Battery and the separator that follows it are built only on
+        # hardware that has a battery -- see _has_battery(). The separator
+        # goes with it, or a desktop draws two pipes with nothing between.
+        *([
+            widget.Battery(
+                name="w_battery_nu",
+                format="  {char}{percent:2.0%}",
+                fontsize=_s(11),
+                padding=4,
+                foreground=colors[6],
+                low_foreground=colors[3],
+                low_percentage=0.2,
+                charge_char=" ↑ ",
+                discharge_char=" ↓ ",
+                full_char="✔ ",
+                show_percentage=True,
+                show_short_text=False,
+                mouse_callbacks={
+                    "Button1": lambda: qtile.spawn(
+                        'battery_notify'
+                    )
+                },
+            ),
+            widget.TextBox(
+                text="|",
+                font="Ubuntu Mono",
+                foreground=colors[1],
+                padding=4,
+                fontsize=_s(14),
+            ),
+        ] if _has_battery() else []),
         widget.CPU(
             name="w_cpu_nu",
             format="  {load_percent}%",
@@ -4101,26 +4115,28 @@ def right_side_widgets():
             foreground=colors[5],
         ),
         # Battery
-        chip(
-            ewidget.Battery,
-            name="w_battery",
-            format="  {char}{percent:2.0%}",
-            fontsize=_s(10),
-            padding=12,
-            foreground=colors[6],
-            low_foreground=colors[3],
-            low_percentage=0.2,
-            charge_char=" ↑ ",
-            discharge_char=" ↓ ",
-            full_char="✔ ",
-            show_percentage=True,
-            show_short_text=False,
-            mouse_callbacks={
-                "Button1": lambda: qtile.spawn(
-                    'battery_notify'
-                )
-            },
-        ),
+        *([
+            chip(
+                ewidget.Battery,
+                name="w_battery",
+                format="  {char}{percent:2.0%}",
+                fontsize=_s(10),
+                padding=12,
+                foreground=colors[6],
+                low_foreground=colors[3],
+                low_percentage=0.2,
+                charge_char=" ↑ ",
+                discharge_char=" ↓ ",
+                full_char="✔ ",
+                show_percentage=True,
+                show_short_text=False,
+                mouse_callbacks={
+                    "Button1": lambda: qtile.spawn(
+                        'battery_notify'
+                    )
+                },
+            ),
+        ] if _has_battery() else []),
         # Keyboard layout
         chip(
             ewidget.KeyboardLayout,
@@ -4592,6 +4608,22 @@ def _disk_parts_text():
         lines.append("Biggest in ~:")
         lines.append(top)
     return "\n".join(lines)
+
+
+def _has_battery():
+    """True on a machine that actually has one.
+
+    libqtile's Battery widget does not fail loudly on a desktop -- it builds
+    fine and then every poll returns the string
+    "Error: Unable to read status for status_file", which is what the bar
+    shows, permanently, in two places (the top bar's chip and the bottom
+    bar's). Nothing in the log says why. Building the chip only when
+    /sys/class/power_supply has a BAT* means a desktop simply has no battery
+    chip, which is the honest rendering.
+    """
+    import glob
+
+    return bool(glob.glob("/sys/class/power_supply/BAT*"))
 
 
 def _battery_detail_text():
