@@ -23,8 +23,9 @@ git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
   && ./install.sh
 ```
 
-Then `startx`. That's it — 42 modules run end to end, and you land on a
-complete desktop: qtile, all 22 themes, every font, every widget.
+Then `startx`. That's it — 47 modules run end to end with no questions asked,
+and you land on a complete desktop: qtile, all 22 themes, every font, every
+widget, and a boot splash carrying your own username.
 
 ### Optional extras — you do not need these
 
@@ -63,18 +64,42 @@ silently do nothing — tmux starts fine and simply ignores every
 `set -g @plugin` line. See
 [TROUBLESHOOTING.md → Tmux](TROUBLESHOOTING.md#tmux).
 
-Two things still want a decision only you can make, because both come
-down to choosing a password:
+### `./install.sh` never asks you anything
 
-- **Passwords** (`Mod+p` `p`) — the installer starts Vaultwarden on
-  `127.0.0.1:8222` and points `rbw` at it, but the account is yours to
-  create: open <https://127.0.0.1:8222> (the `s` matters — the web vault
-  refuses plain http), pick a master password, then hit the binding and
-  enter your email once. See [Passwords](#passwords).
-- **Gemini** *(entirely optional)* — the translators and `rofi_anki`
-  gain AI synonyms and example sentences when `GEMINI_API_KEY` is set in
-  `~/.config/secrets.env` (mode 600, never committed). All three work
-  without it; the AI sections are omitted rather than the tool failing.
+It runs start to finish unattended. That is a guarantee, not a
+description: `install.sh` is `wizard.sh --yes`, every module runs with
+`stdin` closed, and the wizard refuses to reach any prompt in that mode.
+It used to be untrue in two places — the run stopped dead at the very end
+on a Simplenote password prompt, and any module whose child process asked
+a question (a git credential, a `makepkg` confirmation) hung forever
+*behind the spinner*, showing nothing but an animation. Both are fixed;
+`--yes` now has no reachable prompt at all.
+
+So there is nothing to do afterwards to get a working desktop. What is
+left are three accounts, and only you can own an account:
+
+| | What it unlocks | Without it |
+|---|---|---|
+| **Simplenote** | The `Mod+Shift+S` TODOS note syncs to the phone app | The note still works — it is a local file. Only the phone mirror is missing |
+| **Vaultwarden** | `Mod+p` `p` password picker | No password menu |
+| **Gemini** *(optional)* | AI synonyms + example sentences in the translators and `rofi_anki` | All three tools still work; the AI section is omitted, not broken |
+
+Do them whenever you like, in any order, days later is fine:
+
+- **Simplenote** — `./wizard.sh --only=simplenote` (**without** `--yes`, so
+  it can ask). It wants your Simplenote email and password, then proves it
+  worked by pushing the TODOS note for real. Run it *after* your first
+  desktop login: on networks that block `auth.simperium.com` — the login
+  host, which is separate from the reachable note API — it falls back to
+  copying a one-line snippet to your clipboard for the browser console and
+  takes an access token instead, and that needs a browser.
+- **Vaultwarden** — the installer already started the server on
+  `127.0.0.1:8222` and pointed `rbw` at it; the account is yours to create.
+  Open <https://127.0.0.1:8222> (the `s` matters — the web vault refuses
+  plain http), pick a master password, then hit the binding and enter your
+  email once. See [Passwords](#passwords).
+- **Gemini** — put `GEMINI_API_KEY=…` in `~/.config/secrets.env`
+  (mode 600, never committed).
 
 ---
 
@@ -317,7 +342,7 @@ keys into `/etc/environment` (commented, ready to fill), and opens it with
 
 ---
 
-### Boot splash *(opt-in)*
+### Boot splash
 
 Arch boots with the kernel log on screen — a wall of scrolling text ending
 in a mirror list. Worse than ugly: a boot with no feedback is
@@ -440,11 +465,22 @@ desktop session shows nothing at all, because plymouth draws to the DRM
 console and X owns the display; that looks like a broken theme when it is
 fine, so `preview` does the honest thing instead.
 
-It is **opt-in and not part of a default install**, because `enable` edits
-`/etc/mkinitcpio.conf` and the kernel cmdline and rebuilds the initramfs —
-a different category of risk from every other module here.
+**It runs as part of a default `./install.sh`, and it needs nothing from
+you.** Install, reboot, and the splash is there with your own name on it —
+whatever your account is called. Nothing to configure, nothing to render by
+hand, no name to type in: the theme is built at install time from the
+account running the installer.
 
-Two safety properties worth knowing:
+It was opt-in until now, because `enable` edits `/etc/mkinitcpio.conf` and
+the kernel cmdline and rebuilds the initramfs — a different category of
+risk from every other module here. What makes it acceptable by default is
+the ordering plus the two properties below: it runs **immediately after**
+`boot-fallback`, so the verbose LTS rescue entry always exists *before*
+anything touches the primary cmdline, and `enable` refuses outright rather
+than half-applying. Don't want it: `./wizard.sh` (interactive) and uncheck
+it, or reverse it afterwards with the uninstall line below.
+
+Three safety properties worth knowing:
 
 - **The LTS rescue entries stay verbose.** `boot-fallback` strips
   `quiet`/`splash` from their options. A rescue entry that inherited the
@@ -462,8 +498,18 @@ Two safety properties worth knowing:
   and rebuilds.
 
 ```bash
-./wizard.sh --yes --only=boot-splash    # install plymouth + enable
-./wizard.sh --uninstall --only=boot-splash
+./wizard.sh --yes --only=boot-splash       # re-run just this module
+./wizard.sh --uninstall --only=boot-splash # remove it, restore every backup
+boot-splash status                         # what is enabled, and from where
+```
+
+The name is not tied to the username if you don't want it to be — the
+generator reads `BOOT_SPLASH_NAME` first and falls back to `${USER^}`, which
+is also how the awkward cases (long names, two words, accents) are tested
+without creating accounts:
+
+```bash
+BOOT_SPLASH_NAME="Mohamed Attia" boot-splash generate && boot-splash preview
 ```
 
 ---
@@ -746,7 +792,35 @@ to install it.
 3. **No display manager** — TTY + `startx`
 4. Packages managed declaratively via [dcli](https://gitlab.com/theblackdon/dcli)
 
-Systems that don't match may need manual intervention.
+### Arch specifically · Linux generally
+
+The repo splits cleanly in two, and it is worth knowing which half you are
+standing on:
+
+| | Portable? | |
+|---|---|---|
+| **The configs and tools** — everything under `.config/`, all ~50 `AtiScriptsV1` commands | **Any Linux** | Nothing is hardcoded to a distro, a username, a monitor, a GPU or a resolution. Paths come from `$HOME`, the battery and webcam are discovered from `/sys` and `v4l2`, screens from live `xrandr`, DPI from the panel, fonts from `fc-match` |
+| **The installer** — `wizard.sh` and everything that installs a package | **Arch only** | `pacman`, `yay`, the AUR, `dcli`, `mkinitcpio`, `systemd-boot` |
+
+That second row is a deliberate limit, not an oversight. Hand-writing
+`apt`/`dnf` equivalents for 263 declared packages that nobody has ever
+installed on those distros produces a config that *looks* portable and
+breaks on first contact — worse than saying no. So instead:
+
+- `wizard.sh` **fails immediately** on a non-Arch system, in `preflight`,
+  before touching anything.
+- Every standalone script — `speed_boost.sh`, `grub_boost.sh`,
+  `service_trim.sh`, `safe-update` — detects what it needs (`pacman`,
+  `systemd`, `/etc/default/grub`) and **exits 0 with a clear message**
+  rather than erroring or, much worse, half-applying. `grub_boost.sh` also
+  handles `grub2-mkconfig` for Fedora/openSUSE.
+- The desktop half deploys anywhere by hand: install the equivalent
+  packages your way, then run `installScripts/stow_script.sh`. It no longer
+  assumes the repo lives at `~/.dotfiles` (it derives its own location) and
+  it backs up anything it would overwrite into `~/DefaultConfig/<timestamp>/`.
+
+Systems that don't match the four points above need manual intervention for
+the package half; the config half should behave identically.
 
 ### Any screen size
 
@@ -841,7 +915,7 @@ ignored — because an ignored filter means the full live install runs instead,
 and its second module is `pacman -Syu`. Unknown flags and unknown module ids
 fail the same way: exit 2, nothing touched.
 
-Every one of the 42 modules has a reversal, even where that reversal is a
+Every one of the 48 modules has a reversal, even where that reversal is a
 deliberate no-op (`dcli-sync`, `piper`, `whisper`, `whisper-fast`,
 `wallpapers` — removing those would delete packages, multi-hundred-MB
 downloads, or a ~13x-faster build the uninstaller has no business
@@ -852,7 +926,7 @@ uninstall, with earlier modules already reversed.
 **What `./install.sh` does**
 
 - Auto-bootstraps `gum` via pacman (~2 s)
-- Runs all 42 modules end-to-end
+- Runs all 47 default modules end-to-end, start to finish, without asking anything
 - Keeps `sudo` alive for the whole run (primed once, refreshed in the
   background) so long AUR builds don't silently drop package installs when the
   credential cache would otherwise expire mid-run
@@ -865,7 +939,12 @@ Themes / Browsers / Apps / Media), spinners, progress bars and colored badges.
 On failure it shows a red-bordered error tail and prompts **retry · skip ·
 quit** (unless `--yes`, which auto-skips).
 
-**The 41 default modules**
+**The 47 default modules**
+
+Numbered in the order they actually run. This list is generated from
+`wizard.sh`'s own `MOD_ORDER`, not maintained by hand — it had drifted to 36
+rows against a wizard that ran 48, so eleven modules were installed on every
+machine and documented nowhere.
 
 | # | id | What |
 | - | -- | ---- |
@@ -873,45 +952,57 @@ quit** (unless `--yes`, which auto-skips).
 | 2 | `bootstrap` | Bootstrap pkgs (git, stow, xorg-server, base-devel) |
 | 3 | `yay` | Build `yay-bin` from AUR if absent |
 | 4 | `dcli` | Install `dcli-arch-git` |
-| 5 | `stow` | Stow dotfiles into `$HOME` |
+| 5 | `stow` | Stow dotfiles into `$HOME` — backs up anything already there to `~/DefaultConfig/<timestamp>/` |
 | 6 | `arch-config` | Sync `arch-config` host file to current username |
-| 7 | `dcli-sync` | **`dcli sync --force`** — installs every declared pkg (self-verifies + retries) |
-| 8 | `cargo` | Cargo tools (`rustup default stable` + `pomodoro-tui`) |
-| 9 | `ati-scripts` | Install AtiScriptsV1 to `/usr/local/bin` |
-| 10 | `simplenote` | Two-way sync between the `Mod+Shift+S` TODOS note and the Simplenote phone app — pushes on every write, pulls when the window opens, parks a `.remote-*` copy rather than guessing a winner when both sides changed. Asks for the account login at the end of the run |
-| 11 | `pacman-guard` | PreTransaction hook: refuse any pacman/yay/dcli upgrade when `/` is too full |
-| 12 | `boot-fallback` | systemd-boot entries for `linux-lts` + a full-module rescue initramfs |
-| 13 | `login-shell` | `chsh` to fish so the TTY matches kitty |
-| 14 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
-| 15 | `xinit` | Write `~/.xinitrc` (qtile · picom · wallpaper · tray applets · copyq server · `QT_QPA_PLATFORMTHEME=qt6ct` · cursor) |
-| 16 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
-| 17 | `xmodmap` | Write `~/.Xmodmap` — Caps is repurposed as **Alt_L outright**, with no tap-to-Caps-Lock fallback (Alt is dead in hardware on this laptop) |
-| 18 | `lid` | Lid close = ignore (`systemd-logind`) |
-| 19 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
-| 20 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
-| 21 | `piper` | Download Piper voices (EN + DE) |
-| 22 | `whisper` | Download Whisper `base.en` (live dictation) + `small.en` (batch) models |
-| 23 | `whisper-fast` | Rebuild `whisper-cli`/`whisper-stream` optimized + patched, shadow via `/usr/local` (AUR package is ~13x slower unoptimized, and doesn't build `whisper-stream` at all) |
-| 24 | `mic-gain` | Enable `fix-mic-gain.service` — reasserts mic capture gain WirePlumber resets to clipping levels on every login |
-| 25 | `scrcpy` | Android screen mirroring — joins `adbusers` (android-udev's rules), enables `avahi-daemon` and opens mDNS in ufw so `phone_screen` (Super+Shift+F6) can find the phone without typing an address |
-| 26 | `passwordless-sudo` | Passwordless sudo |
-| 27 | `ownership` | Fix dotfiles ownership |
-| 28 | `disable-dm` | Disable all display managers |
-| 29 | `candy-icons` | Install candy-icons theme |
-| 30 | `wallpapers` | Clone wallpaper collection |
-| 31 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
-| 32 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
-| 33 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
-| 34 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
-| 35 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
-| 36 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| 7 | `paths` | Expand `@HOME@` in browser flags · gtk.css · bookmarks for this user |
+| 8 | `dcli-sync` | **`dcli sync --force`** — installs every declared pkg (self-verifies + retries) |
+| 9 | `radios` | Enable NetworkManager + bluetooth so the `Mod+P` popups have a daemon behind them |
+| 10 | `gpu` | Detect Intel/AMD/NVIDIA from PCI ids, install the matching driver set + CPU microcode |
+| 11 | `picom-pin` | Build the picom animation fork from a fixed commit, not branch HEAD |
+| 12 | `cargo` | Cargo tools (`rustup default stable` + `pomodoro-tui`) |
+| 13 | `ati-scripts` | Install AtiScriptsV1 to `/usr/local/bin` |
+| 14 | `simplenote` | Two-way sync between the `Mod+Shift+S` TODOS note and the Simplenote phone app — pushes on every write, pulls when the window opens, parks a `.remote-*` copy rather than guessing a winner when both sides changed. Installs the package and a mode-600 credentials stub; **the login itself is not asked during `./install.sh`** (see below) |
+| 15 | `ui-scale` | Size bar/fonts/margins to this display's real DPI; `ui-scale-toggle` to override |
+| 16 | `githooks` | Install the pre-commit hook that refuses commits breaking the config or drifting packages |
+| 17 | `pacman-guard` | PreTransaction hook: refuse any pacman/yay/dcli upgrade when `/` is too full |
+| 18 | `boot-fallback` | systemd-boot entries for `linux-lts` + a full-module rescue initramfs, deliberately **without** `quiet`/`splash` |
+| 19 | `boot-splash` | plymouth splash: the Arch mark in a progress ring with **your** username under it. Runs immediately after `boot-fallback` so the verbose rescue entry always exists first |
+| 20 | `login-shell` | `chsh` to fish so the TTY matches kitty |
+| 21 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
+| 22 | `xinit` | Write `~/.xinitrc` (qtile · picom · wallpaper · tray applets · copyq server · `QT_QPA_PLATFORMTHEME=qt6ct` · cursor) |
+| 23 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
+| 24 | `xmodmap` | Write `~/.Xmodmap` — Caps is repurposed as **Alt_L outright**, with no tap-to-Caps-Lock fallback (Alt is dead in hardware on this laptop). Real Alt keys keep working, so on a normal machine this just gives you a third Alt |
+| 25 | `lid` | Lid close = ignore, via a `logind.conf.d/` drop-in (pacman-safe, and idempotent) |
+| 26 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
+| 27 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
+| 28 | `piper` | Download Piper voices (EN + DE, ~60 MB) |
+| 29 | `ankiconnect` | Anki addon `rofi_anki` talks to on `:8765` (~26 KB) |
+| 30 | `vaultwarden` | Local password server on `127.0.0.1:8222` + `rbw` for `Mod+p` `p` |
+| 31 | `vaultwarden-phone` | Tailscale proxy so the Bitwarden phone app can reach the same vault |
+| 32 | `tmux-tpm` | Clone TPM + install plugins (this used to be a manual README step) |
+| 33 | `whisper` | Download Whisper `base.en` (live dictation) + `small.en` (batch) models (~630 MB) |
+| 34 | `whisper-fast` | Rebuild `whisper-cli`/`whisper-stream` optimized + patched, shadow via `/usr/local` (AUR package is ~13x slower unoptimized, and doesn't build `whisper-stream` at all) |
+| 35 | `mic-gain` | Enable `fix-mic-gain.service` — reasserts mic capture gain WirePlumber resets to clipping levels on every login |
+| 36 | `scrcpy` | Android screen mirroring — joins `adbusers` (android-udev's rules), enables `avahi-daemon` and opens mDNS in ufw so `phone_screen` (Super+Shift+F6) can find the phone without typing an address |
+| 37 | `passwordless-sudo` | Passwordless sudo (validated with `visudo -c`, and rolled back if rejected) |
+| 38 | `ownership` | Fix dotfiles ownership |
+| 39 | `disable-dm` | Disable all display managers |
+| 40 | `candy-icons` | Install candy-icons theme |
+| 41 | `wallpapers` | Clone wallpaper collection |
+| 42 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
+| 43 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
+| 44 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
+| 45 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
+| 46 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
+| 47 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
 | — | `dcli-sync-extra` | **Opt-in, never in a default run.** docker · jdk · qemu · printing — see [Optional extras](#optional-extras--you-do-not-need-these) |
-| — | `boot-splash` | **Opt-in, never in a default run.** plymouth splash with your username + progress bar; edits kernel cmdline + initramfs |
 
-**Run after your first desktop login** — the `simplenote` module needs a
-browser, and `install.sh` finishes in a TTY before `startx`. If the wizard
-told you to come back to it (it does this automatically when there is no
-graphical session yet), log in to the desktop and run:
+**Run after your first desktop login** — the `simplenote` login needs a
+browser, and `install.sh` finishes in a TTY before `startx`. `./install.sh`
+therefore installs the package and the credentials stub but never asks for
+the account (an unattended run has no business stopping on a password
+prompt, which is exactly what it used to do). Log in to the desktop and run
+it **without** `--yes`, so it can ask:
 
 ```bash
 cd ~/.dotfiles/installScripts && ./wizard.sh --only=simplenote

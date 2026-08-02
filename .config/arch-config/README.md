@@ -83,19 +83,38 @@ Files in `modules/` that are *not* listed there are inert:
 | `wm.yaml` | qtile, qtile-extras, picom fork, qt5ct/qt6ct, tray applets |
 | `dev.yaml` | editors, git, fish, toolchains |
 | `media.yaml` | pipewire stack, mpv, easyeffects |
-| `fonts.yaml` | Nerd Fonts, Amiri, Cairo, emoji |
-| `graphics.yaml` | Intel/mesa/vulkan drivers |
+| `fonts.yaml` | Nerd Fonts, Amiri, Cairo, emoji, and every family a tracked config names by hand |
+| `graphics.yaml` | vendor-neutral mesa/vulkan base |
 | `network.yaml` | networking daemons and tools |
 | `xorg.yaml` | X server and input/display utilities |
 | `system-tools.yaml` | CLI utilities |
 | `python-lib.yaml` | Python packages qtile's config and scripts import |
 | `system-packages-ati.yaml` | *not enabled* — a captured snapshot of manually-installed packages, kept for reference |
 | `declared-packages.yaml` | *not enabled* — scratch list written by `dcli install`/`dcli search` |
+| `graphics-intel.yaml`, `graphics-amd.yaml`, `graphics-nvidia.yaml` | *not enabled* — the wizard's `gpu` module picks one at install time from the PCI vendor id |
+| `optional.yaml` | *not enabled* — docker/jdk/qemu/printing, installed only by `wizard.sh --only=dcli-sync-extra` |
+| `splash.yaml` | *not enabled* — plymouth, installed only by the wizard's `boot-splash` module (a package that is inert until something hooks it into the initramfs) |
 | `example.yaml` | template for a new module |
 
 Declare a package where it belongs by purpose, not where it happens to
 be convenient. Anything a config file calls **unguarded** must be
 declared; a guarded optional fallback (`command -v x && x`) need not be.
+
+Two failure modes these files have actually produced, both silent:
+
+- **A package that no longer exists takes the whole transaction with it.**
+  `graphics-amd.yaml` carried `libva-mesa-driver` and `mesa-vdpau` long
+  after both were dropped from the repos. dcli installs a module's packages
+  in one `pacman -S`, so a single "target not found" meant an AMD machine
+  got no `vulkan-radeon` either and ran the desktop on llvmpipe — with
+  nothing in any log naming a package. Before adding or keeping a name here,
+  `pacman -Si <pkg>` it.
+- **A font that is merely installed is not declared.** fontconfig never
+  errors on a missing family; it substitutes one. `adwaita-fonts` and
+  `noto-fonts` were named by tracked configs, present on the author's
+  machine, and in no module at all — so a fresh install rendered the qtile
+  systray and every GTK app in a different face than intended and said
+  nothing. `validate.sh` now `fc-match`es every family the UI names.
 
 ## Update safety
 
