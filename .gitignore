@@ -109,3 +109,34 @@ brave-profiles
 # tracked; note pcmanfm-qt rewrites LastWindow{Width,Height} into it on
 # exit, so an occasional one-line diff there is the file manager, not you.
 .config/pcmanfm-qt/default/recent-files.conf
+
+# ── Personal content, not configuration ──────────────────────────────
+# These are the files the rofi scripts read and write as you use them:
+# your links, your todos, your notes. A fresh install must start empty,
+# not with the previous owner's reading list -- so they are ignored here
+# and created on first run by the scripts themselves
+# (rofi_shared touches Shared_Links.md, rofi_todo touches its files).
+#
+# Nothing is lost by this: the files stay on disk, they just stop being
+# committed. Templates/ IS still tracked, because those are blank forms
+# rather than content.
+.config/rofi/Todo_files/Shared_Links.md
+.config/rofi/Todo_files/Shared_Links.md.tmp
+.config/rofi/Todo_files/todos.md
+.config/rofi/Todo_files/todos.json
+.config/rofi/Todo_files/subtasks.md
+.config/rofi/Todo_files/working_on.txt
+.config/rofi/Todo_files/done_today.md
+.config/rofi/Todo_files/sum.md
+.config/rofi/Todo_files/test.md
+.config/rofi/Todo_files/yearly_plan.md
+.config/rofi/Todo_files/yearly_plan_week_sum/
+.config/rofi/Todo_files/resources.md
+.config/rofi/Todo_files/linksofdesignPatterns.md
+.config/rofi/Todo_files/.plan_start_date
+
+# Syncthing per-machine folder markers.
+.stfolder/
+
+# 67MB of personal drawings — content, not config.
+.config/rofi/Todo_files/excalidraw.zip
