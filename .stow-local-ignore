@@ -11,7 +11,11 @@ README.md
 # ~/plan_ui_ux_qtile.md, ~/qtile-veil-HANDOFF.md and the rest, as top-level
 # files in a fresh user's home directory. Nothing reads them from there:
 # rofi_docs opens them out of $DOTFILES.
-plan_ui_ux_qtile.md
+#
+# Patterned, not named one by one: the list was already out of date the first
+# time it was written, and the next plan_*.md added to the repo root would
+# have gone straight back into $HOME.
+plan_.*\.md
 qtile-.*\.md
 THEME_AUDIT_REPORT.md
 TROUBLESHOOTING.md
