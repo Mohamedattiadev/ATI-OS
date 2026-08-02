@@ -396,6 +396,16 @@ def main():
             die(f"cannot read {NOTE_FILE}")
         local = ""
 
+    # Nothing to send means no reason to open a connection at all. Every request
+    # costs a full TLS handshake (urllib keeps nothing alive) plus the round
+    # trip, so a no-op push is ~0.7s of pure latency -- on a keybind that fires
+    # on every single :w, including the ones that changed nothing. Comparing
+    # against the ancestor first makes those free. Only push is short-circuited:
+    # a pull with an unchanged local file is exactly when the phone's edits
+    # arrive, so it must still go and look.
+    if MODE == "push" and local == _read(SYNC_FILE) and stored_key():
+        sys.exit(0)
+
     sn = connect()
     if MODE == "pull":
         do_pull(sn, local)
