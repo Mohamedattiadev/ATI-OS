@@ -230,7 +230,7 @@ run() {
 # Group is only used for the picker header — keep display order stable.
 declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
-  sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts ui-scale githooks
+  sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts simplenote ui-scale githooks
   pacman-guard boot-fallback login-shell
   touchpad xinit xresources xmodmap lid image-envs flatpak piper whisper
   whisper-fast mic-gain
@@ -467,6 +467,7 @@ _reg gpu               "GPU + microcode"     System    "Detect Intel/AMD/NVIDIA 
 _reg picom-pin         "picom (pinned)"      System    "Build the animation fork from a fixed commit, not branch HEAD"  "step_picom_pin"
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
 _reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
+_reg simplenote        "Simplenote push"     Apps      "Mirror the Mod+Shift+S TODOS note to your phone (asks for login at the end)" "step_simplenote"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"
 _reg pacman-guard      "Pacman safety hook"  System    "PreTransaction gate: refuse upgrades when / is too full"  "step_pacman_guard"
 _reg boot-fallback     "LTS boot entries"    System    "systemd-boot entries for linux-lts + a rescue initramfs"  "step_boot_fallback"
@@ -790,6 +791,37 @@ step_cargo() {
   command -v cargo >/dev/null && run "cargo install pomodoro-tui" || _WARN "cargo missing, skip"
 }
 step_ati_scripts()  { run "cd $DOTFILES_DIR/.config/AtiScriptsV1 && ./install.sh"; }
+step_simplenote() {
+  # Prepares the Simplenote mirror for the Mod+Shift+S TODOS note: package,
+  # credentials file, state dir. The account login itself is NOT asked here --
+  # _run_module captures a step's stdout into /tmp/wizard-<id>.log behind a
+  # spinner, so a gum prompt in here would render into a file and read as a
+  # hang. page_simplenote_creds() asks at the end of the run instead.
+  #
+  # python-simplenote is also declared in arch-config's python-lib module, so a
+  # full `dcli sync` covers it; installed here too because this module is
+  # legitimately runnable on its own via --only=simplenote.
+  run "yay -S --needed --noconfirm python-simplenote"
+
+  local cred_dir="$HOME/.config/simplenote"
+  local cred="$cred_dir/credentials"
+  run "mkdir -p $cred_dir '${XDG_STATE_HOME:-$HOME/.local/state}/simplenote-push'"
+  # Never clobber a filled-in credentials file on a re-run.
+  if (( DRY_RUN )); then
+    _DIM "  [dry] write $cred (stub, mode 600) if absent"
+  elif [[ ! -f "$cred" ]]; then
+    printf '[simplenote]\nemail = \npassword = \n' >"$cred"
+  fi
+  # Reassert 600 unconditionally: this file holds a plaintext account password
+  # (Simplenote's API has no tokens), and a stray umask on a re-run is enough
+  # to leave it world-readable.
+  run "chmod 600 $cred"
+
+  # The push script rides along with the stowed AtiScriptsV1 tree, so there is
+  # nothing to copy -- but say so plainly if stow has not run yet.
+  [[ -x "$HOME/.config/AtiScriptsV1/simplenote_push" ]] \
+    || _WARN "simplenote_push not on disk yet — run the stow module first"
+}
 step_pacman_guard() {
   # Installs the PreTransaction hook that refuses a package operation when
   # / is too full to unpack safely. This has to be a pacman hook rather
@@ -1603,6 +1635,15 @@ uninstall_ati_scripts() {
     run "sudo rm -f /usr/local/bin/$n"
   done
 }
+uninstall_simplenote() {
+  # Removes the credentials and the pushed-note bookkeeping. The note itself
+  # lives in your Simplenote account and is deliberately left alone -- an
+  # uninstaller has no business deleting notes off a remote service.
+  run "rm -f $HOME/.config/simplenote/credentials"
+  run "rmdir --ignore-fail-on-non-empty $HOME/.config/simplenote 2>/dev/null || true"
+  run "rm -rf ${XDG_STATE_HOME:-$HOME/.local/state}/simplenote-push"
+  _DIM "  The Simplenote note itself was left in your account."
+}
 uninstall_stow() {
   # `stow -D` unlinks the symlinks stow deployed.
   run "cd $DOTFILES_DIR && stow -D -t $HOME . 2>/dev/null || true"
@@ -1676,6 +1717,7 @@ UMOD_CMD[dcli-sync]="uninstall_dcli_sync"
 UMOD_CMD[radios]="uninstall_radios"
 UMOD_CMD[cargo]="uninstall_cargo"
 UMOD_CMD[ati-scripts]="uninstall_ati_scripts"
+UMOD_CMD[simplenote]="uninstall_simplenote"
 UMOD_CMD[pacman-guard]="uninstall_pacman_guard"
 UMOD_CMD[boot-fallback]="uninstall_boot_fallback"
 UMOD_CMD[login-shell]="uninstall_login_shell"
@@ -1963,6 +2005,118 @@ arm_onboarding() {
   : >"$state_dir/onboarding.pending"
 }
 
+# Ask for the Simplenote login, once, after every module has run.
+#
+# Deliberately not inside step_simplenote: _run_module captures step output to a
+# log file behind a spinner, so a prompt there is invisible. Deliberately at the
+# end rather than up front: an install is long enough to walk away from, and a
+# password prompt that blocks the whole run for 40 minutes is worse than one
+# that waits for you at the finish.
+#
+# Gated on a tty, not on ASSUME_YES: ./install.sh IS `wizard.sh --yes`, and the
+# whole point is that it asks. A genuinely unattended run (container-test.sh,
+# CI) has no tty and falls through silently.
+page_simplenote_creds() {
+  local id found=0
+  for id in "${PICKED_IDS[@]}"; do [[ "$id" == simplenote ]] && found=1; done
+  (( found )) || return 0
+  (( DRY_RUN )) && return 0
+  [[ -t 0 ]] || return 0
+
+  local cred="$HOME/.config/simplenote/credentials"
+  [[ -f "$cred" ]] || return 0
+  # Already configured -- do not re-ask, and do not print the stored address.
+  if ! grep -qE '^[[:space:]]*(email|password)[[:space:]]*=[[:space:]]*$' "$cred"; then
+    return 0
+  fi
+
+  echo
+  _H1 "Simplenote"
+  _INFO "  Mirrors the Mod+Shift+S TODOS note to the Simplenote app on your phone."
+  _DIM  "  Leave the email blank to skip — you can set it up later with:"
+  _DIM  "    ./wizard.sh --only=simplenote"
+  echo
+
+  local email password
+  email="$(gum input --placeholder 'Simplenote email (blank = skip)')" || return 0
+  [[ -n "$email" ]] || { _DIM "  Skipped."; return 0; }
+  password="$(gum input --password --placeholder 'Simplenote password')" || return 0
+  if [[ -z "$password" ]]; then
+    _WARN "  No password entered — skipped."
+    return 0
+  fi
+
+  # Write via a 600 temp file rather than editing in place: a plaintext password
+  # must never exist, even briefly, at the default umask.
+  local tmp
+  tmp="$(mktemp)"; chmod 600 "$tmp"
+  printf '[simplenote]\nemail = %s\npassword = %s\n' "$email" "$password" >"$tmp"
+  mv "$tmp" "$cred"; chmod 600 "$cred"
+
+  # Verify immediately. The script exits 0 on every failure (it must never break
+  # :w), so its stderr is what says whether the login actually worked.
+  local out
+  out="$("$HOME/.config/AtiScriptsV1/simplenote_push" 2>&1)" || true
+  if [[ -z "$out" ]]; then
+    _OK "  Connected — check the Simplenote app on your phone."
+    return 0
+  fi
+
+  _WARN "  Saved, but the first push did not go through:"
+  _WARN "    $out"
+
+  # Some networks blackhole auth.simperium.com (login) while leaving
+  # api.simperium.com (every actual note read/write) reachable, which is why
+  # the web app keeps working when this does not. A token taken from the web
+  # app skips the login host entirely.
+  if [[ "$out" == *auth.simperium.com* ]]; then
+    local snippet='Object.entries(localStorage).forEach(([k,v])=>{if(/[0-9a-f]{32}/.test(v))console.log(k,v)})'
+    echo
+    _INFO "  Your network blocks auth.simperium.com — the login host."
+    _INFO "  The note API itself is reachable, so a token from the web app works."
+    echo
+    # A fresh install runs in a TTY, before startx: there is no browser to log
+    # in with and no X clipboard to paste into. Say so plainly and let them
+    # finish from the desktop rather than dead-ending in a prompt they cannot
+    # satisfy.
+    if [[ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+      _WARN "  No graphical session yet — you need a browser for this step."
+      _DIM  "  Finish it after your first login to the desktop:"
+      _DIM  "    ./wizard.sh --only=simplenote"
+      _DIM  "  Full walkthrough: TROUBLESHOOTING.md → Simplenote"
+      return 0
+    fi
+    _INFO "  1. Log in at:  https://app.simplenote.com"
+    _INFO "  2. Press F12 → Console tab"
+    if command -v xclip >/dev/null && printf '%s' "$snippet" | xclip -selection clipboard 2>/dev/null; then
+      _OK "  3. The snippet is already on your clipboard — just paste it (Ctrl+V) + Enter"
+      _DIM "     (Brave may ask you to type 'allow pasting' first)"
+    else
+      _INFO "  3. Paste this into the console, then Enter:"
+      _DIM  "       $snippet"
+    fi
+    _INFO "  4. Copy the 32-character hex value it prints (accessToken)"
+    echo
+    local token
+    token="$(gum input --placeholder 'Simperium token (blank = skip)')" || return 0
+    if [[ -n "$token" ]]; then
+      local tmp2
+      tmp2="$(mktemp)"; chmod 600 "$tmp2"
+      printf '[simplenote]\nemail = %s\npassword = %s\ntoken = %s\n' \
+        "$email" "$password" "$token" >"$tmp2"
+      mv "$tmp2" "$cred"; chmod 600 "$cred"
+      out="$("$HOME/.config/AtiScriptsV1/simplenote_push" 2>&1)" || true
+      if [[ -z "$out" ]]; then
+        _OK "  Connected via token — check the Simplenote app on your phone."
+        return 0
+      fi
+      _WARN "  Still failing:  $out"
+    fi
+  fi
+  _DIM  "  Retry any time:  ~/.config/AtiScriptsV1/simplenote_push"
+  _DIM  "  Details:         TROUBLESHOOTING.md → Simplenote"
+}
+
 page_finale() {
   (( DRY_RUN )) || arm_onboarding
   echo
@@ -2031,6 +2185,7 @@ main() {
   (( ${#PICKED_IDS[@]} )) || { _WARN "No modules left after filter."; exit 0; }
   page_summary || { _WARN "Cancelled by user."; exit 0; }
   page_execute
+  (( UNINSTALL )) || page_simplenote_creds
   page_finale
 }
 

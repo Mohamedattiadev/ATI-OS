@@ -23,7 +23,7 @@ git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
   && ./install.sh
 ```
 
-Then `startx`. That's it — 39 modules run end to end, and you land on a
+Then `startx`. That's it — 41 modules run end to end, and you land on a
 complete desktop: qtile, all 22 themes, every font, every widget.
 
 ### Optional extras — you do not need these
@@ -616,7 +616,7 @@ uninstall, with earlier modules already reversed.
 **What `./install.sh` does**
 
 - Auto-bootstraps `gum` via pacman (~2 s)
-- Runs all 39 modules end-to-end
+- Runs all 41 modules end-to-end
 - Keeps `sudo` alive for the whole run (primed once, refreshed in the
   background) so long AUR builds don't silently drop package installs when the
   credential cache would otherwise expire mid-run
@@ -629,7 +629,7 @@ Themes / Browsers / Apps / Media), spinners, progress bars and colored badges.
 On failure it shows a red-bordered error tail and prompts **retry · skip ·
 quit** (unless `--yes`, which auto-skips).
 
-**The 39 default modules**
+**The 41 default modules**
 
 | # | id | What |
 | - | -- | ---- |
@@ -642,33 +642,58 @@ quit** (unless `--yes`, which auto-skips).
 | 7 | `dcli-sync` | **`dcli sync --force`** — installs every declared pkg (self-verifies + retries) |
 | 8 | `cargo` | Cargo tools (`rustup default stable` + `pomodoro-tui`) |
 | 9 | `ati-scripts` | Install AtiScriptsV1 to `/usr/local/bin` |
-| 10 | `pacman-guard` | PreTransaction hook: refuse any pacman/yay/dcli upgrade when `/` is too full |
-| 11 | `boot-fallback` | systemd-boot entries for `linux-lts` + a full-module rescue initramfs |
-| 12 | `login-shell` | `chsh` to fish so the TTY matches kitty |
-| 13 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
-| 14 | `xinit` | Write `~/.xinitrc` (qtile · picom · wallpaper · tray applets · copyq server · `QT_QPA_PLATFORMTHEME=qt6ct` · cursor) |
-| 15 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
-| 16 | `xmodmap` | Write `~/.Xmodmap` — Caps is repurposed as **Alt_L outright**, with no tap-to-Caps-Lock fallback (Alt is dead in hardware on this laptop) |
-| 17 | `lid` | Lid close = ignore (`systemd-logind`) |
-| 18 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
-| 19 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
-| 20 | `piper` | Download Piper voices (EN + DE) |
-| 21 | `whisper` | Download Whisper `base.en` (live dictation) + `small.en` (batch) models |
-| 22 | `whisper-fast` | Rebuild `whisper-cli`/`whisper-stream` optimized + patched, shadow via `/usr/local` (AUR package is ~13x slower unoptimized, and doesn't build `whisper-stream` at all) |
-| 23 | `mic-gain` | Enable `fix-mic-gain.service` — reasserts mic capture gain WirePlumber resets to clipping levels on every login |
-| 24 | `passwordless-sudo` | Passwordless sudo |
-| 25 | `ownership` | Fix dotfiles ownership |
-| 26 | `disable-dm` | Disable all display managers |
-| 27 | `candy-icons` | Install candy-icons theme |
-| 28 | `wallpapers` | Clone wallpaper collection |
-| 29 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
-| 30 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
-| 31 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
-| 32 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
-| 33 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
-| 34 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| 10 | `simplenote` | Two-way sync between the `Mod+Shift+S` TODOS note and the Simplenote phone app — pushes on every write, pulls when the window opens, parks a `.remote-*` copy rather than guessing a winner when both sides changed. Asks for the account login at the end of the run |
+| 11 | `pacman-guard` | PreTransaction hook: refuse any pacman/yay/dcli upgrade when `/` is too full |
+| 12 | `boot-fallback` | systemd-boot entries for `linux-lts` + a full-module rescue initramfs |
+| 13 | `login-shell` | `chsh` to fish so the TTY matches kitty |
+| 14 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
+| 15 | `xinit` | Write `~/.xinitrc` (qtile · picom · wallpaper · tray applets · copyq server · `QT_QPA_PLATFORMTHEME=qt6ct` · cursor) |
+| 16 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
+| 17 | `xmodmap` | Write `~/.Xmodmap` — Caps is repurposed as **Alt_L outright**, with no tap-to-Caps-Lock fallback (Alt is dead in hardware on this laptop) |
+| 18 | `lid` | Lid close = ignore (`systemd-logind`) |
+| 19 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
+| 20 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
+| 21 | `piper` | Download Piper voices (EN + DE) |
+| 22 | `whisper` | Download Whisper `base.en` (live dictation) + `small.en` (batch) models |
+| 23 | `whisper-fast` | Rebuild `whisper-cli`/`whisper-stream` optimized + patched, shadow via `/usr/local` (AUR package is ~13x slower unoptimized, and doesn't build `whisper-stream` at all) |
+| 24 | `mic-gain` | Enable `fix-mic-gain.service` — reasserts mic capture gain WirePlumber resets to clipping levels on every login |
+| 25 | `passwordless-sudo` | Passwordless sudo |
+| 26 | `ownership` | Fix dotfiles ownership |
+| 27 | `disable-dm` | Disable all display managers |
+| 28 | `candy-icons` | Install candy-icons theme |
+| 29 | `wallpapers` | Clone wallpaper collection |
+| 30 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
+| 31 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
+| 32 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
+| 33 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
+| 34 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
+| 35 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
 | — | `dcli-sync-extra` | **Opt-in, never in a default run.** docker · jdk · qemu · printing — see [Optional extras](#optional-extras--you-do-not-need-these) |
 | — | `boot-splash` | **Opt-in, never in a default run.** plymouth splash with your username + progress bar; edits kernel cmdline + initramfs |
+
+**Run after your first desktop login** — the `simplenote` module needs a
+browser, and `install.sh` finishes in a TTY before `startx`. If the wizard
+told you to come back to it (it does this automatically when there is no
+graphical session yet), log in to the desktop and run:
+
+```bash
+cd ~/.dotfiles/installScripts && ./wizard.sh --only=simplenote
+```
+
+It asks for your Simplenote email and password, then verifies by pushing the
+`Mod+Shift+S` TODOS note for real. On networks that block
+`auth.simperium.com` — the login host, which is separate from the reachable
+note API — it detects that, copies a one-line snippet to your clipboard for
+the browser console, and takes an access token instead.
+
+Once configured, the note syncs **both ways**: every write pushes, and opening
+the window pulls anything typed on the phone. Editing offline on either side is
+safe — the pull doubles as the retry for an unsent write, and a push checks the
+note before overwriting it. Merging is the one thing that is never automatic:
+when both sides changed you get a `TODOS.md.remote-<timestamp>` to reconcile by
+hand rather than a silent guess. See
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md) → **Simplenote** for every case and
+what each log line means.
 
 **Optional post-install tuning** — two interactive scripts, not wired into
 `install.sh` because they need a reboot, are per-machine, and prompt before

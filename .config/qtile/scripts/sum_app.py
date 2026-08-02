@@ -1,4 +1,8 @@
+import os
+
 from libqtile.backend.base import FloatStates
+
+SUM_PULL_CMD = os.path.expanduser("~/.config/AtiScriptsV1/simplenote_push") + " --pull"
 
 FLOAT_W_RATIO = 0.55
 FLOAT_H_RATIO = 0.65
@@ -63,6 +67,26 @@ def float_center_sum(win):
         pass
 
 
+def pull_sum(qtile):
+    """Fetch anything typed on the phone before the window comes up.
+
+    qtile.spawn(), never a blocking call: qtile's event loop is single-threaded,
+    and simplenote_push allows itself up to 15s on a stalled connection. Waiting
+    for it here would freeze the whole WM -- every key, every redraw -- for that
+    long, on a keybind pressed dozens of times a day.
+
+    The consequence of not waiting is that the pull may land a moment after nvim
+    has already read the file. That is what the `autoread` + `checktime` autocmd
+    in nvim/lua/config/autocmds.lua is for: the buffer refreshes itself when the
+    file changes underneath it, and refuses to clobber unsaved edits.
+    """
+    try:
+        qtile.spawn(SUM_PULL_CMD)
+    except Exception:
+        # A missing script or a broken spawn must never stop the window opening.
+        pass
+
+
 def toggle_or_spawn_sum(qtile, myTerm, sum_file):
     for group in qtile.groups:
         for win in group.windows:
@@ -70,6 +94,7 @@ def toggle_or_spawn_sum(qtile, myTerm, sum_file):
 
                 # 🚀 CASE 1: window is on another workspace
                 if win.group != qtile.current_group:
+                    pull_sum(qtile)
                     win.togroup(qtile.current_group.name)
                     # float_center_sum also un-minimizes -- no toggle_minimize()
                     # here, that is what caused the tiled intermediate frame.
@@ -79,10 +104,12 @@ def toggle_or_spawn_sum(qtile, myTerm, sum_file):
 
                 # 🚀 CASE 2: same workspace
                 if win.minimized:
+                    pull_sum(qtile)
                     float_center_sum(win)
                     win.focus()
 
                 elif qtile.current_window != win:
+                    pull_sum(qtile)
                     win.focus()
 
                 else:
@@ -94,6 +121,7 @@ def toggle_or_spawn_sum(qtile, myTerm, sum_file):
                 return
 
     # 🚀 CASE 3: not running
+    pull_sum(qtile)
     # --class gives this window its own WM_CLASS so the float rule matches on the
     # MapRequest itself; without it the window tiles for a frame before floating.
     #

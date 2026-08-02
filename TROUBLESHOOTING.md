@@ -2709,6 +2709,136 @@ something the dotfiles should decide.
 
 ---
 
+## Simplenote
+
+### The TODOS note stops reaching the phone
+
+`simplenote_push` mirrors `~/<USER>TODOS/TODOS.md` into a single Simplenote
+note on every write (a `BufWritePost` autocmd in
+`nvim/lua/config/autocmds.lua`, so `:w`, `:wa`, `:wq`, `:wqa` and `:x` all
+count). It is **deliberately silent**: it exits 0 on every failure, because a
+dropped wifi connection must never break `:w`.
+
+- **Where the failure actually shows up:** `~/.local/state/simplenote-push/push.log`.
+  Nothing surfaces inside nvim, by design.
+- **Test by hand:** `~/.config/AtiScriptsV1/simplenote_push` — silence means
+  it worked.
+
+### Edits made on the phone do not appear on the PC
+
+- **How the two directions differ:** the desktop pushes on every write
+  (`BufWritePost`), but the phone has no way to notify anything — so the
+  pull is triggered by **opening the window**. `Mod+Shift+S` runs
+  `simplenote_push --pull` before showing it.
+- **Why it can take a second:** the pull is fired with `qtile.spawn()` and
+  deliberately **not** waited on. qtile's event loop is single-threaded and
+  the script allows itself 15s on a stalled connection — blocking would
+  freeze the whole WM on a keybind you press dozens of times a day. So the
+  pull sometimes lands just after nvim has read the file; the
+  `autoread` + `:checktime` autocmd refreshes the open buffer when it does.
+- **If it still looks stale:** check `~/.local/state/simplenote-push/push.log`.
+  A `[pull]` line reports what happened.
+
+### Working offline
+
+Both sides can be edited with no network; nothing is lost either way.
+
+- **An offline `:w` fails and nothing retries it** — the note would stay stale
+  until the next write, which may never come. So the pull doubles as the
+  retry: if it finds the desktop ahead and the note unchanged, it pushes
+  there and then. Opening the window is what gets an offline edit sent.
+- **A push checks before it overwrites.** It fetches the note first and
+  compares against `last_sync`; if the remote moved too, that version is
+  saved to `TODOS.md.remote-<timestamp>` *before* the local copy is sent.
+  Without that check, coming back online and writing before ever opening the
+  window would erase the phone's work from the server with no copy kept.
+- **What is never automatic:** merging. Whenever both sides moved you get a
+  `.remote-*` file to reconcile by hand — see below.
+
+### Safety rails that fire on their own
+
+All of these log a line and keep going; none of them ever interrupt a save.
+
+| log line | what happened | why it is handled this way |
+| -- | -- | -- |
+| `another sync is already running — skipped` | a push and a pull overlapped | both read-modify-write the same three state files; concurrent runs with a missing key could create **two** notes. `flock`, non-blocking — the other run is doing the same work anyway |
+| `local file is empty — saved remote to …` | `TODOS.md` was empty at push time | almost always a truncated file rather than an intentional clear, and unrecoverable once sent. The note is still cleared; a copy is kept first |
+| `note … is gone — recovered … by tag` | the stored key pointed at a deleted note | the note is re-found by its `atitodos` tag. Creating a new one instead would leave two tagged notes and make the next recovery ambiguous |
+| `note is in the Simplenote trash — leaving the local file alone` | the note was trashed on the phone | a deletion is not an edit. The next push lifts it back out of the trash (`deleted: 0`) rather than mirroring the removal onto your file |
+| `no sync history — saved existing note to …` | fresh state dir, note already exists | with no ancestor there is no way to tell who is newer, so the existing note is preserved before the local file is pushed |
+| `warning: N notes tagged 'atitodos'` | duplicates exist | the newest surviving one wins, ties broken by key so two machines pick the same. Delete the extras in the app |
+
+**Other invariants worth knowing:**
+
+- **Everything is UTF-8 explicitly**, never the locale encoding. A spawned
+  process can inherit `LANG=C`, which would crash on read and produce
+  mojibake on write the moment a note contains non-ASCII.
+- **Every write is atomic** (temp file + `rename`). A plain truncating write
+  that is interrupted destroys the notes file with nothing to recover from.
+- **`push.log` self-rotates** at 256 KB, keeping the last 200 lines.
+
+### `CONFLICT — both sides changed`
+
+- **Symptom:** a `TODOS.md.remote-<timestamp>` file appears next to
+  `TODOS.md`, and the phone's text is not in `TODOS.md`.
+- **Cause:** the desktop file *and* the note both changed since they last
+  agreed. The state dir keeps `last_sync`, a copy of the content at the
+  moment both sides matched; with that common ancestor the script can tell
+  "only the phone moved" from "only the desktop moved" from "both moved".
+  Only the first case is safe to apply automatically.
+- **Why it does not merge:** guessing by timestamp is how a day of notes
+  gets silently eaten. Nothing is lost here — the remote copy is written
+  beside the file and the local file is untouched.
+- **Fix:** diff them and keep what you want, then delete the leftover:
+  ```bash
+  cd ~/*TODOS && nvim -d TODOS.md TODOS.md.remote-*
+  rm TODOS.md.remote-*        # after merging
+  ```
+  The next `:w` pushes the merged result and re-establishes the ancestor.
+
+### `cannot reach auth.simperium.com` — but the web app logs in fine
+
+- **Symptom:** the push always fails with a timeout after ~15s, while
+  <https://app.simplenote.com> logs in normally in the browser.
+- **Root cause:** Simplenote is two separate hosts, and only one of them
+  gets blocked. `auth.simperium.com` (`192.0.84.248`) handles *login only*;
+  `api.simperium.com` handles every actual note read and write. On some
+  networks the auth host is blackholed at the TCP level — ICMP ping still
+  answers, ports 80 and 443 both hang — while `api.simperium.com` and even
+  the adjacent `simperium.com` (`192.0.84.247`) respond fine. The web app
+  keeps working because it authenticates through `app.simplenote.com`, not
+  through the blocked host.
+- **Confirm it in one line:**
+  ```bash
+  curl -s -o /dev/null -w '%{http_code}\n' --max-time 10 https://auth.simperium.com/   # hangs = blocked
+  curl -s -o /dev/null -w '%{http_code}\n' --max-time 10 https://api.simperium.com/    # 200   = fine
+  ```
+  Pinning the auth hostname at the working IP does **not** help — that host
+  answers `403` from nginx for the auth vhost.
+- **Fix: skip the login entirely with a pre-obtained token.** Every note
+  operation goes to `api.simperium.com`, which is reachable; only the
+  handshake needs the blocked host. Log in at <https://app.simplenote.com>,
+  open devtools (F12) → Console, and dump the stored token:
+  ```js
+  Object.entries(localStorage).forEach(([k, v]) => {
+    if (/[0-9a-f]{32}/.test(v)) console.log(k, v);
+  });
+  ```
+  Copy the 32-character hex value into `~/.config/simplenote/credentials`:
+  ```ini
+  [simplenote]
+  email = you@example.com
+  password = yourpassword
+  token = <32-hex-token>
+  ```
+  With `token` set, the script assigns it directly and `authenticate()` is
+  never called, so the blocked host is never contacted. `email` and
+  `password` can stay — they are only used when no token is present.
+- **If the token later stops working** (`Login to Simplenote API failed!
+  Check Token.`), it was revoked — repeat the steps above for a fresh one.
+
+---
+
 ## System updates
 
 ### An update broke the system badly enough to need a reinstall

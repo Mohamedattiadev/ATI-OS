@@ -167,6 +167,20 @@ while IFS= read -r t; do
 done < <(git ls-files '*.tmpl')
 (( tmpl_bad )) || pass "every .tmpl is referenced by a renderer"
 
+# Python scripts under AtiScriptsV1 are launched detached (qtile.spawn, nvim's
+# vim.system) with their output going to a log nobody reads. A syntax error in
+# one is therefore completely invisible at runtime -- the feature just stops
+# working. Compiling them here is the only place it surfaces.
+head_ "AtiScriptsV1 python"
+py_bad=0
+while IFS= read -r f; do
+  head -1 "$f" | grep -q 'python' || continue
+  if ! python3 -m py_compile "$f" 2>/dev/null; then
+    fail "python syntax error: $f"; py_bad=1
+  fi
+done < <(git ls-files '.config/AtiScriptsV1/*')
+(( py_bad )) || pass "every python script in AtiScriptsV1 compiles"
+
 # ── 7. wizard invariants ─────────────────────────────────────────────
 head_ "wizard"
 if ./installScripts/wizard.sh --help >/dev/null 2>&1; then
