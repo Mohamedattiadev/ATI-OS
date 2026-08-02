@@ -27,6 +27,17 @@ packages:
                      # arch-config/pkgbuilds/ instead. Whichever of the two
                      # is installed, it is intentional.
 
+  # --- declared once by mistake; must NOT be reproduced ---
+  - gtkmm            # the bare name resolves to gtkmm2 (1:2.24.5), dropped
+                     # from the official repos, so system-tools.yaml was
+                     # making every fresh install pay for an AUR compile.
+                     # Nothing ever used it: `pactree -r gtkmm` lists only
+                     # itself, pacman -Qi says Required By: None. Undeclared
+                     # now, but still installed here -- removing a package
+                     # from a working machine is not something an audit fix
+                     # should do behind your back. Reclaim the 6.84 MiB
+                     # whenever you like: pacman -Rns gtkmm
+
   # --- duplicates of something already declared ---
   - pcmanfm          # superseded by pcmanfm-qt (apps.yaml). The GTK build is
                      # still installed on the ati host and still pulled in as a

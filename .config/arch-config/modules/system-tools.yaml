@@ -20,7 +20,13 @@ packages:
   - inotify-tools
   - translate-shell
   - sweet-gtk-theme-dark
-  - gtkmm
+  # gtkmm removed: the bare name resolves to gtkmm2 (1:2.24.5), dropped
+  # from the official repos -- only gtkmm3 and gtkmm-4.0 are there now --
+  # so declaring it made every fresh install pay for an AUR compile.
+  # Nothing here ever used it: on a fully installed machine `pactree -r
+  # gtkmm` lists only gtkmm itself and pacman -Qi reports
+  # `Required By: None` / `Optional For: None`. If a C++ GTK binding is
+  # ever genuinely needed, name the version: gtkmm3 or gtkmm-4.0.
   - libwnck3
   - auto-cpufreq
   - glow             # markdown renderer -- rofi_docs' fallback viewer when
