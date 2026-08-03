@@ -33,9 +33,16 @@ pacman and every dependency statically from source, and several AUR
 packages (espanso, whisper.cpp) are built rather than downloaded. It is
 unattended — walk away and come back.
 
-Verified end to end: a clean Arch VM, 46 of 46 modules, `validate.sh`
-passing inside the guest, and qtile starting and drawing its bar. `vm-test.sh --unattended` (in **Reference**, below) runs that
-yourself before you touch real hardware.
+**Verified end to end**, not asserted — on a clean Arch VM: 46 of 46
+modules, `validate.sh` passing inside the guest, every boot entry's `root=`
+matching the real root device, and qtile starting, loading *this* config
+rather than falling back to its built-in one, and drawing its bar. On real
+hardware, additionally: the boot splash, and picom's glx backend with the
+window animations. You can run the VM test yourself before touching a real
+machine — see `vm-test.sh --unattended` under **Reference**.
+
+What is *not* verified: AMD and NVIDIA graphics, and a HiDPI panel. Nobody
+has run this on either.
 
 ### Optional extras — you do not need these
 
@@ -1085,6 +1092,11 @@ rather than letting you draw the wrong conclusion.
 **What it cannot prove:** there is no GPU in the VM, so picom's `glx`
 backend, the compositing and the animations are untested there, and a
 screenshot is not the same as looking at the thing.
+
+**Picking this up cold?** `HANDOFF.md` is the short brief: what is verified
+and how, what deliberately must not be "fixed", and the repo-specific traps.
+`plan_found-but-not-fixed.md` is the long version, including items that are
+correct as written and recorded so nobody re-breaks them.
 
 **The 3-minute version** — `container-test.sh` runs the config-only modules
 on a throw-away Arch container. It cannot test X11, systemd, the GPU or
