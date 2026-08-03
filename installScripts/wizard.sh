@@ -567,6 +567,37 @@ step_dcli()         { command -v dcli >/dev/null && { _OK "dcli present"; return
                       run "yay -S --needed --noconfirm dcli-arch-git"; }
 step_stow()         { run "$DOTFILES_DIR/installScripts/stow_script.sh"; }
 step_arch_config()  { run "$DOTFILES_DIR/installScripts/arch-config.sh"; }
+# informant hooks pacman and REFUSES every transaction until the Arch news
+# is marked read. That is the whole point of it on a running machine --
+# those are the posts that say "manual intervention required" -- but it is
+# installed BY this sync, and a fresh machine always has unread news. So
+# from the moment it lands, every later pacman call in the install dies:
+#
+#   :: informant: Run `informant read` before re-running your pacman command
+#   error: failed to commit transaction (failed to run transaction hooks)
+#
+# In a clean VM that took out boot-splash (plymouth never installed) and
+# anything else that needed a package later in the run -- reported, of
+# course, as unrelated broken modules.
+#
+# Marking them read here is honest rather than a bypass: the installer has
+# just fetched a current package set, so the news items are about upgrades
+# it did not perform. It also leaves informant fully armed for the next
+# real -Syu, which is when its warning actually matters.
+_clear_informant_news() {
+  (( DRY_RUN )) && return 0
+  command -v informant >/dev/null 2>&1 || return 0
+  if ! informant check >/dev/null 2>&1; then
+    _DIM "  marking Arch news read so informant stops blocking pacman"
+    # --all where supported; the bare form otherwise. timeout because an
+    # older informant pages interactively and there is no tty here.
+    timeout 60 informant read --all >/dev/null 2>&1 \
+      || yes | timeout 60 informant read >/dev/null 2>&1 \
+      || _WARN "could not clear the informant news queue — later pacman calls may fail"
+  fi
+  return 0
+}
+
 # Reclaim the AUR build trees once the packages are installed.
 #
 # yay keeps every package's full build directory under ~/.cache/yay, source
@@ -584,18 +615,43 @@ step_arch_config()  { run "$DOTFILES_DIR/installScripts/arch-config.sh"; }
 # Best-effort by design. Nothing here is load-bearing -- if the cleanup
 # fails the install is still complete, just fatter -- so it never returns
 # non-zero into the module's exit status.
+# Packages whose build tree a LATER module still needs. Deleting these is
+# not a cleanup, it is a broken install:
+#
+#   whisper.cpp-git -- step_whisper_fast (module 33) rebuilds whisper-cli
+#     and whisper-stream from this exact source tree, because the AUR
+#     PKGBUILD ships an unoptimised binary (~13x slower, measured) and
+#     never builds whisper-stream at all. It checks for the directory and
+#     hard-fails when it is missing.
+#
+# The first version of this cleanup did not have that list and removed the
+# tree at module 8, so whisper-fast failed 25 modules later with an empty
+# error log -- because it fails via _ERR and `return 1`, which never
+# reaches the module's stderr. Exactly the sort of action-at-a-distance
+# this whole cleanup was written to stop causing.
+RECLAIM_KEEP=(whisper.cpp-git)
+
 _reclaim_build_cache() {
   (( DRY_RUN )) && { _DIM "  [dry] clean AUR build caches"; return 0; }
-  local before after
+  local before after d keep
   before=$(du -sm "$HOME/.cache/yay" 2>/dev/null | cut -f1 || echo 0)
   [[ "${before:-0}" -gt 0 ]] || return 0
-  yes | yay -Sc >/dev/null 2>&1 || true
-  # yay -Sc leaves the extracted src/ and pkg/ trees behind in some
-  # versions; those are the big ones and nothing reads them again.
-  rm -rf "$HOME"/.cache/yay/*/src "$HOME"/.cache/yay/*/pkg 2>/dev/null || true
+
+  # Not `yay -Sc`: that prunes by its own rules and would take the kept
+  # trees with it. Walk the directories so the keep-list is honoured.
+  for d in "$HOME"/.cache/yay/*/; do
+    [[ -d "$d" ]] || continue
+    keep=0
+    for k in "${RECLAIM_KEEP[@]}"; do
+      [[ "$(basename "$d")" == "$k" ]] && keep=1 && break
+    done
+    (( keep )) && continue
+    rm -rf "${d}src" "${d}pkg" 2>/dev/null || true
+  done
+
   after=$(du -sm "$HOME/.cache/yay" 2>/dev/null | cut -f1 || echo 0)
   if (( before > after )); then
-    _DIM "  reclaimed $(( before - after ))MB of AUR build cache"
+    _DIM "  reclaimed $(( before - after ))MB of AUR build cache (kept: ${RECLAIM_KEEP[*]})"
   fi
   return 0
 }
@@ -627,6 +683,31 @@ step_dcli_sync() {
       sudo pacman -S --needed --noconfirm pipewire-jack >/dev/null 2>&1 \
         || _WARN "could not pre-install pipewire-jack — dcli sync may hit the jack2 conflict"
     fi
+
+    # rustup, and a DEFAULT TOOLCHAIN, before anything tries to build with
+    # cargo.
+    #
+    # step_cargo already runs `rustup default stable`, and its comment
+    # already names paru and didyoumean as the packages that fail without
+    # it. The problem is purely ordering: cargo is module 12 and this is
+    # module 8, so dcli sync reaches those AUR builds four modules before
+    # the toolchain is selected, and both die with
+    #
+    #   error: rustup could not choose a version of cargo to run, because
+    #   one wasn't specified explicitly, and no default is configured
+    #
+    # rustup itself only arrives WITH this sync (dev.yaml), so the fix
+    # cannot be "move the cargo module earlier" -- it has to be seeded
+    # here, the same way the jack provider is.
+    if ! command -v rustup >/dev/null 2>&1; then
+      _DIM "  pre-seeding rustup so cargo-built AUR packages can compile"
+      sudo pacman -S --needed --noconfirm rustup >/dev/null 2>&1 || true
+    fi
+    if command -v rustup >/dev/null 2>&1 && ! rustup default >/dev/null 2>&1; then
+      _DIM "  selecting the stable rust toolchain (paru/didyoumean need it)"
+      rustup default stable >/dev/null 2>&1 \
+        || _WARN "rustup default stable failed — cargo-built AUR packages may not build"
+    fi
   fi
   run "cd $DOTFILES_DIR && dcli sync --force && { command -v mandb >/dev/null && sudo mandb || true; } && fc-cache -fv"
   (( DRY_RUN )) && return
@@ -640,6 +721,7 @@ step_dcli_sync() {
   while (( attempt < 2 )); do
     pending=$(cd "$DOTFILES_DIR" && dcli sync --dry-run 2>/dev/null | grep -oP 'Packages to install: \K[0-9]+' | head -1)
     if [[ -z "$pending" || "$pending" == "0" ]]; then
+      _clear_informant_news
       _reclaim_build_cache
       return 0
     fi
@@ -652,6 +734,7 @@ step_dcli_sync() {
     echo "dcli sync still has $pending package(s) uninstalled after retries — run 'dcli sync --force' manually later"
     return 1
   fi
+  _clear_informant_news
   _reclaim_build_cache
 }
 step_paths() {
