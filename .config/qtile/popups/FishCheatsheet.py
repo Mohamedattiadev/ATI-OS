@@ -114,15 +114,15 @@ COLUMNS = list(CHEATSHEET.items())
 # =============================================================================
 # GEOMETRY -- see popups/_cheatsheet_grid.py
 # =============================================================================
-POPUP_W = 880
-POPUP_H = 580
+POPUP_W = _grid.s(880)
+POPUP_H = _grid.s(580)
 
 # 12pt, up from 11. The right-hand column of this sheet is shell COMMANDS,
 # not key combos ("tmux kill-server"), so `compact()` has nothing to shorten
 # and the rows are long. Four columns still fits every one of them on a
 # single page -- three columns did not, and spilled two lonely cards onto a
 # second page.
-BODY_SIZE = 15
+BODY_SIZE = _grid.s(15)
 N_COLS = 3
 
 # Measured pango extents for "JetBrainsMono Nerd Font" at BODY_SIZE, in
@@ -131,14 +131,14 @@ N_COLS = 3
 # means. Measuring in points made these 33% too big, and every card was
 # built that much larger than the text inside it. selftest() now checks
 # both numbers against pango so they cannot drift again.
-LINE_PX = 21
-CHAR_PX = 9
+LINE_PX = _grid.s(21)
+CHAR_PX = _grid.s(9)
 
 # One LABEL_SIZE character. The label column is set a step down from the
 # key column, so it is narrower than CHAR_PX and rows have to be assembled
 # in pixels rather than columns. Measured like the two above; selftest()
 # checks it against pango.
-LABEL_CHAR_PX = 8
+LABEL_CHAR_PX = _grid.s(8)
 
 FOOTER_Y = _grid.FOOTER_Y
 FONT = _grid.FONT

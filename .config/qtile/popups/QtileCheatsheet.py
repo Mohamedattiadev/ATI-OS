@@ -264,8 +264,8 @@ COLUMNS = list(CHEATSHEET.items())
 # the thing that made these sheets look broken. Change BODY_SIZE and this
 # has to move with it; `python3 -m popups._cheatsheet_grid` prints the
 # numbers to size it from.
-POPUP_W = 880
-POPUP_H = 580
+POPUP_W = _grid.s(880)
+POPUP_H = _grid.s(580)
 
 # 15, down from an 18 that was too big to read comfortably, and up from the
 # 12 this started at. 12 was never a design choice -- it was what the broken
@@ -275,7 +275,7 @@ POPUP_H = 580
 #
 # NB this is not points. qtile sizes fonts with set_absolute_size(), so 15
 # means 15 DEVICE PIXELS -- about 11pt. See LINE_PX/CHAR_PX below.
-BODY_SIZE = 15
+BODY_SIZE = _grid.s(15)
 
 # 3, down from 4, because the popup lost 330px of width. Card width is what
 # actually matters (the rows are `label ... KEY` and clip when it shrinks).
@@ -298,14 +298,14 @@ SCROLL_ROWS = 3
 # Monospace, so these are exact: every row is one LINE_PX line and every
 # glyph is CHAR_PX wide, which is what lets the key column align and lets
 # grid_metrics() size cards in whole characters.
-LINE_PX = 21
-CHAR_PX = 9
+LINE_PX = _grid.s(21)
+CHAR_PX = _grid.s(9)
 
 # One LABEL_SIZE character. The label column is set a step down from the
 # key column, so it is narrower than CHAR_PX and rows have to be assembled
 # in pixels rather than columns. Measured like the two above; selftest()
 # checks it against pango.
-LABEL_CHAR_PX = 8
+LABEL_CHAR_PX = _grid.s(8)
 
 FOOTER_Y = _grid.FOOTER_Y
 FONT = _grid.FONT

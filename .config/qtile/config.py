@@ -1693,8 +1693,8 @@ def _float_and_center_sum(client):
 # proportionally further than W.
 FILE_CHOOSER_W_RATIO = 0.74
 FILE_CHOOSER_H_RATIO = 0.74
-FILE_CHOOSER_W_MIN = 820
-FILE_CHOOSER_H_MIN = 480
+FILE_CHOOSER_W_MIN = _s(820)
+FILE_CHOOSER_H_MIN = _s(480)
 
 # Documentation viewer (rofi_docs opens README/TROUBLESHOOTING/nvim in
 # `kitty --class docs-view`). Larger than the file chooser because it holds
@@ -1803,8 +1803,8 @@ def _float_and_center_file_chooser(client):
 #
 # 480x300 against its natural 531x354 -- smaller, but not so small that
 # GTK clips the entry field or the OK/Cancel row.
-PINENTRY_W = 480
-PINENTRY_H = 300
+PINENTRY_W = _s(480)
+PINENTRY_H = _s(300)
 
 
 def _is_pinentry(client):

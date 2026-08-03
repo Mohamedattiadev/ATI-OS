@@ -36,21 +36,69 @@ from libqtile.log_utils import logger
 # The system monospace. Never "sans": see the module docstring.
 FONT = "JetBrainsMono Nerd Font"
 
+
+# ---------------------------------------------------------------------
+# HiDPI scaling.
+#
+# Everything else in this config multiplies through UI_SCALE; the
+# cheatsheets did not. On a 4K panel the bar, fonts and margins grew and
+# these popups stayed at their 1366x768 pixel sizes -- rendering correctly
+# and postage-stamp small.
+#
+# The whole sheet is linear in this factor: the box, the font size, and the
+# per-character metrics derived from it all scale together, so the layout
+# stays self-similar and the fit relationship the selftest checks is
+# preserved. Fractions (GRID_TOP, FOOTER_Y) and counts (PAD_CHARS, N_COLS)
+# are deliberately NOT scaled -- scaling a ratio or a character count is
+# meaningless.
+#
+# The loader is duplicated from config.py rather than imported: config.py
+# imports this module, so importing back would be circular.
+def _load_ui_scale():
+    import os
+
+    # The selftest pins this to 1.0. It measures every sheet against a
+    # fixed 1366x768 reference screen, so on a scaled display the popup
+    # would grow while that reference did not, and a sheet that fits
+    # perfectly well would be reported as overflowing.
+    forced = os.environ.get("QTILE_UI_SCALE_FORCE")
+    if forced:
+        try:
+            return float(forced)
+        except ValueError:
+            pass
+    try:
+        with open(os.path.expanduser("~/.cache/qtile/ui_scale")) as f:
+            v = float(f.read().strip())
+        # Refuse absurd values rather than rendering an unreadable popup.
+        return v if 0.5 <= v <= 4.0 else 1.0
+    except (OSError, ValueError):
+        return 1.0
+
+
+UI_SCALE = _load_ui_scale()
+
+
+def s(px):
+    """Scale a pixel dimension. Floor of 1 so nothing rounds away to zero."""
+    return max(1, int(round(px * UI_SCALE)))
+
+
 # PopupRelativeLayout's own default. Control positions are fractions of the
 # INNER box (size - 2*margin), which is what these numbers assume.
-MARGIN = 5
+MARGIN = s(5)
 
 # Matches WifiPopup/BluetoothPopup's card styling: 10px radius, a wider
 # gutter between cards so the grid doesn't read as one solid block.
-CARD_RADIUS = 10     # rounded corners on the section cards
+CARD_RADIUS = s(10)  # rounded corners on the section cards
 PAD_CHARS = 1        # left/right padding inside a card, in characters
 PAD_ROWS = 1         # blank rows at the top and bottom of a card
 
 GRID_TOP = 0.155     # under the title block
 GRID_BOTTOM = 0.925  # above the footer (raised when it got smaller)
 FOOTER_Y = 0.93
-CARD_GAP_PX = 16     # MINIMUM gap between cards, both directions
-CARD_GAP_MAX = 56    # ...and the most the gap is allowed to grow to
+CARD_GAP_PX = s(16)  # MINIMUM gap between cards, both directions
+CARD_GAP_MAX = s(56)  # ...and the most the gap is allowed to grow to
 
 # Gutter between the outer cards and the popup's left/right edges. Without
 # it the grid is laid out across the full inner box, so the first and last
@@ -60,7 +108,7 @@ CARD_GAP_MAX = 56    # ...and the most the gap is allowed to grow to
 #
 # This comes out of the width available to the cards, so raising it either
 # narrows them or has to be paid for with a wider popup -- see POPUP_W.
-GRID_SIDE_PAD_PX = 20
+GRID_SIDE_PAD_PX = s(20)
 
 # Blank columns a row must keep between its label and its key, in BASE
 # characters. This is a floor, not the actual gap -- most rows have more,
