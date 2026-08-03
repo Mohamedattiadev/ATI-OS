@@ -52,7 +52,14 @@ SMOKE_RAM_MB=2048                         # --smoke only reaches a login prompt
 # voices (~60M), and the wallpapers clone (~500M) -- plus room for phase D
 # to install Xvfb afterwards, which is where the "only 0G free" abort came
 # from on the same run.
-VM_DISK_GB="${VM_DISK_GB:-40}"
+# 20G died during dcli-sync; 40G got all the way to module 40 and then died
+# on wallpapers/whisper/themes, because yay keeps every AUR package's build
+# tree -- source, and for Rust packages the whole target/ -- and prunes
+# none of it. On the author's own machine that cache is 3.7G with
+# whisper.cpp-git alone at 1.1G; add espanso's Rust build and it is far
+# more. wizard.sh now reclaims it at the end of dcli-sync, and this is the
+# headroom for the PEAK, which happens mid-sync before any cleanup can run.
+VM_DISK_GB="${VM_DISK_GB:-60}"
 # What the HOST keeps for itself. Overridable, but think before lowering
 # it: this margin is the whole reason the preflight exists. Trimming it a
 # little to keep the GUEST at a size already known to work is a better

@@ -567,6 +567,39 @@ step_dcli()         { command -v dcli >/dev/null && { _OK "dcli present"; return
                       run "yay -S --needed --noconfirm dcli-arch-git"; }
 step_stow()         { run "$DOTFILES_DIR/installScripts/stow_script.sh"; }
 step_arch_config()  { run "$DOTFILES_DIR/installScripts/arch-config.sh"; }
+# Reclaim the AUR build trees once the packages are installed.
+#
+# yay keeps every package's full build directory under ~/.cache/yay, source
+# tree included, and never prunes them. For a set this size that is not a
+# rounding error: espanso alone is a Rust project whose target/ runs to
+# several GB, and the sum of them exhausted a 40G disk mid-install -- the
+# packages went on fine, then `wallpapers`, `whisper` and `themes` all died
+# on "No space left on device", and the wizard aborted at 40 ok / 6 failed.
+#
+# Measured, not guessed: a clean VM install needed more than 40G of
+# transient space to produce a system that occupies a fraction of it.
+# Anyone installing this on a modest partition would hit the same wall,
+# with the failure landing on an unrelated module several steps later.
+#
+# Best-effort by design. Nothing here is load-bearing -- if the cleanup
+# fails the install is still complete, just fatter -- so it never returns
+# non-zero into the module's exit status.
+_reclaim_build_cache() {
+  (( DRY_RUN )) && { _DIM "  [dry] clean AUR build caches"; return 0; }
+  local before after
+  before=$(du -sm "$HOME/.cache/yay" 2>/dev/null | cut -f1 || echo 0)
+  [[ "${before:-0}" -gt 0 ]] || return 0
+  yes | yay -Sc >/dev/null 2>&1 || true
+  # yay -Sc leaves the extracted src/ and pkg/ trees behind in some
+  # versions; those are the big ones and nothing reads them again.
+  rm -rf "$HOME"/.cache/yay/*/src "$HOME"/.cache/yay/*/pkg 2>/dev/null || true
+  after=$(du -sm "$HOME/.cache/yay" 2>/dev/null | cut -f1 || echo 0)
+  if (( before > after )); then
+    _DIM "  reclaimed $(( before - after ))MB of AUR build cache"
+  fi
+  return 0
+}
+
 step_dcli_sync() {
   # Settle the `jack` provider BEFORE anything else resolves it.
   #
@@ -606,7 +639,10 @@ step_dcli_sync() {
   local pending attempt=0
   while (( attempt < 2 )); do
     pending=$(cd "$DOTFILES_DIR" && dcli sync --dry-run 2>/dev/null | grep -oP 'Packages to install: \K[0-9]+' | head -1)
-    [[ -z "$pending" || "$pending" == "0" ]] && return 0
+    if [[ -z "$pending" || "$pending" == "0" ]]; then
+      _reclaim_build_cache
+      return 0
+    fi
     attempt=$((attempt+1))
     echo "dcli sync left $pending package(s) uninstalled — retry $attempt/2"
     ( cd "$DOTFILES_DIR" && dcli sync --force )
@@ -616,6 +652,7 @@ step_dcli_sync() {
     echo "dcli sync still has $pending package(s) uninstalled after retries — run 'dcli sync --force' manually later"
     return 1
   fi
+  _reclaim_build_cache
 }
 step_paths() {
   # Render every @HOME@ template to its real destination.
