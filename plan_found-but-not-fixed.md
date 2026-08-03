@@ -134,19 +134,51 @@ What the container **cannot** cover, by its own admission: no X server, so
 nothing about qtile, picom, animations or themes; no systemd, so no
 services; no PCI bus, so `step_gpu` correctly detects nothing.
 
+### The VM layer has now run, and it found five real bugs
+
+`./vm-test.sh --unattended` exists as of 2026-08-03: it scripts a minimal
+base system directly (pacstrap and bootctl, no archinstall — inside the VM
+there is one disk, so the "might pick the wrong one" objection does not
+apply), boots the installed system under UEFI from its own ESP, runs
+`./install.sh`, and asserts the wizard's summary. Roughly two hours a run,
+most of it compiling espanso.
+
+Every one of these was invisible on the author's machine, and every one
+presented as several unrelated broken modules *downstream* of its cause:
+
+| bug | how it presented | fix |
+|---|---|---|
+| `pipewire-jack` vs `jack2` — both provide the virtual `jack`, which ffmpeg/mpv/timidity++ depend on. On a clean machine the resolver picks jack2, which conflicts with the declared pipewire-jack, and **pacman aborts the entire transaction** | 5 failed modules; **nothing installed at all**; the desktop would have come up as stock qtile | pre-seed the provider before `dcli sync` |
+| The install needs **>40 GB of transient disk**. yay keeps every AUR build tree — source, and for Rust the whole `target/` — and prunes none of it | 6 failed modules, all `No space left on device`, starting 32 modules after the cause | reclaim the cache after sync |
+| `rustup` has no default toolchain when `dcli sync` first builds with cargo. `step_cargo` sets it — at module 12, four modules too late | `paru` and `didyoumean` fail to build | seed `rustup default stable` alongside the jack provider |
+| `informant` refuses every pacman transaction until Arch news is read. It installs itself mid-sync, and a fresh machine always has unread news | `boot-splash` (no plymouth) and the desktop check (no Xvfb) — 5 and 20 modules downstream | mark the news read after the sync |
+| *(self-inflicted)* the cache reclaim deleted `whisper.cpp-git/src`, which `step_whisper_fast` rebuilds from | failed 25 modules later with an **empty** error log, because it fails via `_ERR`/`return 1` which never reaches stderr | keep-list |
+
+The lesson worth keeping: on a clean install, **the module that reports the
+failure is almost never the module at fault**. Reading the per-module
+`.err` logs is what distinguished five root causes from twenty-two
+symptoms, and capturing them off the guest before it disappears took three
+attempts to get right (`scp` spells the port `-P`; `ssh` spells it `-p`).
+
 Outstanding:
 
-1. **`./vm-test.sh`** — ~40 min, and the one layer that covers X11, systemd
-   and boot. qemu and edk2-ovmf are installed and `--smoke` has passed
-   before. Two things gate a full run: it needs ~5 GB of free RAM
-   (`--check` refuses below that, by design), and it is **deliberately not
-   unattended** — `archinstall` is interactive, so a human drives that one
-   step. See the note below.
-2. **A real second machine, ideally AMD.** The dead-package fix in
+1. **A clean end-to-end run.** As of the last run, 43 of 46 modules pass.
+   The three fixes above were made after it and have not themselves been
+   run end to end.
+2. **The desktop actually rendering.** `--unattended` phase D starts Xvfb,
+   launches qtile, asserts it did not silently fall back to its built-in
+   config (`qtile cmd-obj -f status` answers OK either way, so that alone
+   proves nothing), and saves a screenshot. It has not yet had a run where
+   the disk survived long enough to reach it. Even when it passes, Xvfb has
+   no GPU: picom, compositing and the animations stay untested.
+3. **A real second machine, ideally AMD.** The dead-package fix in
    `graphics-amd.yaml` is reasoned from `pacman -Si`, not observed on AMD
    hardware. Same for the `BAT1`/`ADP1` battery fix — reasoned from `/sys`
    semantics, never seen on a laptop that names them that way.
-3. **A HiDPI panel** — see §1.3.
+4. **A HiDPI panel** — see §1.3. The scaling is now implemented and
+   verified proportional (at 2.0 the sheets measure the same 3.6 / 2.0 /
+   1.4 screenfuls as at 1.0, with pango measuring real glyph extents at
+   both), but nobody has looked at it on a 4K screen.
 
 ### `validate.sh`'s font list is hand-maintained
 
