@@ -164,16 +164,27 @@ The `informant` fix also took two attempts: marking the news read as the
 invoking user does nothing, because informant's pacman hook runs as ROOT
 and checks root's read-state.
 
+**A correction to the table above.** The AUR-cache row overstates its
+case. `_reclaim_build_cache` has never reported freeing a single megabyte
+in any run, while `step_whisper_fast`'s fallback DID fire with "AUR build
+tree is gone" — so in the guest yay prunes those trees itself, and the
+reclaim is a no-op there. What actually fixed the disk exhaustion was the
+40G → 60G bump, not the cleanup. The 3.7G sitting in `~/.cache/yay` on
+this machine is real and worth `yay -Sc`, but that is a long-lived
+developer box, not a fresh install, and the two should not be conflated.
+The reclaim is harmless and keeps the keep-list honest; it is not
+load-bearing and should not be described as the fix.
+
 Outstanding:
 
-1. **`boot-splash` is the last failing module.** It refuses at its own
-   pre-flight — which is its designed safe behaviour, not a crash — but
-   WHICH check failed is unknown: the wizard truncates the check output in
-   its module log, so the run reports the refusal without the reason. The
-   likely explanation is environmental (the VM base install writes a plain
-   systemd-boot entry with `vmlinuz-linux` + initramfs, while boot-splash
-   is built around a UKI), but that is a hypothesis, not a finding. Capture
-   the full `boot-splash check` output before concluding anything.
+1. **`boot-splash` — FIXED, but not re-run end to end.** It demanded a
+   `udev` hook in mkinitcpio.conf; Arch's current default ships `systemd`
+   instead, so it refused on every freshly installed machine. Diagnosed by
+   rebooting the run-8 disk and running `boot-splash check` inside it
+   (two minutes, versus another 1.5-hour run) and verified on both hook
+   styles — but no full `--unattended` run has happened since the fix.
+   The earlier guess in this file that it was UKI-related was **wrong**;
+   the UKI check passed all along.
 2. **A clean end-to-end run.** As of the last run, 43 of 46 modules pass.
    The three fixes above were made after it and have not themselves been
    run end to end.
