@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="File layout, where configuration lives, how stow works here, the package modules, and the test layers.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="iconbtn" id="menu-toggle" aria-label="Toggle navigation">Menu</button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>Arch Linux &middot; X11 &middot; qtile</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="index.html">Home</a></li>
+    <li><a href="install-usb.html">Install from the ATI-OS USB</a></li>
+    <li><a href="install-git.html">Install from a git clone</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a href="keybindings.html">Keybindings</a></li>
+    <li><a href="themes.html">The themes</a></li>
+    <li><a href="widgets.html">Widgets and popups</a></li>
+    <li><a href="tools.html">Everyday tools</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a href="troubleshooting.html">Troubleshooting</a></li>
+    <li><a class="current" href="reference.html">Reference</a></li>
+  </ol>
+  <h2>On this page</h2>
+  <ol class="sub">
+    <li><a href="#layout">Repository layout</a></li>
+    <li><a href="#stow">How stow works here</a></li>
+    <li><a href="#config">Where configuration lives</a></li>
+    <li><a href="#packages">Packages: dcli and arch-config</a></li>
+    <li><a href="#modules-yaml">The module files</a></li>
+    <li><a href="#state">Runtime state</a></li>
+    <li><a href="#tests">The test layers</a></li>
+    <li><a href="#docs">The repository's own documents</a></li>
+    <li><a href="#quirks">Things that look like bugs and are not</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>Reference</h1>
+<p class="lede">Where everything lives, how it gets there, and the handful of things in this
+repository that read like bugs and are deliberate.</p>
+
+<h2 id="layout">Repository layout</h2>
+
+<pre><code>~/.dotfiles/
+├── .config/                 everything that gets stowed into ~/.config
+│   ├── qtile/               the window manager: config.py, popups/, scripts/
+│   ├── AtiScriptsV1/        ~50 commands, symlinked to /usr/local/bin
+│   ├── arch-config/         declarative package manifests (dcli)
+│   ├── eww/                 the onboarding tour, tooltips, cheatsheet window
+│   ├── rofi/                shared base.rasi + per-menu themes
+│   ├── kitty/  dunst/  picom/  fish/  nvim/  qutebrowser/  ...
+│   └── secrets.env.example  template for GEMINI_API_KEY
+├── installScripts/
+│   ├── install.sh           = wizard.sh --yes
+│   ├── wizard.sh            the 48 registered modules
+│   ├── stow_script.sh       symlink deployment + backup
+│   ├── validate.sh          the seconds-long check
+│   ├── container-test.sh    ~3 min, a real install as another user
+│   ├── vm-test.sh           ~2 h, X11 + systemd + boot
+│   ├── arch-config.sh       point arch-config at the current username
+│   ├── speed_boost.sh  grub_boost.sh  service_trim.sh
+│   ├── hooks/               the pre-commit hook the githooks module installs
+│   └── iso/                 the ATI-OS installation medium
+├── IMGS/                    the screen recordings
+├── docs/                    this manual
+├── README.md
+├── TROUBLESHOOTING.md
+├── HANDOFF.md
+└── plan_found-but-not-fixed.md</code></pre>
+
+<h2 id="stow">How stow works here</h2>
+
+<p><code>installScripts/stow_script.sh</code> wraps GNU stow. It is run by the wizard's
+<code>stow</code> module, and it can be run by hand on any Linux &mdash; it is the one path
+that deploys the configuration half of this repo without pacman.</p>
+
+<pre><code>bash ~/.dotfiles/installScripts/stow_script.sh</code></pre>
+
+<p>Four things it does that plain <code>stow .</code> does not:</p>
+
+<ol>
+<li><b>It derives its own location.</b> <code>DOTFILES_DIR</code> comes from where the
+script actually lives, not from an assumed <code>~/.dotfiles</code>. The repo is routinely
+checked out elsewhere &mdash; a clone under a different name, a git worktree,
+<code>/tmp</code> during container tests &mdash; and hardcoding the path made it silently
+stow a <em>different</em> checkout than the one it was run from. <code>DOTFILES_DIR</code>
+can still be overridden explicitly.</li>
+<li><b>It backs up before it links.</b> Anything it would overwrite moves to
+<code>~/DefaultConfig/&lt;timestamp&gt;/</code>. Only regular <em>files</em> are moved at the
+top level: an existing directory is not a stow conflict &mdash; stow just descends into it
+&mdash; and moving a real <code>~/.claude</code> out from under the user would be
+destructive rather than helpful.</li>
+<li><b>It creates <code>~/.config</code> first</b>, so stow descends into it rather than
+folding the whole directory into a single symlink, which would pollute the repo with every
+future application's config.</li>
+<li><b>It honours <code>.stow-local-ignore</code></b>, and refuses to back up anything that
+file excludes &mdash; moving a file stow was never going to link just relocates the user's
+data for nothing.</li>
+</ol>
+
+<h3>What is deliberately not stowed</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th>Pattern</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>plan_.*\.md</code>, <code>qtile-.*\.md</code>, <code>TROUBLESHOOTING.md</code>, <code>THEME_AUDIT_REPORT.md</code>, <code>README.md</code></td><td>Repo prose. Without these patterns, <code>stow .</code> symlinked all of it into <code>$HOME</code> as top-level files. Nothing reads them from there &mdash; <code>rofi_docs</code> opens them out of the repo. Written as patterns rather than named one by one, because the list was out of date the first time it was written</td></tr>
+<tr><td><code>.claude</code></td><td>A per-project state directory, and one stow would <em>fold into</em> the user's existing <code>~/.claude</code> rather than skip &mdash; which is exactly what happened once</td></tr>
+<tr><td><code>IMGS</code>, <code>installScripts</code></td><td>Not dotfiles</td></tr>
+<tr><td><code>.config/arch-config/.git</code>, <code>.backup-*</code></td><td>Must not be linked</td></tr>
+<tr><td>Plasma leftovers: <code>kdeglobals</code>, <code>plasmashellrc</code>, <code>kwinrc</code>, <code>ksmserverrc</code></td><td>System configs, ignored by the script itself</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="config">Where configuration lives</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>What</th><th>Path</th></tr></thead>
+<tbody>
+<tr><td>The window manager</td><td><code>~/.config/qtile/config.py</code> &mdash; the single largest file in the repo, and the only writable entry in the logo menu's Documentation section</td></tr>
+<tr><td>Popups</td><td><code>~/.config/qtile/popups/</code></td></tr>
+<tr><td>qdrop, qupdate, the restart veil</td><td><code>~/.config/qtile/scripts/</code></td></tr>
+<tr><td>Autostart</td><td><code>~/.config/qtile/autostart.sh</code></td></tr>
+<tr><td>Commands</td><td><code>~/.config/AtiScriptsV1/</code>, symlinked to <code>/usr/local/bin</code></td></tr>
+<tr><td>X session</td><td><code>~/.xinitrc</code> (written by the <code>xinit</code> module), <code>~/.Xresources</code> (the <code>xresources</code> module)</td></tr>
+<tr><td>Secrets</td><td><code>~/.config/secrets.env</code>, mode 600, gitignored, seeded from <code>secrets.env.example</code></td></tr>
+<tr><td>Fonts</td><td><code>~/.config/fontconfig/fonts.conf</code> &mdash; edit here to restyle the popups, dunst and eww together</td></tr>
+<tr><td>Compositor</td><td><code>~/.config/picom/</code>. A per-machine <code>picom/gpu.env</code> is written by the <code>gpu</code> module</td></tr>
+<tr><td>rofi</td><td><code>~/.config/rofi/</code>. All themes import a shared <code>base.rasi</code>; overrides are layout-only</td></tr>
+<tr><td>Packages</td><td><code>~/.config/arch-config/</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="packages">Packages: dcli and arch-config</h2>
+
+<p>Every pacman and AUR package is declared in YAML and reconciled by
+<a href="https://gitlab.com/theblackdon/dcli">dcli</a>. Change a module, run
+<code>dcli sync</code>, and the system converges. <code>timeshift-autosnap</code> snapshots
+on every sync, so a broken update is a one-command rollback.</p>
+
+<pre><code>arch-config/
+├── config.yaml                 pointer to the active host
+├── hosts/ati.yaml              enabled_modules + host packages
+└── modules/*.yaml</code></pre>
+
+<p>To add or remove a package: edit the right <code>modules/*.yaml</code>, run
+<code>dcli sync</code>, then commit once the machine is verified working.</p>
+
+<pre><code>cd ~/.dotfiles
+git add .config/arch-config
+git commit -m "arch-config: &lt;change&gt;"</code></pre>
+
+<div class="warn">
+<p><b><code>host:</code> means USERNAME, not hostname.</b> It reads like a bug and cannot be
+renamed: <code>host:</code> is <em>dcli's</em> config schema, not this repo's, and the string
+is baked into the <code>dcli-arch-git</code> binary &mdash; renaming it would stop dcli
+finding its configuration. The behaviour is also the one wanted: these are per-user package
+sets and dotfile profiles, and two accounts on one machine legitimately want different ones.
+It is documented in place at <code>arch-config.sh</code> so the next reader does not "fix"
+it.</p>
+</div>
+
+<h3>Update hooks</h3>
+
+<div class="tw">
+<table>
+<tbody>
+<tr><td><code>pre_update</code></td><td><code>scripts/pre-update.sh</code> &mdash; gates <code>dcli update</code> on free space and on timeshift snapshots not living on the root filesystem. It <b>refuses</b> (a non-zero exit aborts the update before anything is downloaded); it does not repair</td></tr>
+<tr><td><code>post_update</code></td><td><code>scripts/post-update.sh</code> &mdash; finds AUR packages broken by a library soname bump and puts the rebuild command on your clipboard</td></tr>
+<tr><td><code>behavior</code></td><td><code>always</code>, so it can never be skipped by accident. A safety check you can click past is not a safety check</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="modules-yaml">The module files</h2>
+
+<p>The host's <code>enabled_modules</code> list is what <code>dcli sync</code> installs. Three
+files are deliberately <em>absent</em> from it.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>File</th><th>Contents</th><th>In <code>enabled_modules</code>?</th></tr></thead>
+<tbody>
+<tr><td><code>base.yaml</code></td><td>Core system: <code>base</code>, <code>base-devel</code>, dcli itself, timeshift, pacman-contrib, the LTS rescue kernel</td><td>Implicit base</td></tr>
+<tr><td><code>apps.yaml</code></td><td>Daily applications &mdash; kitty, alacritty, brave-bin, firefox, qutebrowser, and the rest</td><td>Yes</td></tr>
+<tr><td><code>wm.yaml</code></td><td>qtile, qtile-extras, picom, qt5ct/qt6ct. <code>qtile</code> itself is declared explicitly, having previously only been pulled in as a qtile-extras dependency &mdash; an upstream packaging change could have silently removed the desktop</td><td>Yes</td></tr>
+<tr><td><code>dev.yaml</code></td><td>nvim, git, tmux, lazygit, cargo/rust</td><td>Yes</td></tr>
+<tr><td><code>media.yaml</code></td><td>The pipewire stack (including <code>pipewire-jack</code>), easyeffects</td><td>Yes</td></tr>
+<tr><td><code>fonts.yaml</code></td><td>The Nerd Fonts and the families the UI names, plus Amiri and Cairo</td><td>Yes</td></tr>
+<tr><td><code>system-tools.yaml</code></td><td>The largest module. Rescue editors (vim, nano) live here rather than in the optional pass, because they are what you need at a TTY when the nvim config is exactly what broke. Also <code>papirus-folders</code> and <code>pacman-static</code></td><td>Yes</td></tr>
+<tr><td><code>network.yaml</code></td><td><code>networkmanager</code>, iwd, bluez. NetworkManager was previously undeclared and present only because archinstall put it there &mdash; a fresh machine got the tray applet with nothing to talk to</td><td>Yes</td></tr>
+<tr><td><code>xorg.yaml</code></td><td>xinit, xinput, xev, xwallpaper</td><td>Yes</td></tr>
+<tr><td><code>python-lib.yaml</code></td><td>psutil, dbus-fast, pillow and the rest of the popups' dependencies</td><td>Yes</td></tr>
+<tr><td><code>graphics.yaml</code></td><td><b>Vendor-neutral base only.</b> This file used to hardcode the Intel driver set with AMD commented out below it, which on an AMD or NVIDIA machine installed Intel drivers and nothing for the actual GPU</td><td>Yes</td></tr>
+<tr><td><code>graphics-intel.yaml</code><br><code>graphics-amd.yaml</code><br><code>graphics-nvidia.yaml</code></td><td>The vendor half. <b>Not</b> in <code>enabled_modules</code>: each is correct on exactly one class of machine. The wizard's <code>gpu</code> module reads the live PCI ids and installs whichever matches the hardware in front of it. NVIDIA uses the DKMS package rather than the prebuilt <code>nvidia</code>, because the prebuilt module is built against <code>linux</code> only &mdash; booting the LTS rescue entry would come up with no NVIDIA driver at all</td><td><b>No</b> &mdash; runtime-selected</td></tr>
+<tr><td><code>splash.yaml</code></td><td>plymouth. <b>Not</b> in <code>enabled_modules</code>: plymouth is inert until it is hooked into the initramfs and the kernel cmdline, and doing that is a decision about how the machine boots, not a package choice. The wizard's <code>boot-splash</code> module installs it</td><td><b>No</b></td></tr>
+<tr><td><code>optional.yaml</code></td><td>docker, JDK, printing, qemu, diagnostics. <b>Not</b> in <code>enabled_modules</code>: installed only by <code>./wizard.sh --only=dcli-sync-extra</code></td><td><b>No</b></td></tr>
+<tr><td><code>declared-packages.yaml</code></td><td>Where <code>dcli install</code> records ad-hoc additions</td><td>Yes</td></tr>
+<tr><td><code>example.yaml</code></td><td>A template to copy when creating a new module</td><td>&mdash;</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="warn">
+<p><b><code>pacman-static</code> is roughly an hour of any fresh install, on its own.</b> It
+compiles pacman and every dependency statically from source, much of it single-threaded
+through autotools. It is a genuine safety net &mdash; the day it matters is the day nothing
+else can install anything &mdash; but it is the single biggest cost in a fresh install. The
+trade is documented at the declaration in <code>system-tools.yaml</code>; moving it to
+<code>optional.yaml</code> is a one-line change if faster installs are worth more than the
+net.</p>
+</div>
+
+<h3>Auditing drift</h3>
+
+<pre><code>./wizard.sh --audit    # declared vs installed, both directions. Read-only, no sudo</code></pre>
+
+<p>Packages that are installed but deliberately undeclared live in
+<code>audit-ignore.yaml</code>, with the <code>pacman -Rns</code> command recorded next to
+them &mdash; uninstalling from a working machine is the owner's call, not the audit's.</p>
+
+<h2 id="state">Runtime state</h2>
+
+<p>All of it is generated. None of it is tracked, and none of it needs bootstrapping.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Path</th><th>What</th></tr></thead>
+<tbody>
+<tr><td><code>~/.cache/qtile/theme_mode</code></td><td>The active theme mode name</td></tr>
+<tr><td><code>~/.cache/qtile/current_palette.json</code></td><td>The 9-slot palette, rewritten on every apply</td></tr>
+<tr><td><code>~/.cache/qtile/palettes/</code></td><td>Precompiled per-wallpaper palettes</td></tr>
+<tr><td><code>~/.cache/qtile/ui_scale</code></td><td>The per-machine HiDPI factor</td></tr>
+<tr><td><code>~/.cache/qtile/layout_state.json</code></td><td>MonadTall ratios per group, saved every 3 s</td></tr>
+<tr><td><code>~/.cache/qtile/window_group_state.json</code></td><td>window id &rarr; group, plus per-group focus order</td></tr>
+<tr><td><code>~/.cache/qtile/gtk-wal.css</code></td><td>The GTK overlay <code>@import</code>ed by gtk 3 and 4</td></tr>
+<tr><td><code>~/.cache/qtile/.theme-apply.lock</code></td><td>The <code>flock</code> that serialises theme switches</td></tr>
+<tr><td><code>~/.cache/wall</code></td><td>Symlink to the active wallpaper</td></tr>
+<tr><td><code>~/.cache/qdrop.json</code>, <code>~/.cache/qdrop-images/</code></td><td>qdrop's stash</td></tr>
+<tr><td><code>~/.cache/qupdate.json</code></td><td>The pending-updates cache the bar and the logo menu both read</td></tr>
+<tr><td><code>$XDG_RUNTIME_DIR</code></td><td>Where the rofi scripts and kitty's control socket keep per-user state. Moved out of <code>/tmp</code>: kitty's socket sat there as <code>srwxr-xr-x</code> with <code>allow_remote_control yes</code>, which let any other local account drive the terminal. <code>$XDG_RUNTIME_DIR</code> is mode 700</td></tr>
+<tr><td><code>~/DefaultConfig/&lt;timestamp&gt;/</code></td><td>Whatever stow backed up</td></tr>
+<tr><td><code>/tmp/wizard-&lt;id&gt;.err</code></td><td>Per-module install logs. <b>Read these, not the summary card</b></td></tr>
+<tr><td><code>~/.local/share/qtile/qtile.log</code></td><td>qtile's own log</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="tests">The test layers</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>Layer</th><th>Time</th><th>Catches</th></tr></thead>
+<tbody>
+<tr><td><code>validate.sh</code></td><td>seconds</td><td>Parses every tracked shell, Python, fish and YAML file, <b>loads the qtile config for real</b>, greps for hardcoded home paths, checks every <code>.tmpl</code> has a renderer, and runs a full wizard dry-run</td></tr>
+<tr><td><code>wizard.sh --audit</code></td><td>seconds</td><td>Declared packages vs installed, both directions</td></tr>
+<tr><td><code>container-test.sh</code></td><td>~3 min</td><td>A real install as a user called <code>tester</code>: a path that only resolved because <code>$HOME</code> happened to be the author's own home directory, an unrendered <code>@HOME@</code> template, a step that is not idempotent, a module YAML that no longer parses</td></tr>
+<tr><td><code>vm-test.sh --unattended</code></td><td>~2 h</td><td>X11, systemd, boot, the desktop</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The <code>githooks</code> module symlinks a pre-commit hook that runs
+<code>validate.sh</code> plus <code>--audit</code> &mdash; the two fast layers only, because
+a hook that takes three minutes gets <code>--no-verify</code>'d within a week.</p>
+
+<p><code>validate.sh</code> exists because qtile falls back to its stock config on an error,
+so the failure mode is a desktop that looks like a stranger's rather than an error anyone
+sees.</p>
+
+<div class="limit">
+<p><b>What no layer covers.</b> The container has no X server, no systemd and no PCI bus. The
+VM has no GPU, so picom, compositing and the animations are untested there &mdash; a green
+phase-D run must not be read as though it covered them. Nothing anywhere covers AMD, NVIDIA
+or a HiDPI panel.</p>
+</div>
+
+<h2 id="docs">The repository's own documents</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>File</th><th>What it is for</th></tr></thead>
+<tbody>
+<tr><td><code>README.md</code></td><td>The overview, the install, and the collapsible reference sections</td></tr>
+<tr><td><code>TROUBLESHOOTING.md</code></td><td>126 real cases, each symptom &rarr; root cause &rarr; fix</td></tr>
+<tr><td><code>HANDOFF.md</code></td><td>The short brief for picking the repo up cold: what is verified and how, what must not be "fixed", and the repo-specific traps</td></tr>
+<tr><td><code>plan_found-but-not-fixed.md</code></td><td>The long version. Everything an audit turned up and deliberately left alone, with the reason &mdash; including items that are <b>correct as written</b></td></tr>
+<tr><td><code>THEME_AUDIT_REPORT.md</code></td><td>The theming audit</td></tr>
+<tr><td><code>.config/qtile/WAL_PRECOMPILE_REPORT.md</code></td><td>How the per-wallpaper palettes are forced to a doomone-quality bar</td></tr>
+<tr><td><code>installScripts/iso/PLAN.md</code></td><td>Why the ATI-OS medium is built the way it is</td></tr>
+<tr><td><code>installScripts/iso/README.md</code></td><td>How to build and use it</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="quirks">Things that look like bugs and are not</h2>
+
+<p>Recorded in <code>plan_found-but-not-fixed.md</code> precisely so nobody re-breaks them.</p>
+
+<ul>
+<li><b><code>host:</code> keys off the username, not the hostname.</b> See
+<a href="#packages">above</a>.</li>
+<li><b><code>grub_boost.sh</code> refuses rather than guessing.</b> It aborts on a
+trailing-comment or unquoted <code>GRUB_CMDLINE_LINUX_DEFAULT</code> instead of corrupting
+it, and prints the offending line.</li>
+<li><b><code>wizard.sh</code> hard-fails on non-Arch in <code>preflight</code>.</b>
+Deliberate. Loosening the gate would let pacman-only steps run on a distro that cannot
+satisfy them.</li>
+<li><b><code>boot/*.conf</code> hardcode a PARTUUID and <code>intel-ucode.img</code>.</b>
+They are reference copies that are never installed; the wizard generates live entries from
+<code>/proc/cmdline</code>, <code>bootctl --print-esp-path</code> and whichever microcode
+file exists.</li>
+<li><b><code>config.py</code>'s <code>font="Ubuntu Bold"</code></b> despite
+<code>fc-match "Ubuntu Bold"</code> answering Noto Sans CJK. libqtile builds via
+<code>FontDescription.from_string(f"{font} {size}px")</code>, and pango parses that to family
+<em>Ubuntu</em> plus weight 700. The <code>set_family()</code> path that would break it is
+only reachable from the <code>set_font</code> command, which this config never calls.</li>
+<li><b><code>container-test.sh</code>'s idempotency diff warns but never fails.</b>
+Regenerated files legitimately differ between runs.</li>
+<li><b><code>speed_boost.sh</code>'s zram ceiling.</b> <code>zram-size = min(ram, 8192)</code>
+is zram-generator's own expression and already scales with RAM; only the 8&nbsp;GB ceiling is
+a fixed number, and it only applies on machines larger than the one it was written on, where
+an 8&nbsp;GB zram is a defensible cap anyway. <code>swappiness=180</code> and
+<code>page-cluster=0</code> are the standard pairing for compressed swap.</li>
+<li><b><code>copyq_rofi</code>'s one remaining <code>/tmp</code> path</b> is a
+<code>mktemp</code> &mdash; unique, and mode 600.</li>
+</ul>
+
+<h3>Known shellcheck false positives</h3>
+
+<ul>
+<li>SC2209 at <code>ui-scale:55-56</code> (<code>MODE=set</code> &mdash; <code>set</code> as
+a string value)</li>
+<li>SC2016 at <code>container-test.sh:100</code> (a single-quoted in-container script,
+intentional)</li>
+<li>SC2015 at <code>scripts/pre-update.sh:70,142</code> (<code>A &amp;&amp; B || C</code>
+where B is an always-succeeding <code>printf</code>)</li>
+</ul>
+
+<footer class="page">
+  <span>Source: <code>installScripts/stow_script.sh</code>, <code>.stow-local-ignore</code>, <code>.config/arch-config/</code>, <code>plan_found-but-not-fixed.md</code>, <code>HANDOFF.md</code>.</span>
+  <a href="index.html">Back to the home page &rarr;</a>
+</footer>
+
+</main>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

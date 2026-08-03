@@ -31,6 +31,11 @@ TROUBLESHOOTING.md
 # ======================
 IMGS
 
+# The GitHub Pages manual. A directory, so stow would link ~/docs into a
+# fresh user's home the same way it once linked the repo-root prose. It is
+# read on the web (and out of the repo), never out of $HOME.
+docs
+
 # ======================
 # Scripts (not dotfiles)
 # ======================

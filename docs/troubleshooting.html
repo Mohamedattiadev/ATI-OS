@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Troubleshooting &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="The failures a new install actually hits, most common first, each with symptom, cause and fix.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="iconbtn" id="menu-toggle" aria-label="Toggle navigation">Menu</button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>Arch Linux &middot; X11 &middot; qtile</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="index.html">Home</a></li>
+    <li><a href="install-usb.html">Install from the ATI-OS USB</a></li>
+    <li><a href="install-git.html">Install from a git clone</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a href="keybindings.html">Keybindings</a></li>
+    <li><a href="themes.html">The themes</a></li>
+    <li><a href="widgets.html">Widgets and popups</a></li>
+    <li><a href="tools.html">Everyday tools</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a class="current" href="troubleshooting.html">Troubleshooting</a></li>
+    <li><a href="reference.html">Reference</a></li>
+  </ol>
+  <h2>On this page</h2>
+  <ol class="sub">
+    <li><a href="#first">The first five minutes</a></li>
+    <li><a href="#rule">The one rule</a></li>
+    <li><a href="#install">Install and first boot</a></li>
+    <li><a href="#atios">The ATI-OS medium</a></li>
+    <li><a href="#desktop">The desktop</a></li>
+    <li><a href="#theming">Theming</a></li>
+    <li><a href="#network">Network and Bluetooth</a></li>
+    <li><a href="#rofi">The rofi menus</a></li>
+    <li><a href="#dictation">Voice dictation</a></li>
+    <li><a href="#shell">Shell and session</a></li>
+    <li><a href="#full">The full file</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>Troubleshooting</h1>
+<p class="lede">Reorganised from <code>TROUBLESHOOTING.md</code>, which records 126 real
+cases as symptom &rarr; root cause &rarr; fix. The most likely ones are first.</p>
+
+<h2 id="first">The first five minutes</h2>
+
+<h3 id="black-screen">The install finished and I have a black screen with a blinking cursor</h3>
+
+<p><b>That is the install working.</b> There is no display manager and no autologin, on
+purpose &mdash; the <code>disable-dm</code> module disables <code>lightdm</code>,
+<code>gdm</code>, <code>sddm</code> and <code>lxdm</code>.</p>
+
+<ol>
+<li>Log in with the username and password you chose.</li>
+<li>Type <code>letsgo</code>. If that says <em>command not found</em>, type
+<code>startx</code>.</li>
+</ol>
+
+<p><code>letsgo</code> is a fish <em>function</em>, so it only exists when the account's
+login shell is fish. The <code>login-shell</code> module does that with <code>chsh</code>,
+but skips itself if fish is not installed. On such a machine <code>startx</code> is the one
+that works.</p>
+
+<h3 id="x-active">startx says "Server is already active for display 0"</h3>
+
+<p>An unclean X exit left <code>/tmp/.X0-lock</code> behind. <code>letsgo</code> removes it
+for you and tells you it did. By hand:</p>
+
+<pre><code>pgrep -x Xorg          # if this prints a PID, X really is running -- Ctrl+Alt+F1
+rm -f /tmp/.X0-lock    # only when it is not
+startx</code></pre>
+
+<h3 id="desktop-missing">The desktop did not appear after the first ATI-OS boot</h3>
+
+<p>The wizard runs on first boot, not during the install. It takes about 20 minutes and
+prints its progress on screen. If it failed:</p>
+
+<pre><code>cat /var/log/ati-os-firstboot.log          # the whole run
+cat /var/lib/ati-os/firstboot-complete     # the wizard's exit status
+cd ~/.dotfiles/installScripts &amp;&amp; ./wizard.sh</code></pre>
+
+<p>The marker records the exit status rather than merely that the run happened, so a failed
+first boot does not mark itself done and will retry.</p>
+
+<h3 id="validate-lies">validate.sh says everything passed but nothing works</h3>
+
+<div class="warn">
+<p><code>validate.sh</code> <b>degrades every check it cannot run to "skipped"</b> &mdash;
+so on a machine where the install failed and nothing is present, it skips everything and
+exits green. On a fresh machine, trust the wizard's summary card
+(<code>46 ok / 0 failed</code>) over <code>validate.sh</code>.</p>
+</div>
+
+<h3 id="stock-qtile">The desktop came up but it looks like stock qtile</h3>
+
+<p>qtile falls back to its built-in configuration when yours raises an error, and
+<code>qtile cmd-obj -f status</code> answers <code>OK</code> either way. Check the log for
+the fallback:</p>
+
+<pre><code>grep -i "config" ~/.local/share/qtile/qtile.log | head
+bash ~/.dotfiles/installScripts/validate.sh   # loads the config for real</code></pre>
+
+<h2 id="rule">The one rule</h2>
+
+<div class="note">
+<p><b>On a clean install, the module that reports the failure is almost never the module at
+fault.</b> One full disk once presented as five broken modules, 32 modules after the cause.
+One blocked pacman transaction presented as two. Read the per-module logs
+(<code>/tmp/wizard-&lt;id&gt;.err</code>), not the wizard's summary card &mdash; that is what
+distinguished five root causes from twenty-two symptoms.</p>
+<p>The corollary, learned the same way: <b>verify a check against a known-good case before
+trusting it.</b> Five separate times in this repo's history the <em>check</em> was wrong
+rather than the code.</p>
+</div>
+
+<h2 id="install">Install and first boot</h2>
+
+<h3>The wizard finished but packages are missing</h3>
+
+<p><code>dcli sync</code> prints <em>"✓ Packages synced successfully"</em> regardless of what
+happened above it. This has shown up for three unrelated root causes. Always verify:</p>
+
+<pre><code>dcli sync --dry-run    # after any large sync, if a binary seems missing</code></pre>
+
+<p>The three causes seen so far:</p>
+<ol>
+<li><b>The sudo credential cache expired mid-build.</b> Packages show
+<code>Finished making: X</code> but never get <code>pacman -U</code>'d.
+<code>install.sh</code> now keeps sudo alive for the whole run.</li>
+<li><b>A hard package conflict blocked the entire batch.</b> It is one
+<code>pacman -U</code> transaction, so <em>every</em> package in that round fails, not just
+the conflicting one. <code>yay</code> vs <code>yay-bin</code> did this; so did
+<code>jack2</code> vs <code>pipewire-jack</code>, where the resolver picks jack2 for the
+virtual <code>jack</code> that ffmpeg/mpv/timidity depend on, and pacman aborts
+everything.</li>
+<li><b>A build-time tool failure inside one package's <code>prepare()</code>.</b>
+<code>rustup</code> having no default toolchain broke every cargo-based AUR package
+(<code>paru</code>, <code>didyoumean</code>) and nothing else.</li>
+</ol>
+
+<p><code>wizard.sh</code>'s <code>dcli-sync</code> module now self-verifies with a dry-run
+and retries. If you run <code>dcli sync</code> by hand, do the dry-run yourself.</p>
+
+<h3>The install ran out of disk</h3>
+
+<p>It needs about 25&nbsp;GB installed, and considerably more transiently when AUR packages
+are compiled. This presented once as <em>six</em> failed modules all reporting
+<code>No space left on device</code>, starting 32 modules after the actual cause. The VM test
+now provisions 60&nbsp;GB.</p>
+
+<p>On a long-lived machine, <code>~/.cache/yay</code> is worth checking:
+<code>yay -Sc</code>.</p>
+
+<h3>The install stopped on unread Arch news</h3>
+
+<p><code>informant</code> refuses every pacman transaction until Arch news is read, and it
+installs itself mid-sync, so a fresh machine always has unread news. It presented as
+<code>boot-splash</code> (no plymouth) and the desktop check (no Xvfb) failing, 5 and 20
+modules downstream.</p>
+
+<p>The wizard marks the news read after the sync. Note that doing it as the invoking user
+does nothing &mdash; informant's pacman hook runs as <b>root</b> and checks root's read
+state.</p>
+
+<h3>Other install cases in the full file</h3>
+
+<ul>
+<li><code>gum: command not found</code> on fresh Arch</li>
+<li>Long steps (e.g. <code>dcli sync</code>) look frozen with no output</li>
+<li><code>./install.sh</code> hangs forever near the end, spinner still turning</li>
+<li><code>sudo</code> password rejected repeatedly even though it is correct</li>
+<li>Passwordless sudo reports ✔ and <code>sudo</code> still asks for a password</li>
+<li>Laptop still suspends on lid close, and the module said ✔</li>
+<li><code>--only=pacman-guard</code> on a fresh box breaks every pacman transaction</li>
+<li><code>stow</code> aborts the whole install on a machine that already has a
+<code>~/.tmux.conf</code></li>
+<li><code>arch-config.sh</code> prints DONE and changes nothing</li>
+<li><b>AMD machine: the desktop runs on llvmpipe and the GPU module "failed"</b></li>
+<li><code>boot-splash</code> cannot generate a splash without <code>ttf-firacode-nerd</code></li>
+</ul>
+
+<h2 id="atios">The ATI-OS medium</h2>
+
+<h3>The machine will not boot the USB stick at all</h3>
+
+<p>Three things, in this order:</p>
+<ol>
+<li><b>UEFI, not legacy/CSM.</b> The boot menu usually shows each device twice; pick the
+entry that says UEFI. ATI-OS installs UEFI-only.</li>
+<li><b>Secure Boot off.</b> ATI-OS ships an unsigned bootloader. The installer warns about
+this, but skip past it and the machine installs fine and then refuses to boot with "no
+bootable device" &mdash; which looks like a broken install and is not one.</li>
+<li><b>The write actually finished.</b> <code>dd</code> returns before the data is on the
+stick unless you passed <code>oflag=sync</code>. Verify with
+<code>sha256sum -c ati-os-*.iso.sha256</code>.</li>
+</ol>
+
+<h3>"no bootable device" after the install finished</h3>
+
+<p>Almost always Secure Boot, above. If it is genuinely off, check the boot entry:</p>
+
+<pre><code># from the live medium, with the installed disk mounted at /mnt
+cat /mnt/boot/loader/entries/ati-os.conf
+blkid -o value -s PARTUUID /dev/sdaX      # must match root=PARTUUID=</code></pre>
+
+<p><code>test-iso.sh</code> asserts exactly this comparison, so a mismatch means the install
+did not finish rather than that it was written wrong.</p>
+
+<h3>The installer refuses to start</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th>Message</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>booted in BIOS/legacy mode</code></td><td>UEFI only &mdash; see above</td></tr>
+<tr><td><code>${N}G — ATI-OS needs at least 30G</code></td><td>The disk is too small. 60&nbsp;G if the medium is over a year old, because the AUR set then gets compiled and its build trees are large</td></tr>
+<tr><td><code>has mounted partitions</code></td><td>You picked the USB stick, or something else is using that disk</td></tr>
+<tr><td><code>is in use by: lvm/raid/crypt</code></td><td>Deactivate it first: <code>vgchange -an</code>, <code>mdadm --stop</code>, <code>cryptsetup close</code></td></tr>
+<tr><td><code>no network</code></td><td>It downloads during the install. Wi-Fi: <code>iwctl</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Package signature errors during the install</h3>
+
+<p>Two causes, and the message names neither.</p>
+<ul>
+<li><b>A wrong clock.</b> Signatures then look expired or not-yet-valid. The installer syncs
+the clock via NTP before installing anything; if that failed it says so. Check
+<code>timedatectl</code>.</li>
+<li><b>An old medium.</b> <code>pacstrap</code> builds the new system's keyring from the keys
+on the stick. The installer refreshes <code>archlinux-keyring</code> from the network first,
+so this should not happen &mdash; but with no network at that moment it cannot, and falls
+back to what shipped. Rebuild the ISO.</li>
+</ul>
+
+<h3>The install took two hours instead of twenty minutes</h3>
+
+<p>The prebuilt AUR packages were not used, and the installer says which:</p>
+<ul>
+<li><code>no prebuilt AUR repository on this medium</code> &mdash; the ISO was built without
+running <code>aur-repo.sh</code> first.</li>
+<li><code>medium is N days old — NOT using its prebuilt packages</code> &mdash; deliberate.
+Over a year, those binaries were compiled against libraries too old to trust against today's
+glibc, so they are compiled from source instead. Correct, and slow. Rebuild the ISO.</li>
+</ul>
+
+<h3>Building the ISO fails with "call to execv failed"</h3>
+
+<p>The host's own pacman hooks are leaking into the image being built. This repo installs
+<code>/etc/pacman.d/hooks/00-preflight.hook</code>, which runs
+<code>/usr/local/bin/pacman-preflight</code> &mdash; a file that exists on the build machine
+and in no fresh root anywhere. pacman reports it as:</p>
+
+<pre><code>call to execv failed (No such file or directory)
+error: failed to commit transaction (failed to run transaction hooks)</code></pre>
+
+<p>naming neither the hook nor the missing file. Both <code>aur-repo.sh</code> and
+<code>build-iso.sh</code> override <code>HookDir</code> to an empty directory to prevent it.
+Seeing this means that override was lost or the config was hand-edited.</p>
+
+<h3>An AUR package will not build</h3>
+
+<p><code>aur-repo.sh</code> writes one log per package to
+<code>~/ati-os-build/logs/</code>. Read that one, not the summary. Two cases already
+handled, in case they resurface:</p>
+<ul>
+<li><code>You appear to have cloned an empty repository</code> &mdash; the AUR repo is named
+after the package <b>base</b>, not the package. <code>espanso-x11</code> lives in
+<code>espanso</code>.</li>
+<li><code>built but produced no package</code> &mdash; a PKGBUILD overrode
+<code>PKGEXT</code>. <code>pacman-static</code> ships <code>.pkg.tar.xz</code>, not
+<code>.zst</code>.</li>
+</ul>
+
+<h2 id="desktop">The desktop</h2>
+
+<h3>Every app-launching keybind crashes with <code>cmd_spawn</code></h3>
+
+<p><b>Symptom:</b> browser toggles, terminal, file manager, Telegram and Obsidian all fail
+with <code>AttributeError: 'Qtile' object has no attribute 'cmd_spawn'</code> in
+<code>~/.local/share/qtile/qtile.log</code>.</p>
+
+<p><b>Cause:</b> a <code>pacman -Syu</code> upgraded qtile itself, which removed
+<code>Qtile.cmd_spawn()</code> in favour of <code>Qtile.spawn()</code> &mdash; same
+signature, a drop-in rename. <b>Fix:</b> mechanical rename of every
+<code>qtile.cmd_spawn(</code> call site.</p>
+
+<h3>Newly-installed packages or config do not take effect after <code>reload_config</code></h3>
+
+<p>Use <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>r</kbd> (a full restart) rather than
+<code>reload_config</code>. The restart preserves window&rarr;group and layout state through
+qtile's own pickle serialisation; <code>reload_config</code> loses layout order and can
+re-shuffle Match'd applications back to their default group.</p>
+
+<h3>Six Alt bindings and the whole Hint-Mode chord do nothing</h3>
+
+<p>The Homerow hint keys are dead with no error. This is in the full file under <b>Qtile
+config</b>; it is a dependency problem, not a binding problem.</p>
+
+<h3>The bar shows an error where the battery should be</h3>
+
+<p><code>Error: Unable to read status for status_file</code>, permanently, on a desktop with
+no battery. The battery chip is now only added to the bar when a battery actually exists.
+Related: <code>battery-events</code> finds the battery and adapter <em>by type</em> in
+<code>/sys</code> rather than by name, because <code>BAT0</code>/<code>AC</code> is what one
+laptop happens to call them &mdash; others use <code>BAT1</code>, <code>ACAD</code>,
+<code>ADP0</code>, <code>ADP1</code> or <code>AC0</code>.</p>
+
+<div class="limit">
+<p>The <code>BAT1</code>/<code>ADP1</code> fix is <b>reasoned from <code>/sys</code>
+semantics, never observed</b> on a laptop that names them that way.</p>
+</div>
+
+<h3>qtile freezes for seconds after a keybind or widget update</h3>
+
+<p>Something is blocking the main loop. See <b>Qtile freezes</b> in the full file.</p>
+
+<h3>Other desktop cases in the full file</h3>
+
+<ul>
+<li>qdrop pops up while dragging to select text / opens on any drag / glitches when shaken
+while open / opens empty the first time / width changes with contents</li>
+<li>Pasting an image from a web page into qdrop stores a link instead</li>
+<li>Qtile RAM climbs every time a popup is opened and closed</li>
+<li>Entries at the bottom of a cheatsheet column are missing, and nothing errors</li>
+<li>Cheatsheet columns do not line up / the popups render in a CJK face</li>
+<li>Popup labels are washed out or unreadable on some themes</li>
+<li>The triangle chip (systray) is always empty, or never shows the nightlight lamp</li>
+<li><code>copyq_rofi</code> shows no clipboard history</li>
+<li>Touchpad tap-to-click does not work right after the wizard finishes</li>
+<li>File manager opens on the wrong group after switching to <code>pcmanfm-qt</code></li>
+<li>Extract Here / Open Terminal Here / Open as Root do nothing at all</li>
+<li>Mounting a partition from the Places pane is refused with no password prompt</li>
+<li>Opening a folder from another application launches a terminal</li>
+<li>The disk widget shows the wrong free space or the wrong partition</li>
+<li>The language widget shows no flag icon</li>
+<li>btop never gets themed</li>
+</ul>
+
+<h2 id="theming">Theming</h2>
+
+<h3>Everything renders in a CJK face and every aligned column is ragged</h3>
+
+<p><b>Symptom:</b> on a fresh install the bar, every popup and the notifications come up in a
+wrong-looking proportional face, and columns that were supposed to line up are ragged.
+Nothing errors and no log line mentions fonts. It reads like the layout code is broken.</p>
+
+<p><b>Cause:</b> <b>fontconfig never errors on a missing family.</b> It substitutes,
+silently, and on this system <code>fc-match</code> answers Noto Sans CJK KR for anything it
+does not have. Every padded column in this repo is aligned with <em>spaces</em>, and spaces
+only align in a monospace font.</p>
+
+<pre><code>fc-match "JetBrainsMono Nerd Font"   # must answer itself, not Noto
+bash ~/.dotfiles/installScripts/validate.sh   # the "UI fonts installed" check</code></pre>
+
+<div class="warn">
+<p><b>Adding a font to any config takes two edits.</b> Declare the package in
+<code>modules/fonts.yaml</code> <em>and</em> add the family to the list in
+<code>validate.sh</code>'s <em>UI fonts installed</em> check &mdash; that list is
+hand-maintained and does not derive itself. <code>fc-list : family</code> gives the real
+names; they are rarely what you would guess (<code>ttf-firacode-nerd</code> installs
+<em>FiraCode Nerd Font</em>, not <em>FiraCode Nerd</em> &mdash; a trap this repo has fallen
+into twice).</p>
+</div>
+
+<h3>A wallpaper switch half-applies and the desktop never reloads</h3>
+
+<p>Several distinct cases sit under this symptom in the full file, and they are worth reading
+individually. The one to check first: every rofi menu stopping after a wallpaper change, with
+the theme switch reporting success.</p>
+
+<h3>Changing the wallpaper silently replaced my preset theme</h3>
+
+<p>Fixed, and now deliberate: the wallpaper only re-derives the palette when the active mode
+is already <code>wal</code>. On a preset, a new wallpaper swaps the desktop image and nothing
+else. See <a href="themes.html#wallpaper-vs-theme">Wallpaper vs. theme</a>.</p>
+
+<h3>Qt apps (Telegram, pcmanfm-qt) stay light or ignore the palette</h3>
+
+<p>Qt ignores the GTK theme entirely. It needs <code>QT_QPA_PLATFORMTHEME=qt6ct</code>,
+exported from <code>.xinitrc</code>, and it reads the palette at application start &mdash; so
+a fresh X session is required after a theme change.</p>
+
+<h3>Chrome follows the palette but Chromium does not, or vice versa</h3>
+
+<p>Both are in the full file, with different causes. The extension id is derived from
+<code>browser-theme.pem</code> at runtime because it is per-machine, and the browsers have to
+relaunch through their <code>/usr/bin</code> wrapper for <code>*-flags.conf</code> to
+apply.</p>
+
+<h3>Other theming cases in the full file</h3>
+
+<ul>
+<li>qutebrowser: homepage retints but tabs/statusbar/completion do not, or the reverse</li>
+<li>nvim dashboard header stays default cyan</li>
+<li>eww widgets keep doom-one colours after a theme switch</li>
+<li>qtile popup cheatsheets stuck on doom-one</li>
+<li>A new wallpaper not in the precompile cache applies with the old palette</li>
+<li>Folder icons never change colour</li>
+<li>Concurrent <code>theme-apply</code> races</li>
+<li><code>theme-apply</code> fails during install, before you have ever run
+<code>startx</code></li>
+<li>Cheatsheet cards are the wrong size: points vs pixels</li>
+<li>dunst and eww render in a different font than the qtile popups</li>
+</ul>
+
+<h2 id="network">Network and Bluetooth</h2>
+
+<h3>Fresh install: the WiFi/Bluetooth popups say the daemon is not running</h3>
+
+<p><b>Symptom:</b> <kbd>Super</kbd>+<kbd>P</kbd> then <kbd>n</kbd> or <kbd>b</kbd> opens the
+popup and immediately errors &mdash; <em>NetworkManager is not running</em>, or an empty
+Bluetooth list that never fills. <code>nm-applet</code> and <code>blueman-applet</code> are
+visible in the tray and do nothing.</p>
+
+<p><b>Cause:</b> <b>declaring a package installs a binary, not a running daemon.</b>
+<code>networkmanager</code> and <code>bluez</code> are declared and installed, but for a long
+time nothing enabled the units. They were enabled on the development machine only because
+<em>archinstall</em> did it &mdash; exactly the kind of difference a package audit cannot
+see.</p>
+
+<pre><code>./wizard.sh --yes --only=radios
+systemctl is-enabled NetworkManager.service bluetooth.service</code></pre>
+
+<p>The <code>radios</code> module is idempotent. Its uninstaller is a deliberate no-op:
+disabling NetworkManager to "reverse" an install leaves a machine with no network and no GUI
+to fix it with.</p>
+
+<div class="warn">
+<p><b>Watch out for <code>service_trim.sh</code>.</b> It offers to disable
+<code>bluetooth.service</code>; say yes and the <kbd>Super</kbd>+<kbd>P</kbd> <kbd>b</kbd>
+picker goes dead with no other symptom.</p>
+</div>
+
+<h3>A network stays "saved" with a password that can never work</h3>
+
+<p>Fixed: a wrong PSK re-asks rather than leaving a saved profile that can never connect.</p>
+
+<h3>Connecting to an out-of-range network or device hangs forever</h3>
+
+<p>The busy bar spins and never stops. Press <kbd>c</kbd> to cancel &mdash;
+<code>bluetoothctl connect</code> genuinely never returns for an out-of-range device.</p>
+
+<h3>Other network cases in the full file</h3>
+
+<ul>
+<li>Typing a WiFi password pops nm-applet's own GTK dialog on top of the popup</li>
+<li>The Bluetooth list fills up, then empties itself a few seconds later</li>
+<li>The QR code from the WiFi popup will not scan</li>
+</ul>
+
+<h2 id="rofi">The rofi menus</h2>
+
+<h3>Every confirmation dialog answers "cancel" by itself, on a second account</h3>
+
+<p>On a machine with more than one user, one account's rofi state was in a fixed
+<code>/tmp</code> path owned by whoever got there first. All of those now route through
+<code>${XDG_RUNTIME_DIR:-/tmp/rofi-$(id -u)}</code>.</p>
+
+<h3>Pressing Enter in <code>rofi_pass</code> does nothing at all</h3>
+
+<p>The picker opens, entries are listed, Enter closes it and nothing is copied. In the full
+file under <b>Rofi</b>, together with two other <code>rbw</code> cases: entries created with
+an empty password, and <em>"multiple entries found"</em> on get/remove/edit.</p>
+
+<h3>Vaultwarden web vault 404s while the API works</h3>
+
+<p><code>http://127.0.0.1:8222/api/config</code> returns 200 but <code>/</code> does not.
+See the full file. Remember the web vault also requires <code>https</code>.</p>
+
+<h3>Other rofi cases in the full file</h3>
+
+<ul>
+<li>The translator returns only one word, with no dictionary popup</li>
+<li>The translator and <code>rofi_anki</code> show empty synonyms and examples (this is the
+missing <code>GEMINI_API_KEY</code>)</li>
+<li><code>rofi_anki</code> builds a whole card, then fails at "Cannot reach
+AnkiConnect"</li>
+<li>The shared-links picker shows fewer links than the file holds</li>
+<li>The wallpaper picker (<code>dm-setbg</code>) lists nothing</li>
+<li><code>dm-documents</code>: "file not found" for some PDFs but not others</li>
+<li><code>rofi-kill</code>: slow to open, misaligned dividers, kill that did not kill,
+confirm defaulting to No, or no confirm at all</li>
+<li>The screenshot picker fails before the menu even shows</li>
+<li><code>rofi_ilovepdf</code> silently does nothing (missing zenity / libreoffice)</li>
+<li>Webcam recording ignores the resolution you picked, or records the wrong device</li>
+<li><code>tailscale cert</code> fails: "account does not support getting TLS certs" &mdash;
+MagicDNS and HTTPS Certificates both have to be enabled in the admin console</li>
+</ul>
+
+<h2 id="dictation">Voice dictation</h2>
+
+<h3>The mic transcribes garbage, or a session is suddenly much worse than the last one</h3>
+
+<p>WirePlumber resets the mic capture gain to clipping levels on every login. The
+<code>mic-gain</code> module enables <code>fix-mic-gain.service</code>, which reasserts
+it.</p>
+
+<h3><code>voice_dictate</code> feels much slower than it should</h3>
+
+<p>Transcribing a few seconds takes 10+ seconds when <code>whisper-cli</code> comes from the
+unoptimised AUR build. The <code>whisper-fast</code> module rebuilds it optimised and
+shadows the AUR binary via <code>/usr/local</code> &mdash; roughly 13&times; faster. It warns
+and skips rather than failing if it cannot, since it is a speedup, not a requirement.</p>
+
+<h3><code>voice_dictate_live</code> types things you never said</h3>
+
+<p>Repeated phrases. <code>whisper-stream</code>'s VAD sliding-window mode does not emit one
+clean block per finished phrase; <code>voice_dictate_live_typer.py</code> exists to type only
+the new words of each block.</p>
+
+<h2 id="shell">Shell and session</h2>
+
+<h3>A wall of errors on every new fish shell</h3>
+
+<p><code>Unknown command: colorscript</code>, <code>mktemp: failed to create file via
+template '~/tmp/.psub.XXXXXX'</code>, a Rust panic <code>Broken pipe</code>,
+<code>source: missing filename argument</code>. All covered under <b>Fish shell</b> in the
+full file. The <code>image-envs</code> module is what ensures <code>~/tmp</code>
+exists.</p>
+
+<h3>tmux ignores every plugin</h3>
+
+<p>tmux starts fine and silently ignores every <code>set -g @plugin</code> line, so
+<code>vim-tmux-navigator</code>'s pane navigation and resurrect/continuum's save and restore
+all do nothing. TPM needs a bootstrap; that is the <code>tmux-tpm</code> module, and it runs
+as part of the install.</p>
+
+<h3>Warnings on every qtile start that are not problems</h3>
+
+<ul>
+<li><code>xauth: (stdin):2: unknown command "&lt;32 hex chars&gt;"</code> right after
+<code>letsgo</code> &mdash; the very first line, before the Xorg banner.</li>
+<li><code>WARNING:libqtile:Key spec duplicated, overriding previous: &lt;Key ([],
+Escape)&gt;</code> &mdash; this one was <em>fixed</em> by dropping qtile's auto-added Escape
+before appending the config's own, so it should no longer appear.</li>
+<li>xkbcomp warnings about unresolved <code>XF86…</code> keysyms and
+<code>&lt;FK23&gt;</code>/<code>&lt;FK24&gt;</code> being redefined.</li>
+</ul>
+
+<p>The full file has a <em>"What qtile.log looks like on a clean restart"</em> entry, which
+is the fastest way to tell a real error from noise.</p>
+
+<h2 id="full">The full file</h2>
+
+<p><code>TROUBLESHOOTING.md</code> is the complete record &mdash; 126 entries across these
+sections, each with symptom, root cause and fix:</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Section</th><th>Covers</th></tr></thead>
+<tbody>
+<tr><td>Theming</td><td>Palette propagation across all 15 consumers, fonts, popup rendering</td></tr>
+<tr><td>Rofi</td><td>Every rofi script, plus rbw / Vaultwarden / Tailscale</td></tr>
+<tr><td>Qtile freezes</td><td>Main-loop blocking</td></tr>
+<tr><td>Qtile config</td><td>qdrop, widgets, popups, pcmanfm-qt, battery, Homerow</td></tr>
+<tr><td>Network &amp; Bluetooth</td><td>The WiFi and Bluetooth pickers and their daemons</td></tr>
+<tr><td>Voice dictation</td><td>Mic gain, whisper speed, live-typing artefacts</td></tr>
+<tr><td>Testing on a fresh Arch VM</td><td>How to reproduce a clean install</td></tr>
+<tr><td>Wizard / Installer</td><td>Module failures, flags, logs, sudo</td></tr>
+<tr><td>Install / Bootstrap</td><td>dcli, yay, cargo, GPU, grub</td></tr>
+<tr><td>Symlink / stow</td><td>Stow conflicts and diff churn</td></tr>
+<tr><td>Session startup (TTY &rarr; X)</td><td>xauth, xkbcomp, qtile.log, user units</td></tr>
+<tr><td>Fish shell</td><td>Startup errors</td></tr>
+<tr><td>Tmux</td><td>TPM and plugins</td></tr>
+<tr><td>Simplenote</td><td>Every sync case and what each log line means</td></tr>
+<tr><td>System updates</td><td>The update safety net and the recovery ladder</td></tr>
+<tr><td>Android screen mirroring</td><td><code>Super+Shift+F6</code></td></tr>
+<tr><td>ATI-OS installation medium</td><td>Building and installing from the USB</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>On an installed machine, the fastest way in is the logo menu &rarr; <b>Documentation</b>
+&rarr; <b>Troubleshooting</b>. It lists every entry by its <em>symptom</em> line rather than
+its heading, and jumps straight to the line.</p>
+
+<p>Two more files worth knowing: <code>HANDOFF.md</code> is the short brief on what is
+verified and how, and <code>plan_found-but-not-fixed.md</code> is the long version &mdash;
+including items that are <b>correct as written</b> and recorded so nobody "fixes" them
+again.</p>
+
+<footer class="page">
+  <span>Source: <code>TROUBLESHOOTING.md</code>, <code>HANDOFF.md</code>, <code>plan_found-but-not-fixed.md</code>.</span>
+  <a href="reference.html">Next: reference &rarr;</a>
+</footer>
+
+</main>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

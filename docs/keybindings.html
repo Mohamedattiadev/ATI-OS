@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keybindings &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="Every keybinding in the qtile config, grouped by category and read straight out of config.py.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="iconbtn" id="menu-toggle" aria-label="Toggle navigation">Menu</button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>Arch Linux &middot; X11 &middot; qtile</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="index.html">Home</a></li>
+    <li><a href="install-usb.html">Install from the ATI-OS USB</a></li>
+    <li><a href="install-git.html">Install from a git clone</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a class="current" href="keybindings.html">Keybindings</a></li>
+    <li><a href="themes.html">The themes</a></li>
+    <li><a href="widgets.html">Widgets and popups</a></li>
+    <li><a href="tools.html">Everyday tools</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a href="troubleshooting.html">Troubleshooting</a></li>
+    <li><a href="reference.html">Reference</a></li>
+  </ol>
+  <h2>On this page</h2>
+  <ol class="sub">
+    <li><a href="#modifiers">The two modifiers</a></li>
+    <li><a href="#windows">Windows and layouts</a></li>
+    <li><a href="#groups">Workspaces</a></li>
+    <li><a href="#launch">Launching and sessions</a></li>
+    <li><a href="#session">Session and machine</a></li>
+    <li><a href="#homerow">Homerow (mouse-free clicking)</a></li>
+    <li><a href="#alt">Other Alt bindings</a></li>
+    <li><a href="#scratch">Scratchpads</a></li>
+    <li><a href="#mouse">Mouse</a></li>
+    <li><a href="#modes">Modes and chords</a></li>
+    <li><a href="#rofi-mode">Super+P &mdash; rofi mode</a></li>
+    <li><a href="#wallpaper-mode">Wallpaper picker</a></li>
+    <li><a href="#wifi-mode">WiFi</a></li>
+    <li><a href="#bt-mode">Bluetooth</a></li>
+    <li><a href="#audio-mode">Audio</a></li>
+    <li><a href="#display-mode">Display</a></li>
+    <li><a href="#media-mode">Media</a></li>
+    <li><a href="#resize-mode">Resize</a></li>
+    <li><a href="#draw-mode">Draw</a></li>
+    <li><a href="#hint-mode">Hint</a></li>
+    <li><a href="#lang-mode">Language switch</a></li>
+    <li><a href="#cheat-mode">Cheatsheets</a></li>
+    <li><a href="#passthrough">Passthrough</a></li>
+    <li><a href="#live">Getting this list live</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>Keybindings</h1>
+<p class="lede">Everything below was read out of <code>.config/qtile/config.py</code>. If a
+binding is not here, it is not bound.</p>
+
+<h2 id="modifiers">The two modifiers</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>Name here</th><th>In the config</th><th>X modifier</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd></td><td><code>mod</code></td><td><code>mod4</code> &mdash; the Windows key</td></tr>
+<tr><td><kbd>Alt</kbd></td><td><code>mod2</code></td><td><code>mod1</code> &mdash; the Alt key</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<p><b>Caps Lock is not Alt unless you asked for it.</b> The <code>xmodmap</code> module
+that repurposes Caps Lock as <code>Alt_L</code> is <b>opt-in and not part of a default
+install</b> &mdash; it has no tap-to-Caps fallback, which is right for one laptop whose Alt
+key is dead in hardware and merely surprising everywhere else. On a default install, use
+your real Alt key. To opt in: <code>./wizard.sh --yes --only=xmodmap</code>.</p>
+</div>
+
+<h2 id="windows">Windows and layouts</h2>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Keys</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>h</kbd></td><td>Move focus left. On <code>max</code> and <code>treetab</code>, which have no "left", this falls back to <em>previous</em></td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>l</kbd></td><td>Move focus right (or <em>next</em> on <code>max</code>/<code>treetab</code>)</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>j</kbd></td><td>Move focus down</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>k</kbd></td><td>Move focus up</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>h</kbd></td><td>Move the window left; in <code>treetab</code>, move the tab left</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>l</kbd></td><td>Move the window right; in <code>treetab</code>, move the tab right</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>j</kbd></td><td>Move the window down; in <code>treetab</code>, move down a section</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Toggle between split and unsplit sides of the stack</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>x</kbd></td><td>Toggle the focused window between minimum and maximum size</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>t</kbd></td><td>Toggle floating</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>f</kbd></td><td>Toggle fullscreen</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Tab</kbd></td><td>Next layout</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>c</kbd></td><td>Kill the focused window</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>.</kbd></td><td>Move focus to the next monitor</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>,</kbd></td><td>Move focus to the previous monitor</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Growing and shrinking windows is not on <kbd>Super</kbd>+<kbd>Ctrl</kbd> &mdash; it lives
+in <a href="#resize-mode">resize mode</a>.</p>
+
+<h3>The three layouts</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th>Layout</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>MonadTall</code></td><td>The default. <code>ratio=0.75</code>, clamped between 0.6 and 0.85</td></tr>
+<tr><td><code>Max</code></td><td>One window at full size, no border, no margin. The default on groups 2, 5, 8 and S</td></tr>
+<tr><td><code>TreeTab</code></td><td>A side panel 180px wide with sections <code>ONE</code>, <code>TWO</code>, <code>THREE</code>, <code>DEV</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="groups">Workspaces</h2>
+
+<p>Nine groups plus a scratchpad. Group <code>S</code> (Anki, Obsidian, the
+<code>nvimsum</code> window) has no key of its own by design &mdash; you reach it via the
+application bindings.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Keys</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch to that group</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Move the focused window to that group</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Inside most modes the plain digits <kbd>1</kbd>&hellip;<kbd>9</kbd> also switch groups,
+so you never get stuck in a chord on the wrong workspace. That applies to rofi, media,
+resize, draw, hint and cheatsheet mode.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Group</th><th>Default layout</th><th>Applications that land there</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>MonadTall</td><td>ticktick</td></tr>
+<tr><td>2</td><td>Max</td><td>qutebrowser, zen-browser, vlc, ops, firefox</td></tr>
+<tr><td>3</td><td>MonadTall</td><td>Nautilus, pcmanfm-qt, pcmanfm</td></tr>
+<tr><td>4</td><td>MonadTall</td><td>code, Zed, kitty, cursor</td></tr>
+<tr><td>5</td><td>Max</td><td>brave, brave-browser</td></tr>
+<tr><td>6</td><td>MonadTall</td><td>google-chrome, chrome, chromium</td></tr>
+<tr><td>7</td><td>MonadTall</td><td>&mdash;</td></tr>
+<tr><td>8</td><td>Max</td><td>Documents: LibreOffice and the PDF/ebook readers. Opening one takes you here. <code>Max</code> rather than MonadTall because a document is one thing you read at a time</td></tr>
+<tr><td>9</td><td>MonadTall</td><td>thunderbird, TelegramDesktop, discord</td></tr>
+<tr><td>S</td><td>Max</td><td>Anki, Obsidian, the <code>nvimsum</code> window. No direct key</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="launch">Launching and sessions</h2>
+
+<p>The "toggle" bindings are session toggles, not plain launchers: they raise and focus the
+application if it is running, and start it if it is not.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Keys</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>Enter</kbd></td><td>Terminal (<code>kitty</code>)</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd></td><td>Run launcher (<code>rofi -show drun -show-icons</code>)</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>n</kbd></td><td>Toggle the terminal session</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>b</kbd></td><td>Toggle the Brave session</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>v</kbd></td><td>Toggle the qutebrowser session</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>m</kbd></td><td>Toggle the file manager session</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>t</kbd></td><td>Toggle the Telegram session</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>o</kbd></td><td>Open Obsidian to draw (assumes Excalidraw is installed in Obsidian)</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>s</kbd></td><td>Open or focus <code>sum.md</code> globally, in kitty</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>a</kbd></td><td>Toggle the Anki session</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="session">Session and machine</h2>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Keys</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>r</kbd></td><td>Restart qtile. Goes through <code>_smooth_restart</code>, which raises the <a href="widgets.html#veil">restart veil</a> and preserves window&rarr;group and layout state</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>q</kbd></td><td>Logout menu (<code>dm-logout -r</code>)</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F5</kbd></td><td>Refresh the machine without rebooting (<code>reset_PC</code>)</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F6</kbd></td><td>Mirror the Android phone (<code>phone_screen</code>, USB or Wi-Fi)</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>z</kbd></td><td>Toggle between the top and bottom bar</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>`</kbd></td><td>Toggle the second system widget box</td></tr>
+<tr><td><kbd>Print</kbd></td><td>Screenshot an area straight to the clipboard &mdash; the same action as the bar's camera chip</td></tr>
+<tr><td><kbd>F8</kbd></td><td>Start/stop <b>live</b> voice dictation &mdash; types each phrase the instant you pause</td></tr>
+<tr><td><kbd>F9</kbd></td><td>Start/stop <b>batch</b> voice dictation &mdash; whisper.cpp, then <code>xdotool type</code></td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>r</kbd></td><td>Reapply the Alt keymap (<code>xmodmap ~/.Xmodmap</code>) safely</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<p><b>Why F8 and F9 rather than F6 and F7.</b> A bare binding is a <em>global</em> grab
+&mdash; qtile takes the key from every application, permanently &mdash; so the only
+question that matters is which keys nothing else wants. Across the row: F1 help, F2 rename,
+F3 find-next, F5 reload, F6 address bar, F7 caret browsing, F10 menu bar, F11 fullscreen,
+F12 devtools. F8 and F9 are claimed by essentially nothing. Dictation is a hold-a-thought
+action: the whole value is starting it before the sentence goes, and a three-key chord is
+long enough to lose it.</p>
+</div>
+
+<h2 id="homerow">Homerow (mouse-free clicking)</h2>
+
+<p><a href="https://github.com/nathancahill/homerow">Homerow</a>-style hinting over AT-SPI,
+so it targets real UI elements with exact bounds rather than guessing at pixels. Each mode
+has its own <kbd>Alt</kbd> binding <em>as well as</em> a letter inside
+<a href="#hint-mode">hint mode</a>, because hinting is something you do constantly and a
+chord costs a keystroke plus remembering you are in a mode.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Keys</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>Alt</kbd>+<kbd>Space</kbd></td><td>Hint and click / switch window</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>j</kbd></td><td>Scroll mode</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>/</kbd></td><td>Search mode</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>c</kbd></td><td>Caret mode &mdash; vim motions over real text</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>c</kbd></td><td>Caret search &mdash; type to find a word, land the caret there</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>e</kbd></td><td>Edit a field in nvim, in place</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><kbd>Alt</kbd>+<kbd>Space</kbd> rather than Homerow's own <kbd>Shift</kbd>+<kbd>Space</kbd>,
+which would swallow every Shift+Space you type. Caret takes <kbd>Alt</kbd>+<kbd>c</kbd>
+because <kbd>Alt</kbd>+<kbd>v</kbd> is already the CopyQ picker.</p>
+
+<h2 id="alt">Other Alt bindings</h2>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Keys</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>d</kbd></td><td>Toggle <a href="tools.html#qdrop">qdrop</a>, the drop-stash</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>v</kbd></td><td>CopyQ clipboard picker in rofi &mdash; <kbd>Ctrl</kbd>+<kbd>j</kbd>/<kbd>k</kbd> to navigate, with thumbnails</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>p</kbd></td><td>Clock popup: today and this week's plans and todos</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>n</kbd></td><td>Dismiss the top notification (<code>dunstctl close</code>)</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Tab</kbd></td><td>Toggle the systray widget box</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>`</kbd></td><td>Toggle the system widget box</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="scratch">Scratchpads</h2>
+
+<p>Dropdown windows that appear over whatever group you are on and hide again on the same
+key.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Keys</th><th>Window</th></tr></thead>
+<tbody>
+<tr><td><kbd>Alt</kbd>+<kbd>1</kbd></td><td><code>term1</code> &mdash; kitty</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>2</kbd></td><td><code>term2</code> &mdash; kitty</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>5</kbd></td><td><code>calc</code> &mdash; qalculate-gtk</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>8</kbd></td><td>WhatsApp</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>9</kbd></td><td>DeepSeek</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>0</kbd></td><td>ChatGPT</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><kbd>Alt</kbd>+<kbd>3</kbd> and <kbd>Alt</kbd>+<kbd>4</kbd> used to be the
+<code>pavucontrol</code> and <code>arandr</code> scratchpads. They keep their meaning
+&mdash; audio and displays &mdash; but open the <a href="#audio-mode">audio</a> and
+<a href="#display-mode">display</a> popups instead of a GTK window.</p>
+
+<p>The three web scratchpads are Brave <em>profiles</em> inside the main Brave instance
+(<code>--profile-directory</code>), not separate browsers. A separate
+<code>--user-data-dir</code> cannot share anything with the main instance: each one spawns
+its own GPU process, network service, storage service and three zygotes just to render a
+page. Three of those totalled ~4.6&nbsp;GB of a 7.6&nbsp;GB machine, which is what kept
+earlyoom killing renderers and showing "Aw, Snap!" in the WhatsApp dropdown.</p>
+
+<h2 id="mouse">Mouse</h2>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Input</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd> + drag left button</td><td>Move a floating window</td></tr>
+<tr><td><kbd>Super</kbd> + drag right button</td><td>Resize a floating window</td></tr>
+<tr><td><kbd>Super</kbd> + middle click</td><td>Bring the window to the front</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><code>follow_mouse_focus</code> is on; <code>bring_front_click</code> and
+<code>cursor_warp</code> are off.</p>
+
+<h2 id="modes">Modes and chords</h2>
+
+<p>A mode is a qtile <code>KeyChord</code> that takes over the keyboard and announces itself
+as a chip in the bar, listing the keys it accepts. <kbd>Esc</kbd> leaves &mdash; qtile
+appends its own Escape binding to every chord, so it always works even where the tables
+below do not list it.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Entry</th><th>Mode</th><th>Sticky?</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd></td><td><a href="#rofi-mode">Rofi mode</a></td><td>No &mdash; runs one action and leaves</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>w</kbd></td><td><a href="#wallpaper-mode">Wallpaper picker</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>n</kbd></td><td><a href="#wifi-mode">WiFi</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>b</kbd></td><td><a href="#bt-mode">Bluetooth</a></td><td>Yes</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>3</kbd></td><td><a href="#audio-mode">Audio</a></td><td>Yes &mdash; the same key closes it</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>4</kbd></td><td><a href="#display-mode">Display</a></td><td>Yes &mdash; the same key closes it</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>/</kbd></td><td><a href="#media-mode">Media</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>r</kbd></td><td><a href="#resize-mode">Resize</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>w</kbd></td><td><a href="#draw-mode">Draw</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>f</kbd></td><td><a href="#hint-mode">Hint</a></td><td>Yes, but each action leaves it</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Space</kbd></td><td><a href="#lang-mode">Language switch</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd></td><td><a href="#cheat-mode">Cheatsheets</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>F12</kbd></td><td><a href="#passthrough">Passthrough</a></td><td>Yes</td></tr>
+</tbody>
+</table>
+</div>
+
+<figure>
+  <img src="assets/img/rofi.gif" alt="The rofi mode chip appearing in the bar">
+  <figcaption><kbd>Super</kbd>+<kbd>P</kbd>. The clips on this page are cropped to the bar's right section, where the mode chip appears.</figcaption>
+</figure>
+
+<h2 id="rofi-mode">Super+P &mdash; rofi mode</h2>
+
+<p>The launcher hub. It is <em>not</em> sticky: one key runs one thing and the mode ends.
+Three of its letters open sticky sub-modes instead.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Key</th><th>Action</th><th>Command</th></tr></thead>
+<tbody>
+<tr><td><kbd>c</kbd></td><td>Theme picker</td><td><code>theme-toggle</code></td></tr>
+<tr><td><kbd>w</kbd></td><td><b>Wallpaper picker</b> (sub-mode)</td><td>&mdash;</td></tr>
+<tr><td><kbd>n</kbd></td><td><b>WiFi</b> (sub-mode)</td><td>&mdash;</td></tr>
+<tr><td><kbd>b</kbd></td><td><b>Bluetooth</b> (sub-mode)</td><td>&mdash;</td></tr>
+<tr><td><kbd>p</kbd></td><td>Passwords, over Vaultwarden</td><td><code>rofi_pass</code></td></tr>
+<tr><td><kbd>l</kbd></td><td>Screen brightness</td><td><code>rofi_light</code></td></tr>
+<tr><td><kbd>t</kbd></td><td>Todo manager</td><td><code>rofi_todo</code></td></tr>
+<tr><td><kbd>k</kbd></td><td>Kill processes</td><td><code>rofi-kill</code></td></tr>
+<tr><td><kbd>a</kbd></td><td>Add an Anki note</td><td><code>rofi_anki</code></td></tr>
+<tr><td><kbd>e</kbd></td><td>Translate text</td><td><code>rofi_translator/wordreference.py</code></td></tr>
+<tr><td><kbd>s</kbd></td><td>Spell check menu</td><td><code>dm-spellcheck -r</code></td></tr>
+<tr><td><kbd>i</kbd></td><td>Screenshot with annotation</td><td><code>dm-satty</code></td></tr>
+<tr><td><kbd>r</kbd></td><td>Record video / audio / webcam / gif</td><td><code>dm-recordV2</code></td></tr>
+<tr><td><kbd>d</kbd></td><td>Show documents</td><td><code>dm-documents -r</code></td></tr>
+<tr><td><kbd>f</kbd></td><td>Choose a config file to edit</td><td><code>dm-confedit</code></td></tr>
+<tr><td><kbd>m</kbd></td><td>View manpages</td><td><code>dm-man -r</code></td></tr>
+<tr><td><kbd>o</kbd></td><td>Store and copy notes</td><td><code>dm-note -r</code></td></tr>
+<tr><td><kbd>y</kbd></td><td>YouTube menu</td><td><code>dm-youtube -r</code></td></tr>
+<tr><td><kbd>h</kbd></td><td>List all dmscripts</td><td><code>dm-hub -r</code></td></tr>
+<tr><td><kbd>z</kbd></td><td>Shared link preview</td><td><code>rofi_shared</code></td></tr>
+<tr><td><kbd>q</kbd></td><td>Logout menu</td><td><code>dm-logout -r</code></td></tr>
+<tr><td><kbd>x</kbd></td><td>Close all notifications</td><td><code>dunstctl close-all</code></td></tr>
+<tr><td><kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch group</td><td>&mdash;</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="wallpaper-mode">Wallpaper picker &mdash; Super+P then w</h2>
+
+<figure>
+  <img src="assets/img/wallpaper.gif" alt="The wallpaper picker mode chip in the bar">
+</figure>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>h</kbd> / <kbd>l</kbd></td><td>Move left / right</td></tr>
+<tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Move down / up</td></tr>
+<tr><td><kbd>r</kbd></td><td>Jump to a random wallpaper</td></tr>
+<tr><td><kbd>/</kbd></td><td>Fuzzy search in rofi</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Apply</td></tr>
+<tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td>Close</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Changing the wallpaper only re-derives the colour palette when the active theme mode is
+already <code>wal</code>. On a preset you chose a fixed palette on purpose, so a new
+wallpaper swaps the desktop image and nothing else. See <a href="themes.html#wal">The
+themes</a>.</p>
+
+<h2 id="wifi-mode">WiFi &mdash; Super+P then n</h2>
+
+<p>A keyboard-driven picker over <code>nmcli</code>. It never opens
+<code>nm-connection-editor</code>; the applet stays in the tray as an icon only.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Move down / up</td></tr>
+<tr><td><kbd>g</kbd> / <kbd>Shift</kbd>+<kbd>g</kbd></td><td>Jump to top / bottom</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Connect</td></tr>
+<tr><td><kbd>d</kbd></td><td>Disconnect</td></tr>
+<tr><td><kbd>x</kbd></td><td>Forget the network</td></tr>
+<tr><td><kbd>n</kbd></td><td>Connect to a hidden network</td></tr>
+<tr><td><kbd>t</kbd></td><td>Toggle the radio</td></tr>
+<tr><td><kbd>s</kbd></td><td>Share the selected saved network to a phone as a QR code</td></tr>
+<tr><td><kbd>r</kbd></td><td>Rescan</td></tr>
+<tr><td><kbd>/</kbd></td><td>Search</td></tr>
+<tr><td><kbd>c</kbd></td><td>Cancel a connect that is hanging</td></tr>
+<tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td>Close</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>A wrong password re-asks instead of leaving a saved profile that can never connect.</p>
+
+<h2 id="bt-mode">Bluetooth &mdash; Super+P then b</h2>
+
+<p>Everything happens in the popup &mdash; scan, pair, trust, connect, disconnect, remove.
+blueman's window is not involved.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Move down / up</td></tr>
+<tr><td><kbd>g</kbd> / <kbd>Shift</kbd>+<kbd>g</kbd></td><td>Jump to top / bottom</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Connect</td></tr>
+<tr><td><kbd>d</kbd></td><td>Disconnect</td></tr>
+<tr><td><kbd>x</kbd></td><td>Remove the device</td></tr>
+<tr><td><kbd>t</kbd></td><td>Toggle the radio</td></tr>
+<tr><td><kbd>r</kbd></td><td>Scan</td></tr>
+<tr><td><kbd>/</kbd></td><td>Search</td></tr>
+<tr><td><kbd>c</kbd></td><td>Abort a pair or connect that is hanging &mdash; <code>bluetoothctl connect</code> never returns for an out-of-range device</td></tr>
+<tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td>Close</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="audio-mode">Audio &mdash; Alt+3</h2>
+
+<p>Covers what pavucontrol did. Pressing <kbd>Alt</kbd>+<kbd>3</kbd> again closes it.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Move down / up</td></tr>
+<tr><td><kbd>g</kbd> / <kbd>Shift</kbd>+<kbd>g</kbd></td><td>Jump to top / bottom</td></tr>
+<tr><td><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>Cycle view forwards / backwards</td></tr>
+<tr><td><kbd>o</kbd></td><td>Outputs view</td></tr>
+<tr><td><kbd>i</kbd></td><td>Inputs view</td></tr>
+<tr><td><kbd>a</kbd></td><td>Playback (per-application) view</td></tr>
+<tr><td><kbd>s</kbd></td><td>Recording view</td></tr>
+<tr><td><kbd>p</kbd></td><td>Card profiles</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>p</kbd></td><td>Ports &mdash; the thing that picks Headphones over Speakers on one card</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>c</kbd></td><td>Every card at once (pavucontrol's Configuration tab)</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Activate. On an output this also drags the running streams over &mdash; setting the default alone only affects what starts playing afterwards</td></tr>
+<tr><td><kbd>d</kbd></td><td>Send the selected stream to the default device</td></tr>
+<tr><td><kbd>h</kbd> / <kbd>l</kbd></td><td>Volume down / up</td></tr>
+<tr><td><kbd>m</kbd></td><td>Mute</td></tr>
+<tr><td><kbd>b</kbd> / <kbd>Shift</kbd>+<kbd>b</kbd></td><td>Balance left / right (stereo devices only)</td></tr>
+<tr><td><kbd>0</kbd></td><td>Re-centre the balance</td></tr>
+<tr><td><kbd>r</kbd></td><td>Refresh</td></tr>
+<tr><td><kbd>c</kbd></td><td>Abort a card-profile switch &mdash; a bluez renegotiation can sit for seconds</td></tr>
+<tr><td><kbd>q</kbd> / <kbd>Esc</kbd> / <kbd>Alt</kbd>+<kbd>3</kbd></td><td>Close</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="display-mode">Display &mdash; Alt+4</h2>
+
+<p>Covers what arandr did, plus saved layouts, which arandr did not. Pressing
+<kbd>Alt</kbd>+<kbd>4</kbd> again closes it.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Move the cursor. In arrange mode these move the picked monitor instead</td></tr>
+<tr><td><kbd>g</kbd> / <kbd>Shift</kbd>+<kbd>g</kbd></td><td>Jump to top / bottom</td></tr>
+<tr><td><kbd>Tab</kbd></td><td>Pick the next output</td></tr>
+<tr><td><kbd>a</kbd></td><td>Start arranging</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Open the resolution / refresh list for the selected output, and apply from inside it</td></tr>
+<tr><td><kbd>Backspace</kbd></td><td>Back</td></tr>
+<tr><td><kbd>i</kbd></td><td>Internal display only</td></tr>
+<tr><td><kbd>e</kbd></td><td>External display only</td></tr>
+<tr><td><kbd>m</kbd></td><td>Mirror</td></tr>
+<tr><td><kbd>h</kbd> / <kbd>l</kbd></td><td>Place left / right</td></tr>
+<tr><td><kbd>u</kbd> / <kbd>d</kbd></td><td>Place above / below</td></tr>
+<tr><td><kbd>=</kbd></td><td>Cycle cross-axis alignment while arranging: tops, centres, bottoms</td></tr>
+<tr><td><kbd>p</kbd></td><td>Set primary</td></tr>
+<tr><td><kbd>t</kbd></td><td>Rotate</td></tr>
+<tr><td><kbd>f</kbd></td><td>Reflect</td></tr>
+<tr><td><kbd>o</kbd></td><td>Toggle the output on / off</td></tr>
+<tr><td><kbd>v</kbd></td><td>Show saved layouts</td></tr>
+<tr><td><kbd>s</kbd></td><td>Save the current layout</td></tr>
+<tr><td><kbd>x</kbd></td><td>Delete a saved layout</td></tr>
+<tr><td><kbd>y</kbd></td><td>Keep a pending change</td></tr>
+<tr><td><kbd>c</kbd></td><td>Revert it now</td></tr>
+<tr><td><kbd>r</kbd></td><td>Refresh</td></tr>
+<tr><td><kbd>q</kbd> / <kbd>Esc</kbd> / <kbd>Alt</kbd>+<kbd>4</kbd></td><td>Close</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>A change that could blank the screen stays provisional until <kbd>y</kbd>. Doing nothing
+reverts it when the countdown runs out, and leaving the mode reverts it too.</p>
+
+<h2 id="media-mode">Media &mdash; Super+/</h2>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>Shift</kbd>+<kbd>k</kbd> / <kbd>Shift</kbd>+<kbd>j</kbd></td><td>Volume up / down by 5</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>m</kbd></td><td>Mute</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>l</kbd> / <kbd>Shift</kbd>+<kbd>h</kbd></td><td>Brightness up / down by 5</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>p</kbd></td><td>Toggle mpv picture-in-picture mode</td></tr>
+<tr><td><kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch group</td></tr>
+<tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td>Leave</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="resize-mode">Resize &mdash; Super+r</h2>
+
+<figure>
+  <img src="assets/img/resize.gif" alt="The resize mode chip in the bar">
+</figure>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>Shift</kbd>+<kbd>h</kbd></td><td>Shrink (MonadTall / MonadWide)</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>l</kbd></td><td>Grow (MonadTall / MonadWide)</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>n</kbd></td><td>Reset the layout's sizes</td></tr>
+<tr><td><kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch group</td></tr>
+<tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td>Leave</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="draw-mode">Draw &mdash; Super+Shift+w</h2>
+
+<figure>
+  <img src="assets/img/draw.gif" alt="The draw mode chip in the bar">
+  <figcaption>A gromit-mpx overlay for drawing on the screen.</figcaption>
+</figure>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>w</kbd></td><td>Toggle drawing (<code>gromit-mpx -t</code>)</td></tr>
+<tr><td><kbd>c</kbd></td><td>Clear</td></tr>
+<tr><td><kbd>z</kbd></td><td>Undo</td></tr>
+<tr><td><kbd>r</kbd></td><td>Redo</td></tr>
+<tr><td><kbd>v</kbd></td><td>Toggle visibility</td></tr>
+<tr><td><kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch group</td></tr>
+<tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td>Leave</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="hint-mode">Hint &mdash; Super+Shift+f</h2>
+
+<p>The same Homerow actions as the <kbd>Alt</kbd> bindings above, discoverable in one
+place. <b>Each action leaves the mode.</b> It used to persist so actions could be chained,
+but this chord swallows every other binding on the desktop while it is open &mdash;
+including the ones that reload qtile &mdash; and a chord you cannot tell you are inside is
+indistinguishable from the keyboard having broken.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>h</kbd></td><td>Hint and click elements / switch window</td></tr>
+<tr><td><kbd>s</kbd></td><td>Pick a scrollable region, drive it with vim keys</td></tr>
+<tr><td><kbd>f</kbd></td><td>Search elements &mdash; digits pick, Enter clicks</td></tr>
+<tr><td><kbd>v</kbd></td><td>Caret mode: vim motions over real text, <kbd>v</kbd> selects, <kbd>y</kbd> yanks</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>v</kbd></td><td>Caret search: type to find a word, land the caret there</td></tr>
+<tr><td><kbd>e</kbd></td><td>Edit a field in nvim, in place; <code>:wq</code> puts it back</td></tr>
+<tr><td><kbd>t</kbd></td><td>Scroll up fast (the <code>gg</code> equivalent)</td></tr>
+<tr><td><kbd>b</kbd></td><td>Scroll down fast (the <code>G</code> equivalent)</td></tr>
+<tr><td><kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch group</td></tr>
+<tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td>Leave</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="lang-mode">Language switch &mdash; Super+Space</h2>
+
+<figure>
+  <img src="assets/img/lang.gif" alt="The language mode chip in the bar">
+</figure>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Key</th><th>Layout</th></tr></thead>
+<tbody>
+<tr><td><kbd>e</kbd></td><td><code>us</code> &mdash; English</td></tr>
+<tr><td><kbd>a</kbd></td><td><code>ara</code> &mdash; Arabic</td></tr>
+<tr><td><kbd>t</kbd></td><td><code>tr</code> &mdash; Turkish</td></tr>
+<tr><td><kbd>d</kbd></td><td><code>de</code> &mdash; German</td></tr>
+<tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td>Leave</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>These four are bound by X <em>keycode</em> (26, 38, 28, 40) rather than by keysym, so
+they stay on the same physical keys whatever layout is currently active &mdash; which is the
+point, since you press them precisely when the layout is wrong. The letters shown are the
+US-layout positions.</p>
+
+<h2 id="cheat-mode">Cheatsheets &mdash; Super+Shift+k</h2>
+
+<figure>
+  <img src="assets/img/cheatsheet.gif" alt="The cheatsheet mode chip in the bar">
+</figure>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>k</kbd></td><td>Open the qtile sheet when none is up; scroll up when one is</td></tr>
+<tr><td><kbd>j</kbd></td><td>Scroll down a few rows</td></tr>
+<tr><td><kbd>v</kbd></td><td>Show the vim cheatsheet</td></tr>
+<tr><td><kbd>f</kbd></td><td>Show the fish + kitty cheatsheet</td></tr>
+<tr><td><kbd>Tab</kbd></td><td>Next screenful</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>Previous screenful</td></tr>
+<tr><td><kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch group</td></tr>
+<tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td>Exit cheatsheet mode</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Only one sheet is ever open at a time &mdash; <kbd>v</kbd> and <kbd>f</kbd> close
+whichever is showing before opening theirs, which is what makes "the open one" unambiguous
+for <kbd>j</kbd>, <kbd>k</kbd> and <kbd>Tab</kbd>. Modifier names render as symbols
+(<kbd>⇧</kbd> Shift, <kbd>⌃</kbd> Ctrl, <kbd>⏎</kbd> Enter, <kbd>␣</kbd> Space) with the
+legend in the header.</p>
+
+<h2 id="passthrough">Passthrough &mdash; Super+F12</h2>
+
+<p>Releases qtile's grabs so an application can receive keys qtile would otherwise take
+&mdash; a VM, a remote desktop, a nested WM. <kbd>Super</kbd>+<kbd>F12</kbd> again, or
+<kbd>Esc</kbd>, ends it. Unlike the other modes it does <em>not</em> swallow, so everything
+else still reaches the application.</p>
+
+<h2 id="live">Getting this list live</h2>
+
+<p>The desktop generates the same list from the config it is actually running, so it cannot
+drift:</p>
+
+<pre><code>qtile-keys              # every binding with a description, on stdout
+rofi_docs keys          # the searchable rofi list
+rofi_docs               # the whole documentation menu</code></pre>
+
+<p>Or click the logo in the bar and pick <b>Keybindings</b>. That list is built by parsing
+<code>config.py</code>'s AST rather than with a regex, because bindings nest several
+<code>KeyChord</code> levels deep &mdash; a regex pass found 44 of them and lost every chord
+prefix, so mode keys printed as a bare letter instead of <code>Super+P , C</code>.</p>
+
+<div class="note">
+<p><code>qtile-keys</code> lists only bindings that carry a <code>desc=</code>. Several
+real bindings deliberately have none &mdash; the popup navigation keys, the scratchpads,
+the language keycodes &mdash; so its count is smaller than the tables on this page. This
+page includes them.</p>
+</div>
+
+<footer class="page">
+  <span>Source: <code>.config/qtile/config.py</code>, read in full.</span>
+  <a href="themes.html">Next: the themes &rarr;</a>
+</footer>
+
+</main>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

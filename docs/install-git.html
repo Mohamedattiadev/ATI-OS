@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install from a git clone &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="Clone the repository onto a clean Arch base install and run the wizard: 46 modules, end to end, no questions asked.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="iconbtn" id="menu-toggle" aria-label="Toggle navigation">Menu</button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>Arch Linux &middot; X11 &middot; qtile</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="index.html">Home</a></li>
+    <li><a href="install-usb.html">Install from the ATI-OS USB</a></li>
+    <li><a class="current" href="install-git.html">Install from a git clone</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a href="keybindings.html">Keybindings</a></li>
+    <li><a href="themes.html">The themes</a></li>
+    <li><a href="widgets.html">Widgets and popups</a></li>
+    <li><a href="tools.html">Everyday tools</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a href="troubleshooting.html">Troubleshooting</a></li>
+    <li><a href="reference.html">Reference</a></li>
+  </ol>
+  <h2>On this page</h2>
+  <ol class="sub">
+    <li><a href="#one">The one command</a></li>
+    <li><a href="#login">Then log in and start X</a></li>
+    <li><a href="#noask">Why it never asks anything</a></li>
+    <li><a href="#modules">The 46 modules</a></li>
+    <li><a href="#optin">The two opt-in modules</a></li>
+    <li><a href="#options">Install options</a></li>
+    <li><a href="#accounts">The three accounts</a></li>
+    <li><a href="#extras">Optional extras</a></li>
+    <li><a href="#tuning">Post-install tuning</a></li>
+    <li><a href="#testing">Trying it without risking a machine</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>Install from a git clone</h1>
+<p class="lede">You already have Arch installed &mdash; a clean base system, no desktop
+environment, no display manager. One script builds the rest.</p>
+
+<h2 id="one">The one command</h2>
+
+<pre><code>git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
+  &amp;&amp; cd ~/.dotfiles/installScripts \
+  &amp;&amp; ./install.sh</code></pre>
+
+<p>46 modules run end to end with no questions asked, and you land on a complete desktop:
+qtile, all 22 themes, every font, every widget, and a boot splash carrying your own
+username.</p>
+
+<div class="warn">
+<p><b>Set aside an hour or two, and about 25&nbsp;GB.</b> Nothing is wrong if it seems to
+sit still &mdash; most of that time is one package. <code>pacman-static</code> compiles
+pacman and every dependency statically from source, and several AUR packages (espanso,
+whisper.cpp) are built rather than downloaded. It is unattended: walk away and come
+back.</p>
+</div>
+
+<h2 id="login">Then log in and start X</h2>
+
+<div class="note">
+<p><b>There is no autologin and no display manager.</b> Module 38,
+<code>disable-dm</code>, disables <code>lightdm</code>, <code>gdm</code>,
+<code>sddm</code> and <code>lxdm</code> on purpose. Nothing starts X for you.</p>
+<ol>
+<li>Log in at the TTY with your username and password.</li>
+<li>Type <code>letsgo</code>, or <code>startx</code> if that is not found.</li>
+</ol>
+<p><code>letsgo</code> is a fish <em>function</em>, not a shell alias, so it exists only
+when the account's login shell is fish. Module 20, <code>login-shell</code>, runs
+<code>chsh</code> to fish so the TTY matches what kitty already forces &mdash; but it skips
+itself with a message if fish is not installed yet. On such a machine only
+<code>startx</code> exists.</p>
+<p>What <code>letsgo</code> adds over bare <code>startx</code>: it refuses when an X server
+is already running on <code>:0</code> and names the VT to switch to, and it removes a
+stale <code>/tmp/.X0-lock</code> left by an unclean exit &mdash; the leftover that
+otherwise blocks <code>startx</code> with <em>"Server is already active for display
+0"</em>. It deliberately does not <code>exec</code>, so if startx aborts you can read the
+error instead of being thrown back to the login prompt.</p>
+<p>Back to bash: <code>chsh -s /usr/bin/bash $USER</code>.</p>
+</div>
+
+<h2 id="noask">Why it never asks anything</h2>
+
+<p><code>install.sh</code> is <code>wizard.sh --yes</code>. Every module runs with
+<code>stdin</code> closed and the wizard refuses to reach any prompt in that mode. This is
+a guarantee, not a description &mdash; it used to be untrue in two places: the run stopped
+dead at the very end on a Simplenote password prompt, and any module whose child process
+asked a question (a git credential, a <code>makepkg</code> confirmation) hung forever
+<em>behind the spinner</em>, showing nothing but an animation. Both are fixed.</p>
+
+<p>What <code>./install.sh</code> does on top of running the modules:</p>
+
+<ul>
+  <li>Auto-bootstraps <code>gum</code> via pacman (~2 s)</li>
+  <li>Keeps <code>sudo</code> alive for the whole run &mdash; primed once, refreshed in
+  the background &mdash; so long AUR builds do not silently drop package installs when the
+  credential cache would otherwise expire mid-run</li>
+  <li>Auto-skips any failed module, logs it to <code>/tmp/wizard-&lt;id&gt;.err</code>, and
+  lists it in the final summary. <code>dcli sync</code> additionally self-verifies with a
+  dry-run and retries if anything is still missing</li>
+</ul>
+
+<h2 id="modules">The 46 modules</h2>
+
+<p>Numbered in the order they actually run. This list is generated from
+<code>wizard.sh</code>'s own <code>MOD_ORDER</code> rather than maintained by hand.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>#</th><th>id</th><th>What</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>sanity</code></td><td>Sanity checks (Arch, X11, dotfiles present)</td></tr>
+<tr><td>2</td><td><code>bootstrap</code></td><td>Bootstrap packages (git, stow, xorg-server, base-devel)</td></tr>
+<tr><td>3</td><td><code>yay</code></td><td>Build <code>yay-bin</code> from the AUR if absent</td></tr>
+<tr><td>4</td><td><code>dcli</code></td><td>Install <code>dcli-arch-git</code></td></tr>
+<tr><td>5</td><td><code>stow</code></td><td>Stow dotfiles into <code>$HOME</code> &mdash; backs up anything already there to <code>~/DefaultConfig/&lt;timestamp&gt;/</code></td></tr>
+<tr><td>6</td><td><code>arch-config</code></td><td>Sync the <code>arch-config</code> host file to the current username</td></tr>
+<tr><td>7</td><td><code>paths</code></td><td>Expand <code>@HOME@</code> in browser flags, <code>gtk.css</code> and bookmarks for this user</td></tr>
+<tr><td>8</td><td><code>dcli-sync</code></td><td><b><code>dcli sync --force</code></b> &mdash; installs every declared package (self-verifies and retries)</td></tr>
+<tr><td>9</td><td><code>radios</code></td><td>Enable NetworkManager + bluetooth so the <kbd>Super</kbd>+<kbd>P</kbd> popups have a daemon behind them</td></tr>
+<tr><td>10</td><td><code>gpu</code></td><td>Detect Intel/AMD/NVIDIA from PCI ids, install the matching driver set and CPU microcode</td></tr>
+<tr><td>11</td><td><code>picom-pin</code></td><td>Build the picom animation fork from a fixed commit, not branch HEAD</td></tr>
+<tr><td>12</td><td><code>cargo</code></td><td>Cargo tools (<code>rustup default stable</code> + <code>pomodoro-tui</code>)</td></tr>
+<tr><td>13</td><td><code>ati-scripts</code></td><td>Install AtiScriptsV1 to <code>/usr/local/bin</code></td></tr>
+<tr><td>14</td><td><code>simplenote</code></td><td>Installs the package and a mode-600 credentials stub. <b>The login itself is not asked during <code>./install.sh</code></b> &mdash; see <a href="#accounts">the three accounts</a></td></tr>
+<tr><td>15</td><td><code>ui-scale</code></td><td>Size bar, fonts and margins to this display's real DPI</td></tr>
+<tr><td>16</td><td><code>githooks</code></td><td>Install the pre-commit hook that refuses commits breaking the config or drifting packages</td></tr>
+<tr><td>17</td><td><code>pacman-guard</code></td><td>PreTransaction hook: refuse any pacman/yay/dcli upgrade when <code>/</code> is too full</td></tr>
+<tr><td>18</td><td><code>boot-fallback</code></td><td>systemd-boot entries for <code>linux-lts</code> plus a full-module rescue initramfs, deliberately <b>without</b> <code>quiet</code>/<code>splash</code></td></tr>
+<tr><td>19</td><td><code>boot-splash</code></td><td>plymouth splash: the Arch mark in a progress ring with <b>your</b> username under it. Runs immediately after <code>boot-fallback</code> so the verbose rescue entry always exists first</td></tr>
+<tr><td>20</td><td><code>login-shell</code></td><td><code>chsh</code> to fish so the TTY matches kitty (this is what makes <code>letsgo</code> exist)</td></tr>
+<tr><td>21</td><td><code>touchpad</code></td><td>Touchpad config (<code>/etc/X11/xorg.conf.d/30-touchpad.conf</code>)</td></tr>
+<tr><td>22</td><td><code>xinit</code></td><td>Write <code>~/.xinitrc</code> (qtile, picom, wallpaper, tray applets, copyq server, <code>QT_QPA_PLATFORMTHEME=qt6ct</code>, cursor)</td></tr>
+<tr><td>23</td><td><code>xresources</code></td><td>Write <code>~/.Xresources</code> (Xcursor size 24 + Breeze theme)</td></tr>
+<tr><td>24</td><td><code>lid</code></td><td>Lid close = ignore, via a <code>logind.conf.d/</code> drop-in (pacman-safe, idempotent)</td></tr>
+<tr><td>25</td><td><code>image-envs</code></td><td>Suppress VIPS warnings and ensure <code>~/tmp</code> (fish's <code>TMPDIR</code>)</td></tr>
+<tr><td>26</td><td><code>flatpak</code></td><td>Legacy cleanup only &mdash; qdrop replaced flathub/collector</td></tr>
+<tr><td>27</td><td><code>piper</code></td><td>Download Piper voices (EN + DE, ~60 MB)</td></tr>
+<tr><td>28</td><td><code>ankiconnect</code></td><td>The Anki addon <code>rofi_anki</code> talks to on <code>:8765</code> (~26 KB)</td></tr>
+<tr><td>29</td><td><code>vaultwarden</code></td><td>Local password server on <code>127.0.0.1:8222</code> plus <code>rbw</code></td></tr>
+<tr><td>30</td><td><code>vaultwarden-phone</code></td><td>Tailscale proxy so the Bitwarden phone app can reach the same vault</td></tr>
+<tr><td>31</td><td><code>tmux-tpm</code></td><td>Clone TPM and install plugins (this used to be a manual README step)</td></tr>
+<tr><td>32</td><td><code>whisper</code></td><td>Download Whisper <code>base.en</code> (live dictation) and <code>small.en</code> (batch) models (~630 MB)</td></tr>
+<tr><td>33</td><td><code>whisper-fast</code></td><td>Rebuild <code>whisper-cli</code>/<code>whisper-stream</code> optimised and patched, shadowed via <code>/usr/local</code> (the AUR package is ~13&times; slower unoptimised, and does not build <code>whisper-stream</code> at all)</td></tr>
+<tr><td>34</td><td><code>mic-gain</code></td><td>Enable <code>fix-mic-gain.service</code> &mdash; reasserts the mic capture gain WirePlumber resets to clipping levels on every login</td></tr>
+<tr><td>35</td><td><code>scrcpy</code></td><td>Android screen mirroring &mdash; joins <code>adbusers</code>, enables <code>avahi-daemon</code> and opens mDNS in ufw so <code>phone_screen</code> can find the phone without typing an address</td></tr>
+<tr><td>36</td><td><code>passwordless-sudo</code></td><td>Passwordless sudo (validated with <code>visudo -c</code>, rolled back if rejected)</td></tr>
+<tr><td>37</td><td><code>ownership</code></td><td>Fix dotfiles ownership</td></tr>
+<tr><td>38</td><td><code>disable-dm</code></td><td><b>Disable all display managers.</b> TTY + <code>startx</code> only</td></tr>
+<tr><td>39</td><td><code>candy-icons</code></td><td>Install the candy-icons theme</td></tr>
+<tr><td>40</td><td><code>wallpapers</code></td><td>Clone the wallpaper collection</td></tr>
+<tr><td>41</td><td><code>speed</code></td><td>System speed tweaks (<code>speed_boost.sh</code>) &mdash; zram sized to RAM plus zram-aware <code>vm.*</code> sysctls</td></tr>
+<tr><td>42</td><td><code>themes</code></td><td>Theme system (pywal, palette precompile, initial doomone apply)</td></tr>
+<tr><td>43</td><td><code>dark-mode</code></td><td>Advertise <code>prefer-dark</code> via xdg-desktop-portal so sites serve their own dark theme</td></tr>
+<tr><td>44</td><td><code>browser-flags</code></td><td>brave/chrome/chromium wal theme extension flags (and strips legacy force-dark)</td></tr>
+<tr><td>45</td><td><code>browser-memory</code></td><td>Memory Saver by policy &mdash; discards idle tabs, excludes whatsapp/chatgpt/deepseek</td></tr>
+<tr><td>46</td><td><code>chrome-policy</code></td><td>Chrome/chromium theme policy (sign key + enterprise force-install)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="optin">The two opt-in modules</h2>
+
+<p>Both are valid <code>--only=</code> targets and both are listed (unchecked) in the
+interactive picker, but neither is ever part of a default run.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>id</th><th>What, and why it is opt-in</th></tr></thead>
+<tbody>
+<tr><td><code>xmodmap</code></td><td>Writes <code>~/.Xmodmap</code>, repurposing Caps Lock as <b>Alt_L outright</b>, with no tap-to-Caps-Lock fallback. Right for one laptop whose Alt key is dead in hardware, merely surprising everywhere else. Real Alt keys keep working, so on a normal machine this just gives you a third Alt.<br><code>./wizard.sh --yes --only=xmodmap</code></td></tr>
+<tr><td><code>dcli-sync-extra</code></td><td>docker, JDK, printing, qemu &mdash; see <a href="#extras">Optional extras</a>. <code>install.sh</code>'s promise is a working <em>desktop</em>, not a working workstation.<br><code>./wizard.sh --yes --only=dcli-sync-extra</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="options">Install options</h2>
+
+<pre><code>./wizard.sh                 # interactive: TUI checkbox picker
+./wizard.sh --dry-run       # preview every command, touch nothing
+./wizard.sh --yes           # same as ./install.sh
+./wizard.sh --only=stow,themes,browser-flags       # subset
+./wizard.sh --skip=whisper,whisper-fast,piper      # skip heavy downloads
+./wizard.sh --yes --only=dcli-sync-extra           # opt-in extras
+./wizard.sh --audit         # package drift check (read-only, no sudo)
+./wizard.sh --uninstall     # reverse wizard writes (never touches
+                            #   packages or downloaded models)
+./wizard.sh --uninstall --dry-run  # preview reversals</code></pre>
+
+<div class="warn">
+<p><b><code>--only</code> and <code>--skip</code> need the <code>=</code>.</b>
+<code>--only foo</code> is <em>rejected</em>, not quietly ignored &mdash; because an ignored
+filter means the full live install runs instead, and its second module is
+<code>pacman -Syu</code>. Unknown flags and unknown module ids fail the same way: exit 2,
+nothing touched.</p>
+</div>
+
+<p>Every one of the 48 registered modules has a reversal, even where that reversal is a
+deliberate no-op (<code>dcli-sync</code>, <code>piper</code>, <code>whisper</code>,
+<code>whisper-fast</code>, <code>wallpapers</code> &mdash; removing those would delete
+packages, multi-hundred-megabyte downloads, or a ~13&times;-faster build the uninstaller
+has no business touching). The wizard refuses to start if a module is ever added without
+one, because the alternative is discovering it part-way through an uninstall with earlier
+modules already reversed.</p>
+
+<p>The wizard renders an ASCII banner, grouped module cards (System / Dotfiles / Themes /
+Browsers / Apps / Media), spinners, progress bars and coloured badges. On failure it shows
+a red-bordered error tail and prompts <b>retry &middot; skip &middot; quit</b> &mdash;
+unless <code>--yes</code>, which auto-skips.</p>
+
+<h2 id="accounts">The three accounts</h2>
+
+<p>There are no manual follow-up commands to get a working desktop. What is left are three
+accounts, and only you can own an account. Do them whenever you like, in any order, days
+later is fine.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>What it unlocks</th><th>Without it</th></tr></thead>
+<tbody>
+<tr><td><b>Simplenote</b></td><td>The <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> TODOS note syncs to the phone app</td><td>The note still works &mdash; it is a local file. Only the phone mirror is missing</td></tr>
+<tr><td><b>Vaultwarden</b></td><td><kbd>Super</kbd>+<kbd>p</kbd> <kbd>p</kbd> password picker</td><td>No password menu</td></tr>
+<tr><td><b>Gemini</b> <em>(optional)</em></td><td>AI synonyms and example sentences in the translators and <code>rofi_anki</code></td><td>All three tools still work; the AI section is omitted, not broken</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="simplenote">Simplenote</h3>
+
+<p>Run it <b>without</b> <code>--yes</code>, so it can ask, and run it <em>after</em> your
+first desktop login &mdash; <code>install.sh</code> finishes in a TTY before
+<code>startx</code>, and this step may need a browser:</p>
+
+<pre><code>cd ~/.dotfiles/installScripts &amp;&amp; ./wizard.sh --only=simplenote</code></pre>
+
+<p>It asks for your Simplenote email and password, then proves it worked by pushing the
+TODOS note for real. On networks that block <code>auth.simperium.com</code> &mdash; the
+login host, which is separate from the reachable note API &mdash; it detects that, copies a
+one-line snippet to your clipboard for the browser console, and takes an access token
+instead. That is the part that needs a browser.</p>
+
+<p>Once configured the note syncs both ways: every write pushes, and opening the window
+pulls anything typed on the phone. Merging is the one thing that is never automatic &mdash;
+when both sides changed you get a <code>TODOS.md.remote-&lt;timestamp&gt;</code> to
+reconcile by hand rather than a silent guess.</p>
+
+<h3 id="vaultwarden">Vaultwarden</h3>
+
+<p>The installer already started the server on <code>127.0.0.1:8222</code> and pointed
+<code>rbw</code> at it. The account is yours to create:</p>
+
+<ol>
+<li>Open <code>https://127.0.0.1:8222</code> and register. The <code>s</code> matters
+&mdash; the web vault refuses plain http. The local certificate is already trusted by the
+browser, because mkcert installs its CA into the NSS store too.</li>
+<li>Press <kbd>Super</kbd>+<kbd>p</kbd> then <kbd>p</kbd> and enter that email when asked.
+<code>rbw</code> prompts for the master password through pinentry and keeps the vault
+unlocked for 15 minutes.</li>
+</ol>
+
+<p>Details, including the phone app and the Tailscale route: <a href="tools.html#passwords">Everyday tools &rarr; Passwords</a>.</p>
+
+<h3 id="gemini">Gemini</h3>
+
+<p>Put <code>GEMINI_API_KEY=…</code> in <code>~/.config/secrets.env</code>. The install
+seeds that file from <code>secrets.env.example</code> with the key left empty, so it is
+already there with instructions in it. <code>chmod 600</code>, and it is gitignored.</p>
+
+<h2 id="extras">Optional extras</h2>
+
+<p>The default install deliberately leaves out packages that have nothing to do with the
+desktop. <b>Skipping them changes nothing about qtile, the themes, the fonts or the
+widgets.</b> Run this whenever you actually want them:</p>
+
+<pre><code>~/.dotfiles/installScripts/wizard.sh --yes --only=dcli-sync-extra</code></pre>
+
+<div class="tw">
+<table>
+<tbody>
+<tr><td><b>Containers</b></td><td><code>docker</code> &middot; <code>docker-buildx</code> &middot; <code>docker-compose</code></td></tr>
+<tr><td><b>Dev extras</b></td><td><code>github-cli</code> &middot; <code>git-lfs</code> &middot; <code>clang</code> &middot; <code>jdk17-openjdk</code> &middot; <code>uv</code> &middot; <code>ruff</code></td></tr>
+<tr><td><b>Virtualisation</b></td><td><code>qemu-desktop</code> &middot; <code>edk2-ovmf</code> &mdash; only <code>vm-test.sh</code> needs these</td></tr>
+<tr><td><b>Printing</b></td><td><code>cups</code> &middot; <code>cups-pk-helper</code> &middot; <code>system-config-printer</code></td></tr>
+<tr><td><b>Diagnostics</b></td><td><code>xorg-server-xephyr</code> (test a qtile config in a nested X) &middot; <code>mesa-utils</code> (<code>glxinfo</code>, for picom trouble on unfamiliar graphics)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The list lives in <code>.config/arch-config/modules/optional.yaml</code>. Add to it and
+the command above picks the addition up. It is re-runnable: already-installed packages are
+skipped, not reinstalled.</p>
+
+<h2 id="tuning">Post-install tuning</h2>
+
+<p>Two interactive scripts, not wired into <code>install.sh</code> because they need a
+reboot, are per-machine, and prompt before touching anything. Both are idempotent, back up
+before writing, and print revert instructions at the end.</p>
+
+<pre><code>bash ~/.dotfiles/installScripts/grub_boost.sh    # kernel cmdline: nowatchdog,
+                                                 #   quiet loglevel=3, cursor off, i915 GuC
+bash ~/.dotfiles/installScripts/service_trim.sh  # audit + disable heavy services</code></pre>
+
+<div class="note">
+<p><code>grub_boost.sh</code> <b>refuses rather than guessing</b>. It aborts on a
+trailing-comment or unquoted <code>GRUB_CMDLINE_LINUX_DEFAULT</code> instead of corrupting
+it, and prints the offending line. A small number of hand-edited grub files need a manual
+edit first. That refusal is not a bug.</p>
+</div>
+
+<h2 id="testing">Trying it without risking a machine</h2>
+
+<p>Four layers, cheapest first. Each catches what the one above cannot.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Layer</th><th>Time</th><th>Catches</th></tr></thead>
+<tbody>
+<tr><td><code>validate.sh</code></td><td>seconds</td><td>Syntax, qtile config load, hardcoded home paths, unrendered templates</td></tr>
+<tr><td><code>wizard.sh --audit</code></td><td>seconds</td><td>Declared packages vs installed, both directions</td></tr>
+<tr><td><code>container-test.sh</code></td><td>~3 min</td><td>A real install as a user who is <b>not</b> you; idempotency</td></tr>
+<tr><td><code>vm-test.sh --unattended</code></td><td>~2 hours</td><td>X11, systemd, boot, the desktop &mdash; the parts nothing else can reach</td></tr>
+</tbody>
+</table>
+</div>
+
+<pre><code>bash ~/.dotfiles/installScripts/validate.sh
+
+bash ~/.dotfiles/installScripts/container-test.sh --check  # verify runtime
+bash ~/.dotfiles/installScripts/container-test.sh          # full run
+bash ~/.dotfiles/installScripts/container-test.sh --keep   # leave it to poke at
+
+bash ~/.dotfiles/installScripts/vm-test.sh --check         # creates nothing
+bash ~/.dotfiles/installScripts/vm-test.sh --smoke         # 2-min headless boot check
+bash ~/.dotfiles/installScripts/vm-test.sh --unattended    # the whole thing, no human
+bash ~/.dotfiles/installScripts/vm-test.sh                 # fetch ISO, you drive archinstall</code></pre>
+
+<p><code>--unattended</code> scripts a minimal base system, boots it under UEFI from its
+own ESP, runs <code>./install.sh</code>, and then asserts the result: 0 failed modules,
+<code>validate.sh</code> passing inside the guest, every boot entry's <code>root=</code>
+matching the guest's real root device, and qtile starting under a headless X server
+&mdash; checking the qtile log for a silent fallback to the built-in config, because
+<code>qtile cmd-obj -f status</code> answers <code>OK</code> either way. Budget ~2 hours and
+60&nbsp;GB.</p>
+
+<div class="limit">
+<p><b>Two things to know before running it.</b></p>
+<ul>
+<li>It clones from <b>GitHub</b>, so it tests what was last <em>pushed</em>, never the
+working tree. It refuses to start if the branch is ahead of its remote &mdash; do not
+bypass that guard without meaning to.</li>
+<li><b>There is no GPU in the VM</b>, so picom's <code>glx</code> backend, the compositing
+and the animations are untested there, and a screenshot is not the same as looking at the
+thing.</li>
+</ul>
+<p>Its preflight refuses with the specific number that failed (RAM, disk, KVM, qemu)
+instead of wedging the host halfway through a 500&nbsp;MB download.</p>
+</div>
+
+<p><code>container-test.sh</code> populates the container from <code>git ls-files</code>,
+not from the directory and not from a clone &mdash; that is exactly what a fresh clone
+receives, so anything gitignored is correctly absent, and staged work is tested before it
+is committed. Its idempotency diff warns but never fails, because regenerated files
+legitimately differ between runs.</p>
+
+<footer class="page">
+  <span>Source: <code>README.md</code>, <code>installScripts/wizard.sh</code> (<code>MOD_ORDER</code>), <code>installScripts/stow_script.sh</code>, <code>.config/fish/config.fish</code>.</span>
+  <a href="keybindings.html">Next: keybindings &rarr;</a>
+</footer>
+
+</main>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>
