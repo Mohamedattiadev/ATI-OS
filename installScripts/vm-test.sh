@@ -321,6 +321,13 @@ _ssh_opts() {
     -o ServerAliveInterval=30 -o ServerAliveCountMax=10
 }
 SSH_OPTS=()
+SCP_OPTS=()
+
+# scp spells the port -P, ssh spells it -p. Handing SSH_OPTS to scp sends
+# every copy to port 22 instead of the guest -- which is exactly what
+# happened: the module error logs "copied" successfully into an empty
+# directory, twice, because the failure was suppressed.
+_scp_opts() { _ssh_opts | sed 's/^-p$/-P/'; }
 
 _ssh() { ssh "${SSH_OPTS[@]}" "$1@127.0.0.1" "${@:2}"; }
 
@@ -345,6 +352,25 @@ unattended() {
 
   trap '_qemu_kill' EXIT INT TERM
   mapfile -t SSH_OPTS < <(_ssh_opts)
+  mapfile -t SCP_OPTS < <(_scp_opts)
+
+  # The guest clones from GitHub, so this tests what was last PUSHED --
+  # never the working tree. An unpushed fix therefore looks exactly like a
+  # fix that did not work, and costs a full run to find out. That happened:
+  # a commit sat local, the guest cloned the commit before it, and the run
+  # reproduced the very bug the commit fixed.
+  if git -C "$(dirname "${BASH_SOURCE[0]}")/.." rev-parse --git-dir >/dev/null 2>&1; then
+    local ahead
+    ahead="$(git -C "$(dirname "${BASH_SOURCE[0]}")/.." \
+              rev-list --count "origin/$DOTFILES_REF..$DOTFILES_REF" 2>/dev/null || echo 0)"
+    if [[ "$ahead" =~ ^[0-9]+$ ]] && (( ahead > 0 )); then
+      bad "$DOTFILES_REF is $ahead commit(s) ahead of origin/$DOTFILES_REF"
+      printf '            The guest clones from GitHub, so those commits would NOT be tested.\n'
+      printf '            Push first:  git push origin %s\n' "$DOTFILES_REF"
+      printf '            Or test the pushed state deliberately:  VMTEST_ALLOW_UNPUSHED=1 ...\n'
+      [[ -n "${VMTEST_ALLOW_UNPUSHED:-}" ]] || exit 1
+    fi
+  fi
 
   # A wedged previous run leaves the port bound; say so rather than letting
   # ssh cheerfully connect to the wrong VM.
@@ -518,10 +544,11 @@ PY
   # wasted hour.
   mkdir -p "$VM_DIR/module-errors"
   rm -f "$VM_DIR/module-errors/"*.err 2>/dev/null || true
-  scp -q "${SSH_OPTS[@]}" "$VM_USER@127.0.0.1:/tmp/wizard-*.err" \
-      "$VM_DIR/module-errors/" 2>/dev/null || true
-  if compgen -G "$VM_DIR/module-errors/*.err" >/dev/null; then
+  if scp -q "${SCP_OPTS[@]}" "$VM_USER@127.0.0.1:/tmp/wizard-*.err" \
+         "$VM_DIR/module-errors/" 2>"$VM_DIR/scp-errors.log"; then
     say "  module error logs saved to $VM_DIR/module-errors/"
+  else
+    warn "could not copy the module error logs — $(tail -1 "$VM_DIR/scp-errors.log")"
   fi
 
   if (( rc )); then
@@ -543,10 +570,14 @@ PY
     grep -E '✔ .* ok|⚠ .* not run|✖ .* failed' "$ilog" | tail -3 >&2
     fail=1
   fi
-  if grep -qE 'Installation Complete' "$ilog"; then
-    ok "wizard reached its completion card"
+  # Reaching the summary card at all is a separate fact from passing: the
+  # wizard prints "Installation Complete" when clean and "Installation
+  # Finished (with failures)" when not, so matching only the former just
+  # restated the failure count in a more confusing way.
+  if grep -qE 'Installation (Complete|Finished)' "$ilog"; then
+    ok "wizard ran to completion (did not die part-way)"
   else
-    bad "wizard never printed a completion card"; fail=1
+    bad "wizard never reached its summary card — it died mid-run"; fail=1
   fi
   if grep -q 'VMTEST_VALIDATE_OK' "$ilog"; then
     ok "validate.sh passed inside the guest (qtile config loads, fonts resolve)"
@@ -580,7 +611,7 @@ PY
   timeout 900 ssh "${SSH_OPTS[@]}" "$VM_USER@127.0.0.1" bash -s \
     < <(_desktop_check_script) > "$dlog" 2>&1 || drc=$?
 
-  scp -q "${SSH_OPTS[@]}" "$VM_USER@127.0.0.1:/tmp/qtile-headless.png" "$shot" 2>/dev/null || true
+  scp -q "${SCP_OPTS[@]}" "$VM_USER@127.0.0.1:/tmp/qtile-headless.png" "$shot" 2>/dev/null || true
 
   if (( drc )); then
     bad "desktop check did not complete (exit $drc) — log: $dlog"
@@ -730,7 +761,15 @@ export DISPLAY=:99
 
 # Test-only packages, installed AFTER install.sh has already been asserted
 # so they cannot influence what was under test.
-sudo pacman -S --needed --noconfirm xorg-server-xvfb imagemagick >/dev/null 2>&1 || true
+#
+# NOT silenced. The first attempt hid this behind `>/dev/null 2>&1 || true`
+# and the run failed six lines later with a bare "Xvfb: command not found",
+# which says nothing about why the install did not happen.
+if ! sudo pacman -S --needed --noconfirm xorg-server-xvfb imagemagick 2>&1; then
+  echo "could not install the headless X packages (above) — cannot check the desktop"
+  exit 1
+fi
+command -v Xvfb >/dev/null || { echo "xorg-server-xvfb installed but Xvfb is not on PATH"; exit 1; }
 
 Xvfb :99 -screen 0 1366x768x24 >/tmp/xvfb.log 2>&1 &
 for _ in $(seq 1 20); do xdpyinfo >/dev/null 2>&1 && break; sleep 1; done
