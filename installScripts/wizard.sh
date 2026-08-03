@@ -663,8 +663,16 @@ _reclaim_build_cache() {
   done
 
   after=$(du -sm "$HOME/.cache/yay" 2>/dev/null | cut -f1 || echo 0)
+  # Report either way. Logging ONLY on a reduction made this function
+  # silent on every run, and that silence is why the disk exhaustion was
+  # credited to this cleanup rather than to the disk being too small --
+  # yay prunes its own build trees on a fresh machine, so there was
+  # nothing here to reclaim and no output to say so. A cleanup that
+  # cannot be observed cannot be reasoned about.
   if (( before > after )); then
     _DIM "  reclaimed $(( before - after ))MB of AUR build cache (kept: ${RECLAIM_KEEP[*]})"
+  else
+    _DIM "  AUR build cache already minimal (${after}MB) — nothing to reclaim"
   fi
   return 0
 }
@@ -751,6 +759,25 @@ step_dcli_sync() {
   _reclaim_build_cache
 }
 step_paths() {
+  # Seed ~/.config/secrets.env from the tracked template.
+  #
+  # Every rofi script that talks to Gemini sources this file, and until now
+  # nothing created it and nothing shipped an example -- the only way to
+  # learn that GEMINI_API_KEY exists was to grep the source. A new user got
+  # translators with silently empty "synonyms" and "examples" sections and
+  # no indication why.
+  #
+  # Seeded with the key left EMPTY, so behaviour does not change for anyone
+  # who has not filled it in; it just becomes discoverable. Mode 600 from
+  # the start, because rofi_common.sh warns about anything looser and the
+  # first thing written into it will be a credential. Never overwritten:
+  # this must not clobber a file that already has keys in it.
+  local secrets_tmpl="$HOME/.config/secrets.env.example"
+  local secrets_out="$HOME/.config/secrets.env"
+  if [[ -f "$secrets_tmpl" && ! -e "$secrets_out" ]]; then
+    run "install -m600 $secrets_tmpl $secrets_out"
+  fi
+
   # Render every @HOME@ template to its real destination.
   #
   # These are the files where $HOME genuinely cannot be used, so the only
