@@ -73,7 +73,23 @@ packages:
   - downgrade            # roll back ONE bad package without a full restore
   - pacman-static        # statically linked pacman -- still runs when a libc
                          # or libstdc++ upgrade breaks dynamic linking, which
-                         # is exactly when normal pacman cannot help you
+                         # is exactly when normal pacman cannot help you.
+                         #
+                         # COST: this is BY FAR the longest build in the
+                         # whole install -- it compiles pacman and every
+                         # one of its dependencies (openssl, libarchive,
+                         # curl, gpgme, ...) statically from source, much
+                         # of it single-threaded through autotools
+                         # configure. Measured in a 4-vCPU VM it ran for
+                         # roughly an hour on its own, most of a fresh
+                         # install's total time.
+                         #
+                         # Kept anyway: the one day it matters is the day
+                         # nothing else can install anything, and an hour
+                         # once beats an unrecoverable machine. But it is
+                         # a deliberate trade, not a free one -- if you
+                         # want faster installs, this is the line to move
+                         # to optional.yaml.
   - python-pywal
   - papirus-icon-theme
   - papirus-folders        # AUR -- folder color swap used by theme-apply; silently
