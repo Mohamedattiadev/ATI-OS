@@ -1053,8 +1053,20 @@ do_check() {
   st=0; grep -qx "$THEME_NAME" <<<"$themes" || st=1
   _c $st "plymouth recognises the theme"
 
-  st=0; grep -q '^HOOKS=.*\budev\b' "$MKINITCPIO" || st=1
-  _c $st "mkinitcpio has a udev hook to anchor to"
+  # udev OR systemd. Arch's CURRENT default mkinitcpio.conf ships
+  #   HOOKS=(base systemd autodetect microcode modconf kms keyboard
+  #          sd-vconsole block filesystems fsck)
+  # with no udev hook at all, so insisting on udev made this check -- and
+  # therefore the whole module -- fail on every freshly installed machine.
+  # It passed here only because this config predates that change and still
+  # says `base udev plymouth`. Found on a clean VM install, where
+  # boot-splash was the single failing module out of 46.
+  #
+  # The hook itself is called `plymouth` either way: Arch ships no
+  # sd-plymouth (only plymouth and plymouth-shutdown in
+  # /usr/lib/initcpio/install). Only the anchor it sits after changes.
+  st=0; grep -qE '^HOOKS=.*\b(udev|systemd)\b' "$MKINITCPIO" || st=1
+  _c $st "mkinitcpio has a udev or systemd hook to anchor to"
 
   # Every image the script loads, by name. The script calls Image() on all
   # of these unconditionally at startup, so a missing one is not a cosmetic
@@ -1341,7 +1353,15 @@ do_enable() {
     say "plymouth hook already present"
   else
     sudo cp "$MKINITCPIO" "$MKINITCPIO.bak-boot-splash"
-    sudo sed -i 's/^\(HOOKS=([^)]*\)\budev\b/\1udev plymouth/' "$MKINITCPIO"
+    # Anchor to whichever device manager this initramfs actually uses. A
+    # systemd-hook initramfs has no `udev` to sit after, and the old sed
+    # simply matched nothing and left HOOKS untouched -- which the guard
+    # below then caught as "could not add the plymouth hook".
+    if grep -qE '^HOOKS=.*\budev\b' "$MKINITCPIO"; then
+      sudo sed -i 's/^\(HOOKS=([^)]*\)\budev\b/\1udev plymouth/' "$MKINITCPIO"
+    else
+      sudo sed -i 's/^\(HOOKS=([^)]*\)\bsystemd\b/\1systemd plymouth/' "$MKINITCPIO"
+    fi
     grep '^HOOKS=' "$MKINITCPIO" | grep -q plymouth \
       || die "could not add the plymouth hook — restore $MKINITCPIO.bak-boot-splash"
     ok "plymouth hook added (backup: $MKINITCPIO.bak-boot-splash)"
