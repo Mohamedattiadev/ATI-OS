@@ -591,9 +591,22 @@ _clear_informant_news() {
     _DIM "  marking Arch news read so informant stops blocking pacman"
     # --all where supported; the bare form otherwise. timeout because an
     # older informant pages interactively and there is no tty here.
-    timeout 60 informant read --all >/dev/null 2>&1 \
-      || yes | timeout 60 informant read >/dev/null 2>&1 \
+    # sudo, and that is the whole point: informant's pacman hook runs as
+    # ROOT and checks root's read-state. Marking the news read as your own
+    # user updates a cache the hook never looks at, so pacman stays
+    # blocked -- which is exactly what happened, twice, and took out
+    # boot-splash (no plymouth) and the desktop check (no Xvfb).
+    sudo timeout 60 informant read --all >/dev/null 2>&1 \
+      || yes | sudo timeout 60 informant read >/dev/null 2>&1 \
+      || sudo timeout 60 informant read >/dev/null 2>&1 \
       || _WARN "could not clear the informant news queue — later pacman calls may fail"
+    # Prove it worked rather than assuming: `informant check` is what the
+    # hook itself runs, so if this still fails, so will the next pacman.
+    if sudo informant check >/dev/null 2>&1; then
+      _DIM "  informant is satisfied — pacman is unblocked"
+    else
+      _WARN "informant STILL reports unread news; later package installs will fail"
+    fi
   fi
   return 0
 }
@@ -1663,9 +1676,32 @@ step_whisper_fast() {
     return
   fi
 
+  # The AUR build tree is NOT guaranteed to still be there. dcli sync's own
+  # yay invocation cleans it, so on a clean machine this module found
+  # nothing 25 modules after the package was built and hard-failed -- while
+  # working forever on a developer box where the tree happened to survive.
+  # Depending on another tool's leftovers is the bug; re-fetching is the
+  # fix.
   if [[ ! -d "$src" ]]; then
-    _ERR "whisper.cpp-git source not found at $src -- run dcli-sync first (declares whisper.cpp-git)"
-    return 1
+    _DIM "  AUR build tree is gone — re-fetching whisper.cpp-git sources"
+    local fetch="$HOME/.cache/whisper-fast-src"
+    rm -rf "$fetch"; mkdir -p "$fetch"
+    if ( cd "$fetch" && yay -G whisper.cpp-git >/dev/null 2>&1 \
+         && cd whisper.cpp-git \
+         && makepkg --nobuild --noconfirm --skippgpcheck --nodeps >/dev/null 2>&1 ); then
+      src="$fetch/whisper.cpp-git/src/whisper.cpp-git"
+      build="$src/build-fast"
+    fi
+  fi
+
+  # Still nothing: warn and skip rather than fail the install. This module
+  # is a SPEEDUP, not a requirement -- the pacman-built whisper-cli works,
+  # just ~13x slower -- so a missing source tree is not worth turning a
+  # complete install into a failed one.
+  if [[ ! -d "$src" ]]; then
+    _WARN "whisper.cpp-git source unavailable — keeping the slower packaged whisper-cli"
+    _WARN "  rebuild later with: ./wizard.sh --yes --only=whisper-fast"
+    return 0
   fi
 
   # Idempotent: skip the (slow, few-minute) rebuild if already shadowed.
