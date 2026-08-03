@@ -146,17 +146,40 @@ failure is almost never the module at fault**. Reading the per-module
 symptoms, and capturing them off the guest before it disappears took three
 attempts to get right (`scp` spells the port `-P`; `ssh` spells it `-p`).
 
+**Result as of the last run: 45 of 46 modules pass, and the desktop
+renders.** `validate.sh` passes inside the guest (the qtile config loads,
+the fonts resolve), every boot entry's `root=` matches the guest's real
+root device, and phase D starts qtile under Xvfb, confirms from the qtile
+log that it loaded THIS config rather than silently falling back to the
+built-in one, and screenshots a themed bar at 738 distinct colours.
+
+Two more bugs surfaced getting there, after the five above:
+
+| bug | how it presented | fix |
+|---|---|---|
+| `rustup` has no default toolchain when `dcli sync` first builds with cargo; `step_cargo` sets it at module 12, four modules too late | `paru` and `didyoumean` fail to build | seed it alongside the jack provider |
+| `step_whisper_fast` rebuilds from `~/.cache/yay/whisper.cpp-git/src`, which `dcli sync`'s own yay invocation cleans — so it depends on another tool's leftovers surviving 25 modules | hard-failed on a clean machine, worked forever on a developer box | re-fetch through the PKGBUILD; warn and skip rather than fail, since it is a speedup not a requirement |
+
+The `informant` fix also took two attempts: marking the news read as the
+invoking user does nothing, because informant's pacman hook runs as ROOT
+and checks root's read-state.
+
 Outstanding:
 
-1. **A clean end-to-end run.** As of the last run, 43 of 46 modules pass.
+1. **`boot-splash` is the last failing module.** It refuses at its own
+   pre-flight — which is its designed safe behaviour, not a crash — but
+   WHICH check failed is unknown: the wizard truncates the check output in
+   its module log, so the run reports the refusal without the reason. The
+   likely explanation is environmental (the VM base install writes a plain
+   systemd-boot entry with `vmlinuz-linux` + initramfs, while boot-splash
+   is built around a UKI), but that is a hypothesis, not a finding. Capture
+   the full `boot-splash check` output before concluding anything.
+2. **A clean end-to-end run.** As of the last run, 43 of 46 modules pass.
    The three fixes above were made after it and have not themselves been
    run end to end.
-2. **The desktop actually rendering.** `--unattended` phase D starts Xvfb,
-   launches qtile, asserts it did not silently fall back to its built-in
-   config (`qtile cmd-obj -f status` answers OK either way, so that alone
-   proves nothing), and saves a screenshot. It has not yet had a run where
-   the disk survived long enough to reach it. Even when it passes, Xvfb has
-   no GPU: picom, compositing and the animations stay untested.
+3. **The desktop on real hardware.** Phase D now passes, but Xvfb has no
+   GPU: picom, the compositing and the animations are still untested, and
+   a screenshot is not the same as looking at the thing.
 3. **A real second machine, ideally AMD.** The dead-package fix in
    `graphics-amd.yaml` is reasoned from `pacman -Si`, not observed on AMD
    hardware. Same for the `BAT1`/`ADP1` battery fix — reasoned from `/sys`
