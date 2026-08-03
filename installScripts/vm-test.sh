@@ -40,7 +40,11 @@ MIRROR="https://geo.mirror.pkgbuild.com/iso/latest"
 VM_RAM_MB="${VM_RAM_MB:-4096}"            # override for a tighter host
 SMOKE_RAM_MB=2048                         # --smoke only reaches a login prompt
 VM_DISK_GB=20
-HOST_HEADROOM_MB=1024
+# What the HOST keeps for itself. Overridable, but think before lowering
+# it: this margin is the whole reason the preflight exists. Trimming it a
+# little to keep the GUEST at a size already known to work is a better
+# trade than shrinking the guest until an AUR build OOMs halfway through.
+HOST_HEADROOM_MB="${HOST_HEADROOM_MB:-1024}"
 NEED_DISK_GB=$((VM_DISK_GB + 2))          # qcow2 grows; leave room for the ISO
 
 # --unattended only. The guest is driven over SSH rather than by matching
