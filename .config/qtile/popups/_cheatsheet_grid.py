@@ -37,51 +37,11 @@ from libqtile.log_utils import logger
 FONT = "JetBrainsMono Nerd Font"
 
 
-# ---------------------------------------------------------------------
-# HiDPI scaling.
-#
-# Everything else in this config multiplies through UI_SCALE; the
-# cheatsheets did not. On a 4K panel the bar, fonts and margins grew and
-# these popups stayed at their 1366x768 pixel sizes -- rendering correctly
-# and postage-stamp small.
-#
-# The whole sheet is linear in this factor: the box, the font size, and the
-# per-character metrics derived from it all scale together, so the layout
-# stays self-similar and the fit relationship the selftest checks is
-# preserved. Fractions (GRID_TOP, FOOTER_Y) and counts (PAD_CHARS, N_COLS)
-# are deliberately NOT scaled -- scaling a ratio or a character count is
-# meaningless.
-#
-# The loader is duplicated from config.py rather than imported: config.py
-# imports this module, so importing back would be circular.
-def _load_ui_scale():
-    import os
-
-    # The selftest pins this to 1.0. It measures every sheet against a
-    # fixed 1366x768 reference screen, so on a scaled display the popup
-    # would grow while that reference did not, and a sheet that fits
-    # perfectly well would be reported as overflowing.
-    forced = os.environ.get("QTILE_UI_SCALE_FORCE")
-    if forced:
-        try:
-            return float(forced)
-        except ValueError:
-            pass
-    try:
-        with open(os.path.expanduser("~/.cache/qtile/ui_scale")) as f:
-            v = float(f.read().strip())
-        # Refuse absurd values rather than rendering an unreadable popup.
-        return v if 0.5 <= v <= 4.0 else 1.0
-    except (OSError, ValueError):
-        return 1.0
-
-
-UI_SCALE = _load_ui_scale()
-
-
-def s(px):
-    """Scale a pixel dimension. Floor of 1 so nothing rounds away to zero."""
-    return max(1, int(round(px * UI_SCALE)))
+# HiDPI scaling. The rules for what may and may not be scaled, and the
+# evidence that the sheets stay self-similar under it, are in _scale.py.
+# Re-exported as `_grid.s` because the three sheets already import this
+# module and refer to it that way.
+from popups._scale import UI_SCALE, s  # noqa: F401  (re-export)
 
 
 # PopupRelativeLayout's own default. Control positions are fractions of the

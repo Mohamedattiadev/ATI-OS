@@ -29,6 +29,7 @@ from qtile_extras.popup import PopupRelativeLayout, PopupText, PopupImage
 from libqtile.config import Key, KeyChord
 from libqtile.log_utils import logger
 
+from popups._scale import s as _s
 from popups._wal_colors import load_colors as _load_wal_colors
 from popups._wal_colors import fade_in_popup, fade_out_popup
 from popups._wal_colors import _mix, ensure_contrast
@@ -48,12 +49,12 @@ CHORD_NAME = "Wifi-QR"
 # =============================================================================
 # CONFIG
 # =============================================================================
-POPUP_W = 380
-POPUP_H = 500
+POPUP_W = _s(380)
+POPUP_H = _s(500)
 
 FONT = "JetBrainsMono Nerd Font"
-HEAD_SIZE = 14
-BODY_SIZE = 13
+HEAD_SIZE = _s(14)
+BODY_SIZE = _s(13)
 
 # PopupRelativeLayout places controls as fractions of its *inner* box
 # (width - 2*margin), not of the popup size. Converting through the inner
@@ -73,7 +74,7 @@ def fy(px):
     return px / INNER_H
 
 
-QR_BOX = 300          # px of card set aside for the symbol
+QR_BOX = _s(300)          # px of card set aside for the symbol
 CACHE_DIR = os.path.expanduser("~/.cache/qtile")
 
 # Black on white, always. See the module docstring.
