@@ -23,9 +23,19 @@ git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
   && ./install.sh
 ```
 
-Then `startx`. That's it — 47 modules run end to end with no questions asked,
+Then `startx`. That's it — 46 modules run end to end with no questions asked,
 and you land on a complete desktop: qtile, all 22 themes, every font, every
 widget, and a boot splash carrying your own username.
+
+**Set aside an hour or two, and about 25 GB.** Nothing is wrong if it seems
+to sit still: most of that time is one package. `pacman-static` compiles
+pacman and every dependency statically from source, and several AUR
+packages (espanso, whisper.cpp) are built rather than downloaded. It is
+unattended — walk away and come back.
+
+Verified end to end: a clean Arch VM, 46 of 46 modules, `validate.sh`
+passing inside the guest, and qtile starting and drawing its bar. `vm-test.sh --unattended` (in **Reference**, below) runs that
+yourself before you touch real hardware.
 
 ### Optional extras — you do not need these
 
@@ -101,7 +111,11 @@ Do them whenever you like, in any order, days later is fine:
   Open <https://127.0.0.1:8222> (the `s` matters — the web vault refuses
   plain http), pick a master password, then hit the binding and enter your
   email once. See [Passwords](#passwords).
-- **Gemini** — put `GEMINI_API_KEY=…` in `~/.config/secrets.env`
+- **Gemini** — put `GEMINI_API_KEY=…` in `~/.config/secrets.env`. The
+  install seeds that file from `secrets.env.example` with the key left
+  empty, so it is already there with instructions in it — `chmod 600`, and
+  it is gitignored. Everything that uses it degrades rather than breaking
+  when it is absent
   (mode 600, never committed).
 
 ---
@@ -772,8 +786,15 @@ answers for whatever inherited the number.
 
 ### Controls
 
-Caps Lock is the scrcpy modifier — `--shortcut-mod=lalt`, and `.Xmodmap`
-puts Alt on Caps. Super would collide with qtile's global grabs.
+Caps Lock is the scrcpy modifier — `--shortcut-mod=lalt`. Super would
+collide with qtile's global grabs.
+
+> **This assumes Caps is acting as Alt**, which is the `xmodmap` module.
+> That module is **opt-in** and is NOT part of a default install: it
+> repurposes Caps Lock with no tap-to-Caps fallback, which is right for one
+> laptop whose Alt key is dead in hardware and merely surprising everywhere
+> else. Without it, use your real `Alt` key for the shortcuts below. To opt
+> in: `./wizard.sh --yes --only=xmodmap`.
 
 | Action | Key |
 |---|---|
@@ -929,7 +950,7 @@ uninstall, with earlier modules already reversed.
 **What `./install.sh` does**
 
 - Auto-bootstraps `gum` via pacman (~2 s)
-- Runs all 47 default modules end-to-end, start to finish, without asking anything
+- Runs all 46 default modules end-to-end, start to finish, without asking anything
 - Keeps `sudo` alive for the whole run (primed once, refreshed in the
   background) so long AUR builds don't silently drop package installs when the
   credential cache would otherwise expire mid-run
@@ -942,7 +963,7 @@ Themes / Browsers / Apps / Media), spinners, progress bars and colored badges.
 On failure it shows a red-bordered error tail and prompts **retry · skip ·
 quit** (unless `--yes`, which auto-skips).
 
-**The 47 default modules**
+**The 46 default modules**
 
 Numbered in the order they actually run. This list is generated from
 `wizard.sh`'s own `MOD_ORDER`, not maintained by hand — it had drifted to 36
@@ -974,30 +995,30 @@ machine and documented nowhere.
 | 21 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
 | 22 | `xinit` | Write `~/.xinitrc` (qtile · picom · wallpaper · tray applets · copyq server · `QT_QPA_PLATFORMTHEME=qt6ct` · cursor) |
 | 23 | `xresources` | Write `~/.Xresources` (Xcursor size 24 + Breeze theme) |
-| 24 | `xmodmap` | Write `~/.Xmodmap` — Caps is repurposed as **Alt_L outright**, with no tap-to-Caps-Lock fallback (Alt is dead in hardware on this laptop). Real Alt keys keep working, so on a normal machine this just gives you a third Alt |
-| 25 | `lid` | Lid close = ignore, via a `logind.conf.d/` drop-in (pacman-safe, and idempotent) |
-| 26 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
-| 27 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
-| 28 | `piper` | Download Piper voices (EN + DE, ~60 MB) |
-| 29 | `ankiconnect` | Anki addon `rofi_anki` talks to on `:8765` (~26 KB) |
-| 30 | `vaultwarden` | Local password server on `127.0.0.1:8222` + `rbw` for `Mod+p` `p` |
-| 31 | `vaultwarden-phone` | Tailscale proxy so the Bitwarden phone app can reach the same vault |
-| 32 | `tmux-tpm` | Clone TPM + install plugins (this used to be a manual README step) |
-| 33 | `whisper` | Download Whisper `base.en` (live dictation) + `small.en` (batch) models (~630 MB) |
-| 34 | `whisper-fast` | Rebuild `whisper-cli`/`whisper-stream` optimized + patched, shadow via `/usr/local` (AUR package is ~13x slower unoptimized, and doesn't build `whisper-stream` at all) |
-| 35 | `mic-gain` | Enable `fix-mic-gain.service` — reasserts mic capture gain WirePlumber resets to clipping levels on every login |
-| 36 | `scrcpy` | Android screen mirroring — joins `adbusers` (android-udev's rules), enables `avahi-daemon` and opens mDNS in ufw so `phone_screen` (Super+Shift+F6) can find the phone without typing an address |
-| 37 | `passwordless-sudo` | Passwordless sudo (validated with `visudo -c`, and rolled back if rejected) |
-| 38 | `ownership` | Fix dotfiles ownership |
-| 39 | `disable-dm` | Disable all display managers |
-| 40 | `candy-icons` | Install candy-icons theme |
-| 41 | `wallpapers` | Clone wallpaper collection |
-| 42 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
-| 43 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
-| 44 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
-| 45 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
-| 46 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
-| 47 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| 24 | `lid` | Lid close = ignore, via a `logind.conf.d/` drop-in (pacman-safe, and idempotent) |
+| 25 | `image-envs` | Suppress VIPS warnings + ensure `~/tmp` (fish `TMPDIR`) |
+| 26 | `flatpak` | Legacy cleanup only — qdrop replaced flathub/collector |
+| 27 | `piper` | Download Piper voices (EN + DE, ~60 MB) |
+| 28 | `ankiconnect` | Anki addon `rofi_anki` talks to on `:8765` (~26 KB) |
+| 29 | `vaultwarden` | Local password server on `127.0.0.1:8222` + `rbw` for `Mod+p` `p` |
+| 30 | `vaultwarden-phone` | Tailscale proxy so the Bitwarden phone app can reach the same vault |
+| 31 | `tmux-tpm` | Clone TPM + install plugins (this used to be a manual README step) |
+| 32 | `whisper` | Download Whisper `base.en` (live dictation) + `small.en` (batch) models (~630 MB) |
+| 33 | `whisper-fast` | Rebuild `whisper-cli`/`whisper-stream` optimized + patched, shadow via `/usr/local` (AUR package is ~13x slower unoptimized, and doesn't build `whisper-stream` at all) |
+| 34 | `mic-gain` | Enable `fix-mic-gain.service` — reasserts mic capture gain WirePlumber resets to clipping levels on every login |
+| 35 | `scrcpy` | Android screen mirroring — joins `adbusers` (android-udev's rules), enables `avahi-daemon` and opens mDNS in ufw so `phone_screen` (Super+Shift+F6) can find the phone without typing an address |
+| 36 | `passwordless-sudo` | Passwordless sudo (validated with `visudo -c`, and rolled back if rejected) |
+| 37 | `ownership` | Fix dotfiles ownership |
+| 38 | `disable-dm` | Disable all display managers |
+| 39 | `candy-icons` | Install candy-icons theme |
+| 40 | `wallpapers` | Clone wallpaper collection |
+| 41 | `speed` | System speed tweaks (`speed_boost.sh`) — zram sized to RAM + zram-aware `vm.*` sysctls |
+| 42 | `themes` | Theme system (pywal + palette precompile + initial doomone apply) |
+| 43 | `dark-mode` | Advertise `prefer-dark` via xdg-desktop-portal so sites serve their own dark theme |
+| 44 | `browser-flags` | brave/chrome/chromium wal theme extension flags (+ strips legacy force-dark) |
+| 45 | `browser-memory` | Memory Saver by policy — discards idle tabs, excludes whatsapp/chatgpt/deepseek |
+| 46 | `chrome-policy` | Chrome/chromium theme policy (sign key + enterprise force-install) |
+| — | `xmodmap` | **Opt-in, never in a default run.** Write `~/.Xmodmap` — Caps is repurposed as **Alt_L outright**, with no tap-to-Caps-Lock fallback (Alt is dead in hardware on this laptop). Real Alt keys keep working, so on a normal machine this just gives you a third Alt. Right for one laptop, merely surprising elsewhere — `./wizard.sh --yes --only=xmodmap` |
 | — | `dcli-sync-extra` | **Opt-in, never in a default run.** docker · jdk · qemu · printing — see [Optional extras](#optional-extras--you-do-not-need-these) |
 
 **Run after your first desktop login** — the `simplenote` login needs a
@@ -1042,10 +1063,28 @@ number that failed (RAM, disk, KVM, qemu) instead of wedging the host
 halfway through a 500 MB download:
 
 ```bash
-bash ~/.dotfiles/installScripts/vm-test.sh --check   # creates nothing
-bash ~/.dotfiles/installScripts/vm-test.sh --smoke   # 2-min headless boot check
-bash ~/.dotfiles/installScripts/vm-test.sh           # fetch ISO, boot
+bash ~/.dotfiles/installScripts/vm-test.sh --check       # creates nothing
+bash ~/.dotfiles/installScripts/vm-test.sh --smoke       # 2-min headless boot check
+bash ~/.dotfiles/installScripts/vm-test.sh --unattended  # the whole thing, no human
+bash ~/.dotfiles/installScripts/vm-test.sh               # fetch ISO, you drive archinstall
 ```
+
+`--unattended` is the one that proves the install actually works on a
+machine that is not yours. It scripts a minimal base system, boots it under
+UEFI from its own ESP, runs `./install.sh`, and then asserts the result:
+0 failed modules, `validate.sh` passing inside the guest, every boot entry's
+`root=` matching the guest's real root device, and qtile starting under a
+headless X server — checking the qtile log for a silent fallback to the
+built-in config, because `qtile cmd-obj -f status` answers `OK` either way.
+It saves a screenshot. Budget ~2 hours and 60 GB.
+
+It needs the branch to be **pushed**: the guest clones from GitHub, so an
+unpushed commit is not what gets tested. It refuses to start otherwise
+rather than letting you draw the wrong conclusion.
+
+**What it cannot prove:** there is no GPU in the VM, so picom's `glx`
+backend, the compositing and the animations are untested there, and a
+screenshot is not the same as looking at the thing.
 
 **The 3-minute version** — `container-test.sh` runs the config-only modules
 on a throw-away Arch container. It cannot test X11, systemd, the GPU or
