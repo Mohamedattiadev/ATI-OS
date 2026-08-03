@@ -39,7 +39,20 @@ MIRROR="https://geo.mirror.pkgbuild.com/iso/latest"
 # (~60 MB), wallpapers clone (~500 MB), plus the base system.
 VM_RAM_MB="${VM_RAM_MB:-4096}"            # override for a tighter host
 SMOKE_RAM_MB=2048                         # --smoke only reaches a login prompt
-VM_DISK_GB=20
+# 20G was not enough, and the way it failed was expensive: dcli-sync died
+# with "Partition / too full: 2206174 blocks needed, 947403 blocks free"
+# about 8.4G short, and then FOUR more modules failed as a consequence --
+# radios could not enable bluetooth.service because bluez never installed,
+# boot-splash could not find plymouth, speed's pacman hooks failed, and
+# whisper-fast had nothing to rebuild. One full disk, reported as five
+# broken modules.
+#
+# Sized from what actually landed: the base system, ~250 packages, the AUR
+# build tree and package cache, whisper base.en + small.en (~630M), piper
+# voices (~60M), and the wallpapers clone (~500M) -- plus room for phase D
+# to install Xvfb afterwards, which is where the "only 0G free" abort came
+# from on the same run.
+VM_DISK_GB="${VM_DISK_GB:-40}"
 # What the HOST keeps for itself. Overridable, but think before lowering
 # it: this margin is the whole reason the preflight exists. Trimming it a
 # little to keep the GUEST at a size already known to work is a better
@@ -639,13 +652,23 @@ PY
   printf '\n'
   if (( fail )); then
     printf '%s[vm-test] UNATTENDED RUN FAILED — %s%s\n\n' "$r" "$ilog" "$o"
-    # The reason, not just the verdict.
-    local ef
-    for ef in "$VM_DIR"/module-errors/*.err; do
-      [[ -s "$ef" ]] || continue
-      printf '%s── %s ──%s\n' "$y" "${ef##*/}" "$o"
-      tail -15 "$ef" | sed 's/^/    /'
-    done
+    # ONLY the modules the wizard actually reported as failed. Printing
+    # every .err file buried the four real errors under megabytes of curl
+    # progress bars from modules that had succeeded -- their stderr is not
+    # empty, it is just not interesting.
+    local m ef
+    while read -r m; do
+      [[ -n "$m" ]] || continue
+      ef="$VM_DIR/module-errors/wizard-$m.err"
+      printf '%s── %s ──%s\n' "$y" "$m" "$o"
+      if [[ -s "$ef" ]]; then
+        sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$ef" \
+          | grep -vE '^\s*$|% Total|Dload|Time  Time' | tail -12 | sed 's/^/    /'
+      else
+        printf '    (no stderr captured — the module failed on an exit code alone)\n'
+      fi
+    done < <(sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$ilog" \
+             | sed -n 's/^[[:space:]]*·[[:space:]]*\([a-z0-9-]*\)[[:space:]]*(tail .*/\1/p')
     exit 1
   fi
   ok "unattended run passed"
