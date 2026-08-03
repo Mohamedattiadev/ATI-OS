@@ -31,6 +31,8 @@ the session that decided it.
 | §2.4 `dm-*` sourced a helper by relative path and died silently | three-way lookup ending at `/usr/bin/_dm-helper.sh`, with a real error message | `68af5d8` |
 | §2.5 `hosts/ati.yaml` referenced a module that doesn't exist | deleted | `94e87a0` |
 | §3.1 `step_xmodmap` repurposed Caps Lock for everyone | moved to `OPTIN_MODS`; a default install now leaves Caps alone | `5f94a23` |
+| §1.3 popups were fixed pixels, not `UI_SCALE`-scaled | all NINE popups scale now — the plan listed three cheatsheets, pinentry and the file chooser; an audit found the same bug in Audio, Bluetooth, Display, Wallpaper, Wifi and WifiQR. Verified byte-identical at 1.0 and proportional at 2.0 | `b6ab126`, `e438d4f` |
+| §2.6 `rofi_docs`' Maintenance was silently Arch-only | refuses off Arch and names the distro. One guard at section entry covered 15 of the 20 pacman calls, so it did not need the panel-by-panel restructure the plan assumed | `b6ab126` |
 | boot entries were never checked against the real root device | `boot-splash verify-root`, wired into `boot-splash check`, `validate.sh` and `boot-fallback` | `ed49d58` |
 
 The §1.4 socket move turned out to matter more than the collision the audit
@@ -43,47 +45,31 @@ terminal. `$XDG_RUNTIME_DIR` is mode 700.
 
 ## Still open
 
-### 1.3 Popup geometry is fixed pixels, not `_s()`-scaled — *blocked on hardware*
+### 3.3 `speed_boost.sh`'s zram ceiling was chosen against one machine
 
-`QtileCheatsheet` 880×580, `_cheatsheet_grid`'s 1366×768 reference panel,
-`PINENTRY_W/H`, `FILE_CHOOSER_*_MIN`.
+`zram-size = min(ram, 8192)`. Worth being precise about what is and is not
+machine-specific here: that is zram-generator's own expression and it
+already scales with RAM — only the 8 GB *ceiling* is a fixed number, and it
+only applies on machines larger than the one it was written on, where an
+8 GB zram is a defensible cap anyway. `swappiness=180` and
+`page-cluster=0` are the standard pairing for compressed swap.
 
-Everything else in the qtile config multiplies through `UI_SCALE`, so on a
-4K panel the bar, fonts and margins scale and these popups don't — they
-render correctly but small. Threading `UI_SCALE` through three cheatsheets'
-layout arithmetic is a redesign, not a surgical fix, and it needs someone
-to look at the result on a HiDPI screen. **Nobody has tested this repo on a
-HiDPI panel**, so the change could not be verified even if it were written.
-
-### 2.6 `rofi_docs`' system panels are silently Arch-only
-
-`pacman -Qi`, `pacman -Qtdq`, `/var/cache/pacman/pkg`. Every call already has
-`2>/dev/null` and an empty-result path, so off Arch the panels render *empty*
-rather than erroring — which reads as "no data" instead of "wrong distro".
-Saying so explicitly means restructuring ~15 panels.
-
-Same shape, already correct: `boot-splash`'s `pacman -Qq plymouth` checks
-degrade properly (`check` prints ✗, `status` says "not installed", `enable`
-refuses) — the message just doesn't name the distro as the reason.
-
-### 3.2 `arch-config.sh` keys the host identity off the username
-
-It uses `id -un`, not the hostname, despite the field being called `host`.
-It looks wrong every time someone reads it. It is a deliberate repo-wide
-convention that `wizard.sh` and the yaml both depend on — changing it is a
-cross-file semantic change, not a bug fix. Either change it everywhere at
-once or rename the field to say what it means.
-
-### 3.3 `speed_boost.sh`'s zram and sysctl values are tuned for 8 GB
-
-`min(ram, 8192)` and `swappiness=180`. Sane Fedora-default policy at any RAM
-size and the comments justify them at length, but they were chosen against
-one machine.
+Left alone deliberately. Changing swap policy on a hunch, against values
+that are already RAM-adaptive and already justified at length in the
+comments, would be worse than the complaint.
 
 ---
 
 ## Verified correct — do not change
 
+- **`arch-config.sh` keys the host identity off the username, not the
+  hostname**, despite the yaml field being called `host:`. It reads like a
+  bug and cannot be renamed: `host:` is *dcli's* config schema, not this
+  repo's — the string is baked into the `dcli-arch-git` binary, so renaming
+  it would stop dcli finding its configuration. The behaviour is also the
+  one wanted: these are per-USER package sets and dotfile profiles, and two
+  accounts on one machine legitimately want different ones. Documented in
+  place at `arch-config.sh` so the next reader does not "fix" it.
 - **`grub_boost.sh` refuses rather than guessing.** It aborts on a
   trailing-comment or unquoted `GRUB_CMDLINE_LINUX_DEFAULT` instead of
   corrupting it. Strictly safer than the old behaviour, but it does mean a
