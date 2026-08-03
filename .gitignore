@@ -140,3 +140,6 @@ brave-profiles
 
 # 67MB of personal drawings — content, not config.
 .config/rofi/Todo_files/excalidraw.zip
+
+# Private API keys. The .example template IS tracked; the real file never is.
+secrets.env
