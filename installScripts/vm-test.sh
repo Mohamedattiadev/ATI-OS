@@ -656,6 +656,44 @@ PY
   fi
   [[ -s "$shot" ]] && say "screenshot: $shot — worth an actual look"
 
+  # The rest of the desktop stack, all of it GPU-independent.
+  #
+  # These WARN rather than fail. They are additive coverage on top of an
+  # install that has already been asserted, and a headless X server is a
+  # thin enough environment that a miss here should not turn a good
+  # install into a red run. The install assertions stay authoritative.
+  say "  probing the rest of the desktop stack (picom, dunst, rofi, kitty)"
+  local xlog="$VM_DIR/unattended-desktop-extras.log"
+  timeout 400 ssh "${SSH_OPTS[@]}" "$VM_USER@127.0.0.1" bash -s \
+    < <(_desktop_extras_script) > "$xlog" 2>&1 || true
+
+  # picom is deliberately worded as "starts and stays up". The obvious
+  # assertion (_NET_WM_CM_S0) is invalid: on a real display where
+  # compositing demonstrably works, that atom reads "not found" too, so a
+  # check built on it would call picom broken everywhere.
+  if grep -q VMTEST_PICOM_OK "$xlog"; then
+    ok "picom starts and stays up (NOT proof that it composites)"
+  else
+    warn "picom did not confirm — see $xlog"
+  fi
+  if grep -q VMTEST_DUNST_OK "$xlog"; then
+    ok "dunst accepted and stored a notification (dbus end to end)"
+  elif grep -q VMTEST_DUNST_NOBUS "$xlog"; then
+    say "  dunst untested — no session bus in this guest, which is not a dunst fault"
+  else
+    warn "dunst did not confirm — see $xlog"
+  fi
+  if grep -q VMTEST_ROFI_OK "$xlog"; then
+    ok "rofi opens with the repo's theme"
+  else
+    warn "rofi did not confirm — see $xlog"
+  fi
+  if grep -q VMTEST_KITTY_OK "$xlog"; then
+    ok "kitty starts with the repo's config"
+  else
+    warn "kitty did not confirm — see $xlog"
+  fi
+
   printf '\n'
   if (( fail )); then
     printf '%s[vm-test] UNATTENDED RUN FAILED — %s%s\n\n' "$r" "$ilog" "$o"
@@ -840,6 +878,80 @@ if [ -s /tmp/qtile-headless.png ]; then
 fi
 
 qtile cmd-obj -o cmd -f shutdown >/dev/null 2>&1 || true
+GUEST
+}
+
+_desktop_extras_script() {
+  cat <<'GUEST'
+set -Eeuo pipefail
+export DISPLAY=:99
+
+# picom: start it, give it time to fall over, then look.
+if command -v picom >/dev/null 2>&1; then
+  picom --backend xrender >/tmp/picom-vm.log 2>&1 &
+  PICOM_PID=$!
+  sleep 8
+  if kill -0 "$PICOM_PID" 2>/dev/null; then
+    if grep -qiE '\[ *(ERROR|FATAL) *\]' /tmp/picom-vm.log; then
+      echo "picom started but logged errors:"
+      grep -iE '\[ *(ERROR|FATAL) *\]' /tmp/picom-vm.log | head -3
+    else
+      echo VMTEST_PICOM_OK
+    fi
+  else
+    echo "picom exited within 8s:"
+    tail -5 /tmp/picom-vm.log
+  fi
+  kill "$PICOM_PID" 2>/dev/null || true
+else
+  echo "picom not installed"
+fi
+
+# dunst: a notification that is accepted and retrievable is a real
+# end-to-end result -- dbus name acquired, rules matched, nothing crashed.
+if command -v dunst >/dev/null 2>&1 && command -v dunstctl >/dev/null 2>&1; then
+  dunst >/tmp/dunst-vm.log 2>&1 &
+  sleep 3
+  # Distinguish "cannot test here" from "failed". Validating this probe on
+  # the host under dbus-run-session produced "A connection to the bus
+  # can't be made" -- a stripped session, not a dunst fault. A probe that
+  # cries wolf about its own environment teaches you to ignore the test,
+  # so an unreachable bus reports UNTESTED, not a failure.
+  if ! dunstctl count >/dev/null 2>&1; then
+    echo VMTEST_DUNST_NOBUS
+  else
+    notify-send "vmtest" "phase D probe" 2>/dev/null || true
+    sleep 2
+    if dunstctl history 2>/dev/null | grep -q "phase D probe"; then
+      echo VMTEST_DUNST_OK
+    else
+      echo "dunst did not record the notification:"; tail -4 /tmp/dunst-vm.log
+    fi
+    dunstctl close-all 2>/dev/null || true
+  fi
+fi
+
+# rofi: opens with the repo's theme rather than erroring on a missing one.
+if command -v rofi >/dev/null 2>&1; then
+  ( printf 'alpha\nbeta\n' | timeout 8 rofi -dmenu -p vmtest >/dev/null 2>/tmp/rofi-vm.err </dev/null ) &
+  sleep 4
+  if pgrep -f 'rofi -dmenu -p vmtest' >/dev/null; then
+    echo VMTEST_ROFI_OK
+    pkill -f 'rofi -dmenu -p vmtest' 2>/dev/null || true
+  else
+    echo "rofi did not open:"; head -3 /tmp/rofi-vm.err 2>/dev/null
+  fi
+fi
+
+# kitty: starts with the repo's kitty.conf (which this session also changed).
+if command -v kitty >/dev/null 2>&1; then
+  if timeout 20 kitty -o confirm_os_window_close=0 sh -c 'echo KITTY_RAN' \
+       >/tmp/kitty-vm.log 2>&1 && grep -q KITTY_RAN /tmp/kitty-vm.log; then
+    echo VMTEST_KITTY_OK
+  else
+    echo "kitty did not start:"; tail -3 /tmp/kitty-vm.log
+  fi
+fi
 GUEST
 }
 
