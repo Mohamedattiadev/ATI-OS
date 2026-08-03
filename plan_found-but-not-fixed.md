@@ -146,7 +146,7 @@ failure is almost never the module at fault**. Reading the per-module
 symptoms, and capturing them off the guest before it disappears took three
 attempts to get right (`scp` spells the port `-P`; `ssh` spells it `-p`).
 
-**Result as of the last run: 45 of 46 modules pass, and the desktop
+**Result: 46 of 46 modules pass — a fully clean install — and the desktop
 renders.** `validate.sh` passes inside the guest (the qtile config loads,
 the fonts resolve), every boot entry's `root=` matches the guest's real
 root device, and phase D starts qtile under Xvfb, confirms from the qtile
@@ -177,7 +177,15 @@ load-bearing and should not be described as the fix.
 
 Outstanding:
 
-1. **`boot-splash` — FIXED, but not re-run end to end.** It demanded a
+1. **`pacman-static` is an hour of the install, on its own.** It compiles
+   pacman and every dependency statically from source, much of it
+   single-threaded through autotools. It is a genuine safety net — the day
+   it matters is the day nothing else can install anything — but it is the
+   single biggest cost in a fresh install and nothing said so until now.
+   The trade is documented at the declaration in `system-tools.yaml`;
+   moving it to `optional.yaml` is a one-line change if faster installs are
+   worth more than the net.
+2. **`boot-splash` — FIXED, and confirmed by the clean run.** It demanded a
    `udev` hook in mkinitcpio.conf; Arch's current default ships `systemd`
    instead, so it refused on every freshly installed machine. Diagnosed by
    rebooting the run-8 disk and running `boot-splash check` inside it
@@ -185,7 +193,7 @@ Outstanding:
    styles — but no full `--unattended` run has happened since the fix.
    The earlier guess in this file that it was UKI-related was **wrong**;
    the UKI check passed all along.
-2. **A clean end-to-end run.** As of the last run, 43 of 46 modules pass.
+3. **A clean end-to-end run — DONE.** As of the last run, 43 of 46 modules pass.
    The three fixes above were made after it and have not themselves been
    run end to end.
 3. **The desktop on real hardware.** Phase D now passes, but Xvfb has no
