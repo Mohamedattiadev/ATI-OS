@@ -20,3 +20,12 @@ exclude: []
 conflicts:
   - pulseaudio
   - pulseaudio-alsa
+  # jack2 also provides the virtual `jack`, which ffmpeg, mpv and
+  # timidity++ all depend on. If it gets chosen to satisfy that dependency
+  # it conflicts with pipewire-jack above, and pacman aborts the ENTIRE
+  # transaction -- so nothing installs at all and every later module fails
+  # for want of its packages. A clean VM install came out 41 ok / 5 failed
+  # from exactly this, with the desktop falling back to stock qtile.
+  # wizard.sh's dcli-sync step installs pipewire-jack before syncing so the
+  # provider is never ambiguous; this records why, next to the packages.
+  - jack2

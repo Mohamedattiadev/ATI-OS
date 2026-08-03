@@ -506,6 +506,20 @@ PY
     ssh "${SSH_OPTS[@]}" "$VM_USER@127.0.0.1" \
     "DOTFILES_REPO='$DOTFILES_REPO' DOTFILES_REF='$DOTFILES_REF' bash -s" \
     < <(_dotfiles_install_script) > "$ilog" 2>&1 || rc=$?
+  # Pull the wizard's per-module error logs back BEFORE anything can shut
+  # the guest down. The first run of this test reported "5 failed" and then
+  # took the reason to the grave with the VM: those logs live in the
+  # guest's /tmp, which is a tmpfs, so they do not survive even its own
+  # reboot. Knowing WHICH module failed without knowing WHY is most of a
+  # wasted hour.
+  mkdir -p "$VM_DIR/module-errors"
+  rm -f "$VM_DIR/module-errors/"*.err 2>/dev/null || true
+  scp -q "${SSH_OPTS[@]}" "$VM_USER@127.0.0.1:/tmp/wizard-*.err" \
+      "$VM_DIR/module-errors/" 2>/dev/null || true
+  if compgen -G "$VM_DIR/module-errors/*.err" >/dev/null; then
+    say "  module error logs saved to $VM_DIR/module-errors/"
+  fi
+
   if (( rc )); then
     bad "./install.sh did not complete (exit $rc) — log: $ilog"
     tail -40 "$ilog" >&2
@@ -541,16 +555,71 @@ PY
     warn "boot-entry root check did not report (see $ilog)"
   fi
 
+  # ── phase D — does the desktop actually come up? ─────────────────
+  # The one thing no layer below this could reach. The container has no X
+  # server and neither did this VM, so "qtile comes up themed" had always
+  # been a human check on real hardware.
+  #
+  # Xvfb, not Xephyr: Xephyr renders INTO a parent X display, and a
+  # headless guest has no display to be a parent.
+  #
+  # Note what is and is not asserted. `qtile cmd-obj -f status` answering
+  # OK does NOT prove this repo's config loaded -- qtile falls back to its
+  # own built-in config on a config error and answers OK exactly the same.
+  # So the log is checked for that fallback, and the screenshot for having
+  # drawn more than a flat colour. The PNG comes back to the host either
+  # way, because the last mile really is a human looking at it.
+  say "phase D — starting a headless X server and checking qtile renders"
+  local dlog="$VM_DIR/unattended-desktop.log"
+  local shot="$VM_DIR/qtile-screenshot.png"
+  local drc=0
+  timeout 900 ssh "${SSH_OPTS[@]}" "$VM_USER@127.0.0.1" bash -s \
+    < <(_desktop_check_script) > "$dlog" 2>&1 || drc=$?
+
+  scp -q "${SSH_OPTS[@]}" "$VM_USER@127.0.0.1:/tmp/qtile-headless.png" "$shot" 2>/dev/null || true
+
+  if (( drc )); then
+    bad "desktop check did not complete (exit $drc) — log: $dlog"
+    tail -20 "$dlog" >&2
+    fail=1
+  else
+    if grep -q VMTEST_QTILE_OK "$dlog"; then
+      ok "qtile started under X and answered IPC"
+    else
+      bad "qtile did not start under X"; fail=1
+    fi
+    if grep -q VMTEST_QTILE_OWN_CONFIG "$dlog"; then
+      ok "it loaded THIS repo's config (no fallback in the qtile log)"
+    else
+      bad "qtile fell back to its built-in config — the repo's config did not load"; fail=1
+    fi
+    if grep -q VMTEST_QTILE_RENDERED "$dlog"; then
+      ok "the root window actually rendered ($(grep -o 'colours=[0-9]*' "$dlog" | head -1))"
+    else
+      bad "the screen came out blank"; fail=1
+    fi
+  fi
+  [[ -s "$shot" ]] && say "screenshot: $shot — worth an actual look"
+
   printf '\n'
   if (( fail )); then
     printf '%s[vm-test] UNATTENDED RUN FAILED — %s%s\n\n' "$r" "$ilog" "$o"
+    # The reason, not just the verdict.
+    local ef
+    for ef in "$VM_DIR"/module-errors/*.err; do
+      [[ -s "$ef" ]] || continue
+      printf '%s── %s ──%s\n' "$y" "${ef##*/}" "$o"
+      tail -15 "$ef" | sed 's/^/    /'
+    done
     exit 1
   fi
   ok "unattended run passed"
   say "logs: $blog · $ilog · $VM_DIR/unattended-boot.log"
-  printf '\n%sStill not covered, and cannot be:%s the desktop actually rendering.\n' "$y" "$o"
-  printf 'There is no X server here, so qtile coming up themed after startx\n'
-  printf 'remains a human check on real hardware.\n\n'
+  printf '\n%sWhat this still does not prove:%s the desktop on REAL hardware.\n' "$y" "$o"
+  printf 'Xvfb has no GPU, so picom, the compositing and the animations are\n'
+  printf 'untested, and a screenshot is not the same as looking at the thing.\n'
+  printf 'It does now prove qtile starts, loads THIS config rather than the\n'
+  printf 'fallback, and draws.\n\n'
   _qemu_kill
 }
 
@@ -647,6 +716,57 @@ cd "$HOME/.dotfiles/installScripts"
 # and verify-root compares this guest's boot entry against its own root.
 ./validate.sh && echo VMTEST_VALIDATE_OK
 "$HOME/.dotfiles/.config/AtiScriptsV1/boot-splash" verify-root && echo VMTEST_VERIFYROOT_OK
+GUEST
+}
+
+_desktop_check_script() {
+  cat <<'GUEST'
+set -Eeuo pipefail
+export DISPLAY=:99
+
+# Test-only packages, installed AFTER install.sh has already been asserted
+# so they cannot influence what was under test.
+sudo pacman -S --needed --noconfirm xorg-server-xvfb imagemagick >/dev/null 2>&1 || true
+
+Xvfb :99 -screen 0 1366x768x24 >/tmp/xvfb.log 2>&1 &
+for _ in $(seq 1 20); do xdpyinfo >/dev/null 2>&1 && break; sleep 1; done
+xdpyinfo >/dev/null 2>&1 || { echo "Xvfb never came up"; cat /tmp/xvfb.log; exit 1; }
+echo "Xvfb up"
+
+qtile start -b x11 >/tmp/qtile-vm.log 2>&1 &
+for _ in $(seq 1 40); do
+  qtile cmd-obj -o cmd -f status >/dev/null 2>&1 && break
+  sleep 2
+done
+
+if [ "$(qtile cmd-obj -o cmd -f status 2>/dev/null | tr -d '"')" = OK ]; then
+  echo VMTEST_QTILE_OK
+else
+  echo "qtile never answered IPC"; tail -40 /tmp/qtile-vm.log; exit 1
+fi
+
+# qtile logs this and silently substitutes its built-in config when ours
+# raises. Without this check a completely broken config still reports OK.
+if grep -qiE 'error while reading config|could not import config|configuration error' \
+     /tmp/qtile-vm.log ~/.local/share/qtile/qtile.log 2>/dev/null; then
+  echo "qtile fell back to its built-in config:"
+  grep -ihE 'error while reading config|could not import config|configuration error' \
+     /tmp/qtile-vm.log ~/.local/share/qtile/qtile.log 2>/dev/null | head -5
+else
+  echo VMTEST_QTILE_OWN_CONFIG
+fi
+
+import -window root /tmp/qtile-headless.png 2>/dev/null || true
+if [ -s /tmp/qtile-headless.png ]; then
+  k="$(magick identify -format '%k' /tmp/qtile-headless.png 2>/dev/null || echo 0)"
+  echo "colours=$k"
+  # A bare X root is one flat colour. A drawn bar is hundreds -- measured
+  # at 396 on the host. 20 is a floor an empty screen cannot reach, and it
+  # does not depend on the wallpaper having loaded.
+  [ "${k:-0}" -gt 20 ] && echo VMTEST_QTILE_RENDERED
+fi
+
+qtile cmd-obj -o cmd -f shutdown >/dev/null 2>&1 || true
 GUEST
 }
 

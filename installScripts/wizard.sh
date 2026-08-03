@@ -568,6 +568,33 @@ step_dcli()         { command -v dcli >/dev/null && { _OK "dcli present"; return
 step_stow()         { run "$DOTFILES_DIR/installScripts/stow_script.sh"; }
 step_arch_config()  { run "$DOTFILES_DIR/installScripts/arch-config.sh"; }
 step_dcli_sync() {
+  # Settle the `jack` provider BEFORE anything else resolves it.
+  #
+  # ffmpeg, mpv and timidity++ all depend on the virtual package `jack`,
+  # and two packages provide it: jack2 and pipewire-jack. media.yaml
+  # declares pipewire-jack, but on a CLEAN machine the resolver meets the
+  # `jack` dependency first, picks jack2, and then dies:
+  #
+  #   :: pipewire-jack-1:1.6.8-1 and jack2-1.9.22-2 are in conflict
+  #   error: unresolvable package conflicts detected
+  #
+  # That aborts the whole transaction, so NO packages install -- and every
+  # module after this one fails for want of them. A VM install came out as
+  # 41 ok / 5 failed with a desktop that fell back to stock qtile, all from
+  # this one line. It is invisible on a machine that already has
+  # pipewire-jack, which is why it survived this long.
+  #
+  # Naming pipewire-jack explicitly removes the choice: pacman prefers an
+  # already-installed provider, so `jack` is satisfied before the ambiguous
+  # dependency is ever reached. --needed makes it a no-op on a machine that
+  # already has it.
+  if (( ! DRY_RUN )) && command -v pacman >/dev/null; then
+    if ! pacman -Qq pipewire-jack >/dev/null 2>&1; then
+      _DIM "  pre-seeding the jack provider (pipewire-jack) so dcli sync cannot pick jack2"
+      sudo pacman -S --needed --noconfirm pipewire-jack >/dev/null 2>&1 \
+        || _WARN "could not pre-install pipewire-jack — dcli sync may hit the jack2 conflict"
+    fi
+  fi
   run "cd $DOTFILES_DIR && dcli sync --force && { command -v mandb >/dev/null && sudo mandb || true; } && fc-cache -fv"
   (( DRY_RUN )) && return
   # dcli can report the sync step as done even when an individual AUR
