@@ -663,8 +663,16 @@ _reclaim_build_cache() {
   done
 
   after=$(du -sm "$HOME/.cache/yay" 2>/dev/null | cut -f1 || echo 0)
+  # Report either way. Logging ONLY on a reduction made this function
+  # silent on every run, and that silence is why the disk exhaustion was
+  # credited to this cleanup rather than to the disk being too small --
+  # yay prunes its own build trees on a fresh machine, so there was
+  # nothing here to reclaim and no output to say so. A cleanup that
+  # cannot be observed cannot be reasoned about.
   if (( before > after )); then
     _DIM "  reclaimed $(( before - after ))MB of AUR build cache (kept: ${RECLAIM_KEEP[*]})"
+  else
+    _DIM "  AUR build cache already minimal (${after}MB) — nothing to reclaim"
   fi
   return 0
 }
