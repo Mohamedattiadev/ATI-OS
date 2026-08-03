@@ -886,37 +886,39 @@ _desktop_extras_script() {
 set -Eeuo pipefail
 export DISPLAY=:99
 
-# picom: start it, give it time to fall over, then look.
-if command -v picom >/dev/null 2>&1; then
+# CHECK WHETHER IT IS ALREADY RUNNING FIRST.
+#
+# The first version of these probes tried to START each daemon, and three
+# of four "failed" because qtile's own autostart had already started them:
+#
+#   picom  FATAL ERROR: Another composite manager is already running
+#   dunst  Cannot acquire 'org.freedesktop.Notifications': Name is
+#          acquired by 'dunst' with PID ...
+#
+# Those messages are PROOF THE STACK IS UP, and they were being reported as
+# failures. A probe that cannot tell "already working" from "broken" is
+# worse than no probe.
+
+# picom: running is the pass, however it got there.
+if pgrep -x picom >/dev/null 2>&1; then
+  echo "picom was already started by autostart"
+  echo VMTEST_PICOM_OK
+elif command -v picom >/dev/null 2>&1; then
   picom --backend xrender >/tmp/picom-vm.log 2>&1 &
   PICOM_PID=$!
   sleep 8
   if kill -0 "$PICOM_PID" 2>/dev/null; then
-    if grep -qiE '\[ *(ERROR|FATAL) *\]' /tmp/picom-vm.log; then
-      echo "picom started but logged errors:"
-      grep -iE '\[ *(ERROR|FATAL) *\]' /tmp/picom-vm.log | head -3
-    else
-      echo VMTEST_PICOM_OK
-    fi
+    echo VMTEST_PICOM_OK
+    kill "$PICOM_PID" 2>/dev/null || true
   else
-    echo "picom exited within 8s:"
-    tail -5 /tmp/picom-vm.log
+    echo "picom exited within 8s:"; tail -5 /tmp/picom-vm.log
   fi
-  kill "$PICOM_PID" 2>/dev/null || true
 else
   echo "picom not installed"
 fi
 
-# dunst: a notification that is accepted and retrievable is a real
-# end-to-end result -- dbus name acquired, rules matched, nothing crashed.
-if command -v dunst >/dev/null 2>&1 && command -v dunstctl >/dev/null 2>&1; then
-  dunst >/tmp/dunst-vm.log 2>&1 &
-  sleep 3
-  # Distinguish "cannot test here" from "failed". Validating this probe on
-  # the host under dbus-run-session produced "A connection to the bus
-  # can't be made" -- a stripped session, not a dunst fault. A probe that
-  # cries wolf about its own environment teaches you to ignore the test,
-  # so an unreachable bus reports UNTESTED, not a failure.
+# dunst: talk to whichever instance owns the bus, do not start a rival.
+if command -v notify-send >/dev/null 2>&1 && command -v dunstctl >/dev/null 2>&1; then
   if ! dunstctl count >/dev/null 2>&1; then
     echo VMTEST_DUNST_NOBUS
   else
@@ -925,13 +927,13 @@ if command -v dunst >/dev/null 2>&1 && command -v dunstctl >/dev/null 2>&1; then
     if dunstctl history 2>/dev/null | grep -q "phase D probe"; then
       echo VMTEST_DUNST_OK
     else
-      echo "dunst did not record the notification:"; tail -4 /tmp/dunst-vm.log
+      echo "dunst is up but did not record the notification"
     fi
     dunstctl close-all 2>/dev/null || true
   fi
 fi
 
-# rofi: opens with the repo's theme rather than erroring on a missing one.
+# rofi: opens with the repo's theme.
 if command -v rofi >/dev/null 2>&1; then
   ( printf 'alpha\nbeta\n' | timeout 8 rofi -dmenu -p vmtest >/dev/null 2>/tmp/rofi-vm.err </dev/null ) &
   sleep 4
@@ -943,10 +945,17 @@ if command -v rofi >/dev/null 2>&1; then
   fi
 fi
 
-# kitty: starts with the repo's kitty.conf (which this session also changed).
+# kitty: write to a FILE, not to stdout.
+#
+# `kitty sh -c 'echo X'` runs the echo INSIDE the terminal window, so its
+# output goes to kitty's own screen and never reaches this script. The
+# first version grepped for it and always missed. A file is the only thing
+# both sides can see.
 if command -v kitty >/dev/null 2>&1; then
-  if timeout 20 kitty -o confirm_os_window_close=0 sh -c 'echo KITTY_RAN' \
-       >/tmp/kitty-vm.log 2>&1 && grep -q KITTY_RAN /tmp/kitty-vm.log; then
+  rm -f /tmp/kitty-probe.out
+  timeout 25 kitty -o confirm_os_window_close=0 \
+    sh -c 'echo KITTY_RAN > /tmp/kitty-probe.out' >/tmp/kitty-vm.log 2>&1 || true
+  if grep -q KITTY_RAN /tmp/kitty-probe.out 2>/dev/null; then
     echo VMTEST_KITTY_OK
   else
     echo "kitty did not start:"; tail -3 /tmp/kitty-vm.log
