@@ -196,9 +196,17 @@ Outstanding:
 3. **A clean end-to-end run — DONE.** As of the last run, 43 of 46 modules pass.
    The three fixes above were made after it and have not themselves been
    run end to end.
-3. **The desktop on real hardware.** Phase D now passes, but Xvfb has no
-   GPU: picom, the compositing and the animations are still untested, and
-   a screenshot is not the same as looking at the thing.
+3. **The desktop on real hardware — picom and the animations are VERIFIED
+   here; the VM still cannot cover them.** Xvfb has no GPU, so phase D's
+   pass must not be read as though it does. On this machine they were
+   measured directly: `picom --diagnostics` reports a working glx backend
+   on Mesa Intel HD 520, and a 30fps `x11grab` of a window opening shows
+   the per-frame delta ramp 12746 → 88499 → **94618** → 85911 → 67121 →
+   53853 → 48810 before settling at ~48720, across about seven frames
+   (~230 ms). The peak *above* the steady-state value is the tell: that is
+   spring overshoot. An instant appear would jump once and stay flat.
+   What actually remains is the same stack on OTHER hardware — AMD,
+   NVIDIA, HiDPI.
 3. **A real second machine, ideally AMD.** The dead-package fix in
    `graphics-amd.yaml` is reasoned from `pacman -Si`, not observed on AMD
    hardware. Same for the `BAT1`/`ADP1` battery fix — reasoned from `/sys`
