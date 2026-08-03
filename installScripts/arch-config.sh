@@ -4,6 +4,23 @@ set -Eeuo pipefail
 # =====================================================
 # VARIABLES (HARDENED)
 # =====================================================
+# `host` here means USERNAME, not hostname, and that is deliberate.
+#
+# It reads like a bug every time -- the yaml field is called `host:` and
+# this fills it from `id -un`. It cannot be renamed to say what it means:
+# `host:` is dcli's config schema, not this repo's. dcli is an external
+# package (dcli-arch-git) and the string is baked into its binary, so
+# renaming the field here would simply stop dcli finding its configuration.
+#
+# Keying off the username rather than the hostname is also the behaviour
+# the rest of the repo wants: these are per-USER package sets and dotfile
+# profiles, and two accounts on one machine legitimately want different
+# ones. Hostname would give them the same profile; username gives each its
+# own. (This machine does not even have the `hostname` binary installed.)
+#
+# So: the name is wrong and fixed by an external tool, the behaviour is
+# right. Recorded here so the next person to notice the mismatch does not
+# "fix" it and break dcli.
 USER_NAME="$(id -un)"
 
 ARCH_CONFIG_DIR="$HOME/.config/arch-config"

@@ -31,6 +31,8 @@ the session that decided it.
 | §2.4 `dm-*` sourced a helper by relative path and died silently | three-way lookup ending at `/usr/bin/_dm-helper.sh`, with a real error message | `68af5d8` |
 | §2.5 `hosts/ati.yaml` referenced a module that doesn't exist | deleted | `94e87a0` |
 | §3.1 `step_xmodmap` repurposed Caps Lock for everyone | moved to `OPTIN_MODS`; a default install now leaves Caps alone | `5f94a23` |
+| §1.3 popups were fixed pixels, not `UI_SCALE`-scaled | all NINE popups scale now — the plan listed three cheatsheets, pinentry and the file chooser; an audit found the same bug in Audio, Bluetooth, Display, Wallpaper, Wifi and WifiQR. Verified byte-identical at 1.0 and proportional at 2.0 | `b6ab126`, `e438d4f` |
+| §2.6 `rofi_docs`' Maintenance was silently Arch-only | refuses off Arch and names the distro. One guard at section entry covered 15 of the 20 pacman calls, so it did not need the panel-by-panel restructure the plan assumed | `b6ab126` |
 | boot entries were never checked against the real root device | `boot-splash verify-root`, wired into `boot-splash check`, `validate.sh` and `boot-fallback` | `ed49d58` |
 
 The §1.4 socket move turned out to matter more than the collision the audit
@@ -43,47 +45,31 @@ terminal. `$XDG_RUNTIME_DIR` is mode 700.
 
 ## Still open
 
-### 1.3 Popup geometry is fixed pixels, not `_s()`-scaled — *blocked on hardware*
+### 3.3 `speed_boost.sh`'s zram ceiling was chosen against one machine
 
-`QtileCheatsheet` 880×580, `_cheatsheet_grid`'s 1366×768 reference panel,
-`PINENTRY_W/H`, `FILE_CHOOSER_*_MIN`.
+`zram-size = min(ram, 8192)`. Worth being precise about what is and is not
+machine-specific here: that is zram-generator's own expression and it
+already scales with RAM — only the 8 GB *ceiling* is a fixed number, and it
+only applies on machines larger than the one it was written on, where an
+8 GB zram is a defensible cap anyway. `swappiness=180` and
+`page-cluster=0` are the standard pairing for compressed swap.
 
-Everything else in the qtile config multiplies through `UI_SCALE`, so on a
-4K panel the bar, fonts and margins scale and these popups don't — they
-render correctly but small. Threading `UI_SCALE` through three cheatsheets'
-layout arithmetic is a redesign, not a surgical fix, and it needs someone
-to look at the result on a HiDPI screen. **Nobody has tested this repo on a
-HiDPI panel**, so the change could not be verified even if it were written.
-
-### 2.6 `rofi_docs`' system panels are silently Arch-only
-
-`pacman -Qi`, `pacman -Qtdq`, `/var/cache/pacman/pkg`. Every call already has
-`2>/dev/null` and an empty-result path, so off Arch the panels render *empty*
-rather than erroring — which reads as "no data" instead of "wrong distro".
-Saying so explicitly means restructuring ~15 panels.
-
-Same shape, already correct: `boot-splash`'s `pacman -Qq plymouth` checks
-degrade properly (`check` prints ✗, `status` says "not installed", `enable`
-refuses) — the message just doesn't name the distro as the reason.
-
-### 3.2 `arch-config.sh` keys the host identity off the username
-
-It uses `id -un`, not the hostname, despite the field being called `host`.
-It looks wrong every time someone reads it. It is a deliberate repo-wide
-convention that `wizard.sh` and the yaml both depend on — changing it is a
-cross-file semantic change, not a bug fix. Either change it everywhere at
-once or rename the field to say what it means.
-
-### 3.3 `speed_boost.sh`'s zram and sysctl values are tuned for 8 GB
-
-`min(ram, 8192)` and `swappiness=180`. Sane Fedora-default policy at any RAM
-size and the comments justify them at length, but they were chosen against
-one machine.
+Left alone deliberately. Changing swap policy on a hunch, against values
+that are already RAM-adaptive and already justified at length in the
+comments, would be worse than the complaint.
 
 ---
 
 ## Verified correct — do not change
 
+- **`arch-config.sh` keys the host identity off the username, not the
+  hostname**, despite the yaml field being called `host:`. It reads like a
+  bug and cannot be renamed: `host:` is *dcli's* config schema, not this
+  repo's — the string is baked into the `dcli-arch-git` binary, so renaming
+  it would stop dcli finding its configuration. The behaviour is also the
+  one wanted: these are per-USER package sets and dotfile profiles, and two
+  accounts on one machine legitimately want different ones. Documented in
+  place at `arch-config.sh` so the next reader does not "fix" it.
 - **`grub_boost.sh` refuses rather than guessing.** It aborts on a
   trailing-comment or unquoted `GRUB_CMDLINE_LINUX_DEFAULT` instead of
   corrupting it. Strictly safer than the old behaviour, but it does mean a
@@ -134,19 +120,74 @@ What the container **cannot** cover, by its own admission: no X server, so
 nothing about qtile, picom, animations or themes; no systemd, so no
 services; no PCI bus, so `step_gpu` correctly detects nothing.
 
+### The VM layer has now run, and it found five real bugs
+
+`./vm-test.sh --unattended` exists as of 2026-08-03: it scripts a minimal
+base system directly (pacstrap and bootctl, no archinstall — inside the VM
+there is one disk, so the "might pick the wrong one" objection does not
+apply), boots the installed system under UEFI from its own ESP, runs
+`./install.sh`, and asserts the wizard's summary. Roughly two hours a run,
+most of it compiling espanso.
+
+Every one of these was invisible on the author's machine, and every one
+presented as several unrelated broken modules *downstream* of its cause:
+
+| bug | how it presented | fix |
+|---|---|---|
+| `pipewire-jack` vs `jack2` — both provide the virtual `jack`, which ffmpeg/mpv/timidity++ depend on. On a clean machine the resolver picks jack2, which conflicts with the declared pipewire-jack, and **pacman aborts the entire transaction** | 5 failed modules; **nothing installed at all**; the desktop would have come up as stock qtile | pre-seed the provider before `dcli sync` |
+| The install needs **>40 GB of transient disk**. yay keeps every AUR build tree — source, and for Rust the whole `target/` — and prunes none of it | 6 failed modules, all `No space left on device`, starting 32 modules after the cause | reclaim the cache after sync |
+| `rustup` has no default toolchain when `dcli sync` first builds with cargo. `step_cargo` sets it — at module 12, four modules too late | `paru` and `didyoumean` fail to build | seed `rustup default stable` alongside the jack provider |
+| `informant` refuses every pacman transaction until Arch news is read. It installs itself mid-sync, and a fresh machine always has unread news | `boot-splash` (no plymouth) and the desktop check (no Xvfb) — 5 and 20 modules downstream | mark the news read after the sync |
+| *(self-inflicted)* the cache reclaim deleted `whisper.cpp-git/src`, which `step_whisper_fast` rebuilds from | failed 25 modules later with an **empty** error log, because it fails via `_ERR`/`return 1` which never reaches stderr | keep-list |
+
+The lesson worth keeping: on a clean install, **the module that reports the
+failure is almost never the module at fault**. Reading the per-module
+`.err` logs is what distinguished five root causes from twenty-two
+symptoms, and capturing them off the guest before it disappears took three
+attempts to get right (`scp` spells the port `-P`; `ssh` spells it `-p`).
+
+**Result as of the last run: 45 of 46 modules pass, and the desktop
+renders.** `validate.sh` passes inside the guest (the qtile config loads,
+the fonts resolve), every boot entry's `root=` matches the guest's real
+root device, and phase D starts qtile under Xvfb, confirms from the qtile
+log that it loaded THIS config rather than silently falling back to the
+built-in one, and screenshots a themed bar at 738 distinct colours.
+
+Two more bugs surfaced getting there, after the five above:
+
+| bug | how it presented | fix |
+|---|---|---|
+| `rustup` has no default toolchain when `dcli sync` first builds with cargo; `step_cargo` sets it at module 12, four modules too late | `paru` and `didyoumean` fail to build | seed it alongside the jack provider |
+| `step_whisper_fast` rebuilds from `~/.cache/yay/whisper.cpp-git/src`, which `dcli sync`'s own yay invocation cleans — so it depends on another tool's leftovers surviving 25 modules | hard-failed on a clean machine, worked forever on a developer box | re-fetch through the PKGBUILD; warn and skip rather than fail, since it is a speedup not a requirement |
+
+The `informant` fix also took two attempts: marking the news read as the
+invoking user does nothing, because informant's pacman hook runs as ROOT
+and checks root's read-state.
+
 Outstanding:
 
-1. **`./vm-test.sh`** — ~40 min, and the one layer that covers X11, systemd
-   and boot. qemu and edk2-ovmf are installed and `--smoke` has passed
-   before. Two things gate a full run: it needs ~5 GB of free RAM
-   (`--check` refuses below that, by design), and it is **deliberately not
-   unattended** — `archinstall` is interactive, so a human drives that one
-   step. See the note below.
-2. **A real second machine, ideally AMD.** The dead-package fix in
+1. **`boot-splash` is the last failing module.** It refuses at its own
+   pre-flight — which is its designed safe behaviour, not a crash — but
+   WHICH check failed is unknown: the wizard truncates the check output in
+   its module log, so the run reports the refusal without the reason. The
+   likely explanation is environmental (the VM base install writes a plain
+   systemd-boot entry with `vmlinuz-linux` + initramfs, while boot-splash
+   is built around a UKI), but that is a hypothesis, not a finding. Capture
+   the full `boot-splash check` output before concluding anything.
+2. **A clean end-to-end run.** As of the last run, 43 of 46 modules pass.
+   The three fixes above were made after it and have not themselves been
+   run end to end.
+3. **The desktop on real hardware.** Phase D now passes, but Xvfb has no
+   GPU: picom, the compositing and the animations are still untested, and
+   a screenshot is not the same as looking at the thing.
+3. **A real second machine, ideally AMD.** The dead-package fix in
    `graphics-amd.yaml` is reasoned from `pacman -Si`, not observed on AMD
    hardware. Same for the `BAT1`/`ADP1` battery fix — reasoned from `/sys`
    semantics, never seen on a laptop that names them that way.
-3. **A HiDPI panel** — see §1.3.
+4. **A HiDPI panel** — see §1.3. The scaling is now implemented and
+   verified proportional (at 2.0 the sheets measure the same 3.6 / 2.0 /
+   1.4 screenfuls as at 1.0, with pango measuring real glyph extents at
+   both), but nobody has looked at it on a 4K screen.
 
 ### `validate.sh`'s font list is hand-maintained
 

@@ -567,7 +567,161 @@ step_dcli()         { command -v dcli >/dev/null && { _OK "dcli present"; return
                       run "yay -S --needed --noconfirm dcli-arch-git"; }
 step_stow()         { run "$DOTFILES_DIR/installScripts/stow_script.sh"; }
 step_arch_config()  { run "$DOTFILES_DIR/installScripts/arch-config.sh"; }
+# informant hooks pacman and REFUSES every transaction until the Arch news
+# is marked read. That is the whole point of it on a running machine --
+# those are the posts that say "manual intervention required" -- but it is
+# installed BY this sync, and a fresh machine always has unread news. So
+# from the moment it lands, every later pacman call in the install dies:
+#
+#   :: informant: Run `informant read` before re-running your pacman command
+#   error: failed to commit transaction (failed to run transaction hooks)
+#
+# In a clean VM that took out boot-splash (plymouth never installed) and
+# anything else that needed a package later in the run -- reported, of
+# course, as unrelated broken modules.
+#
+# Marking them read here is honest rather than a bypass: the installer has
+# just fetched a current package set, so the news items are about upgrades
+# it did not perform. It also leaves informant fully armed for the next
+# real -Syu, which is when its warning actually matters.
+_clear_informant_news() {
+  (( DRY_RUN )) && return 0
+  command -v informant >/dev/null 2>&1 || return 0
+  if ! informant check >/dev/null 2>&1; then
+    _DIM "  marking Arch news read so informant stops blocking pacman"
+    # --all where supported; the bare form otherwise. timeout because an
+    # older informant pages interactively and there is no tty here.
+    # sudo, and that is the whole point: informant's pacman hook runs as
+    # ROOT and checks root's read-state. Marking the news read as your own
+    # user updates a cache the hook never looks at, so pacman stays
+    # blocked -- which is exactly what happened, twice, and took out
+    # boot-splash (no plymouth) and the desktop check (no Xvfb).
+    sudo timeout 60 informant read --all >/dev/null 2>&1 \
+      || yes | sudo timeout 60 informant read >/dev/null 2>&1 \
+      || sudo timeout 60 informant read >/dev/null 2>&1 \
+      || _WARN "could not clear the informant news queue — later pacman calls may fail"
+    # Prove it worked rather than assuming: `informant check` is what the
+    # hook itself runs, so if this still fails, so will the next pacman.
+    if sudo informant check >/dev/null 2>&1; then
+      _DIM "  informant is satisfied — pacman is unblocked"
+    else
+      _WARN "informant STILL reports unread news; later package installs will fail"
+    fi
+  fi
+  return 0
+}
+
+# Reclaim the AUR build trees once the packages are installed.
+#
+# yay keeps every package's full build directory under ~/.cache/yay, source
+# tree included, and never prunes them. For a set this size that is not a
+# rounding error: espanso alone is a Rust project whose target/ runs to
+# several GB, and the sum of them exhausted a 40G disk mid-install -- the
+# packages went on fine, then `wallpapers`, `whisper` and `themes` all died
+# on "No space left on device", and the wizard aborted at 40 ok / 6 failed.
+#
+# Measured, not guessed: a clean VM install needed more than 40G of
+# transient space to produce a system that occupies a fraction of it.
+# Anyone installing this on a modest partition would hit the same wall,
+# with the failure landing on an unrelated module several steps later.
+#
+# Best-effort by design. Nothing here is load-bearing -- if the cleanup
+# fails the install is still complete, just fatter -- so it never returns
+# non-zero into the module's exit status.
+# Packages whose build tree a LATER module still needs. Deleting these is
+# not a cleanup, it is a broken install:
+#
+#   whisper.cpp-git -- step_whisper_fast (module 33) rebuilds whisper-cli
+#     and whisper-stream from this exact source tree, because the AUR
+#     PKGBUILD ships an unoptimised binary (~13x slower, measured) and
+#     never builds whisper-stream at all. It checks for the directory and
+#     hard-fails when it is missing.
+#
+# The first version of this cleanup did not have that list and removed the
+# tree at module 8, so whisper-fast failed 25 modules later with an empty
+# error log -- because it fails via _ERR and `return 1`, which never
+# reaches the module's stderr. Exactly the sort of action-at-a-distance
+# this whole cleanup was written to stop causing.
+RECLAIM_KEEP=(whisper.cpp-git)
+
+_reclaim_build_cache() {
+  (( DRY_RUN )) && { _DIM "  [dry] clean AUR build caches"; return 0; }
+  local before after d keep
+  before=$(du -sm "$HOME/.cache/yay" 2>/dev/null | cut -f1 || echo 0)
+  [[ "${before:-0}" -gt 0 ]] || return 0
+
+  # Not `yay -Sc`: that prunes by its own rules and would take the kept
+  # trees with it. Walk the directories so the keep-list is honoured.
+  for d in "$HOME"/.cache/yay/*/; do
+    [[ -d "$d" ]] || continue
+    keep=0
+    for k in "${RECLAIM_KEEP[@]}"; do
+      [[ "$(basename "$d")" == "$k" ]] && keep=1 && break
+    done
+    (( keep )) && continue
+    rm -rf "${d}src" "${d}pkg" 2>/dev/null || true
+  done
+
+  after=$(du -sm "$HOME/.cache/yay" 2>/dev/null | cut -f1 || echo 0)
+  if (( before > after )); then
+    _DIM "  reclaimed $(( before - after ))MB of AUR build cache (kept: ${RECLAIM_KEEP[*]})"
+  fi
+  return 0
+}
+
 step_dcli_sync() {
+  # Settle the `jack` provider BEFORE anything else resolves it.
+  #
+  # ffmpeg, mpv and timidity++ all depend on the virtual package `jack`,
+  # and two packages provide it: jack2 and pipewire-jack. media.yaml
+  # declares pipewire-jack, but on a CLEAN machine the resolver meets the
+  # `jack` dependency first, picks jack2, and then dies:
+  #
+  #   :: pipewire-jack-1:1.6.8-1 and jack2-1.9.22-2 are in conflict
+  #   error: unresolvable package conflicts detected
+  #
+  # That aborts the whole transaction, so NO packages install -- and every
+  # module after this one fails for want of them. A VM install came out as
+  # 41 ok / 5 failed with a desktop that fell back to stock qtile, all from
+  # this one line. It is invisible on a machine that already has
+  # pipewire-jack, which is why it survived this long.
+  #
+  # Naming pipewire-jack explicitly removes the choice: pacman prefers an
+  # already-installed provider, so `jack` is satisfied before the ambiguous
+  # dependency is ever reached. --needed makes it a no-op on a machine that
+  # already has it.
+  if (( ! DRY_RUN )) && command -v pacman >/dev/null; then
+    if ! pacman -Qq pipewire-jack >/dev/null 2>&1; then
+      _DIM "  pre-seeding the jack provider (pipewire-jack) so dcli sync cannot pick jack2"
+      sudo pacman -S --needed --noconfirm pipewire-jack >/dev/null 2>&1 \
+        || _WARN "could not pre-install pipewire-jack — dcli sync may hit the jack2 conflict"
+    fi
+
+    # rustup, and a DEFAULT TOOLCHAIN, before anything tries to build with
+    # cargo.
+    #
+    # step_cargo already runs `rustup default stable`, and its comment
+    # already names paru and didyoumean as the packages that fail without
+    # it. The problem is purely ordering: cargo is module 12 and this is
+    # module 8, so dcli sync reaches those AUR builds four modules before
+    # the toolchain is selected, and both die with
+    #
+    #   error: rustup could not choose a version of cargo to run, because
+    #   one wasn't specified explicitly, and no default is configured
+    #
+    # rustup itself only arrives WITH this sync (dev.yaml), so the fix
+    # cannot be "move the cargo module earlier" -- it has to be seeded
+    # here, the same way the jack provider is.
+    if ! command -v rustup >/dev/null 2>&1; then
+      _DIM "  pre-seeding rustup so cargo-built AUR packages can compile"
+      sudo pacman -S --needed --noconfirm rustup >/dev/null 2>&1 || true
+    fi
+    if command -v rustup >/dev/null 2>&1 && ! rustup default >/dev/null 2>&1; then
+      _DIM "  selecting the stable rust toolchain (paru/didyoumean need it)"
+      rustup default stable >/dev/null 2>&1 \
+        || _WARN "rustup default stable failed — cargo-built AUR packages may not build"
+    fi
+  fi
   run "cd $DOTFILES_DIR && dcli sync --force && { command -v mandb >/dev/null && sudo mandb || true; } && fc-cache -fv"
   (( DRY_RUN )) && return
   # dcli can report the sync step as done even when an individual AUR
@@ -579,7 +733,11 @@ step_dcli_sync() {
   local pending attempt=0
   while (( attempt < 2 )); do
     pending=$(cd "$DOTFILES_DIR" && dcli sync --dry-run 2>/dev/null | grep -oP 'Packages to install: \K[0-9]+' | head -1)
-    [[ -z "$pending" || "$pending" == "0" ]] && return 0
+    if [[ -z "$pending" || "$pending" == "0" ]]; then
+      _clear_informant_news
+      _reclaim_build_cache
+      return 0
+    fi
     attempt=$((attempt+1))
     echo "dcli sync left $pending package(s) uninstalled — retry $attempt/2"
     ( cd "$DOTFILES_DIR" && dcli sync --force )
@@ -589,6 +747,8 @@ step_dcli_sync() {
     echo "dcli sync still has $pending package(s) uninstalled after retries — run 'dcli sync --force' manually later"
     return 1
   fi
+  _clear_informant_news
+  _reclaim_build_cache
 }
 step_paths() {
   # Render every @HOME@ template to its real destination.
@@ -1516,9 +1676,32 @@ step_whisper_fast() {
     return
   fi
 
+  # The AUR build tree is NOT guaranteed to still be there. dcli sync's own
+  # yay invocation cleans it, so on a clean machine this module found
+  # nothing 25 modules after the package was built and hard-failed -- while
+  # working forever on a developer box where the tree happened to survive.
+  # Depending on another tool's leftovers is the bug; re-fetching is the
+  # fix.
   if [[ ! -d "$src" ]]; then
-    _ERR "whisper.cpp-git source not found at $src -- run dcli-sync first (declares whisper.cpp-git)"
-    return 1
+    _DIM "  AUR build tree is gone — re-fetching whisper.cpp-git sources"
+    local fetch="$HOME/.cache/whisper-fast-src"
+    rm -rf "$fetch"; mkdir -p "$fetch"
+    if ( cd "$fetch" && yay -G whisper.cpp-git >/dev/null 2>&1 \
+         && cd whisper.cpp-git \
+         && makepkg --nobuild --noconfirm --skippgpcheck --nodeps >/dev/null 2>&1 ); then
+      src="$fetch/whisper.cpp-git/src/whisper.cpp-git"
+      build="$src/build-fast"
+    fi
+  fi
+
+  # Still nothing: warn and skip rather than fail the install. This module
+  # is a SPEEDUP, not a requirement -- the pacman-built whisper-cli works,
+  # just ~13x slower -- so a missing source tree is not worth turning a
+  # complete install into a failed one.
+  if [[ ! -d "$src" ]]; then
+    _WARN "whisper.cpp-git source unavailable — keeping the slower packaged whisper-cli"
+    _WARN "  rebuild later with: ./wizard.sh --yes --only=whisper-fast"
+    return 0
   fi
 
   # Idempotent: skip the (slow, few-minute) rebuild if already shadowed.

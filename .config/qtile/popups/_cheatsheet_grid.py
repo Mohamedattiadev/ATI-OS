@@ -36,21 +36,29 @@ from libqtile.log_utils import logger
 # The system monospace. Never "sans": see the module docstring.
 FONT = "JetBrainsMono Nerd Font"
 
+
+# HiDPI scaling. The rules for what may and may not be scaled, and the
+# evidence that the sheets stay self-similar under it, are in _scale.py.
+# Re-exported as `_grid.s` because the three sheets already import this
+# module and refer to it that way.
+from popups._scale import UI_SCALE, s  # noqa: F401  (re-export)
+
+
 # PopupRelativeLayout's own default. Control positions are fractions of the
 # INNER box (size - 2*margin), which is what these numbers assume.
-MARGIN = 5
+MARGIN = s(5)
 
 # Matches WifiPopup/BluetoothPopup's card styling: 10px radius, a wider
 # gutter between cards so the grid doesn't read as one solid block.
-CARD_RADIUS = 10     # rounded corners on the section cards
+CARD_RADIUS = s(10)  # rounded corners on the section cards
 PAD_CHARS = 1        # left/right padding inside a card, in characters
 PAD_ROWS = 1         # blank rows at the top and bottom of a card
 
 GRID_TOP = 0.155     # under the title block
 GRID_BOTTOM = 0.925  # above the footer (raised when it got smaller)
 FOOTER_Y = 0.93
-CARD_GAP_PX = 16     # MINIMUM gap between cards, both directions
-CARD_GAP_MAX = 56    # ...and the most the gap is allowed to grow to
+CARD_GAP_PX = s(16)  # MINIMUM gap between cards, both directions
+CARD_GAP_MAX = s(56)  # ...and the most the gap is allowed to grow to
 
 # Gutter between the outer cards and the popup's left/right edges. Without
 # it the grid is laid out across the full inner box, so the first and last
@@ -60,7 +68,7 @@ CARD_GAP_MAX = 56    # ...and the most the gap is allowed to grow to
 #
 # This comes out of the width available to the cards, so raising it either
 # narrows them or has to be paid for with a wider popup -- see POPUP_W.
-GRID_SIDE_PAD_PX = 20
+GRID_SIDE_PAD_PX = s(20)
 
 # Blank columns a row must keep between its label and its key, in BASE
 # characters. This is a floor, not the actual gap -- most rows have more,

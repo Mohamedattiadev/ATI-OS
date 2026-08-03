@@ -267,12 +267,18 @@ fi
 # another family at another width and un-aligns the whole key column.
 # Cheap, and the only thing standing between "added one entry" and
 # "silently dropped a different one".
+#
+# QTILE_UI_SCALE_FORCE=1 pins the sheets to their reference size. They
+# scale with UI_SCALE now, but the selftest measures against a fixed
+# 1366x768 reference screen -- so on a HiDPI machine the popup would grow
+# while that reference did not, and every sheet would report as
+# overflowing. The reference design is what this check is for.
 head_ "cheatsheet popups"
 if ! python3 -c "import gi, cairo" 2>/dev/null; then
   skip "no pygobject/cairo — cannot measure text"
 elif ! python3 -c "import qtile_extras" 2>/dev/null; then
   skip "qtile-extras not importable"
-elif _cs_out="$(cd .config/qtile && python3 -m popups._cheatsheet_grid 2>&1)"; then
+elif _cs_out="$(cd .config/qtile && QTILE_UI_SCALE_FORCE=1 python3 -m popups._cheatsheet_grid 2>&1)"; then
   pass "every cheatsheet card fits, nothing clipped, every glyph present"
 else
   printf '%s\n' "$_cs_out" | sed 's/^/    /'

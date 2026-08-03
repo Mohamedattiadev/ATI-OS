@@ -44,6 +44,7 @@ from concurrent.futures import ThreadPoolExecutor
 from qtile_extras.popup import PopupRelativeLayout, PopupText
 from libqtile.log_utils import logger
 
+from popups._scale import s as _s
 from popups._wal_colors import load_colors as _load_wal_colors
 from popups._wal_colors import fade_in_popup, fade_out_popup
 from popups._wal_colors import _mix, ensure_contrast
@@ -116,14 +117,14 @@ _CANCEL = threading.Event()
 # =============================================================================
 # CONFIG & STYLING
 # =============================================================================
-POPUP_W = 940
-POPUP_H = 600
+POPUP_W = _s(940)
+POPUP_H = _s(600)
 
 FONT = "JetBrainsMono Nerd Font"  # monospace: the padded rows only line up
-ROW_SIZE = 14                     # in a fixed-width face
-HEAD_SIZE = 14
-HINT_SIZE = 13
-FOOT_SIZE = 14
+ROW_SIZE = _s(14)                     # in a fixed-width face
+HEAD_SIZE = _s(14)
+HINT_SIZE = _s(13)
+FOOT_SIZE = _s(14)
 
 # qtile builds text layouts with a *pixel* font size ("<family> <n>px"), so
 # these are px, not points: a ROW_SIZE line box is 20px tall and 17 rows

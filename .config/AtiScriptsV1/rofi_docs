@@ -550,7 +550,28 @@ paccache_count() {
   printf '%s' "${n:-0}"
 }
 
+# The running distro's name, for messages that have to explain why an
+# Arch-only section is unavailable. "Linux" if os-release says nothing.
+distro_name() {
+  local n
+  n="$(sed -n 's/^PRETTY_NAME="\?\([^"]*\)"\?$/\1/p' /etc/os-release 2>/dev/null | head -1)"
+  printf '%s' "${n:-Linux}"
+}
+
 sec_maintenance() {
+  # pacman is checked BEFORE pacdiff, and named as the reason.
+  #
+  # Every query in this section is a pacman query, and each already had
+  # `2>/dev/null` plus an empty-result path -- so off Arch the panels
+  # rendered EMPTY rather than failing, which reads as "no orphans, no
+  # cache, nothing to update" instead of "none of this can be computed
+  # here". Worse, the pacdiff branch below then advised
+  # `sudo pacman -S pacman-contrib` -- naming, as the fix, a command that
+  # does not exist on the system being advised.
+  have pacman || {
+    rofi -e "Maintenance is Arch-specific.\n\nEvery panel in this section queries pacman, and this is $(distro_name).\nThe counts would all render as zero rather than as unavailable."
+    return
+  }
   have pacdiff || {
     rofi -e "pacman-contrib not installed\nrun: sudo pacman -S pacman-contrib"
     return

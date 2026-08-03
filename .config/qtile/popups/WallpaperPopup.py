@@ -43,20 +43,22 @@ WALLPAPER_DIR = os.path.expanduser("~/Pictures/Wallpapers")
 CACHE_WALL = os.path.expanduser("~/.cache/wall")
 CACHE_THUMBS = os.path.expanduser("~/.cache/qtile_thumbs")
 
+from popups._scale import s as _s
+
 # --- Geometry -----------------------------------------------------------
 # Rows/columns are sized against POPUP_W/POPUP_H below: a row is one line of
 # FONT at ROW_SIZE, and a name padded to MAX_NAME_LEN plus the
 # icon/indicator/padding columns has to fit inside one card. Nothing clips a
 # control's overflow, so text that outgrows its rect spills over its
 # neighbours -- change one of these and re-check the others.
-POPUP_W = 1120
-POPUP_H = 680
+POPUP_W = _s(1120)
+POPUP_H = _s(680)
 
 FONT = "JetBrainsMono Nerd Font"  # monospace: the padded rows only line up
-ROW_SIZE = 14                     # in a fixed-width face
-HEAD_SIZE = 14
-HINT_SIZE = 13
-FOOT_SIZE = 14
+ROW_SIZE = _s(14)                     # in a fixed-width face
+HEAD_SIZE = _s(14)
+HINT_SIZE = _s(13)
+FOOT_SIZE = _s(14)
 
 # qtile builds these layouts with a *pixel* font size ("<family> <n>px"), so
 # these are px, not points: a ROW_SIZE=14 line box is 20px tall and 20 rows
