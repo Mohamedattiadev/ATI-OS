@@ -1,5 +1,5 @@
 /* ============================================================================
-   Qtile Dotfiles manual — page behaviour.
+   ATI-OS manual — page behaviour.
 
    Everything here is an enhancement. With JavaScript off you still get the
    full left navigation, the content, and working anchor links; you lose the

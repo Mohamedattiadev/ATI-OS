@@ -1,5 +1,5 @@
 /* ============================================================================
-   Qtile Dotfiles manual
+   ATI-OS manual
    One stylesheet. No web fonts, no CDN, no icon library — the manual has to
    render with the network unplugged, so every glyph here is a system font,
    a CSS shape, or inline SVG in the markup.
@@ -53,92 +53,103 @@
   --ease: cubic-bezier(.4, 0, .2, 1);
 }
 
-/* Light. Designed, not derived. */
+/* ---------------------------------------------------------------------------
+   Palette: doom-one, the Emacs theme, in both of its variants.
+
+   The hues are taken verbatim from doom-one and doom-one-light. Where a hue is
+   used as *text* it is only taken verbatim if it clears 4.5:1 against its own
+   background; the light variant's blue, green and red do not, so --accent,
+   --ok and --err carry a darkened mix of the same hue and --accent-line keeps
+   the pure one for rules and underlines, which are decoration and not read.
+   Every value below is annotated with its measured ratio against --bg.
+   ------------------------------------------------------------------------ */
+
+/* doom-one-light. Ground #fafafa, ink #383a42. */
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg:        #ffffff;
-  --bg-sunken: #f6f7f8;
-  --bg-raised: #fbfbfc;
-  --bg-code:   #f6f7f8;
+  --bg:        #fafafa;   /* doom-one-light bg */
+  --bg-sunken: #f0f0f0;   /* bg-alt */
+  --bg-raised: #ffffff;
+  --bg-code:   #f4f4f5;
 
-  --fg:        #16191d;
-  --fg-muted:  #545c66;
-  --fg-faint:  #7b838d;
+  --fg:        #383a42;   /* fg           10.9:1 */
+  --fg-muted:  #5c6370;   /*               5.8:1 */
+  --fg-faint:  #6c727b;   /*               4.7:1 */
 
-  --border:      #e2e5e9;
-  --border-firm: #cdd2d8;
+  --border:      #e3e3e4;
+  --border-firm: #c6c7c7;  /* base3 */
 
-  --accent:      #0f6fa8;   /* rgb(23,147,209), darkened for contrast on white */
-  --accent-weak: #e9f2f8;
-  --accent-line: #1793d1;
+  --accent:      #3a6bd4;  /* blue #4078f2 darkened to  4.8:1 */
+  --accent-weak: #eaf0fe;
+  --accent-line: #4078f2;  /* blue, pure: rules and underlines only */
 
-  --ok:   #2f6f3e;
-  --warn: #8a5a00;
-  --err:  #a83232;
-  --warn-weak: #fdf7e8;
-  --err-weak:  #fdf0ef;
+  --ok:   #427f46;         /* green #50a14f darkened to 4.9:1 */
+  --warn: #986801;         /* doom-one-light yellow      4.7:1 */
+  --err:  #bd4438;         /* red #e45649 darkened to    5.0:1 */
+  --warn-weak: #f7f2e6;
+  --err-weak:  #fbeeec;
 
-  --ring: #1793d1;
-  --shadow-sm: 0 1px 2px rgba(16, 20, 26, .06);
-  --shadow-lg: 0 12px 32px -8px rgba(16, 20, 26, .18);
+  --ring: #4078f2;
+  --shadow-sm: 0 1px 2px rgba(56, 58, 66, .07);
+  --shadow-lg: 0 12px 32px -8px rgba(56, 58, 66, .20);
 }
 
-/* Dark. Near-black ground, off-white ink, quiet borders. */
+/* doom-one. Ground #282c34, ink #bbc2cf. */
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg:        #131619;
-  --bg-sunken: #191d21;
-  --bg-raised: #1b1f24;
-  --bg-code:   #0f1215;
+  --bg:        #282c34;   /* doom-one bg */
+  --bg-sunken: #21242b;   /* bg-alt */
+  --bg-raised: #31353d;
+  --bg-code:   #1c1f24;   /* base1 */
 
-  --fg:        #d7dbe0;
-  --fg-muted:  #98a0a9;
-  --fg-faint:  #6f7780;
+  --fg:        #bbc2cf;   /* fg           7.8:1 */
+  --fg-muted:  #9ca0a4;   /* base7        5.3:1 */
+  --fg-faint:  #8a9099;   /*              4.4:1 */
 
-  --border:      #252a30;
-  --border-firm: #343b43;
+  --border:      #3f444a;  /* base4 */
+  --border-firm: #5B6268;  /* base5 */
 
-  --accent:      #4fb3e8;
-  --accent-weak: #15242e;
-  --accent-line: #1793d1;
+  --accent:      #51afef;  /* blue         5.8:1 */
+  --accent-weak: #1e2a35;
+  --accent-line: #51afef;
 
-  --ok:   #7fb069;
-  --warn: #d9a441;
-  --err:  #e07a72;
-  --warn-weak: #1e1910;
-  --err-weak:  #211413;
+  --ok:   #98be65;         /* green        6.6:1 */
+  --warn: #ECBE7B;         /* yellow       8.1:1 */
+  --err:  #ff6c6b;         /* red          5.1:1 */
+  --warn-weak: #322e23;
+  --err-weak:  #33232a;
 
-  --ring: #4fb3e8;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
-  --shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, .6);
+  --ring: #51afef;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .45);
+  --shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, .65);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
-    --bg:        #131619;
-    --bg-sunken: #191d21;
-    --bg-raised: #1b1f24;
-    --bg-code:   #0f1215;
-    --fg:        #d7dbe0;
-    --fg-muted:  #98a0a9;
-    --fg-faint:  #6f7780;
-    --border:      #252a30;
-    --border-firm: #343b43;
-    --accent:      #4fb3e8;
-    --accent-weak: #15242e;
-    --accent-line: #1793d1;
-    --ok:   #7fb069;
-    --warn: #d9a441;
-    --err:  #e07a72;
-    --warn-weak: #1e1910;
-    --err-weak:  #211413;
-    --ring: #4fb3e8;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
-    --shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, .6);
+    --bg:        #282c34;
+    --bg-sunken: #21242b;
+    --bg-raised: #31353d;
+    --bg-code:   #1c1f24;
+    --fg:        #bbc2cf;
+    --fg-muted:  #9ca0a4;
+    --fg-faint:  #8a9099;
+    --border:      #3f444a;
+    --border-firm: #5B6268;
+    --accent:      #51afef;
+    --accent-weak: #1e2a35;
+    --accent-line: #51afef;
+    --ok:   #98be65;
+    --warn: #ECBE7B;
+    --err:  #ff6c6b;
+    --warn-weak: #322e23;
+    --err-weak:  #33232a;
+    --ring: #51afef;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .45);
+    --shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, .65);
   }
 }
 
@@ -167,6 +178,13 @@ body {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
   border-radius: 3px;
+}
+/* A halo as well as a rule, so the ring survives on top of a tinted callout
+   or a code block, where a 2px outline alone can vanish into the border. */
+@supports (color: color-mix(in srgb, red, blue)) {
+  :focus-visible {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--ring) 26%, transparent);
+  }
 }
 
 ::selection { background: var(--accent-weak); color: var(--fg); }
@@ -496,12 +514,27 @@ h3 {
   line-height: 1.35;
   margin: var(--s6) 0 var(--s3);
 }
+/* h4 sits inside a run of prose that is already full of bold lead words, so it
+   is separated by a rule in the margin rather than by weight alone — muted
+   grey at body size was reading as a bold sentence, not as a heading. */
 h4 {
+  position: relative;
   font-size: var(--t-base);
-  font-weight: 620;
+  font-weight: 650;
   line-height: 1.4;
   margin: var(--s5) 0 var(--s2);
-  color: var(--fg-muted);
+  padding-left: var(--s3);
+  color: var(--fg);
+}
+h4::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .28em;
+  bottom: .28em;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--border-firm);
 }
 
 .lede {
@@ -520,7 +553,20 @@ li { margin: var(--s1) 0; }
 li > p { margin-bottom: var(--s2); }
 li::marker { color: var(--fg-faint); }
 
-a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+/* Links are underlined, always — but the rule is set in the accent at partial
+   strength so a paragraph with four links in it does not read as corduroy.
+   Hover brings the rule up to full weight rather than adding one. */
+a {
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-skip-ink: auto;
+  transition: text-decoration-color .12s var(--ease), color .12s var(--ease);
+}
+@supports (color: color-mix(in srgb, red, blue)) {
+  a { text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+  a:hover { text-decoration-color: currentColor; }
+}
 a:hover { text-decoration-thickness: 2px; }
 
 blockquote {
@@ -571,10 +617,14 @@ dfn { font-style: normal; font-weight: 620; color: var(--fg); }
 
 code, kbd, pre, samp { font-family: var(--mono); }
 
+/* Inline code carries a hairline as well as a fill. On the light ground the
+   fill alone is a two-per-cent difference and disappears; the hairline is what
+   actually makes `letsgo` read as a thing you type. */
 :not(pre) > code {
   background: var(--bg-code);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  padding: .1em .35em;
+  padding: .05em .35em;
   font-size: .86em;
   color: var(--fg);
   overflow-wrap: anywhere;
@@ -591,11 +641,12 @@ pre {
   padding: var(--s4) var(--s5);
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  scrollbar-width: thin;
   font-size: var(--t-ms);
   line-height: 1.65;
   tab-size: 2;
 }
-pre code { background: none; padding: 0; font-size: inherit; }
+pre code { background: none; border: 0; padding: 0; font-size: inherit; }
 
 .copy {
   position: absolute;
@@ -647,6 +698,7 @@ kbd {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg);
+  scrollbar-width: thin;
 }
 
 table {
@@ -677,7 +729,16 @@ thead th {
 }
 
 tbody tr:hover { background: var(--bg-sunken); }
+
+/* Inline code inside a table is a value, not prose: keep it on one line and
+   let it sit on the row background rather than punching a second box into it. */
 td code { white-space: nowrap; }
+tbody tr:hover td code { background: var(--bg); }
+
+/* A table whose first column is a label reads better with that column set
+   apart, so the eye can run down it without re-parsing each row. */
+tbody td:first-child > b:only-child,
+tbody td:first-child > em:only-child { color: var(--fg); }
 
 /* The first column of a shortcut table is a label, not prose. */
 table.keys td:first-child { white-space: nowrap; width: 1%; }
@@ -721,7 +782,10 @@ table.nums th:nth-child(n+2) {
 /* Nested blocks read as inset, not as another box on top of a box. */
 .note pre, .warn pre, .limit pre,
 .note .tw, .warn .tw, .limit .tw,
-.note .screen, .warn .screen, .limit .screen { background: var(--bg); }
+.note .screen, .warn .screen, .limit .screen,
+.note :not(pre) > code,
+.warn :not(pre) > code,
+.limit :not(pre) > code { background: var(--bg); }
 
 details.why {
   margin: 0 0 var(--s4);
@@ -763,7 +827,13 @@ details.why[open] > summary { border-bottom: 1px solid var(--border); }
 details.why > :not(summary) { margin-left: var(--s4); margin-right: var(--s4); }
 details.why > :not(summary):first-of-type { margin-top: var(--s4); }
 details.why > :last-child { margin-bottom: var(--s4); }
-details.why .tw, details.why pre { background: var(--bg); }
+details.why .tw, details.why pre,
+details.why :not(pre) > code { background: var(--bg); }
+
+/* Same reason, one level down: a "what appears on screen" strip is already a
+   sunken panel, so code inside it comes back up to the page ground. */
+.screen :not(pre) > code,
+thead th :not(pre) > code { background: var(--bg); }
 
 
 /* --- Link lists (plain rows, not cards) ---------------------------------- */
