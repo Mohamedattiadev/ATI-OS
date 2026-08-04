@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install from a USB stick &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="Step by step: make the USB stick, start the computer from it, answer the questions, and get a working desktop.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="start.html">Start here</a></li>
+    <li><a class="current" href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a href="troubleshooting.html">Troubleshooting</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>Install from a USB stick</h1>
+
+<p class="lede">Make a stick, start the computer from it, answer eight questions. About 20
+minutes to install, plus 20 more on the first restart.</p>
+
+<div class="limit">
+<p><b>This erases a disk.</b> Everything on the disk you pick is gone and cannot be
+recovered. Copy anything you care about somewhere else first.</p>
+<p>Exception: if the computer already has another operating system and 25&nbsp;GB of free
+space, the installer offers to sit alongside it. See <a href="#q-disk">question 1</a>.</p>
+</div>
+
+<h2 id="need">What you need</h2>
+
+<div class="tw">
+<table>
+<tbody>
+<tr><td><b>A USB stick</b></td><td>4&nbsp;GB or larger. It gets erased.</td></tr>
+<tr><td><b>The target computer</b></td><td>A disk of at least 30&nbsp;GB, and UEFI mode.</td></tr>
+<tr><td><b>Internet on it</b></td><td>A cable is easiest. Wi-Fi needs two extra commands.</td></tr>
+<tr><td><b>A second Arch computer</b></td><td>To build the image on.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="warn">
+<p><b>There is no file to download.</b> The image is not published anywhere. You build it
+yourself on a computer already running Arch Linux.</p>
+<p>No second computer? Use the <a href="install-git.html">other route</a>: install plain
+Arch first, then run one command.</p>
+</div>
+
+<h2 id="make">1. Make the stick</h2>
+
+<p>All of this happens on the Arch computer you already have.</p>
+
+<ol class="steps">
+  <li>
+    <pre><code>cd installScripts/iso</code></pre>
+  </li>
+  <li>
+    <p>Build the software. Start it and go do something else.</p>
+    <pre><code>./aur-repo.sh</code></pre>
+    <p class="screen"><b>2 to 3 hours</b> the first time. The result is saved, so a rebuild
+    later is much faster.</p>
+  </li>
+  <li>
+    <p>Build the image.</p>
+    <pre><code>./build-iso.sh</code></pre>
+    <p class="screen"><b>20 to 40 minutes.</b> You end up with a <code>.iso</code> file in
+    <code>~/ati-os-build/out/</code>.</p>
+  </li>
+  <li>
+    <p>Optional: test it in a fake computer first.</p>
+    <pre><code>./test-iso.sh</code></pre>
+    <p class="screen"><b>1 to 2 hours.</b> It installs the image and checks the result.</p>
+  </li>
+  <li>
+    <p>Plug in the stick. Find out what it is called.</p>
+    <pre><code>lsblk</code></pre>
+    <p class="screen">Look for the size that matches. A 32&nbsp;GB stick shows about
+    <code>29.8G</code>. The name looks like <code>sdb</code>. Write it down.</p>
+  </li>
+  <li>
+    <p>Copy the image onto it. Replace <code>sdX</code> with that name.</p>
+    <pre><code>sudo dd if=~/ati-os-build/out/ati-os-*.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
+    <div class="limit">
+    <p><b>Check the name twice.</b> This command does not ask "are you sure?" and there is no
+    undo. The wrong name destroys the wrong disk.</p>
+    </div>
+    <p class="screen">A counter climbs. Wait for the prompt to come back before unplugging.</p>
+  </li>
+</ol>
+
+<details class="why">
+<summary>Why no download, and why three hours?</summary>
+<p>Those hours compile software in advance so <em>your</em> install takes twenty minutes
+instead of two. The trade, and why an image should be rebuilt every six months, is in
+<a href="under-the-hood.html#iso">How it works</a>.</p>
+<p>All three scripts take <code>--check</code>, which runs only their safety checks and
+changes nothing. Run that first. It turns a failure that costs hours into one that costs
+seconds.</p>
+</details>
+
+<h2 id="boot">2. Start the computer from it</h2>
+
+<ol class="steps">
+  <li><p>Plug the stick into the target computer. Turn that computer fully off.</p></li>
+  <li>
+    <p>Turn it on and tap the boot-menu key repeatedly.</p>
+    <div class="tw">
+    <table>
+    <tbody>
+    <tr><td>Dell, most Lenovo</td><td><kbd>F12</kbd></td></tr>
+    <tr><td>HP</td><td><kbd>F9</kbd></td></tr>
+    <tr><td>Asus, Acer</td><td><kbd>F12</kbd> or <kbd>Esc</kbd></td></tr>
+    <tr><td>Anything else</td><td><kbd>F8</kbd>, <kbd>F10</kbd>, <kbd>F11</kbd>, <kbd>Esc</kbd></td></tr>
+    </tbody>
+    </table>
+    </div>
+    <p class="screen">A short list of things to start from appears.</p>
+  </li>
+  <li>
+    <p>Pick your USB stick.</p>
+    <div class="warn">
+    <p><b>Listed twice? Pick the <code>UEFI</code> one.</b> UEFI is the modern way computers
+    start. This installer supports nothing else. Pick wrong and it stops with a message
+    rather than half-installing.</p>
+    </div>
+  </li>
+</ol>
+
+<h2 id="menu">3. The boot menu</h2>
+
+<p>Press Enter on the first entry:</p>
+
+<pre><code>ATI-OS — Install (x86_64, UEFI)</code></pre>
+
+<p>The others are a screen-reader version and a memory tester.</p>
+
+<p class="screen">Text scrolls for 15 to 60 seconds. Then a blue <b>ATI-OS</b> logo, a short
+welcome, and a prompt.</p>
+
+<div class="note">
+<p><b>On Wi-Fi? Connect now.</b> The installer downloads software. A network cable already
+works. For Wi-Fi type <code>iwctl</code> and follow the prompts. For a mobile modem, use
+<code>mmcli</code>.</p>
+</div>
+
+<h2 id="start">4. Start the installer</h2>
+
+<pre><code>ati-os-install</code></pre>
+
+<p class="screen">The logo again, then <em>"Arch Linux, and a qtile desktop that is already
+configured."</em>, then a section headed <code>── preflight ──</code>.</p>
+
+<h2 id="checks">5. It checks the computer</h2>
+
+<p>Six checks before anything is touched. Lines marked <code>ok</code> are good. A failure
+names exactly what is wrong and changes nothing.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Check</th><th>If it fails</th></tr></thead>
+<tbody>
+<tr><td>Started in UEFI mode</td><td><b>Stops.</b> Turn UEFI on in the firmware settings.</td></tr>
+<tr><td>Secure Boot is off</td><td><b>Warns only.</b> Do not ignore it. See below.</td></tr>
+<tr><td>The clock is right</td><td>Warns. A wrong date makes downloaded software look untrustworthy, and the error will not say so.</td></tr>
+<tr><td>About 2&nbsp;GB of memory</td><td><b>Stops</b>, and prints what it found.</td></tr>
+<tr><td>Internet works</td><td><b>Stops</b>, and prints the commands to connect.</td></tr>
+<tr><td>At least one disk</td><td><b>Stops.</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="warn">
+<p><b>Secure Boot.</b> Turn it off in the firmware settings before continuing. Ignore the
+warning and the install finishes perfectly, then the computer refuses to start and says
+<em>"no bootable device"</em>. That looks like a broken install. It is not one.</p>
+</div>
+
+<details class="why">
+<summary>Why those six?</summary>
+<p>Each one exists because that failure happened and was hard to diagnose from the error it
+produced. The clock is the clearest case: a wrong date makes every signature look expired,
+and the tool reports a signature problem rather than a clock problem. More in
+<a href="under-the-hood.html#preflight">How it works</a>.</p>
+</details>
+
+<h2 id="questions">6. The questions</h2>
+
+<p>Eight, in this order. Square brackets show the default. Press Enter to take it.</p>
+
+<h3 id="q-disk">1. Which disk?</h3>
+
+<pre><code>── target disk ──
+
+     /dev/sda   238.5G  Samsung SSD 860
+     /dev/sdb    57.3G  SanDisk Ultra
+
+  Disk to ERASE and install onto (e.g. /dev/sda):</code></pre>
+
+<p><b>Type:</b> the full name including <code>/dev/</code>, such as <code>/dev/sda</code>.</p>
+
+<p><b>Means:</b> this disk gets erased and gets the new system. Pick the one whose size
+matches the computer's built-in disk. Your USB stick is in the list, but you cannot pick it
+by accident. The installer recognises the stick it is running from and refuses it.</p>
+
+<h4>If the disk already has another system</h4>
+
+<p>With an existing operating system and 25&nbsp;GB free, you get a choice:</p>
+
+<pre><code>  This disk already has an operating system on it.
+    Existing EFI partition: /dev/sda1
+    Unused space available: 120G
+
+   1  Keep it and install ATI-OS alongside (uses the 120G of free space,
+       you pick which system to boot each time)
+   2  Erase the whole disk (everything currently on it is lost)
+
+  Choose [1/2]:</code></pre>
+
+<p><b>Type:</b> <code>1</code> to keep both, <code>2</code> to wipe.</p>
+
+<p><b>Means:</b> option 1 uses the free space and leaves your other system alone. You pick
+which to start each time. The installer <b>will not shrink anything</b> to make room. Free
+the space yourself first, from the other system.</p>
+
+<h4>The final confirmation</h4>
+
+<p>It lists what it is about to destroy, then asks for the disk name a second time:</p>
+
+<pre><code>  EVERYTHING on /dev/sda (238.5G, Samsung SSD 860) will be destroyed.
+  There is no undo and no partial install.
+
+  Type the disk path again to confirm:</code></pre>
+
+<p>Type exactly what you typed before. A mismatch stops the installer and changes nothing.</p>
+
+<div class="note">
+<p><b>Refusals, and what they mean:</b></p>
+<div class="tw">
+<table>
+<tbody>
+<tr><td><em>is the ATI-OS medium you booted from</em></td><td>You picked the USB stick.</td></tr>
+<tr><td><em>has mounted partitions</em></td><td>Something is using that disk right now.</td></tr>
+<tr><td><em>is in use by: lvm</em> (or raid, crypt)</td><td>Part of a more complex storage setup. Take it apart yourself first.</td></tr>
+<tr><td><em>is 20G — ATI-OS needs at least 30G</em></td><td>Too small. 30 to 60&nbsp;GB works but is tight, and it says so.</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<h3 id="q-host">2. Hostname</h3>
+
+<pre><code>  Hostname [ati-os]:</code></pre>
+
+<p><b>Type:</b> anything short with no spaces, or Enter for <code>ati-os</code>.</p>
+
+<p><b>Means:</b> the name on your home network. Cosmetic.</p>
+
+<h3 id="q-user">3. Username</h3>
+
+<pre><code>  Username:</code></pre>
+
+<p><b>Type:</b> lowercase letters and digits. <code>-</code> and <code>_</code> allowed. Must
+not start with a digit. Anything invalid and it asks again.</p>
+
+<p><b>Means:</b> your account name. You type it at the text screen every time you start the
+computer. It also becomes the name in big block letters on the startup screen, so
+<code>ati</code> gives you <code>ATI</code>.</p>
+
+<details class="why">
+<summary>This answer matters more than it looks</summary>
+<p>The software list and settings profile are chosen by <em>username</em>, not by computer
+name. Two accounts on one machine can want different ones. See
+<a href="under-the-hood.html#username">How it works</a>.</p>
+</details>
+
+<h3 id="q-pass">4. Password</h3>
+
+<pre><code>  Password for &lt;your name&gt;:
+  Repeat:</code></pre>
+
+<p>Nothing appears as you type. No dots, no stars. Empty or mismatched and it asks again. The
+administrator account gets the same password.</p>
+
+<h3 id="q-tz">5. Time zone</h3>
+
+<pre><code>  Timezone [Europe/Istanbul]:</code></pre>
+
+<p><b>Type:</b> Enter if the guess is right. Otherwise <code>Continent/City</code>, like
+<code>Europe/Berlin</code>.</p>
+
+<p><b>Means:</b> it sets the clock. The guess comes from your connection's apparent location.
+An unrecognised zone stops the installer rather than silently using the wrong one.</p>
+
+<h3 id="q-enc">6. Lock the disk with a password?</h3>
+
+<pre><code>  Encrypt the whole disk?
+    Yes: a stolen machine reveals nothing. You type a passphrase at
+         every boot, and if you forget it the data is GONE for good.
+    Recommended for a laptop. Not needed for a desktop at home.
+  Encrypt? [y/N]:</code></pre>
+
+<p><b>Type:</b> <code>y</code>, or Enter for no.</p>
+
+<p><b>Means:</b> everything on the disk is scrambled, and you type an extra password every
+time you turn the computer on. A thief gets nothing.</p>
+
+<div class="limit">
+<p><b>Forget that password and your files are gone permanently.</b> No reset, no recovery.
+That is the entire point of it.</p>
+</div>
+
+<p>Saying yes asks twice and requires at least 8 characters.</p>
+
+<h3 id="q-kb">7. Keyboard layout</h3>
+
+<pre><code>  Keyboard layout  (see them all with: localectl list-keymaps)
+  Keymap [us]:</code></pre>
+
+<p><b>Type:</b> Enter for a US keyboard, or the short code for yours: <code>uk</code>,
+<code>de</code>, <code>fr</code>, <code>tr</code>. Unrecognised codes are rejected and it
+asks again.</p>
+
+<p><b>Means:</b> which letter appears when you press a key. Get it wrong and you will type
+your own password incorrectly at the first login with no way to see why. That is why you are
+asked.</p>
+
+<h3 id="q-locale">8. Language</h3>
+
+<pre><code>  System language  (e.g. en_US.UTF-8, ar_EG.UTF-8, de_DE.UTF-8)
+  Locale [en_US.UTF-8]:</code></pre>
+
+<p><b>Type:</b> Enter for English (US), or a code in that form.</p>
+
+<p><b>Means:</b> the language of menus and messages. English is always set up as well,
+because a lot of software misbehaves confusingly without it.</p>
+
+<h2 id="working">7. What you see while it works</h2>
+
+<p>Nothing left to do. It prints a heading per stage.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Heading</th><th>What is happening</th></tr></thead>
+<tbody>
+<tr><td><code>── partitioning /dev/sda ──</code></td><td>Dividing up the disk. <b>The point of no return.</b> Anything failing after this leaves a half-installed disk, and the fix is always to run the installer again.</td></tr>
+<tr><td><code>── mirrors ──</code></td><td>Finding the fastest download servers.</td></tr>
+<tr><td><code>── package signing keys ──</code></td><td>Fetching the keys that prove downloads are genuine.</td></tr>
+<tr><td><code>── installing the base system ──</code></td><td>Basic Linux. The longest download.</td></tr>
+<tr><td><code>── prebuilt AUR packages ──</code></td><td>Copying in software compiled in advance. This is the time saving.</td></tr>
+<tr><td><code>── configuring the system ──</code></td><td>Clock, language, keyboard, your account.</td></tr>
+<tr><td><code>── boot entry ──</code></td><td>Teaching the computer to start the new system.</td></tr>
+<tr><td><code>── dotfiles and the wizard ──</code></td><td>Putting the desktop settings in place.</td></tr>
+<tr><td><code>── first-boot setup ──</code></td><td>Arranging for the desktop to build itself on restart.</td></tr>
+<tr><td><code>── done ──</code></td><td>Finished.</td></tr>
+</tbody>
+</table>
+</div>
+
+<details class="why">
+<summary>What are "prebuilt AUR packages"?</summary>
+<p><dfn>AUR</dfn> is a large collection of extra software Arch users share. It arrives as
+source code and has to be compiled on your own computer, which is slow. One package in this
+set takes about an hour by itself.</p>
+<p>The stick carries 31 already compiled. That is the whole reason this route takes 20
+minutes. Why they can be trusted, and why they expire after a year, is in
+<a href="under-the-hood.html#prebuilt">How it works</a>.</p>
+</details>
+
+<h2 id="restart">8. Restart</h2>
+
+<ol class="steps">
+  <li><p>Pull out the USB stick.</p></li>
+  <li><p>Restart the computer.</p></li>
+</ol>
+
+<div class="warn">
+<p><b>Do not leave the stick in.</b> The computer may start from it again and show you the
+installer a second time.</p>
+</div>
+
+<h2 id="firstboot">9. It builds the desktop</h2>
+
+<p>The desktop is not installed yet. It builds itself on this first restart.</p>
+
+<p class="screen">46 steps scroll up the screen for <b>about 20 minutes</b>. Let it finish.
+Do not turn the computer off.</p>
+
+<p>Then you get a black screen with text, waiting for you to log in.</p>
+
+<div class="note">
+<p><b>If it failed</b>, it says so and does not pretend otherwise.</p>
+<pre><code>cat /var/log/ati-os-firstboot.log</code></pre>
+<p>To try again:</p>
+<pre><code>cd ~/.dotfiles/installScripts
+./wizard.sh</code></pre>
+<p><b>Read the individual step errors, not the summary.</b> On a fresh machine the step that
+reports a failure is almost never the step that caused it. One full disk once showed up as
+five unrelated broken steps.</p>
+</div>
+
+<h2 id="login">10. Log in</h2>
+
+<div class="note">
+<p><b>No login box. Nothing starts by itself.</b> Deliberate.</p>
+<ol class="steps">
+  <li>
+    <p>Type your username, press Enter. Type your password, press Enter.</p>
+    <p class="screen">The password stays invisible. Normal.</p>
+  </li>
+  <li>
+    <p>Type <code>letsgo</code> and press Enter.</p>
+    <p class="screen">The screen flickers. The desktop appears.</p>
+  </li>
+</ol>
+<p>If <code>letsgo</code> is not found, type <code>startx</code>. Two names for one job:
+<code>letsgo</code> only exists once a particular install step has succeeded.</p>
+</div>
+
+<h2 id="after">Done. What is left</h2>
+
+<p>The desktop works. Three things need an account, and only you can make an account. All
+three are optional and can wait days.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Thing</th><th>Gives you</th><th>Without it</th></tr></thead>
+<tbody>
+<tr><td>Password manager</td><td>Your passwords on a keyboard shortcut</td><td>No password menu. Nothing else changes.</td></tr>
+<tr><td>Note syncing</td><td>Your to-do list on your phone</td><td>The list still works locally.</td></tr>
+<tr><td>An AI key</td><td>Extra suggestions in the translation and flashcard tools</td><td>Those tools still work, with one section less.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Setting each one up is on <a href="install-git.html#accounts">the other install page</a>.
+The steps are the same whichever way you installed.</p>
+
+<p>Two extras are left out because most people do not want them:</p>
+
+<pre><code>./wizard.sh --only=xmodmap           # Caps Lock becomes an Alt key
+./wizard.sh --only=dcli-sync-extra   # Docker, Java, printing, virtual machines</code></pre>
+
+<p>For your own wallpapers, drop images into <code>~/Pictures/Wallpapers/</code>.</p>
+
+<h2 id="limits">What this cannot do</h2>
+
+<div class="limit">
+<ul>
+<li><b>UEFI only.</b> Very old machines cannot. The stick still starts on them for rescue
+work, but installing is refused.</li>
+<li><b>It cannot shrink an existing Windows or Linux install.</b> Free the space first.</li>
+<li><b>No AMD or NVIDIA graphics card has ever run this, and no 4K screen.</b> The automated
+tests run inside a fake computer with no graphics hardware, so a passing test says nothing
+about how the animations will look on yours.</li>
+<li><b>The tests have never used a real USB stick.</b> They start the image file directly.</li>
+</ul>
+</div>
+
+<p><a href="troubleshooting.html#atios">Troubleshooting &rarr; The USB stick</a> lists every
+message the installer can refuse with.</p>
+
+<footer class="page">
+  <span>Every prompt quoted here is the real text from the installer.</span>
+  <a href="keybindings.html">Next: keyboard shortcuts &rarr;</a>
+</footer>
+
+</main>
+
+<aside class="toc" aria-label="On this page">
+  <div class="toc-inner">
+    <h2>On this page</h2>
+    <ol id="toc"></ol>
+  </div>
+</aside>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+NAME="ATI-OS"
+PRETTY_NAME="ATI-OS Live"
+ID=ati-os
+# ID_LIKE=arch is load-bearing, not decoration.
+#
+# wizard.sh's preflight HARD-FAILS on a non-Arch system, deliberately --
+# see the "Arch specifically, Linux generally" section of README.md -- and
+# it is not the only thing that looks: rofi_docs' Maintenance panel refuses
+# off Arch and names the distro, and every script that reaches for pacman
+# assumes an Arch base. Without ID_LIKE any of those could decide this is a
+# foreign distro and correctly refuse to run.
+#
+# ATI-OS is not a fork. It is Arch, with a package set and a configuration.
+# Saying so here is what keeps all of that working.
+ID_LIKE=arch
+BUILD_ID=rolling
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://github.com/Mohamedattiadev/Newdotfile-"
+DOCUMENTATION_URL="https://github.com/Mohamedattiadev/Newdotfile-/blob/main/README.md"
+SUPPORT_URL="https://github.com/Mohamedattiadev/Newdotfile-/issues"
+BUG_REPORT_URL="https://github.com/Mohamedattiadev/Newdotfile-/issues"
+LOGO=archlinux-logo

@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keyboard shortcuts &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="Start with the six shortcuts you need on day one. Then the complete list, grouped.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="start.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a class="current" href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a href="troubleshooting.html">Troubleshooting</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>Keyboard shortcuts</h1>
+
+<p class="lede">This desktop is driven from the keyboard. Windows arrange themselves; you
+move between them with keys.</p>
+
+<h2 id="day-one">The six for day one</h2>
+
+<p>Learn these and you can use the computer. Everything else can wait.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press this</th><th>To do this</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>Enter</kbd></td><td><b>Open a terminal</b></td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd></td><td><b>Open a program.</b> A search box appears; type a few letters of the name and press Enter</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>c</kbd></td><td><b>Close the window</b> you are looking at</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>j</kbd> / <kbd>Super</kbd>+<kbd>k</kbd></td><td><b>Move to the next / previous window</b></td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>1</kbd> &hellip; <kbd>Super</kbd>+<kbd>9</kbd></td><td><b>Switch to workspace 1&hellip;9.</b> Nine separate screens' worth of windows</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd> then <kbd>k</kbd></td><td><b>Show the shortcut list on screen.</b> When you forget one, this is faster than this page</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="keys">Which key is which</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>Written here as</th><th>The key on your keyboard</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd></td><td>The <b>Windows key</b>, between Ctrl and Alt. On an Apple keyboard, the Command key.</td></tr>
+<tr><td><kbd>Alt</kbd></td><td>The <b>Alt key</b>, exactly as labelled.</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>c</kbd></td><td>Hold Super and Shift together, then tap <kbd>c</kbd>.</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>c</kbd></td><td>Hold Super and tap <kbd>P</kbd>. <b>Let go.</b> Then tap <kbd>c</kbd> on its own.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<p><b>Caps Lock is not an Alt key unless you asked for it.</b> An optional extra makes it
+one, but it is not installed by default. Use your real Alt key.</p>
+<p>To turn it on: <code>./wizard.sh --yes --only=xmodmap</code>. It takes Caps Lock away
+completely. There is no way to still get capital-lock.</p>
+</div>
+
+<h2 id="windows">Moving between windows</h2>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>j</kbd></td><td>Move to the window below</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>k</kbd></td><td>Move to the window above</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>h</kbd></td><td>Move to the window on the left</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>l</kbd></td><td>Move to the window on the right</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>h</kbd></td><td>Move the window itself to the left</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>l</kbd></td><td>Move the window itself to the right</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>j</kbd></td><td>Move the window itself down</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>f</kbd></td><td>Make the window fill the whole screen. Press again to undo</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>x</kbd></td><td>Make the window as big as it can be without hiding the others. Press again to undo</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>t</kbd></td><td>Let this one window float freely, so you can drag it. Press again to put it back in the grid</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Tab</kbd></td><td>Change how windows are arranged. See the three arrangements below</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Show all the windows in the stack, or one</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>c</kbd></td><td>Close the window</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>.</kbd></td><td>Move to the next monitor</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>,</kbd></td><td>Move to the previous monitor</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>For making windows bigger or smaller, see <a href="#resize-mode">resize mode</a>.</p>
+
+<h3>The three arrangements</h3>
+
+<p><kbd>Super</kbd>+<kbd>Tab</kbd> cycles through these.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Name</th><th>What it looks like</th></tr></thead>
+<tbody>
+<tr><td><b>MonadTall</b></td><td>The usual one. One big window on the left, the rest stacked down the right.</td></tr>
+<tr><td><b>Max</b></td><td>One window at a time, filling the screen. No border, no gaps.</td></tr>
+<tr><td><b>TreeTab</b></td><td>A list of your windows down the left side, one window showing at a time.</td></tr>
+</tbody>
+</table>
+</div>
+
+<details class="why">
+<summary>Why <kbd>Super</kbd>+<kbd>h</kbd> behaves differently in some arrangements</summary>
+<p>Max and TreeTab have no concept of "left", so the key falls back to "previous window"
+there. Without that fallback, ordinary use logged an error constantly: two workspaces default
+to Max.</p>
+</details>
+
+<h2 id="groups">Workspaces</h2>
+
+<p>Nine workspaces, like nine separate desks. Each holds its own windows. Switching is
+instant.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Go to that workspace</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Send the current window to that workspace</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Programs open on a workspace chosen for them, so things stay tidy on their own.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Workspace</th><th>Opens here</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>TickTick</td></tr>
+<tr><td>2</td><td>qutebrowser, Zen Browser, VLC, Firefox</td></tr>
+<tr><td>3</td><td>File managers</td></tr>
+<tr><td>4</td><td>VS Code, Zed, the terminal, Cursor</td></tr>
+<tr><td>5</td><td>Brave</td></tr>
+<tr><td>6</td><td>Chrome, Chromium</td></tr>
+<tr><td>7</td><td>Empty &mdash; yours to use</td></tr>
+<tr><td>8</td><td>Documents: LibreOffice, PDF and ebook readers. Opening one takes you here</td></tr>
+<tr><td>9</td><td>Thunderbird, Telegram, Discord</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>A tenth workspace holds Anki, Obsidian and the notes window. It has no number key. You
+reach it by opening one of those programs.</p>
+
+<p>Inside most <a href="#modes">modes</a> the plain number keys still switch workspaces, so
+you never get stuck on the wrong desk.</p>
+
+<h2 id="launch">Opening programs</h2>
+
+<p>These are toggles, not plain launchers. Already running, they jump you to it. Not
+running, they start it.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Program</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>Enter</kbd></td><td>A terminal (kitty)</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd></td><td>The program launcher. Type a name, press Enter</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>n</kbd></td><td>Terminal</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>b</kbd></td><td>Brave browser</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>v</kbd></td><td>qutebrowser</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>m</kbd></td><td>File manager</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>t</kbd></td><td>Telegram</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>o</kbd></td><td>Obsidian, for drawing (assumes you have Excalidraw installed in it)</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>s</kbd></td><td>Your notes file, in a terminal editor</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>a</kbd></td><td>Anki flashcards</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="session">Whole-computer shortcuts</h2>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>r</kbd></td><td><b>Restart the desktop.</b> Your windows stay where they are. Do this after changing a setting</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>q</kbd></td><td>Log out, shut down, restart or lock. A menu appears</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F5</kbd></td><td>Refresh the desktop without restarting the computer</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F6</kbd></td><td>Show your Android phone's screen on the computer</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>z</kbd></td><td>Move the bar between the top and the bottom of the screen</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>`</kbd></td><td>Show or hide the second group of bar icons</td></tr>
+<tr><td><kbd>Print</kbd></td><td><b>Screenshot.</b> Drag a box; it goes straight to your clipboard</td></tr>
+<tr><td><kbd>F8</kbd></td><td><b>Dictation, live.</b> Speak, and the words type themselves as you pause. Press again to stop</td></tr>
+<tr><td><kbd>F9</kbd></td><td><b>Dictation, all at once.</b> Speak, press again, and the whole thing is typed out</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>r</kbd></td><td>Reapply the Caps-Lock-as-Alt setting, if you turned that on</td></tr>
+</tbody>
+</table>
+</div>
+
+<details class="why">
+<summary>Why dictation is on F8 and F9 and not somewhere more obvious</summary>
+<p>A shortcut with no modifier is taken from <em>every</em> application, permanently. So the
+only question is which keys nothing else wants.</p>
+<p>Across that row: F1 help, F2 rename, F3 find-next, F5 reload, F6 address bar, F7 caret
+browsing, F10 menu bar, F11 fullscreen, F12 developer tools. Nothing claims F8 and F9.</p>
+<p>They are single keys because dictation is a hold-a-thought action. The value is starting
+it before the sentence goes, and a three-key combination is long enough to lose it.</p>
+</details>
+
+<h2 id="alt">The Alt shortcuts</h2>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>d</kbd></td><td><b>The shelf.</b> A panel slides down that you can drag files, text and images into, and drag back out later. See <a href="tools.html#qdrop">qdrop</a></td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>v</kbd></td><td><b>Clipboard history.</b> Everything you have copied recently, with picture previews. <kbd>Ctrl</kbd>+<kbd>j</kbd> and <kbd>Ctrl</kbd>+<kbd>k</kbd> move up and down</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>p</kbd></td><td>Today and this week's plans and to-dos</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>n</kbd></td><td>Dismiss the notification on screen</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Tab</kbd></td><td>Show or hide the system tray icons</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>`</kbd></td><td>Show or hide the first group of bar icons</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="homerow">Clicking without a mouse</h2>
+
+<p>Press one of these and letters appear over everything clickable. Type the letters on the
+one you want and it is clicked. Works in browsers, menus and most applications.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>Alt</kbd>+<kbd>Space</kbd></td><td>Label everything clickable and click the one you pick</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>j</kbd></td><td>Pick a scrollable area and scroll it with the keyboard</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>/</kbd></td><td>Search on-screen text, then click the match</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>c</kbd></td><td>Move a text cursor around with keys, select and copy</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>c</kbd></td><td>Type a word to find, and land the text cursor there</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>e</kbd></td><td>Edit whatever text box you are in using a proper editor</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The same six are grouped under <a href="#hint-mode">hint mode</a>, if one place is easier
+to remember than six shortcuts.</p>
+
+<details class="why">
+<summary>Why <kbd>Alt</kbd>+<kbd>Space</kbd> and <kbd>Alt</kbd>+<kbd>c</kbd> specifically</summary>
+<p>The tool this is based on uses <kbd>Shift</kbd>+<kbd>Space</kbd>. Here that would swallow
+every Shift+Space you type. Caret mode takes <kbd>c</kbd> because <kbd>Alt</kbd>+<kbd>v</kbd>
+is already the clipboard history.</p>
+<p>They are bound directly, not only inside the mode, because hinting is constant. A mode
+costs a keystroke plus remembering you are in one.</p>
+</details>
+
+<h2 id="scratch">Drop-down windows</h2>
+
+<p>These slide down over whatever you are doing. The same key sends them away.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Window</th></tr></thead>
+<tbody>
+<tr><td><kbd>Alt</kbd>+<kbd>1</kbd></td><td>A terminal</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>2</kbd></td><td>A second terminal</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>5</kbd></td><td>A calculator</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>8</kbd></td><td>WhatsApp</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>9</kbd></td><td>DeepSeek</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>0</kbd></td><td>ChatGPT</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><kbd>Alt</kbd>+<kbd>3</kbd> and <kbd>Alt</kbd>+<kbd>4</kbd> still mean sound and
+monitors, but they open the <a href="#audio-mode">sound</a> and
+<a href="#display-mode">monitor</a> popups rather than a window.</p>
+
+<details class="why">
+<summary>Why the three web ones cost almost nothing</summary>
+<p>WhatsApp, DeepSeek and ChatGPT are separate <em>profiles</em> inside the one Brave you
+already have, not three browsers.</p>
+<p>Three browsers each spawn their own graphics process, network service, storage service and
+three helper processes to render one page. That came to about 4.6&nbsp;GB on a 7.6&nbsp;GB
+laptop, which is what kept the system killing tabs and showing "Aw, Snap!" in the WhatsApp
+window. Sharing the engine costs one renderer each. The logins stay separate.</p>
+</details>
+
+<h2 id="mouse">Mouse</h2>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Do this</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Hold <kbd>Super</kbd> and drag with the left button</td><td>Move a floating window</td></tr>
+<tr><td>Hold <kbd>Super</kbd> and drag with the right button</td><td>Resize a floating window</td></tr>
+<tr><td>Hold <kbd>Super</kbd> and click the middle button</td><td>Bring the window to the front</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Windows focus when the mouse moves over them. No click needed.</p>
+
+<h2 id="modes">Modes</h2>
+
+<p>A <b>mode</b> puts the keyboard into a temporary state. A coloured chip appears in the bar
+naming the mode and the keys it accepts. <kbd>Esc</kbd> always leaves.</p>
+
+<figure>
+  <img src="assets/img/rofi.gif" alt="A coloured chip appearing in the bar when a mode is entered">
+  <figcaption>The chip in the bar. Clips on this page are cropped to that corner.</figcaption>
+</figure>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Mode</th><th>Stays open?</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd></td><td><a href="#rofi-mode">The menu key</a>. Opens everything else</td><td>No. One key, one action, then it ends</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>w</kbd></td><td><a href="#wallpaper-mode">Wallpaper picker</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>n</kbd></td><td><a href="#wifi-mode">Wi-Fi</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>b</kbd></td><td><a href="#bt-mode">Bluetooth</a></td><td>Yes</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>3</kbd></td><td><a href="#audio-mode">Sound</a></td><td>Yes. Same key closes it</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>4</kbd></td><td><a href="#display-mode">Monitors</a></td><td>Yes. Same key closes it</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>/</kbd></td><td><a href="#media-mode">Volume and brightness</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>r</kbd></td><td><a href="#resize-mode">Resizing windows</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>w</kbd></td><td><a href="#draw-mode">Drawing on the screen</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>f</kbd></td><td><a href="#hint-mode">Hint mode</a></td><td>Yes, but each action leaves it</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Space</kbd></td><td><a href="#lang-mode">Keyboard language</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd></td><td><a href="#cheat-mode">Cheatsheets</a></td><td>Yes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>F12</kbd></td><td><a href="#passthrough">Passthrough</a></td><td>Yes</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="rofi-mode">Super+P &mdash; the menu key</h2>
+
+<p>The one to remember. Hold <kbd>Super</kbd>, tap <kbd>P</kbd>, let go, tap one letter.
+Almost everything is one letter from here.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Then press</th><th>What you get</th></tr></thead>
+<tbody>
+<tr><td><kbd>c</kbd></td><td><b>Change the colour theme</b></td></tr>
+<tr><td><kbd>w</kbd></td><td><b>Change the wallpaper</b></td></tr>
+<tr><td><kbd>n</kbd></td><td><b>Connect to Wi-Fi</b></td></tr>
+<tr><td><kbd>b</kbd></td><td><b>Connect Bluetooth</b></td></tr>
+<tr><td><kbd>p</kbd></td><td><b>Your saved passwords</b></td></tr>
+<tr><td><kbd>l</kbd></td><td>Screen brightness</td></tr>
+<tr><td><kbd>t</kbd></td><td>Your to-do list</td></tr>
+<tr><td><kbd>k</kbd></td><td>Close a frozen program</td></tr>
+<tr><td><kbd>a</kbd></td><td>Add an Anki flashcard</td></tr>
+<tr><td><kbd>e</kbd></td><td>Translate the text you have selected</td></tr>
+<tr><td><kbd>s</kbd></td><td>Spell check</td></tr>
+<tr><td><kbd>i</kbd></td><td>Screenshot, with annotation tools</td></tr>
+<tr><td><kbd>r</kbd></td><td>Record video, audio, webcam or a gif</td></tr>
+<tr><td><kbd>d</kbd></td><td>Open one of your documents</td></tr>
+<tr><td><kbd>f</kbd></td><td>Edit a settings file</td></tr>
+<tr><td><kbd>m</kbd></td><td>Read a manual page</td></tr>
+<tr><td><kbd>o</kbd></td><td>Store and copy notes</td></tr>
+<tr><td><kbd>y</kbd></td><td>YouTube menu</td></tr>
+<tr><td><kbd>h</kbd></td><td>List every bundled menu script</td></tr>
+<tr><td><kbd>z</kbd></td><td>Your saved links, with previews</td></tr>
+<tr><td><kbd>q</kbd></td><td>Log out / shut down menu</td></tr>
+<tr><td><kbd>x</kbd></td><td>Clear all notifications</td></tr>
+<tr><td><kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch workspace</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="wallpaper-mode">Wallpaper picker &mdash; Super+P then w</h2>
+
+<figure>
+  <img src="assets/img/wallpaper.gif" alt="The wallpaper picker mode chip appearing in the bar">
+</figure>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>h</kbd> / <kbd>l</kbd></td><td>Move left / right</td></tr>
+<tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Move down / up</td></tr>
+<tr><td><kbd>r</kbd></td><td>Jump to a random one</td></tr>
+<tr><td><kbd>/</kbd></td><td>Search by name</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Use this one</td></tr>
+<tr><td><kbd>q</kbd> or <kbd>Esc</kbd></td><td>Close</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Drop any image into <code>~/Pictures/Wallpapers/</code> and it appears here straight
+away.</p>
+
+<div class="note">
+<p><b>Changing the wallpaper does not change your colours</b>, unless you are on the theme
+called <em>Wallpaper</em>. On every other theme you chose those colours deliberately, so a new
+picture is only a new picture. See <a href="themes.html#wallpaper-vs-theme">Changing the
+colours</a>.</p>
+</div>
+
+<h2 id="wifi-mode">Wi-Fi &mdash; Super+P then n</h2>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Move down / up the list</td></tr>
+<tr><td><kbd>g</kbd> / <kbd>Shift</kbd>+<kbd>g</kbd></td><td>Jump to the top / bottom</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Connect</td></tr>
+<tr><td><kbd>d</kbd></td><td>Disconnect</td></tr>
+<tr><td><kbd>x</kbd></td><td>Forget this network</td></tr>
+<tr><td><kbd>n</kbd></td><td>Connect to a hidden network</td></tr>
+<tr><td><kbd>t</kbd></td><td>Turn Wi-Fi off or on</td></tr>
+<tr><td><kbd>s</kbd></td><td>Show a QR code so a phone can join this network</td></tr>
+<tr><td><kbd>r</kbd></td><td>Search for networks again</td></tr>
+<tr><td><kbd>/</kbd></td><td>Search the list</td></tr>
+<tr><td><kbd>c</kbd></td><td>Give up on a connection that is taking too long</td></tr>
+<tr><td><kbd>q</kbd> or <kbd>Esc</kbd></td><td>Close</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>A wrong password makes it ask again rather than saving a network that can never
+connect.</p>
+
+<h2 id="bt-mode">Bluetooth &mdash; Super+P then b</h2>
+
+<p>Searching, pairing, connecting, disconnecting and removing all happen here.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Move down / up the list</td></tr>
+<tr><td><kbd>g</kbd> / <kbd>Shift</kbd>+<kbd>g</kbd></td><td>Jump to the top / bottom</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Connect</td></tr>
+<tr><td><kbd>d</kbd></td><td>Disconnect</td></tr>
+<tr><td><kbd>x</kbd></td><td>Remove this device</td></tr>
+<tr><td><kbd>t</kbd></td><td>Turn Bluetooth off or on</td></tr>
+<tr><td><kbd>r</kbd></td><td>Search for devices</td></tr>
+<tr><td><kbd>/</kbd></td><td>Search the list</td></tr>
+<tr><td><kbd>c</kbd></td><td>Give up on a connection that is hanging. Connecting to a device out of range otherwise never finishes</td></tr>
+<tr><td><kbd>q</kbd> or <kbd>Esc</kbd></td><td>Close</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="audio-mode">Sound &mdash; Alt+3</h2>
+
+<p>Choose speakers or headphones, set per-program volume, pick a microphone.
+<kbd>Alt</kbd>+<kbd>3</kbd> again closes it.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Move down / up</td></tr>
+<tr><td><kbd>g</kbd> / <kbd>Shift</kbd>+<kbd>g</kbd></td><td>Jump to the top / bottom</td></tr>
+<tr><td><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>Next / previous view</td></tr>
+<tr><td><kbd>o</kbd></td><td>Outputs &mdash; speakers and headphones</td></tr>
+<tr><td><kbd>i</kbd></td><td>Inputs &mdash; microphones</td></tr>
+<tr><td><kbd>a</kbd></td><td>What is playing right now, per program</td></tr>
+<tr><td><kbd>s</kbd></td><td>What is recording right now</td></tr>
+<tr><td><kbd>p</kbd></td><td>Sound card modes</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>p</kbd></td><td>Sockets &mdash; the setting that picks headphones over speakers on one card</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>c</kbd></td><td>Every sound card at once</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Use this one. On an output this also moves whatever is already playing across &mdash; otherwise only new sounds would follow</td></tr>
+<tr><td><kbd>d</kbd></td><td>Send this program's sound to the default device</td></tr>
+<tr><td><kbd>h</kbd> / <kbd>l</kbd></td><td>Volume down / up</td></tr>
+<tr><td><kbd>m</kbd></td><td>Mute</td></tr>
+<tr><td><kbd>b</kbd> / <kbd>Shift</kbd>+<kbd>b</kbd></td><td>Balance left / right</td></tr>
+<tr><td><kbd>0</kbd></td><td>Put the balance back in the middle</td></tr>
+<tr><td><kbd>r</kbd></td><td>Refresh the list</td></tr>
+<tr><td><kbd>c</kbd></td><td>Give up on a change that is hanging &mdash; a Bluetooth headset can take seconds</td></tr>
+<tr><td><kbd>q</kbd>, <kbd>Esc</kbd> or <kbd>Alt</kbd>+<kbd>3</kbd></td><td>Close</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="display-mode">Monitors &mdash; Alt+4</h2>
+
+<p>Set up a second screen: position, resolution, which is primary.
+<kbd>Alt</kbd>+<kbd>4</kbd> again closes it.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>i</kbd></td><td><b>Laptop screen only</b></td></tr>
+<tr><td><kbd>e</kbd></td><td><b>External screen only</b></td></tr>
+<tr><td><kbd>m</kbd></td><td><b>Show the same thing on both</b></td></tr>
+<tr><td><kbd>h</kbd> / <kbd>l</kbd></td><td>Put this screen to the left / right of the other</td></tr>
+<tr><td><kbd>u</kbd> / <kbd>d</kbd></td><td>Put it above / below</td></tr>
+<tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Move down / up. While arranging, these move the screen instead of the cursor</td></tr>
+<tr><td><kbd>g</kbd> / <kbd>Shift</kbd>+<kbd>g</kbd></td><td>Jump to the top / bottom</td></tr>
+<tr><td><kbd>Tab</kbd></td><td>Select the next screen</td></tr>
+<tr><td><kbd>a</kbd></td><td>Start arranging them</td></tr>
+<tr><td><kbd>=</kbd></td><td>While arranging: line them up by top edges, middles, or bottom edges</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Open the resolution list for this screen, and apply from inside it</td></tr>
+<tr><td><kbd>Backspace</kbd></td><td>Go back</td></tr>
+<tr><td><kbd>p</kbd></td><td>Make this the primary screen</td></tr>
+<tr><td><kbd>t</kbd></td><td>Rotate it</td></tr>
+<tr><td><kbd>f</kbd></td><td>Mirror it</td></tr>
+<tr><td><kbd>o</kbd></td><td>Turn this screen off or on</td></tr>
+<tr><td><kbd>v</kbd></td><td>Show your saved arrangements</td></tr>
+<tr><td><kbd>s</kbd></td><td>Save this arrangement</td></tr>
+<tr><td><kbd>x</kbd></td><td>Delete a saved arrangement</td></tr>
+<tr><td><kbd>y</kbd></td><td><b>Keep the change</b> &mdash; see below</td></tr>
+<tr><td><kbd>c</kbd></td><td>Undo it now</td></tr>
+<tr><td><kbd>r</kbd></td><td>Refresh</td></tr>
+<tr><td><kbd>q</kbd>, <kbd>Esc</kbd> or <kbd>Alt</kbd>+<kbd>4</kbd></td><td>Close</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<p><b>A change that might blank your screen stays temporary until you press
+<kbd>y</kbd>.</b> Do nothing and a countdown undoes it. Leaving the mode undoes it too. Pick a
+resolution your monitor cannot show and you only have to wait.</p>
+</div>
+
+<h2 id="media-mode">Volume and brightness &mdash; Super+/</h2>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>Shift</kbd>+<kbd>k</kbd> / <kbd>Shift</kbd>+<kbd>j</kbd></td><td>Volume up / down</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>m</kbd></td><td>Mute</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>l</kbd> / <kbd>Shift</kbd>+<kbd>h</kbd></td><td>Screen brighter / dimmer</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>p</kbd></td><td>Shrink the video you are watching into a corner, so you can work over it</td></tr>
+<tr><td><kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch workspace</td></tr>
+<tr><td><kbd>q</kbd> or <kbd>Esc</kbd></td><td>Leave</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="resize-mode">Resizing windows &mdash; Super+r</h2>
+
+<figure>
+  <img src="assets/img/resize.gif" alt="The resize mode chip appearing in the bar">
+</figure>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>Shift</kbd>+<kbd>l</kbd></td><td>Make the main window wider</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>h</kbd></td><td>Make it narrower</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>n</kbd></td><td>Put everything back to the default sizes</td></tr>
+<tr><td><kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch workspace</td></tr>
+<tr><td><kbd>q</kbd> or <kbd>Esc</kbd></td><td>Leave</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="draw-mode">Drawing on the screen &mdash; Super+Shift+w</h2>
+
+<figure>
+  <img src="assets/img/draw.gif" alt="The draw mode chip appearing in the bar">
+  <figcaption>Draw over anything on screen &mdash; useful when explaining something on a call.</figcaption>
+</figure>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>w</kbd></td><td>Start or stop drawing. While it is on, drag the mouse to draw</td></tr>
+<tr><td><kbd>c</kbd></td><td>Erase everything</td></tr>
+<tr><td><kbd>z</kbd></td><td>Undo</td></tr>
+<tr><td><kbd>r</kbd></td><td>Redo</td></tr>
+<tr><td><kbd>v</kbd></td><td>Hide or show what you drew</td></tr>
+<tr><td><kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch workspace</td></tr>
+<tr><td><kbd>q</kbd> or <kbd>Esc</kbd></td><td>Leave</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="hint-mode">Hint mode &mdash; Super+Shift+f</h2>
+
+<p>The same six mouse-free actions as <a href="#homerow">the Alt shortcuts</a>, in one place.
+<b>Each one ends the mode.</b></p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>h</kbd></td><td>Label everything clickable, and click the one you pick</td></tr>
+<tr><td><kbd>s</kbd></td><td>Pick a scrollable area and scroll it with the keyboard</td></tr>
+<tr><td><kbd>f</kbd></td><td>Search on-screen text &mdash; numbers pick, Enter clicks</td></tr>
+<tr><td><kbd>v</kbd></td><td>Move a text cursor with keys. <kbd>v</kbd> selects, <kbd>y</kbd> copies</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>v</kbd></td><td>Type a word to find, and land the cursor there</td></tr>
+<tr><td><kbd>e</kbd></td><td>Edit this text box in a proper editor. Save and quit puts it back</td></tr>
+<tr><td><kbd>t</kbd></td><td>Scroll to the top, fast</td></tr>
+<tr><td><kbd>b</kbd></td><td>Scroll to the bottom, fast</td></tr>
+<tr><td><kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch workspace</td></tr>
+<tr><td><kbd>q</kbd> or <kbd>Esc</kbd></td><td>Leave</td></tr>
+</tbody>
+</table>
+</div>
+
+<details class="why">
+<summary>Why every action ends the mode</summary>
+<p>It used to stay open so actions could be chained. But this mode swallows every other
+shortcut on the desktop while open, including the ones that restart it, and nothing told you
+that you were in it. A mode you cannot tell you are inside is indistinguishable from a broken
+keyboard. Chaining was not worth that.</p>
+</details>
+
+<h2 id="lang-mode">Switching keyboard language &mdash; Super+Space</h2>
+
+<figure>
+  <img src="assets/img/lang.gif" alt="The language mode chip appearing in the bar">
+</figure>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Layout</th></tr></thead>
+<tbody>
+<tr><td><kbd>e</kbd></td><td>English</td></tr>
+<tr><td><kbd>a</kbd></td><td>Arabic</td></tr>
+<tr><td><kbd>t</kbd></td><td>Turkish</td></tr>
+<tr><td><kbd>d</kbd></td><td>German</td></tr>
+<tr><td><kbd>q</kbd> or <kbd>Esc</kbd></td><td>Leave</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<p>These four are tied to <em>positions</em> on the keyboard, not letters. They stay on the
+same physical keys whatever language is active. That matters, because you press them precisely
+when the keyboard is producing the wrong letters. The letters listed are US-keyboard
+positions.</p>
+</div>
+
+<h2 id="cheat-mode">The built-in cheatsheets &mdash; Super+Shift+k</h2>
+
+<figure>
+  <img src="assets/img/cheatsheet.gif" alt="The cheatsheet mode chip appearing in the bar">
+</figure>
+
+<p>Every shortcut on cards, on screen. Faster than this web page.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>k</kbd></td><td>Show the desktop shortcuts. If a sheet is already open, scroll up</td></tr>
+<tr><td><kbd>j</kbd></td><td>Scroll down</td></tr>
+<tr><td><kbd>v</kbd></td><td>Show the Vim text editor shortcuts instead</td></tr>
+<tr><td><kbd>f</kbd></td><td>Show the shell and terminal shortcuts instead</td></tr>
+<tr><td><kbd>Tab</kbd></td><td>Next screenful</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>Previous screenful</td></tr>
+<tr><td><kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Switch workspace</td></tr>
+<tr><td><kbd>q</kbd> or <kbd>Esc</kbd></td><td>Close</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Only one sheet is open at a time, so <kbd>j</kbd> and <kbd>k</kbd> always mean the one you
+can see. Modifier keys appear as symbols: <kbd>⇧</kbd> Shift, <kbd>⌃</kbd> Ctrl,
+<kbd>⏎</kbd> Enter, <kbd>␣</kbd> Space. The header carries the key to them.</p>
+
+<h2 id="passthrough">Passthrough &mdash; Super+F12</h2>
+
+<p>Turns this desktop's shortcuts off temporarily so a program can receive keys the desktop
+would otherwise take: a virtual machine, a remote desktop, a game.
+<kbd>Super</kbd>+<kbd>F12</kbd> again, or <kbd>Esc</kbd>, turns them back on.</p>
+
+<h2 id="live">Getting this list on screen</h2>
+
+<p>The desktop builds this list from the settings it is running, so it is never out of
+date:</p>
+
+<ul>
+<li>Press <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd> then <kbd>k</kbd>.</li>
+<li>Or click the logo in the bar and choose <b>Keybindings</b>.</li>
+<li>Or type <code>qtile-keys</code> in a terminal.</li>
+</ul>
+
+<div class="note">
+<p><code>qtile-keys</code> lists only shortcuts carrying a written description. Several real
+ones deliberately have none: the popup navigation keys, the drop-down windows, the language
+keys. Its count is smaller than the tables here. This page includes them all.</p>
+</div>
+
+<footer class="page">
+  <span>Every shortcut here was read out of the live configuration file. None were guessed.</span>
+  <a href="themes.html">Next: changing the colours &rarr;</a>
+</footer>
+
+</main>
+
+<aside class="toc" aria-label="On this page">
+  <div class="toc-inner">
+    <h2>On this page</h2>
+    <ol id="toc"></ol>
+  </div>
+</aside>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

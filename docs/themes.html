@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Changing the colours &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="Two keys change the colour of everything on the computer at once. 22 schemes to choose from.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="start.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a class="current" href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a href="troubleshooting.html">Troubleshooting</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>Changing the colours</h1>
+
+<p class="lede">Pick a colour scheme and everything follows: the bar, the terminal, the
+menus, the notifications, the browser, your text editor, your folder icons.</p>
+
+<h2 id="how">How to change it</h2>
+
+<ol class="steps">
+  <li>
+    <p>Press <kbd>Super</kbd>+<kbd>P</kbd>, let go, then press <kbd>c</kbd>.</p>
+    <p class="screen">A list of colour scheme names appears. The one you are using now has a
+    <code>●</code> next to it.</p>
+  </li>
+  <li>
+    <p>Move up and down with the arrow keys, and press Enter on the one you want.</p>
+    <p class="screen">The screen goes soft and frosted for a second or two while everything
+    recolours, then comes back in the new colours.</p>
+  </li>
+</ol>
+
+<figure>
+  <img src="assets/img/theme-picker.gif" alt="Choosing a colour scheme from a list, and the whole desktop changing colour">
+</figure>
+
+<p>Or type the name in a terminal:</p>
+
+<pre><code>theme-apply gruvbox</code></pre>
+
+<p>Clicking through the list quickly is fine. A new choice cancels the one still in
+progress.</p>
+
+<h2 id="list">The 22 colour schemes</h2>
+
+<figure>
+  <img src="assets/img/themes.png" alt="Ten of the colour schemes shown side by side">
+  <figcaption>Ten of them. There are 22 in total.</figcaption>
+</figure>
+
+<div class="tw">
+<table>
+<thead><tr><th>Name</th><th>Name</th><th>Name</th></tr></thead>
+<tbody>
+<tr><td><code>doomone</code> <em>(the default)</em></td><td><code>kanagawa</code></td><td><code>cyberpunk-neon</code></td></tr>
+<tr><td><code>dracula</code></td><td><code>oxocarbon</code></td><td><code>synthwave</code></td></tr>
+<tr><td><code>gruvbox</code></td><td><code>onedark</code></td><td><code>matrix</code></td></tr>
+<tr><td><code>nord</code></td><td><code>palenight</code></td><td><code>mono-dark</code></td></tr>
+<tr><td><code>tokyonight</code></td><td><code>nightowl</code></td><td><code>mono-light</code> <em>(the only light one)</em></td></tr>
+<tr><td><code>catppuccin</code></td><td><code>github-dark</code></td><td><code>wal</code> &mdash; shown as <b>Wallpaper</b> in the picker</td></tr>
+<tr><td><code>monokai</code></td><td><code>ayu-mirage</code></td><td></td></tr>
+<tr><td><code>everforest</code></td><td></td><td></td></tr>
+<tr><td><code>rose-pine</code></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="light">If you want a light theme</h2>
+
+<p><code>mono-light</code> is the one light scheme. Everything else is dark.</p>
+
+<p>It also switches the underlying window style and icon set to their light versions, so
+ordinary applications render properly dark-on-white instead of looking like a dark theme with
+pale colours poured over it.</p>
+
+<h2 id="wal">Matching your wallpaper</h2>
+
+<p>The scheme called <b>Wallpaper</b> in the picker (<code>wal</code> if you are typing)
+reads the colours out of your current wallpaper and builds a scheme from them.</p>
+
+<pre><code>theme-apply wal</code></pre>
+
+<p>Drop any image into <code>~/Pictures/Wallpapers/</code>. It appears in the wallpaper
+picker (<kbd>Super</kbd>+<kbd>P</kbd> then <kbd>w</kbd>) immediately. Colours are worked out
+the first time you use it and remembered afterwards. Nothing to run.</p>
+
+<details class="why">
+<summary>How the colours get picked, and why they are always readable</summary>
+<p>Colours pulled straight out of a photo are often unreadable. Grey text on a grey bar.
+So every generated scheme is forced to meet a quality bar first: the strongest accessibility
+contrast standard between background and text, a slightly lower one per accent, and a
+guaranteed spread of hues so the accents do not all come out the same.</p>
+<p>The six accent slots have fixed jobs, which is what stops "urgent" ever coming out green.
+Details in <a href="under-the-hood.html#theming">How it works</a>.</p>
+</details>
+
+<h2 id="wallpaper-vs-theme">Wallpaper and theme are separate</h2>
+
+<div class="note">
+<p><b>Changing your wallpaper does not change your colours</b>, unless you are on the
+<b>Wallpaper</b> scheme.</p>
+<p>On any other scheme you chose those colours deliberately, so a new picture changes only
+the picture. True whichever of the three ways you use to set one.</p>
+</div>
+
+<h2 id="retints">What changes colour</h2>
+
+<p>Almost everything. In particular:</p>
+
+<ul>
+<li>The bar, and all the popup windows</li>
+<li>The terminal &mdash; already-open ones too, immediately</li>
+<li>Every menu and picker</li>
+<li>Notifications</li>
+<li>Ordinary application windows, and Qt applications like Telegram and the file manager</li>
+<li>The web browsers' own toolbars and tabs &mdash; Brave, Chrome, Chromium, qutebrowser</li>
+<li>The Neovim text editor</li>
+<li>Your folder icons</li>
+<li>The mouse pointer theme</li>
+<li>The startup screen &mdash; with <a href="#splash">one extra step</a></li>
+</ul>
+
+<div class="note">
+<p><b>Two things need a moment.</b></p>
+<ul>
+<li><b>Telegram and the file manager</b> pick up new colours when they next start, not
+while running. Close and reopen them, or log out and back in.</li>
+<li><b>Web pages are not recoloured</b>, on purpose. The desktop tells websites you prefer
+dark mode and each site serves its own dark design, which beats a filter applied over the
+top. For a site with no dark design, turn on force-dark for that one site from your browser's
+page menu.</li>
+</ul>
+</div>
+
+<details class="why">
+<summary>Why every one of those needs a different mechanism</summary>
+<p>There is no shared standard. Each of the fifteen programs is recoloured a different way.
+One takes a live command. One needs a file swapped underneath it. One has to be restarted.
+One needs a browser extension repacked and reinstalled. Full table in
+<a href="under-the-hood.html#theming">How it works</a>.</p>
+</details>
+
+<h2 id="splash">The startup screen</h2>
+
+<p>An Arch logo inside a progress ring, with <b>your name</b> underneath in block letters,
+in the current colours. Nothing to set up. The name comes from your username, so
+<code>ati</code> becomes <code>ATI</code>.</p>
+
+<div class="note">
+<p><b>This one does not change with the rest.</b> It has to be rebuilt, which takes about a
+minute. Far too slow for a colour change. So a theme change tells you the startup screen is
+out of date and you rebuild it when you feel like it:</p>
+<pre><code>boot-splash sync</code></pre>
+<p>To see the current state of things:</p>
+<pre><code>boot-splash status</code></pre>
+</div>
+
+<p>To see what it will look like without restarting:</p>
+
+<pre><code>boot-splash preview</code></pre>
+
+<p>That builds an animation from the real installed files at your real screen size. What
+you see is what you get.</p>
+
+<details class="why">
+<summary>Other things boot-splash can do</summary>
+<pre><code>boot-splash generate       # re-draw it (changes nothing about starting up)
+boot-splash preview --real # show it for real, on a spare screen
+boot-splash check          # 16 safety checks, run before it will change anything
+boot-splash enable         # switch it on
+boot-splash disable        # switch it off and restore every backup
+boot-splash status         # what is installed and switched on</code></pre>
+<p>Want a different name on it?</p>
+<pre><code>BOOT_SPLASH_NAME="Mohamed Attia" boot-splash generate &amp;&amp; boot-splash preview
+BOOT_SPLASH_SIZE=32 boot-splash generate   # bigger</code></pre>
+<p>To remove it altogether:</p>
+<pre><code>./wizard.sh --uninstall --only=boot-splash</code></pre>
+<p>Why it is drawn this way, why the rescue boot option deliberately gets no splash, and
+what the 16 checks are: <a href="under-the-hood.html#boot">How it works</a>.</p>
+</details>
+
+<h2 id="trouble">If something stays the old colour</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>What you see</th><th>What to do</th></tr></thead>
+<tbody>
+<tr><td>Telegram or the file manager is still the old colours</td><td>Close and reopen it. Those read their colours once, when they start.</td></tr>
+<tr><td>The startup screen is still the old colours</td><td>Run <code>boot-splash sync</code>. See <a href="#splash">above</a>.</td></tr>
+<tr><td>Folder icons never change</td><td>One optional package is missing. It fails silently by design rather than breaking the theme change.</td></tr>
+<tr><td>The web page content is not dark</td><td>That is deliberate &mdash; see <a href="#retints">above</a>.</td></tr>
+<tr><td>Everything looks wrong and the text does not line up</td><td>A font is missing. See <a href="troubleshooting.html#fonts">Troubleshooting</a>.</td></tr>
+<tr><td>Something else</td><td><a href="troubleshooting.html#theming">Troubleshooting &rarr; Colours</a> lists every case that has come up.</td></tr>
+</tbody>
+</table>
+</div>
+
+<footer class="page">
+  <span>Every scheme name here was read out of the file that defines them.</span>
+  <a href="widgets.html">Next: the bar and the popups &rarr;</a>
+</footer>
+
+</main>
+
+<aside class="toc" aria-label="On this page">
+  <div class="toc-inner">
+    <h2>On this page</h2>
+    <ol id="toc"></ol>
+  </div>
+</aside>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ATI-OS &mdash; one person's Arch and qtile desktop, packaged</title>
+<meta name="description" content="ATI-OS is one person's Arch Linux + qtile desktop, packaged as an ISO so a second machine can have the same setup.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="index.html">ATI-OS<small>Arch + qtile, packaged</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search the manual">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<main class="landing">
+
+<section class="hero wrap">
+  <h1 class="wordmark"><span class="wm-ati">ATI</span><span class="wm-os">-OS</span></h1>
+
+  <p class="tagline">One person's Arch Linux and qtile desktop, packaged as an install
+  medium so a second machine can have the same one.</p>
+
+  <ul class="actions">
+    <li><a class="action" href="start.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></svg>
+      Manual</a></li>
+    <li><a class="action" href="install-usb.html#make">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.5"/></svg>
+      ISO</a></li>
+    <li><a class="action" href="https://github.com/Mohamedattiadev/Newdotfile-">
+      <svg class="solid" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+      GitHub</a></li>
+    <li><a class="action" href="keybindings.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 9.5h.01M9.5 9.5h.01M13 9.5h.01M16.5 9.5h.01M6 13h.01M9.5 13h.01M13 13h.01M16.5 13h.01M8 16h8"/></svg>
+      Keybindings</a></li>
+    <li><a class="action" href="troubleshooting.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M14.5 9.5 18.4 5.6M5.6 18.4l3.9-3.9M14.5 14.5l3.9 3.9M5.6 5.6l3.9 3.9"/></svg>
+      Troubleshooting</a></li>
+  </ul>
+</section>
+
+<figure class="shot wrap-wide">
+  <img src="assets/img/real-desktop.png" width="1366" height="768"
+       alt="The ATI-OS desktop: a bar across the top with workspace, launcher and status widgets, over a wallpaper of a Kyoto street">
+  <figcaption>The desktop as it comes up. The bar is the only chrome; windows tile
+  underneath it.</figcaption>
+</figure>
+
+<section class="wrap">
+  <h2>What you get</h2>
+  <p class="sublede">Every number here is counted out of this repository, not estimated.</p>
+
+  <ul class="facts">
+    <li><b>22</b><span>colour schemes. Picking one retints the bar, the terminal, the
+      launcher, GTK and the browser at the same time.</span></li>
+    <li><b>46</b><span>install modules run by default, each one reported as it passes.
+      Two more are opt-in.</span></li>
+    <li><b>~20 min</b><span>from booting the USB medium to a working desktop.</span></li>
+    <li><b>31</b><span>AUR packages compiled into the medium in advance, so the install
+      is not waiting on builds.</span></li>
+    <li><b>qtile</b><span>tiling window manager on X11. No display manager: you log in at
+      a TTY, then <code>letsgo</code> starts the desktop.</span></li>
+  </ul>
+</section>
+
+<section class="wrap-wide">
+  <h2>Moving pictures</h2>
+  <p class="sublede">Real recordings of the running desktop.</p>
+
+  <div class="films">
+    <figure>
+      <img src="assets/img/overview.gif" loading="lazy" decoding="async"
+           alt="A screen recording of the desktop: windows arranging themselves, a launcher opening, the colours changing">
+      <figcaption>Windows arrange themselves. Nothing is dragged.</figcaption>
+    </figure>
+    <figure>
+      <img src="assets/img/theme-picker.gif" loading="lazy" decoding="async"
+           alt="Choosing a colour scheme from a list, and the whole desktop changing colour">
+      <figcaption>Pick a scheme; every application follows.
+      <a href="themes.html">Changing the colours</a></figcaption>
+    </figure>
+    <figure>
+      <img src="assets/img/qdrop.gif" loading="lazy" decoding="async"
+           alt="Dragging a file into a panel that slides down from the top, then dragging it back out">
+      <figcaption>A shelf that drops from the top; drag files in on one workspace and
+      out on another. <a href="tools.html">The tools you get</a></figcaption>
+    </figure>
+    <figure>
+      <img src="assets/img/veil.gif" loading="lazy" decoding="async"
+           alt="A restart hidden behind a frosted overlay showing one card per window">
+      <figcaption>Restarts hide behind an overlay instead of flashing every window.
+      <a href="widgets.html">The bar and the popups</a></figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>What this is not</h2>
+
+  <div class="limit">
+  <p><b>It is not a distribution.</b> It is Arch Linux with one person's configuration
+  stowed on top, plus an installer that does the stowing. There is no separate package
+  repository to trust, no release schedule and no support.</p>
+  <ul>
+  <li><b>UEFI only.</b> The USB installer refuses a machine that starts in legacy BIOS mode
+  rather than half-installing it.</li>
+  <li><b>Intel graphics is the only path anyone has watched work.</b> The code handles AMD
+  and NVIDIA too; neither has been run on real hardware.</li>
+  <li><b>No HiDPI machine has been tested.</b> The scaling arithmetic is there. Nobody has
+  looked at a 4K screen running it.</li>
+  </ul>
+  <p><a href="start.html#honest">The longer list of what has not been tested</a>.</p>
+  </div>
+</section>
+
+</main>
+
+<footer class="site">
+  <ul class="links">
+    <li><a href="start.html">Manual</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto existing Arch</a></li>
+    <li><a href="https://github.com/Mohamedattiadev/Newdotfile-">Source repository</a></li>
+  </ul>
+  <p>No licence file has been added to the repository yet, so no licence is granted:
+  read the code, but assume all rights reserved until one appears. Based on
+  <a href="https://www.youtube.com/c/DistroTube/videos">Distrotube's</a> qtile
+  configuration, extended with the author's own workflow.</p>
+</footer>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

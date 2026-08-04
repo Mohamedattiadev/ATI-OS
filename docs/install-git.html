@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install onto Arch you already have &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="One command adds this desktop to an Arch Linux computer you already have. Step by step.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="start.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a class="current" href="install-git.html">Install onto Arch you already have</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a href="troubleshooting.html">Troubleshooting</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>Install onto Arch you already have</h1>
+
+<p class="lede">One command adds the whole desktop to an Arch Linux computer you already
+have. It asks you nothing along the way.</p>
+
+<h2 id="need">What you need</h2>
+
+<div class="tw">
+<table>
+<tbody>
+<tr><td><b>Arch Linux</b></td><td>Freshly installed, no desktop on it yet.</td></tr>
+<tr><td><b>25&nbsp;GB free</b></td><td>On the disk.</td></tr>
+<tr><td><b>An hour or two</b></td><td>Almost all waiting. You can walk away.</td></tr>
+<tr><td><b>Internet</b></td><td></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<p><b>It erases nothing.</b> Any settings file it would replace is moved to
+<code>~/DefaultConfig/&lt;timestamp&gt;/</code> first.</p>
+</div>
+
+<h2 id="run">1. Run the command</h2>
+
+<p>Open a terminal, paste this in, press Enter.</p>
+
+<pre><code>git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
+  &amp;&amp; cd ~/.dotfiles/installScripts \
+  &amp;&amp; ./install.sh</code></pre>
+
+<p class="screen">It asks for your password once, near the start. Then a logo, then a
+list of steps, each with a spinner and a tick as it finishes.</p>
+
+<details class="why">
+<summary>What does that command actually do?</summary>
+<p>Three commands joined. <code>git clone</code> downloads the project to
+<code>~/.dotfiles</code>. <code>cd</code> moves into it. <code>./install.sh</code> runs the
+installer.</p>
+<p><code>&amp;&amp;</code> means "only if the last one worked". A failed download will not
+run the installer against nothing.</p>
+</details>
+
+<h2 id="wait">2. Wait</h2>
+
+<p>46 steps run in order. Nothing for you to do.</p>
+
+<div class="warn">
+<p><b>It will look frozen. It is not.</b> One step compiles a piece of safety software from
+scratch and can sit there for close to an hour showing nothing. There is no faster way. A
+couple of other steps compile things too.</p>
+<p>Come back in an hour or two.</p>
+</div>
+
+<p class="screen">You get a summary card at the end. You want <code>46 ok / 0
+failed</code>. A failed step is named, along with its error file at
+<code>/tmp/wizard-&lt;name&gt;.err</code>.</p>
+
+<details class="why">
+<summary>Why it never asks you anything, and why that took work</summary>
+<p>It is a guarantee, not a description. Every step runs with its input closed off, so it
+<em>cannot</em> stop and wait for you.</p>
+<p>This used to be untrue in two places. The run stopped dead at the end on a password
+prompt. And any step whose sub-programs asked a question hung forever <em>behind the
+spinner</em>, showing nothing but an animation. Both are fixed. More in
+<a href="under-the-hood.html#wizard">How it works</a>.</p>
+</details>
+
+<h2 id="login">3. Log in and start the desktop</h2>
+
+<div class="note">
+<p><b>No login box. The desktop does not start by itself.</b> Step 38 switches off every
+graphical login screen it can find.</p>
+
+<ol class="steps">
+  <li>
+    <p>Log out, or restart. You land on a black screen with text on it &mdash; a
+    <dfn>TTY</dfn>, a plain text screen with no mouse.</p>
+  </li>
+  <li>
+    <p>Type your username, press Enter. Type your password, press Enter.</p>
+    <p class="screen">The password does not appear as you type. Not even dots. That is
+    normal.</p>
+  </li>
+  <li>
+    <p>Type <code>letsgo</code> and press Enter.</p>
+    <p class="screen">The screen flickers and the desktop appears.</p>
+  </li>
+</ol>
+
+<p>If it says <code>letsgo: command not found</code>, type <code>startx</code> instead.</p>
+</div>
+
+<details class="why">
+<summary>Why two different commands for one job?</summary>
+<p><code>startx</code> is the standard Linux command. <code>letsgo</code> is a helper this
+project adds, and it exists only once step 20 has run. That step changes which shell your
+account uses, and the helper lives inside that shell.</p>
+<p><code>letsgo</code> adds two things. It notices when the desktop is <em>already</em>
+running and tells you which screen to switch to
+(<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F1</kbd>). And it clears a leftover file from an
+unclean shutdown, the one that makes <code>startx</code> refuse with <em>"Server is already
+active for display 0"</em>.</p>
+<p>Back to the normal shell: <code>chsh -s /usr/bin/bash $USER</code>. You then lose
+<code>letsgo</code>.</p>
+</details>
+
+<h2 id="accounts">4. The three accounts</h2>
+
+<p>The desktop is finished and working. What is left is three online accounts, and nobody
+can create an account for you. All three are optional and can wait days.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Account</th><th>What it gives you</th><th>Without it</th></tr></thead>
+<tbody>
+<tr><td><b>Vaultwarden</b> &mdash; a password manager</td><td>A pop-up list of your passwords on <kbd>Super</kbd>+<kbd>p</kbd> then <kbd>p</kbd></td><td>No password menu. Nothing else changes.</td></tr>
+<tr><td><b>Simplenote</b> &mdash; note syncing</td><td>Your to-do list also appears in the Simplenote phone app</td><td>The list still works. It is a file on your computer. Only the phone copy is missing.</td></tr>
+<tr><td><b>Gemini</b> &mdash; an AI key</td><td>Extra word suggestions and example sentences in the translation and flashcard tools</td><td>All three tools still work, with one section less.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="vaultwarden">Setting up the password manager</h3>
+
+<p>The installer already started the password server on your own computer and pointed the
+tools at it. Only the account is missing.</p>
+
+<ol class="steps">
+  <li>
+    <p>Open a web browser and go to <code>https://127.0.0.1:8222</code></p>
+    <p class="screen">A registration page appears. The <b>s</b> in <code>https</code>
+    matters &mdash; without it the page refuses to load.</p>
+  </li>
+  <li>
+    <p>Create an account with your email and a master password.</p>
+    <div class="warn">
+    <p>Nothing here can choose the master password for you, and you must not forget it.</p>
+    </div>
+  </li>
+  <li>
+    <p>Back on the desktop, press <kbd>Super</kbd>+<kbd>p</kbd>, then <kbd>p</kbd>.</p>
+    <p class="screen">It asks for your email, once. Then it asks for your master password
+    and keeps the list unlocked for 15 minutes.</p>
+  </li>
+</ol>
+
+<p>The server runs on your own computer and only your computer can reach it. It speaks the
+same protocol as the official Bitwarden apps, so the phone app and the browser extension both
+work. Details, including reaching it from a phone, are on
+<a href="tools.html#passwords">The tools you get</a>.</p>
+
+<h3 id="simplenote">Setting up note syncing</h3>
+
+<p>Do this after your first desktop login. It may need a web browser.</p>
+
+<pre><code>cd ~/.dotfiles/installScripts
+./wizard.sh --only=simplenote</code></pre>
+
+<div class="warn">
+<p>There is no <code>--yes</code> on that command, on purpose. Without it the step is allowed
+to ask you questions, which is what you want here.</p>
+</div>
+
+<p class="screen">It asks for your Simplenote email and password, then proves it worked by
+sending your to-do note for real.</p>
+
+<p>Some networks block the login server while the notes themselves stay reachable. It
+notices, copies a one-line snippet to your clipboard to paste into your browser, and takes a
+login token that way. That is the part needing a browser.</p>
+
+<h3 id="gemini">Setting up the AI key</h3>
+
+<p>Open the file <code>~/.config/secrets.env</code> and put your key in it:</p>
+
+<pre><code>GEMINI_API_KEY=your-key-here</code></pre>
+
+<p>The file already exists, with instructions inside and the key left blank. Only you can
+read it, and it is never uploaded.</p>
+
+<h2 id="extras">Optional extras</h2>
+
+<p>The install leaves out software unrelated to the desktop. <b>Skipping it changes nothing
+about how the desktop looks or works.</b> Add it whenever you want it:</p>
+
+<pre><code>~/.dotfiles/installScripts/wizard.sh --yes --only=dcli-sync-extra</code></pre>
+
+<div class="tw">
+<table>
+<tbody>
+<tr><td><b>Containers</b></td><td><code>docker</code> &middot; <code>docker-buildx</code> &middot; <code>docker-compose</code></td></tr>
+<tr><td><b>Extra developer tools</b></td><td><code>github-cli</code> &middot; <code>git-lfs</code> &middot; <code>clang</code> &middot; <code>jdk17-openjdk</code> &middot; <code>uv</code> &middot; <code>ruff</code></td></tr>
+<tr><td><b>Virtual machines</b></td><td><code>qemu-desktop</code> &middot; <code>edk2-ovmf</code></td></tr>
+<tr><td><b>Printing</b></td><td><code>cups</code> &middot; <code>cups-pk-helper</code> &middot; <code>system-config-printer</code></td></tr>
+<tr><td><b>Diagnostics</b></td><td><code>xorg-server-xephyr</code> &middot; <code>mesa-utils</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Safe to run again. Anything already installed is skipped.</p>
+
+<h3>Caps Lock as an extra Alt key</h3>
+
+<pre><code>./wizard.sh --yes --only=xmodmap</code></pre>
+
+<p><b>Not part of a normal install.</b> It turns Caps Lock into an Alt key completely. You
+lose Caps Lock with no way to get capital-lock back. That is right for one laptop with a
+broken Alt key and surprising everywhere else. Your real Alt keys keep working, so on a
+normal keyboard this only gives you a third one.</p>
+
+<h2 id="modules">What the 46 steps actually do</h2>
+
+<p>You do not need this to install. It is here so a failed step means something.</p>
+
+<details class="why">
+<summary>Show all 46 steps, in the order they run</summary>
+<div class="tw">
+<table>
+<thead><tr><th>#</th><th>Name</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>sanity</code></td><td>Checks this really is Arch, and that the files are where it expects</td></tr>
+<tr><td>2</td><td><code>bootstrap</code></td><td>Installs the handful of tools the installer itself needs</td></tr>
+<tr><td>3</td><td><code>yay</code></td><td>Installs the helper that fetches community software</td></tr>
+<tr><td>4</td><td><code>dcli</code></td><td>Installs the tool that keeps the software list in sync</td></tr>
+<tr><td>5</td><td><code>stow</code></td><td>Puts the settings files in place. Anything it would overwrite is moved to <code>~/DefaultConfig/&lt;timestamp&gt;/</code></td></tr>
+<tr><td>6</td><td><code>arch-config</code></td><td>Points the software list at your username</td></tr>
+<tr><td>7</td><td><code>paths</code></td><td>Fills your home folder's real location into a few settings files</td></tr>
+<tr><td>8</td><td><code>dcli-sync</code></td><td><b>Installs every piece of software.</b> The longest step by far. It double-checks itself afterwards and retries anything missing</td></tr>
+<tr><td>9</td><td><code>radios</code></td><td>Switches on Wi-Fi and Bluetooth, so the pop-up pickers have something to talk to</td></tr>
+<tr><td>10</td><td><code>gpu</code></td><td>Works out whether your graphics are Intel, AMD or NVIDIA, and installs the right drivers</td></tr>
+<tr><td>11</td><td><code>picom-pin</code></td><td>Builds the piece that draws window shadows and animations</td></tr>
+<tr><td>12</td><td><code>cargo</code></td><td>Sets up the Rust toolchain and one tool built with it</td></tr>
+<tr><td>13</td><td><code>ati-scripts</code></td><td>Makes the ~50 bundled commands available to type anywhere</td></tr>
+<tr><td>14</td><td><code>simplenote</code></td><td>Installs the note-syncing tool. <b>It does not ask for your account</b> &mdash; see <a href="#simplenote">above</a></td></tr>
+<tr><td>15</td><td><code>ui-scale</code></td><td>Measures your screen and sizes the text and bar to suit it</td></tr>
+<tr><td>16</td><td><code>githooks</code></td><td>Adds a check that refuses to save broken settings</td></tr>
+<tr><td>17</td><td><code>pacman-guard</code></td><td>Blocks software updates when the disk is nearly full</td></tr>
+<tr><td>18</td><td><code>boot-fallback</code></td><td>Adds a spare, older Linux kernel to the startup menu, as a rescue option</td></tr>
+<tr><td>19</td><td><code>boot-splash</code></td><td>The startup screen: an Arch logo in a progress ring with <b>your</b> name under it</td></tr>
+<tr><td>20</td><td><code>login-shell</code></td><td>Switches your shell to fish. <b>This is what makes <code>letsgo</code> exist</b></td></tr>
+<tr><td>21</td><td><code>touchpad</code></td><td>Touchpad settings</td></tr>
+<tr><td>22</td><td><code>xinit</code></td><td>Writes the file that says what to start when the desktop starts</td></tr>
+<tr><td>23</td><td><code>xresources</code></td><td>Mouse pointer size and theme</td></tr>
+<tr><td>24</td><td><code>lid</code></td><td>Stops the laptop sleeping when you close the lid</td></tr>
+<tr><td>25</td><td><code>image-envs</code></td><td>Silences some noisy warnings, and creates a temporary folder</td></tr>
+<tr><td>26</td><td><code>flatpak</code></td><td>Cleans up something an older version used to install</td></tr>
+<tr><td>27</td><td><code>piper</code></td><td>Downloads text-to-speech voices, English and German (~60&nbsp;MB)</td></tr>
+<tr><td>28</td><td><code>ankiconnect</code></td><td>A small add-on for the Anki flashcard app (~26&nbsp;KB)</td></tr>
+<tr><td>29</td><td><code>vaultwarden</code></td><td>Starts the password server on your own computer</td></tr>
+<tr><td>30</td><td><code>vaultwarden-phone</code></td><td>Optional bridge so the phone app can reach that server</td></tr>
+<tr><td>31</td><td><code>tmux-tpm</code></td><td>Installs the terminal multiplexer's add-ons</td></tr>
+<tr><td>32</td><td><code>whisper</code></td><td>Downloads the speech-recognition models for dictation (~630&nbsp;MB)</td></tr>
+<tr><td>33</td><td><code>whisper-fast</code></td><td>Rebuilds the dictation engine properly. The stock build is around 13&times; slower. <b>Skips itself with a warning if it cannot</b>, since it is a speed-up and not a requirement</td></tr>
+<tr><td>34</td><td><code>mic-gain</code></td><td>Stops your microphone volume being reset to a distorting level at every login</td></tr>
+<tr><td>35</td><td><code>scrcpy</code></td><td>Sets up Android phone mirroring, including letting your computer find the phone by itself</td></tr>
+<tr><td>36</td><td><code>passwordless-sudo</code></td><td>Stops asking for your password for admin tasks. Checked before it is applied, and undone if the check fails</td></tr>
+<tr><td>37</td><td><code>ownership</code></td><td>Makes sure the settings files belong to you</td></tr>
+<tr><td>38</td><td><code>disable-dm</code></td><td><b>Switches off every graphical login screen.</b> This is why you log in on a text screen</td></tr>
+<tr><td>39</td><td><code>candy-icons</code></td><td>Installs an icon set</td></tr>
+<tr><td>40</td><td><code>wallpapers</code></td><td>Downloads the wallpaper collection</td></tr>
+<tr><td>41</td><td><code>speed</code></td><td>Memory tuning, sized to how much your computer has</td></tr>
+<tr><td>42</td><td><code>themes</code></td><td>Builds the 22 colour schemes and applies the default one</td></tr>
+<tr><td>43</td><td><code>dark-mode</code></td><td>Tells websites you prefer dark mode, so they serve their own dark design</td></tr>
+<tr><td>44</td><td><code>browser-flags</code></td><td>Makes the browsers follow your colour scheme</td></tr>
+<tr><td>45</td><td><code>browser-memory</code></td><td>Lets the browser free up memory from tabs you are not using</td></tr>
+<tr><td>46</td><td><code>chrome-policy</code></td><td>The Chrome side of the colour scheme</td></tr>
+</tbody>
+</table>
+</div>
+<p>The order is not arbitrary. Why step 19 sits exactly where it does is in
+<a href="under-the-hood.html#wizard">How it works</a>.</p>
+</details>
+
+<h2 id="options">Doing less than all of it</h2>
+
+<p>Mostly for when one step failed and you want to re-run only that one.</p>
+
+<pre><code>./wizard.sh                 # pick steps from a list, with checkboxes
+./wizard.sh --dry-run       # show every command, change nothing
+./wizard.sh --yes           # exactly the same as ./install.sh
+./wizard.sh --only=themes   # run one step (or several, comma-separated)
+./wizard.sh --skip=whisper  # run everything except these
+./wizard.sh --audit         # compare what should be installed against what is
+./wizard.sh --uninstall     # undo the settings changes</code></pre>
+
+<div class="warn">
+<p><b>The <code>=</code> is required.</b> <code>--only themes</code> with a space is rejected
+outright rather than ignored. An ignored filter would run the whole install instead, and its
+eighth step installs every piece of software on the list.</p>
+</div>
+
+<p><code>--uninstall</code> reverses settings changes only. It never removes software and
+never deletes the large downloads.</p>
+
+<h2 id="limits">What has not been tested</h2>
+
+<div class="limit">
+<ul>
+<li><b>AMD and NVIDIA graphics cards.</b> Only Intel has been seen working. The driver
+choice for the other two is reasoned from documentation, not observed.</li>
+<li><b>Very high resolution (4K) screens.</b> The sizing maths has been checked and is
+correct; nobody has looked at the result on a real 4K screen.</li>
+<li><b>Some laptop battery indicators</b>, on models that name them unusually.</li>
+</ul>
+<p>Proven on a clean test machine: all 46 steps complete, the desktop starts, and it loads
+these settings instead of silently falling back to a default. On the author's own hardware,
+also the startup screen and the window animations.</p>
+</div>
+
+<div class="warn">
+<p><b><code>validate.sh</code> cannot tell you the install worked.</b> When the self-check
+cannot run a check, it marks it "skipped" rather than failing. On a bad install it skips
+everything and reports success. Trust <code>46 ok / 0 failed</code> instead.</p>
+</div>
+
+<p>You can try the whole thing on a throwaway virtual machine first. See
+<a href="under-the-hood.html#testing">How it works</a>.</p>
+
+<footer class="page">
+  <span>The step list is generated from the installer itself, not maintained by hand.</span>
+  <a href="keybindings.html">Next: keyboard shortcuts &rarr;</a>
+</footer>
+
+</main>
+
+<aside class="toc" aria-label="On this page">
+  <div class="toc-inner">
+    <h2>On this page</h2>
+    <ol id="toc"></ol>
+  </div>
+</aside>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="The design reasoning behind every part of this desktop, for people who want to know why.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="start.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a href="troubleshooting.html">Troubleshooting</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a class="current" href="under-the-hood.html">How it works</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>How it works</h1>
+
+<p class="lede">The reasoning behind the decisions. Nothing here is needed to use the
+desktop.</p>
+
+<h2 id="shape">The shape of the thing</h2>
+
+<p>The project splits in two, and it matters which half you are on.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Half</th><th>Portable?</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>The configs and the ~50 bundled commands</td><td><b>Any Linux</b></td><td>Nothing is hardcoded to a distribution, username, monitor, GPU or resolution. Paths come from <code>$HOME</code>, the battery and webcam from <code>/sys</code> and v4l2, screens from live <code>xrandr</code>, DPI from the panel, fonts from <code>fc-match</code></td></tr>
+<tr><td>The installer</td><td><b>Arch only</b></td><td><code>pacman</code>, <code>yay</code>, the AUR, <code>dcli</code>, <code>mkinitcpio</code>, <code>systemd-boot</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>That second row is a deliberate limit. Hand-writing <code>apt</code> and <code>dnf</code>
+equivalents for 263 packages nobody has ever installed on those systems produces a config
+that <em>looks</em> portable and breaks on first contact. Worse than saying no.</p>
+
+<p>So the installer fails immediately on a non-Arch system, before touching anything. Every
+standalone script detects what it needs and exits cleanly with a message rather than
+half-applying. The desktop half deploys anywhere by hand through
+<code>stow_script.sh</code>.</p>
+
+<h3>Graphics</h3>
+
+<p>x86_64 only. The <code>gpu</code> step reads the graphics card's vendor id and installs
+the matching drivers, then reads the CPU type and installs the matching microcode. A laptop
+with switchable graphics gets both sets. A virtual machine gets neither, because the generic
+driver is already correct there.</p>
+
+<p>This matters more than it sounds. The compositor asks for hardware acceleration, so a
+machine with no driver for its actual card silently falls back to software rendering. The
+animations, rounded corners and shadows the desktop is built around either crawl or vanish,
+with nothing in the logs pointing at a package list.</p>
+
+<p>NVIDIA additionally gets one optimisation disabled in a per-machine file, because its
+proprietary driver is the one stack where that optimisation smears during animations.</p>
+
+<p><b>ARM is not supported.</b> The step detects a non-x86_64 machine and skips hardware
+detection rather than installing something wrong. But four required community packages are
+not all built for ARM, so a full install will not complete.</p>
+
+<h2 id="iso">The USB image</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>Script</th><th>Job</th></tr></thead>
+<tbody>
+<tr><td><code>aur-repo.sh</code></td><td>Builds 31 community packages in a clean isolated environment</td></tr>
+<tr><td><code>build-iso.sh</code></td><td>Stages the profile, those packages and the dotfiles, then builds the image</td></tr>
+<tr><td><code>test-iso.sh</code></td><td>Four-phase test in a virtual machine: bootloader, install, boot, filesystem</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The split is deliberate. Rebuilding 31 packages to change a boot-menu label would be
+absurd, so the first script's output is cached and the second only checks for it.</p>
+
+<p>Everything is written under <code>~/ati-os-build</code>, never into the git checkout. On
+the author's machine <code>/</code> has about 6&nbsp;GB free and <code>/home</code> has 100.</p>
+
+<h3>The profile is a fork, kept close</h3>
+
+<p>It is a fork of Arch's own standard image recipe, kept deliberately close to the original.
+Every line that differs has to be reconciled by hand whenever the original changes upstream.
+The whole difference is branding and the installer script.</p>
+
+<h3>An image is a snapshot, not a product</h3>
+
+<p>The signing keys baked into it expire in one to two years. After that it cannot install
+anything, and its kernel stops recognising new hardware. That is Arch being Arch, not a
+defect.</p>
+
+<p>The build is unattended, so the honest version of "always works" is <em>cheap to
+regenerate</em>, not <em>never expires</em>. Rebuild every six months.</p>
+
+<h2 id="prebuilt">The prebuilt software</h2>
+
+<p>The USB route takes 20 minutes instead of two hours because four packages ship compiled.
+One of them, a statically-linked package manager kept as an emergency tool, is an hour on its
+own.</p>
+
+<h3>The trust model</h3>
+
+<p>Those packages are added to the new system as an unsigned source. That is defensible for
+one reason: <b>the packages and the tool reading them arrive on the same read-only
+medium</b>, so a signature would only verify the medium against itself.</p>
+
+<p>The source is <b>removed again at the end of the install</b>. The finished system is never
+left with a permanent unsigned software source.</p>
+
+<p>The packages are copied into the target rather than referenced on the stick, because the
+package manager running inside the new system cannot see the live medium's mount point.</p>
+
+<div class="note">
+<p><b>Adding a software source without syncing its index breaks every install on the
+system</b>, not only ones wanting a package from it. That cost two full test runs.</p>
+<p>It presented as "Failed to install gum", because <code>gum</code> happens to be the first
+thing fetched. It was not a gum problem. Every package install on that machine was broken.
+The installer now syncs, then verifies that the index exists and that packages resolve out of
+it.</p>
+</div>
+
+<h3>Why they expire</h3>
+
+<p>Everything else on an image ages harmlessly because it is refetched at install time. The
+prebuilt packages are the exception. They were compiled against one build day's libraries and
+then installed beside whatever the mirrors serve today.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Age</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td>Up to 180 days</td><td>Used</td></tr>
+<tr><td>181 to 365 days</td><td>Used, with a warning that a rebuild is safer</td></tr>
+<tr><td>Over a year</td><td><b>Not used.</b> Compiled from source instead: correct, and two hours rather than twenty minutes. The disk requirement rises from 30&nbsp;GB to 60&nbsp;GB, because build trees are large</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Past that point the honest move is to stop using them. That is a bad trade to make
+silently and a good one to make rather than hand somebody a desktop that breaks in a
+month.</p>
+
+<h2 id="preflight">Why everything checks first</h2>
+
+<p>Every entry point runs a preflight that <b>names the value that failed</b> rather than
+saying "requirements not met". Each check exists because that failure happened and was
+expensive to diagnose.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Check</th><th>The failure it prevents</th></tr></thead>
+<tbody>
+<tr><td>UEFI firmware</td><td>Every boot-related step here is written against one bootloader. A second, untested way to boot is the worst kind to ship</td></tr>
+<tr><td>Secure Boot</td><td>Not fatal at install time because it is fatal <em>later</em> and far more confusingly. The install completes, the machine reboots, the firmware silently refuses an unsigned bootloader, and the user sees "no bootable device" and blames the installer</td></tr>
+<tr><td>The clock</td><td>A wrong date makes every signature look expired, and the tool reports that as a signature error rather than a clock problem</td></tr>
+<tr><td>Disk size</td><td>A finished install is about 20&nbsp;GB. An earlier version asked for 25, which looked fine and left nothing for the cache, the journal or your files. Running out at step 30 presents as five unrelated steps reporting "No space left on device"</td></tr>
+<tr><td>Real disks only</td><td>A plain disk listing includes loopback and RAM devices. On a live medium the compressed filesystem alone adds one, and the first version of that screen showed twenty entries on a machine with one SSD. Asking someone to pick which to <em>erase</em> out of that is how the wrong disk gets chosen</td></tr>
+<tr><td>Disks held open by other storage layers</td><td>Partitioning succeeds and stays invisible to the kernel until reboot, so the install proceeds against a stale view of the disk</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Encryption is offered, never imposed</h3>
+
+<p>Right for a laptop, wrong to force. The trade is real: a passphrase at every boot, and a
+forgotten passphrase means the data is gone. There is no recovery, by design.</p>
+
+<p>So the question is asked plainly with the cost stated, rather than defaulted to "secure"
+on someone's behalf. The 8-character minimum exists because a guessable phrase is worse than
+no encryption. It feels safe.</p>
+
+<h3>The keyboard and language questions are not niceties</h3>
+
+<p>The first version wrote no console keymap at all. Every installed machine came up with a
+US keyboard whatever hardware it had, so somebody on an AZERTY or Arabic keyboard would type
+their own password wrong at the first login with no way to tell why.</p>
+
+<p>Whatever language is chosen, US English is generated as well. A surprising amount of
+tooling assumes it exists and misbehaves confusingly without it.</p>
+
+<h2 id="wizard">The installer</h2>
+
+<h3>"It never asks you anything" is a guarantee</h3>
+
+<p><code>install.sh</code> is <code>wizard.sh --yes</code>. Every step runs with its input
+closed, and the wizard refuses to <em>reach</em> a prompt in that mode.</p>
+
+<p>This used to be untrue twice over. The run stopped dead at the end on a password prompt.
+And any step whose child process asked a question hung forever <em>behind the spinner</em>,
+showing nothing but an animation. Both are fixed.</p>
+
+<p>The installer also keeps admin permission alive for the whole run, refreshed in the
+background, so long builds do not silently drop package installs when the credential cache
+would expire mid-run.</p>
+
+<h3>The step order is load-bearing</h3>
+
+<p>The list is generated from the installer's own order array, not maintained by hand. The
+hand-maintained version had drifted to 36 rows against an installer that ran 48, so eleven
+steps ran on every machine and were documented nowhere.</p>
+
+<p>The important constraint: the startup splash runs <b>immediately after</b> the rescue boot
+entry. That is what makes the splash safe to have on by default. The verbose rescue entry
+always exists before anything touches the primary boot settings.</p>
+
+<h3>Every step has a reversal, including the no-ops</h3>
+
+<p>The wizard <b>refuses to start</b> if a step is ever added without one. The alternative is
+discovering that part-way through an uninstall, with earlier steps already reversed.</p>
+
+<p>Several reversals are deliberate no-ops. Reversing them would delete packages,
+hundred-megabyte downloads, or a 13-times-faster build that an uninstaller has no business
+touching. So is the Wi-Fi and Bluetooth step: disabling the network to "reverse" an install
+leaves a machine with no network and no interface to fix it with.</p>
+
+<h3>Filters need an equals sign</h3>
+
+<p><code>--only foo</code> with a space is <b>rejected</b>, not ignored. An ignored filter
+means the full install runs instead, and its eighth step installs every declared package.
+Unknown flags and unknown step names fail the same way: exit 2, nothing touched.</p>
+
+<h3>Two steps are opt-in</h3>
+
+<p>The promise is a working <em>desktop</em>, not a working workstation. Docker, a JDK,
+printing and virtualisation are a second pass you run when you need them. Keeping them out of
+round one is what keeps the first boot short and predictable.</p>
+
+<p>The Caps-Lock step is opt-in for a different reason. It repurposes Caps Lock outright with
+no fallback, which is right for one laptop with a dead Alt key and surprising everywhere
+else.</p>
+
+<h2 id="username">Why the username is the key</h2>
+
+<p>Package sets and settings profiles are keyed off the <b>username</b>, not the hostname,
+even though the configuration field is called <code>host:</code>.</p>
+
+<p>It reads like a bug and cannot be renamed. That field belongs to <em>dcli's</em> schema,
+not this project's, and the string is compiled into the dcli binary. Renaming it would stop
+dcli finding its own configuration.</p>
+
+<p>The behaviour is also the one wanted. These are per-user package sets, and two accounts on
+one machine legitimately want different ones. It is documented in place so the next reader
+does not "fix" it.</p>
+
+<h2 id="stow">How the settings files get deployed</h2>
+
+<p><code>stow_script.sh</code> wraps GNU <code>stow</code>, which links a folder of files
+into your home directory. Editing a file in the project immediately changes the live
+configuration, with no copy step to forget.</p>
+
+<p>Four things it does that a plain <code>stow .</code> does not:</p>
+
+<ol>
+<li><b>It derives its own location.</b> The project is routinely checked out elsewhere, and
+hardcoding <code>~/.dotfiles</code> made it silently deploy a <em>different</em> checkout
+than the one it was run from.</li>
+<li><b>It backs up before linking</b>, into <code>~/DefaultConfig/&lt;timestamp&gt;/</code>.
+Only regular files are moved at the top level. An existing directory is not a conflict, and
+moving a real <code>~/.claude</code> out from under the user would be destructive rather than
+helpful.</li>
+<li><b>It creates <code>~/.config</code> first</b>, so stow descends into it instead of
+folding the whole directory into one link. That would pollute the project with every future
+application's settings.</li>
+<li><b>It refuses to back up anything the ignore list excludes.</b> Moving a file stow was
+never going to link only relocates your data for nothing.</li>
+</ol>
+
+<h3>What is excluded, and why</h3>
+
+<p>The project's own prose is excluded <em>by pattern</em>, not by name. Without those
+patterns, stow symlinked all seven markdown files into the home directory. Nothing reads them
+there. Patterns rather than names, because the list was already out of date the first time it
+was written.</p>
+
+<p><code>.claude</code> is excluded for a sharper reason. It is a directory stow would
+<em>fold into</em> the user's existing one rather than skip. That happened once, leaving a
+link back into the project inside the user's global configuration.</p>
+
+<h2 id="packages">How software is declared</h2>
+
+<p>Every package is declared in YAML and reconciled by dcli. Change a file, run
+<code>dcli sync</code>, and the system converges. A snapshot is taken every sync, so a broken
+update is a one-command rollback.</p>
+
+<h3>Three files are never synced automatically</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th>File</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>The three <code>graphics-*.yaml</code></td><td>Each is correct on exactly one class of machine. The <code>gpu</code> step reads live hardware ids and installs whichever matches. NVIDIA uses the source-built driver, not the prebuilt one, because the prebuilt module is built against the current kernel only. Booting the rescue entry would come up with no NVIDIA driver at all, which is precisely the fallback you installed for emergencies</td></tr>
+<tr><td><code>splash.yaml</code></td><td>The splash program is inert until it is wired into the boot process, and doing that is a decision about how the machine boots, not a package choice</td></tr>
+<tr><td><code>optional.yaml</code></td><td>Docker, JDK, printing, virtualisation. Installed only on request</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><code>graphics.yaml</code> holds the vendor-neutral base only. It used to hardcode the
+Intel driver set with AMD commented out below it, which on an AMD or NVIDIA machine installed
+Intel drivers and nothing for the actual hardware.</p>
+
+<h3>One package is an hour of every install</h3>
+
+<p><code>pacman-static</code> compiles the package manager and every dependency statically
+from source, much of it single-threaded. It is a genuine safety net. The day it matters is
+the day nothing else on the machine can install anything.</p>
+
+<p>It is also the single biggest cost in a fresh install, and nothing said so until it was
+measured. Moving it to the optional list is a one-line change if faster installs are worth
+more than the net.</p>
+
+<h3>The update safety net</h3>
+
+<ol>
+<li>A hook that refuses an upgrade when the disk is too full. It fires for <em>any</em> tool,
+so it cannot be bypassed.</li>
+<li>A pre-update hook that blocks on low space, on snapshots stored on the root device
+itself, or on an inconsistent package database. It <b>refuses</b>, it does not repair, and it
+cannot be skipped by accident. A safety check you can click past is not a safety check.</li>
+<li>A post-update hook that finds packages broken by a library version bump and puts the
+repair command on your clipboard.</li>
+</ol>
+
+<p><b>The recovery ladder:</b> downgrade the package, then the fallback kernel at the boot
+menu, then the rescue entry with every driver loaded, then a repair from an Arch USB stick,
+then a snapshot restore.</p>
+
+<h2 id="boot">The boot chain</h2>
+
+<h3>Why there is a rescue entry</h3>
+
+<p>The <code>boot-fallback</code> step writes two boot entries for the long-term-support
+kernel: a normal one and a rescue one with every driver loaded. The kernel package alone
+ships <em>none</em>, so without this the rescue kernel is installed but unreachable.</p>
+
+<p><b>Both stay verbose.</b> The step strips the quiet and splash options from them. A rescue
+entry that inherited the splash would show a logo while hiding the kernel messages saying
+what broke, which is indistinguishable from the failed boot you are escaping.</p>
+
+<h3>The startup splash</h3>
+
+<p>Arch boots with the kernel log on screen: a wall of scrolling text ending in a mirror
+list. Worse than ugly. A boot with no feedback is indistinguishable from a boot that has
+hung.</p>
+
+<p>The replacement is the Arch mark <em>inside</em> a progress ring, with the username in
+block art underneath, in the current colours. The logo is not decoration next to a spinner.
+It lives inside the progress indicator, so the one element that moves is also the one
+reporting state.</p>
+
+<p>Two things move, so a slow boot never looks hung. A comet sweeps continuously around the
+ring, which keeps moving even when no progress is reported, which is most of a fast boot. And
+the ring fills clockwise with real progress when there is any.</p>
+
+<p>The accent colour has exactly one job on that screen, the progress arc. So the name is
+drawn in the foreground colour. A composition where the largest element and the status
+indicator share a colour has nothing to direct the eye with.</p>
+
+<h4>Details that took measuring</h4>
+
+<ul>
+<li><b>The logo is read from the distribution's own file</b> rather than copied in,
+recoloured through its transparency as a stencil, with the trademark glyph removed
+programmatically. At this size it is a few pixels of grit, and cropping cannot reach it
+without cutting the logo's feet.</li>
+<li><b>The block art comes from a 40-glyph text table</b>, not from a text-art program. That
+typeface is a contributed one that does not ship with the program, so using it would mean
+both a new dependency and copying in a font file of uncertain licence.</li>
+<li><b>It is rendered solid.</b> The typeface draws the letters with block characters and
+their shadow with box-drawing characters, and one render pass fills both in the same colour,
+producing a hollow double outline that reads as a cheap 3D bevel. Only the block characters
+are kept. A one-pixel kerning adjustment closes the seam the fixed-width spacing leaves down
+the middle of each letter: invisible in a mock-up, obvious in cream on dark.</li>
+<li><b>The ring is 26% of screen height</b>, sized from the screen rather than fixed. An
+earlier 96-pixel ring was about 7% of a 1366-pixel panel and, photographed off the real
+display, read as a stray dot. The comet was moving, but there was not enough arc for the
+motion to be legible.</li>
+<li><b>The ring and the name are laid out as one group</b>, then centred and lifted.
+Positioning each from the screen edges independently produced the old top-heavy stack with a
+lonely dot under it.</li>
+<li><b>The ring ships as pre-rendered frames</b>, 48 for the comet and 41 for the fill, about
+400&nbsp;KB. The splash program's scripting cannot draw an arc, and rotating an image every
+frame at 50fps during early boot is the kind of per-frame work that makes a splash stutter on
+slow hardware.</li>
+</ul>
+
+<h4>One continuous image</h4>
+
+<p>The splash used to be bookended by the Arch logo, about 3 seconds before and 4 after, on
+both sides of five seconds of actual splash.</p>
+
+<p>Neither was the splash program's doing. Arch bakes a bitmap into the kernel image. The
+bootloader paints it the moment a boot entry is picked, the splash draws over it, and when
+the splash quits its buffer is released and the bitmap shows through again until the console
+is cleared.</p>
+
+<p>So the generator also renders a <b>static image of the same composition</b> at the
+firmware's resolution, and points every kernel preset at it instead. One picture from the
+boot menu to the login prompt.</p>
+
+<p>That is also why there is no fade-in. The splash takes the framebuffer the instant it
+starts, so fading up from zero would make the picture <em>already on screen</em> vanish and
+reappear. The first frame is rendered to match the bitmap exactly, down to the name's opacity
+of 0.94, because that is where the breathing sine starts.</p>
+
+<h4>Why a theme change does not update it immediately</h4>
+
+<p>The splash runs before the disk is mounted, so the theme lives inside the boot image.
+Rebuilding that takes about a minute, far too slow for a colour change. So a theme change
+regenerates the assets and reports that the boot screen is out of date;
+<code>boot-splash sync</code> does the rebuild when you want it.</p>
+
+<h4>The sixteen checks</h4>
+
+<p><code>enable</code> refuses unless <code>check</code> passes, and a failure changes
+nothing. Among them: the splash program installed, colour placeholders substituted, the theme
+script's braces balanced, the theme recognised, a verbose rescue entry existing and not
+splashed, the rescue kernel present on the boot partition.</p>
+
+<p>The subtle one: the static boot frame must be an <b>uncompressed 24-bit BMP3</b>. The
+bootloader reads nothing else and silently draws blank for anything else, which looks exactly
+like a broken theme.</p>
+
+<p>Every file it edits is backed up, and <code>disable</code> restores all of them.</p>
+
+<div class="note">
+<p><b>The diagnosis that took two attempts.</b> The splash demanded one particular hook in
+the boot image configuration; current Arch ships a different one, so it refused on every
+freshly installed machine.</p>
+<p>An earlier guess that this was about the kernel image format was <b>wrong</b>. That check
+had passed all along. It was found by booting a test disk and running
+<code>boot-splash check</code> inside it: two minutes, against another 90-minute test run.</p>
+</div>
+
+<h2 id="theming">How one command recolours fifteen programs</h2>
+
+<p>There is no shared mechanism. Fifteen consumers, fifteen reload paths, because none of
+these programs agree on how to be recoloured.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Consumer</th><th>Reload mechanism</th></tr></thead>
+<tbody>
+<tr><td>kitty</td><td>A live command per open window, plus a signal</td></tr>
+<tr><td>rofi</td><td>A file swapped underneath it</td></tr>
+<tr><td>dunst</td><td>Render a template, then restart</td></tr>
+<tr><td>qtile</td><td>A restart, detached so the caller does not deadlock</td></tr>
+<tr><td>GTK 3 and 4</td><td>An overlay stylesheet imported from the cache</td></tr>
+<tr><td>Qt 5 and Qt 6</td><td>A 21-role palette file. <b>Needs <code>QT_QPA_PLATFORMTHEME=qt6ct</code></b>, exported at session start. Qt ignores the GTK theme entirely and falls back to a <em>light</em> palette without it. Read at application start, so a fresh session is required</td></tr>
+<tr><td>qutebrowser</td><td>Home page by inline styles. Browser chrome, 78 options, by a function reading the dumped palette. For <em>all</em> themes, not only the wallpaper one</td></tr>
+<tr><td>nvim</td><td>A filesystem watch on the dumped palette. Themes with no dedicated plugin render highlights straight from it</td></tr>
+<tr><td>Brave</td><td>An extension whose manifest is read live on relaunch</td></tr>
+<tr><td>Chrome and Chromium</td><td>Enterprise policy from a local update file. The package is repacked and preferences purged each time so the install lands immediately. The extension id is derived from a per-machine key at runtime, never hardcoded, and the browsers relaunch through their wrapper so their flags file is applied</td></tr>
+<tr><td>Folder icons</td><td>A hue match, through an optional package. Silently does nothing if missing</td></tr>
+<tr><td>Bar widgets</td><td>Daemon killed, restarted, open windows reopened. A plain reload left compiled stylesheets cached</td></tr>
+<tr><td>qtile popups</td><td>Read the dumped palette, falling back to the wallpaper-derived one. The muted tone is blended from background to foreground for readable dividers</td></tr>
+<tr><td>GTK base and icon theme</td><td>Its settings file rewritten per palette</td></tr>
+<tr><td>Mouse pointer</td><td>Merged at session start</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Concurrency</h3>
+
+<p>Theme changes hold a lock. Keyboard-shortcut spam is dropped rather than corrupting
+caches. Picker clicks are different: a rapid second click <em>kills</em> the one in flight and
+starts the newer one, because a dropped click there reads as the picker being broken.</p>
+
+<h3>Wallpaper-derived palettes</h3>
+
+<p>A precompiler walks the wallpaper folder and produces a palette per image, each forced to
+a quality bar: the strongest contrast standard for background against text, one step down per
+accent, and a guaranteed hue spread. Six accent slots with fixed jobs:</p>
+
+<div class="tw">
+<table>
+<tbody>
+<tr><td><code>color1</code></td><td>Urgent. Always warm</td></tr>
+<tr><td><code>color2</code></td><td>Dominant, the main wallpaper hue. Bar accents pin here</td></tr>
+<tr><td><code>color3</code></td><td>Warm fill</td></tr>
+<tr><td><code>color4</code></td><td>Cool fill</td></tr>
+<tr><td><code>color5</code></td><td>Complement</td></tr>
+<tr><td><code>color6</code></td><td>Info</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>A test harness validates 12 hue buckets end to end.</p>
+
+<h3>Why web page content is not force-darkened</h3>
+
+<p>A force-dark browser flag used to sit in all three browser configs. It is a per-pixel
+colour transform applied after render, with no knowledge of the page's design. Fine on a site
+with no dark theme. Destructive on one that has a good one, because it re-darkens an
+already-dark palette and blows out gradients and accent text.</p>
+
+<p>The replacement is a preference, not a transform. The desktop advertises a dark colour
+scheme, the browser reads it, and each site serves <em>its own</em> dark stylesheet.</p>
+
+<h3>Fonts fail silently, and that has cost three incidents</h3>
+
+<p>The font system never errors on a missing family. It substitutes quietly, and here
+anything unknown resolves to a CJK face. Every padded column in this project is aligned with
+<em>spaces</em>, and spaces only align in a fixed-width font. So a missing font presents as
+"the layout code is broken", with nothing in any log.</p>
+
+<p>Adding a font therefore takes two edits: declare the package, and add the family to the
+check in <code>validate.sh</code>. That list is hand-maintained and does not derive itself,
+which is a known weakness. Real family names are rarely what you would guess. One package
+installs "FiraCode Nerd Font", not "FiraCode Nerd". This project has fallen into that
+twice.</p>
+
+<h2 id="scaling">How it fits any screen</h2>
+
+<p>Every pixel value was tuned on a 1366&times;768 14-inch panel. Copied unchanged to a
+15-inch 4K laptop, that is a sliver of a bar with unreadable text. It is the one thing
+dotfiles cannot keep identical by copying files, because the right answer depends on the
+glass.</p>
+
+<p><code>ui-scale</code> computes a factor from the display's real DPI. The window manager
+multiplies every font size, bar height, icon and margin by it, and a second setting carries
+the same factor into applications, menus and notifications. It runs at every login, so
+docking to an external monitor re-scales.</p>
+
+<div class="tw">
+<table class="nums">
+<thead><tr><th>Screen</th><th>DPI</th><th>Factor</th></tr></thead>
+<tbody>
+<tr><td>14" 1366&times;768 <em>(reference)</em></td><td>125</td><td>1.00</td></tr>
+<tr><td>24" 1080p</td><td>92</td><td>1.00</td></tr>
+<tr><td>27" 1440p</td><td>109</td><td>1.00</td></tr>
+<tr><td>15" 1080p</td><td>142</td><td>1.15</td></tr>
+<tr><td>14" 1080p</td><td>158</td><td>1.25</td></tr>
+<tr><td>13" 1440p</td><td>227</td><td>1.80</td></tr>
+<tr><td>15" 4K</td><td>284</td><td>2.25</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Physical size, not resolution. A 24-inch 1080p monitor sits further away and has larger
+pixels, so it correctly stays at 1.00 rather than shrinking. The factor never goes below the
+reference, because that panel is already small.</p>
+
+<div class="limit">
+<p><b>Verified proportional, never photographed.</b> At factor 2.0 the popups measure the
+same 3.6 / 2.0 / 1.4 screenfuls as at 1.0, with the text engine measuring real glyph extents
+at both. That is a mathematical proof. Nobody has looked at it on a 4K screen.</p>
+</div>
+
+<h2 id="veil">The restart veil</h2>
+
+<p>Restarting the window manager normally means watching every window from every workspace
+flash across the screen for two seconds. That is unfixable from configuration alone. Its own
+startup maps every window before the hook that would let you intervene ever fires.</p>
+
+<p>So the restart raises a veil, in a <b>separate process</b>, so it survives the restart
+replacing the window manager itself. It frosts the desktop, shows a card with each window's
+real icon, and reports genuine progress from the incoming process rather than a timer. It
+pauses notifications and keeps itself on top by reacting to window-stacking events. Without
+its one dependency, the reload falls back to a plain restart.</p>
+
+<h3>Layout survives</h3>
+
+<p>Window proportions save every 3 seconds. The window-to-workspace map and per-workspace
+focus order save alongside. Both restore shortly after startup.</p>
+
+<p>Windows you moved by hand stay where you put them even though the automatic placement
+rules re-fire during the restart. The rule is overridden for any window in the restored
+map.</p>
+
+<h2 id="popups">Why the popups are popups</h2>
+
+<p>The sound, monitor, Wi-Fi and Bluetooth pickers replaced four separate programs. Being
+drawn by the window manager means no window to manage, no workspace to put it on and no
+floating rule to write. They close when their mode ends. The tray icons stay as icons only.</p>
+
+<h3>The cheatsheets scroll rather than page</h3>
+
+<p>Paging tied <em>capacity</em> to <em>size</em>. The only way to show more was to be bigger,
+and they had grown to 1330&times;750 on a 1366&times;768 screen, covering the very window you
+opened them to ask about. With a viewport that moves, size only decides how much you see at
+once.</p>
+
+<p>Only one sheet is open at a time, which is what makes "the open one" unambiguous for the
+scroll keys.</p>
+
+<h3>Opening a sheet from the menu goes through the window manager's own channel</h3>
+
+<p>Not by replaying keystrokes. Replaying the shortcut could not work: entering it auto-shows
+the first sheet, so the replayed key <em>toggled it back off</em> and it appeared for a single
+frame.</p>
+
+<h3>The mode chip is not decoration</h3>
+
+<p>Every mode announces itself in the bar and lists the keys it accepts, in its own colour.
+One mode used to persist after each action so actions could be chained. But it swallows every
+other shortcut on the desktop while open, including the ones that restart the desktop, and
+nothing said you were in it. A mode you cannot tell you are inside is indistinguishable from
+a broken keyboard.</p>
+
+<h2 id="docsmenu">The documentation menu</h2>
+
+<p>Left-clicking the logo used to open a terminal, which four other shortcuts already do. A
+desktop with this many shortcuts, themes and custom tools has a <em>discovery</em> problem,
+not a terminal-launching problem. So the most prominent click in the bar now answers "what
+can this thing do".</p>
+
+<p><b>Every section is generated from the live system</b>, because a hand-written menu drifts
+the moment anything is added, and does it silently.</p>
+
+<ul>
+<li><b>The shortcut list parses the config's syntax tree</b>, not a regular expression.
+Shortcuts nest several mode levels deep, and a regex pass found 44 of them while losing every
+mode prefix, so mode keys printed as a bare letter instead of the full sequence.</li>
+<li><b>Esc goes up, not out.</b> Only Esc at the top level closes. A menu you have to reopen
+from the bar after every glance is a menu you stop using.</li>
+<li><b>One frame, every section</b>, at 614&times;432, applied centrally so a new section
+cannot forget it. They used to inherit the launcher's shape loosely and re-shape on every
+step, which is worse than being the wrong size. A menu whose frame moves under you is one you
+stop reading.</li>
+<li><b>That frame fixes a 52-character budget</b>, measured from what actually rendered
+rather than calculated. The arithmetic said 56, and 56 visibly clipped.</li>
+<li><b>Troubleshooting rows show the symptom, not the heading.</b> "Rofi" tells you nothing.
+"Yellow wallpaper but rofi selection shows blue/purple" is what you would type when it
+happens. It was a two-column layout at 147 characters, wider than the screen. Two columns do
+not survive the cut to 52: at 24 each, both halves are shredded.</li>
+<li><b>Documentation is rendered and read-only.</b> You read the document rather than its
+markup, and cannot damage the project's own docs by accident. It opens in readonly
+<em>mode</em>, not with the buffer locked, because locking blocks plugins that legitimately
+write to their own buffers.</li>
+</ul>
+
+<h3>Maintenance is the only section that acts</h3>
+
+<p>It replaced a section that listed all 38 bundled tools with their header comments and
+deliberately never ran any of them. Correct, and a reading exercise nobody opened twice, when
+the tools are all on the command path anyway.</p>
+
+<p>What nothing surfaced was the slow rot: configuration files never merged after an upgrade,
+orphaned dependencies, services that failed while you watched a splash screen, a download
+cache growing without bound. So that is what is there, with a live count on every entry.</p>
+
+<p>Two deliberate omissions. Pending updates come from the <em>bar's</em> cache, never a live
+check, which would sync package databases over the network and turn a menu draw into a
+multi-second stall, or a hang with no connection. And the orphan entry opens the
+<em>list</em>, not a bare confirmation. "Remove 21 packages?" with no names is a prompt you
+either rubber-stamp or cancel, and neither is a decision.</p>
+
+<h2 id="testing">How this gets tested</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>Layer</th><th>Time</th><th>Catches</th></tr></thead>
+<tbody>
+<tr><td><code>validate.sh</code></td><td>seconds</td><td>Parses every tracked shell, Python, fish and YAML file. <b>Loads the window manager config for real.</b> Greps for hardcoded home paths, checks every template has a renderer, runs a full installer dry-run</td></tr>
+<tr><td><code>wizard.sh --audit</code></td><td>seconds</td><td>Declared packages against installed ones, both directions</td></tr>
+<tr><td><code>container-test.sh</code></td><td>~3 min</td><td>A real install as a user who is <b>not</b> you. Whether running twice changes anything</td></tr>
+<tr><td><code>vm-test.sh --unattended</code></td><td>~2 hours</td><td>A graphical session, system services, booting, the desktop</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The pre-commit hook runs the first two only. A hook that takes three minutes gets bypassed
+within a week.</p>
+
+<p><code>validate.sh</code> exists because <b>the window manager falls back to its stock
+configuration on an error</b>. The failure mode is a desktop that looks like a stranger's,
+not an error anyone sees.</p>
+
+<p><code>container-test.sh</code> populates its container from the list of tracked files, not
+from the directory and not from a clone. That is exactly what a fresh clone receives, so
+anything excluded from version control is correctly absent, and staged work gets tested
+before it is committed. Its repeat-run comparison warns but never fails, because regenerated
+files legitimately differ between runs.</p>
+
+<p><code>vm-test.sh --unattended</code> scripts a minimal base system, boots it from its own
+boot partition, runs the installer, then asserts: zero failed steps, <code>validate.sh</code>
+passing inside the guest, every boot entry's root device matching the guest's real one, and
+the window manager starting under a headless display. It checks the log for a silent fallback
+to the built-in config, because asking for its status answers "OK" either way.</p>
+
+<div class="limit">
+<p><b>What no layer covers.</b> The container has no display server, no service manager and
+no hardware bus. The virtual machine has no graphics card, so the compositor and the
+animations are untested there. A passing run must <em>not</em> be read as though it covered
+them. Nothing anywhere covers AMD, NVIDIA or a high-resolution panel.</p>
+<p>An easier install means the untested paths start reaching strangers' machines. That is an
+argument for fixing them, not for reading a green test run as though it had.</p>
+</div>
+
+<div class="warn">
+<p><b><code>validate.sh</code> degrades every check it cannot run to "skipped".</b> On a
+machine where the install failed and nothing is present, it skips everything and exits green.
+Trust the installer's own summary card on a fresh machine.</p>
+</div>
+
+<p>The VM test clones from GitHub, so it tests what was last <em>pushed</em>, never the
+working directory. It refuses to start if the branch is ahead of its remote, so nobody draws
+the wrong conclusion from a green run.</p>
+
+<h2 id="lessons">The two lessons that cost the most</h2>
+
+<div class="note">
+<p><b>1. On a clean install, the step that reports the failure is almost never the step at
+fault.</b></p>
+<p>One full disk presented as five broken steps, starting 32 steps after the cause. One
+blocked package transaction presented as two. Reading the per-step error logs is what
+separated five root causes from twenty-two symptoms.</p>
+<p>All five were invisible on the author's machine, because that machine was the single
+configuration where the code happened to work:</p>
+<ul>
+<li>Two packages providing the same virtual dependency. On a clean machine the resolver picks
+the wrong one, it conflicts with the declared one, and <b>the entire transaction aborts</b>.
+Five failed steps, nothing installed at all, and the desktop would have come up plain.</li>
+<li>The install needing more than 40&nbsp;GB of transient disk.</li>
+<li>The Rust toolchain having no default selected when the first package needing it is built.
+The step that sets it runs four steps too late.</li>
+<li>A news-checking tool that refuses every package transaction until the distribution's news
+is read. It installs itself mid-sync, and a fresh machine always has unread news. Marking it
+read <em>as the invoking user</em> does nothing, because its hook runs as root and checks
+root's state.</li>
+<li>A self-inflicted one: a cache cleanup deleted a build tree another step rebuilt from. It
+failed 25 steps later with an <b>empty</b> error log, because it failed through a path that
+never reaches the error stream.</li>
+</ul>
+</div>
+
+<div class="note">
+<p><b>2. Verify a check against a known-good case before trusting it.</b></p>
+<p>Five separate times the <em>check</em> was wrong, not the code. A compositor assertion
+that reads "not found" even on a working display. "Dead" documentation links that are
+anchors inside collapsible sections. A "broken heading" that is a comment inside a code
+block. Desktop probes reporting a working stack as broken because the daemons were already
+running. And the compositor filed as "untestable" when the hardware was sitting right
+there.</p>
+<p>Every one would have been a regression.</p>
+</div>
+
+<h2 id="quirks">Things that look like bugs and are not</h2>
+
+<p>Recorded in the project's own <code>plan_found-but-not-fixed.md</code> so nobody re-breaks
+them.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Looks wrong</th><th>Why it is right</th></tr></thead>
+<tbody>
+<tr><td><code>host:</code> keys off the username</td><td>See <a href="#username">above</a></td></tr>
+<tr><td><code>grub_boost.sh</code> refuses rather than guessing</td><td>It aborts on a trailing-comment or unquoted kernel command line instead of corrupting it, and prints the offending line. A few hand-edited files need a manual edit first</td></tr>
+<tr><td>The installer hard-fails on non-Arch</td><td>Loosening the gate would let package-manager-specific steps run on a system that cannot satisfy them</td></tr>
+<tr><td>The reference boot entries hardcode a partition id and an Intel microcode file</td><td>They are reference copies that are never installed. Live entries are generated from the running system</td></tr>
+<tr><td>The config names a font that resolves elsewhere when queried directly</td><td>The library builds a font description string that the text engine parses into family plus weight. The code path that would break it is only reachable from a command this config never calls</td></tr>
+<tr><td>The compressed-swap ceiling of 8&nbsp;GB</td><td>The expression already scales with installed memory. Only the ceiling is fixed, and it applies only on machines larger than the one it was written on, where 8&nbsp;GB is a defensible cap anyway</td></tr>
+<tr><td>One remaining temporary path</td><td>A <code>mktemp</code>. Unique, and readable only by its owner</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Where the state lives, and why it moved</h3>
+
+<p>Per-user runtime state moved out of the shared temporary directory. The danger was not
+name collisions. The terminal's control socket sat there world-traversable with remote
+control enabled, which let any other local account drive the terminal. The runtime directory
+is private to its owner.</p>
+
+<footer class="page">
+  <span>Sources: <code>README.md</code>, <code>HANDOFF.md</code>, <code>plan_found-but-not-fixed.md</code>, <code>installScripts/iso/PLAN.md</code>, and the scripts themselves.</span>
+  <a href="reference.html">Where everything lives &rarr;</a>
+</footer>
+
+</main>
+
+<aside class="toc" aria-label="On this page">
+  <div class="toc-inner">
+    <h2>On this page</h2>
+    <ol id="toc"></ol>
+  </div>
+</aside>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

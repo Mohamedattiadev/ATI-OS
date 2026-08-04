@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where everything lives &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="Which file to edit to change something, where the logs are, and how to add or remove software.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="start.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a href="troubleshooting.html">Troubleshooting</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a class="current" href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>Where everything lives</h1>
+
+<p class="lede">Which file to open to change something, and where to look when you want to
+know what happened.</p>
+
+<h2 id="change">"I want to change X"</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>You want to change</th><th>Do this</th></tr></thead>
+<tbody>
+<tr><td>Colours</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>c</kbd>. No file editing. See <a href="themes.html">Changing the colours</a></td></tr>
+<tr><td>The wallpaper</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>w</kbd>. Add your own images to <code>~/Pictures/Wallpapers/</code></td></tr>
+<tr><td>How big everything is</td><td><code>ui-scale-toggle</code>. See <a href="widgets.html#scaling">the bar and the popups</a></td></tr>
+<tr><td>A keyboard shortcut</td><td><code>~/.config/qtile/config.py</code></td></tr>
+<tr><td>Which programs open on which workspace</td><td><code>~/.config/qtile/config.py</code>, in the <code>groups</code> section</td></tr>
+<tr><td>What starts automatically when you log in</td><td><code>~/.config/qtile/autostart.sh</code></td></tr>
+<tr><td>The terminal</td><td><code>~/.config/kitty/</code></td></tr>
+<tr><td>Notifications</td><td><code>~/.config/dunst/</code></td></tr>
+<tr><td>Window shadows and animations</td><td><code>~/.config/picom/</code></td></tr>
+<tr><td>The look of the menus</td><td><code>~/.config/rofi/</code>. They all share one base file; the others only change the layout</td></tr>
+<tr><td>Fonts used across the desktop</td><td><code>~/.config/fontconfig/fonts.conf</code>. One edit restyles the popups, the notifications and the widgets together</td></tr>
+<tr><td>Your API keys</td><td><code>~/.config/secrets.env</code>. Readable only by you, and never uploaded</td></tr>
+<tr><td>Which software is installed</td><td><code>~/.config/arch-config/modules/</code>. See <a href="#software">below</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Fastest way to open any of these: <kbd>Super</kbd>+<kbd>P</kbd> then <kbd>f</kbd>, a
+searchable list of settings files.</p>
+
+<h2 id="edit">How to edit a settings file safely</h2>
+
+<ol class="steps">
+  <li>
+    <p>Edit the file.</p>
+  </li>
+  <li>
+    <p>Check it before you rely on it:</p>
+    <pre><code>bash ~/.dotfiles/installScripts/validate.sh</code></pre>
+    <p class="screen">A couple of seconds. It loads the window manager settings for real
+    rather than reading them, so a mistake is caught here instead of by the desktop
+    disappearing.</p>
+  </li>
+  <li>
+    <p>Apply it:</p>
+    <pre><code>Super + Shift + r</code></pre>
+    <p class="screen">The desktop restarts behind a frosted overlay. Your windows stay exactly
+    where they were.</p>
+  </li>
+</ol>
+
+<div class="warn">
+<p><b>Why step 2 matters.</b> An error in the settings file does not produce an error
+message. The window manager silently loads its own plain built-in settings instead. The
+failure looks like your desktop turning into a stranger's, with nothing explaining why.</p>
+</div>
+
+<h2 id="layout">The folder layout</h2>
+
+<p>Everything lives in one folder: <code>~/.dotfiles</code>.</p>
+
+<pre><code>~/.dotfiles/
+├── .config/                 all the settings
+│   ├── qtile/               the window manager, the popups, the shelf and updater
+│   ├── AtiScriptsV1/        the ~50 bundled commands
+│   ├── arch-config/         which software should be installed
+│   ├── eww/                 the welcome tour and tooltips
+│   ├── rofi/                the menus
+│   ├── kitty/ dunst/ picom/ fish/ nvim/ qutebrowser/ ...
+│   └── secrets.env.example  a template for your API keys
+├── installScripts/
+│   ├── install.sh           the installer
+│   ├── wizard.sh            its 46 steps
+│   ├── validate.sh          the quick self-check
+│   ├── stow_script.sh       puts settings files in place
+│   └── iso/                 building the USB stick
+├── IMGS/                    the screen recordings
+├── docs/                    this manual
+├── README.md
+├── TROUBLESHOOTING.md
+├── HANDOFF.md
+└── plan_found-but-not-fixed.md</code></pre>
+
+<h2 id="symlinks">Why editing the repo changes your desktop</h2>
+
+<p>The files in <code>~/.config/</code> are not copies. They are <b>links</b> back into
+<code>~/.dotfiles/.config/</code>. Editing either path edits the same file.</p>
+
+<p>So:</p>
+
+<ul>
+<li>You can edit whichever path you find easier.</li>
+<li>There is no "apply my changes" copy step to forget.</li>
+<li>Your changes join the project's history, so you can see what you changed and undo
+it.</li>
+</ul>
+
+<p><code>stow_script.sh</code> sets this up. It runs during the install, and you can run it
+again by hand:</p>
+
+<pre><code>bash ~/.dotfiles/installScripts/stow_script.sh</code></pre>
+
+<div class="note">
+<p><b>Nothing is overwritten.</b> Any file it would replace moves to
+<code>~/DefaultConfig/&lt;timestamp&gt;/</code> first.</p>
+</div>
+
+<details class="why">
+<summary>The details of what does and does not get linked</summary>
+<p>The project's own documentation is excluded by pattern, so it does not end up scattered
+in your home folder. Same for the images, the install scripts and this manual.</p>
+<p>Full reasoning, including the two ways a naive setup went wrong, in
+<a href="under-the-hood.html#stow">How it works</a>.</p>
+</details>
+
+<h2 id="software">Adding and removing software</h2>
+
+<p>The software list is written down in files rather than being whatever happens to be on
+the computer. A second computer can be made identical, and you can see what you added.</p>
+
+<ol class="steps">
+  <li>
+    <p>Open the right file in <code>~/.dotfiles/.config/arch-config/modules/</code> and add or
+    remove a line.</p>
+    <div class="tw">
+    <table>
+    <thead><tr><th>File</th><th>What belongs in it</th></tr></thead>
+    <tbody>
+    <tr><td><code>apps.yaml</code></td><td>Everyday applications</td></tr>
+    <tr><td><code>dev.yaml</code></td><td>Programming tools</td></tr>
+    <tr><td><code>media.yaml</code></td><td>Sound and video</td></tr>
+    <tr><td><code>fonts.yaml</code></td><td>Fonts</td></tr>
+    <tr><td><code>system-tools.yaml</code></td><td>Command-line utilities</td></tr>
+    <tr><td><code>wm.yaml</code></td><td>The desktop itself</td></tr>
+    <tr><td><code>network.yaml</code></td><td>Wi-Fi and Bluetooth</td></tr>
+    <tr><td><code>optional.yaml</code></td><td>Things installed only on request &mdash; Docker, Java, printing</td></tr>
+    </tbody>
+    </table>
+    </div>
+  </li>
+  <li>
+    <p>Apply it:</p>
+    <pre><code>dcli sync</code></pre>
+    <p class="screen">A snapshot is taken first, so a bad change can be undone.</p>
+  </li>
+  <li>
+    <p>Once the computer is working properly, save the change:</p>
+    <pre><code>cd ~/.dotfiles
+git add .config/arch-config
+git commit -m "add something"</code></pre>
+  </li>
+</ol>
+
+<p>To see whether what is installed matches what is written down:</p>
+
+<pre><code>~/.dotfiles/installScripts/wizard.sh --audit</code></pre>
+
+<p>Read-only. It changes nothing and needs no admin permission.</p>
+
+<details class="why">
+<summary>Three of these files are deliberately never applied automatically</summary>
+<p>The three graphics files, one per manufacturer. The startup screen's file. The optional
+extras. Each is correct only in particular circumstances, so something else decides when to
+use them. See <a href="under-the-hood.html#packages">How it works</a>.</p>
+</details>
+
+<h2 id="logs">Where the logs are</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>File</th><th>What it holds</th></tr></thead>
+<tbody>
+<tr><td><code>/tmp/wizard-&lt;name&gt;.err</code></td><td><b>One file per install step that failed.</b> Read these, not the summary card</td></tr>
+<tr><td><code>~/.local/share/qtile/qtile.log</code></td><td>The window manager's own log. Where to look when a shortcut errors</td></tr>
+<tr><td><code>/var/log/ati-os-firstboot.log</code></td><td>The whole first-boot desktop build, if you installed from USB</td></tr>
+<tr><td><code>/tmp/qupdate-$UID-run.log</code></td><td>The last background update</td></tr>
+<tr><td><code>~/ati-os-build/logs/</code></td><td>One file per package, when building a USB stick</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Files the desktop generates for itself</h3>
+
+<p>You never create or edit these. Knowing they exist explains a lot.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>File</th><th>What it holds</th></tr></thead>
+<tbody>
+<tr><td><code>~/.cache/qtile/theme_mode</code></td><td>Which colour scheme is active</td></tr>
+<tr><td><code>~/.cache/qtile/current_palette.json</code></td><td>The current colours, which everything else reads</td></tr>
+<tr><td><code>~/.cache/qtile/palettes/</code></td><td>Worked-out colours for each of your wallpapers</td></tr>
+<tr><td><code>~/.cache/qtile/ui_scale</code></td><td>Your text size setting for this computer</td></tr>
+<tr><td><code>~/.cache/qtile/layout_state.json</code></td><td>Your window sizes, so they survive a restart</td></tr>
+<tr><td><code>~/.cache/qtile/window_group_state.json</code></td><td>Which window is on which workspace</td></tr>
+<tr><td><code>~/.cache/wall</code></td><td>Points at your current wallpaper</td></tr>
+<tr><td><code>~/.cache/qdrop.json</code></td><td>What is in the shelf</td></tr>
+<tr><td><code>~/.cache/qupdate.json</code></td><td>The saved list of pending updates</td></tr>
+<tr><td><code>~/DefaultConfig/&lt;timestamp&gt;/</code></td><td>Whatever settings you had before installing</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="undo">Undoing things</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>To undo</th><th>Run</th></tr></thead>
+<tbody>
+<tr><td>All the settings changes the installer made</td><td><code>./wizard.sh --uninstall</code></td></tr>
+<tr><td>Just one step</td><td><code>./wizard.sh --uninstall --only=&lt;name&gt;</code></td></tr>
+<tr><td>See what an undo would do first</td><td><code>./wizard.sh --uninstall --dry-run</code></td></tr>
+<tr><td>The startup screen specifically</td><td><code>./wizard.sh --uninstall --only=boot-splash</code></td></tr>
+<tr><td>Caps Lock behaving as Alt</td><td><code>./wizard.sh --uninstall --only=xmodmap</code></td></tr>
+<tr><td>Going back to the normal shell</td><td><code>chsh -s /usr/bin/bash $USER</code></td></tr>
+<tr><td>A bad software update</td><td>Restore a snapshot &mdash; see <a href="tools.html#updating">the recovery steps</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<p><b>Undo never removes software</b> and never deletes large downloads like the dictation
+models or the wallpapers. Settings changes only.</p>
+</div>
+
+<h2 id="docs">The project's own documents</h2>
+
+<p>These live in <code>~/.dotfiles</code>. Fastest way to read them: the logo in the bar
+&rarr; <b>Documentation</b>, which shows them formatted and read-only.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>File</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td><code>README.md</code></td><td>The overview and the install instructions</td></tr>
+<tr><td><code>TROUBLESHOOTING.md</code></td><td>126 real problems, each with cause and fix</td></tr>
+<tr><td><code>HANDOFF.md</code></td><td>A short summary of what has been proven and what has not</td></tr>
+<tr><td><code>plan_found-but-not-fixed.md</code></td><td>Everything looked at and deliberately left alone, with the reason. <b>Some entries are correct as written</b> and are recorded so nobody breaks them again</td></tr>
+<tr><td><code>installScripts/iso/README.md</code></td><td>Building the USB stick</td></tr>
+<tr><td><code>installScripts/iso/PLAN.md</code></td><td>Why the USB stick is built the way it is</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>For the reasoning behind any of it, see <a href="under-the-hood.html">How it
+works</a>.</p>
+
+<footer class="page">
+  <span>Every path on this page was read out of the scripts that create it.</span>
+  <a href="under-the-hood.html">Next: how it works &rarr;</a>
+</footer>
+
+</main>
+
+<aside class="toc" aria-label="On this page">
+  <div class="toc-inner">
+    <h2>On this page</h2>
+    <ol id="toc"></ol>
+  </div>
+</aside>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

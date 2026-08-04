@@ -15,6 +15,45 @@ a drop-stash, a package picker, and a restart that doesn't flash.
 
 ## Install
 
+Two ways in. The USB image is the easy one; the git clone is what the rest of
+this file documents.
+
+### From a USB stick — ATI-OS
+
+`installScripts/iso/` builds a bootable installation medium: Arch, this
+config, and the 31 AUR packages already compiled. Boot it, answer seven
+questions, and the desktop builds itself on first boot.
+
+**Roughly 20 minutes instead of two hours**, because `pacman-static` (an hour
+on its own), espanso, paru and whisper.cpp ship prebuilt rather than being
+compiled on the target machine.
+
+```sh
+cd installScripts/iso
+./aur-repo.sh      # 2-3 h, cached — builds the AUR set in a clean chroot
+./build-iso.sh     # ~25 min
+./test-iso.sh      # boots it in qemu and asserts the result
+```
+
+It asks: disk, hostname, username, password, timezone, keyboard, language,
+and whether to encrypt. It offers to install *alongside* an existing
+operating system when there is an EFI partition and 25 GB free.
+
+After it reboots and builds the desktop, you log in at a TTY and start the
+session yourself with `letsgo` (or `startx`). There is no display manager and
+no autologin — `step_disable_dm` turns every display manager off on purpose,
+and that applies however you installed.
+
+Read `installScripts/iso/README.md` before building one, and `PLAN.md` next
+to it for why it is built the way it is.
+
+**UEFI only.** The live environment boots on BIOS machines for rescue work,
+but the installer refuses to install there — every boot module in this repo
+is written against systemd-boot, and a second untested boot path is worse
+than no second path.
+
+### From a git clone
+
 Fresh Arch base install, no desktop environment, no display manager:
 
 ```bash

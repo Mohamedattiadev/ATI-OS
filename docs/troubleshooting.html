@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Troubleshooting &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="What to do when something is wrong. The most likely problems first, each described by what you actually see.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="start.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a class="current" href="troubleshooting.html">Troubleshooting</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>Troubleshooting</h1>
+
+<p class="lede">Find what you are seeing in the headings below. Every problem here is real,
+with the cause and the fix.</p>
+
+<h2 id="first">The first five minutes</h2>
+
+<h3 id="black-screen">I get a black screen with text on it, and nothing happens</h3>
+
+<p><b>Nothing is wrong.</b> There is no graphical login screen, and the desktop does not
+start itself. Deliberate.</p>
+
+<ol class="steps">
+  <li>
+    <p>Type your username, press Enter. Type your password, press Enter.</p>
+    <p class="screen">The password does not appear as you type. Not even dots. Keep going.</p>
+  </li>
+  <li>
+    <p>Type <code>letsgo</code> and press Enter.</p>
+  </li>
+</ol>
+
+<p>If that says <code>letsgo: command not found</code>, type <code>startx</code>. Same job.
+<code>letsgo</code> only exists once a particular install step has succeeded.</p>
+
+<h3 id="x-active">It says "Server is already active for display 0"</h3>
+
+<p>A previous session left a marker file behind. <code>letsgo</code> clears it for you.
+With <code>startx</code>, do it by hand:</p>
+
+<ol class="steps">
+  <li>
+    <p>First check whether the desktop is genuinely already running:</p>
+    <pre><code>pgrep -x Xorg</code></pre>
+    <p class="screen">If that prints a number, the desktop <em>is</em> running. Switch to it
+    with <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F1</kbd> and stop here.</p>
+  </li>
+  <li>
+    <p>If it printed nothing, remove the leftover and try again:</p>
+    <pre><code>rm -f /tmp/.X0-lock
+startx</code></pre>
+  </li>
+</ol>
+
+<h3 id="desktop-missing">The desktop never appeared after installing from USB</h3>
+
+<p>The desktop builds itself on the first restart, not during the install. About 20 minutes,
+with progress on screen. A failure is reported, and it retries next time rather than
+pretending it worked.</p>
+
+<pre><code>cat /var/log/ati-os-firstboot.log</code></pre>
+
+<p>To run it again yourself:</p>
+
+<pre><code>cd ~/.dotfiles/installScripts
+./wizard.sh</code></pre>
+
+<h3 id="stock-qtile">The desktop starts but looks completely plain</h3>
+
+<p>No colours, no bar, nothing like the pictures. The settings file had an error, so the
+window manager fell back to its built-in default. Silently.</p>
+
+<pre><code>bash ~/.dotfiles/installScripts/validate.sh</code></pre>
+
+<p>That loads the settings for real and reports the error. Also worth reading:</p>
+
+<pre><code>grep -i config ~/.local/share/qtile/qtile.log | head</code></pre>
+
+<h3 id="validate-lies">The self-check says everything passed, but nothing works</h3>
+
+<div class="warn">
+<p><code>validate.sh</code> <b>marks anything it cannot check as "skipped" and still reports
+success.</b> On a bad install it skips everything and finishes green.</p>
+<p>Trust the installer's own count: <code>46 ok / 0 failed</code>.</p>
+</div>
+
+<h2 id="rule">One rule before you start digging</h2>
+
+<div class="note">
+<p><b>The step that reports a failure is almost never the step that caused it.</b></p>
+<p>One full disk once showed up as five broken steps, 32 steps after the real cause. One
+blocked software transaction showed up as two.</p>
+<p>Read the individual error files, not the summary card:</p>
+<pre><code>ls /tmp/wizard-*.err
+cat /tmp/wizard-&lt;name&gt;.err</code></pre>
+<p>That is what separated five real causes from twenty-two symptoms.</p>
+</div>
+
+<h2 id="install">During the install</h2>
+
+<h3>It finished, but some software is missing</h3>
+
+<p>The software sync prints <em>"✓ Packages synced successfully"</em> whatever happened
+above it. Check yourself:</p>
+
+<pre><code>dcli sync --dry-run</code></pre>
+
+<p>That lists anything still missing. Three causes have produced it:</p>
+
+<ol>
+<li><b>Admin permission expired part-way through.</b> Things were built and never installed.
+The installer now keeps it alive for the whole run.</li>
+<li><b>Two pieces of software conflicted.</b> It is one transaction, so <em>everything</em> in
+that round failed, not just the two that clashed.</li>
+<li><b>One package's build tools were not ready.</b> Breaks only the packages needing
+them.</li>
+</ol>
+
+<h3>It ran out of disk space</h3>
+
+<p>About 25&nbsp;GB installed, and more while working. This once showed up as <em>six</em>
+unrelated steps reporting "No space left on device", 32 steps after the cause.</p>
+
+<p>On an older computer, clear the build cache:</p>
+
+<pre><code>yay -Sc</code></pre>
+
+<h3>It stopped because of unread news</h3>
+
+<p>Arch has a tool that blocks software changes until the distribution's announcements are
+read. It installs itself part-way through, and a new machine always has unread ones.</p>
+
+<p>The installer handles it. It has to be done as the administrator. Doing it as yourself has
+no effect, which is a confusing 20 minutes if you go looking.</p>
+
+<h3>Other install problems</h3>
+
+<p>All covered in the full troubleshooting file, with cause and fix:</p>
+
+<ul>
+<li><code>gum: command not found</code> on a brand new Arch</li>
+<li>A step sits with no output for a very long time (this is usually normal &mdash; see
+above)</li>
+<li>The install hangs near the end with the spinner still turning</li>
+<li>Your password is rejected repeatedly even though it is correct</li>
+<li>The admin-without-password step reports success and you still get asked</li>
+<li>The laptop still sleeps when you close the lid</li>
+<li>The install stops because you already have a <code>~/.tmux.conf</code></li>
+<li><b>On an AMD computer, the desktop is very slow and the graphics step "failed"</b></li>
+</ul>
+
+<h2 id="atios">The USB stick</h2>
+
+<h3>The computer will not start from the stick at all</h3>
+
+<p>Three things, in this order:</p>
+
+<ol class="steps">
+  <li>
+    <p><b>Pick the UEFI entry.</b> The boot menu usually lists the same stick twice. Choose the
+    one that says UEFI.</p>
+  </li>
+  <li>
+    <p><b>Turn Secure Boot off</b> in the computer's firmware settings.</p>
+  </li>
+  <li>
+    <p><b>Check the copy actually finished.</b> Copying to a USB stick can return before the
+    data is really there.</p>
+    <pre><code>sha256sum -c ati-os-*.iso.sha256</code></pre>
+  </li>
+</ol>
+
+<h3>"No bootable device" after the install finished</h3>
+
+<p>Almost always Secure Boot. The installer uses an unsigned startup program, which Secure
+Boot refuses to run. The install completes perfectly, then the computer will not start. It
+looks exactly like a broken install.</p>
+
+<p>Turn Secure Boot off and start again. Nothing needs reinstalling.</p>
+
+<h3>The installer refuses to start</h3>
+
+<p>Each refusal names the exact thing that failed:</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>What it says</th><th>What to do</th></tr></thead>
+<tbody>
+<tr><td><code>booted in BIOS/legacy mode</code></td><td>Restart and choose the UEFI entry, or turn UEFI on in the firmware settings</td></tr>
+<tr><td><code>${N}G — ATI-OS needs at least 30G</code></td><td>That disk is too small. It needs 60&nbsp;GB if the USB stick is over a year old, because it then has to compile everything</td></tr>
+<tr><td><code>has mounted partitions</code></td><td>You picked the USB stick, or something else is using that disk</td></tr>
+<tr><td><code>is in use by: lvm</code> (or raid, or crypt)</td><td>The disk is part of a more complicated storage setup. You have to take that apart yourself first</td></tr>
+<tr><td><code>no network</code></td><td>It downloads during the install. Connect Wi-Fi with <code>iwctl</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>It complains about signatures on the downloaded software</h3>
+
+<p>Two causes. The error message mentions neither.</p>
+
+<ul>
+<li><b>The clock is wrong.</b> A wrong date makes signatures look expired. Check with
+<code>timedatectl</code>.</li>
+<li><b>The USB stick is old.</b> Its built-in keys have expired. Rebuild it.</li>
+</ul>
+
+<h3>It took two hours instead of twenty minutes</h3>
+
+<p>The pre-compiled software was not used, and it says which:</p>
+
+<ul>
+<li><code>no prebuilt AUR repository on this medium</code> &mdash; the USB stick was made
+without running <code>./aur-repo.sh</code> first.</li>
+<li><code>medium is N days old — NOT using its prebuilt packages</code> &mdash; deliberate.
+Over a year old, that software was built against libraries too different from today's to be
+trusted, so it compiles it fresh instead. Correct, and slow. Rebuild the stick.</li>
+</ul>
+
+<h3>Building the stick fails with "call to execv failed"</h3>
+
+<p>Your own computer's settings are leaking into the image. This project installs a safety
+check that runs before every software change, and it does not exist inside the fresh system
+being built. The error names neither the check nor the missing file.</p>
+
+<p>Both build scripts prevent this. Seeing it means that protection was lost, or a
+configuration file was hand-edited.</p>
+
+<h3>One of the software packages will not build</h3>
+
+<p>Read that package's own log, not the summary:</p>
+
+<pre><code>ls ~/ati-os-build/logs/</code></pre>
+
+<h2 id="desktop">The desktop itself</h2>
+
+<h3>Every shortcut that opens a program suddenly fails</h3>
+
+<p>Browsers, terminal, file manager, Telegram. All of them. The log shows an error
+mentioning <code>cmd_spawn</code>.</p>
+
+<p><b>Cause:</b> an update to the window manager renamed something the settings file uses.</p>
+<p><b>Fix:</b> update this project's files, or edit the settings to use the new name.</p>
+
+<h3>I changed a setting and nothing happened</h3>
+
+<p>Press <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>r</kbd>. Your windows stay where they
+are.</p>
+
+<p>A lighter "reload" command exists, but only a full restart reliably picks up new software
+and new settings.</p>
+
+<h3>The bar shows an error where the battery should be</h3>
+
+<p>On a desktop with no battery. Fixed. The indicator is only added when a battery
+exists.</p>
+
+<div class="limit">
+<p>On some laptops the battery and charger have unusual internal names. The code looks at
+what each device <em>is</em> rather than what it is called. That fix was reasoned out, never
+tested on a laptop that names them that way. A wrong battery indicator is likely this.</p>
+</div>
+
+<h3>The desktop freezes for a few seconds</h3>
+
+<p>Something is blocking the main loop, usually after a shortcut or a bar update. See
+<b>Qtile freezes</b> in the full file.</p>
+
+<h3>The six Alt shortcuts and hint mode do nothing</h3>
+
+<p>No error, nothing on screen. A missing dependency, not a broken shortcut. In the full
+file.</p>
+
+<h3>Other desktop problems in the full file</h3>
+
+<ul>
+<li>The shelf pops up when you drag to select text, or opens on any drag at all</li>
+<li>The shelf flickers when you shake while it is already open</li>
+<li>The shelf is empty the first time and only fills up after you close and reopen it</li>
+<li>Pasting an image from a web page stores a link instead of the picture</li>
+<li>Memory use climbs every time you open and close a popup</li>
+<li>The bottom few entries of a cheatsheet are missing, with no error</li>
+<li>Cheatsheet columns do not line up</li>
+<li>Popup labels are washed out and hard to read on some themes</li>
+<li>The system tray is always empty</li>
+<li>Clipboard history shows nothing</li>
+<li>Touchpad tap-to-click does not work right after installing</li>
+<li>The file manager opens on the wrong workspace</li>
+<li>"Extract Here" and "Open Terminal Here" do nothing</li>
+<li>Mounting a drive from the sidebar is refused with no password prompt</li>
+<li>"Open containing folder" from a browser opens a terminal instead</li>
+<li>The disk indicator shows the wrong amount of free space</li>
+<li>The language indicator shows no flag</li>
+</ul>
+
+<h2 id="theming">Colours</h2>
+
+<h3>Telegram or the file manager is still the old colour</h3>
+
+<p>They read their colours once, at start. Close and reopen them. Still wrong? Log out and
+back in.</p>
+
+<h3>The startup screen is still the old colour</h3>
+
+<p>That one has to be rebuilt, which takes about a minute:</p>
+
+<pre><code>boot-splash sync</code></pre>
+
+<h3>Folder icons never change colour</h3>
+
+<p>An optional package is missing. It fails silently by design rather than breaking the whole
+theme change.</p>
+
+<h3>Web pages are not dark</h3>
+
+<p>Deliberate. Rather than a filter over the top, the desktop tells websites you prefer dark
+mode, so each serves its own dark design. For a site with none, turn on force-dark for that one
+site in your browser's page menu.</p>
+
+<h3>Changing the wallpaper replaced my theme</h3>
+
+<p>Fixed. The wallpaper only changes your colours on the theme called <b>Wallpaper</b>. On
+any other, a new picture is only a new picture.</p>
+
+<h3>Other colour problems in the full file</h3>
+
+<ul>
+<li>The browser's toolbar follows the theme but its home page does not, or the reverse</li>
+<li>The text editor's dashboard stays the default colour</li>
+<li>The bar widgets keep old colours after a theme change</li>
+<li>A new wallpaper is applied with the old colours</li>
+<li>Rapid theme changes leave things half-applied</li>
+<li>Every menu stops opening after a wallpaper change &mdash; while the theme change reported
+success</li>
+<li>The theme step fails during install, before you have ever started the desktop</li>
+</ul>
+
+<h2 id="fonts">Text looks wrong</h2>
+
+<h3>Everything is in a strange font and nothing lines up</h3>
+
+<p><b>What you see:</b> the bar, popups and notifications in an odd font, with every column
+ragged. Nothing reports an error. It looks like broken layout code.</p>
+
+<p><b>What it is:</b> a missing font. The system never reports one. It silently substitutes,
+and here the substitute is a Chinese/Japanese/Korean face. This project lines its columns up
+with spaces, and spaces only line up in a fixed-width font.</p>
+
+<p><b>Check it:</b></p>
+
+<pre><code>fc-match "JetBrainsMono Nerd Font"</code></pre>
+
+<p class="screen">It should answer with that same name. Anything else means the font is
+missing.</p>
+
+<pre><code>bash ~/.dotfiles/installScripts/validate.sh</code></pre>
+
+<p>Look at its <em>UI fonts installed</em> section, which checks every font the desktop names.</p>
+
+<details class="why">
+<summary>If you are adding a font to a settings file yourself</summary>
+<p>Two edits, not one. Add the package to <code>modules/fonts.yaml</code> <em>and</em> add
+the family name to the list in <code>validate.sh</code>. That list is hand-maintained.</p>
+<p>Get the real family name with <code>fc-list : family</code>. They are rarely what you would
+guess. One package installs "FiraCode Nerd Font", not "FiraCode Nerd". This project has fallen
+into that twice.</p>
+</details>
+
+<h2 id="network">Wi-Fi and Bluetooth</h2>
+
+<h3>The pickers say the service is not running</h3>
+
+<p><b>What you see:</b> <kbd>Super</kbd>+<kbd>P</kbd> then <kbd>n</kbd> or <kbd>b</kbd>
+opens and immediately errors, or the Bluetooth list never fills. The tray icons do nothing.</p>
+
+<p><b>What it is:</b> installing software is not the same as switching it on. Fix:</p>
+
+<pre><code>./wizard.sh --yes --only=radios</code></pre>
+
+<p>To check afterwards:</p>
+
+<pre><code>systemctl is-enabled NetworkManager.service bluetooth.service</code></pre>
+
+<div class="warn">
+<p><b>Watch out for <code>service_trim.sh</code>.</b> That optional tuning script offers to
+switch Bluetooth off. Say yes and the Bluetooth picker goes dead with no other symptom.</p>
+</div>
+
+<h3>Connecting hangs forever</h3>
+
+<p>The busy indicator spins and never stops. <b>Press <kbd>c</kbd> to give up.</b> Connecting
+to an out-of-range Bluetooth device genuinely never finishes on its own.</p>
+
+<h3>A network keeps failing with a password I know is right</h3>
+
+<p>Fixed. A wrong password asks again rather than saving a network that can never connect.
+For an old broken entry, press <kbd>x</kbd> to forget it and connect again.</p>
+
+<h3>Other network problems in the full file</h3>
+
+<ul>
+<li>A separate password dialog pops up on top of the picker</li>
+<li>The Bluetooth list fills up and then empties itself</li>
+<li>The Wi-Fi QR code will not scan</li>
+</ul>
+
+<h2 id="menus">The menus</h2>
+
+<h3>Pressing Enter in the password list does nothing</h3>
+
+<p>The list opens, the entries are there, Enter closes it and copies nothing. In the full
+file, with two other password-tool problems.</p>
+
+<h3>Every confirmation answers "cancel" by itself</h3>
+
+<p>Only with more than one person on the computer. Fixed. The menus keep temporary state
+somewhere private to each user rather than in a shared location.</p>
+
+<h3>The translator shows no suggestions or examples</h3>
+
+<p>The missing <a href="install-git.html#gemini">AI key</a>. Translation itself still
+works.</p>
+
+<h3>Other menu problems in the full file</h3>
+
+<ul>
+<li>The translator returns a single word with no dictionary</li>
+<li>The flashcard tool builds a whole card and then cannot reach Anki</li>
+<li>The saved-links list shows fewer links than the file has</li>
+<li>The wallpaper menu lists nothing</li>
+<li>Some PDFs report "file not found"</li>
+<li>The process killer is slow to open, or its columns do not line up</li>
+<li>The screenshot menu fails before it appears</li>
+<li>The PDF tool silently does nothing</li>
+<li>Webcam recording uses the wrong device or resolution</li>
+</ul>
+
+<h2 id="dictation">Dictation</h2>
+
+<h3>It transcribes nonsense</h3>
+
+<p>Your microphone volume was reset to a distorting level. Something resets it at every
+login, and a background service puts it back. If dictation was fine and suddenly got much
+worse, this is why.</p>
+
+<h3>It is very slow</h3>
+
+<p>A few seconds of speech taking ten or more means the engine was installed unoptimised. An
+install step rebuilds it about 13 times faster. That step <em>warns and skips itself</em>
+rather than failing, so it may have been skipped quietly.</p>
+
+<h3>Live dictation types things I never said</h3>
+
+<p>Usually repeated phrases. The engine does not cleanly separate one phrase from the next in
+live mode, and there is a piece specifically to work around that. In the full file.</p>
+
+<h2 id="shell">Errors when you open a terminal</h2>
+
+<h3>A wall of errors on every new terminal</h3>
+
+<p>Unknown command, a temporary file that could not be created, a missing filename. All under
+<b>Fish shell</b> in the full file.</p>
+
+<h3>The terminal multiplexer ignores all its add-ons</h3>
+
+<p>tmux starts fine and quietly ignores every plugin line, so pane navigation and
+session-restore do nothing. Its add-on manager needs a one-time setup, which is an install
+step.</p>
+
+<h3>Warnings when the desktop starts that are not problems</h3>
+
+<p>Some startup messages mean nothing. The full file has an entry called <em>"What qtile.log
+looks like on a clean restart"</em>, the fastest way to tell a real error from normal
+noise.</p>
+
+<h2 id="full">Finding the rest</h2>
+
+<p>The complete record is <code>TROUBLESHOOTING.md</code> in the project folder: 126
+entries, each with what you see, what caused it and what to do.</p>
+
+<p><b>Search it from the desktop:</b> click the logo in the bar &rarr; <b>Documentation</b>
+&rarr; <b>Troubleshooting</b>. That list shows each entry by <em>what you see</em> rather than
+by a heading, so you can search the words you would actually type, and it jumps straight to
+the right place.</p>
+
+<p>Two other files, if you are digging deeper:</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>File</th><th>What it holds</th></tr></thead>
+<tbody>
+<tr><td><code>HANDOFF.md</code></td><td>A short summary of what has been proven to work and what has not</td></tr>
+<tr><td><code>plan_found-but-not-fixed.md</code></td><td>Everything that was looked at and deliberately left alone, with the reason. <b>Several entries are correct as written</b> and are recorded so nobody "fixes" them again</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>For <em>why</em> something behaves as it does rather than how to fix it, see
+<a href="under-the-hood.html">How it works</a>.</p>
+
+<footer class="page">
+  <span>Every problem on this page happened to someone. None are hypothetical.</span>
+  <a href="reference.html">Next: where everything lives &rarr;</a>
+</footer>
+
+</main>
+
+<aside class="toc" aria-label="On this page">
+  <div class="toc-inner">
+    <h2>On this page</h2>
+    <ol id="toc"></ol>
+  </div>
+</aside>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

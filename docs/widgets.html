@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The bar and the popups &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="What everything in the bar does when you click it, and what each popup window is for.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="start.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a class="current" href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a href="troubleshooting.html">Troubleshooting</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>The bar and the popups</h1>
+
+<p class="lede">The bar is the strip along the edge of your screen. Almost everything in it
+does something when clicked.</p>
+
+<h2 id="logo">Start by clicking the logo</h2>
+
+<p><b>Left-click the logo.</b> It opens a menu answering "what can this computer do?". It is
+the fastest way to find anything.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Click</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td><b>Left</b></td><td>The documentation menu</td></tr>
+<tr><td><b>Middle</b></td><td>A terminal</td></tr>
+<tr><td><b>Right</b></td><td>The program launcher</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The menu has seven sections:</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Section</th><th>What it gives you</th></tr></thead>
+<tbody>
+<tr><td><b>Keybindings</b></td><td>Every keyboard shortcut, searchable. Type a few letters to filter</td></tr>
+<tr><td><b>Cheatsheets</b></td><td>Opens the on-screen shortcut cards for the desktop, Vim, or the shell</td></tr>
+<tr><td><b>Documentation</b></td><td>Reads the manuals &mdash; nicely formatted, not raw text, and read-only so you cannot damage them by accident</td></tr>
+<tr><td><b>Espanso</b></td><td>Your text-expansion shortcuts, and which of their settings are filled in</td></tr>
+<tr><td><b>Appearance</b></td><td>Colour theme, text size, wallpaper, startup screen</td></tr>
+<tr><td><b>System</b></td><td>What this computer is, which software is installed, what failed, your screen and graphics</td></tr>
+<tr><td><b>Maintenance</b></td><td><b>The only section that changes anything.</b> Housekeeping: leftover settings files to merge, unused software to remove, failures since you started up, and a growing download cache to clean. Each shows a live count</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><b><kbd>Esc</kbd> goes up one level, not out.</b> Only at the top does it close the
+menu. Browse without reopening it constantly.</p>
+
+<details class="why">
+<summary>Why the menu is generated fresh every time you open it</summary>
+<p>A hand-written menu goes out of date the moment anything is added, silently. So every
+section is built from the live system when you open it. The shortcut list is read out of the
+configuration file the desktop is running.</p>
+<p>The design decisions behind it are in
+<a href="under-the-hood.html#docsmenu">How it works</a>.</p>
+</details>
+
+<h2 id="chips">Everything else in the bar</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>Click this</th><th>And you get</th></tr></thead>
+<tbody>
+<tr><td><b>The camera</b></td><td>Screenshot &mdash; drag a box, it goes to your clipboard. Same as pressing <kbd>Print</kbd></td></tr>
+<tr><td><b>The CPU or memory number</b></td><td>A full-screen view of what is using your computer</td></tr>
+<tr><td><b>The updates count</b></td><td>The update window &mdash; see <a href="tools.html#qupdate">qupdate</a></td></tr>
+<tr><td><b>The disk indicator</b></td><td>How full your disks are</td></tr>
+<tr><td><b>The battery</b></td><td>Charge level and whether it is charging. <em>Only appears if the computer has a battery</em></td></tr>
+<tr><td><b>The keyboard language</b></td><td>Switches to the next language</td></tr>
+<tr><td><b>The clock</b></td><td>Today's and this week's plans and to-dos</td></tr>
+<tr><td><b>The media controls</b></td><td>Left click: play or pause. Right click: previous track</td></tr>
+<tr><td><b>The ✖ icon</b></td><td>Opens the wallpaper picker, or closes it if it is open</td></tr>
+<tr><td><b>The layout icon</b></td><td>Right click: change how windows are arranged</td></tr>
+<tr><td><b>The tooltip icon</b></td><td>Opens the <a href="#tour">welcome tour</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="boxes">Hidden groups of icons</h2>
+
+<p>The bar cannot fit everything. Some icons live in groups you open when you want them.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Shows</th></tr></thead>
+<tbody>
+<tr><td><kbd>Alt</kbd>+<kbd>`</kbd></td><td>The first group of system icons</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>`</kbd></td><td>The second group</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Tab</kbd></td><td>The system tray &mdash; icons put there by running programs</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Opening a keyboard <a href="keybindings.html#modes">mode</a> closes whichever group is
+open and remembers it, so the mode's chip never fights for space.</p>
+
+<h2 id="modechip">The coloured chip</h2>
+
+<p>Press a <a href="keybindings.html#modes">mode</a> shortcut and a coloured chip appears
+in the bar. It names the mode and lists the keys it accepts. Each mode has its own colour.</p>
+
+<p>That chip answers "which keys work right now?". If the keyboard seems to have stopped
+responding, look there. You are probably in a mode. <kbd>Esc</kbd> always leaves.</p>
+
+<h2 id="move">Moving the bar</h2>
+
+<p>Press <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>z</kbd> to move the bar between the top and
+the bottom of the screen.</p>
+
+<h2 id="popups">The popup windows</h2>
+
+<p>Drawn by the desktop itself, not separate programs. Keyboard-driven, and they close when
+you leave.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Popup</th><th>What it is for</th><th>Open it with</th></tr></thead>
+<tbody>
+<tr><td><b>Sound</b></td><td>Choose speakers or headphones, set the volume of individual programs, pick a microphone</td><td><kbd>Alt</kbd>+<kbd>3</kbd></td></tr>
+<tr><td><b>Monitors</b></td><td>Set up a second screen: where it sits, its resolution, which is primary</td><td><kbd>Alt</kbd>+<kbd>4</kbd></td></tr>
+<tr><td><b>Wi-Fi</b></td><td>Connect to a network</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>n</kbd></td></tr>
+<tr><td><b>QR code</b></td><td>Share your Wi-Fi with a phone by scanning</td><td><kbd>s</kbd>, inside the Wi-Fi popup</td></tr>
+<tr><td><b>Bluetooth</b></td><td>Pair and connect devices</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>b</kbd></td></tr>
+<tr><td><b>Wallpaper</b></td><td>Browse and pick a wallpaper</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>w</kbd>, or the ✖ icon</td></tr>
+<tr><td><b>Cheatsheets</b> (three of them)</td><td>Shortcut cards for the desktop, Vim, and the shell</td><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Every key each of them accepts is listed under
+<a href="keybindings.html#modes">Keyboard shortcuts &rarr; Modes</a>.</p>
+
+<details class="why">
+<summary>Why these are not ordinary applications</summary>
+<p>They replaced four separate programs. Drawn by the desktop means no window to manage,
+nothing to put on a workspace, no rule about where it should appear. The Wi-Fi and Bluetooth
+tray icons are still there, but the pickers never open those old windows. More in
+<a href="under-the-hood.html#popups">How it works</a>.</p>
+</details>
+
+<h2 id="cheatsheets">The cheatsheets</h2>
+
+<figure>
+  <img src="assets/img/cheatsheet.gif" alt="A cheatsheet of shortcuts appearing on screen">
+</figure>
+
+<p><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd> then <kbd>k</kbd>. Every shortcut on a
+card, with the key on the right.</p>
+
+<p>They <b>scroll</b>: <kbd>j</kbd> and <kbd>k</kbd> move a few rows, <kbd>Tab</kbd> and
+<kbd>Shift</kbd>+<kbd>Tab</kbd> move a whole screenful, and the header shows how far down you
+are. <kbd>v</kbd> switches to the Vim sheet and <kbd>f</kbd> to the shell one.
+<kbd>Esc</kbd> closes.</p>
+
+<p>Modifier keys are drawn as symbols: <kbd>⇧</kbd> Shift, <kbd>⌃</kbd> Ctrl,
+<kbd>⏎</kbd> Enter, <kbd>␣</kbd> Space. The header carries the key to them.</p>
+
+<details class="why">
+<summary>Why they scroll instead of paging</summary>
+<p>Paging tied how much you could see to how big the window was. The only way to show more
+shortcuts was to be bigger, and they had grown to nearly the size of a 1366&times;768 screen,
+covering the very window you opened them to ask about. With a view that scrolls, size only
+decides how much you see at once.</p>
+</details>
+
+<h2 id="tour">The welcome tour</h2>
+
+<p>On your first login after installing, a short tour appears: welcome, workspaces, the
+shortcuts worth knowing first, finish.</p>
+
+<p>It runs <b>once</b>. After that, open it from the tooltip icon in the bar.</p>
+
+<h2 id="veil">Why a restart does not flicker</h2>
+
+<figure>
+  <img src="assets/img/veil.gif" alt="A restart hidden behind a frosted overlay showing one card per window">
+</figure>
+
+<p>Restarting the desktop with <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>r</kbd>, or changing
+your theme, would normally mean watching every window from every workspace flash across the
+screen for two seconds.</p>
+
+<p>Instead a frosted overlay covers the screen. It shows a card per window with its real
+icon, and a progress indicator reporting genuine progress rather than a timer.</p>
+
+<p><b>Your layout survives.</b> Window sizes, which workspace each window is on, and which
+was focused all come back as they were. Windows you moved by hand stay where you put them
+rather than jumping back to their default workspace.</p>
+
+<h2 id="scaling">If everything is too small or too big</h2>
+
+<p>The desktop measures your screen at login and sizes text, bar and icons to suit. Disagree
+with the result? Two clicks, not a settings file:</p>
+
+<pre><code>ui-scale-toggle</code></pre>
+
+<p>That opens a picker. Also in the logo menu under <b>Appearance &rarr; UI scale</b>. Or
+set it directly:</p>
+
+<pre><code>ui-scale --set 1.25    # pin a value; it survives re-detection
+ui-scale --auto        # go back to measuring automatically
+ui-scale --show        # what was detected, what is pinned, what is active</code></pre>
+
+<p>It re-measures at every login, so plugging in an external monitor adjusts by itself.</p>
+
+<div class="limit">
+<p><b>Nobody has looked at this on a real 4K screen.</b> The sizing has been checked
+mathematically and it is correct: at double size everything is exactly twice as big. That is a
+proof, not a photograph. If it looks wrong on yours, <code>ui-scale --set</code> is there.</p>
+</div>
+
+<footer class="page">
+  <span>Every click behaviour on this page was read out of the configuration that defines it.</span>
+  <a href="tools.html">Next: the tools you get &rarr;</a>
+</footer>
+
+</main>
+
+<aside class="toc" aria-label="On this page">
+  <div class="toc-inner">
+    <h2>On this page</h2>
+    <ol id="toc"></ol>
+  </div>
+</aside>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

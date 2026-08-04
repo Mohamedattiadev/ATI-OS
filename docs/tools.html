@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The tools you get &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="A shelf for files, a one-click updater, passwords, phone mirroring and dictation. What each is for, and how to use it.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <button class="iconbtn" id="theme-toggle">Light</button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="start.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a class="current" href="tools.html">The tools you get</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a href="troubleshooting.html">Troubleshooting</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>The tools you get</h1>
+
+<p class="lede">About fifty small commands come with this desktop. These are the ones you
+will use.</p>
+
+<h2 id="glance">All of them at a glance</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>Tool</th><th>What it is for</th><th>How to open it</th></tr></thead>
+<tbody>
+<tr><td><a href="#qdrop"><b>The shelf</b></a></td><td>A panel you drag files into now and drag out later</td><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>d</kbd></td></tr>
+<tr><td><a href="#qupdate"><b>The updater</b></a></td><td>Update or install software with checkboxes, no typing</td><td>Click the updates count in the bar</td></tr>
+<tr><td><a href="#passwords"><b>Passwords</b></a></td><td>A pop-up list of your saved passwords</td><td><kbd>Super</kbd>+<kbd>p</kbd> then <kbd>p</kbd></td></tr>
+<tr><td><a href="#phone"><b>Phone mirroring</b></a></td><td>Your Android phone's screen on the computer, controllable</td><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F6</kbd></td></tr>
+<tr><td><a href="#dictation"><b>Dictation</b></a></td><td>Speak, and the words are typed</td><td><kbd>F8</kbd> or <kbd>F9</kbd></td></tr>
+<tr><td><b>Clipboard history</b></td><td>Everything you copied recently, with picture previews</td><td><kbd>Alt</kbd>+<kbd>v</kbd></td></tr>
+<tr><td><b>Screenshots</b></td><td>Drag a box, straight to the clipboard</td><td><kbd>Print</kbd></td></tr>
+<tr><td><b>Screen recording</b></td><td>Video, audio, webcam or a gif</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>r</kbd></td></tr>
+<tr><td><b>Translation</b></td><td>Translate whatever text you have selected</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>e</kbd></td></tr>
+<tr><td><b>Drawing on screen</b></td><td>Scribble over anything, for explaining on calls</td><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>w</kbd></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="qdrop">The shelf</h2>
+
+<p>A panel slides down from the top of the screen. Drag files, text, links or images into
+it. They stay. Later, in another program, drag them back out.</p>
+
+<p>It solves "I want to attach this file to that email, but they are on different
+workspaces".</p>
+
+<figure>
+  <img src="assets/img/qdrop.gif" alt="Dragging a file into a panel that slides down from the top, then dragging it back out">
+</figure>
+
+<h3>Using it</h3>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Do this</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>d</kbd></td><td>Show or hide it</td></tr>
+<tr><td><b>Shake the mouse while dragging a file</b></td><td>It comes to you. Any direction. This is the good one</td></tr>
+<tr><td>Drop something in</td><td>It is added. Links are recognised automatically</td></tr>
+<tr><td>Drag an item out</td><td>Paste it into any program</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Paste from the clipboard &mdash; text, files, or an image you copied from a web page</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Search what is in there</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Open the selected item</td></tr>
+<tr><td><kbd>Del</kbd></td><td>Remove it</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd>, or drag a box on empty space</td><td>Select several at once</td></tr>
+<tr><td>Right-click</td><td>A menu</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>It hides 8 seconds after the mouse leaves, unless a menu or dialog is open.</p>
+
+<div class="note">
+<p><b>Shaking only works while you are really dragging a file.</b> Selecting text or dragging
+a selection box will not trigger it. Otherwise it would pop up constantly.</p>
+</div>
+
+<details class="why">
+<summary>Where it stores things, and what it costs</summary>
+<p>The list lives in <code>~/.cache/qdrop.json</code>. An image copied from a web page is
+raw pixels rather than a file, so it is saved into <code>~/.cache/qdrop-images/</code> and
+added as a normal entry.</p>
+<p>From a terminal:</p>
+<pre><code>qdrop.py --show | --hide | --toggle | --add-text TXT | --reload | --status</code></pre>
+<p>Idle cost: 0% CPU, about 90&nbsp;MB of memory for both parts together.</p>
+</details>
+
+<h2 id="qupdate">Updating without a terminal</h2>
+
+<p>Update and install software by ticking boxes.</p>
+
+<p><b>Click the updates count in the bar.</b> A window opens with two tabs.</p>
+
+<figure>
+  <img src="assets/img/qupdate.gif" alt="A window listing pending updates with checkboxes next to each">
+</figure>
+
+<h3>The Updates tab</h3>
+
+<p>Everything with a new version. Each row: a checkbox, a badge saying where it comes from,
+the old and new version numbers.</p>
+
+<p>Two buttons at the bottom:</p>
+
+<ul>
+<li><b>Update selected</b> &mdash; only the ones you ticked.</li>
+<li><b>Full upgrade</b> &mdash; everything. Use this one normally. It snapshots your system
+first, so a bad update can be undone.</li>
+</ul>
+
+<p>Tick <b>Run in background</b> and no terminal appears. You get a notification when it
+finishes either way.</p>
+
+<h3>The Install tab</h3>
+
+<p>Type a name. Results are sorted so the one you meant is at the top, with a marker on
+anything you already have. Tick, then <b>Install selected</b>.</p>
+
+<details class="why">
+<summary>Why the list appears instantly</summary>
+<p>It shows a saved copy the moment you open the window and checks for a newer one in the
+background. Without that, opening the window meant waiting for a network round trip, and
+hanging entirely with no connection.</p>
+</details>
+
+<h2 id="passwords">Passwords</h2>
+
+<p>Your passwords in a pop-up list, on a keyboard shortcut. Nothing leaves your
+computer.</p>
+
+<p><a href="install-git.html#vaultwarden">Create the account first</a>. Two minutes, once.</p>
+
+<p>Then press <kbd>Super</kbd>+<kbd>p</kbd>, let go, press <kbd>p</kbd>. Type to filter.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><kbd>Enter</kbd></td><td><b>Copy the password.</b> Your clipboard is wiped 30 seconds later</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>u</kbd></td><td>Copy the username</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>t</kbd></td><td>Copy the two-factor code</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>o</kbd></td><td>Open that site in your browser</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>a</kbd></td><td><b>Type the password</b> into the window you came from. It never touches the clipboard</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>n</kbd></td><td>New entry &mdash; it can generate a 24-character password for you</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>e</kbd></td><td>Edit an entry</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>x</kbd></td><td>Delete an entry</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>s</kbd></td><td>Sync now</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The hint line shows the three you reach for. All nine work.</p>
+
+<h3>In your web browser too</h3>
+
+<ol class="steps">
+  <li><p>Install the <b>Bitwarden</b> extension from your browser's store.</p></li>
+  <li>
+    <p>Open it and, <b>before you log in</b>, click the ⚙ cog at the top left &rarr;
+    <em>Self-hosted environment</em>.</p>
+  </li>
+  <li>
+    <p>Put <code>https://127.0.0.1:8222</code> in the server box and save.</p>
+    <p class="screen">The <b>s</b> in <code>https</code> matters.</p>
+  </li>
+  <li><p>Log in with your email and master password.</p></li>
+</ol>
+
+<p>Nothing else needed. Your browser already trusts the certificate.</p>
+
+<h3>On your phone</h3>
+
+<div class="warn">
+<p>The password server listens only to your own computer, on purpose. <b>Do not open port
+8222 to your network or the internet.</b></p>
+</div>
+
+<p>Reaching it from a phone needs one extra piece. Two things block the obvious approach:</p>
+
+<ul>
+<li>The Bitwarden app refuses plain unencrypted connections outright, with no exception for
+your own home network.</li>
+<li>Modern Android does not trust certificates you install yourself, so putting your
+computer's certificate on the phone still fails. <em>This is the step that eats an
+evening.</em></li>
+</ul>
+
+<p><a href="https://tailscale.com">Tailscale</a> solves both. A free private network
+between your own devices, and it can issue a certificate phones already trust.</p>
+
+<ol class="steps">
+  <li>
+    <p>On the computer, run <code>sudo tailscale up</code> and follow the link it prints to
+    sign in.</p>
+  </li>
+  <li>
+    <p>In the Tailscale admin website, turn on <b>MagicDNS</b> and <b>HTTPS
+    Certificates</b>.</p>
+    <p class="screen">Without both, the next step fails with "your Tailscale account does not
+    support getting TLS certs".</p>
+  </li>
+  <li>
+    <p>Back on the computer:</p>
+    <pre><code>./wizard.sh --yes --only=vaultwarden-phone</code></pre>
+  </li>
+  <li>
+    <p>On the phone: install Tailscale and sign in with the same account. Install Bitwarden.
+    Before logging in, tap ⚙ &rarr; <em>Self-hosted environment</em> and enter
+    <code>https://&lt;yourcomputer&gt;.&lt;yournetwork&gt;.ts.net:8222</code></p>
+  </li>
+</ol>
+
+<div class="limit">
+<p><b>A laptop is not a server.</b> With the lid shut your phone can still read passwords it
+already downloaded. It cannot sync or save new ones until the laptop is back. If that matters,
+move the password server to something that stays on, such as a Raspberry Pi or a small rented
+server, and point the tools at it. Nothing else changes.</p>
+</div>
+
+<details class="why">
+<summary>What is actually running</summary>
+<p>Vaultwarden, an independent implementation of the Bitwarden server, running on your own
+computer at <code>127.0.0.1:8222</code>. It speaks the same protocol as the official Bitwarden
+apps. That is the whole point: no bespoke phone app to trust.</p>
+<p>The phone bridge publishes a proxy rather than moving the server. One program can listen on
+only one address, so moving it would take <code>127.0.0.1</code> away and break both the
+pop-up list and the browser extension. The proxy handles encryption and forwards to the local
+server, so <b>nothing is exposed to your home network</b>.</p>
+</details>
+
+<h2 id="phone">Your phone on the screen</h2>
+
+<p>Your Android phone's screen in a window, controlled with your mouse and keyboard. Sound
+comes out of the computer's speakers.</p>
+
+<h3>The first time</h3>
+
+<ol class="steps">
+  <li>
+    <p>On the phone, turn on <b>Wireless debugging</b>: Settings &rarr; Developer options
+    &rarr; Wireless debugging.</p>
+    <p class="screen">This survives restarts, so it really is a one-time thing.</p>
+  </li>
+  <li>
+    <p>On the computer, press <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F6</kbd>.</p>
+    <p class="screen">A window opens with a QR code and a text box.</p>
+  </li>
+  <li>
+    <p>Either scan the QR code with the phone (Wireless debugging &rarr; <em>Pair device with
+    QR code</em>), or tap <em>Pair device with pairing code</em> and type the 6 digits into the
+    text box. Whichever finishes first wins.</p>
+  </li>
+</ol>
+
+<p>After that the shortcut goes straight to the mirror. Pressing it again brings that window
+to the front rather than starting a second one.</p>
+
+<h3>Controls</h3>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Do this</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Left / right / middle click</td><td>Tap / back / home</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>S</kbd></td><td>App switcher</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>F</kbd></td><td>Fullscreen</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>O</kbd></td><td>Turn the phone's own screen back on &mdash; it starts dark to save battery</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Q</kbd></td><td>Quit</td></tr>
+<tr><td>Drag a file onto the window</td><td>It is copied to the phone's Download folder</td></tr>
+<tr><td>Drag an APK onto the window</td><td>It is installed</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<p>Turned on the optional Caps-Lock-as-Alt setting? Use <kbd>Caps</kbd> instead. On a normal
+install your real <kbd>Alt</kbd> key is correct.</p>
+</div>
+
+<h3>Making the picture better</h3>
+
+<p><b>Plug in a USB cable.</b> Not a marginal improvement. Wi-Fi is the bottleneck, not the
+computer. Measured here, the round trip to the phone averaged 53&nbsp;ms, worse than two whole
+frames before anything is encoded. A cable raises the quality ceiling substantially.</p>
+
+<p>To make the window bigger:</p>
+
+<pre><code>PHONE_SIZE=100 phone_screen</code></pre>
+
+<p>Default 92, meaning 92% of usable screen height. A phone held upright cannot go wider
+without being taller than your screen, so 100 is the ceiling.</p>
+
+<details class="why">
+<summary>Why this needs a special tool at all</summary>
+<p>On Arch the standard Android tool is built without the ability to find a phone on the
+network, so every guide saying "it just finds it" is wrong here. The address and port are both
+random, and the port changes whenever the phone restarts. Doing it by hand is a chore every
+session, not a one-off.</p>
+<p>The script listens for the announcement the phone broadcasts and hands the connection
+details over. That is the whole trick.</p>
+<p>It also keeps the window on screen when you rotate the phone. The mirror resizes from its
+top-left corner, which walks a right-anchored window off the edge. A watcher checks once a
+second and nudges it back.</p>
+</details>
+
+<h2 id="dictation">Dictation</h2>
+
+<p>Speak instead of typing. It runs entirely on your own computer. Nothing is sent
+anywhere.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td><kbd>F8</kbd></td><td><b>Live.</b> Start talking. Each phrase is typed the moment you pause. Press <kbd>F8</kbd> again to stop</td></tr>
+<tr><td><kbd>F9</kbd></td><td><b>All at once.</b> Start talking, press <kbd>F9</kbd> again when you are done, and the whole thing is typed out</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><kbd>F8</kbd> for a chat message. <kbd>F9</kbd> for a paragraph you want to think through
+first.</p>
+
+<div class="note">
+<p><b>Transcribing nonsense?</b> Your microphone volume was probably reset to a distorting
+level. A background service fixes that, installed as part of a normal install. See
+<a href="troubleshooting.html#dictation">Troubleshooting</a>.</p>
+</div>
+
+<h2 id="notes">Notes and to-dos</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>Press</th><th>What you get</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>s</kbd></td><td>Your main notes file, in an editor. Press again to hide it</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>p</kbd>, or the clock</td><td>Today's and this week's plans and to-dos</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>t</kbd></td><td>A to-do manager</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>o</kbd></td><td>Store and copy short notes</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>With <a href="install-git.html#simplenote">note syncing set up</a>, your to-do list also
+appears in the Simplenote phone app. Saving uploads. Opening the window downloads.</p>
+
+<div class="note">
+<p><b>Editing in both places is safe.</b> Change the list on both and it will <em>not</em>
+guess a winner. You get a second file with a timestamp in its name holding the phone's version,
+and you merge by hand.</p>
+</div>
+
+<h2 id="menus">The menus behind Super+P</h2>
+
+<p>All searchable lists. Type to filter, arrows to move, Enter to choose.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Press</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>k</kbd></td><td><b>Close a frozen program.</b> Shows what is running with its window title, so you can tell which browser tab is the problem</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>l</kbd></td><td>Screen brightness</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>e</kbd></td><td>Translate the selected text, with a dictionary table</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>s</kbd></td><td>Spell and grammar check a word or a sentence</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>a</kbd></td><td>Build an Anki flashcard and send it to Anki</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>i</kbd></td><td>Screenshot, then annotate it before saving</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>r</kbd></td><td>Record video, audio, webcam or a gif</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>d</kbd></td><td>Find and open one of your documents</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>f</kbd></td><td>Browse and edit settings files</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>m</kbd></td><td>Read a manual page</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>z</kbd></td><td>Your saved links, with previews</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>y</kbd></td><td>YouTube menu</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>h</kbd></td><td>Every one of these menus, in one list</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<p>The translation, spell check and flashcard tools can use an AI service for extra
+suggestions. Without <a href="install-git.html#gemini">an AI key</a> they still work, with one
+section less.</p>
+</div>
+
+<h2 id="updating">Updating safely</h2>
+
+<p>Use the <a href="#qupdate">updater window</a>, or type:</p>
+
+<pre><code>dcli update</code></pre>
+
+<p><b>Not a plain <code>pacman -Syu</code>.</b> Three safety nets sit around the proper
+command:</p>
+
+<ol>
+<li>Refused if your disk is nearly full. Applies to <em>any</em> tool, so it cannot be worked
+around by accident.</li>
+<li>Refused if your safety snapshots sit somewhere that would not survive the problem they
+are for.</li>
+<li>After an update, anything that broke gets the repair command put straight on your
+clipboard.</li>
+</ol>
+
+<h3>If an update breaks something</h3>
+
+<p>Work down. Each step is a bigger hammer than the last.</p>
+
+<ol class="steps">
+  <li><p>Put the broken piece of software back to its previous version.</p></li>
+  <li><p>Restart, and choose the <b>fallback kernel</b> from the startup menu.</p></li>
+  <li><p>Restart, and choose the <b>rescue</b> entry &mdash; the same fallback kernel, but with
+  every driver loaded.</p></li>
+  <li><p>Start from an Arch USB stick and repair from there.</p></li>
+  <li><p>Restore a snapshot.</p></li>
+</ol>
+
+<p>Steps 2 and 3 exist because this install adds them. The fallback kernel package alone
+gives you no way to boot it.</p>
+
+<h2 id="more">A few more</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>Type this</th><th>To do this</th></tr></thead>
+<tbody>
+<tr><td><code>letsgo</code> or <code>startx</code></td><td>Start the desktop from the text screen</td></tr>
+<tr><td><code>theme-apply gruvbox</code></td><td>Change the colour theme</td></tr>
+<tr><td><code>ui-scale-toggle</code></td><td>Change the size of everything</td></tr>
+<tr><td><code>boot-splash preview</code></td><td>See the startup screen without restarting</td></tr>
+<tr><td><code>qtile-keys</code></td><td>Print every keyboard shortcut</td></tr>
+<tr><td><code>fc-cache -fv</code></td><td>Notice newly installed fonts</td></tr>
+<tr><td><code>qtile cmd-obj -o cmd -f reload_config</code></td><td>Reload settings without a full restart</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>All bundled commands work from anywhere. <code>ls /usr/local/bin</code> shows the
+complete set.</p>
+
+<footer class="page">
+  <span>Every command and shortcut on this page was read out of the scripts that provide them.</span>
+  <a href="troubleshooting.html">Next: troubleshooting &rarr;</a>
+</footer>
+
+</main>
+
+<aside class="toc" aria-label="On this page">
+  <div class="toc-inner">
+    <h2>On this page</h2>
+    <ol id="toc"></ol>
+  </div>
+</aside>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>
