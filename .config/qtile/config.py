@@ -2934,7 +2934,7 @@ def close_wallpaper_mode(qtile):
     close_wallpaper_picker()
     # ungrab_chord() only pops the innermost level and re-grabs whatever
     # chord is beneath it -- correct for a keyboard "back" inside a nested
-    # menu, but WallpaperPicker is nested under Rofi-Mode (mod+p, then b),
+    # menu, but WallpaperPicker is nested under Rofi-Mode (mod+p, then w),
     # so that left qtile silently re-grabbed into Rofi-Mode's keymap with
     # no visible indicator. The chip's next click assumed a clean root
     # state and replayed [mod]+p then b to re-enter -- [mod]+p is not
