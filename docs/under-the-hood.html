@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="no-js">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,7 +10,7 @@
 <body>
 
 <header class="topbar">
-  <button class="iconbtn" id="menu-toggle" aria-label="Toggle navigation">Menu</button>
+  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
   <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
   <div class="spacer"></div>
   <div class="search">
@@ -44,8 +44,6 @@
     <li><a href="reference.html">Where everything lives</a></li>
     <li><a class="current" href="under-the-hood.html">How it works</a></li>
   </ol>
-  <h2>On this page</h2>
-  <ol class="sub" id="toc"></ol>
 </nav>
 
 <main>
@@ -562,7 +560,7 @@ the same factor into applications, menus and notifications. It runs at every log
 docking to an external monitor re-scales.</p>
 
 <div class="tw">
-<table>
+<table class="nums">
 <thead><tr><th>Screen</th><th>DPI</th><th>Factor</th></tr></thead>
 <tbody>
 <tr><td>14" 1366&times;768 <em>(reference)</em></td><td>125</td><td>1.00</td></tr>
@@ -808,6 +806,13 @@ is private to its owner.</p>
 </footer>
 
 </main>
+
+<aside class="toc" aria-label="On this page">
+  <div class="toc-inner">
+    <h2>On this page</h2>
+    <ol id="toc"></ol>
+  </div>
+</aside>
 </div>
 
 <script src="assets/search-index.js"></script>

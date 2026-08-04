@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="no-js">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,7 +10,7 @@
 <body>
 
 <header class="topbar">
-  <button class="iconbtn" id="menu-toggle" aria-label="Toggle navigation">Menu</button>
+  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
   <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
   <div class="spacer"></div>
   <div class="search">
@@ -44,8 +44,6 @@
     <li><a class="current" href="reference.html">Where everything lives</a></li>
     <li><a href="under-the-hood.html">How it works</a></li>
   </ol>
-  <h2>On this page</h2>
-  <ol class="sub" id="toc"></ol>
 </nav>
 
 <main>
@@ -304,6 +302,13 @@ works</a>.</p>
 </footer>
 
 </main>
+
+<aside class="toc" aria-label="On this page">
+  <div class="toc-inner">
+    <h2>On this page</h2>
+    <ol id="toc"></ol>
+  </div>
+</aside>
 </div>
 
 <script src="assets/search-index.js"></script>
