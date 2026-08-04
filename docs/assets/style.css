@@ -1478,17 +1478,36 @@ footer.site {
   font-size: var(--t-ms);
   color: var(--fg-faint);
 }
+/* Two regions, not a brand floating alone beside two lists. The left column
+   carries the mark, the name and the licence paragraph -- which is what fills
+   it; with the licence set below the whole footer instead, the left half of a
+   58rem footer was empty and the thing read as an unfinished grid. */
 .site-top {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: var(--s6);
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) auto;
+  gap: var(--s6) var(--s7);
   padding-bottom: var(--s6);
 }
 .site-brand {
   display: flex;
   flex-direction: column;
-  gap: var(--s1);
+  gap: var(--s3);
+  min-width: 0;
+}
+.site-id {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+}
+.site-id .brand-mark {
+  flex: none;
+  white-space: pre;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--accent-line);
 }
 .site-brand .brand-name {
   font-family: var(--mono);
@@ -1528,13 +1547,17 @@ footer.site a { color: var(--fg-muted); }
 footer.site a:hover { color: var(--accent); }
 .site-legal {
   margin: 0;
-  padding: var(--s5) 0 var(--s6);
-  border-top: 1px solid var(--border);
-  max-width: var(--measure);
+  max-width: 30rem;
+  line-height: 1.6;
 }
 
+/* Two regions side by side needs about 44rem; below that they stack, and the
+   three link lists wrap among themselves. */
+@media (max-width: 720px) {
+  .site-top { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
+  .site-legal { max-width: var(--measure); }
+}
 @media (max-width: 480px) {
-  .site-top { gap: var(--s5); }
   .site-cols { gap: var(--s5) var(--s6); }
 }
 
