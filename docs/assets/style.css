@@ -9,7 +9,8 @@
      2. Reset           7. Code
      3. Layout          8. Tables
      4. Header          9. Callouts + disclosure
-     5. Navigation     10. Responsive, motion, print
+     5. Navigation     10. Responsive
+    11. Landing page   12. Motion and print
    ========================================================================= */
 
 
@@ -931,6 +932,211 @@ footer.page a:hover { color: var(--accent); }
 @media (max-width: 470px) {
   .topbar .brand { font-size: 0; gap: 0; }
   .topbar .brand::before { width: 11px; height: 11px; }
+}
+
+
+/* --- 11. Landing page ----------------------------------------------------
+   index.html only. It has no sidebar and no contents column, so it opts out
+   of .shell entirely and uses its own centred containers. Same tokens, same
+   type scale, same accent — it has to read as the front of this site, not as
+   a different one. */
+
+.wrap {
+  max-width: 58rem;
+  margin: 0 auto;
+  padding: 0 var(--s5);
+}
+.wrap-wide { max-width: 76rem; margin: 0 auto; padding: 0 var(--s5); }
+
+.landing { padding: 0 0 var(--s8); }
+/* `auto` on the sides, not 0: these sections carry .wrap, and a shorthand
+   that zeroed the side margins would silently un-centre every one of them. */
+.landing > section { margin: 0 auto var(--s8); }
+
+/* Hero */
+.hero {
+  text-align: center;
+  padding: clamp(var(--s7), 9vw, calc(var(--s8) + var(--s7))) 0 var(--s7);
+}
+
+.wordmark {
+  margin: 0 0 var(--s4);
+  font-family: var(--mono);
+  font-size: clamp(3.25rem, 15vw, 9rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  text-wrap: nowrap;
+}
+.wordmark .wm-os { color: var(--accent); }
+
+.hero .tagline {
+  max-width: 34rem;
+  margin: 0 auto var(--s6);
+  font-size: var(--t-lg);
+  line-height: 1.55;
+  color: var(--fg-muted);
+  text-wrap: pretty;
+}
+
+/* Button row */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.actions li { margin: 0; }
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s3) var(--s5);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-firm);
+  border-radius: var(--radius);
+  color: var(--fg);
+  font-size: var(--t-sm);
+  font-weight: 620;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color .12s var(--ease), border-color .12s var(--ease),
+              background .12s var(--ease);
+}
+.action:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-weak);
+}
+.action svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.action svg.solid { fill: currentColor; stroke: none; }
+
+/* Screenshot */
+.shot { margin-bottom: var(--s8); }
+.shot img {
+  width: 100%;
+  border: 1px solid var(--border-firm);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+.shot figcaption { text-align: center; }
+
+/* Section headings on the landing page do not carry the manual's rule line. */
+.landing h2 {
+  margin: 0 0 var(--s5);
+  padding-top: 0;
+  border-top: 0;
+  font-size: var(--t-xl);
+  text-align: center;
+}
+.landing .sublede {
+  max-width: 38rem;
+  margin: calc(-1 * var(--s3)) auto var(--s6);
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--t-ms);
+}
+
+/* Facts */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+  gap: var(--s4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.facts li {
+  margin: 0;
+  padding: var(--s5);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.facts b {
+  display: block;
+  margin-bottom: var(--s1);
+  font-family: var(--mono);
+  font-size: var(--t-2xl);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.facts span {
+  display: block;
+  font-size: var(--t-ms);
+  line-height: 1.55;
+  color: var(--fg-muted);
+}
+
+/* Recordings */
+/* Two columns, never three: the recordings have different aspect ratios and
+   a third column makes the rows ragged. */
+.films {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s6) var(--s5);
+  max-width: 62rem;
+  margin: 0 auto;
+}
+.films figure { display: flex; flex-direction: column; }
+.films img { align-self: start; }
+.films figure { margin: 0; }
+.films img { width: 100%; }
+.films figcaption { margin-top: var(--s2); }
+
+/* Site footer (landing page) */
+footer.site {
+  max-width: 58rem;
+  margin: 0 auto;
+  padding: var(--s5) var(--s5) 0;
+  border-top: 1px solid var(--border);
+  font-size: var(--t-ms);
+  color: var(--fg-faint);
+}
+footer.site .links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3) var(--s5);
+  margin: 0 0 var(--s3);
+  padding: 0;
+  list-style: none;
+}
+footer.site li { margin: 0; }
+footer.site a { color: var(--fg-muted); }
+footer.site a:hover { color: var(--accent); }
+footer.site p { margin: 0 0 var(--s4); max-width: var(--measure); }
+
+@media (max-width: 780px) {
+  .films { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 620px) {
+  .wrap, .wrap-wide, footer.site { padding-left: var(--s4); padding-right: var(--s4); }
+  .facts { grid-template-columns: minmax(0, 1fr); }
+  .action { padding: var(--s3) var(--s4); }
+}
+
+@media (max-width: 430px) {
+  .actions { gap: var(--s2); }
+  .action { font-size: var(--t-xs); padding: var(--s2) var(--s3); }
 }
 
 

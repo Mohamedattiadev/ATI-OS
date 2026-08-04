@@ -16,8 +16,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
+# index.html is the landing page, not part of the manual: it has no
+# headings worth jumping to and every claim on it is repeated, sourced, on
+# the page it links to. The manual starts at start.html.
 PAGES = [
-    ("index.html", "Start here"),
+    ("start.html", "Start here"),
     ("install-usb.html", "Install from a USB stick"),
     ("install-git.html", "Install onto Arch you already have"),
     ("keybindings.html", "Keyboard shortcuts"),

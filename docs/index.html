@@ -3,185 +3,137 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Qtile Dotfiles Manual</title>
-<meta name="description" content="A ready-made Linux desktop you install in one go. Start here.">
+<title>ATI-OS &mdash; one person's Arch and qtile desktop, packaged</title>
+<meta name="description" content="ATI-OS is one person's Arch Linux + qtile desktop, packaged as an ISO so a second machine can have the same setup.">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
 <header class="topbar">
-  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
-  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
+  <a class="brand" href="index.html">ATI-OS<small>Arch + qtile, packaged</small></a>
   <div class="spacer"></div>
   <div class="search">
-    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search the manual">
     <div class="search-results" id="search-results"></div>
   </div>
   <button class="iconbtn" id="theme-toggle">Light</button>
 </header>
 
-<div class="shell">
-<nav class="sidebar" aria-label="Manual">
-  <h2>Start here</h2>
-  <ol>
-    <li><a class="current" href="index.html">Start here</a></li>
-    <li><a href="install-usb.html">Install from a USB stick</a></li>
-    <li><a href="install-git.html">Install onto Arch you already have</a></li>
-  </ol>
-  <h2>Using the desktop</h2>
-  <ol>
-    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
-    <li><a href="themes.html">Changing the colours</a></li>
-    <li><a href="widgets.html">The bar and the popups</a></li>
-    <li><a href="tools.html">The tools you get</a></li>
-  </ol>
-  <h2>When it breaks</h2>
-  <ol>
-    <li><a href="troubleshooting.html">Troubleshooting</a></li>
-  </ol>
-  <h2>Going deeper</h2>
-  <ol>
-    <li><a href="reference.html">Where everything lives</a></li>
-    <li><a href="under-the-hood.html">How it works</a></li>
-  </ol>
-</nav>
+<main class="landing">
 
-<main>
+<section class="hero wrap">
+  <h1 class="wordmark"><span class="wm-ati">ATI</span><span class="wm-os">-OS</span></h1>
 
-<h1>Start here</h1>
+  <p class="tagline">One person's Arch Linux and qtile desktop, packaged as an install
+  medium so a second machine can have the same one.</p>
 
-<p class="lede">A ready-made Linux desktop. Install it once and you get the computer in the
-picture below, with 22 colour schemes and about fifty tools already set up.</p>
+  <ul class="actions">
+    <li><a class="action" href="start.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></svg>
+      Manual</a></li>
+    <li><a class="action" href="install-usb.html#make">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.5"/></svg>
+      ISO</a></li>
+    <li><a class="action" href="https://github.com/Mohamedattiadev/Newdotfile-">
+      <svg class="solid" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+      GitHub</a></li>
+    <li><a class="action" href="keybindings.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 9.5h.01M9.5 9.5h.01M13 9.5h.01M16.5 9.5h.01M6 13h.01M9.5 13h.01M13 13h.01M16.5 13h.01M8 16h8"/></svg>
+      Keybindings</a></li>
+    <li><a class="action" href="troubleshooting.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M14.5 9.5 18.4 5.6M5.6 18.4l3.9-3.9M14.5 14.5l3.9 3.9M5.6 5.6l3.9 3.9"/></svg>
+      Troubleshooting</a></li>
+  </ul>
+</section>
 
-<figure>
-  <img src="assets/img/overview.gif" alt="A screen recording of the desktop: windows arranging themselves, a launcher opening, the colours changing">
-  <figcaption>Windows arrange themselves. Colours change everywhere at once.</figcaption>
+<figure class="shot wrap-wide">
+  <img src="assets/img/real-desktop.png" width="1366" height="768"
+       alt="The ATI-OS desktop: a bar across the top with workspace, launcher and status widgets, over a wallpaper of a Kyoto street">
+  <figcaption>The desktop as it comes up. The bar is the only chrome; windows tile
+  underneath it.</figcaption>
 </figure>
 
-<div class="warn">
-<p><b>If you are stuck, start here.</b></p>
-<ul>
-<li><a href="troubleshooting.html#black-screen">Black screen with text after installing</a>
-&mdash; normal. Type <code>letsgo</code>.</li>
-<li><a href="troubleshooting.html#desktop-missing">The desktop never appeared</a></li>
-<li><a href="troubleshooting.html#stock-qtile">It starts, but looks completely plain</a></li>
-<li><a href="troubleshooting.html#network">Wi-Fi or Bluetooth says the service is not
-running</a></li>
-<li><a href="troubleshooting.html#fonts">Strange font, nothing lines up</a></li>
-</ul>
-</div>
+<section class="wrap">
+  <h2>What you get</h2>
+  <p class="sublede">Every number here is counted out of this repository, not estimated.</p>
 
-<h2 id="which">Which install do I want?</h2>
+  <ul class="facts">
+    <li><b>22</b><span>colour schemes. Picking one retints the bar, the terminal, the
+      launcher, GTK and the browser at the same time.</span></li>
+    <li><b>46</b><span>install modules run by default, each one reported as it passes.
+      Two more are opt-in.</span></li>
+    <li><b>~20 min</b><span>from booting the USB medium to a working desktop.</span></li>
+    <li><b>31</b><span>AUR packages compiled into the medium in advance, so the install
+      is not waiting on builds.</span></li>
+    <li><b>qtile</b><span>tiling window manager on X11. No display manager: you log in at
+      a TTY, then <code>letsgo</code> starts the desktop.</span></li>
+  </ul>
+</section>
 
-<p>One question: do you already have Arch Linux on this computer?</p>
+<section class="wrap-wide">
+  <h2>Moving pictures</h2>
+  <p class="sublede">Real recordings of the running desktop.</p>
 
-<ul class="cards">
-  <li><a href="install-usb.html">
-    <strong>No. The computer is empty, or I want to start fresh</strong>
-    <span>Use a USB stick. It installs Linux and this desktop together. About 20 minutes.
-    It erases the disk you point it at.</span>
-  </a></li>
-  <li><a href="install-git.html">
-    <strong>Yes. Arch is already installed</strong>
-    <span>Run one command. It adds this desktop to what you have and erases nothing.
-    One to two hours, almost all of it waiting.</span>
-  </a></li>
-</ul>
+  <div class="films">
+    <figure>
+      <img src="assets/img/overview.gif" loading="lazy" decoding="async"
+           alt="A screen recording of the desktop: windows arranging themselves, a launcher opening, the colours changing">
+      <figcaption>Windows arrange themselves. Nothing is dragged.</figcaption>
+    </figure>
+    <figure>
+      <img src="assets/img/theme-picker.gif" loading="lazy" decoding="async"
+           alt="Choosing a colour scheme from a list, and the whole desktop changing colour">
+      <figcaption>Pick a scheme; every application follows.
+      <a href="themes.html">Changing the colours</a></figcaption>
+    </figure>
+    <figure>
+      <img src="assets/img/qdrop.gif" loading="lazy" decoding="async"
+           alt="Dragging a file into a panel that slides down from the top, then dragging it back out">
+      <figcaption>A shelf that drops from the top; drag files in on one workspace and
+      out on another. <a href="tools.html">The tools you get</a></figcaption>
+    </figure>
+    <figure>
+      <img src="assets/img/veil.gif" loading="lazy" decoding="async"
+           alt="A restart hidden behind a frosted overlay showing one card per window">
+      <figcaption>Restarts hide behind an overlay instead of flashing every window.
+      <a href="widgets.html">The bar and the popups</a></figcaption>
+    </figure>
+  </div>
+</section>
 
-<p>Both end at the same desktop.</p>
+<section class="wrap">
+  <h2>What this is not</h2>
 
-<h2 id="firstlogin">After it installs, you get a black screen</h2>
-
-<div class="note">
-<p><b>This is normal.</b> There is no login box, and the desktop does not start itself.</p>
-
-<ol class="steps">
-  <li>
-    <p>Type your username, press Enter. Type your password, press Enter.</p>
-    <p class="screen">The password stays invisible as you type. Not even dots. Keep going.</p>
-  </li>
-  <li>
-    <p>Type <code>letsgo</code> and press Enter.</p>
-    <p class="screen">The screen flickers. The desktop appears.</p>
-  </li>
-</ol>
-
-<p>If that says <code>letsgo: command not found</code>, type <code>startx</code> instead.
-<a href="troubleshooting.html#black-screen">More on this</a>.</p>
-</div>
-
-<h2 id="what">Words used on this site</h2>
-
-<div class="tw">
-<table>
-<thead><tr><th>Word</th><th>Meaning</th></tr></thead>
-<tbody>
-<tr><td><dfn>Arch Linux</dfn></td><td>The version of Linux this runs on. It only works on Arch.</td></tr>
-<tr><td><dfn>tiling window manager</dfn></td><td>Windows arrange themselves side by side. You do not drag or resize them with the mouse.</td></tr>
-<tr><td><dfn>qtile</dfn></td><td>The particular tiling window manager used here.</td></tr>
-<tr><td><dfn>the bar</dfn></td><td>The strip at the edge of the screen with the clock and battery.</td></tr>
-<tr><td><dfn>theme</dfn></td><td>A set of colours. Changing it recolours everything at once, down to your folder icons.</td></tr>
-<tr><td><dfn>terminal</dfn></td><td>A window where you type commands instead of clicking.</td></tr>
-<tr><td><dfn>TTY</dfn></td><td>A plain text screen with no mouse. What you see before the desktop starts.</td></tr>
-</tbody>
-</table>
-</div>
-
-<h2 id="honest">What has not been tested</h2>
-
-<p>This is one person's desktop, shared. Some of it is proven on real machines. Some is
-not.</p>
-
-<div class="limit">
-<p><b>Nobody has ever run this on:</b></p>
-<ul>
-<li><b>AMD or NVIDIA graphics.</b> Only Intel has been seen working. The code handles all
-three, but two of them are untested.</li>
-<li><b>A 4K screen.</b> The sizing maths is correct. Nobody has looked at the result.</li>
-<li><b>Some laptop battery indicators</b>, on models that name them unusually.</li>
-</ul>
-<p>The USB installer also needs a computer that starts in <b>UEFI mode</b>. Almost anything
-built after 2012 does. Older machines are refused outright rather than half-installed.</p>
-</div>
-
-<div class="warn">
-<p><b>The built-in self-check can lie on a fresh machine.</b> When
-<code>validate.sh</code> cannot run a check, it marks it "skipped" and still reports
-success. On a machine where the install went badly it skips everything and passes.</p>
-<p>Trust the installer's own count instead: <code>46 ok / 0 failed</code>.</p>
-</div>
-
-<h2 id="next">Once it is running</h2>
-
-<ul class="cards">
-  <li><a href="keybindings.html"><strong>Keyboard shortcuts</strong><span>The six you need on day one, then the rest.</span></a></li>
-  <li><a href="themes.html"><strong>Changing the colours</strong><span>Two keys. 22 schemes.</span></a></li>
-  <li><a href="widgets.html"><strong>The bar and the popups</strong><span>What everything does when you click it.</span></a></li>
-  <li><a href="tools.html"><strong>The tools you get</strong><span>A shelf for files, an update button, phone mirroring, dictation.</span></a></li>
-  <li><a href="troubleshooting.html"><strong>Troubleshooting</strong><span>Real problems, most likely first.</span></a></li>
-  <li><a href="reference.html"><strong>Where everything lives</strong><span>Which file to edit to change something.</span></a></li>
-  <li><a href="under-the-hood.html"><strong>How it works</strong><span>The design reasoning, kept out of the way.</span></a></li>
-</ul>
-
-<blockquote>
-<p>Based on <a href="https://www.youtube.com/c/DistroTube/videos">Distrotube's</a> qtile
-configuration, extended with the author's own customisation and workflow.</p>
-</blockquote>
-
-<footer class="page">
-  <span>Every shortcut, command and path here was read out of the file it describes.</span>
-  <a href="https://github.com/Mohamedattiadev/Newdotfile-">Source repository</a>
-</footer>
+  <div class="limit">
+  <p><b>It is not a distribution.</b> It is Arch Linux with one person's configuration
+  stowed on top, plus an installer that does the stowing. There is no separate package
+  repository to trust, no release schedule and no support.</p>
+  <ul>
+  <li><b>UEFI only.</b> The USB installer refuses a machine that starts in legacy BIOS mode
+  rather than half-installing it.</li>
+  <li><b>Intel graphics is the only path anyone has watched work.</b> The code handles AMD
+  and NVIDIA too; neither has been run on real hardware.</li>
+  <li><b>No HiDPI machine has been tested.</b> The scaling arithmetic is there. Nobody has
+  looked at a 4K screen running it.</li>
+  </ul>
+  <p><a href="start.html#honest">The longer list of what has not been tested</a>.</p>
+  </div>
+</section>
 
 </main>
 
-<aside class="toc" aria-label="On this page">
-  <div class="toc-inner">
-    <h2>On this page</h2>
-    <ol id="toc"></ol>
-  </div>
-</aside>
-</div>
+<footer class="site">
+  <ul class="links">
+    <li><a href="start.html">Manual</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto existing Arch</a></li>
+    <li><a href="https://github.com/Mohamedattiadev/Newdotfile-">Source repository</a></li>
+  </ul>
+  <p>No licence file has been added to the repository yet, so no licence is granted:
+  read the code, but assume all rights reserved until one appears. Based on
+  <a href="https://www.youtube.com/c/DistroTube/videos">Distrotube's</a> qtile
+  configuration, extended with the author's own workflow.</p>
+</footer>
 
 <script src="assets/search-index.js"></script>
 <script src="assets/site.js"></script>
