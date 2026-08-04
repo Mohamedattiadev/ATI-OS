@@ -30,25 +30,37 @@
 <section class="hero wrap">
   <h1 class="wordmark">
     <span class="vh">ATI-OS</span>
-    <pre class="ascii-mark" aria-hidden="true"> █████╗ ████████╗██╗       ██████╗ ███████╗
-██╔══██╗╚══██╔══╝██║      ██╔═══██╗██╔════╝
-███████║   ██║   ██║█████╗██║   ██║███████╗
-██╔══██║   ██║   ██║╚════╝██║   ██║╚════██║
-██║  ██║   ██║   ██║      ╚██████╔╝███████║
-╚═╝  ╚═╝   ╚═╝   ╚═╝       ╚═════╝ ╚══════╝</pre>
+    <span class="wm-row" aria-hidden="true">
+      <pre class="ascii-mark"> █████╗ ████████╗██╗
+██╔══██╗╚══██╔══╝██║
+███████║   ██║   ██║
+██╔══██║   ██║   ██║
+██║  ██║   ██║   ██║
+╚═╝  ╚═╝   ╚═╝   ╚═╝</pre>
+      <span class="wm-suffix">-OS</span>
+    </span>
   </h1>
 
   <p class="tagline">One person's Arch Linux and qtile desktop, packaged as an install
   medium so a second machine can have the same one.</p>
 
-  <p class="actions">
-    <a class="action primary" href="start.html">Read the manual</a>
-    <a class="action" href="install-usb.html#make">Make a USB stick</a>
-  </p>
-  <p class="also">Or go straight to
-    <a href="keybindings.html">the keyboard shortcuts</a>,
-    <a href="troubleshooting.html">what to do when it breaks</a>, or
-    <a href="https://github.com/Mohamedattiadev/Newdotfile-">the source on GitHub</a>.</p>
+  <ul class="actions">
+    <li><a class="action" href="start.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></svg>
+      Manual</a></li>
+    <li><a class="action iso" href="install-usb.html#make">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.5"/></svg>
+      ISO</a></li>
+    <li><a class="action" href="https://github.com/Mohamedattiadev/Newdotfile-">
+      <svg class="solid" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+      GitHub</a></li>
+    <li><a class="action" href="keybindings.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 9.5h.01M9.5 9.5h.01M13 9.5h.01M16.5 9.5h.01M6 13h.01M9.5 13h.01M13 13h.01M16.5 13h.01M8 16h8"/></svg>
+      Keybindings</a></li>
+    <li><a class="action" href="troubleshooting.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M14.5 9.5 18.4 5.6M5.6 18.4l3.9-3.9M14.5 14.5l3.9 3.9M5.6 5.6l3.9 3.9"/></svg>
+      Troubleshooting</a></li>
+  </ul>
 </section>
 
 <figure class="shot wrap-wide">
@@ -58,36 +70,71 @@
   underneath it.</figcaption>
 </figure>
 
-<section class="wrap">
+<section class="wrap-wide">
   <h2>What you get</h2>
-  <p class="sublede">Every number here is counted out of this repository, not estimated.</p>
+  <p class="sublede">Every number here is counted out of this repository, not estimated.
+  The strip below scrolls; hover, focus, or tap it to hold it still.</p>
 
-  <dl class="spec">
-    <div>
-      <dt>22</dt>
-      <dd>colour schemes. Picking one retints the bar, the terminal, the launcher,
-      GTK and the browser at the same time.</dd>
-    </div>
-    <div>
-      <dt>46</dt>
-      <dd>install modules run by default, each one reported as it passes. Two more
-      are opt-in.</dd>
-    </div>
-    <div>
-      <dt>~20 min</dt>
-      <dd>from booting the USB medium to a working desktop.</dd>
-    </div>
-    <div>
-      <dt>31</dt>
-      <dd>AUR packages compiled into the medium in advance, so the install is not
-      waiting on builds.</dd>
-    </div>
-    <div>
-      <dt>qtile</dt>
-      <dd>tiling window manager on X11. No display manager: you log in at a TTY,
-      then <code>letsgo</code> starts the desktop.</dd>
-    </div>
-  </dl>
+  <!-- The five facts are the entire content: each appears once as a real
+       <dl> definition for anyone reading, searching, printing or using a
+       screen reader, then a second time, aria-hidden, purely so the CSS
+       animation below has a seamless second lap to scroll onto. Nothing here
+       depends on JavaScript, and the .no-js class carries no branch for this
+       section because there isn't a working one -- pausing on hover/focus and
+       the sitewide prefers-reduced-motion rule are the only controls, both
+       pure CSS. See the .spec-marquee rule for the loop mechanics. -->
+  <div class="spec-marquee" tabindex="0" aria-label="What you get -- five facts, scrolling; press Tab and hold to stop it">
+    <dl class="spec">
+      <div>
+        <dt>22</dt>
+        <dd>colour schemes. Picking one retints the bar, the terminal, the launcher,
+        GTK and the browser at the same time.</dd>
+      </div>
+      <div>
+        <dt>46</dt>
+        <dd>install modules run by default, each one reported as it passes. Two more
+        are opt-in.</dd>
+      </div>
+      <div>
+        <dt>~20 min</dt>
+        <dd>from booting the USB medium to a working desktop.</dd>
+      </div>
+      <div>
+        <dt>31</dt>
+        <dd>AUR packages compiled into the medium in advance, so the install is not
+        waiting on builds.</dd>
+      </div>
+      <div>
+        <dt>qtile</dt>
+        <dd>tiling window manager on X11. No display manager: you log in at a TTY,
+        then <code>letsgo</code> starts the desktop.</dd>
+      </div>
+      <div aria-hidden="true">
+        <dt>22</dt>
+        <dd>colour schemes. Picking one retints the bar, the terminal, the launcher,
+        GTK and the browser at the same time.</dd>
+      </div>
+      <div aria-hidden="true">
+        <dt>46</dt>
+        <dd>install modules run by default, each one reported as it passes. Two more
+        are opt-in.</dd>
+      </div>
+      <div aria-hidden="true">
+        <dt>~20 min</dt>
+        <dd>from booting the USB medium to a working desktop.</dd>
+      </div>
+      <div aria-hidden="true">
+        <dt>31</dt>
+        <dd>AUR packages compiled into the medium in advance, so the install is not
+        waiting on builds.</dd>
+      </div>
+      <div aria-hidden="true">
+        <dt>qtile</dt>
+        <dd>tiling window manager on X11. No display manager: you log in at a TTY,
+        then <code>letsgo</code> starts the desktop.</dd>
+      </div>
+    </dl>
+  </div>
 </section>
 
 <section class="wrap-wide">
@@ -125,16 +172,19 @@
   <h2>What this is not</h2>
 
   <div class="caveats">
-  <p><b class="lead">It is not a distribution.</b> It is Arch Linux with one person's configuration
-  stowed on top, plus an installer that does the stowing. There is no separate package
-  repository to trust, no release schedule and no support.</p>
+  <p class="lead-in"><b class="lead">It is not a distribution.</b> It is Arch Linux with one
+  person's configuration stowed on top, plus an installer that does the stowing. There is no
+  separate package repository to trust, no release schedule and no support.</p>
   <ul>
-  <li><b>UEFI only.</b> The USB installer refuses a machine that starts in legacy BIOS mode
-  rather than half-installing it.</li>
-  <li><b>Intel graphics is the only path anyone has watched work.</b> The code handles AMD
-  and NVIDIA too; neither has been run on real hardware.</li>
-  <li><b>No HiDPI machine has been tested.</b> The scaling arithmetic is there. Nobody has
-  looked at a 4K screen running it.</li>
+  <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 1 13.5h14z"/><path d="M8 6v3.2M8 11.6h.01"/></svg>
+  <span><b>UEFI only.</b> The USB installer refuses a machine that starts in legacy BIOS mode
+  rather than half-installing it.</span></li>
+  <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 1 13.5h14z"/><path d="M8 6v3.2M8 11.6h.01"/></svg>
+  <span><b>Intel graphics is the only path anyone has watched work.</b> The code handles AMD
+  and NVIDIA too; neither has been run on real hardware.</span></li>
+  <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 1 13.5h14z"/><path d="M8 6v3.2M8 11.6h.01"/></svg>
+  <span><b>No HiDPI machine has been tested.</b> The scaling arithmetic is there. Nobody has
+  looked at a 4K screen running it.</span></li>
   </ul>
   <p><a href="start.html#honest">The longer list of what has not been tested</a>.</p>
   </div>
@@ -143,14 +193,30 @@
 </main>
 
 <footer class="site">
-  <ul class="links">
-    <li><a href="start.html">Manual</a></li>
-    <li><a href="install-usb.html">Install from a USB stick</a></li>
-    <li><a href="install-git.html">Install onto existing Arch</a></li>
-    <li><a href="https://github.com/Mohamedattiadev/Newdotfile-">Source repository</a></li>
-  </ul>
-  <p>No licence file has been added to the repository yet, so no licence is granted:
-  read the code, but assume all rights reserved until one appears. Based on
+  <div class="site-top">
+    <div class="site-brand">
+      <span class="brand-name"><span class="wm-ati">ATI</span><span class="wm-os">-OS</span></span>
+      <small>Arch + qtile, packaged</small>
+    </div>
+    <nav class="site-cols" aria-label="Footer">
+      <div>
+        <h3>Manual</h3>
+        <ul>
+          <li><a href="start.html">Manual</a></li>
+          <li><a href="install-usb.html">Install from a USB stick</a></li>
+          <li><a href="install-git.html">Install onto existing Arch</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Project</h3>
+        <ul>
+          <li><a href="https://github.com/Mohamedattiadev/Newdotfile-">Source repository</a></li>
+        </ul>
+      </div>
+    </nav>
+  </div>
+  <p class="site-legal">No licence file has been added to the repository yet, so no licence is
+  granted: read the code, but assume all rights reserved until one appears. Based on
   <a href="https://www.youtube.com/c/DistroTube/videos">Distrotube's</a> qtile
   configuration, extended with the author's own workflow.</p>
 </footer>

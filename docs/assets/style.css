@@ -1156,20 +1156,31 @@ footer.page a:hover { color: var(--accent); }
   padding: clamp(var(--s7), 9vw, calc(var(--s8) + var(--s7))) 0 var(--s7);
 }
 
-/* The wordmark is the real thing: the same six lines the ISO prints at login
-   and the installer prints on its first screen, character for character. It
-   is decoration to a screen reader -- the .vh copy next to it carries the
-   name -- but it is the one place on the site where the full artwork fits.
+/* The wordmark used to be the full six-line ATI-OS artwork, character for
+   character, at up to 1.4rem -- about 550x130px on a desktop viewport, the
+   single biggest thing on the page. Asked for smaller, and for only the
+   "ATI" glyphs to be artwork: the art below is the same six rows, cropped to
+   its first 20 monospace columns (verified against installScripts/iso/
+   profile/airootfs/usr/local/bin/ati-os-install's banner() -- not retyped),
+   which happens to be exactly the "ATI" glyphs with no seventh column of
+   bleed. "-OS" sits beside it as ordinary text, not artwork, and the
+   sentence below it is already the smaller-text tier that was asked for.
 
-   Sizing. The art is 43 monospace columns wide, so its width is
-   43 x 0.6em ~= 25.8em. The middle term of the clamp below solves that back
-   to a font-size that keeps 43 columns inside the viewport minus the .wrap
-   padding, with ~8% held back so a monospace face with a wider advance than
-   DejaVu's 0.602em still fits. Do not replace it with a plain vw value: at
-   400px the fixed padding is 12% of the screen and a pure ratio overflows. */
+   Text/SVG over a PNG, deliberately. A PNG bakes one colour permanently, so
+   it would need a second export for the dark variant (or a mid-tone that is
+   wrong in both) and it cannot live at --accent when that token moves. This
+   markup is still `currentColor`-driven monospace text -- one asset, correct
+   in both themes, no extra request. */
 .wordmark {
-  margin: 0 0 var(--s5);
+  margin: 0 0 var(--s4);
   line-height: 1;
+}
+.wm-row {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s3);
 }
 .ascii-mark {
   margin: 0;
@@ -1178,18 +1189,23 @@ footer.page a:hover { color: var(--accent); }
   border: 0;
   overflow: visible;
   font-family: var(--mono);
-  font-size: clamp(0.5rem, calc(3.75vw - 1.9px), 1.4rem);
+  /* The old mark's six rows ran up to 1.4rem, ~134px tall. Six rows at any
+     font-size big enough to still call itself "smaller" caps out well
+     below that -- 1rem here is 96px tall, about a third less, and it is
+     also visibly narrower now that only 20 of the old 43 columns remain. */
+  font-size: clamp(0.7rem, 3.6vw, 1rem);
   line-height: 1;
   font-weight: 400;
-  /* A hair of overlap. Adjacent full blocks otherwise leave a hairline of
-     background between cells wherever the advance width lands on a fraction
-     of a pixel, which reads as a scratch across every solid stroke. */
   letter-spacing: -0.03em;
   color: var(--accent);
-  /* Safe here, and only here: all six rows are exactly 43 columns wide -- the
-     art is padded with real spaces -- so centring each line independently
-     lands them all in the same place. Do not paste a ragged block in. */
-  text-align: center;
+  text-align: left;
+}
+.wm-suffix {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: clamp(0.95rem, 4.4vw, 1.5rem);
+  letter-spacing: -0.01em;
+  color: var(--fg);
 }
 
 .hero .tagline {
@@ -1201,29 +1217,38 @@ footer.page a:hover { color: var(--accent); }
   text-wrap: pretty;
 }
 
-/* Button row. Two buttons, not five: a row of five identically-weighted
-   uppercase pills is the shape every generated landing page has, and it says
-   nothing about which one you want. One filled primary, one outline beside
-   it, and the remaining destinations as an ordinary sentence underneath. */
+/* Button row, restored to five: Manual, ISO, GitHub, Keybindings,
+   Troubleshooting, each an outline pill with a small inline icon. The ISO
+   button carries the accent -- filled would have claimed it as the single
+   strongest call to action, which is Manual's job, so this is a tinted
+   border and ground instead, enough to read as "the other one that
+   matters" without outranking it. Centred and wrapping: at 400px five
+   pills settle 2-2-1, and the lone last pill stays centred rather than
+   pinned left, so it reads as a deliberate close, not a dropped item. */
 .actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--s3);
   margin: 0 0 var(--s4);
+  padding: 0;
+  list-style: none;
 }
+.actions li { margin: 0; }
 
 .action {
   display: inline-flex;
   align-items: center;
+  gap: var(--s2);
   padding: var(--s3) var(--s5);
   background: var(--bg-raised);
   border: 1px solid var(--border-firm);
   border-radius: var(--radius);
   color: var(--fg);
-  font-size: var(--t-ms);
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: var(--t-sm);
+  font-weight: 620;
+  letter-spacing: .07em;
+  text-transform: uppercase;
   text-decoration: none;
   white-space: nowrap;
   transition: color .12s var(--ease), border-color .12s var(--ease),
@@ -1234,25 +1259,27 @@ footer.page a:hover { color: var(--accent); }
   border-color: var(--accent);
   background: var(--accent-weak);
 }
-/* The one action most readers want. Filled, so it is the only element on the
-   page carrying the accent as a ground -- that is what makes it primary. */
-.action.primary {
+.action svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.action svg.solid { fill: currentColor; stroke: none; }
+
+.action.iso {
+  background: var(--accent-weak);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.action.iso:hover {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--bg);
-}
-.action.primary:hover {
-  background: var(--fg);
-  border-color: var(--fg);
-  color: var(--bg);
-}
-
-.hero .also {
-  max-width: 34rem;
-  margin: 0 auto;
-  font-size: var(--t-ms);
-  color: var(--fg-muted);
-  text-wrap: pretty;
 }
 
 /* Screenshot */
@@ -1283,31 +1310,62 @@ footer.page a:hover { color: var(--accent); }
 
 /* What you get.
 
-   Not cards. A five-up grid of bordered boxes with a giant coloured numeral in
-   each is the single most recognisable generated-landing-page shape, and five
-   into three columns leaves an empty cell staring back at you. This is a spec
-   sheet instead: figure on the left in the mono stack at reading size, the
-   sentence it belongs to on the right, hairline rules between rows and no
-   boxes at all. The figures are still the accent, but at body size they are
-   emphasis rather than decoration -- the sentence is the thing being read. */
-.spec {
-  max-width: 40rem;
+   A slider, right to left, not a five-up grid of bordered boxes: that grid
+   is the single most recognisable generated-landing-page shape, and five
+   into three columns leaves an empty cell staring back at you. Every fact
+   is still written out in full, once, as a real <dl> -- the markup above
+   duplicates that list a second time with aria-hidden so the belt has a
+   seamless second lap to scroll onto, but the reading order, the search
+   index (index.html is not indexed at all -- see build-index.py) and a
+   screen reader all only ever see the first five.
+
+   Continuous motion and readable prose fight each other, so this pauses
+   instead of choosing one: :hover and :focus-within stop it dead, the
+   marquee itself is tabbable so a keyboard user can stop it without a
+   mouse, and the sitewide prefers-reduced-motion rule (bottom of this file)
+   freezes every animation on the page including this one. Width is capped
+   by wrapping .spec-marquee in overflow:hidden, not by the animation, so
+   there is no horizontal scrollbar at any width -- the belt is simply
+   clipped to its box. */
+.spec-marquee {
+  overflow: hidden;
+  width: 100%;
   margin: 0 auto;
-  border-top: 1px solid var(--border);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
 }
+.spec-marquee:focus-visible { outline-offset: 6px; }
+
+.spec {
+  display: flex;
+  width: max-content;
+  margin: 0;
+  border-top: 0;
+  /* 60s for one full lap of ten items (five real, five duplicate) is a
+     comfortable reading pace for the shortest sentence here; anyone who
+     wants longer just hovers or tabs to it and it stops. */
+  animation: spec-scroll 60s linear infinite;
+}
+.spec-marquee:hover .spec,
+.spec-marquee:focus-within .spec {
+  animation-play-state: paused;
+}
+
 .spec > div {
-  display: grid;
-  grid-template-columns: 5.5rem minmax(0, 1fr);
-  gap: 0 var(--s4);
-  align-items: baseline;
-  padding: var(--s3) 0;
-  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  width: 19rem;
+  padding: var(--s3) var(--s6) var(--s3) 0;
+  margin-right: var(--s3);
+  border-bottom: 0;
+  border-right: 1px solid var(--border);
 }
 .spec dt {
+  display: block;
+  margin: 0 0 var(--s1);
   font-family: var(--mono);
   font-size: var(--t-base);
   font-weight: 700;
-  line-height: 1.5;
+  line-height: 1.3;
   letter-spacing: -0.01em;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
@@ -1318,6 +1376,11 @@ footer.page a:hover { color: var(--accent); }
   line-height: 1.6;
   color: var(--fg-muted);
   text-wrap: pretty;
+}
+
+@keyframes spec-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
 }
 
 /* Recordings */
@@ -1349,21 +1412,34 @@ footer.page a:hover { color: var(--accent); }
 
    This used to be the whole section wrapped in .limit -- a page-wide pink
    panel, which reads as an error the reader has caused rather than as the
-   author being straight with them. It is plain prose now, with one hairline
-   list; the only colour left is on the lead sentence, which is the one line
-   that has to land. */
+   author being straight with them. It stayed plain prose, but plain enough
+   that next to the rest of the (redesigned) page it read as unfinished
+   rather than restrained: no visual anchor for the one sentence that has to
+   land, and three list rows that were pure text with nothing to catch the
+   eye while scanning. The lead sentence now sits against a hairline rule on
+   its left, the same vocabulary .screen already uses elsewhere on the site,
+   so it is not a new device. Each list row gets a small triangular caution
+   mark -- outline only, --err, no fill -- so the three limits read as a
+   glance-able set instead of a paragraph. */
 .caveats {
   max-width: var(--measure);
   margin: 0 auto;
 }
+.caveats .lead-in {
+  padding-left: var(--s4);
+  border-left: 2px solid var(--err);
+}
 .caveats .lead { color: var(--err); }
 .caveats ul {
-  margin: var(--s4) 0;
+  margin: var(--s5) 0;
   padding: 0;
   list-style: none;
   border-top: 1px solid var(--border);
 }
 .caveats li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
   margin: 0;
   padding: var(--s3) 0;
   border-bottom: 1px solid var(--border);
@@ -1371,30 +1447,96 @@ footer.page a:hover { color: var(--accent); }
   line-height: 1.6;
   color: var(--fg-muted);
 }
+.caveats li svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 0.2em;
+  fill: none;
+  stroke: var(--err);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .caveats li b { color: var(--fg); }
 .caveats > p:last-child { margin-bottom: 0; font-size: var(--t-ms); }
 
-/* Site footer (landing page) */
+/* Site footer (landing page).
+
+   Used to be a flat row of four links over one paragraph -- every word
+   still here, just with structure under it: the brand mark on its own on
+   the left so the footer still reads as this site's, two headed columns of
+   the same four links grouped by what they are (the manual's three
+   destinations vs. the one project link), and the licence/attribution
+   paragraph set apart below its own rule so it does not read as a fifth
+   list item. */
 footer.site {
   max-width: 58rem;
   margin: 0 auto;
-  padding: var(--s5) var(--s5) 0;
+  padding: var(--s6) var(--s5) 0;
   border-top: 1px solid var(--border);
   font-size: var(--t-ms);
   color: var(--fg-faint);
 }
-footer.site .links {
+.site-top {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--s3) var(--s5);
+  justify-content: space-between;
+  gap: var(--s6);
+  padding-bottom: var(--s6);
+}
+.site-brand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+.site-brand .brand-name {
+  font-family: var(--mono);
+  font-size: var(--t-ms);
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: var(--fg);
+}
+.site-brand .brand-name .wm-os { color: var(--accent); }
+.site-brand small {
+  font-size: var(--t-xs);
+  color: var(--fg-faint);
+}
+.site-cols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s6) var(--s7);
+}
+.site-cols h3 {
   margin: 0 0 var(--s3);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.site-cols ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: 0;
   padding: 0;
   list-style: none;
 }
-footer.site li { margin: 0; }
+.site-cols li { margin: 0; }
 footer.site a { color: var(--fg-muted); }
 footer.site a:hover { color: var(--accent); }
-footer.site p { margin: 0 0 var(--s4); max-width: var(--measure); }
+.site-legal {
+  margin: 0;
+  padding: var(--s5) 0 var(--s6);
+  border-top: 1px solid var(--border);
+  max-width: var(--measure);
+}
+
+@media (max-width: 480px) {
+  .site-top { gap: var(--s5); }
+  .site-cols { gap: var(--s5) var(--s6); }
+}
 
 @media (max-width: 780px) {
   .films { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
@@ -1406,20 +1548,98 @@ footer.site p { margin: 0 0 var(--s4); max-width: var(--measure); }
   .action { padding: var(--s3) var(--s4); }
 }
 
-/* The figure column costs 88px of a 400px screen and the sentences start to
-   break badly, so the pair stacks: figure, then its sentence under it. The
-   hairline between rows is what keeps it reading as one list. */
+/* A 19rem card is wider than a 400px screen once its own padding is
+   counted, so the belt would clip mid-word on the very item it is meant to
+   show. Narrower cards below this width, so each one comfortably fits. */
 @media (max-width: 560px) {
-  .spec > div {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--s1) 0;
-    padding: var(--s3) 0;
-  }
+  .spec > div { width: 15.5rem; padding-right: var(--s5); }
 }
 
 @media (max-width: 430px) {
   .actions { gap: var(--s2); }
-  .action { font-size: var(--t-sm); padding: var(--s3) var(--s4); }
+  .action { font-size: var(--t-xs); padding: var(--s2) var(--s3); }
+  .spec > div { width: 13.5rem; }
+}
+
+
+/* --- Ambient background --------------------------------------------------
+
+   Two soft points of light, drifting. Sitewide (a body pseudo-element, no
+   markup, so every page gets it for free) rather than landing-page-only,
+   because the ask was for the manual to feel less like a bare document, not
+   just the front door. Deliberately not a tiled pattern -- a repeating
+   texture is the thing that reads as a template -- and deliberately faint:
+   this is a manual, so the blobs sit at low opacity behind a heavy blur,
+   fixed (they do not scroll with content) and z-index -1 so they cannot
+   land in front of text or a focus ring. Built from --accent alone via
+   color-mix, so it re-tints itself for free with the rest of the palette
+   and needs no new hex. Rendered at 1440 and 400 in both themes before
+   being kept -- the dark variant reads as a faint glow near the two
+   radial centres; the light variant is closer to a warm paper vignette.
+   Stopped, not merely slowed, under reduced motion by the sitewide
+   animation rule below, and removed outright under print. */
+@supports (color: color-mix(in srgb, red, blue)) {
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -15vh -15vw;
+    z-index: -1;
+    pointer-events: none;
+    /* A plain low-alpha radial-gradient here bands visibly: rendered and
+       looked at, it came back as concentric rings, not a smooth fade --
+       8-bit colour stepping across a gradient this size and this low in
+       contrast, confirmed by sampling the screenshot's raw pixels (flat
+       runs of tens of px, then a +1 step). Blurring it harder did not fix
+       this -- the steps are in the source gradient, not the edges -- so
+       what actually fixes it is a third background layer: a tiled SVG
+       fractal-noise tile, inline as a data URI (no request, no new
+       asset), blended over the gradients at `overlay`. The noise is
+       imperceptible on its own; blended in, it dithers the gradient's
+       8-bit steps into a smooth-reading fade instead of rings. */
+    /* filter: blur() made no visible difference at any radius under this
+       headless renderer -- 8px and 90px produced identical rings -- so
+       nothing here depends on it working; the fade is graded through
+       explicit gradient stops instead.
+
+       The noise layer dithers the banding away, but blended sitewide it
+       first came back as a visible grey grain over the *entire* page --
+       the SVG noise tile is fully opaque, so `overlay` was compositing it
+       everywhere this pseudo-element covers, not just near the two
+       blobs. A CSS mask in the same two shapes as the colour gradients
+       confines the whole layer -- colour and noise alike -- back to
+       where the glow actually is; everywhere else, this element is
+       masked to nothing. */
+    background-image:
+      radial-gradient(36rem 36rem at 15% 20%,
+        color-mix(in srgb, var(--accent) 40%, transparent) 0%,
+        color-mix(in srgb, var(--accent) 18%, transparent) 30%,
+        color-mix(in srgb, var(--accent) 6%, transparent) 55%,
+        transparent 90%),
+      radial-gradient(32rem 32rem at 85% 78%,
+        color-mix(in srgb, var(--accent) 32%, transparent) 0%,
+        color-mix(in srgb, var(--accent) 14%, transparent) 30%,
+        color-mix(in srgb, var(--accent) 4%, transparent) 55%,
+        transparent 90%),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: no-repeat, no-repeat, repeat;
+    background-size: auto, auto, 180px 180px;
+    background-blend-mode: normal, normal, overlay;
+    /* Wide, soft mask stops -- opaque only near the centre, fading out
+       gradually to 95% -- so the cut-off reads as a fade, not a disc. The
+       first attempt at this (58%/78%) was still a visible spotlight edge. */
+    -webkit-mask-image:
+      radial-gradient(36rem 36rem at 15% 20%, #000 25%, transparent 95%),
+      radial-gradient(32rem 32rem at 85% 78%, #000 25%, transparent 95%);
+    mask-image:
+      radial-gradient(36rem 36rem at 15% 20%, #000 25%, transparent 95%),
+      radial-gradient(32rem 32rem at 85% 78%, #000 25%, transparent 95%);
+    opacity: .28;
+    animation: aurora-drift 50s ease-in-out infinite alternate;
+  }
+}
+@keyframes aurora-drift {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(2.5%, -2%) scale(1.05); }
 }
 
 
@@ -1438,6 +1658,7 @@ footer.site p { margin: 0 0 var(--s4); max-width: var(--measure); }
 /* --- Print --------------------------------------------------------------- */
 
 @media print {
+  body::before { content: none !important; }
   .topbar, .sidebar, .toc, .scrim, .copy, .anchor { display: none !important; }
   .shell { display: block; max-width: none; padding: 0; }
   main { padding: 0; }
