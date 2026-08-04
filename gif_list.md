@@ -145,7 +145,7 @@ honestly.
 | `collector_app.py` | collector window that hides by moving off-screen rather than minimising | **cannot run.** Imported nowhere, *and* two prerequisites are absent: the `it.mijorus.collector` flatpak is not installed, and the `_collector` group it parks the window in is not defined in `config.py`. |
 | `gg_scroll` | double-tap `g` scroll-to-top gesture | Runs — `bc` and `xdotool` are both present — but needs a binding, and a bare `g` bound globally would be swallowed inside every application. |
 | `rofi_keymaps` | qtile **and fish** shortcut list, AST-parsed | Compiles and runs. Overlaps `qtile-keys`, which *is* wired into the docs menu's Keybindings section; the fish half is the part `qtile-keys` does not cover. |
-| `dm-weather` | weather notification | Binding exists but is **commented out** at `config.py:6340`. |
+| `dm-weather` | weather notification | Works — wttr.in answers, and it reports through `notify-send`. Its binding at `config.py:6340` is commented out because it asks for `Super+P , W`, which the **wallpaper picker** already owns. Needs a different key, not un-commenting. Note it geolocates by IP, so the notification names the owner's city. |
 
 ### Wired after all
 
