@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Widgets and popups &mdash; Qtile Dotfiles Manual</title>
-<meta name="description" content="The bar and its chips, the logo documentation menu, the qtile popups, the cheatsheets, the eww tour and the restart veil.">
+<title>The bar and the popups &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="What everything in the bar does when you click it, and what each popup window is for.">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
 <header class="topbar">
   <button class="iconbtn" id="menu-toggle" aria-label="Toggle navigation">Menu</button>
-  <a class="brand" href="index.html">Qtile Dotfiles<small>Arch Linux &middot; X11 &middot; qtile</small></a>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
   <div class="spacer"></div>
   <div class="search">
     <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
@@ -24,369 +24,239 @@
 <nav class="sidebar" aria-label="Manual">
   <h2>Start here</h2>
   <ol>
-    <li><a href="index.html">Home</a></li>
-    <li><a href="install-usb.html">Install from the ATI-OS USB</a></li>
-    <li><a href="install-git.html">Install from a git clone</a></li>
+    <li><a href="index.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
   </ol>
   <h2>Using the desktop</h2>
   <ol>
-    <li><a href="keybindings.html">Keybindings</a></li>
-    <li><a href="themes.html">The themes</a></li>
-    <li><a class="current" href="widgets.html">Widgets and popups</a></li>
-    <li><a href="tools.html">Everyday tools</a></li>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a class="current" href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
   </ol>
   <h2>When it breaks</h2>
   <ol>
     <li><a href="troubleshooting.html">Troubleshooting</a></li>
-    <li><a href="reference.html">Reference</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
   </ol>
   <h2>On this page</h2>
-  <ol class="sub">
-    <li><a href="#bar">The bar</a></li>
-    <li><a href="#chips">The chips, and what clicking does</a></li>
-    <li><a href="#boxes">Widget boxes</a></li>
-    <li><a href="#logo">The logo menu</a></li>
-    <li><a href="#espanso">Espanso snippets</a></li>
-    <li><a href="#popups">The qtile popups</a></li>
-    <li><a href="#cheatsheets">The cheatsheets</a></li>
-    <li><a href="#scaling">HiDPI scaling</a></li>
-    <li><a href="#eww">The eww widgets</a></li>
-    <li><a href="#veil">The restart veil</a></li>
-  </ol>
+  <ol class="sub" id="toc"></ol>
 </nav>
 
 <main>
 
-<h1>Widgets and popups</h1>
-<p class="lede">The bar, what each chip does when you click it, the keyboard-driven popups
-that replaced pavucontrol and arandr, and the veil that hides a qtile restart.</p>
+<h1>The bar and the popups</h1>
 
-<h2 id="bar">The bar</h2>
+<p class="lede">The bar is the strip along the edge of your screen. Almost everything in it
+does something when clicked.</p>
 
-<p>Two bars are defined and one is shown at a time.
-<kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>z</kbd> swaps between the top bar and the bottom bar
-&mdash; only one is ever exclusive.</p>
+<h2 id="logo">Start by clicking the logo</h2>
 
-<p>Everything in the bar is built from a small set of qtile and
-<code>qtile_extras</code> widgets: <code>GroupBox</code>, <code>TaskList</code>,
-<code>Chord</code>, <code>Clock</code>, <code>CPU</code>, <code>Memory</code>,
-<code>Battery</code>, <code>Systray</code>, <code>LaunchBar</code>, <code>TextBox</code>
-and <code>Spacer</code>, wrapped in a local <code>chip()</code> helper that gives each one
-the rounded pill decoration.</p>
-
-<h2 id="chips">The chips, and what clicking does</h2>
+<p><b>Left-click the logo.</b> It opens a menu answering "what can this computer do?". It is
+the fastest way to find anything.</p>
 
 <div class="tw">
 <table>
-<thead><tr><th>Chip</th><th>Click</th></tr></thead>
+<thead><tr><th>Click</th><th>What happens</th></tr></thead>
 <tbody>
-<tr><td><b>The logo</b></td><td><b>Left</b> &mdash; the <a href="#logo">documentation menu</a>. <b>Middle</b> &mdash; a terminal. <b>Right</b> &mdash; <code>rofi -show drun</code></td></tr>
-<tr><td><b>Camera</b></td><td>Screenshot an area straight to the clipboard &mdash; the same action as the bare <kbd>Print</kbd> key</td></tr>
-<tr><td><b>CPU / memory</b></td><td>Opens <code>btop</code> in a fullscreen terminal</td></tr>
-<tr><td><b>Updates</b></td><td>Toggles <a href="tools.html#qupdate">qupdate</a></td></tr>
-<tr><td><b>Disk</b></td><td><code>disk_notify</code> &mdash; a dunst popup with usage for <code>/</code> and <code>/home</code></td></tr>
-<tr><td><b>Battery</b></td><td><code>battery_notify</code> &mdash; charge level and state. The chip is only added to the bar at all when a battery exists, so a desktop does not get one</td></tr>
-<tr><td><b>Keyboard layout</b></td><td>Cycles to the next layout</td></tr>
-<tr><td><b>Clock</b></td><td><code>clock_popup</code> &mdash; today and this week's plans and todos. Also on <kbd>Alt</kbd>+<kbd>p</kbd></td></tr>
-<tr><td><b>Media</b></td><td><b>Left</b> &mdash; <code>playerctl play-pause</code>. <b>Right</b> &mdash; <code>playerctl previous</code></td></tr>
-<tr><td><b>Wallpaper (✖)</b></td><td>Toggles the wallpaper picker &mdash; opens it if closed, closes it if open</td></tr>
-<tr><td><b>Tooltip box</b></td><td>Opens the <a href="#eww">eww onboarding tour</a></td></tr>
-<tr><td><b>Layout</b></td><td><b>Right</b> &mdash; next layout</td></tr>
+<tr><td><b>Left</b></td><td>The documentation menu</td></tr>
+<tr><td><b>Middle</b></td><td>A terminal</td></tr>
+<tr><td><b>Right</b></td><td>The program launcher</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>The <b>chord chip</b> is the one that appears only while a mode is active. It names the
-mode and lists the keys that mode accepts, and it changes colour per mode. That is what
-makes a chord discoverable rather than a state you have to remember you are in.</p>
-
-<h2 id="boxes">Widget boxes</h2>
-
-<p>Three collapsible groups, so the bar can carry more than fits.</p>
+<p>The menu has seven sections:</p>
 
 <div class="tw">
 <table>
-<thead><tr><th>Box</th><th>Key</th></tr></thead>
+<thead><tr><th>Section</th><th>What it gives you</th></tr></thead>
 <tbody>
-<tr><td><code>system_widgetbox</code></td><td><kbd>Alt</kbd>+<kbd>`</kbd></td></tr>
-<tr><td><code>2nd_system_widgetbox</code></td><td><kbd>Super</kbd>+<kbd>`</kbd></td></tr>
-<tr><td><code>systray_widgetbox</code> (the △ chip)</td><td><kbd>Alt</kbd>+<kbd>Tab</kbd></td></tr>
+<tr><td><b>Keybindings</b></td><td>Every keyboard shortcut, searchable. Type a few letters to filter</td></tr>
+<tr><td><b>Cheatsheets</b></td><td>Opens the on-screen shortcut cards for the desktop, Vim, or the shell</td></tr>
+<tr><td><b>Documentation</b></td><td>Reads the manuals &mdash; nicely formatted, not raw text, and read-only so you cannot damage them by accident</td></tr>
+<tr><td><b>Espanso</b></td><td>Your text-expansion shortcuts, and which of their settings are filled in</td></tr>
+<tr><td><b>Appearance</b></td><td>Colour theme, text size, wallpaper, startup screen</td></tr>
+<tr><td><b>System</b></td><td>What this computer is, which software is installed, what failed, your screen and graphics</td></tr>
+<tr><td><b>Maintenance</b></td><td><b>The only section that changes anything.</b> Housekeeping: leftover settings files to merge, unused software to remove, failures since you started up, and a growing download cache to clean. Each shows a live count</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>Entering any chord closes an open widget box and remembers it, so a mode chip is never
-competing for space with an expanded box.</p>
+<p><b><kbd>Esc</kbd> goes up one level, not out.</b> Only at the top does it close the
+menu. Browse without reopening it constantly.</p>
 
-<h2 id="logo">The logo menu</h2>
+<details class="why">
+<summary>Why the menu is generated fresh every time you open it</summary>
+<p>A hand-written menu goes out of date the moment anything is added, silently. So every
+section is built from the live system when you open it. The shortcut list is read out of the
+configuration file the desktop is running.</p>
+<p>The design decisions behind it are in
+<a href="under-the-hood.html#docsmenu">How it works</a>.</p>
+</details>
 
-<p>Left-clicking the logo opens <code>rofi_docs</code>. A desktop with this many
-keybindings, themes and custom tools has a discovery problem, not a terminal-launching
-problem &mdash; so the most prominent click in the bar answers <em>"what can this thing
-do"</em>.</p>
-
-<p>Seven sections, and <b>every one is generated from the live system</b>, because a
-hand-written menu drifts the moment anything is added, and silently.</p>
+<h2 id="chips">Everything else in the bar</h2>
 
 <div class="tw">
 <table>
-<thead><tr><th>Section</th><th>What it lists</th><th>Where it comes from</th></tr></thead>
+<thead><tr><th>Click this</th><th>And you get</th></tr></thead>
 <tbody>
-<tr><td><b>Keybindings</b></td><td>Every shortcut, searchable</td><td><code>config.py</code>, parsed by <code>qtile-keys</code> via Python's AST</td></tr>
-<tr><td><b>Cheatsheets</b></td><td>qtile &middot; vim &middot; fish popups</td><td>qtile IPC, not replayed keystrokes</td></tr>
-<tr><td><b>Documentation</b></td><td>README &middot; troubleshooting &middot; packages &middot; boot &middot; the config</td><td>Rendered read-only; the config is the one writable entry</td></tr>
-<tr><td><b>Espanso</b></td><td>Which snippet variables are set, and which are not</td><td><code>match/*.yml</code> vs <code>/etc/environment</code></td></tr>
-<tr><td><b>Appearance</b></td><td>theme &middot; UI scale &middot; wallpaper &middot; splash</td><td>The existing pickers</td></tr>
-<tr><td><b>System</b></td><td>about &middot; package audit &middot; failed services &middot; display and GPU</td><td>Run live at open time</td></tr>
-<tr><td><b>Maintenance</b></td><td>merges &middot; orphans &middot; boot errors &middot; package cache</td><td><code>pacdiff</code>, <code>pacman -Qtdq</code>, <code>journalctl</code>, <code>paccache</code></td></tr>
+<tr><td><b>The camera</b></td><td>Screenshot &mdash; drag a box, it goes to your clipboard. Same as pressing <kbd>Print</kbd></td></tr>
+<tr><td><b>The CPU or memory number</b></td><td>A full-screen view of what is using your computer</td></tr>
+<tr><td><b>The updates count</b></td><td>The update window &mdash; see <a href="tools.html#qupdate">qupdate</a></td></tr>
+<tr><td><b>The disk indicator</b></td><td>How full your disks are</td></tr>
+<tr><td><b>The battery</b></td><td>Charge level and whether it is charging. <em>Only appears if the computer has a battery</em></td></tr>
+<tr><td><b>The keyboard language</b></td><td>Switches to the next language</td></tr>
+<tr><td><b>The clock</b></td><td>Today's and this week's plans and to-dos</td></tr>
+<tr><td><b>The media controls</b></td><td>Left click: play or pause. Right click: previous track</td></tr>
+<tr><td><b>The ✖ icon</b></td><td>Opens the wallpaper picker, or closes it if it is open</td></tr>
+<tr><td><b>The layout icon</b></td><td>Right click: change how windows are arranged</td></tr>
+<tr><td><b>The tooltip icon</b></td><td>Opens the <a href="#tour">welcome tour</a></td></tr>
 </tbody>
 </table>
 </div>
 
-<pre><code>rofi_docs               # the menu
-rofi_docs keys          # jump straight to a section
-qtile-keys              # the binding list on stdout</code></pre>
+<h2 id="boxes">Hidden groups of icons</h2>
 
-<h3>How it behaves</h3>
-
-<ul>
-<li><b>Esc goes up, not out.</b> Every submenu returns to its parent; only Esc at the top
-level closes the menu. A menu you have to reopen from the bar after every glance is a menu
-you stop using.</li>
-<li><b>One frame, every section.</b> All of them draw at 614&times;432 &mdash; the same shape
-<code>dtos-center.rasi</code> gives every other rofi on this system &mdash; applied inside
-<code>pick()</code> so a new section cannot forget it. That frame fixes a <b>52-column
-budget</b>, and every row builder is cut to fit it, measured from what rendered rather than
-derived: the arithmetic says 56 and 56 visibly clipped.</li>
-<li><b>Documentation is rendered and read-only.</b> Markdown opens through
-<code>glow</code>, so you read the document rather than its markup and cannot edit the
-repo's own docs by accident. Troubleshooting jumps open in <code>nvim -R</code> &mdash;
-readonly <em>mode</em>, not <code>set nomodifiable</code>, which blocks plugins that
-legitimately write to their own buffers and made fidget.nvim throw on every
-notification.</li>
-<li><b>Troubleshooting rows show the symptom, not the heading.</b> "Rofi" tells you nothing;
-<em>"yellow wallpaper but rofi selection shows blue/purple"</em> is what you would actually
-type when it happens. Section rows keep their heading, since they have no symptom of their
-own.</li>
-<li><b>Everything opens in a centred floating window</b> (<code>kitty --class
-docs-view</code>) at 78% &times; 80% of the screen, so reading a doc never disturbs the
-layout.</li>
-</ul>
-
-<h3>Maintenance is the only section that acts</h3>
-
-<p>It replaced a Commands section that listed every tool in <code>AtiScriptsV1</code> with
-its header comment and deliberately never ran any of them &mdash; correct, and a reading
-exercise nobody opened twice, when the scripts are all on <code>$PATH</code> anyway.</p>
-
-<p>What nothing surfaced was the slow rot: <code>.pacnew</code> files never merged, orphaned
-dependencies, units that failed while you were looking at a splash screen, a package cache
-growing without bound. So that is what is here, with a live count on every entry, and
-selecting one merges, removes, prunes or upgrades.</p>
-
-<p>Two deliberate omissions:</p>
-<ul>
-<li>Pending updates come from the <b>bar's</b> cache (<code>~/.cache/qupdate.json</code>),
-never from <code>checkupdates</code>, which syncs a private copy of the package databases
-over the network and would turn a menu draw into a multi-second stall &mdash; or a hang with
-no connection.</li>
-<li>The orphan entry opens the <b>list</b>, not a bare confirm. <em>"Remove 21
-packages?"</em> with no names is a prompt you either rubber-stamp or cancel, and neither is
-a decision.</li>
-</ul>
-
-<div class="warn">
-<p><b>Maintenance is Arch-only</b> and says so: it refuses off Arch and names the distro,
-rather than running <code>pacman</code> commands that do not exist.</p>
-</div>
-
-<h2 id="espanso">Espanso snippets</h2>
-
-<p>The snippets in <code>match/base.yml</code> hold no personal data &mdash; they shell out
-to <code>source /etc/environment; echo "$MY_NAME"</code>. That is the right design and it
-has a sharp edge: on a machine where those variables are unset, every one of them expands to
-an <b>empty string</b>, with no error.</p>
-
-<p>The Espanso section of the logo menu lists which of the 26 variables are set and which are
-missing, scaffolds the missing keys into <code>/etc/environment</code> (commented, ready to
-fill), and opens it with <code>sudoedit</code>.</p>
-
-<h2 id="popups">The qtile popups</h2>
-
-<p>These are <code>qtile_extras</code> popups drawn by qtile itself, not separate
-applications. They live in <code>.config/qtile/popups/</code>.</p>
+<p>The bar cannot fit everything. Some icons live in groups you open when you want them.</p>
 
 <div class="tw">
-<table>
-<thead><tr><th>Popup</th><th>Opened by</th><th>What it replaces</th></tr></thead>
+<table class="keys">
+<thead><tr><th>Press</th><th>Shows</th></tr></thead>
 <tbody>
-<tr><td><code>AudioPopup</code></td><td><kbd>Alt</kbd>+<kbd>3</kbd></td><td><code>pavucontrol</code></td></tr>
-<tr><td><code>DisplayPopup</code></td><td><kbd>Alt</kbd>+<kbd>4</kbd></td><td><code>arandr</code>, plus saved layouts, which arandr had no equivalent of</td></tr>
-<tr><td><code>WifiPopup</code></td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>n</kbd></td><td><code>nm-connection-editor</code></td></tr>
-<tr><td><code>WifiQR</code></td><td><kbd>s</kbd> inside the WiFi popup</td><td>&mdash;</td></tr>
-<tr><td><code>BluetoothPopup</code></td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>b</kbd></td><td>the blueman window</td></tr>
-<tr><td><code>WallpaperPopup</code></td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>w</kbd>, or the ✖ chip</td><td>&mdash;</td></tr>
-<tr><td><code>QtileCheatsheet</code></td><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd> then <kbd>k</kbd></td><td>&mdash;</td></tr>
-<tr><td><code>VimCheatsheet</code></td><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd> then <kbd>v</kbd></td><td>&mdash;</td></tr>
-<tr><td><code>FishCheatsheet</code></td><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd> then <kbd>f</kbd></td><td>&mdash;</td></tr>
-<tr><td><code>UpdatesPopup</code></td><td>&mdash; not bound in the current config</td><td>&mdash;</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>`</kbd></td><td>The first group of system icons</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>`</kbd></td><td>The second group</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Tab</kbd></td><td>The system tray &mdash; icons put there by running programs</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>Three shared helper modules sit alongside them: <code>_wal_colors.py</code> (palette
-loading), <code>_scale.py</code> (UI scaling) and <code>_cheatsheet_grid.py</code> (the
-scrolling card grid the three cheatsheets share).</p>
+<p>Opening a keyboard <a href="keybindings.html#modes">mode</a> closes whichever group is
+open and remembers it, so the mode's chip never fights for space.</p>
 
-<p>Every binding for every popup is in <a href="keybindings.html#modes">Keybindings &rarr;
-Modes and chords</a>.</p>
+<h2 id="modechip">The coloured chip</h2>
 
-<div class="note">
-<p><b>Why they are popups and not applications.</b> Each one is keyboard-first and closes
-when its chord ends, so there is no window to manage, no group to put it on and no float
-rule to write. <code>Alt</code>+<code>3</code> and <code>Alt</code>+<code>4</code> keep the
-keys the pavucontrol and arandr scratchpads used to have.</p>
+<p>Press a <a href="keybindings.html#modes">mode</a> shortcut and a coloured chip appears
+in the bar. It names the mode and lists the keys it accepts. Each mode has its own colour.</p>
+
+<p>That chip answers "which keys work right now?". If the keyboard seems to have stopped
+responding, look there. You are probably in a mode. <kbd>Esc</kbd> always leaves.</p>
+
+<h2 id="move">Moving the bar</h2>
+
+<p>Press <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>z</kbd> to move the bar between the top and
+the bottom of the screen.</p>
+
+<h2 id="popups">The popup windows</h2>
+
+<p>Drawn by the desktop itself, not separate programs. Keyboard-driven, and they close when
+you leave.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Popup</th><th>What it is for</th><th>Open it with</th></tr></thead>
+<tbody>
+<tr><td><b>Sound</b></td><td>Choose speakers or headphones, set the volume of individual programs, pick a microphone</td><td><kbd>Alt</kbd>+<kbd>3</kbd></td></tr>
+<tr><td><b>Monitors</b></td><td>Set up a second screen: where it sits, its resolution, which is primary</td><td><kbd>Alt</kbd>+<kbd>4</kbd></td></tr>
+<tr><td><b>Wi-Fi</b></td><td>Connect to a network</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>n</kbd></td></tr>
+<tr><td><b>QR code</b></td><td>Share your Wi-Fi with a phone by scanning</td><td><kbd>s</kbd>, inside the Wi-Fi popup</td></tr>
+<tr><td><b>Bluetooth</b></td><td>Pair and connect devices</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>b</kbd></td></tr>
+<tr><td><b>Wallpaper</b></td><td>Browse and pick a wallpaper</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>w</kbd>, or the ✖ icon</td></tr>
+<tr><td><b>Cheatsheets</b> (three of them)</td><td>Shortcut cards for the desktop, Vim, and the shell</td><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd></td></tr>
+</tbody>
+</table>
 </div>
+
+<p>Every key each of them accepts is listed under
+<a href="keybindings.html#modes">Keyboard shortcuts &rarr; Modes</a>.</p>
+
+<details class="why">
+<summary>Why these are not ordinary applications</summary>
+<p>They replaced four separate programs. Drawn by the desktop means no window to manage,
+nothing to put on a workspace, no rule about where it should appear. The Wi-Fi and Bluetooth
+tray icons are still there, but the pickers never open those old windows. More in
+<a href="under-the-hood.html#popups">How it works</a>.</p>
+</details>
 
 <h2 id="cheatsheets">The cheatsheets</h2>
 
 <figure>
-  <img src="assets/img/cheatsheet.gif" alt="The cheatsheet mode chip in the bar">
+  <img src="assets/img/cheatsheet.gif" alt="A cheatsheet of shortcuts appearing on screen">
 </figure>
 
-<p>Every binding on a card, with the key hard against the card's right edge, in the same
-monospace face the rest of the popups use.</p>
+<p><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd> then <kbd>k</kbd>. Every shortcut on a
+card, with the key on the right.</p>
 
-<p>The sheets <b>scroll</b> rather than page: <kbd>j</kbd>/<kbd>k</kbd> move a few rows,
-<kbd>Tab</kbd>/<kbd>Shift</kbd>+<kbd>Tab</kbd> a screenful, <kbd>Esc</kbd> closes, and the
-header shows how far down you are.</p>
+<p>They <b>scroll</b>: <kbd>j</kbd> and <kbd>k</kbd> move a few rows, <kbd>Tab</kbd> and
+<kbd>Shift</kbd>+<kbd>Tab</kbd> move a whole screenful, and the header shows how far down you
+are. <kbd>v</kbd> switches to the Vim sheet and <kbd>f</kbd> to the shell one.
+<kbd>Esc</kbd> closes.</p>
 
-<p>Scrolling is also why the sheets are an ordinary popup size rather than nearly
-full-screen. Paging tied <em>capacity</em> to <em>size</em> &mdash; the only way to show more
-bindings was to be bigger, and they had grown to 1330&times;750 on a 1366&times;768 screen,
-covering the very window you opened them to ask about. With a viewport that moves, the size
-only decides how much you see at once.</p>
+<p>Modifier keys are drawn as symbols: <kbd>⇧</kbd> Shift, <kbd>⌃</kbd> Ctrl,
+<kbd>⏎</kbd> Enter, <kbd>␣</kbd> Space. The header carries the key to them.</p>
 
-<p><kbd>k</kbd> does double duty: it opens the qtile sheet when none is up, and scrolls up
-when one is. Only one sheet is ever open at a time.</p>
+<details class="why">
+<summary>Why they scroll instead of paging</summary>
+<p>Paging tied how much you could see to how big the window was. The only way to show more
+shortcuts was to be bigger, and they had grown to nearly the size of a 1366&times;768 screen,
+covering the very window you opened them to ask about. With a view that scrolls, size only
+decides how much you see at once.</p>
+</details>
 
-<p>Opening a sheet from the logo menu goes through qtile's IPC
-(<code>open_cheatsheet()</code> in <code>config.py</code>), not <code>xdotool</code>.
-Replaying the chord could not work: entering <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd>
-auto-shows the qtile sheet, so the replayed <kbd>k</kbd> toggled it back off and it appeared
-for a single frame.</p>
+<h2 id="tour">The welcome tour</h2>
 
-<h2 id="scaling">HiDPI scaling</h2>
+<p>On your first login after installing, a short tour appears: welcome, workspaces, the
+shortcuts worth knowing first, finish.</p>
 
-<p>Every pixel value in the qtile config was tuned on a 1366&times;768 14" panel. Copied
-unchanged to a 15" 4K laptop that is a sliver of a bar with unreadable text &mdash; the one
-thing these dotfiles cannot keep identical by copying files, because the right answer depends
-on the glass.</p>
+<p>It runs <b>once</b>. After that, open it from the tooltip icon in the bar.</p>
 
-<p><code>ui-scale</code> computes a factor from the primary display's real DPI and writes it
-to <code>~/.cache/qtile/ui_scale</code> (per-machine, untracked). qtile multiplies every font
-size, bar height, icon and margin by it; <code>Xft.dpi</code> carries the same factor into
-GTK, Qt, rofi and dunst. It runs from <code>.xinitrc</code> on every login, so docking to an
-external monitor re-scales.</p>
-
-<div class="tw">
-<table>
-<thead><tr><th>Screen</th><th>DPI</th><th>Scale</th></tr></thead>
-<tbody>
-<tr><td>14" 1366&times;768 <em>(reference)</em></td><td>125</td><td>1.00</td></tr>
-<tr><td>24" 1080p</td><td>92</td><td>1.00</td></tr>
-<tr><td>27" 1440p</td><td>109</td><td>1.00</td></tr>
-<tr><td>15" 1080p</td><td>142</td><td>1.15</td></tr>
-<tr><td>14" 1080p</td><td>158</td><td>1.25</td></tr>
-<tr><td>13" 1440p</td><td>227</td><td>1.80</td></tr>
-<tr><td>15" 4K</td><td>284</td><td>2.25</td></tr>
-</tbody>
-</table>
-</div>
-
-<p>Physical size, not resolution: a 24" 1080p monitor sits further away and has larger
-pixels, so it correctly stays at 1.00 rather than shrinking. The factor never goes below the
-reference &mdash; that panel is already small.</p>
-
-<pre><code>ui-scale-toggle        # rofi picker  (also: logo menu -> UI scale)
-ui-scale --set 1.25    # pin a value; survives re-detection
-ui-scale --auto        # back to detection
-ui-scale --show        # detected vs pinned vs active</code></pre>
-
-<div class="limit">
-<p><b>Nobody has looked at this on a 4K screen.</b> The popups are verified byte-identical
-at scale 1.0 and proportional at 2.0 &mdash; at 2.0 the sheets measure the same 3.6 / 2.0 /
-1.4 screenfuls as at 1.0, with pango measuring real glyph extents at both. That is a
-mathematical proof, not a photograph.</p>
-</div>
-
-<h2 id="eww">The eww widgets</h2>
-
-<p><a href="https://github.com/elkowar/eww">eww</a> carries the parts that are not qtile
-popups. Its configuration is in <code>.config/eww/</code>.</p>
-
-<div class="tw">
-<table>
-<thead><tr><th>Window</th><th>What it is</th></tr></thead>
-<tbody>
-<tr><td><code>onboarding-welcome</code></td><td>First page of the tour</td></tr>
-<tr><td><code>onboarding-workspaces</code></td><td>What the groups are</td></tr>
-<tr><td><code>onboarding-keybindings</code></td><td>The keys worth knowing first</td></tr>
-<tr><td><code>onboarding-finish</code></td><td>Last page</td></tr>
-<tr><td><code>bar-tooltip</code></td><td>The tooltip the bar's tooltip chip opens</td></tr>
-<tr><td><code>csheet</code></td><td>A cheatsheet window (<code>cheatsheet/cheatsheet.yuck</code>)</td></tr>
-</tbody>
-</table>
-</div>
-
-<p>The tour runs <b>once</b>, on the first graphical login after an install, via
-<code>onboarding-first-run</code>; <code>wizard.sh</code> arms it by writing a stamp file at
-the end of a successful run. After that it is only reachable from the bar's tooltip chip.
-<code>onboarding-cheatsheet</code> opens the qtile cheatsheet from inside the tour and hands
-the tour back its last page when you close the sheet.</p>
-
-<p>eww follows the theme like everything else. SCSS classes cover whole widgets, but the
-onboarding pages colour individual words inside a label, and a pango
-<code>&lt;span foreground="…"&gt;</code> can only take a literal &mdash; so those hex values
-used to be hardcoded doomone and stayed doomone on all the other palettes. The palette is now
-polled from <code>~/.cache/qtile/current_palette.json</code> and interpolated. The poll
-interval (30 minutes) is a backstop only: <code>theme-apply</code> reloads or restarts eww
-immediately after writing.</p>
-
-<h2 id="veil">The restart veil</h2>
+<h2 id="veil">Why a restart does not flicker</h2>
 
 <figure>
-  <img src="assets/img/veil.gif" alt="A qtile restart hidden behind a frosted veil with one card per window">
+  <img src="assets/img/veil.gif" alt="A restart hidden behind a frosted overlay showing one card per window">
 </figure>
 
-<p><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>r</kbd> &mdash; and any theme change &mdash; goes
-through <code>_smooth_restart</code>, which raises a veil over the transition:
-<code>qtile/scripts/qtile-restart-veil.py</code>, a <b>separate process</b> so it survives
-the <code>execv</code>.</p>
+<p>Restarting the desktop with <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>r</kbd>, or changing
+your theme, would normally mean watching every window from every workspace flash across the
+screen for two seconds.</p>
 
-<p>It frosts the desktop, shows a card carrying each window's real icon, and reports genuine
-progress from the incoming qtile &mdash; not a timer. It exists because qtile's own boot maps
-every window from every workspace for ~2 seconds before the <code>startup</code> hook fires,
-which is unfixable from config alone.</p>
+<p>Instead a frosted overlay covers the screen. It shows a card per window with its real
+icon, and a progress indicator reporting genuine progress rather than a timer.</p>
 
-<p>The veil pauses dunst and keeps itself topmost by reacting to root-window restack events,
-so nothing lands on top of it. It needs <code>python-gobject</code>; without it the reload
-falls back to a plain restart.</p>
+<p><b>Your layout survives.</b> Window sizes, which workspace each window is on, and which
+was focused all come back as they were. Windows you moved by hand stay where you put them
+rather than jumping back to their default workspace.</p>
 
-<h3>Layout survives the restart</h3>
+<h2 id="scaling">If everything is too small or too big</h2>
 
-<p>MonadTall ratios and secondary stack sizes save every 3 seconds to
-<code>layout_state.json</code>; window&rarr;group mapping and per-group focus order save to
-<code>window_group_state.json</code>. Both restore on <code>startup_complete</code>, at +0.6s
-and +1.6s.</p>
+<p>The desktop measures your screen at login and sizes text, bar and icons to suit. Disagree
+with the result? Two clicks, not a settings file:</p>
 
-<p>Manually-moved windows stay in the group you chose even though Match rules re-fire on
-adoption &mdash; the <code>client_new</code> hook overrides Match assignment for any window
-id present in the restored map.</p>
+<pre><code>ui-scale-toggle</code></pre>
+
+<p>That opens a picker. Also in the logo menu under <b>Appearance &rarr; UI scale</b>. Or
+set it directly:</p>
+
+<pre><code>ui-scale --set 1.25    # pin a value; it survives re-detection
+ui-scale --auto        # go back to measuring automatically
+ui-scale --show        # what was detected, what is pinned, what is active</code></pre>
+
+<p>It re-measures at every login, so plugging in an external monitor adjusts by itself.</p>
+
+<div class="limit">
+<p><b>Nobody has looked at this on a real 4K screen.</b> The sizing has been checked
+mathematically and it is correct: at double size everything is exactly twice as big. That is a
+proof, not a photograph. If it looks wrong on yours, <code>ui-scale --set</code> is there.</p>
+</div>
 
 <footer class="page">
-  <span>Source: <code>.config/qtile/config.py</code>, <code>.config/qtile/popups/</code>, <code>.config/eww/</code>, <code>.config/AtiScriptsV1/rofi_docs</code> and <code>ui-scale</code>.</span>
-  <a href="tools.html">Next: everyday tools &rarr;</a>
+  <span>Every click behaviour on this page was read out of the configuration that defines it.</span>
+  <a href="tools.html">Next: the tools you get &rarr;</a>
 </footer>
 
 </main>

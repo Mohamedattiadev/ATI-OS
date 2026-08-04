@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The themes &mdash; Qtile Dotfiles Manual</title>
-<meta name="description" content="22 theme modes, how switching works, and the full list of what retints when you switch.">
+<title>Changing the colours &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="Two keys change the colour of everything on the computer at once. 22 schemes to choose from.">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
 <header class="topbar">
   <button class="iconbtn" id="menu-toggle" aria-label="Toggle navigation">Menu</button>
-  <a class="brand" href="index.html">Qtile Dotfiles<small>Arch Linux &middot; X11 &middot; qtile</small></a>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
   <div class="spacer"></div>
   <div class="search">
     <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
@@ -24,81 +24,80 @@
 <nav class="sidebar" aria-label="Manual">
   <h2>Start here</h2>
   <ol>
-    <li><a href="index.html">Home</a></li>
-    <li><a href="install-usb.html">Install from the ATI-OS USB</a></li>
-    <li><a href="install-git.html">Install from a git clone</a></li>
+    <li><a href="index.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
   </ol>
   <h2>Using the desktop</h2>
   <ol>
-    <li><a href="keybindings.html">Keybindings</a></li>
-    <li><a class="current" href="themes.html">The themes</a></li>
-    <li><a href="widgets.html">Widgets and popups</a></li>
-    <li><a href="tools.html">Everyday tools</a></li>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a class="current" href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
   </ol>
   <h2>When it breaks</h2>
   <ol>
     <li><a href="troubleshooting.html">Troubleshooting</a></li>
-    <li><a href="reference.html">Reference</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
   </ol>
   <h2>On this page</h2>
-  <ol class="sub">
-    <li><a href="#switch">Switching</a></li>
-    <li><a href="#list">The 22 modes</a></li>
-    <li><a href="#light">Light mode</a></li>
-    <li><a href="#retints">What retints, and how</a></li>
-    <li><a href="#wal">Wallpaper mode</a></li>
-    <li><a href="#palette">Palette semantics</a></li>
-    <li><a href="#wallpaper-vs-theme">Wallpaper vs. theme</a></li>
-    <li><a href="#splash">The boot splash</a></li>
-    <li><a href="#state">State files</a></li>
-    <li><a href="#concurrency">Concurrency</a></li>
-    <li><a href="#notweb">What is deliberately not themed</a></li>
-  </ol>
+  <ol class="sub" id="toc"></ol>
 </nav>
 
 <main>
 
-<h1>The themes</h1>
-<p class="lede">Pick a theme and everything follows &mdash; bar, terminal, rofi,
-notifications, GTK, Qt, browser chrome, nvim, the boot splash, even the folder icons.</p>
+<h1>Changing the colours</h1>
+
+<p class="lede">Pick a colour scheme and everything follows: the bar, the terminal, the
+menus, the notifications, the browser, your text editor, your folder icons.</p>
+
+<h2 id="how">How to change it</h2>
+
+<ol class="steps">
+  <li>
+    <p>Press <kbd>Super</kbd>+<kbd>P</kbd>, let go, then press <kbd>c</kbd>.</p>
+    <p class="screen">A list of colour scheme names appears. The one you are using now has a
+    <code>●</code> next to it.</p>
+  </li>
+  <li>
+    <p>Move up and down with the arrow keys, and press Enter on the one you want.</p>
+    <p class="screen">The screen goes soft and frosted for a second or two while everything
+    recolours, then comes back in the new colours.</p>
+  </li>
+</ol>
 
 <figure>
-  <img src="assets/img/themes.png" alt="Ten of the theme modes side by side">
-  <figcaption>10 of the 22 modes.</figcaption>
+  <img src="assets/img/theme-picker.gif" alt="Choosing a colour scheme from a list, and the whole desktop changing colour">
 </figure>
 
-<h2 id="switch">Switching</h2>
+<p>Or type the name in a terminal:</p>
 
-<pre><code>theme-apply gruvbox   # any preset
-theme-apply wal       # follow the current wallpaper
-theme-toggle          # the rofi picker</code></pre>
+<pre><code>theme-apply gruvbox</code></pre>
 
-<p>Or press <kbd>Super</kbd>+<kbd>P</kbd> then <kbd>c</kbd>. The picker shows friendly
-names (<code>wal</code> appears as <em>Wallpaper</em>) and marks the current theme with
-<code>●</code>.</p>
+<p>Clicking through the list quickly is fine. A new choice cancels the one still in
+progress.</p>
+
+<h2 id="list">The 22 colour schemes</h2>
 
 <figure>
-  <img src="assets/img/theme-picker.gif" alt="The rofi theme picker, with a live switch">
+  <img src="assets/img/themes.png" alt="Ten of the colour schemes shown side by side">
+  <figcaption>Ten of them. There are 22 in total.</figcaption>
 </figure>
-
-<p>Rapid picker clicks preempt: an in-flight <code>theme-apply</code> is killed and the
-newer one starts, rather than the second click being silently dropped.</p>
-
-<h2 id="list">The 22 modes</h2>
-
-<p>21 fixed presets plus <code>wal</code>, which derives its palette from the current
-wallpaper.</p>
 
 <div class="tw">
 <table>
-<thead><tr><th>Mode</th><th>Mode</th><th>Mode</th></tr></thead>
+<thead><tr><th>Name</th><th>Name</th><th>Name</th></tr></thead>
 <tbody>
-<tr><td><code>doomone</code> <em>(default)</em></td><td><code>kanagawa</code></td><td><code>cyberpunk-neon</code></td></tr>
+<tr><td><code>doomone</code> <em>(the default)</em></td><td><code>kanagawa</code></td><td><code>cyberpunk-neon</code></td></tr>
 <tr><td><code>dracula</code></td><td><code>oxocarbon</code></td><td><code>synthwave</code></td></tr>
 <tr><td><code>gruvbox</code></td><td><code>onedark</code></td><td><code>matrix</code></td></tr>
 <tr><td><code>nord</code></td><td><code>palenight</code></td><td><code>mono-dark</code></td></tr>
-<tr><td><code>tokyonight</code></td><td><code>nightowl</code></td><td><code>mono-light</code></td></tr>
-<tr><td><code>catppuccin</code></td><td><code>github-dark</code></td><td><code>wal</code> &mdash; from the wallpaper</td></tr>
+<tr><td><code>tokyonight</code></td><td><code>nightowl</code></td><td><code>mono-light</code> <em>(the only light one)</em></td></tr>
+<tr><td><code>catppuccin</code></td><td><code>github-dark</code></td><td><code>wal</code> &mdash; shown as <b>Wallpaper</b> in the picker</td></tr>
 <tr><td><code>monokai</code></td><td><code>ayu-mirage</code></td><td></td></tr>
 <tr><td><code>everforest</code></td><td></td><td></td></tr>
 <tr><td><code>rose-pine</code></td><td></td><td></td></tr>
@@ -106,237 +105,139 @@ wallpaper.</p>
 </table>
 </div>
 
-<p>Each preset is nine hex colours in <code>theme-apply</code>: background, alternate
-background, foreground, then red, green, yellow, blue, purple and cyan.</p>
+<h2 id="light">If you want a light theme</h2>
 
-<h2 id="light">Light mode</h2>
+<p><code>mono-light</code> is the one light scheme. Everything else is dark.</p>
 
-<p><code>mono-light</code> is the one light preset. It flips the base GTK theme to
-<code>Breeze</code> + <code>Papirus-Light</code>; every other mode uses
-<code>Sweet-Dark</code> + <code>Papirus-Dark</code>. That is what makes GTK apps render
-properly light-on-white rather than dark widgets on a light palette.</p>
+<p>It also switches the underlying window style and icon set to their light versions, so
+ordinary applications render properly dark-on-white instead of looking like a dark theme with
+pale colours poured over it.</p>
 
-<p>The file manager (<code>pcmanfm-qt</code>) is a Qt application, so it ignores the GTK
-theme entirely and follows the generated <code>qt6ct</code>/<code>qt5ct</code> palette
-instead &mdash; same colours, different path.</p>
+<h2 id="wal">Matching your wallpaper</h2>
 
-<h2 id="retints">What retints, and how</h2>
+<p>The scheme called <b>Wallpaper</b> in the picker (<code>wal</code> if you are typing)
+reads the colours out of your current wallpaper and builds a scheme from them.</p>
 
-<p>Fifteen separate consumers, each with its own reload mechanism, because none of them
-share one.</p>
+<pre><code>theme-apply wal</code></pre>
 
-<div class="tw">
-<table>
-<thead><tr><th>Consumer</th><th>Reload mechanism</th></tr></thead>
-<tbody>
-<tr><td>kitty</td><td><code>set-colors --all</code> per live socket, plus SIGUSR1</td></tr>
-<tr><td>rofi</td><td>A <code>current-palette.rasi</code> symlink swap</td></tr>
-<tr><td>dunst</td><td>Render <code>dunstrc.tmpl</code>, then restart</td></tr>
-<tr><td>qtile</td><td><code>restart</code>, detached so the caller does not deadlock</td></tr>
-<tr><td>GTK 3 / 4</td><td>An <code>@import</code> overlay at <code>~/.cache/qtile/gtk-wal.css</code></td></tr>
-<tr><td>Qt 5 / Qt 6 (Telegram, pcmanfm-qt, &hellip;)</td><td>A 21-role QPalette written to <code>~/.config/qt6ct/colors/current.conf</code> and the qt5ct equivalent. <b>Needs <code>QT_QPA_PLATFORMTHEME=qt6ct</code></b>, exported from <code>.xinitrc</code> &mdash; Qt ignores the GTK theme entirely and falls back to a <em>light</em> palette without it. Read at application start, so a fresh X session is required</td></tr>
-<tr><td>qutebrowser</td><td>Homepage: inline <code>&lt;style&gt;</code> plus an <code>--accent</code> CSS variable. Browser chrome (tabs, statusbar, completion, messages, prompts, downloads &mdash; 78 options): <code>config.py:_apply_palette()</code> reads <code>current_palette.json</code>, for <em>all</em> modes rather than only <code>wal</code>. Both applied via <code>:config-source</code> and <code>:restart</code></td></tr>
-<tr><td>nvim</td><td>An fs_event on <code>~/.cache/qtile/theme_mode</code> and <code>current_palette.json</code> re-sources the scheme. Modes with no dedicated plugin (matrix, mono-*, synthwave, cyberpunk-neon, palenight, github-dark, ayu-mirage, onedark, nightowl) render distinct highlights straight from the JSON; the Snacks dashboard uses the dominant hue</td></tr>
-<tr><td>Brave</td><td><code>--load-extension</code> reads a live <code>manifest.json</code> on relaunch; the extension id matches via an embedded <code>key</code></td></tr>
-<tr><td>Chrome / Chromium</td><td>Enterprise policy <code>force_installed</code> from a local <code>updates.xml</code>. The <code>.crx</code> is repacked and Preferences purged on each apply so the install lands immediately. The extension id is derived from <code>browser-theme.pem</code> at runtime &mdash; never hardcoded, because it is per-machine &mdash; and browsers relaunch through their <code>/usr/bin</code> wrapper so <code>*-flags.conf</code> is actually applied</td></tr>
-<tr><td>Papirus folder icons</td><td><code>papirus-folders -C &lt;hue-match&gt; -u</code>. Needs the <code>papirus-folders</code> AUR package (declared in <code>system-tools.yaml</code>); silently no-ops if missing</td></tr>
-<tr><td>eww widgets</td><td>Daemon killed, <code>setsid eww daemon</code> restarted, prior windows reopened. A plain <code>eww reload</code> left compiled SCSS cached</td></tr>
-<tr><td>qtile popups + wallpaper picker</td><td><code>popups/_wal_colors.load_colors()</code> reads <code>current_palette.json</code> first and falls back to <code>~/.cache/wal/colors.json</code>. The muted tone is derived from a bg&rarr;fg blend, for readable dividers</td></tr>
-<tr><td>GTK base theme + icon theme</td><td><code>settings.ini</code> rewritten per palette (see <a href="#light">Light mode</a>)</td></tr>
-<tr><td>Cursor</td><td><code>~/.Xresources</code> sets <code>Xcursor.size: 24</code> and <code>Xcursor.theme: breeze_cursors</code>, loaded via <code>xrdb -merge</code> in <code>~/.xinitrc</code></td></tr>
-<tr><td>Boot splash</td><td>Re-rendered on every switch &mdash; but see <a href="#splash">the boot splash</a>, which needs one extra command</td></tr>
-</tbody>
-</table>
-</div>
+<p>Drop any image into <code>~/Pictures/Wallpapers/</code>. It appears in the wallpaper
+picker (<kbd>Super</kbd>+<kbd>P</kbd> then <kbd>w</kbd>) immediately. Colours are worked out
+the first time you use it and remembered afterwards. Nothing to run.</p>
 
-<h2 id="wal">Wallpaper mode</h2>
+<details class="why">
+<summary>How the colours get picked, and why they are always readable</summary>
+<p>Colours pulled straight out of a photo are often unreadable. Grey text on a grey bar.
+So every generated scheme is forced to meet a quality bar first: the strongest accessibility
+contrast standard between background and text, a slightly lower one per accent, and a
+guaranteed spread of hues so the accents do not all come out the same.</p>
+<p>The six accent slots have fixed jobs, which is what stops "urgent" ever coming out green.
+Details in <a href="under-the-hood.html#theming">How it works</a>.</p>
+</details>
 
-<p><code>theme-apply wal</code> derives the palette from the current wallpaper, using a
-precompiled cache. <code>wal-precompile</code> walks
-<code>~/Pictures/Wallpapers/</code> and produces a per-image palette at
-<code>~/.cache/qtile/palettes/&lt;basename&gt;.json</code>, each one forced to a
-doomone-quality bar: WCAG AAA background/foreground contrast, WCAG AA per accent, and a
-guaranteed hue spread.</p>
-
-<p>Drop any image into <code>~/Pictures/Wallpapers/</code> and select it &mdash;
-<code>theme-apply wal</code> auto-runs <code>wal-precompile --only &lt;basename&gt;</code>
-on a cache miss. There is no manual step.</p>
-
-<h2 id="palette">Palette semantics</h2>
-
-<p>Six accent slots, hue-concentrated rather than evenly spread:</p>
-
-<div class="tw">
-<table>
-<thead><tr><th>Slot</th><th>Role</th></tr></thead>
-<tbody>
-<tr><td><code>color1</code></td><td>Urgent &mdash; always warm</td></tr>
-<tr><td><code>color2</code></td><td>Dominant &mdash; the main wallpaper hue. Bar accents pin here</td></tr>
-<tr><td><code>color3</code></td><td>Warm fill</td></tr>
-<tr><td><code>color4</code></td><td>Cool fill</td></tr>
-<tr><td><code>color5</code></td><td>Complement</td></tr>
-<tr><td><code>color6</code></td><td>Info / cyan</td></tr>
-</tbody>
-</table>
-</div>
-
-<p>A test harness at <code>.config/qtile/scripts/wal-visual-test.py</code> validates 12 hue
-buckets end to end.</p>
-
-<h2 id="wallpaper-vs-theme">Wallpaper vs. theme</h2>
+<h2 id="wallpaper-vs-theme">Wallpaper and theme are separate</h2>
 
 <div class="note">
-<p>Changing the wallpaper re-derives the palette <b>only when the active mode is already
-<code>wal</code></b>. On a preset you picked a fixed palette on purpose, so a new wallpaper
-swaps the desktop image and nothing else.</p>
-<p>All three wallpaper setters (<code>dm-setbg</code>, the dmscripts <code>dm-setbg</code>,
-and the qtile <code>WallpaperPopup</code>) check <code>~/.cache/qtile/theme_mode</code>
-before invoking <code>theme-apply wal</code> on a background thread, and fail closed if
-that file is unreadable.</p>
+<p><b>Changing your wallpaper does not change your colours</b>, unless you are on the
+<b>Wallpaper</b> scheme.</p>
+<p>On any other scheme you chose those colours deliberately, so a new picture changes only
+the picture. True whichever of the three ways you use to set one.</p>
 </div>
 
-<h2 id="splash">The boot splash</h2>
+<h2 id="retints">What changes colour</h2>
 
-<p>The splash follows your theme too, but it is the one consumer that cannot update
-instantly: plymouth runs before <code>/</code> is mounted, so the theme is embedded in the
-<em>initramfs</em>. Rebuilding that is about a minute &mdash; far too slow for a colour
-change.</p>
-
-<p>So <code>theme-apply</code> regenerates the assets and then tells you the boot screen is
-out of date. You do the rebuild when you want it:</p>
-
-<pre><code>boot-splash status         # what is installed, hooked and set
-boot-splash sync           # rebuild the initramfs to match the current theme</code></pre>
-
-<p>The full command set:</p>
-
-<pre><code>boot-splash generate       # render + install the theme (touches nothing about boot)
-boot-splash preview        # an animated GIF at your real resolution
-boot-splash preview --real # run plymouth for real on a spare VT
-boot-splash check          # 16 pre-reboot safety checks
-boot-splash enable         # wire into initramfs + kernel cmdline
-boot-splash disable        # reverse all of it</code></pre>
-
-<p><code>preview</code> renders from the real installed assets using the same arithmetic the
-plymouth script uses, so the timing and layout you see are the ones it will produce. Running
-<code>plymouthd</code> from a desktop session shows nothing at all, because plymouth draws
-to the DRM console and X owns the display &mdash; that looks like a broken theme when it is
-fine, so <code>preview</code> does the honest thing instead.</p>
-
-<h3 id="splash-what">What it draws</h3>
-
-<p>The Arch mark <em>inside</em> a progress ring, with your username underneath as ANSI
-Shadow block art, in the colours of the active theme. The name is generated, never
-hardcoded: user <code>ati</code> gets <code>ATI</code>, user <code>beko</code> gets
-<code>BEKO</code>. Override it with <code>BOOT_SPLASH_NAME</code>:</p>
-
-<pre><code>BOOT_SPLASH_NAME="Mohamed Attia" boot-splash generate &amp;&amp; boot-splash preview
-BOOT_SPLASH_SIZE=32 boot-splash generate   # bigger, if you want it</code></pre>
-
-<p>Two things move, so a slow boot never looks like a hung one: a comet sweeps continuously
-around the ring &mdash; the liveness signal, which keeps moving even when plymouth reports
-no progress at all, which is most of a fast boot &mdash; and the ring fills clockwise with
-real progress when it is reported.</p>
-
-<h3 id="splash-uki">One continuous image</h3>
-
-<p>The splash used to be bookended by Arch's own logo, for ~3s before and ~4s after.
-Neither was plymouth's doing: Arch's <code>linux.preset</code> ships
-<code>--splash /usr/share/systemd/bootctl/splash-arch.bmp</code>, which bakes that bitmap
-into the UKI as a PE <code>.splash</code> section. systemd-boot paints it the moment a boot
-entry is picked, plymouth draws over it, and when plymouth quits its buffer is released and
-the bitmap shows through again.</p>
-
-<p>So <code>generate</code> also renders a static BMP of the same composition at the
-firmware's framebuffer resolution, and <code>enable</code>/<code>sync</code> point every
-UKI-building preset at it instead. The presets are pacman-owned, so this is an in-place edit
-with a backup; a <code>linux</code> package upgrade restores Arch's line, and
-<code>boot-splash status</code> reports it while <code>sync</code> puts it back.</p>
-
-<h3 id="splash-safety">Three safety properties</h3>
+<p>Almost everything. In particular:</p>
 
 <ul>
-<li><b>The LTS rescue entries stay verbose.</b> <code>boot-fallback</code> strips
-<code>quiet</code> and <code>splash</code> from their options. A rescue entry that inherited
-the splash would show a logo while hiding the kernel messages saying what broke &mdash;
-indistinguishable from the failed boot you are escaping.</li>
-<li><b><code>enable</code> refuses unless <code>check</code> passes.</b> Sixteen checks run
-first: plymouth installed, colour placeholders substituted, theme script braces balanced,
-plymouth recognises the theme, the static boot frame is <em>uncompressed 24-bit BMP3</em>
-(systemd-boot reads nothing else and silently draws blank for anything else), the UKI presets
-point at it, a verbose LTS entry exists and is not splashed, the LTS kernel is on the ESP. A
-failure changes nothing.</li>
-<li><b>Every file edited is backed up</b> as <code>*.bak-boot-splash</code> &mdash;
-mkinitcpio.conf, the kernel cmdline, and each UKI preset &mdash; and <code>disable</code>
-restores them all and rebuilds.</li>
+<li>The bar, and all the popup windows</li>
+<li>The terminal &mdash; already-open ones too, immediately</li>
+<li>Every menu and picker</li>
+<li>Notifications</li>
+<li>Ordinary application windows, and Qt applications like Telegram and the file manager</li>
+<li>The web browsers' own toolbars and tabs &mdash; Brave, Chrome, Chromium, qutebrowser</li>
+<li>The Neovim text editor</li>
+<li>Your folder icons</li>
+<li>The mouse pointer theme</li>
+<li>The startup screen &mdash; with <a href="#splash">one extra step</a></li>
 </ul>
 
-<pre><code>./wizard.sh --yes --only=boot-splash       # re-run just this module
-./wizard.sh --uninstall --only=boot-splash # remove it, restore every backup</code></pre>
+<div class="note">
+<p><b>Two things need a moment.</b></p>
+<ul>
+<li><b>Telegram and the file manager</b> pick up new colours when they next start, not
+while running. Close and reopen them, or log out and back in.</li>
+<li><b>Web pages are not recoloured</b>, on purpose. The desktop tells websites you prefer
+dark mode and each site serves its own dark design, which beats a filter applied over the
+top. For a site with no dark design, turn on force-dark for that one site from your browser's
+page menu.</li>
+</ul>
+</div>
 
-<h2 id="state">State files</h2>
+<details class="why">
+<summary>Why every one of those needs a different mechanism</summary>
+<p>There is no shared standard. Each of the fifteen programs is recoloured a different way.
+One takes a live command. One needs a file swapped underneath it. One has to be restarted.
+One needs a browser extension repacked and reinstalled. Full table in
+<a href="under-the-hood.html#theming">How it works</a>.</p>
+</details>
 
-<p>All auto-created; there is no manual bootstrap.</p>
+<h2 id="splash">The startup screen</h2>
+
+<p>An Arch logo inside a progress ring, with <b>your name</b> underneath in block letters,
+in the current colours. Nothing to set up. The name comes from your username, so
+<code>ati</code> becomes <code>ATI</code>.</p>
+
+<div class="note">
+<p><b>This one does not change with the rest.</b> It has to be rebuilt, which takes about a
+minute. Far too slow for a colour change. So a theme change tells you the startup screen is
+out of date and you rebuild it when you feel like it:</p>
+<pre><code>boot-splash sync</code></pre>
+<p>To see the current state of things:</p>
+<pre><code>boot-splash status</code></pre>
+</div>
+
+<p>To see what it will look like without restarting:</p>
+
+<pre><code>boot-splash preview</code></pre>
+
+<p>That builds an animation from the real installed files at your real screen size. What
+you see is what you get.</p>
+
+<details class="why">
+<summary>Other things boot-splash can do</summary>
+<pre><code>boot-splash generate       # re-draw it (changes nothing about starting up)
+boot-splash preview --real # show it for real, on a spare screen
+boot-splash check          # 16 safety checks, run before it will change anything
+boot-splash enable         # switch it on
+boot-splash disable        # switch it off and restore every backup
+boot-splash status         # what is installed and switched on</code></pre>
+<p>Want a different name on it?</p>
+<pre><code>BOOT_SPLASH_NAME="Mohamed Attia" boot-splash generate &amp;&amp; boot-splash preview
+BOOT_SPLASH_SIZE=32 boot-splash generate   # bigger</code></pre>
+<p>To remove it altogether:</p>
+<pre><code>./wizard.sh --uninstall --only=boot-splash</code></pre>
+<p>Why it is drawn this way, why the rescue boot option deliberately gets no splash, and
+what the 16 checks are: <a href="under-the-hood.html#boot">How it works</a>.</p>
+</details>
+
+<h2 id="trouble">If something stays the old colour</h2>
 
 <div class="tw">
 <table>
-<thead><tr><th>Path</th><th>Contents</th></tr></thead>
+<thead><tr><th>What you see</th><th>What to do</th></tr></thead>
 <tbody>
-<tr><td><code>~/.cache/qtile/theme_mode</code></td><td>The active mode name</td></tr>
-<tr><td><code>~/.cache/qtile/current_palette.json</code></td><td>The 9-slot palette, dumped on every apply. Consumed by nvim, the popups and eww</td></tr>
-<tr><td><code>~/.cache/qtile/palettes/&lt;name&gt;.json</code></td><td>Precompiled per-wallpaper palettes</td></tr>
-<tr><td><code>~/.cache/qtile/layout_state.json</code></td><td>MonadTall ratios and relative sizes per group</td></tr>
-<tr><td><code>~/.cache/qtile/window_group_state.json</code></td><td>window id &rarr; group map, plus per-group focus order</td></tr>
-<tr><td><code>~/.cache/wall</code></td><td>Symlink to the active wallpaper</td></tr>
+<tr><td>Telegram or the file manager is still the old colours</td><td>Close and reopen it. Those read their colours once, when they start.</td></tr>
+<tr><td>The startup screen is still the old colours</td><td>Run <code>boot-splash sync</code>. See <a href="#splash">above</a>.</td></tr>
+<tr><td>Folder icons never change</td><td>One optional package is missing. It fails silently by design rather than breaking the theme change.</td></tr>
+<tr><td>The web page content is not dark</td><td>That is deliberate &mdash; see <a href="#retints">above</a>.</td></tr>
+<tr><td>Everything looks wrong and the text does not line up</td><td>A font is missing. See <a href="troubleshooting.html#fonts">Troubleshooting</a>.</td></tr>
+<tr><td>Something else</td><td><a href="troubleshooting.html#theming">Troubleshooting &rarr; Colours</a> lists every case that has come up.</td></tr>
 </tbody>
 </table>
-</div>
-
-<h2 id="concurrency">Concurrency</h2>
-
-<p><code>theme-apply</code> holds a <code>flock</code> on
-<code>~/.cache/qtile/.theme-apply.lock</code>. Keybind spam is dropped rather than
-corrupting caches; picker clicks preempt instead of being dropped.</p>
-
-<h2 id="notweb">What is deliberately not themed</h2>
-
-<div class="note">
-<p><b>Web page content.</b> The <code>dark-mode</code> module sets
-<code>org.gnome.desktop.interface color-scheme=prefer-dark</code>, which xdg-desktop-portal
-republishes as <code>org.freedesktop.appearance color-scheme = 1</code>. Chromium reads that
-key and reports <code>prefers-color-scheme: dark</code>, so each site serves <em>its
-own</em> dark stylesheet. The browser <em>chrome</em> stays palette-driven.</p>
-<p><code>--enable-features=WebContentsForceDark</code> used to sit in all three
-<code>*-flags.conf</code>. It is a per-pixel colour transform applied after render, with no
-knowledge of the page's design &mdash; fine on a site with no dark theme, destructive on one
-that has a good one, because it re-darkens an already-dark palette and blows out gradients
-and accent text. For the occasional site with no dark theme, enable force-dark for that site
-from the page menu instead of globally.</p>
-<pre><code>busctl --user call org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop \
-  org.freedesktop.portal.Settings ReadOne ss org.freedesktop.appearance color-scheme</code></pre>
-<p>That should answer <code>v u 1</code>.</p>
-</div>
-
-<h3>The shared UI font</h3>
-
-<p>The qtile popups use <code>qtile_extras</code>' default <code>sans</code> family, so
-dunst (<code>Sans 10</code>) and eww (<code>$ui-font: sans-serif</code>) resolve through the
-same fontconfig alias rather than naming a family. Restyle all three at once by editing
-<code>~/.config/fontconfig/fonts.conf</code>; <code>fc-match sans</code> shows the
-winner.</p>
-
-<div class="warn">
-<p><b>Font names fail silently.</b> A family fontconfig does not know renders in a
-substituted face with no error at all &mdash; this repo has hit that three times. Run
-<code>fc-match</code> on any family name before putting it in a config.
-<code>validate.sh</code> checks a hand-maintained list of 8 families, but it does not derive
-itself, so a config that starts naming a new family will pass validation while rendering
-wrong.</p>
 </div>
 
 <footer class="page">
-  <span>Source: <code>.config/AtiScriptsV1/theme-apply</code>, <code>theme-toggle</code>, <code>boot-splash</code>, <code>wal-precompile</code>, and <code>README.md</code>.</span>
-  <a href="widgets.html">Next: widgets and popups &rarr;</a>
+  <span>Every scheme name here was read out of the file that defines them.</span>
+  <a href="widgets.html">Next: the bar and the popups &rarr;</a>
 </footer>
 
 </main>

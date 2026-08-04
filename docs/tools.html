@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Everyday tools &mdash; Qtile Dotfiles Manual</title>
-<meta name="description" content="qdrop, qupdate, the theme picker, the rofi menus, passwords, phone mirroring and voice dictation.">
+<title>The tools you get &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="A shelf for files, a one-click updater, passwords, phone mirroring and dictation. What each is for, and how to use it.">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
 <header class="topbar">
   <button class="iconbtn" id="menu-toggle" aria-label="Toggle navigation">Menu</button>
-  <a class="brand" href="index.html">Qtile Dotfiles<small>Arch Linux &middot; X11 &middot; qtile</small></a>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
   <div class="spacer"></div>
   <div class="search">
     <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
@@ -24,511 +24,458 @@
 <nav class="sidebar" aria-label="Manual">
   <h2>Start here</h2>
   <ol>
-    <li><a href="index.html">Home</a></li>
-    <li><a href="install-usb.html">Install from the ATI-OS USB</a></li>
-    <li><a href="install-git.html">Install from a git clone</a></li>
+    <li><a href="index.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
   </ol>
   <h2>Using the desktop</h2>
   <ol>
-    <li><a href="keybindings.html">Keybindings</a></li>
-    <li><a href="themes.html">The themes</a></li>
-    <li><a href="widgets.html">Widgets and popups</a></li>
-    <li><a class="current" href="tools.html">Everyday tools</a></li>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a class="current" href="tools.html">The tools you get</a></li>
   </ol>
   <h2>When it breaks</h2>
   <ol>
     <li><a href="troubleshooting.html">Troubleshooting</a></li>
-    <li><a href="reference.html">Reference</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
   </ol>
   <h2>On this page</h2>
-  <ol class="sub">
-    <li><a href="#everyday">Everyday commands</a></li>
-    <li><a href="#qdrop">qdrop</a></li>
-    <li><a href="#qupdate">qupdate</a></li>
-    <li><a href="#theming">theme-apply and theme-toggle</a></li>
-    <li><a href="#rofi">The rofi menus</a></li>
-    <li><a href="#passwords">Passwords</a></li>
-    <li><a href="#phone">Android screen mirroring</a></li>
-    <li><a href="#dictation">Voice dictation</a></li>
-    <li><a href="#notes">Notes and todos</a></li>
-    <li><a href="#updating">Updating safely</a></li>
-    <li><a href="#all">Every script</a></li>
-  </ol>
+  <ol class="sub" id="toc"></ol>
 </nav>
 
 <main>
 
-<h1>Everyday tools</h1>
-<p class="lede">About fifty commands live in <code>.config/AtiScriptsV1/</code>, symlinked
-onto <code>$PATH</code> at <code>/usr/local/bin</code> by the <code>ati-scripts</code>
-module. Symlinked rather than copied, so an edit in the repo applies immediately.</p>
+<h1>The tools you get</h1>
 
-<h2 id="everyday">Everyday commands</h2>
+<p class="lede">About fifty small commands come with this desktop. These are the ones you
+will use.</p>
+
+<h2 id="glance">All of them at a glance</h2>
 
 <div class="tw">
 <table>
+<thead><tr><th>Tool</th><th>What it is for</th><th>How to open it</th></tr></thead>
 <tbody>
-<tr><td><code>letsgo</code> / <code>startx</code></td><td>Start the session from a TTY</td></tr>
-<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>r</kbd></td><td>Restart qtile (keeps layout and window&rarr;group state)</td></tr>
-<tr><td><code>dcli sync</code></td><td>Update the system, snapshotting first</td></tr>
-<tr><td><code>theme-apply &lt;name&gt;</code></td><td>Switch theme</td></tr>
-<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>c</kbd></td><td>Theme picker</td></tr>
-<tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>d</kbd></td><td>Toggle qdrop</td></tr>
-<tr><td><code>fc-cache -fv</code></td><td>Reload fonts</td></tr>
+<tr><td><a href="#qdrop"><b>The shelf</b></a></td><td>A panel you drag files into now and drag out later</td><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>d</kbd></td></tr>
+<tr><td><a href="#qupdate"><b>The updater</b></a></td><td>Update or install software with checkboxes, no typing</td><td>Click the updates count in the bar</td></tr>
+<tr><td><a href="#passwords"><b>Passwords</b></a></td><td>A pop-up list of your saved passwords</td><td><kbd>Super</kbd>+<kbd>p</kbd> then <kbd>p</kbd></td></tr>
+<tr><td><a href="#phone"><b>Phone mirroring</b></a></td><td>Your Android phone's screen on the computer, controllable</td><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F6</kbd></td></tr>
+<tr><td><a href="#dictation"><b>Dictation</b></a></td><td>Speak, and the words are typed</td><td><kbd>F8</kbd> or <kbd>F9</kbd></td></tr>
+<tr><td><b>Clipboard history</b></td><td>Everything you copied recently, with picture previews</td><td><kbd>Alt</kbd>+<kbd>v</kbd></td></tr>
+<tr><td><b>Screenshots</b></td><td>Drag a box, straight to the clipboard</td><td><kbd>Print</kbd></td></tr>
+<tr><td><b>Screen recording</b></td><td>Video, audio, webcam or a gif</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>r</kbd></td></tr>
+<tr><td><b>Translation</b></td><td>Translate whatever text you have selected</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>e</kbd></td></tr>
+<tr><td><b>Drawing on screen</b></td><td>Scribble over anything, for explaining on calls</td><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>w</kbd></td></tr>
 </tbody>
 </table>
 </div>
 
-<p>Reload the qtile config without a full restart:</p>
+<h2 id="qdrop">The shelf</h2>
 
-<pre><code>qtile cmd-obj -o cmd -f reload_config</code></pre>
+<p>A panel slides down from the top of the screen. Drag files, text, links or images into
+it. They stay. Later, in another program, drag them back out.</p>
 
-<h2 id="qdrop">qdrop &mdash; drop things here, use them later</h2>
+<p>It solves "I want to attach this file to that email, but they are on different
+workspaces".</p>
 
 <figure>
-  <img src="assets/img/qdrop.gif" alt="Dragging a file into the qdrop stash and back out again">
+  <img src="assets/img/qdrop.gif" alt="Dragging a file into a panel that slides down from the top, then dragging it back out">
 </figure>
-
-<p>A lightweight GTK3 daemon that slides in from top-centre, stashes files, text, URLs and
-images, and lets you drag them back out into any application. It replaced the flatpak
-<code>it.mijorus.collector</code>. It is themed live from the active palette.</p>
 
 <h3>Using it</h3>
 
-<ul>
-<li><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>d</kbd> toggles it.</li>
-<li><b>Shake the mouse while actually dragging</b> a file, folder or image &mdash; any axis,
-two reversals within 1.2 seconds &mdash; and it comes to you. A click-drag carrying nothing
-(a text selection, a rubber band, panning) is ignored. Shaking while it is already open
-keeps it open instead of replaying the reveal.</li>
-<li>Drop a file, text, URL or image in to add an entry. URL text is auto-detected.</li>
-<li>Drag an item back out to paste into any application.</li>
-<li>Rubber-band select on an empty area. <kbd>Ctrl</kbd>+<kbd>A</kbd>,
-<kbd>Ctrl</kbd>+click. Right-click for a menu.</li>
-<li><kbd>Ctrl</kbd>+<kbd>V</kbd> pastes the clipboard &mdash; text, files, or a
-<em>copied image</em>. A web image is raw pixels, so it is saved to
-<code>~/.cache/qdrop-images/</code> and added as a normal file entry.</li>
-<li><kbd>Ctrl</kbd>+<kbd>F</kbd> search. <kbd>Del</kbd> remove. <kbd>Enter</kbd> open.</li>
-<li>Text and text files open in a floating alacritty + nvim (<code>clip-view</code> class);
-image files open in <code>imv</code>.</li>
-<li>It auto-hides 8 seconds after the pointer leaves, paused while dialogs or menus are
-open.</li>
-</ul>
-
-<h3>Files and IPC</h3>
-
 <div class="tw">
-<table>
+<table class="keys">
+<thead><tr><th>Do this</th><th>Result</th></tr></thead>
 <tbody>
-<tr><td><code>.config/qtile/scripts/qdrop.py</code></td><td>Daemon, IPC and widget</td></tr>
-<tr><td><code>.config/qtile/scripts/qdrop_watch.py</code></td><td>XInput2 raw-event shake detector. Firing also requires a real XDND drag in flight, which is why a plain click-drag is ignored. <code>--debug</code> logs each decision; <code>--any-drag</code> disables the drag requirement</td></tr>
-<tr><td><code>.config/qtile/scripts/qdrop_test.py</code></td><td>Pure and live tests: helpers, IPC, shake detection, and a stubbed-GTK suite over the open/close state machine</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>d</kbd></td><td>Show or hide it</td></tr>
+<tr><td><b>Shake the mouse while dragging a file</b></td><td>It comes to you. Any direction. This is the good one</td></tr>
+<tr><td>Drop something in</td><td>It is added. Links are recognised automatically</td></tr>
+<tr><td>Drag an item out</td><td>Paste it into any program</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Paste from the clipboard &mdash; text, files, or an image you copied from a web page</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Search what is in there</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Open the selected item</td></tr>
+<tr><td><kbd>Del</kbd></td><td>Remove it</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd>, or drag a box on empty space</td><td>Select several at once</td></tr>
+<tr><td>Right-click</td><td>A menu</td></tr>
 </tbody>
 </table>
 </div>
 
-<pre><code>qdrop.py --show | --hide | --toggle | --add-text TXT | --reload | --status</code></pre>
-
-<p>Over a Unix socket at <code>/tmp/qdrop-$UID.sock</code>. Persistence lives at
-<code>~/.cache/qdrop.json</code>; a palette reload triggers itself from an mtime poll. Both
-the daemon and the watcher are launched from <code>autostart.sh</code> at login. Measured
-cost: 0% CPU idle, ~90&nbsp;MB combined RSS.</p>
-
-<h2 id="qupdate">qupdate &mdash; updates and installs, no terminal</h2>
-
-<figure>
-  <img src="assets/img/qupdate.gif" alt="The qupdate window listing pending packages with checkboxes">
-</figure>
-
-<p>Click the updates chip in the bar. A floating GTK3 daemon with two tabs.</p>
-
-<h3>Updates tab</h3>
-
-<ul>
-<li>Lists pending pacman and AUR packages, from a parallel <code>paru -Qu</code> plus
-<code>paru -Qua</code>.</li>
-<li>Cache-first render from <code>~/.cache/qupdate.json</code>, so it opens instantly;
-revalidation runs on a background thread.</li>
-<li>Per-package checkbox, a <code>PKG</code>/<code>AUR</code> badge, and
-<code>oldver → newver</code>.</li>
-<li>Refresh / All / None / filter.</li>
-<li>Footer: <b>Update selected</b> (<code>paru -S --needed</code>) or <b>Full upgrade</b>
-via the tool combo &mdash; which defaults to <code>dcli sync</code>, so timeshift snapshots
-and arch-config module state stay in sync.</li>
-<li><b>Run in background</b> means no terminal: <code>notify-send</code> on success or
-failure, and a log at <code>/tmp/qupdate-$UID-run.log</code>.</li>
-</ul>
-
-<h3>Install tab</h3>
-
-<ul>
-<li>Searches the official repos (<code>pacman -Ss</code>) and the AUR
-(<code>paru -Ssa</code>) with a 350&nbsp;ms debounce. Repo search is used for common queries
-so paru's "too many results" cap does not apply.</li>
-<li>Deduped and sorted: exact match &rarr; prefix &rarr; substring, repo before AUR,
-not-installed first, shortest name.</li>
-<li>Rows show name, badge and description, with an <code>installed</code> marker when
-present.</li>
-<li><b>Install selected</b> runs <code>paru -S --needed &lt;pkgs&gt;</code>, in a terminal or
-in the background.</li>
-</ul>
-
-<pre><code>qupdate.py --show | --hide | --toggle | --refresh | --status | --daemon</code></pre>
-
-<p>Over <code>/tmp/qupdate-$UID.sock</code>. It is palette-themed (polling
-<code>current_palette.json</code>'s mtime every 3 seconds) and autostarted hidden at
-login.</p>
-
-<h2 id="theming">theme-apply and theme-toggle</h2>
-
-<pre><code>theme-apply gruvbox    # any of the 21 presets
-theme-apply wal        # follow the current wallpaper
-theme-toggle           # the rofi picker; also Super+P then c</code></pre>
-
-<p>The full list and everything a switch touches is on <a href="themes.html">The
-themes</a>.</p>
-
-<h2 id="rofi">The rofi menus</h2>
-
-<p>All of these are on <kbd>Super</kbd>+<kbd>P</kbd> plus one key &mdash; see
-<a href="keybindings.html#rofi-mode">the rofi mode table</a> for the bindings. What they
-actually do:</p>
-
-<div class="tw">
-<table>
-<thead><tr><th>Command</th><th>What it does</th></tr></thead>
-<tbody>
-<tr><td><code>rofi_pass</code></td><td>Password picker over Vaultwarden via <code>rbw</code>. See <a href="#passwords">Passwords</a></td></tr>
-<tr><td><code>rofi_todo</code></td><td>Todo manager</td></tr>
-<tr><td><code>rofi_light</code></td><td>Screen brightness, via <code>light</code></td></tr>
-<tr><td><code>rofi-kill</code></td><td>Process killer, showing PID + process + window title in aligned columns (via <code>wmctrl -lp</code> and a PPID walk for browser subprocesses)</td></tr>
-<tr><td><code>rofi_anki</code></td><td>Build an Anki note and send it over AnkiConnect on <code>:8765</code></td></tr>
-<tr><td><code>rofi_shared</code></td><td>Shared-links picker with previews</td></tr>
-<tr><td><code>rofi_translator</code> / <code>wordreference.py</code></td><td>Translate the selected text, with a dictionary table</td></tr>
-<tr><td><code>dm-spellcheck</code></td><td>Spell- and grammar-check a word or a whole sentence in a rofi table</td></tr>
-<tr><td><code>dm-satty</code></td><td>Screenshot with <code>maim</code>, optionally annotated in <code>satty</code></td></tr>
-<tr><td><code>dm-recordV2</code></td><td>Record video, audio, webcam or a gif via ffmpeg</td></tr>
-<tr><td><code>dm-confedit</code></td><td>Dual-branch config browser over <code>~/.config</code> and <code>~/.dotfiles</code></td></tr>
-<tr><td><code>dm-logout</code></td><td>Logout, shutdown, reboot or lock</td></tr>
-<tr><td><code>dm-setbg</code></td><td>Wallpaper setter</td></tr>
-<tr><td><code>copyq_rofi</code></td><td>CopyQ clipboard picker with image thumbnails. <kbd>Ctrl</kbd>+<kbd>j</kbd>/<kbd>k</kbd> navigate, <kbd>Alt</kbd>+<kbd>d</kbd> deletes, <kbd>Alt</kbd>+<kbd>p</kbd> pins, <kbd>Enter</kbd> pastes. Bound to <kbd>Alt</kbd>+<kbd>v</kbd></td></tr>
-<tr><td><code>rofi_ilovepdf</code></td><td>Hierarchical file browser for PDF conversions</td></tr>
-<tr><td><code>rofi_docs</code></td><td>The <a href="widgets.html#logo">logo menu</a></td></tr>
-</tbody>
-</table>
-</div>
-
-<p>They all import a shared <code>base.rasi</code> (doom-one flavour, radius 12,
-palette-driven); overrides are layout-only. The scripts source
-<code>.config/AtiScriptsV1/rofi_common.sh</code> for palette parsing, wayland-safe
-clipboard, dependency checks and a compact <code>rofi_confirm</code>.</p>
+<p>It hides 8 seconds after the mouse leaves, unless a menu or dialog is open.</p>
 
 <div class="note">
-<p>The three tools that use AI (both translators and <code>rofi_anki</code>) read
-<code>GEMINI_API_KEY</code> from <code>~/.config/secrets.env</code>. Without it they still
-work &mdash; the AI section is omitted, not broken.</p>
+<p><b>Shaking only works while you are really dragging a file.</b> Selecting text or dragging
+a selection box will not trigger it. Otherwise it would pop up constantly.</p>
 </div>
+
+<details class="why">
+<summary>Where it stores things, and what it costs</summary>
+<p>The list lives in <code>~/.cache/qdrop.json</code>. An image copied from a web page is
+raw pixels rather than a file, so it is saved into <code>~/.cache/qdrop-images/</code> and
+added as a normal entry.</p>
+<p>From a terminal:</p>
+<pre><code>qdrop.py --show | --hide | --toggle | --add-text TXT | --reload | --status</code></pre>
+<p>Idle cost: 0% CPU, about 90&nbsp;MB of memory for both parts together.</p>
+</details>
+
+<h2 id="qupdate">Updating without a terminal</h2>
+
+<p>Update and install software by ticking boxes.</p>
+
+<p><b>Click the updates count in the bar.</b> A window opens with two tabs.</p>
+
+<figure>
+  <img src="assets/img/qupdate.gif" alt="A window listing pending updates with checkboxes next to each">
+</figure>
+
+<h3>The Updates tab</h3>
+
+<p>Everything with a new version. Each row: a checkbox, a badge saying where it comes from,
+the old and new version numbers.</p>
+
+<p>Two buttons at the bottom:</p>
+
+<ul>
+<li><b>Update selected</b> &mdash; only the ones you ticked.</li>
+<li><b>Full upgrade</b> &mdash; everything. Use this one normally. It snapshots your system
+first, so a bad update can be undone.</li>
+</ul>
+
+<p>Tick <b>Run in background</b> and no terminal appears. You get a notification when it
+finishes either way.</p>
+
+<h3>The Install tab</h3>
+
+<p>Type a name. Results are sorted so the one you meant is at the top, with a marker on
+anything you already have. Tick, then <b>Install selected</b>.</p>
+
+<details class="why">
+<summary>Why the list appears instantly</summary>
+<p>It shows a saved copy the moment you open the window and checks for a newer one in the
+background. Without that, opening the window meant waiting for a network round trip, and
+hanging entirely with no connection.</p>
+</details>
 
 <h2 id="passwords">Passwords</h2>
 
-<p><kbd>Super</kbd>+<kbd>p</kbd> then <kbd>p</kbd> opens a rofi picker over your vault.
-<b>Enter copies the password</b> and wipes the clipboard 30 seconds later.</p>
+<p>Your passwords in a pop-up list, on a keyboard shortcut. Nothing leaves your
+computer.</p>
 
-<p>The hint line advertises only the three you reach for &mdash; <kbd>↵</kbd> copy,
-<kbd>Alt</kbd>+<kbd>n</kbd> new, <kbd>Alt</kbd>+<kbd>x</kbd> delete &mdash; but the full set
-is bound:</p>
+<p><a href="install-git.html#vaultwarden">Create the account first</a>. Two minutes, once.</p>
+
+<p>Then press <kbd>Super</kbd>+<kbd>p</kbd>, let go, press <kbd>p</kbd>. Type to filter.</p>
 
 <div class="tw">
 <table class="keys">
-<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<thead><tr><th>Press</th><th>Result</th></tr></thead>
 <tbody>
-<tr><td><kbd>↵</kbd></td><td>Copy the password (clipboard cleared after 30s)</td></tr>
+<tr><td><kbd>Enter</kbd></td><td><b>Copy the password.</b> Your clipboard is wiped 30 seconds later</td></tr>
 <tr><td><kbd>Alt</kbd>+<kbd>u</kbd></td><td>Copy the username</td></tr>
-<tr><td><kbd>Alt</kbd>+<kbd>t</kbd></td><td>Copy the TOTP code</td></tr>
-<tr><td><kbd>Alt</kbd>+<kbd>o</kbd></td><td>Open the entry's website</td></tr>
-<tr><td><kbd>Alt</kbd>+<kbd>a</kbd></td><td>Type the password into the window that had focus &mdash; never touches the clipboard</td></tr>
-<tr><td><kbd>Alt</kbd>+<kbd>n</kbd></td><td>New entry (generate a 24-character password, or type your own)</td></tr>
-<tr><td><kbd>Alt</kbd>+<kbd>e</kbd></td><td>Edit &mdash; choose password or username</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>t</kbd></td><td>Copy the two-factor code</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>o</kbd></td><td>Open that site in your browser</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>a</kbd></td><td><b>Type the password</b> into the window you came from. It never touches the clipboard</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>n</kbd></td><td>New entry &mdash; it can generate a 24-character password for you</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>e</kbd></td><td>Edit an entry</td></tr>
 <tr><td><kbd>Alt</kbd>+<kbd>x</kbd></td><td>Delete an entry</td></tr>
-<tr><td><kbd>Alt</kbd>+<kbd>s</kbd></td><td>Force a sync</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>s</kbd></td><td>Sync now</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>Behind it is <b>Vaultwarden</b>, a Rust reimplementation of the Bitwarden server, running
-on <code>127.0.0.1:8222</code> and read through <code>rbw</code>. Vaultwarden speaks the
-Bitwarden API, which is the whole point: the <b>official Bitwarden phone apps</b> sync
-against it, so there is no bespoke mobile client to trust.</p>
+<p>The hint line shows the three you reach for. All nine work.</p>
 
-<h3>Browser extension</h3>
+<h3>In your web browser too</h3>
 
-<ol>
-<li>Install the <b>Bitwarden</b> extension from the store.</li>
-<li>Open it and, <b>before logging in</b>, click the ⚙ cog (top-left of the login screen)
-&rarr; <em>Self-hosted environment</em>.</li>
-<li>Server URL: <code>https://127.0.0.1:8222</code> &mdash; the <code>s</code> matters.</li>
-<li>Save, then log in with your email and master password.</li>
+<ol class="steps">
+  <li><p>Install the <b>Bitwarden</b> extension from your browser's store.</p></li>
+  <li>
+    <p>Open it and, <b>before you log in</b>, click the ⚙ cog at the top left &rarr;
+    <em>Self-hosted environment</em>.</p>
+  </li>
+  <li>
+    <p>Put <code>https://127.0.0.1:8222</code> in the server box and save.</p>
+    <p class="screen">The <b>s</b> in <code>https</code> matters.</p>
+  </li>
+  <li><p>Log in with your email and master password.</p></li>
 </ol>
 
-<p>Nothing extra is needed: the local certificate is already trusted by the browser, because
-mkcert installs its CA into the NSS store too.</p>
+<p>Nothing else needed. Your browser already trusts the certificate.</p>
 
-<h3>From your phone</h3>
+<h3>On your phone</h3>
 
 <div class="warn">
-<p>The server listens on loopback only, deliberately. <b>Do not open port 8222 to your
-network or the internet.</b></p>
+<p>The password server listens only to your own computer, on purpose. <b>Do not open port
+8222 to your network or the internet.</b></p>
 </div>
 
-<p>Two things make a plain LAN address useless, and both are worth knowing before you
-try:</p>
+<p>Reaching it from a phone needs one extra piece. Two things block the obvious approach:</p>
+
 <ul>
-<li>The Bitwarden app refuses plain HTTP outright &mdash; the web vault has a hard
-<code>url.startsWith("https://")</code> check with no localhost exception.</li>
-<li>Since Android API 24, apps do not trust user-installed CAs. Putting the mkcert root
-certificate on the phone still leaves the app rejecting the connection. This is the step
-that eats an evening.</li>
+<li>The Bitwarden app refuses plain unencrypted connections outright, with no exception for
+your own home network.</li>
+<li>Modern Android does not trust certificates you install yourself, so putting your
+computer's certificate on the phone still fails. <em>This is the step that eats an
+evening.</em></li>
 </ul>
 
-<p><a href="https://tailscale.com">Tailscale</a> sidesteps both:
-<code>tailscale cert</code> issues a <b>publicly trusted</b> certificate for a
-<code>*.ts.net</code> name, so the app accepts it with nothing installed, and only your own
-devices can reach the server.</p>
+<p><a href="https://tailscale.com">Tailscale</a> solves both. A free private network
+between your own devices, and it can issue a certificate phones already trust.</p>
 
-<pre><code>sudo tailscale up                                     # opens a login URL
-# enable MagicDNS + HTTPS Certificates in the admin console, then:
-./wizard.sh --yes --only=vaultwarden-phone</code></pre>
-
-<p>That module enables <code>tailscaled</code> and publishes the proxy. It uses
-<code>tailscale serve</code> rather than rebinding Vaultwarden, because one process can only
-bind one address &mdash; rebinding to the tailnet IP would take <code>127.0.0.1</code> away
-and break both <code>rofi_pass</code> and the browser extension. The proxy terminates TLS
-with the tailnet's own certificate and forwards to the local listener, so <b>nothing is
-exposed to your LAN</b>.</p>
-
-<p>It stops with a hint if either piece is missing, because neither can be done from the
-machine: <code>sudo tailscale up</code> needs a browser and your account, and <b>MagicDNS</b>
-and <b>HTTPS Certificates</b> both have to be on at
-<a href="https://login.tailscale.com/admin/dns">login.tailscale.com/admin/dns</a> &mdash;
-without them <code>tailscale cert</code> answers <em>"your Tailscale account does not
-support getting TLS certs"</em>.</p>
-
-<p>On the phone: install Tailscale and sign in with the same account, install Bitwarden,
-open it and <b>before logging in</b> tap ⚙ &rarr; <em>Self-hosted environment</em>, and set
-the server URL to <code>https://&lt;host&gt;.&lt;tailnet&gt;.ts.net:8222</code>.</p>
+<ol class="steps">
+  <li>
+    <p>On the computer, run <code>sudo tailscale up</code> and follow the link it prints to
+    sign in.</p>
+  </li>
+  <li>
+    <p>In the Tailscale admin website, turn on <b>MagicDNS</b> and <b>HTTPS
+    Certificates</b>.</p>
+    <p class="screen">Without both, the next step fails with "your Tailscale account does not
+    support getting TLS certs".</p>
+  </li>
+  <li>
+    <p>Back on the computer:</p>
+    <pre><code>./wizard.sh --yes --only=vaultwarden-phone</code></pre>
+  </li>
+  <li>
+    <p>On the phone: install Tailscale and sign in with the same account. Install Bitwarden.
+    Before logging in, tap ⚙ &rarr; <em>Self-hosted environment</em> and enter
+    <code>https://&lt;yourcomputer&gt;.&lt;yournetwork&gt;.ts.net:8222</code></p>
+  </li>
+</ol>
 
 <div class="limit">
-<p><b>A laptop is not an always-on server.</b> With the lid shut, the phone can still read
-the vault it has already cached, but it cannot sync or save new entries until the laptop is
-back. If that matters, move Vaultwarden to something that stays on &mdash; a Raspberry Pi or
-a small VPS &mdash; and repoint <code>rbw config set base_url</code>. Nothing else
-changes.</p>
+<p><b>A laptop is not a server.</b> With the lid shut your phone can still read passwords it
+already downloaded. It cannot sync or save new ones until the laptop is back. If that matters,
+move the password server to something that stays on, such as a Raspberry Pi or a small rented
+server, and point the tools at it. Nothing else changes.</p>
 </div>
 
-<h2 id="phone">Android screen mirroring</h2>
+<details class="why">
+<summary>What is actually running</summary>
+<p>Vaultwarden, an independent implementation of the Bitwarden server, running on your own
+computer at <code>127.0.0.1:8222</code>. It speaks the same protocol as the official Bitwarden
+apps. That is the whole point: no bespoke phone app to trust.</p>
+<p>The phone bridge publishes a proxy rather than moving the server. One program can listen on
+only one address, so moving it would take <code>127.0.0.1</code> away and break both the
+pop-up list and the browser extension. The proxy handles encryption and forwards to the local
+server, so <b>nothing is exposed to your home network</b>.</p>
+</details>
 
-<p><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F6</kbd> puts the phone on screen, with mouse and
-keyboard control back to it. It works over USB or Wi-Fi; the script picks whichever is
-available and prefers the cable.</p>
+<h2 id="phone">Your phone on the screen</h2>
+
+<p>Your Android phone's screen in a window, controlled with your mouse and keyboard. Sound
+comes out of the computer's speakers.</p>
 
 <h3>The first time</h3>
 
-<p>Turn on <b>Wireless debugging</b> on the phone once &mdash; Settings &rarr; Developer
-options &rarr; Wireless debugging. It survives reboots, so this is genuinely one time.</p>
+<ol class="steps">
+  <li>
+    <p>On the phone, turn on <b>Wireless debugging</b>: Settings &rarr; Developer options
+    &rarr; Wireless debugging.</p>
+    <p class="screen">This survives restarts, so it really is a one-time thing.</p>
+  </li>
+  <li>
+    <p>On the computer, press <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F6</kbd>.</p>
+    <p class="screen">A window opens with a QR code and a text box.</p>
+  </li>
+  <li>
+    <p>Either scan the QR code with the phone (Wireless debugging &rarr; <em>Pair device with
+    QR code</em>), or tap <em>Pair device with pairing code</em> and type the 6 digits into the
+    text box. Whichever finishes first wins.</p>
+  </li>
+</ol>
 
-<p>Then press the key. A rofi window opens with a QR code and a text field. Either scan the
-QR with the phone (Wireless debugging &rarr; <em>Pair device with QR code</em>), or tap
-<em>Pair device with pairing code</em> and type the 6 digits into the same window. Whichever
-finishes first wins. After that, pairing is remembered and the key goes straight to the
-mirror.</p>
-
-<h3>Why the script exists</h3>
-
-<p>Arch's <code>android-tools</code> is built <b>without mDNS</b>.
-<code>adb mdns services</code> answers <code>unknown host service</code>, so adb cannot find
-a wirelessly-debugging phone by itself &mdash; every guide that says "adb just finds it" is
-wrong on this distro. The address and port are also both random, and the connect port
-changes on every phone reboot.</p>
-
-<p><code>phone_screen</code> reads the phone's own mDNS announcement through
-<code>avahi-browse</code> and hands adb a plain <code>host:port</code>. That is why the
-<code>scrcpy</code> module enables <code>avahi-daemon</code> and opens <code>5353/udp</code>
-in ufw.</p>
-
-<h3>Speed</h3>
-
-<p><b>Wi-Fi is the bottleneck, not the laptop.</b> Measured on this machine, ping to the
-phone averaged 53&nbsp;ms with 16&nbsp;ms of jitter &mdash; worse than two frames at 30fps
-before anything is encoded. Over Wi-Fi the script caps the stream
-(<code>-m 720 --max-fps=30 -b 3M</code>) to spend what headroom exists on latency rather than
-detail; over USB it raises the ceiling (<code>-m 1280 --max-fps=60 -b 12M</code>).</p>
-
-<p><b>Plug in a cable if the picture matters.</b> It is not a marginal upgrade.</p>
-
-<p>Sound comes out of the laptop: <code>--audio-source=output</code> forwards the whole
-device output and mutes playback on the handset. It is a second, separately-buffered stream
-and costs some latency &mdash; <code>--no-audio</code> is the way back to the lowest-latency
-picture, and <code>--audio-buffer</code> is the knob if it crackles.</p>
-
-<p>Pressing the key again focuses the existing mirror rather than starting a second one. Two
-scrcpy processes against one phone means two decoders and two audio streams competing for the
-same Wi-Fi budget, which looks exactly like the link being slow.</p>
-
-<h3>Window size and rotation</h3>
-
-<p><code>PHONE_SIZE</code> (percent of usable height, default 92) tunes it:
-<code>PHONE_SIZE=100 phone_screen</code>. Portrait has no slack to give &mdash; a ~9:20
-handset at full height is only ~325px wide on a 1366&times;768 panel &mdash; so 100 is the
-ceiling there. Landscape is capped separately at 60% of screen width.</p>
-
-<p>Turn the phone sideways and scrcpy resizes <em>its own</em> window, keeping the top-left
-corner fixed while it grows &mdash; which, anchored to the right edge, walks the window
-straight off the screen. Two things stop it: at launch, placement reads the <em>current</em>
-rotation from <code>dumpsys window displays</code> (<code>cur=WxH</code>) rather than
-<code>wm size</code>, which reports the physical panel and never changes; mid-session, a
-small watcher samples the window geometry once a second and nudges it back inside the usable
-area. The watcher is a poll because qtile's <code>float_change</code> hook fires
-<b>zero</b> times for a floating window resized from outside qtile &mdash; it tracks
-floating <em>state</em>, not geometry.</p>
+<p>After that the shortcut goes straight to the mirror. Pressing it again brings that window
+to the front rather than starting a second one.</p>
 
 <h3>Controls</h3>
 
-<p>The scrcpy modifier is <code>lalt</code> &mdash; Super would collide with qtile's global
-grabs.</p>
-
-<div class="note">
-<p>The table below writes it as <kbd>Caps</kbd> because it assumes the opt-in
-<code>xmodmap</code> module, which makes Caps Lock act as Alt. <b>That module is not part of
-a default install.</b> Without it, use your real <kbd>Alt</kbd> key.</p>
-</div>
-
 <div class="tw">
 <table class="keys">
-<thead><tr><th>Action</th><th>Key</th></tr></thead>
+<thead><tr><th>Do this</th><th>Result</th></tr></thead>
 <tbody>
-<tr><td>Tap / back / home</td><td>Left / right / middle click</td></tr>
-<tr><td>App switcher</td><td><kbd>Alt</kbd>+<kbd>S</kbd></td></tr>
-<tr><td>Fullscreen</td><td><kbd>Alt</kbd>+<kbd>F</kbd></td></tr>
-<tr><td>Turn the phone screen back on</td><td><kbd>Alt</kbd>+<kbd>O</kbd> &mdash; it starts dark, via <code>-S</code></td></tr>
-<tr><td>Quit</td><td><kbd>Alt</kbd>+<kbd>Q</kbd></td></tr>
+<tr><td>Left / right / middle click</td><td>Tap / back / home</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>S</kbd></td><td>App switcher</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>F</kbd></td><td>Fullscreen</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>O</kbd></td><td>Turn the phone's own screen back on &mdash; it starts dark to save battery</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Q</kbd></td><td>Quit</td></tr>
+<tr><td>Drag a file onto the window</td><td>It is copied to the phone's Download folder</td></tr>
+<tr><td>Drag an APK onto the window</td><td>It is installed</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>Drag a file onto the window to push it to <code>/sdcard/Download</code>; drag an APK to
-install it.</p>
+<div class="note">
+<p>Turned on the optional Caps-Lock-as-Alt setting? Use <kbd>Caps</kbd> instead. On a normal
+install your real <kbd>Alt</kbd> key is correct.</p>
+</div>
 
-<h2 id="dictation">Voice dictation</h2>
+<h3>Making the picture better</h3>
+
+<p><b>Plug in a USB cable.</b> Not a marginal improvement. Wi-Fi is the bottleneck, not the
+computer. Measured here, the round trip to the phone averaged 53&nbsp;ms, worse than two whole
+frames before anything is encoded. A cable raises the quality ceiling substantially.</p>
+
+<p>To make the window bigger:</p>
+
+<pre><code>PHONE_SIZE=100 phone_screen</code></pre>
+
+<p>Default 92, meaning 92% of usable screen height. A phone held upright cannot go wider
+without being taller than your screen, so 100 is the ceiling.</p>
+
+<details class="why">
+<summary>Why this needs a special tool at all</summary>
+<p>On Arch the standard Android tool is built without the ability to find a phone on the
+network, so every guide saying "it just finds it" is wrong here. The address and port are both
+random, and the port changes whenever the phone restarts. Doing it by hand is a chore every
+session, not a one-off.</p>
+<p>The script listens for the announcement the phone broadcasts and hands the connection
+details over. That is the whole trick.</p>
+<p>It also keeps the window on screen when you rotate the phone. The mirror resizes from its
+top-left corner, which walks a right-anchored window off the edge. A watcher checks once a
+second and nudges it back.</p>
+</details>
+
+<h2 id="dictation">Dictation</h2>
+
+<p>Speak instead of typing. It runs entirely on your own computer. Nothing is sent
+anywhere.</p>
 
 <div class="tw">
 <table class="keys">
-<thead><tr><th>Key</th><th>Tool</th><th>Model</th></tr></thead>
+<thead><tr><th>Press</th><th>What happens</th></tr></thead>
 <tbody>
-<tr><td><kbd>F8</kbd></td><td><code>voice_dictate_live</code> &mdash; types each phrase the instant you pause</td><td>Whisper <code>base.en</code></td></tr>
-<tr><td><kbd>F9</kbd></td><td><code>voice_dictate</code> &mdash; press to start, press again to stop and paste the transcript</td><td>Whisper <code>small.en</code></td></tr>
+<tr><td><kbd>F8</kbd></td><td><b>Live.</b> Start talking. Each phrase is typed the moment you pause. Press <kbd>F8</kbd> again to stop</td></tr>
+<tr><td><kbd>F9</kbd></td><td><b>All at once.</b> Start talking, press <kbd>F9</kbd> again when you are done, and the whole thing is typed out</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>Both run on whisper.cpp locally &mdash; nothing is sent anywhere. The batch path is
-<code>whisper-cli</code> plus <code>sox</code> plus <code>xdotool</code>; the live path is
-<code>whisper-stream</code> in VAD sliding-window mode, with
-<code>voice_dictate_live_typer.py</code> reading its block output and typing only the new
-words of each block.</p>
-
-<p>The models are downloaded by the <code>whisper</code> module (~630&nbsp;MB). The
-<code>whisper-fast</code> module then rebuilds <code>whisper-cli</code> and
-<code>whisper-stream</code> optimised and patched, shadowing the AUR binaries via
-<code>/usr/local</code> &mdash; the AUR package is roughly 13&times; slower unoptimised, and
-does not build <code>whisper-stream</code> at all. That module <em>warns and skips</em>
-rather than failing if it cannot rebuild, since it is a speedup and not a requirement.</p>
+<p><kbd>F8</kbd> for a chat message. <kbd>F9</kbd> for a paragraph you want to think through
+first.</p>
 
 <div class="note">
-<p><b>Mic gain.</b> WirePlumber resets capture gain to clipping levels on every login, which
-makes dictation transcribe garbage and looks like a model problem. The
-<code>mic-gain</code> module enables <code>fix-mic-gain.service</code>, which reasserts
-it.</p>
+<p><b>Transcribing nonsense?</b> Your microphone volume was probably reset to a distorting
+level. A background service fixes that, installed as part of a normal install. See
+<a href="troubleshooting.html#dictation">Troubleshooting</a>.</p>
 </div>
 
-<h2 id="notes">Notes and todos</h2>
+<h2 id="notes">Notes and to-dos</h2>
 
 <div class="tw">
 <table>
-<thead><tr><th>Trigger</th><th>What</th></tr></thead>
+<thead><tr><th>Press</th><th>What you get</th></tr></thead>
 <tbody>
-<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>s</kbd></td><td>Open or focus <code>sum.md</code> in kitty, globally</td></tr>
-<tr><td><kbd>Alt</kbd>+<kbd>p</kbd> or the clock chip</td><td><code>clock_popup</code> &mdash; today and this week's plans and todos</td></tr>
-<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>t</kbd></td><td><code>rofi_todo</code></td></tr>
-<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>o</kbd></td><td><code>dm-note -r</code> &mdash; store and copy notes</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>s</kbd></td><td>Your main notes file, in an editor. Press again to hide it</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>p</kbd>, or the clock</td><td>Today's and this week's plans and to-dos</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>t</kbd></td><td>A to-do manager</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>o</kbd></td><td>Store and copy short notes</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>The TODOS note syncs to the Simplenote phone app once you have configured the account
-(<code>./wizard.sh --only=simplenote</code>, without <code>--yes</code>). Every write pushes
-and opening the window pulls. Editing offline on either side is safe &mdash; the pull doubles
-as the retry for an unsent write, and a push checks the note before overwriting it. Merging
-is the one thing that is never automatic: when both sides changed you get a
-<code>TODOS.md.remote-&lt;timestamp&gt;</code> to reconcile by hand rather than a silent
-guess.</p>
+<p>With <a href="install-git.html#simplenote">note syncing set up</a>, your to-do list also
+appears in the Simplenote phone app. Saving uploads. Opening the window downloads.</p>
+
+<div class="note">
+<p><b>Editing in both places is safe.</b> Change the list on both and it will <em>not</em>
+guess a winner. You get a second file with a timestamp in its name holding the phone's version,
+and you merge by hand.</p>
+</div>
+
+<h2 id="menus">The menus behind Super+P</h2>
+
+<p>All searchable lists. Type to filter, arrows to move, Enter to choose.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Press</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>k</kbd></td><td><b>Close a frozen program.</b> Shows what is running with its window title, so you can tell which browser tab is the problem</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>l</kbd></td><td>Screen brightness</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>e</kbd></td><td>Translate the selected text, with a dictionary table</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>s</kbd></td><td>Spell and grammar check a word or a sentence</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>a</kbd></td><td>Build an Anki flashcard and send it to Anki</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>i</kbd></td><td>Screenshot, then annotate it before saving</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>r</kbd></td><td>Record video, audio, webcam or a gif</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>d</kbd></td><td>Find and open one of your documents</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>f</kbd></td><td>Browse and edit settings files</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>m</kbd></td><td>Read a manual page</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>z</kbd></td><td>Your saved links, with previews</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>y</kbd></td><td>YouTube menu</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>h</kbd></td><td>Every one of these menus, in one list</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<p>The translation, spell check and flashcard tools can use an AI service for extra
+suggestions. Without <a href="install-git.html#gemini">an AI key</a> they still work, with one
+section less.</p>
+</div>
 
 <h2 id="updating">Updating safely</h2>
 
-<p>Use <code>dcli update</code> or <code>safe-update</code>, <b>not</b> a bare
-<code>pacman -Syu</code>. Three layers guard it:</p>
+<p>Use the <a href="#qupdate">updater window</a>, or type:</p>
+
+<pre><code>dcli update</code></pre>
+
+<p><b>Not a plain <code>pacman -Syu</code>.</b> Three safety nets sit around the proper
+command:</p>
 
 <ol>
-<li>A pacman <code>PreTransaction</code> hook (<code>pacman-preflight</code>) that refuses
-when <code>/</code> is too full. It fires for <em>any</em> tool, so it cannot be
-bypassed.</li>
-<li>A dcli <code>pre_update</code> hook that blocks on low space, snapshots stored on the
-root device, or an inconsistent package database.</li>
-<li>A <code>post_update</code> hook that finds AUR packages broken by a library soname bump
-and puts the rebuild command straight on your clipboard
-(<code>post-update-notify</code>).</li>
+<li>Refused if your disk is nearly full. Applies to <em>any</em> tool, so it cannot be worked
+around by accident.</li>
+<li>Refused if your safety snapshots sit somewhere that would not survive the problem they
+are for.</li>
+<li>After an update, anything that broke gets the repair command put straight on your
+clipboard.</li>
 </ol>
 
-<p><b>The recovery ladder</b>, in order: <code>downgrade</code> &rarr; the LTS fallback
-kernel at the boot menu &rarr; the LTS <em>rescue</em> entry (same kernel, full-module
-initramfs) &rarr; <code>pacman-static</code> from the Arch ISO &rarr; a Timeshift restore
-from <code>/home</code>.</p>
+<h3>If an update breaks something</h3>
 
-<p>The wizard module <code>boot-fallback</code> writes both LTS boot entries &mdash; the
-<code>linux-lts</code> package on its own ships none, so without it the rescue kernel is
-installed but unreachable.</p>
+<p>Work down. Each step is a bigger hammer than the last.</p>
 
-<h2 id="all">Every script</h2>
+<ol class="steps">
+  <li><p>Put the broken piece of software back to its previous version.</p></li>
+  <li><p>Restart, and choose the <b>fallback kernel</b> from the startup menu.</p></li>
+  <li><p>Restart, and choose the <b>rescue</b> entry &mdash; the same fallback kernel, but with
+  every driver loaded.</p></li>
+  <li><p>Start from an Arch USB stick and repair from there.</p></li>
+  <li><p>Restore a snapshot.</p></li>
+</ol>
 
-<p>A few worth knowing that are not covered above.</p>
+<p>Steps 2 and 3 exist because this install adds them. The fallback kernel package alone
+gives you no way to boot it.</p>
+
+<h2 id="more">A few more</h2>
 
 <div class="tw">
 <table>
-<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<thead><tr><th>Type this</th><th>To do this</th></tr></thead>
 <tbody>
-<tr><td><code>qtile-keys</code></td><td>Print every documented keybinding, parsed from the live config's AST</td></tr>
-<tr><td><code>reset_PC</code></td><td>Soft reset of the session &mdash; <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F5</kbd></td></tr>
-<tr><td><code>ui-scale</code>, <code>ui-scale-toggle</code></td><td><a href="widgets.html#scaling">HiDPI scaling</a></td></tr>
-<tr><td><code>boot-splash</code></td><td><a href="themes.html#splash">The boot splash</a></td></tr>
-<tr><td><code>wal-precompile</code></td><td>Precompile a palette per wallpaper</td></tr>
-<tr><td><code>wal-audit</code></td><td>Walk the wallpaper directory and report palette quality as CSV + a report</td></tr>
-<tr><td><code>battery-events</code>, <code>battery_notify</code></td><td>Plug/unplug popups and the battery chip's popup. Both find the battery and adapter by <em>type</em> in <code>/sys</code>, never by name &mdash; <code>BAT0</code>/<code>AC</code> is what one laptop happens to call them</td></tr>
-<tr><td><code>disk_notify</code></td><td>Disk usage popup behind the disk chip</td></tr>
-<tr><td><code>keyboard_layout_watcher</code></td><td>Watches the X keyboard layout and shows a compact popup on change</td></tr>
-<tr><td><code>adhkar</code></td><td>Periodic reminder notifications</td></tr>
-<tr><td><code>gg_scroll</code></td><td>Double-tap detection helper for the fast-scroll bindings</td></tr>
-<tr><td><code>safe-update</code></td><td>Guarded system upgrade</td></tr>
-<tr><td><code>pacman-preflight</code></td><td>The PreTransaction gate pacman itself runs</td></tr>
-<tr><td><code>simplenote_push</code></td><td><code>simplenote_push</code> pushes; <code>--pull</code> pulls</td></tr>
-<tr><td><code>onboarding-first-run</code></td><td>Shows the eww tour once, on the first graphical login after an install</td></tr>
+<tr><td><code>letsgo</code> or <code>startx</code></td><td>Start the desktop from the text screen</td></tr>
+<tr><td><code>theme-apply gruvbox</code></td><td>Change the colour theme</td></tr>
+<tr><td><code>ui-scale-toggle</code></td><td>Change the size of everything</td></tr>
+<tr><td><code>boot-splash preview</code></td><td>See the startup screen without restarting</td></tr>
+<tr><td><code>qtile-keys</code></td><td>Print every keyboard shortcut</td></tr>
+<tr><td><code>fc-cache -fv</code></td><td>Notice newly installed fonts</td></tr>
+<tr><td><code>qtile cmd-obj -o cmd -f reload_config</code></td><td>Reload settings without a full restart</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>The scripts are all on <code>$PATH</code>; <code>ls /usr/local/bin</code> after an install
-shows the full set.</p>
+<p>All bundled commands work from anywhere. <code>ls /usr/local/bin</code> shows the
+complete set.</p>
 
 <footer class="page">
-  <span>Source: <code>.config/AtiScriptsV1/</code>, <code>.config/qtile/scripts/</code>, and <code>README.md</code>.</span>
+  <span>Every command and shortcut on this page was read out of the scripts that provide them.</span>
   <a href="troubleshooting.html">Next: troubleshooting &rarr;</a>
 </footer>
 

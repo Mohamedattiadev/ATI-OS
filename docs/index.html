@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Qtile Dotfiles Manual</title>
-<meta name="description" content="The manual for a themed Arch Linux + X11 + qtile desktop: install it, learn the keys, and fix it when it breaks.">
+<meta name="description" content="A ready-made Linux desktop you install in one go. Start here.">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
 <header class="topbar">
   <button class="iconbtn" id="menu-toggle" aria-label="Toggle navigation">Menu</button>
-  <a class="brand" href="index.html">Qtile Dotfiles<small>Arch Linux &middot; X11 &middot; qtile</small></a>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
   <div class="spacer"></div>
   <div class="search">
     <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
@@ -24,192 +24,145 @@
 <nav class="sidebar" aria-label="Manual">
   <h2>Start here</h2>
   <ol>
-    <li><a class="current" href="index.html">Home</a></li>
-    <li><a href="install-usb.html">Install from the ATI-OS USB</a></li>
-    <li><a href="install-git.html">Install from a git clone</a></li>
+    <li><a class="current" href="index.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
   </ol>
   <h2>Using the desktop</h2>
   <ol>
-    <li><a href="keybindings.html">Keybindings</a></li>
-    <li><a href="themes.html">The themes</a></li>
-    <li><a href="widgets.html">Widgets and popups</a></li>
-    <li><a href="tools.html">Everyday tools</a></li>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
   </ol>
   <h2>When it breaks</h2>
   <ol>
     <li><a href="troubleshooting.html">Troubleshooting</a></li>
-    <li><a href="reference.html">Reference</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
   </ol>
   <h2>On this page</h2>
-  <ol class="sub">
-    <li><a href="#what">What this is</a></li>
-    <li><a href="#look">What it looks like</a></li>
-    <li><a href="#install">The two ways to install</a></li>
-    <li><a href="#firstlogin">Your first login</a></li>
-    <li><a href="#requirements">Requirements</a></li>
-    <li><a href="#honest">What is not tested</a></li>
-    <li><a href="#next">Where to go next</a></li>
-  </ol>
+  <ol class="sub" id="toc"></ol>
 </nav>
 
 <main>
 
-<h1>The Qtile Dotfiles manual</h1>
-<p class="lede">A complete Arch Linux desktop &mdash; tiling window manager, 22 themes that
-retint every application at once, a drop-stash, a package picker and a boot splash with
-your own name on it. One command installs all of it.</p>
+<h1>Start here</h1>
 
-<div class="note">
-<p><b>Read this first if you have just installed.</b> There is no display manager and no
-autologin. When the machine reboots you land on a black text console with a blinking
-cursor &mdash; that is the install working, not failing. Log in with the username and
-password you chose, then type <code>letsgo</code> (or <code>startx</code>) to start the
-desktop. See <a href="#firstlogin">Your first login</a>.</p>
+<p class="lede">A ready-made Linux desktop. Install it once and you get the computer in the
+picture below, with 22 colour schemes and about fifty tools already set up.</p>
+
+<figure>
+  <img src="assets/img/overview.gif" alt="A screen recording of the desktop: windows arranging themselves, a launcher opening, the colours changing">
+  <figcaption>Windows arrange themselves. Colours change everywhere at once.</figcaption>
+</figure>
+
+<div class="warn">
+<p><b>If you are stuck, start here.</b></p>
+<ul>
+<li><a href="troubleshooting.html#black-screen">Black screen with text after installing</a>
+&mdash; normal. Type <code>letsgo</code>.</li>
+<li><a href="troubleshooting.html#desktop-missing">The desktop never appeared</a></li>
+<li><a href="troubleshooting.html#stock-qtile">It starts, but looks completely plain</a></li>
+<li><a href="troubleshooting.html#network">Wi-Fi or Bluetooth says the service is not
+running</a></li>
+<li><a href="troubleshooting.html#fonts">Strange font, nothing lines up</a></li>
+</ul>
 </div>
 
-<h2 id="what">What this is</h2>
+<h2 id="which">Which install do I want?</h2>
 
-<p>This is a dotfiles repository that installs an entire desktop on a clean Arch Linux
-base system: <a href="https://qtile.org">qtile</a> under X11, a themed bar, a set of
-keyboard-driven popups, about fifty command-line tools, and the package declarations that
-put all of it there. It is not a distribution and not a desktop environment &mdash; it is
-one person's desktop, written down completely enough that a second machine can reproduce
-it.</p>
+<p>One question: do you already have Arch Linux on this computer?</p>
 
-<p>Two halves, and it is worth knowing which one you are standing on:</p>
+<ul class="cards">
+  <li><a href="install-usb.html">
+    <strong>No. The computer is empty, or I want to start fresh</strong>
+    <span>Use a USB stick. It installs Linux and this desktop together. About 20 minutes.
+    It erases the disk you point it at.</span>
+  </a></li>
+  <li><a href="install-git.html">
+    <strong>Yes. Arch is already installed</strong>
+    <span>Run one command. It adds this desktop to what you have and erases nothing.
+    One to two hours, almost all of it waiting.</span>
+  </a></li>
+</ul>
+
+<p>Both end at the same desktop.</p>
+
+<h2 id="firstlogin">After it installs, you get a black screen</h2>
+
+<div class="note">
+<p><b>This is normal.</b> There is no login box, and the desktop does not start itself.</p>
+
+<ol class="steps">
+  <li>
+    <p>Type your username, press Enter. Type your password, press Enter.</p>
+    <p class="screen">The password stays invisible as you type. Not even dots. Keep going.</p>
+  </li>
+  <li>
+    <p>Type <code>letsgo</code> and press Enter.</p>
+    <p class="screen">The screen flickers. The desktop appears.</p>
+  </li>
+</ol>
+
+<p>If that says <code>letsgo: command not found</code>, type <code>startx</code> instead.
+<a href="troubleshooting.html#black-screen">More on this</a>.</p>
+</div>
+
+<h2 id="what">Words used on this site</h2>
 
 <div class="tw">
 <table>
-<thead><tr><th>Half</th><th>Portable?</th><th>Why</th></tr></thead>
+<thead><tr><th>Word</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td><b>The configs and tools</b> &mdash; everything under <code>.config/</code></td><td>Any Linux</td><td>Nothing is hardcoded to a distro, username, monitor, GPU or resolution. Paths come from <code>$HOME</code>, battery and webcam are discovered from <code>/sys</code> and v4l2, screens from live <code>xrandr</code>, DPI from the panel, fonts from <code>fc-match</code></td></tr>
-<tr><td><b>The installer</b> &mdash; <code>wizard.sh</code> and anything that installs a package</td><td>Arch only</td><td><code>pacman</code>, <code>yay</code>, the AUR, <code>dcli</code>, <code>mkinitcpio</code>, <code>systemd-boot</code></td></tr>
+<tr><td><dfn>Arch Linux</dfn></td><td>The version of Linux this runs on. It only works on Arch.</td></tr>
+<tr><td><dfn>tiling window manager</dfn></td><td>Windows arrange themselves side by side. You do not drag or resize them with the mouse.</td></tr>
+<tr><td><dfn>qtile</dfn></td><td>The particular tiling window manager used here.</td></tr>
+<tr><td><dfn>the bar</dfn></td><td>The strip at the edge of the screen with the clock and battery.</td></tr>
+<tr><td><dfn>theme</dfn></td><td>A set of colours. Changing it recolours everything at once, down to your folder icons.</td></tr>
+<tr><td><dfn>terminal</dfn></td><td>A window where you type commands instead of clicking.</td></tr>
+<tr><td><dfn>TTY</dfn></td><td>A plain text screen with no mouse. What you see before the desktop starts.</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>That second row is a deliberate limit. <code>wizard.sh</code> fails immediately on a
-non-Arch system, in its preflight, before touching anything.</p>
+<h2 id="honest">What has not been tested</h2>
 
-<h2 id="look">What it looks like</h2>
-
-<figure>
-  <img src="assets/img/overview.gif" alt="Screen recording: tiling windows, the launcher, the drop-stash and a theme switch">
-  <figcaption>Tiling &middot; launcher &middot; qdrop &middot; qupdate &middot; a theme switch carried by the restart veil.</figcaption>
-</figure>
-
-<figure>
-  <img src="assets/img/themes.png" alt="Ten of the twenty-two colour themes side by side">
-  <figcaption>10 of the 22 modes. The full list, and what each switch retints, is on <a href="themes.html">The themes</a>.</figcaption>
-</figure>
-
-<h2 id="install">The two ways to install</h2>
-
-<ul class="cards">
-  <li><a href="install-usb.html">
-    <strong>From the ATI-OS USB &rarr;</strong>
-    <span>A bootable installation medium with the expensive compiles already done. Answer
-    seven questions; the desktop builds itself on the first boot. Roughly 20 minutes of
-    unattended work instead of two hours.</span>
-  </a></li>
-  <li><a href="install-git.html">
-    <strong>From a git clone &rarr;</strong>
-    <span>You already have Arch installed. Clone the repo and run one script; 46 modules
-    run end to end with no questions asked. Set aside an hour or two and about 25&nbsp;GB.</span>
-  </a></li>
-</ul>
-
-<p>Both routes end at the same desktop. The USB is faster because
-<code>pacman-static</code> (an hour on its own), espanso, paru and whisper.cpp ship
-prebuilt rather than being compiled on your machine.</p>
-
-<h2 id="firstlogin">Your first login</h2>
-
-<p>The install deliberately leaves you at a text console. The wizard's
-<code>disable-dm</code> module disables every display manager it can find
-(<code>lightdm</code>, <code>gdm</code>, <code>sddm</code>, <code>lxdm</code>); nothing
-starts X for you and nothing logs you in.</p>
-
-<ol>
-  <li>Log in at the TTY with the username and password you chose during the install.</li>
-  <li>Type <code>letsgo</code> and press Enter. If that is not found, type
-  <code>startx</code>.</li>
-</ol>
-
-<div class="note">
-<p><b>Why two commands.</b> <code>letsgo</code> is a <em>fish function</em>, not a shell
-alias, so it exists only when the account's login shell is fish. The wizard's
-<code>login-shell</code> module runs <code>chsh</code> to fish &mdash; but only if fish
-installed successfully, and it skips itself with a message if fish is not there yet. On a
-machine where that happened, <code>startx</code> is the one that works.</p>
-<p><code>letsgo</code> does a little more than <code>startx</code>: it refuses if an X
-server is already running on <code>:0</code> and tells you which VT to switch to, and it
-clears a stale <code>/tmp/.X0-lock</code> left by an unclean exit &mdash; the leftover
-that otherwise makes <code>startx</code> fail with <em>"Server is already active for
-display 0"</em>.</p>
-</div>
-
-<p>To go back to bash: <code>chsh -s /usr/bin/bash $USER</code>. You then lose
-<code>letsgo</code> and everything else defined in <code>config.fish</code> at the TTY.</p>
-
-<h2 id="requirements">Requirements</h2>
-
-<ol>
-  <li><b>Arch Linux</b>, clean base install</li>
-  <li><b>X11 only</b> &mdash; Wayland is not supported</li>
-  <li><b>No display manager</b> &mdash; TTY plus <code>letsgo</code>/<code>startx</code></li>
-  <li>Packages are managed declaratively via <a href="https://gitlab.com/theblackdon/dcli">dcli</a></li>
-</ol>
-
-<p>x86_64 only. The GPU module detects Intel, AMD or NVIDIA from the PCI vendor id and
-installs the matching driver set plus the right CPU microcode. <b>ARM (aarch64) is not
-supported</b>: the module detects a non-x86_64 architecture and skips PCI and microcode
-detection rather than installing something wrong, but several AUR packages this repo
-depends on (<code>picom-ftlabs-git</code>, <code>qtile-extras</code>,
-<code>brave-bin</code>, <code>google-chrome</code>) are not all built for ARM, so a full
-install will not complete.</p>
-
-<h2 id="honest">What is not tested</h2>
-
-<p>The repository is explicit about this and so is this manual. What <em>is</em> verified,
-on a clean Arch VM: 46 of 46 modules install, <code>validate.sh</code> passes inside the
-guest, every boot entry's <code>root=</code> matches the guest's real root device, and
-qtile starts and loads <em>this</em> config rather than silently falling back to its
-built-in one. On real hardware, additionally: the boot splash, and picom's glx backend
-with the window animations on Mesa Intel HD 520.</p>
+<p>This is one person's desktop, shared. Some of it is proven on real machines. Some is
+not.</p>
 
 <div class="limit">
-<p><b>Not verified, because nobody here has the hardware:</b></p>
+<p><b>Nobody has ever run this on:</b></p>
 <ul>
-<li><b>AMD and NVIDIA graphics.</b> <code>graphics-amd.yaml</code> is reasoned from
-<code>pacman -Si</code>, never observed on AMD hardware.</li>
-<li><b>A real HiDPI / 4K panel.</b> The scaling is proven proportional mathematically
-&mdash; at scale 2.0 the popups measure the same number of screenfuls as at 1.0 &mdash;
-but nobody has looked at it on a 4K screen.</li>
-<li><b><code>BAT1</code>/<code>ADP1</code> battery naming</b>, reasoned from
-<code>/sys</code> semantics rather than seen on a laptop that names them that way.</li>
-<li><b>The GPU path in any automated test.</b> The VM and the ISO test both run under a
-headless X server with no graphics hardware, so a green run says nothing at all about
-compositing or animations.</li>
+<li><b>AMD or NVIDIA graphics.</b> Only Intel has been seen working. The code handles all
+three, but two of them are untested.</li>
+<li><b>A 4K screen.</b> The sizing maths is correct. Nobody has looked at the result.</li>
+<li><b>Some laptop battery indicators</b>, on models that name them unusually.</li>
 </ul>
+<p>The USB installer also needs a computer that starts in <b>UEFI mode</b>. Almost anything
+built after 2012 does. Older machines are refused outright rather than half-installed.</p>
 </div>
 
 <div class="warn">
-<p><b><code>validate.sh</code> degrades to skips.</b> Every check it cannot run is
-reported as "skipped", so on a machine where the install failed and nothing is present it
-skips everything and exits green. On a fresh machine, trust the wizard's own summary card
-(<code>46 ok / 0 failed</code>) over <code>validate.sh</code>.</p>
+<p><b>The built-in self-check can lie on a fresh machine.</b> When
+<code>validate.sh</code> cannot run a check, it marks it "skipped" and still reports
+success. On a machine where the install went badly it skips everything and passes.</p>
+<p>Trust the installer's own count instead: <code>46 ok / 0 failed</code>.</p>
 </div>
 
-<h2 id="next">Where to go next</h2>
+<h2 id="next">Once it is running</h2>
 
 <ul class="cards">
-  <li><a href="keybindings.html"><strong>Keybindings &rarr;</strong><span>Every binding in the config, grouped and in tables. Also available live: press <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> then <kbd>k</kbd>.</span></a></li>
-  <li><a href="themes.html"><strong>The themes &rarr;</strong><span>22 modes, how a switch propagates, and the full list of what retints.</span></a></li>
-  <li><a href="widgets.html"><strong>Widgets and popups &rarr;</strong><span>The bar, the logo menu, the qtile popups and the eww onboarding tour.</span></a></li>
-  <li><a href="tools.html"><strong>Everyday tools &rarr;</strong><span>qdrop, qupdate, the theme picker, the rofi menus, phone mirroring and voice dictation.</span></a></li>
-  <li><a href="troubleshooting.html"><strong>Troubleshooting &rarr;</strong><span>The common failures first, each with the symptom you would actually search for.</span></a></li>
-  <li><a href="reference.html"><strong>Reference &rarr;</strong><span>File layout, where config lives, how stow works here, and the test layers.</span></a></li>
+  <li><a href="keybindings.html"><strong>Keyboard shortcuts</strong><span>The six you need on day one, then the rest.</span></a></li>
+  <li><a href="themes.html"><strong>Changing the colours</strong><span>Two keys. 22 schemes.</span></a></li>
+  <li><a href="widgets.html"><strong>The bar and the popups</strong><span>What everything does when you click it.</span></a></li>
+  <li><a href="tools.html"><strong>The tools you get</strong><span>A shelf for files, an update button, phone mirroring, dictation.</span></a></li>
+  <li><a href="troubleshooting.html"><strong>Troubleshooting</strong><span>Real problems, most likely first.</span></a></li>
+  <li><a href="reference.html"><strong>Where everything lives</strong><span>Which file to edit to change something.</span></a></li>
+  <li><a href="under-the-hood.html"><strong>How it works</strong><span>The design reasoning, kept out of the way.</span></a></li>
 </ul>
 
 <blockquote>
@@ -218,7 +171,7 @@ configuration, extended with the author's own customisation and workflow.</p>
 </blockquote>
 
 <footer class="page">
-  <span>Generated from the repository. Every keybinding, command and path on this site was read out of the files it documents.</span>
+  <span>Every shortcut, command and path here was read out of the file it describes.</span>
   <a href="https://github.com/Mohamedattiadev/Newdotfile-">Source repository</a>
 </footer>
 

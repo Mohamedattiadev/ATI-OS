@@ -92,8 +92,8 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--sans);
-  font-size: 16px;
-  line-height: 1.65;
+  font-size: 16.5px;
+  line-height: 1.72;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -242,32 +242,51 @@ body {
   box-shadow: inset 2px 0 0 var(--accent);
   font-weight: 600;
 }
-.sidebar .sub a { padding-left: 1.4rem; font-size: .84rem; }
+.sidebar .sub a {
+  padding-left: .9rem;
+  font-size: .84rem;
+  border-left: 2px solid var(--border-soft);
+  border-radius: 0 5px 5px 0;
+}
+.sidebar .sub a.here {
+  color: var(--fg);
+  border-left-color: var(--accent);
+  background: var(--bg-soft);
+}
 
 main {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 1.75rem 1.5rem 6rem;
+  padding: 2.25rem 2rem 8rem;
 }
 
-/* ---------- prose ---------- */
+/* ---------- prose ----------
+   Measure is set on the text elements, not on <main>, so that tables and
+   code blocks stay free to use the full column width. */
 
-h1, h2, h3, h4 { line-height: 1.25; letter-spacing: -.012em; }
-h1 { font-size: 2rem; margin: 0 0 .4rem; }
+h1, h2, h3, h4 { line-height: 1.25; letter-spacing: -.014em; }
+h1 { font-size: 2rem; margin: 0 0 .6rem; }
 h2 {
-  font-size: 1.35rem;
-  margin: 2.75rem 0 .75rem;
-  padding-top: .4rem;
+  font-size: 1.3rem;
+  margin: 3.5rem 0 1rem;
+  padding-top: 1.4rem;
   border-top: 1px solid var(--border-soft);
 }
-h3 { font-size: 1.06rem; margin: 1.75rem 0 .5rem; }
-h4 { font-size: .95rem; margin: 1.25rem 0 .35rem; color: var(--fg-dim); }
+h3 { font-size: 1.02rem; margin: 2.25rem 0 .6rem; }
+h4 { font-size: .93rem; margin: 1.5rem 0 .4rem; color: var(--fg-dim); }
 
-.lede { font-size: 1.06rem; color: var(--fg-dim); margin-top: 0; }
+.lede {
+  font-size: 1.08rem;
+  color: var(--fg-dim);
+  margin: 0 0 2rem;
+  max-width: 40rem;
+}
 
-p, ul, ol, table, pre, blockquote, figure { margin: 0 0 1rem; }
-ul, ol { padding-left: 1.35rem; }
-li { margin: .2rem 0; }
+p, ul, ol, table, pre, blockquote, figure { margin: 0 0 1.15rem; }
+p, ul, ol, blockquote { max-width: 42rem; }
+ul, ol { padding-left: 1.4rem; }
+li { margin: .3rem 0; }
+li > p { margin-bottom: .5rem; }
 
 a { color: var(--accent); }
 a:hover { color: var(--accent-2); }
@@ -293,14 +312,17 @@ code, kbd, pre, samp { font-family: var(--mono); }
   overflow-wrap: anywhere;
 }
 
+/* Code blocks carry a left rule so they are obvious when scrolling fast. */
 pre {
   background: var(--bg-code);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: .8rem 1rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  padding: .85rem 1.1rem;
   overflow-x: auto;
-  font-size: .85rem;
-  line-height: 1.55;
+  font-size: .86rem;
+  line-height: 1.6;
+  max-width: 52rem;
 }
 pre code { background: none; border: 0; padding: 0; font-size: inherit; }
 
@@ -328,7 +350,13 @@ hr { border: 0; border-top: 1px solid var(--border-soft); margin: 2rem 0; }
 
 /* ---------- tables ---------- */
 
-.tw { overflow-x: auto; margin: 0 0 1rem; }
+.tw {
+  overflow-x: auto;
+  margin: 0 0 1.4rem;
+  max-width: 56rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
 table {
   border-collapse: collapse;
   width: 100%;
@@ -338,14 +366,16 @@ table {
 th, td {
   text-align: left;
   vertical-align: top;
-  padding: .42rem .7rem;
+  padding: .55rem .85rem;
   border-bottom: 1px solid var(--border-soft);
 }
+tbody tr:last-child td { border-bottom: 0; }
 th {
   color: var(--fg-dim);
-  font-size: .76rem;
+  font-size: .74rem;
   text-transform: uppercase;
-  letter-spacing: .05em;
+  letter-spacing: .06em;
+  background: var(--bg-soft);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
@@ -358,12 +388,16 @@ table.keys td:first-child { white-space: nowrap; width: 1%; }
 .note, .warn, .limit {
   border: 1px solid var(--border);
   border-left-width: 3px;
-  border-radius: 6px;
-  padding: .7rem .9rem;
-  margin: 0 0 1rem;
+  border-radius: 0 6px 6px 0;
+  padding: .85rem 1.1rem;
+  margin: 0 0 1.4rem;
+  max-width: 44rem;
   background: var(--bg-soft);
   font-size: .93rem;
 }
+.note p, .warn p, .limit p,
+.note ul, .warn ul, .limit ul,
+.note ol, .warn ol, .limit ol { max-width: none; }
 .note   { border-left-color: var(--accent); }
 .warn   { border-left-color: var(--warn); }
 .limit  { border-left-color: var(--err); }
@@ -371,35 +405,109 @@ table.keys td:first-child { white-space: nowrap; width: 1%; }
 .note > :first-child, .warn > :first-child, .limit > :first-child { margin-top: 0; }
 .note b, .warn b, .limit b { display: inline; }
 
-/* ---------- cards ---------- */
+/* ---------- collapsible "why it works this way" ---------- */
 
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: .85rem;
-  margin: 0 0 1.25rem;
-  padding: 0;
-  list-style: none;
-}
-.cards li { margin: 0; }
-.cards a {
-  display: block;
-  height: 100%;
-  padding: .8rem .9rem;
-  background: var(--bg-soft);
+details.why {
   border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--bg-soft);
+  margin: 0 0 1rem;
+  padding: 0;
+}
+details.why > summary {
+  cursor: pointer;
+  padding: .55rem .9rem;
+  font-size: .9rem;
+  color: var(--fg-dim);
+  list-style: none;
+  user-select: none;
+}
+details.why > summary::-webkit-details-marker { display: none; }
+details.why > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 1em;
+  color: var(--fg-faint);
+}
+details.why[open] > summary::before { content: "▾"; }
+details.why > summary:hover { color: var(--fg); }
+details.why[open] > summary { border-bottom: 1px solid var(--border-soft); }
+details.why > :not(summary) { padding: 0 .9rem; }
+details.why > :not(summary):first-of-type { padding-top: .8rem; }
+details.why > :last-child { padding-bottom: .2rem; margin-bottom: .8rem; }
+
+/* ---------- numbered walkthrough ---------- */
+
+ol.steps { counter-reset: step; list-style: none; padding-left: 0; }
+ol.steps > li {
+  counter-increment: step;
+  position: relative;
+  padding-left: 2.6rem;
+  margin: 0 0 1.4rem;
+}
+ol.steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: .05rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  line-height: 1.8rem;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: .9rem;
+  font-weight: 700;
+}
+ol.steps > li > :first-child { margin-top: 0; }
+ol.steps > li > :last-child { margin-bottom: 0; }
+ol.steps .screen {
+  margin: .5rem 0 0;
+  padding: .5rem .8rem;
+  border-left: 3px solid var(--border);
+  background: var(--bg-soft);
+  border-radius: 0 6px 6px 0;
+  font-size: .9rem;
+  color: var(--fg-dim);
+}
+
+/* a word being defined in place */
+dfn { font-style: normal; font-weight: 600; }
+
+/* ---------- link lists ----------
+   Plain rows, not cards. One per line, ruled, so a list of destinations
+   scans like a table of contents rather than a dashboard. */
+
+.cards {
+  margin: 0 0 1.4rem;
+  padding: 0;
+  list-style: none;
+  max-width: 44rem;
+  border-top: 1px solid var(--border-soft);
+}
+.cards li { margin: 0; border-bottom: 1px solid var(--border-soft); }
+.cards a {
+  display: block;
+  padding: .7rem .2rem;
   text-decoration: none;
   color: var(--fg);
 }
-.cards a:hover { border-color: var(--accent); }
-.cards strong { display: block; margin-bottom: .15rem; }
-.cards span { display: block; font-size: .86rem; color: var(--fg-dim); line-height: 1.5; }
+.cards a:hover { background: var(--bg-soft); }
+.cards a:hover strong { color: var(--accent); }
+.cards strong { display: block; margin-bottom: .1rem; font-size: .96rem; }
+.cards span { display: block; font-size: .88rem; color: var(--fg-dim); line-height: 1.55; }
 
 /* ---------- figures ---------- */
 
-figure { margin: 1.25rem 0; }
-img { max-width: 100%; height: auto; display: block; border-radius: 8px; }
+figure { margin: 1.5rem 0 1.75rem; max-width: 46rem; }
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+}
 figcaption {
   margin-top: .45rem;
   font-size: .82rem;

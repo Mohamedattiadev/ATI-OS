@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Install from the ATI-OS USB &mdash; Qtile Dotfiles Manual</title>
-<meta name="description" content="Boot the ATI-OS installation medium, answer the installer's questions, and let the desktop build itself on first boot.">
+<title>Install from a USB stick &mdash; Qtile Dotfiles Manual</title>
+<meta name="description" content="Step by step: make the USB stick, start the computer from it, answer the questions, and get a working desktop.">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
 <header class="topbar">
   <button class="iconbtn" id="menu-toggle" aria-label="Toggle navigation">Menu</button>
-  <a class="brand" href="index.html">Qtile Dotfiles<small>Arch Linux &middot; X11 &middot; qtile</small></a>
+  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
   <div class="spacer"></div>
   <div class="search">
     <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
@@ -24,175 +24,206 @@
 <nav class="sidebar" aria-label="Manual">
   <h2>Start here</h2>
   <ol>
-    <li><a href="index.html">Home</a></li>
-    <li><a class="current" href="install-usb.html">Install from the ATI-OS USB</a></li>
-    <li><a href="install-git.html">Install from a git clone</a></li>
+    <li><a href="index.html">Start here</a></li>
+    <li><a class="current" href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
   </ol>
   <h2>Using the desktop</h2>
   <ol>
-    <li><a href="keybindings.html">Keybindings</a></li>
-    <li><a href="themes.html">The themes</a></li>
-    <li><a href="widgets.html">Widgets and popups</a></li>
-    <li><a href="tools.html">Everyday tools</a></li>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
   </ol>
   <h2>When it breaks</h2>
   <ol>
     <li><a href="troubleshooting.html">Troubleshooting</a></li>
-    <li><a href="reference.html">Reference</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
   </ol>
   <h2>On this page</h2>
-  <ol class="sub">
-    <li><a href="#what">What ATI-OS is</a></li>
-    <li><a href="#build">Building the medium</a></li>
-    <li><a href="#write">Writing it to a stick</a></li>
-    <li><a href="#run">Starting the installer</a></li>
-    <li><a href="#preflight">Stage 1: preflight</a></li>
-    <li><a href="#questions">The questions</a></li>
-    <li><a href="#stages">What happens at each stage</a></li>
-    <li><a href="#firstboot">The first boot</a></li>
-    <li><a href="#login">Logging in</a></li>
-    <li><a href="#after">What you still supply</a></li>
-    <li><a href="#limits">Limits</a></li>
-  </ol>
+  <ol class="sub" id="toc"></ol>
 </nav>
 
 <main>
 
-<h1>Install from the ATI-OS USB</h1>
-<p class="lede">A bootable installation medium that installs Arch, this configuration and
-31 already-compiled AUR packages onto a blank machine. Roughly 20 minutes of unattended
-work instead of two hours.</p>
+<h1>Install from a USB stick</h1>
 
-<div class="note">
-<p><b>Nothing logs you in and nothing starts X.</b> After the install and the first boot,
-the machine stops at a text console. That is intended. See <a href="#login">Logging
-in</a>.</p>
+<p class="lede">Make a stick, start the computer from it, answer eight questions. About 20
+minutes to install, plus 20 more on the first restart.</p>
+
+<div class="limit">
+<p><b>This erases a disk.</b> Everything on the disk you pick is gone and cannot be
+recovered. Copy anything you care about somewhere else first.</p>
+<p>Exception: if the computer already has another operating system and 25&nbsp;GB of free
+space, the installer offers to sit alongside it. See <a href="#q-disk">question 1</a>.</p>
 </div>
 
-<h2 id="what">What ATI-OS is</h2>
-
-<p>It lives in <code>installScripts/iso/</code>. The profile is a fork of Arch's own
-<code>releng</code> archiso profile, kept deliberately close to it &mdash; every line that
-differs has to be re-reconciled when archiso changes, so the diff is branding, the
-installer, and nothing else.</p>
-
-<p>The saving comes from one thing: <code>pacman-static</code>, espanso, paru and
-whisper.cpp are compiled once when the ISO is built, not on every machine that installs
-it. <code>pacman-static</code> alone is about an hour, because it compiles pacman and every
-dependency statically from source, much of it single-threaded through autotools.</p>
+<h2 id="need">What you need</h2>
 
 <div class="tw">
 <table>
-<thead><tr><th>File</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><code>aur-repo.sh</code></td><td>Builds the 31 AUR packages in a clean chroot into a local pacman repo</td></tr>
-<tr><td><code>build-iso.sh</code></td><td>Stages the profile, the repo and the dotfiles, then runs <code>mkarchiso</code></td></tr>
-<tr><td><code>test-iso.sh</code></td><td>A 4-phase qemu test: bootloader, install, boot, filesystem</td></tr>
-<tr><td><code>profile/airootfs/usr/local/bin/ati-os-install</code></td><td>The installer itself</td></tr>
+<tr><td><b>A USB stick</b></td><td>4&nbsp;GB or larger. It gets erased.</td></tr>
+<tr><td><b>The target computer</b></td><td>A disk of at least 30&nbsp;GB, and UEFI mode.</td></tr>
+<tr><td><b>Internet on it</b></td><td>A cable is easiest. Wi-Fi needs two extra commands.</td></tr>
+<tr><td><b>A second Arch computer</b></td><td>To build the image on.</td></tr>
 </tbody>
 </table>
 </div>
 
-<h2 id="build">Building the medium</h2>
-
-<pre><code>cd installScripts/iso
-./aur-repo.sh      # 2-3 h, cached. 31 AUR packages -&gt; a local pacman repo
-./build-iso.sh     # 20-40 min. stages the profile, runs mkarchiso
-./test-iso.sh      # 1-2 h. boots it in qemu, installs, asserts</code></pre>
-
-<p>Each takes <code>--check</code> to run only its preflight and touch nothing. Do that
-first &mdash; the preflights are the reason a failure costs seconds instead of hours.</p>
-
-<p><code>aur-repo.sh</code> is separate from <code>build-iso.sh</code> on purpose:
-rebuilding 31 AUR packages to change a boot-menu label would be absurd, so its output is
-cached and <code>build-iso.sh</code> only checks for it.</p>
-
-<p>Everything is written under <code>$ATI_ISO_WORK</code> (default
-<code>~/ati-os-build</code>), never into the git checkout.</p>
-
 <div class="warn">
-<p><b>An ISO is a snapshot; rebuild it every six months.</b> The
-<code>archlinux-keyring</code> baked into it ages out in roughly one to two years, after
-which it cannot install anything, and its kernel stops recognising new hardware. That is
-Arch being Arch, not a defect. <code>build-iso.sh</code> is unattended, so the honest
-version of "always works" is <em>cheap to regenerate</em>, not <em>never expires</em>.</p>
+<p><b>There is no file to download.</b> The image is not published anywhere. You build it
+yourself on a computer already running Arch Linux.</p>
+<p>No second computer? Use the <a href="install-git.html">other route</a>: install plain
+Arch first, then run one command.</p>
 </div>
 
-<h2 id="write">Writing it to a stick</h2>
+<h2 id="make">1. Make the stick</h2>
 
-<pre><code>lsblk                      # find the right device FIRST
-sudo dd if=~/ati-os-build/out/ati-os-*.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
+<p>All of this happens on the Arch computer you already have.</p>
 
-<p><code>dd</code> does not ask. Check <code>lsblk</code> twice. The
-<code>oflag=sync</code> matters: without it <code>dd</code> returns before the data is
-actually on the stick.</p>
+<ol class="steps">
+  <li>
+    <pre><code>cd installScripts/iso</code></pre>
+  </li>
+  <li>
+    <p>Build the software. Start it and go do something else.</p>
+    <pre><code>./aur-repo.sh</code></pre>
+    <p class="screen"><b>2 to 3 hours</b> the first time. The result is saved, so a rebuild
+    later is much faster.</p>
+  </li>
+  <li>
+    <p>Build the image.</p>
+    <pre><code>./build-iso.sh</code></pre>
+    <p class="screen"><b>20 to 40 minutes.</b> You end up with a <code>.iso</code> file in
+    <code>~/ati-os-build/out/</code>.</p>
+  </li>
+  <li>
+    <p>Optional: test it in a fake computer first.</p>
+    <pre><code>./test-iso.sh</code></pre>
+    <p class="screen"><b>1 to 2 hours.</b> It installs the image and checks the result.</p>
+  </li>
+  <li>
+    <p>Plug in the stick. Find out what it is called.</p>
+    <pre><code>lsblk</code></pre>
+    <p class="screen">Look for the size that matches. A 32&nbsp;GB stick shows about
+    <code>29.8G</code>. The name looks like <code>sdb</code>. Write it down.</p>
+  </li>
+  <li>
+    <p>Copy the image onto it. Replace <code>sdX</code> with that name.</p>
+    <pre><code>sudo dd if=~/ati-os-build/out/ati-os-*.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
+    <div class="limit">
+    <p><b>Check the name twice.</b> This command does not ask "are you sure?" and there is no
+    undo. The wrong name destroys the wrong disk.</p>
+    </div>
+    <p class="screen">A counter climbs. Wait for the prompt to come back before unplugging.</p>
+  </li>
+</ol>
 
-<h2 id="run">Starting the installer</h2>
+<details class="why">
+<summary>Why no download, and why three hours?</summary>
+<p>Those hours compile software in advance so <em>your</em> install takes twenty minutes
+instead of two. The trade, and why an image should be rebuilt every six months, is in
+<a href="under-the-hood.html#iso">How it works</a>.</p>
+<p>All three scripts take <code>--check</code>, which runs only their safety checks and
+changes nothing. Run that first. It turns a failure that costs hours into one that costs
+seconds.</p>
+</details>
 
-<p>Boot the stick, then at the live shell:</p>
+<h2 id="boot">2. Start the computer from it</h2>
+
+<ol class="steps">
+  <li><p>Plug the stick into the target computer. Turn that computer fully off.</p></li>
+  <li>
+    <p>Turn it on and tap the boot-menu key repeatedly.</p>
+    <div class="tw">
+    <table>
+    <tbody>
+    <tr><td>Dell, most Lenovo</td><td><kbd>F12</kbd></td></tr>
+    <tr><td>HP</td><td><kbd>F9</kbd></td></tr>
+    <tr><td>Asus, Acer</td><td><kbd>F12</kbd> or <kbd>Esc</kbd></td></tr>
+    <tr><td>Anything else</td><td><kbd>F8</kbd>, <kbd>F10</kbd>, <kbd>F11</kbd>, <kbd>Esc</kbd></td></tr>
+    </tbody>
+    </table>
+    </div>
+    <p class="screen">A short list of things to start from appears.</p>
+  </li>
+  <li>
+    <p>Pick your USB stick.</p>
+    <div class="warn">
+    <p><b>Listed twice? Pick the <code>UEFI</code> one.</b> UEFI is the modern way computers
+    start. This installer supports nothing else. Pick wrong and it stops with a message
+    rather than half-installing.</p>
+    </div>
+  </li>
+</ol>
+
+<h2 id="menu">3. The boot menu</h2>
+
+<p>Press Enter on the first entry:</p>
+
+<pre><code>ATI-OS — Install (x86_64, UEFI)</code></pre>
+
+<p>The others are a screen-reader version and a memory tester.</p>
+
+<p class="screen">Text scrolls for 15 to 60 seconds. Then a blue <b>ATI-OS</b> logo, a short
+welcome, and a prompt.</p>
+
+<div class="note">
+<p><b>On Wi-Fi? Connect now.</b> The installer downloads software. A network cable already
+works. For Wi-Fi type <code>iwctl</code> and follow the prompts. For a mobile modem, use
+<code>mmcli</code>.</p>
+</div>
+
+<h2 id="start">4. Start the installer</h2>
 
 <pre><code>ati-os-install</code></pre>
 
-<p>It must run as root. Two other modes exist:</p>
+<p class="screen">The logo again, then <em>"Arch Linux, and a qtile desktop that is already
+configured."</em>, then a section headed <code>── preflight ──</code>.</p>
+
+<h2 id="checks">5. It checks the computer</h2>
+
+<p>Six checks before anything is touched. Lines marked <code>ok</code> are good. A failure
+names exactly what is wrong and changes nothing.</p>
 
 <div class="tw">
 <table>
-<thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+<thead><tr><th>Check</th><th>If it fails</th></tr></thead>
 <tbody>
-<tr><td><code>--check</code></td><td>Runs the preflight and exits. Changes nothing.</td></tr>
-<tr><td><code>--unattended</code></td><td>Takes every answer from environment variables (<code>ATI_DISK</code>, <code>ATI_USER</code>, <code>ATI_PASS</code>, <code>ATI_HOSTNAME</code>, <code>ATI_TIMEZONE</code>, <code>ATI_KEYMAP</code>, <code>ATI_LOCALE</code>, <code>ATI_ENCRYPT</code>, <code>ATI_LUKS_PASS</code>, <code>ATI_DUALBOOT</code>). This is what <code>test-iso.sh</code> drives. It erases the named disk without confirming.</td></tr>
+<tr><td>Started in UEFI mode</td><td><b>Stops.</b> Turn UEFI on in the firmware settings.</td></tr>
+<tr><td>Secure Boot is off</td><td><b>Warns only.</b> Do not ignore it. See below.</td></tr>
+<tr><td>The clock is right</td><td>Warns. A wrong date makes downloaded software look untrustworthy, and the error will not say so.</td></tr>
+<tr><td>About 2&nbsp;GB of memory</td><td><b>Stops</b>, and prints what it found.</td></tr>
+<tr><td>Internet works</td><td><b>Stops</b>, and prints the commands to connect.</td></tr>
+<tr><td>At least one disk</td><td><b>Stops.</b></td></tr>
 </tbody>
 </table>
 </div>
 
-<h2 id="preflight">Stage 1: preflight</h2>
-
-<p>Before anything is touched, the installer checks six things and refuses if any of the
-fatal ones fail. Each refusal names the value that failed, rather than saying "requirements
-not met".</p>
-
-<div class="tw">
-<table>
-<thead><tr><th>Check</th><th>Fatal?</th><th>Notes</th></tr></thead>
-<tbody>
-<tr><td><b>UEFI firmware</b> (<code>/sys/firmware/efi/efivars</code> present)</td><td>Yes</td><td><em>"this machine booted in BIOS/legacy mode"</em>. The live environment still boots on BIOS machines for rescue work &mdash; only installing is refused.</td></tr>
-<tr><td><b>Secure Boot</b></td><td>No, but warns loudly</td><td>ATI-OS installs an unsigned bootloader. With Secure Boot on, the install <em>finishes</em> and the machine then refuses to boot with "no bootable device", which looks like a broken install and is not one. Turn it off in the firmware first.</td></tr>
-<tr><td><b>Clock</b></td><td>No</td><td>Enables NTP and waits up to 15 seconds. A wrong date makes every package signature look expired or not-yet-valid, and pacman reports that as a signature error rather than a clock problem.</td></tr>
-<tr><td><b>Memory</b> &ge; ~2&nbsp;GB</td><td>Yes</td><td>Reports the actual MB it found.</td></tr>
-<tr><td><b>Network</b></td><td>Yes</td><td>Packages are downloaded during the install. If it fails it prints the commands: <code>iwctl station wlan0 connect &lt;network&gt;</code> for Wi-Fi, <code>mmcli</code> for WWAN, <code>ip addr</code> for wired.</td></tr>
-<tr><td><b>At least one disk</b></td><td>Yes</td><td></td></tr>
-</tbody>
-</table>
+<div class="warn">
+<p><b>Secure Boot.</b> Turn it off in the firmware settings before continuing. Ignore the
+warning and the install finishes perfectly, then the computer refuses to start and says
+<em>"no bootable device"</em>. That looks like a broken install. It is not one.</p>
 </div>
 
-<h3 id="age">The medium's age</h3>
+<details class="why">
+<summary>Why those six?</summary>
+<p>Each one exists because that failure happened and was hard to diagnose from the error it
+produced. The clock is the clearest case: a wrong date makes every signature look expired,
+and the tool reports a signature problem rather than a clock problem. More in
+<a href="under-the-hood.html#preflight">How it works</a>.</p>
+</details>
 
-<p>The preflight reads a <code>BUILD_EPOCH</code> stamp baked into the ISO and decides
-whether the prebuilt AUR packages can still be trusted. Everything else on an ISO ages
-harmlessly because it is refetched from mirrors; these binaries were compiled against one
-particular build day's libraries.</p>
+<h2 id="questions">6. The questions</h2>
 
-<div class="tw">
-<table>
-<thead><tr><th>Age</th><th>What happens</th></tr></thead>
-<tbody>
-<tr><td>&le; 180 days</td><td>Used. <em>"prebuilt packages are current enough"</em></td></tr>
-<tr><td>181&ndash;365 days</td><td>Used, with a warning that a rebuilt ISO is the safer answer</td></tr>
-<tr><td>&gt; 365 days</td><td><b>Not used.</b> The AUR set is compiled from source instead &mdash; correct, and roughly two hours rather than twenty minutes. The disk floor also rises from 30&nbsp;GB to 60&nbsp;GB, because those build trees are large.</td></tr>
-</tbody>
-</table>
-</div>
+<p>Eight, in this order. Square brackets show the default. Press Enter to take it.</p>
 
-<p>If the medium was built without running <code>aur-repo.sh</code> first, there is no
-prebuilt repo at all, and the installer says so: <em>"no prebuilt AUR repository on this
-medium"</em>.</p>
-
-<h2 id="questions">The questions</h2>
-
-<p>These are the real prompts, in the order the installer asks them. Defaults are shown in
-brackets; pressing Enter accepts them.</p>
-
-<h3 id="q-disk">1. The target disk</h3>
+<h3 id="q-disk">1. Which disk?</h3>
 
 <pre><code>── target disk ──
 
@@ -201,20 +232,15 @@ brackets; pressing Enter accepts them.</p>
 
   Disk to ERASE and install onto (e.g. /dev/sda):</code></pre>
 
-<p>The list is real disks only. Loop, ram and nbd devices are excluded by major number and
-zram by name &mdash; on a live medium the squashfs alone adds a loop device, and an early
-version of this screen showed twenty entries on a machine with one SSD.</p>
+<p><b>Type:</b> the full name including <code>/dev/</code>, such as <code>/dev/sda</code>.</p>
 
-<p>The installer refuses the medium you booted from, so picking the USB stick out of the
-list cannot destroy the installer mid-run. It also refuses a disk with mounted partitions,
-or one held open by LVM, RAID or an existing LUKS container (<em>"is in use by:
-lvm"</em>) &mdash; those make the partition table changes invisible to the kernel until
-reboot, so the install would proceed against a stale view of the disk.</p>
+<p><b>Means:</b> this disk gets erased and gets the new system. Pick the one whose size
+matches the computer's built-in disk. Your USB stick is in the list, but you cannot pick it
+by accident. The installer recognises the stick it is running from and refuses it.</p>
 
-<h4>The dual-boot offer</h4>
+<h4>If the disk already has another system</h4>
 
-<p>If the disk already has an EFI partition <b>and</b> at least 25&nbsp;GB of unused
-space, you get a choice:</p>
+<p>With an existing operating system and 25&nbsp;GB free, you get a choice:</p>
 
 <pre><code>  This disk already has an operating system on it.
     Existing EFI partition: /dev/sda1
@@ -226,62 +252,82 @@ space, you get a choice:</p>
 
   Choose [1/2]:</code></pre>
 
-<p>The offer only appears when it can actually work. With an existing ESP but less than
-25&nbsp;GB free, you get a message instead: shrink the other system first &mdash;
-<b>this installer will not resize partitions</b>.</p>
+<p><b>Type:</b> <code>1</code> to keep both, <code>2</code> to wipe.</p>
 
-<h4>The size floor and the confirmation</h4>
+<p><b>Means:</b> option 1 uses the free space and leaves your other system alone. You pick
+which to start each time. The installer <b>will not shrink anything</b> to make room. Free
+the space yourself first, from the other system.</p>
 
-<p>A disk smaller than 30&nbsp;GB is refused outright (60&nbsp;GB when the medium is old
-enough that the AUR set gets compiled). A finished install measures about 20&nbsp;GB, so
-25&nbsp;GB looked fine on paper and left nothing for the package cache, the journal or your
-own files. Between 30 and 60&nbsp;GB you get a warning that it works but is tight.</p>
+<h4>The final confirmation</h4>
 
-<p>Before erasing, the installer lists what it is about to destroy by name &mdash; the
-partition table, and any operating system <code>os-prober</code> can identify &mdash; and
-then makes you type the path again:</p>
+<p>It lists what it is about to destroy, then asks for the disk name a second time:</p>
 
 <pre><code>  EVERYTHING on /dev/sda (238.5G, Samsung SSD 860) will be destroyed.
   There is no undo and no partial install.
 
   Type the disk path again to confirm:</code></pre>
 
+<p>Type exactly what you typed before. A mismatch stops the installer and changes nothing.</p>
+
+<div class="note">
+<p><b>Refusals, and what they mean:</b></p>
+<div class="tw">
+<table>
+<tbody>
+<tr><td><em>is the ATI-OS medium you booted from</em></td><td>You picked the USB stick.</td></tr>
+<tr><td><em>has mounted partitions</em></td><td>Something is using that disk right now.</td></tr>
+<tr><td><em>is in use by: lvm</em> (or raid, crypt)</td><td>Part of a more complex storage setup. Take it apart yourself first.</td></tr>
+<tr><td><em>is 20G — ATI-OS needs at least 30G</em></td><td>Too small. 30 to 60&nbsp;GB works but is tight, and it says so.</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
 <h3 id="q-host">2. Hostname</h3>
 
 <pre><code>  Hostname [ati-os]:</code></pre>
+
+<p><b>Type:</b> anything short with no spaces, or Enter for <code>ati-os</code>.</p>
+
+<p><b>Means:</b> the name on your home network. Cosmetic.</p>
 
 <h3 id="q-user">3. Username</h3>
 
 <pre><code>  Username:</code></pre>
 
-<p>Lowercase letters, digits, <code>-</code> and <code>_</code>, not starting with a
-digit. It re-asks until the name is valid.</p>
+<p><b>Type:</b> lowercase letters and digits. <code>-</code> and <code>_</code> allowed. Must
+not start with a digit. Anything invalid and it asks again.</p>
 
-<div class="note">
-<p><b>The username is not cosmetic.</b> <code>arch-config</code> keys the host profile off
-the <em>username</em>. The YAML field is called <code>host:</code> but it holds a
-username &mdash; a quirk of dcli's config schema, documented at length in
-<code>arch-config.sh</code>. So this answer decides which package set and dotfile profile
-get applied. It also becomes the name rendered on the boot splash.</p>
-</div>
+<p><b>Means:</b> your account name. You type it at the text screen every time you start the
+computer. It also becomes the name in big block letters on the startup screen, so
+<code>ati</code> gives you <code>ATI</code>.</p>
+
+<details class="why">
+<summary>This answer matters more than it looks</summary>
+<p>The software list and settings profile are chosen by <em>username</em>, not by computer
+name. Two accounts on one machine can want different ones. See
+<a href="under-the-hood.html#username">How it works</a>.</p>
+</details>
 
 <h3 id="q-pass">4. Password</h3>
 
-<pre><code>  Password for &lt;user&gt;:
+<pre><code>  Password for &lt;your name&gt;:
   Repeat:</code></pre>
 
-<p>Not echoed. Re-asks if empty or mismatched. The same password is set for
-<code>root</code>.</p>
+<p>Nothing appears as you type. No dots, no stars. Empty or mismatched and it asks again. The
+administrator account gets the same password.</p>
 
-<h3 id="q-tz">5. Timezone</h3>
+<h3 id="q-tz">5. Time zone</h3>
 
 <pre><code>  Timezone [Europe/Istanbul]:</code></pre>
 
-<p>The default is guessed from your IP via <code>ipapi.co</code>, with a 5-second timeout,
-falling back to <code>UTC</code>. An unknown zone aborts rather than silently installing
-the wrong one.</p>
+<p><b>Type:</b> Enter if the guess is right. Otherwise <code>Continent/City</code>, like
+<code>Europe/Berlin</code>.</p>
 
-<h3 id="q-enc">6. Full-disk encryption</h3>
+<p><b>Means:</b> it sets the clock. The guess comes from your connection's apparent location.
+An unrecognised zone stops the installer rather than silently using the wrong one.</p>
+
+<h3 id="q-enc">6. Lock the disk with a password?</h3>
 
 <pre><code>  Encrypt the whole disk?
     Yes: a stolen machine reveals nothing. You type a passphrase at
@@ -289,134 +335,169 @@ the wrong one.</p>
     Recommended for a laptop. Not needed for a desktop at home.
   Encrypt? [y/N]:</code></pre>
 
-<p>Defaults to no, deliberately. Saying yes asks for a passphrase twice and requires at
-least 8 characters &mdash; LUKS is only as strong as what is typed into it, and a
-brute-forceable phrase is worse than no encryption because it feels safe. There is no
-recovery mechanism, by design.</p>
+<p><b>Type:</b> <code>y</code>, or Enter for no.</p>
+
+<p><b>Means:</b> everything on the disk is scrambled, and you type an extra password every
+time you turn the computer on. A thief gets nothing.</p>
+
+<div class="limit">
+<p><b>Forget that password and your files are gone permanently.</b> No reset, no recovery.
+That is the entire point of it.</p>
+</div>
+
+<p>Saying yes asks twice and requires at least 8 characters.</p>
 
 <h3 id="q-kb">7. Keyboard layout</h3>
 
 <pre><code>  Keyboard layout  (see them all with: localectl list-keymaps)
   Keymap [us]:</code></pre>
 
-<p>Validated against <code>localectl list-keymaps</code> and re-asked until it matches.
-This is asked rather than assumed because the first version of the installer wrote no
-<code>/etc/vconsole.conf</code> at all: every machine came up with a US console keymap
-whatever hardware it had, so somebody on an AZERTY or Arabic keyboard would type their own
-password wrong at the very first login with no way to tell why.</p>
+<p><b>Type:</b> Enter for a US keyboard, or the short code for yours: <code>uk</code>,
+<code>de</code>, <code>fr</code>, <code>tr</code>. Unrecognised codes are rejected and it
+asks again.</p>
 
-<h3 id="q-locale">8. System language</h3>
+<p><b>Means:</b> which letter appears when you press a key. Get it wrong and you will type
+your own password incorrectly at the first login with no way to see why. That is why you are
+asked.</p>
+
+<h3 id="q-locale">8. Language</h3>
 
 <pre><code>  System language  (e.g. en_US.UTF-8, ar_EG.UTF-8, de_DE.UTF-8)
   Locale [en_US.UTF-8]:</code></pre>
 
-<p>Validated against <code>/etc/locale.gen</code>. Whatever you pick,
-<code>en_US.UTF-8</code> is <em>also</em> generated, because a surprising amount of tooling
-assumes it exists and misbehaves confusingly when it does not.</p>
+<p><b>Type:</b> Enter for English (US), or a code in that form.</p>
 
-<h2 id="stages">What happens at each stage</h2>
+<p><b>Means:</b> the language of menus and messages. English is always set up as well,
+because a lot of software misbehaves confusingly without it.</p>
 
-<p>After the last question the installer runs without further input. Each stage announces
-itself with a <code>── name ──</code> header.</p>
+<h2 id="working">7. What you see while it works</h2>
+
+<p>Nothing left to do. It prints a heading per stage.</p>
 
 <div class="tw">
 <table>
-<thead><tr><th>Stage</th><th>What it does</th></tr></thead>
+<thead><tr><th>Heading</th><th>What is happening</th></tr></thead>
 <tbody>
-<tr><td><code>partitioning</code></td><td>Writes the partition table. If encryption was chosen, <code>cryptsetup luksFormat --type luks2</code> then opens it as <code>cryptroot</code>. <b>From here on, a failure leaves a half-installed disk</b> &mdash; the installer says so plainly, because the recovery is always the same: run it again.</td></tr>
-<tr><td><code>mirrors</code></td><td>Mirrors are ranked, not asked about.</td></tr>
-<tr><td><code>package signing keys</code></td><td>Refreshes <code>archlinux-keyring</code> from the network first, so the new system's keyring is not limited to what shipped on the stick. Best-effort: with no network it cannot work.</td></tr>
-<tr><td><code>installing the base system</code></td><td><code>pacstrap</code>.</td></tr>
-<tr><td><code>prebuilt AUR packages</code></td><td>Copies the prebuilt packages <em>into</em> the target (pacman inside <code>arch-chroot</code> cannot see <code>/run/archiso</code>), adds them as a <code>SigLevel = Optional TrustAll</code> repo, syncs, and then <b>verifies</b> that the database exists and actually resolves packages. The repo section is removed again at the end, so the installed system is never left with a permanent unsigned package source.</td></tr>
-<tr><td><code>configuring the system</code></td><td>Timezone symlink, <code>hwclock --systohc</code>, locale generation, <code>vconsole.conf</code>, hostname, user creation and passwords.</td></tr>
-<tr><td><code>boot entry</code></td><td>A systemd-boot entry titled <code>ATI-OS</code>, with the microcode image if one exists and <code>root=</code> pointing at the real device.</td></tr>
-<tr><td><code>dotfiles and the wizard</code></td><td>Places the dotfiles (baked into the medium, or cloned if absent).</td></tr>
-<tr><td><code>first-boot setup</code></td><td>Installs and enables <code>ati-os-firstboot.service</code>. Its <code>TimeoutStartSec=0</code> because the wizard takes 20+ minutes even with everything prebuilt, and systemd's default would kill it partway through. Output goes to <code>journal+console</code>, so somebody watching the screen sees progress rather than an idle login prompt.</td></tr>
-<tr><td><code>done</code></td><td>Syncs, unmounts, closes the LUKS container, and tells you to remove the medium and reboot.</td></tr>
+<tr><td><code>── partitioning /dev/sda ──</code></td><td>Dividing up the disk. <b>The point of no return.</b> Anything failing after this leaves a half-installed disk, and the fix is always to run the installer again.</td></tr>
+<tr><td><code>── mirrors ──</code></td><td>Finding the fastest download servers.</td></tr>
+<tr><td><code>── package signing keys ──</code></td><td>Fetching the keys that prove downloads are genuine.</td></tr>
+<tr><td><code>── installing the base system ──</code></td><td>Basic Linux. The longest download.</td></tr>
+<tr><td><code>── prebuilt AUR packages ──</code></td><td>Copying in software compiled in advance. This is the time saving.</td></tr>
+<tr><td><code>── configuring the system ──</code></td><td>Clock, language, keyboard, your account.</td></tr>
+<tr><td><code>── boot entry ──</code></td><td>Teaching the computer to start the new system.</td></tr>
+<tr><td><code>── dotfiles and the wizard ──</code></td><td>Putting the desktop settings in place.</td></tr>
+<tr><td><code>── first-boot setup ──</code></td><td>Arranging for the desktop to build itself on restart.</td></tr>
+<tr><td><code>── done ──</code></td><td>Finished.</td></tr>
 </tbody>
 </table>
 </div>
 
-<h2 id="firstboot">The first boot</h2>
+<details class="why">
+<summary>What are "prebuilt AUR packages"?</summary>
+<p><dfn>AUR</dfn> is a large collection of extra software Arch users share. It arrives as
+source code and has to be compiled on your own computer, which is slow. One package in this
+set takes about an hour by itself.</p>
+<p>The stick carries 31 already compiled. That is the whole reason this route takes 20
+minutes. Why they can be trusted, and why they expire after a year, is in
+<a href="under-the-hood.html#prebuilt">How it works</a>.</p>
+</details>
 
-<p>The desktop is <b>not</b> installed during the install. It is installed on the first
-boot, by <code>ati-os-firstboot.service</code>, which runs the same
-<code>wizard.sh</code> the git-clone route uses &mdash; all 46 modules, on screen, roughly
-20 minutes. Let it finish before logging in.</p>
+<h2 id="restart">8. Restart</h2>
 
-<pre><code>cat /var/log/ati-os-firstboot.log       # the whole run
-cat /var/lib/ati-os/firstboot-complete  # the wizard's exit status</code></pre>
-
-<p>The marker records the <em>exit status</em>, not merely that the run happened, so a
-failed first boot does not mark itself done and will retry. To re-run by hand:</p>
-
-<pre><code>cd ~/.dotfiles/installScripts &amp;&amp; ./wizard.sh</code></pre>
-
-<div class="warn">
-<p><b>Read the per-module errors, not the summary card.</b> On a clean install the module
-that reports a failure is almost never the module at fault. One full disk once presented as
-five broken modules; one blocked pacman presented as two.</p>
-</div>
-
-<h2 id="login">Logging in</h2>
-
-<p>There is <b>no autologin and no display manager</b>. The wizard's
-<code>disable-dm</code> module disables <code>lightdm</code>, <code>gdm</code>,
-<code>sddm</code> and <code>lxdm</code> on purpose. After the first boot finishes you are
-looking at a text console with a blinking cursor.</p>
-
-<ol>
-  <li>Log in with the username and password you chose.</li>
-  <li>Type <code>letsgo</code>, or <code>startx</code> if that is not found.</li>
+<ol class="steps">
+  <li><p>Pull out the USB stick.</p></li>
+  <li><p>Restart the computer.</p></li>
 </ol>
 
-<p><code>letsgo</code> is a fish <em>function</em>, not a shell alias, so it exists only
-once the account's login shell is fish. The wizard's <code>login-shell</code> module does
-that with <code>chsh</code>, but only when fish installed successfully &mdash; if it did
-not, <code>startx</code> is the one that works.</p>
+<div class="warn">
+<p><b>Do not leave the stick in.</b> The computer may start from it again and show you the
+installer a second time.</p>
+</div>
 
-<h2 id="after">What you still supply</h2>
+<h2 id="firstboot">9. It builds the desktop</h2>
 
-<ul>
-  <li><code>GEMINI_API_KEY</code> in <code>~/.config/secrets.env</code> &mdash; the install
-  seeds that file from a template with the key left empty. Everything that uses it degrades
-  rather than breaking when it is absent.</li>
-  <li>Vaultwarden, Simplenote and scrcpy accounts &mdash; see <a href="tools.html">Everyday
-  tools</a>.</li>
-  <li>Your own wallpapers, if you do not want the author's collection.</li>
-</ul>
+<p>The desktop is not installed yet. It builds itself on this first restart.</p>
 
-<p>Deliberately not installed by default:</p>
+<p class="screen">46 steps scroll up the screen for <b>about 20 minutes</b>. Let it finish.
+Do not turn the computer off.</p>
 
-<pre><code>./wizard.sh --only=xmodmap           # Caps-Lock-as-Alt
-./wizard.sh --only=dcli-sync-extra   # docker, JDK, printing, qemu</code></pre>
+<p>Then you get a black screen with text, waiting for you to log in.</p>
 
-<h2 id="limits">Limits</h2>
+<div class="note">
+<p><b>If it failed</b>, it says so and does not pretend otherwise.</p>
+<pre><code>cat /var/log/ati-os-firstboot.log</code></pre>
+<p>To try again:</p>
+<pre><code>cd ~/.dotfiles/installScripts
+./wizard.sh</code></pre>
+<p><b>Read the individual step errors, not the summary.</b> On a fresh machine the step that
+reports a failure is almost never the step that caused it. One full disk once showed up as
+five unrelated broken steps.</p>
+</div>
+
+<h2 id="login">10. Log in</h2>
+
+<div class="note">
+<p><b>No login box. Nothing starts by itself.</b> Deliberate.</p>
+<ol class="steps">
+  <li>
+    <p>Type your username, press Enter. Type your password, press Enter.</p>
+    <p class="screen">The password stays invisible. Normal.</p>
+  </li>
+  <li>
+    <p>Type <code>letsgo</code> and press Enter.</p>
+    <p class="screen">The screen flickers. The desktop appears.</p>
+  </li>
+</ol>
+<p>If <code>letsgo</code> is not found, type <code>startx</code>. Two names for one job:
+<code>letsgo</code> only exists once a particular install step has succeeded.</p>
+</div>
+
+<h2 id="after">Done. What is left</h2>
+
+<p>The desktop works. Three things need an account, and only you can make an account. All
+three are optional and can wait days.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Thing</th><th>Gives you</th><th>Without it</th></tr></thead>
+<tbody>
+<tr><td>Password manager</td><td>Your passwords on a keyboard shortcut</td><td>No password menu. Nothing else changes.</td></tr>
+<tr><td>Note syncing</td><td>Your to-do list on your phone</td><td>The list still works locally.</td></tr>
+<tr><td>An AI key</td><td>Extra suggestions in the translation and flashcard tools</td><td>Those tools still work, with one section less.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Setting each one up is on <a href="install-git.html#accounts">the other install page</a>.
+The steps are the same whichever way you installed.</p>
+
+<p>Two extras are left out because most people do not want them:</p>
+
+<pre><code>./wizard.sh --only=xmodmap           # Caps Lock becomes an Alt key
+./wizard.sh --only=dcli-sync-extra   # Docker, Java, printing, virtual machines</code></pre>
+
+<p>For your own wallpapers, drop images into <code>~/Pictures/Wallpapers/</code>.</p>
+
+<h2 id="limits">What this cannot do</h2>
 
 <div class="limit">
 <ul>
-<li><b>UEFI only.</b> The installed system boots with systemd-boot, and every boot module
-in this repo (<code>boot-fallback</code>, <code>boot-splash</code>, and
-<code>boot-splash</code>'s root-device verification) is written against it. A GRUB/BIOS
-path would be a second, untested way to boot.</li>
-<li><b>It does not resize partitions.</b> Alongside-install uses free space that is already
-free.</li>
-<li><b>The qemu test cannot touch the GPU path</b> &mdash; no graphics hardware, so picom,
-glx and the window animations are untested by every phase of it.</li>
-<li><b>No AMD or NVIDIA hardware, and no 4K panel</b>, has ever run this.</li>
-<li><b>The test boots the ISO <em>file</em></b>, not a real USB stick on real firmware.</li>
+<li><b>UEFI only.</b> Very old machines cannot. The stick still starts on them for rescue
+work, but installing is refused.</li>
+<li><b>It cannot shrink an existing Windows or Linux install.</b> Free the space first.</li>
+<li><b>No AMD or NVIDIA graphics card has ever run this, and no 4K screen.</b> The automated
+tests run inside a fake computer with no graphics hardware, so a passing test says nothing
+about how the animations will look on yours.</li>
+<li><b>The tests have never used a real USB stick.</b> They start the image file directly.</li>
 </ul>
-<p>An ISO makes the install much easier to run, which means the untested paths start
-reaching strangers' machines. That is an argument for fixing them, not for reading a green
-test run as though it had.</p>
 </div>
 
-<p>Problems with the medium itself are collected under
-<a href="troubleshooting.html#atios">Troubleshooting &rarr; The ATI-OS medium</a>.</p>
+<p><a href="troubleshooting.html#atios">Troubleshooting &rarr; The USB stick</a> lists every
+message the installer can refuse with.</p>
 
 <footer class="page">
-  <span>Source: <code>installScripts/iso/README.md</code>, <code>PLAN.md</code> and <code>profile/airootfs/usr/local/bin/ati-os-install</code>.</span>
-  <a href="install-git.html">Next: install from a git clone &rarr;</a>
+  <span>Every prompt quoted here is the real text from the installer.</span>
+  <a href="keybindings.html">Next: keyboard shortcuts &rarr;</a>
 </footer>
 
 </main>

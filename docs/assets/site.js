@@ -57,6 +57,43 @@
     hs[i].appendChild(a);
   }
 
+  // ---- on-this-page list, built from the page itself ----------------------
+  // Generated rather than hand-written: a hand-written one drifts the moment
+  // a heading is renamed, and does it silently.
+  var toc = document.getElementById('toc');
+  var tops = document.querySelectorAll('main h2[id]');
+  if (toc && tops.length) {
+    for (var j = 0; j < tops.length; j++) {
+      var li = document.createElement('li');
+      var link = document.createElement('a');
+      link.href = '#' + tops[j].id;
+      link.textContent = tops[j].firstChild
+        ? tops[j].textContent.replace(/#$/, '').trim()
+        : tops[j].id;
+      li.appendChild(link);
+      toc.appendChild(li);
+    }
+
+    // Highlight whichever section you are reading.
+    var links = toc.querySelectorAll('a');
+    var spy = function () {
+      var best = 0;
+      for (var k = 0; k < tops.length; k++) {
+        if (tops[k].getBoundingClientRect().top <= 90) best = k;
+      }
+      for (var m = 0; m < links.length; m++) {
+        links[m].classList.toggle('here', m === best);
+      }
+    };
+    var ticking = false;
+    window.addEventListener('scroll', function () {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(function () { spy(); ticking = false; });
+    }, { passive: true });
+    spy();
+  }
+
   // ---- search ------------------------------------------------------------
   var input = document.getElementById('search-input');
   var out = document.getElementById('search-results');

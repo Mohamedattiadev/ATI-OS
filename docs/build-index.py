@@ -17,15 +17,16 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 PAGES = [
-    ("index.html", "Home"),
-    ("install-usb.html", "Install from the ATI-OS USB"),
-    ("install-git.html", "Install from a git clone"),
-    ("keybindings.html", "Keybindings"),
-    ("themes.html", "The themes"),
-    ("widgets.html", "Widgets and popups"),
-    ("tools.html", "Everyday tools"),
+    ("index.html", "Start here"),
+    ("install-usb.html", "Install from a USB stick"),
+    ("install-git.html", "Install onto Arch you already have"),
+    ("keybindings.html", "Keyboard shortcuts"),
+    ("themes.html", "Changing the colours"),
+    ("widgets.html", "The bar and the popups"),
+    ("tools.html", "The tools you get"),
     ("troubleshooting.html", "Troubleshooting"),
-    ("reference.html", "Reference"),
+    ("reference.html", "Where everything lives"),
+    ("under-the-hood.html", "How it works"),
 ]
 
 TAG = re.compile(r"<[^>]+>")
