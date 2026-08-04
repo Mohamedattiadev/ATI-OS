@@ -265,46 +265,63 @@ main > figure { max-width: var(--wide); }
   }
 }
 
-/* The header wordmark. Six lines of block letters cannot survive a 52px bar,
-   so the bar gets the same vocabulary at a legible size instead: a two-line
-   micro-mark built from the quadrant glyphs, then the name in the mono stack,
-   letter-spaced, with "-OS" in the accent — the landing page's hero in
-   miniature rather than a shrunken screenshot of it. */
+/* The header wordmark.
+
+   The mark is the letter A from the six-line artwork the ISO prints at login,
+   in the same block-and-shadow vocabulary — solid `█` body, `╗ ║` shadow down
+   the right — reduced to four rows so it survives a 52px bar. The reduction
+   is not a crop: the real A draws its counters with the line glyphs `╔══╗`,
+   which are hairlines and dissolve below about 12px, so the two counters are
+   opened out to real background cells and the leg row and the `╚═╝` feet are
+   dropped. What is left is apex, counter, crossbar, legs — rendered at 10px
+   it reads as an A, which the crop does not. Judged by rendering it, not by
+   reasoning about it; if you change the rows, look at it again at 400px.
+
+   Beside it the name is set in the mono stack with "-OS" in the accent, and
+   the strapline is deliberately two steps down — smaller, lighter, sans, and
+   in --fg-faint — so the pair reads as name-then-note, not as one phrase. */
 .topbar .brand {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  font-size: var(--t-ms);
-  font-weight: 640;
-  letter-spacing: -0.01em;
   color: var(--fg);
   text-decoration: none;
   white-space: nowrap;
 }
 .topbar .brand-mark {
   flex: none;
-  /* pre-line, not pre: the two rows are written as a newline in the markup so
-     the mark stays copy-pasteable text rather than a background image. */
-  white-space: pre-line;
+  /* `pre`, not `pre-line`. The rows are written as real newlines in the
+     markup so the mark stays copy-pasteable text rather than a background
+     image -- but two of them carry a two-cell counter written as two spaces,
+     and pre-line collapses those to one, which closes the hole and turns the
+     A back into a blob. The rows are flush to column 0 in the markup for the
+     same reason: under `pre`, indenting them would indent the artwork. */
+  white-space: pre;
   font-family: var(--mono);
-  font-size: 10px;
-  line-height: 0.9;
-  letter-spacing: 0;
+  /* 9px x 4 rows = 36px of a 52px bar. 10px reads a touch better in
+     isolation but fills 40px, and the mark then crowds both rules of the
+     bar; 8px and below the seams between adjacent blocks start to show. */
+  font-size: 9px;
+  line-height: 1;
+  /* Same hair of overlap the hero uses, and for the same reason: adjacent
+     full blocks otherwise leave a hairline of background wherever the advance
+     width lands on a fraction of a pixel, which at this size reads as a
+     scratch down the middle of every stroke. */
+  letter-spacing: -0.04em;
   color: var(--accent-line);
-  /* The glyphs sit on the baseline; nudge the pair onto the optical centre. */
-  transform: translateY(-0.5px);
 }
 .topbar .brand-name {
   font-family: var(--mono);
-  font-size: var(--t-sm);
+  font-size: var(--t-ms);
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
 }
 .topbar .brand-name .wm-os { color: var(--accent); }
 .topbar .brand small {
   font-family: var(--sans);
   font-weight: 400;
-  font-size: var(--t-sm);
+  font-size: var(--t-xs);
+  line-height: 1;
   color: var(--fg-faint);
   letter-spacing: 0;
 }
@@ -328,15 +345,15 @@ main > figure { max-width: var(--wide); }
 }
 .iconbtn:hover { color: var(--fg); border-color: var(--border-firm); }
 
-/* Theme toggle. Square, icon-only. Which icon shows is decided in CSS from the
-   active theme, not by script, so the button is still correct with JavaScript
-   off -- it just stops doing anything when clicked. */
-.theme-btn {
+/* Square, icon-only variants. Both keep the same 1.9rem box as the search
+   field so the right-hand end of the bar sits on one line. */
+.theme-btn, .gh-btn {
   justify-content: center;
   width: 1.9rem;
   padding: 0;
 }
-.theme-btn svg { flex: none; }
+.theme-btn svg, .gh-btn svg { flex: none; }
+.gh-btn { text-decoration: none; }
 .theme-btn .ico-sun { display: none; }
 .theme-btn .ico-moon { display: block; }
 
@@ -716,11 +733,16 @@ code, kbd, pre, samp { font-family: var(--mono); }
 .codeblock { position: relative; margin: 0 0 var(--s4); }
 .codeblock pre { margin: 0; }
 
+/* A hairline all the way round, not a 3px accent bar down the left. Six
+   different things on this site draw a left bar -- code blocks, blockquotes,
+   the three callouts, the "what appears on screen" strip, h4 -- and this was
+   the only other one in a colour. On a page with twenty-three code blocks it
+   stopped meaning anything and just striped the page blue. Colour in the bar
+   is the callouts' now, where it carries severity; the rest stay grey. */
 pre {
   background: var(--bg-code);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent-line);
-  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  border-radius: var(--radius-lg);
   padding: var(--s4) var(--s5);
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -775,11 +797,13 @@ kbd {
 
 /* --- 8. Tables ----------------------------------------------------------- */
 
+/* No outer box. The reference pages run to twenty-five tables each, and a
+   rounded bordered panel repeated twenty-five times down a page is the only
+   thing you see. The row rules already show where the table starts and stops;
+   the container keeps the horizontal scroll and nothing else. */
 .tw {
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
   background: var(--bg);
   scrollbar-width: thin;
 }
@@ -791,18 +815,23 @@ table {
   font-size: var(--t-ms);
 }
 
+/* Tighter than prose. A keybinding row is a label and a short phrase, and at
+   prose leading a twelve-row table was 560px tall for 12 short lines. */
 th, td {
   text-align: left;
   vertical-align: top;
-  padding: var(--s3) var(--s4);
+  padding: var(--s2) var(--s4) var(--s2) 0;
   border-bottom: 1px solid var(--border);
-  line-height: 1.55;
+  line-height: 1.5;
 }
+th:not(:first-child), td:not(:first-child) { padding-left: 0; }
 tbody tr:last-child > * { border-bottom: 0; }
 
+/* The header is a hairline and a word, not a filled strip: the fill was the
+   second box on top of the first one. */
 thead th {
-  background: var(--bg-sunken);
-  color: var(--fg-muted);
+  padding-top: 0;
+  color: var(--fg-faint);
   font-size: var(--t-xs);
   font-weight: 620;
   text-transform: uppercase;
@@ -842,9 +871,11 @@ table.nums th:nth-child(n+2) {
   margin: 0 0 var(--s5);
   padding: var(--s4) var(--s5);
   background: var(--cal-bg);
-  border: 1px solid var(--border);
+  /* Tint and a bar. The 1px border that used to run round the outside was a
+     third edge on a shape that already had two, and on the light ground it
+     read as a box drawn round a box. */
   border-left: 3px solid var(--cal);
-  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
   font-size: var(--t-ms);
   line-height: 1.65;
 }
@@ -1110,10 +1141,14 @@ footer.page a:hover { color: var(--accent); }
 }
 .wrap-wide { max-width: 76rem; margin: 0 auto; padding: 0 var(--s5); }
 
-.landing { padding: 0 0 var(--s8); }
+.landing { padding: 0; }
 /* `auto` on the sides, not 0: these sections carry .wrap, and a shorthand
    that zeroed the side margins would silently un-centre every one of them. */
-.landing > section { margin: 0 auto var(--s8); }
+.landing > section { margin: 0 auto var(--s7); }
+/* The bottom of the page used to hold a section margin and a wrapper padding
+   on top of the footer's own rule -- about 160px of nothing above a two-line
+   footer. One gap is enough. */
+.landing > section:last-child { margin-bottom: var(--s7); }
 
 /* Hero */
 .hero {
@@ -1166,31 +1201,29 @@ footer.page a:hover { color: var(--accent); }
   text-wrap: pretty;
 }
 
-/* Button row */
+/* Button row. Two buttons, not five: a row of five identically-weighted
+   uppercase pills is the shape every generated landing page has, and it says
+   nothing about which one you want. One filled primary, one outline beside
+   it, and the remaining destinations as an ordinary sentence underneath. */
 .actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--s3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  margin: 0 0 var(--s4);
 }
-.actions li { margin: 0; }
 
 .action {
   display: inline-flex;
   align-items: center;
-  gap: var(--s2);
   padding: var(--s3) var(--s5);
   background: var(--bg-raised);
   border: 1px solid var(--border-firm);
   border-radius: var(--radius);
   color: var(--fg);
-  font-size: var(--t-sm);
-  font-weight: 620;
-  letter-spacing: .07em;
-  text-transform: uppercase;
+  font-size: var(--t-ms);
+  font-weight: 600;
+  line-height: 1.2;
   text-decoration: none;
   white-space: nowrap;
   transition: color .12s var(--ease), border-color .12s var(--ease),
@@ -1201,17 +1234,26 @@ footer.page a:hover { color: var(--accent); }
   border-color: var(--accent);
   background: var(--accent-weak);
 }
-.action svg {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+/* The one action most readers want. Filled, so it is the only element on the
+   page carrying the accent as a ground -- that is what makes it primary. */
+.action.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
 }
-.action svg.solid { fill: currentColor; stroke: none; }
+.action.primary:hover {
+  background: var(--fg);
+  border-color: var(--fg);
+  color: var(--bg);
+}
+
+.hero .also {
+  max-width: 34rem;
+  margin: 0 auto;
+  font-size: var(--t-ms);
+  color: var(--fg-muted);
+  text-wrap: pretty;
+}
 
 /* Screenshot */
 .shot { margin-bottom: var(--s8); }
@@ -1239,38 +1281,43 @@ footer.page a:hover { color: var(--accent); }
   font-size: var(--t-ms);
 }
 
-/* Facts */
-.facts {
+/* What you get.
+
+   Not cards. A five-up grid of bordered boxes with a giant coloured numeral in
+   each is the single most recognisable generated-landing-page shape, and five
+   into three columns leaves an empty cell staring back at you. This is a spec
+   sheet instead: figure on the left in the mono stack at reading size, the
+   sentence it belongs to on the right, hairline rules between rows and no
+   boxes at all. The figures are still the accent, but at body size they are
+   emphasis rather than decoration -- the sentence is the thing being read. */
+.spec {
+  max-width: 40rem;
+  margin: 0 auto;
+  border-top: 1px solid var(--border);
+}
+.spec > div {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
-  gap: var(--s4);
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0 var(--s4);
+  align-items: baseline;
+  padding: var(--s3) 0;
+  border-bottom: 1px solid var(--border);
 }
-.facts li {
-  margin: 0;
-  padding: var(--s5);
-  background: var(--bg-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-}
-.facts b {
-  display: block;
-  margin-bottom: var(--s1);
+.spec dt {
   font-family: var(--mono);
-  font-size: var(--t-2xl);
+  font-size: var(--t-base);
   font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -0.03em;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
-.facts span {
-  display: block;
+.spec dd {
+  margin: 0;
   font-size: var(--t-ms);
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--fg-muted);
+  text-wrap: pretty;
 }
 
 /* Recordings */
@@ -1283,11 +1330,49 @@ footer.page a:hover { color: var(--accent); }
   max-width: 62rem;
   margin: 0 auto;
 }
-.films figure { display: flex; flex-direction: column; }
-.films img { align-self: start; }
-.films figure { margin: 0; }
-.films img { width: 100%; }
+.films figure { display: flex; flex-direction: column; margin: 0; }
+/* Matched on height, not on width. The four recordings are different shapes,
+   so filling the column width left every row ragged and put the captions at
+   four different heights; cropping them to a common ratio would cut content
+   out of a real recording. A common height keeps every frame whole and lands
+   the captions on one line. Below the one-column breakpoint the column width
+   is the binding constraint again, so this is dropped. */
+.films img {
+  align-self: center;
+  height: 16rem;
+  width: auto;
+  max-width: 100%;
+}
 .films figcaption { margin-top: var(--s2); }
+
+/* What this is not.
+
+   This used to be the whole section wrapped in .limit -- a page-wide pink
+   panel, which reads as an error the reader has caused rather than as the
+   author being straight with them. It is plain prose now, with one hairline
+   list; the only colour left is on the lead sentence, which is the one line
+   that has to land. */
+.caveats {
+  max-width: var(--measure);
+  margin: 0 auto;
+}
+.caveats .lead { color: var(--err); }
+.caveats ul {
+  margin: var(--s4) 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+.caveats li {
+  margin: 0;
+  padding: var(--s3) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--t-ms);
+  line-height: 1.6;
+  color: var(--fg-muted);
+}
+.caveats li b { color: var(--fg); }
+.caveats > p:last-child { margin-bottom: 0; font-size: var(--t-ms); }
 
 /* Site footer (landing page) */
 footer.site {
@@ -1312,18 +1397,29 @@ footer.site a:hover { color: var(--accent); }
 footer.site p { margin: 0 0 var(--s4); max-width: var(--measure); }
 
 @media (max-width: 780px) {
-  .films { grid-template-columns: minmax(0, 1fr); }
+  .films { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
+  .films img { height: auto; width: 100%; }
 }
 
 @media (max-width: 620px) {
   .wrap, .wrap-wide, footer.site { padding-left: var(--s4); padding-right: var(--s4); }
-  .facts { grid-template-columns: minmax(0, 1fr); }
   .action { padding: var(--s3) var(--s4); }
+}
+
+/* The figure column costs 88px of a 400px screen and the sentences start to
+   break badly, so the pair stacks: figure, then its sentence under it. The
+   hairline between rows is what keeps it reading as one list. */
+@media (max-width: 560px) {
+  .spec > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s1) 0;
+    padding: var(--s3) 0;
+  }
 }
 
 @media (max-width: 430px) {
   .actions { gap: var(--s2); }
-  .action { font-size: var(--t-xs); padding: var(--s2) var(--s3); }
+  .action { font-size: var(--t-sm); padding: var(--s3) var(--s4); }
 }
 
 
