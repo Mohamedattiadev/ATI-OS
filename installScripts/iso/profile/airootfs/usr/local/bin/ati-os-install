@@ -33,7 +33,7 @@ BAKED_DOTFILES="$ATI_SHARE/dotfiles"  # a clone of the repo
 REPO_NAME=ati-local
 # Set by preflight when the medium is too old for its own binaries.
 SKIP_LOCAL_REPO=0
-DOTFILES_URL="${DOTFILES_URL:-https://github.com/Mohamedattiadev/Newdotfile-.git}"
+DOTFILES_URL="${DOTFILES_URL:-https://github.com/Mohamedattiadev/ATI-OS.git}"
 DOTFILES_REF="${DOTFILES_REF:-main}"
 
 MODE=interactive
@@ -520,7 +520,7 @@ load_unattended() {
 #
 # Picked from the CPU actually present, not from a guess. The wizard writes
 # boot entries the same way, from whichever microcode image exists -- see
-# the note in plan_found-but-not-fixed.md about boot/*.conf being reference
+# the note in notes/archive/plan_found-but-not-fixed.md about boot/*.conf being reference
 # copies that hardcode intel-ucode and are never installed.
 detect_ucode() {
   case "$(awk -F: '/vendor_id/ {gsub(/ /,"",$2); print $2; exit}' /proc/cpuinfo)" in
@@ -779,7 +779,7 @@ CHROOT
   # `systemd` init, and the two families must not be mixed. This repo
   # already learned that lesson the expensive way -- boot-splash demanded a
   # `udev` hook and refused on every freshly installed machine because Arch
-  # now ships `systemd` instead (plan_found-but-not-fixed.md, item 2).
+  # now ships `systemd` instead (notes/archive/plan_found-but-not-fixed.md, item 2).
   # So the hook is inserted next to `block` in whichever style is present.
   if (( ENCRYPT )); then
     if grep -qE '^HOOKS=.*\bsystemd\b' /mnt/etc/mkinitcpio.conf; then

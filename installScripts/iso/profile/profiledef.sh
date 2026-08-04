@@ -18,7 +18,7 @@ iso_name="ati-os"
 # SOURCE_DATE_EPOCH is honoured for the same reason upstream honours it:
 # it is what makes a rebuild from the same inputs produce the same image.
 iso_label="ATI_OS_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"
-iso_publisher="ATI-OS <https://github.com/Mohamedattiadev/Newdotfile->"
+iso_publisher="ATI-OS <https://github.com/Mohamedattiadev/ATI-OS>"
 iso_application="ATI-OS Install Medium"
 iso_version="$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y.%m.%d)"
 

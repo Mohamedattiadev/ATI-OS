@@ -1,0 +1,6 @@
+# installed by symlinking an existing Remotion install; see make-assets.sh
+node_modules
+
+# derived from IMGS/ and the recordings — rebuild with ./make-assets.sh
+public/
+out/

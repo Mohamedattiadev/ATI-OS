@@ -97,7 +97,7 @@ changes, so the diff is branding, the installer, and nothing else.
 
 ## What the test does not cover
 
-Unchanged from what `HANDOFF.md` already records, and it must not be
+Unchanged from what `notes/archive/HANDOFF.md` already records, and it must not be
 overclaimed just because an ISO now exists:
 
 - **the GPU path** — qemu has no graphics hardware, so picom, glx and the
