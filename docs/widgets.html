@@ -11,13 +11,16 @@
 
 <header class="topbar">
   <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
-  <a class="brand" href="index.html">ATI-OS<small>Arch + qtile, packaged</small></a>
+  <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">██╗
+╚═╝</span><span class="brand-name"><span class="wm-ati">ATI</span><span class="wm-os">-OS</span></span><small>Arch + qtile, packaged</small></a>
   <div class="spacer"></div>
   <div class="search">
-    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <svg class="search-ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14"/></svg>
+    <input id="search-input" type="search" placeholder="Search the manual" autocomplete="off" spellcheck="false" aria-label="Search">
+    <kbd class="search-hint" aria-hidden="true">/</kbd>
     <div class="search-results" id="search-results"></div>
   </div>
-  <button class="iconbtn" id="theme-toggle">Light</button>
+  <button class="iconbtn theme-btn" id="theme-toggle" type="button" aria-label="Switch colour theme"><svg class="ico-sun" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="3.1"/><path d="M8 1.2v1.6M8 13.2v1.6M14.8 8h-1.6M2.8 8H1.2M12.81 3.19l-1.13 1.13M4.32 11.68l-1.13 1.13M12.81 12.81l-1.13-1.13M4.32 4.32 3.19 3.19"/></svg><svg class="ico-moon" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.6 9.7A5.9 5.9 0 0 1 6.3 2.4a5.9 5.9 0 1 0 7.3 7.3z"/></svg></button>
 </header>
 
 <div class="shell">

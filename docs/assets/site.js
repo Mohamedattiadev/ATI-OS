@@ -32,10 +32,15 @@
 
   var toggle = document.getElementById('theme-toggle');
 
+  // Which of the two icons is visible is decided in CSS from the active
+  // theme, so this only has to keep the accessible name in step -- and it
+  // must not touch textContent, which would delete both <svg> children.
+  // The markup ships the vaguer "Switch colour theme", because with this file
+  // blocked nothing can know which way round the button is pointing; naming a
+  // direction there would be wrong half the time.
   function paintToggle() {
     if (!toggle) return;
     var dark = currentTheme() === 'dark';
-    toggle.textContent = dark ? 'Light' : 'Dark';
     toggle.setAttribute('aria-label', 'Switch to ' + (dark ? 'light' : 'dark') + ' theme');
   }
   paintToggle();

@@ -189,6 +189,21 @@ body {
 
 ::selection { background: var(--accent-weak); color: var(--fg); }
 
+/* Readable to a screen reader, invisible on screen. Used where a picture --
+   the ASCII wordmark -- stands in for text that still has to be announced. */
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 
 /* --- 3. Layout ----------------------------------------------------------- */
 
@@ -250,6 +265,11 @@ main > figure { max-width: var(--wide); }
   }
 }
 
+/* The header wordmark. Six lines of block letters cannot survive a 52px bar,
+   so the bar gets the same vocabulary at a legible size instead: a two-line
+   micro-mark built from the quadrant glyphs, then the name in the mono stack,
+   letter-spaced, with "-OS" in the accent — the landing page's hero in
+   miniature rather than a shrunken screenshot of it. */
 .topbar .brand {
   display: flex;
   align-items: center;
@@ -261,15 +281,28 @@ main > figure { max-width: var(--wide); }
   text-decoration: none;
   white-space: nowrap;
 }
-.topbar .brand::before {
-  content: "";
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  background: var(--accent-line);
+.topbar .brand-mark {
   flex: none;
+  /* pre-line, not pre: the two rows are written as a newline in the markup so
+     the mark stays copy-pasteable text rather than a background image. */
+  white-space: pre-line;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 0.9;
+  letter-spacing: 0;
+  color: var(--accent-line);
+  /* The glyphs sit on the baseline; nudge the pair onto the optical centre. */
+  transform: translateY(-0.5px);
 }
+.topbar .brand-name {
+  font-family: var(--mono);
+  font-size: var(--t-sm);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.topbar .brand-name .wm-os { color: var(--accent); }
 .topbar .brand small {
+  font-family: var(--sans);
   font-weight: 400;
   font-size: var(--t-sm);
   color: var(--fg-faint);
@@ -294,6 +327,25 @@ main > figure { max-width: var(--wide); }
   transition: color .12s var(--ease), border-color .12s var(--ease);
 }
 .iconbtn:hover { color: var(--fg); border-color: var(--border-firm); }
+
+/* Theme toggle. Square, icon-only. Which icon shows is decided in CSS from the
+   active theme, not by script, so the button is still correct with JavaScript
+   off -- it just stops doing anything when clicked. */
+.theme-btn {
+  justify-content: center;
+  width: 1.9rem;
+  padding: 0;
+}
+.theme-btn svg { flex: none; }
+.theme-btn .ico-sun { display: none; }
+.theme-btn .ico-moon { display: block; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .theme-btn .ico-sun  { display: block; }
+  :root:not([data-theme]) .theme-btn .ico-moon { display: none; }
+}
+:root[data-theme="dark"] .theme-btn .ico-sun  { display: block; }
+:root[data-theme="dark"] .theme-btn .ico-moon { display: none; }
 
 /* hamburger */
 .navbtn {
@@ -331,12 +383,19 @@ main > figure { max-width: var(--wide); }
 
 /* --- Search -------------------------------------------------------------- */
 
-.search { position: relative; flex: 0 1 20rem; min-width: 7rem; }
+.search {
+  position: relative;
+  flex: 0 1 20rem;
+  min-width: 7rem;
+  display: flex;
+  align-items: center;
+}
 
 .search input {
   width: 100%;
   height: 1.9rem;
-  padding: 0 var(--s3);
+  /* Room on the left for the magnifier, on the right for the "/" hint. */
+  padding: 0 1.9rem 0 1.95rem;
   font: inherit;
   font-size: var(--t-ms);
   color: var(--fg);
@@ -346,6 +405,30 @@ main > figure { max-width: var(--wide); }
   transition: border-color .12s var(--ease), background .12s var(--ease);
 }
 .search input::placeholder { color: var(--fg-faint); }
+
+/* Both affordances sit over the field and must never swallow a click meant
+   for it, hence pointer-events: none. */
+.search-ico,
+.search-hint {
+  position: absolute;
+  pointer-events: none;
+  color: var(--fg-faint);
+}
+.search-ico { left: var(--s2); flex: none; }
+.search-hint {
+  right: var(--s2);
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  line-height: 1;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+.search input:focus ~ .search-hint { opacity: 0; }
+/* Chromium draws its own clear button, which would land on top of the hint. */
+.search input::-webkit-search-cancel-button,
+.search input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
 .search input:focus {
   outline: none;
   background: var(--bg);
@@ -998,10 +1081,19 @@ footer.page a:hover { color: var(--accent); }
   h2 { margin-top: var(--s7); }
 }
 
-/* Very small: the tagline and wordmark would crowd out the search box. */
+/* Below this the search field needs every pixel of its own width, and a hint
+   about a keyboard shortcut is the first thing worth losing on a phone. */
+@media (max-width: 700px) {
+  .search-hint { display: none; }
+  .search input { padding-right: var(--s3); }
+}
+
+/* Very small: the strapline is already gone, so trim the wordmark's spacing
+   rather than blanking it -- the icon-only toggle gave back the room the old
+   text button was taking, and the name is the thing worth keeping. */
 @media (max-width: 470px) {
-  .topbar .brand { font-size: 0; gap: 0; }
-  .topbar .brand::before { width: 11px; height: 11px; }
+  .topbar .brand { gap: var(--s1); }
+  .topbar .brand-name { letter-spacing: 0.03em; }
 }
 
 
@@ -1029,16 +1121,41 @@ footer.page a:hover { color: var(--accent); }
   padding: clamp(var(--s7), 9vw, calc(var(--s8) + var(--s7))) 0 var(--s7);
 }
 
+/* The wordmark is the real thing: the same six lines the ISO prints at login
+   and the installer prints on its first screen, character for character. It
+   is decoration to a screen reader -- the .vh copy next to it carries the
+   name -- but it is the one place on the site where the full artwork fits.
+
+   Sizing. The art is 43 monospace columns wide, so its width is
+   43 x 0.6em ~= 25.8em. The middle term of the clamp below solves that back
+   to a font-size that keeps 43 columns inside the viewport minus the .wrap
+   padding, with ~8% held back so a monospace face with a wider advance than
+   DejaVu's 0.602em still fits. Do not replace it with a plain vw value: at
+   400px the fixed padding is 12% of the screen and a pure ratio overflows. */
 .wordmark {
-  margin: 0 0 var(--s4);
-  font-family: var(--mono);
-  font-size: clamp(3.25rem, 15vw, 9rem);
-  font-weight: 700;
+  margin: 0 0 var(--s5);
   line-height: 1;
-  letter-spacing: -0.05em;
-  text-wrap: nowrap;
 }
-.wordmark .wm-os { color: var(--accent); }
+.ascii-mark {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  overflow: visible;
+  font-family: var(--mono);
+  font-size: clamp(0.5rem, calc(3.75vw - 1.9px), 1.4rem);
+  line-height: 1;
+  font-weight: 400;
+  /* A hair of overlap. Adjacent full blocks otherwise leave a hairline of
+     background between cells wherever the advance width lands on a fraction
+     of a pixel, which reads as a scratch across every solid stroke. */
+  letter-spacing: -0.03em;
+  color: var(--accent);
+  /* Safe here, and only here: all six rows are exactly 43 columns wide -- the
+     art is padded with real spaces -- so centring each line independently
+     lands them all in the same place. Do not paste a ragged block in. */
+  text-align: center;
+}
 
 .hero .tagline {
   max-width: 34rem;
