@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# ati-os-welcome — what a stranger sees when the medium finishes booting.
+#
+# This exists because the medium used to boot to a bare console with a
+# banner telling you to type `ati-os-install`. That is fine if you wrote
+# the thing and obvious to nobody else. Someone who was handed a USB stick
+# should not have to know a command to use it.
+#
+# It deliberately does NOT start the installer by itself. The installer
+# erases a disk, and a screen that begins destroying storage because a
+# machine was left booted from a stick it forgot was plugged in is a bad
+# trade for saving one keystroke. It explains, then asks.
+
+set -uo pipefail
+
+if [[ -t 1 ]]; then
+  ACC=$'\e[38;2;23;147;209m'; B=$'\e[1m'; DIM=$'\e[2m'
+  WARN=$'\e[33m'; R=$'\e[0m'
+else
+  ACC=; B=; DIM=; WARN=; R=
+fi
+
+# Real disks only.
+#
+# A bare `lsblk -d` lists loop devices, nbd devices, ram disks and zram
+# alongside the actual hardware. On the live medium the squashfs alone adds
+# a loop device, and the first version of this screen showed twenty entries
+# where the machine had one SSD. Asking somebody to pick which one to ERASE
+# out of that list is how the wrong disk gets chosen.
+#
+# Excluded by major number: 7 = loop, 1 = ram, 43 = nbd. zram has no stable
+# major, so it goes by name.
+list_real_disks() {
+  lsblk -dpo NAME,SIZE,MODEL --exclude 7,1,43 2>/dev/null \
+    | grep -vE '^/dev/(zram|ram)'
+}
+
+net_state() {
+  if ping -c1 -W2 archlinux.org >/dev/null 2>&1; then
+    printf '%sconnected%s' $'\e[32m' "$R"
+  else
+    printf '%sNOT connected%s' "$WARN" "$R"
+  fi
+}
+
+screen() {
+  clear
+  printf '%s' "$ACC"
+  cat <<'EOF'
+   █████╗ ████████╗██╗       ██████╗ ███████╗
+  ██╔══██╗╚══██╔══╝██║      ██╔═══██╗██╔════╝
+  ███████║   ██║   ██║█████╗██║   ██║███████╗
+  ██╔══██║   ██║   ██║╚════╝██║   ██║╚════██║
+  ██║  ██║   ██║   ██║      ╚██████╔╝███████║
+  ╚═╝  ╚═╝   ╚═╝   ╚═╝       ╚═════╝ ╚══════╝
+EOF
+  printf '%s\n' "$R"
+  printf '  A ready-made Linux desktop. Everything is already set up.\n'
+  printf '  %sYour computer has NOT been changed. You can still turn it off\n' "$DIM"
+  printf '  and nothing will have happened.%s\n\n' "$R"
+
+  printf '  %s─── If you install, here is exactly what happens ───%s\n\n' "$B" "$R"
+  printf '    %sYou answer 7 easy questions%s  %s(each one suggests an answer —\n' "$B" "$R" "$DIM"
+  printf '    press Enter to accept it)%s\n' "$R"
+  printf '      • which disk to use        • your name and password\n'
+  printf '      • keyboard and language    • encrypt the disk? (yes/no)\n\n'
+  printf '    %sThen it runs on its own, twice:%s\n' "$B" "$R"
+  printf '      1. About 5 minutes, then it asks you to restart\n'
+  printf '      2. After restarting, about 20 minutes building the desktop\n'
+  printf '         %sLeave it alone during this. Do not turn it off.%s\n\n' "$DIM" "$R"
+  printf '    %sThen you log in and type%s %sletsgo%s %sto start the desktop.%s\n' "$B" "$R" "$B" "$R" "$B" "$R"
+  printf '    %s(no autologin and no display manager — that is deliberate)%s\n\n' "$DIM" "$R"
+
+  printf '  %s⚠ The one thing to be careful about%s\n' "$WARN" "$R"
+  printf '    Installing %sERASES the disk you pick%s. Everything on it is gone —\n' "$WARN" "$R"
+  printf '    Windows, files, photos, all of it. %sCopy anything you want to keep\n' "$DIM"
+  printf '    onto another drive FIRST.%s You will be asked to type the disk\n' "$R"
+  printf '    name twice, so a slip cannot do it by accident.\n\n'
+
+  printf '  %sInternet:%s %s' "$B" "$R" "$(net_state)"
+  printf '   %s(needed — it downloads while installing)%s\n' "$DIM" "$R"
+  printf '  %sDisks found on this computer:%s\n' "$B" "$R"
+  list_real_disks | sed 's/^/    /'
+  printf '\n'
+
+  printf '  %sWhat do you want to do?%s\n\n' "$B" "$R"
+  printf '   %s1%s  Install it  %s(asks the 7 questions first)%s\n' "$B" "$R" "$DIM" "$R"
+  printf '   %s2%s  Connect to Wi-Fi\n'                              "$B" "$R"
+  printf '   %s3%s  Just look around %s(command line, changes nothing)%s\n' "$B" "$R" "$DIM" "$R"
+  printf '   %s4%s  Restart      %s5%s  Turn off\n\n'               "$B" "$R" "$B" "$R"
+}
+
+while true; do
+  screen
+  read -rp "  Choose [1-5]: " choice
+  case "${choice:-}" in
+    1) printf '\n'; ati-os-install; printf '\n'
+       read -rp "  Press Enter to return to this menu: " _ ;;
+    2) printf '\n  Available networks:\n'
+       iwctl station wlan0 scan >/dev/null 2>&1
+       sleep 2
+       iwctl station wlan0 get-networks 2>/dev/null | sed 's/^/    /'
+       printf '\n'
+       read -rp "  Network name (blank to cancel): " ssid
+       [[ -n "$ssid" ]] && iwctl station wlan0 connect "$ssid"
+       read -rp "  Press Enter to continue: " _ ;;
+    3) printf '\n  %sNothing here changes your computer. Type `ati-os-welcome`\n  and press Enter to come back to this menu.%s\n\n' "$DIM" "$R"
+       exit 0 ;;
+    4) systemctl reboot ;;
+    5) systemctl poweroff ;;
+    *) : ;;
+  esac
+done

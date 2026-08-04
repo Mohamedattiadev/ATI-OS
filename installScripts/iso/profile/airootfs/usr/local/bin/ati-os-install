@@ -1,0 +1,1120 @@
+#!/usr/bin/env bash
+# ati-os-install — install ATI-OS from the live medium onto a disk.
+#
+# This script deliberately does NOT reimplement the install. The partition
+# / pacstrap / bootctl sequence below is lifted from vm-test.sh's
+# _base_install_script, which has been run end to end and verified, and
+# everything after the base system is `wizard.sh` -- the same 46 modules,
+# in the same order, from the same code. The only thing that is new here is
+# asking a human which disk to erase.
+#
+# That matters more than it sounds. Every clean-install bug this repo has
+# found -- the jack2 provider conflict, rustup's missing default toolchain,
+# informant blocking pacman as root, whisper.cpp's vanishing build tree --
+# is fixed inside wizard.sh. An installer that pacstrapped its own package
+# list would reintroduce all four.
+#
+# Usage:
+#   ati-os-install                 # interactive
+#   ati-os-install --check         # preflight only, touch nothing
+#   ati-os-install --unattended    # answers from the environment (see below)
+#
+# --unattended reads: ATI_DISK ATI_HOSTNAME ATI_USER ATI_PASS ATI_TIMEZONE
+# It exists for test-iso.sh. It is not a supported way to install a real
+# machine, because it erases ATI_DISK with no confirmation at all.
+
+set -Eeuo pipefail
+
+# Where the live medium keeps what it baked in. Both are populated by
+# build-iso.sh; neither exists in a plain archiso.
+ATI_SHARE=/usr/share/ati-os
+LOCAL_REPO="$ATI_SHARE/repo"          # prebuilt AUR packages
+BAKED_DOTFILES="$ATI_SHARE/dotfiles"  # a clone of the repo
+REPO_NAME=ati-local
+# Set by preflight when the medium is too old for its own binaries.
+SKIP_LOCAL_REPO=0
+DOTFILES_URL="${DOTFILES_URL:-https://github.com/Mohamedattiadev/Newdotfile-.git}"
+DOTFILES_REF="${DOTFILES_REF:-main}"
+
+MODE=interactive
+while (( $# )); do
+  case "$1" in
+    --check)      MODE=check ;;
+    --unattended) MODE=unattended ;;
+    -h|--help)    sed -n '2,28p' "$0"; exit 0 ;;
+    *) printf 'ati-os-install: unknown argument: %s\n' "$1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+# ─── presentation ────────────────────────────────────────────────────
+if [[ -t 1 ]]; then
+  C_OK=$'\e[32m'; C_WARN=$'\e[33m'; C_ERR=$'\e[31m'
+  C_DIM=$'\e[2m'; C_B=$'\e[1m'; C_ACC=$'\e[38;2;23;147;209m'; C_R=$'\e[0m'
+else
+  C_OK=; C_WARN=; C_ERR=; C_DIM=; C_B=; C_ACC=; C_R=
+fi
+_OK()   { printf '%s  ok %s %s\n' "$C_OK"   "$C_R" "$*"; }
+_WARN() { printf '%swarn %s %s\n' "$C_WARN" "$C_R" "$*"; }
+_ERR()  { printf '%sfail %s %s\n' "$C_ERR"  "$C_R" "$*" >&2; }
+_DIM()  { printf '%s     %s%s\n'  "$C_DIM"  "$*" "$C_R"; }
+say()   { printf '\n%s── %s ──%s\n' "$C_B" "$*" "$C_R"; }
+
+banner() {
+  printf '%s\n' "$C_ACC"
+  cat <<'EOF'
+   █████╗ ████████╗██╗       ██████╗ ███████╗
+  ██╔══██╗╚══██╔══╝██║      ██╔═══██╗██╔════╝
+  ███████║   ██║   ██║█████╗██║   ██║███████╗
+  ██╔══██║   ██║   ██║╚════╝██║   ██║╚════██║
+  ██║  ██║   ██║   ██║      ╚██████╔╝███████║
+  ╚═╝  ╚═╝   ╚═╝   ╚═╝       ╚═════╝ ╚══════╝
+EOF
+  printf '%s' "$C_R"
+  printf '  Arch Linux, and a qtile desktop that is already configured.\n\n'
+}
+
+# Every failure after partitioning starts leaves a half-installed disk.
+# Saying so plainly beats a bare shell trace, because the recovery is
+# always the same: run the installer again.
+PARTITIONING_STARTED=0
+on_err() {
+  local rc=$?
+  _ERR "installation failed (exit $rc) at line ${BASH_LINENO[0]}"
+  if (( PARTITIONING_STARTED )); then
+    _DIM "the target disk has been partitioned and is NOT bootable."
+    _DIM "re-run ati-os-install to start over; it erases the disk anyway."
+  else
+    _DIM "nothing was written to any disk."
+  fi
+  exit "$rc"
+}
+trap on_err ERR
+
+# ─── preflight ───────────────────────────────────────────────────────
+preflight() {
+  say "preflight"
+  local fail=0
+
+  # UEFI only, and this is a real limitation rather than an oversight.
+  # The installed system boots with systemd-boot, and the repo's boot
+  # modules -- boot-fallback, boot-splash, and boot-splash's verify-root
+  # check -- are all written against systemd-boot's layout. A GRUB/BIOS
+  # path would be a second, untested way to boot, and an untested boot
+  # path is the worst kind to ship.
+  #
+  # The ISO still OFFERS a BIOS boot entry: booting the live environment
+  # on an old machine to look around or rescue something is useful even
+  # when installing there is not.
+  if [[ -d /sys/firmware/efi/efivars ]]; then
+    _OK "firmware: UEFI"
+  else
+    _ERR "this machine booted in BIOS/legacy mode"
+    _DIM "ATI-OS installs UEFI-only. Enable UEFI in the firmware settings"
+    _DIM "and boot this medium again. The live environment works either way."
+    fail=1
+  fi
+
+  # Secure Boot. Not fatal here, because it is fatal LATER and much more
+  # confusingly: the install completes, the machine reboots, and the
+  # firmware silently refuses to run an unsigned systemd-boot. The user
+  # sees "no bootable device" and blames the installer.
+  local sb
+  sb=$(bootctl status 2>/dev/null | awk -F': *' '/Secure Boot/ {print $2; exit}')
+  if [[ "$sb" == enabled* ]]; then
+    _WARN "Secure Boot is ENABLED"
+    _DIM "ATI-OS installs an unsigned bootloader, which this firmware will"
+    _DIM "refuse to start. The install will finish and the machine will not"
+    _DIM "boot. Turn Secure Boot off in the firmware settings first."
+    _DIM "Continuing anyway is supported, but you were told."
+  else
+    _OK "Secure Boot: ${sb:-not enabled}"
+  fi
+
+  # The clock. A wrong system date makes every package signature look
+  # expired or not-yet-valid, and pacman reports that as a signature error
+  # rather than as a clock problem -- one of the more baffling ways an
+  # install can fail.
+  if timedatectl set-ntp true >/dev/null 2>&1; then
+    local i=0
+    while (( i < 15 )); do
+      timedatectl show -p NTPSynchronized --value 2>/dev/null | grep -q yes && break
+      sleep 1; i=$((i+1))
+    done
+    if timedatectl show -p NTPSynchronized --value 2>/dev/null | grep -q yes; then
+      _OK "clock synchronised ($(date -Iseconds))"
+    else
+      _WARN "clock not synchronised yet — signatures may fail if it is wrong"
+      _DIM "current time reads $(date -Iseconds)"
+    fi
+  else
+    _WARN "could not enable NTP — check the date is right: $(date -Iseconds)"
+  fi
+
+  local mem_mb
+  mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+  if (( mem_mb >= 1900 )); then
+    _OK "memory: ${mem_mb} MB"
+  else
+    _ERR "memory: ${mem_mb} MB — need about 2 GB"
+    fail=1
+  fi
+
+  if ping -c1 -W3 archlinux.org >/dev/null 2>&1 \
+     || curl -sf --max-time 5 https://archlinux.org >/dev/null 2>&1; then
+    _OK "network reachable"
+  else
+    _ERR "no network"
+    _DIM "wifi:     iwctl station wlan0 connect <network>"
+    _DIM "wwan:     mmcli"
+    _DIM "ethernet with DHCP should already be up — check: ip addr"
+    fail=1
+  fi
+
+  if [[ -d "$LOCAL_REPO" ]] && compgen -G "$LOCAL_REPO/*.pkg.tar.*" >/dev/null; then
+    local n sz
+    n=$(find "$LOCAL_REPO" -name '*.pkg.tar.*' | wc -l)
+    sz=$(du -sh "$LOCAL_REPO" | cut -f1)
+    _OK "prebuilt package repository: $n packages, $sz"
+
+    # How old is this medium, and is that old enough to matter?
+    #
+    # Everything else on an ISO ages harmlessly because it is refetched:
+    # mirrors, databases, the base system and its libraries all come from
+    # the network at install time. The prebuilt AUR packages are the
+    # exception -- compiled against THIS build day's libraries, installed
+    # beside whatever the mirrors serve today.
+    #
+    # Past a point the honest move is to stop using them and compile from
+    # source instead. That turns a 20-minute install into a two-hour one,
+    # which is a bad trade to make silently and a good one to make rather
+    # than hand somebody a desktop that breaks in a month.
+    if [[ -f "$ATI_SHARE/BUILD_EPOCH" ]]; then
+      local built now age_days
+      built=$(cat "$ATI_SHARE/BUILD_EPOCH")
+      now=$(date +%s)
+      age_days=$(( (now - built) / 86400 ))
+      if (( age_days < 0 )); then
+        _WARN "this machine's clock is behind the medium's build date — check the time"
+      elif (( age_days <= 180 )); then
+        _OK "medium is ${age_days} days old — prebuilt packages are current enough"
+      elif (( age_days <= 365 )); then
+        _WARN "medium is ${age_days} days old"
+        _DIM "the prebuilt AUR packages were compiled against older libraries."
+        _DIM "they will probably work, but a rebuilt ISO is the safer answer."
+      else
+        _WARN "medium is ${age_days} days old — NOT using its prebuilt packages"
+        _DIM "over a year of library drift is past what a binary built then can"
+        _DIM "be trusted against today's glibc. They will be COMPILED instead:"
+        _DIM "correct, but roughly two hours rather than twenty minutes."
+        _DIM "Rebuilding the ISO avoids both problems."
+        SKIP_LOCAL_REPO=1
+      fi
+    fi
+  else
+    # Not fatal. Without it every AUR package is compiled on this machine
+    # instead, which is correct but turns a 20-minute install into a
+    # two-hour one -- so it is worth saying out loud rather than letting
+    # someone wonder why it is taking so long.
+    _WARN "no prebuilt AUR repository on this medium"
+    _DIM "AUR packages will be COMPILED during the install (~2 hours,"
+    _DIM "most of it pacman-static). A normal ATI-OS medium has them."
+  fi
+
+  if [[ -d "$BAKED_DOTFILES/.git" ]]; then
+    _OK "dotfiles baked into the medium"
+  else
+    _WARN "no baked dotfiles — will clone from $DOTFILES_URL"
+  fi
+
+  local ndisks
+  ndisks=$(lsblk -dnro NAME,TYPE | awk '$2=="disk"' | wc -l)
+  if (( ndisks >= 1 )); then
+    _OK "disks detected: $ndisks"
+  else
+    _ERR "no disks found"
+    fail=1
+  fi
+
+  (( fail )) && { _ERR "preflight failed — nothing was changed"; exit 1; }
+  _OK "preflight clean"
+}
+
+# ─── questions ───────────────────────────────────────────────────────
+# ─── free space and existing ESP, for the dual-boot path ─────────────
+#
+# Dual-boot is the most dangerous code in this installer: everything else
+# runs on a disk the user has already agreed to destroy, whereas this runs
+# on one with somebody's Windows install on it. So it is written to REFUSE
+# rather than improvise, and it never issues a destructive command against
+# a partition it did not create.
+free_space_gib() {
+  # The largest single unallocated block, in GiB. parted reports free
+  # regions explicitly, which sgdisk does not.
+  parted -s "$1" unit B print free 2>/dev/null \
+    | awk '/Free Space/ {gsub("B","",$3); if ($3+0 > max) max=$3+0} END {print int(max/1024/1024/1024)}'
+}
+
+find_existing_esp() {
+  # By partition TYPE GUID, not by size or label. The EFI type GUID is
+  # fixed and unambiguous; guessing from "the small FAT one" is how an
+  # installer eats a recovery partition.
+  lsblk -nro PATH,PARTTYPE "$1" 2>/dev/null \
+    | awk '$2=="c12a7328-f81f-11d2-ba4b-00a0c93ec93b" {print $1; exit}'
+}
+
+# Real disks only.
+#
+# A bare `lsblk -d` lists loop devices, nbd devices, ram disks and zram
+# alongside the actual hardware. On the live medium the squashfs alone adds
+# a loop device, and the first version of this screen showed twenty entries
+# where the machine had one SSD. Asking somebody to pick which one to ERASE
+# out of that list is how the wrong disk gets chosen.
+#
+# Excluded by major number: 7 = loop, 1 = ram, 43 = nbd. zram has no stable
+# major, so it goes by name.
+list_real_disks() {
+  lsblk -dpo NAME,SIZE,MODEL --exclude 7,1,43 2>/dev/null \
+    | grep -vE '^/dev/(zram|ram)'
+}
+
+ask_disk() {
+  say "target disk"
+  printf '\n'
+  list_real_disks | sed 's/^/     /'
+  printf '\n'
+  while true; do
+    read -rp "  Disk to ERASE and install onto (e.g. /dev/sda): " DISK
+    [[ -b "$DISK" ]] || { _ERR "$DISK is not a block device"; continue; }
+    # Refuse the medium we are running from. Without this check the
+    # obvious mistake -- picking the USB stick out of the lsblk list --
+    # destroys the installer mid-install.
+    if findmnt -no SOURCE /run/archiso/bootmnt 2>/dev/null | grep -q "^${DISK}"; then
+      _ERR "$DISK is the ATI-OS medium you booted from"
+      continue
+    fi
+    break
+  done
+
+  # Whole disk, or alongside what is already there.
+  #
+  # Offered only when it is actually possible: if there is no existing ESP
+  # and no free space, presenting a dual-boot option that cannot work
+  # would be worse than not offering it.
+  local esp_found free_gib
+  esp_found=$(find_existing_esp "$DISK")
+  free_gib=$(free_space_gib "$DISK")
+  free_gib=${free_gib:-0}
+  DUALBOOT=0
+  if [[ -n "$esp_found" ]] && (( free_gib >= 25 )); then
+    printf '\n  %sThis disk already has an operating system on it.%s\n' "$C_B" "$C_R"
+    printf '    %sExisting EFI partition: %s\n' "$C_DIM" "$esp_found"
+    printf '    Unused space available: %sG%s\n\n' "$free_gib" "$C_R"
+    printf '   %s1%s  Keep it and install ATI-OS alongside %s(uses the %sG of free space,\n' \
+      "$C_B" "$C_R" "$C_DIM" "$free_gib"
+    printf '       you pick which system to boot each time)%s\n' "$C_R"
+    printf '   %s2%s  Erase the whole disk %s(everything currently on it is lost)%s\n\n' \
+      "$C_B" "$C_R" "$C_DIM" "$C_R"
+    local mode
+    read -rp "  Choose [1/2]: " mode
+    if [[ "$mode" == "1" ]]; then
+      DUALBOOT=1
+      ESP="$esp_found"
+      _OK "installing alongside — the existing system and its files are left alone"
+      return 0
+    fi
+  elif [[ -n "$esp_found" ]] && (( free_gib > 0 )); then
+    printf '\n  %sThere is an existing system here, but only %sG of free space.%s\n' \
+      "$C_WARN" "$free_gib" "$C_R"
+    printf '  %sInstalling alongside needs 25G. Shrink the other system first if\n' "$C_DIM"
+    printf '  you want to keep it — this installer will not resize partitions.%s\n' "$C_R"
+  fi
+
+  # A target with mounted partitions is either the medium itself or a disk
+  # something else is using. Partitioning it succeeds and then corrupts
+  # whatever held it open.
+  if lsblk -nro MOUNTPOINT "$DISK" 2>/dev/null | grep -q .; then
+    _ERR "$DISK has mounted partitions:"
+    lsblk -nro NAME,MOUNTPOINT "$DISK" | grep -v '^\S*\s*$' | sed 's/^/     /'
+    _DIM "unmount them first, or pick a different disk"
+    exit 1
+  fi
+
+  # LVM, RAID or an existing LUKS container holds the partition table open
+  # and makes sgdisk's changes invisible to the kernel until reboot, so
+  # the install proceeds against a stale view of the disk.
+  local holders
+  holders=$(lsblk -nro TYPE "$DISK" 2>/dev/null | grep -E 'lvm|raid|crypt' | sort -u | tr '\n' ' ')
+  if [[ -n "$holders" ]]; then
+    _ERR "$DISK is in use by: $holders"
+    _DIM "deactivate it first — e.g. vgchange -an, mdadm --stop, cryptsetup close"
+    _DIM "ATI-OS will not tear down someone else's storage stack for them"
+    exit 1
+  fi
+
+  # Refuse a disk that cannot hold the result. The desktop plus its build
+  # cache needs real room, and finding that out at module 30 -- as
+  # "No space left on device" reported by five unrelated modules -- is
+  # exactly the failure this repo already spent a day diagnosing.
+  local bytes gib
+  bytes=$(lsblk -dnbo SIZE "$DISK")
+  gib=$(( bytes / 1024 / 1024 / 1024 ))
+  # 30G, not the 25G an earlier version of this script asked for.
+  #
+  # A finished install measures about 20G, so 25G looked fine on paper and
+  # left almost nothing for the package cache, the journal, or the user's
+  # own files. And when the prebuilt repo is skipped -- which happens
+  # automatically on a medium over a year old -- the AUR build trees need
+  # far more: this repo has already lost a run to "No space left on
+  # device" reported by five unrelated modules, 32 modules after the
+  # actual cause.
+  local floor=30
+  (( SKIP_LOCAL_REPO )) && floor=60
+  if (( gib < floor )); then
+    _ERR "$DISK is ${gib}G — ATI-OS needs at least ${floor}G"
+    (( SKIP_LOCAL_REPO )) && _DIM "60G because this medium is old enough that the AUR packages get compiled, and their build trees are large"
+    exit 1
+  fi
+  (( gib < 60 )) && _WARN "${gib}G works, but 60G+ is comfortable once you add your own files"
+
+  # Say what is about to be destroyed, by name. "Everything on /dev/sda"
+  # is abstract; "Windows, and 3 partitions" is not, and this is the last
+  # point at which somebody can realise they picked the wrong disk.
+  local parts
+  parts=$(lsblk -nro NAME "$DISK" | tail -n +2 | wc -l)
+  if (( parts > 0 )); then
+    printf '\n%s  This disk is NOT empty — %s partition(s):%s\n' "$C_WARN" "$parts" "$C_R"
+    lsblk -no NAME,SIZE,FSTYPE,LABEL "$DISK" | sed 's/^/     /'
+    if command -v os-prober >/dev/null && os-prober 2>/dev/null | grep -q .; then
+      printf '%s  An existing operating system was detected:%s\n' "$C_WARN" "$C_R"
+      os-prober 2>/dev/null | sed 's/^/     /'
+    fi
+    printf '  %sAll of it will be erased. ATI-OS does not dual-boot.%s\n' "$C_DIM" "$C_R"
+  fi
+
+  local size model
+  size=$(lsblk -dno SIZE "$DISK")
+  model=$(lsblk -dno MODEL "$DISK" 2>/dev/null || echo "unknown")
+  printf '\n%s  EVERYTHING on %s (%s, %s) will be destroyed.%s\n' \
+    "$C_WARN" "$DISK" "$size" "$model" "$C_R"
+  printf '  There is no undo and no partial install.\n\n'
+  local confirm
+  read -rp "  Type the disk path again to confirm: " confirm
+  [[ "$confirm" == "$DISK" ]] || { _ERR "did not match — nothing was changed"; exit 1; }
+}
+
+ask_rest() {
+  say "system"
+  read -rp "  Hostname [ati-os]: " HOSTNAME_IN
+  HOSTNAME_IN="${HOSTNAME_IN:-ati-os}"
+
+  # The username is not cosmetic. arch-config keys the host profile off the
+  # USERNAME -- the yaml field is called `host:` but it holds a username,
+  # a dcli schema quirk documented at length in arch-config.sh. So this
+  # answer decides which package set and dotfile profile get applied.
+  while true; do
+    read -rp "  Username: " USER_IN
+    [[ "$USER_IN" =~ ^[a-z_][a-z0-9_-]*$ ]] && break
+    _ERR "lowercase letters, digits, - and _ only, not starting with a digit"
+  done
+
+  while true; do
+    read -rsp "  Password for $USER_IN: " PASS_IN; printf '\n'
+    read -rsp "  Repeat: " pass2; printf '\n'
+    [[ -n "$PASS_IN" && "$PASS_IN" == "$pass2" ]] && break
+    _ERR "empty or did not match"
+  done
+
+  local tz_guess
+  tz_guess=$(curl -sf --max-time 5 https://ipapi.co/timezone 2>/dev/null || echo "UTC")
+  [[ -f "/usr/share/zoneinfo/$tz_guess" ]] || tz_guess=UTC
+  read -rp "  Timezone [$tz_guess]: " TZ_IN
+  TZ_IN="${TZ_IN:-$tz_guess}"
+  [[ -f "/usr/share/zoneinfo/$TZ_IN" ]] || { _ERR "unknown timezone: $TZ_IN"; exit 1; }
+
+  # Full-disk encryption. Offered, never forced, and defaulted to NO.
+  #
+  # It is the right choice for a laptop -- a stolen machine gives up
+  # nothing -- and the wrong one to impose, because the trade is real: a
+  # passphrase at every single boot, and a forgotten passphrase means the
+  # data is gone. There is no recovery, by design. So the question is
+  # asked plainly with the cost stated, rather than defaulted to "secure"
+  # on someone's behalf.
+  printf '\n  %sEncrypt the whole disk?%s\n' "$C_B" "$C_R"
+  printf '    %sYes: a stolen machine reveals nothing. You type a passphrase at\n' "$C_DIM"
+  printf '         every boot, and if you forget it the data is GONE for good.\n'
+  printf '    Recommended for a laptop. Not needed for a desktop at home.%s\n' "$C_R"
+  read -rp "  Encrypt? [y/N]: " enc
+  if [[ "${enc,,}" == y || "${enc,,}" == yes ]]; then
+    ENCRYPT=1
+    while true; do
+      read -rsp "  Disk passphrase: " LUKS_PASS; printf '\n'
+      read -rsp "  Repeat: " lp2; printf '\n'
+      if [[ -z "$LUKS_PASS" ]]; then _ERR "cannot be empty"; continue; fi
+      if [[ "$LUKS_PASS" != "$lp2" ]]; then _ERR "did not match"; continue; fi
+      # Short passphrases defeat the point: LUKS is only as strong as what
+      # is typed into it, and a brute-forceable phrase is worse than no
+      # encryption because it feels safe.
+      if (( ${#LUKS_PASS} < 8 )); then _ERR "use at least 8 characters"; continue; fi
+      break
+    done
+  else
+    ENCRYPT=0
+  fi
+
+  # Keyboard layout. Asked, and this is not a nicety: the first version
+  # wrote no /etc/vconsole.conf at all, so every installed machine came up
+  # with a US console keymap whatever hardware it had. Somebody on an
+  # AZERTY or Arabic keyboard would type their own password wrong at the
+  # very first login and have no way to tell why.
+  printf '\n  %sKeyboard layout%s  (see them all with: localectl list-keymaps)\n' "$C_B" "$C_R"
+  while true; do
+    read -rp "  Keymap [us]: " KEYMAP_IN
+    KEYMAP_IN="${KEYMAP_IN:-us}"
+    localectl list-keymaps 2>/dev/null | grep -qx "$KEYMAP_IN" && break
+    _ERR "unknown keymap: $KEYMAP_IN"
+  done
+
+  # Locale. Previously hardcoded en_US.UTF-8, which is fine for the author
+  # and wrong for anyone else. en_US.UTF-8 is ALWAYS generated as well as
+  # the chosen one, because a surprising amount of tooling assumes it
+  # exists and misbehaves in confusing ways when it does not.
+  printf '\n  %sSystem language%s  (e.g. en_US.UTF-8, ar_EG.UTF-8, de_DE.UTF-8)\n' "$C_B" "$C_R"
+  while true; do
+    read -rp "  Locale [en_US.UTF-8]: " LOCALE_IN
+    LOCALE_IN="${LOCALE_IN:-en_US.UTF-8}"
+    grep -qE "^#?${LOCALE_IN%% *} " /etc/locale.gen 2>/dev/null && break
+    _ERR "not a locale this Arch knows: $LOCALE_IN"
+  done
+}
+
+load_unattended() {
+  DISK="${ATI_DISK:?--unattended needs ATI_DISK}"
+  HOSTNAME_IN="${ATI_HOSTNAME:-ati-os}"
+  USER_IN="${ATI_USER:?--unattended needs ATI_USER}"
+  PASS_IN="${ATI_PASS:?--unattended needs ATI_PASS}"
+  TZ_IN="${ATI_TIMEZONE:-UTC}"
+  KEYMAP_IN="${ATI_KEYMAP:-us}"
+  LOCALE_IN="${ATI_LOCALE:-en_US.UTF-8}"
+  # Unattended skips ask_disk entirely, so anything ask_disk would have
+  # set must be given a value here or `set -u` aborts the run.
+  #
+  # ATI_DUALBOOT exists so test-iso.sh can exercise the alongside-install
+  # path. It is the single most dangerous branch in this script -- it runs
+  # on a disk with somebody else's operating system on it -- so it must be
+  # reachable by an automated test rather than only by a human clicking
+  # through prompts.
+  DUALBOOT="${ATI_DUALBOOT:-0}"
+  if (( DUALBOOT )); then
+    ESP=$(find_existing_esp "$DISK")
+    [[ -b "$ESP" ]] || { _ERR "ATI_DUALBOOT=1 but no existing ESP on $DISK"; exit 1; }
+    _WARN "unattended dual-boot: installing alongside, ESP $ESP"
+  fi
+  ENCRYPT="${ATI_ENCRYPT:-0}"
+  LUKS_PASS="${ATI_LUKS_PASS:-}"
+  [[ -b "$DISK" ]] || { _ERR "$DISK is not a block device"; exit 1; }
+  _WARN "unattended: erasing $DISK without confirmation"
+}
+
+# ─── microcode ───────────────────────────────────────────────────────
+#
+# Picked from the CPU actually present, not from a guess. The wizard writes
+# boot entries the same way, from whichever microcode image exists -- see
+# the note in plan_found-but-not-fixed.md about boot/*.conf being reference
+# copies that hardcode intel-ucode and are never installed.
+detect_ucode() {
+  case "$(awk -F: '/vendor_id/ {gsub(/ /,"",$2); print $2; exit}' /proc/cpuinfo)" in
+    GenuineIntel) UCODE_PKG=intel-ucode; UCODE_IMG=intel-ucode.img ;;
+    AuthenticAMD) UCODE_PKG=amd-ucode;   UCODE_IMG=amd-ucode.img ;;
+    *)            UCODE_PKG="";          UCODE_IMG="" ;;
+  esac
+}
+
+# ─── the install ─────────────────────────────────────────────────────
+do_partition() {
+  say "partitioning $DISK"
+  PARTITIONING_STARTED=1
+
+  if (( DUALBOOT )); then
+    # ONE new partition in the largest free block. Nothing else on this
+    # disk is touched: no --zap-all, no mkfs on the existing ESP, no
+    # resize. `sgdisk -n 0:0:0` means "next free number, largest free
+    # block, to its end", so the existing partitions are stepped around
+    # rather than reasoned about.
+    _DIM "  creating one partition in the free space; nothing else is altered"
+    local before after
+    before=$(lsblk -nro NAME "$DISK" | tail -n +2 | wc -l)
+    sgdisk -n 0:0:0 -t 0:8304 -c 0:ati-os-root "$DISK" >/dev/null
+    partprobe "$DISK" 2>/dev/null || true
+    udevadm settle || true
+    sleep 2
+    after=$(lsblk -nro NAME "$DISK" | tail -n +2 | wc -l)
+    (( after == before + 1 )) || { _ERR "expected one new partition, got $((after-before))"; exit 1; }
+
+    # The new partition is identified by the LABEL just written, not by
+    # "the last one" or "the highest number". Both of those are guesses,
+    # and a wrong guess here formats somebody's Windows.
+    ROOTPART=$(lsblk -nro PATH,PARTLABEL "$DISK" | awk '$2=="ati-os-root" {print $1; exit}')
+    [[ -b "$ROOTPART" ]] || { _ERR "could not find the partition just created"; exit 1; }
+    _OK "new partition $ROOTPART; existing partitions untouched"
+
+    # The existing ESP is MOUNTED, never formatted. Formatting it would
+    # destroy the other operating system's bootloader.
+    [[ -b "$ESP" ]] || { _ERR "existing ESP $ESP disappeared"; exit 1; }
+  else
+
+  # 512M ESP + the rest as root, mounted at /boot rather than /efi so that
+  # mkinitcpio writes the kernel and initramfs straight onto the ESP. That
+  # is the layout every boot module in this repo assumes, and
+  # `bootctl --print-esp-path` answers /boot under it.
+  sgdisk --zap-all "$DISK"
+  sgdisk -n1:0:+512M -t1:ef00 -c1:EFI  "$DISK"
+  sgdisk -n2:0:0     -t2:8304 -c2:root "$DISK"
+  partprobe "$DISK" 2>/dev/null || true
+  udevadm settle || true
+  sleep 2
+
+  # NVMe and mmc devices number partitions p1/p2, SATA and USB use 1/2.
+  # Getting this wrong formats nothing and fails confusingly, so derive it
+  # rather than assuming.
+  if [[ "$DISK" =~ (nvme|mmcblk|loop) ]]; then
+    ESP="${DISK}p1"; ROOTPART="${DISK}p2"
+  else
+    ESP="${DISK}1";  ROOTPART="${DISK}2"
+  fi
+  [[ -b "$ESP" && -b "$ROOTPART" ]] || { _ERR "partitions did not appear ($ESP, $ROOTPART)"; exit 1; }
+
+  mkfs.fat -F32 "$ESP"
+  fi
+
+  # With encryption the ext4 goes INSIDE the LUKS container, so everything
+  # downstream -- mkfs, mount, fstab, the boot entry -- must target the
+  # mapper device rather than the partition.
+  if (( ENCRYPT )); then
+    _DIM "  creating the LUKS container (this takes a moment)"
+    printf '%s' "$LUKS_PASS" | cryptsetup luksFormat --type luks2 --batch-mode "$ROOTPART" -
+    printf '%s' "$LUKS_PASS" | cryptsetup open "$ROOTPART" cryptroot -
+    ROOTFS=/dev/mapper/cryptroot
+    LUKS_UUID=$(blkid -o value -s UUID "$ROOTPART")
+    [[ -n "$LUKS_UUID" ]] || { _ERR "could not read the LUKS container UUID"; exit 1; }
+    _OK "encrypted container open (LUKS2)"
+  else
+    ROOTFS="$ROOTPART"
+  fi
+
+  mkfs.ext4 -F "$ROOTFS"
+  mount "$ROOTFS" /mnt
+  mkdir -p /mnt/boot
+  mount "$ESP" /mnt/boot
+  _OK "ESP $ESP (512M), root $ROOTFS"
+}
+
+# Mirrors are ranked, not asked about.
+#
+# A question here would be a bad one: nobody knows which Arch mirror is
+# fast from their house, and the honest answer is "measure it", which is
+# what reflector does. The medium ships whatever mirrorlist it was built
+# with, which can be slow or stale enough to make the install crawl or
+# fail outright -- and that failure looks like a broken installer rather
+# than a bad mirror.
+#
+# Best-effort: if reflector is missing or the network is being unhelpful,
+# the shipped list is still perfectly usable, so this must never be fatal.
+rank_mirrors() {
+  say "mirrors"
+  command -v reflector >/dev/null || { _WARN "reflector not present — using the shipped mirrorlist"; return 0; }
+  _DIM "ranking by download rate; up to a minute"
+  if timeout 120 reflector --latest 20 --protocol https --sort rate \
+       --save /etc/pacman.d/mirrorlist >/dev/null 2>&1; then
+    _OK "mirrorlist ranked ($(grep -c '^Server' /etc/pacman.d/mirrorlist) servers)"
+  else
+    _WARN "could not rank mirrors — using the shipped mirrorlist"
+  fi
+}
+
+# Refresh the keyring on the LIVE medium before anything is installed.
+#
+# This is the single thing that most extends how long an ISO stays usable.
+# `pacstrap -K` builds the target's keyring from the keys present HERE, on
+# the medium -- so an image built a year ago hands a year-old keyring to
+# every machine it installs. Once Arch rotates or revokes a key, package
+# signatures start failing, and the failure is deeply unhelpful: it looks
+# like a corrupt download or a broken mirror, not an expired key.
+#
+# Pulling the current archlinux-keyring first means an old ISO installs a
+# CURRENT system. It does not make the ISO immortal -- the medium's own
+# kernel still ages, and a keyring old enough that it cannot verify the
+# new keyring package is past saving -- but it moves the expiry from
+# months to years.
+#
+# Best-effort by design: with no network this cannot work, and refusing to
+# install over it would be worse than proceeding with what shipped.
+refresh_keyring() {
+  say "package signing keys"
+  _DIM "fetching the current archlinux-keyring so an older medium still installs"
+  if pacman -Sy --noconfirm archlinux-keyring >/dev/null 2>&1; then
+    _OK "keyring updated on the live medium"
+  else
+    _WARN "could not update the keyring — using the one on this medium"
+    _DIM "if package signatures fail later, that is why: rebuild the ISO"
+  fi
+}
+
+do_pacstrap() {
+  say "installing the base system"
+  detect_ucode
+  [[ -n "$UCODE_PKG" ]] && _OK "microcode: $UCODE_PKG" || _WARN "unknown CPU vendor — no microcode"
+
+  # Deliberately minimal, matching vm-test.sh: anything the wizard is
+  # supposed to install must NOT be pre-seeded here, or the install stops
+  # testing what it claims to. base-devel and git are the exception --
+  # yay cannot bootstrap without them.
+  local pkgs=(base linux linux-firmware sudo networkmanager git base-devel)
+  # cryptsetup must be IN the installed system, not merely on the live
+  # medium: mkinitcpio's sd-encrypt hook pulls its binaries from the
+  # target root when it builds the initramfs.
+  (( ENCRYPT )) && pkgs+=(cryptsetup)
+  [[ -n "$UCODE_PKG" ]] && pkgs+=("$UCODE_PKG")
+  pacstrap -K /mnt "${pkgs[@]}"
+  genfstab -U /mnt >> /mnt/etc/fstab
+  _OK "base system installed"
+}
+
+wire_local_repo() {
+  [[ -d "$LOCAL_REPO" ]] || return 0
+  if (( SKIP_LOCAL_REPO )); then
+    _WARN "skipping the prebuilt packages — the medium is too old to trust them"
+    return 0
+  fi
+  say "prebuilt AUR packages"
+
+  # The packages are COPIED into the target rather than referenced on the
+  # medium, because pacman must still be able to reach them from inside
+  # arch-chroot, where /run/archiso is not visible.
+  install -d /mnt/var/cache/"$REPO_NAME"
+  cp -a "$LOCAL_REPO"/. /mnt/var/cache/"$REPO_NAME"/
+
+  # SigLevel Optional TrustAll: these packages and the pacman reading them
+  # arrive on the same read-only medium, so a signature here would verify
+  # the medium against itself. The section is REMOVED again at the end of
+  # the install (see unwire_local_repo), so the installed system is never
+  # left with a permanent unsigned package source.
+  cat >> /mnt/etc/pacman.conf <<EOF
+
+[$REPO_NAME]
+SigLevel = Optional TrustAll
+Server = file:///var/cache/$REPO_NAME
+EOF
+  local n
+  n=$(find "$LOCAL_REPO" -name '*.pkg.tar.*' | wc -l)
+  _OK "$n prebuilt packages copied in as [$REPO_NAME]"
+
+  # THE SYNC IS NOT OPTIONAL.
+  #
+  # Adding a repository to pacman.conf without syncing its database breaks
+  # EVERY pacman operation on the system, not just ones that want a package
+  # from it:
+  #
+  #   error: failed to prepare transaction (could not find database)
+  #
+  # This cost two full test runs. It presented as "Failed to install gum" --
+  # the wizard bootstraps gum before doing anything else -- so it looked
+  # like a gum problem, then like a chroot problem. It was neither. Every
+  # single package install on that machine was broken, and the first one
+  # attempted happened to be gum. The repo's own lesson, again: the thing
+  # that reports the failure is almost never the thing at fault.
+  arch-chroot /mnt pacman -Sy --noconfirm >/dev/null 2>&1 || {
+    _ERR "pacman -Sy failed after adding [$REPO_NAME]"
+    return 1
+  }
+
+  # Verified, not assumed. `pacman -Sy` can succeed while a file:// repo
+  # produces no usable database, and the consequence of that is a machine
+  # where nothing installs -- so this checks that the database exists AND
+  # that packages actually resolve out of it.
+  if ! arch-chroot /mnt test -f "/var/lib/pacman/sync/$REPO_NAME.db"; then
+    _ERR "[$REPO_NAME] has no synced database — every pacman call would fail"
+    return 1
+  fi
+  local listed
+  listed=$(arch-chroot /mnt pacman -Sl "$REPO_NAME" 2>/dev/null | wc -l)
+  if (( listed < 1 )); then
+    _ERR "[$REPO_NAME] synced but lists no packages"
+    return 1
+  fi
+  _OK "[$REPO_NAME] synced and resolving ($listed packages visible to pacman)"
+}
+
+
+do_chroot_config() {
+  say "configuring the system"
+  arch-chroot /mnt bash -s <<CHROOT
+set -Eeuo pipefail
+ln -sf "/usr/share/zoneinfo/$TZ_IN" /etc/localtime
+hwclock --systohc
+# The chosen locale AND en_US.UTF-8, deliberately: too much tooling
+# assumes the latter exists and fails obscurely without it.
+echo '$LOCALE_IN UTF-8' >> /etc/locale.gen
+echo 'en_US.UTF-8 UTF-8' >> /etc/locale.gen
+locale-gen
+echo 'LANG=$LOCALE_IN' > /etc/locale.conf
+# Without this file the console comes up US regardless of the hardware.
+echo 'KEYMAP=$KEYMAP_IN' > /etc/vconsole.conf
+echo '$HOSTNAME_IN' > /etc/hostname
+useradd -m -G wheel -s /bin/bash '$USER_IN'
+# The wizard calls sudo dozens of times with no tty to prompt on, so this
+# has to exist BEFORE it runs. The repo's own passwordless-sudo module
+# manages the lasting policy; this is what makes the first run possible.
+echo '%wheel ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/00-wheel
+chmod 440 /etc/sudoers.d/00-wheel
+systemctl enable NetworkManager
+bootctl install
+CHROOT
+
+  # The initramfs must be able to OPEN the container before it can mount
+  # root. Without this hook the machine boots to an emergency shell every
+  # time, which looks like a broken install rather than a missing hook.
+  #
+  # sd-encrypt, not encrypt: Arch's current default HOOKS line uses the
+  # `systemd` init, and the two families must not be mixed. This repo
+  # already learned that lesson the expensive way -- boot-splash demanded a
+  # `udev` hook and refused on every freshly installed machine because Arch
+  # now ships `systemd` instead (plan_found-but-not-fixed.md, item 2).
+  # So the hook is inserted next to `block` in whichever style is present.
+  if (( ENCRYPT )); then
+    if grep -qE '^HOOKS=.*\bsystemd\b' /mnt/etc/mkinitcpio.conf; then
+      sed -i 's/^\(HOOKS=.*\)\bblock\b/\1block sd-encrypt/' /mnt/etc/mkinitcpio.conf
+      _OK "added sd-encrypt to the initramfs (systemd-style hooks)"
+    else
+      sed -i 's/^\(HOOKS=.*\)\bblock\b/\1encrypt block/' /mnt/etc/mkinitcpio.conf
+      _OK "added encrypt to the initramfs (udev-style hooks)"
+    fi
+    grep -qE '^HOOKS=.*(sd-encrypt|encrypt)' /mnt/etc/mkinitcpio.conf \
+      || { _ERR "could not add the encryption hook — the system would not boot"; exit 1; }
+    arch-chroot /mnt mkinitcpio -P >/dev/null 2>&1 \
+      || { _ERR "mkinitcpio failed after adding the encryption hook"; exit 1; }
+    _OK "initramfs rebuilt with encryption support"
+  fi
+
+  # Passwords are set OUTSIDE that heredoc, on purpose.
+  #
+  # The heredoc is unquoted so that $TZ_IN and $USER_IN expand, which means
+  # anything interpolated into it is re-parsed as shell. A password
+  # containing a single quote -- or a $, or a backtick -- would have broken
+  # out of `echo '$USER_IN:$PASS_IN'` and either failed the install or set
+  # a different password than the one that was typed. Neither is acceptable
+  # for the credential the user is about to lock themselves out with.
+  #
+  # Piping into chpasswd's stdin passes the password as DATA, so no
+  # character in it is special. Root gets the same password rather than
+  # being left unset: a locked root account is not extra security here, it
+  # just makes single-user recovery harder.
+  printf '%s:%s\n' "$USER_IN" "$PASS_IN" | arch-chroot /mnt chpasswd
+  printf 'root:%s\n' "$PASS_IN"          | arch-chroot /mnt chpasswd
+
+  # The installed system refreshes its own keys weekly through
+  # archlinux-keyring-wkd-sync.timer, which the keyring package ships
+  # already wanted by timers.target. Verified rather than assumed, because
+  # if it ever stops being shipped that way the machine silently stops
+  # self-healing and only finds out years later.
+  if arch-chroot /mnt test -e /usr/lib/systemd/system/timers.target.wants/archlinux-keyring-wkd-sync.timer; then
+    _OK "the installed system will refresh its signing keys weekly"
+  else
+    _WARN "archlinux-keyring-wkd-sync.timer is not enabled — enabling it"
+    arch-chroot /mnt systemctl enable archlinux-keyring-wkd-sync.timer >/dev/null 2>&1 || true
+  fi
+
+  _OK "users, locale, clock and systemd-boot configured"
+}
+
+do_boot_entry() {
+  say "boot entry"
+  # Written from the REAL PARTUUID of the partition just created. This is
+  # exactly what `boot-splash verify-root` checks later, so a mistake here
+  # is caught by the repo's own validation rather than at the next reboot.
+  local root_opts
+  if (( ENCRYPT )); then
+    # rd.luks.name names the container by the UUID of the PARTITION holding
+    # it, and root= then points at the mapper device the hook creates.
+    root_opts="rd.luks.name=$LUKS_UUID=cryptroot root=/dev/mapper/cryptroot rw"
+    _OK "encrypted root: rd.luks.name=$LUKS_UUID=cryptroot"
+  else
+    local root_partuuid
+    root_partuuid="$(blkid -o value -s PARTUUID "$ROOTPART")"
+    [[ -n "$root_partuuid" ]] || { _ERR "could not read the root PARTUUID"; exit 1; }
+    root_opts="root=PARTUUID=$root_partuuid rw"
+    _OK "root=PARTUUID=$root_partuuid"
+  fi
+
+  cat > /mnt/boot/loader/loader.conf <<EOF
+default ati-os.conf
+timeout 3
+console-mode max
+EOF
+
+  # The microcode initrd line must come BEFORE the main initramfs, and is
+  # omitted entirely when the CPU vendor is unknown -- a dangling initrd
+  # line for a file that was never installed makes systemd-boot drop the
+  # entry without explaining why.
+  {
+    printf 'title   ATI-OS\n'
+    printf 'linux   /vmlinuz-linux\n'
+    [[ -n "$UCODE_IMG" ]] && printf 'initrd  /%s\n' "$UCODE_IMG"
+    printf 'initrd  /initramfs-linux.img\n'
+    printf 'options %s\n' "$root_opts"
+  } > /mnt/boot/loader/entries/ati-os.conf
+}
+
+do_dotfiles_and_wizard() {
+  say "dotfiles and the wizard"
+  local home="/home/$USER_IN"
+  local dest="$home/.dotfiles"
+
+  if [[ -d "$BAKED_DOTFILES/.git" ]]; then
+    # Cloning from the baked copy rather than copying it keeps the result a
+    # normal git checkout with a working `origin`, so the user can pull
+    # updates later. A plain `cp` would leave a repo pointing at a path
+    # that only exists on the install medium.
+    git clone --no-hardlinks "$BAKED_DOTFILES" "/mnt$dest"
+    arch-chroot /mnt git -C "$dest" remote set-url origin "$DOTFILES_URL"
+    _OK "dotfiles from the medium (origin set to $DOTFILES_URL)"
+  else
+    arch-chroot /mnt git clone --branch "$DOTFILES_REF" "$DOTFILES_URL" "$dest"
+    _OK "dotfiles cloned from $DOTFILES_URL"
+  fi
+  arch-chroot /mnt chown -R "$USER_IN:$USER_IN" "$home"
+
+  # Brand the INSTALLED system too. /etc/os-release is a symlink to
+  # /usr/lib/os-release, which the `filesystem` package owns; writing a
+  # real file at /etc shadows it and survives upgrades, whereas editing
+  # /usr/lib/os-release would be reverted by the next `pacman -Syu`.
+  if [[ -f /etc/os-release ]]; then
+    rm -f /mnt/etc/os-release
+    sed 's/^PRETTY_NAME=.*/PRETTY_NAME="ATI-OS"/' /etc/os-release > /mnt/etc/os-release
+  fi
+
+  install_firstboot_service
+}
+
+# ─── the wizard runs on FIRST BOOT, not in this chroot ───────────────
+#
+# The first version of this installer ran `./install.sh` inside
+# arch-chroot. It failed completely, and the way it failed is the reason
+# this comment is long.
+#
+# The wizard bootstraps `gum` before it does anything else, because every
+# line of its output goes through `gum style`. Inside the chroot that
+# bootstrap failed, so the wizard exited immediately -- and the result was
+# a base system with NO DESKTOP AT ALL, which is exactly the outcome the
+# jack2 bug used to produce. Worse, it looked fine: the installer treated
+# the wizard's failure as a warning and still printed success, and
+# `validate.sh` then "passed" by skipping every check, because with nothing
+# installed there was nothing to check.
+#
+# The deeper problem is that a chroot is not the environment the wizard was
+# ever proven in. vm-test.sh -- the harness that established the 46/46
+# result -- runs install.sh over ssh on a BOOTED system: systemd is up,
+# the network is configured, services can actually start. A chroot has none
+# of that. Running the wizard there was inventing a new, untested path
+# while believing the old evidence still applied.
+#
+# So the wizard runs where it is known to work: on the installed system, on
+# its first boot. The user watches their desktop being built, which is also
+# a better experience than staring at a live-USB console.
+install_firstboot_service() {
+  say "first-boot setup"
+  local dest="/home/$USER_IN/.dotfiles"
+
+  # The runner is a real script rather than a long ExecStart line so that
+  # its output is greppable and its exit status is recorded somewhere a
+  # human -- or a test -- can read after the fact.
+  cat > /mnt/usr/local/bin/ati-os-firstboot <<EOF
+#!/usr/bin/env bash
+# Runs the wizard once, on the first boot of a freshly installed ATI-OS.
+set -uo pipefail
+
+LOG=/var/log/ati-os-firstboot.log
+MARKER=/var/lib/ati-os/firstboot-complete
+mkdir -p /var/lib/ati-os
+
+exec > >(tee -a "\$LOG") 2>&1
+printf '\\n===== ATI-OS first boot %s =====\\n' "\$(date -Is)"
+
+# TERM=dumb for the same reason vm-test.sh sets it: there is no tty on a
+# systemd unit, and without it the wizard's progress rendering fills the
+# log with escape sequences.
+#
+# The path is \$dest/installScripts, NOT \$dest -- there is no install.sh at
+# the top of the repo.
+# A USER SYSTEMD INSTANCE has to exist before the wizard runs.
+#
+# Several modules call \`systemctl --user\` -- step_mic_gain enables
+# fix-mic-gain.service that way -- and a system service running \`su\` has
+# no user bus at all, so those calls die with:
+#
+#   Failed to connect to user scope bus via local transport:
+#   \$DBUS_SESSION_BUS_ADDRESS
+#
+# Lingering starts user@UID.service without anyone logging in, which is
+# what creates /run/user/UID and its bus. It is enabled only for the
+# duration of this run and turned off again below: \`systemctl --user
+# enable\` writes symlinks under ~/.config/systemd/user which persist
+# regardless, so the services still come up on the user's first real
+# login. Leaving lingering on would be a lasting change to how the
+# machine boots, which is not this script's decision to make.
+UID_N=\$(id -u '$USER_IN')
+loginctl enable-linger '$USER_IN' || true
+for _ in \$(seq 1 30); do
+  [[ -S "/run/user/\$UID_N/bus" ]] && break
+  sleep 1
+done
+if [[ ! -S "/run/user/\$UID_N/bus" ]]; then
+  printf 'ATI-OS-FIRSTBOOT: WARNING no user bus — --user units will not enable\\n'
+fi
+
+su - '$USER_IN' -c "export TERM=dumb XDG_RUNTIME_DIR=/run/user/\$UID_N DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\$UID_N/bus; cd '$dest/installScripts' && ./install.sh"
+rc=\$?
+
+loginctl disable-linger '$USER_IN' || true
+
+printf 'ATI-OS-FIRSTBOOT: wizard exit %s\\n' "\$rc"
+
+# validate.sh runs HERE, after the wizard, on a booted system -- the same
+# place vm-test.sh runs it. Its result is informational: it is known to
+# degrade to "skipped" for anything not installed, so a green validate on a
+# bare system proves nothing. The wizard's exit status above is the real
+# signal.
+su - '$USER_IN' -c "export TERM=dumb; cd '$dest/installScripts' && ./validate.sh" \\
+  && printf 'ATI-OS-FIRSTBOOT: VALIDATE-OK\\n' \\
+  || printf 'ATI-OS-FIRSTBOOT: VALIDATE-PROBLEMS\\n'
+
+# The install-time package repository is removed only now, once the wizard
+# has actually consumed it. Removing it before the first boot -- which an
+# earlier version did -- would have deleted the prebuilt packages at
+# exactly the moment they were needed, sending every AUR package back to
+# being compiled on the user's machine.
+#
+# Both halves, and in this order: leaving the section behind would point
+# pacman at a directory that is about to disappear.
+sed -i '/^\\[$REPO_NAME\\]/,/^Server = file:/d' /etc/pacman.conf
+rm -rf /var/cache/$REPO_NAME
+printf 'ATI-OS-FIRSTBOOT: install-time package repo removed\\n'
+# The marker records the STATUS, not merely that the attempt happened. A
+# marker written unconditionally would let a totally failed run look
+# identical to a good one on the next boot.
+printf '%s\\n' "\$rc" > "\$MARKER"
+if (( rc == 0 )); then
+  printf 'ATI-OS-FIRSTBOOT: OK\\n'
+else
+  printf 'ATI-OS-FIRSTBOOT: FAILED\\n'
+  printf 'Re-run by hand:  cd ~/.dotfiles/installScripts && ./wizard.sh\\n'
+  printf 'Read the per-module errors, not the summary card.\\n'
+fi
+exit "\$rc"
+EOF
+  chmod 755 /mnt/usr/local/bin/ati-os-firstboot
+
+  cat > /mnt/etc/systemd/system/ati-os-firstboot.service <<'EOF'
+[Unit]
+Description=ATI-OS first-boot setup (installs the desktop)
+# The wizard downloads packages, so it must not start before the network is
+# genuinely up. Wants= as well as After=, or network-online.target is never
+# pulled in and this races.
+Wants=network-online.target
+After=network-online.target systemd-timesyncd.service
+# Runs exactly once. The marker is written with the wizard's exit status,
+# so a failed run does NOT silently mark itself done.
+ConditionPathExists=!/var/lib/ati-os/firstboot-complete
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/ati-os-firstboot
+# The wizard takes 20+ minutes even with everything prebuilt. systemd's
+# default start timeout would kill it partway through and leave a machine
+# in a worse state than not having started.
+TimeoutStartSec=0
+# Onto tty1 as well as the journal, so somebody watching the screen sees
+# what is happening instead of an idle login prompt.
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  arch-chroot /mnt systemctl enable ati-os-firstboot.service >/dev/null 2>&1 \
+    || { _ERR "could not enable the first-boot service"; return 1; }
+
+  _OK "the desktop will be installed on first boot (ati-os-firstboot.service)"
+  _DIM "it logs to /var/log/ati-os-firstboot.log and runs once"
+}
+
+
+finish() {
+  sync
+  umount -R /mnt
+  # Close the container after unmounting, or the next run finds it busy.
+  (( ENCRYPT )) && cryptsetup close cryptroot 2>/dev/null || true
+  say "done"
+  cat <<EOF
+
+  The base system is installed on $DISK.
+
+  ${C_B}Remove the USB medium and reboot.${C_R}
+
+  ${C_B}The desktop installs itself on that first boot.${C_R} You will see the
+  wizard run through its 46 modules on screen -- roughly 20 minutes,
+  because the AUR packages came prebuilt on this medium instead of being
+  compiled. Let it finish before logging in.
+
+  Then log in with the username and password you just chose, and start the
+  desktop by typing:
+
+      ${C_B}letsgo${C_R}          (or: startx)
+
+  That is deliberate, not an omission. There is no display manager and no
+  autologin: you land in a TTY and start the session yourself.
+
+  If it fails, it says so and does NOT mark itself done:
+    log:     /var/log/ati-os-firstboot.log
+    re-run:  cd ~/.dotfiles/installScripts && ./wizard.sh
+    read the per-module errors, not the summary card.
+
+  What you still have to supply yourself:
+    - GEMINI_API_KEY in ~/.config/secrets.env  (seeded empty from a template)
+    - Vaultwarden / Simplenote / scrcpy accounts
+    - wallpapers, if you do not want the author's:  ~/Pictures/Wallpapers
+
+  Not installed by default, on purpose:
+    - Caps-Lock-as-Alt   ->  ./wizard.sh --only=xmodmap
+    - docker, JDK, printing, qemu  ->  ./wizard.sh --only=dcli-sync-extra
+
+EOF
+}
+
+main() {
+  [[ $EUID -eq 0 ]] || { _ERR "run as root"; exit 1; }
+  banner
+  preflight
+  [[ "$MODE" == check ]] && { _OK "--check only, nothing was changed"; exit 0; }
+
+  if [[ "$MODE" == unattended ]]; then
+    load_unattended
+  else
+    ask_disk
+    ask_rest
+  fi
+
+  do_partition
+  rank_mirrors
+  refresh_keyring
+  do_pacstrap
+  wire_local_repo
+  do_chroot_config
+  do_boot_entry
+  do_dotfiles_and_wizard
+  finish
+}
+
+main "$@"

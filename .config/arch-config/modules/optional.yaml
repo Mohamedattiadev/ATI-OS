@@ -55,5 +55,18 @@ packages:
 #                   the CPU governor; auto-cpufreq is the declared choice,
 #                   so PPD must be disabled rather than reproduced.
 
+
+  # ─── building the ATI-OS installation medium ──────────────────────
+  # Needed only by installScripts/iso/. Declared because
+  # `wizard.sh --audit` correctly flags anything installed and
+  # unaccounted for, and silent drift is what that audit exists to
+  # catch -- these five arrived in one long session and would
+  # otherwise look like somebody's 2am pacman -S.
+  - archiso               # mkarchiso: builds the ISO itself
+  - arch-install-scripts  # pacstrap / arch-chroot / genfstab
+  - devtools              # makechrootpkg: the AUR set in a clean chroot
+  - gptfdisk              # sgdisk: partitions the dual-boot test fixture
+  - git-filter-repo       # rewriting commit history
+
 exclude: []
 conflicts: []

@@ -1,0 +1,20 @@
+
+ [38;2;23;147;209m █████╗ ████████╗██╗       ██████╗ ███████╗[0m
+[38;2;23;147;209m██╔══██╗╚══██╔══╝██║      ██╔═══██╗██╔════╝[0m
+[38;2;23;147;209m███████║   ██║   ██║█████╗██║   ██║███████╗[0m
+[38;2;23;147;209m██╔══██║   ██║   ██║╚════╝██║   ██║╚════██║[0m
+[38;2;23;147;209m██║  ██║   ██║   ██║      ╚██████╔╝███████║[0m
+[38;2;23;147;209m╚═╝  ╚═╝   ╚═╝   ╚═╝       ╚═════╝ ╚══════╝[0m
+
+ Arch Linux and a configured qtile desktop, on one medium.
+
+ To install:            [35mati-os-install[0m
+ To see your disks:     [35mlsblk[0m
+
+ The installer needs a network connection for the packages that are not
+ already on this medium. Ethernet and DHCP work automatically; for Wi-Fi
+ authenticate with [35miwctl[0m, and for a WWAN modem use [35mmmcli[0m.
+
+ This is Arch underneath, so the upstream installation guide still applies
+ if you would rather do it by hand: [35mInstallation_guide[0m
+

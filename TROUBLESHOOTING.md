@@ -3827,3 +3827,130 @@ It is placed from live geometry: qtile's screen size and *current* bar
 height, plus the phone's real resolution from `adb shell wm size`. If any
 of that cannot be read the script emits no geometry flags and scrcpy
 places itself. Check `qtile cmd-obj -o bar top -f info` returns something.
+
+## ATI-OS installation medium
+
+Everything here is about `installScripts/iso/` — building the USB image or
+installing from it. Desktop problems after a successful install belong in the
+sections above; the desktop is the same desktop either way.
+
+### The machine will not boot the USB stick at all
+
+Check three things, in this order:
+
+1. **UEFI, not legacy/CSM.** The boot menu usually shows each device twice;
+   pick the entry that says UEFI. ATI-OS installs UEFI-only.
+2. **Secure Boot off.** ATI-OS ships an unsigned bootloader. The installer
+   warns about this, but if you skipped past it the machine installs fine and
+   then refuses to boot with "no bootable device" — which looks like a broken
+   install and is not one.
+3. **The write actually finished.** `dd` returns before the data is on the
+   stick unless you passed `oflag=sync`. Verify:
+   `sha256sum -c ati-os-*.iso.sha256`
+
+### "no bootable device" after the install finished
+
+Almost always Secure Boot, see above. If Secure Boot is genuinely off, the
+boot entry is the next suspect:
+
+```sh
+# from the live medium, with the installed disk mounted at /mnt
+cat /mnt/boot/loader/entries/ati-os.conf
+blkid -o value -s PARTUUID /dev/sdaX      # must match root=PARTUUID=
+```
+
+`test-iso.sh` asserts exactly this comparison, so a mismatch here means the
+install did not finish rather than that it was written wrong.
+
+### The installer refuses to start
+
+Each refusal names the number that failed. They are deliberate:
+
+| message | meaning |
+|---|---|
+| `booted in BIOS/legacy mode` | see above — UEFI only |
+| `${N}G — ATI-OS needs at least 30G` | the disk is too small. 60G if the medium is over a year old, because the AUR set then gets compiled and build trees are large |
+| `has mounted partitions` | you picked the USB stick, or something else is using that disk |
+| `is in use by: lvm/raid/crypt` | deactivate it first: `vgchange -an`, `mdadm --stop`, `cryptsetup close` |
+| `no network` | it downloads during the install. Wi-Fi: menu option 2, or `iwctl` |
+
+### Package signature errors during the install
+
+Two causes, and the message names neither of them.
+
+**A wrong clock.** Signatures then look expired or not-yet-valid. The
+installer syncs the clock via NTP before installing anything; if that failed
+it says so. Check with `timedatectl`.
+
+**An old medium.** `pacstrap` builds the new system's keyring from the keys on
+the USB stick. The installer refreshes `archlinux-keyring` from the network
+first, so this should not happen — but with no network at that moment it
+cannot, and falls back to what shipped. Rebuild the ISO.
+
+### The install took two hours instead of twenty minutes
+
+The prebuilt AUR packages were not used. The installer says which:
+
+- `no prebuilt AUR repository on this medium` — the ISO was built without
+  running `aur-repo.sh` first.
+- `medium is N days old — NOT using its prebuilt packages` — deliberate. Over
+  a year, those binaries were compiled against libraries too old to trust
+  against today's glibc, so they are compiled from source instead. Correct,
+  and slow. Rebuild the ISO.
+
+### The desktop did not appear after the first reboot
+
+The wizard runs on first boot, not during the install. It takes about 20
+minutes and prints its progress on screen. If it failed:
+
+```sh
+cat /var/log/ati-os-firstboot.log          # the whole run
+cat /var/lib/ati-os/firstboot-complete     # the wizard's exit status
+cd ~/.dotfiles/installScripts && ./wizard.sh
+```
+
+**Read the per-module errors, not the summary card.** On a clean install the
+module that reports the failure is almost never the module at fault — one
+full disk once presented as five broken modules.
+
+The marker records the exit status rather than merely that the run happened,
+so a failed first boot does not mark itself done and will retry.
+
+### `validate.sh` says everything passed but nothing works
+
+Known, and not specific to the ISO. `validate.sh` degrades every check it
+cannot run to "skipped" — so on a machine where the install failed and
+nothing is present, it skips everything and exits green. Trust the wizard's
+summary card (`46 ok / 0 failed`) over `validate.sh` on a fresh machine.
+
+### Building the ISO fails with "call to execv failed"
+
+The host's own pacman hooks are leaking into the image being built. This repo
+installs `/etc/pacman.d/hooks/00-preflight.hook`, which runs
+`/usr/local/bin/pacman-preflight` — a file that exists on the build machine
+and in no fresh root anywhere. pacman reports it as:
+
+```
+call to execv failed (No such file or directory)
+error: failed to commit transaction (failed to run transaction hooks)
+```
+
+naming neither the hook nor the missing file. Both `aur-repo.sh` and
+`build-iso.sh` override `HookDir` to an empty directory to prevent it. If you
+see this, that override was lost or the config was edited by hand.
+
+### An AUR package will not build
+
+`aur-repo.sh` writes one log per package to `~/ati-os-build/logs/`. Read that
+one, not the summary.
+
+Two specific cases already handled, in case they resurface elsewhere:
+
+- **`You appear to have cloned an empty repository`** — the AUR repo is named
+  after the package BASE, not the package. `espanso-x11` lives in `espanso`.
+- **`built but produced no package`** — a PKGBUILD overrode `PKGEXT`.
+  `pacman-static` ships `.pkg.tar.xz`, not `.zst`.
+
+An interrupted run leaves a partial download that makepkg then tries to
+resume, which GitHub does not support; the build retries once after
+`git clean -xdf` for exactly that reason.
