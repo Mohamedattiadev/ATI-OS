@@ -1462,7 +1462,7 @@ live from the active palette.
   SHOW, mid-animation reversals, group switch)
 - Autostart entry in `autostart.sh` launches daemon + watcher at login.
 
-**IPC** — Unix socket at `/tmp/qdrop-$UID.sock`:
+**IPC** — Unix socket at `/tmp/qdrop-$UID-$DISPLAY.sock`:
 `qdrop.py --show|--hide|--toggle|--add-text TXT|--reload|--status`. Palette
 reload auto-triggers via mtime poll. Persistence at `~/.cache/qdrop.json`.
 
@@ -1500,7 +1500,7 @@ Click the CheckUpdates chip in the top bar. Floating GTK3 daemon, two tabs.
 - Rows show name + badge + description, with an `installed` marker when present.
 - `Install selected` runs `paru -S --needed <pkgs>` (terminal or background).
 
-**Shared** — socket at `/tmp/qupdate-$UID.sock`:
+**Shared** — socket at `/tmp/qupdate-$UID-$DISPLAY.sock`:
 `qupdate.py --show|--hide|--toggle|--refresh|--status|--daemon`. Palette-themed
 (polls `current_palette.json` mtime every 3s). Autostarted hidden at login;
 widget Button1 sends `--toggle`.
