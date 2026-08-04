@@ -17,6 +17,7 @@ import argparse
 import fcntl
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -36,8 +37,37 @@ gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, GLib, Gtk
 
 UID = os.getuid()
-LOCK_FILE = Path(f"/tmp/qupdate-{UID}.lock")
-SOCK_PATH = Path(f"/tmp/qupdate-{UID}.sock")
+
+
+def _display_tag() -> str:
+    """A filename-safe token identifying the X display.
+
+    The control socket has to be keyed by DISPLAY as well as UID. Keyed by
+    UID alone, a second X session for the same user -- a nested Xephyr, a
+    second seat, a VNC server -- resolves to the FIRST session's socket:
+    `_client` connects to it, the already-running daemon obeys, and the
+    window appears on the wrong screen entirely. The flock singleton cannot
+    catch this, because it was keyed by UID for the same reason.
+
+    Found while recording the demo GIFs -- a `--toggle` inside a nested
+    display drove the daemon on the real one.
+
+    The screen suffix is dropped on purpose. DISPLAY is
+    `[host]:display[.screen]`, and `.0`/`.1` select a screen on the SAME
+    server, so keeping it would hand one X server two daemons.
+    """
+    disp = os.environ.get("DISPLAY", "")
+    if not disp:
+        return "nodisplay"
+    host, _, rest = disp.rpartition(":")
+    num = rest.split(".", 1)[0]
+    tag = f"{host}-{num}" if host else num
+    return re.sub(r"[^A-Za-z0-9_-]", "_", tag) or "nodisplay"
+
+
+DISPLAY_TAG = _display_tag()
+LOCK_FILE = Path(f"/tmp/qupdate-{UID}-{DISPLAY_TAG}.lock")
+SOCK_PATH = Path(f"/tmp/qupdate-{UID}-{DISPLAY_TAG}.sock")
 CACHE_FILE = Path.home() / ".cache" / "qupdate.json"
 QT_PALETTE = Path.home() / ".cache" / "qtile" / "current_palette.json"
 WAL_COLORS = Path.home() / ".cache" / "wal" / "colors.json"
