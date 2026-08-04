@@ -1,5 +1,5 @@
 /* ============================================================================
-   Qtile Dotfiles manual
+   ATI-OS manual
    One stylesheet. No web fonts, no CDN, no icon library — the manual has to
    render with the network unplugged, so every glyph here is a system font,
    a CSS shape, or inline SVG in the markup.
@@ -53,92 +53,103 @@
   --ease: cubic-bezier(.4, 0, .2, 1);
 }
 
-/* Light. Designed, not derived. */
+/* ---------------------------------------------------------------------------
+   Palette: doom-one, the Emacs theme, in both of its variants.
+
+   The hues are taken verbatim from doom-one and doom-one-light. Where a hue is
+   used as *text* it is only taken verbatim if it clears 4.5:1 against its own
+   background; the light variant's blue, green and red do not, so --accent,
+   --ok and --err carry a darkened mix of the same hue and --accent-line keeps
+   the pure one for rules and underlines, which are decoration and not read.
+   Every value below is annotated with its measured ratio against --bg.
+   ------------------------------------------------------------------------ */
+
+/* doom-one-light. Ground #fafafa, ink #383a42. */
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg:        #ffffff;
-  --bg-sunken: #f6f7f8;
-  --bg-raised: #fbfbfc;
-  --bg-code:   #f6f7f8;
+  --bg:        #fafafa;   /* doom-one-light bg */
+  --bg-sunken: #f0f0f0;   /* bg-alt */
+  --bg-raised: #ffffff;
+  --bg-code:   #f4f4f5;
 
-  --fg:        #16191d;
-  --fg-muted:  #545c66;
-  --fg-faint:  #7b838d;
+  --fg:        #383a42;   /* fg           10.9:1 */
+  --fg-muted:  #5c6370;   /*               5.8:1 */
+  --fg-faint:  #6c727b;   /*               4.7:1 */
 
-  --border:      #e2e5e9;
-  --border-firm: #cdd2d8;
+  --border:      #e3e3e4;
+  --border-firm: #c6c7c7;  /* base3 */
 
-  --accent:      #0f6fa8;   /* rgb(23,147,209), darkened for contrast on white */
-  --accent-weak: #e9f2f8;
-  --accent-line: #1793d1;
+  --accent:      #3a6bd4;  /* blue #4078f2 darkened to  4.8:1 */
+  --accent-weak: #eaf0fe;
+  --accent-line: #4078f2;  /* blue, pure: rules and underlines only */
 
-  --ok:   #2f6f3e;
-  --warn: #8a5a00;
-  --err:  #a83232;
-  --warn-weak: #fdf7e8;
-  --err-weak:  #fdf0ef;
+  --ok:   #427f46;         /* green #50a14f darkened to 4.9:1 */
+  --warn: #986801;         /* doom-one-light yellow      4.7:1 */
+  --err:  #bd4438;         /* red #e45649 darkened to    5.0:1 */
+  --warn-weak: #f7f2e6;
+  --err-weak:  #fbeeec;
 
-  --ring: #1793d1;
-  --shadow-sm: 0 1px 2px rgba(16, 20, 26, .06);
-  --shadow-lg: 0 12px 32px -8px rgba(16, 20, 26, .18);
+  --ring: #4078f2;
+  --shadow-sm: 0 1px 2px rgba(56, 58, 66, .07);
+  --shadow-lg: 0 12px 32px -8px rgba(56, 58, 66, .20);
 }
 
-/* Dark. Near-black ground, off-white ink, quiet borders. */
+/* doom-one. Ground #282c34, ink #bbc2cf. */
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg:        #131619;
-  --bg-sunken: #191d21;
-  --bg-raised: #1b1f24;
-  --bg-code:   #0f1215;
+  --bg:        #282c34;   /* doom-one bg */
+  --bg-sunken: #21242b;   /* bg-alt */
+  --bg-raised: #31353d;
+  --bg-code:   #1c1f24;   /* base1 */
 
-  --fg:        #d7dbe0;
-  --fg-muted:  #98a0a9;
-  --fg-faint:  #6f7780;
+  --fg:        #bbc2cf;   /* fg           7.8:1 */
+  --fg-muted:  #9ca0a4;   /* base7        5.3:1 */
+  --fg-faint:  #8a9099;   /*              4.4:1 */
 
-  --border:      #252a30;
-  --border-firm: #343b43;
+  --border:      #3f444a;  /* base4 */
+  --border-firm: #5B6268;  /* base5 */
 
-  --accent:      #4fb3e8;
-  --accent-weak: #15242e;
-  --accent-line: #1793d1;
+  --accent:      #51afef;  /* blue         5.8:1 */
+  --accent-weak: #1e2a35;
+  --accent-line: #51afef;
 
-  --ok:   #7fb069;
-  --warn: #d9a441;
-  --err:  #e07a72;
-  --warn-weak: #1e1910;
-  --err-weak:  #211413;
+  --ok:   #98be65;         /* green        6.6:1 */
+  --warn: #ECBE7B;         /* yellow       8.1:1 */
+  --err:  #ff6c6b;         /* red          5.1:1 */
+  --warn-weak: #322e23;
+  --err-weak:  #33232a;
 
-  --ring: #4fb3e8;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
-  --shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, .6);
+  --ring: #51afef;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .45);
+  --shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, .65);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
-    --bg:        #131619;
-    --bg-sunken: #191d21;
-    --bg-raised: #1b1f24;
-    --bg-code:   #0f1215;
-    --fg:        #d7dbe0;
-    --fg-muted:  #98a0a9;
-    --fg-faint:  #6f7780;
-    --border:      #252a30;
-    --border-firm: #343b43;
-    --accent:      #4fb3e8;
-    --accent-weak: #15242e;
-    --accent-line: #1793d1;
-    --ok:   #7fb069;
-    --warn: #d9a441;
-    --err:  #e07a72;
-    --warn-weak: #1e1910;
-    --err-weak:  #211413;
-    --ring: #4fb3e8;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
-    --shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, .6);
+    --bg:        #282c34;
+    --bg-sunken: #21242b;
+    --bg-raised: #31353d;
+    --bg-code:   #1c1f24;
+    --fg:        #bbc2cf;
+    --fg-muted:  #9ca0a4;
+    --fg-faint:  #8a9099;
+    --border:      #3f444a;
+    --border-firm: #5B6268;
+    --accent:      #51afef;
+    --accent-weak: #1e2a35;
+    --accent-line: #51afef;
+    --ok:   #98be65;
+    --warn: #ECBE7B;
+    --err:  #ff6c6b;
+    --warn-weak: #322e23;
+    --err-weak:  #33232a;
+    --ring: #51afef;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .45);
+    --shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, .65);
   }
 }
 
@@ -168,8 +179,30 @@ body {
   outline-offset: 2px;
   border-radius: 3px;
 }
+/* A halo as well as a rule, so the ring survives on top of a tinted callout
+   or a code block, where a 2px outline alone can vanish into the border. */
+@supports (color: color-mix(in srgb, red, blue)) {
+  :focus-visible {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--ring) 26%, transparent);
+  }
+}
 
 ::selection { background: var(--accent-weak); color: var(--fg); }
+
+/* Readable to a screen reader, invisible on screen. Used where a picture --
+   the ASCII wordmark -- stands in for text that still has to be announced. */
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 
 /* --- 3. Layout ----------------------------------------------------------- */
@@ -232,28 +265,73 @@ main > figure { max-width: var(--wide); }
   }
 }
 
+/* The header wordmark: [ATI mark]-OS  Arch + qtile, packaged.
+
+   The mark is the ATI glyphs of the six-line artwork the ISO prints at login
+   -- its first 20 monospace columns, taken from ati-os-install's banner() and
+   not retyped -- reduced to the cells the artwork fills with a solid `█` and
+   redrawn as an SVG path on that grid. Those cells are a 19x5 bitmap that
+   reads "ATI" outright; the sixth row and the `╔═╗ ║ ╚═╝` cells are the
+   drop-shadow, and they are dropped here.
+
+   Three earlier attempts failed the same way and it is worth writing down.
+   Bar height gives the mark about 15px, and at 15px the shadow's hairlines
+   are thinner than a pixel: a CSS version at 9px, a four-row crop, and a
+   downsampled 95x48 PNG all turned the shadow into a grey haze around soft,
+   unevenly-weighted stems -- visibly blurry next to the hinted text beside
+   it. Rendered side by side, the vector is the only one that is sharp. So:
+   no shadow, and no raster.
+
+   Being a path and not an image buys the rest of it. `currentColor` means one
+   mark serves both themes and follows --accent when the token moves, instead
+   of baking one blue that has to clear both grounds. `shape-rendering:
+   crispEdges` plus an integral 2x3px cell means every stem lands on whole
+   device pixels at 1x and doubles exactly at 2x -- which is also why the mark
+   is drawn at its intrinsic 38x15 and never scaled, including at the narrow
+   breakpoint. Scaling it is what would put the fuzz back.
+
+   "-OS" beside it is ordinary accent text in the mono stack, and the
+   strapline is two steps down -- smaller, lighter, sans, --fg-faint -- so the
+   bar reads as name-then-note rather than one phrase. */
 .topbar .brand {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  font-size: var(--t-ms);
-  font-weight: 640;
-  letter-spacing: -0.01em;
   color: var(--fg);
   text-decoration: none;
   white-space: nowrap;
 }
-.topbar .brand::before {
-  content: "";
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  background: var(--accent-line);
+/* The sitewide `img` rule frames content images -- a border and a 10px
+   radius. A logo is not a content image: that rule drew a rounded box around
+   the mark. Both are cleared here, and nowhere else. */
+.topbar .brand-mark {
   flex: none;
+  display: block;
+  color: var(--accent);
+}
+/* Matched to the mark by measurement, not by nominal size. The mark's letters
+   are its full 15px. Liberation Mono Bold's ink height for "-OS" is 0.68 of
+   its font-size (rendered at 100px and trimmed: 68px), so 15 / 0.68 = 22px =
+   1.375rem sets the two on one cap line -- which is what "same size" means to
+   the eye here, not equal nominal sizes. */
+.topbar .brand-os {
+  /* Cancels most of .brand's 8px flex gap: "ATI" and "-OS" are one word and
+     have to set as one. The strapline gets that gap back and more, so the row
+     reads as [name][pause][note]. */
+  margin-left: -6px;
+  font-family: var(--mono);
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--accent);
 }
 .topbar .brand small {
+  margin-left: var(--s2);
+  font-family: var(--sans);
   font-weight: 400;
-  font-size: var(--t-sm);
+  font-size: var(--t-xs);
+  line-height: 1;
   color: var(--fg-faint);
   letter-spacing: 0;
 }
@@ -276,6 +354,25 @@ main > figure { max-width: var(--wide); }
   transition: color .12s var(--ease), border-color .12s var(--ease);
 }
 .iconbtn:hover { color: var(--fg); border-color: var(--border-firm); }
+
+/* Square, icon-only variants. Both keep the same 1.9rem box as the search
+   field so the right-hand end of the bar sits on one line. */
+.theme-btn, .gh-btn {
+  justify-content: center;
+  width: 1.9rem;
+  padding: 0;
+}
+.theme-btn svg, .gh-btn svg { flex: none; }
+.gh-btn { text-decoration: none; }
+.theme-btn .ico-sun { display: none; }
+.theme-btn .ico-moon { display: block; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .theme-btn .ico-sun  { display: block; }
+  :root:not([data-theme]) .theme-btn .ico-moon { display: none; }
+}
+:root[data-theme="dark"] .theme-btn .ico-sun  { display: block; }
+:root[data-theme="dark"] .theme-btn .ico-moon { display: none; }
 
 /* hamburger */
 .navbtn {
@@ -313,12 +410,19 @@ main > figure { max-width: var(--wide); }
 
 /* --- Search -------------------------------------------------------------- */
 
-.search { position: relative; flex: 0 1 20rem; min-width: 7rem; }
+.search {
+  position: relative;
+  flex: 0 1 20rem;
+  min-width: 7rem;
+  display: flex;
+  align-items: center;
+}
 
 .search input {
   width: 100%;
   height: 1.9rem;
-  padding: 0 var(--s3);
+  /* Room on the left for the magnifier, on the right for the "/" hint. */
+  padding: 0 1.9rem 0 1.95rem;
   font: inherit;
   font-size: var(--t-ms);
   color: var(--fg);
@@ -328,6 +432,30 @@ main > figure { max-width: var(--wide); }
   transition: border-color .12s var(--ease), background .12s var(--ease);
 }
 .search input::placeholder { color: var(--fg-faint); }
+
+/* Both affordances sit over the field and must never swallow a click meant
+   for it, hence pointer-events: none. */
+.search-ico,
+.search-hint {
+  position: absolute;
+  pointer-events: none;
+  color: var(--fg-faint);
+}
+.search-ico { left: var(--s2); flex: none; }
+.search-hint {
+  right: var(--s2);
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  line-height: 1;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+.search input:focus ~ .search-hint { opacity: 0; }
+/* Chromium draws its own clear button, which would land on top of the hint. */
+.search input::-webkit-search-cancel-button,
+.search input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
 .search input:focus {
   outline: none;
   background: var(--bg);
@@ -496,12 +624,27 @@ h3 {
   line-height: 1.35;
   margin: var(--s6) 0 var(--s3);
 }
+/* h4 sits inside a run of prose that is already full of bold lead words, so it
+   is separated by a rule in the margin rather than by weight alone — muted
+   grey at body size was reading as a bold sentence, not as a heading. */
 h4 {
+  position: relative;
   font-size: var(--t-base);
-  font-weight: 620;
+  font-weight: 650;
   line-height: 1.4;
   margin: var(--s5) 0 var(--s2);
-  color: var(--fg-muted);
+  padding-left: var(--s3);
+  color: var(--fg);
+}
+h4::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .28em;
+  bottom: .28em;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--border-firm);
 }
 
 .lede {
@@ -520,7 +663,20 @@ li { margin: var(--s1) 0; }
 li > p { margin-bottom: var(--s2); }
 li::marker { color: var(--fg-faint); }
 
-a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+/* Links are underlined, always — but the rule is set in the accent at partial
+   strength so a paragraph with four links in it does not read as corduroy.
+   Hover brings the rule up to full weight rather than adding one. */
+a {
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-skip-ink: auto;
+  transition: text-decoration-color .12s var(--ease), color .12s var(--ease);
+}
+@supports (color: color-mix(in srgb, red, blue)) {
+  a { text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+  a:hover { text-decoration-color: currentColor; }
+}
 a:hover { text-decoration-thickness: 2px; }
 
 blockquote {
@@ -571,10 +727,14 @@ dfn { font-style: normal; font-weight: 620; color: var(--fg); }
 
 code, kbd, pre, samp { font-family: var(--mono); }
 
+/* Inline code carries a hairline as well as a fill. On the light ground the
+   fill alone is a two-per-cent difference and disappears; the hairline is what
+   actually makes `letsgo` read as a thing you type. */
 :not(pre) > code {
   background: var(--bg-code);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  padding: .1em .35em;
+  padding: .05em .35em;
   font-size: .86em;
   color: var(--fg);
   overflow-wrap: anywhere;
@@ -583,19 +743,25 @@ code, kbd, pre, samp { font-family: var(--mono); }
 .codeblock { position: relative; margin: 0 0 var(--s4); }
 .codeblock pre { margin: 0; }
 
+/* A hairline all the way round, not a 3px accent bar down the left. Six
+   different things on this site draw a left bar -- code blocks, blockquotes,
+   the three callouts, the "what appears on screen" strip, h4 -- and this was
+   the only other one in a colour. On a page with twenty-three code blocks it
+   stopped meaning anything and just striped the page blue. Colour in the bar
+   is the callouts' now, where it carries severity; the rest stay grey. */
 pre {
   background: var(--bg-code);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent-line);
-  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  border-radius: var(--radius-lg);
   padding: var(--s4) var(--s5);
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  scrollbar-width: thin;
   font-size: var(--t-ms);
   line-height: 1.65;
   tab-size: 2;
 }
-pre code { background: none; padding: 0; font-size: inherit; }
+pre code { background: none; border: 0; padding: 0; font-size: inherit; }
 
 .copy {
   position: absolute;
@@ -641,12 +807,15 @@ kbd {
 
 /* --- 8. Tables ----------------------------------------------------------- */
 
+/* No outer box. The reference pages run to twenty-five tables each, and a
+   rounded bordered panel repeated twenty-five times down a page is the only
+   thing you see. The row rules already show where the table starts and stops;
+   the container keeps the horizontal scroll and nothing else. */
 .tw {
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
   background: var(--bg);
+  scrollbar-width: thin;
 }
 
 table {
@@ -656,18 +825,23 @@ table {
   font-size: var(--t-ms);
 }
 
+/* Tighter than prose. A keybinding row is a label and a short phrase, and at
+   prose leading a twelve-row table was 560px tall for 12 short lines. */
 th, td {
   text-align: left;
   vertical-align: top;
-  padding: var(--s3) var(--s4);
+  padding: var(--s2) var(--s4) var(--s2) 0;
   border-bottom: 1px solid var(--border);
-  line-height: 1.55;
+  line-height: 1.5;
 }
+th:not(:first-child), td:not(:first-child) { padding-left: 0; }
 tbody tr:last-child > * { border-bottom: 0; }
 
+/* The header is a hairline and a word, not a filled strip: the fill was the
+   second box on top of the first one. */
 thead th {
-  background: var(--bg-sunken);
-  color: var(--fg-muted);
+  padding-top: 0;
+  color: var(--fg-faint);
   font-size: var(--t-xs);
   font-weight: 620;
   text-transform: uppercase;
@@ -677,7 +851,16 @@ thead th {
 }
 
 tbody tr:hover { background: var(--bg-sunken); }
+
+/* Inline code inside a table is a value, not prose: keep it on one line and
+   let it sit on the row background rather than punching a second box into it. */
 td code { white-space: nowrap; }
+tbody tr:hover td code { background: var(--bg); }
+
+/* A table whose first column is a label reads better with that column set
+   apart, so the eye can run down it without re-parsing each row. */
+tbody td:first-child > b:only-child,
+tbody td:first-child > em:only-child { color: var(--fg); }
 
 /* The first column of a shortcut table is a label, not prose. */
 table.keys td:first-child { white-space: nowrap; width: 1%; }
@@ -698,9 +881,11 @@ table.nums th:nth-child(n+2) {
   margin: 0 0 var(--s5);
   padding: var(--s4) var(--s5);
   background: var(--cal-bg);
-  border: 1px solid var(--border);
+  /* Tint and a bar. The 1px border that used to run round the outside was a
+     third edge on a shape that already had two, and on the light ground it
+     read as a box drawn round a box. */
   border-left: 3px solid var(--cal);
-  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
   font-size: var(--t-ms);
   line-height: 1.65;
 }
@@ -721,7 +906,10 @@ table.nums th:nth-child(n+2) {
 /* Nested blocks read as inset, not as another box on top of a box. */
 .note pre, .warn pre, .limit pre,
 .note .tw, .warn .tw, .limit .tw,
-.note .screen, .warn .screen, .limit .screen { background: var(--bg); }
+.note .screen, .warn .screen, .limit .screen,
+.note :not(pre) > code,
+.warn :not(pre) > code,
+.limit :not(pre) > code { background: var(--bg); }
 
 details.why {
   margin: 0 0 var(--s4);
@@ -763,7 +951,13 @@ details.why[open] > summary { border-bottom: 1px solid var(--border); }
 details.why > :not(summary) { margin-left: var(--s4); margin-right: var(--s4); }
 details.why > :not(summary):first-of-type { margin-top: var(--s4); }
 details.why > :last-child { margin-bottom: var(--s4); }
-details.why .tw, details.why pre { background: var(--bg); }
+details.why .tw, details.why pre,
+details.why :not(pre) > code { background: var(--bg); }
+
+/* Same reason, one level down: a "what appears on screen" strip is already a
+   sunken panel, so code inside it comes back up to the page ground. */
+.screen :not(pre) > code,
+thead th :not(pre) > code { background: var(--bg); }
 
 
 /* --- Link lists (plain rows, not cards) ---------------------------------- */
@@ -928,10 +1122,21 @@ footer.page a:hover { color: var(--accent); }
   h2 { margin-top: var(--s7); }
 }
 
-/* Very small: the tagline and wordmark would crowd out the search box. */
+/* Below this the search field needs every pixel of its own width, and a hint
+   about a keyboard shortcut is the first thing worth losing on a phone. */
+@media (max-width: 700px) {
+  .search-hint { display: none; }
+  .search input { padding-right: var(--s3); }
+}
+
+/* Very small: the strapline is already gone, so trim the wordmark's spacing
+   rather than blanking it -- the icon-only toggle gave back the room the old
+   text button was taking, and the name is the thing worth keeping. */
 @media (max-width: 470px) {
-  .topbar .brand { font-size: 0; gap: 0; }
-  .topbar .brand::before { width: 11px; height: 11px; }
+  /* Tighten the gaps, never the mark: it is pixel-snapped at 38x15 and
+     scaling it is exactly what makes it fuzzy. */
+  .topbar .brand { gap: var(--s1); }
+  .topbar .brand-os { margin-left: -3px; }
 }
 
 
@@ -948,10 +1153,14 @@ footer.page a:hover { color: var(--accent); }
 }
 .wrap-wide { max-width: 76rem; margin: 0 auto; padding: 0 var(--s5); }
 
-.landing { padding: 0 0 var(--s8); }
+.landing { padding: 0; }
 /* `auto` on the sides, not 0: these sections carry .wrap, and a shorthand
    that zeroed the side margins would silently un-centre every one of them. */
-.landing > section { margin: 0 auto var(--s8); }
+.landing > section { margin: 0 auto var(--s7); }
+/* The bottom of the page used to hold a section margin and a wrapper padding
+   on top of the footer's own rule -- about 160px of nothing above a two-line
+   footer. One gap is enough. */
+.landing > section:last-child { margin-bottom: var(--s7); }
 
 /* Hero */
 .hero {
@@ -959,16 +1168,51 @@ footer.page a:hover { color: var(--accent); }
   padding: clamp(var(--s7), 9vw, calc(var(--s8) + var(--s7))) 0 var(--s7);
 }
 
+/* The wordmark is the real thing: the same six lines the ISO prints at login
+   and the installer prints on its first screen, character for character,
+   copied out of installScripts/iso/profile/airootfs/usr/local/bin/
+   ati-os-install's banner() -- not retyped. It is decoration to a screen
+   reader (the .vh copy beside it carries the name), but it is the one place
+   on the site where the full artwork fits.
+
+   Sizing. The art is 43 monospace columns wide, so its width is
+   43 x 0.6em ~= 25.8em. The middle term of the clamp below solves that back
+   to a font-size that keeps 43 columns inside the viewport minus the .wrap
+   padding, with ~8% held back so a monospace face with a wider advance than
+   DejaVu's 0.602em still fits. Do not replace it with a plain vw value: at
+   400px the fixed padding is 12% of the screen and a pure ratio overflows.
+   Measured at 400, 430, 620, 700, 1000 and 1440: no clipping, no wrap, no
+   horizontal page scroll.
+
+   Text over a PNG, deliberately. A PNG bakes one colour permanently, so it
+   would need a second export for the light variant (or a mid-tone that is
+   wrong in both) and it could not follow --accent when that token moves. */
 .wordmark {
-  margin: 0 0 var(--s4);
-  font-family: var(--mono);
-  font-size: clamp(3.25rem, 15vw, 9rem);
-  font-weight: 700;
+  margin: 0 0 var(--s5);
   line-height: 1;
-  letter-spacing: -0.05em;
-  text-wrap: nowrap;
 }
-.wordmark .wm-os { color: var(--accent); }
+.ascii-mark {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  overflow: visible;
+  font-family: var(--mono);
+  font-size: clamp(0.5rem, calc(3.75vw - 1.9px), 1.4rem);
+  line-height: 1;
+  font-weight: 400;
+  /* A hair of overlap. Adjacent full blocks otherwise leave a hairline of
+     background between cells wherever the advance width lands on a fraction
+     of a pixel, which reads as a scratch across every solid stroke. */
+  letter-spacing: -0.03em;
+  color: var(--accent);
+  /* Safe here, and only here: all six rows are exactly 43 columns wide -- the
+     art is padded with real spaces -- so centring each line independently
+     lands them all in the same place. `width: fit-content` + `margin-inline:
+     auto` does NOT centre this in Chromium (measured); text-align does.
+     Do not paste a ragged block in. */
+  text-align: center;
+}
 
 .hero .tagline {
   max-width: 34rem;
@@ -979,13 +1223,20 @@ footer.page a:hover { color: var(--accent); }
   text-wrap: pretty;
 }
 
-/* Button row */
+/* Button row, restored to five: Manual, ISO, GitHub, Keybindings,
+   Troubleshooting, each an outline pill with a small inline icon. The ISO
+   button carries the accent -- filled would have claimed it as the single
+   strongest call to action, which is Manual's job, so this is a tinted
+   border and ground instead, enough to read as "the other one that
+   matters" without outranking it. Centred and wrapping: at 400px five
+   pills settle 2-2-1, and the lone last pill stays centred rather than
+   pinned left, so it reads as a deliberate close, not a dropped item. */
 .actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--s3);
-  margin: 0;
+  margin: 0 0 var(--s4);
   padding: 0;
   list-style: none;
 }
@@ -1026,6 +1277,17 @@ footer.page a:hover { color: var(--accent); }
 }
 .action svg.solid { fill: currentColor; stroke: none; }
 
+.action.iso {
+  background: var(--accent-weak);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.action.iso:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
 /* Screenshot */
 .shot { margin-bottom: var(--s8); }
 .shot img {
@@ -1052,38 +1314,40 @@ footer.page a:hover { color: var(--accent); }
   font-size: var(--t-ms);
 }
 
-/* Facts */
-.facts {
+/* What you get.
+
+   A plain reading list -- term, then sentence, one per row, ruled. Five
+   facts, each written out once, in the document order a reader, a printer
+   and a screen reader all get. It was briefly a scrolling belt; motion
+   fights prose, and nothing here is worth making somebody chase. */
+.spec {
+  max-width: 40rem;
+  margin: 0 auto;
+  border-top: 1px solid var(--border);
+}
+.spec > div {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
-  gap: var(--s4);
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0 var(--s4);
+  align-items: baseline;
+  padding: var(--s3) 0;
+  border-bottom: 1px solid var(--border);
 }
-.facts li {
-  margin: 0;
-  padding: var(--s5);
-  background: var(--bg-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-}
-.facts b {
-  display: block;
-  margin-bottom: var(--s1);
+.spec dt {
   font-family: var(--mono);
-  font-size: var(--t-2xl);
+  font-size: var(--t-base);
   font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -0.03em;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
-.facts span {
-  display: block;
+.spec dd {
+  margin: 0;
   font-size: var(--t-ms);
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--fg-muted);
+  text-wrap: pretty;
 }
 
 /* Recordings */
@@ -1096,47 +1360,272 @@ footer.page a:hover { color: var(--accent); }
   max-width: 62rem;
   margin: 0 auto;
 }
-.films figure { display: flex; flex-direction: column; }
-.films img { align-self: start; }
-.films figure { margin: 0; }
-.films img { width: 100%; }
+.films figure { display: flex; flex-direction: column; margin: 0; }
+/* Matched on height, not on width. The four recordings are different shapes,
+   so filling the column width left every row ragged and put the captions at
+   four different heights; cropping them to a common ratio would cut content
+   out of a real recording. A common height keeps every frame whole and lands
+   the captions on one line. Below the one-column breakpoint the column width
+   is the binding constraint again, so this is dropped. */
+.films img {
+  align-self: center;
+  height: 16rem;
+  width: auto;
+  max-width: 100%;
+}
 .films figcaption { margin-top: var(--s2); }
 
-/* Site footer (landing page) */
+/* What this is not.
+
+   This used to be the whole section wrapped in .limit -- a page-wide pink
+   panel, which reads as an error the reader has caused rather than as the
+   author being straight with them. It stayed plain prose, but plain enough
+   that next to the rest of the (redesigned) page it read as unfinished
+   rather than restrained: no visual anchor for the one sentence that has to
+   land, and three list rows that were pure text with nothing to catch the
+   eye while scanning. The lead sentence now sits against a hairline rule on
+   its left, the same vocabulary .screen already uses elsewhere on the site,
+   so it is not a new device. Each list row gets a small triangular caution
+   mark -- outline only, --err, no fill -- so the three limits read as a
+   glance-able set instead of a paragraph. */
+.caveats {
+  max-width: var(--measure);
+  margin: 0 auto;
+}
+.caveats .lead-in {
+  padding-left: var(--s4);
+  border-left: 2px solid var(--err);
+}
+.caveats .lead { color: var(--err); }
+.caveats ul {
+  margin: var(--s5) 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+.caveats li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  margin: 0;
+  padding: var(--s3) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--t-ms);
+  line-height: 1.6;
+  color: var(--fg-muted);
+}
+.caveats li svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 0.2em;
+  fill: none;
+  stroke: var(--err);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.caveats li b { color: var(--fg); }
+.caveats > p:last-child { margin-bottom: 0; font-size: var(--t-ms); }
+
+/* Site footer (landing page).
+
+   Used to be a flat row of four links over one paragraph -- every word
+   still here, just with structure under it: the brand mark on its own on
+   the left so the footer still reads as this site's, two headed columns of
+   the same four links grouped by what they are (the manual's three
+   destinations vs. the one project link), and the licence/attribution
+   paragraph set apart below its own rule so it does not read as a fifth
+   list item. */
 footer.site {
   max-width: 58rem;
   margin: 0 auto;
-  padding: var(--s5) var(--s5) 0;
+  padding: var(--s6) var(--s5) 0;
   border-top: 1px solid var(--border);
   font-size: var(--t-ms);
   color: var(--fg-faint);
 }
-footer.site .links {
+/* Two regions, not a brand floating alone beside two lists. The left column
+   carries the mark, the name and the licence paragraph -- which is what fills
+   it; with the licence set below the whole footer instead, the left half of a
+   58rem footer was empty and the thing read as an unfinished grid. */
+.site-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) auto;
+  gap: var(--s6) var(--s7);
+  padding-bottom: var(--s6);
+}
+.site-brand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+}
+.site-id {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+}
+/* Same mark, same size, as the header -- one asset, already cached. */
+.site-id .brand-mark {
+  flex: none;
+  display: block;
+  color: var(--accent);
+}
+.site-brand .brand-os {
+  margin-left: -6px;
+  font-family: var(--mono);
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+}
+.site-brand small {
+  font-size: var(--t-xs);
+  color: var(--fg-faint);
+}
+.site-cols {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--s3) var(--s5);
+  gap: var(--s6) var(--s7);
+}
+.site-cols h3 {
   margin: 0 0 var(--s3);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.site-cols ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: 0;
   padding: 0;
   list-style: none;
 }
-footer.site li { margin: 0; }
+.site-cols li { margin: 0; }
 footer.site a { color: var(--fg-muted); }
 footer.site a:hover { color: var(--accent); }
-footer.site p { margin: 0 0 var(--s4); max-width: var(--measure); }
+.site-legal {
+  margin: 0;
+  max-width: 30rem;
+  line-height: 1.6;
+}
+
+/* Two regions side by side needs about 44rem; below that they stack, and the
+   three link lists wrap among themselves. */
+@media (max-width: 720px) {
+  .site-top { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
+  .site-legal { max-width: var(--measure); }
+}
+@media (max-width: 480px) {
+  .site-cols { gap: var(--s5) var(--s6); }
+}
 
 @media (max-width: 780px) {
-  .films { grid-template-columns: minmax(0, 1fr); }
+  .films { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
+  .films img { height: auto; width: 100%; }
 }
 
 @media (max-width: 620px) {
   .wrap, .wrap-wide, footer.site { padding-left: var(--s4); padding-right: var(--s4); }
-  .facts { grid-template-columns: minmax(0, 1fr); }
   .action { padding: var(--s3) var(--s4); }
+}
+
+/* Below this the 5.5rem term column steals too much of the line, so the
+   term stacks above its sentence instead of sitting beside it. */
+@media (max-width: 560px) {
+  .spec > div { grid-template-columns: minmax(0, 1fr); gap: var(--s1) 0; }
 }
 
 @media (max-width: 430px) {
   .actions { gap: var(--s2); }
   .action { font-size: var(--t-xs); padding: var(--s2) var(--s3); }
+}
+
+
+/* --- Ambient background --------------------------------------------------
+
+   Two soft points of light, drifting. Sitewide (a body pseudo-element, no
+   markup, so every page gets it for free) rather than landing-page-only,
+   because the ask was for the manual to feel less like a bare document, not
+   just the front door. Deliberately not a tiled pattern -- a repeating
+   texture is the thing that reads as a template -- and deliberately faint:
+   this is a manual, so the blobs sit at low opacity behind a heavy blur,
+   fixed (they do not scroll with content) and z-index -1 so they cannot
+   land in front of text or a focus ring. Built from --accent alone via
+   color-mix, so it re-tints itself for free with the rest of the palette
+   and needs no new hex. Rendered at 1440 and 400 in both themes before
+   being kept -- the dark variant reads as a faint glow near the two
+   radial centres; the light variant is closer to a warm paper vignette.
+   Stopped, not merely slowed, under reduced motion by the sitewide
+   animation rule below, and removed outright under print. */
+@supports (color: color-mix(in srgb, red, blue)) {
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -15vh -15vw;
+    z-index: -1;
+    pointer-events: none;
+    /* A plain low-alpha radial-gradient here bands visibly: rendered and
+       looked at, it came back as concentric rings, not a smooth fade --
+       8-bit colour stepping across a gradient this size and this low in
+       contrast, confirmed by sampling the screenshot's raw pixels (flat
+       runs of tens of px, then a +1 step). Blurring it harder did not fix
+       this -- the steps are in the source gradient, not the edges -- so
+       what actually fixes it is a third background layer: a tiled SVG
+       fractal-noise tile, inline as a data URI (no request, no new
+       asset), blended over the gradients at `overlay`. The noise is
+       imperceptible on its own; blended in, it dithers the gradient's
+       8-bit steps into a smooth-reading fade instead of rings. */
+    /* filter: blur() made no visible difference at any radius under this
+       headless renderer -- 8px and 90px produced identical rings -- so
+       nothing here depends on it working; the fade is graded through
+       explicit gradient stops instead.
+
+       The noise layer dithers the banding away, but blended sitewide it
+       first came back as a visible grey grain over the *entire* page --
+       the SVG noise tile is fully opaque, so `overlay` was compositing it
+       everywhere this pseudo-element covers, not just near the two
+       blobs. A CSS mask in the same two shapes as the colour gradients
+       confines the whole layer -- colour and noise alike -- back to
+       where the glow actually is; everywhere else, this element is
+       masked to nothing. */
+    background-image:
+      radial-gradient(36rem 36rem at 15% 20%,
+        color-mix(in srgb, var(--accent) 40%, transparent) 0%,
+        color-mix(in srgb, var(--accent) 18%, transparent) 30%,
+        color-mix(in srgb, var(--accent) 6%, transparent) 55%,
+        transparent 90%),
+      radial-gradient(32rem 32rem at 85% 78%,
+        color-mix(in srgb, var(--accent) 32%, transparent) 0%,
+        color-mix(in srgb, var(--accent) 14%, transparent) 30%,
+        color-mix(in srgb, var(--accent) 4%, transparent) 55%,
+        transparent 90%),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: no-repeat, no-repeat, repeat;
+    background-size: auto, auto, 180px 180px;
+    background-blend-mode: normal, normal, overlay;
+    /* Wide, soft mask stops -- opaque only near the centre, fading out
+       gradually to 95% -- so the cut-off reads as a fade, not a disc. The
+       first attempt at this (58%/78%) was still a visible spotlight edge. */
+    -webkit-mask-image:
+      radial-gradient(36rem 36rem at 15% 20%, #000 25%, transparent 95%),
+      radial-gradient(32rem 32rem at 85% 78%, #000 25%, transparent 95%);
+    mask-image:
+      radial-gradient(36rem 36rem at 15% 20%, #000 25%, transparent 95%),
+      radial-gradient(32rem 32rem at 85% 78%, #000 25%, transparent 95%);
+    opacity: .28;
+    animation: aurora-drift 50s ease-in-out infinite alternate;
+  }
+}
+@keyframes aurora-drift {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(2.5%, -2%) scale(1.05); }
 }
 
 
@@ -1155,6 +1644,7 @@ footer.site p { margin: 0 0 var(--s4); max-width: var(--measure); }
 /* --- Print --------------------------------------------------------------- */
 
 @media print {
+  body::before { content: none !important; }
   .topbar, .sidebar, .toc, .scrim, .copy, .anchor { display: none !important; }
   .shell { display: block; max-width: none; padding: 0; }
   main { padding: 0; }

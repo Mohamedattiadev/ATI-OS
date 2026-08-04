@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Install from a USB stick &mdash; Qtile Dotfiles Manual</title>
+<title>Install from a USB stick &mdash; ATI-OS Manual</title>
 <meta name="description" content="Step by step: make the USB stick, start the computer from it, answer the questions, and get a working desktop.">
 <link rel="stylesheet" href="assets/style.css">
 </head>
@@ -11,13 +11,16 @@
 
 <header class="topbar">
   <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
-  <a class="brand" href="index.html">Qtile Dotfiles<small>A ready-made Linux desktop</small></a>
+  <a class="brand" href="index.html"><svg class="brand-mark" viewBox="0 0 38 15" width="38" height="15" role="img" aria-label="ATI" fill="currentColor" shape-rendering="crispEdges" focusable="false"><path d="M2 0h10v3h-10zM16 0h16v3h-16zM34 0h4v3h-4zM0 3h4v3h-4zM10 3h4v3h-4zM22 3h4v3h-4zM34 3h4v3h-4zM0 6h14v3h-14zM22 6h4v3h-4zM34 6h4v3h-4zM0 9h4v3h-4zM10 9h4v3h-4zM22 9h4v3h-4zM34 9h4v3h-4zM0 12h4v3h-4zM10 12h4v3h-4zM22 12h4v3h-4zM34 12h4v3h-4z"/></svg><span class="brand-os">-OS</span><small>Arch + qtile, packaged</small></a>
   <div class="spacer"></div>
   <div class="search">
-    <input id="search-input" type="search" placeholder="Search the manual  ( / )" autocomplete="off" spellcheck="false" aria-label="Search">
+    <svg class="search-ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14"/></svg>
+    <input id="search-input" type="search" placeholder="Search the manual" autocomplete="off" spellcheck="false" aria-label="Search">
+    <kbd class="search-hint" aria-hidden="true">/</kbd>
     <div class="search-results" id="search-results"></div>
   </div>
-  <button class="iconbtn" id="theme-toggle">Light</button>
+  <a class="iconbtn gh-btn" href="https://github.com/Mohamedattiadev/Newdotfile-" aria-label="ATI-OS on GitHub"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg></a>
+  <button class="iconbtn theme-btn" id="theme-toggle" type="button" aria-label="Switch colour theme"><svg class="ico-sun" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="3.1"/><path d="M8 1.2v1.6M8 13.2v1.6M14.8 8h-1.6M2.8 8H1.2M12.81 3.19l-1.13 1.13M4.32 11.68l-1.13 1.13M12.81 12.81l-1.13-1.13M4.32 4.32 3.19 3.19"/></svg><svg class="ico-moon" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.6 9.7A5.9 5.9 0 0 1 6.3 2.4a5.9 5.9 0 1 0 7.3 7.3z"/></svg></button>
 </header>
 
 <div class="shell">
@@ -68,25 +71,116 @@ space, the installer offers to sit alongside it. See <a href="#q-disk">question 
 <tr><td><b>A USB stick</b></td><td>4&nbsp;GB or larger. It gets erased.</td></tr>
 <tr><td><b>The target computer</b></td><td>A disk of at least 30&nbsp;GB, and UEFI mode.</td></tr>
 <tr><td><b>Internet on it</b></td><td>A cable is easiest. Wi-Fi needs two extra commands.</td></tr>
-<tr><td><b>A second Arch computer</b></td><td>To build the image on.</td></tr>
+<tr><td><b>An Arch computer</b></td><td>Only if you build the image yourself. See below.</td></tr>
 </tbody>
 </table>
 </div>
 
-<div class="warn">
-<p><b>There is no file to download.</b> The image is not published anywhere. You build it
-yourself on a computer already running Arch Linux.</p>
-<p>No second computer? Use the <a href="install-git.html">other route</a>: install plain
-Arch first, then run one command.</p>
+<h2 id="make">1. Make the stick</h2>
+
+<p>Two ways to get the image. Then one way to write it to the stick.</p>
+
+<h3 id="which-path">Which one do I want?</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th>&nbsp;</th><th>Download it</th><th>Build it</th></tr></thead>
+<tbody>
+<tr><td><b>Who it is for</b></td><td>Almost everyone.</td><td>People whose download is old, or who want today's packages.</td></tr>
+<tr><td><b>Needs</b></td><td>Any computer that can write a USB stick.</td><td>A second computer already running Arch Linux.</td></tr>
+<tr><td><b>Takes</b></td><td>A 2.6&nbsp;GB download.</td><td>3 to 4 hours, mostly unattended.</td></tr>
+<tr><td><b>Available now</b></td><td><b>Yes.</b> Published 4 August 2026.</td><td>Yes.</td></tr>
+</tbody>
+</table>
 </div>
 
-<h2 id="make">1. Make the stick</h2>
+<p>So for almost everybody the answer is <a href="#download">path 1</a>. Build it yourself if
+your download has aged past the point where the prebuilt packages are still trusted, or take
+the <a href="install-git.html">other route</a> entirely: install plain Arch first, then run
+one command.</p>
+
+<h3 id="download">Path 1 &mdash; Download the image</h3>
+
+<p>Most people should not build an operating system image. They should download one that
+somebody already built and check that it arrived intact. That is this path.</p>
+
+<p>The image is hosted on the Internet Archive &mdash; 2.6&nbsp;GB in one file, no account, no
+mirror list. A single file on GitHub Releases is capped at 2&nbsp;GB, which is why it is not
+there.</p>
+
+<div class="tw">
+<table>
+<tbody>
+<tr><td><b>The image</b></td>
+    <td><a id="iso-link" href="https://archive.org/download/ati-os-2026.08.04-x86_64/ati-os-2026.08.04-x86_64.iso"><code>ati-os-2026.08.04-x86_64.iso</code></a> &mdash; 2.6&nbsp;GB</td></tr>
+<tr><td><b>Its checksum</b></td>
+    <td><a href="https://archive.org/download/ati-os-2026.08.04-x86_64/ati-os-2026.08.04-x86_64.iso.sha256"><code>ati-os-2026.08.04-x86_64.iso.sha256</code></a> &mdash; 95 bytes</td></tr>
+<tr><td><b>Where both live</b></td>
+    <td><a href="https://archive.org/details/ati-os-2026.08.04-x86_64">archive.org/details/ati-os-2026.08.04-x86_64</a>, which also carries a torrent</td></tr>
+</tbody>
+</table>
+</div>
+
+<p id="download-started" class="screen" hidden>Your download has been started. If nothing
+happened, use the <a href="https://archive.org/download/ati-os-2026.08.04-x86_64/ati-os-2026.08.04-x86_64.iso">image
+link above</a>.</p>
+
+<p>Do not go looking for an ATI-OS image anywhere else; anything you find under that name did
+not come from here. The published checksum is:</p>
+
+<pre><code>767e91801733ac506ea2c3b84e5bec608bc34bbe1a4211737ed156de2c903ba3</code></pre>
+
+<p>Put the <code>.iso</code> and the <code>.sha256</code> in the same folder and run:</p>
+
+<pre><code>sha256sum -c ati-os-2026.08.04-x86_64.iso.sha256</code></pre>
+
+<p class="screen">One line back. <code>ati-os-2026.08.04-x86_64.iso: OK</code> means the file is
+byte-for-byte what was published. <code>FAILED</code> means download it again &mdash; do not
+write it to a stick.</p>
+
+<div class="note">
+<p><b>Why bother checking.</b> A 2.6&nbsp;GB download that stops 40&nbsp;MB early still
+leaves a file called <code>.iso</code> on your disk. It will write to the stick, it will even
+start booting, and it will then fail somewhere unhelpful and look like broken hardware. Sixty
+seconds of <code>sha256sum</code> rules that out.</p>
+</div>
+
+<div class="limit">
+<p><b>What this image has actually been through.</b> It was installed and checked inside QEMU
+across all three install modes &mdash; plain, encrypted, and alongside an existing operating
+system, where the other OS's data and its bootloader both survived. That is the whole of it:</p>
+<ul>
+<li><b>UEFI only.</b> A machine started in legacy BIOS mode is refused rather than
+half-installed.</li>
+<li><b>Nobody has ever booted it from a physical USB stick.</b> Every test started the image
+file directly.</li>
+<li><b>No AMD or NVIDIA card and no HiDPI screen has run it.</b> A fake computer has no
+graphics hardware, so those passes say nothing about yours.</li>
+</ul>
+<p><a href="#limits">The full list is at the bottom of this page</a>.</p>
+</div>
+
+<p>With a verified <code>.iso</code>, skip to <a href="#write">writing it to the stick</a>.</p>
+
+<h3 id="build">Path 2 &mdash; Build it yourself</h3>
+
+<p>An image is a snapshot. The 31 prebuilt AUR packages inside it were compiled on the day it
+was built, and they are only accepted while they still match the Arch libraries they were
+compiled against. After roughly a year the installer stops trusting them and compiles from
+source on your machine instead &mdash; which is the correct thing to do, and turns a
+twenty-minute install into a two-hour one. It also raises the disk the install needs from
+30&nbsp;GB to 60, because build trees are large.</p>
+
+<p>Building your own image is how you avoid that: the packages are compiled today, against
+today's Arch.</p>
 
 <p>All of this happens on the Arch computer you already have.</p>
 
 <ol class="steps">
   <li>
-    <pre><code>cd installScripts/iso</code></pre>
+    <p>Get the project.</p>
+    <pre><code>git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles
+cd ~/.dotfiles/installScripts/iso</code></pre>
   </li>
   <li>
     <p>Build the software. Start it and go do something else.</p>
@@ -105,6 +199,23 @@ Arch first, then run one command.</p>
     <pre><code>./test-iso.sh</code></pre>
     <p class="screen"><b>1 to 2 hours.</b> It installs the image and checks the result.</p>
   </li>
+</ol>
+
+<details class="why">
+<summary>Why does building take three hours?</summary>
+<p>Those hours compile software in advance so <em>your</em> install takes twenty minutes
+instead of two. The trade, and why an image should be rebuilt every six months, is in
+<a href="under-the-hood.html#iso">How it works</a>.</p>
+<p>All three scripts take <code>--check</code>, which runs only their safety checks and
+changes nothing. Run that first. It turns a failure that costs hours into one that costs
+seconds.</p>
+</details>
+
+<h3 id="write">Write it to the stick</h3>
+
+<p>Both paths meet here. Downloaded or built, it is the same kind of file.</p>
+
+<ol class="steps">
   <li>
     <p>Plug in the stick. Find out what it is called.</p>
     <pre><code>lsblk</code></pre>
@@ -114,6 +225,8 @@ Arch first, then run one command.</p>
   <li>
     <p>Copy the image onto it. Replace <code>sdX</code> with that name.</p>
     <pre><code>sudo dd if=~/ati-os-build/out/ati-os-*.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
+    <p>If you downloaded the image instead, point <code>if=</code> at where you saved it:</p>
+    <pre><code>sudo dd if=~/Downloads/ati-os.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
     <div class="limit">
     <p><b>Check the name twice.</b> This command does not ask "are you sure?" and there is no
     undo. The wrong name destroys the wrong disk.</p>
@@ -121,16 +234,6 @@ Arch first, then run one command.</p>
     <p class="screen">A counter climbs. Wait for the prompt to come back before unplugging.</p>
   </li>
 </ol>
-
-<details class="why">
-<summary>Why no download, and why three hours?</summary>
-<p>Those hours compile software in advance so <em>your</em> install takes twenty minutes
-instead of two. The trade, and why an image should be rebuilt every six months, is in
-<a href="under-the-hood.html#iso">How it works</a>.</p>
-<p>All three scripts take <code>--check</code>, which runs only their safety checks and
-changes nothing. Run that first. It turns a failure that costs hours into one that costs
-seconds.</p>
-</details>
 
 <h2 id="boot">2. Start the computer from it</h2>
 
@@ -510,5 +613,39 @@ message the installer can refuse with.</p>
 
 <script src="assets/search-index.js"></script>
 <script src="assets/site.js"></script>
+<!-- The ISO button on the landing page links here as
+     install-usb.html?get=iso#download, so a reader lands on the checksum and
+     the writing instructions AND gets the file. This starts that download.
+
+     It is an enhancement, never the mechanism: the link it clicks is the same
+     <a id="iso-link"> printed in the table above, so with JavaScript blocked
+     the reader still arrives at #download and the download link is the first
+     thing under the heading. Nothing here is the only way to reach the file.
+
+     The query is stripped afterwards so a reload, a bookmark or a Back button
+     does not fire a 2.6 GB transfer a second time. -->
+<script>
+(function () {
+  var p = new URLSearchParams(location.search);
+  if (p.get('get') !== 'iso') return;
+  var src = document.getElementById('iso-link');
+  if (!src) return;
+
+  p.delete('get');
+  var q = p.toString();
+  history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
+
+  var note = document.getElementById('download-started');
+  if (note) note.hidden = false;
+
+  var a = document.createElement('a');
+  a.href = src.href;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+})();
+</script>
 </body>
 </html>
