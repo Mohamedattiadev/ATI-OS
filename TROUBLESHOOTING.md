@@ -1967,7 +1967,7 @@ loadkeys us
 archinstall   # follow prompts: minimal, user with sudo, mirror region
 
 # 4. Reboot into installed system, log in as your user
-git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles
+git clone https://github.com/Mohamedattiadev/ATI-OS.git ~/.dotfiles
 cd ~/.dotfiles/installScripts
 ./install.sh
 ```
@@ -3690,7 +3690,7 @@ reports real progress.
   simpler saves nothing — it is a separate process animating in parallel.
 - **Never iterate on this by restarting the live session.** An early
   attempt (fullscreen `feh` overlay) froze the desktop and crashed X. Use
-  the Xephyr sandbox; recipe in `qtile-veil-HANDOFF.md`. Note the sandbox
+  the Xephyr sandbox; recipe in `notes/archive/qtile-veil-HANDOFF.md`. Note the sandbox
   understates real timings by ~2.5x — good for behaviour, useless for
   numbers.
 

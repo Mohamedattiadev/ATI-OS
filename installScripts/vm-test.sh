@@ -76,7 +76,7 @@ VM_USER="${VM_USER:-vmtest}"
 VM_PASS="${VM_PASS:-vmtest}"              # throw-away VM, never reachable off localhost
 SSH_PORT="${SSH_PORT:-2222}"
 SSH_KEY="$VM_DIR/id_vmtest"
-DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/Mohamedattiadev/Newdotfile-.git}"
+DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/Mohamedattiadev/ATI-OS.git}"
 DOTFILES_REF="${DOTFILES_REF:-main}"
 # Generous, because these are wall-clock budgets for a whole install on a
 # laptop that is also doing other things. They exist to stop a wedged run
@@ -201,7 +201,7 @@ ${g}Booting the VM.${o} Inside it:
 
   2. ${d}# reboot into the installed system, log in as that user${o}
 
-  3. git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles
+  3. git clone https://github.com/Mohamedattiadev/ATI-OS.git ~/.dotfiles
      cd ~/.dotfiles/installScripts
      ./install.sh
 

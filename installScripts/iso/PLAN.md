@@ -28,7 +28,7 @@ The honest scope, decided up front so nobody is surprised at first boot.
 | `GEMINI_API_KEY` and `~/.config/secrets.env` | it is your secret | seeded empty from the template; installer says so |
 | Vaultwarden / Simplenote / scrcpy accounts | per-person | left unconfigured |
 | GPU stack | AMD/NVIDIA/Intel differ | `step_gpu` detects at install, same as now |
-| `host: ati` in `arch-config` | that field is a USERNAME (see `plan_found-but-not-fixed.md`) | installer asks for a username and writes a matching host yaml |
+| `host: ati` in `arch-config` | that field is a USERNAME (see `notes/archive/plan_found-but-not-fixed.md`) | installer asks for a username and writes a matching host yaml |
 | Caps-Lock-as-Alt (`xmodmap`) | correct for exactly one laptop | stays opt-in, per the existing `OPTIN_MODS` decision |
 | wallpapers (~500 MB clone) | author's personal repo | offered, not baked |
 
@@ -245,7 +245,7 @@ Build and test cannot run at once — 7 GB of RAM will not hold both.
 
 ## Bugs found while building this
 
-Recorded for the same reason `plan_found-but-not-fixed.md` exists: "we hit
+Recorded for the same reason `notes/archive/plan_found-but-not-fixed.md` exists: "we hit
 this and fixed it" is only useful if it survives the session that found it.
 Every one of these was invisible until something actually ran.
 
@@ -322,5 +322,5 @@ reading 16/16 as though it had.
 4. `ati-os-install` — lifted from `vm-test.sh:740-780`, plus the prompts.
 5. `build-iso.sh` — glue, with a preflight in the house style.
 6. `test-iso.sh` — QEMU run, fix whatever it finds, re-run until clean.
-7. Document: `README.md` section, and update `HANDOFF.md`'s verified table
+7. Document: `README.md` section, and update `notes/archive/HANDOFF.md`'s verified table
    with what the ISO run actually proved — and what it did not.

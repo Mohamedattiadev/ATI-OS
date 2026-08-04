@@ -7,17 +7,15 @@
 README.md
 
 # The rest of the repo-root prose. README.md was already listed; these were
-# not, so `stow .` symlinked all seven into $HOME -- ~/TROUBLESHOOTING.md,
+# not, so `stow .` symlinked all of them into $HOME -- ~/TROUBLESHOOTING.md,
 # ~/plan_ui_ux_qtile.md, ~/qtile-veil-HANDOFF.md and the rest, as top-level
 # files in a fresh user's home directory. Nothing reads them from there:
 # rofi_docs opens them out of $DOTFILES.
 #
-# Patterned, not named one by one: the list was already out of date the first
-# time it was written, and the next plan_*.md added to the repo root would
-# have gone straight back into $HOME.
-plan_.*\.md
-qtile-.*\.md
-THEME_AUDIT_REPORT.md
+# The plan_/qtile-/prompt_ files now live in notes/, so one directory entry
+# covers them and every future one. TROUBLESHOOTING.md has to stay named:
+# rofi_docs reads it from the repo root.
+notes
 TROUBLESHOOTING.md
 
 # Claude Code's PER-PROJECT state directory. It is not a dotfile, and it is a
