@@ -71,35 +71,48 @@ space, the installer offers to sit alongside it. See <a href="#q-disk">question 
 <tr><td><b>A USB stick</b></td><td>4&nbsp;GB or larger. It gets erased.</td></tr>
 <tr><td><b>The target computer</b></td><td>A disk of at least 30&nbsp;GB, and UEFI mode.</td></tr>
 <tr><td><b>Internet on it</b></td><td>A cable is easiest. Wi-Fi needs two extra commands.</td></tr>
-<tr><td><b>An Arch computer</b></td><td>Only if you build the image yourself. See below.</td></tr>
 </tbody>
 </table>
 </div>
 
-<h2 id="make">1. Make the stick</h2>
+<h2 id="which-path">Which one do I want?</h2>
 
-<p>Two ways to get the image. Then one way to write it to the stick.</p>
-
-<h3 id="which-path">Which one do I want?</h3>
+<p>Two ways in, and the one you want depends on what is on the computer already.</p>
 
 <div class="tw">
 <table>
-<thead><tr><th>&nbsp;</th><th>Download it</th><th>Build it</th></tr></thead>
+<thead><tr><th>&nbsp;</th><th>Path 1 &mdash; USB stick</th><th>Path 2 &mdash; Arch you have</th></tr></thead>
 <tbody>
-<tr><td><b>Who it is for</b></td><td>Almost everyone.</td><td>People whose download is old, or who want today's packages.</td></tr>
-<tr><td><b>Needs</b></td><td>Any computer that can write a USB stick.</td><td>A second computer already running Arch Linux.</td></tr>
-<tr><td><b>Takes</b></td><td>A 2.6&nbsp;GB download.</td><td>3 to 4 hours, mostly unattended.</td></tr>
-<tr><td><b>Available now</b></td><td><b>Yes.</b> Published 4 August 2026.</td><td>Yes.</td></tr>
+<tr><td><b>Who it is for</b></td><td>A blank computer, or one you are willing to erase.</td><td>A computer already running Arch Linux with no desktop on it.</td></tr>
+<tr><td><b>What it does</b></td><td>Installs the whole operating system, disk and all.</td><td>Adds the desktop to the Arch that is already there.</td></tr>
+<tr><td><b>Needs</b></td><td>A 2.6&nbsp;GB download and a USB stick.</td><td>Nothing but the computer and a terminal.</td></tr>
+<tr><td><b>Erases</b></td><td><b>A whole disk.</b></td><td>Nothing.</td></tr>
+<tr><td><b>Takes</b></td><td>About 20 minutes, plus 20 on the first restart.</td><td>An hour or two, almost all of it waiting.</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>So for almost everybody the answer is <a href="#download">path 1</a>. Build it yourself if
-your download has aged past the point where the prebuilt packages are still trusted, or take
-the <a href="install-git.html">other route</a> entirely: install plain Arch first, then run
-one command.</p>
+<h3 id="path-arch">Path 2 &mdash; Arch you already have</h3>
 
-<h3 id="download">Path 1 &mdash; Download the image</h3>
+<p>If the computer is already running Arch, none of the rest of this page applies. There is no
+image to fetch, no stick to write and no disk to erase. Clone the project and run the
+installer:</p>
+
+<pre><code>git clone https://github.com/Mohamedattiadev/Newdotfile-.git ~/.dotfiles \
+  &amp;&amp; cd ~/.dotfiles/installScripts \
+  &amp;&amp; ./install.sh</code></pre>
+
+<p>That is the whole of it. It asks for your password once and nothing else.
+<a href="install-git.html">Install onto Arch you already have</a> is the full walkthrough:
+what it needs, what the 46 steps do, and what to do when one fails.</p>
+
+<p>Everything below is path 1.</p>
+
+<h2 id="make">1. Make the stick</h2>
+
+<p>Get the image, then write it to the stick.</p>
+
+<h3 id="download">Download the image</h3>
 
 <p>Most people should not build an operating system image. They should download one that
 somebody already built and check that it arrived intact. That is this path.</p>
@@ -160,21 +173,24 @@ graphics hardware, so those passes say nothing about yours.</li>
 <p><a href="#limits">The full list is at the bottom of this page</a>.</p>
 </div>
 
-<p>With a verified <code>.iso</code>, skip to <a href="#write">writing it to the stick</a>.</p>
+<h3 id="ageing">An image ages</h3>
 
-<h3 id="build">Path 2 &mdash; Build it yourself</h3>
+<p>The 31 prebuilt AUR packages inside it were compiled on the day it was built, and they are
+only accepted while they still match the Arch libraries they were compiled against. After
+roughly a year the installer stops trusting them and compiles from source on your machine
+instead &mdash; which is the correct thing to do, and turns a twenty-minute install into a
+two-hour one. It also raises the disk the install needs from 30&nbsp;GB to 60, because build
+trees are large.</p>
 
-<p>An image is a snapshot. The 31 prebuilt AUR packages inside it were compiled on the day it
-was built, and they are only accepted while they still match the Arch libraries they were
-compiled against. After roughly a year the installer stops trusting them and compiles from
-source on your machine instead &mdash; which is the correct thing to do, and turns a
-twenty-minute install into a two-hour one. It also raises the disk the install needs from
-30&nbsp;GB to 60, because build trees are large.</p>
+<p>Nothing breaks when that happens; the install just gets slow. If the published image has
+aged past that point you can build a fresh one, which is a job for somebody who already runs
+Arch and does not mind waiting.</p>
 
-<p>Building your own image is how you avoid that: the packages are compiled today, against
-today's Arch.</p>
+<details class="why" id="build">
+<summary>Build the image yourself instead</summary>
 
-<p>All of this happens on the Arch computer you already have.</p>
+<p>On an Arch computer you already have. Three to four hours, mostly unattended, and the
+result is a <code>.iso</code> you write to a stick exactly as below.</p>
 
 <ol class="steps">
   <li>
@@ -201,19 +217,19 @@ cd ~/.dotfiles/installScripts/iso</code></pre>
   </li>
 </ol>
 
-<details class="why">
-<summary>Why does building take three hours?</summary>
 <p>Those hours compile software in advance so <em>your</em> install takes twenty minutes
 instead of two. The trade, and why an image should be rebuilt every six months, is in
 <a href="under-the-hood.html#iso">How it works</a>.</p>
+
 <p>All three scripts take <code>--check</code>, which runs only their safety checks and
 changes nothing. Run that first. It turns a failure that costs hours into one that costs
 seconds.</p>
+
 </details>
 
 <h3 id="write">Write it to the stick</h3>
 
-<p>Both paths meet here. Downloaded or built, it is the same kind of file.</p>
+<p>Downloaded or built, it is the same kind of file.</p>
 
 <ol class="steps">
   <li>
@@ -223,10 +239,11 @@ seconds.</p>
     <code>29.8G</code>. The name looks like <code>sdb</code>. Write it down.</p>
   </li>
   <li>
-    <p>Copy the image onto it. Replace <code>sdX</code> with that name.</p>
+    <p>Copy the image onto it. Replace <code>sdX</code> with that name, and
+    <code>if=</code> with wherever you saved the download.</p>
+    <pre><code>sudo dd if=~/Downloads/ati-os-2026.08.04-x86_64.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
+    <p>If you built the image yourself it is in <code>~/ati-os-build/out/</code> instead:</p>
     <pre><code>sudo dd if=~/ati-os-build/out/ati-os-*.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
-    <p>If you downloaded the image instead, point <code>if=</code> at where you saved it:</p>
-    <pre><code>sudo dd if=~/Downloads/ati-os.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
     <div class="limit">
     <p><b>Check the name twice.</b> This command does not ask "are you sure?" and there is no
     undo. The wrong name destroys the wrong disk.</p>
