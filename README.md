@@ -175,9 +175,9 @@ GTK, Qt, browser, nvim, even your folder icons.
 
 ![22 themes](IMGS/themes.png)
 
-<sub>10 of the 22 modes. Also: monokai, kanagawa, oxocarbon, onedark, palenight,
-nightowl, github-dark, ayu-mirage, cyberpunk-neon, synthwave, mono-dark, and
-`wal` (palette derived from your wallpaper).</sub>
+<sub>21 of the 22 modes, same windows and same text in every tile. The 22nd is
+`wal`, which derives its palette from your wallpaper and so has no fixed
+appearance to show.</sub>
 
 ```bash
 theme-apply gruvbox   # any preset
@@ -227,23 +227,49 @@ qtile.
 
 ---
 
+### Workspaces and layouts
+
+Nine groups, each with its own icon in the bar. `Mod+1`…`Mod+9` switches;
+the active group's glyph takes the accent colour and the window list beside
+it refills with that group's windows.
+
+![switching between workspaces](IMGS/groups.gif)
+
+`Mod+Tab` cycles the layout, and the chip in the bar names the one you are
+in. Right-click the chip to cycle it without the keyboard.
+
+![cycling through layouts](IMGS/layouts.gif)
+
+<sub>monadtall → max → treetab: two panes side by side, then one full-width,
+then a tree of windows in a side panel.</sub>
+
+---
+
+### Sound, without a mixer
+
+`Alt+3` opens the audio picker: every sink with its volume, gain, balance,
+port and profile, `Tab` across to the microphones, `m` to mute a device.
+
+![the audio picker](IMGS/audio-popup.gif)
+
+---
+
 ### Modes
 
 Every mode is a `KeyChord` that takes over the keyboard and announces itself as a
 chip in the bar, listing the keys it accepts. `Esc` leaves.
 
-**`Mod+Space` — language switcher**
+![the mode chip cycling through six modes](IMGS/modes-chip.gif)
 
-![lang mode chip in the bar](IMGS/lang.gif)
+<sub>One chip, six modes: rofi, language, resize, draw, cheatsheet, media. Each
+carries its own colour and spells out the keys it takes.</sub>
+
+**`Mod+Space` — language switcher**
 
 **`Mod+P` — rofi mode** (launchers, `c` theme picker, `w` wallpaper picker,
 `n` WiFi, `b` Bluetooth)
 
-![rofi mode chip in the bar](IMGS/rofi.gif)
-
 **`Mod+P` then `w` — wallpaper picker**
-
-![wallpaper picker chip in the bar](IMGS/wallpaper.gif)
 
 **`Mod+P` then `n` — WiFi**, `b` — **Bluetooth**
 
@@ -259,15 +285,11 @@ applets stay in the tray as icons only.
 
 **`Mod+R` — resize mode**
 
-![resize mode chip in the bar](IMGS/resize.gif)
-
 **`Mod+Shift+W` — draw mode** (gromit-mpx overlay)
-
-![draw mode chip in the bar](IMGS/draw.gif)
 
 **`Mod+Shift+K` — cheatsheets** (`k` qtile, `v` vim, `f` fish+kitty)
 
-![cheatsheet chip in the bar](IMGS/cheatsheet.gif)
+![the qtile cheatsheet scrolling](IMGS/cheatsheet-qtile.gif)
 
 Every binding on a card, the key hard against the card's right edge, in the
 same monospace face the rest of the popups use. The sheets **scroll** rather
@@ -319,9 +341,16 @@ hand-written menu drifts the moment anything is added, and silently:
 | **System** | about · package audit · failed services · display + GPU | run live at open time |
 | **Maintenance** | merges · orphans · boot errors · package cache | `pacdiff`, `pacman -Qtdq`, `journalctl`, `paccache` |
 
+![the logo menu, entering a section and stepping back out](IMGS/docs-menu.gif)
+
 **Esc goes up, not out.** Every submenu returns to its parent; only Esc at
 the top level closes the menu. A menu you have to reopen from the bar after
 every glance is a menu you stop using.
+
+![the searchable keybinding list filtering live](IMGS/keybindings.gif)
+
+<sub>Every binding parsed out of `config.py`, chord prefixes intact, filtering
+as you type.</sub>
 
 **One frame, every section.** All of them draw at 614×432 — the same shape
 `dtos-center.rasi` gives every other rofi on this system (`rofi_light`,
@@ -411,18 +440,28 @@ Arch boots with the kernel log on screen — a wall of scrolling text ending
 in a mirror list. Worse than ugly: a boot with no feedback is
 indistinguishable from a boot that has hung.
 
-`boot-splash` replaces it with the **Arch mark inside a progress ring**,
-and **your username as ANSI Shadow block art** underneath, in the colours
-of whatever theme is currently active. The name is generated, never
-hardcoded: user `ati` gets `ATI`, user `beko` gets `BEKO`.
+`boot-splash` replaces it with **your username as ANSI Shadow block art**,
+in the colours of whatever theme is currently active. The name is
+generated, never hardcoded: user `ati` gets `ATI`, user `beko` gets `BEKO`.
 
-The logo is not decoration sitting next to a spinner — it lives *inside*
-the progress indicator, so the one element that moves is also the one
-reporting state. It is read from the distro's own
+![boot splash](IMGS/boot-splash.gif)
+
+*Composited from the installed theme assets by `boot-splash preview`, at the
+real 1366×768, in the current `mono-dark` palette.*
+
+Top to bottom, the composition is the name up in the upper third, the Arch
+mark below it — small and quiet, at 80% opacity — and three dots anchored
+near the bottom edge. The mark is read from the distro's own
 `/usr/share/pixmaps/archlinux-logo.svg` rather than vendored, recoloured
 through its alpha as a stencil, with the trademark glyph dropped by a
 connected-components pass (it is a few pixels of grit at this size, and
 cropping cannot reach it without cutting the logo's feet).
+
+There is no ring. One was tried, and neither size worked: an arc large
+enough to read as motion became a second focal point competing with the
+name, and one small enough to stay subordinate read as a stray dot with
+nothing legible happening in it. Three dots are legible at a size that
+stays out of the name's way.
 
 The block art comes from a vendored glyph table
 ([`plymouth/ansi-shadow.txt`](.config/arch-config/plymouth/ansi-shadow.txt)),
@@ -440,31 +479,47 @@ characters are kept. `-kerning -1` closes the seam the mono advance leaves
 down the middle of each letter: invisible in a mock-up, obvious in cream on
 dark.
 
-**It is animated.** Two things move, so a slow boot never looks like a hung
-one:
+**It is animated.** The three dots do two jobs at once, so a slow boot
+never looks like a hung one:
 
-- a **comet sweeps continuously around the ring** — this is the liveness
-  signal, and it keeps moving even when plymouth reports no progress at
-  all, which is most of a fast boot
-- the ring **fills clockwise** with real progress when it is reported
+- **liveness** — a wave travels through them continuously, each dot offset
+  in phase from the last so it reads as travel rather than a blink. This
+  keeps moving even when plymouth reports no progress at all, which is
+  most of a fast boot.
+- **progress** — they fill left to right, accent-coloured, as real progress
+  arrives. Each dot owns a third and fades in over its share; three hard
+  steps across five seconds would read as three glitches. The fill chases
+  its target rather than jumping to it (plymouth reports progress in coarse
+  steps, and an indicator that teleports reads as broken), and it creeps
+  forward on its own when nothing is reported — capped below full, so it
+  can never claim to have finished something it has not.
 
-The name breathes on opacity, barely (a 0.06 swing). There is no fade-in:
-see *One continuous image* below.
+The colour transition is a cross-fade between two fixed dot images.
+Plymouth's script language cannot tint an image, and pre-rendering a colour
+ramp would mean shipping frames for something two sprites do for free.
+
+There is no fade-in: see *One continuous image* below.
 
 The background is flat and there is no glow. The accent colour has exactly
-one job on this screen — the progress arc — so the name is drawn in the
+one job on this screen — the progress dots — so the name is drawn in the
 foreground colour; a composition where the largest element and the status
-indicator are the same colour has nothing to direct the eye with.
+indicator are the same colour has nothing to direct the eye with. On
+palettes where the accent is *darker* than the foreground, `generate` warns
+and draws the progress dots in the foreground instead, so the fill still
+reads as a state change (gruvbox keeps its accent; matrix, whose accent is
+the same hue as its foreground only dimmer, falls back).
 
-**Proportions.** A three-letter name sits at ~23% of screen width; longer
-names scale themselves down so the art never runs past a comfortable share
-of the screen. The ring is **26% of screen height**, sized from the screen
-rather than fixed: an earlier 96px ring was ~7% of a 1366px panel and,
-photographed off the real display, read as a stray dot — the comet was
-moving, but there was not enough arc for the motion to be legible. The ring
-and the name are laid out as **one group**, then centred and lifted;
-positioning each from the screen edges independently is what produced the
-old top-heavy stack with a lonely dot under it.
+**Proportions.** Everything is a fraction of the screen, not a fixed pixel
+count, and `dotfiles.script` recomputes the same arithmetic at boot from
+the real `Window` dimensions — `boot-splash check` compares the two, because
+if they disagree the handover from systemd-boot's bitmap to plymouth's
+first frame is a visible jump. A three-letter name sits at ~23% of a 1366px
+screen and is centred on **38% of screen height**; longer names scale
+themselves down, capped at 66% of width and 40% of height, so the art never
+runs past a comfortable share of the screen. The mark is **6% of screen
+height**. The dots sit at **81% of screen height** — anchored to the bottom
+of the screen rather than hung underneath the name, because gluing the
+indicator to the name is what produced the old top-heavy stack.
 
 #### One continuous image
 
@@ -486,9 +541,11 @@ login prompt.
 
 That is also why there is no fade-in: plymouth takes the framebuffer the
 instant it starts, so fading up from zero would make the picture *already
-on screen* vanish and then reappear. The first plymouth frame is rendered
-to match the bitmap exactly — down to the name's opacity, which is 0.94 at
-tick 0 because that is where the breathing sine starts.
+on screen* vanish and then reappear. Every sprite starts at its final
+opacity, and the first plymouth frame is rendered to match the bitmap
+exactly — down to the dots, whose liveness wave is evaluated at tick 0 when
+the still is composited, so the wave picks up mid-stride instead of
+stepping.
 
 The presets are pacman-owned, so this is an in-place edit with a backup. A
 `linux` package upgrade restores Arch's line; `boot-splash status` reports
@@ -498,10 +555,10 @@ it and `sync` puts it back.
 BOOT_SPLASH_SIZE=32 boot-splash generate   # bigger, if you want it
 ```
 
-The ring ships as pre-rendered frames (48 for the comet, 41 for the fill,
-~400 KB). Plymouth's script language cannot draw an arc, and rotating an
-image every frame at 50 fps during early boot is the kind of per-frame work
-that makes a splash stutter on slow hardware.
+The whole theme is four PNGs — the name, the mark, and two 8×8 dots —
+under 3 KB together. The animation is opacity arithmetic on six sprites,
+which is cheap enough to run at plymouth's ~50 Hz refresh during early boot
+without the stutter that per-frame image work causes on slow hardware.
 
 **It follows your theme.** `theme-apply` re-renders it on every switch. But
 the theme is *embedded in the initramfs* (plymouth runs before `/` is
@@ -1036,7 +1093,7 @@ machine and documented nowhere.
 | 16 | `githooks` | Install the pre-commit hook that refuses commits breaking the config or drifting packages |
 | 17 | `pacman-guard` | PreTransaction hook: refuse any pacman/yay/dcli upgrade when `/` is too full |
 | 18 | `boot-fallback` | systemd-boot entries for `linux-lts` + a full-module rescue initramfs, deliberately **without** `quiet`/`splash` |
-| 19 | `boot-splash` | plymouth splash: the Arch mark in a progress ring with **your** username under it. Runs immediately after `boot-fallback` so the verbose rescue entry always exists first |
+| 19 | `boot-splash` | plymouth splash: **your** username in block art, the Arch mark under it, three progress dots. Runs immediately after `boot-fallback` so the verbose rescue entry always exists first |
 | 20 | `login-shell` | `chsh` to fish so the TTY matches kitty |
 | 21 | `touchpad` | Touchpad config (`/etc/X11/xorg.conf.d/30-touchpad.conf`) |
 | 22 | `xinit` | Write `~/.xinitrc` (qtile · picom · wallpaper · tray applets · copyq server · `QT_QPA_PLATFORMTHEME=qt6ct` · cursor) |

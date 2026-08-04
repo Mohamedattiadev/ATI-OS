@@ -383,16 +383,20 @@ what broke, which is indistinguishable from the failed boot you are escaping.</p
 list. Worse than ugly. A boot with no feedback is indistinguishable from a boot that has
 hung.</p>
 
-<p>The replacement is the Arch mark <em>inside</em> a progress ring, with the username in
-block art underneath, in the current colours. The logo is not decoration next to a spinner.
-It lives inside the progress indicator, so the one element that moves is also the one
-reporting state.</p>
+<p>The replacement is the username in block art up in the upper third, the Arch mark small
+and quiet underneath it, and three dots near the bottom edge, all in the current colours.</p>
 
-<p>Two things move, so a slow boot never looks hung. A comet sweeps continuously around the
-ring, which keeps moving even when no progress is reported, which is most of a fast boot. And
-the ring fills clockwise with real progress when there is any.</p>
+<p>There is no ring. One was tried, and neither size worked: an arc large enough to read as
+motion became a second focal point competing with the name, and one small enough to stay
+subordinate read as a stray dot with nothing legible happening in it.</p>
 
-<p>The accent colour has exactly one job on that screen, the progress arc. So the name is
+<p>The three dots do two jobs at once, so a slow boot never looks hung. A wave travels
+through them continuously — each dot offset in phase from the last, so it reads as travel
+rather than a blink — and that keeps moving even when no progress is reported, which is most
+of a fast boot. Separately they fill left to right, in the accent colour, with real progress
+when there is any.</p>
+
+<p>The accent colour has exactly one job on that screen, the progress dots. So the name is
 drawn in the foreground colour. A composition where the largest element and the status
 indicator share a colour has nothing to direct the eye with.</p>
 
@@ -411,17 +415,19 @@ their shadow with box-drawing characters, and one render pass fills both in the 
 producing a hollow double outline that reads as a cheap 3D bevel. Only the block characters
 are kept. A one-pixel kerning adjustment closes the seam the fixed-width spacing leaves down
 the middle of each letter: invisible in a mock-up, obvious in cream on dark.</li>
-<li><b>The ring is 26% of screen height</b>, sized from the screen rather than fixed. An
-earlier 96-pixel ring was about 7% of a 1366-pixel panel and, photographed off the real
-display, read as a stray dot. The comet was moving, but there was not enough arc for the
-motion to be legible.</li>
-<li><b>The ring and the name are laid out as one group</b>, then centred and lifted.
-Positioning each from the screen edges independently produced the old top-heavy stack with a
-lonely dot under it.</li>
-<li><b>The ring ships as pre-rendered frames</b>, 48 for the comet and 41 for the fill, about
-400&nbsp;KB. The splash program's scripting cannot draw an arc, and rotating an image every
-frame at 50fps during early boot is the kind of per-frame work that makes a splash stutter on
-slow hardware.</li>
+<li><b>Everything is a fraction of the screen</b>, not a fixed pixel count. The name is
+centred on 38% of screen height, the mark is 6% of screen height, and the dots sit at 81%.
+The splash script recomputes the same arithmetic at boot from the real screen dimensions, and
+a check command compares the two: if they disagree, the handover from the firmware's bitmap
+to the splash's first frame is a visible jump.</li>
+<li><b>The indicator is anchored to the bottom of the screen</b>, not hung underneath the
+name. Gluing it to the name is what produced the old top-heavy stack.</li>
+<li><b>The whole theme is four small images</b> — the name, the mark, and two 8-pixel dots —
+under 3&nbsp;KB together. The colour transition is a cross-fade between two fixed dot images,
+because the splash program's scripting cannot tint an image and pre-rendering a colour ramp
+would mean shipping frames for something two sprites do for free. The animation is opacity
+arithmetic on six sprites, cheap enough to run at 50fps during early boot without the stutter
+that per-frame image work causes on slow hardware.</li>
 </ul>
 
 <h4>One continuous image</h4>
@@ -440,8 +446,9 @@ boot menu to the login prompt.</p>
 
 <p>That is also why there is no fade-in. The splash takes the framebuffer the instant it
 starts, so fading up from zero would make the picture <em>already on screen</em> vanish and
-reappear. The first frame is rendered to match the bitmap exactly, down to the name's opacity
-of 0.94, because that is where the breathing sine starts.</p>
+reappear. Every element starts at its final opacity, and the first frame is rendered to match
+the bitmap exactly — down to the dots, whose wave is evaluated at tick zero when the still is
+composited, so the motion picks up mid-stride instead of stepping.</p>
 
 <h4>Why a theme change does not update it immediately</h4>
 
