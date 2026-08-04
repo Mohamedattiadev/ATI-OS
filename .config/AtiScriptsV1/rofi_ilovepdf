@@ -2,29 +2,107 @@
 #
 # Script name: ILovePDF Mini Files
 # Description: Hierarchical file browser for iLovePDF-style conversions
-# Dependencies: rofi, zenity, libreoffice, imagemagick, ghostscript, poppler-utils (for pdfinfo)
+# Dependencies: rofi, libreoffice, imagemagick, ghostscript, poppler-utils
 # License: MIT
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# BASH_SOURCE, not $0: $0 is the *invoking* script when this file is
+# sourced, so the helper next to it could not be found from anywhere but a
+# direct run -- which also made the conversion logic untestable.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=rofi_common.sh
 source "$SCRIPT_DIR/rofi_common.sh"
 
-require_cmd rofi libreoffice convert gs || exit 1
+# pdfinfo was a declared dependency that was never checked, so "Split PDF"
+# reached its page-count call and failed there instead of saying what was
+# missing. zenity is gone entirely -- see ask_size().
+require_cmd rofi libreoffice gs pdfinfo || exit 1
+
+# ImageMagick 7 renamed the entry point; `convert` is a deprecated shim that
+# prints a warning to stderr on every call and is not guaranteed to exist.
+IM=magick
+command -v magick >/dev/null 2>&1 || IM=convert
+require_cmd "$IM" || exit 1
 
 # --- Configuration ---
-BASE_DIR=~/ILovePdf_Style_Docs
-ROFI_CMD="rofi -dmenu -i -p"
-SEPARATOR=""
+BASE_DIR="$HOME/ILovePdf_Style_Docs"
+SEPARATOR="›"
 
-# Main directories to browse.
+# LibreOffice refuses to run headless while a GUI instance holds the default
+# profile: it exits 0 having converted nothing, which -- before this script
+# checked its output -- was reported to the user as success. A private
+# profile directory makes the headless run independent of whatever the
+# desktop is doing.
+LO_PROFILE="${XDG_RUNTIME_DIR:-/tmp}/ilovepdf-lo-profile"
+
+# Actions, and what each one accepts. Kept as one table rather than three
+# parallel case statements: the extension list, the multi-select flag and
+# the menu order all have to agree, and separating them is how they drift.
+declare -A ACTION_EXT=(
+	["Word → PDF"]="doc docx odt rtf"
+	["PDF → Word"]="pdf"
+	["Excel → PDF"]="xls xlsx ods csv"
+	["PowerPoint → PDF"]="ppt pptx odp"
+	["PDF → JPG"]="pdf"
+	["PDF → PNG"]="pdf"
+	["JPG → PDF"]="jpg jpeg"
+	["PNG → PDF"]="png"
+	["Compress PDF"]="pdf"
+	["Resize Image"]="jpg jpeg png gif bmp webp tif tiff"
+	["Merge PDFs"]="pdf"
+	["Split PDF"]="pdf"
+)
+# Order is deliberate: conversions first, then the operations on a PDF you
+# already have. An associative array has no order of its own.
+ACTION_ORDER=(
+	"Word → PDF" "PDF → Word" "Excel → PDF" "PowerPoint → PDF"
+	"PDF → JPG" "PDF → PNG" "JPG → PDF" "PNG → PDF"
+	"Compress PDF" "Resize Image" "Merge PDFs" "Split PDF"
+)
+MULTI_ACTIONS=("Merge PDFs")
+
+# Every rofi call below captures its exit status explicitly, with `|| rc=$?`.
 #
-# This used to hardcode Documents/Downloads/Pictures/Desktop. Two of
-# those (~/Documents, ~/Desktop) do not exist on this machine, so the
-# browser offered dead entries that opened an empty listing. Ask
-# xdg-user-dir where it can, fall back to the conventional name, and
-# only offer what is actually on disk.
+# THE bug this rewrite exists to fix. Every menu used to be
+#
+#     choice=$(printf ... | rofi -dmenu ...)
+#
+# under `set -e`. rofi exits 1 when you press Esc, so that bare assignment
+# terminated the whole script -- which meant the Esc handling written below
+# it, the navigation stack, and "Esc goes up one directory" were all
+# unreachable code. Esc did not go up a level; it quit the program. Nothing
+# about the symptom pointed at `set -e`.
+#
+# rofi also distinguishes 1 (user pressed Esc) from >1 (rofi could not
+# start), and those must not be treated alike: the first is navigation, the
+# second is an error worth surfacing.
+
+# Ask for a size string. This used to shell out to zenity, which is a
+# different toolkit with its own theme -- a GTK dialog in the middle of a
+# run of palette-themed rofi windows. rofi_common already has an input
+# prompt that follows the active palette, so zenity is no longer a
+# dependency at all.
+ask_size() {
+	local answer
+	answer="$(rofi_input "New size" "e.g. 50%  ·  800x600  ·  1920x (keep ratio)")" || return 1
+	[[ -n "$answer" ]] || return 1
+	# Reject anything that is not a geometry ImageMagick will accept, rather
+	# than passing it straight through and letting the conversion fail with
+	# a message nobody sees.
+	if [[ ! "$answer" =~ ^[0-9]+%$ && ! "$answer" =~ ^[0-9]*x?[0-9]*[\!\>\<\^]?$ ]]; then
+		notify_safe "iLovePDF" "Not a valid size: $answer"
+		return 1
+	fi
+	printf '%s' "$answer"
+}
+
+# --- Browsable roots --------------------------------------------------
+#
+# This used to hardcode Documents/Downloads/Pictures/Desktop. Two of those
+# do not exist on this machine, so the browser offered dead entries that
+# opened an empty listing. Ask xdg-user-dir where it can, fall back to the
+# conventional name, and only offer what is actually on disk.
 declare -A MAIN_DIR_MAP
 add_dir() {
 	local label="$1" dir="$2"
@@ -37,6 +115,12 @@ xdg_or() {
 	[[ -n "$got" && "$got" != "$HOME" ]] && { printf '%s' "$got"; return; }
 	printf '%s' "$fallback"
 }
+
+# Created up front, not lazily. It used to be added to the menu only if it
+# already existed, so on a first run the one folder this script writes to
+# was the one folder you could not browse to.
+mkdir -p "$BASE_DIR"
+
 add_dir "Documents"   "$(xdg_or DOCUMENTS "$HOME/Documents")"
 add_dir "Downloads"   "$(xdg_or DOWNLOAD  "$HOME/Downloads")"
 add_dir "Pictures"    "$(xdg_or PICTURES  "$HOME/Pictures")"
@@ -50,129 +134,254 @@ if (( ${#MAIN_DIR_MAP[@]} == 0 )); then
 	exit 1
 fi
 
-# --- Main Logic in a function ---
-main() {
-	# --- Actions Menu ---
-	local ACTIONS="Word → PDF
-PDF → Word
-Excel → PDF
-PowerPoint → PDF
-PDF → JPG
-PDF → PNG
-JPG → PDF
-PNG → PDF
-Compress PDF
-Resize Image
-Merge PDFs
-Split PDF"
+# --- Helpers ----------------------------------------------------------
 
-	# 1. Select action from the menu
+# Never silently overwrite. Running the same conversion twice used to
+# replace the first result with no warning; now the second lands beside it.
+unique_path() {
+	local path="$1" dir base ext n=2
+	dir="$(dirname "$path")"; base="$(basename "$path")"
+	if [[ "$base" == *.* ]]; then ext=".${base##*.}"; base="${base%.*}"; else ext=""; fi
+	while [[ -e "$path" ]]; do
+		path="$dir/${base}-${n}${ext}"
+		(( n++ ))
+	done
+	printf '%s' "$path"
+}
+
+# Same idea, but for the actions that emit a NUMBERED SERIES rather than one
+# file -- PDF→JPG/PNG and Split PDF write "<stem>_000.jpg", "<stem>_page_1.pdf".
+# Feeding those through unique_path() cannot work: it tests one concrete
+# filename, so it either never collides (and the series overwrites silently)
+# or it appends its suffix in the middle of the pattern and produces names
+# like "doc_000-2.jpg_000.jpg". This checks the whole series with a glob.
+unique_stem() {
+	local dir="$1" base="$2" glob="$3" n=2
+	# Separate `local`: a variable assigned earlier in the SAME local
+	# statement is not yet visible to a later one on that line.
+	local stem="$dir/$base"
+	while compgen -G "${stem}${glob}" >/dev/null 2>&1; do
+		stem="$dir/${base}-${n}"
+		(( n++ ))
+	done
+	printf '%s' "$stem"
+}
+
+# LibreOffice writes <input-basename>.<target-ext> into --outdir and gives
+# no way to name the output. Convert into a scratch directory, then move the
+# single file it produced to where we actually want it.
+lo_convert() {
+	local infile="$1" target="$2" outfile="$3" infilter="${4:-}"
+	local tmp; tmp="$(mktemp -d)"
+	local -a args=(-env:UserInstallation="file://$LO_PROFILE" --headless --norestore)
+	[[ -n "$infilter" ]] && args+=(--infilter="$infilter")
+	args+=(--convert-to "$target" "$infile" --outdir "$tmp")
+
+	libreoffice "${args[@]}" >/dev/null 2>&1 || true
+
+	local produced
+	produced="$(find "$tmp" -maxdepth 1 -type f -print -quit 2>/dev/null || true)"
+	if [[ -z "$produced" ]]; then
+		rm -rf "$tmp"
+		return 1
+	fi
+	mv -- "$produced" "$outfile"
+	rm -rf "$tmp"
+	return 0
+}
+
+# --- Main -------------------------------------------------------------
+
+SELECTED_FILES=()
+
+pick_action() {
+	local out rc=0
+	out="$(printf '%s\n' "${ACTION_ORDER[@]}" | rofi -dmenu -i -p "Select Action" \
+		-theme "$HOME/.config/rofi/themes/base.rasi" \
+		-mesg "$(rofi_hint "↵ choose" "Esc closes")")" || rc=$?
+	(( rc != 0 )) && return 1
+	printf '%s' "$out"
+}
+
+run() {
 	local ACTION
-	ACTION=$(echo -e "$ACTIONS" | $ROFI_CMD "Select Action") || exit 0
+	ACTION="$(pick_action)" || exit 0
+	[[ -n "$ACTION" ]] || exit 0
+	[[ -v "ACTION_EXT[$ACTION]" ]] || { notify_safe "iLovePDF" "Unknown action: $ACTION"; exit 1; }
 
-	# 2. Define allowed file extensions based on action
-	local EXT=""
-	local MULTI_SELECT="false"
-	case "$ACTION" in
-	"Word → PDF") EXT="docx" ;;
-	"PDF → Word") EXT="pdf" ;;
-	"Excel → PDF") EXT="xlsx" ;;
-	"PowerPoint → PDF") EXT="pptx" ;;
-	"PDF → JPG" | "PDF → PNG") EXT="pdf" ;;
-	"JPG → PDF") EXT="jpg jpeg" ;;
-	"PNG → PDF") EXT="png" ;;
-	"Compress PDF" | "Split PDF") EXT="pdf" ;;
-	"Resize Image") EXT="jpg jpeg png gif bmp" ;;
-	"Merge PDFs")
-		EXT="pdf"
-		MULTI_SELECT="true"
-		;;
-	*)
-		echo "Unknown action: $ACTION"
-		exit 1
-		;;
-	esac
 	local -a EXT_ARRAY
-	read -r -a EXT_ARRAY <<<"$EXT"
+	read -r -a EXT_ARRAY <<<"${ACTION_EXT[$ACTION]}"
 
-	# 3. Main application loop for directory/file selection
+	local multi_select="false"
+	local a
+	for a in "${MULTI_ACTIONS[@]}"; do
+		[[ "$a" == "$ACTION" ]] && multi_select="true"
+	done
+
+	# Directory / file selection. navigate() returns 0 once files are
+	# chosen, 1 to come back here, 2 to quit outright.
 	while true; do
-		SELECTED_FILES=() # Reset selected files array for each loop
+		SELECTED_FILES=()
+		local -a roots=()
+		mapfile -t roots < <(printf '%s\n' "${!MAIN_DIR_MAP[@]}" | sort)
 
-		local main_menu_options=("${!MAIN_DIR_MAP[@]}")
+		local out rc=0
+		out="$(printf '%s\n' "${roots[@]}" | rofi -dmenu -i -p "Start in" \
+			-theme "$HOME/.config/rofi/themes/base.rasi" \
+			-mesg "$(rofi_hint "↵ open" "Esc closes")")" || rc=$?
+		(( rc != 0 )) && exit 0
+		[[ -n "$out" ]] || exit 0
+		[[ -v "MAIN_DIR_MAP[$out]" ]] || continue
 
-		local DIR_CHOICE
-		DIR_CHOICE=$(printf '%s\n' "${main_menu_options[@]}" | sort | $ROFI_CMD "Select Starting Directory") || exit 0
+		navigate "${MAIN_DIR_MAP[$out]}" "$ACTION" "$multi_select" "${EXT_ARRAY[@]}"
+		case $? in
+			0) break ;;   # files chosen
+			1) continue ;;# back to the roots menu
+			*) exit 0 ;;  # quit
+		esac
+	done
 
-		local CURRENT_DIR="${MAIN_DIR_MAP[$DIR_CHOICE]}"
+	(( ${#SELECTED_FILES[@]} > 0 )) || exit 0
 
-		# Navigate and select files. This function returns 0 on success (file selected), 1 on "go home".
-		if navigate "$CURRENT_DIR" "$ACTION" "$MULTI_SELECT" "${EXT_ARRAY[@]}"; then
-			# If a file was selected (returns 0), break the loop to proceed with conversion
-			break
-		else
-			# If user chose "Main Menu" or cancelled from top (returns 1), loop continues
-			continue
+	# convert_files returns rather than exits, so it stays callable from a
+	# test harness; run() is what turns a failed conversion into a non-zero
+	# exit status for the process.
+	convert_files "$ACTION" "${SELECTED_FILES[@]}" || exit 1
+}
+
+convert_files() {
+	local ACTION="$1"; shift
+	local -a files=("$@")
+
+	# Merging one file is not a merge -- gs happily runs on a single input
+	# and reports a successful "merge" that is really a copy. Checked here
+	# rather than at the call site so it holds for every caller.
+	if [[ "$ACTION" == "Merge PDFs" && ${#files[@]} -lt 2 ]]; then
+		notify_safe "iLovePDF" "Merge needs at least two PDFs — pick more with Shift or Ctrl."
+		return 1
+	fi
+
+	# Ghostscript and ImageMagick report a missing input on stdout, not
+	# stderr, so a bad path used to spray a stack dump into whatever
+	# launched this. Check first and say it once.
+	local f
+	for f in "${files[@]}"; do
+		if [[ ! -r "$f" ]]; then
+			notify_safe "iLovePDF" "Cannot read $(basename "$f")"
+			return 1
 		fi
 	done
 
-	# 4. Prepare output folder and perform the action
 	local OUT_DIR="$BASE_DIR/$ACTION"
 	mkdir -p "$OUT_DIR"
 
-	local FIRST_FILE="${SELECTED_FILES[0]}"
-	local FILENAME
-	FILENAME=$(basename "$FIRST_FILE")
-	local NAME="${FILENAME%.*}"
+	local FIRST="${files[0]}"
+	local FILENAME NAME
+	FILENAME="$(basename "$FIRST")"
+	NAME="${FILENAME%.*}"
+
+	local ok=1 produced="" out
+	notify_safe "iLovePDF" "$ACTION — working…"
 
 	case "$ACTION" in
 	"Word → PDF" | "Excel → PDF" | "PowerPoint → PDF")
-		libreoffice --headless --convert-to pdf "$FIRST_FILE" --outdir "$OUT_DIR"
+		out="$(unique_path "$OUT_DIR/${NAME}.pdf")"
+		lo_convert "$FIRST" pdf "$out" && { ok=0; produced="$out"; }
 		;;
 	"PDF → Word")
-		libreoffice --headless --convert-to docx "$FIRST_FILE" --outdir "$OUT_DIR"
+		# `--convert-to docx` on a PDF fails outright: LibreOffice has no
+		# route from PDF to Writer without being told to use the PDF import
+		# filter, and the explicit target filter name. Measured: the old
+		# command exited 1 and produced nothing, while the notification
+		# still said the conversion had completed.
+		out="$(unique_path "$OUT_DIR/${NAME}.docx")"
+		lo_convert "$FIRST" "docx:MS Word 2007 XML" "$out" writer_pdf_import \
+			&& { ok=0; produced="$out"; }
 		;;
 	"JPG → PDF" | "PNG → PDF")
-		convert "$FIRST_FILE" "$OUT_DIR/${NAME}.pdf"
+		out="$(unique_path "$OUT_DIR/${NAME}.pdf")"
+		"$IM" "$FIRST" "$out" >/dev/null 2>&1 && { ok=0; produced="$out"; }
 		;;
-	"PDF → JPG")
-		convert -density 150 "$FIRST_FILE" "$OUT_DIR/${NAME}_%03d.jpg"
-		;;
-	"PDF → PNG")
-		convert -density 150 "$FIRST_FILE" "$OUT_DIR/${NAME}_%03d.png"
+	"PDF → JPG" | "PDF → PNG")
+		local ext=jpg; [[ "$ACTION" == "PDF → PNG" ]] && ext=png
+		local stem; stem="$(unique_stem "$OUT_DIR" "$NAME" "_*.${ext}")"
+		if "$IM" -density 150 "$FIRST" "${stem}_%03d.${ext}" >/dev/null 2>&1; then
+			produced="$(find "$OUT_DIR" -maxdepth 1 -name "$(basename "$stem")_*.${ext}" | head -1)"
+			[[ -n "$produced" ]] && ok=0
+		fi
 		;;
 	"Compress PDF")
+		out="$(unique_path "$OUT_DIR/${NAME}_compressed.pdf")"
 		gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/screen \
-			-dNOPAUSE -dBATCH -sOutputFile="$OUT_DIR/${NAME}_compressed.pdf" "$FIRST_FILE"
+			-dNOPAUSE -dBATCH -q -sOutputFile="$out" "$FIRST" >/dev/null 2>&1 \
+			&& { ok=0; produced="$out"; }
 		;;
 	"Resize Image")
 		local SIZE
-		SIZE=$(zenity --entry --title="Resize Image" --text="Enter new size (e.g., 50% or 800x600)") || exit 1
-		convert "$FIRST_FILE" -resize "$SIZE" "$OUT_DIR/${NAME}_resized.${FIRST_FILE##*.}"
+		SIZE="$(ask_size)" || return 0
+		out="$(unique_path "$OUT_DIR/${NAME}_resized.${FIRST##*.}")"
+		"$IM" "$FIRST" -resize "$SIZE" "$out" >/dev/null 2>&1 && { ok=0; produced="$out"; }
 		;;
 	"Merge PDFs")
-		local OUTPUT_FILENAME="${NAME}_merged.pdf"
-		gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -sOutputFile="$OUT_DIR/$OUTPUT_FILENAME" "${SELECTED_FILES[@]}"
+		out="$(unique_path "$OUT_DIR/${NAME}_merged.pdf")"
+		gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -sOutputFile="$out" "${files[@]}" >/dev/null 2>&1 \
+			&& { ok=0; produced="$out"; }
 		;;
 	"Split PDF")
 		local PAGES
-		PAGES=$(pdfinfo "$FIRST_FILE" | grep "Pages:" | awk '{print $2}')
+		PAGES="$(pdfinfo "$FIRST" 2>/dev/null | awk '/^Pages:/{print $2}')"
 		if ! [[ "$PAGES" =~ ^[0-9]+$ ]]; then
-			notify_safe "ILovePDF Error" "Could not determine page count for $FILENAME"
-			exit 1
+			notify_safe "iLovePDF" "Could not read a page count from $FILENAME"
+			return 1
 		fi
-		for ((i = 1; i <= PAGES; i++)); do
-			gs -sDEVICE=pdfwrite -dBATCH -dNOPAUSE -dFirstPage=$i -dLastPage=$i \
-				-sOutputFile="$OUT_DIR/${NAME}_page_$i.pdf" "$FIRST_FILE"
-		done
+		if (( PAGES < 2 )); then
+			notify_safe "iLovePDF" "$FILENAME is a single page — nothing to split."
+			return 0
+		fi
+		# One gs invocation, not one per page. The old loop ran gs PAGES
+		# times, so a 200-page document meant 200 process spawns and 200
+		# full parses of the same file.
+		local stem; stem="$(unique_stem "$OUT_DIR" "$NAME" "_page_*.pdf")"
+		if gs -sDEVICE=pdfwrite -dBATCH -dNOPAUSE -q \
+			-sOutputFile="${stem}_page_%d.pdf" "$FIRST" >/dev/null 2>&1; then
+			produced="$(find "$OUT_DIR" -maxdepth 1 -name "$(basename "$stem")_page_*.pdf" | head -1)"
+			[[ -n "$produced" ]] && ok=0
+		fi
 		;;
 	esac
 
-	notify_safe "ILovePDF" "$ACTION completed for '$FILENAME'. Check $OUT_DIR"
+	# The old script notified "completed" unconditionally, at the end of a
+	# case statement that never checked a single exit status. A failed
+	# LibreOffice run and a successful one produced the same message.
+	if (( ok != 0 )) || [[ -z "$produced" || ! -e "$produced" ]]; then
+		notify_safe "iLovePDF — failed" "$ACTION could not convert $FILENAME"
+		return 1
+	fi
+
+	local count
+	count="$(find "$OUT_DIR" -maxdepth 1 -newermt '-10 seconds' -type f 2>/dev/null | wc -l)"
+	notify_safe "iLovePDF ✓ $ACTION" "$FILENAME → ${count} file(s) in ${OUT_DIR/#$HOME/\~}"
+
+	# Offer the result rather than just naming a path. Declining is the
+	# common case, so Esc and "No" both simply return.
+	if command -v xdg-open >/dev/null 2>&1; then
+		local ans rc=0
+		ans="$(printf 'No\nOpen folder\nOpen file\n' | rofi -dmenu -i -p "Done" \
+			-theme "$HOME/.config/rofi/themes/base.rasi" \
+			-mesg "$(basename "$produced")" -selected-row 0)" || rc=$?
+		(( rc != 0 )) && return 0
+		case "$ans" in
+			"Open folder") setsid xdg-open "$OUT_DIR"  >/dev/null 2>&1 & ;;
+			"Open file")   setsid xdg-open "$produced" >/dev/null 2>&1 & ;;
+		esac
+	fi
+	return 0
 }
 
-# This global is populated by the navigate function
-SELECTED_FILES=()
+# --- Browser ----------------------------------------------------------
+#
+# Returns 0 when files were chosen, 1 to go back to the roots menu, 2 to
+# quit. SELECTED_FILES is the output.
 navigate() {
 	local current_dir="$1"
 	local action="$2"
@@ -180,67 +389,111 @@ navigate() {
 	shift 3
 	local ext_array=("$@")
 
-	local navigation_stack=()
-	local rofi_options=""
-	[[ "$multi_select" == "true" ]] && rofi_options="-multi-select"
+	local -a navigation_stack=()
+	local -a rofi_extra=()
+	[[ "$multi_select" == "true" ]] && rofi_extra=(-multi-select)
+
+	# Exact string membership. This was `grep -q "^${current_dir}$"`, which
+	# treats the path as a regular expression -- a directory with a '+' or
+	# '[' in its name either matched nothing or matched the wrong root, and
+	# the "../" entry appeared or vanished accordingly.
+	is_root() {
+		local d="$1" r
+		for r in "${MAIN_DIR_MAP[@]}"; do [[ "$r" == "$d" ]] && return 0; done
+		return 1
+	}
 
 	while true; do
-		local ENTRIES=() DIRS=() FILES=()
+		local -a DIRS=() FILES=() ENTRIES=()
 
-		# Find non-hidden directories
 		while IFS= read -r -d '' d; do
-			local dirname
-			dirname=$(basename "$d")
-			[[ "$dirname" == .* ]] && continue # Hide dot folders
-			DIRS+=("$dirname/")
+			local dn; dn="$(basename "$d")"
+			[[ "$dn" == .* ]] && continue
+			DIRS+=("$dn/")
 		done < <(find "$current_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null | sort -z)
 
-		# Find non-hidden files with the right extension
 		while IFS= read -r -d '' f; do
-			local filename
-			filename=$(basename "$f")
-			[[ "$filename" == .* ]] && continue # Hide dot files
-			local file_ext="${f##*.}"
+			local fn; fn="$(basename "$f")"
+			[[ "$fn" == .* ]] && continue
+			# A file with no dot at all has no extension; "${fn##*.}" would
+			# return the whole name and could match an extension by accident.
+			[[ "$fn" == *.* ]] || continue
+			local fe="${fn##*.}"
+			local e
 			for e in "${ext_array[@]}"; do
-				if [[ "${file_ext,,}" == "$e" ]]; then
-					FILES+=("$filename")
-					break
-				fi
+				if [[ "${fe,,}" == "$e" ]]; then FILES+=("$fn"); break; fi
 			done
 		done < <(find "$current_dir" -mindepth 1 -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
 
-		ENTRIES=("${DIRS[@]}" "${FILES[@]}")
+		ENTRIES=("🏠 Main Menu")
+		is_root "$current_dir" || ENTRIES=("../" "${ENTRIES[@]}")
+		(( ${#DIRS[@]}  )) && ENTRIES+=("${DIRS[@]}")
+		(( ${#FILES[@]} )) && ENTRIES+=("${FILES[@]}")
 
-		# Add navigation options to the top of the menu
-		ENTRIES=("🏠 Main Menu" "${ENTRIES[@]}")
-		if ! printf '%s\n' "${MAIN_DIR_MAP[@]}" | grep -q "^${current_dir}$"; then
-			ENTRIES=("../" "${ENTRIES[@]}")
+		local rel="${current_dir/#"$HOME"/\~}"
+		local mesg
+		if (( ${#FILES[@]} == 0 )); then
+			mesg="no matching files here · wants: ${ext_array[*]}"
+		elif [[ "$multi_select" == "true" ]]; then
+			mesg="$(rofi_hint "Shift/Ctrl multi-select" "↵ confirm" "Esc back")"
+		else
+			mesg="$(rofi_hint "↵ choose" "Esc back")"
 		fi
 
-		local REL_PATH="${current_dir#$HOME/}"
-		local choice
-		choice=$(printf '%s\n' "${ENTRIES[@]}" | $ROFI_CMD $rofi_options "$action ${SEPARATOR} ${REL_PATH}")
+		local choice rc=0
+		choice="$(printf '%s\n' "${ENTRIES[@]}" | rofi -dmenu -i \
+			-p "$action $SEPARATOR $rel" \
+			-theme "$HOME/.config/rofi/themes/base.rasi" \
+			-mesg "$mesg" "${rofi_extra[@]}")" || rc=$?
 
-		if [[ -z "$choice" ]]; then                                # User pressed Esc
-			if [[ ${#navigation_stack[@]} -eq 0 ]]; then return 1; fi # At top level, go to Main Menu
+		# rc 1 is Esc, anything higher is rofi failing to start.
+		(( rc > 1 )) && return 2
+
+		if (( rc != 0 )) || [[ -z "$choice" ]]; then
+			# Esc: up one level if we descended, otherwise back to the roots
+			# menu. This is the behaviour that `set -e` made unreachable.
+			if (( ${#navigation_stack[@]} == 0 )); then return 1; fi
 			current_dir="${navigation_stack[-1]}"
-			unset 'navigation_stack[${#navigation_stack[@]}-1]'
-		elif [[ "$choice" == "🏠 Main Menu" ]]; then
-			return 1 # Signal to go back to the main directory menu
-		elif [[ "$choice" == "../" ]]; then
-			current_dir="$(dirname "$current_dir")"
-		elif [[ "$choice" == */ ]]; then
+			unset 'navigation_stack[-1]'
+			continue
+		fi
+
+		case "$choice" in
+		"🏠 Main Menu") return 1 ;;
+		"../")
+			if (( ${#navigation_stack[@]} )); then
+				current_dir="${navigation_stack[-1]}"
+				unset 'navigation_stack[-1]'
+			else
+				current_dir="$(dirname "$current_dir")"
+			fi
+			;;
+		*/)
 			navigation_stack+=("$current_dir")
 			current_dir="$current_dir/${choice%/}"
-		else
-			mapfile -t choices < <(echo -e "$choice")
-			for item in "${choices[@]}"; do
+			;;
+		*)
+			# `echo -e` here mangled any filename containing a backslash --
+			# it interprets \t, \n and friends inside the name itself.
+			local -a picked=()
+			mapfile -t picked <<<"$choice"
+			local item
+			for item in "${picked[@]}"; do
+				[[ -n "$item" ]] || continue
+				[[ -f "$current_dir/$item" ]] || continue
 				SELECTED_FILES+=("$current_dir/$item")
 			done
-			return 0 # Signal success, file was selected
-		fi
+			(( ${#SELECTED_FILES[@]} )) && return 0
+			;;
+		esac
 	done
 }
 
-# --- Script Entry Point ---
-[[ "${BASH_SOURCE[0]}" == "${0}" ]] && main "$@"
+# --- Entry point ------------------------------------------------------
+#
+# An `if` rather than `[[ ... ]] && run`, because the && form leaves the
+# file's exit status at 1 when the guard is false -- and this file turns on
+# `set -e`, so sourcing it for a test killed the shell doing the sourcing.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+	run "$@"
+fi
