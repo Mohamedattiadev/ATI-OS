@@ -5941,6 +5941,16 @@ keys = [
     ),
     # ---copyq clipboard popup---
     Key([mod2], "v", lazy.spawn(os.path.expanduser("~/.config/AtiScriptsV1/copyq_rofi")), desc="CopyQ clipboard rofi picker (ctrl+j/k nav, thumbnails)"),
+    # ---scroll to top on a double tap---
+    # gg_scroll is a double-tap detector: the FIRST press stores a
+    # timestamp, a second within 0.5s scrolls to the top. So it has to be
+    # bound to a key you can press twice quickly, and it cannot be a bare
+    # "g" -- that would swallow the letter inside every application. Alt+g
+    # is free and is the vim mnemonic without the cost.
+    #
+    # It had no binding at all before this, and nothing in .config
+    # referenced it.
+    Key([mod2], "g", lazy.spawn(os.path.expanduser("~/.config/AtiScriptsV1/gg_scroll")), desc="Scroll to top (tap twice)"),
     # ---gptscript-inline---
     # FIX:  was working but now not......
     # Key(

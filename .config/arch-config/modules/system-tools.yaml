@@ -53,8 +53,25 @@ packages:
   - python-tqdm
   - dmenu           # rofi fallback used by dmscripts
   - slock           # lock fallback in dm-logout
-  - poppler         # pdftotext, pdfinfo used by dm-maim etc.
-  - ghostscript     # pdf processing
+  - poppler         # pdftotext, pdfinfo, pdftoppm, pdfimages — rofi_ilovepdf
+  - ghostscript     # pdf compression + repair in rofi_ilovepdf
+  # qpdf carries every page-level operation in rofi_ilovepdf: merge, split,
+  # rotate, extract/delete pages, encrypt, decrypt. It was already on this
+  # machine, but ONLY as a dependency of libcupsfilters -- so it would have
+  # gone the moment the print stack did, and on a machine with a different
+  # printing setup it may never arrive at all. Declared explicitly because
+  # something depends on it directly now.
+  #
+  # gs is deliberately not used for merging: it re-writes every page through
+  # its interpreter and silently drops form fields, annotations and
+  # bookmarks. qpdf copies the page objects intact.
+  - qpdf
+  # OCR for rofi_ilovepdf's "make text selectable". The action is hidden
+  # from the menu when tesseract is absent rather than failing, so this is
+  # what turns the feature on. -data-eng is the language model; add
+  # tesseract-data-<lang> for others.
+  - tesseract
+  - tesseract-data-eng
   - wl-clipboard    # wl-copy fallback in fish scripts
   - whisper.cpp-git # voice_dictate backend (AUR)
   - yt-dlp

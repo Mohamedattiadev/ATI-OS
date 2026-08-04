@@ -133,31 +133,23 @@ session, for that specific clip.
 
 ---
 
-## No trigger found — resolve before speccing
+## Scripts with no trigger — resolved
 
-These exist and look finished, but nothing in `.config` reaches them —
-not `config.py`, `autostart.sh`, `rofi_docs`, eww or fish. No GIF row is
-written for them, because a row's "exact trigger" column cannot be filled in
-honestly.
+All four of the genuinely unreachable scripts have been dealt with. Kept
+here because the audit that found them was wrong twice, and the corrections
+are worth more than the list was.
 
-| script | what it looks like it does | status |
-|---|---|---|
-| `collector_app.py` | collector window that hides by moving off-screen rather than minimising | **cannot run.** Imported nowhere, *and* two prerequisites are absent: the `it.mijorus.collector` flatpak is not installed, and the `_collector` group it parks the window in is not defined in `config.py`. |
-| `gg_scroll` | double-tap `g` scroll-to-top gesture | Runs — `bc` and `xdotool` are both present — but needs a binding, and a bare `g` bound globally would be swallowed inside every application. |
-| `rofi_keymaps` | qtile **and fish** shortcut list, AST-parsed | Compiles and runs. Overlaps `qtile-keys`, which *is* wired into the docs menu's Keybindings section; the fish half is the part `qtile-keys` does not cover. |
-| `dm-weather` | weather notification | Works — wttr.in answers, and it reports through `notify-send`. Its binding at `config.py:6340` is commented out because it asks for `Super+P , W`, which the **wallpaper picker** already owns. Needs a different key, not un-commenting. Note it geolocates by IP, so the notification names the owner's city. |
-
-### Wired after all
-
-An earlier pass in this file listed these three as orphans and was **wrong**.
-Each is reached through a path or a helper rather than by bare name, which is
-what a name search misses:
-
-| script | reached by |
+| script | outcome |
 |---|---|
-| `reset_PC` | `Mod+Shift+F5` — `config.py:5868`, via `~/.config/AtiScriptsV1/reset_PC` inside a shell string |
-| `sum_app.py` | `Mod+Shift+S` — `config.py:5894`, via `toggle_or_spawn_sum()`; the import at `config.py:58` is live, not dead |
-| `rofi_ilovepdf` | `Super+P , V` — wired this session. All six dependencies (rofi, libreoffice, imagemagick, ghostscript, zenity, poppler) were already installed. |
+| `rofi_ilovepdf` | **Wired** to `Super+P , V`, then rebuilt into a 23-action offline PDF toolkit. Four of its original twelve actions did not work. |
+| `rofi_keymaps` | **Wired** into the docs menu, Cheatsheets → "Your own shortcuts". Worth having beside the three hand-written sheets because it is parsed live: `FishCheatsheet.py` never reads `config.fish`, so the 79 functions and aliases actually defined there appeared on no sheet at all. Also lists 91 qtile bindings. |
+| `gg_scroll` | **Wired** to `Alt+G`. It is a double-tap detector — first press stores a timestamp, a second within 0.5 s scrolls to the top — so it needs a key that can be pressed twice quickly, and could not be the bare `g` it was written for without swallowing the letter inside every application. |
+| `collector_app.py` | **Deleted.** It could not run: imported nowhere, the `it.mijorus.collector` flatpak is not installed, and the `_collector` group it parks its window in is not defined in `config.py`. In git history if it is ever wanted. |
+
+Two earlier claims in this file were wrong, and are corrected above and in
+the git log: `reset_PC` (`Mod+Shift+F5`) and `sum_app.py` (`Mod+Shift+S`)
+were never orphans — both are invoked through a path or a helper rather
+than by bare name, which is what a search for the bare name misses.
 
 ## Capture method
 
