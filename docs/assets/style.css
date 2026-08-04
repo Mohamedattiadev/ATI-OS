@@ -265,14 +265,20 @@ main > figure { max-width: var(--wide); }
   }
 }
 
-/* The header wordmark: [ATI mark]-OS  Arch + qtile, packaged.
+/* The header wordmark: [ATI-OS mark]  Arch + qtile, packaged.
 
-   The mark is the ATI glyphs of the six-line artwork the ISO prints at login
-   -- its first 20 monospace columns, taken from ati-os-install's banner() and
-   not retyped -- reduced to the cells the artwork fills with a solid `█` and
-   redrawn as an SVG path on that grid. Those cells are a 19x5 bitmap that
-   reads "ATI" outright; the sixth row and the `╔═╗ ║ ╚═╝` cells are the
-   drop-shadow, and they are dropped here.
+   The mark is the whole six-line artwork the ISO prints at login -- taken
+   from ati-os-install's banner() and not retyped -- reduced to the cells the
+   artwork fills with a solid `█` and redrawn as an SVG path on that grid.
+   Those cells are a 42x5 bitmap that reads "ATI-OS" outright; the sixth row
+   and the `╔═╗ ║ ╚═╝` cells are the drop-shadow, and they are dropped here.
+
+   It used to be the first 19 columns only -- "ATI" as a bitmap -- with "-OS"
+   set beside it as ordinary mono text. Two drawing systems in one word: the
+   pixel letters and the hinted, curved font read as two logos stuck
+   together, however carefully the sizes were matched. Tracing the whole
+   banner costs 200 bytes of path and gives the word one voice, the same one
+   the hero and the installer already use.
 
    Three earlier attempts failed the same way and it is worth writing down.
    Bar height gives the mark about 15px, and at 15px the shadow's hairlines
@@ -287,12 +293,11 @@ main > figure { max-width: var(--wide); }
    of baking one blue that has to clear both grounds. `shape-rendering:
    crispEdges` plus an integral 2x3px cell means every stem lands on whole
    device pixels at 1x and doubles exactly at 2x -- which is also why the mark
-   is drawn at its intrinsic 38x15 and never scaled, including at the narrow
+   is drawn at its intrinsic 84x15 and never scaled, including at the narrow
    breakpoint. Scaling it is what would put the fuzz back.
 
-   "-OS" beside it is ordinary accent text in the mono stack, and the
-   strapline is two steps down -- smaller, lighter, sans, --fg-faint -- so the
-   bar reads as name-then-note rather than one phrase. */
+   The strapline is two steps down from the mark -- smaller, lighter, sans,
+   --fg-faint -- so the bar reads as name-then-note rather than one phrase. */
 .topbar .brand {
   display: flex;
   align-items: center;
@@ -307,23 +312,6 @@ main > figure { max-width: var(--wide); }
 .topbar .brand-mark {
   flex: none;
   display: block;
-  color: var(--accent);
-}
-/* Matched to the mark by measurement, not by nominal size. The mark's letters
-   are its full 15px. Liberation Mono Bold's ink height for "-OS" is 0.68 of
-   its font-size (rendered at 100px and trimmed: 68px), so 15 / 0.68 = 22px =
-   1.375rem sets the two on one cap line -- which is what "same size" means to
-   the eye here, not equal nominal sizes. */
-.topbar .brand-os {
-  /* Cancels most of .brand's 8px flex gap: "ATI" and "-OS" are one word and
-     have to set as one. The strapline gets that gap back and more, so the row
-     reads as [name][pause][note]. */
-  margin-left: -6px;
-  font-family: var(--mono);
-  font-size: 1.375rem;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.02em;
   color: var(--accent);
 }
 .topbar .brand small {
@@ -1133,10 +1121,9 @@ footer.page a:hover { color: var(--accent); }
    rather than blanking it -- the icon-only toggle gave back the room the old
    text button was taking, and the name is the thing worth keeping. */
 @media (max-width: 470px) {
-  /* Tighten the gaps, never the mark: it is pixel-snapped at 38x15 and
+  /* Tighten the gaps, never the mark: it is pixel-snapped at 84x15 and
      scaling it is exactly what makes it fuzzy. */
   .topbar .brand { gap: var(--s1); }
-  .topbar .brand-os { margin-left: -3px; }
 }
 
 
@@ -1316,28 +1303,62 @@ footer.page a:hover { color: var(--accent); }
 
 /* What you get.
 
-   A plain reading list -- term, then sentence, one per row, ruled. Five
-   facts, each written out once, in the document order a reader, a printer
-   and a screen reader all get. It was briefly a scrolling belt; motion
-   fights prose, and nothing here is worth making somebody chase. */
-.spec {
-  max-width: 40rem;
+   A slider, right to left, not a five-up grid of bordered boxes: that grid
+   is the single most recognisable generated-landing-page shape, and five
+   into three columns leaves an empty cell staring back at you. Every fact
+   is still written out in full, once, as a real <dl> -- the markup above
+   duplicates that list a second time with aria-hidden so the belt has a
+   seamless second lap to scroll onto, but the reading order, the search
+   index (index.html is not indexed at all -- see build-index.py) and a
+   screen reader all only ever see the first five.
+
+   Continuous motion and readable prose fight each other, so this pauses
+   instead of choosing one: :hover and :focus-within stop it dead, the
+   marquee itself is tabbable so a keyboard user can stop it without a
+   mouse, and the sitewide prefers-reduced-motion rule (bottom of this file)
+   freezes every animation on the page including this one. Width is capped
+   by wrapping .spec-marquee in overflow:hidden, not by the animation, so
+   there is no horizontal scrollbar at any width -- the belt is simply
+   clipped to its box. */
+.spec-marquee {
+  overflow: hidden;
+  width: 100%;
   margin: 0 auto;
-  border-top: 1px solid var(--border);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
 }
+.spec-marquee:focus-visible { outline-offset: 6px; }
+
+.spec {
+  display: flex;
+  width: max-content;
+  margin: 0;
+  border-top: 0;
+  /* 60s for one full lap of ten items (five real, five duplicate) is a
+     comfortable reading pace for the shortest sentence here; anyone who
+     wants longer just hovers or tabs to it and it stops. */
+  animation: spec-scroll 60s linear infinite;
+}
+.spec-marquee:hover .spec,
+.spec-marquee:focus-within .spec {
+  animation-play-state: paused;
+}
+
 .spec > div {
-  display: grid;
-  grid-template-columns: 5.5rem minmax(0, 1fr);
-  gap: 0 var(--s4);
-  align-items: baseline;
-  padding: var(--s3) 0;
-  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  width: 19rem;
+  padding: var(--s3) var(--s6) var(--s3) 0;
+  margin-right: var(--s3);
+  border-bottom: 0;
+  border-right: 1px solid var(--border);
 }
 .spec dt {
+  display: block;
+  margin: 0 0 var(--s1);
   font-family: var(--mono);
   font-size: var(--t-base);
   font-weight: 700;
-  line-height: 1.5;
+  line-height: 1.3;
   letter-spacing: -0.01em;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
@@ -1348,6 +1369,11 @@ footer.page a:hover { color: var(--accent); }
   line-height: 1.6;
   color: var(--fg-muted);
   text-wrap: pretty;
+}
+
+@keyframes spec-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
 }
 
 /* Recordings */
@@ -1473,15 +1499,6 @@ footer.site {
   display: block;
   color: var(--accent);
 }
-.site-brand .brand-os {
-  margin-left: -6px;
-  font-family: var(--mono);
-  font-size: 1.375rem;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  color: var(--accent);
-}
 .site-brand small {
   font-size: var(--t-xs);
   color: var(--fg-faint);
@@ -1536,15 +1553,17 @@ footer.site a:hover { color: var(--accent); }
   .action { padding: var(--s3) var(--s4); }
 }
 
-/* Below this the 5.5rem term column steals too much of the line, so the
-   term stacks above its sentence instead of sitting beside it. */
+/* A 19rem card is wider than a 400px screen once its own padding is
+   counted, so the belt would clip mid-word on the very item it is meant to
+   show. Narrower cards below this width, so each one comfortably fits. */
 @media (max-width: 560px) {
-  .spec > div { grid-template-columns: minmax(0, 1fr); gap: var(--s1) 0; }
+  .spec > div { width: 15.5rem; padding-right: var(--s5); }
 }
 
 @media (max-width: 430px) {
   .actions { gap: var(--s2); }
   .action { font-size: var(--t-xs); padding: var(--s2) var(--s3); }
+  .spec > div { width: 13.5rem; }
 }
 
 

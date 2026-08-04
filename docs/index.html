@@ -10,7 +10,7 @@
 <body>
 
 <header class="topbar">
-  <a class="brand" href="index.html"><svg class="brand-mark" viewBox="0 0 38 15" width="38" height="15" role="img" aria-label="ATI" fill="currentColor" shape-rendering="crispEdges" focusable="false"><path d="M2 0h10v3h-10zM16 0h16v3h-16zM34 0h4v3h-4zM0 3h4v3h-4zM10 3h4v3h-4zM22 3h4v3h-4zM34 3h4v3h-4zM0 6h14v3h-14zM22 6h4v3h-4zM34 6h4v3h-4zM0 9h4v3h-4zM10 9h4v3h-4zM22 9h4v3h-4zM34 9h4v3h-4zM0 12h4v3h-4zM10 12h4v3h-4zM22 12h4v3h-4zM34 12h4v3h-4z"/></svg><span class="brand-os">-OS</span><small>Arch + qtile, packaged</small></a>
+  <a class="brand" href="index.html"><svg class="brand-mark" viewBox="0 0 84 15" width="84" height="15" role="img" aria-label="ATI-OS" fill="currentColor" shape-rendering="crispEdges" focusable="false"><path d="M2 0h10v3h-10zM16 0h16v3h-16zM34 0h4v3h-4zM54 0h12v3h-12zM70 0h14v3h-14zM0 3h4v3h-4zM10 3h4v3h-4zM22 3h4v3h-4zM34 3h4v3h-4zM52 3h4v3h-4zM64 3h4v3h-4zM70 3h4v3h-4zM0 6h14v3h-14zM22 6h4v3h-4zM34 6h4v3h-4zM40 6h10v3h-10zM52 6h4v3h-4zM64 6h4v3h-4zM70 6h14v3h-14zM0 9h4v3h-4zM10 9h4v3h-4zM22 9h4v3h-4zM34 9h4v3h-4zM52 9h4v3h-4zM64 9h4v3h-4zM80 9h4v3h-4zM0 12h4v3h-4zM10 12h4v3h-4zM22 12h4v3h-4zM34 12h4v3h-4zM54 12h12v3h-12zM70 12h14v3h-14z"/></svg><small>Arch + qtile, packaged</small></a>
   <div class="spacer"></div>
   <div class="search">
     <svg class="search-ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14"/></svg>
@@ -74,32 +74,66 @@
   <h2>What you get</h2>
   <p class="sublede">Every number here is counted out of this repository, not estimated.</p>
 
-  <dl class="spec">
-    <div>
-      <dt>22</dt>
-      <dd>colour schemes. Picking one retints the bar, the terminal, the launcher,
-      GTK and the browser at the same time.</dd>
-    </div>
-    <div>
-      <dt>46</dt>
-      <dd>install modules run by default, each one reported as it passes. Two more
-      are opt-in.</dd>
-    </div>
-    <div>
-      <dt>~20 min</dt>
-      <dd>from booting the USB medium to a working desktop.</dd>
-    </div>
-    <div>
-      <dt>31</dt>
-      <dd>AUR packages compiled into the medium in advance, so the install is not
-      waiting on builds.</dd>
-    </div>
-    <div>
-      <dt>qtile</dt>
-      <dd>tiling window manager on X11. No display manager: you log in at a TTY,
-      then <code>letsgo</code> starts the desktop.</dd>
-    </div>
-  </dl>
+  <!-- The five facts are the entire content: each appears once as a real
+       <dl> definition for anyone reading, searching, printing or using a
+       screen reader, then a second time, aria-hidden, purely so the CSS
+       animation below has a seamless second lap to scroll onto. Nothing here
+       depends on JavaScript, and the .no-js class carries no branch for this
+       section because there isn't a working one -- pausing on hover/focus and
+       the sitewide prefers-reduced-motion rule are the only controls, both
+       pure CSS. See the .spec-marquee rule for the loop mechanics. -->
+  <div class="spec-marquee" tabindex="0" aria-label="What you get -- five facts, scrolling; press Tab and hold to stop it">
+    <dl class="spec">
+      <div>
+        <dt>22</dt>
+        <dd>colour schemes. Picking one retints the bar, the terminal, the launcher,
+        GTK and the browser at the same time.</dd>
+      </div>
+      <div>
+        <dt>46</dt>
+        <dd>install modules run by default, each one reported as it passes. Two more
+        are opt-in.</dd>
+      </div>
+      <div>
+        <dt>~20 min</dt>
+        <dd>from booting the USB medium to a working desktop.</dd>
+      </div>
+      <div>
+        <dt>31</dt>
+        <dd>AUR packages compiled into the medium in advance, so the install is not
+        waiting on builds.</dd>
+      </div>
+      <div>
+        <dt>qtile</dt>
+        <dd>tiling window manager on X11. No display manager: you log in at a TTY,
+        then <code>letsgo</code> starts the desktop.</dd>
+      </div>
+      <div aria-hidden="true">
+        <dt>22</dt>
+        <dd>colour schemes. Picking one retints the bar, the terminal, the launcher,
+        GTK and the browser at the same time.</dd>
+      </div>
+      <div aria-hidden="true">
+        <dt>46</dt>
+        <dd>install modules run by default, each one reported as it passes. Two more
+        are opt-in.</dd>
+      </div>
+      <div aria-hidden="true">
+        <dt>~20 min</dt>
+        <dd>from booting the USB medium to a working desktop.</dd>
+      </div>
+      <div aria-hidden="true">
+        <dt>31</dt>
+        <dd>AUR packages compiled into the medium in advance, so the install is not
+        waiting on builds.</dd>
+      </div>
+      <div aria-hidden="true">
+        <dt>qtile</dt>
+        <dd>tiling window manager on X11. No display manager: you log in at a TTY,
+        then <code>letsgo</code> starts the desktop.</dd>
+      </div>
+    </dl>
+  </div>
 </section>
 
 <section class="wrap-wide">
@@ -160,7 +194,7 @@
 <footer class="site">
   <div class="site-top">
     <div class="site-brand">
-      <p class="site-id"><svg class="brand-mark" viewBox="0 0 38 15" width="38" height="15" role="img" aria-label="ATI" fill="currentColor" shape-rendering="crispEdges" focusable="false"><path d="M2 0h10v3h-10zM16 0h16v3h-16zM34 0h4v3h-4zM0 3h4v3h-4zM10 3h4v3h-4zM22 3h4v3h-4zM34 3h4v3h-4zM0 6h14v3h-14zM22 6h4v3h-4zM34 6h4v3h-4zM0 9h4v3h-4zM10 9h4v3h-4zM22 9h4v3h-4zM34 9h4v3h-4zM0 12h4v3h-4zM10 12h4v3h-4zM22 12h4v3h-4zM34 12h4v3h-4z"/></svg><span class="brand-os">-OS</span><small>Arch + qtile, packaged</small></p>
+      <p class="site-id"><svg class="brand-mark" viewBox="0 0 84 15" width="84" height="15" role="img" aria-label="ATI-OS" fill="currentColor" shape-rendering="crispEdges" focusable="false"><path d="M2 0h10v3h-10zM16 0h16v3h-16zM34 0h4v3h-4zM54 0h12v3h-12zM70 0h14v3h-14zM0 3h4v3h-4zM10 3h4v3h-4zM22 3h4v3h-4zM34 3h4v3h-4zM52 3h4v3h-4zM64 3h4v3h-4zM70 3h4v3h-4zM0 6h14v3h-14zM22 6h4v3h-4zM34 6h4v3h-4zM40 6h10v3h-10zM52 6h4v3h-4zM64 6h4v3h-4zM70 6h14v3h-14zM0 9h4v3h-4zM10 9h4v3h-4zM22 9h4v3h-4zM34 9h4v3h-4zM52 9h4v3h-4zM64 9h4v3h-4zM80 9h4v3h-4zM0 12h4v3h-4zM10 12h4v3h-4zM22 12h4v3h-4zM34 12h4v3h-4zM54 12h12v3h-12zM70 12h14v3h-14z"/></svg><small>Arch + qtile, packaged</small></p>
       <p class="site-legal">No licence file has been added to the repository yet, so no licence is
       granted: read the code, but assume all rights reserved until one appears. Based on
       <a href="https://www.youtube.com/c/DistroTube/videos">Distrotube's</a> qtile
