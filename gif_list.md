@@ -135,24 +135,29 @@ session, for that specific clip.
 
 ## No trigger found — resolve before speccing
 
-These scripts exist and look finished, but a search of `.config` for every
-reference — keybindings in `config.py`, `autostart.sh`, `rofi_docs`, eww, fish —
-returns **nothing**. They are reachable only by typing their name in a shell, if
-at all. No GIF row has been written for them, because a row's "exact trigger"
-column cannot be filled in honestly.
+These exist and look finished, but nothing in `.config` reaches them —
+not `config.py`, `autostart.sh`, `rofi_docs`, eww or fish. No GIF row is
+written for them, because a row's "exact trigger" column cannot be filled in
+honestly.
 
 | script | what it looks like it does | status |
 |---|---|---|
-| `rofi_ilovepdf` | hierarchical file browser for iLovePDF-style PDF conversions | no keybinding, not in `rofi_docs` |
-| `rofi_keymaps` | keymap picker | no keybinding, not in `rofi_docs` |
-| `reset_PC` | "~95 % fresh PC without reboot" soft reset, Lv1 + Lv2 | no keybinding, not in `rofi_docs` |
-| `collector_app.py` | collector window that hides by moving off-screen rather than minimising | imported nowhere |
-| `gg_scroll` | double-tap `gg` scroll gesture, with per-user tmp handling | referenced nowhere |
-| `sum_app.py` | floating calculator; `toggle_or_spawn_sum` is **imported by `config.py:58` and never called** | dead import |
-| `dm-weather` | weather notification | binding exists but is **commented out** at `config.py:6340` |
+| `collector_app.py` | collector window that hides by moving off-screen rather than minimising | **cannot run.** Imported nowhere, *and* two prerequisites are absent: the `it.mijorus.collector` flatpak is not installed, and the `_collector` group it parks the window in is not defined in `config.py`. |
+| `gg_scroll` | double-tap `g` scroll-to-top gesture | Runs — `bc` and `xdotool` are both present — but needs a binding, and a bare `g` bound globally would be swallowed inside every application. |
+| `rofi_keymaps` | qtile **and fish** shortcut list, AST-parsed | Compiles and runs. Overlaps `qtile-keys`, which *is* wired into the docs menu's Keybindings section; the fish half is the part `qtile-keys` does not cover. |
+| `dm-weather` | weather notification | Binding exists but is **commented out** at `config.py:6340`. |
 
-Decide per script: wire it up and then record it, or drop it. Either way the
-answer belongs in the repo rather than in a recording agent's guess.
+### Wired after all
+
+An earlier pass in this file listed these three as orphans and was **wrong**.
+Each is reached through a path or a helper rather than by bare name, which is
+what a name search misses:
+
+| script | reached by |
+|---|---|
+| `reset_PC` | `Mod+Shift+F5` — `config.py:5868`, via `~/.config/AtiScriptsV1/reset_PC` inside a shell string |
+| `sum_app.py` | `Mod+Shift+S` — `config.py:5894`, via `toggle_or_spawn_sum()`; the import at `config.py:58` is live, not dead |
+| `rofi_ilovepdf` | `Super+P , V` — wired this session. All six dependencies (rofi, libreoffice, imagemagick, ghostscript, zenity, poppler) were already installed. |
 
 ## Capture method
 

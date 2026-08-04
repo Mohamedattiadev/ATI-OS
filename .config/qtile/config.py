@@ -6342,6 +6342,13 @@ keys = [
             Key([], "t", lazy.spawn("rofi_todo"), desc="Open todo manager"),
             # --- screen light ---
             Key([], "l", lazy.spawn("rofi_light"), desc="screen light"),
+            # --- PDF conversions ---
+            # "v" for conVert: p/f/d/c are all taken in this chord, and
+            # rofi_ilovepdf had no trigger at all -- it was reachable only by
+            # typing its name in a shell, despite all six of its dependencies
+            # (rofi, libreoffice, imagemagick, ghostscript, zenity, poppler)
+            # being installed.
+            Key([], "v", lazy.spawn("rofi_ilovepdf"), desc="PDF conversions"),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
             *group_keys(),
         ],
