@@ -187,10 +187,21 @@ Matrix = [
     ["#008f11", "#008f11"], ["#00b849", "#00b849"], ["#00ff9f", "#00ff9f"],
 ]
 
+# Slot 7 is the MAIN ACCENT -- config.py hands it to the GroupBox as
+# this_current_screen_border, to main_icon_chip, and to every "this is the
+# selected thing" chip.  It used to be #909090, which in a palette with no
+# hue to fall back on made the accent DARKER than both the foreground
+# (#e0e0e0, the GroupBox's `inactive`) and the info slot (#b0b0b0, its
+# `active`).  Result: with highlight_method="text" the current workspace's
+# glyph was the DIMMEST of the row -- the highlight read as missing rather
+# than inverted.  Caught on camera in the nested capture session: four
+# groups shot under mono-dark, and the current one was the one you could
+# not pick out.  In a monochrome theme the accent has only value to work
+# with, so it has to be the top of the ramp.
 MonoDark = [
     ["#000000", "#000000"], ["#e0e0e0", "#e0e0e0"], ["#0a0a0a", "#0a0a0a"],
     ["#808080", "#808080"], ["#a0a0a0", "#a0a0a0"], ["#c0c0c0", "#c0c0c0"],
-    ["#a0a0a0", "#a0a0a0"], ["#909090", "#909090"], ["#b0b0b0", "#b0b0b0"],
+    ["#a0a0a0", "#a0a0a0"], ["#ffffff", "#ffffff"], ["#b0b0b0", "#b0b0b0"],
 ]
 
 MonoLight = [
