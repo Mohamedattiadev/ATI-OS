@@ -11,10 +11,7 @@
 
 <header class="topbar">
   <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
-  <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"> █████╗
-██  ██║
-██████║
-██  ██║</span><span class="brand-name"><span class="wm-ati">ATI</span><span class="wm-os">-OS</span></span><small>Arch + qtile, packaged</small></a>
+  <a class="brand" href="index.html"><svg class="brand-mark" viewBox="0 0 38 15" width="38" height="15" role="img" aria-label="ATI" fill="currentColor" shape-rendering="crispEdges" focusable="false"><path d="M2 0h10v3h-10zM16 0h16v3h-16zM34 0h4v3h-4zM0 3h4v3h-4zM10 3h4v3h-4zM22 3h4v3h-4zM34 3h4v3h-4zM0 6h14v3h-14zM22 6h4v3h-4zM34 6h4v3h-4zM0 9h4v3h-4zM10 9h4v3h-4zM22 9h4v3h-4zM34 9h4v3h-4zM0 12h4v3h-4zM10 12h4v3h-4zM22 12h4v3h-4zM34 12h4v3h-4z"/></svg><span class="brand-os">-OS</span><small>Arch + qtile, packaged</small></a>
   <div class="spacer"></div>
   <div class="search">
     <svg class="search-ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14"/></svg>
@@ -92,50 +89,75 @@ space, the installer offers to sit alongside it. See <a href="#q-disk">question 
 <tr><td><b>Who it is for</b></td><td>Almost everyone.</td><td>People whose download is old, or who want today's packages.</td></tr>
 <tr><td><b>Needs</b></td><td>Any computer that can write a USB stick.</td><td>A second computer already running Arch Linux.</td></tr>
 <tr><td><b>Takes</b></td><td>A 2.6&nbsp;GB download.</td><td>3 to 4 hours, mostly unattended.</td></tr>
-<tr><td><b>Available now</b></td><td><b>No.</b> Nothing is published yet.</td><td>Yes.</td></tr>
+<tr><td><b>Available now</b></td><td><b>Yes.</b> Published 4 August 2026.</td><td>Yes.</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>So today the honest answer is <a href="#build">path 2</a>, or the
-<a href="install-git.html">other route</a> entirely: install plain Arch first, then run one
-command.</p>
+<p>So for almost everybody the answer is <a href="#download">path 1</a>. Build it yourself if
+your download has aged past the point where the prebuilt packages are still trusted, or take
+the <a href="install-git.html">other route</a> entirely: install plain Arch first, then run
+one command.</p>
 
 <h3 id="download">Path 1 &mdash; Download the image</h3>
 
 <p>Most people should not build an operating system image. They should download one that
-somebody already built and check that it arrived intact. That is the normal path, and it is
-the one this project intends to offer.</p>
+somebody already built and check that it arrived intact. That is this path.</p>
 
-<div class="warn">
-<p><b>There is no download link yet.</b> Not a slow link, not a private one &mdash; the file
-has not been published. Do not go looking for an ATI-OS image elsewhere; anything you find
-under that name did not come from here.</p>
-<p>The image is 2.6&nbsp;GB. A single file on GitHub Releases is capped at 2&nbsp;GB, so the
-release page cannot hold it as-is, and the intention is to publish it as <b>one file</b>
-rather than chop it into parts that have to be glued back together. That means finding a
-host that will take 2.6&nbsp;GB. Until that is settled, there is nothing to link to.</p>
+<p>The image is hosted on the Internet Archive &mdash; 2.6&nbsp;GB in one file, no account, no
+mirror list. A single file on GitHub Releases is capped at 2&nbsp;GB, which is why it is not
+there.</p>
+
+<div class="tw">
+<table>
+<tbody>
+<tr><td><b>The image</b></td>
+    <td><a id="iso-link" href="https://archive.org/download/ati-os-2026.08.04-x86_64/ati-os-2026.08.04-x86_64.iso"><code>ati-os-2026.08.04-x86_64.iso</code></a> &mdash; 2.6&nbsp;GB</td></tr>
+<tr><td><b>Its checksum</b></td>
+    <td><a href="https://archive.org/download/ati-os-2026.08.04-x86_64/ati-os-2026.08.04-x86_64.iso.sha256"><code>ati-os-2026.08.04-x86_64.iso.sha256</code></a> &mdash; 95 bytes</td></tr>
+<tr><td><b>Where both live</b></td>
+    <td><a href="https://archive.org/details/ati-os-2026.08.04-x86_64">archive.org/details/ati-os-2026.08.04-x86_64</a>, which also carries a torrent</td></tr>
+</tbody>
+</table>
 </div>
 
-<p>When it lands it will be announced on the releases page of the repository,
-<a href="https://github.com/Mohamedattiadev/Newdotfile-">github.com/Mohamedattiadev/Newdotfile-</a>.
-Until then that page has no image on it, and that is not a mistake.</p>
+<p id="download-started" class="screen" hidden>Your download has been started. If nothing
+happened, use the <a href="https://archive.org/download/ati-os-2026.08.04-x86_64/ati-os-2026.08.04-x86_64.iso">image
+link above</a>.</p>
 
-<p>Two things will sit next to it: the <code>.iso</code> itself, and a small
-<code>.sha256</code> text file. The second one is how you tell a complete download from a
-truncated one. Put both in the same folder and run:</p>
+<p>Do not go looking for an ATI-OS image anywhere else; anything you find under that name did
+not come from here. The published checksum is:</p>
 
-<pre><code>sha256sum -c ati-os.iso.sha256</code></pre>
+<pre><code>767e91801733ac506ea2c3b84e5bec608bc34bbe1a4211737ed156de2c903ba3</code></pre>
 
-<p class="screen">One line back. <code>ati-os.iso: OK</code> means the file is byte-for-byte
-what was published. <code>FAILED</code> means download it again &mdash; do not write it to a
-stick.</p>
+<p>Put the <code>.iso</code> and the <code>.sha256</code> in the same folder and run:</p>
+
+<pre><code>sha256sum -c ati-os-2026.08.04-x86_64.iso.sha256</code></pre>
+
+<p class="screen">One line back. <code>ati-os-2026.08.04-x86_64.iso: OK</code> means the file is
+byte-for-byte what was published. <code>FAILED</code> means download it again &mdash; do not
+write it to a stick.</p>
 
 <div class="note">
 <p><b>Why bother checking.</b> A 2.6&nbsp;GB download that stops 40&nbsp;MB early still
 leaves a file called <code>.iso</code> on your disk. It will write to the stick, it will even
 start booting, and it will then fail somewhere unhelpful and look like broken hardware. Sixty
 seconds of <code>sha256sum</code> rules that out.</p>
+</div>
+
+<div class="limit">
+<p><b>What this image has actually been through.</b> It was installed and checked inside QEMU
+across all three install modes &mdash; plain, encrypted, and alongside an existing operating
+system, where the other OS's data and its bootloader both survived. That is the whole of it:</p>
+<ul>
+<li><b>UEFI only.</b> A machine started in legacy BIOS mode is refused rather than
+half-installed.</li>
+<li><b>Nobody has ever booted it from a physical USB stick.</b> Every test started the image
+file directly.</li>
+<li><b>No AMD or NVIDIA card and no HiDPI screen has run it.</b> A fake computer has no
+graphics hardware, so those passes say nothing about yours.</li>
+</ul>
+<p><a href="#limits">The full list is at the bottom of this page</a>.</p>
 </div>
 
 <p>With a verified <code>.iso</code>, skip to <a href="#write">writing it to the stick</a>.</p>
@@ -150,7 +172,7 @@ twenty-minute install into a two-hour one. It also raises the disk the install n
 30&nbsp;GB to 60, because build trees are large.</p>
 
 <p>Building your own image is how you avoid that: the packages are compiled today, against
-today's Arch. It is also the only way to get an image at all right now.</p>
+today's Arch.</p>
 
 <p>All of this happens on the Arch computer you already have.</p>
 
@@ -591,5 +613,39 @@ message the installer can refuse with.</p>
 
 <script src="assets/search-index.js"></script>
 <script src="assets/site.js"></script>
+<!-- The ISO button on the landing page links here as
+     install-usb.html?get=iso#download, so a reader lands on the checksum and
+     the writing instructions AND gets the file. This starts that download.
+
+     It is an enhancement, never the mechanism: the link it clicks is the same
+     <a id="iso-link"> printed in the table above, so with JavaScript blocked
+     the reader still arrives at #download and the download link is the first
+     thing under the heading. Nothing here is the only way to reach the file.
+
+     The query is stripped afterwards so a reload, a bookmark or a Back button
+     does not fire a 2.6 GB transfer a second time. -->
+<script>
+(function () {
+  var p = new URLSearchParams(location.search);
+  if (p.get('get') !== 'iso') return;
+  var src = document.getElementById('iso-link');
+  if (!src) return;
+
+  p.delete('get');
+  var q = p.toString();
+  history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
+
+  var note = document.getElementById('download-started');
+  if (note) note.hidden = false;
+
+  var a = document.createElement('a');
+  a.href = src.href;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+})();
+</script>
 </body>
 </html>

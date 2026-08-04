@@ -10,10 +10,7 @@
 <body>
 
 <header class="topbar">
-  <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"> █████╗
-██  ██║
-██████║
-██  ██║</span><span class="brand-name"><span class="wm-ati">ATI</span><span class="wm-os">-OS</span></span><small>Arch + qtile, packaged</small></a>
+  <a class="brand" href="index.html"><svg class="brand-mark" viewBox="0 0 38 15" width="38" height="15" role="img" aria-label="ATI" fill="currentColor" shape-rendering="crispEdges" focusable="false"><path d="M2 0h10v3h-10zM16 0h16v3h-16zM34 0h4v3h-4zM0 3h4v3h-4zM10 3h4v3h-4zM22 3h4v3h-4zM34 3h4v3h-4zM0 6h14v3h-14zM22 6h4v3h-4zM34 6h4v3h-4zM0 9h4v3h-4zM10 9h4v3h-4zM22 9h4v3h-4zM34 9h4v3h-4zM0 12h4v3h-4zM10 12h4v3h-4zM22 12h4v3h-4zM34 12h4v3h-4z"/></svg><span class="brand-os">-OS</span><small>Arch + qtile, packaged</small></a>
   <div class="spacer"></div>
   <div class="search">
     <svg class="search-ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14"/></svg>
@@ -30,15 +27,12 @@
 <section class="hero wrap">
   <h1 class="wordmark">
     <span class="vh">ATI-OS</span>
-    <span class="wm-row" aria-hidden="true">
-      <pre class="ascii-mark"> █████╗ ████████╗██╗
-██╔══██╗╚══██╔══╝██║
-███████║   ██║   ██║
-██╔══██║   ██║   ██║
-██║  ██║   ██║   ██║
-╚═╝  ╚═╝   ╚═╝   ╚═╝</pre>
-      <span class="wm-suffix">-OS</span>
-    </span>
+    <pre class="ascii-mark" aria-hidden="true"> █████╗ ████████╗██╗       ██████╗ ███████╗
+██╔══██╗╚══██╔══╝██║      ██╔═══██╗██╔════╝
+███████║   ██║   ██║█████╗██║   ██║███████╗
+██╔══██║   ██║   ██║╚════╝██║   ██║╚════██║
+██║  ██║   ██║   ██║      ╚██████╔╝███████║
+╚═╝  ╚═╝   ╚═╝   ╚═╝       ╚═════╝ ╚══════╝</pre>
   </h1>
 
   <p class="tagline">One person's Arch Linux and qtile desktop, packaged as an install
@@ -48,9 +42,15 @@
     <li><a class="action" href="start.html">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></svg>
       Manual</a></li>
-    <li><a class="action iso" href="install-usb.html#make">
+    <!-- Not a bare link to the 2.6 GB file. This lands the reader on the
+         section that explains verifying the checksum and writing the stick,
+         and install-usb.html's own script starts the download from there on
+         seeing ?get=iso. With JavaScript off it is still a working link to
+         that section, where the direct .iso link is the first thing printed
+         -- so it never silently does nothing. -->
+    <li><a class="action iso" href="install-usb.html?get=iso#download">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.5"/></svg>
-      ISO</a></li>
+      Download ISO</a></li>
     <li><a class="action" href="https://github.com/Mohamedattiadev/Newdotfile-">
       <svg class="solid" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
       GitHub</a></li>
@@ -72,69 +72,34 @@
 
 <section class="wrap-wide">
   <h2>What you get</h2>
-  <p class="sublede">Every number here is counted out of this repository, not estimated.
-  The strip below scrolls; hover, focus, or tap it to hold it still.</p>
+  <p class="sublede">Every number here is counted out of this repository, not estimated.</p>
 
-  <!-- The five facts are the entire content: each appears once as a real
-       <dl> definition for anyone reading, searching, printing or using a
-       screen reader, then a second time, aria-hidden, purely so the CSS
-       animation below has a seamless second lap to scroll onto. Nothing here
-       depends on JavaScript, and the .no-js class carries no branch for this
-       section because there isn't a working one -- pausing on hover/focus and
-       the sitewide prefers-reduced-motion rule are the only controls, both
-       pure CSS. See the .spec-marquee rule for the loop mechanics. -->
-  <div class="spec-marquee" tabindex="0" aria-label="What you get -- five facts, scrolling; press Tab and hold to stop it">
-    <dl class="spec">
-      <div>
-        <dt>22</dt>
-        <dd>colour schemes. Picking one retints the bar, the terminal, the launcher,
-        GTK and the browser at the same time.</dd>
-      </div>
-      <div>
-        <dt>46</dt>
-        <dd>install modules run by default, each one reported as it passes. Two more
-        are opt-in.</dd>
-      </div>
-      <div>
-        <dt>~20 min</dt>
-        <dd>from booting the USB medium to a working desktop.</dd>
-      </div>
-      <div>
-        <dt>31</dt>
-        <dd>AUR packages compiled into the medium in advance, so the install is not
-        waiting on builds.</dd>
-      </div>
-      <div>
-        <dt>qtile</dt>
-        <dd>tiling window manager on X11. No display manager: you log in at a TTY,
-        then <code>letsgo</code> starts the desktop.</dd>
-      </div>
-      <div aria-hidden="true">
-        <dt>22</dt>
-        <dd>colour schemes. Picking one retints the bar, the terminal, the launcher,
-        GTK and the browser at the same time.</dd>
-      </div>
-      <div aria-hidden="true">
-        <dt>46</dt>
-        <dd>install modules run by default, each one reported as it passes. Two more
-        are opt-in.</dd>
-      </div>
-      <div aria-hidden="true">
-        <dt>~20 min</dt>
-        <dd>from booting the USB medium to a working desktop.</dd>
-      </div>
-      <div aria-hidden="true">
-        <dt>31</dt>
-        <dd>AUR packages compiled into the medium in advance, so the install is not
-        waiting on builds.</dd>
-      </div>
-      <div aria-hidden="true">
-        <dt>qtile</dt>
-        <dd>tiling window manager on X11. No display manager: you log in at a TTY,
-        then <code>letsgo</code> starts the desktop.</dd>
-      </div>
-    </dl>
-  </div>
+  <dl class="spec">
+    <div>
+      <dt>22</dt>
+      <dd>colour schemes. Picking one retints the bar, the terminal, the launcher,
+      GTK and the browser at the same time.</dd>
+    </div>
+    <div>
+      <dt>46</dt>
+      <dd>install modules run by default, each one reported as it passes. Two more
+      are opt-in.</dd>
+    </div>
+    <div>
+      <dt>~20 min</dt>
+      <dd>from booting the USB medium to a working desktop.</dd>
+    </div>
+    <div>
+      <dt>31</dt>
+      <dd>AUR packages compiled into the medium in advance, so the install is not
+      waiting on builds.</dd>
+    </div>
+    <div>
+      <dt>qtile</dt>
+      <dd>tiling window manager on X11. No display manager: you log in at a TTY,
+      then <code>letsgo</code> starts the desktop.</dd>
+    </div>
+  </dl>
 </section>
 
 <section class="wrap-wide">
@@ -195,10 +160,7 @@
 <footer class="site">
   <div class="site-top">
     <div class="site-brand">
-      <p class="site-id"><span class="brand-mark" aria-hidden="true"> █████╗
-██  ██║
-██████║
-██  ██║</span><span class="brand-name"><span class="wm-ati">ATI</span><span class="wm-os">-OS</span></span><small>Arch + qtile, packaged</small></p>
+      <p class="site-id"><svg class="brand-mark" viewBox="0 0 38 15" width="38" height="15" role="img" aria-label="ATI" fill="currentColor" shape-rendering="crispEdges" focusable="false"><path d="M2 0h10v3h-10zM16 0h16v3h-16zM34 0h4v3h-4zM0 3h4v3h-4zM10 3h4v3h-4zM22 3h4v3h-4zM34 3h4v3h-4zM0 6h14v3h-14zM22 6h4v3h-4zM34 6h4v3h-4zM0 9h4v3h-4zM10 9h4v3h-4zM22 9h4v3h-4zM34 9h4v3h-4zM0 12h4v3h-4zM10 12h4v3h-4zM22 12h4v3h-4zM34 12h4v3h-4z"/></svg><span class="brand-os">-OS</span><small>Arch + qtile, packaged</small></p>
       <p class="site-legal">No licence file has been added to the repository yet, so no licence is
       granted: read the code, but assume all rights reserved until one appears. Based on
       <a href="https://www.youtube.com/c/DistroTube/videos">Distrotube's</a> qtile

@@ -265,21 +265,34 @@ main > figure { max-width: var(--wide); }
   }
 }
 
-/* The header wordmark.
+/* The header wordmark: [ATI mark]-OS  Arch + qtile, packaged.
 
-   The mark is the letter A from the six-line artwork the ISO prints at login,
-   in the same block-and-shadow vocabulary — solid `█` body, `╗ ║` shadow down
-   the right — reduced to four rows so it survives a 52px bar. The reduction
-   is not a crop: the real A draws its counters with the line glyphs `╔══╗`,
-   which are hairlines and dissolve below about 12px, so the two counters are
-   opened out to real background cells and the leg row and the `╚═╝` feet are
-   dropped. What is left is apex, counter, crossbar, legs — rendered at 10px
-   it reads as an A, which the crop does not. Judged by rendering it, not by
-   reasoning about it; if you change the rows, look at it again at 400px.
+   The mark is the ATI glyphs of the six-line artwork the ISO prints at login
+   -- its first 20 monospace columns, taken from ati-os-install's banner() and
+   not retyped -- reduced to the cells the artwork fills with a solid `█` and
+   redrawn as an SVG path on that grid. Those cells are a 19x5 bitmap that
+   reads "ATI" outright; the sixth row and the `╔═╗ ║ ╚═╝` cells are the
+   drop-shadow, and they are dropped here.
 
-   Beside it the name is set in the mono stack with "-OS" in the accent, and
-   the strapline is deliberately two steps down — smaller, lighter, sans, and
-   in --fg-faint — so the pair reads as name-then-note, not as one phrase. */
+   Three earlier attempts failed the same way and it is worth writing down.
+   Bar height gives the mark about 15px, and at 15px the shadow's hairlines
+   are thinner than a pixel: a CSS version at 9px, a four-row crop, and a
+   downsampled 95x48 PNG all turned the shadow into a grey haze around soft,
+   unevenly-weighted stems -- visibly blurry next to the hinted text beside
+   it. Rendered side by side, the vector is the only one that is sharp. So:
+   no shadow, and no raster.
+
+   Being a path and not an image buys the rest of it. `currentColor` means one
+   mark serves both themes and follows --accent when the token moves, instead
+   of baking one blue that has to clear both grounds. `shape-rendering:
+   crispEdges` plus an integral 2x3px cell means every stem lands on whole
+   device pixels at 1x and doubles exactly at 2x -- which is also why the mark
+   is drawn at its intrinsic 38x15 and never scaled, including at the narrow
+   breakpoint. Scaling it is what would put the fuzz back.
+
+   "-OS" beside it is ordinary accent text in the mono stack, and the
+   strapline is two steps down -- smaller, lighter, sans, --fg-faint -- so the
+   bar reads as name-then-note rather than one phrase. */
 .topbar .brand {
   display: flex;
   align-items: center;
@@ -288,36 +301,33 @@ main > figure { max-width: var(--wide); }
   text-decoration: none;
   white-space: nowrap;
 }
+/* The sitewide `img` rule frames content images -- a border and a 10px
+   radius. A logo is not a content image: that rule drew a rounded box around
+   the mark. Both are cleared here, and nowhere else. */
 .topbar .brand-mark {
   flex: none;
-  /* `pre`, not `pre-line`. The rows are written as real newlines in the
-     markup so the mark stays copy-pasteable text rather than a background
-     image -- but two of them carry a two-cell counter written as two spaces,
-     and pre-line collapses those to one, which closes the hole and turns the
-     A back into a blob. The rows are flush to column 0 in the markup for the
-     same reason: under `pre`, indenting them would indent the artwork. */
-  white-space: pre;
-  font-family: var(--mono);
-  /* 9px x 4 rows = 36px of a 52px bar. 10px reads a touch better in
-     isolation but fills 40px, and the mark then crowds both rules of the
-     bar; 8px and below the seams between adjacent blocks start to show. */
-  font-size: 9px;
-  line-height: 1;
-  /* Same hair of overlap the hero uses, and for the same reason: adjacent
-     full blocks otherwise leave a hairline of background wherever the advance
-     width lands on a fraction of a pixel, which at this size reads as a
-     scratch down the middle of every stroke. */
-  letter-spacing: -0.04em;
-  color: var(--accent-line);
+  display: block;
+  color: var(--accent);
 }
-.topbar .brand-name {
+/* Matched to the mark by measurement, not by nominal size. The mark's letters
+   are its full 15px. Liberation Mono Bold's ink height for "-OS" is 0.68 of
+   its font-size (rendered at 100px and trimmed: 68px), so 15 / 0.68 = 22px =
+   1.375rem sets the two on one cap line -- which is what "same size" means to
+   the eye here, not equal nominal sizes. */
+.topbar .brand-os {
+  /* Cancels most of .brand's 8px flex gap: "ATI" and "-OS" are one word and
+     have to set as one. The strapline gets that gap back and more, so the row
+     reads as [name][pause][note]. */
+  margin-left: -6px;
   font-family: var(--mono);
-  font-size: var(--t-ms);
+  font-size: 1.375rem;
   font-weight: 700;
-  letter-spacing: 0.07em;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--accent);
 }
-.topbar .brand-name .wm-os { color: var(--accent); }
 .topbar .brand small {
+  margin-left: var(--s2);
   font-family: var(--sans);
   font-weight: 400;
   font-size: var(--t-xs);
@@ -1123,8 +1133,10 @@ footer.page a:hover { color: var(--accent); }
    rather than blanking it -- the icon-only toggle gave back the room the old
    text button was taking, and the name is the thing worth keeping. */
 @media (max-width: 470px) {
+  /* Tighten the gaps, never the mark: it is pixel-snapped at 38x15 and
+     scaling it is exactly what makes it fuzzy. */
   .topbar .brand { gap: var(--s1); }
-  .topbar .brand-name { letter-spacing: 0.03em; }
+  .topbar .brand-os { margin-left: -3px; }
 }
 
 
@@ -1156,31 +1168,28 @@ footer.page a:hover { color: var(--accent); }
   padding: clamp(var(--s7), 9vw, calc(var(--s8) + var(--s7))) 0 var(--s7);
 }
 
-/* The wordmark used to be the full six-line ATI-OS artwork, character for
-   character, at up to 1.4rem -- about 550x130px on a desktop viewport, the
-   single biggest thing on the page. Asked for smaller, and for only the
-   "ATI" glyphs to be artwork: the art below is the same six rows, cropped to
-   its first 20 monospace columns (verified against installScripts/iso/
-   profile/airootfs/usr/local/bin/ati-os-install's banner() -- not retyped),
-   which happens to be exactly the "ATI" glyphs with no seventh column of
-   bleed. "-OS" sits beside it as ordinary text, not artwork, and the
-   sentence below it is already the smaller-text tier that was asked for.
+/* The wordmark is the real thing: the same six lines the ISO prints at login
+   and the installer prints on its first screen, character for character,
+   copied out of installScripts/iso/profile/airootfs/usr/local/bin/
+   ati-os-install's banner() -- not retyped. It is decoration to a screen
+   reader (the .vh copy beside it carries the name), but it is the one place
+   on the site where the full artwork fits.
 
-   Text/SVG over a PNG, deliberately. A PNG bakes one colour permanently, so
-   it would need a second export for the dark variant (or a mid-tone that is
-   wrong in both) and it cannot live at --accent when that token moves. This
-   markup is still `currentColor`-driven monospace text -- one asset, correct
-   in both themes, no extra request. */
+   Sizing. The art is 43 monospace columns wide, so its width is
+   43 x 0.6em ~= 25.8em. The middle term of the clamp below solves that back
+   to a font-size that keeps 43 columns inside the viewport minus the .wrap
+   padding, with ~8% held back so a monospace face with a wider advance than
+   DejaVu's 0.602em still fits. Do not replace it with a plain vw value: at
+   400px the fixed padding is 12% of the screen and a pure ratio overflows.
+   Measured at 400, 430, 620, 700, 1000 and 1440: no clipping, no wrap, no
+   horizontal page scroll.
+
+   Text over a PNG, deliberately. A PNG bakes one colour permanently, so it
+   would need a second export for the light variant (or a mid-tone that is
+   wrong in both) and it could not follow --accent when that token moves. */
 .wordmark {
-  margin: 0 0 var(--s4);
+  margin: 0 0 var(--s5);
   line-height: 1;
-}
-.wm-row {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--s3);
 }
 .ascii-mark {
   margin: 0;
@@ -1189,23 +1198,20 @@ footer.page a:hover { color: var(--accent); }
   border: 0;
   overflow: visible;
   font-family: var(--mono);
-  /* The old mark's six rows ran up to 1.4rem, ~134px tall. Six rows at any
-     font-size big enough to still call itself "smaller" caps out well
-     below that -- 1rem here is 96px tall, about a third less, and it is
-     also visibly narrower now that only 20 of the old 43 columns remain. */
-  font-size: clamp(0.7rem, 3.6vw, 1rem);
+  font-size: clamp(0.5rem, calc(3.75vw - 1.9px), 1.4rem);
   line-height: 1;
   font-weight: 400;
+  /* A hair of overlap. Adjacent full blocks otherwise leave a hairline of
+     background between cells wherever the advance width lands on a fraction
+     of a pixel, which reads as a scratch across every solid stroke. */
   letter-spacing: -0.03em;
   color: var(--accent);
-  text-align: left;
-}
-.wm-suffix {
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: clamp(0.95rem, 4.4vw, 1.5rem);
-  letter-spacing: -0.01em;
-  color: var(--fg);
+  /* Safe here, and only here: all six rows are exactly 43 columns wide -- the
+     art is padded with real spaces -- so centring each line independently
+     lands them all in the same place. `width: fit-content` + `margin-inline:
+     auto` does NOT centre this in Chromium (measured); text-align does.
+     Do not paste a ragged block in. */
+  text-align: center;
 }
 
 .hero .tagline {
@@ -1310,62 +1316,28 @@ footer.page a:hover { color: var(--accent); }
 
 /* What you get.
 
-   A slider, right to left, not a five-up grid of bordered boxes: that grid
-   is the single most recognisable generated-landing-page shape, and five
-   into three columns leaves an empty cell staring back at you. Every fact
-   is still written out in full, once, as a real <dl> -- the markup above
-   duplicates that list a second time with aria-hidden so the belt has a
-   seamless second lap to scroll onto, but the reading order, the search
-   index (index.html is not indexed at all -- see build-index.py) and a
-   screen reader all only ever see the first five.
-
-   Continuous motion and readable prose fight each other, so this pauses
-   instead of choosing one: :hover and :focus-within stop it dead, the
-   marquee itself is tabbable so a keyboard user can stop it without a
-   mouse, and the sitewide prefers-reduced-motion rule (bottom of this file)
-   freezes every animation on the page including this one. Width is capped
-   by wrapping .spec-marquee in overflow:hidden, not by the animation, so
-   there is no horizontal scrollbar at any width -- the belt is simply
-   clipped to its box. */
-.spec-marquee {
-  overflow: hidden;
-  width: 100%;
-  margin: 0 auto;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
-          mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
-}
-.spec-marquee:focus-visible { outline-offset: 6px; }
-
+   A plain reading list -- term, then sentence, one per row, ruled. Five
+   facts, each written out once, in the document order a reader, a printer
+   and a screen reader all get. It was briefly a scrolling belt; motion
+   fights prose, and nothing here is worth making somebody chase. */
 .spec {
-  display: flex;
-  width: max-content;
-  margin: 0;
-  border-top: 0;
-  /* 60s for one full lap of ten items (five real, five duplicate) is a
-     comfortable reading pace for the shortest sentence here; anyone who
-     wants longer just hovers or tabs to it and it stops. */
-  animation: spec-scroll 60s linear infinite;
+  max-width: 40rem;
+  margin: 0 auto;
+  border-top: 1px solid var(--border);
 }
-.spec-marquee:hover .spec,
-.spec-marquee:focus-within .spec {
-  animation-play-state: paused;
-}
-
 .spec > div {
-  flex: 0 0 auto;
-  width: 19rem;
-  padding: var(--s3) var(--s6) var(--s3) 0;
-  margin-right: var(--s3);
-  border-bottom: 0;
-  border-right: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0 var(--s4);
+  align-items: baseline;
+  padding: var(--s3) 0;
+  border-bottom: 1px solid var(--border);
 }
 .spec dt {
-  display: block;
-  margin: 0 0 var(--s1);
   font-family: var(--mono);
   font-size: var(--t-base);
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.5;
   letter-spacing: -0.01em;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
@@ -1376,11 +1348,6 @@ footer.page a:hover { color: var(--accent); }
   line-height: 1.6;
   color: var(--fg-muted);
   text-wrap: pretty;
-}
-
-@keyframes spec-scroll {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
 }
 
 /* Recordings */
@@ -1500,23 +1467,21 @@ footer.site {
   gap: var(--s2);
   margin: 0;
 }
+/* Same mark, same size, as the header -- one asset, already cached. */
 .site-id .brand-mark {
   flex: none;
-  white-space: pre;
-  font-family: var(--mono);
-  font-size: 9px;
-  line-height: 1;
-  letter-spacing: -0.04em;
-  color: var(--accent-line);
+  display: block;
+  color: var(--accent);
 }
-.site-brand .brand-name {
+.site-brand .brand-os {
+  margin-left: -6px;
   font-family: var(--mono);
-  font-size: var(--t-ms);
+  font-size: 1.375rem;
   font-weight: 700;
-  letter-spacing: 0.07em;
-  color: var(--fg);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--accent);
 }
-.site-brand .brand-name .wm-os { color: var(--accent); }
 .site-brand small {
   font-size: var(--t-xs);
   color: var(--fg-faint);
@@ -1571,17 +1536,15 @@ footer.site a:hover { color: var(--accent); }
   .action { padding: var(--s3) var(--s4); }
 }
 
-/* A 19rem card is wider than a 400px screen once its own padding is
-   counted, so the belt would clip mid-word on the very item it is meant to
-   show. Narrower cards below this width, so each one comfortably fits. */
+/* Below this the 5.5rem term column steals too much of the line, so the
+   term stacks above its sentence instead of sitting beside it. */
 @media (max-width: 560px) {
-  .spec > div { width: 15.5rem; padding-right: var(--s5); }
+  .spec > div { grid-template-columns: minmax(0, 1fr); gap: var(--s1) 0; }
 }
 
 @media (max-width: 430px) {
   .actions { gap: var(--s2); }
   .action { font-size: var(--t-xs); padding: var(--s2) var(--s3); }
-  .spec > div { width: 13.5rem; }
 }
 
 
