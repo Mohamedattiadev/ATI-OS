@@ -316,12 +316,20 @@ sec_cheats() {
       "󰘳  Qtile cheatsheet   every mode and binding" \
       "󰕷  Vim cheatsheet     motions, text objects" \
       "󰈺  Fish / kitty       shell and terminal keys" \
+      "󰘳  Your own shortcuts read live from config.py + config.fish" \
       | pick "Cheatsheets" "$(rofi_hint "↵ open the sheet" "Esc back" "q closes it")")"
     (( RC != 0 )) && return
     case "$c" in
       *Qtile*) open_cheatsheet qtile; return ;;
       *Vim*)   open_cheatsheet vim;   return ;;
       *Fish*)  open_cheatsheet fish;  return ;;
+      # The three sheets above are hand-written and fixed. This one is
+      # parsed out of the live config each time it opens, which is why it is
+      # worth having beside them: FishCheatsheet.py never reads config.fish,
+      # so the ~100 functions and aliases actually defined there appear on no
+      # other sheet. rofi_keymaps had no trigger at all before this -- it was
+      # reachable only by typing its name in a shell.
+      *"Your own"*) run_tool rofi_keymaps; return ;;
       *) return ;;
     esac
   done
