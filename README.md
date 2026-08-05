@@ -18,6 +18,9 @@ and a restart that doesn't flash.
 
 ![the desktop](IMGS/overview.gif)
 
+**[▶ Watch the 1:38 tour](https://mohamedattiadev.github.io/ATI-OS/#films)** — the whole
+desktop, no narration, including the parts that are not finished.
+
 </div>
 
 ---
