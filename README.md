@@ -43,18 +43,16 @@ purpose.
 → [What the installer does, module by module](https://mohamedattiadev.github.io/ATI-OS/install-git.html)
 
 **Already installed?** The USB image is built now and then; the desktop is
-improved continuously. One command brings you level — no reinstall:
+improved every day. One command catches you up — no reinstall:
 
 ```sh
 ati-update
 ```
 
-It shows what changed, asks, then does only what that update needs: link new
-settings, install newly required packages, regenerate the boot splash, restart
-the desktop. Your windows survive. If the new config doesn't load it rolls
-back, so a bad push can't leave you at a broken desktop.
+Shows what changed, asks, then does only what that update needs. Your windows
+survive the restart, and if the new config doesn't load it rolls itself back.
 
-→ [All of it, including `--check` and `--stash`](https://mohamedattiadev.github.io/ATI-OS/tools.html#update)
+→ [`--check`, `--stash` and the rest](https://mohamedattiadev.github.io/ATI-OS/tools.html#update)
 
 **UEFI only.** Verified on a clean Arch VM, and in QEMU across three install
 modes. Not verified: AMD or NVIDIA graphics, or a HiDPI panel.
@@ -69,7 +67,7 @@ modes. Not verified: AMD or NVIDIA graphics, or a HiDPI panel.
 | **[Keyboard-driven](https://mohamedattiadev.github.io/ATI-OS/keybindings.html)** | ~90 bindings, grouped into modes that announce themselves in the bar |
 | **[A bar that does things](https://mohamedattiadev.github.io/ATI-OS/widgets.html)** | Updates, audio, wifi, bluetooth, displays — popups, not terminals |
 | **[~50 tools](https://mohamedattiadev.github.io/ATI-OS/tools.html)** | Drop-stash, package manager, offline PDF toolkit, cheatsheets, screenshots, dictation |
-| **[Mouse-free clicking](https://mohamedattiadev.github.io/ATI-OS/keybindings.html#homerow)** | [Hintium](https://github.com/Mohamedattiadev/Hintium) labels everything clickable — hint, scroll and caret modes from the home row |
+| **[Mouse-free clicking](https://mohamedattiadev.github.io/ATI-OS/keybindings.html#hintium)** | [Hintium](https://github.com/Mohamedattiadev/Hintium) labels everything clickable — hint, scroll and caret modes from the home row |
 | **[Documented](https://mohamedattiadev.github.io/ATI-OS/troubleshooting.html)** | 126 troubleshooting entries, searchable, reachable from the desktop itself |
 
 <div align="center">
