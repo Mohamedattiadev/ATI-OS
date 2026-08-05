@@ -45,8 +45,6 @@ You’ve learned the basics:
 
 From here on, everything is muscle memory.
 Take your time, explore, and make it yours.
-
-
 ")
 
     ;; ----------------------------
@@ -61,6 +59,26 @@ Take your time, explore, and make it yours.
       :wrap true
       :markup
 "<b>Tip:</b> <b><span foreground='${palette.cyan}'>Win + Shift + K</span></b> then <b><span foreground='${palette.cyan}'>k</span></b> opens the cheatsheet, anytime.")
+
+    ;; ----------------------------
+    ;; Staying current
+    ;; ----------------------------
+    ;; The desktop is configured from a git checkout that is pushed to far
+    ;; more often than the ISO is rebuilt, so an install from an older
+    ;; stick is an older desktop -- and nothing on screen would ever say
+    ;; so. This is the one place every new user is guaranteed to look.
+    (label
+      :class "onb-text"
+      :halign "start"
+      :xalign 0
+      :wrap true
+      :markup
+;; Kept SHORT on purpose. :wrap true is set and still does not wrap here
+    ;; -- the label sits in a fixed-width card and pango ellipsises the
+    ;; overflow instead, exactly as the tip above once did. Verified by
+    ;; rendering the window, not by reading the yuck: at 74 characters this
+    ;; line ended "...to pull the newest s…" on screen.
+"<b>Staying current:</b> <b><span foreground='${palette.cyan}'>ati-update</span></b> pulls the newest settings.")
 
     ;; ----------------------------
     ;; Actions

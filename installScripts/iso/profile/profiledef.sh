@@ -56,4 +56,9 @@ file_permissions=(
   # The welcome menu. Root-owned and 0755 for the same reason: it is the
   # thing that launches the installer.
   ["/usr/local/bin/ati-os-welcome"]="0:0:755"
+  # The first-boot self-update. It is never run from the live session --
+  # ati-os-install copies it onto the target and the first-boot service
+  # calls it there -- but it has to be executable on the medium for that
+  # copy to land executable.
+  ["/usr/local/bin/ati-os-selfupdate"]="0:0:755"
 )

@@ -486,6 +486,29 @@ ask_rest() {
     grep -qE "^#?${LOCALE_IN%% *} " /etc/locale.gen 2>/dev/null && break
     _ERR "not a locale this Arch knows: $LOCALE_IN"
   done
+
+  # Self-update on first boot. Asked, defaulted to yes, and worth asking.
+  #
+  # This medium is a snapshot and the config is pushed most days, so an
+  # older stick installs an older desktop unless something reaches back to
+  # GitHub. Saying yes closes that gap once, at the end of the first boot.
+  # Saying no is a legitimate answer: somebody reproducing a known-good
+  # build, or auditing exactly what they burned, wants the snapshot and
+  # nothing else. Either way the machine ends up with a working desktop --
+  # the update runs after the wizard has finished and validates before it
+  # applies, so the worst case is the desktop this medium shipped.
+  printf '\n  %sUpdate to the latest configuration on first boot?%s\n' "$C_B" "$C_R"
+  printf '    %sThis medium was built on a particular day; the configuration is\n' "$C_DIM"
+  printf '    updated more often than the ISO is rebuilt. Answering yes runs\n'
+  printf '    `ati-update` once, after the desktop is installed. With no network\n'
+  printf '    it warns and carries on. Either way you can run ati-update later.%s\n' "$C_R"
+  read -rp "  Update on first boot? [Y/n]: " selfup
+  if [[ "${selfup,,}" == n || "${selfup,,}" == no ]]; then
+    SELFUPDATE=0
+    _OK "keeping exactly the configuration on this medium"
+  else
+    SELFUPDATE=1
+  fi
 }
 
 load_unattended() {
@@ -512,6 +535,11 @@ load_unattended() {
   fi
   ENCRYPT="${ATI_ENCRYPT:-0}"
   LUKS_PASS="${ATI_LUKS_PASS:-}"
+  # Default 1, matching the interactive default. test-iso.sh installs
+  # offline-ish against whatever mirrors it has, and the self-update is
+  # written to survive an unreachable origin, so leaving it on keeps the
+  # automated path testing the same code a human gets.
+  SELFUPDATE="${ATI_SELFUPDATE:-1}"
   [[ -b "$DISK" ]] || { _ERR "$DISK is not a block device"; exit 1; }
   _WARN "unattended: erasing $DISK without confirmation"
 }
@@ -925,6 +953,33 @@ install_firstboot_service() {
   say "first-boot setup"
   local dest="/home/$USER_IN/.dotfiles"
 
+  # The self-update runner is a file on the medium rather than another
+  # heredoc, so that it can be shellcheck'd and run standalone. Copied onto
+  # the target because that is where it runs -- on the first boot of the
+  # installed system, not in the live session.
+  install -d -m755 /mnt/var/lib/ati-os
+  if [[ -f /usr/local/bin/ati-os-selfupdate ]]; then
+    install -m755 /usr/local/bin/ati-os-selfupdate /mnt/usr/local/bin/ati-os-selfupdate
+  else
+    # An older medium, or a hand-assembled one. Not fatal: the first-boot
+    # script calls it with `|| true` and the marker below keeps the
+    # accounting honest either way.
+    _WARN "no ati-os-selfupdate on this medium — the first boot will not self-update"
+    : >/mnt/var/lib/ati-os/no-selfupdate
+  fi
+
+  # Opting out is a file, not a flag baked into the generated script, so
+  # that it stays reversible: delete it and run ati-os-selfupdate, or
+  # create it from a rescue shell before the first boot.
+  if (( SELFUPDATE )); then
+    _OK "the first boot will run ati-update once, after the desktop is installed"
+    _DIM "opt out later by creating /var/lib/ati-os/no-selfupdate"
+  else
+    : >/mnt/var/lib/ati-os/no-selfupdate
+    _OK "self-update declined — this install keeps exactly what is on the medium"
+    _DIM "change your mind with: sudo rm /var/lib/ati-os/no-selfupdate && sudo ati-os-selfupdate \$USER"
+  fi
+
   # The runner is a real script rather than a long ExecStart line so that
   # its output is greppable and its exit status is recorded somewhere a
   # human -- or a test -- can read after the fact.
@@ -987,6 +1042,27 @@ printf 'ATI-OS-FIRSTBOOT: wizard exit %s\\n' "\$rc"
 su - '$USER_IN' -c "export TERM=dumb; cd '$dest/installScripts' && ./validate.sh" \\
   && printf 'ATI-OS-FIRSTBOOT: VALIDATE-OK\\n' \\
   || printf 'ATI-OS-FIRSTBOOT: VALIDATE-PROBLEMS\\n'
+
+# Catch up with upstream, once.
+#
+# HERE, and not earlier, for two reasons. Before the wizard, libqtile is
+# not installed, so validate.sh reports the qtile config check as "skipped"
+# -- and ati-update's rollback, the one thing that makes it safe to run
+# unattended, would silently be protecting nothing. And a rollback needs
+# somewhere to land: after the wizard that is a desktop that has already
+# been built and validated on this machine.
+#
+# Before the package repo is torn down below, so an update that pulls in a
+# newly declared package can still resolve it out of the prebuilt set
+# instead of compiling it here.
+#
+# Never fatal, and never allowed to touch \$rc: this runs after the install
+# has already succeeded, and no outcome of it may turn that into a failure.
+if (( rc == 0 )); then
+  /usr/local/bin/ati-os-selfupdate '$USER_IN' '$DOTFILES_REF' || true
+else
+  printf 'ATI-OS-SELFUPDATE: the wizard did not finish — not updating on top of it\\n'
+fi
 
 # The install-time package repository is removed only now, once the wizard
 # has actually consumed it. Removing it before the first boot -- which an
@@ -1075,6 +1151,23 @@ finish() {
 
   That is deliberate, not an omission. There is no display manager and no
   autologin: you land in a TTY and start the session yourself.
+
+  ${C_B}Keeping it current:${C_R}  ATI-OS is configured from a git checkout in
+  ~/.dotfiles, and it is pushed to more often than this medium is rebuilt.
+
+      ${C_B}ati-update${C_R}      pull the newest configuration and apply it
+      ${C_B}ati-update -n${C_R}   say what would change, touch nothing
+
+  It works out for itself whether a given change needs stow, packages, the
+  boot splash or a qtile restart, and it checks the incoming config loads
+  before applying it -- a bad push rolls back instead of landing.
+$(if (( SELFUPDATE )); then
+  printf '  The first boot runs it once for you, at the very end. With no network\n'
+  printf '  it warns and carries on. Opt out: create /var/lib/ati-os/no-selfupdate\n'
+else
+  printf '  You asked for the snapshot on this medium, so the first boot will NOT\n'
+  printf '  run it. Enable it: sudo rm /var/lib/ati-os/no-selfupdate\n'
+fi)
 
   If it fails, it says so and does NOT mark itself done:
     log:     /var/log/ati-os-firstboot.log

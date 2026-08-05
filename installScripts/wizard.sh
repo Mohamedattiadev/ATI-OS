@@ -3021,7 +3021,16 @@ page_finale() {
   _H1 "Next steps"
   _INFO "  · Log out to TTY and run:  letsgo   (or: startx)"
   _INFO "  · Reload qtile any time:   qtile cmd-obj -o cmd -f reload_config"
-  _INFO "  · Update system:           dcli sync"
+  _INFO "  · Update packages:         dcli sync"
+  _INFO "  · Update this config:      ati-update      (--check to preview)"
+  echo
+  # Said here because this is the only screen everybody sees. The config
+  # is pushed far more often than the ISO is rebuilt, so somebody who
+  # installed from a stick burned months ago is running months-old
+  # settings and has no way to know it from the desktop itself.
+  _DIM "    ati-update pulls the newest configuration from GitHub and applies"
+  _DIM "    only the parts a given change needs. It checks the incoming qtile"
+  _DIM "    config loads before applying anything, and rolls back if it does not."
   echo
   _OK   "  · A short tour opens by itself the first time the desktop starts."
   _DIM "    Skip it with Cancel; reopen it any time from the 💡 tray icon."

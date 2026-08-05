@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+# ati-os-selfupdate — on first boot, bring the freshly installed config up
+# to date with upstream, exactly once, and never at the cost of the install.
+#
+# THE PROBLEM
+#
+# An ISO is a snapshot; the config is pushed most days. Somebody who burns
+# a stick and installs from it six months later gets a six-month-old
+# desktop and no hint that a newer one exists. `ati-update` already solves
+# staying current -- it knows which of stow, dcli, the script symlinks, the
+# boot splash and a qtile restart a given diff needs -- but nothing in the
+# install path ever ran it. This does, once, on the first boot.
+#
+# THE RULE THIS IS WRITTEN AROUND
+#
+# A FAILURE HERE MUST NEVER BREAK AN INSTALL. Everything below is arranged
+# so that the worst outcome is the desktop the medium shipped, which is a
+# working desktop. Concretely:
+#
+#   * it runs AFTER the wizard, not before. Before the wizard, libqtile is
+#     not installed yet, so validate.sh's qtile check reports "skipped"
+#     rather than passing or failing -- which means ati-update's rollback,
+#     the single thing that makes it safe to run blind, would be a no-op.
+#     Running it after the wizard is the only placement where that
+#     protection is real. It also means a rollback lands on a desktop the
+#     wizard has already built and validated, instead of on nothing.
+#
+#   * it does not run at all if the wizard failed. Updating on top of a
+#     half-built system turns one problem into two.
+#
+#   * no network is a warning, not an error. The machine may have been
+#     installed entirely offline. It is probed with a short timeout before
+#     ati-update is invoked at all, so an unreachable origin costs seconds
+#     rather than a hung git.
+#
+#   * everything is under `timeout`, including the update itself. A stalled
+#     fetch or a wedged package transaction must not leave the first boot
+#     hanging forever with no login prompt.
+#
+#   * the exit status is ALWAYS 0. The caller must not be able to conclude
+#     "the install failed" from anything that happens in here.
+#
+# WHY IT CLEANS THE TREE FIRST
+#
+# ati-update refuses to run against a dirty checkout, and rightly so -- it
+# cannot tell a user's edit from anything else. But the wizard itself
+# leaves the checkout dirty on every install where the username is not the
+# maintainer's: installScripts/arch-config.sh renames hosts/<maintainer>.yaml
+# to hosts/<user>.yaml and rewrites the `host:` pointer in config.yaml.
+# Those are DERIVED files -- arch-config.sh regenerates them from the
+# username in a second -- so the honest move is to put them back, update,
+# and re-derive, rather than to --stash them and risk a merge conflict
+# writing conflict markers into a config file on somebody's first boot.
+#
+# Anything dirty OUTSIDE that derived set means a human has been here, and
+# then this does nothing at all and says why.
+#
+# Opt out by creating /var/lib/ati-os/no-selfupdate before the first boot;
+# the installer writes it for you if you answer "no" to its question.
+#
+# Usage: ati-os-selfupdate <username> [branch]
+
+set -uo pipefail
+
+USER_N="${1:-}"
+BRANCH="${2:-main}"
+
+STATE_DIR=/var/lib/ati-os
+STAMP="$STATE_DIR/selfupdate-done"
+OPTOUT="$STATE_DIR/no-selfupdate"
+
+# How long a reachability probe may take before we call it "no network",
+# and how long the whole update may take before we call it wedged. The
+# update budget is generous because ati-update can end up running a
+# `dcli sync` that downloads packages.
+PROBE_TIMEOUT=25
+UPDATE_TIMEOUT=1800
+
+# The derived files described above, as anchored regexes matched against
+# git's porcelain paths.
+DERIVED_RE='^(\.config/arch-config/config\.yaml|\.config/arch-config/hosts/[^/]+\.yaml)$'
+
+say() { printf 'ATI-OS-SELFUPDATE: %s\n' "$*"; }
+
+# Every exit is a success exit. There is exactly one `exit` in this script
+# so that no future edit can accidentally introduce a failing one.
+done_() { say "$*"; exit 0; }
+
+[[ -n "$USER_N" ]] || done_ "no username given — skipped"
+
+HOME_DIR="$(getent passwd "$USER_N" | cut -d: -f6)"
+[[ -n "$HOME_DIR" ]] || done_ "no such user: $USER_N — skipped"
+DOTS="$HOME_DIR/.dotfiles"
+
+mkdir -p "$STATE_DIR"
+
+[[ -e "$OPTOUT" ]] && done_ "opted out ($OPTOUT) — keeping the configuration this medium shipped"
+[[ -e "$STAMP"  ]] && done_ "already ran on $(date -r "$STAMP" '+%F %T') — nothing to do"
+[[ -d "$DOTS/.git" ]] || done_ "no git checkout at $DOTS — skipped"
+
+# Quoted once, reused everywhere a value is interpolated into a shell
+# string that `su -c` will re-parse.
+Q_DOTS="$(printf %q "$DOTS")"
+Q_BRANCH="$(printf %q "$BRANCH")"
+
+# The environment every `su -c` below gets.
+#
+# `su -` rather than `runuser`/`sudo` because that is what ati-os-firstboot
+# already uses for the wizard, and because ati-update needs a real login
+# environment: it refuses to run as root, keys everything off $HOME, and
+# calls sudo itself for the parts that need it.
+#
+# GIT_TERMINAL_PROMPT=0 is load-bearing. If origin ever becomes private,
+# renamed or moved, git's default is to ASK for credentials on a terminal
+# that does not exist here -- which is a hang, on the first boot of a
+# machine with no login prompt yet, and precisely the failure this script
+# exists to make impossible. GIT_ASKPASS covers the same door from the
+# other side, for the helpers that would otherwise pop their own prompt.
+ENV_PREFIX="export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/true TERM=dumb ATI_UPDATE_BRANCH=$Q_BRANCH;"
+
+# Run one command as the target user, from inside the checkout.
+as_user() {
+  su - "$USER_N" -c "$ENV_PREFIX cd $Q_DOTS && $1"
+}
+
+# ── is upstream reachable at all? ────────────────────────────────────
+#
+# Asked separately, and cheaply, so that the offline case -- which is a
+# perfectly normal way to install this -- costs 25 seconds and a warning
+# rather than however long an unreachable git fetch decides to take.
+#
+# `timeout` wraps `su`, which forwards the signal to git; -k adds a KILL a
+# few seconds later for anything that ignores the TERM.
+say "checking whether $BRANCH can be reached"
+if ! timeout -k 5 "$PROBE_TIMEOUT" \
+     su - "$USER_N" -c "$ENV_PREFIX cd $Q_DOTS && git ls-remote --heads origin $Q_BRANCH" \
+     >/dev/null 2>&1; then
+  say "could not reach the update server — this machine keeps the configuration"
+  say "that shipped on the install medium, which is a complete, working desktop."
+  say "Once it is online, bring it up to date with:  ati-update"
+  done_ "offline — nothing was changed"
+fi
+say "upstream reachable"
+
+# ── put the derived files back, if that is all that is dirty ─────────
+RESTORED=0
+DIRTY="$(as_user 'git status --porcelain -uno' 2>/dev/null)"
+if [[ -n "$DIRTY" ]]; then
+  UNEXPECTED=()
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    # Porcelain v1: two status columns, a space, then the path.
+    path="${line:3}"
+    # Renames read "old -> new"; take the destination.
+    [[ "$path" == *" -> "* ]] && path="${path##* -> }"
+    path="${path%\"}"; path="${path#\"}"
+    [[ "$path" =~ $DERIVED_RE ]] || UNEXPECTED+=("$path")
+  done <<<"$DIRTY"
+
+  if (( ${#UNEXPECTED[@]} )); then
+    say "the checkout has local changes that this script did not make:"
+    printf 'ATI-OS-SELFUPDATE:   %s\n' "${UNEXPECTED[@]}"
+    say "leaving them alone. Update by hand when you have looked at them:"
+    say "  cd ~/.dotfiles && ati-update --stash"
+    done_ "not updating over local changes"
+  fi
+
+  say "restoring the host files the installer derived, so the update applies cleanly"
+  as_user 'git checkout -- .config/arch-config/config.yaml .config/arch-config/hosts' \
+    >/dev/null 2>&1 || done_ "could not restore them — not updating"
+  # The renamed host file is untracked, so the checkout above brought the
+  # original back and left this one beside it. Two host yamls is a state
+  # arch-config.sh explicitly refuses to guess about, so drop the derived
+  # one -- but only if it really is untracked, never a tracked file.
+  if ! as_user "git ls-files --error-unmatch .config/arch-config/hosts/$(printf %q "$USER_N").yaml" >/dev/null 2>&1; then
+    rm -f "$DOTS/.config/arch-config/hosts/$USER_N.yaml"
+  fi
+  RESTORED=1
+fi
+
+# ── the update ───────────────────────────────────────────────────────
+#
+# ati-update does the thinking: it works out from the diff whether this
+# needs stow, dcli, the script symlinks or the boot splash, and it
+# VALIDATES the incoming qtile config before applying anything, rolling the
+# checkout back if it does not load. That validation is only meaningful
+# because we are running after the wizard, with libqtile installed.
+#
+# The fallback path matters: ati-update reaches /usr/local/bin through the
+# `ati-scripts` wizard module, and if that one module failed the command is
+# not on PATH even though the file is sitting in the checkout.
+say "running: ati-update --yes  (branch $BRANCH)"
+UPDATE_RC=0
+timeout -k 30 "$UPDATE_TIMEOUT" \
+  su - "$USER_N" -c \
+  "$ENV_PREFIX command -v ati-update >/dev/null 2>&1 && exec ati-update --yes; exec $Q_DOTS/.config/AtiScriptsV1/ati-update --yes" \
+  || UPDATE_RC=$?
+
+case "$UPDATE_RC" in
+  0)   say "configuration is current" ;;
+  124|137)
+       say "the update did not finish within ${UPDATE_TIMEOUT}s and was stopped."
+       say "The desktop the medium shipped is intact. Try again later: ati-update" ;;
+  *)   say "the update did not apply (exit $UPDATE_RC)."
+       say "ati-update rolls the checkout back when the incoming config does not"
+       say "load, so this machine is still on the configuration it was installed"
+       say "with. Nothing to do; try again later with:  ati-update" ;;
+esac
+
+# ── re-derive what we put back ───────────────────────────────────────
+#
+# Unconditionally on the restore, whatever the update did: if it applied,
+# the host files need deriving from the NEW upstream copies; if it rolled
+# back or failed, they need deriving from the old ones. Either way the
+# machine must not be left pointing at the maintainer's host profile.
+if (( RESTORED )); then
+  say "re-pointing arch-config at this machine's user"
+  if as_user './installScripts/arch-config.sh' >/dev/null 2>&1; then
+    say "arch-config points at $USER_N"
+  else
+    say "WARNING: could not re-point arch-config at $USER_N."
+    say "dcli will use the wrong package set until you run:"
+    say "  ~/.dotfiles/installScripts/arch-config.sh"
+  fi
+fi
+
+# Stamped only here, at the end of a run that actually reached upstream.
+# An offline boot leaves no stamp on purpose, so running this by hand once
+# the machine is online still does something.
+date -Is > "$STAMP"
+done_ "done"
