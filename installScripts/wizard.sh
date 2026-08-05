@@ -504,7 +504,7 @@ _reg gpu               "GPU + microcode"     System    "Detect Intel/AMD/NVIDIA 
 _reg picom-pin         "picom (pinned)"      System    "Build the animation fork from a fixed commit, not branch HEAD"  "step_picom_pin"
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
 _reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
-_reg homerow           "Hintium / homerow"   Apps      "Hint, scroll and caret modes driven from the home row"   "step_homerow"
+_reg homerow           "Hintium"             Apps      "Hint, scroll and caret modes driven from the home row"   "step_homerow"
 _reg simplenote        "Simplenote push"     Apps      "Mirror the Mod+Shift+S TODOS note to your phone (asks for login at the end)" "step_simplenote"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"
 _reg pacman-guard      "Pacman safety hook"  System    "PreTransaction gate: refuse upgrades when / is too full"  "step_pacman_guard"
@@ -1923,47 +1923,82 @@ step_candy()        { [[ -d /usr/share/icons/candy-icons ]] && { _OK "candy-icon
 WALLPAPERS_REPO="${WALLPAPERS_REPO:-https://github.com/Mohamedattiadev/wallpapers}"
 step_wallpapers()   { [[ -d $HOME/Pictures/Wallpapers/.git ]] && { _OK "wallpapers present"; return; }
                       run "rm -rf $HOME/Pictures/Wallpapers && mkdir -p $HOME/Pictures && git clone $WALLPAPERS_REPO $HOME/Pictures/Wallpapers"; }
-# Hintium -- the homerow implementation config.py has always called and
-# nothing has ever installed.
+# Hintium -- the hint/scroll/caret tool config.py calls and nothing used to
+# install.
 #
-# config.py:260 resolves it as `which homerow-hint` with a fallback to
-# ~/Attia-Pro/Projects/Homerow_replika/, a path that exists on exactly one
-# machine in the world. So on every other install, Super+Shift+F entered a
-# chord whose binary was not there: the mode chip appeared, the hint overlay
-# never did, and nothing said why.
+# config.py resolves it as `which hintium-hint`, with a fallback to
+# ~/Attia-Pro/Projects/Hintium/, a path that exists on exactly one machine in
+# the world. Before this module existed, every other install entered the
+# Super+Shift+F chord with no binary behind it: the mode chip appeared, the
+# hint overlay never did, and nothing said why.
 #
-# Cloned rather than packaged because it is not in the AUR, and to
-# ~/.local/share so it is not mistaken for something the user is working on.
-# The three entry points are symlinked, not copied, so `git pull` in that
-# directory takes effect immediately -- the same reason step_ati_scripts
-# symlinks instead of copying.
-HOMEROW_REPO="${HOMEROW_REPO:-https://github.com/Mohamedattiadev/Hintium}"
-HOMEROW_DIR="${HOMEROW_DIR:-$HOME/.local/share/homerow}"
+# Cloned rather than packaged (it is not in the AUR), into ~/.local/share so
+# it is not mistaken for something the user is working on. Entry points are
+# SYMLINKED, not copied, so a `git pull` in that directory takes effect
+# immediately -- the same reason step_ati_scripts symlinks.
+#
+# TWO NAMES, ON PURPOSE
+#
+# The project renamed itself from "homerow" to "hintium", and at the time of
+# writing that rename is on a branch and not yet on master: a fresh clone
+# still ships homerow-hint / homerow-cli / homerow-daemon, while config.py
+# already asks for hintium-hint. Installing only what shipped would leave
+# hint mode broken on every new machine until the merge lands; installing
+# only the new names would break today. So whichever set the checkout
+# provides is linked under BOTH names. When master carries the rename this
+# keeps working unchanged, and the homerow-* aliases can be dropped then.
+HINTIUM_REPO="${HINTIUM_REPO:-https://github.com/Mohamedattiadev/Hintium}"
+HINTIUM_DIR="${HINTIUM_DIR:-$HOME/.local/share/hintium}"
+# Kept so an install done before the rename is migrated rather than
+# duplicated.
+HINTIUM_DIR_OLD="$HOME/.local/share/homerow"
 step_homerow() {
-  if [[ -d "$HOMEROW_DIR/.git" ]]; then
-    run "cd $HOMEROW_DIR && git pull --ff-only --quiet || true"
+  # Migrate a pre-rename clone instead of leaving two copies on disk.
+  if [[ -d "$HINTIUM_DIR_OLD/.git" && ! -d "$HINTIUM_DIR/.git" ]]; then
+    run "mv $HINTIUM_DIR_OLD $HINTIUM_DIR"
+  fi
+
+  if [[ -d "$HINTIUM_DIR/.git" ]]; then
+    run "cd $HINTIUM_DIR && git pull --ff-only --quiet || true"
   else
-    run "mkdir -p $(dirname "$HOMEROW_DIR") && git clone --depth 1 $HOMEROW_REPO $HOMEROW_DIR"
+    run "mkdir -p $(dirname "$HINTIUM_DIR") && git clone --depth 1 $HINTIUM_REPO $HINTIUM_DIR"
   fi
   (( DRY_RUN )) && return 0
-  [[ -d "$HOMEROW_DIR" ]] || { _WARN "homerow clone missing — skipping the symlinks"; return 0; }
+  [[ -d "$HINTIUM_DIR" ]] || { _WARN "hintium clone missing — skipping the symlinks"; return 0; }
 
-  local linked=0 f
-  for f in homerow-hint homerow-cli homerow-daemon bin/homerow; do
-    [[ -f "$HOMEROW_DIR/$f" ]] || continue
-    chmod +x "$HOMEROW_DIR/$f" 2>/dev/null || true
-    run "sudo ln -sfn $HOMEROW_DIR/$f /usr/local/bin/$(basename "$f")"
+  # role -> the filenames that have carried it, newest naming first.
+  local linked=0 role src candidate
+  for role in hint cli daemon; do
+    src=""
+    for candidate in "hintium-$role" "homerow-$role"; do
+      [[ -f "$HINTIUM_DIR/$candidate" ]] && { src="$HINTIUM_DIR/$candidate"; break; }
+    done
+    [[ -n "$src" ]] || continue
+    chmod +x "$src" 2>/dev/null || true
+    run "sudo ln -sfn $src /usr/local/bin/hintium-$role"
+    run "sudo ln -sfn $src /usr/local/bin/homerow-$role"
     linked=$((linked+1))
   done
-  (( linked )) || { _WARN "no homerow entry points found in $HOMEROW_DIR"; return 0; }
+
+  # The single front-end command, under bin/.
+  for candidate in bin/hintium bin/homerow; do
+    if [[ -f "$HINTIUM_DIR/$candidate" ]]; then
+      chmod +x "$HINTIUM_DIR/$candidate" 2>/dev/null || true
+      run "sudo ln -sfn $HINTIUM_DIR/$candidate /usr/local/bin/hintium"
+      run "sudo ln -sfn $HINTIUM_DIR/$candidate /usr/local/bin/homerow"
+      break
+    fi
+  done
+
+  (( linked )) || { _WARN "no hintium entry points found in $HINTIUM_DIR"; return 0; }
 
   # Its own doctor is the install instructions in executable form, and it
-  # knows about at-spi and browser flags this wizard does not. Advisory
-  # only: a missing browser flag must not fail the install.
-  if [[ -x "$HOMEROW_DIR/bin/homerow" ]]; then
-    "$HOMEROW_DIR/bin/homerow" --doctor >/dev/null 2>&1 \
-      && _OK "homerow --doctor passed" \
-      || _WARN "homerow installed; run 'homerow --doctor' to see what it still wants"
+  # knows about at-spi and per-browser flags this wizard does not. Advisory
+  # only: a missing browser flag must not fail an install.
+  if command -v hintium >/dev/null 2>&1; then
+    hintium --doctor >/dev/null 2>&1 \
+      && _OK "hintium --doctor passed" \
+      || _WARN "hintium installed; run 'hintium --doctor' to see what it still wants"
   fi
 }
 
@@ -2377,12 +2412,14 @@ uninstall_homerow() {
   # The symlinks go; the clone stays. It is a checkout under the user's own
   # ~/.local/share and may carry local commits, so removing it is a data
   # loss this uninstaller has no business deciding on. The path is printed
-  # instead.
+  # instead. Both naming eras are removed -- see step_homerow for why both
+  # get installed.
   local f
-  for f in homerow-hint homerow-cli homerow-daemon homerow; do
+  for f in hintium-hint hintium-cli hintium-daemon hintium \
+           homerow-hint homerow-cli homerow-daemon homerow; do
     run "sudo rm -f /usr/local/bin/$f"
   done
-  [[ -d "$HOMEROW_DIR" ]] && _OK "left the clone at $HOMEROW_DIR — delete it by hand if you want it gone"
+  [[ -d "$HINTIUM_DIR" ]] && _OK "left the clone at $HINTIUM_DIR — delete it by hand if you want it gone"
   return 0
 }
 
