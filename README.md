@@ -121,10 +121,21 @@ docs/             the manual, published to GitHub Pages
 installScripts/   install.sh, wizard.sh, and iso/ to build the USB image
 IMGS/             the screenshots and clips used above
 notes/            recording plans and archived working notes
+LICENSE           GPL-3.0
+NOTICE.md         what is vendored, and under which licence
 ```
 
 → [Where every file lives](https://mohamedattiadev.github.io/ATI-OS/reference.html)
 · [How it actually works](https://mohamedattiadev.github.io/ATI-OS/under-the-hood.html)
+
+---
+
+## Licence
+
+[GPL-3.0](LICENSE). Parts of this repository are derived from
+[dmscripts](https://gitlab.com/dwt1/dmscripts) and
+[archiso](https://gitlab.archlinux.org/archlinux/archiso), both GPL-3.0 —
+[`NOTICE.md`](NOTICE.md) records what came from where.
 
 ---
 

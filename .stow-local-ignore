@@ -5,6 +5,8 @@
 .git
 .gitignore
 README.md
+LICENSE
+NOTICE.md
 
 # The rest of the repo-root prose. README.md was already listed; these were
 # not, so `stow .` symlinked all of them into $HOME -- ~/TROUBLESHOOTING.md,
