@@ -43,17 +43,20 @@ developers. Three files under
 - `livecd-sound`
 - `Installation_guide`
 
-## Anki — AGPL-3.0
+## Anki
 
-<https://github.com/ankitects/anki>. A launcher bundle is vendored at
-`.config/anki-launcher-25.07.5-linux/`. It is a redistributed upstream
-application, not a modification: its own licence and terms apply, and
-nothing in this repository claims otherwise.
+Not vendored, and no longer in this repository.
 
-> **Note for maintenance, not licensing:** this directory is ~79 MB and
-> contributes materially to the size of a clone. It is a packaged
-> application rather than configuration, and would be better installed from
-> the AUR (`anki-bin`) than tracked here.
+A launcher bundle for Anki 25.07.5 used to live at
+`.config/anki-launcher-25.07.5-linux/` — 82 MB of tracked files, 78 MB of
+which were `uv` binaries for amd64 and arm64. It was removed because it was
+redundant three times over: `anki` is already declared in
+[`apps.yaml`](.config/arch-config/modules/apps.yaml) and installed by the
+installer, nothing in the repository referenced the bundled path, and the
+bundled version was already behind the packaged one.
+
+Anki itself is AGPL-3.0 — <https://github.com/ankitects/anki> — and is
+installed from the Arch repositories like any other package.
 
 ## Hintium — MIT
 
