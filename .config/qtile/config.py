@@ -3780,6 +3780,65 @@ def groupbox_widget():
 # -----------------------------------------------------------------------------
 
 
+class SteadyCurrentLayout(ewidget.CurrentLayout):
+    """CurrentLayout that always reserves room for the widest layout name.
+
+    In text mode this widget is exactly as wide as the name it is showing,
+    so moving from a group on "monadtall" to one on "max" shrank it by six
+    characters. It sits to the LEFT of the centred GroupBox, so that whole
+    difference shoved the GroupBox sideways, and _center_top_groupbox()
+    only pulled it back on the next pass of the event loop -- a frame
+    late. That is the jitter: every workspace switch between groups on
+    different layouts kicked the GroupBox left or right and then snapped
+    it back.
+
+    Reserving the widest name removes the width change altogether, so
+    there is nothing left to correct and nothing to see. It also covers
+    the plain layout switch (Mod+Tab), which changes this width with no
+    client and no group event -- `layout_change` is not one of the hooks
+    _center_top_groupbox() listens on, so that case used to leave the
+    GroupBox off-centre until some unrelated event re-ran the centring.
+    """
+
+    def _layout_names(self):
+        names = {lo.name for lo in layouts}
+        group = getattr(getattr(self, "bar", None), "screen", None)
+        names.update(lo.name for lo in getattr(getattr(group, "group", None), "layouts", []))
+        if self.text:
+            names.add(self.text)
+        return sorted(names)
+
+    def calculate_length(self):
+        if self.mode != "text":
+            return super().calculate_length()
+        # Cached on the text metrics that decide the answer, so a theme or
+        # scale change that restyles the bar recomputes instead of holding
+        # a width measured with the old font.
+        key = (self.font, self.fontsize)
+        if getattr(self, "_widest_key", None) != key:
+            try:
+                width, _ = self.drawer.max_layout_size(
+                    self._layout_names(), self.font, self.fontsize
+                )
+            except Exception:
+                return super().calculate_length()
+            self._widest_key = key
+            self._widest = width
+        return min(self._widest, self.bar.length) + self.padding * 2
+
+    def draw(self):
+        # _TextBox.draw() puts the text at x=padding, so all the reserved
+        # surplus would pool on the right and short names like "max" would
+        # sit left-aligned in an over-wide pill. Centre them instead.
+        # _scroll_offset is simply subtracted from that x and is dead
+        # weight while scroll=False, so it is the one seam into the
+        # position that does not mean copying the whole method.
+        if self.mode == "text" and self.layout is not None:
+            surplus = self.length - self.padding * 2 - self.layout.width
+            self._scroll_offset = -max(0, surplus // 2)
+        super().draw()
+
+
 def left_side_widgets():
     return [
         # main Icon Chip
@@ -3800,7 +3859,7 @@ def left_side_widgets():
         ),
         # Current Layout — original padding, text mode; right-click cycles layout
         chip(
-            ewidget.CurrentLayout,
+            SteadyCurrentLayout,
             # Explicit name so the tooltip resolves by name and the widget
             # is addressable as lazy.widget["w_layout"], rather than
             # depending on class-name derivation.
@@ -6346,7 +6405,7 @@ keys = [
             # "v" for conVert: p/f/d/c are all taken in this chord, and
             # rofi_ilovepdf had no trigger at all -- it was reachable only by
             # typing its name in a shell, despite all six of its dependencies
-            # (rofi, libreoffice, imagemagick, ghostscript, zenity, poppler)
+            # (rofi, libreoffice, imagemagick, ghostscript, poppler, qpdf)
             # being installed.
             Key([], "v", lazy.spawn("rofi_ilovepdf"), desc="PDF conversions"),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
