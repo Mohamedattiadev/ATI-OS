@@ -81,5 +81,8 @@ packages:
   - chromium        # qtile pins it to group 6 alongside chrome; also the
                     # fallback that packs the browser-theme .crx when
                     # google-chrome isn't installed
-  - zenity          # rofi_ilovepdf file picker
+  # zenity: was rofi_ilovepdf's file picker. It browses with rofi now, so
+  # this is no longer a dependency of it -- kept as a general GTK dialog
+  # tool, not because anything here still calls it.
+  - zenity
   - libreoffice-fresh   # rofi_ilovepdf doc->pdf conversion
