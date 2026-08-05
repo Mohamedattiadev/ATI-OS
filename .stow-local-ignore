@@ -31,6 +31,12 @@ TROUBLESHOOTING.md
 # ======================
 IMGS
 
+# The explainer-video sources and their build script. Added to the repo root
+# after IMGS/docs were listed here, and missed -- `stow -n .` reported
+# "LINK: video => .dotfiles/video", so a fresh install got a ~/video symlink
+# in the user's home for the same reason it once got ~/docs.
+video
+
 # The GitHub Pages manual. A directory, so stow would link ~/docs into a
 # fresh user's home the same way it once linked the repo-root prose. It is
 # read on the web (and out of the repo), never out of $HOME.
