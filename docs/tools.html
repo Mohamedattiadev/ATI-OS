@@ -62,6 +62,7 @@ will use.</p>
 <table>
 <thead><tr><th>Tool</th><th>What it is for</th><th>How to open it</th></tr></thead>
 <tbody>
+<tr><td><a href="#update"><b>ati-update</b></a></td><td><b>Bring this desktop up to date.</b> Run it now and then</td><td>Type <code>ati-update</code></td></tr>
 <tr><td><a href="#qdrop"><b>The shelf</b></a></td><td>A panel you drag files into now and drag out later</td><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>d</kbd></td></tr>
 <tr><td><a href="#qupdate"><b>The updater</b></a></td><td>Update or install software with checkboxes, no typing</td><td>Click the updates count in the bar</td></tr>
 <tr><td><a href="#passwords"><b>Passwords</b></a></td><td>A pop-up list of your saved passwords</td><td><kbd>Super</kbd>+<kbd>p</kbd> then <kbd>p</kbd></td></tr>
@@ -70,16 +71,60 @@ will use.</p>
 <tr><td><b>Clipboard history</b></td><td>Everything you copied recently, with picture previews</td><td><kbd>Alt</kbd>+<kbd>v</kbd></td></tr>
 <tr><td><b>Screenshots</b></td><td>Drag a box, straight to the clipboard</td><td><kbd>Print</kbd></td></tr>
 <tr><td><b>Screen recording</b></td><td>Video, audio, webcam or a gif</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>r</kbd></td></tr>
+<tr><td><b>PDF toolkit</b></td><td>Convert, merge, split, compress, rotate, password, OCR &mdash; offline</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>v</kbd></td></tr>
 <tr><td><b>Translation</b></td><td>Translate whatever text you have selected</td><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>e</kbd></td></tr>
 <tr><td><b>Drawing on screen</b></td><td>Scribble over anything, for explaining on calls</td><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>w</kbd></td></tr>
 </tbody>
 </table>
 </div>
 
+<h2 id="update">Keeping this desktop up to date</h2>
+
+<p><b>Do this one now and then.</b> The USB stick is a snapshot of the day it was built. The
+desktop itself is improved most days. You do not need a new stick &mdash; one command brings
+your machine level with the latest version:</p>
+
+<pre><code>ati-update</code></pre>
+
+<p>It shows you what changed and asks before doing anything. Your windows survive.</p>
+
+<div class="note">
+<p><b>Your own changes are never thrown away.</b> If you have edited any of the settings
+files, it stops and tells you rather than overwriting them.</p>
+</div>
+
+<div class="tw">
+<table>
+<thead><tr><th>Variation</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>ati-update --check</code></td><td>Say what would happen, change nothing</td></tr>
+<tr><td><code>ati-update --yes</code></td><td>Do not ask. For running it automatically</td></tr>
+<tr><td><code>ati-update --stash</code></td><td>Set your own edits aside, update, then put them back</td></tr>
+<tr><td><code>ati-update --no-restart</code></td><td>Update, but leave the desktop restart until later</td></tr>
+</tbody>
+</table>
+</div>
+
+<details class="why">
+<summary>What it decides for itself, and why it tests the new settings first</summary>
+<p>It works out what a given update actually needs &mdash; new settings linked into place,
+newly required programs installed, the boot screen regenerated, the desktop restarted &mdash;
+and does only those.</p>
+<p><code>--stash</code> sets your own edits aside and restores them afterwards. If your edit
+and the update touch the same lines, it stops there too, tells you which files, and does
+<em>not</em> restart the desktop.</p>
+<p>A mistake in the window manager's settings file does not produce an error. The window
+manager quietly loads its own plain built-in settings instead, so the failure looks like your
+desktop turning into a stranger's, with nothing on screen explaining why.</p>
+<p>So the new settings are loaded for real, in the background, <em>before</em> anything is
+applied. If they do not load, your machine is put back exactly as it was and the error is
+printed. A bad update cannot leave you staring at a desktop you do not recognise.</p>
+</details>
+
 <h2 id="qdrop">The shelf</h2>
 
-<p>A panel slides down from the top of the screen. Drag files, text, links or images into
-it. They stay. Later, in another program, drag them back out.</p>
+<p>A panel slides down from the top. Drag files, text, links or images into it; they stay.
+Later, in another program, drag them back out.</p>
 
 <p>It solves "I want to attach this file to that email, but they are on different
 workspaces".</p>
@@ -125,11 +170,10 @@ added as a normal entry.</p>
 <p>Idle cost: 0% CPU, about 90&nbsp;MB of memory for both parts together.</p>
 </details>
 
-<h2 id="qupdate">Updating without a terminal</h2>
+<h2 id="qupdate">Updating software without a terminal</h2>
 
-<p>Update and install software by ticking boxes.</p>
-
-<p><b>Click the updates count in the bar.</b> A window opens with two tabs.</p>
+<p>Update and install programs by ticking boxes. <b>Click the updates count in the bar.</b> A
+window opens with two tabs.</p>
 
 <figure>
   <img src="assets/img/qupdate.gif" alt="A window listing pending updates with checkboxes next to each">
@@ -165,12 +209,11 @@ hanging entirely with no connection.</p>
 
 <h2 id="passwords">Passwords</h2>
 
-<p>Your passwords in a pop-up list, on a keyboard shortcut. Nothing leaves your
-computer.</p>
+<p>Your passwords in a pop-up list, on a keyboard shortcut. Nothing leaves your computer.</p>
 
-<p><a href="install-git.html#vaultwarden">Create the account first</a>. Two minutes, once.</p>
-
-<p>Then press <kbd>Super</kbd>+<kbd>p</kbd>, let go, press <kbd>p</kbd>. Type to filter.</p>
+<p><a href="install-git.html#vaultwarden">Create the account first</a> &mdash; two minutes,
+once. Then press <kbd>Super</kbd>+<kbd>p</kbd>, let go, press <kbd>p</kbd>. Type to
+filter.</p>
 
 <div class="tw">
 <table class="keys">
@@ -215,8 +258,12 @@ computer.</p>
 8222 to your network or the internet.</b></p>
 </div>
 
-<p>Reaching it from a phone needs one extra piece. Two things block the obvious approach:</p>
+<p>To reach it from a phone, use <a href="https://tailscale.com">Tailscale</a> &mdash; a free
+private network between your own devices.</p>
 
+<details class="why">
+<summary>Why a phone needs Tailscale and cannot just connect</summary>
+<p>Two things block the obvious approach:</p>
 <ul>
 <li>The Bitwarden app refuses plain unencrypted connections outright, with no exception for
 your own home network.</li>
@@ -224,9 +271,9 @@ your own home network.</li>
 computer's certificate on the phone still fails. <em>This is the step that eats an
 evening.</em></li>
 </ul>
-
-<p><a href="https://tailscale.com">Tailscale</a> solves both. A free private network
-between your own devices, and it can issue a certificate phones already trust.</p>
+<p>Tailscale solves both: it is encrypted, and it can issue a certificate phones already
+trust.</p>
+</details>
 
 <ol class="steps">
   <li>
@@ -270,8 +317,8 @@ server, so <b>nothing is exposed to your home network</b>.</p>
 
 <h2 id="phone">Your phone on the screen</h2>
 
-<p>Your Android phone's screen in a window, controlled with your mouse and keyboard. Sound
-comes out of the computer's speakers.</p>
+<p>Your Android phone in a window, controlled with your mouse and keyboard. Sound comes out
+of the computer's speakers.</p>
 
 <h3>The first time</h3>
 
@@ -319,9 +366,8 @@ install your real <kbd>Alt</kbd> key is correct.</p>
 
 <h3>Making the picture better</h3>
 
-<p><b>Plug in a USB cable.</b> Not a marginal improvement. Wi-Fi is the bottleneck, not the
-computer. Measured here, the round trip to the phone averaged 53&nbsp;ms, worse than two whole
-frames before anything is encoded. A cable raises the quality ceiling substantially.</p>
+<p><b>Plug in a USB cable.</b> Not a marginal improvement &mdash; Wi-Fi is the bottleneck, not
+the computer.</p>
 
 <p>To make the window bigger:</p>
 
@@ -329,6 +375,12 @@ frames before anything is encoded. A cable raises the quality ceiling substantia
 
 <p>Default 92, meaning 92% of usable screen height. A phone held upright cannot go wider
 without being taller than your screen, so 100 is the ceiling.</p>
+
+<details class="why">
+<summary>How much difference the cable makes</summary>
+<p>Measured here, the round trip to the phone over Wi-Fi averaged 53&nbsp;ms, worse than two
+whole frames before anything is encoded. A cable raises the quality ceiling substantially.</p>
+</details>
 
 <details class="why">
 <summary>Why this needs a special tool at all</summary>
@@ -345,8 +397,7 @@ second and nudges it back.</p>
 
 <h2 id="dictation">Dictation</h2>
 
-<p>Speak instead of typing. It runs entirely on your own computer. Nothing is sent
-anywhere.</p>
+<p>Speak instead of typing. It runs on your own computer; nothing is sent anywhere.</p>
 
 <div class="tw">
 <table class="keys">
@@ -405,6 +456,7 @@ and you merge by hand.</p>
 <tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>a</kbd></td><td>Build an Anki flashcard and send it to Anki</td></tr>
 <tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>i</kbd></td><td>Screenshot, then annotate it before saving</td></tr>
 <tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>r</kbd></td><td>Record video, audio, webcam or a gif</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>v</kbd></td><td><b>The PDF toolkit.</b> Office documents and images to PDF and back, merge, split, extract a page range, delete or rotate pages, compress, add or remove a password, watermark, page numbers, repair, and OCR to make a scan selectable. All of it on your own machine &mdash; nothing is uploaded, and nothing is watermarked on the way out</td></tr>
 <tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>d</kbd></td><td>Find and open one of your documents</td></tr>
 <tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>f</kbd></td><td>Browse and edit settings files</td></tr>
 <tr><td><kbd>Super</kbd>+<kbd>P</kbd> <kbd>m</kbd></td><td>Read a manual page</td></tr>
@@ -427,9 +479,9 @@ section less.</p>
 
 <pre><code>dcli update</code></pre>
 
-<p><b>Not a plain <code>pacman -Syu</code>.</b> Three safety nets sit around the proper
-command:</p>
-
+<details class="why">
+<summary>Why not a plain <code>pacman -Syu</code></summary>
+<p>Three safety nets sit around the proper command:</p>
 <ol>
 <li>Refused if your disk is nearly full. Applies to <em>any</em> tool, so it cannot be worked
 around by accident.</li>
@@ -438,10 +490,11 @@ are for.</li>
 <li>After an update, anything that broke gets the repair command put straight on your
 clipboard.</li>
 </ol>
+</details>
 
 <h3>If an update breaks something</h3>
 
-<p>Work down. Each step is a bigger hammer than the last.</p>
+<p>Work down the list. Each step is a bigger hammer than the last.</p>
 
 <ol class="steps">
   <li><p>Put the broken piece of software back to its previous version.</p></li>
@@ -476,48 +529,6 @@ gives you no way to boot it.</p>
 
 <p>All bundled commands work from anywhere. <code>ls /usr/local/bin</code> shows the
 complete set.</p>
-
-<h2 id="update">Keeping up to date</h2>
-
-<p>The USB image is built now and then. The desktop itself is improved continuously. You do
-not need a new USB stick to get those improvements &mdash; one command brings your machine
-level with the latest version:</p>
-
-<pre><code>ati-update</code></pre>
-
-<p>It shows you what changed and asks before doing anything. It works out for itself what a
-given update actually needs &mdash; new settings linked into place, newly required programs
-installed, the boot screen regenerated, the desktop restarted &mdash; and does only those.
-Your windows survive the restart.</p>
-
-<div class="tw">
-<table>
-<thead><tr><th>Variation</th><th>What it does</th></tr></thead>
-<tbody>
-<tr><td><code>ati-update --check</code></td><td>Say what would happen, change nothing</td></tr>
-<tr><td><code>ati-update --yes</code></td><td>Do not ask. For running it automatically</td></tr>
-<tr><td><code>ati-update --stash</code></td><td>Set your own edits aside, update, then put them back</td></tr>
-<tr><td><code>ati-update --no-restart</code></td><td>Update, but leave the desktop restart until later</td></tr>
-</tbody>
-</table>
-</div>
-
-<div class="note">
-<p><b>Your own changes are never thrown away.</b> If you have edited any of the settings
-files, it stops and tells you rather than overwriting them. <code>--stash</code> puts them
-aside and restores them afterwards &mdash; and if your edit and the update touch the same
-lines, it stops there too, tells you which files, and does <em>not</em> restart the desktop.</p>
-</div>
-
-<details class="why">
-<summary>Why it checks the new settings before applying them</summary>
-<p>A mistake in the window manager's settings file does not produce an error. The window
-manager quietly loads its own plain built-in settings instead, so the failure looks like your
-desktop turning into a stranger's, with nothing on screen explaining why.</p>
-<p>So the new settings are loaded for real, in the background, <em>before</em> anything is
-applied. If they do not load, your machine is put back exactly as it was and the error is
-printed. A bad update cannot leave you staring at a desktop you do not recognise.</p>
-</details>
 
 <footer class="page">
   <span>Every command and shortcut on this page was read out of the scripts that provide them.</span>

@@ -53,9 +53,8 @@
 
 <h1>Start here</h1>
 
-<p class="lede">ATI-OS is a ready-made Linux desktop: Arch and qtile, packaged. Install it
-once and you get the computer in the picture below, with 22 colour schemes and about forty-five
-tools already set up.</p>
+<p class="lede">ATI-OS is a ready-made Linux desktop. Install it once and you get the computer
+in the picture below: 22 colour schemes and about forty-five tools, already set up.</p>
 
 <figure>
   <img src="assets/img/overview.gif" alt="A screen recording of the desktop: windows arranging themselves, a launcher opening, the colours changing">
@@ -77,7 +76,7 @@ running</a></li>
 
 <h2 id="which">Which install do I want?</h2>
 
-<p>One question: do you already have Arch Linux on this computer?</p>
+<p>One question. Do you already have Arch Linux on this computer?</p>
 
 <ul class="cards">
   <li><a href="install-usb.html">
@@ -114,6 +113,38 @@ running</a></li>
 <a href="troubleshooting.html#black-screen">More on this</a>.</p>
 </div>
 
+<h2 id="firstten">Your first ten minutes</h2>
+
+<p>The desktop is on screen. Windows here arrange themselves, so there is nothing to drag.
+These six keys are enough to use the computer.</p>
+
+<div class="tw">
+<table class="keys">
+<thead><tr><th>Press this</th><th>To do this</th></tr></thead>
+<tbody>
+<tr><td><kbd>Super</kbd>+<kbd>Enter</kbd></td><td><b>Open a terminal</b></td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd></td><td><b>Open a program.</b> Type a few letters of its name, press Enter</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>c</kbd></td><td><b>Close the window</b> you are looking at</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>j</kbd> / <kbd>Super</kbd>+<kbd>k</kbd></td><td><b>Move to the next / previous window</b></td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>P</kbd> then <kbd>c</kbd></td><td><b>Change the colours.</b> Try it. It recolours everything at once</td></tr>
+<tr><td><kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>k</kbd> then <kbd>k</kbd></td><td><b>Show every shortcut on screen.</b> Faster than this page</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><kbd>Super</kbd> is the Windows key, between Ctrl and Alt.
+<a href="keybindings.html">All the shortcuts</a>.</p>
+
+<h2 id="update">Then run <code>ati-update</code></h2>
+
+<div class="note">
+<p><b>Your copy is already behind.</b> The USB stick is a snapshot of one day. The desktop is
+improved most days. Open a terminal and type:</p>
+<pre><code>ati-update</code></pre>
+<p>It shows you what changed and asks before doing anything. Run it now, and every week or
+so after that. <a href="tools.html#update">More about it</a>.</p>
+</div>
+
 <h2 id="what">Words used on this site</h2>
 
 <div class="tw">
@@ -148,12 +179,12 @@ three, but two of them are untested.</li>
 built after 2012 does. Older machines are refused outright rather than half-installed.</p>
 </div>
 
-<div class="warn">
-<p><b>The built-in self-check can lie on a fresh machine.</b> When
-<code>validate.sh</code> cannot run a check, it marks it "skipped" and still reports
+<details class="why">
+<summary>The built-in self-check can lie on a fresh machine</summary>
+<p>When <code>validate.sh</code> cannot run a check, it marks it "skipped" and still reports
 success. On a machine where the install went badly it skips everything and passes.</p>
 <p>Trust the installer's own count instead: <code>47 ok / 0 failed</code>.</p>
-</div>
+</details>
 
 <h2 id="next">Once it is running</h2>
 
