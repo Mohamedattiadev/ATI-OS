@@ -53,6 +53,17 @@ packages:
   - python-tqdm
   - dmenu           # rofi fallback used by dmscripts
   - slock           # lock fallback in dm-logout
+  # Hintium / homerow -- Hint-Mode, Scroll-Mode and the caret modes. All of
+  # these were installed on the development machine and declared nowhere, so
+  # a fresh install got a Super+Shift+F chord whose binary did not exist.
+  # at-spi2-core is not optional decoration: the accessibility tree is the
+  # entire premise of hint mode, and without it homerow sees no UI elements
+  # at all and simply shows nothing.
+  - at-spi2-core
+  - libx11
+  - libxtst
+  - openbsd-netcat  # the homerow client talks to its daemon over a socket
+  - vte3
   - poppler         # pdftotext, pdfinfo, pdftoppm, pdfimages — rofi_ilovepdf
   - ghostscript     # pdf compression + repair in rofi_ilovepdf
   # qpdf carries every page-level operation in rofi_ilovepdf: merge, split,

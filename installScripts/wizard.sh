@@ -241,7 +241,7 @@ sudo_probe() {
 # Group is only used for the picker header — keep display order stable.
 declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
-  sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts simplenote ui-scale githooks
+  sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts homerow simplenote ui-scale githooks
   pacman-guard boot-fallback boot-splash login-shell
   touchpad xinit xresources xmodmap lid image-envs flatpak piper ankiconnect vaultwarden vaultwarden-phone tmux-tpm whisper
   whisper-fast mic-gain scrcpy
@@ -504,6 +504,7 @@ _reg gpu               "GPU + microcode"     System    "Detect Intel/AMD/NVIDIA 
 _reg picom-pin         "picom (pinned)"      System    "Build the animation fork from a fixed commit, not branch HEAD"  "step_picom_pin"
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
 _reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
+_reg homerow           "Hintium / homerow"   Apps      "Hint, scroll and caret modes driven from the home row"   "step_homerow"
 _reg simplenote        "Simplenote push"     Apps      "Mirror the Mod+Shift+S TODOS note to your phone (asks for login at the end)" "step_simplenote"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"
 _reg pacman-guard      "Pacman safety hook"  System    "PreTransaction gate: refuse upgrades when / is too full"  "step_pacman_guard"
@@ -1922,6 +1923,50 @@ step_candy()        { [[ -d /usr/share/icons/candy-icons ]] && { _OK "candy-icon
 WALLPAPERS_REPO="${WALLPAPERS_REPO:-https://github.com/Mohamedattiadev/wallpapers}"
 step_wallpapers()   { [[ -d $HOME/Pictures/Wallpapers/.git ]] && { _OK "wallpapers present"; return; }
                       run "rm -rf $HOME/Pictures/Wallpapers && mkdir -p $HOME/Pictures && git clone $WALLPAPERS_REPO $HOME/Pictures/Wallpapers"; }
+# Hintium -- the homerow implementation config.py has always called and
+# nothing has ever installed.
+#
+# config.py:260 resolves it as `which homerow-hint` with a fallback to
+# ~/Attia-Pro/Projects/Homerow_replika/, a path that exists on exactly one
+# machine in the world. So on every other install, Super+Shift+F entered a
+# chord whose binary was not there: the mode chip appeared, the hint overlay
+# never did, and nothing said why.
+#
+# Cloned rather than packaged because it is not in the AUR, and to
+# ~/.local/share so it is not mistaken for something the user is working on.
+# The three entry points are symlinked, not copied, so `git pull` in that
+# directory takes effect immediately -- the same reason step_ati_scripts
+# symlinks instead of copying.
+HOMEROW_REPO="${HOMEROW_REPO:-https://github.com/Mohamedattiadev/Hintium}"
+HOMEROW_DIR="${HOMEROW_DIR:-$HOME/.local/share/homerow}"
+step_homerow() {
+  if [[ -d "$HOMEROW_DIR/.git" ]]; then
+    run "cd $HOMEROW_DIR && git pull --ff-only --quiet || true"
+  else
+    run "mkdir -p $(dirname "$HOMEROW_DIR") && git clone --depth 1 $HOMEROW_REPO $HOMEROW_DIR"
+  fi
+  (( DRY_RUN )) && return 0
+  [[ -d "$HOMEROW_DIR" ]] || { _WARN "homerow clone missing — skipping the symlinks"; return 0; }
+
+  local linked=0 f
+  for f in homerow-hint homerow-cli homerow-daemon bin/homerow; do
+    [[ -f "$HOMEROW_DIR/$f" ]] || continue
+    chmod +x "$HOMEROW_DIR/$f" 2>/dev/null || true
+    run "sudo ln -sfn $HOMEROW_DIR/$f /usr/local/bin/$(basename "$f")"
+    linked=$((linked+1))
+  done
+  (( linked )) || { _WARN "no homerow entry points found in $HOMEROW_DIR"; return 0; }
+
+  # Its own doctor is the install instructions in executable form, and it
+  # knows about at-spi and browser flags this wizard does not. Advisory
+  # only: a missing browser flag must not fail the install.
+  if [[ -x "$HOMEROW_DIR/bin/homerow" ]]; then
+    "$HOMEROW_DIR/bin/homerow" --doctor >/dev/null 2>&1 \
+      && _OK "homerow --doctor passed" \
+      || _WARN "homerow installed; run 'homerow --doctor' to see what it still wants"
+  fi
+}
+
 step_speed()        { run "$DOTFILES_DIR/installScripts/speed_boost.sh"; }
 step_themes() {
   run "sudo pacman -S --needed --noconfirm python-pywal python-pillow papirus-icon-theme jq"
@@ -2328,6 +2373,19 @@ print(''.join(chr(ord('a') + int(c, 16)) for c in h))
     done
   fi
 }
+uninstall_homerow() {
+  # The symlinks go; the clone stays. It is a checkout under the user's own
+  # ~/.local/share and may carry local commits, so removing it is a data
+  # loss this uninstaller has no business deciding on. The path is printed
+  # instead.
+  local f
+  for f in homerow-hint homerow-cli homerow-daemon homerow; do
+    run "sudo rm -f /usr/local/bin/$f"
+  done
+  [[ -d "$HOMEROW_DIR" ]] && _OK "left the clone at $HOMEROW_DIR — delete it by hand if you want it gone"
+  return 0
+}
+
 uninstall_ati_scripts() {
   # Remove every AtiScriptsV1 script from /usr/local/bin.
   local ati="$DOTFILES_DIR/.config/AtiScriptsV1"
@@ -2469,6 +2527,7 @@ UMOD_CMD[dcli-sync]="uninstall_dcli_sync"
 UMOD_CMD[radios]="uninstall_radios"
 UMOD_CMD[cargo]="uninstall_cargo"
 UMOD_CMD[ati-scripts]="uninstall_ati_scripts"
+UMOD_CMD[homerow]="uninstall_homerow"
 UMOD_CMD[simplenote]="uninstall_simplenote"
 UMOD_CMD[pacman-guard]="uninstall_pacman_guard"
 UMOD_CMD[boot-fallback]="uninstall_boot_fallback"
