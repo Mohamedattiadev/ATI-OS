@@ -158,7 +158,17 @@ active for display 0"</em>.</p>
 <code>letsgo</code>.</p>
 </details>
 
-<h2 id="accounts">4. The three accounts</h2>
+<h2 id="update">4. Get up to date</h2>
+
+<div class="note">
+<p><b>The desktop is improved most days.</b> One command brings your machine level with the
+latest version. Open a terminal (<kbd>Super</kbd>+<kbd>Enter</kbd>) and type:</p>
+<pre><code>ati-update</code></pre>
+<p>It shows you what changed and asks before doing anything. Run it now and then.
+<a href="tools.html#update">More about it</a>.</p>
+</div>
+
+<h2 id="accounts">5. The three accounts</h2>
 
 <p>The desktop is finished and working. What is left is three online accounts, and nobody
 can create an account for you. All three are optional and can wait days.</p>
@@ -199,9 +209,8 @@ tools at it. Only the account is missing.</p>
 </ol>
 
 <p>The server runs on your own computer and only your computer can reach it. It speaks the
-same protocol as the official Bitwarden apps, so the phone app and the browser extension both
-work. Details, including reaching it from a phone, are on
-<a href="tools.html#passwords">The tools you get</a>.</p>
+same language as the official Bitwarden apps, so the phone app and the browser extension both
+work &mdash; see <a href="tools.html#passwords">The tools you get</a>.</p>
 
 <h3 id="simplenote">Setting up note syncing</h3>
 
@@ -218,9 +227,12 @@ to ask you questions, which is what you want here.</p>
 <p class="screen">It asks for your Simplenote email and password, then proves it worked by
 sending your to-do note for real.</p>
 
+<details class="why">
+<summary>Why it may ask you to paste something into a browser</summary>
 <p>Some networks block the login server while the notes themselves stay reachable. It
 notices, copies a one-line snippet to your clipboard to paste into your browser, and takes a
-login token that way. That is the part needing a browser.</p>
+login token that way.</p>
+</details>
 
 <h3 id="gemini">Setting up the AI key</h3>
 
@@ -234,7 +246,7 @@ read it, and it is never uploaded.</p>
 <h2 id="extras">Optional extras</h2>
 
 <p>The install leaves out software unrelated to the desktop. <b>Skipping it changes nothing
-about how the desktop looks or works.</b> Add it whenever you want it:</p>
+about how the desktop looks or works.</b> Add it whenever:</p>
 
 <pre><code>~/.dotfiles/installScripts/wizard.sh --yes --only=dcli-sync-extra</code></pre>
 
@@ -256,10 +268,9 @@ about how the desktop looks or works.</b> Add it whenever you want it:</p>
 
 <pre><code>./wizard.sh --yes --only=xmodmap</code></pre>
 
-<p><b>Not part of a normal install.</b> It turns Caps Lock into an Alt key completely. You
-lose Caps Lock with no way to get capital-lock back. That is right for one laptop with a
-broken Alt key and surprising everywhere else. Your real Alt keys keep working, so on a
-normal keyboard this only gives you a third one.</p>
+<p><b>Not part of a normal install.</b> It turns Caps Lock into an Alt key completely, with no
+way to get capital-lock back. Right for a laptop with a broken Alt key, surprising everywhere
+else. Your real Alt keys keep working.</p>
 
 <h2 id="modules">What the 47 steps actually do</h2>
 

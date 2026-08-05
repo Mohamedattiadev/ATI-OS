@@ -75,51 +75,20 @@ space, the installer offers to sit alongside it. See <a href="#q-disk">question 
 </table>
 </div>
 
-<h2 id="which-path">Which one do I want?</h2>
-
-<p>Two ways in, and the one you want depends on what is on the computer already.</p>
-
-<div class="tw">
-<table>
-<thead><tr><th>&nbsp;</th><th>Path 1 &mdash; USB stick</th><th>Path 2 &mdash; Arch you have</th></tr></thead>
-<tbody>
-<tr><td><b>Who it is for</b></td><td>A blank computer, or one you are willing to erase.</td><td>A computer already running Arch Linux with no desktop on it.</td></tr>
-<tr><td><b>What it does</b></td><td>Installs the whole operating system, disk and all.</td><td>Adds the desktop to the Arch that is already there.</td></tr>
-<tr><td><b>Needs</b></td><td>A 2.6&nbsp;GB download and a USB stick.</td><td>Nothing but the computer and a terminal.</td></tr>
-<tr><td><b>Erases</b></td><td><b>A whole disk.</b></td><td>Nothing.</td></tr>
-<tr><td><b>Takes</b></td><td>About 20 minutes, plus 20 on the first restart.</td><td>An hour or two, almost all of it waiting.</td></tr>
-</tbody>
-</table>
+<div class="note" id="which-path">
+<p><b>Already running Arch Linux?</b> Then skip this page. You do not need a stick and you
+erase nothing &mdash; go to
+<a href="install-git.html">Install onto Arch you already have</a>.</p>
 </div>
-
-<h3 id="path-arch">Path 2 &mdash; Arch you already have</h3>
-
-<p>If the computer is already running Arch, none of the rest of this page applies. There is no
-image to fetch, no stick to write and no disk to erase. Clone the project and run the
-installer:</p>
-
-<pre><code>git clone https://github.com/Mohamedattiadev/ATI-OS.git ~/.dotfiles \
-  &amp;&amp; cd ~/.dotfiles/installScripts \
-  &amp;&amp; ./install.sh</code></pre>
-
-<p>That is the whole of it. It asks for your password once and nothing else.
-<a href="install-git.html">Install onto Arch you already have</a> is the full walkthrough:
-what it needs, what the 47 steps do, and what to do when one fails.</p>
-
-<p>Everything below is path 1.</p>
 
 <h2 id="make">1. Make the stick</h2>
 
-<p>Get the image, then write it to the stick.</p>
+<p>Two steps: download the image, then copy it onto the stick.</p>
 
 <h3 id="download">Download the image</h3>
 
-<p>Most people should not build an operating system image. They should download one that
-somebody already built and check that it arrived intact. That is this path.</p>
-
-<p>The image is hosted on the Internet Archive &mdash; 2.6&nbsp;GB in one file, no account, no
-mirror list. A single file on GitHub Releases is capped at 2&nbsp;GB, which is why it is not
-there.</p>
+<p>Download the ready-made image and check it arrived intact. It lives on the Internet
+Archive: 2.6&nbsp;GB, one file, no account needed.</p>
 
 <div class="tw">
 <table>
@@ -143,7 +112,8 @@ not come from here. The published checksum is:</p>
 
 <pre><code>767e91801733ac506ea2c3b84e5bec608bc34bbe1a4211737ed156de2c903ba3</code></pre>
 
-<p>Put the <code>.iso</code> and the <code>.sha256</code> in the same folder and run:</p>
+<p><b>Check the download before you use it.</b> Put the <code>.iso</code> and the
+<code>.sha256</code> in the same folder and run:</p>
 
 <pre><code>sha256sum -c ati-os-2026.08.04-x86_64.iso.sha256</code></pre>
 
@@ -151,29 +121,25 @@ not come from here. The published checksum is:</p>
 byte-for-byte what was published. <code>FAILED</code> means download it again &mdash; do not
 write it to a stick.</p>
 
-<div class="note">
-<p><b>Why bother checking.</b> A 2.6&nbsp;GB download that stops 40&nbsp;MB early still
-leaves a file called <code>.iso</code> on your disk. It will write to the stick, it will even
-start booting, and it will then fail somewhere unhelpful and look like broken hardware. Sixty
-seconds of <code>sha256sum</code> rules that out.</p>
-</div>
+<details class="why">
+<summary>Why bother checking, and why the file is not on GitHub</summary>
+<p>A 2.6&nbsp;GB download that stops 40&nbsp;MB early still leaves a file called
+<code>.iso</code> on your disk. It will write to the stick, it will even start booting, and it
+will then fail somewhere unhelpful and look like broken hardware. Sixty seconds of
+<code>sha256sum</code> rules that out.</p>
+<p>A single file on GitHub Releases is capped at 2&nbsp;GB, which is why the image is hosted
+on the Internet Archive instead. That page also carries a torrent.</p>
+</details>
 
 <div class="limit">
-<p><b>What this image has actually been through.</b> It was installed and checked inside QEMU
-across all three install modes &mdash; plain, encrypted, and alongside an existing operating
-system, where the other OS's data and its bootloader both survived. That is the whole of it:</p>
-<ul>
-<li><b>UEFI only.</b> A machine started in legacy BIOS mode is refused rather than
-half-installed.</li>
-<li><b>Nobody has ever booted it from a physical USB stick.</b> Every test started the image
-file directly.</li>
-<li><b>No AMD or NVIDIA card and no HiDPI screen has run it.</b> A fake computer has no
-graphics hardware, so those passes say nothing about yours.</li>
-</ul>
-<p><a href="#limits">The full list is at the bottom of this page</a>.</p>
+<p><b>What this image has actually been through.</b> It was installed and checked inside a
+fake computer, in all three install modes &mdash; plain, encrypted, and alongside an existing
+operating system, where the other system's data and its startup menu both survived. That is
+the whole of it. <a href="#limits">What that leaves untested</a>.</p>
 </div>
 
-<h3 id="ageing">An image ages</h3>
+<details class="why" id="ageing">
+<summary>An image over a year old still works, but installs slowly</summary>
 
 <p>The 31 prebuilt AUR packages inside it were compiled on the day it was built, and they are
 only accepted while they still match the Arch libraries they were compiled against. After
@@ -185,6 +151,8 @@ trees are large.</p>
 <p>Nothing breaks when that happens; the install just gets slow. If the published image has
 aged past that point you can build a fresh one, which is a job for somebody who already runs
 Arch and does not mind waiting.</p>
+
+</details>
 
 <details class="why" id="build">
 <summary>Build the image yourself instead</summary>
@@ -228,8 +196,6 @@ seconds.</p>
 </details>
 
 <h3 id="write">Write it to the stick</h3>
-
-<p>Downloaded or built, it is the same kind of file.</p>
 
 <ol class="steps">
   <li>
@@ -306,8 +272,8 @@ configured."</em>, then a section headed <code>── preflight ──</code>.</
 
 <h2 id="checks">5. It checks the computer</h2>
 
-<p>Six checks before anything is touched. Lines marked <code>ok</code> are good. A failure
-names exactly what is wrong and changes nothing.</p>
+<p>Six checks before anything is touched. <code>ok</code> is good. A failure names exactly
+what is wrong and changes nothing.</p>
 
 <div class="tw">
 <table>
@@ -353,12 +319,12 @@ and the tool reports a signature problem rather than a clock problem. More in
 <p><b>Type:</b> the full name including <code>/dev/</code>, such as <code>/dev/sda</code>.</p>
 
 <p><b>Means:</b> this disk gets erased and gets the new system. Pick the one whose size
-matches the computer's built-in disk. Your USB stick is in the list, but you cannot pick it
-by accident. The installer recognises the stick it is running from and refuses it.</p>
+matches the computer's built-in disk. Your USB stick is in the list, but you cannot pick it by
+accident &mdash; the installer recognises the stick it is running from and refuses it.</p>
 
 <h4>If the disk already has another system</h4>
 
-<p>With an existing operating system and 25&nbsp;GB free, you get a choice:</p>
+<p>With another operating system on it and 25&nbsp;GB free, you get a choice:</p>
 
 <pre><code>  This disk already has an operating system on it.
     Existing EFI partition: /dev/sda1
@@ -572,8 +538,20 @@ five unrelated broken steps.</p>
 
 <h2 id="after">Done. What is left</h2>
 
-<p>The desktop works. Three things need an account, and only you can make an account. All
-three are optional and can wait days.</p>
+<p>The desktop works. Start with <a href="keybindings.html#day-one">the six shortcuts for day
+one</a>.</p>
+
+<div class="note">
+<p><b>Then run <code>ati-update</code>.</b> The stick is a snapshot of one day, and the
+desktop is improved most days, so your copy is already behind. Open a terminal
+(<kbd>Super</kbd>+<kbd>Enter</kbd>) and type:</p>
+<pre><code>ati-update</code></pre>
+<p>It shows you what changed and asks before doing anything. Do it now and then from time to
+time. <a href="tools.html#update">More about it</a>.</p>
+</div>
+
+<p>Three more things need an online account, and only you can make an account. All three are
+optional and can wait days.</p>
 
 <div class="tw">
 <table>

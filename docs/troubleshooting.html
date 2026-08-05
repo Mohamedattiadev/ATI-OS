@@ -53,8 +53,8 @@
 
 <h1>Troubleshooting</h1>
 
-<p class="lede">Find what you are seeing in the headings below. Every problem here is real,
-with the cause and the fix.</p>
+<p class="lede">Find what you are seeing in the headings below. Every problem here is real, with
+its cause and its fix.</p>
 
 <h2 id="first">The first five minutes</h2>
 
@@ -97,9 +97,8 @@ startx</code></pre>
 
 <h3 id="desktop-missing">The desktop never appeared after installing from USB</h3>
 
-<p>The desktop builds itself on the first restart, not during the install. About 20 minutes,
-with progress on screen. A failure is reported, and it retries next time rather than
-pretending it worked.</p>
+<p>The desktop builds itself on the first restart, not during the install: about 20 minutes,
+with progress on screen. A failure is reported, and it retries next time.</p>
 
 <pre><code>cat /var/log/ati-os-firstboot.log</code></pre>
 
@@ -148,8 +147,10 @@ above it. Check yourself:</p>
 
 <pre><code>dcli sync --dry-run</code></pre>
 
-<p>That lists anything still missing. Three causes have produced it:</p>
+<p>That lists anything still missing.</p>
 
+<details class="why">
+<summary>The three causes that have produced this</summary>
 <ol>
 <li><b>Admin permission expired part-way through.</b> Things were built and never installed.
 The installer now keeps it alive for the whole run.</li>
@@ -158,6 +159,7 @@ that round failed, not just the two that clashed.</li>
 <li><b>One package's build tools were not ready.</b> Breaks only the packages needing
 them.</li>
 </ol>
+</details>
 
 <h3>It ran out of disk space</h3>
 
@@ -171,10 +173,9 @@ unrelated steps reporting "No space left on device", 32 steps after the cause.</
 <h3>It stopped because of unread news</h3>
 
 <p>Arch has a tool that blocks software changes until the distribution's announcements are
-read. It installs itself part-way through, and a new machine always has unread ones.</p>
-
-<p>The installer handles it. It has to be done as the administrator. Doing it as yourself has
-no effect, which is a confusing 20 minutes if you go looking.</p>
+read. It installs itself part-way through, and a new machine always has unread ones. The
+installer handles it. It has to be marked read as the administrator &mdash; doing it as
+yourself has no effect, which is a confusing 20 minutes if you go looking.</p>
 
 <h3>Other install problems</h3>
 
