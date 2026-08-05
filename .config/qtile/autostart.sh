@@ -124,9 +124,15 @@ lxqt-policykit-agent &
   pgrep -f 'scripts/qdrop.py$' >/dev/null || python3 ~/.config/qtile/scripts/qdrop.py &
   pgrep -f 'scripts/qupdate.py$' >/dev/null || python3 ~/.config/qtile/scripts/qupdate.py --daemon &
   pgrep -f qdrop_watch.py >/dev/null || python3 ~/.config/qtile/scripts/qdrop_watch.py &
-  # Homerow hint daemon. alt+shift+f only feels instant if the imports are
+  # hintium hint daemon. alt+shift+f only feels instant if the imports are
   # already paid for; the client falls back to starting this on demand.
-  pgrep -f 'homerow-daemon$' >/dev/null || ~/Attia-Pro/Projects/Homerow_replika/homerow-daemon &
+  #
+  # Resolved through PATH, like every other line here, rather than named as a
+  # checkout path: the wizard symlinks the entry points into /usr/local/bin,
+  # and the hardcoded path this used to carry broke the moment the project
+  # directory was renamed -- silently, because a `&`-backgrounded command that
+  # does not exist says nothing to anyone.
+  pgrep -f 'hintium-daemon$' >/dev/null || hintium-daemon &
   # ~/.config/qtile/scripts/watch_todo_conflicts.sh &
 ) &
 

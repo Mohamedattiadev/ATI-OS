@@ -66,9 +66,9 @@ modes. Not verified: AMD or NVIDIA graphics, or a HiDPI panel.
 | **[22 themes](https://mohamedattiadev.github.io/ATI-OS/themes.html)** | One command retints bar, terminal, rofi, GTK, Qt, browser, nvim — and your folder icons |
 | **[Keyboard-driven](https://mohamedattiadev.github.io/ATI-OS/keybindings.html)** | ~90 bindings, grouped into modes that announce themselves in the bar |
 | **[A bar that does things](https://mohamedattiadev.github.io/ATI-OS/widgets.html)** | Updates, audio, wifi, bluetooth, displays — popups, not terminals |
-| **[~50 tools](https://mohamedattiadev.github.io/ATI-OS/tools.html)** | Drop-stash, package manager, offline PDF toolkit, cheatsheets, screenshots, dictation |
+| **[~45 tools](https://mohamedattiadev.github.io/ATI-OS/tools.html)** | Drop-stash, package manager, offline PDF toolkit, cheatsheets, screenshots, dictation |
 | **[Mouse-free clicking](https://mohamedattiadev.github.io/ATI-OS/keybindings.html#hintium)** | [Hintium](https://github.com/Mohamedattiadev/Hintium) labels everything clickable — hint, scroll and caret modes from the home row |
-| **[Documented](https://mohamedattiadev.github.io/ATI-OS/troubleshooting.html)** | 126 troubleshooting entries, searchable, reachable from the desktop itself |
+| **[Documented](https://mohamedattiadev.github.io/ATI-OS/troubleshooting.html)** | 186 troubleshooting entries, searchable, reachable from the desktop itself |
 
 <div align="center">
 
@@ -121,10 +121,21 @@ docs/             the manual, published to GitHub Pages
 installScripts/   install.sh, wizard.sh, and iso/ to build the USB image
 IMGS/             the screenshots and clips used above
 notes/            recording plans and archived working notes
+LICENSE           GPL-3.0
+NOTICE.md         what is vendored, and under which licence
 ```
 
 → [Where every file lives](https://mohamedattiadev.github.io/ATI-OS/reference.html)
 · [How it actually works](https://mohamedattiadev.github.io/ATI-OS/under-the-hood.html)
+
+---
+
+## Licence
+
+[GPL-3.0](LICENSE). Parts of this repository are derived from
+[dmscripts](https://gitlab.com/dwt1/dmscripts) and
+[archiso](https://gitlab.archlinux.org/archlinux/archiso), both GPL-3.0 —
+[`NOTICE.md`](NOTICE.md) records what came from where.
 
 ---
 

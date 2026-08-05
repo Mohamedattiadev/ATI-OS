@@ -64,14 +64,14 @@ desktop.</p>
 <table>
 <thead><tr><th>Half</th><th>Portable?</th><th>Why</th></tr></thead>
 <tbody>
-<tr><td>The configs and the ~50 bundled commands</td><td><b>Any Linux</b></td><td>Nothing is hardcoded to a distribution, username, monitor, GPU or resolution. Paths come from <code>$HOME</code>, the battery and webcam from <code>/sys</code> and v4l2, screens from live <code>xrandr</code>, DPI from the panel, fonts from <code>fc-match</code></td></tr>
+<tr><td>The configs and the ~45 bundled commands</td><td><b>Any Linux</b></td><td>Nothing is hardcoded to a distribution, username, monitor, GPU or resolution. Paths come from <code>$HOME</code>, the battery and webcam from <code>/sys</code> and v4l2, screens from live <code>xrandr</code>, DPI from the panel, fonts from <code>fc-match</code></td></tr>
 <tr><td>The installer</td><td><b>Arch only</b></td><td><code>pacman</code>, <code>yay</code>, the AUR, <code>dcli</code>, <code>mkinitcpio</code>, <code>systemd-boot</code></td></tr>
 </tbody>
 </table>
 </div>
 
 <p>That second row is a deliberate limit. Hand-writing <code>apt</code> and <code>dnf</code>
-equivalents for 263 packages nobody has ever installed on those systems produces a config
+equivalents for 275 packages nobody has ever installed on those systems produces a config
 that <em>looks</em> portable and breaks on first contact. Worse than saying no.</p>
 
 <p>So the installer fails immediately on a non-Arch system, before touching anything. Every
@@ -494,7 +494,7 @@ these programs agree on how to be recoloured.</p>
 <tr><td>qtile</td><td>A restart, detached so the caller does not deadlock</td></tr>
 <tr><td>GTK 3 and 4</td><td>An overlay stylesheet imported from the cache</td></tr>
 <tr><td>Qt 5 and Qt 6</td><td>A 21-role palette file. <b>Needs <code>QT_QPA_PLATFORMTHEME=qt6ct</code></b>, exported at session start. Qt ignores the GTK theme entirely and falls back to a <em>light</em> palette without it. Read at application start, so a fresh session is required</td></tr>
-<tr><td>qutebrowser</td><td>Home page by inline styles. Browser chrome, 78 options, by a function reading the dumped palette. For <em>all</em> themes, not only the wallpaper one</td></tr>
+<tr><td>qutebrowser</td><td>Home page by inline styles. Browser chrome, 92 options, by a function reading the dumped palette. For <em>all</em> themes, not only the wallpaper one</td></tr>
 <tr><td>nvim</td><td>A filesystem watch on the dumped palette. Themes with no dedicated plugin render highlights straight from it</td></tr>
 <tr><td>Brave</td><td>An extension whose manifest is read live on relaunch</td></tr>
 <tr><td>Chrome and Chromium</td><td>Enterprise policy from a local update file. The package is repacked and preferences purged each time so the install lands immediately. The extension id is derived from a per-machine key at runtime, never hardcoded, and the browsers relaunch through their wrapper so their flags file is applied</td></tr>

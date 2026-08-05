@@ -396,7 +396,14 @@ sec_docs() {
     # Counted here, not written here. This row said "126 fixes" and the file
     # had grown to 139 -- the one hand-typed number in a script whose whole
     # claim is that nothing is hand-listed, and it had already drifted by 13.
-    n_fix="$(grep -cE '^#{2,3} ' "$DOTFILES/TROUBLESHOOTING.md" 2>/dev/null || echo 0)"
+    #
+    # '^### ', not '^#{2,3} '. The wider pattern also matches the 18 '## '
+    # section headers -- "Theming", "Rofi", "Tmux" and the rest -- which are
+    # categories, not fixes. It reported 204 against a real 186, so replacing
+    # a hand-typed number with a derived one fixed the drift and kept the
+    # error. doc_index() below still wants both levels, because it is asking
+    # "does this document have anything to index at all".
+    n_fix="$(grep -c '^### ' "$DOTFILES/TROUBLESHOOTING.md" 2>/dev/null || echo 0)"
     c="$(printf '%s\n' \
       "󰈙  README            what this desktop is" \
       "󰋗  Troubleshooting   ${n_fix} fixes, by symptom" \
@@ -496,7 +503,7 @@ sec_trouble() {
       }
       heading = ""
     }
-  ' "$f" | pick "Troubleshooting" "$(rofi_hint "↵ jump" "Esc back" "$(grep -cE '^#{2,3} ' "$f") fixes" "type the symptom")")"
+  ' "$f" | pick "Troubleshooting" "$(rofi_hint "↵ jump" "Esc back" "$(grep -c '^### ' "$f") fixes" "type the symptom")")"
   (( RC != 0 )) && return
   [[ -z "$sel" ]] && return
   local line="${sel##*:}"

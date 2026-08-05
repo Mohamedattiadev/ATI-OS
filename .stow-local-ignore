@@ -5,6 +5,8 @@
 .git
 .gitignore
 README.md
+LICENSE
+NOTICE.md
 
 # The rest of the repo-root prose. README.md was already listed; these were
 # not, so `stow .` symlinked all of them into $HOME -- ~/TROUBLESHOOTING.md,
@@ -28,6 +30,12 @@ TROUBLESHOOTING.md
 # Images / assets
 # ======================
 IMGS
+
+# The explainer-video sources and their build script. Added to the repo root
+# after IMGS/docs were listed here, and missed -- `stow -n .` reported
+# "LINK: video => .dotfiles/video", so a fresh install got a ~/video symlink
+# in the user's home for the same reason it once got ~/docs.
+video
 
 # The GitHub Pages manual. A directory, so stow would link ~/docs into a
 # fresh user's home the same way it once linked the repo-root prose. It is

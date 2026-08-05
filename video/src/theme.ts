@@ -21,17 +21,17 @@ export const MONO = '"JetBrainsMono Nerd Font", "Adwaita Mono", monospace';
  * caption aligns to MARGIN, and every size comes from T — that shared grid is
  * most of what separates "designed" from "assembled".
  */
-export const MARGIN = 96;
+export const MARGIN = 130;
 
 export const T = {
-  eyebrow: 21,
-  display: 52,
-  headline: 34,
-  captionTitle: 29,
-  body: 27,
-  bodySm: 23,
-  mono: 21,
-  monoSm: 19,
+  eyebrow: 25,
+  display: 74,
+  headline: 46,
+  captionTitle: 35,
+  body: 31,
+  bodySm: 27,
+  mono: 26,
+  monoSm: 22,
 };
 
 export const clamp = (x: number) => Math.max(0, Math.min(1, x));

@@ -150,8 +150,6 @@ CHEATSHEET = {
         ("YouTube menu", "y"),
         ("Kill process", "k"),
         ("Spell check", "s"),
-        # "Weather / w" used to sit here. dm-weather has been commented out
-        # in config.py for a while, and w is the wallpaper picker now.
         ("Todo manager", "t"),
         ("Saved Links", "z"),
         ("Logout menu", "q"),

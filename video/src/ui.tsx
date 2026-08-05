@@ -98,3 +98,86 @@ export const Caption: React.FC<{
     </AbsoluteFill>
   );
 };
+
+/**
+ * The usage take was re-recorded at 1920x1080 and fills the frame. The older
+ * feature clips are 1366x768 and would have to be upscaled by 1.41 to match,
+ * which blurs terminal text badly.
+ *
+ * So they are not upscaled. They sit at native size in a framed panel with the
+ * caption in the band underneath, which turns the leftover space into layout
+ * instead of letterboxing. The frame's left edge becomes the left rail for
+ * that beat, so the caption still lines up with something.
+ */
+export const Framed: React.FC<{ clip: Clip; from?: number; children?: React.ReactNode }> = ({
+  clip,
+  from = 0,
+  children,
+}) => {
+  const left = Math.round((1920 - clip.w) / 2);
+  return (
+    <AbsoluteFill style={{ background: C.bg }}>
+      <div
+        style={{
+          position: "absolute",
+          left,
+          top: 74,
+          width: clip.w,
+          height: clip.h,
+          border: `1px solid ${C.line}`,
+          boxShadow: "0 24px 70px rgba(0,0,0,0.5)",
+          overflow: "hidden",
+        }}
+      >
+        <OffthreadVideo
+          src={staticFile(clip.src)}
+          trimBefore={from}
+          style={{ width: clip.w, height: clip.h }}
+        />
+      </div>
+      <div style={{ position: "absolute", left, top: 74 + clip.h + 34, right: left }}>
+        {children}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+/** The caption body used underneath a framed clip, on its own line. */
+export const UnderCaption: React.FC<{ at: number; title: string; body?: string }> = ({
+  at,
+  title,
+  body,
+}) => {
+  const f = useCurrentFrame();
+  const o = textIn(f, at, Infinity, 14);
+  if (o <= 0.001) return null;
+  const rise = outCubic(range(f, at, at + 20));
+  return (
+    <div style={{ opacity: o, transform: `translateY(${(1 - rise) * 10}px)` }}>
+      <div
+        style={{
+          fontFamily: MONO,
+          fontSize: T.captionTitle,
+          lineHeight: 1.35,
+          letterSpacing: "-0.005em",
+          color: C.fg,
+        }}
+      >
+        {title}
+      </div>
+      {body ? (
+        <div
+          style={{
+            marginTop: 8,
+            fontFamily: SANS,
+            fontSize: T.bodySm,
+            lineHeight: 1.5,
+            color: C.dim,
+          }}
+        >
+          {body}
+        </div>
+      ) : null}
+    </div>
+  );
+};

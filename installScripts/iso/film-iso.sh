@@ -29,7 +29,7 @@ GIF="$FILM_DIR/ati-os-install.gif"
 # frames.
 INTERVAL="${INTERVAL:-6}"
 SEG1_SECS="${SEG1_SECS:-600}"     # boot + welcome + installer
-SEG2_SECS="${SEG2_SECS:-1500}"    # first boot, the wizard's 46 modules
+SEG2_SECS="${SEG2_SECS:-1500}"    # first boot, the wizard's 47 modules
 
 VM_RAM_MB="${VM_RAM_MB:-4096}"
 VM_DISK_GB="${VM_DISK_GB:-60}"

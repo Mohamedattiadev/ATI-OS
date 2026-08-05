@@ -4,7 +4,7 @@
 # This script deliberately does NOT reimplement the install. The partition
 # / pacstrap / bootctl sequence below is lifted from vm-test.sh's
 # _base_install_script, which has been run end to end and verified, and
-# everything after the base system is `wizard.sh` -- the same 46 modules,
+# everything after the base system is `wizard.sh` -- the same 47 modules,
 # in the same order, from the same code. The only thing that is new here is
 # asking a human which disk to erase.
 #
@@ -1064,7 +1064,7 @@ finish() {
   ${C_B}Remove the USB medium and reboot.${C_R}
 
   ${C_B}The desktop installs itself on that first boot.${C_R} You will see the
-  wizard run through its 46 modules on screen -- roughly 20 minutes,
+  wizard run through its 47 modules on screen -- roughly 20 minutes,
   because the AUR packages came prebuilt on this medium instead of being
   compiled. Let it finish before logging in.
 
