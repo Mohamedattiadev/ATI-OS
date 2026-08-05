@@ -241,7 +241,7 @@ sudo_probe() {
 # Group is only used for the picker header — keep display order stable.
 declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
-  sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts homerow simplenote ui-scale githooks
+  sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts hintium simplenote ui-scale githooks
   pacman-guard boot-fallback boot-splash login-shell
   touchpad xinit xresources xmodmap lid image-envs flatpak piper ankiconnect vaultwarden vaultwarden-phone tmux-tpm whisper
   whisper-fast mic-gain scrcpy
@@ -504,7 +504,7 @@ _reg gpu               "GPU + microcode"     System    "Detect Intel/AMD/NVIDIA 
 _reg picom-pin         "picom (pinned)"      System    "Build the animation fork from a fixed commit, not branch HEAD"  "step_picom_pin"
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
 _reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
-_reg homerow           "Hintium"             Apps      "Hint, scroll and caret modes driven from the home row"   "step_homerow"
+_reg hintium           "Hintium"             Apps      "Hint, scroll and caret modes driven from the home row"   "step_hintium"
 _reg simplenote        "Simplenote push"     Apps      "Mirror the Mod+Shift+S TODOS note to your phone (asks for login at the end)" "step_simplenote"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"
 _reg pacman-guard      "Pacman safety hook"  System    "PreTransaction gate: refuse upgrades when / is too full"  "step_pacman_guard"
@@ -1952,14 +1952,22 @@ HINTIUM_DIR="${HINTIUM_DIR:-$HOME/.local/share/hintium}"
 # Kept so an install done before the rename is migrated rather than
 # duplicated.
 HINTIUM_DIR_OLD="$HOME/.local/share/homerow"
-step_homerow() {
+step_hintium() {
   # Migrate a pre-rename clone instead of leaving two copies on disk.
   if [[ -d "$HINTIUM_DIR_OLD/.git" && ! -d "$HINTIUM_DIR/.git" ]]; then
     run "mv $HINTIUM_DIR_OLD $HINTIUM_DIR"
   fi
 
   if [[ -d "$HINTIUM_DIR/.git" ]]; then
-    run "cd $HINTIUM_DIR && git pull --ff-only --quiet || true"
+    # `git pull --ff-only || true` on its own is a silent no-op whenever the
+    # checkout is on a branch with no upstream -- which happens the moment
+    # anyone checks out a feature branch in there to try something. The
+    # update then stops happening and nothing says so. Report it instead.
+    if (( ! DRY_RUN )) && ! git -C "$HINTIUM_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+      _WARN "$HINTIUM_DIR is on '$(git -C "$HINTIUM_DIR" rev-parse --abbrev-ref HEAD)', which tracks nothing — leaving it alone"
+    else
+      run "cd $HINTIUM_DIR && git pull --ff-only --quiet || true"
+    fi
   else
     run "mkdir -p $(dirname "$HINTIUM_DIR") && git clone --depth 1 $HINTIUM_REPO $HINTIUM_DIR"
   fi
@@ -2408,11 +2416,11 @@ print(''.join(chr(ord('a') + int(c, 16)) for c in h))
     done
   fi
 }
-uninstall_homerow() {
+uninstall_hintium() {
   # The symlinks go; the clone stays. It is a checkout under the user's own
   # ~/.local/share and may carry local commits, so removing it is a data
   # loss this uninstaller has no business deciding on. The path is printed
-  # instead. Both naming eras are removed -- see step_homerow for why both
+  # instead. Both naming eras are removed -- see step_hintium for why both
   # get installed.
   local f
   for f in hintium-hint hintium-cli hintium-daemon hintium \
@@ -2564,7 +2572,7 @@ UMOD_CMD[dcli-sync]="uninstall_dcli_sync"
 UMOD_CMD[radios]="uninstall_radios"
 UMOD_CMD[cargo]="uninstall_cargo"
 UMOD_CMD[ati-scripts]="uninstall_ati_scripts"
-UMOD_CMD[homerow]="uninstall_homerow"
+UMOD_CMD[hintium]="uninstall_hintium"
 UMOD_CMD[simplenote]="uninstall_simplenote"
 UMOD_CMD[pacman-guard]="uninstall_pacman_guard"
 UMOD_CMD[boot-fallback]="uninstall_boot_fallback"
