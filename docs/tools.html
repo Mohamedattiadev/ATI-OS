@@ -465,6 +465,7 @@ gives you no way to boot it.</p>
 <tr><td><code>theme-apply gruvbox</code></td><td>Change the colour theme</td></tr>
 <tr><td><code>ui-scale-toggle</code></td><td>Change the size of everything</td></tr>
 <tr><td><code>boot-splash preview</code></td><td>See the startup screen without restarting</td></tr>
+<tr><td><code>ati-update</code></td><td><b>Get the latest version of this desktop.</b> See below</td></tr>
 <tr><td><code>qtile-keys</code></td><td>Print every keyboard shortcut</td></tr>
 <tr><td><code>fc-cache -fv</code></td><td>Notice newly installed fonts</td></tr>
 <tr><td><code>qtile cmd-obj -o cmd -f reload_config</code></td><td>Reload settings without a full restart</td></tr>
@@ -474,6 +475,48 @@ gives you no way to boot it.</p>
 
 <p>All bundled commands work from anywhere. <code>ls /usr/local/bin</code> shows the
 complete set.</p>
+
+<h2 id="update">Keeping up to date</h2>
+
+<p>The USB image is built now and then. The desktop itself is improved continuously. You do
+not need a new USB stick to get those improvements &mdash; one command brings your machine
+level with the latest version:</p>
+
+<pre><code>ati-update</code></pre>
+
+<p>It shows you what changed and asks before doing anything. It works out for itself what a
+given update actually needs &mdash; new settings linked into place, newly required programs
+installed, the boot screen regenerated, the desktop restarted &mdash; and does only those.
+Your windows survive the restart.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Variation</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>ati-update --check</code></td><td>Say what would happen, change nothing</td></tr>
+<tr><td><code>ati-update --yes</code></td><td>Do not ask. For running it automatically</td></tr>
+<tr><td><code>ati-update --stash</code></td><td>Set your own edits aside, update, then put them back</td></tr>
+<tr><td><code>ati-update --no-restart</code></td><td>Update, but leave the desktop restart until later</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<p><b>Your own changes are never thrown away.</b> If you have edited any of the settings
+files, it stops and tells you rather than overwriting them. <code>--stash</code> puts them
+aside and restores them afterwards &mdash; and if your edit and the update touch the same
+lines, it stops there too, tells you which files, and does <em>not</em> restart the desktop.</p>
+</div>
+
+<details class="why">
+<summary>Why it checks the new settings before applying them</summary>
+<p>A mistake in the window manager's settings file does not produce an error. The window
+manager quietly loads its own plain built-in settings instead, so the failure looks like your
+desktop turning into a stranger's, with nothing on screen explaining why.</p>
+<p>So the new settings are loaded for real, in the background, <em>before</em> anything is
+applied. If they do not load, your machine is put back exactly as it was and the error is
+printed. A bad update cannot leave you staring at a desktop you do not recognise.</p>
+</details>
 
 <footer class="page">
   <span>Every command and shortcut on this page was read out of the scripts that provide them.</span>

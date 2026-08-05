@@ -42,6 +42,20 @@ purpose.
 
 → [What the installer does, module by module](https://mohamedattiadev.github.io/ATI-OS/install-git.html)
 
+**Already installed?** The USB image is built now and then; the desktop is
+improved continuously. One command brings you level — no reinstall:
+
+```sh
+ati-update
+```
+
+It shows what changed, asks, then does only what that update needs: link new
+settings, install newly required packages, regenerate the boot splash, restart
+the desktop. Your windows survive. If the new config doesn't load it rolls
+back, so a bad push can't leave you at a broken desktop.
+
+→ [All of it, including `--check` and `--stash`](https://mohamedattiadev.github.io/ATI-OS/tools.html#update)
+
 **UEFI only.** Verified on a clean Arch VM, and in QEMU across three install
 modes. Not verified: AMD or NVIDIA graphics, or a HiDPI panel.
 
