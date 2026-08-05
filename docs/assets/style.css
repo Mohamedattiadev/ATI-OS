@@ -1678,3 +1678,22 @@ footer.site a:hover { color: var(--accent); }
   details.why[open] > :not(summary) { display: block; }
   img { max-width: 60%; }
 }
+
+/* The landing-page film. Sits above the gif grid, full column width.
+   height:auto with the intrinsic width/height on the element keeps the
+   aspect ratio reserved before the poster loads, so the page does not
+   jump -- the same reason the gifs below carry width/height. */
+.film-main { margin: 0 0 28px; }
+.film-main video {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 8px;
+    background: #000;
+    border: 1px solid var(--border);
+}
+.film-main figcaption {
+    margin-top: 10px;
+    color: var(--fg-faint);
+    font-size: .93rem;
+}
