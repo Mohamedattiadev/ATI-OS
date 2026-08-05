@@ -6396,7 +6396,6 @@ keys = [
             Key([], "s", lazy.spawn("dm-spellcheck -r"), desc="Spell check menu"),
             # --- Search weather ---
             # Disabled: `w` now opens the WiFi picker (chord above).
-            # Key([], "w", lazy.spawn("dm-weather -r"), desc="Search weather"),
             # --- Open todo manager ---
             Key([], "t", lazy.spawn("rofi_todo"), desc="Open todo manager"),
             # --- screen light ---
