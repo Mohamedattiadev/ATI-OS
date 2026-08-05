@@ -85,6 +85,21 @@ packages:
   - tesseract-data-eng
   - wl-clipboard    # wl-copy fallback in fish scripts
   - whisper.cpp-git # voice_dictate backend (AUR)
+  # cmake is what step_whisper_fast actually builds with -- wizard.sh runs
+  # `cmake -S ... -B ...` and `cmake --build ...` with no `command -v` guard,
+  # so a missing cmake hard-fails that step rather than warning and skipping
+  # like its other failure paths do.
+  #
+  # It was never declared, and only ever arrived as a transient makedepend of
+  # whisper.cpp-git. `pacman -Qi cmake` says "Required By: None / Installed as
+  # a dependency", and it is in `pacman -Qtdq` RIGHT NOW -- meaning this
+  # repo's own Maintenance section would offer to remove it as an orphan,
+  # after which `./wizard.sh --only=whisper-fast` breaks on a machine that was
+  # working an hour earlier.
+  #
+  # `wizard.sh --audit` cannot catch this class: it compares declared against
+  # installed, and cmake IS installed here, so there is no drift to report.
+  - cmake
   - yt-dlp
   - xdg-utils
   - stow
