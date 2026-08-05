@@ -1431,7 +1431,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   notification and does not care whether the exec succeeded, so the only
   evidence was a fork nobody was counting.
 - **Why it looked plausible:** copy-the-last-notification *is*
-  implemented here — as `scripts/auto-copy-dunst.sh`, which is its own
+  implemented here — as `.config/dunst/scripts/auto-copy-dunst.sh`, which is its own
   `dbus-monitor` daemon and not a dunst script hook at all. It takes no
   `(appname, summary, body, …)` argv and would do nothing if it were
   wired in here, so the rule could never have worked even with the file
@@ -3935,7 +3935,7 @@ so a failed first boot does not mark itself done and will retry.
 Known, and not specific to the ISO. `validate.sh` degrades every check it
 cannot run to "skipped" — so on a machine where the install failed and
 nothing is present, it skips everything and exits green. Trust the wizard's
-summary card (`46 ok / 0 failed`) over `validate.sh` on a fresh machine.
+summary card (`47 ok / 0 failed`) over `validate.sh` on a fresh machine.
 
 ### Building the ISO fails with "call to execv failed"
 

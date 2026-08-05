@@ -18,7 +18,7 @@ The honest scope, decided up front so nobody is surprised at first boot.
 - Every dotfile, stowed the same way by `stow_script.sh`.
 - qtile config, picom, rofi themes, eww, kitty, dunst, fonts — byte-identical,
   because they are files in the repo, not generated.
-- The wizard's 46 modules run in the same order, from the same code.
+- The wizard's 47 modules run in the same order, from the same code.
 
 **Cannot be identical — machine-specific by nature:**
 
@@ -91,7 +91,7 @@ target.
 | stage | what | cost to the user |
 |---|---|---|
 | baked in the ISO | base system, kernel, the 30 AUR packages, the dotfiles repo itself | 0 — already on the USB |
-| during install | partition, pacstrap, `wizard.sh` runs its 46 modules | ~15–25 min instead of ~2 hours |
+| during install | partition, pacstrap, `wizard.sh` runs its 47 modules | ~15–25 min instead of ~2 hours |
 | after first boot, opt-in | whisper models (~630 MB), piper voices (~60 MB), wallpapers (~500 MB) | user's choice, on their bandwidth |
 
 ---
@@ -150,7 +150,7 @@ rescue something is useful even when installing there is not.
    with `[ati-local]` mounted from the ISO so the AUR packages install as
    binaries instead of building.
 5. **Clone + wizard** — clone the dotfiles repo (or copy the baked-in one when
-   offline), then `./install.sh` for the 46 modules.
+   offline), then `./install.sh` for the 47 modules.
 6. **Assert** — run `validate.sh` in the chroot before declaring success, and
    print the same summary card the wizard prints.
 
