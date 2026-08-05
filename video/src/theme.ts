@@ -16,6 +16,24 @@ export const C = {
 export const SANS = '"Adwaita Sans", "Noto Sans", sans-serif';
 export const MONO = '"JetBrainsMono Nerd Font", "Adwaita Mono", monospace';
 
+/**
+ * One left rail and one type scale for the whole film. Every card and every
+ * caption aligns to MARGIN, and every size comes from T — that shared grid is
+ * most of what separates "designed" from "assembled".
+ */
+export const MARGIN = 96;
+
+export const T = {
+  eyebrow: 21,
+  display: 52,
+  headline: 34,
+  captionTitle: 29,
+  body: 27,
+  bodySm: 23,
+  mono: 21,
+  monoSm: 19,
+};
+
 export const clamp = (x: number) => Math.max(0, Math.min(1, x));
 
 /** 0..1 progress between two frames */

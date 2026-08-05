@@ -246,7 +246,7 @@ os.environ["XMODIFIERS"] = ""
 mod = "mod4"  # Primary mod = WINDOWS (Alt broken on hardware)
 mod2 = "mod1"  # Secondary mod = ALT
 
-# homerow client. A shell script that pokes the resident daemon over a socket,
+# hintium client. A shell script that pokes the resident daemon over a socket,
 # so spawning it costs ~12ms rather than a Python interpreter start.
 #
 # PATH first. This was only the checkout path below, which lives outside this
@@ -257,23 +257,23 @@ mod2 = "mod1"  # Secondary mod = ALT
 # shutil.which()-then-fall-back shape _rescale_then_restart uses for ui-scale.
 import shutil as _shutil  # noqa: E402  (kept next to its only use)
 
-HOMEROW = _shutil.which("homerow-hint") or os.path.expanduser(
-    "~/Attia-Pro/Projects/Homerow_replika/homerow-hint"
+HINTIUM = _shutil.which("hintium-hint") or os.path.expanduser(
+    "~/Attia-Pro/Projects/Hintium/hintium-hint"
 )
 
-# Bar indicator for homerow's direct alt+space/j//c bindings. These are not
+# Bar indicator for hintium's direct alt+space/j//c bindings. These are not
 # qtile chords (see the "Hint mode is bound directly" comment on the keys
 # below), so the existing Chord widget cannot show them -- it only reflects
-# qtile's own chord state. Instead the homerow daemon itself writes the name
+# qtile's own chord state. Instead the hintium daemon itself writes the name
 # of whichever mode is currently open to this file the instant it opens one,
 # and removes the file the instant it closes (service.py: _set_mode /
 # _clear_mode) -- including on a hang, since a killed daemon's next start
 # clears any stale file left behind. Polling this is what lets the bar show
-# real homerow state rather than a proxy for it.
-HOMEROW_MODE_PATH = os.path.join(
-    os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "homerow-mode"
+# real hintium state rather than a proxy for it.
+HINTIUM_MODE_PATH = os.path.join(
+    os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "hintium-mode"
 )
-HOMEROW_MODE_LABELS = {
+HINTIUM_MODE_LABELS = {
     "hint": "󰍽   HINT",
     "scroll": "   SCROLL",
     "search": "   SEARCH",
@@ -282,7 +282,7 @@ HOMEROW_MODE_LABELS = {
 }
 
 
-def homerow_mode_text():
+def hintium_mode_text():
     """" LABEL " when a mode is open, bare "" when idle.
 
     The padding is baked in here rather than left to the widget's `fmt`,
@@ -292,13 +292,13 @@ def homerow_mode_text():
     disappearing the way the Chord widget above it does.
     """
     try:
-        with open(HOMEROW_MODE_PATH, encoding="utf-8") as handle:
+        with open(HINTIUM_MODE_PATH, encoding="utf-8") as handle:
             name = handle.read().strip()
     except OSError:
         return ""
     if not name:
         return ""
-    return f" {HOMEROW_MODE_LABELS.get(name, name.upper())} "
+    return f" {HINTIUM_MODE_LABELS.get(name, name.upper())} "
 myTerm = "kitty"  # My terminal of choice
 my2ndTerm = "alacritty"  # My terminal of choice
 myFullScreenTerm = "kitty --start-as=fullscreen"
@@ -2724,7 +2724,7 @@ def remember_chord(chord_name):
 # could not stay: warpd grabbed the keyboard the moment it started, so h/s/f
 # never reached qtile and the chord looked dead. warpd itself is gone now --
 # it segfaulted in x_input_wait on every boot, so its `n`/`w` bindings had
-# been dead for a while without anyone noticing. Homerow covers the same
+# been dead for a while without anyone noticing. Hintium covers the same
 # ground (h hint, s scroll, f search, v caret) and does not grab the keyboard.
 
 
@@ -3634,8 +3634,8 @@ def normal_user_bar():
                 "Wifi-QR": "   WIFI QR : ESC to close ",
             }.get(name, name.upper()),
         ),
-        # Homerow mode chip — see the matching one in right_side_widgets()
-        # and homerow_mode_text() near the top of the file for why this
+        # Hintium mode chip — see the matching one in right_side_widgets()
+        # and hintium_mode_text() near the top of the file for why this
         # can't just reuse the Chord widget above it.
         #
         # Explicit chip_color/foreground rather than colors[N] indices:
@@ -3648,8 +3648,8 @@ def normal_user_bar():
         chip(
             widget.GenPollText,
             chip_color=colors[4],
-            name="homerow_mode_chip_nu",
-            func=homerow_mode_text,
+            name="hintium_mode_chip_nu",
+            func=hintium_mode_text,
             update_interval=0.2,
             padding=11,
             foreground=colors[0],
@@ -3994,19 +3994,19 @@ def right_side_widgets():
                 # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
             }.get(name, name.upper()),
         ),
-        # Homerow mode chip — same idea as the Chord widget above, but for
-        # homerow's direct alt+space/j//c bindings, which are not qtile
-        # chords and so never touch that widget. See homerow_mode_text().
+        # Hintium mode chip — same idea as the Chord widget above, but for
+        # hintium's direct alt+space/j//c bindings, which are not qtile
+        # chords and so never touch that widget. See hintium_mode_text().
         #
         # Explicit chip_color/foreground, not colors[N] indices -- see the
-        # matching comment on homerow_mode_chip_nu in normal_user_bar() for
+        # matching comment on hintium_mode_chip_nu in normal_user_bar() for
         # why: colors[2] landed on almost exactly DEFAULT_CHIP_COLOR here,
         # invisible near-black text on a near-black chip.
         chip(
             widget.GenPollText,
             chip_color=colors[4],
-            name="homerow_mode_chip",
-            func=homerow_mode_text,
+            name="hintium_mode_chip",
+            func=hintium_mode_text,
             update_interval=0.2,
             padding=11,
             foreground=colors[0],
@@ -5825,8 +5825,8 @@ keys = [
     Key(
         [mod2],
         "space",
-        lazy.spawn(HOMEROW),
-        desc="Homerow: hint and click / switch window",
+        lazy.spawn(HINTIUM),
+        desc="Hintium: hint and click / switch window",
     ),
     # Homerow binds a key per mode rather than nesting them: shift+space,
     # shift+J, shift+/ over there. Same shape here with alt, since grabbing
@@ -5835,32 +5835,32 @@ keys = [
     Key(
         [mod2],
         "j",
-        lazy.spawn(HOMEROW + " --scroll"),
-        desc="Homerow: scroll mode",
+        lazy.spawn(HINTIUM + " --scroll"),
+        desc="Hintium: scroll mode",
     ),
     Key(
         [mod2],
         "slash",
-        lazy.spawn(HOMEROW + " --search"),
-        desc="Homerow: search mode",
+        lazy.spawn(HINTIUM + " --search"),
+        desc="Hintium: search mode",
     ),
     Key(
         [mod2],
         "c",
-        lazy.spawn(HOMEROW + " --caret"),
-        desc="Homerow: caret mode",
+        lazy.spawn(HINTIUM + " --caret"),
+        desc="Hintium: caret mode",
     ),
     Key(
         [mod2, "shift"],
         "c",
-        lazy.spawn(HOMEROW + " --caret-search"),
-        desc="Homerow: caret search (type to find a word, land the caret there)",
+        lazy.spawn(HINTIUM + " --caret-search"),
+        desc="Hintium: caret search (type to find a word, land the caret there)",
     ),
     Key(
         [mod2],
         "e",
-        lazy.spawn(HOMEROW + " --edit"),
-        desc="Homerow: edit a field in nvim, in place",
+        lazy.spawn(HINTIUM + " --edit"),
+        desc="Hintium: edit a field in nvim, in place",
     ),
     # FIX: try to make a speach to text app
     # ---------------------
@@ -6532,7 +6532,7 @@ keys = [
         [mod, "shift"],
         "f",
         [
-            # --- homerow (AT-SPI: real elements, exact bounds) ---
+            # --- hintium (AT-SPI: real elements, exact bounds) ---
             # Each of these leaves the chord. It used to persist so actions
             # could be chained, but this chord is mode=True and swallow=True:
             # while it is open every other binding on the desktop is dead,
@@ -6542,37 +6542,37 @@ keys = [
             # no longer worth that -- every mode has its own alt binding now.
             Key(
                 [], "h",
-                lazy.spawn(HOMEROW),
+                lazy.spawn(HINTIUM),
                 lazy.ungrab_chord(),
                 desc="hint and click elements / switch window",
             ),
             Key(
                 [], "s",
-                lazy.spawn(HOMEROW + " --scroll"),
+                lazy.spawn(HINTIUM + " --scroll"),
                 lazy.ungrab_chord(),
                 desc="pick a scrollable region, drive it with vim keys",
             ),
             Key(
                 [], "f",
-                lazy.spawn(HOMEROW + " --search"),
+                lazy.spawn(HINTIUM + " --search"),
                 lazy.ungrab_chord(),
                 desc="search elements, digits pick, enter clicks",
             ),
             Key(
                 [], "v",
-                lazy.spawn(HOMEROW + " --caret"),
+                lazy.spawn(HINTIUM + " --caret"),
                 lazy.ungrab_chord(),
                 desc="caret mode: vim motions over real text, v selects, y yanks",
             ),
             Key(
                 ["shift"], "v",
-                lazy.spawn(HOMEROW + " --caret-search"),
+                lazy.spawn(HINTIUM + " --caret-search"),
                 lazy.ungrab_chord(),
                 desc="caret search: type to find a word, land the caret there",
             ),
             Key(
                 [], "e",
-                lazy.spawn(HOMEROW + " --edit"),
+                lazy.spawn(HINTIUM + " --edit"),
                 lazy.ungrab_chord(),
                 desc="edit a field in nvim, in place; :wq puts it back",
             ),

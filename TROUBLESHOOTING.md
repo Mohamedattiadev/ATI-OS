@@ -1705,19 +1705,33 @@ subsystem. Each entry: **symptom → root cause → fix**.
   trace is a "command not found" on a stderr nobody is reading.
 
 ### Six `alt+` bindings and the whole Hint-Mode chord do nothing
-- **Symptom:** the homerow hint keys are dead. No error, no
+- **Symptom:** the Hintium hint keys are dead. No error, no
   notification, nothing in `qtile.log` — the keys are bound, they just
   have no effect.
-- **Root cause:** `HOMEROW` in `config.py` was a bare
-  `os.path.expanduser("~/Attia-Pro/Projects/Homerow_replika/homerow-hint")`
+- **Root cause, part one:** `HINTIUM` in `config.py` was a bare
+  `os.path.expanduser("~/Attia-Pro/Projects/Hintium/hintium-hint")`
   — a path into a project checkout that lives **outside this repo**. On
-  any machine that keeps that project somewhere else, or that installs
-  the client into `~/.local/bin` like every other tool here, all six
-  bindings and the entire Hint-Mode `KeyChord` spawned a path that does
-  not exist. `lazy.spawn` does not surface that anywhere.
-- **Fix:** `shutil.which("homerow-hint")` first, with the checkout path
+  any machine that keeps that project somewhere else, all six bindings
+  and the entire Hint-Mode `KeyChord` spawned a path that does not
+  exist. `lazy.spawn` does not surface that anywhere.
+- **Root cause, part two:** the fallback was doing all the work, because
+  *nothing installed Hintium at all*. `which()` returned nothing on every
+  machine, so the tool was only ever present on the one laptop that had
+  the checkout. The `homerow` wizard module now clones
+  [Hintium](https://github.com/Mohamedattiadev/Hintium) to
+  `~/.local/share/hintium` and symlinks its entry points.
+- **Fix:** `shutil.which("hintium-hint")` first, with the checkout path
   kept only as a fallback — the same which-then-fall-back shape
-  `_rescale_then_restart` already uses for ui-scale.
+  `_rescale_then_restart` already uses for ui-scale — *and* a wizard
+  module that makes `which()` succeed.
+- **Check it:** `hintium --doctor`. It verifies every library, typelib
+  and browser flag, and prints the command to fix whatever is missing.
+  If it reports the accessibility tree is unavailable, that is
+  `at-spi2-core` — the tree is the whole premise, and without it the
+  hint overlay has nothing to label.
+- **Naming:** the project was called *homerow* and is now *Hintium*. The
+  installer links both name sets, so `homerow-hint` and `hintium-hint`
+  both work while the rename settles.
 
 ---
 
@@ -2647,10 +2661,10 @@ on screen against what matters.
   (The old instructions had a typo — `sudo vim /etc/enviromen`. Use
   `sudoedit /etc/environment`.)
 - **Status:** not set by the wizard, and not required for what most people
-  want AT-SPI for here. homerow hints **browser** content via
+  want AT-SPI for here. Hintium hints **browser** content via
   `--force-renderer-accessibility` in `brave-flags.conf`, which is a
   per-browser flag and needs none of the above.
-- **When you still want them:** if you want homerow to hint native GTK/Qt
+- **When you still want them:** if you want Hintium to hint native GTK/Qt
   applications rather than just web pages. They are a system-wide
   behaviour change with a memory cost in every toolkit app, which is why
   they are opt-in rather than part of `install.sh`.
@@ -3050,7 +3064,7 @@ Append entries here as you hit them. Keep the same tri-format
   reporting the old size until the next boot.
 - **If it still happens after all of the above**, drop
   `--force-renderer-accessibility` from `brave-flags.conf` — its own
-  comment flags the per-tab cost. That disables homerow's link hinting in
+  comment flags the per-tab cost. That disables Hintium's link hinting in
   the browser, which is why it is the last resort rather than the first.
 - **Verify:**
   ```bash
@@ -3201,7 +3215,7 @@ $ ps -eo rss,comm --sort=-rss | awk 'NR>1{s[$2]+=$1;n[$2]++} END{for(k in s) pri
    `sudo systemctl start docker` when you actually need it.
 5. **`--force-renderer-accessibility`** in `brave-flags.conf` — an AT-SPI
    tree per tab, so its cost scales with renderer count. Listed last
-   deliberately: removing it disables homerow's link hinting in the browser,
+   deliberately: removing it disables Hintium's link hinting in the browser,
    which is a real feature loss rather than free savings. Try everything
    above first.
 
