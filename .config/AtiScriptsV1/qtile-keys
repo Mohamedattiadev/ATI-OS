@@ -98,6 +98,21 @@ def descend(node, prefix):
                 sub = "+".join(m + [k]) if k else "+".join(m)
                 if prefix:
                     sub = f"{prefix} , {sub}"
+                # A KeyChord's OWN desc= was walked past: this branch built
+                # `sub`, recursed into the keys inside, and never emitted a
+                # row for the chord itself. Five chords carry a desc and
+                # printed nothing -- the audio, display, wallpaper, bluetooth
+                # and wifi pickers -- so this tool reported 86 bindings
+                # against a real 91, while its own docstring says desc= is
+                # "the single source of truth".
+                #
+                # Emitted BEFORE descending so the chord line sorts above the
+                # keys it contains, which is the order you read them in.
+                for kw in n.keywords:
+                    if kw.arg == "desc":
+                        d = const(kw.value)
+                        if isinstance(d, str) and d:
+                            rows.append((sub, d))
                 descend(n.args[2], sub)
                 for extra in n.args[3:]:
                     descend(extra, prefix)
