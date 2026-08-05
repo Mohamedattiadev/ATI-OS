@@ -7,17 +7,17 @@
 export type Clip = { src: string; w: number; h: number; frames: number };
 
 export const CLIP = {
-  // 31 s of ordinary work, recorded in the Xephyr nest against a scrubbed home
-  usage: { src: "usage.mp4", w: 1366, h: 768, frames: 743 },
+  // 30 s of ordinary work at 1920x1080, recorded in a second Xephyr nest
+  usage: { src: "usage.mp4", w: 1920, h: 1080, frames: 732 },
   // desktop captures, 1:1 with the 1366x768 composition
-  veil: { src: "veil.mp4", w: 1366, h: 768, frames: 275 },
-  overview: { src: "overview.mp4", w: 1366, h: 768, frames: 879 },
-  qupdate: { src: "qupdate.mp4", w: 1366, h: 768, frames: 350 },
-  themePicker: { src: "theme-picker.mp4", w: 1366, h: 768, frames: 260 },
-  keybindings: { src: "keybindings.mp4", w: 1366, h: 768, frames: 302 },
+  veil: { src: "veil.mp4", w: 1366, h: 768, frames: 220 },
+  overview: { src: "overview.mp4", w: 1366, h: 768, frames: 703 },
+  qupdate: { src: "qupdate.mp4", w: 1366, h: 768, frames: 280 },
+  themePicker: { src: "theme-picker.mp4", w: 1366, h: 768, frames: 208 },
+  keybindings: { src: "keybindings.mp4", w: 1366, h: 768, frames: 242 },
   // the QEMU window from one real install run
-  installA: { src: "install-a.mp4", w: 900, h: 562, frames: 378 },
-  installB: { src: "install-b.mp4", w: 900, h: 562, frames: 621 },
+  installA: { src: "install-a.mp4", w: 900, h: 562, frames: 303 },
+  installB: { src: "install-b.mp4", w: 900, h: 562, frames: 497 },
 } satisfies Record<string, Clip>;
 
 export const AUTHOR = "Mohamed Attia";

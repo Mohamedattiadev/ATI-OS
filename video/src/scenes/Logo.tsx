@@ -4,16 +4,15 @@ import { AUTHOR, BANNER, EMAIL, ISO, REPO } from "../data";
 import { C, MONO, SANS, outCubic, outQuint, range, smooth, textIn } from "../theme";
 
 /**
- * The film opens here. The artwork is the installer's own banner(), so the
- * first thing you see in the video and the first thing you see on a real
- * install are the same six lines. Each row wipes in from the left, the way the
- * banner paints itself into a terminal, then a rule sweeps under it.
+ * The artwork is the installer's own banner(), set as text so the `╔═╗ ║ ╚═╝`
+ * drop shadow comes through exactly as it does in a terminal. Each row wipes
+ * in from the left, the way the banner paints itself on a real install.
  *
- * JetBrainsMono advances 0.6em, so a font-size that is a multiple of 5 lands
- * on a whole pixel — 30px gives 18px cells and the blocks butt up seamlessly
- * with letter-spacing at 0. The docs header's -0.03em is wrong at this size:
- * it drags each glyph's `╔═╗` shadow over the neighbouring solid `█` and the
- * wordmark visibly smears. Do not reintroduce it.
+ * An earlier pass redrew this as SVG rectangles to chase the hairline seams
+ * between block cells. It removed the seams and ruined the mark: the outline
+ * shadow cannot be reproduced with rects, and a solid offset shadow reads as
+ * a completely different logo. The seams are the lesser problem. Leave it as
+ * text.
  */
 const ROWS = BANNER.split("\n");
 const STAGGER = 3;
@@ -21,12 +20,14 @@ const ROW_WIPE = 11;
 
 export const Logo: React.FC<{ tail?: boolean }> = ({ tail }) => {
   const f = useCurrentFrame();
-  const size = tail ? 20 : 30;
+  // Sized for a 1920x1080 frame. The end card is the last thing on screen and
+  // carries the contact details, so it runs bigger than it used to.
+  const size = tail ? 34 : 45;
   const done = (ROWS.length - 1) * STAGGER + ROW_WIPE;
 
   const settle = outQuint(range(f, 0, 22));
   const rule = outCubic(range(f, done - 2, done + 14));
-  const glow = smooth(range(f, 3, done)) * (tail ? 0.09 : 0.16);
+  const glow = smooth(range(f, 3, done)) * (tail ? 0.1 : 0.16);
 
   return (
     <AbsoluteFill
@@ -35,11 +36,11 @@ export const Logo: React.FC<{ tail?: boolean }> = ({ tail }) => {
       <div
         style={{
           position: "absolute",
-          width: 900,
-          height: 320,
+          width: 1200,
+          height: 420,
           borderRadius: "50%",
           background: C.accent,
-          filter: "blur(120px)",
+          filter: "blur(150px)",
           opacity: glow,
         }}
       />
@@ -66,7 +67,7 @@ export const Logo: React.FC<{ tail?: boolean }> = ({ tail }) => {
         <div
           style={{
             height: 2,
-            marginTop: tail ? 16 : 24,
+            marginTop: tail ? 22 : 30,
             background: C.accent,
             opacity: 0.85,
             transform: `scaleX(${rule})`,
@@ -78,22 +79,27 @@ export const Logo: React.FC<{ tail?: boolean }> = ({ tail }) => {
       {tail ? (
         <div
           style={{
-            marginTop: 38,
+            marginTop: 54,
             textAlign: "center",
             opacity: textIn(f, done + 8, Infinity, 14),
           }}
         >
-          <div style={{ fontFamily: SANS, fontSize: 27, color: C.fg }}>{AUTHOR}</div>
-          <div style={{ fontFamily: MONO, fontSize: 21, color: C.accent, marginTop: 8 }}>
+          <div
+            style={{ fontFamily: SANS, fontSize: 46, letterSpacing: "-0.015em", color: C.fg }}
+          >
+            {AUTHOR}
+          </div>
+          <div style={{ fontFamily: MONO, fontSize: 29, color: C.accent, marginTop: 14 }}>
             {EMAIL}
           </div>
+          <div style={{ width: 130, height: 1, background: C.line, margin: "34px auto 0" }} />
           <div
             style={{
               fontFamily: MONO,
-              fontSize: 19,
+              fontSize: 25,
               color: C.faint,
-              marginTop: 22,
-              lineHeight: 1.8,
+              marginTop: 28,
+              lineHeight: 1.95,
             }}
           >
             <div>{REPO}</div>
@@ -103,9 +109,9 @@ export const Logo: React.FC<{ tail?: boolean }> = ({ tail }) => {
       ) : (
         <div
           style={{
-            marginTop: 36,
+            marginTop: 46,
             fontFamily: SANS,
-            fontSize: 25,
+            fontSize: 32,
             letterSpacing: "0.16em",
             color: C.dim,
             opacity: textIn(f, done + 4, Infinity, 14),

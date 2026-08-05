@@ -15,12 +15,13 @@ import { Install, INSTALL_DUR } from "./scenes/Install";
 import { Receipts, RECEIPTS_DUR } from "./scenes/Receipts";
 import { Thanks, THANKS_DUR } from "./scenes/Thanks";
 
-// 24 fps because that is what the captures are; see make-assets.sh. 1366x768
-// because that is the resolution the desktop was recorded at, so every clip
-// plays 1:1 and no resampling ever touches the terminal text.
+// 24 fps because that is what the captures are; see make-assets.sh. 1920x1080
+// because a 1366x768 file looks dated in a feed, whatever its sharpness. The
+// usage take was re-recorded at 1080p and fills the frame; the older 1366x768
+// clips are framed at native size rather than upscaled and blurred.
 const FPS = 24;
-const W = 1366;
-const H = 768;
+const W = 1920;
+const H = 1080;
 
 /**
  * The logo opens. Then 28 seconds of real work in one take, and only after
@@ -28,9 +29,12 @@ const H = 768;
  * the thing it belongs to.
  */
 const SCENES: { dur: number; el: React.ReactNode }[] = [
+  // Opens on the veil, not the wordmark. A stranger has no reason to care
+  // about a logo for a project they have never heard of; a desktop dissolving
+  // and rebuilding itself is strange enough to make them stop.
+  { dur: VEIL_DUR, el: <Veil /> },
   { dur: 96, el: <Logo /> },
   { dur: USAGE_DUR, el: <Usage /> },
-  { dur: VEIL_DUR, el: <Veil /> },
   { dur: QUPDATE_DUR, el: <Qupdate /> },
   { dur: THEMES_DUR, el: <Themes /> },
   { dur: KEYS_DUR, el: <Keybindings /> },

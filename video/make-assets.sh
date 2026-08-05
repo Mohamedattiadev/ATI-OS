@@ -5,8 +5,10 @@
 # is transcoded to h264 first. public/ is not committed; the sources are.
 #
 # NOTHING IS SCALED, IN SPACE OR IN TIME.
-#   * The composition is 1366x768 because that is the resolution the desktop
-#     was captured at, so every full-screen clip plays 1:1.
+#   * The composition is 1920x1080. The usage take was re-recorded in a second
+#     nest at that size and plays 1:1. The older feature clips are 1366x768
+#     and are NOT upscaled to fit; they sit at native size inside a frame,
+#     with the caption in the band below them.
 #   * The composition is 24 fps because that is what the captures are. An
 #     earlier cut ran at 30 and sped clips up with playbackRate; against a
 #     10-14 fps GIF source that produces visible judder, which is what "looks
@@ -16,7 +18,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 imgs="$here/../IMGS"
-usage_src="${USAGE_MKV:-$HOME/tmp/atios-video/out/usage.mkv}"
+usage_src="${USAGE_MKV:-$HOME/tmp/atios-video/out/usage1080.mkv}"
 install_gif="${1:-$HOME/ati-os-install.gif}"
 out="$here/public"
 mkdir -p "$out"
@@ -31,7 +33,7 @@ enc() { # <src> <dest> [extra ffmpeg input args...]
 # The 28 s real-usage take, recorded in the Xephyr nest against a scrubbed
 # home. Trimmed to the part that reads: the trailing seconds are the session
 # returning to the terminal.
-enc "$usage_src" usage.mp4 -t 29.5
+enc "$usage_src" usage.mp4 -t 30.5
 
 # The re-recorded feature set (2026-08-05), straight out of the same nest.
 for g in veil overview qupdate theme-picker keybindings; do
