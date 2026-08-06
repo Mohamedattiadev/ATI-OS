@@ -340,6 +340,13 @@ else. Your real Alt keys keep working.</p>
 
 <p>Mostly for when one step failed and you want to re-run only that one.</p>
 
+<figure>
+  <img src="assets/img/wizard-modules.png" width="1366" height="568" loading="lazy"
+       alt="The wizard's module list: every step pre-ticked, each with its name, a System or Dotfiles tag, and a one-line description of what it does">
+  <figcaption>What <code>./wizard.sh</code> on its own shows. Everything is ticked to start
+  with &mdash; space unticks. Each step says which part of the machine it touches.</figcaption>
+</figure>
+
 <pre><code>./wizard.sh                 # pick steps from a list, with checkboxes
 ./wizard.sh --dry-run       # show every command, change nothing
 ./wizard.sh --yes           # exactly the same as ./install.sh

@@ -94,9 +94,17 @@ shadows it from `$HOME/.local/bin`, which is ahead of everything on the nest's
 `PATH`. Overriding there rather than editing the copied `config.fish`, because
 it runs inline partway through — there is no "unset" to append afterwards.
 
-**pipewire cannot be contained.** It lives in the shared `XDG_RUNTIME_DIR`, so
-any clip that changes volume or mutes hits the owner's real sink. This harness
-cannot fix that; see the `audio-popup.gif` row in `gif_list.md`.
+**pipewire cannot be contained, so it is undone instead.** It lives in the
+shared `XDG_RUNTIME_DIR`, and the nest runs the same qtile config with the same
+`volume_control.py` and the same bar widgets — so it drives the owner's real
+sink. This is not confined to the audio clip: a session of ordinary capture
+work left this machine unmuted after starting muted, with no volume key pressed
+by anyone, and it surfaced only because the state happened to be checked.
+
+`nest.sh` now snapshots the sink on `up` and puts it back on `down`, reporting
+it if anything moved. That is a backstop, not a licence: a clip that touches
+audio still restores its own state inline, because a take that dies halfway
+should not leave the speakers wrong until teardown. See `clips/audio-popup.sh`.
 
 **Never run `theme-apply` against the nest.** It restarts qtile and rewrites
 global state through paths that are symlinks to the owner's config. `nest.sh`
