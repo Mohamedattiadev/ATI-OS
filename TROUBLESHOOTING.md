@@ -82,6 +82,49 @@ subsystem. Each entry: **symptom → root cause → fix**.
 - **Fix:** override to `c.color2` (dominant) plus Alpha / Startify /
   Telescope / WhichKey / NeoTree overrides in `themes.lua`.
 
+### nvim looks identical on every preset theme — only `wal` mode retints
+- **Symptom:** `theme-apply oxocarbon` (or dracula, gruvbox, nord,
+  kanagawa, rose-pine, monokai, everforest, tokyonight) repaints the bar,
+  GTK, btop and the terminal, but the nvim dashboard stays grey: the
+  ATIVIM banner, the menu labels and the footer are all plain `Normal`
+  foreground, exactly as they were before the switch. Switching to
+  `matrix` or `synthwave` — modes with *no* nvim plugin — does work,
+  which makes it look backwards.
+- **Root cause:** `themes.lua` had three paths and only two of them
+  painted the dashboard. The wal path and the `current_palette.json`
+  path each set `SnacksDashboardHeader` and friends by hand; the
+  plugin path just ran `:colorscheme <name>` and stopped. None of the
+  colorscheme plugins define the Snacks groups themselves, so those
+  groups stayed unset and the dashboard fell back to `Normal`. The modes
+  that appeared to work were precisely the ones with no plugin, because
+  they were the only ones taking a painted path.
+- **Fix:** the dashboard/branding groups moved into
+  `apply_accents()` in `lua/config/theme_sync.lua`, applied from a
+  `ColorScheme` autocmd so they land on top of every scheme — ours,
+  LazyVim's at startup, or a `:colorscheme` typed by hand.
+- **Also fixed here:**
+  - Two mode→scheme maps existed and disagreed. LazyVim's
+    `opts.colorscheme` said `tokyonight` meant `nord` while the watcher
+    said it meant `tokyonight`. Both read `theme_sync.scheme_of` now.
+  - `tokyonight.nvim` was declared twice in `themes.lua`, once inside a
+    large commented-out block that still carried a live
+    `enabled = false`. The plugin was never installed, so the
+    `tokyonight` mode silently took the palette fallback. The dead block
+    is gone.
+  - The dashboard banner used the palette's `green` slot, but the
+    desktop accent is not a fixed slot — it is blue for oxocarbon, yellow
+    for gruvbox, purple for rose-pine. `theme-apply` now publishes
+    `accent` in `current_palette.json` (see `accent_of_mode`), so the
+    banner is the same colour as the GroupBox in the bar.
+  - The `wal` footer used `color8`, which on a dark wallpaper lands at
+    ~1.2 contrast against the background — invisible. De-emphasised
+    dashboard text now blends fg toward bg when the grey it was handed
+    is too close to the background, the same reasoning as
+    `gen_glow_style`.
+- **Verification:** all 22 modes driven through a headless nvim, asserting
+  `SnacksDashboardHeader` is set and equals the mode's published accent.
+  Was 10 modes unstyled, now 0.
+
 ### eww widgets (cheatsheet/onboarding/tooltip) do not follow wallpaper
 - **Symptom:** eww kept doom-one colors after theme switch.
 - **Root cause:** `colors.scss` was static, committed to repo.

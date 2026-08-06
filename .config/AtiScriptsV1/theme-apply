@@ -496,12 +496,62 @@ EOF
   done
 }
 
+accent_of_mode() {
+  # The one colour that means "this desktop" -- the GTK accent_color, the
+  # qtile GroupBox highlight, the focused border. It is NOT a fixed slot of
+  # the 9-slot palette: it is blue for most themes, but cyan for nord and
+  # the neon set, purple for rose-pine and catppuccin, yellow for gruvbox.
+  # Hand-picked per theme, because the slot that reads as "the signature
+  # colour" differs by theme.
+  #
+  # These values are the 4th argument of the gen_gtk_css call for the same
+  # mode further down. Keep the two in step.
+  case "$1" in
+    doomone)        echo "#51afef" ;;
+    dracula)        echo "#bd93f9" ;;
+    nord)           echo "#88c0d0" ;;
+    gruvbox)        echo "#fabd2f" ;;
+    tokyonight)     echo "#7aa2f7" ;;
+    catppuccin)     echo "#cba6f7" ;;
+    monokai)        echo "#66d9ef" ;;
+    everforest)     echo "#7fbbb3" ;;
+    rose-pine)      echo "#c4a7e7" ;;
+    kanagawa)       echo "#7e9cd8" ;;
+    oxocarbon)      echo "#33b1ff" ;;
+    cyberpunk-neon) echo "#00fff9" ;;
+    synthwave)      echo "#36f9f6" ;;
+    matrix)         echo "#00ff9f" ;;
+    mono-dark)      echo "#b0b0b0" ;;
+    mono-light)     echo "#000080" ;;
+    nightowl)       echo "#82aaff" ;;
+    onedark)        echo "#61afef" ;;
+    palenight)      echo "#82b1ff" ;;
+    github-dark)    echo "#58a6ff" ;;
+    ayu-mirage)     echo "#5ccfe6" ;;
+    # wal has no fixed accent -- colour12 is the bright variant of the
+    # wallpaper's dominant hue, which is what GTK is handed too. jq can
+    # return the literal "null" for a key that is absent rather than
+    # failing, so check the shape, not just the exit status.
+    wal)
+      local c12
+      c12="$(jq -r '.colors.color12 // empty' ~/.cache/wal/colors.json 2>/dev/null || true)"
+      if [[ "$c12" =~ ^#[0-9a-fA-F]{6}$ ]]; then echo "$c12"; else echo "$2"; fi
+      ;;
+    *)              echo "$2" ;;
+  esac
+}
+
 dump_palette_json() {
   # Dump current 9-slot palette to ~/.cache/qtile/current_palette.json so
   # nvim (+ any other consumer) can render themes for modes that don't
   # have a dedicated plugin (matrix, mono-*, synthwave, cyberpunk-neon,
   # palenight, github-dark, ayu-mirage, onedark, nightowl, ...).
+  #
+  # `accent` is dumped alongside the 9 slots because it cannot be derived
+  # from them -- see accent_of_mode. nvim paints the dashboard banner with
+  # it so the ATIVIM logo is the same colour as the GroupBox in the bar.
   local out="$HOME/.cache/qtile/current_palette.json"
+  local accent; accent="$(accent_of_mode "$MODE" "$7")"
   mkdir -p "$(dirname "$out")"
   cat >"$out" <<EOF
 {
@@ -514,7 +564,8 @@ dump_palette_json() {
   "yellow": "$6",
   "blue": "$7",
   "purple": "$8",
-  "cyan": "$9"
+  "cyan": "$9",
+  "accent": "$accent"
 }
 EOF
 }
