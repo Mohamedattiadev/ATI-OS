@@ -43,6 +43,14 @@ source "$script"        # sets the above and defines choreograph()
 
 declare -F choreograph >/dev/null || die "$script defines no choreograph()"
 
+# Optional. Setup that must NOT be in frame: putting an app back to a known
+# state, warming a daemon so the clip does not open on a spinner, clearing
+# whatever the last take left behind. Runs before the capture opens.
+if declare -F prepare >/dev/null; then
+  printf '%s::%s preparing…\n' "$d" "$o"
+  prepare
+fi
+
 size="${REGION%%+*}"
 offs="${REGION#*+}"; x="${offs%%+*}"; y="${offs##*+}"
 
