@@ -43,7 +43,22 @@ packages:
   - findutils
   - shellcheck
   - udisks2
-  # awk, sed, coreutils, findutils, man-db, man-pages already in base group
+  - man-db          # dm-man (Super+P , M) is `man -k .` piped into rofi.
+                    # The comment that used to sit here claimed man-db and
+                    # man-pages were "already in base group" and skipped
+                    # both. Wrong twice: `base` is a meta-PACKAGE now, not a
+                    # group, and man-db is not among its dependencies. A
+                    # fresh install had no `man` binary at all, so the
+                    # manpage picker died on a command that was never there.
+                    # Same shape as ttf-jetbrains-mono-nerd: present on the
+                    # author's machine, declared nowhere.
+                    #
+                    # man-pages is deliberately NOT declared. It only adds
+                    # the POSIX/Linux section pages; `man -k .` indexes
+                    # whatever the installed packages ship, so the picker
+                    # works without it. It is not installed on this machine
+                    # either, which is how we know.
+  # awk, sed, coreutils and findutils really are pulled in by base
   - openssh
   - slop
   - ffmpeg
