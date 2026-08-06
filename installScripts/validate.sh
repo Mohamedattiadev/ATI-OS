@@ -309,41 +309,119 @@ fi
 # qutebrowser's fallback lists name plenty of fonts on purpose that are
 # not expected to be present.
 head_ "UI fonts installed"
+
+# The list used to be hand-written, and the note in
+# notes/archive/plan_found-but-not-fixed.md called that out as the last open
+# item here: "it does not derive itself. Any config that starts naming a new
+# family will pass validation while rendering in a substituted face. That is
+# the exact failure this repo has now hit three times."
+#
+# It was already incomplete when this replaced it. config.py asks for
+# `Ubuntu Mono` in five widgets and the list only carried `Ubuntu`; pango
+# parses "Bold" off "Ubuntu Bold" as a weight, but "Mono" is a different
+# FAMILY, not a style. Nothing broke because ttf-ubuntu-font-family happens
+# to ship both, which is luck, not coverage.
+#
+# So the families are derived from the configs that name them. What is
+# maintained by hand now is the list of SOURCES -- which kinds of file name a
+# font, and how -- and that changes far less often than the fonts do.
+_font_family() {   # pango-ish string -> bare family
+  local s="$1"
+  s="${s%\"}"; s="${s#\"}"
+  # Trim FIRST. kitty pads its values ("bold_font   FiraCode Nerd Font Bold"),
+  # and with a trailing space the anchored style strip below never fires --
+  # which is how "FiraCode Nerd Font Bold" reached fc-match and came back as
+  # Noto Sans CJK KR, a missing-font failure that was really a parsing one.
+  s="$(sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/,.*$//' <<<"$s")"
+  s="$(sed -E 's/[[:space:]]+[0-9]+([.][0-9]+)?$//' <<<"$s")"          # trailing size
+  # Loop: styles stack. kitty's bold_italic_font is "FiraCode Nerd Font Bold
+  # Italic", and stripping one word left "...Bold", which fc-match answered
+  # with Noto Sans CJK KR -- reported as a missing font when it was really
+  # two style words and a single-shot regex.
+  local prev=""
+  while [[ "$s" != "$prev" ]]; do
+    prev="$s"
+    s="$(sed -E 's/[[:space:]]+(Bold|Italic|Oblique|Light|Medium|Regular|SemiBold|Semibold|Thin|Black|Heavy|Condensed|ExtraBold)$//I' <<<"$s")"
+  done
+  sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$s"
+}
+
+# Generic aliases resolve by definition -- requiring them would be asserting
+# that fontconfig works, not that a font is installed.
+_font_generic() {
+  grep -qiE '^(sans|serif|monospace|sans-serif|system-ui|cursive|fantasy|ui-monospace|emoji)$' <<<"$1"
+}
+
+_font_emit() {     # raw, source-file
+  local fam; fam="$(_font_family "$1")"
+  [[ -z "$fam" ]] && return 0
+  _font_generic "$fam" && return 0
+  printf '%s|%s\n' "$fam" "${2#./}"
+}
+
+# sed -n .../p, NOT a `.*re.*` wrapper: half these patterns are anchored and
+# wrapping them in .* makes ^ unmatchable, which silently passes the whole
+# line through as if it were a family name.
+_font_scan() {     # file, ERE with one capture group
+  local f="$1" re="$2" hit
+  [[ -f "$f" ]] || return 0
+  while IFS= read -r hit; do _font_emit "$hit" "$f"; done \
+    < <(sed -nE "s/$re/\1/Ip" "$f" 2>/dev/null)
+}
+
+_font_sources() {
+  local f k
+  # qtile: widget font="X", and pango markup <span font_family="X">
+  while IFS= read -r f; do
+    _font_scan "$f" '.*font[[:space:]]*=[[:space:]]*"([^"]+)".*'
+    _font_scan "$f" '.*font_family="([^"]+)".*'
+  done < <(git ls-files '.config/qtile/*.py' '.config/qtile/**/*.py' 2>/dev/null)
+  for k in font_family bold_font italic_font bold_italic_font; do
+    _font_scan .config/kitty/kitty.conf "^${k}[[:space:]]+(.+)$"
+  done
+  while IFS= read -r f; do
+    _font_scan "$f" '.*family[[:space:]]*=[[:space:]]*"([^"]+)".*'
+  done < <(git ls-files '.config/alacritty/*.toml' 2>/dev/null)
+  while IFS= read -r f; do
+    _font_scan "$f" '.*font:[[:space:]]*"([^"]+)".*'
+  done < <(git ls-files '.config/rofi/*.rasi' '.config/rofi/**/*.rasi' 2>/dev/null)
+  for f in .config/gtk-3.0/settings.ini .config/gtk-4.0/settings.ini; do
+    _font_scan "$f" '^gtk-font-name[[:space:]]*=[[:space:]]*(.+)$'
+  done
+  _font_scan .config/dunst/dunstrc '^[[:space:]]*font[[:space:]]*=[[:space:]]*(.+)$'
+  # fontconfig: only what a generic is aliased TO. The <family> naming the
+  # generic itself, and the MS-font names in the <match> blocks below it, are
+  # deliberately not required to exist.
+  if [[ -f .config/fontconfig/fonts.conf ]]; then
+    while IFS= read -r f; do
+      _font_emit "$f" .config/fontconfig/fonts.conf
+    done < <(awk '/<prefer>/{p=1;next} /<\/prefer>/{p=0} p' .config/fontconfig/fonts.conf \
+               | grep -oE '<family>[^<]+</family>' | sed -E 's|</?family>||g')
+  fi
+}
+
 if ! command -v fc-match >/dev/null 2>&1; then
   skip "no fontconfig — cannot check families"
 else
   _font_bad=0
+  _font_n=0
   while IFS='|' read -r _fam _who; do
     [[ -z "$_fam" ]] && continue
+    _font_n=$(( _font_n + 1 ))
     _got="$(fc-match -f '%{family}' "$_fam" 2>/dev/null)"
-    # Compare case- and space-insensitively: fc-match answers the full
-    # family list ("FiraCode Nerd Font Mono,FiraCode NFM").
+    # fc-match answers the whole family list ("FiraCode Nerd Font Mono,FiraCode NFM").
     if [[ "${_got,,}" != *"${_fam,,}"* ]]; then
-      printf '    %s -> %s  (wanted by %s)\n' "$_fam" "${_got:-nothing}" "$_who"
+      printf '    %s -> %s  (named by %s)\n' "$_fam" "${_got:-nothing}" "$_who"
       _font_bad=1
     fi
-  # Hand-maintained, and it must stay exhaustive: this list is the only thing
-  # standing between a fresh install and a desktop that renders in the wrong
-  # face with nothing in any log. It was three entries and claimed to cover
-  # "every family the UI names" -- two of the families below were missing from
-  # it, and one of those ("Noto Sans", asked for by both GTK settings files)
-  # was silently substituted on the author's own machine for exactly as long
-  # as the check has existed. Anything a tracked config names goes here:
-  #   git grep -ohiE 'font[-_ ]?(name|family)?[ =:"]+[A-Z][A-Za-z ]+'
-  done <<'FONTS'
-JetBrainsMono Nerd Font|qtile bar, all qtile popups, dunst
-FiraCode Nerd Font|kitty
-Noto Sans CJK KR|rofi (base.rasi names it directly, on purpose)
-Noto Sans|gtk-3.0/settings.ini, gtk-4.0/settings.ini
-Adwaita Mono|qtile systray triangle, wallpaper chip ✖
-Ubuntu|qtile bar widgets ("Ubuntu Bold" -- pango parses the weight off)
-Cairo|fontconfig sans-serif Arabic fallback
-Amiri|fontconfig serif Arabic fallback
-FONTS
+  done < <(_font_sources | sort -u -t'|' -k1,1)
+
   if (( _font_bad )); then
     fail "a font the UI names is missing — fontconfig is silently substituting it; install the fonts module"
+  elif (( _font_n == 0 )); then
+    fail "no font families found in any config — the extraction is broken, not the fonts"
   else
-    pass "every family the UI names resolves to itself, no silent substitution"
+    pass "$_font_n families named by configs, every one resolves to itself"
   fi
 fi
 
