@@ -436,6 +436,56 @@ else
   (( _map_bad )) || pass "theme_sync map, themes.lua specs and disabled.lua agree"
 fi
 
+# ── 12. the docs serve the same clips IMGS/ holds ────────────────────
+head_ "doc assets"
+
+# There are two copies of every clip: IMGS/ is where they are recorded to,
+# docs/assets/img/ is what GitHub Pages actually serves. Nothing syncs them,
+# and a re-shoot that updates only IMGS/ leaves the published manual showing
+# the old clip with no error anywhere.
+#
+# That is not hypothetical. c206da5 re-shot five clips onto doomone so the
+# manual would stop looking like a palette jumble, and added clock-tooltip
+# -- all into IMGS/ only. The site kept serving the tokyonight/gruvbox/
+# kanagawa/catppuccin/nord versions the commit existed to replace, and
+# clock-tooltip was referenced by no page at all.
+#
+# Files that live on only ONE side are fine and deliberate: wordmark-*.png
+# are README assets, film-poster.jpg and real-desktop.png are page
+# furniture. Only a basename present in both has to match.
+_img_bad=0
+_img_n=0
+if [[ ! -d IMGS || ! -d docs/assets/img ]]; then
+  skip "clip sync (IMGS/ or docs/assets/img/ missing)"
+else
+  for _src in IMGS/*; do
+    [[ -f "$_src" ]] || continue
+    _b="${_src##*/}"
+    _dst="docs/assets/img/$_b"
+    [[ -f "$_dst" ]] || continue
+    _img_n=$((_img_n + 1))
+    if ! cmp -s "$_src" "$_dst"; then
+      fail "docs/assets/img/$_b differs from IMGS/$_b — the site is serving the older clip"
+      _img_bad=1
+    fi
+  done
+  (( _img_bad )) || pass "$_img_n clips identical in IMGS/ and docs/assets/img/"
+fi
+
+# A clip nobody links to is a clip nobody sees. Catches the other half of
+# the same failure: recorded, committed, and then never put on a page.
+_orphan=0
+if [[ -d docs/assets/img ]]; then
+  for _src in docs/assets/img/*; do
+    [[ -f "$_src" ]] || continue
+    _b="${_src##*/}"
+    grep -qF "assets/img/$_b" docs/*.html 2>/dev/null && continue
+    warn "docs/assets/img/$_b is referenced by no page"
+    _orphan=1
+  done
+  (( _orphan )) || pass "every file in docs/assets/img/ is used by a page"
+fi
+
 # ── result ───────────────────────────────────────────────────────────
 echo
 if (( FAIL )); then

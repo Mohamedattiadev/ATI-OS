@@ -134,6 +134,37 @@ configuration file the desktop is running.</p>
 </table>
 </div>
 
+<h2 id="clock">Resting the pointer on the clock</h2>
+
+<p>The clock does something on hover as well as on click. Leave the pointer on it and a
+tooltip opens with <b>the next prayer and a live countdown to it</b>, and under that
+<b>two currency rates</b>.</p>
+
+<figure>
+  <img src="assets/img/clock-tooltip.gif" alt="Resting the pointer on the clock: a tooltip opens showing the next prayer with a countdown, and currency rates below it">
+  <figcaption>Two separate live sources behind one chip. The countdown ticks while the
+  tooltip is open.</figcaption>
+</figure>
+
+<p>Both are set for the machine's owner, so both are worth changing to yours. They are
+environment variables &mdash; put them wherever you keep yours:</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Variable</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>PRAYER_CITY</code></td><td><code>Cairo</code></td><td>City the prayer times are calculated for</td></tr>
+<tr><td><code>PRAYER_COUNTRY</code></td><td><code>Egypt</code></td><td>Its country</td></tr>
+<tr><td><code>PRAYER_METHOD</code></td><td><code>5</code></td><td>Which calculation method to use</td></tr>
+<tr><td><code>FX_BASES</code></td><td><code>USD EUR</code></td><td>Currencies to quote</td></tr>
+<tr><td><code>FX_QUOTES</code></td><td><code>TRY EGP</code></td><td>Currencies to quote them <em>in</em></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Rates are fetched at most once every six hours and cached in between, so the tooltip
+opens instantly and the machine is not asking the internet every time you pass the clock.</p>
+
 <h2 id="boxes">Hidden groups of icons</h2>
 
 <p>The bar cannot fit everything. Some icons live in groups you open when you want them.</p>
