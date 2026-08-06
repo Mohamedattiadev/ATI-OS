@@ -486,6 +486,70 @@ if [[ -d docs/assets/img ]]; then
   (( _orphan )) || pass "every file in docs/assets/img/ is used by a page"
 fi
 
+# ── 13. the docs' step count and list match MOD_ORDER ────────────────
+head_ "wizard steps vs docs"
+
+# A default run is MOD_ORDER minus OPTIN_MODS, and the number is NOT
+# hardware-dependent -- PICKED_IDS is built by filtering opt-ins and nothing
+# else, so it is the same on every machine. Five places in docs/ state it as
+# a fixed number, and install-git.html lists every step by id and in order.
+#
+# Add a module and forget those, and the manual quietly describes a wizard
+# that no longer exists. That is not hypothetical in the other direction:
+# `hintium` was added on 2026-08-05 and took the count 46 -> 47, which is
+# why screenshots and notes from 2026-08-03/04 legitimately say 46. Both
+# were right when written. Only a check keeps them right.
+_ws_src="$(sed -n '/^MOD_ORDER=(/,/^)/p' installScripts/wizard.sh)"
+if [[ -z "$_ws_src" ]]; then
+  skip "wizard step count (MOD_ORDER not found)"
+else
+  # shellcheck disable=SC1090,SC2154
+  eval "$_ws_src"
+  _optin_src="$(grep -E '^OPTIN_MODS=\(' installScripts/wizard.sh)"
+  eval "$_optin_src"
+  _code_ids=()
+  for _id in "${MOD_ORDER[@]}"; do
+    _skip=0
+    for _o in "${OPTIN_MODS[@]}"; do [[ "$_id" == "$_o" ]] && _skip=1; done
+    (( _skip )) || _code_ids+=("$_id")
+  done
+  _n="${#_code_ids[@]}"
+
+  # Every "<n> steps" claim in the manual -- but only where it is a TOTAL.
+  # "32 steps after the cause" and "25 steps later" are distances between
+  # steps, not counts of them, and four such sentences exist in the
+  # troubleshooting and internals pages. Matching them was the first version
+  # of this check and it failed on correct prose.
+  _ws_bad=0
+  while IFS=: read -r _f _claim; do
+    [[ -z "$_claim" ]] && continue
+    if [[ "$_claim" != "$_n" ]]; then
+      fail "$_f says $_claim steps; wizard.sh runs $_n by default"
+      _ws_bad=1
+    fi
+  done < <(grep -roE '[0-9]+ steps( after| later)?' docs/*.html \
+             | grep -vE ' (after|later)$' \
+             | sed -E 's/:([0-9]+) steps.*/:\1/' | sort -u)
+
+  # and the enumerated list, ids and order both
+  if [[ -f docs/install-git.html ]]; then
+    mapfile -t _doc_ids < <(
+      sed -n '/Show all .* steps/,/<\/details>/p' docs/install-git.html \
+        | grep -oE '<td><code>[a-z0-9-]+</code></td>' \
+        | sed 's|<td><code>||; s|</code></td>||'
+    )
+    if (( ${#_doc_ids[@]} != _n )); then
+      fail "install-git.html lists ${#_doc_ids[@]} steps; wizard.sh runs $_n"
+      _ws_bad=1
+    elif ! diff -q <(printf '%s\n' "${_code_ids[@]}") \
+                   <(printf '%s\n' "${_doc_ids[@]}") >/dev/null; then
+      fail "install-git.html's step list disagrees with MOD_ORDER (ids or order)"
+      _ws_bad=1
+    fi
+  fi
+  (( _ws_bad )) || pass "$_n default steps — every docs claim and the full ordered list agree"
+fi
+
 # ── result ───────────────────────────────────────────────────────────
 echo
 if (( FAIL )); then
