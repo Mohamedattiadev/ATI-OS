@@ -69,7 +69,7 @@ space, the installer offers to sit alongside it. See <a href="#q-disk">question 
 <table>
 <tbody>
 <tr><td><b>A USB stick</b></td><td>4&nbsp;GB or larger. It gets erased.</td></tr>
-<tr><td><b>The target computer</b></td><td>A disk of at least 30&nbsp;GB, and UEFI mode.</td></tr>
+<tr><td><b>The target computer</b></td><td>A disk of at least 30&nbsp;GB, and UEFI mode. (60&nbsp;GB if the image is over a year old &mdash; it then <a href="#ageing">compiles from source</a> instead.)</td></tr>
 <tr><td><b>Internet on it</b></td><td>A cable is easiest. Wi-Fi needs two extra commands.</td></tr>
 </tbody>
 </table>
@@ -307,7 +307,7 @@ and the tool reports a signature problem rather than a clock problem. More in
 
 <p>Eight, in this order. Square brackets show the default. Press Enter to take it.</p>
 
-<h3 id="q-disk">1. Which disk?</h3>
+<h3 id="q-disk">Question 1 &mdash; Which disk?</h3>
 
 <pre><code>── target disk ──
 
@@ -367,7 +367,7 @@ the space yourself first, from the other system.</p>
 </div>
 </div>
 
-<h3 id="q-host">2. Hostname</h3>
+<h3 id="q-host">Question 2 &mdash; Hostname</h3>
 
 <pre><code>  Hostname [ati-os]:</code></pre>
 
@@ -375,7 +375,7 @@ the space yourself first, from the other system.</p>
 
 <p><b>Means:</b> the name on your home network. Cosmetic.</p>
 
-<h3 id="q-user">3. Username</h3>
+<h3 id="q-user">Question 3 &mdash; Username</h3>
 
 <pre><code>  Username:</code></pre>
 
@@ -393,7 +393,7 @@ name. Two accounts on one machine can want different ones. See
 <a href="under-the-hood.html#username">How it works</a>.</p>
 </details>
 
-<h3 id="q-pass">4. Password</h3>
+<h3 id="q-pass">Question 4 &mdash; Password</h3>
 
 <pre><code>  Password for &lt;your name&gt;:
   Repeat:</code></pre>
@@ -401,7 +401,7 @@ name. Two accounts on one machine can want different ones. See
 <p>Nothing appears as you type. No dots, no stars. Empty or mismatched and it asks again. The
 administrator account gets the same password.</p>
 
-<h3 id="q-tz">5. Time zone</h3>
+<h3 id="q-tz">Question 5 &mdash; Time zone</h3>
 
 <pre><code>  Timezone [Europe/Istanbul]:</code></pre>
 
@@ -411,7 +411,7 @@ administrator account gets the same password.</p>
 <p><b>Means:</b> it sets the clock. The guess comes from your connection's apparent location.
 An unrecognised zone stops the installer rather than silently using the wrong one.</p>
 
-<h3 id="q-enc">6. Lock the disk with a password?</h3>
+<h3 id="q-enc">Question 6 &mdash; Lock the disk with a password?</h3>
 
 <pre><code>  Encrypt the whole disk?
     Yes: a stolen machine reveals nothing. You type a passphrase at
@@ -431,7 +431,7 @@ That is the entire point of it.</p>
 
 <p>Saying yes asks twice and requires at least 8 characters.</p>
 
-<h3 id="q-kb">7. Keyboard layout</h3>
+<h3 id="q-kb">Question 7 &mdash; Keyboard layout</h3>
 
 <pre><code>  Keyboard layout  (see them all with: localectl list-keymaps)
   Keymap [us]:</code></pre>
@@ -444,7 +444,7 @@ asks again.</p>
 your own password incorrectly at the first login with no way to see why. That is why you are
 asked.</p>
 
-<h3 id="q-locale">8. Language</h3>
+<h3 id="q-locale">Question 8 &mdash; Language</h3>
 
 <pre><code>  System language  (e.g. en_US.UTF-8, ar_EG.UTF-8, de_DE.UTF-8)
   Locale [en_US.UTF-8]:</code></pre>

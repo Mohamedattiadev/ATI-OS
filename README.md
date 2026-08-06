@@ -71,7 +71,7 @@ modes. Not verified: AMD or NVIDIA graphics, or a HiDPI panel.
 | **[A bar that does things](https://mohamedattiadev.github.io/ATI-OS/widgets.html)** | Updates, audio, wifi, bluetooth, displays — popups, not terminals |
 | **[~45 tools](https://mohamedattiadev.github.io/ATI-OS/tools.html)** | Drop-stash, package manager, offline PDF toolkit, cheatsheets, screenshots, dictation |
 | **[Mouse-free clicking](https://mohamedattiadev.github.io/ATI-OS/keybindings.html#hintium)** | [Hintium](https://github.com/Mohamedattiadev/Hintium) labels everything clickable — hint, scroll and caret modes from the home row |
-| **[Documented](https://mohamedattiadev.github.io/ATI-OS/troubleshooting.html)** | 186 troubleshooting entries, searchable, reachable from the desktop itself |
+| **[Documented](https://mohamedattiadev.github.io/ATI-OS/troubleshooting.html)** | 187 troubleshooting entries, searchable, reachable from the desktop itself |
 
 <div align="center">
 
