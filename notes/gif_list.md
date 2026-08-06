@@ -28,6 +28,17 @@ re-shot clips sat in `IMGS/` for two days while the site kept serving the
 superseded ones. `validate.sh` now fails if a basename present in both
 differs, and warns about any doc asset no page references. Copy to both.
 
+**Not every gap wants a clip.** `install-usb.html` and `install-git.html` had
+no images at all between them — the two pages where somebody decides whether
+to install this. Both are fixed with stills, not motion: the installer's
+first screen (22 KB) and the wizard's module list (50 KB). A still is the
+right answer when the subject does not move and the information is dense.
+Neither needed the 3.1 MB a trimmed `ati-os-install` GIF costs.
+
+**The nest can change this machine's audio, and now undoes it.** Read the
+pipewire bullet under *Containment* before recording anything — it is no
+longer only the audio clip's problem.
+
 Still open: the P2 and P3 rows, and everything in *Cannot be captured safely*
 that has not been given a per-clip go-ahead.
 
@@ -241,6 +252,16 @@ Measured in the session that recorded these clips. All of it cost real incidents
   user fight over a single daemon.
 - **pipewire cannot be contained** by a `$HOME` overlay — it lives in the shared
   `XDG_RUNTIME_DIR`. Anything that mutes or changes volume hits the real sink.
+  **This is not confined to the audio clip.** The nest runs the same qtile
+  config, so the same `volume_control.py` and the same bar widgets are live in
+  it, and a session of ordinary capture work — a wizard screenshot, no audio
+  row anywhere near it — left the machine unmuted after it started muted, with
+  no volume key pressed by anyone. It surfaced only because the sink happened
+  to be checked on the way out, which is not a control. `nest.sh` now
+  snapshots mute and volume on `up` and restores them on `down`, reporting any
+  change. Treat that as a backstop: a clip that touches audio still restores
+  its own state inline, because a take that dies halfway should not leave the
+  speakers wrong until teardown.
 - **Rofi and GTK popups do not follow `theme_mode`.** Set
   `rofi/themes/current-palette.rasi` and generate `current_palette.json`
   separately, or the popups clash with the bar.
