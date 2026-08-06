@@ -30,6 +30,14 @@
 #     "works" and the missing plugin goes unnoticed for months.
 #
 # Usage: ./validate.sh [--quiet]
+#
+# TESTING A CHECK IN HERE: use ./validate-selftest.sh, never the live repo.
+# `~/.config` is stow-symlinked INTO this repository, so editing
+# .config/kitty/kitty.conf to prove the font check works edits the running
+# terminal's font. That happened -- the owner's terminal changed face
+# mid-session and only reverted when the backup was restored minutes later.
+# The self-test mutates a detached git worktree instead, which nothing in
+# `~` points at.
 
 set -Eeuo pipefail
 
