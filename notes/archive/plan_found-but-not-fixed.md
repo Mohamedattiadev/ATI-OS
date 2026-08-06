@@ -216,10 +216,33 @@ Outstanding:
    1.4 screenfuls as at 1.0, with pango measuring real glyph extents at
    both), but nobody has looked at it on a 4K screen.
 
-### `validate.sh`'s font list is hand-maintained
+### `validate.sh`'s font list is hand-maintained — **FIXED 2026-08-07**
 
 It is now exhaustive (8 families) and the regenerating query is recorded next
 to the list, but it does not derive itself. Any config that starts naming a
 new family will pass validation while rendering in a substituted face. That
 is the exact failure this repo has now hit three times — most recently in
 `eww/fonts.scss`, where `fira-code` had never been a family fontconfig knew.
+
+**Fixed.** The families are derived from the configs that name them, so what
+is maintained by hand is the list of *sources* — which kinds of file name a
+font, and how — and that changes far less often than the fonts do. Six
+extractors: qtile `font=` and pango `font_family=` markup, kitty's four
+`*_font` keys, alacritty `family =`, rofi `font:`, both GTK
+`gtk-font-name`, dunst, and the `<prefer>` blocks in `fonts.conf`. Generic
+aliases (`sans`, `monospace`, …) are skipped: requiring them would assert
+that fontconfig works, not that a font is installed. CSS and qutebrowser
+fallback stacks are still not scanned at all, on purpose — they name fonts
+that are *meant* to be absent.
+
+The hand list was already incomplete when this replaced it, which is the
+point: `config.py` asks for **`Ubuntu Mono`** in five widgets and the list
+only carried `Ubuntu`. Pango parses "Bold" off "Ubuntu Bold" as a weight, but
+"Mono" is a different FAMILY. Nothing broke only because
+`ttf-ubuntu-font-family` happens to ship both — luck, not coverage. The
+derived set is 11 families, and also picks up `Noto Sans Mono CJK KR` and
+`Noto Serif CJK KR` from the fontconfig aliases.
+
+Verified by naming a font that does not exist in each of three different
+config kinds — qtile, kitty, `fonts.conf` — and confirming each is caught,
+named with the file that asked for it, and exits non-zero.
