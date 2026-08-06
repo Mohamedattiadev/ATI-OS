@@ -25,8 +25,9 @@
 #     restart their live session. The three files that matter are written
 #     directly, below.
 #   * pipewire cannot be contained at all -- it lives in the shared
-#     XDG_RUNTIME_DIR. Any clip that changes volume or mutes hits the real
-#     sink. That is a per-clip problem; this script cannot solve it.
+#     XDG_RUNTIME_DIR, so anything in the nest that touches volume hits the
+#     real sink. That cannot be prevented, but it can be UNDONE: the sink
+#     state is snapshotted on `up` and put back on `down`. See audio_save.
 set -Eeuo pipefail
 
 NEST_DISPLAY="${NEST_DISPLAY:-:9}"
@@ -59,6 +60,44 @@ nest_pids() {
 }
 
 is_up() { [[ -e "/tmp/.X11-unix/X${NEST_DISPLAY#:}" ]]; }
+
+# ── the one thing the nest cannot contain ────────────────────────────
+# pipewire lives in the shared XDG_RUNTIME_DIR, so the nest drives the
+# OWNER'S sink. gif_list.md says so for the audio clip, but it is not
+# limited to that clip: the nest runs the same qtile config, with the same
+# volume_control.py and the same bar widgets, and a session of ordinary
+# capture work left this machine UNMUTED after starting muted. Nobody
+# pressed a volume key. It only surfaced because the state was checked.
+#
+# So it is snapshotted on up and put back on down, every time, whatever the
+# clip did. This is a guard, not a substitute for a clip being careful --
+# audio-popup.sh still restores its own state inline, since a take that dies
+# halfway should not wait for teardown to fix the speakers.
+audio_save() {
+  command -v pactl >/dev/null || return 0
+  mkdir -p "$RUN_DIR"
+  { pactl get-sink-mute @DEFAULT_SINK@ | awk '{print $2}'
+    pactl get-sink-volume @DEFAULT_SINK@ | grep -oE '[0-9]+%' | head -1
+  } >"$RUN_DIR/sink" 2>/dev/null || true
+  [[ -s "$RUN_DIR/sink" ]] && ok "sink state saved ($(tr '\n' ' ' <"$RUN_DIR/sink"))"
+}
+
+audio_restore() {
+  command -v pactl >/dev/null || return 0
+  [[ -f "$RUN_DIR/sink" ]] || return 0
+  local want_mute want_vol now_mute now_vol
+  want_mute="$(sed -n 1p "$RUN_DIR/sink")"
+  want_vol="$(sed -n 2p "$RUN_DIR/sink")"
+  [[ -n "$want_mute" ]] || return 0
+  now_mute="$(pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | awk '{print $2}')"
+  now_vol="$(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | grep -oE '[0-9]+%' | head -1)"
+  if [[ "$now_mute" != "$want_mute" || "$now_vol" != "$want_vol" ]]; then
+    warn "the nest changed this machine's audio ($now_mute/$now_vol) — putting it back to $want_mute/$want_vol"
+  fi
+  pactl set-sink-mute @DEFAULT_SINK@ "$([[ "$want_mute" == yes ]] && echo 1 || echo 0)" 2>/dev/null || true
+  [[ -n "$want_vol" ]] && pactl set-sink-volume @DEFAULT_SINK@ "$want_vol" 2>/dev/null || true
+  ok "sink restored ($(pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | awk '{print $2}')/$(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | grep -oE '[0-9]+%' | head -1))"
+}
 
 # ── copying config without a path back to the owner's files ──────────
 #
@@ -222,6 +261,7 @@ up() {
   command -v xdotool >/dev/null || die "xdotool not installed"
 
   mkdir -p "$RUN_DIR"
+  audio_save
   say "building scrubbed home at $HOME_DIR"
   build_home
   theme_nest
@@ -332,6 +372,7 @@ down() {
     mapfile -t pids < <(nest_pids)
     (( ${#pids[@]} )) && { kill -9 "${pids[@]}" 2>/dev/null || true; sleep 1; }
   fi
+  audio_restore
   rm -f "/tmp/.X11-unix/X${NEST_DISPLAY#:}" 2>/dev/null || true
   ok "down"
 }
