@@ -495,7 +495,7 @@ these programs agree on how to be recoloured.</p>
 <tr><td>GTK 3 and 4</td><td>An overlay stylesheet imported from the cache</td></tr>
 <tr><td>Qt 5 and Qt 6</td><td>A 21-role palette file. <b>Needs <code>QT_QPA_PLATFORMTHEME=qt6ct</code></b>, exported at session start. Qt ignores the GTK theme entirely and falls back to a <em>light</em> palette without it. Read at application start, so a fresh session is required</td></tr>
 <tr><td>qutebrowser</td><td>Home page by inline styles. Browser chrome, 92 options, by a function reading the dumped palette. For <em>all</em> themes, not only the wallpaper one</td></tr>
-<tr><td>nvim</td><td>A filesystem watch on the dumped palette. Themes with no dedicated plugin render highlights straight from it</td></tr>
+<tr><td>nvim</td><td>Filesystem watches on the mode file and the dumped palette, so open editors recolour without restarting. Eleven themes load a real colorscheme plugin; the other eleven render highlights straight from the palette. Either way the start screen and pickers are painted from the published accent afterwards, so all 22 look different</td></tr>
 <tr><td>Brave</td><td>An extension whose manifest is read live on relaunch</td></tr>
 <tr><td>Chrome and Chromium</td><td>Enterprise policy from a local update file. The package is repacked and preferences purged each time so the install lands immediately. The extension id is derived from a per-machine key at runtime, never hardcoded, and the browsers relaunch through their wrapper so their flags file is applied</td></tr>
 <tr><td>Folder icons</td><td>A hue match, through an optional package. Silently does nothing if missing</td></tr>

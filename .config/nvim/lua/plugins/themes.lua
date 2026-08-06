@@ -1,120 +1,35 @@
-return {
-  --
-  {
-    "folke/tokyonight.nvim",
-    enabled = false,
-    -- lazy = false,
-    -- priority = 1000,
-    -- opts = {
-    --   style = "moon", -- Options: "storm", "moon", "night", "day"
-    --   transparent = false,
-    --   terminal_colors = true,
-    --   styles = {
-    --     comments = { italic = true },
-    --     keywords = { italic = true },
-    --     functions = {},
-    --     variables = {},
-    --     sidebars = "dark", -- style for sidebars: dark/light/transparent
-    --     floats = "dark", -- style for floating windows
-    --   },
-    --   sidebars = { "qf", "help", "terminal", "packer" },
-    --   dim_inactive = true,
-    --   lualine_bold = true,
-    -- },
-    -- config = function(_, opts)
-    --   require("tokyonight").setup(opts)
-    --   vim.cmd.colorscheme("tokyonight") -- apply it
-    -- end,
-    -- },
-    -- {
-    --   "ellisonleao/gruvbox.nvim",
-    --   priority = 1000,
-    --   config = function()
-    --     -- Set Gruvbox as the default color scheme
-    --     -- vim.cmd("colorscheme gruvbox")
-    --
-    --     -- Optional: Set the background (dark or light)
-    --     -- vim.o.background = "dark" -- Use "light" if you prefer the light theme
-    --   end,
-    --   opts = {}, -- Optional: Add any other options for the plugin here if needed
-    -- },
-    -- {
-    --   "olimorris/onedarkpro.nvim",
-    --   priority = 1000, -- Ensure it loads first
-    -- },
+-- Colorschemes, and the machinery that keeps nvim in step with the desktop.
+--
+-- `theme-apply <mode>` repaints the qtile bar, GTK, qt, btop, glow and the
+-- terminal, then writes the mode name and its palette into ~/.cache/qtile.
+-- The doom-one block at the bottom watches those files and switches nvim to
+-- match -- live, in already-open instances, no restart.
+--
+-- All the mode/scheme knowledge lives in lua/config/theme_sync.lua so the
+-- LazyVim opt below and the watcher cannot disagree.
 
-    -- Using Lazy
-    -- {
-    --   "navarasu/onedark.nvim",
-    --   priority = 1000, -- make sure to load this before all the other start plugins
-    --   config = function()
-    --     require("onedark").setup({
-    --       style = "darker",
-    --     })
-    --     -- Enable theme
-    --     require("onedark").load()
-    --   end,
-    -- },
-    -- {
-    --   "catppuccin/nvim",
-    --   lazy = false,
-    --   name = "catppuccin",
-    --   priority = 1000,
-    --
-    --   config = function()
-    --     require("catppuccin").setup({
-    --       transparent_background = true,
-    --     })
-    --     vim.cmd.colorscheme("catppuccin-mocha")
-    --   end,
-  },
+local sync = require("config.theme_sync")
+
+return {
+  -- Startup colorscheme. Picks the same answer the watcher would, so there
+  -- is no flash of the wrong theme before the first apply() runs.
   {
     "LazyVim/LazyVim",
     opts = {
       colorscheme = function()
-        local mode_file = vim.fn.expand("~/.cache/qtile/theme_mode")
-        local ok, f = pcall(io.open, mode_file, "r")
-        if ok and f then
-          local m = (f:read("*l") or ""):gsub("%s+", "")
-          f:close()
-          local map = {
-            wal = "wal",
-            doomone = "doom-one",
-            dracula = "dracula",
-            gruvbox = "gruvbox",
-            nord = "nord",
-            tokyonight = "nord",
-            catppuccin = "dracula",
-            monokai = "monokai-pro",
-            everforest = "everforest",
-            ["rose-pine"] = "rose-pine",
-            kanagawa = "kanagawa",
-            oxocarbon = "oxocarbon",
-            -- New themes fall back to closest installed nvim scheme.
-            ["cyberpunk-neon"] = "dracula",
-            synthwave = "dracula",
-            matrix = "gruvbox",
-            ["mono-dark"] = "doom-one",
-            ["mono-light"] = "doom-one",
-            nightowl = "nord",
-            onedark = "doom-one",
-            palenight = "nord",
-            ["github-dark"] = "nord",
-            ["ayu-mirage"] = "kanagawa",
-          }
-          return map[m] or "doom-one"
-        end
-        return "doom-one"
+        return sync.scheme_for(sync.read_mode()) or sync.fallback
       end,
     },
   },
 
+  -- One entry per mode in theme_sync.scheme_of. catppuccin is not here: it
+  -- is switched off in lua/plugins/disabled.lua, so the catppuccin mode
+  -- renders from current_palette.json instead.
   { "dylanaraps/wal.vim", lazy = false, priority = 999 },
   { "Mofiqul/dracula.nvim", lazy = true },
   { "ellisonleao/gruvbox.nvim", lazy = true },
   { "shaunsingh/nord.nvim", lazy = true },
   { "folke/tokyonight.nvim", lazy = true },
-  { "catppuccin/nvim", name = "catppuccin", lazy = true },
   { "loctvl842/monokai-pro.nvim", lazy = true },
   { "neanias/everforest-nvim", lazy = true },
   { "rose-pine/neovim", name = "rose-pine", lazy = true },
@@ -148,259 +63,66 @@ return {
     end,
 
     config = function()
-      -- Sync nvim colorscheme with ~/.cache/qtile/theme_mode. Reapply on
-      -- any of: fs_event (theme-apply rewrote the file), FocusGained
-      -- (user tabbed back to terminal), :Theme user command.
-      local mode_file = vim.fn.expand("~/.cache/qtile/theme_mode")
-      local wal_cache = vim.fn.expand("~/.cache/wal/colors-wal.vim")
-      local wal_json  = vim.fn.expand("~/.cache/wal/colors.json")
-      local preset_json = vim.fn.expand("~/.cache/qtile/current_palette.json")
-
-      local function apply_preset_from_json()
-        local ok, f = pcall(io.open, preset_json, "r")
-        if not (ok and f) then return false end
-        local raw = f:read("*a"); f:close()
-        local ok2, d = pcall(vim.json.decode, raw)
-        if not ok2 then return false end
-        local bg, bg_alt, fg = d.bg, d.bg_alt, d.fg
-        local red, green, yellow = d.red, d.green, d.yellow
-        local blue, purple, cyan = d.blue, d.purple, d.cyan
-        if not (bg and fg and red) then return false end
-        vim.cmd("hi clear")
-        if vim.fn.exists("syntax_on") == 1 then vim.cmd("syntax reset") end
-        vim.o.background = (d.mode == "mono-light") and "light" or "dark"
-        vim.g.colors_name = "qtile-" .. (d.mode or "preset")
-        local set = function(g, o) vim.api.nvim_set_hl(0, g, o) end
-        set("Normal",       { fg = fg,     bg = bg })
-        set("NormalFloat",  { fg = fg,     bg = bg_alt })
-        set("NormalNC",     { fg = fg,     bg = bg })
-        set("SignColumn",   { fg = fg,     bg = bg })
-        set("EndOfBuffer",  { fg = bg,     bg = bg })
-        set("LineNr",       { fg = purple, bg = bg })
-        set("CursorLineNr", { fg = yellow, bg = bg, bold = true })
-        set("CursorLine",   { bg = bg_alt })
-        set("Visual",       { bg = bg_alt })
-        set("Comment",      { fg = purple, italic = true })
-        set("Constant",     { fg = yellow })
-        set("String",       { fg = green })
-        set("Statement",    { fg = red })
-        set("Keyword",      { fg = red })
-        set("Function",     { fg = blue })
-        set("Type",         { fg = purple })
-        set("Special",      { fg = cyan })
-        set("PreProc",      { fg = yellow })
-        set("Identifier",   { fg = red })
-        set("StatusLine",   { fg = fg,     bg = bg_alt })
-        set("StatusLineNC", { fg = purple, bg = bg_alt })
-        set("TabLine",      { fg = purple, bg = bg_alt })
-        set("TabLineSel",   { fg = bg,     bg = blue, bold = true })
-        set("TabLineFill",  { bg = bg_alt })
-        set("WinSeparator", { fg = purple, bg = bg })
-        set("Pmenu",        { fg = fg,     bg = bg_alt })
-        set("PmenuSel",     { fg = bg,     bg = blue, bold = true })
-        set("PmenuThumb",   { bg = blue })
-        set("Search",       { fg = bg,     bg = yellow })
-        set("IncSearch",    { fg = bg,     bg = cyan })
-        set("MatchParen",   { fg = cyan,   bold = true })
-        set("DiagnosticError", { fg = red })
-        set("DiagnosticWarn",  { fg = yellow })
-        set("DiagnosticInfo",  { fg = blue })
-        set("DiagnosticHint",  { fg = cyan })
-        set("Error",        { fg = red,    bold = true })
-        set("WarningMsg",   { fg = yellow })
-        set("DashboardHeader",       { fg = green, bold = true })
-        set("DashboardIcon",         { fg = green })
-        set("DashboardDesc",         { fg = fg })
-        set("DashboardKey",          { fg = red })
-        set("DashboardFooter",       { fg = purple, italic = true })
-        set("DashboardProjectTitle", { fg = green, bold = true })
-        set("SnacksDashboardHeader", { fg = green, bold = true })
-        set("SnacksDashboardIcon",   { fg = green })
-        set("SnacksDashboardDesc",   { fg = fg })
-        set("SnacksDashboardKey",    { fg = red })
-        set("SnacksDashboardFooter", { fg = purple, italic = true })
-        set("SnacksDashboardTitle",  { fg = green, bold = true })
-        set("SnacksDashboardFile",   { fg = fg })
-        set("SnacksDashboardDir",    { fg = purple })
-        set("SnacksDashboardSpecial",{ fg = green })
-        set("NeoTreeNormal",   { fg = fg, bg = bg })
-        set("TelescopeNormal", { fg = fg, bg = bg })
-        set("TelescopeBorder", { fg = green, bg = bg })
-        set("TelescopeSelection", { fg = fg, bg = bg_alt, bold = true })
-        set("WhichKeyGroup",   { fg = green })
-        set("WhichKeyDesc",    { fg = fg })
-        set("WhichKey",        { fg = red })
-        set("BufferLineFill",  { bg = bg_alt })
-        set("DiffAdd",     { fg = green })
-        set("DiffChange",  { fg = yellow })
-        set("DiffDelete",  { fg = red })
-        set("GitSignsAdd",    { fg = green })
-        set("GitSignsChange", { fg = yellow })
-        set("GitSignsDelete", { fg = red })
-        return true
-      end
-
-      -- dylanaraps/wal.vim only sets cterm* — invisible under
-      -- termguicolors. Read colors.json and set gui* highlights so bg
-      -- and syntax actually track the wallpaper. Overrides the common
-      -- LazyVim dashboard/UI groups so those tint too.
-      local function apply_wal_from_json()
-        local ok, f = pcall(io.open, wal_json, "r")
-        if not (ok and f) then return false end
-        local raw = f:read("*a"); f:close()
-        local ok2, d = pcall(vim.json.decode, raw)
-        if not ok2 then return false end
-        local c = d.colors; local bg = d.special.background; local fg = d.special.foreground
-        vim.cmd("hi clear")
-        if vim.fn.exists("syntax_on") == 1 then vim.cmd("syntax reset") end
-        vim.o.background = "dark"
-        vim.g.colors_name = "wal"
-        local set = function(g, o) vim.api.nvim_set_hl(0, g, o) end
-        set("Normal",       { fg = fg,       bg = bg })
-        set("NormalFloat",  { fg = fg,       bg = c.color0 })
-        set("NormalNC",     { fg = fg,       bg = bg })
-        set("SignColumn",   { fg = fg,       bg = bg })
-        set("EndOfBuffer",  { fg = bg,       bg = bg })
-        set("LineNr",       { fg = c.color8, bg = bg })
-        set("CursorLineNr", { fg = c.color3, bg = bg, bold = true })
-        set("CursorLine",   { bg = c.color0 })
-        set("Visual",       { bg = c.color8 })
-        set("Comment",      { fg = c.color8, italic = true })
-        set("Constant",     { fg = c.color3 })
-        set("String",       { fg = c.color2 })
-        set("Statement",    { fg = c.color1 })
-        set("Keyword",      { fg = c.color1 })
-        set("Function",     { fg = c.color4 })
-        set("Type",         { fg = c.color5 })
-        set("Special",      { fg = c.color6 })
-        set("PreProc",      { fg = c.color3 })
-        set("Identifier",   { fg = c.color1 })
-        set("StatusLine",   { fg = fg,       bg = c.color0 })
-        set("StatusLineNC", { fg = c.color8, bg = c.color0 })
-        set("TabLine",      { fg = c.color8, bg = c.color0 })
-        set("TabLineSel",   { fg = bg,       bg = c.color4, bold = true })
-        set("TabLineFill",  { bg = c.color0 })
-        set("WinSeparator", { fg = c.color8, bg = bg })
-        set("Pmenu",        { fg = fg,       bg = c.color0 })
-        set("PmenuSel",     { fg = bg,       bg = c.color4, bold = true })
-        set("PmenuThumb",   { bg = c.color4 })
-        set("Search",       { fg = bg,       bg = c.color3 })
-        set("IncSearch",    { fg = bg,       bg = c.color6 })
-        set("MatchParen",   { fg = c.color6, bold = true })
-        set("DiagnosticError", { fg = c.color1 })
-        set("DiagnosticWarn",  { fg = c.color3 })
-        set("DiagnosticInfo",  { fg = c.color4 })
-        set("DiagnosticHint",  { fg = c.color6 })
-        set("Error",        { fg = c.color1, bold = true })
-        set("WarningMsg",   { fg = c.color3 })
-        -- LazyVim / Snacks dashboard. Header uses c.color2 (precompile
-        -- dominant slot = main wallpaper hue) so it matches qtile bar +
-        -- brave accent. Icons use dominant too for consistent branding.
-        set("DashboardHeader",       { fg = c.color2, bold = true })
-        set("DashboardIcon",         { fg = c.color2 })
-        set("DashboardDesc",         { fg = fg })
-        set("DashboardKey",          { fg = c.color1 })
-        set("DashboardFooter",       { fg = c.color8, italic = true })
-        set("DashboardProjectTitle", { fg = c.color2, bold = true })
-        set("SnacksDashboardHeader", { fg = c.color2, bold = true })
-        set("SnacksDashboardIcon",   { fg = c.color2 })
-        set("SnacksDashboardDesc",   { fg = fg })
-        set("SnacksDashboardKey",    { fg = c.color1 })
-        set("SnacksDashboardFooter", { fg = c.color8, italic = true })
-        set("SnacksDashboardTitle",  { fg = c.color2, bold = true })
-        set("SnacksDashboardFile",   { fg = fg })
-        set("SnacksDashboardDir",    { fg = c.color8 })
-        set("SnacksDashboardSpecial",{ fg = c.color2 })
-        -- Alpha / Startify fallbacks
-        set("AlphaHeader",    { fg = c.color2, bold = true })
-        set("AlphaButtons",   { fg = fg })
-        set("AlphaShortcut",  { fg = c.color1 })
-        set("StartifyHeader", { fg = c.color2, bold = true })
-        -- Sidebar / picker tint
-        set("NeoTreeNormal",   { fg = fg, bg = bg })
-        set("TelescopeNormal", { fg = fg, bg = bg })
-        set("TelescopeBorder", { fg = c.color2, bg = bg })
-        set("TelescopeSelection", { fg = fg, bg = c.color0, bold = true })
-        set("WhichKeyGroup",   { fg = c.color2 })
-        set("WhichKeyDesc",    { fg = fg })
-        set("WhichKey",        { fg = c.color1 })
-        set("BufferLineFill",  { bg = c.color0 })
-        -- git signs
-        set("DiffAdd",     { fg = c.color2 })
-        set("DiffChange",  { fg = c.color3 })
-        set("DiffDelete",  { fg = c.color1 })
-        set("GitSignsAdd",    { fg = c.color2 })
-        set("GitSignsChange", { fg = c.color3 })
-        set("GitSignsDelete", { fg = c.color1 })
-        return true
-      end
-      -- Modes with a dedicated plugin. Anything else renders from
-      -- ~/.cache/qtile/current_palette.json (dumped by theme-apply) so
-      -- every mode gets a distinct nvim look matching the qtile bar.
-      local map = {
-        wal = "wal",
-        doomone = "doom-one",
-        dracula = "dracula",
-        gruvbox = "gruvbox",
-        nord = "nord",
-        tokyonight = "tokyonight",
-        catppuccin = "catppuccin",
-        monokai = "monokai-pro",
-        everforest = "everforest",
-        ["rose-pine"] = "rose-pine",
-        kanagawa = "kanagawa",
-        oxocarbon = "oxocarbon",
-      }
       local last_mode = nil
       local last_wal_mtime = 0
-      local function read_mode()
-        local ok, f = pcall(io.open, mode_file, "r")
-        if not (ok and f) then return nil end
-        local m = (f:read("*l") or ""):gsub("%s+", "")
-        f:close()
-        return m
-      end
+
       local function wal_mtime()
-        local st = vim.uv.fs_stat(wal_cache)
+        local st = vim.uv.fs_stat(sync.wal_cache)
         return st and st.mtime.sec or 0
       end
-      -- scheme name -> lazy.nvim plugin dir name (for on-demand load).
-      local plugin_for = {
-        ["doom-one"] = "doom-one.nvim",
-        dracula = "dracula.nvim",
-        gruvbox = "gruvbox.nvim",
-        nord = "nord.nvim",
-        tokyonight = "tokyonight.nvim",
-        catppuccin = "catppuccin",
-        ["monokai-pro"] = "monokai-pro.nvim",
-        everforest = "everforest-nvim",
-        ["rose-pine"] = "rose-pine",
-        kanagawa = "kanagawa.nvim",
-        oxocarbon = "oxocarbon.nvim",
-        wal = "wal.vim",
-      }
 
       local function try_load_plugin(scheme)
-        local plug = plugin_for[scheme]
-        if not plug then return end
+        local plug = sync.plugin_of[scheme]
+        if not plug then
+          return
+        end
         local ok, lazy = pcall(require, "lazy")
-        if ok then pcall(lazy.load, { plugins = { plug } }) end
+        if ok then
+          pcall(lazy.load, { plugins = { plug } })
+        end
       end
+
+      -- Repaint the dashboard/branding groups over whatever scheme is
+      -- loaded. Prefer the palette theme-apply just wrote (so nvim, the bar
+      -- and glow all agree); fall back to the scheme's own highlights if
+      -- that file is missing or describes a different mode.
+      local function overlay_accents()
+        local p = sync.read_palette()
+        if not (p and p.mode == last_mode) then
+          p = sync.palette_from_hl()
+        end
+        sync.apply_accents(p)
+      end
+
+      -- ColorScheme fires for `:colorscheme x` from anywhere -- our own
+      -- set_scheme, LazyVim's startup, or the user at the prompt -- so the
+      -- accents follow all three. The palette paths do not go through
+      -- `:colorscheme` and call apply_accents themselves.
+      vim.api.nvim_create_autocmd("ColorScheme", {
+        group = vim.api.nvim_create_augroup("AtiThemeAccents", { clear = true }),
+        callback = function()
+          pcall(overlay_accents)
+        end,
+      })
 
       local function set_scheme(scheme)
         try_load_plugin(scheme)
-        local ok = pcall(vim.cmd, "colorscheme " .. scheme)
-        if ok then return true end
-        -- Retry after next tick so lazy load can finish plugin setup.
+        if pcall(vim.cmd, "colorscheme " .. scheme) then
+          return true
+        end
+        -- Retry after next tick so a lazy load can finish plugin setup.
         vim.defer_fn(function()
           try_load_plugin(scheme)
           if not pcall(vim.cmd, "colorscheme " .. scheme) then
-            -- Plugin unavailable — render distinct highlights from
-            -- current_palette.json rather than silently collapsing to
-            -- doom-one (which makes multiple modes look identical).
-            if not apply_preset_from_json() then
-              try_load_plugin("doom-one")
-              pcall(vim.cmd, "colorscheme doom-one")
+            -- Plugin genuinely unavailable. Render from the palette rather
+            -- than collapsing to doom-one, which would make several modes
+            -- look identical.
+            local p = sync.read_palette()
+            if p then
+              sync.apply_palette(p)
+            else
+              try_load_plugin(sync.fallback)
+              pcall(vim.cmd, "colorscheme " .. sync.fallback)
             end
           end
         end, 30)
@@ -408,53 +130,88 @@ return {
       end
 
       local function apply(force)
-        local m = read_mode()
-        if not m then return end
+        local m = sync.read_mode()
+        if not m then
+          return
+        end
         local mt = wal_mtime()
-        -- wal mode: reapply when colors-wal.vim mtime changed (wallpaper switch).
-        -- Preset modes: reapply only when mode name changed.
+        -- wal mode: reapply when colors-wal.vim mtime changes (wallpaper
+        -- switch). Preset modes: reapply when the mode name changes.
         local changed = force or (m ~= last_mode) or (m == "wal" and mt ~= last_wal_mtime)
-        if not changed then return end
+        if not changed then
+          return
+        end
         last_mode = m
         last_wal_mtime = mt
+
         if m == "wal" then
-          if not apply_wal_from_json() then
-            set_scheme("doom-one")
-          end
-        elseif map[m] then
-          set_scheme(map[m])
-        else
-          -- Aliased/non-plugin modes: render from current_palette.json.
-          if not apply_preset_from_json() then
-            set_scheme("doom-one")
+          -- dylanaraps/wal.vim only sets cterm* colours, which are invisible
+          -- under termguicolors, so drive gui* from colors.json ourselves.
+          local p = sync.read_wal_palette()
+          if p then
+            sync.apply_palette(p)
+            return
           end
         end
+
+        local scheme = sync.scheme_for(m)
+        if scheme and scheme ~= "wal" then
+          set_scheme(scheme)
+          return
+        end
+
+        local p = sync.read_palette()
+        if p then
+          sync.apply_palette(p)
+        else
+          set_scheme(sync.fallback)
+        end
       end
+
       apply(true)
 
       local function arm_fs(path, cb)
         local w = vim.uv.new_fs_event()
-        if not w then return nil end
+        if not w then
+          return nil
+        end
         local function start()
-          w:start(path, {}, vim.schedule_wrap(function()
-            cb()
-            vim.defer_fn(function() pcall(w.stop, w); start() end, 50)
-          end))
+          w:start(
+            path,
+            {},
+            vim.schedule_wrap(function()
+              cb()
+              vim.defer_fn(function()
+                pcall(w.stop, w)
+                start()
+              end, 50)
+            end)
+          )
         end
         start()
         return w
       end
-      -- watch theme_mode (preset switches) + colors-wal.vim (wallpaper switches)
-      -- + current_palette.json (aliased preset repaints).
-      arm_fs(mode_file, function() apply(false) end)
-      arm_fs(wal_cache, function() apply(false) end)
-      arm_fs(preset_json, function() apply(true) end)
+
+      -- theme_mode (preset switches) + colors-wal.vim (wallpaper switches)
+      -- + current_palette.json (repaint of the mode we are already on).
+      arm_fs(sync.mode_file, function()
+        apply(false)
+      end)
+      arm_fs(sync.wal_cache, function()
+        apply(false)
+      end)
+      arm_fs(sync.palette_json, function()
+        apply(true)
+      end)
 
       vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter" }, {
-        callback = function() apply(false) end,
+        callback = function()
+          apply(false)
+        end,
       })
-      vim.api.nvim_create_user_command("Theme", function() apply(true) end,
-        { desc = "Reapply colorscheme from ~/.cache/qtile/theme_mode" })
+      vim.api.nvim_create_user_command("Theme", function()
+        apply(true)
+      end, { desc = "Reapply colorscheme from ~/.cache/qtile/theme_mode" })
     end,
   },
 }

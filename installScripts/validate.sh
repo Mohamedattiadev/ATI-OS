@@ -22,6 +22,12 @@
 #   * a cheatsheet entry drawn past the edge of its popup, clipped mid-key,
 #     or using a glyph the font lacks. PopupText does not clip and pango
 #     falls back silently, so all three are invisible -- no error anywhere.
+#   * an nvim lua file that does not parse
+#   * an nvim theme that will never install: a colorscheme named in
+#     theme_sync's map with no plugin spec behind it, or a spec carrying a
+#     live `enabled = false`. Neither errors at runtime -- nvim just falls
+#     through to rendering that mode from the palette, so the theme still
+#     "works" and the missing plugin goes unnoticed for months.
 #
 # Usage: ./validate.sh [--quiet]
 
@@ -339,6 +345,95 @@ FONTS
   else
     pass "every family the UI names resolves to itself, no silent substitution"
   fi
+fi
+
+# ── 11. nvim: lua parses, and the theme map matches the plugin specs ──
+head_ "nvim config"
+
+if ! command -v luac >/dev/null 2>&1; then
+  skip "lua syntax (luac not installed)"
+else
+  _lua_bad=0
+  _lua_n=0
+  while IFS= read -r f; do
+    _lua_n=$((_lua_n + 1))
+    luac -p "$f" 2>/dev/null || { fail "luac -p: $f"; _lua_bad=1; }
+  done < <(git ls-files '.config/nvim/**/*.lua' '.config/nvim/*.lua' 2>/dev/null)
+  if (( _lua_bad )); then
+    :
+  elif (( _lua_n )); then
+    pass "$_lua_n nvim lua files parse"
+  else
+    skip "lua syntax (no tracked .lua files)"
+  fi
+fi
+
+# theme_sync.scheme_of is the single source of truth for "desktop mode ->
+# colorscheme", read by BOTH the startup colorscheme and the live watcher.
+# A scheme listed there whose plugin is not actually declared in themes.lua
+# does not error: nvim silently falls through to rendering from the palette,
+# so the mode still *works* and nobody notices the plugin was never
+# installed. That is exactly how tokyonight sat broken -- declared twice in
+# themes.lua, once with a stray enabled=false. Catch the drift instead.
+_ts=.config/nvim/lua/config/theme_sync.lua
+_th=.config/nvim/lua/plugins/themes.lua
+if [[ ! -f "$_ts" || ! -f "$_th" ]]; then
+  skip "nvim theme map (theme_sync.lua or themes.lua missing)"
+elif ! command -v lua >/dev/null 2>&1; then
+  skip "nvim theme map (lua not installed)"
+else
+  # Plugin dirs the specs actually declare. lazy.nvim installs
+  # "owner/repo" into a directory called `repo` unless the spec overrides
+  # it with name = "...". Specs here span several lines, so collect both
+  # forms from the whole file rather than trying to parse spec by spec.
+  mapfile -t _declared < <(
+    {
+      grep -oE '"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"' "$_th" \
+        | tr -d '"' | sed 's|.*/||'
+      grep -oE 'name\s*=\s*"[^"]+"' "$_th" \
+        | grep -oE '"[^"]+"' | tr -d '"'
+    } | sort -u
+  )
+  # plugin dirs theme_sync.plugin_of promises to load
+  mapfile -t _promised < <(
+    lua -e '
+      package.path = ".config/nvim/lua/?.lua;" .. package.path
+      -- theme_sync only touches vim.fn at load time; stub enough for that.
+      vim = { fn = { expand = function(s) return s end } }
+      local ok, m = pcall(require, "config.theme_sync")
+      if not ok then os.exit(0) end
+      local seen = {}
+      for mode, scheme in pairs(m.scheme_of) do
+        local plug = m.plugin_of[scheme]
+        if not plug then
+          print("NOPLUGIN\t" .. mode .. "\t" .. scheme)
+        elseif not seen[plug] then
+          seen[plug] = true
+          print("NEED\t" .. plug)
+        end
+      end
+    ' 2>/dev/null
+  )
+  _map_bad=0
+  for line in "${_promised[@]}"; do
+    kind=${line%%$'\t'*}; rest=${line#*$'\t'}
+    if [[ "$kind" == NOPLUGIN ]]; then
+      fail "theme_sync: mode '${rest%%$'\t'*}' maps to scheme '${rest##*$'\t'}' with no entry in plugin_of"
+      _map_bad=1
+    elif [[ "$kind" == NEED ]]; then
+      # NB: not `d` -- that is the dim-colour global at the top of this file.
+      _hit=0
+      for _decl in "${_declared[@]}"; do [[ "$_decl" == "$rest" ]] && _hit=1 && break; done
+      (( _hit )) || { fail "theme_sync.plugin_of names '$rest', but themes.lua declares no such plugin"; _map_bad=1; }
+    fi
+  done
+  # A live enabled=false in themes.lua means a theme that silently never
+  # installs. Disabling belongs in disabled.lua, where it is deliberate.
+  if grep -nE '^[^-]*enabled\s*=\s*false' "$_th" >/dev/null 2>&1; then
+    fail "themes.lua has a live 'enabled = false' — a theme that will never install; put it in disabled.lua"
+    _map_bad=1
+  fi
+  (( _map_bad )) || pass "theme_sync map, themes.lua specs and disabled.lua agree"
 fi
 
 # ── result ───────────────────────────────────────────────────────────
