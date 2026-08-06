@@ -123,6 +123,7 @@ generated from the live system, so it cannot go stale.
 docs/             the manual, published to GitHub Pages
 installScripts/   install.sh, wizard.sh, and iso/ to build the USB image
 IMGS/             the screenshots and clips used above
+video/            the film, and capture/ — the harness that records the clips
 notes/            recording plans and archived working notes
 LICENSE           GPL-3.0
 NOTICE.md         what is vendored, and under which licence
