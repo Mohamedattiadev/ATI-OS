@@ -242,7 +242,18 @@ return {
         render_modes = false,
         -- icons = { "❀", "✿", "✾", "❁", "✦", "✧", "❉" },
 
-        icons = { "❀", "✿", "◍", "◉", "✦", "●" },
+        -- Every glyph here is verified present in FiraCode Nerd Font, the
+        -- terminal font (kitty.conf / alacritty.toml).
+        --
+        -- The previous set was { "❀", "✿", "◍", "◉", "✦", "●" }, and four of
+        -- those -- ❀ U+2740, ✿ U+273F, ◍ U+25CD, ✦ U+2726 -- are NOT in
+        -- FiraCode. fontconfig silently substituted Adwaita Mono for them, so
+        -- those bullet levels rendered in a different face at a different
+        -- width and knocked the list indentation out of line. Only ◉ and ●
+        -- were ever really FiraCode.
+        --
+        -- Filled/hollow alternating by depth: circle, diamond, square.
+        icons = { "●", "○", "◆", "◇", "▪", "▫" },
         highlight = function(ctx)
           local hl_groups = {
             [1] = "RenderMarkdownBullet1",
@@ -270,15 +281,19 @@ return {
         end,
       }
 
-      -- LaTeX rendering
+      -- LaTeX rendering, off.
+      --
+      -- This was `enabled = true` with `converter = nil`, but neither piece
+      -- it needs is present: the `latex` treesitter parser is not installed
+      -- and neither is a converter binary (utftex / latex2text). So it could
+      -- never render a formula -- it only produced three warnings in
+      -- `:checkhealth render-markdown` and made that report look broken.
+      --
+      -- To actually use it: `:TSInstall latex`, install utftex or latex2text,
+      -- then flip this back to true.
       opts.latex = vim.tbl_deep_extend("force", opts.latex or {}, {
-        enabled = true,
-        render_modes = false,
-        converter = nil,
+        enabled = false,
         highlight = "RenderMarkdownMath",
-        position = "above",
-        top_pad = 0,
-        bottom_pad = 0,
       })
 
       -- Code block settings
