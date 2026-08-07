@@ -636,6 +636,46 @@ else
   (( _ws_bad )) || pass "$_n default steps — every docs claim and the full ordered list agree"
 fi
 
+# ── 14. the docs' package count matches what is declared ─────────────
+head_ "declared package count"
+
+# Adding one package to one module yaml silently falsifies any prose that
+# quotes the total. It did: declaring man-db took the count from 276 to 277
+# and left under-the-hood.html saying 276 in the same commit.
+#
+# The number is MARKED in the HTML rather than matched in prose --
+# <span data-count="declared-packages">277</span> -- because the same page
+# also says "31 packages" about a rebuild cost and "21 packages" in an
+# example prompt, and a `[0-9]+ packages` pattern would fail on both. That
+# is the mistake the steps check made first; not repeating it.
+if ! command -v pacman >/dev/null 2>&1; then
+  skip "declared package count (not an Arch system)"
+else
+  _pkg_declared="$(./installScripts/wizard.sh --audit 2>/dev/null | grep -oE 'declared: [0-9]+' | grep -oE '[0-9]+' | head -1)"
+  if [[ -z "$_pkg_declared" ]]; then
+    skip "declared package count (audit produced no total)"
+  else
+    _pkg_bad=0
+    _pkg_seen=0
+    while IFS=: read -r _f _claim; do
+      [[ -z "$_claim" ]] && continue
+      _pkg_seen=$(( _pkg_seen + 1 ))
+      if [[ "$_claim" != "$_pkg_declared" ]]; then
+        fail "$_f says $_claim declared packages; the audit counts $_pkg_declared"
+        _pkg_bad=1
+      fi
+    done < <(grep -roE 'data-count="declared-packages">[0-9]+' docs/*.html 2>/dev/null \
+               | sed -E 's/:.*>([0-9]+)$/:\1/')
+    if (( _pkg_bad )); then
+      :
+    elif (( _pkg_seen == 0 )); then
+      pass "$_pkg_declared declared; no page quotes the total"
+    else
+      pass "$_pkg_declared declared, and all $_pkg_seen page(s) quoting it agree"
+    fi
+  fi
+fi
+
 # ── result ───────────────────────────────────────────────────────────
 echo
 if (( FAIL )); then
