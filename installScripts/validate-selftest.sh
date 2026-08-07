@@ -45,6 +45,7 @@ CASES=(
 "wizard-count|installScripts/wizard.sh|s=s.replace('  whisper-fast mic-gain scrcpy','  whisper-fast mic-gain scrcpy newmodule',1)|wizard.sh runs 48"
 "wizard-order|docs/install-git.html|s=s.replace('<tr><td>2</td><td><code>bootstrap</code></td>','<tr><td>2</td><td><code>zzz-wrong</code></td>',1)|disagrees with MOD_ORDER"
 "nvim-disabled|.config/nvim/lua/plugins/themes.lua|s=s.replace('{ \"Mofiqul/dracula.nvim\", lazy = true }','{ \"Mofiqul/dracula.nvim\", lazy = true, enabled = false }',1)|enabled = false"
+"pkg-count|docs/under-the-hood.html|s=s.replace('data-count=\"declared-packages\">277','data-count=\"declared-packages\">999',1)|says 999 declared packages"
 "nvim-map|.config/nvim/lua/config/theme_sync.lua|s=s.replace('  oxocarbon = \"oxocarbon\",','  oxocarbon = \"oxocarbon\",\\n  bogus = \"bogus-scheme\",',1)|no entry in plugin_of"
 )
 
@@ -66,6 +67,26 @@ setup() {
   # and nothing in ~ may point into it
   local probe; probe="$(readlink -f "$HOME/.config/kitty" 2>/dev/null || true)"
   [[ "$probe" != "$wt_real"/* ]] || { printf '%s✗%s ~/.config points into the worktree — refusing\n' "$r" "$o" >&2; exit 2; }
+
+  # Test what is about to be COMMITTED, not the last commit. A worktree is
+  # created at HEAD, so a check still sitting uncommitted in the working
+  # tree is simply absent from it -- and the case for that check then
+  # "passes validate", which reads exactly like the check being broken. It
+  # cost a debugging detour to notice the worktree was running an older
+  # validate.sh than the one being tested.
+  if ! git -C "$REPO" diff --quiet HEAD -- 2>/dev/null; then
+    git -C "$REPO" diff HEAD -- | git -C "$WT" apply --allow-empty - \
+      || { printf '%s✗%s could not carry uncommitted changes into the worktree\n' "$r" "$o" >&2; exit 2; }
+    printf '%s   carried uncommitted changes into the worktree%s\n' "$d" "$o"
+  fi
+
+  # Freeze whatever the worktree now holds as ITS baseline. run_case reverts
+  # with `git checkout -- .` between cases, which restores HEAD -- and HEAD
+  # does not contain the carried changes, so the first revert would delete
+  # the very check being tested and every later case would "pass validate".
+  git -C "$WT" add -A
+  git -C "$WT" -c user.name=selftest -c user.email=selftest@local \
+      commit -q --allow-empty -m 'selftest baseline (throwaway worktree)'
 }
 teardown() { git -C "$REPO" worktree remove --force "$WT" 2>/dev/null || true; rm -rf "$WT"; }
 trap teardown EXIT
