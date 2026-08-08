@@ -42,6 +42,14 @@ return {
   -- markdown extras (since you already render)
   { "markdown-preview.nvim", enabled = false },
 
+  -- One surround plugin, not two. nvim-surround (plugins/surround.lua, the
+  -- classic ys/ds/cs verbs) and mini.surround were both loaded: mini.surround
+  -- arrives via the "coding.mini-surround" entry in lazyvim.json and binds a
+  -- second, parallel set of verbs under gsa/gsd/gsr plus its own textobjects.
+  -- Nothing collided, but every surround action had two spellings and only one
+  -- of them was configured here. Keeping the one this config actually sets up.
+  { "nvim-mini/mini.surround", enabled = false },
+
   { "rcarriga/nvim-notify", enabled = false },
 
   { "folke/which-key.nvim", enabled = false },

@@ -64,7 +64,11 @@ opt.foldenable = true
 -- NOTE: 'lazyredraw' was removed here on purpose: it suppresses redraws
 -- during async work and causes stale/ghost frames with image.nvim's kitty
 -- backend. 'ttyfast' was removed too -- it is a no-op on Neovim.
-opt.updatetime = 50
+-- 200ms, not 50. updatetime drives CursorHold, which LSP document-highlight,
+-- diagnostic floats and the TODOS.md :checktime autocmd all hang off. At 50ms
+-- those re-fire almost continuously while reading, which shows up as
+-- flickering reference highlights and steady background work for no benefit.
+opt.updatetime = 200
 opt.timeoutlen = 300
 
 -- Clipboard

@@ -14,7 +14,20 @@ return {
 
     -- ❌ disable visual movement effects
     indent = { enabled = false },
-    statuscolumn = { enabled = false },
+
+    -- `enabled = false` only stops snacks installing the option itself;
+    -- LazyVim points 'statuscolumn' at LazyVim.statuscolumn(), which calls
+    -- snacks.statuscolumn.get() regardless. So this block IS live -- it is
+    -- what draws the fold arrow.
+    --
+    -- folds.open defaults to false, so only CLOSED folds got an arrow. In an
+    -- outline that reads as a bug: one heading showed the arrow while the
+    -- heading right below it showed nothing, purely because its own body was
+    -- already expanded. Drawing both states keeps the column consistent.
+    statuscolumn = {
+      enabled = false,
+      folds = { open = true },
+    },
 
     dashboard = {
 

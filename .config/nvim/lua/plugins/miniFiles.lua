@@ -90,6 +90,35 @@ return {
     set_highlights()
     vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = set_highlights })
 
+    -- Plain hjkl stay the explorer's navigation keys (go in / go out), which
+    -- leaves no way to walk the cursor across a file name to edit it. So
+    -- <C-hjkl> are plain cursor motions here: left/down/up/right, in both
+    -- normal and insert mode.
+    --
+    -- Buffer-local rather than `opts.mappings`, which only knows about
+    -- mini.files' own actions and has one key slot per action.
+    --
+    -- kitty + Neovim speak the kitty keyboard protocol, so <C-h> arrives
+    -- distinct from <BS> (which stays bound to `reset`).
+    vim.api.nvim_create_autocmd("User", {
+      group = group,
+      pattern = "MiniFilesBufferCreate",
+      callback = function(args)
+        local buf = args.data and args.data.buf_id
+        if not buf then
+          return
+        end
+        local motions = { ["<C-h>"] = "<Left>", ["<C-j>"] = "<Down>", ["<C-k>"] = "<Up>", ["<C-l>"] = "<Right>" }
+        for lhs, rhs in pairs(motions) do
+          vim.keymap.set({ "n", "i" }, lhs, rhs, {
+            buffer = buf,
+            desc = "Cursor " .. rhs:sub(2, -2):lower(),
+            nowait = true,
+          })
+        end
+      end,
+    })
+
     -- Fires once per directory buffer render -- exactly when the listing
     -- needs its markers (re)drawn.
     vim.api.nvim_create_autocmd("User", {
@@ -105,7 +134,8 @@ return {
   end,
 
   opts = function(_, opts)
-    -- Your custom mappings (These are fine)
+    -- The <C-hjkl> navigation duplicates of these live in the
+    -- MiniFilesBufferCreate autocmd at the top of this file.
     opts.mappings = vim.tbl_deep_extend("force", opts.mappings or {}, {
       close = "q",
       go_in = "l",

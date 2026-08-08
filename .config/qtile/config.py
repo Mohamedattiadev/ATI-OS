@@ -7069,6 +7069,79 @@ groups.append(
     )
 )
 
+
+# --------------------------------------------------------------------------
+# Keep dropdowns above fullscreen windows.
+#
+# Symptom: with a dropdown open, fullscreening any other window buried the
+# dropdown for good -- toggling it off and on did not lift it back, the
+# fullscreen window had to be returned to normal first.
+#
+# qtile 0.36 already intends the opposite. get_layering_information() in
+# backend/x11/window.py sorts windows into six stacking layers and reserves
+# the TOP one for scratchpads -- its own docstring: "qtile adds an additional
+# layer so that scratchpad windows are placed above all others, always". A
+# focused fullscreen window sits in the layer just below that. Get the layer
+# right and the rest of change_layer() does the correct thing on its own: a
+# window raising itself into a layer it now occupies alone is explicitly
+# placed "below the first window in the higher layers".
+#
+# That top layer never engages here, for two independent reasons:
+#
+#   1. It is chosen by
+#          isinstance(qtile.groups_map.get(self.group), ScratchPad)
+#      but groups_map is keyed by group NAME (dict[str, _Group]) while
+#      self.group is a _Group object, so .get() always returns None.
+#      Confirmed against the running instance -- groups_map.get(g) was None
+#      for all eleven groups, the ScratchPad included.
+#
+#   2. Even keyed correctly it would still miss the case that matters: a
+#      *shown* dropdown does not live in the scratchpad group. ScratchPad's
+#      show() calls win.togroup() to pull the window into the current group
+#      and only sends it back on hide(). The layer would apply exactly while
+#      the window is invisible, and never while it is on screen.
+#
+# So ownership is decided from the ScratchPad's `dropdowns` registry, which
+# tracks the window whichever group it is currently parked in. The value
+# returned keeps the shape the callers compare against: a 6-tuple with one
+# True, ordered so that a SMALLER tuple is a higher layer (index 0 is
+# _NET_WM_TYPE_DESKTOP at the bottom), which puts index 5 on top.
+#
+# X11 only -- guarded so that the config still loads under the Wayland
+# backend, where this module does not exist.
+# --------------------------------------------------------------------------
+try:
+    from libqtile.backend.x11.window import _Window as _X11Window
+    from libqtile.scratchpad import ScratchPad as _ScratchPadGroup
+except ImportError:  # pragma: no cover - wayland backend
+    pass
+else:
+    # The guard matters because config.py is re-executed on every qtile
+    # restart: without it each restart would wrap the previous wrapper.
+    if not getattr(_X11Window.get_layering_information, "_scratchpads_on_top", False):
+        _SCRATCHPAD_LAYER = (False, False, False, False, False, True)
+        _layering_unpatched = _X11Window.get_layering_information
+
+        def _owned_by_scratchpad(win):
+            qtile_obj = getattr(win, "qtile", None)
+            if qtile_obj is None:
+                return False
+            for grp in qtile_obj.groups:
+                if isinstance(grp, _ScratchPadGroup):
+                    for toggler in grp.dropdowns.values():
+                        if toggler.window is win:
+                            return True
+            return False
+
+        def _layering_with_scratchpads_on_top(self):
+            if _owned_by_scratchpad(self):
+                return _SCRATCHPAD_LAYER
+            return _layering_unpatched(self)
+
+        _layering_with_scratchpads_on_top._scratchpads_on_top = True
+        _X11Window.get_layering_information = _layering_with_scratchpads_on_top
+
+
 keys.extend(
     [
         Key([mod2], "1", lazy.group["scratchpad"].dropdown_toggle("term1")),
