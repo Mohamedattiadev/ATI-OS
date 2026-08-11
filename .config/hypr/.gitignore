@@ -1,0 +1,4 @@
+# Written by AtiScriptsV1/theme-apply on every theme change — generated
+# output, not configuration. looks.conf sources it and falls back to its
+# own defaults when it is absent, so a fresh clone works without it.
+colors.conf
