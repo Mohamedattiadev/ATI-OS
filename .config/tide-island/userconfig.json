@@ -1,0 +1,38 @@
+{
+  "_comment": "Tide Island, restyled toward hypr/DESIGN-SPEC.md. Read by tide-island's UserConfigBackend from ~/.config/tide-island/userconfig.json. Keys and defaults come from backend/UserConfigBackend.cpp; anything omitted keeps its upstream default. Values that DIVERGE from upstream are the ones carrying spec intent, and each is noted in hypr/DESIGN-SPEC.md.",
+
+  "_geometry": "Spec: collapsed 150x38 pill, 11px below the top edge in floating form. Upstream defaults are 140x38 at margin 4, so only width and margin move. Height already matched.",
+  "islandWidth": 150,
+  "islandHeight": 38,
+  "islandTopMargin": 11,
+  "islandPositionX": 50,
+
+  "_exclusiveZone": "38 height + 11 margin = 49, so windows tile below the island instead of under it. This pill IS the whole top surface - there is no separate bar to account for.",
+  "islandExclusiveZone": 49,
+
+  "_opacity": "Spec is emphatic that the shape is hardcoded #000000 and NOT theme-tinted: it is imitating bezel, and 'tint it and it stops being a notch and becomes a colored blob'. Upstream default 60 is translucent, so this is a real divergence. Theming goes INSIDE the island, never on the shell shape.",
+  "islandBackgroundOpacity": 100,
+
+  "_resting": "Spec's resting state is exactly two things: the clock and a 4-bar EQ that animates only while music plays. Workspaces, tray, battery and Wi-Fi are deliberately deleted - 'it earned permanent screen real estate by being occasionally relevant. That's a terrible trade.' Auto-hide is off because the pill is meant to be permanently present, not summoned.",
+  "islandAutoHideEnabled": false,
+  "islandShowWorkspaceOnAutoHide": false,
+
+  "_expansion": "Spec: expands on hover, or click to pin. Media and notifications explicitly do NOT expand it - they swap the content while the shape stays put ('different mechanism entirely'), which is what disableAutoExpandOnTrackChange buys.",
+  "hoverExpandAction": 1,
+  "disableAutoExpandOnTrackChange": true,
+
+  "_typography": "Spec substitutes Inter for SF Pro Text and Inter Display for SF Pro Display, with Inter Medium for body weight. inter-font provides both cuts from one Inter.ttc, and fc-match resolves all three names to themselves - verified, because a wrong family name silently becomes Noto Sans CJK with no warning.",
+  "heroFontFamily": "Inter Display",
+  "timeFontFamily": "Inter Display",
+  "textFontFamily": "Inter Medium",
+  "iconFontFamily": "JetBrainsMono Nerd Font",
+  "titleFontSize": 20,
+  "bodyFontSize": 16,
+  "iconFontSize": 18,
+
+  "_clock": "24-hour, matching hyprlock.conf's `date +%H:%M`. Upstream defaults to 12.",
+  "clockFormat": "24",
+
+  "_wallpaper": "Left on upstream defaults ON PURPOSE. AtiScriptsV1/theme-apply already owns wallpaper and pywal for both sessions, and hypr/scripts/wallpaper-sync.sh feeds hyprpaper from the same cache. Setting wallpaperPywalEnabled here would give two independent things opinions about the same wallpaper.",
+  "wallpaperPywalEnabled": false
+}

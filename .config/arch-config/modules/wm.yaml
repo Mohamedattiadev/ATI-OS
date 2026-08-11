@@ -63,6 +63,23 @@ packages:
   # the next free wayland-N socket), point wtype at that display, and only
   # the nested compositor locks. See MIGRATION.md.
   - wtype
+  # The bar. Hyprland has no built-in one, and qtile's was 7,900 lines of
+  # Python widgets that do not port -- see hypr/MIGRATION.md.
+  #
+  # tide-island is an AUR package (the wizard installs modules with yay,
+  # so repo and AUR entries sit in the same list). It is a compiled
+  # C++/Qt QML shell, NOT a drop-in Quickshell config directory: its
+  # shell.qml imports the IslandBackend module, so it has to be built and
+  # installed rather than pointed at with `qs -c`. Ours is only the
+  # config, ~/.config/tide-island/userconfig.json, which is stowed from
+  # this repo and carries the hypr/DESIGN-SPEC.md restyle.
+  #
+  # quickshell is listed explicitly even though tide-island pulls it in:
+  # it is the runtime the bar executes under (`quickshell -p
+  # /usr/share/tide-island`), and any future shell work depends on it
+  # directly rather than transitively.
+  - quickshell
+  - tide-island
   # keyd remaps Caps to Alt at the evdev layer, BELOW the display server.
   # This laptop's physical Alt is dead in hardware (see hypr/input.conf),
   # and ~40 bindings use Alt. X11 solved it with ~/.Xmodmap, which does
