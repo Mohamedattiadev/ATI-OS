@@ -146,6 +146,62 @@ property, so the paired `bind = , X, submap, reset` lines throughout
 verified in `KeybindManager.cpp` that two binds on one key both fire, in
 config order — just more verbose than they need to be.
 
+### SUPER+P typing a literal "p" — cause identified, fix applied
+
+Reported symptom: `$mod P` types a `p` into the focused window instead of
+entering the Rofi chord. Earlier attempts could not reproduce it, because
+`wtype` cannot trigger Hyprland keybinds at all — it creates and destroys a
+virtual keyboard, which resets the submap, so every synthetic press looks
+like a failure whether or not one exists.
+
+**What was ruled out**, all measured against the running compositor:
+
+| suspect | evidence |
+|---|---|
+| a shadowing duplicate bind | `hyprctl binds` has exactly ONE bind on modmask 64 + P, and it is `submap, rofi`. The other P binds are modmask 8 (`$alt`, clock_popup) and two inside the rofi submap at modmask 0 |
+| the bind not being loaded | it is present in `hyprctl binds` after every reload |
+| a non-US layout changing the keysym | `input:resolve_binds_by_sym` is **0**, so binds resolve by KEYCODE and the four configured layouts cannot affect them. All eight keyboards also report `English (US)` |
+| Caps Lock as a modifier | keyd remaps Caps to `leftalt`, so it can never latch |
+| NumLock as a modifier | `numlock_by_default` is 0 and both numlock LEDs read 0 |
+
+**What actually explains it**, and it is a behavioural difference between
+qtile chords and Hyprland submaps that this config had not accounted for:
+
+qtile's chords ran with `swallow=True`, which ate **every** key while the
+chord was open. Hyprland submaps do not. A key with no bind in the active
+submap is passed straight through to the focused window.
+
+Inside the `rofi` submap there was **no SUPER-modified bind of any kind**.
+So SUPER+P while already in that submap matches nothing, leaks to the
+client, and types a `p` — which is exactly the report. And it repeats
+forever, because pressing it again does the same thing and never leaves.
+This submap is also the easiest one to get stuck in: `q` is `dm-logout`
+here, faithful to qtile, so `Escape` was the only exit.
+
+**Fix: every submap's own entry combination now exits it.** `$mod P` inside
+`rofi`, `$mod R` inside `resize`, `$mod SHIFT W` inside `draw`, `$mod SPACE`
+inside `lang` — `passthrough` already had `$mod F12`. Each is a toggle now
+and can never be the key that leaks. This is also what qtile itself did for
+the modes it put on a single keystroke: Audio-Mode and Display-Mode each
+rebound `alt+3` / `alt+4` to close-and-ungrab, with the comment "so alt+3
+toggles".
+
+**Honest status: the cause is not proved by reproduction, only by
+elimination plus a mechanism that produces exactly the reported symptom.**
+The fix is correct regardless — an entry key that does not toggle is a bug
+on its own terms — but if a bare `p` still appears, the next step is to
+watch the event socket while pressing the key for real:
+
+```
+socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock
+# or, since socat is not installed here, scripts/submap-indicator.sh's
+# python reader is the same three lines
+```
+
+A `submap>>rofi` line means the bind fired and the `p` came from somewhere
+else; no line at all means the modifier is not reaching the compositor,
+which points at the keyboard or the keyd layer rather than at this config.
+
 ### Window borders were green in every theme
 
 The complaint that borders "don't follow the theme" was real, and the
