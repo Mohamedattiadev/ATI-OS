@@ -92,6 +92,11 @@ brave-profiles
 .config/gtk-3.0/gtk.css
 .config/gtk-4.0/gtk.css
 .config/gtk-3.0/bookmarks
+# Tide Island joins them for the same reason: its UserConfigBackend reads
+# wallpaperLibraryPath as a literal string with no tilde or variable
+# expansion, so an unexpanded ~ makes the picker open empty saying "No
+# wallpapers found".
+.config/tide-island/userconfig.json
 
 # Runtime state with this machine's paths baked in. nitrogen has no caller
 # anywhere in the repo (the wallpaper is set by xwallpaper from ~/.cache/wall

@@ -97,6 +97,32 @@ exactly 60%x60% @ 20%,10%.
   `qutebrowser`. `toggle-app.sh` matches unanchored so it works, but any
   `match:class ^(qutebrowser)$` rule added later will not fire.
 
+### Chords were invisible; now they announce themselves
+
+qtile's `KeyChord` named the active mode in the bar. Hyprland submaps
+give no feedback whatsoever — the compositor just starts swallowing
+keys, and the only way to tell you are in one is to press something.
+
+`scripts/submap-indicator.sh` listens on Hyprland's event socket
+(`submap>>name` entering, `submap>>` leaving) and raises a
+**non-expiring** dunst notification naming the mode and its keys,
+cleared the instant the submap resets. Non-expiring is the point: it is
+a mode indicator, not a toast.
+
+It lands **in the island** for free, because Tide Island renders
+notifications in its capsule — so the mode shows up where the bar used
+to say it, without forking anything.
+
+The socket is read with python3, not socat: socat is not installed here,
+and adding a declared package for one `read` on a unix socket is a poor
+trade when python3 is already a hard dependency.
+
+Note for future work: Hyprland 0.56 has a per-bind `submap.reset`
+property, so the paired `bind = , X, submap, reset` lines throughout
+`submaps.conf` are redundant with a native feature. They are NOT a bug —
+verified in `KeybindManager.cpp` that two binds on one key both fire, in
+config order — just more verbose than they need to be.
+
 ### Window borders were green in every theme
 
 The complaint that borders "don't follow the theme" was real, and the

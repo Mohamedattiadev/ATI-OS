@@ -808,7 +808,8 @@ step_paths() {
     "$DOTFILES_DIR/.config/chromium-flags.conf.tmpl" \
     "$DOTFILES_DIR/.config/gtk-3.0/gtk.css.tmpl" \
     "$DOTFILES_DIR/.config/gtk-4.0/gtk.css.tmpl" \
-    "$DOTFILES_DIR/.config/gtk-3.0/bookmarks.tmpl"
+    "$DOTFILES_DIR/.config/gtk-3.0/bookmarks.tmpl" \
+    "$DOTFILES_DIR/.config/tide-island/userconfig.json.tmpl"
   do
     [[ -f "$src" ]] || { _WARN "missing template $src"; continue; }
     dst="$HOME/.config/${src#"$DOTFILES_DIR"/.config/}"
