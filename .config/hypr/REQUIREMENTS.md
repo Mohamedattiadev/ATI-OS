@@ -504,7 +504,46 @@ on the list.
 
 ## 5. Circular theme-change animation
 
-**Status: NOT STARTED**
+**Status: DONE.** `tide-island-fork/qml/theme/ThemeTransitionWindow.qml`,
+one `PanelWindow` per screen, driven from `shell.qml`'s
+`startThemeTransition()` and exposed as `tide applyThemeAnimated <theme>`.
+The island's theme picker goes through it; the rofi `theme-toggle` can be
+pointed at the same IPC whenever you want the animation there too.
+
+All five of the video author's traps are implemented and named at the site
+— JPEG q85, the 700 ms safety timer, one boolean for both directions, the
+90 ms warm-up, and barely-above-zero opacity while idle.
+
+Two things learned building it that the spec does not mention:
+
+- **The picker cannot own the animation.** It is a `Loader` that unloads
+  when the island leaves the picker state, and the first thing a theme
+  change does is close the picker — so an animation owned by its trigger is
+  destroyed on frame one. It lives in `shellRoot`.
+- **The animation must own the apply.** `theme-apply` runs *underneath* the
+  frozen frame, after the capture. Letting the picker also run it repaints
+  the desktop before the screenshot and there is nothing left to reveal.
+
+`OpacityMask { invert: true }` from `Qt5Compat.GraphicalEffects` is the
+whole mechanism: a growing black circle in the mask becomes a growing hole
+in the frozen frame. Verified in a standalone `qml6` window before it went
+anywhere near the shell — centre transparent, corners opaque source —
+because a mistake here paints an opaque sheet over the entire desktop.
+
+**Verifying it needs a trick, and the trick is worth writing down.** The
+reveal is invisible to a screenshot under normal conditions, and that is
+correct behaviour, not a bug: outside the hole you see a frozen picture of
+the desktop and inside it you see the live desktop, and for the first half
+second those are the same image. Force them apart — swap the wallpaper the
+instant the overlay's layer surface appears — and the circle becomes the
+only place the new wallpaper shows. Measured: the
+`quickshell-theme-transition` layer is up for ~600 ms, matching capture +
+90 ms + 620 ms, and a frame grabbed right after it appears still shows the
+OLD wallpaper that hyprpaper had already been told to replace.
+
+Original notes below.
+
+**Was: NOT STARTED**
 
 Source: [Aylur/dotfiles](https://github.com/Aylur/dotfiles) → the shell is
 **[Marble Shell](https://github.com/Aylur/marble-shell)**, built on **AGS**

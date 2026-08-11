@@ -32,6 +32,15 @@ FocusScope {
 
     signal closeRequested
 
+    // FORK: when the shell can drive the circular reveal (REQUIREMENTS.md
+    // item 5), the picker hands the theme name over instead of running
+    // theme-apply itself — the animation has to OWN the apply, because it
+    // freezes the screen first and applies underneath the frozen frame.
+    // Running it here as well would repaint the desktop before the capture
+    // and there would be nothing left to reveal.
+    signal themeRequested(string name)
+    property bool useTransition: false
+
     property bool showCondition: false
     property string textFontFamily: ""
     property string heroFontFamily: ""
@@ -84,6 +93,17 @@ FocusScope {
         // while the real work happens.
         root.pendingTheme = name;
         root.errorText = "";
+
+        if (root.useTransition) {
+            root.themeRequested(name);
+            // The picker cannot watch the apply's exit code any more — the
+            // shell owns the process now — so the highlight is reconciled on
+            // a timer instead. Long enough for theme-apply's slowest run plus
+            // the 620ms reveal.
+            reconcileTimer.restart();
+            return;
+        }
+
         applyProcess.command = [Quickshell.env("HOME") + "/.dotfiles/.config/AtiScriptsV1/theme-apply", name];
         applyProcess.running = true;
     }
@@ -122,6 +142,13 @@ FocusScope {
                 }
             }
         }
+    }
+
+    Timer {
+        id: reconcileTimer
+        interval: 2600
+        repeat: false
+        onTriggered: themeListProcess.running = true
     }
 
     Process {

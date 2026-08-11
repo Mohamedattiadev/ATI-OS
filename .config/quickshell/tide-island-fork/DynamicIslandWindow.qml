@@ -2917,6 +2917,17 @@ PanelWindow {
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
                         showCondition: islandContainer.themePickerLayerVisible
+                        // Guarded on the function existing rather than on the
+                        // controller existing: an older shell.qml (or a
+                        // /usr/share/tide-island left over after an upgrade
+                        // wiped the fork) still has shellRootController, and
+                        // calling a method it does not have would take the
+                        // picker down with a TypeError on click.
+                        useTransition: root.shellRootController
+                            && typeof root.shellRootController.startThemeTransition === "function"
+                        onThemeRequested: function(name) {
+                            root.shellRootController.startThemeTransition(name);
+                        }
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }

@@ -3,6 +3,9 @@ import Quickshell
 import Quickshell.Io
 import IslandBackend
 
+// FORK: the circular theme-change reveal — REQUIREMENTS.md item 5.
+import "qml/theme"
+
 Scope {
     id: shellRoot
 
@@ -154,6 +157,48 @@ Scope {
             callback(fallbackWindow);
     }
 
+    // FORK: REQUIREMENTS.md item 5, the circular theme-change animation.
+    //
+    // It lives in shellRoot rather than inside the theme picker because the
+    // picker is a Loader that UNLOADS when the island leaves the picker
+    // state — and the very first thing a theme change does is close the
+    // picker. An animation owned by the thing that triggers it would be
+    // destroyed on frame one.
+    function startThemeTransition(themeName) {
+        if (!themeName)
+            return;
+        const windows = themeTransitionVariants.instances
+            ? themeTransitionVariants.instances : [];
+        if (windows.length === 0)
+            return;
+        for (let index = 0; index < windows.length; index++) {
+            if (windows[index])
+                windows[index].begin(String(themeName));
+        }
+    }
+
+    Variants {
+        id: themeTransitionVariants
+
+        model: Quickshell.screens
+
+        ThemeTransitionWindow {
+            required property var modelData
+
+            screen: modelData
+            outputName: modelData && modelData.name !== undefined
+                ? String(modelData.name) : ""
+            themeApplyPath: Quickshell.env("HOME")
+                + "/.dotfiles/.config/AtiScriptsV1/theme-apply"
+            // Only the first screen's overlay runs theme-apply; see the note
+            // in ThemeTransitionWindow.qml. Compared by identity against the
+            // screen list rather than by an index property, because Variants
+            // gives no index.
+            ownsThemeApply: Quickshell.screens.length === 0
+                || modelData === Quickshell.screens[0]
+        }
+    }
+
     IpcHandler {
         target: "overview"
 
@@ -256,6 +301,14 @@ Scope {
         // alongside toggleWallpaperPicker.
         function toggleThemePicker() {
             shellRoot.forFocusedWindow((window) => window.toggleThemePickerWindow());
+        }
+
+        // FORK: apply a theme THROUGH the circular reveal. This is what the
+        // theme picker calls instead of running theme-apply itself, and it is
+        // exposed on the IPC so `theme-toggle` (the rofi picker, which the
+        // qtile session shares) can get the same animation later.
+        function applyThemeAnimated(theme: string) {
+            shellRoot.startThemeTransition(theme);
         }
 
         // FORK: arbitrary text in the island, which upstream has no way to
