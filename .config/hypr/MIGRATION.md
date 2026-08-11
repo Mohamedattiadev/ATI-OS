@@ -434,11 +434,45 @@ to translate.
 | WifiPopup + WifiQR | 14 | `nmtui`, `rofi-network-manager` |
 | BluetoothPopup | 12 | `blueman-manager`, `rofi-bluetooth` |
 | WallpaperPopup | 9 | `waypaper` |
-| Cheatsheets (Qtile/Vim/Fish) | 16 | rofi-based list, or rebuild in QML |
+| Cheatsheets (Qtile/Vim/Fish) | 16 | **DONE** — rofi, see below |
 | UpdatesPopup | — | `qupdate.py` daemon still runs |
 
 These are the natural second phase, rebuilt as Quickshell/QML pages inside
 the Tide-island bar — which is where they arguably belong anyway.
+
+### Cheatsheets are done, and they are rofi on purpose
+
+REQUIREMENTS.md item 3 sets the rule — rebuild the *interactive* popups in
+the shell, leave the *launcher* problems on rofi — and a cheatsheet is
+firmly the second kind. It is a list you read and dismiss. rofi already
+does that, under XWayland, with fuzzy search, for nothing.
+
+`scripts/cheatsheet.py`, on qtile's `$mod SHIFT K`, with `k` / `v` / `f`.
+
+Four of qtile's sixteen bindings (`j`, `k`, `Tab`, `Shift+Tab`) existed
+only to move a viewport around 129 rows of text. They are deliberately
+**not** reproduced: rofi replaces all four with typing what you are looking
+for, which is strictly better than paging.
+
+Two things worth keeping:
+
+- **The Hyprland sheet is generated from `hyprctl binds` at the moment you
+  press the key**, not from a list and not by parsing `binds.conf`. qtile's
+  `QtileCheatsheet.py` carried 129 hand-maintained rows that were only as
+  true as the last person to update them. Reading the compositor's own
+  resolved table means the sheet cannot drift — 181 rows today, every
+  submap included. It labels ALT as Caps Lock in the header, because on
+  this laptop that is what ALT physically is.
+- **The vim and fish sheets are parsed out of the qtile popups with `ast`,
+  never imported.** `popups/VimCheatsheet.py` imports `qtile_extras` at
+  module level and builds a popup as a side effect, so importing it from
+  outside qtile fails and importing it from inside would draw a popup.
+  `ast.literal_eval` on the single `CHEATSHEET` assignment reads the data
+  and runs none of the file — one copy of the content, and
+  `~/.config/qtile` stays read-only.
+
+Verified by opening all three and reading them: 181 Hyprland rows, 89 vim,
+60 fish, markup intact, search working.
 
 ### DisplayPopup is done, and it was the urgent one
 
