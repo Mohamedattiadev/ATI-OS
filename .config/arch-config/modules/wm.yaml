@@ -29,3 +29,36 @@ packages:
   - qrencode
   - blueman
   - syncthing
+
+  # ---------------------------------------------------------------
+  # Hyprland — the parallel Wayland session (see ../../hypr/).
+  #
+  # Declared here rather than in a module of its own so the existing
+  # wizard step list and the docs claims about it stay accurate; this
+  # is the window-manager module and Hyprland is a window manager.
+  #
+  # qtile remains the default session. Nothing here replaces it: both
+  # are selectable at login and share theme state through theme-apply.
+  # ---------------------------------------------------------------
+  - hyprland
+  - xdg-desktop-portal-hyprland   # screen sharing, file pickers, and the
+                                  # portal every Electron app asks for
+  - hyprpaper                     # wallpaper; fed by hypr/scripts/wallpaper-sync.sh
+  - hypridle
+  - hyprlock
+  - qt5-wayland                   # without these, Qt apps fall back to
+  - qt6-wayland                   # XWayland and ignore fractional scaling
+  - polkit-kde-agent               # the auth prompt; X11 used lxqt-policykit
+  # grim + slurp replace maim/xclip for the Print-key screenshot path.
+  # There is no Wayland equivalent of a plain X11 screen grab, so losing
+  # either one breaks the binding outright rather than degrading it.
+  - grim
+  - slurp
+  # keyd remaps Caps to Alt at the evdev layer, BELOW the display server.
+  # This laptop's physical Alt is dead in hardware (see hypr/input.conf),
+  # and ~40 bindings use Alt. X11 solved it with ~/.Xmodmap, which does
+  # not exist on Wayland, and xkb ships no caps:alt option. Doing it in
+  # evdev means one remap serves both sessions instead of two configs
+  # drifting apart -- so this is required for Hyprland and useful for
+  # qtile, not optional for either.
+  - keyd

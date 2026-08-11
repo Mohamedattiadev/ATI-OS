@@ -22,9 +22,33 @@ Deferred breaks down as 121 popup-chord bindings, 18 root bindings, and 3
 nested chord entries. Blocked is Hintium (6 root + all 19 of Hint-Mode)
 plus the xmodmap reapply binding.
 
-Nothing in this config has been executed. Hyprland is not installed; no
-part of it has been parsed by Hyprland itself. Treat every line as
-unverified until first boot.
+**Hyprland 0.56.2 is installed, and `Hyprland --verify-config` reports
+`config ok`.** The config parses. It has still never been *run*, so
+runtime behaviour — which `class:` matchers actually fire, whether the
+scratchpads land where intended — is unverified until first login.
+
+## Hyprland 0.56 API changes this config had to absorb
+
+Written against pre-0.5x documentation, corrected against the binary.
+Recorded here because none of it is obvious from an error message.
+
+| Was | Now |
+|---|---|
+| `windowrulev2 = ...` | `windowrule = ...` (v2 merged in, v1 name kept) |
+| `windowrule = float, class:^(x)$` | `windowrule = float true, match:class ^(x)$` |
+| `noblur` / `nofocus` | `no_blur true` / `no_focus true` |
+| `suppressevent` / `idleinhibit` | `suppress_event` / `idle_inhibit` |
+| `xwayland:1`, `fullscreen:1` | `match:xwayland true`, `match:fullscreen true` |
+| `togglesplit` dispatcher | `layoutmsg, togglesplit` |
+| `splitratio` dispatcher | `layoutmsg, splitratio ±n` |
+| `gestures { workspace_swipe = true }` | `gesture = 3, horizontal, workspace` |
+| `misc:vfr` | removed; the renderer handles it |
+| `dwindle:pseudotile` | removed as an option; `pseudo` is a dispatcher |
+
+The rule change is the big one: **every rule now needs an explicit
+value, and every matcher is prefixed `match:`**. A bare `float` fails
+with "invalid field float: missing a value", which does not hint that
+the matcher syntax changed too. 57 rules were converted.
 
 ## What works on first boot
 

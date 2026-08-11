@@ -243,7 +243,7 @@ declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
   sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts hintium simplenote ui-scale githooks
   pacman-guard boot-fallback boot-splash login-shell
-  touchpad xinit xresources xmodmap lid image-envs flatpak piper ankiconnect vaultwarden vaultwarden-phone tmux-tpm whisper
+  touchpad xinit xresources xmodmap keyd lid image-envs flatpak piper ankiconnect vaultwarden vaultwarden-phone tmux-tpm whisper
   whisper-fast mic-gain scrcpy
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes dark-mode browser-flags browser-memory chrome-policy
@@ -277,7 +277,7 @@ MOD_ORDER=(
 # actual loss is Caps Lock itself, silently and with no tap-to-Caps
 # fallback. A stranger installing this repo should get a normal keyboard.
 # On the laptop that needs it:  ./wizard.sh --only=xmodmap
-OPTIN_MODS=(dcli-sync-extra xmodmap)
+OPTIN_MODS=(dcli-sync-extra xmodmap keyd)
 _is_optin() {
   local id m
   id="$1"
@@ -513,6 +513,7 @@ _reg login-shell       "Fish login shell"    System    "chsh to fish so the TTY 
 _reg xinit             ".xinitrc"            Dotfiles  "Auto-start qtile + picom + cursor size"                 "step_xinit"
 _reg xresources        ".Xresources"         Dotfiles  "Xcursor size 24 + Breeze theme (load via xrdb)"         "step_xresources"
 _reg xmodmap           ".Xmodmap"            Optional  "Caps fully repurposed as Alt · opt-in · one broken-Alt laptop" "step_xmodmap"
+_reg keyd              "keyd Caps→Alt"       Optional  "The same remap below the display server · works on X11 AND Wayland" "step_keyd"
 _reg lid               "Lid = ignore"        System    "Never sleep on lid close"                               "step_lid"
 _reg image-envs        "Image env"           Dotfiles  "Suppress VIPS warnings + ensure ~/tmp (fish TMPDIR)"    "step_image_envs"
 _reg flatpak           "Flatpak (legacy)"    Apps      "Uninstall-only: qdrop replaced flathub/collector"       "step_flatpak"
@@ -1384,6 +1385,46 @@ clear mod1
 keycode 66 = Alt_L
 add mod1 = Alt_L Alt_R
 XMM_EOF
+}
+step_keyd() {
+  # The same Caps->Alt remap as step_xmodmap, one layer lower.
+  #
+  # xmodmap is an X11 client: it talks to the X server, so it does
+  # nothing at all under Wayland. keyd sits on evdev, BELOW the display
+  # server, so one config serves the qtile/X11 session and the Hyprland
+  # session both -- which matters because the alternative is maintaining
+  # the remap twice and watching the two drift.
+  #
+  # Opt-in for exactly the reason .Xmodmap is: this laptop's Alt is dead
+  # in hardware and Caps is the only working Alt. On any other machine
+  # this silently takes the Caps key away.
+  #
+  # Undo with: ./wizard.sh --uninstall --only=keyd
+  #
+  # keyd writes through /dev/uinput, and dies on startup with
+  # "open uinput: No such device" if that module is not loaded. The
+  # device node can exist while the module does not, so the failure
+  # does not look like a missing module -- it looks like broken keyd.
+  # Declaring it in modules-load.d is what makes the remap survive a
+  # reboot rather than needing a modprobe every time.
+  run "echo uinput | sudo tee /etc/modules-load.d/uinput.conf > /dev/null"
+  run "sudo modprobe uinput || true"
+  run "sudo mkdir -p /etc/keyd"
+  run "sudo tee /etc/keyd/default.conf > /dev/null << 'EOF'
+[ids]
+*
+
+[main]
+capslock = leftalt
+EOF"
+  run "sudo systemctl enable --now keyd"
+  # Verify rather than assume: keyd silently does nothing if the service
+  # failed to bind the device, and the failure mode is a third of the
+  # keyboard going dead at the next login. Immediately after a kernel
+  # upgrade this WILL report inactive -- the running kernel's modules are
+  # already gone from /lib/modules, so uinput cannot load until a reboot.
+  # That case is expected and resolves itself; any other is not.
+  run "systemctl is-active --quiet keyd && echo '  keyd active' || echo '  keyd NOT active -- expected if the kernel was just upgraded (reboot); otherwise: sudo journalctl -u keyd -n20'"
 }
 step_lid() {
   # A drop-in, not `sed -i` on /etc/systemd/logind.conf.
@@ -2335,6 +2376,8 @@ preflight() {
 
 uninstall_xinit()            { run "rm -f $HOME/.xinitrc"; }
 uninstall_xmodmap()          { run "rm -f $HOME/.Xmodmap"; }
+uninstall_keyd()             { run "sudo systemctl disable --now keyd"
+                               run "sudo rm -f /etc/keyd/default.conf"; }
 # .Xresources is NOT deleted: step_xresources appends a marker-guarded
 # block to a file the user may own. Strip only our block.
 uninstall_xresources()       { run "sed -i '/^! BEGIN-WIZARD-XCURSOR\$/,/^! END-WIZARD-XCURSOR\$/d' $HOME/.Xresources 2>/dev/null || true"; }
@@ -2581,6 +2624,7 @@ UMOD_CMD[touchpad]="uninstall_touchpad"
 UMOD_CMD[xinit]="uninstall_xinit"
 UMOD_CMD[xresources]="uninstall_xresources"
 UMOD_CMD[xmodmap]="uninstall_xmodmap"
+UMOD_CMD[keyd]="uninstall_keyd"
 UMOD_CMD[lid]="uninstall_lid"
 UMOD_CMD[image-envs]="uninstall_image_envs"
 UMOD_CMD[flatpak]="uninstall_flatpak"
