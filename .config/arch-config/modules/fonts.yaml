@@ -34,3 +34,13 @@ packages:
   #     is already rendering in something other than what its config requests.
   - adwaita-fonts
   - noto-fonts
+  # Third instance of the same silent-substitution class, and the reason
+  # the rule above is worth keeping. hypr/hyprlock.conf names "Inter
+  # Medium" and "Inter Display Semibold", and DESIGN-SPEC.md specifies
+  # Inter / Inter Display throughout the notch bar -- the stated stand-in
+  # for SF Pro. Inter was installed nowhere, so `fc-match "Inter Medium"`
+  # returned Noto Sans CJK KR and the lock screen clock rendered in it,
+  # with no warning from hyprlock, fontconfig or validate.sh's config
+  # parse. One package covers both faces: Inter.ttc carries the Display
+  # cut, so "Inter Display SemiBold" resolves to itself.
+  - inter-font

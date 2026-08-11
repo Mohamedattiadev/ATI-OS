@@ -97,7 +97,99 @@ exactly 60%x60% @ 20%,10%.
   `qutebrowser`. `toggle-app.sh` matches unanchored so it works, but any
   `match:class ^(qutebrowser)$` rule added later will not fire.
 
-### hyprlock: what is and is not verified
+### Window borders were green in every theme
+
+The complaint that borders "don't follow the theme" was real, and the
+cause was in `theme-apply`, not in Hyprland. `gen_hypr_colors()` set
+`$accent` to the **green slot**, and `looks.conf` used `$accent` for
+`col.active_border`. Green is green in all 20+ palettes, so switching
+theme moved the border between shades of green and looked like nothing
+had happened.
+
+Three different things had been collapsed into one variable:
+
+| role | doomone value | who wants it |
+|---|---|---|
+| green slot | `#98be65` | nothing — this was the bug |
+| `accent_of_mode` | `#51afef` | GTK accent, qtile GroupBox, hyprlock field |
+| qtile `colors[8]` (cyan) | `#46d9ff` | the focused window border |
+
+qtile's `layout_theme` sets `border_focus = colors[8]`, which is the
+cyan slot of the 9-slot palette — not the accent. So `colors.conf` now
+generates a dedicated `$border_active` / `$border_inactive` pair, and
+`$accent` is `accent_of_mode` (correct for hyprlock's field colour).
+
+Verified by cycling themes against the live compositor:
+
+| theme | border | accent |
+|---|---|---|
+| doomone | `46d9ff` | `51afef` |
+| gruvbox | `8ec07c` | `fabd2f` |
+| nord | `88c0d0` | `88c0d0` |
+| dracula | `8be9fd` | `bd93f9` |
+
+qtile uses `border_normal = colors[1]` (the light FG slot) for unfocused
+windows. That is deliberately **not** mirrored — at `border_size 2` a
+bright border on every unfocused window reads as noise under Hyprland's
+gaps. `$border_inactive` is `$bg_alt`; swap it to `$fg` for literal
+parity.
+
+### hyprlock rejected three options without failing
+
+`hyprctl configerrors` knows nothing about `hyprlock.conf` — hyprlock
+parses it itself, at lock time, and prints to **its own stderr**, which
+nothing captures during a normal lock. It reported:
+
+```
+config option <general:grace> does not exist.
+config option <general:no_fade_in> does not exist.
+config option <general:disable_loading_bar> does not exist.
+Proceeding ignoring faulty entries
+```
+
+In 0.9.6 `grace` is a **command-line flag**, not a config option
+(`hyprlock --grace 0`); the other two were removed with no replacement.
+`hypridle.conf`'s `lock_cmd` now passes `--grace 0` explicitly. The
+valid `general:` keys are `fail_timeout`, `fractional_scaling`,
+`hide_cursor`, `ignore_empty_input`, `immediate_render`,
+`screencopy_mode`, `text_trim`.
+
+### The lock clock was drawn off-screen
+
+Label positions were `420` and `330` px, taken from the video's 2560x1440
+display. `valign = center` measures upward from the vertical centre, so
+on this 1366x768 panel the date sat at 804 — 36px above the top edge,
+invisible — and the clock was clipped. Nothing logs this. Both are now
+percentages (`26%`, `17%`), so the layout holds on either monitor.
+
+### hyprlock: VERIFIED, including the wrong password
+
+Done, and it passes. The live test does not require locking your real
+session — run a **nested Hyprland** as a window and lock only that:
+
+```
+Hyprland -c nested.conf          # nested.conf sets its own monitor +
+                                 # exec-once = hyprlock --grace 0
+WAYLAND_DISPLAY=wayland-2 wtype "wrong-password"
+WAYLAND_DISPLAY=wayland-2 wtype -k Return
+```
+
+The nested compositor takes the next free socket (`wayland-2`), and
+`wtype` drives it through `zwp_virtual_keyboard_manager_v1`, so
+hyprlock receives real keystrokes while the outer session stays
+untouched. Screenshot the nested window with `grim -g`.
+
+Result: **rejected.** hyprlock displayed `Wrong password`, stayed
+locked, and the process was still alive afterwards. Confirmed
+independently of the UI by `faillock --user ati`, which recorded the
+attempt with source `hyprlock` — proof PAM actually evaluated and
+denied it rather than the field merely clearing.
+
+Note `deny=3` / `unlock_time=600` are the defaults here, so three wrong
+attempts lock the account for ten minutes. Reset a test's counter with
+`sudo faillock --user ati --reset`.
+
+Static analysis of the PAM stack, which the above confirms:
 
 The lockout risk is cleared: `/etc/pam.d/hyprlock` exists and is the
 packaged one (`auth include login`), resolving through
@@ -113,16 +205,12 @@ auth optional                pam_permit.so
 no always-accept path — which is precisely the failure the video author
 hit with a hand-written PAM file. This config does not have his bug.
 
-**Still owed: the live wrong-password test.** It cannot be automated —
-hyprlock grabs input and Wayland forbids synthetic keystrokes — so it
-needs a human at the keyboard. Do it with a watchdog so a failure is
-self-recovering:
-
-```
-( sleep 60; pkill hyprlock ) & hyprlock
-```
-
-Type a wrong password, confirm it is rejected, then the real one.
+(An earlier draft of this file claimed the wrong-password test could not
+be automated, on the grounds that Wayland forbids synthetic keystrokes.
+That is true of the *outer* session but not of a nested compositor,
+where `wtype` is an ordinary client — hence the method above. Do NOT
+test by locking the real session: doing so once already cost a TTY
+switch to recover.)
 
 ## Hyprland 0.56 API changes this config had to absorb
 
