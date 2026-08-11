@@ -1,5 +1,8 @@
 import QtQuick
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: shell
 
@@ -10,9 +13,15 @@ Item {
     property var provider: null
     property var mainCapsule: null
     property real availableWidth: 0
-    property real detailWidth: 318
-    property real detailHeight: 404
-    property real detailGap: 16
+    // Scaled like everything else. These were missed on the first rescale
+    // pass because the property names are local to this file rather than
+    // QML's own width/height, and the symptom was specific: an unscaled
+    // 318x404 network list hanging off the side of a 310x221 control
+    // centre, nearly twice its height, with its left edge pushed to the
+    // screen edge by shownX's clamp.
+    property real detailWidth: Metrics.px(318)
+    property real detailHeight: Metrics.px(404)
+    property real detailGap: Metrics.px(16)
     property string iconFontFamily: ""
     property string textFontFamily: ""
     property string heroFontFamily: ""
@@ -24,8 +33,8 @@ Item {
     readonly property real capsuleWidth: mainCapsule ? mainCapsule.width : 0
     readonly property real capsuleHeight: mainCapsule ? mainCapsule.height : 0
     readonly property real shownX: rightSide
-        ? Math.min(availableWidth - width - 16, capsuleX + capsuleWidth + detailGap)
-        : Math.max(16, capsuleX - width - detailGap)
+        ? Math.min(availableWidth - width - Metrics.pad(16), capsuleX + capsuleWidth + detailGap)
+        : Math.max(Metrics.pad(16), capsuleX - width - detailGap)
     readonly property real hiddenX: rightSide
         ? capsuleX + capsuleWidth - width - 28
         : capsuleX + 28

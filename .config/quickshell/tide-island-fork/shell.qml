@@ -301,6 +301,16 @@ Scope {
         // alongside toggleWallpaperPicker.
         // FORK: qtile's DisplayPopup, ported. Bound to alt+4 in
         // hypr/binds.conf, which is the key it had in qtile.
+        // FORK: qtile's WifiPopup and BluetoothPopup keys, landing straight
+        // in the control centre's own lists. See openConnectivityPanelWindow.
+        function toggleWifiPanel() {
+            shellRoot.forFocusedWindow((window) => window.openConnectivityPanelWindow("wifi"));
+        }
+
+        function toggleBluetoothPanel() {
+            shellRoot.forFocusedWindow((window) => window.openConnectivityPanelWindow("bluetooth"));
+        }
+
         function toggleDisplayPanel() {
             shellRoot.forFocusedWindow((window) => window.toggleDisplayPanelWindow());
         }

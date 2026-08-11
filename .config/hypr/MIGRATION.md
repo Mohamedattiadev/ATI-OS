@@ -431,14 +431,44 @@ to translate.
 |---|---|---|
 | AudioPopup | 25 | `pavucontrol` / rofi-pulse |
 | DisplayPopup | 28 | **DONE** — rebuilt, see below |
-| WifiPopup + WifiQR | 14 | `nmtui`, `rofi-network-manager` |
-| BluetoothPopup | 12 | `blueman-manager`, `rofi-bluetooth` |
+| WifiPopup + WifiQR | 14 | **mostly done** — see below; QR still open |
+| BluetoothPopup | 12 | **done** — see below |
 | WallpaperPopup | 9 | `waypaper` |
 | Cheatsheets (Qtile/Vim/Fish) | 16 | **DONE** — rofi, see below |
 | UpdatesPopup | — | `qupdate.py` daemon still runs |
 
 These are the natural second phase, rebuilt as Quickshell/QML pages inside
 the Tide-island bar — which is where they arguably belong anyway.
+
+### Wi-Fi and Bluetooth were already built, and simply unbound
+
+The island's control centre owns both lists — scan, signal strength,
+connect, the lot — and they were reachable only by opening the control
+centre and clicking a chevron. 26 bindings' worth of function was sitting
+there with no key on it.
+
+`tide toggleWifiPanel` / `tide toggleBluetoothPanel` open the control
+centre and its sub-panel in one step, bound to **`n`** and **`b`** in the
+rofi submap, which are the keys qtile's WifiPopup and BluetoothPopup had.
+
+One implementation note that is not obvious: the two cannot be opened in
+the same tick. `controlCenterLoader` is not instantiated until the island
+is already in the `control_center` state, so `controlCenterLoader.item` is
+still null on the line after `showControlCenter()`. Deferred by one
+event-loop turn with `Qt.callLater` — enough, because the Loader is
+synchronous.
+
+**Still open under this heading: WifiQR** (`s` in qtile's chord), which
+generates a shareable QR for the current network, and the audio detail
+popup.
+
+The connectivity panels also caught a rescale miss worth recording: their
+size comes from `connectivityDetailWidth` / `Height` on the island window,
+which OVERRIDE `ConnectivityDetailShell`'s own defaults — so scaling the
+defaults changed nothing at all. The names are local rather than QML's
+`width`/`height`, so the mechanical pass did not see them, and the symptom
+was an unscaled 318x404 network list hanging off a 310x221 control centre
+at nearly twice its height.
 
 ### Cheatsheets are done, and they are rofi on purpose
 

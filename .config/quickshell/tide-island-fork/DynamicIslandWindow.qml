@@ -346,8 +346,13 @@ PanelWindow {
     property bool bluetoothConnectivityDetailOpen: false
     property bool bluetoothConnectivityDetailMounted: false
     readonly property bool anyConnectivityDetailMounted: wifiConnectivityDetailMounted || bluetoothConnectivityDetailMounted
-    readonly property real connectivityDetailWidth: 318
-    readonly property real connectivityDetailHeight: 404
+    // FORK: these override ConnectivityDetailShell's own defaults, which is
+    // why scaling them there alone changed nothing. Missed on the first
+    // rescale pass because the names are local rather than QML's width and
+    // height; the symptom was an unscaled 318x404 network list hanging off a
+    // 310x221 control centre, nearly twice its height.
+    readonly property real connectivityDetailWidth: Metrics.px(318)
+    readonly property real connectivityDetailHeight: Metrics.px(404)
     readonly property real controlCenterMaximumExtraHeight: controlCenterLoader.item
         ? controlCenterLoader.item.controlCenterMaximumExtraHeight
         : 120
@@ -358,7 +363,7 @@ PanelWindow {
     readonly property real notificationCenterWindowHeight: islandContainer.notificationCenterLayerVisible
         ? userConfig.islandTopMargin + (notificationCenterLoader.item ? notificationCenterLoader.item.contentHeight : 400) + 6
         : 0
-    readonly property real connectivityDetailGap: 16
+    readonly property real connectivityDetailGap: Metrics.px(16)
     readonly property int connectivityDetailAnimationDuration: 360
     readonly property string overviewWallpaperSource: overviewWallpaperCache.effectiveSource
     property string wallpaperPickerActiveWallpaper: userConfig.wallpaperPath
@@ -705,6 +710,41 @@ PanelWindow {
             islandContainer.smartRestoreState();
         else
             islandContainer.showControlCenter();
+    }
+
+    // FORK: land directly in the Wi-Fi or Bluetooth list, which is what
+    // qtile's WifiPopup ($mod P then n) and BluetoothPopup ($mod P then b)
+    // did in one chord. The control centre already owns both lists — they
+    // were simply only reachable by opening it and clicking a chevron, so
+    // 26 bindings' worth of function was present and unbound.
+    //
+    // Opening the control centre and opening the sub-panel cannot happen in
+    // the same tick: controlCenterLoader is not instantiated until the
+    // island is in the control_center state, so `controlCenterLoader.item`
+    // is still null on the line after showControlCenter(). Deferred by one
+    // event-loop turn with Qt.callLater, which is enough — the Loader is
+    // synchronous (asynchronous: false), so it exists by the next turn.
+    function openConnectivityPanelWindow(kind) {
+        const wasOpen = islandContainer.islandState === "control_center"
+            && controlCenterLoader.item
+            && controlCenterLoader.item.isConnectivityPanelOpen(kind);
+
+        if (wasOpen) {
+            // Pressing the same chord again closes it, matching the toggle
+            // behaviour every other island panel has.
+            islandContainer.smartRestoreState();
+            return;
+        }
+
+        if (islandContainer.islandState !== "control_center")
+            islandContainer.showControlCenter();
+
+        Qt.callLater(function() {
+            if (!controlCenterLoader.item)
+                return;
+            controlCenterLoader.item.closeConnectivityPanels(false);
+            controlCenterLoader.item.setConnectivityPanelOpen(kind, true);
+        });
     }
 
     function toggleNotificationCenterWindow() {
