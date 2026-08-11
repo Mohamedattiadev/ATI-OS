@@ -77,7 +77,49 @@ structural is now specified.
 
 ## 1. Notch bar + port my popups into it
 
-**Status: NOT STARTED**
+**Status: RUNNING AND RESTYLED. The popups are still to do.**
+
+Tide Island is installed (AUR, `tide-island 1.0.34`) and starts from
+`autostart.conf`. Hyprland is no longer bar-less.
+
+**The invocation in the plan was wrong.** `qs -c tide-island` against a
+clone in `~/.config/quickshell` cannot work: `shell.qml` imports
+`IslandBackend`, a compiled C++/Qt QML module. It is a package that
+installs to `/usr` and launches via `quickshell -p /usr/share/tide-island`.
+So the fork-and-restyle plan does not apply as written — **only the
+config is ours**, at `~/.config/tide-island/userconfig.json`, stowed from
+this repo.
+
+That turned out to be a good trade. Its `UserConfigBackend` exposes 45
+settings, and its own defaults already sit close to the spec (140x38,
+`Inter Display`). Restyling to DESIGN-SPEC.md needed **no forking at
+all** for the resting state:
+
+| Spec | Setting | Verified |
+|---|---|---|
+| 150x38 collapsed pill | `islandWidth` 150, `islandHeight` 38 | renders |
+| 11 px below top edge | `islandTopMargin` 11 | renders |
+| hardcoded black, not tinted | `islandBackgroundOpacity` 100 (upstream 60) | solid black |
+| clock only at rest | `islandAutoHideEnabled` false, `islandShowWorkspaceOnAutoHide` false | workspaces gone |
+| media swaps content, never expands | `disableAutoExpandOnTrackChange` true | — |
+| Inter / Inter Display | the four `*FontFamily` keys | resolves, not substituted |
+| — | `islandExclusiveZone` 49 | reserved `[0,49,0,0]`, windows tile at y=59 |
+
+**What config cannot reach**, and still needs QML work in a fork: the
+notch morph itself (square top corners, 14 px concave flare, one
+interpolated path in two phases), the 400 ms / 0.8-damping spring, and
+the 4 px overshoot. Those are the parts the video's author wrote by
+hand, and they are the visual signature — so the shape today is Tide
+Island's rounded pill at spec dimensions, not the spec's notch.
+
+**The 13 popups (121 bindings) are untouched.** That remains the long
+pole, and it is now clearer what it costs: they cannot be dropped into
+`~/.config/quickshell` either, so each is either a fork of Tide Island
+or a separate Quickshell surface alongside it.
+
+Original notes below.
+
+**Was: NOT STARTED**
 
 Base: [Tide-island](https://github.com/enhaoswen/Tide-island) — Quickshell
 (QML/Qt6), targets Hyprland and niri. The video's shell is unavailable
@@ -130,7 +172,55 @@ Effort: weeks. This is the long pole of the whole migration.
 
 ## 2. Liquid glass
 
-**Status: CONFIG WRITTEN — `hyprglass.conf` + `hyprglass.lua`, awaiting install**
+**Status: INSTALLED, ENABLED AND LOADED.**
+
+```
+hyprpm add https://github.com/hyprnux/hyprglass   # builds vs local headers
+hyprpm enable hyprglass
+```
+
+`hyprctl plugin list` reports hyprglass 1.0.0; `hyprctl configerrors` is
+empty; every setting reads back correctly, including `tint_color` as
+`0x282C3440` — doomone's `$glass_tint`, so the glass follows the theme.
+
+**`hyprglass.conf` had to be rewritten against the real plugin.** It was
+transcribed from the video's narration before the plugin existed here,
+and four things in it were wrong in ways that fail silently:
+
+| Was | Actually |
+|---|---|
+| `preset = apple` | key is `default_preset`, and **there is no `apple` preset** — built-ins are `high_contrast`, `subtle`, `clear`, `glass` |
+| `layers_enabled`, `mask_threshold` | not top-level keys; layers is a nested block, thresholds are per-namespace |
+| `edge_thickness = 0.18` | documented range is 0.0–0.15 |
+| `tag hyprglass_theme_light` | needs the leading `+` |
+
+The video's "just run the Apple preset" names a *look*, not a shipped
+preset, so the config now **defines** an `apple` preset with the video's
+restraint values and sets `default_preset = apple`. This matters
+mechanically, not just cosmetically: preset values outrank global ones
+(preset chain → theme override → global → default), so tuning left loose
+in the block would have been silently overridden.
+
+**Native blur stays on.** The old claim that blur must be globally
+disabled was wrong: `manage_window_blur` (default on) sets `noblur` per
+glassed window, so native blur keeps serving everything else. The real
+constraint is `blur:new_optimizations`, already false.
+
+**Layers (bar glass) stay OFF** — that answers open question 3 as
+"windows only". Empty `namespaces` means *all* layers, not none, and
+layer support hooks Hyprland's private render pipeline.
+
+**Not captured by the package audit.** hyprpm plugins are not pacman
+packages, so `wizard.sh --audit` cannot see hyprglass and a fresh
+machine will not get it. Re-run the two commands above after a rebuild,
+and `hyprpm update` after **every** Hyprland upgrade — the plugin is ABI
+locked and silently refuses to load against a mismatched compositor.
+`autostart.conf` runs `hyprpm reload -n`, because the enabled flag
+persists but does not load the plugin into a fresh compositor.
+
+Original notes below.
+
+**Was: CONFIG WRITTEN — `hyprglass.conf` + `hyprglass.lua`, awaiting install**
 
 Written from the video's own settings and warnings. Already handled:
 
