@@ -324,6 +324,12 @@ Scope {
             shellRoot.forFocusedWindow((window) => window.toggleAudioPanelWindow());
         }
 
+        // FORK: qtile's WifiQR — `s` inside its WiFi chord. Bound to SHIFT+S
+        // in the rofi submap, beside the `n` that opens the network list.
+        function toggleWifiQr() {
+            shellRoot.forFocusedWindow((window) => window.toggleWifiQrWindow());
+        }
+
         function toggleThemePicker() {
             shellRoot.forFocusedWindow((window) => window.toggleThemePickerWindow());
         }

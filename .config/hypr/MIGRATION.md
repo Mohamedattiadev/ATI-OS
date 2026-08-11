@@ -431,7 +431,7 @@ to translate.
 |---|---|---|
 | AudioPopup | 25 | **DONE** — rebuilt, see below |
 | DisplayPopup | 28 | **DONE** — rebuilt, see below |
-| WifiPopup + WifiQR | 14 | **mostly done** — see below; QR still open |
+| WifiPopup + WifiQR | 14 | **DONE** — see below |
 | BluetoothPopup | 12 | **done** — see below |
 | WallpaperPopup | 9 | `waypaper` |
 | Cheatsheets (Qtile/Vim/Fish) | 16 | **DONE** — rofi, see below |
@@ -458,8 +458,62 @@ still null on the line after `showControlCenter()`. Deferred by one
 event-loop turn with `Qt.callLater` — enough, because the Loader is
 synchronous.
 
-**Still open under this heading: WifiQR** (`s` in qtile's chord), which
-generates a shareable QR for the current network.
+**WifiQR is done too**, on **`$mod P` → `SHIFT+S`**.
+
+qtile had it a level deeper than this config has a level: `$mod P`, then
+`n` for Wifi-Mode, then `s`. Here `n` opens the island's network list
+directly rather than a chord, so there is nowhere for a plain `s` to
+live — and plain `s` at the rofi level is already dm-spellcheck, itself a
+qtile port that keeps its key. Shifting the letter is the convention
+`SHIFT+C` already set for the island's theme picker beside rofi's.
+
+`scripts/wifi-qr.py` reads the SSID and the stored PSK out of
+NetworkManager (`nmcli --show-secrets` works as the logged-in user for
+`psk-flags=0`, which is anything saved normally — no sudo, no polkit),
+builds the `WIFI:` URI that Android and iOS cameras understand, and shells
+out to `qrencode`. `tide-island-fork/qml/wifi/WifiQrLayer.qml` shows it.
+`qrencode` was already installed and already declared in
+`arch-config/modules/wm.yaml`, so no package count moved.
+
+Four things are deliberate and would be easy to "improve" into a code that
+phones refuse:
+
+- **Black on white, always**, on its own white card, whatever the theme is.
+  Inverted codes are out of spec and many cameras reject them, and the
+  white card IS the quiet zone — a dark desktop running up to the modules
+  costs the decoder the margin it uses to find the symbol.
+- **qrencode runs twice**: once at one pixel per module to learn the module
+  count, then at an integer scale that fits the box. The panel then paints
+  the result at its natural size and never stretches it. A fractional
+  resample softens exactly the edges a camera needs.
+- **`-8` pins byte mode.** A QR carries no ECI header, so a decoder may
+  guess the charset — zbar guesses Shift-JIS and returns katakana for a
+  Turkish SSID.
+- **`\ ; , : "` are escaped** in the SSID and the PSK. They are the
+  separators of the URI itself, so one of them unescaped truncates the
+  payload and the phone joins the wrong network, or asks for a password
+  that looks right.
+
+Verified: the panel drew a 222 px symbol for `TDV-OGRENCI-KAT-1B`, which
+is the active connection `nmcli` reports. There is no QR decoder on this
+machine (`zbarimg` is not installed and adding a package to check one file
+is a poor trade), so the render was checked structurally instead — the
+final PNG was compared **module for module** against the one-pixel-per-
+module probe: 37 modules at 6 px each, **0 mismatches**, quiet zone white
+all round. That proves the scaling step did not distort the symbol, which
+is the only step this code adds on top of qrencode.
+
+Refusals are also messages rather than an empty box, because "not
+connected to Wi-Fi", "no stored password for this network" and
+"enterprise networks can't be shared by QR" have three different answers.
+A profile name that does not exist is caught explicitly: every `nmcli -g`
+query answers "" for it, and an empty key-mgmt reads as an OPEN network,
+so a typo would otherwise produce a perfectly valid code for a network
+that does not exist. Those three panels were not photographed — the
+machine is connected to a WPA network and disconnecting it to take a
+screenshot is not worth it — so the *rendering* of the error state is
+argued, not shown; the script side of each was run and prints what the
+panel displays.
 
 The connectivity panels also caught a rescale miss worth recording: their
 size comes from `connectivityDetailWidth` / `Height` on the island window,

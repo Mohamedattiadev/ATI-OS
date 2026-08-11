@@ -230,11 +230,13 @@ so the merge is mechanical.
 cheatsheets) are untouched** — still the long pole, and each is either a
 fork of Tide Island or a separate Quickshell surface beside it.
 
-**Since written: all of them are done except the Wi-Fi QR.** Display
+**Since written: all of them are done.** Display
 (`$alt 4`), cheatsheets (`$mod SHIFT K`), Wi-Fi and Bluetooth (`$mod P`
 then `n`/`b`) landed first; the audio detail panel (`$alt 3`,
 `qml/audio/AudioPanel.qml` + `hypr/scripts/audio-ctl.py`) closes the
-largest of them at 25 bindings. MIGRATION.md has the per-item evidence.
+largest of them at 25 bindings, and the Wi-Fi QR (`$mod P` → `SHIFT+S`,
+`qml/wifi/WifiQrLayer.qml` + `hypr/scripts/wifi-qr.py`) closes the last
+one. MIGRATION.md has the per-item evidence.
 The control centre's Sound slider did NOT already cover audio — it is the
 volume of the default sink, and qtile's popup was about everything that
 is not the default. That table is in MIGRATION.md too.

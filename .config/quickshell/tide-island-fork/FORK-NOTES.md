@@ -266,6 +266,25 @@ Two smaller ones, both already paid for:
   and its declaration compiles a component that really is missing it, and
   the log fills with `ReferenceError` from a binding that is correct.
 
+### `qml/wifi/WifiQrLayer.qml` (new file) — the Wi-Fi QR
+
+qtile's `popups/WifiQR.py`, on `$mod P` → `SHIFT+S`. New `wifi_qr` island
+state, its own Loader, and a `tide toggleWifiQr` IPC entry. All of the nmcli
+and qrencode work is in `hypr/scripts/wifi-qr.py`; this layer only shows what
+that produced.
+
+Two things in it are not style choices:
+
+- **The symbol is painted at its natural pixel size.** The script is told how
+  much room there is, picks an integer scale that fits, and reports the exact
+  pixel count back; the `Image` is set to that. Letting QML stretch it to the
+  card resamples the modules at a fractional ratio and softens exactly the
+  edges a phone camera needs in poor light.
+- **`cache: false` on the Image.** The path never changes
+  (`~/.cache/hypr/wifi-qr.png`), so Qt's image cache is free to serve the
+  PREVIOUS network's code after a reconnect: right size, right white card,
+  wrong network, and nothing on screen to say so.
+
 ## Pre-existing upstream warning, not ours
 
 ```
