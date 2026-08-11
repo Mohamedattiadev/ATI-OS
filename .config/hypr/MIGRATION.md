@@ -88,11 +88,17 @@ exactly 60%x60% @ 20%,10%.
 - **calc** lands at `820x550`, not `820x461` — qalculate-gtk enforces a
   GTK minimum height and Hyprland re-centres around it. App-imposed;
   qtile's DropDown had the same constraint. Not worth fighting.
-- **Inter is not installed**, so every `font_family` in `hyprlock.conf`
-  silently resolves to Noto Sans CJK KR (`fc-match "Inter Medium"`
-  confirms). The lock clock renders in the wrong face with no warning.
-  `sudo pacman -S inter-font` fixes it, and it is needed for the notch
-  bar anyway — DESIGN-SPEC.md specifies Inter / Inter Display throughout.
+- **Inter was not installed, and nothing said so — now fixed.** Every
+  `font_family` in `hyprlock.conf`, and every family DESIGN-SPEC.md
+  specifies for the notch, silently resolved to Noto Sans CJK KR. There
+  is no warning for this anywhere: fontconfig's job is to always return
+  *a* font, so a typo'd or absent family renders in the wrong face and
+  looks merely ugly rather than broken. `inter-font` is installed and
+  declared in `arch-config/modules/fonts.yaml`; verified with
+  `fc-match`, which now answers `Inter.ttc: "Inter" "Medium"` and
+  `Inter.ttc: "Inter Display" "SemiBold"` — i.e. each family resolves to
+  itself. **`fc-match` every family you name in a config**; that is the
+  only way to catch this class of bug.
 - **qutebrowser's Wayland app_id is `org.qutebrowser.qutebrowser`**, not
   `qutebrowser`. `toggle-app.sh` matches unanchored so it works, but any
   `match:class ^(qutebrowser)$` rule added later will not fire.

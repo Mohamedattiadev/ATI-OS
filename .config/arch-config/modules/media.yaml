@@ -9,6 +9,12 @@ packages:
   - alsa-utils
   - libpulse
   - playerctl      # mpris widget + media keybindings
+  # The notch's resting state is specified as exactly two things: the clock
+  # and a 4-bar EQ that moves only while music actually plays. Quickshell's
+  # cava integration shells out to the cava binary, and without it the bars
+  # render but their levels are pinned at zero -- so the EQ looks correct,
+  # animates never, and nothing anywhere says why. Half the resting state.
+  - cava
   - gst-plugin-pipewire
   - sox
   - espeak-ng

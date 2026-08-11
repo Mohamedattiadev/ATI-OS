@@ -1102,8 +1102,21 @@ PanelWindow {
             dateText: timeObj.currentDateLabel
             currentWorkspace: islandContainer.currentWs
             customSwipeActive: customSwipeLoader.active
-            lyricsCavaActive: islandContainer.lyricsSwipeVisible
-                && islandContainer.rightSwipeProgress > 0.001
+            // FORK: `|| musicPlaying` is the resting EQ's subscription, and
+            // without it that EQ is decoration that can never move.
+            //
+            // cava is polled only while some client asks for it — upstream
+            // asks only while the lyrics card is actually swiped into view
+            // (rightSwipeProgress > 0.001), which is correct for upstream
+            // because the bars only exist inside that card. The fork put a
+            // second 4-bar instance on the CLOCK's side of the crossfade,
+            // where rightSwipeProgress is exactly 0. So the bars rendered,
+            // read their levels from a feed nobody had subscribed to, and
+            // sat at zero forever. Nothing logs this: an unsubscribed cava
+            // is not an error, it is just silence.
+            lyricsCavaActive: (islandContainer.lyricsSwipeVisible
+                    && islandContainer.rightSwipeProgress > 0.001)
+                || islandContainer.musicPlaying
 
             onTransientRequested: function(icon, progress, text) {
                 islandContainer.showTransientCapsule(icon, progress, text);
