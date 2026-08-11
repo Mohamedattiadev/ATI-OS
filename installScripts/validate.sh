@@ -651,7 +651,16 @@ head_ "declared package count"
 if ! command -v pacman >/dev/null 2>&1; then
   skip "declared package count (not an Arch system)"
 else
-  _pkg_declared="$(./installScripts/wizard.sh --audit 2>/dev/null | grep -oE 'declared: [0-9]+' | grep -oE '[0-9]+' | head -1)"
+  # Captured whole, then matched in-shell rather than piped through
+  # `head -1`. Under `set -Eeuo pipefail` that head closes the pipe as
+  # soon as it has its line, wizard.sh takes SIGPIPE (141), pipefail
+  # promotes it to the pipeline's status and set -e kills validate.sh
+  # mid-run -- silently, since the section header has already printed.
+  # It only began firing once --audit grew a section AFTER the
+  # "declared:" line, leaving the writer still going when head exits.
+  _pkg_audit="$(./installScripts/wizard.sh --audit 2>/dev/null || true)"
+  _pkg_declared=""
+  [[ "$_pkg_audit" =~ declared:\ ([0-9]+) ]] && _pkg_declared="${BASH_REMATCH[1]}"
   if [[ -z "$_pkg_declared" ]]; then
     skip "declared package count (audit produced no total)"
   else

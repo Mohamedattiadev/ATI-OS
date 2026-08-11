@@ -22,6 +22,15 @@ packages:
   - xorg-xset
   - wmctrl
   - xwallpaper
+  # The X11 compatibility layer a Wayland compositor runs X clients under.
+  # Arrives today only as a dependency, which is the same fragility the
+  # three above document -- and it matters more here, because the whole
+  # rofi/dmscripts launcher set, gromit-mpx and the Brave --app windows
+  # all run through it in the Hyprland session (see ../../hypr/). Losing
+  # it silently would take out ~30 keybindings there while leaving the
+  # qtile session untouched, which is the hardest kind of breakage to
+  # trace back to a packaging change.
+  - xorg-xwayland
 
 exclude: []
 conflicts: []
