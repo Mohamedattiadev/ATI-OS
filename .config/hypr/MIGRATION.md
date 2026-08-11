@@ -154,6 +154,27 @@ entering the Rofi chord. Earlier attempts could not reproduce it, because
 virtual keyboard, which resets the submap, so every synthetic press looks
 like a failure whether or not one exists.
 
+**That claim was an assertion when it was written. It has now been
+measured**, three ways, because "the tool cannot test this" is exactly the
+kind of statement that quietly stops being true:
+
+| experiment | result |
+|---|---|
+| `hyprctl keyword bind "SUPER,F9,exec,touch /tmp/x"`, then `wtype -M logo -k F9` | bind present in `hyprctl binds` at modmask 64; **file never created** |
+| same with an unmodified `,F8` | **never created** — so it is not the modifier |
+| enter `submap rofi` by dispatcher, watch `.socket2.sock`, run any `wtype` | `submap>>rofi` … then `submap>>` **the moment wtype runs** — the reset is real and it is caused by the virtual keyboard, not by the key |
+| `wtype hello` into a focused `cat > file` with no submap active | `hello` arrives intact |
+
+So the split is precise: **`wtype` reaches CLIENTS but not the compositor's
+bind layer.** That is worth knowing in both directions — it is why the audio
+and display panels can be driven and verified end to end by synthesising
+keys (they are ordinary Wayland clients with keyboard focus), and it is why
+`$mod P` cannot be. One more detail from the same run, in case it misleads
+someone later: typing `insubmap` while the `rofi` submap was active landed
+`nsubmap` in the client — the leading `i` was lost to the submap-reset race,
+**not** consumed by the `i` bind, which was checked by confirming `dm-satty`
+never ran.
+
 **What was ruled out**, all measured against the running compositor:
 
 | suspect | evidence |
@@ -186,8 +207,19 @@ the modes it put on a single keystroke: Audio-Mode and Display-Mode each
 rebound `alt+3` / `alt+4` to close-and-ungrab, with the comment "so alt+3
 toggles".
 
-**Honest status: the cause is not proved by reproduction, only by
-elimination plus a mechanism that produces exactly the reported symptom.**
+**Honest status, unchanged after a second attempt: the cause is not proved
+by reproduction, only by elimination plus a mechanism that produces exactly
+the reported symptom.** The second attempt is the table above — it closed
+off synthesis as a route rather than opening one, and no other route exists
+on this machine. `ydotool`/`dotool` would work, because they inject through
+`uinput` and Hyprland sees a real evdev device, but that means a new declared
+package and a uinput permission change to test one keystroke. keyd is already
+here and is a real evdev device, but 2.6.0 has no `keyd do` — it can only
+rebind a key that a finger still has to press.
+
+**So this needs the one thing an agent cannot supply: a human pressing the
+key.** If a bare `p` still appears, run the listener below and press it for
+real; that single observation decides it.
 The fix is correct regardless — an entry key that does not toggle is a bug
 on its own terms — but if a bare `p` still appears, the next step is to
 watch the event socket while pressing the key for real:
