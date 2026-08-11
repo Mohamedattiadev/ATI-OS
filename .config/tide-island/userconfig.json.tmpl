@@ -1,14 +1,16 @@
 {
   "_comment": "Tide Island, restyled toward hypr/DESIGN-SPEC.md. Read by tide-island's UserConfigBackend from ~/.config/tide-island/userconfig.json. Keys and defaults come from backend/UserConfigBackend.cpp; anything omitted keeps its upstream default. Values that DIVERGE from upstream are the ones carrying spec intent, and each is noted in hypr/DESIGN-SPEC.md.",
 
-  "_geometry": "Spec says 150x38. That number was measured off the video author's 2560x1440 display, where it is 5.9% of screen width. On this 1366x768 panel the same 150px is 11% - proportionally almost double, which is why it read as oversized. Scaled to the spec's PROPORTION instead of its pixel count: 5.9% of 1366 = 80, rounded up to 96 so the 24-hour clock keeps comfortable side padding at font size 20. Height stays 38, which is the spec value and also upstream's default.",
+  "_geometry": "Spec says 150x38. That number was measured off the video author's 2560x1440 display, where it is 5.9% of screen width. On this 1366x768 panel the same 150px is 11% - proportionally almost double, which is why it read as oversized. Scaled to the spec's PROPORTION instead of its pixel count: 5.9% of 1366 = 80, rounded up to 96 so the 24-hour clock keeps comfortable side padding.",
+  "_height": "28, NOT the spec's 38. This is a deliberate user override of DESIGN-SPEC.md, recorded in REQUIREMENTS.md item 1: qtile's top bar was `bar.Bar(..., 28)` and that was the known-good daily driver for years, so it wins over a number measured off a stranger's 1440p screen. The width stays 96, so shrinking the height while keeping it is itself part of the padding fix - the clock gets smaller inside a box that does not.",
   "islandWidth": 96,
-  "islandHeight": 38,
+  "islandHeight": 28,
+  "_notch": "islandTopMargin is now the FLOATING form's gap only. The resting form is the NOTCH: flush to the top edge, top corners square, a concave flare each side. That is a fork change in DynamicIslandWindow.qml (notchProgress / notchSkirt), not a config key - UserConfigBackend is compiled and has no notion of it. This value still matters because it is what the morph interpolates back to when notch mode is switched off.",
   "islandTopMargin": 11,
   "islandPositionX": 50,
 
-  "_exclusiveZone": "38 height + 11 margin = 49, so windows tile below the island instead of under it. This pill IS the whole top surface - there is no separate bar to account for.",
-  "islandExclusiveZone": 49,
+  "_exclusiveZone": "The notch is flush at the top and 28 tall, so 28 is the minimum that keeps windows out from under it. 38 keeps the extra 10 as breathing room below the flares, which read badly with a window edge jammed against them - and 38 is also exactly what qtile reserved, since its 28px bar carried margin [5,10,5,10]. This shape IS the whole top surface; there is no separate bar to account for.",
+  "islandExclusiveZone": 38,
 
   "_opacity": "Spec is emphatic that the shape is hardcoded #000000 and NOT theme-tinted: it is imitating bezel, and 'tint it and it stops being a notch and becomes a colored blob'. Upstream default 60 is translucent, so this is a real divergence. Theming goes INSIDE the island, never on the shell shape.",
   "islandBackgroundOpacity": 100,
@@ -26,9 +28,10 @@
   "timeFontFamily": "Inter Display",
   "textFontFamily": "Inter Medium",
   "iconFontFamily": "JetBrainsMono Nerd Font",
-  "titleFontSize": 20,
-  "bodyFontSize": 16,
-  "iconFontSize": 18,
+  "_fontSizes": "Matched to qtile's widget_defaults, which set fontsize 10 - pango points at 96dpi, so ~13px on screen. The resting clock renders at bodyFontSize+1 (SwipeLyricsLayer), so bodyFontSize 12 puts it at 13 and lands on qtile's number exactly. title and icon follow the same ratio down from 20/18. The previous 20/16/18 in a 38px shape was proportionally the same as this - the island was simply a uniformly larger object than the bar it replaced, which is what read as oversized.",
+  "titleFontSize": 15,
+  "bodyFontSize": 12,
+  "iconFontSize": 13,
 
   "_clock": "24-hour, matching hyprlock.conf's `date +%H:%M`. Upstream defaults to 12.",
   "clockFormat": "24",

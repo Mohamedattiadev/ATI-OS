@@ -88,11 +88,17 @@ exactly 60%x60% @ 20%,10%.
 - **calc** lands at `820x550`, not `820x461` — qalculate-gtk enforces a
   GTK minimum height and Hyprland re-centres around it. App-imposed;
   qtile's DropDown had the same constraint. Not worth fighting.
-- **Inter is not installed**, so every `font_family` in `hyprlock.conf`
-  silently resolves to Noto Sans CJK KR (`fc-match "Inter Medium"`
-  confirms). The lock clock renders in the wrong face with no warning.
-  `sudo pacman -S inter-font` fixes it, and it is needed for the notch
-  bar anyway — DESIGN-SPEC.md specifies Inter / Inter Display throughout.
+- **Inter was not installed, and nothing said so — now fixed.** Every
+  `font_family` in `hyprlock.conf`, and every family DESIGN-SPEC.md
+  specifies for the notch, silently resolved to Noto Sans CJK KR. There
+  is no warning for this anywhere: fontconfig's job is to always return
+  *a* font, so a typo'd or absent family renders in the wrong face and
+  looks merely ugly rather than broken. `inter-font` is installed and
+  declared in `arch-config/modules/fonts.yaml`; verified with
+  `fc-match`, which now answers `Inter.ttc: "Inter" "Medium"` and
+  `Inter.ttc: "Inter Display" "SemiBold"` — i.e. each family resolves to
+  itself. **`fc-match` every family you name in a config**; that is the
+  only way to catch this class of bug.
 - **qutebrowser's Wayland app_id is `org.qutebrowser.qutebrowser`**, not
   `qutebrowser`. `toggle-app.sh` matches unanchored so it works, but any
   `match:class ^(qutebrowser)$` rule added later will not fire.
@@ -104,14 +110,31 @@ give no feedback whatsoever — the compositor just starts swallowing
 keys, and the only way to tell you are in one is to press something.
 
 `scripts/submap-indicator.sh` listens on Hyprland's event socket
-(`submap>>name` entering, `submap>>` leaving) and raises a
-**non-expiring** dunst notification naming the mode and its keys,
-cleared the instant the submap resets. Non-expiring is the point: it is
-a mode indicator, not a toast.
+(`submap>>name` entering, `submap>>` leaving) and puts the mode name in
+the island, where qtile's bar used to say it. It stays for exactly as
+long as the mode is active: **persistent, not a toast.**
 
-It lands **in the island** for free, because Tide Island renders
-notifications in its capsule — so the mode shows up where the bar used
-to say it, without forking anything.
+It now uses the island **directly**, via a forked `tide showText <string>`
+IPC. The earlier note said this needed dunst because upstream's
+`showCustom()` takes no arguments — true at the time, and no longer.
+dunst remains only as a fallback for the window between login and the
+island finishing its load, tried per event rather than probed once.
+
+**A bug worth remembering, because only a never-expiring indicator can
+have it.** Nothing in the system will ever remove a `-t 0` notification,
+so the only thing that cleared it was this script seeing the matching
+leave event. Killed mid-chord, restarted after a reload, or one dropped
+event, and a permanent "ROFI-MODE" sits over a desktop that is in no
+submap at all — worse than no indicator, because you believe it. Fixed
+by clearing once *before* the event loop and again from a trap on EXIT
+TERM INT HUP, plus an `flock` guard so there is only ever one instance.
+
+The trap needed the loop to change shape, which is the non-obvious part:
+bash defers trap handlers until the current foreground command returns,
+and `reader | while read` is one command that never returns — so SIGTERM
+left the process alive and the indicator on screen, reintroducing the
+exact bug. Reading from a process substitution puts the interruptible
+`read` builtin in the main shell instead, and the handler fires at once.
 
 The socket is read with python3, not socat: socat is not installed here,
 and adding a declared package for one `read` on a unix socket is a poor
@@ -122,6 +145,62 @@ property, so the paired `bind = , X, submap, reset` lines throughout
 `submaps.conf` are redundant with a native feature. They are NOT a bug —
 verified in `KeybindManager.cpp` that two binds on one key both fire, in
 config order — just more verbose than they need to be.
+
+### SUPER+P typing a literal "p" — cause identified, fix applied
+
+Reported symptom: `$mod P` types a `p` into the focused window instead of
+entering the Rofi chord. Earlier attempts could not reproduce it, because
+`wtype` cannot trigger Hyprland keybinds at all — it creates and destroys a
+virtual keyboard, which resets the submap, so every synthetic press looks
+like a failure whether or not one exists.
+
+**What was ruled out**, all measured against the running compositor:
+
+| suspect | evidence |
+|---|---|
+| a shadowing duplicate bind | `hyprctl binds` has exactly ONE bind on modmask 64 + P, and it is `submap, rofi`. The other P binds are modmask 8 (`$alt`, clock_popup) and two inside the rofi submap at modmask 0 |
+| the bind not being loaded | it is present in `hyprctl binds` after every reload |
+| a non-US layout changing the keysym | `input:resolve_binds_by_sym` is **0**, so binds resolve by KEYCODE and the four configured layouts cannot affect them. All eight keyboards also report `English (US)` |
+| Caps Lock as a modifier | keyd remaps Caps to `leftalt`, so it can never latch |
+| NumLock as a modifier | `numlock_by_default` is 0 and both numlock LEDs read 0 |
+
+**What actually explains it**, and it is a behavioural difference between
+qtile chords and Hyprland submaps that this config had not accounted for:
+
+qtile's chords ran with `swallow=True`, which ate **every** key while the
+chord was open. Hyprland submaps do not. A key with no bind in the active
+submap is passed straight through to the focused window.
+
+Inside the `rofi` submap there was **no SUPER-modified bind of any kind**.
+So SUPER+P while already in that submap matches nothing, leaks to the
+client, and types a `p` — which is exactly the report. And it repeats
+forever, because pressing it again does the same thing and never leaves.
+This submap is also the easiest one to get stuck in: `q` is `dm-logout`
+here, faithful to qtile, so `Escape` was the only exit.
+
+**Fix: every submap's own entry combination now exits it.** `$mod P` inside
+`rofi`, `$mod R` inside `resize`, `$mod SHIFT W` inside `draw`, `$mod SPACE`
+inside `lang` — `passthrough` already had `$mod F12`. Each is a toggle now
+and can never be the key that leaks. This is also what qtile itself did for
+the modes it put on a single keystroke: Audio-Mode and Display-Mode each
+rebound `alt+3` / `alt+4` to close-and-ungrab, with the comment "so alt+3
+toggles".
+
+**Honest status: the cause is not proved by reproduction, only by
+elimination plus a mechanism that produces exactly the reported symptom.**
+The fix is correct regardless — an entry key that does not toggle is a bug
+on its own terms — but if a bare `p` still appears, the next step is to
+watch the event socket while pressing the key for real:
+
+```
+socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock
+# or, since socat is not installed here, scripts/submap-indicator.sh's
+# python reader is the same three lines
+```
+
+A `submap>>rofi` line means the bind fired and the `p` came from somewhere
+else; no line at all means the modifier is not reaching the compositor,
+which points at the keyboard or the keyd layer rather than at this config.
 
 ### Window borders were green in every theme
 
@@ -351,15 +430,110 @@ to translate.
 | Popup | Bindings | Interim stand-in |
 |---|---|---|
 | AudioPopup | 25 | `pavucontrol` / rofi-pulse |
-| DisplayPopup | 28 | `nwg-displays` / `wdisplays` |
-| WifiPopup + WifiQR | 14 | `nmtui`, `rofi-network-manager` |
-| BluetoothPopup | 12 | `blueman-manager`, `rofi-bluetooth` |
+| DisplayPopup | 28 | **DONE** — rebuilt, see below |
+| WifiPopup + WifiQR | 14 | **mostly done** — see below; QR still open |
+| BluetoothPopup | 12 | **done** — see below |
 | WallpaperPopup | 9 | `waypaper` |
-| Cheatsheets (Qtile/Vim/Fish) | 16 | rofi-based list, or rebuild in QML |
+| Cheatsheets (Qtile/Vim/Fish) | 16 | **DONE** — rofi, see below |
 | UpdatesPopup | — | `qupdate.py` daemon still runs |
 
 These are the natural second phase, rebuilt as Quickshell/QML pages inside
 the Tide-island bar — which is where they arguably belong anyway.
+
+### Wi-Fi and Bluetooth were already built, and simply unbound
+
+The island's control centre owns both lists — scan, signal strength,
+connect, the lot — and they were reachable only by opening the control
+centre and clicking a chevron. 26 bindings' worth of function was sitting
+there with no key on it.
+
+`tide toggleWifiPanel` / `tide toggleBluetoothPanel` open the control
+centre and its sub-panel in one step, bound to **`n`** and **`b`** in the
+rofi submap, which are the keys qtile's WifiPopup and BluetoothPopup had.
+
+One implementation note that is not obvious: the two cannot be opened in
+the same tick. `controlCenterLoader` is not instantiated until the island
+is already in the `control_center` state, so `controlCenterLoader.item` is
+still null on the line after `showControlCenter()`. Deferred by one
+event-loop turn with `Qt.callLater` — enough, because the Loader is
+synchronous.
+
+**Still open under this heading: WifiQR** (`s` in qtile's chord), which
+generates a shareable QR for the current network, and the audio detail
+popup.
+
+The connectivity panels also caught a rescale miss worth recording: their
+size comes from `connectivityDetailWidth` / `Height` on the island window,
+which OVERRIDE `ConnectivityDetailShell`'s own defaults — so scaling the
+defaults changed nothing at all. The names are local rather than QML's
+`width`/`height`, so the mechanical pass did not see them, and the symptom
+was an unscaled 318x404 network list hanging off a 310x221 control centre
+at nearly twice its height.
+
+### Cheatsheets are done, and they are rofi on purpose
+
+REQUIREMENTS.md item 3 sets the rule — rebuild the *interactive* popups in
+the shell, leave the *launcher* problems on rofi — and a cheatsheet is
+firmly the second kind. It is a list you read and dismiss. rofi already
+does that, under XWayland, with fuzzy search, for nothing.
+
+`scripts/cheatsheet.py`, on qtile's `$mod SHIFT K`, with `k` / `v` / `f`.
+
+Four of qtile's sixteen bindings (`j`, `k`, `Tab`, `Shift+Tab`) existed
+only to move a viewport around 129 rows of text. They are deliberately
+**not** reproduced: rofi replaces all four with typing what you are looking
+for, which is strictly better than paging.
+
+Two things worth keeping:
+
+- **The Hyprland sheet is generated from `hyprctl binds` at the moment you
+  press the key**, not from a list and not by parsing `binds.conf`. qtile's
+  `QtileCheatsheet.py` carried 129 hand-maintained rows that were only as
+  true as the last person to update them. Reading the compositor's own
+  resolved table means the sheet cannot drift — 181 rows today, every
+  submap included. It labels ALT as Caps Lock in the header, because on
+  this laptop that is what ALT physically is.
+- **The vim and fish sheets are parsed out of the qtile popups with `ast`,
+  never imported.** `popups/VimCheatsheet.py` imports `qtile_extras` at
+  module level and builds a popup as a side effect, so importing it from
+  outside qtile fails and importing it from inside would draw a popup.
+  `ast.literal_eval` on the single `CHEATSHEET` assignment reads the data
+  and runs none of the file — one copy of the content, and
+  `~/.config/qtile` stays read-only.
+
+Verified by opening all three and reading them: 181 Hyprland rows, 89 vim,
+60 fish, markup intact, search working.
+
+### DisplayPopup is done, and it was the urgent one
+
+Not because it is the largest, but because it was the only one with **no
+working fallback**. The table above named nwg-displays and wdisplays as the
+stand-in and neither is installed, so between the migration and now this
+machine had no way to change resolution, scale, rotation or arrangement
+except by editing `monitors.conf` and reloading.
+
+`scripts/display-ctl.py` is the backend and knows everything about
+Hyprland's monitor syntax; `tide-island-fork/qml/display/DisplayPanel.qml`
+is the keyboard and the pixels. The split is deliberate — the backend can
+be exercised from a shell, where the previous generation of this feature
+was 2,000 lines of Python that could only be run by opening a popup.
+
+Bound to **`$alt 4`**, qtile's own key. It is not a submap: qtile needed a
+KeyChord because its popup could not take keyboard focus at all, whereas
+this is a layer surface with an exclusive grab that reads its own keys.
+
+Verified against the live panel — the countdown in both directions being
+the one that matters, since it is the only thing standing between a bad
+mode and a screen you cannot see to fix:
+
+| action | result |
+|---|---|
+| Enter on 47.99 Hz | applied; header shows "reverting in 11s — y to keep, c to revert" |
+| wait it out | back at 59.987 Hz, "no answer — reverted" |
+| Enter, then `y` | stayed at 47.99 Hz, "kept" |
+| `v`, Enter on a saved layout | restored, through the same countdown |
+| `set --disable` on the only output | refused |
+| `preset external` with no external | refused |
 
 ## Deferred: app togglers (7 bindings)
 
@@ -368,15 +542,32 @@ qtile's own client list. Nothing in it survives the move. Each becomes a
 `hyprctl clients -j` lookup plus `dispatch focuswindow`, or is folded into
 a scratchpad. They are listed commented in `binds.conf`.
 
-## Deferred: the bar
+## The bar — now a notch, and forked
 
-Four bindings drove qtile widget internals (`SmartWidgetBox` toggles,
-top↔bottom bar swap). They resume meaning only once Tide-island is running
-and exposing IPC.
+Tide Island is running, and the QML is vendored and patched at
+`.config/quickshell/tide-island-fork/` (launched by `scripts/island.sh`).
+The resting shape is the notch from DESIGN-SPEC.md: flush to the top
+edge, top corners square, a 9 px concave flare each side, pure black.
 
-Tide-island: <https://github.com/enhaoswen/Tide-island> — clone to
-`~/.config/quickshell/`, then uncomment the `qs -c tide-island` line in
-`autostart.conf`.
+Four things landed in the fork that no config key could reach — the notch
+morph, a generated spring, arbitrary text, and a theme picker. Each is
+written up with its traps in `tide-island-fork/FORK-NOTES.md`, which is
+also the merge list for the next `pacman -Syu` of `tide-island`.
+
+The two traps most likely to bite again:
+
+- **Qt's `Easing.BezierSpline` takes at most 10 cubic segments.** The
+  eleventh corrupts the heap and the process takes SIGSEGV on the first
+  animated frame — no warning, no fallback. It killed the shell on every
+  launch until it was bisected in an offscreen `qml6` harness.
+- **Quickshell IPC parameters must be typed.** `function f(text: string)`
+  works; `function f(text)` accepts the call and arrives `undefined`.
+
+Four qtile bindings drove widget internals (`SmartWidgetBox` toggles,
+top↔bottom bar swap). Those remain unported — they have no analogue in
+this shell.
+
+Tide-island upstream: <https://github.com/enhaoswen/Tide-island>
 
 ## Deliberate behaviour changes
 

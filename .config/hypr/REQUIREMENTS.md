@@ -77,7 +77,13 @@ structural is now specified.
 
 ## 1. Notch bar + port my popups into it
 
-**Status: RUNNING AND RESTYLED. The popups are still to do.**
+**Status: THE NOTCH IS DONE. The remaining popups are still to do.**
+
+The resting shape is now the notch itself — flush to the top edge, top
+corners square, concave flares, pure black — not a pill floating below it.
+That was the last thing that made it read as a widget rather than as
+bezel. Motion, arbitrary text and a theme picker all landed with it; the
+audio/display/wifi/bluetooth/cheatsheet popups have not.
 
 Tide Island is installed (AUR, `tide-island 1.0.34`) and starts from
 `autostart.conf`. Hyprland is no longer bar-less.
@@ -86,11 +92,13 @@ Tide Island is installed (AUR, `tide-island 1.0.34`) and starts from
 clone in `~/.config/quickshell` cannot work: `shell.qml` imports
 `IslandBackend`, a compiled C++/Qt QML module. It is a package that
 installs to `/usr` and launches via `quickshell -p /usr/share/tide-island`.
-So the fork-and-restyle plan does not apply as written — **only the
-config is ours**, at `~/.config/tide-island/userconfig.json`, stowed from
-this repo.
 
-That turned out to be a good trade. Its `UserConfigBackend` exposes 45
+An earlier revision of this file concluded from that "only the config is
+ours". **That was too pessimistic, and it is now corrected** — see
+"The fork" below. The compiled module is not the obstacle it looked like.
+
+The config is ours regardless, at `~/.config/tide-island/userconfig.json`,
+stowed from this repo. Its `UserConfigBackend` exposes 45
 settings, and its own defaults already sit close to the spec (140x38,
 `Inter Display`). Restyling to DESIGN-SPEC.md needed **no forking at
 all** for the resting state:
@@ -104,6 +112,29 @@ all** for the resting state:
 | media swaps content, never expands | `disableAutoExpandOnTrackChange` true | — |
 | Inter / Inter Display | the four `*FontFamily` keys | resolves, not substituted |
 | — | `islandExclusiveZone` 49 | reserved `[0,49,0,0]`, windows tile at y=59 |
+
+### Sizing: qtile's numbers now win over the spec's — the user's call
+
+**`islandHeight` is 28, not the spec's 38.** The user asked for the bar to
+be "the same like qtile since was good", and qtile's was
+`bar.Bar(..., 28)` with `widget_defaults` `fontsize` 10 — the known-good
+daily driver for years, against a 38 measured off a stranger's 2560x1440
+screen. This is a deliberate override of DESIGN-SPEC.md and it is recorded
+here so nobody "fixes" it back.
+
+The font sizes follow: the resting clock renders at `bodyFontSize + 1`, so
+`bodyFontSize` 12 puts it at 13 px, which is what qtile's `fontsize` 10
+comes to at 96 dpi. `islandExclusiveZone` is 38, which is also exactly what
+qtile reserved (28 px bar plus its `margin` of 5 top and 5 bottom).
+
+**Changing those four config keys reached only the fonts, and that made
+things worse before it made them better.** Every other dimension in the
+shell is a QML literal that `UserConfigBackend` does not expose, so the
+panels kept their full-size boxes and got tiny text floating in them.
+The fix is `tide-island-fork/qml/common/Metrics.js`: one `SCALE`, applied
+to ~380 literals across 21 layer files, with a separate `pad()` that is
+deliberately super-linear because padding scaled linearly stays cramped.
+Written up in FORK-NOTES.md.
 
 **Sizing was wrong at first, and the reason is worth keeping.** The spec's
 150 px was measured off a 2560x1440 display, where it is 5.9% of screen
@@ -127,20 +158,73 @@ These are now bound in `binds.conf`. The wallpaper picker also needs
 `wallpaperLibraryPath` set or it opens empty saying "No wallpapers
 found"; it points at `~/Pictures/Wallpapers` (362 images).
 
-**What config still cannot reach**, and needs a QML fork:
+**What config could not reach — ALL FOUR NOW DONE in the fork:**
 
-- The notch morph (square top corners, 14 px concave flare, one path
-  interpolated in two phases) and the 4 px overshoot.
-- The 400 ms / 0.8-damping spring. There is **no animation-speed setting
-  at all** among the 45 config keys — `wallpaperTransitionDuration` is
-  wallpaper-only — so "the movement feels slow" cannot be tuned from
-  config. It is a fork or nothing.
-- Arbitrary text in the island. Its `showCustom()` IPC takes no
-  arguments; content comes from the shell's own custom-info source.
+- **The notch morph — DONE.** Flush to the top, top corners square, a 9 px
+  concave flare each side (14 scaled by the island's 96/150 factor), 4 px
+  overshoot clipped. One path interpolated by one value in two phases
+  (un-round, then flare), per the spec's rule against swapping shapes.
+  This is now the DEFAULT resting form: the floating pill is what it
+  morphs back to, not the norm. `notchProgress` / `notchSkirt` in
+  `DynamicIslandWindow.qml`.
+- **The 400 ms / 0.8-damping spring — DONE.** `qml/common/Motion.js`
+  solves the damped harmonic oscillator and emits it as an
+  `Easing.BezierSpline`; nine Behaviors use it, geometry on the spring and
+  opacity/colour on a critically damped curve. Measured live at the top
+  row of the capsule during an expansion: reaches 94% of travel ~127 ms
+  in, peaks 5 px past the settled width, and settles — a +1.6% overshoot
+  against the 1.54% the maths predicts. **Qt's BezierSpline accepts at
+  most 10 segments and segfaults on the eleventh**; the first attempt used
+  24 and crashed the shell on every launch. See FORK-NOTES.md.
+- **Arbitrary text in the island — DONE.** `tide showText <string>` /
+  `tide clearText`, persistent until cleared and re-asserted after any
+  transient OSD interrupts it. `submap-indicator.sh` uses it and no longer
+  needs dunst.
+- **A theme picker — DONE.** `ThemePickerLayer.qml`, bound as SHIFT+C in
+  the rofi submap. 22 tiles each painted in the palette it applies, with
+  swatches parsed out of `theme-apply` itself rather than copied.
 
-**A theme picker is not among the island's panels.** `theme-toggle` is
-still the rofi one, on `$mod P` → `c`. Putting it in the island is fork
-work, same bucket as the above.
+**A theme picker is not among the island's panels** — it is now, as fork
+work. `$mod P` → `c` is still the rofi `theme-toggle`, unchanged; `$mod P`
+→ `SHIFT+c` opens the island's. Both drive `theme-apply` and both read
+`~/.cache/qtile/theme_mode`, so they cannot disagree, and rofi keeps
+working when the island is not running.
+
+### The fork — DONE, and cheaper than the earlier note assumed
+
+The compiled `IslandBackend` module blocks *rebuilding* Tide Island. It
+does not block *replacing its QML*, and the QML is where all four
+unreachable things live.
+
+**Verified before anything was written**, because it decides the whole
+approach: copy `/usr/share/tide-island` to an arbitrary path, run
+`quickshell -p <that path>`, and it prints "Configuration Loaded" with no
+`module IslandBackend is not installed`. `/usr/lib/qt6/qml` is one of
+Qt's default import paths and the package installs the module there, so
+a vendored tree at any location still imports it.
+
+So the fork is **QML-only**:
+
+| | |
+|---|---|
+| Vendored into this repo | `.config/quickshell/tide-island-fork/` — `shell.qml`, `DynamicIslandWindow.qml`, the `qml/` tree (44 files) |
+| Kept from the package | `IslandBackend` (compiled), `bin/lyricsmpris` (356K ELF — a binary blob does not belong in a dotfiles repo) |
+| Launched by | `hypr/scripts/island.sh` from `autostart.conf`, replacing the `tide-island` binary |
+
+`island.sh` exports the two env vars the packaged launcher set and we
+would otherwise lose (`QUICKSHELL_LYRICS_BACKEND`, the jemalloc
+`MALLOC_CONF` tuning), and falls back to `exec tide-island` if the fork
+is missing, so a machine where stow has not run yet still gets a bar.
+
+**`$qsi` in `binds.conf` had to move to the fork path in the same
+commit.** Quickshell keys its IPC socket by config path, so
+`qs -p /usr/share/tide-island ipc call ...` against a fork instance
+matches nothing and fails silently from a keybind.
+
+The standing cost is that `pacman -Syu` updates `/usr/share/tide-island`
+and leaves the fork stale. `tide-island-fork/FORK-NOTES.md` records the
+vendored version (1.0.34-1), the diff commands, and every patch applied,
+so the merge is mechanical.
 
 **The remaining popups (audio detail, display, wifi/QR, bluetooth,
 cheatsheets) are untouched** — still the long pole, and each is either a
@@ -353,8 +437,38 @@ still held catppuccin values — the two had drifted. Re-applying doomone
 reconciled them. The shared state file does keep both sessions in sync,
 but only for themes applied *after* the Hyprland target existed.
 
-Remaining under this item: a Quickshell/QML target, which cannot be
-written until item 1 exists.
+**The Quickshell/QML target is now DONE too.** `gen_island_colors()` sits
+beside `gen_hypr_colors()` in `gen_all_theme_css()` and writes
+`~/.cache/tide-island/colors.json`; the island watches that path and
+repaints live. JSON rather than Hyprland's `$name = rgb(hex)` form because
+the consumer is QML — the palette is still generated once, from the same
+nine arguments, in the same call.
+
+This is what makes the island's background follow the theme, which is a
+**deliberate reversal of DESIGN-SPEC.md** on the user's explicit
+instruction. Written up under "Colour — hardcoded black" in that file,
+including why the fill is the background slot blended 35% toward black
+rather than the raw palette colour.
+
+**Two traps, both of which failed silently and both of which are the same
+mistake in different clothes: something that looks wired up and is not.**
+
+1. `theme-apply` wrote the file with `mv` from a temp file — the correct
+   pattern almost everywhere, and wrong here. Quickshell's `FileView` is a
+   `QFileSystemWatcher` underneath, and that watches the **inode**. An
+   atomic rename leaves the watch pointing at the unlinked old file and
+   `onFileChanged` never fires again. It is written in place instead; the
+   reasoning and the torn-read trade are recorded at the call site.
+2. In the QML, the `FileView` was first declared as the value of a property
+   on a bare `QtObject`. It constructs, reports nothing, and never fires
+   either signal. It has to be an ordinary child in the object tree — which
+   is why `IslandTheme.qml` is an invisible `Item`, the same shape
+   `WallpaperThumbnailCache.qml` already used.
+
+Both presented identically: the island keeping its fallback palette while
+every other target repainted, i.e. exactly "the theme is not wired up".
+
+Remaining under this item: nothing.
 
 Original notes below.
 
@@ -390,7 +504,46 @@ on the list.
 
 ## 5. Circular theme-change animation
 
-**Status: NOT STARTED**
+**Status: DONE.** `tide-island-fork/qml/theme/ThemeTransitionWindow.qml`,
+one `PanelWindow` per screen, driven from `shell.qml`'s
+`startThemeTransition()` and exposed as `tide applyThemeAnimated <theme>`.
+The island's theme picker goes through it; the rofi `theme-toggle` can be
+pointed at the same IPC whenever you want the animation there too.
+
+All five of the video author's traps are implemented and named at the site
+— JPEG q85, the 700 ms safety timer, one boolean for both directions, the
+90 ms warm-up, and barely-above-zero opacity while idle.
+
+Two things learned building it that the spec does not mention:
+
+- **The picker cannot own the animation.** It is a `Loader` that unloads
+  when the island leaves the picker state, and the first thing a theme
+  change does is close the picker — so an animation owned by its trigger is
+  destroyed on frame one. It lives in `shellRoot`.
+- **The animation must own the apply.** `theme-apply` runs *underneath* the
+  frozen frame, after the capture. Letting the picker also run it repaints
+  the desktop before the screenshot and there is nothing left to reveal.
+
+`OpacityMask { invert: true }` from `Qt5Compat.GraphicalEffects` is the
+whole mechanism: a growing black circle in the mask becomes a growing hole
+in the frozen frame. Verified in a standalone `qml6` window before it went
+anywhere near the shell — centre transparent, corners opaque source —
+because a mistake here paints an opaque sheet over the entire desktop.
+
+**Verifying it needs a trick, and the trick is worth writing down.** The
+reveal is invisible to a screenshot under normal conditions, and that is
+correct behaviour, not a bug: outside the hole you see a frozen picture of
+the desktop and inside it you see the live desktop, and for the first half
+second those are the same image. Force them apart — swap the wallpaper the
+instant the overlay's layer surface appears — and the circle becomes the
+only place the new wallpaper shows. Measured: the
+`quickshell-theme-transition` layer is up for ~600 ms, matching capture +
+90 ms + 620 ms, and a frame grabbed right after it appears still shows the
+OLD wallpaper that hyprpaper had already been told to replace.
+
+Original notes below.
+
+**Was: NOT STARTED**
 
 Source: [Aylur/dotfiles](https://github.com/Aylur/dotfiles) → the shell is
 **[Marble Shell](https://github.com/Aylur/marble-shell)**, built on **AGS**
