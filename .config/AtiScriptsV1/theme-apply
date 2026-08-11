@@ -463,6 +463,61 @@ EOF
   fi
 }
 
+gen_island_colors() {
+  # The Quickshell target REQUIREMENTS.md item 4 left open until the notch
+  # bar existed. It exists, and the user has now overruled DESIGN-SPEC.md's
+  # rule that the notch shape must stay hardcoded #000000: the island
+  # background follows the theme.
+  #
+  # JSON rather than the `$name = rgb(hex)` form gen_hypr_colors emits,
+  # because the consumer is QML and JSON.parse is one line there, whereas
+  # Hyprland's own parser cannot read JSON at all. Two formats for two
+  # parsers is not duplication -- the palette is still generated once, from
+  # the same nine arguments, in the same function call.
+  #
+  # Written to ~/.cache rather than ~/.config: it is generated state, it is
+  # regenerated on every theme change, and putting it under .config would
+  # put a machine-local file inside a stow-managed tree.
+  local bg="$1" bg_alt="$2" fg="$3" red="$4" green="$5" yellow="$6" blue="$7" purple="$8" cyan="$9"
+  local dir="$HOME/.cache/tide-island"
+  local out="$dir/colors.json"
+  local accent; accent="$(accent_of_mode "$MODE" "$7")"
+
+  mkdir -p "$dir" 2>/dev/null || return
+
+  # Written IN PLACE, not written-then-renamed, and that is the opposite of
+  # the usual advice for a reason that was measured rather than assumed.
+  #
+  # The island watches this path with a Quickshell FileView, which is a
+  # QFileSystemWatcher underneath, and QFileSystemWatcher watches the INODE.
+  # An atomic `mv` replaces the inode, so the watch is left pointing at the
+  # unlinked old file and onFileChanged never fires again -- the island keeps
+  # whatever palette it loaded at startup, forever, while every other target
+  # repaints. It looks exactly like "the island does not follow the theme",
+  # which is the bug this whole function exists to fix.
+  #
+  # A truncate-and-write can in principle be read torn. In practice this is
+  # one ~280 byte heredoc, written by one write(2), and the reader's
+  # JSON.parse is wrapped so a failed parse keeps the colours it already has
+  # -- and the close triggers a second change event anyway. That is a better
+  # trade than a watcher that is guaranteed to stop working.
+  cat >"$out" <<EOF
+{
+  "theme": "$MODE",
+  "bg": "$bg",
+  "bgAlt": "$bg_alt",
+  "fg": "$fg",
+  "red": "$red",
+  "green": "$green",
+  "yellow": "$yellow",
+  "blue": "$blue",
+  "purple": "$purple",
+  "cyan": "$cyan",
+  "accent": "$accent"
+}
+EOF
+}
+
 gen_btop_theme() {
   # btop has never been themed by this setup (pure defaults) -- generate
   # a proper .theme file from the current 9-slot palette and point
@@ -750,6 +805,7 @@ gen_all_theme_css() {
   gen_qb_css "$@"
   gen_eww_scss "$@"
   gen_hypr_colors "$@"
+  gen_island_colors "$@"
   gen_btop_theme "$@"
   gen_qt_colors "$@"
   gen_glow_style "$@"

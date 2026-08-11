@@ -866,6 +866,11 @@ PanelWindow {
         screenObject: root.screen
     }
 
+    // FORK: the live palette, watched from theme-apply's generated file.
+    IslandTheme {
+        id: islandTheme
+    }
+
     IslandClock {
         id: timeObj
         clockFormat: userConfig.clockFormat
@@ -2186,9 +2191,41 @@ PanelWindow {
             readonly property real sideSwipePreviewWidth: mainCapsule.sideSwipeWidthForProgress(
                 islandContainer.swipeTransitionProgress
             )
+            // FORK: the shell fill FOLLOWS THE THEME.
+            //
+            // This reverses DESIGN-SPEC.md, deliberately and on the user's
+            // call — the spec says the notch must be hardcoded #000000
+            // because it is imitating bezel, and "tint it and it stops being
+            // a notch and becomes a colored blob". REQUIREMENTS.md item 1
+            // recorded that as a conflict to decide and it is now decided the
+            // other way. Both documents say so; this note is here so the spec
+            // is not read alone and the decision quietly reverted.
+            //
+            // The spec's actual CONCERN is still answered, which is why this
+            // is a blend rather than a swap: islandTheme.shellFill is the
+            // palette's background slot dragged 72% toward black, so the hue
+            // is identifiable beside the wallpaper while the surface stays
+            // dark enough to read as bezel. See qml/common/IslandTheme.qml.
+            //
+            // islandBackgroundOpacity still governs the alpha, so a user who
+            // wants the old translucent pill keeps that control.
             color: root.overviewContentVisible
                 ? root.overviewCapsuleColor
-                : (notificationHistorySurface ? "#080808" : Qt.rgba(0, 0, 0, userConfig.islandBackgroundOpacity / 100.0))
+                : (notificationHistorySurface
+                    ? Qt.darker(islandTheme.shellFill, 1.6)
+                    : Qt.rgba(islandTheme.shellFill.r,
+                              islandTheme.shellFill.g,
+                              islandTheme.shellFill.b,
+                              userConfig.islandBackgroundOpacity / 100.0))
+
+            // No `Behavior on color` here: mainCapsule already has one
+            // further down, on Motion.fade(), and a second interceptor on the
+            // same property is refused with
+            //   WARN: Attempting to set another interceptor on
+            //         QQuickRectangle property color - unsupported
+            // — which is a warning, not an error, so the shell runs and one
+            // of the two animations simply never happens. The existing one
+            // already cross-dissolves a theme change for free.
             // FORK: the resting offset is now interpolated between the two
             // forms rather than fixed at islandTopMargin. Phase 1 of the
             // morph carries it from the floating gap to flush with the top

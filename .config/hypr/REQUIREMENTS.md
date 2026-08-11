@@ -437,8 +437,38 @@ still held catppuccin values — the two had drifted. Re-applying doomone
 reconciled them. The shared state file does keep both sessions in sync,
 but only for themes applied *after* the Hyprland target existed.
 
-Remaining under this item: a Quickshell/QML target, which cannot be
-written until item 1 exists.
+**The Quickshell/QML target is now DONE too.** `gen_island_colors()` sits
+beside `gen_hypr_colors()` in `gen_all_theme_css()` and writes
+`~/.cache/tide-island/colors.json`; the island watches that path and
+repaints live. JSON rather than Hyprland's `$name = rgb(hex)` form because
+the consumer is QML — the palette is still generated once, from the same
+nine arguments, in the same call.
+
+This is what makes the island's background follow the theme, which is a
+**deliberate reversal of DESIGN-SPEC.md** on the user's explicit
+instruction. Written up under "Colour — hardcoded black" in that file,
+including why the fill is the background slot blended 35% toward black
+rather than the raw palette colour.
+
+**Two traps, both of which failed silently and both of which are the same
+mistake in different clothes: something that looks wired up and is not.**
+
+1. `theme-apply` wrote the file with `mv` from a temp file — the correct
+   pattern almost everywhere, and wrong here. Quickshell's `FileView` is a
+   `QFileSystemWatcher` underneath, and that watches the **inode**. An
+   atomic rename leaves the watch pointing at the unlinked old file and
+   `onFileChanged` never fires again. It is written in place instead; the
+   reasoning and the torn-read trade are recorded at the call site.
+2. In the QML, the `FileView` was first declared as the value of a property
+   on a bare `QtObject`. It constructs, reports nothing, and never fires
+   either signal. It has to be an ordinary child in the object tree — which
+   is why `IslandTheme.qml` is an invisible `Item`, the same shape
+   `WallpaperThumbnailCache.qml` already used.
+
+Both presented identically: the island keeping its fallback palette while
+every other target repainted, i.e. exactly "the theme is not wired up".
+
+Remaining under this item: nothing.
 
 Original notes below.
 

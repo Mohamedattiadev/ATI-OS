@@ -72,6 +72,38 @@ floating island had to go black too.
 > and keep the shell shape `#000000`. Flag if you disagree — it's your call,
 > but the illusion is the entire point of the design.
 
+### RESOLVED — the user overruled this; the shape follows the theme
+
+**"the color of the bg if the islend should also follow the colortheme".**
+It was flagged as their call and they have made it. The section above is
+kept as written because the *reasoning* is still worth understanding — the
+rule is simply no longer what the shell does.
+
+The implementation answers the spec's real concern rather than ignoring it.
+The fill is the palette's **background** slot, never its accent, and all 22
+palettes have a near-black there (doomone `#282c34`, gruvbox `#282828`,
+nord `#2e3440`). That is then blended 35% toward black. The shape stays
+unmistakably dark — bezel, not a coloured blob — while its hue is readable
+beside the wallpaper:
+
+| theme | palette bg | island fill |
+|---|---|---|
+| doomone | `#282c34` | `#1a1d22` |
+| gruvbox | `#282828` | `#1a1a1a` |
+| nord | `#2e3440` | `#1e222a` |
+
+Sampled out of the framebuffer while cycling, not asserted. **The first
+attempt darkened by 72% and was worthless**: every palette's background is
+already near-black, so taking three quarters off put doomone at `#0b0c0f`
+and gruvbox at `#0b0b0b` — four points apart on a single channel. The theme
+was genuinely being followed and no eye could tell. If this ever looks
+plain black again, that is the number to check.
+
+Mechanism: `theme-apply`'s `gen_island_colors()` writes
+`~/.cache/tide-island/colors.json` and
+`tide-island-fork/qml/common/IslandTheme.qml` watches it. See
+REQUIREMENTS.md item 4.
+
 ## The 4-pixel shadow trap
 
 When first made flush, a 1–2 px line of desktop showed above it — surviving
