@@ -234,6 +234,38 @@ elements render happily on top of each other. In-tile margins use `px` and
 not `pad` for the same reason: inside a 46 px tile, generous padding is
 taken directly out of the two things that need the room.
 
+### `qml/audio/AudioPanel.qml` (new file) — qtile's AudioPopup
+
+Upstream's control centre has one Sound slider, on the default sink. This
+is the other seven-eighths of qtile's popup — output and microphone
+selection, per-app volume and routing, card profiles, ports — on qtile's
+own `$alt 3`. New `audio_panel` island state, a Loader beside the display
+panel's, and a `tide toggleAudioPanel` IPC entry. The pactl side is
+`hypr/scripts/audio-ctl.py`; see MIGRATION.md for what it restores.
+
+**The trap, and it is a general one about this shell's `var` models:**
+mutating a field of a plain JS object that a `ListView` delegate is
+showing changes nothing on screen. There is no notifier — the property
+still points at the same array, and the same object. The first version set
+`item.vol = target` on a volume keypress and the details column updated
+while the list row kept the old number and the bar did not move, which
+reads as "the write failed" rather than as "the view did not refresh".
+`patchSelected()` copies the row, copies the array, and assigns the
+property back. At these list sizes (single digits) copying is free, and it
+is the only change QML actually sees.
+
+Two smaller ones, both already paid for:
+
+- The bar and the readout must not read `modelData.vol` unguarded. Ports,
+  profiles and cards are rows with no volume at all, and their delegates
+  still evaluate those bindings before `visible: false` hides them —
+  `undefined / 150` is NaN, and a NaN width warns every frame.
+- `islandContainer.audioPanelLayerVisible` is spelled through its id in
+  the `focus:` binding where its neighbours are bare names. Quickshell
+  hot-reloads on write, so a save landing between a fork property's use
+  and its declaration compiles a component that really is missing it, and
+  the log fills with `ReferenceError` from a binding that is correct.
+
 ## Pre-existing upstream warning, not ours
 
 ```

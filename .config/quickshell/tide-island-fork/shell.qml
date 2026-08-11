@@ -315,6 +315,15 @@ Scope {
             shellRoot.forFocusedWindow((window) => window.toggleDisplayPanelWindow());
         }
 
+        // FORK: qtile's AudioPopup, ported. Bound to alt+3 in hypr/binds.conf,
+        // which is the key it had in qtile. Deliberately NOT folded into
+        // toggleControlCenter: the control centre's Sound row is the volume of
+        // the default sink, and this is everything else — which output is the
+        // default, per-application volume and routing, card profiles, ports.
+        function toggleAudioPanel() {
+            shellRoot.forFocusedWindow((window) => window.toggleAudioPanelWindow());
+        }
+
         function toggleThemePicker() {
             shellRoot.forFocusedWindow((window) => window.toggleThemePickerWindow());
         }

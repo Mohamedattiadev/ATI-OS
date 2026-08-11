@@ -429,7 +429,7 @@ to translate.
 
 | Popup | Bindings | Interim stand-in |
 |---|---|---|
-| AudioPopup | 25 | `pavucontrol` / rofi-pulse |
+| AudioPopup | 25 | **DONE** — rebuilt, see below |
 | DisplayPopup | 28 | **DONE** — rebuilt, see below |
 | WifiPopup + WifiQR | 14 | **mostly done** — see below; QR still open |
 | BluetoothPopup | 12 | **done** — see below |
@@ -459,8 +459,7 @@ event-loop turn with `Qt.callLater` — enough, because the Loader is
 synchronous.
 
 **Still open under this heading: WifiQR** (`s` in qtile's chord), which
-generates a shareable QR for the current network, and the audio detail
-popup.
+generates a shareable QR for the current network.
 
 The connectivity panels also caught a rescale miss worth recording: their
 size comes from `connectivityDetailWidth` / `Height` on the island window,
@@ -534,6 +533,74 @@ mode and a screen you cannot see to fix:
 | `v`, Enter on a saved layout | restored, through the same countdown |
 | `set --disable` on the only output | refused |
 | `preset external` with no external | refused |
+
+### AudioPopup is done, and the control centre was not already doing it
+
+The easy conclusion — "the island's control centre has a Sound slider, so
+audio is covered" — was wrong, and it is worth writing down why, because
+it is the same shape of mistake as the Wi-Fi one two sections up in
+reverse. That slider is the volume of the **default sink**. qtile's popup
+was about which device the default *is*, and about everything that is not
+the default:
+
+| qtile did | reachable before | now |
+|---|---|---|
+| pick the output **and drag the playing streams onto it** | no | Enter in `outputs` |
+| pick the default microphone | no | Enter in `mics` |
+| per-application volume / mute | no | `playback`, `h`/`l`/`m` |
+| route ONE app to another device | no | Enter on a stream → `move to…` |
+| what is recording right now | no | `recording` |
+| card **profile** (A2DP ↔ HSP/HFP) | no | `p`, or `C` for every card |
+| output **port** (speakers ↔ headphone jack) | no | `Shift+P` |
+| volume above 100% | no | to 150%, red past unity |
+
+`pavucontrol` is not installed on this machine, so the stand-in the table
+above named did not exist either.
+
+`scripts/audio-ctl.py` is the backend and
+`tide-island-fork/qml/audio/AudioPanel.qml` is the keyboard and the
+pixels — the same split as the display panel, and for the same reason.
+Bound to **`$alt 3`**, qtile's own key. Not a submap: it is a layer
+surface with an exclusive grab, so its keys cannot leak.
+
+**The one thing `pactl set-default-sink` will not do is the reason this
+exists.** Pulse routes only *new* streams to a new default, so switching
+output while music plays leaves the music on the old device. `default-sink`
+re-reads the sink-input list and moves every one of them, and the status
+line reports the count.
+
+Four pactl traps are carried over from the qtile file rather than
+rediscovered; they are documented at the top of `audio-ctl.py`. The one
+most likely to bite a future change: **indices are PipeWire serials and
+they move** (a sink's own index changed from 51 to 249079 just from a
+stream move), so everything is addressed by name and the one thing that
+cannot be — a sink-input — is re-read in the pass that uses it.
+
+Verified against the live daemon, by driving the panel and reading `pactl`
+back afterwards:
+
+| action | result |
+|---|---|
+| `h` on a playing stream | row, bar and details all moved to 85%; `pactl` agreed |
+| `m` | `mute: True` in `pactl`, "mute" in red on the row |
+| Enter on the output | `output: … · output set · moved 1 stream` |
+| `p`, Enter on Analog Stereo Output | `active_profile` became `output:analog-stereo`; `k`+Enter put Duplex back |
+| `Shift+P`, Enter on Headphones | refused: "Headphones has nothing plugged in" |
+| `b` `b` | balance `-0.2`, channels 79/63; `0` re-centred |
+| Enter on a stream → Enter | `move to…`, cursor already on the current device |
+
+**`wtype` DOES drive this panel**, which is worth knowing after the
+SUPER+P work concluded the opposite about keybinds. The distinction is
+that a submap is compositor state that a virtual keyboard's arrival and
+departure resets, whereas this panel is an ordinary Wayland client with
+keyboard focus — synthetic keys reach it exactly like real ones. Only the
+`$alt 3` that opens it cannot be synthesised; that was checked with
+`hyprctl binds` instead.
+
+**Not ported, deliberately:** qtile's `_slider()` box-drawing bar (this
+draws a real rectangle) and the busy sweep animation in its footer (the
+status line says what is happening, and pactl reports no progress to
+animate, so the sweep was a fiction).
 
 ## Deferred: app togglers (7 bindings)
 
