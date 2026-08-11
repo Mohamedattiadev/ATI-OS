@@ -7,6 +7,7 @@ import IslandBackend
 import "qml/common"
 import "qml/controlcenter"
 import "qml/connectivity"
+import "qml/display"
 import "qml/island"
 import "qml/workspace"
 // FORK: the motion system. Upstream hardcodes Easing.OutQuint / OutCubic
@@ -163,6 +164,7 @@ PanelWindow {
     WlrLayershell.layer: islandContainer.wallpaperPickerLayerVisible
         || islandContainer.applicationLauncherLayerVisible
         || islandContainer.themePickerLayerVisible
+        || islandContainer.displayPanelLayerVisible
         ? WlrLayer.Overlay
         : WlrLayer.Top
     WlrLayershell.keyboardFocus: {
@@ -171,7 +173,8 @@ PanelWindow {
         // was focused behind it.
         if (islandContainer.wallpaperPickerLayerVisible
                 || islandContainer.applicationLauncherLayerVisible
-                || islandContainer.themePickerLayerVisible)
+                || islandContainer.themePickerLayerVisible
+                || islandContainer.displayPanelLayerVisible)
             return WlrKeyboardFocus.Exclusive;
         // Keep keyboard focus on the overview until an overview action closes it.
         // Click-to-focus closes the overview before focusing the selected client.
@@ -718,6 +721,13 @@ PanelWindow {
             islandContainer.showWallpaperPicker();
     }
 
+    function toggleDisplayPanelWindow() {
+        if (islandContainer.islandState === "display_panel")
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showDisplayPanel();
+    }
+
     function toggleThemePickerWindow() {
         if (islandContainer.islandState === "theme_picker")
             islandContainer.smartRestoreState();
@@ -883,6 +893,7 @@ PanelWindow {
         focus: wallpaperPickerLayerVisible
             || applicationLauncherLayerVisible
             || themePickerLayerVisible
+            || displayPanelLayerVisible
             || expandedPlayerKeyboardFocusRequested
             || (root.monitorFocused && (root.overviewVisible || root.connectivityPromptActive))
 
@@ -980,6 +991,7 @@ PanelWindow {
             || islandState === "wallpaper_picker"
             || islandState === "application_launcher"
             || islandState === "theme_picker"
+            || islandState === "display_panel"
         readonly property bool splitShowsProgress: islandState === "split" && osdProgress >= 0
         readonly property bool splitShowsText: islandState === "split" && osdProgress < 0 && osdCustomText !== ""
         readonly property bool splitShowsIconOnly: islandState === "split" && osdProgress < 0 && osdCustomText === ""
@@ -1024,6 +1036,8 @@ PanelWindow {
         readonly property bool wallpaperPickerLayerVisible: !root.overviewVisible && islandState === "wallpaper_picker"
         readonly property bool applicationLauncherLayerVisible: !root.overviewVisible && islandState === "application_launcher"
         readonly property bool themePickerLayerVisible: !root.overviewVisible && islandState === "theme_picker"
+        // FORK: the display panel, the port of qtile's DisplayPopup.
+        readonly property bool displayPanelLayerVisible: !root.overviewVisible && islandState === "display_panel"
         readonly property var activePlayer: mediaController.activePlayer
         readonly property string lyricsDisplayText: mediaController.displayText
         readonly property string currentTrack: mediaController.currentTrack
@@ -1809,6 +1823,19 @@ PanelWindow {
             stopAutoHideTimer();
         }
 
+        // FORK: the display panel — qtile's DisplayPopup (28 bindings),
+        // the largest hole the migration left and the only one with no
+        // fallback at all, since neither nwg-displays nor wdisplays is
+        // installed. See qml/display/DisplayPanel.qml.
+        function showDisplayPanel() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "display_panel";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
         // FORK: the theme switcher, which DESIGN-SPEC.md lists as one of
         // the island's states and which upstream does not have.
         function showThemePicker() {
@@ -2096,6 +2123,15 @@ PanelWindow {
                 case "wallpaper_picker":
                 case "application_launcher":
                     return Metrics.px(1100);
+                case "display_panel":
+                    // Wider than the theme picker because the layout is a
+                    // list AND a details column side by side: an output row
+                    // is "eDP-1 (laptop) 1366x768" and the details are
+                    // "position", "scale", "rotation", "mirror" with values.
+                    // Neither elides well, and eliding the one field that
+                    // says what a change did is the worst place to save
+                    // width.
+                    return Math.min(Metrics.px(900), root.width - Metrics.px(48));
                 case "theme_picker":
                     // 22 tiles in a 4-column grid. Narrower than the
                     // wallpaper picker's 1100 because a theme tile is a
@@ -2138,6 +2174,8 @@ PanelWindow {
                 case "wallpaper_picker":
                 case "application_launcher":
                     return Metrics.px(260);
+                case "display_panel":
+                    return Metrics.px(300);
                 case "theme_picker":
                     return Metrics.px(290);
                 case "expanded":
@@ -2168,6 +2206,7 @@ PanelWindow {
                     return mainCapsule.targetHeight * 40 / 165;
                 case "wallpaper_picker":
                 case "application_launcher":
+                case "display_panel":
                 case "theme_picker":
                     return Metrics.px(34);
                 case "expanded":
@@ -2900,6 +2939,25 @@ PanelWindow {
                         showCondition: islandContainer.wallpaperPickerLayerVisible
                         onWallpaperApplied: filePath => root.wallpaperPickerActiveWallpaper = filePath
                         onWallpaperApplySucceeded: filePath => root.handleWallpaperApplySucceeded(filePath)
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            // FORK: the display panel. Ordered before the theme picker only
+            // for readability; Loaders are mutually exclusive by island state.
+            Loader {
+                id: displayPanelLoader
+                anchors.fill: parent
+                active: islandContainer.displayPanelLayerVisible
+                asynchronous: false
+                visible: islandContainer.displayPanelLayerVisible
+
+                sourceComponent: Component {
+                    DisplayPanel {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        showCondition: islandContainer.displayPanelLayerVisible
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }

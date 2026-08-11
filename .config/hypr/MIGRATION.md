@@ -374,7 +374,7 @@ to translate.
 | Popup | Bindings | Interim stand-in |
 |---|---|---|
 | AudioPopup | 25 | `pavucontrol` / rofi-pulse |
-| DisplayPopup | 28 | `nwg-displays` / `wdisplays` |
+| DisplayPopup | 28 | **DONE** — rebuilt, see below |
 | WifiPopup + WifiQR | 14 | `nmtui`, `rofi-network-manager` |
 | BluetoothPopup | 12 | `blueman-manager`, `rofi-bluetooth` |
 | WallpaperPopup | 9 | `waypaper` |
@@ -383,6 +383,37 @@ to translate.
 
 These are the natural second phase, rebuilt as Quickshell/QML pages inside
 the Tide-island bar — which is where they arguably belong anyway.
+
+### DisplayPopup is done, and it was the urgent one
+
+Not because it is the largest, but because it was the only one with **no
+working fallback**. The table above named nwg-displays and wdisplays as the
+stand-in and neither is installed, so between the migration and now this
+machine had no way to change resolution, scale, rotation or arrangement
+except by editing `monitors.conf` and reloading.
+
+`scripts/display-ctl.py` is the backend and knows everything about
+Hyprland's monitor syntax; `tide-island-fork/qml/display/DisplayPanel.qml`
+is the keyboard and the pixels. The split is deliberate — the backend can
+be exercised from a shell, where the previous generation of this feature
+was 2,000 lines of Python that could only be run by opening a popup.
+
+Bound to **`$alt 4`**, qtile's own key. It is not a submap: qtile needed a
+KeyChord because its popup could not take keyboard focus at all, whereas
+this is a layer surface with an exclusive grab that reads its own keys.
+
+Verified against the live panel — the countdown in both directions being
+the one that matters, since it is the only thing standing between a bad
+mode and a screen you cannot see to fix:
+
+| action | result |
+|---|---|
+| Enter on 47.99 Hz | applied; header shows "reverting in 11s — y to keep, c to revert" |
+| wait it out | back at 59.987 Hz, "no answer — reverted" |
+| Enter, then `y` | stayed at 47.99 Hz, "kept" |
+| `v`, Enter on a saved layout | restored, through the same countdown |
+| `set --disable` on the only output | refused |
+| `preset external` with no external | refused |
 
 ## Deferred: app togglers (7 bindings)
 

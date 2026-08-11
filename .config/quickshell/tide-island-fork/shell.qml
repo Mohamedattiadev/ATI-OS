@@ -299,6 +299,12 @@ Scope {
         // FORK: the theme switcher, one of the island states DESIGN-SPEC.md
         // lists and upstream does not have. Bound in hypr/binds.conf
         // alongside toggleWallpaperPicker.
+        // FORK: qtile's DisplayPopup, ported. Bound to alt+4 in
+        // hypr/binds.conf, which is the key it had in qtile.
+        function toggleDisplayPanel() {
+            shellRoot.forFocusedWindow((window) => window.toggleDisplayPanelWindow());
+        }
+
         function toggleThemePicker() {
             shellRoot.forFocusedWindow((window) => window.toggleThemePickerWindow());
         }
