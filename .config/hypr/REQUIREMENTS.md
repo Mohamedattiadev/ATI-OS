@@ -105,17 +105,46 @@ all** for the resting state:
 | Inter / Inter Display | the four `*FontFamily` keys | resolves, not substituted |
 | — | `islandExclusiveZone` 49 | reserved `[0,49,0,0]`, windows tile at y=59 |
 
-**What config cannot reach**, and still needs QML work in a fork: the
-notch morph itself (square top corners, 14 px concave flare, one
-interpolated path in two phases), the 400 ms / 0.8-damping spring, and
-the 4 px overshoot. Those are the parts the video's author wrote by
-hand, and they are the visual signature — so the shape today is Tide
-Island's rounded pill at spec dimensions, not the spec's notch.
+**Sizing was wrong at first, and the reason is worth keeping.** The spec's
+150 px was measured off a 2560x1440 display, where it is 5.9% of screen
+width. Applied literally to this 1366 px panel it becomes 11% —
+proportionally almost double, and it read as oversized. `islandWidth` now
+follows the spec's *proportion* rather than its pixel count: 5.9% of 1366
+is 80, rounded to 96 so the 24-hour clock keeps side padding. Any spec
+number taken off that video needs the same treatment.
 
-**The 13 popups (121 bindings) are untouched.** That remains the long
-pole, and it is now clearer what it costs: they cannot be dropped into
-`~/.config/quickshell` either, so each is either a fork of Tide Island
-or a separate Quickshell surface alongside it.
+**Several popups turned out to already exist**, unbound — found with
+`qs -p /usr/share/tide-island ipc show`, which lists the island's IPC:
+
+| IPC call | Replaces |
+|---|---|
+| `tide toggleWallpaperPicker` | WallpaperPopup (9 bindings) |
+| `tide toggleControlCenter` | much of AudioPopup + connectivity |
+| `tide toggleNotificationCenter` | — |
+| `overview toggle` | the group overview the qtile bar gave at a glance |
+
+These are now bound in `binds.conf`. The wallpaper picker also needs
+`wallpaperLibraryPath` set or it opens empty saying "No wallpapers
+found"; it points at `~/Pictures/Wallpapers` (362 images).
+
+**What config still cannot reach**, and needs a QML fork:
+
+- The notch morph (square top corners, 14 px concave flare, one path
+  interpolated in two phases) and the 4 px overshoot.
+- The 400 ms / 0.8-damping spring. There is **no animation-speed setting
+  at all** among the 45 config keys — `wallpaperTransitionDuration` is
+  wallpaper-only — so "the movement feels slow" cannot be tuned from
+  config. It is a fork or nothing.
+- Arbitrary text in the island. Its `showCustom()` IPC takes no
+  arguments; content comes from the shell's own custom-info source.
+
+**A theme picker is not among the island's panels.** `theme-toggle` is
+still the rofi one, on `$mod P` → `c`. Putting it in the island is fork
+work, same bucket as the above.
+
+**The remaining popups (audio detail, display, wifi/QR, bluetooth,
+cheatsheets) are untouched** — still the long pole, and each is either a
+fork of Tide Island or a separate Quickshell surface beside it.
 
 Original notes below.
 

@@ -1,8 +1,8 @@
 {
   "_comment": "Tide Island, restyled toward hypr/DESIGN-SPEC.md. Read by tide-island's UserConfigBackend from ~/.config/tide-island/userconfig.json. Keys and defaults come from backend/UserConfigBackend.cpp; anything omitted keeps its upstream default. Values that DIVERGE from upstream are the ones carrying spec intent, and each is noted in hypr/DESIGN-SPEC.md.",
 
-  "_geometry": "Spec: collapsed 150x38 pill, 11px below the top edge in floating form. Upstream defaults are 140x38 at margin 4, so only width and margin move. Height already matched.",
-  "islandWidth": 150,
+  "_geometry": "Spec says 150x38. That number was measured off the video author's 2560x1440 display, where it is 5.9% of screen width. On this 1366x768 panel the same 150px is 11% - proportionally almost double, which is why it read as oversized. Scaled to the spec's PROPORTION instead of its pixel count: 5.9% of 1366 = 80, rounded up to 96 so the 24-hour clock keeps comfortable side padding at font size 20. Height stays 38, which is the spec value and also upstream's default.",
+  "islandWidth": 96,
   "islandHeight": 38,
   "islandTopMargin": 11,
   "islandPositionX": 50,
@@ -33,6 +33,7 @@
   "_clock": "24-hour, matching hyprlock.conf's `date +%H:%M`. Upstream defaults to 12.",
   "clockFormat": "24",
 
-  "_wallpaper": "Left on upstream defaults ON PURPOSE. AtiScriptsV1/theme-apply already owns wallpaper and pywal for both sessions, and hypr/scripts/wallpaper-sync.sh feeds hyprpaper from the same cache. Setting wallpaperPywalEnabled here would give two independent things opinions about the same wallpaper.",
+  "_wallpaper": "The island ships its own wallpaper picker, which answers qtile's WallpaperPopup (9 bindings) without a port - it just needs pointing at the library, or it opens and says 'No wallpapers found'. 362 images live in ~/Pictures/Wallpapers. wallpaperPywalEnabled stays FALSE on purpose: AtiScriptsV1/theme-apply already owns pywal for both sessions and hypr/scripts/wallpaper-sync.sh feeds hyprpaper from the same cache, so enabling it here would give two independent things opinions about the same wallpaper and the qtile session would drift.",
+  "wallpaperLibraryPath": "@HOME@/Pictures/Wallpapers",
   "wallpaperPywalEnabled": false
 }
