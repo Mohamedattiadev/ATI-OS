@@ -157,11 +157,16 @@ PanelWindow {
     exclusiveZone: Math.ceil(root.baseExclusiveZone * root.exclusiveZoneProgress)
     WlrLayershell.layer: islandContainer.wallpaperPickerLayerVisible
         || islandContainer.applicationLauncherLayerVisible
+        || islandContainer.themePickerLayerVisible
         ? WlrLayer.Overlay
         : WlrLayer.Top
     WlrLayershell.keyboardFocus: {
+        // Exclusive, not OnDemand: the theme picker is arrow-key driven,
+        // and without an exclusive grab the arrows go to whatever window
+        // was focused behind it.
         if (islandContainer.wallpaperPickerLayerVisible
-                || islandContainer.applicationLauncherLayerVisible)
+                || islandContainer.applicationLauncherLayerVisible
+                || islandContainer.themePickerLayerVisible)
             return WlrKeyboardFocus.Exclusive;
         // Keep keyboard focus on the overview until an overview action closes it.
         // Click-to-focus closes the overview before focusing the selected client.
@@ -272,6 +277,11 @@ PanelWindow {
     // It scales to zero as the shape morphs back to floating, because the
     // floating form needs its islandTopMargin gap back.
     readonly property real notchOvershoot: 4
+
+    // Kept on root so the capsule can size itself for the resting EQ
+    // without instantiating SwipeLyricsLayer to ask it. 4 bars of 3 px with
+    // 3 px gaps, plus the 7 px gap after the clock.
+    readonly property real restingEqAllowance: 4 * 3 + 3 * 3 + 7
     readonly property bool hoverExpandEnabled: configuredHoverExpandAction > 0
     readonly property bool topGestureInputActive: !root.overviewVisible && islandContainer.canShowSideSwipe
     readonly property bool autoHideRuntimeEnabled: !shellRootController
@@ -694,6 +704,13 @@ PanelWindow {
             islandContainer.showWallpaperPicker();
     }
 
+    function toggleThemePickerWindow() {
+        if (islandContainer.islandState === "theme_picker")
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showThemePicker();
+    }
+
     function toggleApplicationLauncherWindow() {
         if (islandContainer.islandState === "application_launcher")
             islandContainer.smartRestoreState();
@@ -846,6 +863,7 @@ PanelWindow {
         anchors.fill: parent
         focus: wallpaperPickerLayerVisible
             || applicationLauncherLayerVisible
+            || themePickerLayerVisible
             || expandedPlayerKeyboardFocusRequested
             || (root.monitorFocused && (root.overviewVisible || root.connectivityPromptActive))
 
@@ -869,6 +887,25 @@ PanelWindow {
         property var bluetoothExpandedDevice: null
         property var notificationHistoryModel: ListModel {}
         readonly property var cavaLevels: systemState.cavaLevels
+        // FORK: gates the resting-state EQ. See SwipeLyricsLayer.restingEq.
+        readonly property bool musicPlaying: mediaController.musicPlaying
+
+        // FORK: whether the media/lyrics surface has anything to be ABOUT.
+        // Upstream guards the left-hand custom surface on
+        // hasCustomLeftItems but leaves the right-hand media surface
+        // ungated, and that asymmetry is a real bug: with no player at all,
+        // resting on "lyrics" renders lyricsBridge.displayText, which falls
+        // through to the literal string "No music playing" beside an empty
+        // album-art square. So the island's resting state became a card
+        // announcing the absence of media.
+        //
+        // DESIGN-SPEC.md rules that out twice over — the resting state is
+        // "exactly two things: the time, and a 4-bar EQ", and media is
+        // supposed to "swap the content while the shape stays put", never
+        // to own the rest state. Note this is deliberately activePlayer,
+        // not musicPlaying: a paused track is still a media surface worth
+        // showing, no player at all is not.
+        readonly property bool hasMediaSurface: mediaController.activePlayer !== null
         property real swipeTransitionProgress: 0
         property string workspaceOriginSide: "none"
         property string splitOriginSide: "none"
@@ -905,6 +942,7 @@ PanelWindow {
             || islandState === "notification"
             || islandState === "wallpaper_picker"
             || islandState === "application_launcher"
+            || islandState === "theme_picker"
         readonly property bool splitShowsProgress: islandState === "split" && osdProgress >= 0
         readonly property bool splitShowsText: islandState === "split" && osdProgress < 0 && osdCustomText !== ""
         readonly property bool splitShowsIconOnly: islandState === "split" && osdProgress < 0 && osdCustomText === ""
@@ -948,6 +986,7 @@ PanelWindow {
         readonly property bool notificationCenterLayerVisible: !root.overviewVisible && islandState === "notification_center"
         readonly property bool wallpaperPickerLayerVisible: !root.overviewVisible && islandState === "wallpaper_picker"
         readonly property bool applicationLauncherLayerVisible: !root.overviewVisible && islandState === "application_launcher"
+        readonly property bool themePickerLayerVisible: !root.overviewVisible && islandState === "theme_picker"
         readonly property var activePlayer: mediaController.activePlayer
         readonly property string lyricsDisplayText: mediaController.displayText
         readonly property string currentTrack: mediaController.currentTrack
@@ -973,6 +1012,25 @@ PanelWindow {
                     controlCenterLoader.item.closeConnectivityPanels();
                 else
                     root.closeAllConnectivityDetails();
+            }
+        }
+
+        // FORK: mirrors onCustomLeftItemsChanged below. When the last
+        // player goes away while the island is resting on the media
+        // surface, fall back to the clock instead of sitting on a card
+        // about a player that no longer exists.
+        onHasMediaSurfaceChanged: {
+            if (hasMediaSurface || restingState !== "lyrics")
+                return;
+
+            restingState = "normal";
+
+            if (islandState === "lyrics"
+                    || (islandState === "split" && splitOriginSide === "right")
+                    || (islandState === "long_capsule" && workspaceOriginSide === "right")) {
+                restoreRestingCapsule(true);
+            } else {
+                applyRestingVisuals();
             }
         }
 
@@ -1173,7 +1231,10 @@ PanelWindow {
         }
 
         function normalizeRestingState(nextState) {
-            if (nextState === "lyrics") return "lyrics";
+            // FORK: `&& hasMediaSurface`. Was unconditional, which is what
+            // let the island rest on a "No music playing" card. Now
+            // symmetric with the custom branch below it.
+            if (nextState === "lyrics" && hasMediaSurface) return "lyrics";
             if (nextState === "custom" && hasCustomLeftItems) return "custom";
             return "normal";
         }
@@ -1342,7 +1403,10 @@ PanelWindow {
             let settleProgress = sideSwipeRestProgressForProgress(startProgress);
             let settleWidth = sideSwipeRestWidthForProgress(startProgress);
 
-            if (finalProgress >= 0.56) {
+            // FORK: `hasMediaSurface &&`. Without it a right-swipe with no
+            // player running settles onto the empty media card and stays
+            // there, which is the same bug reachable by gesture.
+            if (hasMediaSurface && finalProgress >= 0.56) {
                 settleAction = "lyrics";
                 settleProgress = 1;
                 settleWidth = lyricsCapsuleWidth;
@@ -1645,6 +1709,17 @@ PanelWindow {
             stopAutoHideTimer();
         }
 
+        // FORK: the theme switcher, which DESIGN-SPEC.md lists as one of
+        // the island's states and which upstream does not have.
+        function showThemePicker() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "theme_picker";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
         function showApplicationLauncher() {
             cancelSideSwipeSettle();
             abortSideTransientMode();
@@ -1921,6 +1996,14 @@ PanelWindow {
                 case "wallpaper_picker":
                 case "application_launcher":
                     return 1100;
+                case "theme_picker":
+                    // 22 tiles in a 4-column grid. Narrower than the
+                    // wallpaper picker's 1100 because a theme tile is a
+                    // word and three chips, not a thumbnail; at 1100 the
+                    // tiles were mostly empty background. Clamped to the
+                    // screen so it still fits this 1366 panel with the
+                    // island's own margins.
+                    return Math.min(760, root.width - 48);
                 case "expanded":
                 case "bluetooth_expanded":
                     return 410;
@@ -1931,7 +2014,17 @@ PanelWindow {
                         Math.min(root.width - 48, notificationLoader.item.maximumWidth, notificationLoader.item.preferredWidth)
                     );
                 default:
-                    return userConfig.islandWidth;
+                    // FORK: the collapsed width grows to fit the resting EQ
+                    // rather than clipping it. islandWidth is sized for the
+                    // clock alone (96 on this panel), and the bars are
+                    // additional ink, not ink that fits in the padding.
+                    // It rides mainCapsule's own spring for free, because
+                    // Behavior on displayedWidth already covers it — which
+                    // is why the bars fade in over 180ms while the capsule
+                    // takes 400: the shape arrives first and the content
+                    // lands inside it.
+                    return userConfig.islandWidth
+                        + (islandContainer.musicPlaying ? root.restingEqAllowance : 0);
                 }
             }
             readonly property real targetHeight: {
@@ -1945,6 +2038,8 @@ PanelWindow {
                 case "wallpaper_picker":
                 case "application_launcher":
                     return 260;
+                case "theme_picker":
+                    return 250;
                 case "expanded":
                 case "bluetooth_expanded":
                     return 165;
@@ -1966,6 +2061,7 @@ PanelWindow {
                     return mainCapsule.targetHeight * 40 / 165;
                 case "wallpaper_picker":
                 case "application_launcher":
+                case "theme_picker":
                     return 34;
                 case "expanded":
                 case "bluetooth_expanded":
@@ -2416,6 +2512,7 @@ PanelWindow {
                         maximumWidth: Math.max(220, root.width - 48)
                         transitionProgress: islandContainer.rightSwipeProgress
                         recordingActive: islandContainer.screenRecordingActive
+                        musicPlaying: islandContainer.musicPlaying
                         showSecondaryText: islandContainer.workspaceOriginSide !== "right"
                             && islandContainer.splitOriginSide !== "right"
                         showCondition: true
@@ -2664,6 +2761,23 @@ PanelWindow {
                         showCondition: islandContainer.wallpaperPickerLayerVisible
                         onWallpaperApplied: filePath => root.wallpaperPickerActiveWallpaper = filePath
                         onWallpaperApplySucceeded: filePath => root.handleWallpaperApplySucceeded(filePath)
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            Loader {
+                id: themePickerLoader
+                anchors.fill: parent
+                active: islandContainer.themePickerLayerVisible
+                asynchronous: false
+                visible: islandContainer.themePickerLayerVisible
+
+                sourceComponent: Component {
+                    ThemePickerLayer {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        showCondition: islandContainer.themePickerLayerVisible
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }

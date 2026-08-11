@@ -120,6 +120,44 @@ it exists to cover the drop shadow's padding, which is an absolute pixel
 count, so shrinking it would reintroduce the desktop-coloured hairline it
 exists to hide.
 
+### `qml/island/ThemePickerLayer.qml` (new file) — the theme switcher
+
+DESIGN-SPEC.md lists a theme switcher among the island's states; upstream
+has a wallpaper picker and no theme picker at all. New layer, plus a
+`theme_picker` island state in `DynamicIslandWindow.qml` and a
+`tide toggleThemePicker` IPC entry in `shell.qml`.
+
+It owns no theming logic: it lists what `AtiScriptsV1/theme-apply` offers
+and runs `theme-apply`. Swatches come from `hypr/scripts/theme-list.sh`,
+which parses `theme-apply`'s own `resolve_palette` table rather than
+carrying a copy — a second copy would drift silently, and a wrong swatch
+still renders.
+
+Needs `import Quickshell` (not just `Quickshell.Io`) for `Quickshell.env`.
+Without it the panel opens empty with only a `ReferenceError: Quickshell is
+not defined` in the log, which is easy to read as "the script failed".
+
+### `DynamicIslandWindow.qml` + `IslandMprisController.qml` — resting state
+
+Two related fixes, both about the spec's rule that the resting island is
+"exactly two things: the time, and a 4-bar EQ visualiser that animates only
+while music actually plays".
+
+**The media surface leaked into the rest state.** Upstream guards the
+left-hand custom surface on `hasCustomLeftItems` but leaves the right-hand
+media surface ungated, so `normalizeRestingState("lyrics")` succeeded with
+no player running and the island rested on a card reading the literal
+string "No music playing" beside an empty album-art square. Now gated on
+`hasMediaSurface` (`activePlayer !== null` — a paused track still counts, no
+player does not), in three places: the normaliser, the swipe settle, and a
+new `onHasMediaSurfaceChanged` that falls back to the clock when the last
+player disappears.
+
+**The EQ was only reachable by swiping.** Upstream draws cava bars inside
+the lyrics row, which lives at `clampedProgress` 1. A second, smaller
+4-bar instance now sits on the clock's side of the crossfade, gated on a
+new `musicPlaying` flag, and the collapsed capsule widens to fit it.
+
 ## Pre-existing upstream warning, not ours
 
 ```

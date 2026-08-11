@@ -17,6 +17,9 @@ Item {
     property string timeFontFamily: activeConfig.timeFontFamily
     property bool showCondition: false
     property bool showSecondaryText: true
+    // FORK: whether sound is actually coming out right now, not whether a
+    // player exists. Gates the resting EQ — see restingEq below.
+    property bool musicPlaying: false
     property bool recordingActive: false
     property real transitionProgress: 0
     property int textPixelSize: userConfig.bodyFontSize
@@ -33,6 +36,21 @@ Item {
     property real lyricChangeProgress: 1
     property int recordingDotSpacing: 12
 
+    // Gap between the clock and the resting EQ, and the total the collapsed
+    // capsule has to grow by to fit it. Exported so DynamicIslandWindow can
+    // widen the capsule on the same spring rather than clipping the bars.
+    readonly property real restingEqGap: 7
+    readonly property real restingEqWidth: 4 * 3 + 3 * 3
+    readonly property real restingEqAllowance: restingEqWidth + restingEqGap
+    // The clock and the EQ are one centred group, so the clock slides left
+    // by half the allowance when the bars appear rather than staying put
+    // and letting the pair sit off-centre. Animated on its own short curve
+    // because it is content shifting inside the capsule, not the capsule
+    // moving — those two settling at different times is what makes the
+    // bars look bolted on.
+    readonly property real restingGroupShift:
+        (musicPlaying && showSecondaryText) ? restingEqAllowance / 2 : 0
+
     readonly property real clampedProgress: Math.max(0, Math.min(1, transitionProgress))
     readonly property bool lyricMostlyVisible: clampedProgress > 0.92
     readonly property real textWidth: Math.max(0, width - horizontalPadding * 2)
@@ -48,6 +66,12 @@ Item {
     readonly property real dragDistance: Math.max(lyricEntryDistance, timeExitDistance)
     readonly property real lyricX: centeredX - (1 - clampedProgress) * dragDistance
     readonly property real timeX: centeredX + clampedProgress * dragDistance
+    property real animatedGroupShift: restingGroupShift
+    readonly property real shiftedTimeX: timeX - animatedGroupShift
+
+    Behavior on animatedGroupShift {
+        NumberAnimation { duration: 180; easing.type: Easing.InOutQuad }
+    }
     readonly property real lyricBaselineY: lyricBaselineGuide.y + lyricBaselineGuide.baselineOffset
     readonly property real timeBaselineY: timeBaselineGuide.y + timeBaselineGuide.baselineOffset
     readonly property real visibleLyricWidth: Math.min(lyricTextWidth, Math.max(0, lyricMetrics.advanceWidth))
@@ -271,7 +295,7 @@ Item {
 
     Text {
         visible: timeText !== "" && showSecondaryText
-        x: timeX
+        x: shiftedTimeX
         y: timeBaselineY - baselineOffset
         width: textWidth
         text: timeText
@@ -284,6 +308,51 @@ Item {
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideRight
         wrapMode: Text.NoWrap
+    }
+
+    // FORK: the resting-state EQ. DESIGN-SPEC.md's resting island shows
+    // exactly two things — "the time, and a 4-bar EQ visualiser that
+    // animates only while music actually plays".
+    //
+    // Upstream already draws cava bars, but only inside the lyrics row,
+    // which lives at clampedProgress 1 — i.e. only after you swipe. At
+    // rest that row is fully transparent and all you get is the clock.
+    // This is a second, smaller instance that lives on the clock's side of
+    // the crossfade instead: its opacity is 1 - clampedProgress, exactly
+    // like the time text, so swiping to lyrics hands the EQ over to the
+    // big one rather than showing two.
+    //
+    // Four bars, not upstream's five, because the spec says four and
+    // because the collapsed capsule is 96 px wide on this panel — the
+    // fifth bar costs 6 px that the clock needs.
+    //
+    // "Animates only while music plays" is taken literally: with nothing
+    // playing the bars are not idling at their minimum height, they are
+    // gone, and the capsule is just a clock. cavaLevels stays pinned at
+    // zero unless the cava module is present, so a flat row of dots would
+    // have been the permanent state on a machine without it — a
+    // decoration that never moves, which is the exact trade the spec
+    // deletes battery and Wi-Fi for.
+    SwipeCavaBars {
+        id: restingEq
+        levels: root.cavaLevels
+        barCount: 4
+        barWidth: 3
+        barSpacing: 3
+        minimumBarHeight: 3
+        barColor: "white"
+        height: 14
+
+        readonly property bool shown: root.musicPlaying && root.showSecondaryText
+
+        anchors.verticalCenter: parent.verticalCenter
+        // Sits just right of the clock's own ink, not of its full-width
+        // centred box, so the pair reads as one centred group.
+        x: root.shiftedTimeX + (root.textWidth + root.visibleTimeWidth) / 2 + root.restingEqGap
+        opacity: shown ? (1 - root.clampedProgress) : 0
+        visible: opacity > 0.001
+
+        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.InOutQuad } }
     }
 
     RecordingIndicator {

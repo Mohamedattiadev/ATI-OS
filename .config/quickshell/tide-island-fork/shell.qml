@@ -250,6 +250,13 @@ Scope {
         function toggleApplicationLauncher() {
             shellRoot.forFocusedWindow((window) => window.toggleApplicationLauncherWindow());
         }
+
+        // FORK: the theme switcher, one of the island states DESIGN-SPEC.md
+        // lists and upstream does not have. Bound in hypr/binds.conf
+        // alongside toggleWallpaperPicker.
+        function toggleThemePicker() {
+            shellRoot.forFocusedWindow((window) => window.toggleThemePickerWindow());
+        }
     }
 
     Connections {

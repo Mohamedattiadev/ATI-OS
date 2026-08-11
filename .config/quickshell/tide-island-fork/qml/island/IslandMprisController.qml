@@ -31,6 +31,17 @@ Item {
         if (lyricsLookupArtist !== "") return lyricsLookupArtist;
         return "Unknown";
     }
+    // FORK: DESIGN-SPEC.md's resting state is "the time, and a 4-bar EQ
+    // visualiser that animates only while music actually plays". Upstream
+    // never needed a plain is-it-playing flag — resolveActivePlayer()
+    // deliberately falls back to paused and even merely-controllable
+    // players so the expanded card still has something to show — so this
+    // is a narrower question than "is there a player": it is specifically
+    // whether sound is coming out right now.
+    readonly property bool musicPlaying: activePlayer
+        ? activePlayer.playbackState === MprisPlaybackState.Playing
+        : false
+
     readonly property string currentArtUrl: activePlayer ? (activePlayer.trackArtUrl || activePlayer.artUrl || "") : ""
     readonly property string inlineLyricsRaw: {
         if (!activePlayer || !activePlayer.metadata) return "";
