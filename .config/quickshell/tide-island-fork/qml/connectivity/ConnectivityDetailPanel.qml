@@ -1,6 +1,9 @@
 import QtQuick
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: root
 
@@ -81,7 +84,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: 28
+        radius: Metrics.px(28)
         color: StyleTokens.module
         opacity: 0.9
     }
@@ -89,7 +92,7 @@ Item {
     Item {
         id: contentRoot
         anchors.fill: parent
-        anchors.margins: 16
+        anchors.margins: Metrics.pad(16)
         opacity: 0.45 + root.presentationProgress * 0.55
 
         Behavior on opacity {
@@ -104,13 +107,13 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            height: 24
+            height: Metrics.px(24)
 
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.isWifi ? "Wi-Fi" : "Bluetooth"
                 color: StyleTokens.textPrimary
-                font.pixelSize: 15
+                font.pixelSize: Metrics.font(15)
                 font.family: root.heroFontFamily
                 font.weight: Font.Bold
             }
@@ -121,13 +124,13 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: headerRow.bottom
-            anchors.topMargin: 14
-            spacing: 10
+            anchors.topMargin: Metrics.pad(14)
+            spacing: Metrics.px(10)
 
             Rectangle {
                 width: parent.width
                 height: visible ? 64 : 0
-                radius: 16
+                radius: Metrics.px(16)
                 color: StyleTokens.transparent
                 visible: root.isWifi && root.provider && root.provider.wifiEnabled && root.provider.wifiCurrentSsid.length > 0
 
@@ -145,26 +148,26 @@ Item {
 
                 Item {
                     anchors.fill: parent
-                    anchors.margins: 14
+                    anchors.margins: Metrics.pad(14)
 
                     Text {
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.provider ? root.provider.wifiGlyph : ""
                         color: StyleTokens.accent
-                        font.pixelSize: 16
+                        font.pixelSize: Metrics.font(16)
                         font.family: root.iconFontFamily
                     }
 
                     Text {
                         anchors.left: parent.left
-                        anchors.leftMargin: 28
+                        anchors.leftMargin: Metrics.pad(28)
                         anchors.top: parent.top
                         anchors.right: parent.right
-                        anchors.rightMargin: 24
+                        anchors.rightMargin: Metrics.pad(24)
                         text: root.provider ? root.provider.wifiCurrentSsid : ""
                         color: StyleTokens.textPrimary
-                        font.pixelSize: 12
+                        font.pixelSize: Metrics.font(12)
                         font.family: root.textFontFamily
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
@@ -172,11 +175,11 @@ Item {
 
                     Text {
                         anchors.left: parent.left
-                        anchors.leftMargin: 28
+                        anchors.leftMargin: Metrics.pad(28)
                         anchors.bottom: parent.bottom
                         text: "Connected"
                         color: StyleTokens.textSoft
-                        font.pixelSize: 11
+                        font.pixelSize: Metrics.font(11)
                         font.family: root.textFontFamily
                     }
 
@@ -185,7 +188,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: "✓"
                         color: StyleTokens.success
-                        font.pixelSize: 18
+                        font.pixelSize: Metrics.font(18)
                         font.family: root.textFontFamily
                         font.weight: Font.DemiBold
                     }
@@ -197,7 +200,7 @@ Item {
                 visible: root.provider && root.provider.wifiAvailabilityMessage.length > 0 && root.isWifi
                 text: root.provider ? root.provider.wifiAvailabilityMessage : ""
                 color: StyleTokens.textMuted
-                font.pixelSize: 11
+                font.pixelSize: Metrics.font(11)
                 font.family: root.textFontFamily
                 wrapMode: Text.Wrap
             }
@@ -207,7 +210,7 @@ Item {
                 visible: root.provider && root.provider.wifiInfoMessage.length > 0 && root.isWifi
                 text: root.provider ? root.provider.wifiInfoMessage : ""
                 color: StyleTokens.accentSoft
-                font.pixelSize: 11
+                font.pixelSize: Metrics.font(11)
                 font.family: root.textFontFamily
                 wrapMode: Text.Wrap
             }
@@ -217,7 +220,7 @@ Item {
                 visible: root.provider && root.provider.wifiError.length > 0 && root.isWifi
                 text: root.provider ? root.provider.wifiError : ""
                 color: StyleTokens.error
-                font.pixelSize: 11
+                font.pixelSize: Metrics.font(11)
                 font.family: root.textFontFamily
                 wrapMode: Text.Wrap
             }
@@ -227,7 +230,7 @@ Item {
                 visible: root.provider && root.provider.bluetoothAvailabilityMessage.length > 0 && root.isBluetooth
                 text: root.provider ? root.provider.bluetoothAvailabilityMessage : ""
                 color: StyleTokens.textMuted
-                font.pixelSize: 11
+                font.pixelSize: Metrics.font(11)
                 font.family: root.textFontFamily
                 wrapMode: Text.Wrap
             }
@@ -237,7 +240,7 @@ Item {
                 visible: root.provider && root.provider.bluetoothInfoMessage.length > 0 && root.isBluetooth
                 text: root.provider ? root.provider.bluetoothInfoMessage : ""
                 color: StyleTokens.accentSoft
-                font.pixelSize: 11
+                font.pixelSize: Metrics.font(11)
                 font.family: root.textFontFamily
                 wrapMode: Text.Wrap
             }
@@ -247,7 +250,7 @@ Item {
                 visible: root.provider && root.provider.bluetoothError.length > 0 && root.isBluetooth
                 text: root.provider ? root.provider.bluetoothError : ""
                 color: StyleTokens.error
-                font.pixelSize: 11
+                font.pixelSize: Metrics.font(11)
                 font.family: root.textFontFamily
                 wrapMode: Text.Wrap
             }
@@ -260,7 +263,7 @@ Item {
                         ? 122
                         : ((root.provider && root.provider.bluetoothPairingRequiresConfirmation) ? 110 : 82))
                     : 0
-                radius: 16
+                radius: Metrics.px(16)
                 color: StyleTokens.prompt
                 visible: root.isBluetooth && root.provider && root.provider.bluetoothPairingActive
                 clip: true
@@ -272,19 +275,19 @@ Item {
 
                 Item {
                     anchors.fill: parent
-                    anchors.margins: 12
+                    anchors.margins: Metrics.pad(12)
 
                     Column {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        spacing: 10
+                        spacing: Metrics.px(10)
 
                         Text {
                             width: parent.width
                             text: root.provider ? root.provider.bluetoothPairingTitle : ""
                             color: StyleTokens.textPrimary
-                            font.pixelSize: 12
+                            font.pixelSize: Metrics.font(12)
                             font.family: root.textFontFamily
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
@@ -294,7 +297,7 @@ Item {
                             width: parent.width
                             text: root.provider ? root.provider.bluetoothPairingMessage : ""
                             color: "#d2d4da"
-                            font.pixelSize: 11
+                            font.pixelSize: Metrics.font(11)
                             font.family: root.textFontFamily
                             wrapMode: Text.Wrap
                         }
@@ -304,7 +307,7 @@ Item {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
-                        spacing: 8
+                        spacing: Metrics.px(8)
                         visible: root.provider
                             && (root.provider.bluetoothPairingRequiresInput
                                 || root.provider.bluetoothPairingRequiresConfirmation)
@@ -314,8 +317,8 @@ Item {
                             width: visible
                                 ? Math.max(0, parent.width - bluetoothPrimaryButton.width - bluetoothCancelButton.width - 16)
                                 : 0
-                            height: 34
-                            radius: 12
+                            height: Metrics.px(34)
+                            radius: Metrics.px(12)
                             color: StyleTokens.input
                             border.color: StyleTokens.inputBorder
                             border.width: 1
@@ -323,13 +326,13 @@ Item {
 
                             Text {
                                 anchors.left: parent.left
-                                anchors.leftMargin: 12
+                                anchors.leftMargin: Metrics.pad(12)
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: root.provider && root.provider.bluetoothPairingNumericInput
                                     ? "Passkey"
                                     : "PIN"
                                 color: StyleTokens.textTertiary
-                                font.pixelSize: 11
+                                font.pixelSize: Metrics.font(11)
                                 font.family: root.textFontFamily
                                 visible: bluetoothSecretField.text.length === 0 && !bluetoothSecretField.activeFocus
                             }
@@ -339,11 +342,11 @@ Item {
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
-                                anchors.leftMargin: 12
-                                anchors.rightMargin: 12
+                                anchors.leftMargin: Metrics.pad(12)
+                                anchors.rightMargin: Metrics.pad(12)
                                 height: Math.min(parent.height - 8, implicitHeight + 2)
                                 color: StyleTokens.textPrimary
-                                font.pixelSize: 11
+                                font.pixelSize: Metrics.font(11)
                                 font.family: root.textFontFamily
                                 verticalAlignment: TextInput.AlignVCenter
                                 topPadding: 0
@@ -372,8 +375,8 @@ Item {
                         Rectangle {
                             id: bluetoothPrimaryButton
                             width: root.provider && root.provider.bluetoothPairingRequiresInput ? 50 : 76
-                            height: 34
-                            radius: 12
+                            height: Metrics.px(34)
+                            radius: Metrics.px(12)
                             color: StyleTokens.accent
 
                             Text {
@@ -382,7 +385,7 @@ Item {
                                     ? "Confirm"
                                     : "Pair"
                                 color: StyleTokens.white
-                                font.pixelSize: 11
+                                font.pixelSize: Metrics.font(11)
                                 font.family: root.textFontFamily
                                 font.weight: Font.DemiBold
                             }
@@ -403,16 +406,16 @@ Item {
 
                         Rectangle {
                             id: bluetoothCancelButton
-                            width: 58
-                            height: 34
-                            radius: 12
+                            width: Metrics.px(58)
+                            height: Metrics.px(34)
+                            radius: Metrics.px(12)
                             color: StyleTokens.secondaryButton
 
                             Text {
                                 anchors.centerIn: parent
                                 text: "Cancel"
                                 color: StyleTokens.textPrimary
-                                font.pixelSize: 11
+                                font.pixelSize: Metrics.font(11)
                                 font.family: root.textFontFamily
                                 font.weight: Font.DemiBold
                             }
@@ -433,7 +436,7 @@ Item {
                 id: wifiPasswordPrompt
                 width: parent.width
                 height: visible ? 92 : 0
-                radius: 16
+                radius: Metrics.px(16)
                 color: StyleTokens.prompt
                 visible: root.isWifi && root.provider && root.provider.wifiPendingPasswordSsid.length > 0
                 clip: true
@@ -445,7 +448,7 @@ Item {
 
                 Item {
                     anchors.fill: parent
-                    anchors.margins: 12
+                    anchors.margins: Metrics.pad(12)
 
                     Text {
                         anchors.left: parent.left
@@ -453,7 +456,7 @@ Item {
                         anchors.right: parent.right
                         text: "Enter password for " + (root.provider ? root.provider.wifiPendingPasswordSsid : "")
                         color: StyleTokens.textPrimary
-                        font.pixelSize: 12
+                        font.pixelSize: Metrics.font(12)
                         font.family: root.textFontFamily
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
@@ -462,21 +465,21 @@ Item {
                     Rectangle {
                         anchors.left: parent.left
                         anchors.right: joinButton.left
-                        anchors.rightMargin: 8
+                        anchors.rightMargin: Metrics.pad(8)
                         anchors.bottom: parent.bottom
-                        height: 34
-                        radius: 12
+                        height: Metrics.px(34)
+                        radius: Metrics.px(12)
                         color: StyleTokens.input
                         border.color: StyleTokens.inputBorder
                         border.width: 1
 
                         Text {
                             anchors.left: parent.left
-                            anchors.leftMargin: 12
+                            anchors.leftMargin: Metrics.pad(12)
                             anchors.verticalCenter: parent.verticalCenter
                             text: "Password"
                             color: StyleTokens.textTertiary
-                            font.pixelSize: 11
+                            font.pixelSize: Metrics.font(11)
                             font.family: root.textFontFamily
                             visible: root.provider && root.provider.wifiPendingPasswordValue.length === 0 && !wifiPasswordField.activeFocus
                         }
@@ -486,11 +489,11 @@ Item {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
+                            anchors.leftMargin: Metrics.pad(12)
+                            anchors.rightMargin: Metrics.pad(12)
                             height: Math.min(parent.height - 8, implicitHeight + 2)
                             color: StyleTokens.textPrimary
-                            font.pixelSize: 11
+                            font.pixelSize: Metrics.font(11)
                             font.family: root.textFontFamily
                             echoMode: TextInput.Password
                             verticalAlignment: TextInput.AlignVCenter
@@ -516,18 +519,18 @@ Item {
                     Rectangle {
                         id: joinButton
                         anchors.right: cancelButton.left
-                        anchors.rightMargin: 8
+                        anchors.rightMargin: Metrics.pad(8)
                         anchors.bottom: parent.bottom
-                        width: 50
-                        height: 34
-                        radius: 12
+                        width: Metrics.px(50)
+                        height: Metrics.px(34)
+                        radius: Metrics.px(12)
                         color: StyleTokens.accent
 
                         Text {
                             anchors.centerIn: parent
                             text: "Join"
                             color: StyleTokens.white
-                            font.pixelSize: 11
+                            font.pixelSize: Metrics.font(11)
                             font.family: root.textFontFamily
                             font.weight: Font.DemiBold
                         }
@@ -545,16 +548,16 @@ Item {
                         id: cancelButton
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
-                        width: 50
-                        height: 34
-                        radius: 12
+                        width: Metrics.px(50)
+                        height: Metrics.px(34)
+                        radius: Metrics.px(12)
                         color: StyleTokens.secondaryButton
 
                         Text {
                             anchors.centerIn: parent
                             text: "Cancel"
                             color: StyleTokens.textPrimary
-                            font.pixelSize: 11
+                            font.pixelSize: Metrics.font(11)
                             font.family: root.textFontFamily
                             font.weight: Font.DemiBold
                         }
@@ -585,7 +588,7 @@ Item {
             Column {
                 id: contentColumn
                 width: contentFlick.width
-                spacing: 8
+                spacing: Metrics.px(8)
 
                 Text {
                     width: parent.width
@@ -595,7 +598,7 @@ Item {
                         && !root.provider.wifiEnabled
                     text: "Turn on Wi-Fi to see nearby networks."
                     color: StyleTokens.textMuted
-                    font.pixelSize: 12
+                    font.pixelSize: Metrics.font(12)
                     font.family: root.textFontFamily
                     wrapMode: Text.Wrap
                 }
@@ -605,7 +608,7 @@ Item {
                     visible: root.isWifi && root.provider && root.provider.wifiListRunning
                     text: "Scanning nearby networks..."
                     color: StyleTokens.textMuted
-                    font.pixelSize: 12
+                    font.pixelSize: Metrics.font(12)
                     font.family: root.textFontFamily
                 }
 
@@ -615,7 +618,7 @@ Item {
                     delegate: Rectangle {
                         width: contentColumn.width
                         height: visible ? 52 : 0
-                        radius: 14
+                        radius: Metrics.px(14)
                         color: StyleTokens.transparent
                         visible: root.wifiEntryVisible(connected)
                         clip: true
@@ -641,26 +644,26 @@ Item {
 
                         Item {
                             anchors.fill: parent
-                            anchors.margins: 12
+                            anchors.margins: Metrics.pad(12)
 
                             Text {
                                 anchors.left: parent.left
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: root.provider ? root.provider.wifiGlyph : ""
                                 color: connected ? StyleTokens.accent : StyleTokens.disabledControl
-                                font.pixelSize: 14
+                                font.pixelSize: Metrics.font(14)
                                 font.family: root.iconFontFamily
                             }
 
                             Text {
                                 anchors.left: parent.left
-                                anchors.leftMargin: 26
+                                anchors.leftMargin: Metrics.pad(26)
                                 anchors.top: parent.top
                                 anchors.right: rightInfo.left
-                                anchors.rightMargin: 8
+                                anchors.rightMargin: Metrics.pad(8)
                                 text: displayName
                                 color: StyleTokens.textPrimary
-                                font.pixelSize: 12
+                                font.pixelSize: Metrics.font(12)
                                 font.family: root.textFontFamily
                                 font.weight: Font.DemiBold
                                 elide: Text.ElideRight
@@ -668,13 +671,13 @@ Item {
 
                             Text {
                                 anchors.left: parent.left
-                                anchors.leftMargin: 26
+                                anchors.leftMargin: Metrics.pad(26)
                                 anchors.bottom: parent.bottom
                                 anchors.right: rightInfo.left
-                                anchors.rightMargin: 8
+                                anchors.rightMargin: Metrics.pad(8)
                                 text: secure ? "Secure network" : "Open network"
                                 color: StyleTokens.textMuted
-                                font.pixelSize: 10
+                                font.pixelSize: Metrics.font(10)
                                 font.family: root.textFontFamily
                                 elide: Text.ElideRight
                             }
@@ -683,12 +686,12 @@ Item {
                                 id: rightInfo
                                 anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: 6
+                                spacing: Metrics.px(6)
 
                                 Text {
                                     text: signal + "%"
                                     color: "#f0f0f3"
-                                    font.pixelSize: 11
+                                    font.pixelSize: Metrics.font(11)
                                     font.family: root.textFontFamily
                                     visible: signal >= 0
                                 }
@@ -696,7 +699,7 @@ Item {
                                 Text {
                                     text: ""
                                     color: StyleTokens.textSubtle
-                                    font.pixelSize: 11
+                                    font.pixelSize: Metrics.font(11)
                                     font.family: root.iconFontFamily
                                     visible: secure
                                 }
@@ -710,7 +713,7 @@ Item {
                     visible: root.isBluetooth && root.provider && root.provider.bluetoothAvailable && !root.provider.bluetoothEnabled
                     text: "Turn on Bluetooth to see nearby devices."
                     color: StyleTokens.textMuted
-                    font.pixelSize: 12
+                    font.pixelSize: Metrics.font(12)
                     font.family: root.textFontFamily
                     wrapMode: Text.Wrap
                 }
@@ -722,7 +725,7 @@ Item {
                         && root.bluetoothScanning
                     text: "Scanning nearby devices..."
                     color: StyleTokens.textMuted
-                    font.pixelSize: 12
+                    font.pixelSize: Metrics.font(12)
                     font.family: root.textFontFamily
                 }
 
@@ -734,7 +737,7 @@ Item {
                     Column {
                         id: btConnectedSection
                         width: parent.width
-                        spacing: 8
+                        spacing: Metrics.px(8)
 
                         Repeater {
                             model: root.bluetoothConnectedDevices
@@ -759,7 +762,7 @@ Item {
                     Column {
                         id: btPairedSection
                         width: parent.width
-                        spacing: 8
+                        spacing: Metrics.px(8)
 
                         Repeater {
                             model: root.bluetoothPairedDevices
@@ -784,7 +787,7 @@ Item {
                     Column {
                         id: btAvailableSection
                         width: parent.width
-                        spacing: 8
+                        spacing: Metrics.px(8)
 
                         Repeater {
                             model: root.bluetoothAvailableDevices

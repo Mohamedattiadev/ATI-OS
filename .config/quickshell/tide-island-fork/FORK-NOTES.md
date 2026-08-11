@@ -187,6 +187,53 @@ instead of setting it.
 First consumer is `hypr/scripts/submap-indicator.sh`, which no longer needs
 dunst.
 
+### `qml/common/Metrics.js` (new file) + every layer — one scale factor
+
+The island was resized from DESIGN-SPEC.md's 38 px notch to qtile's 28 px
+bar height, on the user's explicit call: qtile's bar was the known-good
+daily driver for years and the spec's 38 was measured off a stranger's
+2560x1440 screen. See REQUIREMENTS.md item 1.
+
+**Changing `userconfig.json` did that and nothing else, and the result was
+worse than leaving it alone.** `islandHeight` and the three font sizes are
+the only dimensions `UserConfigBackend` exposes; every other number in this
+shell — panel widths, tile sizes, grid spacing, thumbnail sizes, album art,
+internal padding, corner radii — is a literal in QML the config cannot
+reach. So the theme picker kept its full-size panel and tile boxes and got
+9 px labels inside them, which reads as broken rather than as smaller.
+
+`Metrics.js` holds `SCALE = ISLAND_HEIGHT / DESIGN_HEIGHT` (28/38) and three
+helpers, and ~380 literals across 21 layer files now go through them:
+
+| helper | for | note |
+|---|---|---|
+| `px(n)` | structural lengths | rounded, never below 1 — a hairline must not scale itself away |
+| `pad(n)` | internal padding | `SCALE * 1.35`, deliberately **not** linear |
+| `font(n)` | type sizes | floored at 9 px |
+
+`pad()` is the one that is not a plain ratio, and it is the whole answer to
+"the padding should be better, more". Scaling margins by 0.74 alongside the
+shape preserves the ratio and therefore preserves the cramped look — the
+box gets smaller and the content stays jammed against its edges. Content is
+bounded below by glyph height, which stops scaling long before the shape
+does, so the space around it has to be given back explicitly.
+
+It is a literal rather than read from `UserConfig`, because a
+`.pragma library` JS file has no QML context and cannot see the config
+singleton, and initialising it from QML at startup would make every layer's
+layout depend on load order — the kind of bug that presents as "the panel is
+the right size on the second open". SCALE and `islandHeight` are two halves
+of one decision and the derivation is written next to both.
+
+**The trap, found by looking rather than by arithmetic:** the theme picker's
+tile delegate insets itself by `tileSpacing / 2` on every side, so a tile's
+usable height is `cellHeight - tileSpacing`, not `cellHeight`. The first
+scaled pass put the label and the swatch chips in the same 34 px and they
+overlapped — the chips sat on the label's descenders. Nothing warns; both
+elements render happily on top of each other. In-tile margins use `px` and
+not `pad` for the same reason: inside a 46 px tile, generous padding is
+taken directly out of the two things that need the room.
+
 ## Pre-existing upstream warning, not ours
 
 ```

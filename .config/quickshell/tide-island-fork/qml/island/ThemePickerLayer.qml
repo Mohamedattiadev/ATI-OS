@@ -5,6 +5,9 @@ import Quickshell
 import Quickshell.Io
 import IslandBackend
 
+// FORK: the shared scale factor — see qml/common/Metrics.js.
+import "../common/Metrics.js" as Metrics
+
 //
 // FORK — new file. The theme switcher DESIGN-SPEC.md lists as one of the
 // island's states ("launcher, control center, calendar, power menu, Polkit
@@ -40,9 +43,9 @@ FocusScope {
     property string errorText: ""
 
     readonly property int columns: 4
-    readonly property real tileSpacing: 10
-    readonly property real horizontalPadding: 18
-    readonly property real headerHeight: 34
+    readonly property real tileSpacing: Metrics.px(10)
+    readonly property real horizontalPadding: Metrics.pad(18)
+    readonly property real headerHeight: Metrics.pad(34)
 
     focus: showCondition
     activeFocusOnTab: true
@@ -178,11 +181,11 @@ FocusScope {
     Text {
         id: header
         x: root.horizontalPadding
-        y: 12
-        height: root.headerHeight - 12
+        y: Metrics.pad(12)
+        height: root.headerHeight - Metrics.pad(12)
         text: root.errorText !== "" ? root.errorText : "Theme"
         color: root.errorText !== "" ? "#ff6b6b" : "white"
-        font.pixelSize: 15
+        font.pixelSize: Metrics.font(15)
         font.family: root.heroFontFamily
         font.weight: Font.DemiBold
         font.letterSpacing: -0.2
@@ -191,23 +194,27 @@ FocusScope {
     Text {
         anchors.right: parent.right
         anchors.rightMargin: root.horizontalPadding
-        y: 12
-        height: root.headerHeight - 12
+        y: Metrics.pad(12)
+        height: root.headerHeight - Metrics.pad(12)
         text: root.pendingTheme !== "" ? "applying " + root.pendingTheme + "…" : root.currentTheme
         color: "#8a8a8a"
-        font.pixelSize: 13
+        font.pixelSize: Metrics.font(13)
         font.family: root.textFontFamily
     }
 
     GridView {
         id: themeGrid
         x: root.horizontalPadding
-        y: root.headerHeight + 6
+        y: root.headerHeight + Metrics.pad(6)
         width: parent.width - root.horizontalPadding * 2
-        height: parent.height - root.headerHeight - 18
+        height: parent.height - root.headerHeight - Metrics.pad(18)
         clip: true
         cellWidth: Math.floor(width / root.columns)
-        cellHeight: 56
+        // Tall enough that the label and the swatch chips cannot meet. The tile's
+        // usable height is cellHeight MINUS tileSpacing (the delegate insets
+        // itself by tileSpacing/2 on each side), which is what made the first
+        // scaled attempt overlap: 41 looked like plenty and was 34 in practice.
+        cellHeight: Metrics.px(62)
         model: root.themes
         currentIndex: root.selectedIndex
         boundsBehavior: Flickable.StopAtBounds
@@ -227,7 +234,7 @@ FocusScope {
             Rectangle {
                 anchors.fill: parent
                 anchors.margins: root.tileSpacing / 2
-                radius: 10
+                radius: Metrics.px(10)
                 // The swatch IS the tile background, so the list previews
                 // itself: every tile is painted in the palette it applies.
                 color: tile.modelData.bg || "#1a1a1a"
@@ -240,16 +247,19 @@ FocusScope {
 
                 Text {
                     anchors.left: parent.left
-                    anchors.leftMargin: 10
+                    anchors.leftMargin: Metrics.pad(10)
                     anchors.top: parent.top
-                    anchors.topMargin: 8
+                    // px, not pad: inside a 46px tile the label and the chips are
+                    // competing for the same 39px, and generous margins here buy
+                    // breathing room by taking it from the two things that need it.
+                    anchors.topMargin: Metrics.px(8)
                     text: tile.modelData.name
                     color: tile.modelData.fg || "white"
-                    font.pixelSize: 12
+                    font.pixelSize: Metrics.font(12)
                     font.family: root.textFontFamily
                     font.weight: tile.isActive ? Font.DemiBold : Font.Normal
                     elide: Text.ElideRight
-                    width: parent.width - 20
+                    width: parent.width - Metrics.pad(20)
                 }
 
                 // Three chips: alt, fg, accent. Enough to tell nord from
@@ -257,18 +267,18 @@ FocusScope {
                 // full 9-slot palette in a 4-column grid would be mush.
                 Row {
                     anchors.left: parent.left
-                    anchors.leftMargin: 10
+                    anchors.leftMargin: Metrics.pad(10)
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 9
-                    spacing: 5
+                    anchors.bottomMargin: Metrics.px(9)
+                    spacing: Metrics.px(5)
 
                     Repeater {
                         model: [tile.modelData.alt, tile.modelData.fg, tile.modelData.accent]
                         delegate: Rectangle {
                             required property var modelData
-                            width: 12
-                            height: 12
-                            radius: 3
+                            width: Metrics.px(12)
+                            height: Metrics.px(12)
+                            radius: Metrics.px(3)
                             color: modelData || "#000000"
                             border.width: 1
                             border.color: "#22ffffff"
@@ -282,12 +292,12 @@ FocusScope {
                 Text {
                     visible: tile.modelData.dynamic === true
                     anchors.right: parent.right
-                    anchors.rightMargin: 10
+                    anchors.rightMargin: Metrics.pad(10)
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 9
+                    anchors.bottomMargin: Metrics.px(9)
                     text: "from wallpaper"
                     color: "#8a8a8a"
-                    font.pixelSize: 9
+                    font.pixelSize: Metrics.font(9)
                     font.family: root.textFontFamily
                 }
 

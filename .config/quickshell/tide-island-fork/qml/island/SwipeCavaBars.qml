@@ -1,17 +1,20 @@
 import QtQuick
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: root
 
     property var levels: [0, 0, 0, 0, 0, 0, 0, 0]
     property int barCount: Math.max(1, levelCount() > 0 ? levelCount() : 8)
-    property real barWidth: 4
-    property real barSpacing: 3
-    property real minimumBarHeight: 4
+    property real barWidth: Metrics.px(4)
+    property real barSpacing: Metrics.px(3)
+    property real minimumBarHeight: Metrics.px(4)
     property color barColor: "white"
 
     implicitWidth: barCount * barWidth + Math.max(0, barCount - 1) * barSpacing
-    implicitHeight: 18
+    implicitHeight: Metrics.px(18)
     width: implicitWidth
     height: implicitHeight
 

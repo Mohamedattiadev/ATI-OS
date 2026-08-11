@@ -4,6 +4,9 @@ import Quickshell.Io
 import Quickshell.Widgets
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 FocusScope {
     id: root
 
@@ -505,7 +508,7 @@ FocusScope {
         anchors.leftMargin: root.hPad
         anchors.rightMargin: root.hPad
         anchors.bottomMargin: root.botPad
-        spacing: 6
+        spacing: Metrics.px(6)
 
         // ── Carousel ───────────────────────────────────────────────────────
         Item {
@@ -515,7 +518,7 @@ FocusScope {
             // Empty state
             Column {
                 anchors.centerIn: parent
-                spacing: 8
+                spacing: Metrics.px(8)
                 visible: !root.wallpapersLoaded || allWallpapers.count === 0
 
                 Text {
@@ -531,7 +534,7 @@ FocusScope {
                     text: "No wallpapers found\nin " + root.displayPath(root.wallpaperDir)
                     horizontalAlignment: Text.AlignHCenter
                     color: Qt.rgba(1, 1, 1, 0.22)
-                    font.pixelSize: 11
+                    font.pixelSize: Metrics.font(11)
                     font.family: root.textFontFamily
                     lineHeight: 1.5
                 }
@@ -603,7 +606,7 @@ FocusScope {
                             anchors.horizontalCenter: parent.horizontalCenter
                             width: root.cardW
                             height: root.cardH
-                            radius: 14
+                            radius: Metrics.px(14)
                             color: "#1a1a1a"
                             antialiasing: false
 
@@ -636,7 +639,7 @@ FocusScope {
                             anchors.horizontalCenter: parent.horizontalCenter
                             width: root.cardW
                             height: root.cardH
-                            radius: 14
+                            radius: Metrics.px(14)
                             color: "transparent"
                             border.width: (model.filePath === root.effectiveActiveWallpaper) ? 2.5 : 0
                             border.color: "#60a5fa"

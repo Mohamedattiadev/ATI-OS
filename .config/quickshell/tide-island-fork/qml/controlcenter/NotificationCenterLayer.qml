@@ -3,6 +3,9 @@ import QtQuick.Shapes
 import IslandBackend
 import "../island"
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: notificationCenter
 
@@ -15,8 +18,8 @@ Item {
 
     readonly property bool hasNotifications: notificationModel && notificationModel.count > 0
     readonly property real contentHeight: 218
-    readonly property real verticalPadding: 10
-    readonly property real horizontalPadding: 22
+    readonly property real verticalPadding: Metrics.pad(10)
+    readonly property real horizontalPadding: Metrics.pad(22)
 
     NotificationHistory {
         id: notificationHistory
@@ -43,8 +46,8 @@ Item {
         anchors.right: parent.right
         anchors.topMargin: notificationCenter.verticalPadding + 3
         anchors.rightMargin: notificationCenter.horizontalPadding + 2
-        width: 24
-        height: 24
+        width: Metrics.px(24)
+        height: Metrics.px(24)
 
         Behavior on opacity {
             NumberAnimation {
@@ -57,8 +60,8 @@ Item {
             id: trashIcon
 
             anchors.centerIn: parent
-            width: 24
-            height: 24
+            width: Metrics.px(24)
+            height: Metrics.px(24)
             scale: clearMouse.pressed ? 0.70 : 0.75
 
             Behavior on scale {

@@ -4,6 +4,9 @@ import Quickshell.Bluetooth
 import Quickshell.Io
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: controlCenter
 
@@ -846,7 +849,7 @@ Item {
     }
 
     anchors.fill: parent
-    anchors.margins: 12
+    anchors.margins: Metrics.pad(12)
     opacity: showCondition ? 1 : 0
     visible: opacity > 0
 
@@ -1188,17 +1191,17 @@ Item {
 
     Column {
         anchors.fill: parent
-        spacing: 12
+        spacing: Metrics.px(12)
 
         Item {
             width: parent.width
-            height: 28
+            height: Metrics.px(28)
 
             Item {
                 anchors.left: parent.left
-                anchors.leftMargin: 6
+                anchors.leftMargin: Metrics.pad(6)
                 anchors.verticalCenter: parent.verticalCenter
-                width: 220
+                width: Metrics.px(220)
                 height: parent.height
 
                 Text {
@@ -1207,7 +1210,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: currentTime
                     color: StyleTokens.textPrimaryBright
-                    font.pixelSize: 19
+                    font.pixelSize: Metrics.font(19)
                     font.family: heroFontFamily
                     font.weight: Font.Bold
                     font.letterSpacing: -0.45
@@ -1215,11 +1218,11 @@ Item {
 
                 Text {
                     anchors.left: timeLabel.right
-                    anchors.leftMargin: 10
+                    anchors.leftMargin: Metrics.pad(10)
                     anchors.baseline: timeLabel.baseline
                     text: currentDateLabel
                     color: textSecondary
-                    font.pixelSize: 12
+                    font.pixelSize: Metrics.font(12)
                     font.family: textFontFamily
                     font.weight: Font.Medium
                 }
@@ -1227,14 +1230,14 @@ Item {
 
             Row {
                 anchors.right: parent.right
-                anchors.rightMargin: 2
+                anchors.rightMargin: Metrics.pad(2)
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 5
+                spacing: Metrics.px(5)
 
                 Text {
                     text: controlCenter.chargingIconGlyph
                     color: StyleTokens.white
-                    font.pixelSize: 13
+                    font.pixelSize: Metrics.font(13)
                     font.family: iconFontFamily
                     visible: isCharging
                     anchors.verticalCenter: parent.verticalCenter
@@ -1243,21 +1246,21 @@ Item {
                 Text {
                     text: batteryCapacity + "%"
                     color: StyleTokens.white
-                    font.pixelSize: 13
+                    font.pixelSize: Metrics.font(13)
                     font.family: textFontFamily
                     font.weight: Font.DemiBold
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
                 Item {
-                    width: 28
-                    height: 14
+                    width: Metrics.px(28)
+                    height: Metrics.px(14)
                     anchors.verticalCenter: parent.verticalCenter
 
                     Rectangle {
                         anchors.fill: parent
-                        anchors.rightMargin: 2
-                        radius: 4
+                        anchors.rightMargin: Metrics.pad(2)
+                        radius: Metrics.px(4)
                         color: StyleTokens.transparent
                         border.color: StyleTokens.textSecondary
                         border.width: 1
@@ -1266,8 +1269,8 @@ Item {
                             anchors.left: parent.left
                             anchors.top: parent.top
                             anchors.bottom: parent.bottom
-                            anchors.margins: 2
-                            radius: 2
+                            anchors.margins: Metrics.pad(2)
+                            radius: Metrics.px(2)
                             width: (parent.width - 4) * (batteryCapacity / 100.0)
                             color: {
                                 if (batteryCapacity <= 10) return StyleTokens.danger;
@@ -1285,8 +1288,8 @@ Item {
                     }
 
                     Rectangle {
-                        width: 2
-                        height: 6
+                        width: Metrics.px(2)
+                        height: Metrics.px(6)
                         radius: 1
                         color: StyleTokens.textSecondary
                         anchors.right: parent.right
@@ -1298,18 +1301,18 @@ Item {
 
         Item {
             width: parent.width
-            height: 80
+            height: Metrics.px(80)
 
             Row {
                 id: connectivityCardsRow
                 anchors.fill: parent
-                spacing: 12
+                spacing: Metrics.px(12)
 
                 Rectangle {
                     id: wifiCard
                     width: (connectivityCardsRow.width - connectivityCardsRow.spacing) / 2
                     height: connectivityCardsRow.height
-                    radius: 20
+                    radius: Metrics.px(20)
                     color: StyleTokens.clearBlack
                     clip: true
 
@@ -1327,24 +1330,24 @@ Item {
 
                     Text {
                         anchors.left: parent.left
-                        anchors.leftMargin: 14
+                        anchors.leftMargin: Metrics.pad(14)
                         anchors.top: parent.top
-                        anchors.topMargin: 12
+                        anchors.topMargin: Metrics.pad(12)
                         text: wifiGlyph
                         color: wifiEnabled ? cardAccent : StyleTokens.textDisabled
-                        font.pixelSize: 18
+                        font.pixelSize: Metrics.font(18)
                         font.family: iconFontFamily
                     }
 
                     Rectangle {
                         id: wifiSwitchTrack
                         anchors.right: parent.right
-                        anchors.rightMargin: 12
+                        anchors.rightMargin: Metrics.pad(12)
                         anchors.top: parent.top
-                        anchors.topMargin: 12
-                        width: 34
-                        height: 20
-                        radius: 10
+                        anchors.topMargin: Metrics.pad(12)
+                        width: Metrics.px(34)
+                        height: Metrics.px(20)
+                        radius: Metrics.px(10)
                         color: wifiEnabled ? StyleTokens.success : StyleTokens.switchOff
 
                         Behavior on color {
@@ -1354,10 +1357,10 @@ Item {
                         }
 
                         Rectangle {
-                            width: 16
-                            height: 16
-                            radius: 8
-                            y: 2
+                            width: Metrics.px(16)
+                            height: Metrics.px(16)
+                            radius: Metrics.px(8)
+                            y: Metrics.px(2)
                             x: wifiEnabled ? 16 : 2
                             color: StyleTokens.white
 
@@ -1382,19 +1385,19 @@ Item {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 12
-                        anchors.bottomMargin: 8
-                        height: 30
+                        anchors.leftMargin: Metrics.pad(12)
+                        anchors.rightMargin: Metrics.pad(12)
+                        anchors.bottomMargin: Metrics.pad(8)
+                        height: Metrics.px(30)
 
                         Text {
                             anchors.left: parent.left
                             anchors.right: wifiChevron.left
-                            anchors.rightMargin: 8
+                            anchors.rightMargin: Metrics.pad(8)
                             anchors.top: parent.top
                             text: "Wi-Fi"
                             color: textPrimary
-                            font.pixelSize: 13
+                            font.pixelSize: Metrics.font(13)
                             font.family: textFontFamily
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
@@ -1403,11 +1406,11 @@ Item {
                         Text {
                             anchors.left: parent.left
                             anchors.right: wifiChevron.left
-                            anchors.rightMargin: 8
+                            anchors.rightMargin: Metrics.pad(8)
                             anchors.bottom: parent.bottom
                             text: wifiStatusText
                             color: StyleTokens.textMuted
-                            font.pixelSize: 10
+                            font.pixelSize: Metrics.font(10)
                             font.family: textFontFamily
                             font.weight: Font.Medium
                             elide: Text.ElideRight
@@ -1419,7 +1422,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "›"
                             color: wifiPanelOpen ? "#c7c9cf" : StyleTokens.textSubtle
-                            font.pixelSize: 17
+                            font.pixelSize: Metrics.font(17)
                             font.family: textFontFamily
                             font.weight: Font.DemiBold
                         }
@@ -1435,7 +1438,7 @@ Item {
                     id: bluetoothCard
                     width: (connectivityCardsRow.width - connectivityCardsRow.spacing) / 2
                     height: connectivityCardsRow.height
-                    radius: 20
+                    radius: Metrics.px(20)
                     color: StyleTokens.clearBlack
                     clip: true
 
@@ -1453,24 +1456,24 @@ Item {
 
                     Text {
                         anchors.left: parent.left
-                        anchors.leftMargin: 14
+                        anchors.leftMargin: Metrics.pad(14)
                         anchors.top: parent.top
-                        anchors.topMargin: 12
+                        anchors.topMargin: Metrics.pad(12)
                         text: bluetoothGlyph
                         color: bluetoothEnabled ? cardAccent : StyleTokens.textDisabled
-                        font.pixelSize: 18
+                        font.pixelSize: Metrics.font(18)
                         font.family: iconFontFamily
                     }
 
                     Rectangle {
                         id: bluetoothSwitchTrack
                         anchors.right: parent.right
-                        anchors.rightMargin: 12
+                        anchors.rightMargin: Metrics.pad(12)
                         anchors.top: parent.top
-                        anchors.topMargin: 12
-                        width: 34
-                        height: 20
-                        radius: 10
+                        anchors.topMargin: Metrics.pad(12)
+                        width: Metrics.px(34)
+                        height: Metrics.px(20)
+                        radius: Metrics.px(10)
                         color: bluetoothEnabled ? StyleTokens.success : StyleTokens.switchOff
 
                         Behavior on color {
@@ -1480,10 +1483,10 @@ Item {
                         }
 
                         Rectangle {
-                            width: 16
-                            height: 16
-                            radius: 8
-                            y: 2
+                            width: Metrics.px(16)
+                            height: Metrics.px(16)
+                            radius: Metrics.px(8)
+                            y: Metrics.px(2)
                             x: bluetoothEnabled ? 16 : 2
                             color: StyleTokens.white
 
@@ -1508,19 +1511,19 @@ Item {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 12
-                        anchors.bottomMargin: 8
-                        height: 30
+                        anchors.leftMargin: Metrics.pad(12)
+                        anchors.rightMargin: Metrics.pad(12)
+                        anchors.bottomMargin: Metrics.pad(8)
+                        height: Metrics.px(30)
 
                         Text {
                             anchors.left: parent.left
                             anchors.right: bluetoothChevron.left
-                            anchors.rightMargin: 8
+                            anchors.rightMargin: Metrics.pad(8)
                             anchors.top: parent.top
                             text: "Bluetooth"
                             color: textPrimary
-                            font.pixelSize: 13
+                            font.pixelSize: Metrics.font(13)
                             font.family: textFontFamily
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
@@ -1529,11 +1532,11 @@ Item {
                         Text {
                             anchors.left: parent.left
                             anchors.right: bluetoothChevron.left
-                            anchors.rightMargin: 8
+                            anchors.rightMargin: Metrics.pad(8)
                             anchors.bottom: parent.bottom
                             text: bluetoothStatusText
                             color: StyleTokens.textMuted
-                            font.pixelSize: 10
+                            font.pixelSize: Metrics.font(10)
                             font.family: textFontFamily
                             font.weight: Font.Medium
                             elide: Text.ElideRight
@@ -1545,7 +1548,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "›"
                             color: bluetoothPanelOpen ? "#c7c9cf" : StyleTokens.textSubtle
-                            font.pixelSize: 17
+                            font.pixelSize: Metrics.font(17)
                             font.family: textFontFamily
                             font.weight: Font.DemiBold
                         }
@@ -1577,7 +1580,7 @@ Item {
                 y: -height + controlCenter.batteryDrawerProgress * height
                 width: batteryDrawer.cardWidth
                 height: controlCenter.batteryModeCardHeight
-                radius: 20
+                radius: Metrics.px(20)
                 color: StyleTokens.clearBlack
                 visible: controlCenter.tlpControlsEnabled
                 opacity: controlCenter.tlpControlsEnabled ? Math.min(1, controlCenter.batteryDrawerProgress * 1.35) : 0
@@ -1591,21 +1594,21 @@ Item {
 
                 Text {
                     anchors.left: parent.left
-                    anchors.leftMargin: 14
+                    anchors.leftMargin: Metrics.pad(14)
                     anchors.top: parent.top
-                    anchors.topMargin: 11
+                    anchors.topMargin: Metrics.pad(11)
                     text: "Battery"
                     color: textPrimary
-                    font.pixelSize: 13
+                    font.pixelSize: Metrics.font(13)
                     font.family: textFontFamily
                     font.weight: Font.DemiBold
                 }
 
                 Text {
                     anchors.right: parent.right
-                    anchors.rightMargin: 12
+                    anchors.rightMargin: Metrics.pad(12)
                     anchors.top: parent.top
-                    anchors.topMargin: 12
+                    anchors.topMargin: Metrics.pad(12)
                     width: Math.max(0, parent.width - 88)
                     text: controlCenter.batteryModeError.length > 0
                         ? controlCenter.batteryModeError
@@ -1614,7 +1617,7 @@ Item {
                             : controlCenter.batteryModeStatusText)
                     color: controlCenter.batteryModeError.length > 0 ? StyleTokens.error : StyleTokens.textMuted
                     horizontalAlignment: Text.AlignRight
-                    font.pixelSize: 9
+                    font.pixelSize: Metrics.font(9)
                     font.family: textFontFamily
                     font.weight: Font.Medium
                     elide: Text.ElideRight
@@ -1623,12 +1626,12 @@ Item {
                 Item {
                     id: batteryModeCarousel
                     anchors.left: parent.left
-                    anchors.leftMargin: 12
+                    anchors.leftMargin: Metrics.pad(12)
                     anchors.right: parent.right
-                    anchors.rightMargin: 12
+                    anchors.rightMargin: Metrics.pad(12)
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 8
-                    height: 34
+                    anchors.bottomMargin: Metrics.pad(8)
+                    height: Metrics.px(34)
                     clip: true
 
                     Item {
@@ -1669,7 +1672,7 @@ Item {
                                     anchors.centerIn: parent
                                     width: index === controlCenter.batteryModeIndex ? 32 : 28
                                     height: index === controlCenter.batteryModeIndex ? 28 : 24
-                                    radius: 12
+                                    radius: Metrics.px(12)
                                     color: index === controlCenter.batteryModeIndex ? StyleTokens.textPrimary : "#292a2f"
 
                                     Behavior on width {
@@ -1707,8 +1710,8 @@ Item {
                     Rectangle {
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.bottom: parent.bottom
-                        width: 22
-                        height: 2
+                        width: Metrics.px(22)
+                        height: Metrics.px(2)
                         radius: 1
                         color: "#5d6068"
                         opacity: 0.75
@@ -1779,7 +1782,7 @@ Item {
                 y: batteryModeCard.y
                 width: batteryDrawer.cardWidth
                 height: controlCenter.batteryModeCardHeight
-                radius: 20
+                radius: Metrics.px(20)
                 color: StyleTokens.clearBlack
                 opacity: Math.min(1, controlCenter.batteryDrawerProgress * 1.35)
                 clip: true
@@ -1828,8 +1831,8 @@ Item {
 
                     Rectangle {
                         anchors.fill: parent
-                        anchors.margins: 4
-                        radius: 16
+                        anchors.margins: Metrics.pad(4)
+                        radius: Metrics.px(16)
                         color: focusButtonMouse.containsMouse ? "#08ffffff" : StyleTokens.clearBlack
 
                         Behavior on color {
@@ -1857,8 +1860,8 @@ Item {
                         Shape {
                             id: focusIcon
                             anchors.centerIn: parent
-                            width: 24
-                            height: 24
+                            width: Metrics.px(24)
+                            height: Metrics.px(24)
                             scale: focusButtonMouse.pressed ? 0.94 : 1.0
                             opacity: controlCenter.focusBusy ? 0.5 : 1.0
                             preferredRendererType: Shape.CurveRenderer
@@ -1909,7 +1912,7 @@ Item {
                         text: "Silent"
                         color: controlCenter.focusEnabled ? StyleTokens.textPrimaryBright : StyleTokens.textMuted
                         horizontalAlignment: Text.AlignHCenter
-                        font.pixelSize: 10
+                        font.pixelSize: Metrics.font(10)
                         font.family: textFontFamily
                         font.weight: Font.Medium
                         elide: Text.ElideRight
@@ -1934,8 +1937,8 @@ Item {
 
                     Rectangle {
                         anchors.fill: parent
-                        anchors.margins: 4
-                        radius: 16
+                        anchors.margins: Metrics.pad(4)
+                        radius: Metrics.px(16)
                         color: nightLightButtonMouse.containsMouse ? "#08ffffff" : StyleTokens.clearBlack
 
                         Behavior on color {
@@ -1957,7 +1960,7 @@ Item {
                             anchors.verticalCenterOffset: 1
                             text: controlCenter.nightLightGlyph
                             color: "#45000000"
-                            font.pixelSize: 29
+                            font.pixelSize: Metrics.font(29)
                             font.family: iconFontFamily
                             scale: nightLightButtonMouse.pressed ? 0.94 : 1.0
                             opacity: controlCenter.nightLightBusy ? 0.1 : 0.22
@@ -1968,7 +1971,7 @@ Item {
                             anchors.centerIn: parent
                             text: controlCenter.nightLightGlyph
                             color: controlCenter.nightLightEnabled ? StyleTokens.textPrimaryBright : "#c8cad1"
-                            font.pixelSize: 29
+                            font.pixelSize: Metrics.font(29)
                             font.family: iconFontFamily
                             scale: nightLightButtonMouse.pressed ? 0.94 : 1.0
                             opacity: controlCenter.nightLightBusy ? 0.5 : 1.0
@@ -1989,7 +1992,7 @@ Item {
                         text: "Night mode"
                         color: controlCenter.nightLightEnabled ? StyleTokens.textPrimaryBright : StyleTokens.textMuted
                         horizontalAlignment: Text.AlignHCenter
-                        font.pixelSize: 10
+                        font.pixelSize: Metrics.font(10)
                         font.family: textFontFamily
                         font.weight: Font.Medium
                         elide: Text.ElideRight
@@ -2028,10 +2031,10 @@ Item {
 
                 Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    y: 8
-                    width: 48
-                    height: 5
-                    radius: 3
+                    y: Metrics.px(8)
+                    width: Metrics.px(48)
+                    height: Metrics.px(5)
+                    radius: Metrics.px(3)
                     color: controlCenter.batteryDrawerOpen ? "#d4d6dc" : StyleTokens.textSubtle
                     opacity: 0.88
                 }
@@ -2096,7 +2099,7 @@ Item {
         ControlSliderCard {
             id: brightnessCard
             width: parent.width
-            height: 76
+            height: Metrics.px(76)
             title: "Display"
             iconText: controlCenter.brightnessIconGlyph
             iconFontFamily: controlCenter.iconFontFamily
@@ -2130,7 +2133,7 @@ Item {
         ControlSliderCard {
             id: volumeCard
             width: parent.width
-            height: 76
+            height: Metrics.px(76)
             title: "Sound"
             iconText: controlCenter.volumeIconGlyph
             iconFontFamily: controlCenter.iconFontFamily

@@ -1,6 +1,9 @@
 import QtQuick
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Rectangle {
     id: root
 
@@ -26,7 +29,7 @@ Rectangle {
         return Math.max(0, Math.min(1, nextValue));
     }
 
-    radius: 24
+    radius: Metrics.px(24)
     color: StyleTokens.clearBlack
     clip: true
 
@@ -39,14 +42,14 @@ Rectangle {
 
     Item {
         anchors.fill: parent
-        anchors.margins: 12
+        anchors.margins: Metrics.pad(12)
 
         Text {
             anchors.left: parent.left
             anchors.top: parent.top
             text: root.title
             color: root.textPrimary
-            font.pixelSize: 13
+            font.pixelSize: Metrics.font(13)
             font.family: root.textFontFamily
             font.weight: Font.DemiBold
         }
@@ -56,8 +59,8 @@ Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 22
-            radius: 11
+            height: Metrics.px(22)
+            radius: Metrics.px(11)
             color: "#1d1f24"
             border.width: 1
             border.color: "#30333a"
@@ -66,17 +69,17 @@ Rectangle {
             Rectangle {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: 10
-                width: 18
-                height: 18
-                radius: 9
+                anchors.leftMargin: Metrics.pad(10)
+                width: Metrics.px(18)
+                height: Metrics.px(18)
+                radius: Metrics.px(9)
                 color: StyleTokens.transparent
 
                 Text {
                     anchors.centerIn: parent
                     text: root.iconText
                     color: root.textSecondary
-                    font.pixelSize: 13
+                    font.pixelSize: Metrics.font(13)
                     font.family: root.iconFontFamily
                 }
             }

@@ -1,6 +1,9 @@
 import QtQuick
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: root
 
@@ -14,8 +17,8 @@ Item {
     property bool showCondition: false
     property real transitionProgress: 0
     property int textPixelSize: userConfig.titleFontSize
-    property real hiddenLeftPadding: 16
-    property real hiddenRightPadding: 16
+    property real hiddenLeftPadding: Metrics.pad(16)
+    property real hiddenRightPadding: Metrics.pad(16)
 
     readonly property real clampedProgress: Math.max(0, Math.min(1, transitionProgress))
     readonly property real dateHiddenX: -dateLabel.implicitWidth - hiddenLeftPadding

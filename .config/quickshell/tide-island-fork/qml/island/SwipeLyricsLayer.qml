@@ -2,6 +2,9 @@ import QtQuick
 import Qt5Compat.GraphicalEffects
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: root
 
@@ -23,14 +26,14 @@ Item {
     property bool recordingActive: false
     property real transitionProgress: 0
     property int textPixelSize: userConfig.bodyFontSize
-    property real minimumWidth: 220
+    property real minimumWidth: Metrics.px(220)
     property real maximumWidth: minimumWidth
-    property real horizontalPadding: 14
-    property real coverSize: 24
-    property real coverRadius: 7
-    property real visualSpacing: 35
-    property real hiddenLeftPadding: 18
-    property real hiddenRightPadding: 16
+    property real horizontalPadding: Metrics.pad(14)
+    property real coverSize: Metrics.px(24)
+    property real coverRadius: Metrics.px(7)
+    property real visualSpacing: Metrics.px(35)
+    property real hiddenLeftPadding: Metrics.pad(18)
+    property real hiddenRightPadding: Metrics.pad(16)
     property string activeLyricText: lyricText
     property string previousLyricText: ""
     property real lyricChangeProgress: 1
@@ -286,9 +289,9 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             levels: root.cavaLevels
             barCount: 5
-            barWidth: 3
-            barSpacing: 3
-            minimumBarHeight: 4
+            barWidth: Metrics.px(3)
+            barSpacing: Metrics.px(3)
+            minimumBarHeight: Metrics.px(4)
             barColor: "white"
         }
     }
@@ -337,11 +340,11 @@ Item {
         id: restingEq
         levels: root.cavaLevels
         barCount: 4
-        barWidth: 3
-        barSpacing: 3
-        minimumBarHeight: 3
+        barWidth: Metrics.px(3)
+        barSpacing: Metrics.px(3)
+        minimumBarHeight: Metrics.px(3)
         barColor: "white"
-        height: 14
+        height: Metrics.px(14)
 
         readonly property bool shown: root.musicPlaying && root.showSecondaryText
 

@@ -1,6 +1,9 @@
 import QtQuick
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: root
 
@@ -27,13 +30,13 @@ Item {
         if (body !== "") return body;
         return "New notification";
     }
-    readonly property real minimumWidth: 272
+    readonly property real minimumWidth: Metrics.px(272)
     readonly property real compactMaximumWidth: 400
     readonly property real expandedMaximumWidth: 520
     readonly property real maximumWidth: expanded && hasOverflowContent ? expandedMaximumWidth : compactMaximumWidth
     readonly property real iconSlotWidth: 18
     readonly property real contentSpacing: 13
-    readonly property real horizontalPadding: 16
+    readonly property real horizontalPadding: Metrics.pad(16)
     readonly property real compactVerticalPadding: 7
     readonly property real expandedVerticalPadding: 13
     readonly property real verticalPadding: expanded && hasOverflowContent ? expandedVerticalPadding : compactVerticalPadding
@@ -80,8 +83,8 @@ Item {
 
     Text {
         id: compactContentProbe
-        x: -10000
-        y: -10000
+        x: Metrics.px(-10000)
+        y: Metrics.px(-10000)
         height: 0
         opacity: 0
         width: textBlockWidthAtMaximum
@@ -96,8 +99,8 @@ Item {
 
     Text {
         id: expandedContentProbe
-        x: -10000
-        y: -10000
+        x: Metrics.px(-10000)
+        y: Metrics.px(-10000)
         height: 0
         opacity: 0
         width: expandedTextBlockWidthAtMaximum

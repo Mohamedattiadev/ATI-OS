@@ -1,6 +1,9 @@
 import QtQuick
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: root
 
@@ -42,7 +45,7 @@ Item {
     }
 
     anchors.fill: parent
-    anchors.margins: 20
+    anchors.margins: Metrics.pad(20)
     opacity: showCondition ? 1 : 0
 
     Behavior on opacity {
@@ -54,18 +57,18 @@ Item {
 
     Column {
         anchors.fill: parent
-        spacing: 16
+        spacing: Metrics.px(16)
 
         Item {
             width: parent.width
-            height: 66
+            height: Metrics.px(66)
 
             Item {
                 id: bluetoothIcon
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                width: 44
-                height: 58
+                width: Metrics.px(44)
+                height: Metrics.px(58)
 
                 Text {
                     anchors.centerIn: parent
@@ -80,13 +83,13 @@ Item {
                 id: batteryIcon
                 anchors.right: parent.right
                 y: infoBlock.y + Math.round((nameLine.height - height) / 2)
-                width: 28
-                height: 14
+                width: Metrics.px(28)
+                height: Metrics.px(14)
 
                 Rectangle {
                     anchors.fill: parent
-                    anchors.rightMargin: 2
-                    radius: 4
+                    anchors.rightMargin: Metrics.pad(2)
+                    radius: Metrics.px(4)
                     color: "transparent"
                     border.color: "#8e8e93"
                     border.width: 1
@@ -95,8 +98,8 @@ Item {
                         anchors.left: parent.left
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
-                        anchors.margins: 2
-                        radius: 2
+                        anchors.margins: Metrics.pad(2)
+                        radius: Metrics.px(2)
                         width: root.batteryAvailable ? (parent.width - 4) * (root.batteryPercent / 100.0) : 0
                         color: root.batteryColor
 
@@ -114,8 +117,8 @@ Item {
                 }
 
                 Rectangle {
-                    width: 2
-                    height: 6
+                    width: Metrics.px(2)
+                    height: Metrics.px(6)
                     radius: 1
                     color: "#8e8e93"
                     anchors.right: parent.right
@@ -126,19 +129,19 @@ Item {
             Item {
                 id: infoBlock
                 anchors.left: bluetoothIcon.right
-                anchors.leftMargin: 12
+                anchors.leftMargin: Metrics.pad(12)
                 anchors.right: batteryIcon.left
-                anchors.rightMargin: 4
+                anchors.rightMargin: Metrics.pad(4)
                 anchors.verticalCenter: parent.verticalCenter
-                height: 44
+                height: Metrics.px(44)
 
                 Row {
                     id: nameLine
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.top: parent.top
-                    height: 22
-                    spacing: 8
+                    height: Metrics.px(22)
+                    spacing: Metrics.px(8)
 
                     Text {
                         width: Math.max(0, parent.width - batteryText.implicitWidth - parent.spacing)
@@ -178,16 +181,16 @@ Item {
 
         Item {
             width: parent.width
-            height: 43
+            height: Metrics.px(43)
 
             Text {
                 id: volumeLabel
                 anchors.left: parent.left
-                anchors.leftMargin: 12
+                anchors.leftMargin: Metrics.pad(12)
                 anchors.baseline: volumeValue.baseline
                 text: "vol"
                 color: "#f5f5f7"
-                font.pixelSize: 12
+                font.pixelSize: Metrics.font(12)
                 font.family: root.textFontFamily
                 font.weight: Font.Medium
             }
@@ -195,11 +198,11 @@ Item {
             Text {
                 id: volumeValue
                 anchors.right: parent.right
-                anchors.rightMargin: 12
+                anchors.rightMargin: Metrics.pad(12)
                 anchors.verticalCenter: volumeTrack.verticalCenter
                 text: root.volumeAvailable ? root.volumePercent : "--"
                 color: "#8e8e93"
-                font.pixelSize: 12
+                font.pixelSize: Metrics.font(12)
                 font.family: root.textFontFamily
                 font.weight: Font.Medium
             }
@@ -207,13 +210,13 @@ Item {
             Rectangle {
                 id: volumeTrack
                 anchors.left: volumeLabel.right
-                anchors.leftMargin: 14
+                anchors.leftMargin: Metrics.pad(14)
                 anchors.right: volumeValue.left
-                anchors.rightMargin: 14
+                anchors.rightMargin: Metrics.pad(14)
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: 15
-                height: 8
-                radius: 4
+                anchors.bottomMargin: Metrics.pad(15)
+                height: Metrics.px(8)
+                radius: Metrics.px(4)
                 color: "#2c2c2e"
 
                 Rectangle {

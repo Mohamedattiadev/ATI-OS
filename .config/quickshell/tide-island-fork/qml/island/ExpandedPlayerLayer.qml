@@ -3,6 +3,9 @@ import IslandBackend
 import Quickshell.Services.Mpris
 import "../controlcenter"
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: root
 
@@ -256,22 +259,22 @@ Item {
 
                 Column {
                     anchors.fill: parent
-                    anchors.margins: 20
-                    spacing: 14
+                    anchors.margins: Metrics.pad(20)
+                    spacing: Metrics.px(14)
 
                     Item {
                         width: parent.width
-                        height: 60
+                        height: Metrics.px(60)
 
                         Row {
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: 16
+                            spacing: Metrics.px(16)
 
                             Rectangle {
-                                width: 60
-                                height: 60
-                                radius: 14
+                                width: Metrics.px(60)
+                                height: Metrics.px(60)
+                                radius: Metrics.px(14)
                                 color: "#2c2c2e"
                                 clip: true
 
@@ -286,7 +289,7 @@ Item {
 
                             Column {
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: 4
+                                spacing: Metrics.px(4)
 
                                 Text {
                                     text: currentTrack
@@ -295,7 +298,7 @@ Item {
                                     font.family: textFontFamily
                                     font.weight: Font.DemiBold
                                     font.letterSpacing: -0.15
-                                    width: 180
+                                    width: Metrics.px(180)
                                     elide: Text.ElideRight
                                 }
 
@@ -305,7 +308,7 @@ Item {
                                     font.pixelSize: userConfig.bodyFontSize - 2
                                     font.family: textFontFamily
                                     font.weight: Font.Medium
-                                    width: 200
+                                    width: Metrics.px(200)
                                     elide: Text.ElideRight
                                 }
                             }
@@ -314,23 +317,23 @@ Item {
                         Item {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 44
-                            height: 22
+                            width: Metrics.px(44)
+                            height: Metrics.px(22)
 
                             Row {
                                 anchors.centerIn: parent
                                 height: parent.height
-                                spacing: 4
+                                spacing: Metrics.px(4)
 
                                 Repeater {
                                     model: 5
 
                                     delegate: Rectangle {
-                                        width: 4
+                                        width: Metrics.px(4)
                                         height: isPlaying
                                             ? 6 + (parent.height - 6) * visualizerLevel(index)
                                             : 6 + (parent.height - 6) * pausedVisualizerLevel(index)
-                                        radius: 2
+                                        radius: Metrics.px(2)
                                         color: isPlaying ? "#b56cff" : "#5f4b72"
                                         anchors.verticalCenter: parent.verticalCenter
 
@@ -355,7 +358,7 @@ Item {
 
                     Item {
                         width: parent.width
-                        height: 16
+                        height: Metrics.px(16)
 
                         Text {
                             id: timeL
@@ -371,14 +374,14 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.left: timeL.right
                             anchors.right: timeR.left
-                            anchors.margins: 12
-                            height: 6
-                            radius: 3
+                            anchors.margins: Metrics.pad(12)
+                            height: Metrics.px(6)
+                            radius: Metrics.px(3)
                             color: "#333333"
 
                             Rectangle {
                                 height: parent.height
-                                radius: 3
+                                radius: Metrics.px(3)
                                 color: "white"
                                 width: parent.width * trackProgress
 
@@ -404,15 +407,15 @@ Item {
 
                     Item {
                         width: parent.width
-                        height: 36
+                        height: Metrics.px(36)
 
                         Row {
                             anchors.centerIn: parent
-                            spacing: 50
+                            spacing: Metrics.px(50)
 
                             Item {
-                                width: 28
-                                height: 28
+                                width: Metrics.px(28)
+                                height: Metrics.px(28)
                                 scale: prevArea.pressed ? 0.8 : 1.0
 
                                 Behavior on scale {
@@ -449,7 +452,7 @@ Item {
                                 MouseArea {
                                     id: prevArea
                                     anchors.fill: parent
-                                    anchors.margins: -15
+                                    anchors.margins: Metrics.pad(-15)
                                     preventStealing: true
                                     onPressed: (mouse) => {
                                         controlPressed();
@@ -460,8 +463,8 @@ Item {
                             }
 
                             Item {
-                                width: 28
-                                height: 28
+                                width: Metrics.px(28)
+                                height: Metrics.px(28)
                                 scale: playArea.pressed ? 0.8 : 1.0
 
                                 Behavior on scale {
@@ -470,7 +473,7 @@ Item {
 
                                 Row {
                                     anchors.centerIn: parent
-                                    spacing: 6
+                                    spacing: Metrics.px(6)
                                     visible: activePlayer && activePlayer.playbackState === MprisPlaybackState.Playing
 
                                     Rectangle { width: 6; height: 20; radius: 2; color: playArea.pressed ? "#888" : "white" }
@@ -503,7 +506,7 @@ Item {
                                 MouseArea {
                                     id: playArea
                                     anchors.fill: parent
-                                    anchors.margins: -15
+                                    anchors.margins: Metrics.pad(-15)
                                     preventStealing: true
                                     onPressed: (mouse) => {
                                         controlPressed();
@@ -514,8 +517,8 @@ Item {
                             }
 
                             Item {
-                                width: 28
-                                height: 28
+                                width: Metrics.px(28)
+                                height: Metrics.px(28)
                                 scale: nextArea.pressed ? 0.8 : 1.0
 
                                 Behavior on scale {
@@ -552,7 +555,7 @@ Item {
                                 MouseArea {
                                     id: nextArea
                                     anchors.fill: parent
-                                    anchors.margins: -15
+                                    anchors.margins: Metrics.pad(-15)
                                     preventStealing: true
                                     onPressed: (mouse) => {
                                         controlPressed();
@@ -689,20 +692,20 @@ Item {
 
         Row {
             anchors.fill: parent
-            anchors.leftMargin: 8
-            anchors.rightMargin: 8
-            spacing: 18
+            anchors.leftMargin: Metrics.pad(8)
+            anchors.rightMargin: Metrics.pad(8)
+            spacing: Metrics.px(18)
 
             Item {
-                width: 116
+                width: Metrics.px(116)
                 height: parent.height
 
                 Canvas {
                     id: progressRing
 
                     anchors.centerIn: parent
-                    width: 104
-                    height: 104
+                    width: Metrics.px(104)
+                    height: Metrics.px(104)
 
                     onPaint: {
                         const ctx = getContext("2d");
@@ -747,12 +750,12 @@ Item {
             Column {
                 width: parent.width - 173
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 10
+                spacing: Metrics.px(10)
 
                 Row {
                     width: parent.width
-                    height: 42
-                    spacing: 8
+                    height: Metrics.px(42)
+                    spacing: Metrics.px(8)
 
                     TimerInput {
                         id: hourInput
@@ -793,8 +796,8 @@ Item {
 
                 Row {
                     width: parent.width
-                    height: 34
-                    spacing: 8
+                    height: Metrics.px(34)
+                    spacing: Metrics.px(8)
 
                     TimerButton {
                         width: (parent.width - 8) / 2
@@ -858,7 +861,7 @@ Item {
 
             MatteSurface {
                 anchors.fill: parent
-                radius: 10
+                radius: Metrics.px(10)
                 hovered: input.activeFocus || inputMouseArea.containsMouse
                 pressed: inputMouseArea.pressed
             }
@@ -866,7 +869,7 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 anchors.margins: 1
-                radius: 9
+                radius: Metrics.px(9)
                 color: StyleTokens.transparent
                 border.width: 1
                 border.color: input.activeFocus ? "#ff9f0a" : "#2b2e35"
@@ -892,12 +895,12 @@ Item {
             Row {
                 z: 1
                 anchors.centerIn: parent
-                spacing: 4
+                spacing: Metrics.px(4)
 
                 TextInput {
                     id: input
 
-                    width: 42
+                    width: Metrics.px(42)
                     property bool sanitizing: false
                     color: "#f5f5f7"
                     selectionColor: "#ff9f0a"
@@ -965,7 +968,7 @@ Item {
 
             MatteSurface {
                 anchors.fill: parent
-                radius: 10
+                radius: Metrics.px(10)
                 hovered: buttonArea.containsMouse
                 pressed: buttonArea.pressed
             }
@@ -973,7 +976,7 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 anchors.margins: 1
-                radius: 9
+                radius: Metrics.px(9)
                 color: buttonRoot.accent
                     ? (buttonArea.pressed ? "#d98500" : "#ff9f0a")
                     : StyleTokens.transparent

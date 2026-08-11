@@ -113,6 +113,29 @@ all** for the resting state:
 | Inter / Inter Display | the four `*FontFamily` keys | resolves, not substituted |
 | — | `islandExclusiveZone` 49 | reserved `[0,49,0,0]`, windows tile at y=59 |
 
+### Sizing: qtile's numbers now win over the spec's — the user's call
+
+**`islandHeight` is 28, not the spec's 38.** The user asked for the bar to
+be "the same like qtile since was good", and qtile's was
+`bar.Bar(..., 28)` with `widget_defaults` `fontsize` 10 — the known-good
+daily driver for years, against a 38 measured off a stranger's 2560x1440
+screen. This is a deliberate override of DESIGN-SPEC.md and it is recorded
+here so nobody "fixes" it back.
+
+The font sizes follow: the resting clock renders at `bodyFontSize + 1`, so
+`bodyFontSize` 12 puts it at 13 px, which is what qtile's `fontsize` 10
+comes to at 96 dpi. `islandExclusiveZone` is 38, which is also exactly what
+qtile reserved (28 px bar plus its `margin` of 5 top and 5 bottom).
+
+**Changing those four config keys reached only the fonts, and that made
+things worse before it made them better.** Every other dimension in the
+shell is a QML literal that `UserConfigBackend` does not expose, so the
+panels kept their full-size boxes and got tiny text floating in them.
+The fix is `tide-island-fork/qml/common/Metrics.js`: one `SCALE`, applied
+to ~380 literals across 21 layer files, with a separate `pad()` that is
+deliberately super-linear because padding scaled linearly stays cramped.
+Written up in FORK-NOTES.md.
+
 **Sizing was wrong at first, and the reason is worth keeping.** The spec's
 150 px was measured off a 2560x1440 display, where it is 5.9% of screen
 width. Applied literally to this 1366 px panel it becomes 11% —

@@ -4,6 +4,9 @@ import QtQuick.Shapes
 import IslandBackend
 import "../controlcenter"
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: root
 
@@ -40,18 +43,18 @@ Item {
 
         Row {
             anchors.left: parent.left
-            anchors.leftMargin: 6
+            anchors.leftMargin: Metrics.pad(6)
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: 1
-            spacing: 8
+            spacing: Metrics.px(8)
 
             Item {
-                width: 18
-                height: 18
+                width: Metrics.px(18)
+                height: Metrics.px(18)
 
                 Shape {
-                    width: 24
-                    height: 24
+                    width: Metrics.px(24)
+                    height: Metrics.px(24)
                     scale: 0.75
                     transformOrigin: Item.TopLeft
                     preferredRendererType: Shape.CurveRenderer
@@ -87,7 +90,7 @@ Item {
                 text: "Notification History"
                 textFormat: Text.PlainText
                 color: "#f7f7f7"
-                font.pixelSize: 15
+                font.pixelSize: Metrics.font(15)
                 font.family: root.textFontFamily
                 font.weight: Font.Bold
                 font.letterSpacing: 0.1
@@ -111,7 +114,7 @@ Item {
             text: "No notifications"
             textFormat: Text.PlainText
             color: "#6f6f74"
-            font.pixelSize: 10
+            font.pixelSize: Metrics.font(10)
             font.family: root.textFontFamily
             font.weight: Font.Medium
         }
@@ -157,10 +160,10 @@ Item {
             ScrollBar.vertical: ScrollBar {
                 active: listView.moving || listView.dragging
                 policy: ScrollBar.AsNeeded
-                width: 3
+                width: Metrics.px(3)
 
                 contentItem: Rectangle {
-                    radius: 1.5
+                    radius: Metrics.px(1.5)
                     color: "#5b5b60"
                 }
 
@@ -191,22 +194,22 @@ Item {
 
                 Item {
                     anchors.left: parent.left
-                    anchors.leftMargin: 16
+                    anchors.leftMargin: Metrics.pad(16)
                     anchors.right: parent.right
-                    anchors.rightMargin: 16
+                    anchors.rightMargin: Metrics.pad(16)
                     anchors.top: parent.top
-                    anchors.topMargin: 3
+                    anchors.topMargin: Metrics.pad(3)
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 6
+                    anchors.bottomMargin: Metrics.pad(6)
 
                     Text {
                         anchors.top: parent.top
                         width: parent.width
-                        height: 18
+                        height: Metrics.px(18)
                         text: delegateItem.titleText
                         textFormat: Text.PlainText
                         color: "#f7f7f7"
-                        font.pixelSize: 15
+                        font.pixelSize: Metrics.font(15)
                         font.family: root.textFontFamily
                         font.weight: Font.Bold
                         verticalAlignment: Text.AlignVCenter
@@ -216,11 +219,11 @@ Item {
                     Text {
                         anchors.bottom: parent.bottom
                         width: parent.width
-                        height: 16
+                        height: Metrics.px(16)
                         text: delegateItem.bodyText
                         textFormat: Text.PlainText
                         color: "#c8c8cc"
-                        font.pixelSize: 13
+                        font.pixelSize: Metrics.font(13)
                         font.family: root.textFontFamily
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight

@@ -1,6 +1,9 @@
 import QtQuick
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Rectangle {
     id: root
 
@@ -29,8 +32,8 @@ Rectangle {
     readonly property color iconColor: section === "available" ? StyleTokens.textTertiary : StyleTokens.accent
 
     width: parent ? parent.width : 0
-    height: 52
-    radius: 14
+    height: Metrics.px(52)
+    radius: Metrics.px(14)
     color: StyleTokens.transparent
     clip: true
 
@@ -46,28 +49,28 @@ Rectangle {
 
     Item {
         anchors.fill: parent
-        anchors.margins: 12
+        anchors.margins: Metrics.pad(12)
 
         Text {
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
             text: root.hasProvider ? root.provider.bluetoothGlyph : ""
             color: root.iconColor
-            font.pixelSize: 14
+            font.pixelSize: Metrics.font(14)
             font.family: root.iconFontFamily
         }
 
         Text {
             anchors.left: parent.left
-            anchors.leftMargin: 26
+            anchors.leftMargin: Metrics.pad(26)
             anchors.top: parent.top
             anchors.right: actionLabel.left
-            anchors.rightMargin: 8
+            anchors.rightMargin: Metrics.pad(8)
             text: root.hasProvider && root.provider.bluetoothDeviceName
                 ? root.provider.bluetoothDeviceName(root.device)
                 : ""
             color: StyleTokens.textPrimary
-            font.pixelSize: 12
+            font.pixelSize: Metrics.font(12)
             font.family: root.textFontFamily
             font.weight: Font.DemiBold
             elide: Text.ElideRight
@@ -75,13 +78,13 @@ Rectangle {
 
         Text {
             anchors.left: parent.left
-            anchors.leftMargin: 26
+            anchors.leftMargin: Metrics.pad(26)
             anchors.bottom: parent.bottom
             anchors.right: actionLabel.left
-            anchors.rightMargin: 8
+            anchors.rightMargin: Metrics.pad(8)
             text: root.subtitleText
             color: StyleTokens.textMuted
-            font.pixelSize: 10
+            font.pixelSize: Metrics.font(10)
             font.family: root.textFontFamily
             elide: Text.ElideRight
         }

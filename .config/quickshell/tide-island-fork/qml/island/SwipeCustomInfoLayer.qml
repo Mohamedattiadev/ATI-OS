@@ -1,6 +1,9 @@
 import QtQuick
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: root
 
@@ -18,11 +21,11 @@ Item {
     property bool showSecondaryText: true
     property bool recordingActive: false
     property real transitionProgress: 0
-    property real minimumWidth: 220
+    property real minimumWidth: Metrics.px(220)
     property real maximumWidth: minimumWidth
-    property real horizontalPadding: 14
-    property real hiddenLeftPadding: 18
-    property real hiddenRightPadding: 18
+    property real horizontalPadding: Metrics.pad(14)
+    property real hiddenLeftPadding: Metrics.pad(18)
+    property real hiddenRightPadding: Metrics.pad(18)
     property real groupSpacing: 16
     property real iconSpacing: 8
     property int textPixelSize: userConfig.bodyFontSize
@@ -192,7 +195,7 @@ Item {
                                 anchors.centerIn: parent
                                 anchors.horizontalCenterOffset: root.batteryChargingXOffset
                                 anchors.verticalCenterOffset: root.batteryChargingYOffset
-                                spacing: 2
+                                spacing: Metrics.px(2)
                                 z: 2
 
                                 Text {

@@ -15,6 +15,11 @@ import "qml/workspace"
 // loud warning about Qt's undocumented 10-segment BezierSpline limit,
 // which crashed the whole shell the first time this was attempted.
 import "qml/common/Motion.js" as Motion
+// FORK: one scale factor for every surface — see qml/common/Metrics.js.
+// The island was resized to qtile's 28px bar height; changing the config
+// alone reached only the fonts, because every panel dimension in here is a
+// literal that UserConfig cannot see.
+import "qml/common/Metrics.js" as Metrics
 
 PanelWindow {
     id: root
@@ -974,7 +979,7 @@ PanelWindow {
         readonly property bool splitShowsText: islandState === "split" && osdProgress < 0 && osdCustomText !== ""
         readonly property bool splitShowsIconOnly: islandState === "split" && osdProgress < 0 && osdCustomText === ""
         readonly property bool splitUsesExtendedLayout: splitShowsProgress || splitShowsText
-        readonly property real splitCapsuleWidth: splitShowsProgress ? 248 : (splitShowsText ? 220 : userConfig.islandWidth)
+        readonly property real splitCapsuleWidth: splitShowsProgress ? Metrics.px(248) : (splitShowsText ? Metrics.px(220) : userConfig.islandWidth)
         readonly property bool canShowSideSwipe: islandState === "normal"
             || islandState === "custom"
             || islandState === "lyrics"
@@ -2074,18 +2079,18 @@ PanelWindow {
                 case "split":
                     return islandContainer.splitCapsuleWidth;
                 case "long_capsule":
-                    return 220;
+                    return Metrics.px(220);
                 case "custom":
                     return islandContainer.customCapsuleWidth;
                 case "lyrics":
                     return islandContainer.lyricsCapsuleWidth;
                 case "control_center":
-                    return 420;
+                    return Metrics.px(420);
                 case "notification_center":
-                    return 410;
+                    return Metrics.px(410);
                 case "wallpaper_picker":
                 case "application_launcher":
-                    return 1100;
+                    return Metrics.px(1100);
                 case "theme_picker":
                     // 22 tiles in a 4-column grid. Narrower than the
                     // wallpaper picker's 1100 because a theme tile is a
@@ -2093,15 +2098,15 @@ PanelWindow {
                     // tiles were mostly empty background. Clamped to the
                     // screen so it still fits this 1366 panel with the
                     // island's own margins.
-                    return Math.min(760, root.width - 48);
+                    return Math.min(Metrics.px(760), root.width - Metrics.px(48));
                 case "expanded":
                 case "bluetooth_expanded":
-                    return 410;
+                    return Metrics.px(410);
                 case "notification":
-                    if (!notificationLoader.item) return 272;
+                    if (!notificationLoader.item) return Metrics.px(272);
                     return Math.max(
                         notificationLoader.item.minimumWidth,
-                        Math.min(root.width - 48, notificationLoader.item.maximumWidth, notificationLoader.item.preferredWidth)
+                        Math.min(root.width - Metrics.px(48), notificationLoader.item.maximumWidth, notificationLoader.item.preferredWidth)
                     );
                 default:
                     // FORK: the collapsed width grows to fit the resting EQ
@@ -2122,21 +2127,21 @@ PanelWindow {
 
                 switch (islandContainer.islandState) {
                 case "control_center":
-                    return 320 + (controlCenterLoader.item ? controlCenterLoader.item.controlCenterExtraHeight : 32);
+                    return Metrics.px(320) + (controlCenterLoader.item ? controlCenterLoader.item.controlCenterExtraHeight : Metrics.px(32));
                 case "notification_center":
-                    return notificationCenterLoader.item ? notificationCenterLoader.item.contentHeight : 200;
+                    return notificationCenterLoader.item ? notificationCenterLoader.item.contentHeight : Metrics.px(200);
                 case "wallpaper_picker":
                 case "application_launcher":
-                    return 260;
+                    return Metrics.px(260);
                 case "theme_picker":
-                    return 250;
+                    return Metrics.px(290);
                 case "expanded":
                 case "bluetooth_expanded":
-                    return 165;
+                    return Metrics.px(165);
                 case "notification":
                     return notificationLoader.item
-                        ? Math.max(56, notificationLoader.item.preferredHeight)
-                        : 56;
+                        ? Math.max(Metrics.px(56), notificationLoader.item.preferredHeight)
+                        : Metrics.px(56);
                 default:
                     return userConfig.islandHeight;
                 }
@@ -2146,18 +2151,18 @@ PanelWindow {
 
                 switch (islandContainer.islandState) {
                 case "control_center":
-                    return 34;
+                    return Metrics.px(34);
                 case "notification_center":
                     return mainCapsule.targetHeight * 40 / 165;
                 case "wallpaper_picker":
                 case "application_launcher":
                 case "theme_picker":
-                    return 34;
+                    return Metrics.px(34);
                 case "expanded":
                 case "bluetooth_expanded":
-                    return 40;
+                    return Metrics.px(40);
                 case "notification":
-                    return islandContainer.notificationExpanded ? 28 : mainCapsule.targetHeight / 2;
+                    return islandContainer.notificationExpanded ? Metrics.px(28) : mainCapsule.targetHeight / 2;
                 default:
                     return userConfig.islandHeight / 2;
                 }

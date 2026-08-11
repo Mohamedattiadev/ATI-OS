@@ -1,6 +1,9 @@
 import QtQuick
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: root
 
@@ -19,8 +22,8 @@ Item {
         return "▶";
     }
 
-    width: 28
-    height: 28
+    width: Metrics.px(28)
+    height: Metrics.px(28)
     scale: controlArea.pressed ? 0.8 : 1.0
     opacity: enabled ? 1.0 : 0.45
 
@@ -44,7 +47,7 @@ Item {
     MouseArea {
         id: controlArea
         anchors.fill: parent
-        anchors.margins: -15
+        anchors.margins: Metrics.pad(-15)
         enabled: root.enabled
         preventStealing: true
 

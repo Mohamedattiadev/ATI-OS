@@ -1,6 +1,9 @@
 import QtQuick
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: root
 
@@ -19,8 +22,8 @@ Item {
     readonly property bool showProgress: progress >= 0
     readonly property bool showText: progress < 0 && customText !== ""
     property bool showCondition: false
-    property real hiddenLeftPadding: 16
-    property real hiddenRightPadding: 16
+    property real hiddenLeftPadding: Metrics.pad(16)
+    property real hiddenRightPadding: Metrics.pad(16)
     readonly property real clampedProgress: slideDirection === "right"
         ? Math.max(0, Math.min(1, transitionProgress))
         : (slideDirection === "left"
@@ -54,9 +57,9 @@ Item {
 
         Row {
             anchors.left: parent.left
-            anchors.leftMargin: 18
+            anchors.leftMargin: Metrics.pad(18)
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 12
+            spacing: Metrics.px(12)
 
             Text {
                 text: iconText
@@ -78,17 +81,17 @@ Item {
         }
 
         Item {
-            width: 30
-            height: 30
+            width: Metrics.px(30)
+            height: Metrics.px(30)
             anchors.right: parent.right
-            anchors.rightMargin: 16
+            anchors.rightMargin: Metrics.pad(16)
             anchors.verticalCenter: parent.verticalCenter
 
             Rectangle {
                 anchors.centerIn: parent
-                width: 16
-                height: 16
-                radius: 8
+                width: Metrics.px(16)
+                height: Metrics.px(16)
+                radius: Metrics.px(8)
                 color: "#111111"
                 border.color: "#1f1f1f"
                 border.width: 1
@@ -138,7 +141,7 @@ Item {
 
         Row {
             anchors.centerIn: parent
-            spacing: 14
+            spacing: Metrics.px(14)
 
             Text {
                 text: iconText

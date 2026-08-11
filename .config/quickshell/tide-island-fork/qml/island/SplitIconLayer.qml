@@ -1,6 +1,9 @@
 import QtQuick
 import IslandBackend
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 Item {
     id: root
 
@@ -13,8 +16,8 @@ Item {
     property string slideDirection: "none"
     property real transitionProgress: 0
     property bool showCondition: false
-    property real hiddenLeftPadding: 16
-    property real hiddenRightPadding: 16
+    property real hiddenLeftPadding: Metrics.pad(16)
+    property real hiddenRightPadding: Metrics.pad(16)
     readonly property real clampedProgress: slideDirection === "right"
         ? Math.max(0, Math.min(1, transitionProgress))
         : (slideDirection === "left"

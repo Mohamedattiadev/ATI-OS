@@ -7,6 +7,9 @@ import Quickshell.Io
 import Quickshell.Widgets
 import "../common/ApplicationSearch.js" as ApplicationSearch
 
+// FORK: one shared scale factor for every island surface.
+import "../common/Metrics.js" as Metrics
+
 FocusScope {
     id: root
 
@@ -476,22 +479,22 @@ FocusScope {
 
     Column {
         anchors.fill: parent
-        anchors.topMargin: 15
-        anchors.bottomMargin: 12
-        anchors.leftMargin: 22
-        anchors.rightMargin: 22
-        spacing: 10
+        anchors.topMargin: Metrics.pad(15)
+        anchors.bottomMargin: Metrics.pad(12)
+        anchors.leftMargin: Metrics.pad(22)
+        anchors.rightMargin: Metrics.pad(22)
+        spacing: Metrics.px(10)
 
         Item {
             width: parent.width
-            height: 46
+            height: Metrics.px(46)
 
             Rectangle {
                 id: searchField
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: Math.min(650, parent.width - 120)
                 height: parent.height
-                radius: 17
+                radius: Metrics.px(17)
                 color: searchInput.activeFocus ? "#17181c" : "#111216"
                 border.width: 1
                 border.color: searchInput.activeFocus ? "#3d3f47" : "#292a30"
@@ -501,18 +504,18 @@ FocusScope {
 
                 Text {
                     anchors.left: parent.left
-                    anchors.leftMargin: 16
+                    anchors.leftMargin: Metrics.pad(16)
                     anchors.verticalCenter: parent.verticalCenter
                     text: "\uf002"
                     color: searchInput.activeFocus ? "#d1d1d6" : "#8e8e93"
                     font.family: root.iconFontFamily
-                    font.pixelSize: 15
+                    font.pixelSize: Metrics.font(15)
                 }
 
                 TextInput {
                     id: searchInput
                     anchors.left: parent.left
-                    anchors.leftMargin: 45
+                    anchors.leftMargin: Metrics.pad(45)
                     anchors.right: parent.right
                     anchors.rightMargin: root.query === "" ? 16 : 42
                     anchors.verticalCenter: parent.verticalCenter
@@ -520,7 +523,7 @@ FocusScope {
                     selectionColor: "#0a84ff"
                     selectedTextColor: "#ffffff"
                     font.family: root.textFontFamily
-                    font.pixelSize: 15
+                    font.pixelSize: Metrics.font(15)
                     clip: true
                     selectByMouse: true
                     text: ""
@@ -558,12 +561,12 @@ FocusScope {
 
                 Rectangle {
                     anchors.right: parent.right
-                    anchors.rightMargin: 11
+                    anchors.rightMargin: Metrics.pad(11)
                     anchors.verticalCenter: parent.verticalCenter
                     visible: root.query !== ""
-                    width: 24
-                    height: 24
-                    radius: 12
+                    width: Metrics.px(24)
+                    height: Metrics.px(24)
+                    radius: Metrics.px(12)
                     color: clearSearchArea.containsMouse ? "#34353b" : "#24252a"
 
                     Text {
@@ -571,7 +574,7 @@ FocusScope {
                         text: "\uf00d"
                         color: "#a5a6ac"
                         font.family: root.iconFontFamily
-                        font.pixelSize: 10
+                        font.pixelSize: Metrics.font(10)
                     }
 
                     MouseArea {
@@ -600,7 +603,7 @@ FocusScope {
             width: parent.width
             height: parent.height - y
             model: root.filteredApplications
-            cellWidth: 126
+            cellWidth: Metrics.px(126)
             cellHeight: height
             flow: GridView.FlowTopToBottom
             clip: true
@@ -632,7 +635,7 @@ FocusScope {
                     anchors.centerIn: parent
                     anchors.verticalCenterOffset: 8
                     width: parent.width - 10
-                    height: 124
+                    height: Metrics.px(124)
                     scale: favoriteDrag.active ? 1.07
                         : appArea.pressed ? 0.95
                         : (appDelegate.selected || appArea.containsMouse ? 1.035 : 1)
@@ -663,14 +666,14 @@ FocusScope {
                         id: iconArea
                         anchors.top: parent.top
                         anchors.horizontalCenter: parent.horizontalCenter
-                        width: 76
-                        height: 76
+                        width: Metrics.px(76)
+                        height: Metrics.px(76)
 
                         IconImage {
                             id: appIcon
                             anchors.centerIn: parent
-                            width: 64
-                            height: 64
+                            width: Metrics.px(64)
+                            height: Metrics.px(64)
                             source: Quickshell.iconPath(appDelegate.entry.icon, true)
                             asynchronous: true
                             mipmap: true
@@ -683,27 +686,27 @@ FocusScope {
                             text: String(appDelegate.entry.name).charAt(0).toLocaleUpperCase()
                             color: "white"
                             font.family: root.textFontFamily
-                            font.pixelSize: 24
+                            font.pixelSize: Metrics.font(24)
                             font.weight: Font.DemiBold
                         }
 
                         Text {
                             anchors.top: parent.top
-                            anchors.topMargin: -2
+                            anchors.topMargin: Metrics.pad(-2)
                             anchors.left: parent.left
-                            anchors.leftMargin: -2
+                            anchors.leftMargin: Metrics.pad(-2)
                             visible: appDelegate.favoriteNumber > 0
                             text: appDelegate.favoriteNumber
                             color: "#a5a6ac"
                             font.family: root.textFontFamily
-                            font.pixelSize: 12
+                            font.pixelSize: Metrics.font(12)
                             font.weight: Font.DemiBold
                         }
                     }
 
                     Text {
                         anchors.top: iconArea.bottom
-                        anchors.topMargin: 10
+                        anchors.topMargin: Metrics.pad(10)
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: parent.width - 8
                         text: appDelegate.entry.name
@@ -711,15 +714,15 @@ FocusScope {
                         horizontalAlignment: Text.AlignHCenter
                         elide: Text.ElideRight
                         font.family: root.textFontFamily
-                        font.pixelSize: 12
+                        font.pixelSize: Metrics.font(12)
                         font.weight: appDelegate.selected ? Font.Medium : Font.Normal
                     }
 
                     FavoriteStar {
                         anchors.top: iconArea.top
-                        anchors.topMargin: -2
+                        anchors.topMargin: Metrics.pad(-2)
                         anchors.right: iconArea.right
-                        anchors.rightMargin: -4
+                        anchors.rightMargin: Metrics.pad(-4)
                         active: appDelegate.favorite
                         hovered: delegateHover.hovered
                         onToggleRequested: root.toggleFavorite(appDelegate.entry)
@@ -788,7 +791,7 @@ FocusScope {
                 text: root.query === "" ? "没有找到可启动的应用" : "没有找到“" + root.query + "”"
                 color: "#696b72"
                 font.family: root.textFontFamily
-                font.pixelSize: 13
+                font.pixelSize: Metrics.font(13)
             }
         }
     }
