@@ -77,7 +77,13 @@ structural is now specified.
 
 ## 1. Notch bar + port my popups into it
 
-**Status: RUNNING AND RESTYLED. The popups are still to do.**
+**Status: THE NOTCH IS DONE. The remaining popups are still to do.**
+
+The resting shape is now the notch itself — flush to the top edge, top
+corners square, concave flares, pure black — not a pill floating below it.
+That was the last thing that made it read as a widget rather than as
+bezel. Motion, arbitrary text and a theme picker all landed with it; the
+audio/display/wifi/bluetooth/cheatsheet popups have not.
 
 Tide Island is installed (AUR, `tide-island 1.0.34`) and starts from
 `autostart.conf`. Hyprland is no longer bar-less.
@@ -129,20 +135,37 @@ These are now bound in `binds.conf`. The wallpaper picker also needs
 `wallpaperLibraryPath` set or it opens empty saying "No wallpapers
 found"; it points at `~/Pictures/Wallpapers` (362 images).
 
-**What config still cannot reach**, and needs a QML fork:
+**What config could not reach — ALL FOUR NOW DONE in the fork:**
 
-- The notch morph (square top corners, 14 px concave flare, one path
-  interpolated in two phases) and the 4 px overshoot.
-- The 400 ms / 0.8-damping spring. There is **no animation-speed setting
-  at all** among the 45 config keys — `wallpaperTransitionDuration` is
-  wallpaper-only — so "the movement feels slow" cannot be tuned from
-  config. It is a fork or nothing.
-- Arbitrary text in the island. Its `showCustom()` IPC takes no
-  arguments; content comes from the shell's own custom-info source.
+- **The notch morph — DONE.** Flush to the top, top corners square, a 9 px
+  concave flare each side (14 scaled by the island's 96/150 factor), 4 px
+  overshoot clipped. One path interpolated by one value in two phases
+  (un-round, then flare), per the spec's rule against swapping shapes.
+  This is now the DEFAULT resting form: the floating pill is what it
+  morphs back to, not the norm. `notchProgress` / `notchSkirt` in
+  `DynamicIslandWindow.qml`.
+- **The 400 ms / 0.8-damping spring — DONE.** `qml/common/Motion.js`
+  solves the damped harmonic oscillator and emits it as an
+  `Easing.BezierSpline`; nine Behaviors use it, geometry on the spring and
+  opacity/colour on a critically damped curve. Measured live at the top
+  row of the capsule during an expansion: reaches 94% of travel ~127 ms
+  in, peaks 5 px past the settled width, and settles — a +1.6% overshoot
+  against the 1.54% the maths predicts. **Qt's BezierSpline accepts at
+  most 10 segments and segfaults on the eleventh**; the first attempt used
+  24 and crashed the shell on every launch. See FORK-NOTES.md.
+- **Arbitrary text in the island — DONE.** `tide showText <string>` /
+  `tide clearText`, persistent until cleared and re-asserted after any
+  transient OSD interrupts it. `submap-indicator.sh` uses it and no longer
+  needs dunst.
+- **A theme picker — DONE.** `ThemePickerLayer.qml`, bound as SHIFT+C in
+  the rofi submap. 22 tiles each painted in the palette it applies, with
+  swatches parsed out of `theme-apply` itself rather than copied.
 
-**A theme picker is not among the island's panels.** `theme-toggle` is
-still the rofi one, on `$mod P` → `c`. Putting it in the island is fork
-work, same bucket as the above.
+**A theme picker is not among the island's panels** — it is now, as fork
+work. `$mod P` → `c` is still the rofi `theme-toggle`, unchanged; `$mod P`
+→ `SHIFT+c` opens the island's. Both drive `theme-apply` and both read
+`~/.cache/qtile/theme_mode`, so they cannot disagree, and rofi keeps
+working when the island is not running.
 
 ### The fork — DONE, and cheaper than the earlier note assumed
 

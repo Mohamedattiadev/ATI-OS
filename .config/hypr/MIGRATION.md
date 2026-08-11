@@ -104,14 +104,31 @@ give no feedback whatsoever — the compositor just starts swallowing
 keys, and the only way to tell you are in one is to press something.
 
 `scripts/submap-indicator.sh` listens on Hyprland's event socket
-(`submap>>name` entering, `submap>>` leaving) and raises a
-**non-expiring** dunst notification naming the mode and its keys,
-cleared the instant the submap resets. Non-expiring is the point: it is
-a mode indicator, not a toast.
+(`submap>>name` entering, `submap>>` leaving) and puts the mode name in
+the island, where qtile's bar used to say it. It stays for exactly as
+long as the mode is active: **persistent, not a toast.**
 
-It lands **in the island** for free, because Tide Island renders
-notifications in its capsule — so the mode shows up where the bar used
-to say it, without forking anything.
+It now uses the island **directly**, via a forked `tide showText <string>`
+IPC. The earlier note said this needed dunst because upstream's
+`showCustom()` takes no arguments — true at the time, and no longer.
+dunst remains only as a fallback for the window between login and the
+island finishing its load, tried per event rather than probed once.
+
+**A bug worth remembering, because only a never-expiring indicator can
+have it.** Nothing in the system will ever remove a `-t 0` notification,
+so the only thing that cleared it was this script seeing the matching
+leave event. Killed mid-chord, restarted after a reload, or one dropped
+event, and a permanent "ROFI-MODE" sits over a desktop that is in no
+submap at all — worse than no indicator, because you believe it. Fixed
+by clearing once *before* the event loop and again from a trap on EXIT
+TERM INT HUP, plus an `flock` guard so there is only ever one instance.
+
+The trap needed the loop to change shape, which is the non-obvious part:
+bash defers trap handlers until the current foreground command returns,
+and `reader | while read` is one command that never returns — so SIGTERM
+left the process alive and the indicator on screen, reintroducing the
+exact bug. Reading from a process substitution puts the interruptible
+`read` builtin in the main shell instead, and the handler fires at once.
 
 The socket is read with python3, not socat: socat is not installed here,
 and adding a declared package for one `read` on a unix socket is a poor
@@ -368,15 +385,32 @@ qtile's own client list. Nothing in it survives the move. Each becomes a
 `hyprctl clients -j` lookup plus `dispatch focuswindow`, or is folded into
 a scratchpad. They are listed commented in `binds.conf`.
 
-## Deferred: the bar
+## The bar — now a notch, and forked
 
-Four bindings drove qtile widget internals (`SmartWidgetBox` toggles,
-top↔bottom bar swap). They resume meaning only once Tide-island is running
-and exposing IPC.
+Tide Island is running, and the QML is vendored and patched at
+`.config/quickshell/tide-island-fork/` (launched by `scripts/island.sh`).
+The resting shape is the notch from DESIGN-SPEC.md: flush to the top
+edge, top corners square, a 9 px concave flare each side, pure black.
 
-Tide-island: <https://github.com/enhaoswen/Tide-island> — clone to
-`~/.config/quickshell/`, then uncomment the `qs -c tide-island` line in
-`autostart.conf`.
+Four things landed in the fork that no config key could reach — the notch
+morph, a generated spring, arbitrary text, and a theme picker. Each is
+written up with its traps in `tide-island-fork/FORK-NOTES.md`, which is
+also the merge list for the next `pacman -Syu` of `tide-island`.
+
+The two traps most likely to bite again:
+
+- **Qt's `Easing.BezierSpline` takes at most 10 cubic segments.** The
+  eleventh corrupts the heap and the process takes SIGSEGV on the first
+  animated frame — no warning, no fallback. It killed the shell on every
+  launch until it was bisected in an offscreen `qml6` harness.
+- **Quickshell IPC parameters must be typed.** `function f(text: string)`
+  works; `function f(text)` accepts the call and arrives `undefined`.
+
+Four qtile bindings drove widget internals (`SmartWidgetBox` toggles,
+top↔bottom bar swap). Those remain unported — they have no analogue in
+this shell.
+
+Tide-island upstream: <https://github.com/enhaoswen/Tide-island>
 
 ## Deliberate behaviour changes
 
