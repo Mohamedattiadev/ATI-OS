@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Shapes
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Services.Mpris
@@ -192,6 +193,85 @@ PanelWindow {
         return isNaN(action) ? 0 : Math.max(0, Math.min(2, Math.round(action)));
     }
     readonly property real baseExclusiveZone: userConfig.islandExclusiveZone
+
+    // ------------------------------------------------------------------
+    // FORK: the notch form. DESIGN-SPEC.md, "Geometry" and "The morph".
+    // ------------------------------------------------------------------
+    //
+    // Upstream only has the floating pill: islandTopMargin below the top
+    // edge, all four corners rounded. The spec has TWO forms of the SAME
+    // shape, and the one that makes it read as a notch rather than as a
+    // widget is the flush one:
+    //
+    //   floating — islandTopMargin below the top, all corners rounded
+    //   notch    — flush to the top edge, TOP CORNERS SQUARE, a concave
+    //              flare each side where it meets the screen top, and a
+    //              few px of overshoot past the top that gets clipped
+    //
+    // notchProgress is the single value the spec insists on:
+    //
+    //   "This is one shape morphing and not two shapes swapping. A single
+    //    path interpolated by one value."
+    //
+    // He tried the obvious way first — a rounded rect and a teardrop
+    // flipped with `visible` — and it popped, "looked cheap instantly",
+    // because one shape vanished while the other appeared mid-animation.
+    //
+    // The interpolation is deliberately TWO-PHASE, because an outline
+    // cannot be both round-topped and flared at once: the flare grows out
+    // of a square corner, so the corner has to finish un-rounding before
+    // the flare has anywhere to attach. Phase 1 un-rounds the top corners
+    // and slides the shape flush; phase 2 grows the flares. Both are
+    // driven by notchProgress alone, so there is only ever one shape and
+    // one value.
+    property real notchProgress: root.notchModeEnabled ? 1 : 0
+
+    // Default form. The spec's whole argument is that a notch is
+    // pretending to be bezel — so the resting, everyday state is the
+    // flush one, and the floating pill is the alternative rather than the
+    // norm. Toggled live over IPC (`island setNotchMode`).
+    property bool notchModeEnabled: true
+
+    readonly property real notchUnround: Math.max(0, Math.min(1, root.notchProgress * 2))
+    readonly property real notchFlareProgress: Math.max(0, Math.min(1, root.notchProgress * 2 - 1))
+
+    // The morph rides the same generated spring as every other geometry
+    // change in the shell — see Motion.js. It has to: a shape that
+    // un-rounds on a spring and flares on an ease would read as two
+    // animations, which is the thing the single-path rule exists to
+    // prevent.
+    Behavior on notchProgress {
+        NumberAnimation {
+            duration: Motion.morphDuration()
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.spring()
+        }
+    }
+
+    // PROPORTION, not pixels. REQUIREMENTS.md: every number in the spec was
+    // measured off the author's 2560x1440 display, and applying them
+    // literally to this 1366x768 panel doubles them in proportional terms —
+    // which is exactly why islandWidth is 96 and not the spec's 150.
+    //
+    // The flare is a feature OF the island, not of the screen, so it is
+    // scaled by the island's own factor (96/150 = 0.64) rather than by the
+    // screen-width ratio: 14 * 0.64 = 9.0 -> 9 px. Scaling by screen width
+    // instead would have given 7.5, and both are defensible; the island
+    // ratio wins because the flare has to look right against the island's
+    // 38 px height, which did NOT get scaled down.
+    readonly property real notchFlareSize: Math.round(14 * (userConfig.islandWidth / 150.0))
+
+    // The overshoot is the ONE number here that is NOT scaled, and that is
+    // deliberate. Its job is not aesthetic: the spec records that when the
+    // shape was first made flush, a 1-2 px line of desktop showed above it,
+    // and the cause was the drop shadow's own padding insetting the painted
+    // shape inside its layer. That padding is an absolute pixel count and
+    // does not shrink with the panel, so shrinking the overshoot to match
+    // would reintroduce the exact gap it exists to cover. Stays at 4.
+    //
+    // It scales to zero as the shape morphs back to floating, because the
+    // floating form needs its islandTopMargin gap back.
+    readonly property real notchOvershoot: 4
     readonly property bool hoverExpandEnabled: configuredHoverExpandAction > 0
     readonly property bool topGestureInputActive: !root.overviewVisible && islandContainer.canShowSideSwipe
     readonly property bool autoHideRuntimeEnabled: !shellRootController
@@ -1704,6 +1784,93 @@ PanelWindow {
             }
         }
 
+        // FORK: the notch skirt — the overshoot band and the two concave
+        // flares, drawn as ONE path so that nothing ever appears or
+        // disappears; every vertex is a continuous function of
+        // root.notchProgress. At notchProgress 0 the path collapses to a
+        // zero-area sliver on the capsule's own top edge and the floating
+        // pill is exactly what upstream drew.
+        //
+        // Why this is a sibling of mainCapsule and not part of it: a
+        // Rectangle cannot be concave, and mainCapsule has clip:true plus
+        // ~40 anchored children. Painting the flares inside it would clip
+        // them away; changing its bounds to make room would move all of
+        // them. The skirt owns no content, so it can be any shape it likes.
+        //
+        // Both are opaque #000 and share exact edges, so the join is
+        // invisible — there is no alpha blending at a hard vertical edge
+        // between two identical opaque fills. It sits BELOW the capsule
+        // (z 4 vs 5) so the capsule's own border, when it has one, still
+        // draws on top.
+        Shape {
+            id: notchSkirt
+            z: 4
+            visible: root.notchProgress > 0.001 && root.autoHideProgress > 0.001
+            opacity: root.autoHideProgress
+            preferredRendererType: Shape.CurveRenderer
+
+            // Live, animated values. F and O are what the two phases drive:
+            // O (overshoot) rides phase 1 alongside the un-rounding, so the
+            // shape is already sealed against the top edge before the flares
+            // start growing; F rides phase 2.
+            readonly property real f: root.notchFlareSize * root.notchFlareProgress
+            readonly property real o: root.notchOvershoot * root.notchUnround
+            // Quarter-circle-to-cubic constant. 4/3*(sqrt(2)-1); a cubic
+            // with its controls this far along the tangents is within 0.03%
+            // of a true quarter arc, and unlike PathArc it leaves no room
+            // for a sweep-direction mistake that silently draws the arc the
+            // long way round.
+            readonly property real kappa: 0.5522847498
+
+            x: mainCapsule.x - f
+            y: mainCapsule.y - o
+            width: mainCapsule.width + f * 2
+            height: o + f
+
+            ShapePath {
+                fillColor: mainCapsule.color
+                strokeWidth: -1
+
+                // Clockwise from the top-left of the bounding box. The band
+                // above local y = o is the overshoot: it is off-screen and
+                // exists only because the drop shadow's padding otherwise
+                // leaves a 1-2 px line of desktop above the notch.
+                startX: 0
+                startY: 0
+                PathLine { x: notchSkirt.width; y: 0 }
+                PathLine { x: notchSkirt.width; y: notchSkirt.o }
+
+                // Right flare. A fillet between the screen's top edge and
+                // the capsule's right side: full flared width at the top,
+                // tapering to the capsule's own width one flare-height down.
+                // Concave because the fill lies OUTSIDE the circle, which is
+                // what makes it read as the shape blooming into the bezel
+                // rather than as a chamfer stuck on the side.
+                PathCubic {
+                    control1X: notchSkirt.width - notchSkirt.kappa * notchSkirt.f
+                    control1Y: notchSkirt.o
+                    control2X: notchSkirt.width - notchSkirt.f
+                    control2Y: notchSkirt.o + notchSkirt.f - notchSkirt.kappa * notchSkirt.f
+                    x: notchSkirt.width - notchSkirt.f
+                    y: notchSkirt.o + notchSkirt.f
+                }
+
+                PathLine { x: notchSkirt.f; y: notchSkirt.o + notchSkirt.f }
+
+                // Left flare, mirrored.
+                PathCubic {
+                    control1X: notchSkirt.f
+                    control1Y: notchSkirt.o + notchSkirt.f - notchSkirt.kappa * notchSkirt.f
+                    control2X: notchSkirt.kappa * notchSkirt.f
+                    control2Y: notchSkirt.o
+                    x: 0
+                    y: notchSkirt.o
+                }
+
+                PathLine { x: 0; y: 0 }
+            }
+        }
+
         // --- UI 渲染：灵动岛主干 ---
         Rectangle {
             id: mainCapsule
@@ -1824,13 +1991,34 @@ PanelWindow {
             color: root.overviewContentVisible
                 ? root.overviewCapsuleColor
                 : (notificationHistorySurface ? "#080808" : Qt.rgba(0, 0, 0, userConfig.islandBackgroundOpacity / 100.0))
-            y: userConfig.islandTopMargin
+            // FORK: the resting offset is now interpolated between the two
+            // forms rather than fixed at islandTopMargin. Phase 1 of the
+            // morph carries it from the floating gap to flush with the top
+            // edge.
+            //
+            // The overshoot is deliberately NOT folded in here. Pushing this
+            // rectangle to a negative y would drag ~40 anchored children up
+            // with it, and growing its height to compensate would recentre
+            // every one of them by half the overshoot — a 2 px drift across
+            // every panel the capsule hosts, to fix a seam nobody can see.
+            // The overshoot band is painted by notchSkirt instead, which is
+            // a sibling and owns no content.
+            readonly property real restingTopOffset:
+                userConfig.islandTopMargin * (1 - root.notchUnround)
+
+            y: restingTopOffset
                 - (1 - root.autoHideProgress) * (targetHeight + userConfig.islandTopMargin + 8)
             x: parent ? parent.width * userConfig.islandPositionX / 100 - width / 2 : 0
             clip: true
             width: displayedWidth
             height: targetHeight
             radius: targetRadius
+            // FORK: the un-rounding half of the morph. `radius` still drives
+            // the bottom corners — the notch keeps those, it is only the top
+            // pair that squares off against the screen edge. Per-corner radii
+            // are Qt 6.7+; this runs on 6.11.
+            topLeftRadius: targetRadius * (1 - root.notchUnround)
+            topRightRadius: targetRadius * (1 - root.notchUnround)
             opacity: root.autoHideProgress
             scale: 0.96 + root.autoHideProgress * 0.04
             transformOrigin: Item.Top

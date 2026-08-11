@@ -4,10 +4,11 @@
   "_geometry": "Spec says 150x38. That number was measured off the video author's 2560x1440 display, where it is 5.9% of screen width. On this 1366x768 panel the same 150px is 11% - proportionally almost double, which is why it read as oversized. Scaled to the spec's PROPORTION instead of its pixel count: 5.9% of 1366 = 80, rounded up to 96 so the 24-hour clock keeps comfortable side padding at font size 20. Height stays 38, which is the spec value and also upstream's default.",
   "islandWidth": 96,
   "islandHeight": 38,
+  "_notch": "islandTopMargin is now the FLOATING form's gap only. The resting form is the NOTCH: flush to the top edge, top corners square, a concave flare each side. That is a fork change in DynamicIslandWindow.qml (notchProgress / notchSkirt), not a config key - UserConfigBackend is compiled and has no notion of it. This value still matters because it is what the morph interpolates back to when notch mode is switched off.",
   "islandTopMargin": 11,
   "islandPositionX": 50,
 
-  "_exclusiveZone": "38 height + 11 margin = 49, so windows tile below the island instead of under it. This pill IS the whole top surface - there is no separate bar to account for.",
+  "_exclusiveZone": "The notch is flush at the top and 38 tall, so 38 is the minimum that keeps windows out from under it. 49 keeps the extra 11 as breathing room below the flares, which read badly with a window edge jammed against them. This shape IS the whole top surface - there is no separate bar to account for.",
   "islandExclusiveZone": 49,
 
   "_opacity": "Spec is emphatic that the shape is hardcoded #000000 and NOT theme-tinted: it is imitating bezel, and 'tint it and it stops being a notch and becomes a colored blob'. Upstream default 60 is translucent, so this is a real divergence. Theming goes INSIDE the island, never on the shell shape.",

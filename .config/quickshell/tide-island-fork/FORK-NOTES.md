@@ -82,6 +82,44 @@ cluster on the rise and the overshoot peak rather than on the flat tail —
 max deviation from the true response 4.0e-4 versus 2.9e-3 for even
 spacing.
 
+### `DynamicIslandWindow.qml` — the notch form
+
+Upstream has one resting shape: a pill floating `islandTopMargin` below the
+top edge with all four corners rounded. DESIGN-SPEC.md has two forms of the
+**same** shape, and the flush one is what makes it read as a notch rather
+than as a widget. `notchModeEnabled` defaults true, so the notch is now the
+everyday resting appearance.
+
+Driven by a single `notchProgress` 0..1, because the spec is explicit that
+this must be "one shape morphing and not two shapes swapping. A single path
+interpolated by one value" — the author's first attempt flipped two shapes
+with `visible` and it "looked cheap instantly". Interpolated in two phases,
+because an outline cannot be round-topped and flared at once:
+
+| phase | range | what moves |
+|---|---|---|
+| 1 | 0 → 0.5 | top corner radii → 0, capsule slides flush, overshoot grows |
+| 2 | 0.5 → 1 | the concave flares grow |
+
+`notchSkirt` is a new `Shape` sibling of `mainCapsule` carrying the
+overshoot band and both flares as one `ShapePath`. It is a sibling rather
+than a child because `mainCapsule` is a `Rectangle` (cannot be concave)
+with `clip: true` and ~40 anchored children — painting the flares inside
+would clip them, and resizing it to make room would shift every child.
+Quarter arcs are cubics at kappa = 0.5523 rather than `PathArc`, which
+removes any chance of a sweep-direction mistake drawing the arc the long
+way round.
+
+The top corners use Qt 6.7+ `topLeftRadius` / `topRightRadius`; `radius`
+still drives the bottom pair, which the notch keeps.
+
+Scaling, per REQUIREMENTS.md's proportion rule: the flare is 14 px in the
+spec's 2560-wide measurements and is scaled by the island's own factor
+(96/150) to **9 px**. The 4 px overshoot is deliberately **not** scaled —
+it exists to cover the drop shadow's padding, which is an absolute pixel
+count, so shrinking it would reintroduce the desktop-coloured hairline it
+exists to hide.
+
 ## Pre-existing upstream warning, not ours
 
 ```
