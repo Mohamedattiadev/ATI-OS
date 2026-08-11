@@ -7,9 +7,22 @@ Standing constraint, applies to everything below:
 
 ## 0. Install Hyprland
 
-**Status: NOT DONE — needs you, not me.**
+**Status: DONE.** Hyprland 0.56.2 installed and running; keyd is active,
+enabled, and confirmed bound to `AT Translated Set 2 keyboard`. See the
+"Runtime verification" section of MIGRATION.md for what first login
+proved.
 
-Package installation requires `sudo`, which is interactive. Run:
+One package is still missing and matters for items 1 and 5:
+
+```
+sudo pacman -S inter-font
+```
+
+Without it every `Inter` / `Inter Display` family in `hyprlock.conf` —
+and every one DESIGN-SPEC.md specifies for the notch — silently resolves
+to Noto Sans CJK KR. `fc-match "Inter Medium"` confirms it.
+
+Original install command, for reference:
 
 ```
 sudo pacman -S hyprland xdg-desktop-portal-hyprland \
@@ -203,7 +216,30 @@ benefit from being in the notch.
 
 ## 4. System-wide theming
 
-**Status: NOT STARTED — but far cheaper than expected**
+**Status: DONE and verified live.**
+
+`gen_hypr_colors()` is in `theme-apply` (line ~398) and wired into
+`gen_all_theme_css()`. Verified in a running session: `theme-apply
+doomone` regenerated `~/.config/hypr/colors.conf` with the doomone
+palette and the live border colour became `ff98be65` (doomone green)
+without a restart. `hyprctl configerrors` stayed clean.
+
+Both guards work as designed — it returns early if `~/.config/hypr` is
+absent, and only shells out to `hyprctl reload` when
+`HYPRLAND_INSTANCE_SIGNATURE` is set, so running it from the qtile/X11
+session is unaffected.
+
+Note: `~/.cache/qtile/theme_mode` said `doomone` while `colors.conf`
+still held catppuccin values — the two had drifted. Re-applying doomone
+reconciled them. The shared state file does keep both sessions in sync,
+but only for themes applied *after* the Hyprland target existed.
+
+Remaining under this item: a Quickshell/QML target, which cannot be
+written until item 1 exists.
+
+Original notes below.
+
+**Was: NOT STARTED — but far cheaper than expected**
 
 `~/.dotfiles/.config/AtiScriptsV1/theme-apply` is 1,660 lines and already
 does the hard part: **20+ named themes** (doomone, dracula, gruvbox, nord,

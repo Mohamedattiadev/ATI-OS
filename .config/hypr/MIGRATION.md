@@ -22,10 +22,195 @@ Deferred breaks down as 121 popup-chord bindings, 18 root bindings, and 3
 nested chord entries. Blocked is Hintium (6 root + all 19 of Hint-Mode)
 plus the xmodmap reapply binding.
 
-**Hyprland 0.56.2 is installed, and `Hyprland --verify-config` reports
-`config ok`.** The config parses. It has still never been *run*, so
-runtime behaviour — which `class:` matchers actually fire, whether the
-scratchpads land where intended — is unverified until first login.
+**Hyprland 0.56.2 is installed and has now been run.** See
+"Runtime verification" below for what first login actually proved —
+including one silent bug that `--verify-config` cannot catch.
+
+## Runtime verification (first live session)
+
+Checked against a running 0.56.2 on the 1366x768 laptop panel, single
+monitor. `hyprctl configerrors` is empty and the log has no config
+errors; the only `ERR` lines are aquamarine's TTY-launch backend probing
+(`wl_display_connect failed`, `getCurrentCRTC: No CRTC 0`,
+`Cannot commit when a page-flip is awaiting`) — all benign.
+
+| Check | Result |
+|---|---|
+| keyd Caps→Alt | **works** — matched `AT Translated Set 2 keyboard`; Hyprland's `main` keyboard is `keyd-virtual-keyboard`, and 55 ALT binds are live |
+| Rules engine (`class:` / `title:`) | **works** — verified by spawning against real matchers |
+| Scratchpad geometry | **was broken, fixed** — see below |
+| Scratchpad spawn-on-first-press | **works** — spawns once, toggles thereafter, never respawns |
+| `toggle-app.sh` | **works** — all three states (spawn / stash / pull-back-and-focus) |
+| hyprlock PAM | **statically sound**, live test still owed — see below |
+| Autostart | all daemons up: hyprpaper, hypridle, dunst, copyq, polkit, portals, qupdate |
+
+### The log is not at `~/.hyprland.log`
+
+0.56 writes it per-instance under the runtime dir:
+
+```
+$XDG_RUNTIME_DIR/hypr/<instance-signature>/hyprland.log
+# i.e.  ls $XDG_RUNTIME_DIR/hypr/*/hyprland.log
+```
+
+It is also ~95% libinput gesture debug spam; `grep -v DEBUG` first.
+
+### Percentage `size` / `move` window rules are silently inert
+
+This is the one that `--verify-config` and `hyprctl configerrors` both
+miss, because the config is syntactically valid — the rules simply never
+apply. Measured by spawning kitty with `size 50% 25%, move 10% 40%`
+(want `683x192 @ 137,307`) on a 1366x768 monitor:
+
+| rule form | workspace | result |
+|---|---|---|
+| percent | special | `1346x748 @ 10,10` — **both ignored** |
+| pixel | special | `683x192 @ 137,307` — correct |
+| percent | normal | `683x192 @ 342,288` — size ok, **move ignored** (centred) |
+| pixel | normal | `683x192 @ 137,307` — correct |
+
+So percentage `move` never applies, and on a special workspace
+percentage `size` does not either. **`float` applies in all four cases**,
+which is exactly what made this hard to see: all six scratchpads floated,
+so they looked configured, but each kept full tiled size.
+
+Fixed by moving scratchpad geometry out of `rules.conf` and into
+`scripts/scratchpad.sh`, which resolves the percentages against the
+*focused* monitor at spawn time and passes pixels as inline exec rules
+(`[workspace special:x silent; float; size W H; move X Y]`). Hardcoding
+pixels in `rules.conf` would have fixed one monitor and broken the other.
+
+Verified after the fix: term1 and term2 land at `820x461 @ 273,77`,
+exactly 60%x60% @ 20%,10%.
+
+### Known cosmetic deviations
+
+- **calc** lands at `820x550`, not `820x461` — qalculate-gtk enforces a
+  GTK minimum height and Hyprland re-centres around it. App-imposed;
+  qtile's DropDown had the same constraint. Not worth fighting.
+- **Inter is not installed**, so every `font_family` in `hyprlock.conf`
+  silently resolves to Noto Sans CJK KR (`fc-match "Inter Medium"`
+  confirms). The lock clock renders in the wrong face with no warning.
+  `sudo pacman -S inter-font` fixes it, and it is needed for the notch
+  bar anyway — DESIGN-SPEC.md specifies Inter / Inter Display throughout.
+- **qutebrowser's Wayland app_id is `org.qutebrowser.qutebrowser`**, not
+  `qutebrowser`. `toggle-app.sh` matches unanchored so it works, but any
+  `match:class ^(qutebrowser)$` rule added later will not fire.
+
+### Window borders were green in every theme
+
+The complaint that borders "don't follow the theme" was real, and the
+cause was in `theme-apply`, not in Hyprland. `gen_hypr_colors()` set
+`$accent` to the **green slot**, and `looks.conf` used `$accent` for
+`col.active_border`. Green is green in all 20+ palettes, so switching
+theme moved the border between shades of green and looked like nothing
+had happened.
+
+Three different things had been collapsed into one variable:
+
+| role | doomone value | who wants it |
+|---|---|---|
+| green slot | `#98be65` | nothing — this was the bug |
+| `accent_of_mode` | `#51afef` | GTK accent, qtile GroupBox, hyprlock field |
+| qtile `colors[8]` (cyan) | `#46d9ff` | the focused window border |
+
+qtile's `layout_theme` sets `border_focus = colors[8]`, which is the
+cyan slot of the 9-slot palette — not the accent. So `colors.conf` now
+generates a dedicated `$border_active` / `$border_inactive` pair, and
+`$accent` is `accent_of_mode` (correct for hyprlock's field colour).
+
+Verified by cycling themes against the live compositor:
+
+| theme | border | accent |
+|---|---|---|
+| doomone | `46d9ff` | `51afef` |
+| gruvbox | `8ec07c` | `fabd2f` |
+| nord | `88c0d0` | `88c0d0` |
+| dracula | `8be9fd` | `bd93f9` |
+
+qtile uses `border_normal = colors[1]` (the light FG slot) for unfocused
+windows. That is deliberately **not** mirrored — at `border_size 2` a
+bright border on every unfocused window reads as noise under Hyprland's
+gaps. `$border_inactive` is `$bg_alt`; swap it to `$fg` for literal
+parity.
+
+### hyprlock rejected three options without failing
+
+`hyprctl configerrors` knows nothing about `hyprlock.conf` — hyprlock
+parses it itself, at lock time, and prints to **its own stderr**, which
+nothing captures during a normal lock. It reported:
+
+```
+config option <general:grace> does not exist.
+config option <general:no_fade_in> does not exist.
+config option <general:disable_loading_bar> does not exist.
+Proceeding ignoring faulty entries
+```
+
+In 0.9.6 `grace` is a **command-line flag**, not a config option
+(`hyprlock --grace 0`); the other two were removed with no replacement.
+`hypridle.conf`'s `lock_cmd` now passes `--grace 0` explicitly. The
+valid `general:` keys are `fail_timeout`, `fractional_scaling`,
+`hide_cursor`, `ignore_empty_input`, `immediate_render`,
+`screencopy_mode`, `text_trim`.
+
+### The lock clock was drawn off-screen
+
+Label positions were `420` and `330` px, taken from the video's 2560x1440
+display. `valign = center` measures upward from the vertical centre, so
+on this 1366x768 panel the date sat at 804 — 36px above the top edge,
+invisible — and the clock was clipped. Nothing logs this. Both are now
+percentages (`26%`, `17%`), so the layout holds on either monitor.
+
+### hyprlock: VERIFIED, including the wrong password
+
+Done, and it passes. The live test does not require locking your real
+session — run a **nested Hyprland** as a window and lock only that:
+
+```
+Hyprland -c nested.conf          # nested.conf sets its own monitor +
+                                 # exec-once = hyprlock --grace 0
+WAYLAND_DISPLAY=wayland-2 wtype "wrong-password"
+WAYLAND_DISPLAY=wayland-2 wtype -k Return
+```
+
+The nested compositor takes the next free socket (`wayland-2`), and
+`wtype` drives it through `zwp_virtual_keyboard_manager_v1`, so
+hyprlock receives real keystrokes while the outer session stays
+untouched. Screenshot the nested window with `grim -g`.
+
+Result: **rejected.** hyprlock displayed `Wrong password`, stayed
+locked, and the process was still alive afterwards. Confirmed
+independently of the UI by `faillock --user ati`, which recorded the
+attempt with source `hyprlock` — proof PAM actually evaluated and
+denied it rather than the field merely clearing.
+
+Note `deny=3` / `unlock_time=600` are the defaults here, so three wrong
+attempts lock the account for ten minutes. Reset a test's counter with
+`sudo faillock --user ati --reset`.
+
+Static analysis of the PAM stack, which the above confirms:
+
+The lockout risk is cleared: `/etc/pam.d/hyprlock` exists and is the
+packaged one (`auth include login`), resolving through
+`system-login` → `system-auth`, whose stack is stock Arch:
+
+```
+auth [success=1 default=bad] pam_unix.so try_first_pass nullok
+auth [default=die]           pam_faillock.so authfail
+auth optional                pam_permit.so
+```
+
+`pam_permit` is only reachable *after* `pam_unix` succeeds, so there is
+no always-accept path — which is precisely the failure the video author
+hit with a hand-written PAM file. This config does not have his bug.
+
+(An earlier draft of this file claimed the wrong-password test could not
+be automated, on the grounds that Wayland forbids synthetic keystrokes.
+That is true of the *outer* session but not of a nested compositor,
+where `wtype` is an ordinary client — hence the method above. Do NOT
+test by locking the real session: doing so once already cost a TTY
+switch to recover.)
 
 ## Hyprland 0.56 API changes this config had to absorb
 

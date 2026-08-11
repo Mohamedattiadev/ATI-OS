@@ -54,6 +54,15 @@ packages:
   # either one breaks the binding outright rather than degrading it.
   - grim
   - slurp
+  # wtype synthesises keystrokes through zwp_virtual_keyboard_manager_v1.
+  # Not part of any binding -- it exists so hyprlock can be TESTED. A lock
+  # screen that accepts any password looks identical to a working one, so
+  # it has to be driven with a deliberately wrong password and observed to
+  # reject it. Doing that against the real session locks you out of the
+  # machine you are testing from; instead run a nested Hyprland (it takes
+  # the next free wayland-N socket), point wtype at that display, and only
+  # the nested compositor locks. See MIGRATION.md.
+  - wtype
   # keyd remaps Caps to Alt at the evdev layer, BELOW the display server.
   # This laptop's physical Alt is dead in hardware (see hypr/input.conf),
   # and ~40 bindings use Alt. X11 solved it with ~/.Xmodmap, which does
