@@ -8,6 +8,12 @@ import "qml/controlcenter"
 import "qml/connectivity"
 import "qml/island"
 import "qml/workspace"
+// FORK: the motion system. Upstream hardcodes Easing.OutQuint / OutCubic
+// durations inline; DESIGN-SPEC.md calls for a generated spring instead.
+// Motion.js explains why there are two curves and not one — and carries a
+// loud warning about Qt's undocumented 10-segment BezierSpline limit,
+// which crashed the whole shell the first time this was attempted.
+import "qml/common/Motion.js" as Motion
 
 PanelWindow {
     id: root
@@ -259,17 +265,33 @@ PanelWindow {
     readonly property string overviewWallpaperSource: overviewWallpaperCache.effectiveSource
     property string wallpaperPickerActiveWallpaper: userConfig.wallpaperPath
 
+    // FORK: autoHideProgress drives BOTH the capsule's y offset and its
+    // opacity (see mainCapsule), so it is a mixed channel. It therefore
+    // takes the critically damped `fade` curve rather than the spring:
+    // opacity is clamped 0-1, and a curve that overshoots on the way in
+    // would try to exceed fully opaque, get clipped, and read as a cut.
+    // Position loses a little character here; opacity would lose more.
+    //
+    // Upstream used 120ms OutCubic in / 300ms InCubic out. The asymmetry
+    // is deliberate and kept — appearing should be immediate, leaving
+    // should be unhurried — but both now run on the same generated curve
+    // so the reveal and the hide are the same motion at two speeds.
     Behavior on autoHideProgress {
         NumberAnimation {
-            duration: root.autoHideTargetVisible ? 120 : 300
-            easing.type: root.autoHideTargetVisible ? Easing.OutCubic : Easing.InCubic
+            duration: root.autoHideTargetVisible ? 140 : Motion.morphDuration()
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.fade()
         }
     }
 
+    // Exclusive zone is a compositor-side reservation, not something the
+    // eye tracks — it just needs to not fight the capsule's own motion,
+    // so it matches it.
     Behavior on exclusiveZoneProgress {
         NumberAnimation {
-            duration: root.exclusiveZoneTargetActive ? 120 : 300
-            easing.type: root.exclusiveZoneTargetActive ? Easing.OutCubic : Easing.InCubic
+            duration: root.exclusiveZoneTargetActive ? 140 : Motion.morphDuration()
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.fade()
         }
     }
 
@@ -946,10 +968,18 @@ PanelWindow {
 
             SmoothedAnimation { velocity: 1.2; duration: 180; easing.type: Easing.InOutQuad }
         }
+        // FORK: the swipe settle. This one keeps its shorter budget — it is
+        // the release of a direct-manipulation gesture, and a gesture that
+        // keeps travelling for 400ms after your finger stops feels detached
+        // from the finger. But it springs, because the overshoot is exactly
+        // the "it has mass" cue that makes a flick read as a flick.
+        // Duration 0 while the gesture is live is upstream's, and correct:
+        // the capsule must track the finger 1:1.
         Behavior on swipeTransitionProgress {
             NumberAnimation {
                 duration: capsuleMouseArea.sideSwipeInteractive ? 0 : islandContainer.swipeAnimationDuration
-                easing.type: Easing.OutCubic
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.spring()
             }
         }
 
@@ -1678,7 +1708,14 @@ PanelWindow {
         Rectangle {
             id: mainCapsule
             z: 5
-            property int morphDuration: 400
+            // FORK: was a bare `property int morphDuration: 400`. Same 400,
+            // but sourced from Motion.js so the whole shell's speed is one
+            // number (Motion.SCALE) rather than 92 literals. A Timer and
+            // ExpandedPlayerLayer's sliderIntroDelay both synchronise
+            // against this, which is why the duration is kept at the spec
+            // value and the SHAPE of the curve does the speeding up.
+            // Nothing assigns to it, so readonly is safe.
+            readonly property int morphDuration: Motion.morphDuration()
             readonly property bool notificationHistorySurface: islandContainer.islandState === "notification_center"
             property real outlineWidth: root.overviewContentVisible || notificationHistorySurface ? 1 : 0
             property color outlineColor: root.overviewContentVisible
@@ -1803,10 +1840,21 @@ PanelWindow {
                     displayedWidth = baseTargetWidth;
             }
 
+            // FORK: geometry moves on the spring, everything colour-ish
+            // moves on the critically damped fade. See Motion.js.
+            //
+            // Upstream ran the three geometry Behaviors on Easing.OutQuint
+            // and the three colour ones on InOutQuad. OutQuint is the reason
+            // the island "felt slow": it is monotone with a very long tail,
+            // so it covers 97% of the distance in the first ~150ms and then
+            // spends 250ms crawling the last 3%. The spring covers the
+            // distance in ~105ms, overshoots 1.5%, and settles — same 400ms
+            // budget, completely different perceived speed.
             Behavior on displayedWidth  {
                 NumberAnimation {
                     duration: capsuleMouseArea.sideSwipeInteractive ? 0 : mainCapsule.morphDuration
-                    easing.type: Easing.OutQuint
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Motion.spring()
                 }
             }
             Behavior on height {
@@ -1814,13 +1862,42 @@ PanelWindow {
 
                 NumberAnimation {
                     duration: mainCapsule.morphDuration
-                    easing.type: Easing.OutQuint
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Motion.spring()
                 }
             }
-            Behavior on radius { NumberAnimation { duration: mainCapsule.morphDuration; easing.type: Easing.OutQuint } }
-            Behavior on color { ColorAnimation { duration: 280; easing.type: Easing.InOutQuad } }
-            Behavior on outlineWidth { NumberAnimation { duration: 260; easing.type: Easing.InOutQuad } }
-            Behavior on outlineColor { ColorAnimation { duration: 260; easing.type: Easing.InOutQuad } }
+            Behavior on radius {
+                NumberAnimation {
+                    duration: mainCapsule.morphDuration
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Motion.spring()
+                }
+            }
+            // Colour cannot overshoot for the same reason opacity cannot:
+            // the channels are clamped, so an undershoot below 0 or an
+            // overshoot past the target colour is silently flattened and
+            // shows up as a hitch rather than as bounce.
+            Behavior on color {
+                ColorAnimation {
+                    duration: Motion.fadeDuration()
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Motion.fade()
+                }
+            }
+            Behavior on outlineWidth {
+                NumberAnimation {
+                    duration: Motion.fadeDuration()
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Motion.fade()
+                }
+            }
+            Behavior on outlineColor {
+                ColorAnimation {
+                    duration: Motion.fadeDuration()
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Motion.fade()
+                }
+            }
             border.width: outlineWidth
             border.color: outlineColor
 

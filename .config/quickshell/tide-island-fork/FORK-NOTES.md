@@ -56,6 +56,32 @@ why the spec wanted something else.
 
 <!-- PATCH LIST -->
 
+### `qml/common/Motion.js` (new file) + `DynamicIslandWindow.qml` — the spring
+
+Upstream animates the capsule on `Easing.OutQuint` (geometry) and
+`Easing.InOutQuad` (colour), at a hardcoded `morphDuration: 400`.
+DESIGN-SPEC.md wants a generated damped-harmonic spring instead: 400 ms,
+damping ratio 0.8, with **fades on a separate critically-damped curve**
+because opacity is clamped 0-1 and an overshooting fade gets clipped.
+
+`Motion.js` solves the oscillator analytically and emits it as an
+`Easing.BezierSpline`. Nine `Behavior`s in `DynamicIslandWindow.qml` now
+call `Motion.spring()` (geometry) or `Motion.fade()` (opacity/colour).
+
+**The trap, which cost a crashed shell:** Qt's `BezierSpline` supports at
+most **10 cubic segments**. An eleventh does not warn or fall back — it
+writes past the end of a preallocated `QList` in `BezierEase::init()` and
+the process takes SIGSEGV on the first animated frame. The first attempt
+used 24 and killed Quickshell every launch, with the misleading trailing
+message `QEventLoop: Cannot be used without QCoreApplication` (that is the
+crash handler, not the cause). Bisected in an offscreen `qml6` harness:
+8 and 10 fine, 11 and up SIGSEGV. See the long comment in `Motion.js`.
+
+To keep fidelity inside 10 segments the knots are warped `t^1.8` so they
+cluster on the rise and the overshoot peak rather than on the flat tail —
+max deviation from the true response 4.0e-4 versus 2.9e-3 for even
+spacing.
+
 ## Pre-existing upstream warning, not ours
 
 ```
