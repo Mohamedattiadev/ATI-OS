@@ -96,7 +96,7 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             text: root.actionText
             color: root.section === "connected" ? StyleTokens.success : StyleTokens.textPrimary
-            font.pixelSize: root.section === "connected" ? 18 : 11
+            font.pixelSize: root.section === "connected" ? Metrics.font(18) : Metrics.font(11)
             font.family: root.textFontFamily
             font.weight: Font.DemiBold
         }

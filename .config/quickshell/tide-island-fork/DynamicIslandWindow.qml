@@ -2136,6 +2136,13 @@ PanelWindow {
                 case "theme_picker":
                     return Metrics.px(290);
                 case "expanded":
+                    // Deliberately NOT the scaled 165 that bluetooth_expanded
+                    // keeps. The media card's content — art, two lines of
+                    // text, a scrubber and a transport row — has a floor set
+                    // by glyph height, and glyph height does not scale all the
+                    // way down with the shape. At the scaled 122 the transport
+                    // row was cut off by the card's own bottom edge.
+                    return Metrics.px(190);
                 case "bluetooth_expanded":
                     return Metrics.px(165);
                 case "notification":

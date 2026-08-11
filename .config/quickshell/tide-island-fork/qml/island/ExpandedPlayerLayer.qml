@@ -305,7 +305,7 @@ Item {
                                 Text {
                                     text: currentArtist
                                     color: "#8e8e93"
-                                    font.pixelSize: userConfig.bodyFontSize - 2
+                                    font.pixelSize: userConfig.bodyFontSize - Metrics.px(2)
                                     font.family: textFontFamily
                                     font.weight: Font.Medium
                                     width: Metrics.px(200)
@@ -365,7 +365,7 @@ Item {
                             anchors.left: parent.left
                             text: timePlayed
                             color: "#8e8e93"
-                            font.pixelSize: userConfig.bodyFontSize - 4
+                            font.pixelSize: userConfig.bodyFontSize - Metrics.px(4)
                             font.family: textFontFamily
                             font.weight: Font.Medium
                         }
@@ -399,7 +399,7 @@ Item {
                             anchors.right: parent.right
                             text: timeTotal
                             color: "#8e8e93"
-                            font.pixelSize: userConfig.bodyFontSize - 4
+                            font.pixelSize: userConfig.bodyFontSize - Metrics.px(4)
                             font.family: textFontFamily
                             font.weight: Font.Medium
                         }
@@ -739,7 +739,7 @@ Item {
                     anchors.centerIn: progressRing
                     text: timerRoot.timeText
                     color: "#ffffff"
-                    font.pixelSize: timerRoot.displaySeconds >= 3600 ? timerRoot.userConfig.bodyFontSize + 2 : timerRoot.userConfig.bodyFontSize + 8
+                    font.pixelSize: timerRoot.displaySeconds >= 3600 ? timerRoot.userConfig.bodyFontSize + Metrics.px(2) : timerRoot.userConfig.bodyFontSize + Metrics.px(8)
                     font.family: timerRoot.textFontFamily
                     font.weight: Font.DemiBold
                     horizontalAlignment: Text.AlignHCenter
@@ -905,7 +905,7 @@ Item {
                     color: "#f5f5f7"
                     selectionColor: "#ff9f0a"
                     selectedTextColor: "#111111"
-                    font.pixelSize: UserConfig.bodyFontSize + 2
+                    font.pixelSize: UserConfig.bodyFontSize + Metrics.px(2)
                     font.family: inputRoot.textFontFamily
                     font.weight: Font.DemiBold
                     horizontalAlignment: TextInput.AlignRight
@@ -935,7 +935,7 @@ Item {
                 Text {
                     text: inputRoot.label
                     color: "#9b9da4"
-                    font.pixelSize: UserConfig.bodyFontSize - 3
+                    font.pixelSize: UserConfig.bodyFontSize - Metrics.px(3)
                     font.family: inputRoot.textFontFamily
                     font.weight: Font.Medium
                 }
@@ -989,7 +989,7 @@ Item {
             anchors.centerIn: parent
             text: buttonRoot.label
             color: buttonRoot.accent ? "#111111" : "#f5f5f7"
-            font.pixelSize: UserConfig.bodyFontSize - 2
+            font.pixelSize: UserConfig.bodyFontSize - Metrics.px(2)
             font.family: buttonRoot.textFontFamily
             font.weight: Font.DemiBold
         }

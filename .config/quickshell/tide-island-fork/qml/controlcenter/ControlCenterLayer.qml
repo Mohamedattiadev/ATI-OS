@@ -1699,7 +1699,7 @@ Item {
                                         anchors.centerIn: parent
                                         text: controlCenter.batteryModeGlyphs[index]
                                         color: index === controlCenter.batteryModeIndex ? StyleTokens.module : StyleTokens.textDim
-                                        font.pixelSize: index === controlCenter.batteryModeIndex ? 15 : 13
+                                        font.pixelSize: index === controlCenter.batteryModeIndex ? Metrics.font(15) : Metrics.font(13)
                                         font.family: iconFontFamily
                                     }
                                 }

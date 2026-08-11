@@ -74,7 +74,7 @@ Item {
                     anchors.centerIn: parent
                     text: root.iconText
                     color: "#0a84ff"
-                    font.pixelSize: userConfig.iconFontSize + 16
+                    font.pixelSize: userConfig.iconFontSize + Metrics.px(16)
                     font.family: root.iconFontFamily
                 }
             }

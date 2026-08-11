@@ -219,6 +219,22 @@ FocusScope {
         currentIndex: root.selectedIndex
         boundsBehavior: Flickable.StopAtBounds
 
+        // Whole rows only.
+        //
+        // positionViewAtIndex(Contain) scrolls by the minimum needed to make
+        // one CELL visible, which routinely lands contentY mid-row: the row
+        // above is then cut horizontally through its middle by the panel's
+        // top edge — labels sliced in half, tiles at half height, hard
+        // against the header. It looks like a rendering fault rather than
+        // like scrolling. snapMode makes every rest position a row boundary,
+        // so a partially scrolled grid always reads as "there is more above",
+        // never as "this is broken".
+        snapMode: GridView.SnapToRow
+
+        // And a real gap under the header, so even a mid-flick frame has the
+        // top row passing UNDER a margin rather than touching the title.
+        topMargin: Metrics.pad(6)
+
         delegate: Item {
             id: tile
             required property int index

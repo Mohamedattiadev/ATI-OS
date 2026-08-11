@@ -110,9 +110,24 @@ FocusScope {
         + "        os.makedirs(os.path.dirname(target) or '.',exist_ok=True)\n"
         + "        shutil.copy2(source,target)\n"
         + "    applied=target\n"
-        + "cmd=['awww','img',applied,'--transition-type',transition,'--transition-step',step,'--transition-duration',duration,'--transition-fps',fps,'--transition-angle',angle,'--transition-pos',pos,'--transition-bezier',bezier,'--transition-wave',wave]\n"
-        + "if invert_y == 'true':\n"
-        + "    cmd.append('--invert-y')\n"
+        // FORK: hyprpaper, not swww.
+        //
+        // Upstream runs `awww img <path> --transition-*` — i.e. swww, a
+        // daemon that is not installed on this machine and never has been.
+        // Clicking a thumbnail therefore did NOTHING, and said nothing: a
+        // missing binary exits non-zero, the picker only checks
+        // `exitCode === 0` before emitting "applied", so it just closed.
+        //
+        // hypr/scripts/wallpaper-set.sh both records the choice in
+        // ~/.cache/wall — the single source of truth theme-apply and the
+        // still-running qtile session both read — and points hyprpaper at
+        // it. Everything hyprpaper-specific lives there, including the
+        // 0.8.4 API trap that `preload` no longer exists.
+        //
+        // The transition-* settings above are swww's and have no hyprpaper
+        // equivalent; they are left in the config so the diff against
+        // upstream stays honest, and are simply not passed.
+        + "cmd=[os.path.expanduser('~/.config/hypr/scripts/wallpaper-set.sh'),applied]\n"
         + "result=subprocess.run(cmd,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
         + "if result.returncode == 0 and pywal_enabled == 'true':\n"
         + "    if not shutil.which('wal'):\n"
