@@ -154,6 +154,27 @@ entering the Rofi chord. Earlier attempts could not reproduce it, because
 virtual keyboard, which resets the submap, so every synthetic press looks
 like a failure whether or not one exists.
 
+**That claim was an assertion when it was written. It has now been
+measured**, three ways, because "the tool cannot test this" is exactly the
+kind of statement that quietly stops being true:
+
+| experiment | result |
+|---|---|
+| `hyprctl keyword bind "SUPER,F9,exec,touch /tmp/x"`, then `wtype -M logo -k F9` | bind present in `hyprctl binds` at modmask 64; **file never created** |
+| same with an unmodified `,F8` | **never created** — so it is not the modifier |
+| enter `submap rofi` by dispatcher, watch `.socket2.sock`, run any `wtype` | `submap>>rofi` … then `submap>>` **the moment wtype runs** — the reset is real and it is caused by the virtual keyboard, not by the key |
+| `wtype hello` into a focused `cat > file` with no submap active | `hello` arrives intact |
+
+So the split is precise: **`wtype` reaches CLIENTS but not the compositor's
+bind layer.** That is worth knowing in both directions — it is why the audio
+and display panels can be driven and verified end to end by synthesising
+keys (they are ordinary Wayland clients with keyboard focus), and it is why
+`$mod P` cannot be. One more detail from the same run, in case it misleads
+someone later: typing `insubmap` while the `rofi` submap was active landed
+`nsubmap` in the client — the leading `i` was lost to the submap-reset race,
+**not** consumed by the `i` bind, which was checked by confirming `dm-satty`
+never ran.
+
 **What was ruled out**, all measured against the running compositor:
 
 | suspect | evidence |
@@ -186,8 +207,19 @@ the modes it put on a single keystroke: Audio-Mode and Display-Mode each
 rebound `alt+3` / `alt+4` to close-and-ungrab, with the comment "so alt+3
 toggles".
 
-**Honest status: the cause is not proved by reproduction, only by
-elimination plus a mechanism that produces exactly the reported symptom.**
+**Honest status, unchanged after a second attempt: the cause is not proved
+by reproduction, only by elimination plus a mechanism that produces exactly
+the reported symptom.** The second attempt is the table above — it closed
+off synthesis as a route rather than opening one, and no other route exists
+on this machine. `ydotool`/`dotool` would work, because they inject through
+`uinput` and Hyprland sees a real evdev device, but that means a new declared
+package and a uinput permission change to test one keystroke. keyd is already
+here and is a real evdev device, but 2.6.0 has no `keyd do` — it can only
+rebind a key that a finger still has to press.
+
+**So this needs the one thing an agent cannot supply: a human pressing the
+key.** If a bare `p` still appears, run the listener below and press it for
+real; that single observation decides it.
 The fix is correct regardless — an entry key that does not toggle is a bug
 on its own terms — but if a bare `p` still appears, the next step is to
 watch the event socket while pressing the key for real:
@@ -429,9 +461,9 @@ to translate.
 
 | Popup | Bindings | Interim stand-in |
 |---|---|---|
-| AudioPopup | 25 | `pavucontrol` / rofi-pulse |
+| AudioPopup | 25 | **DONE** — rebuilt, see below |
 | DisplayPopup | 28 | **DONE** — rebuilt, see below |
-| WifiPopup + WifiQR | 14 | **mostly done** — see below; QR still open |
+| WifiPopup + WifiQR | 14 | **DONE** — see below |
 | BluetoothPopup | 12 | **done** — see below |
 | WallpaperPopup | 9 | `waypaper` |
 | Cheatsheets (Qtile/Vim/Fish) | 16 | **DONE** — rofi, see below |
@@ -458,9 +490,62 @@ still null on the line after `showControlCenter()`. Deferred by one
 event-loop turn with `Qt.callLater` — enough, because the Loader is
 synchronous.
 
-**Still open under this heading: WifiQR** (`s` in qtile's chord), which
-generates a shareable QR for the current network, and the audio detail
-popup.
+**WifiQR is done too**, on **`$mod P` → `SHIFT+S`**.
+
+qtile had it a level deeper than this config has a level: `$mod P`, then
+`n` for Wifi-Mode, then `s`. Here `n` opens the island's network list
+directly rather than a chord, so there is nowhere for a plain `s` to
+live — and plain `s` at the rofi level is already dm-spellcheck, itself a
+qtile port that keeps its key. Shifting the letter is the convention
+`SHIFT+C` already set for the island's theme picker beside rofi's.
+
+`scripts/wifi-qr.py` reads the SSID and the stored PSK out of
+NetworkManager (`nmcli --show-secrets` works as the logged-in user for
+`psk-flags=0`, which is anything saved normally — no sudo, no polkit),
+builds the `WIFI:` URI that Android and iOS cameras understand, and shells
+out to `qrencode`. `tide-island-fork/qml/wifi/WifiQrLayer.qml` shows it.
+`qrencode` was already installed and already declared in
+`arch-config/modules/wm.yaml`, so no package count moved.
+
+Four things are deliberate and would be easy to "improve" into a code that
+phones refuse:
+
+- **Black on white, always**, on its own white card, whatever the theme is.
+  Inverted codes are out of spec and many cameras reject them, and the
+  white card IS the quiet zone — a dark desktop running up to the modules
+  costs the decoder the margin it uses to find the symbol.
+- **qrencode runs twice**: once at one pixel per module to learn the module
+  count, then at an integer scale that fits the box. The panel then paints
+  the result at its natural size and never stretches it. A fractional
+  resample softens exactly the edges a camera needs.
+- **`-8` pins byte mode.** A QR carries no ECI header, so a decoder may
+  guess the charset — zbar guesses Shift-JIS and returns katakana for a
+  Turkish SSID.
+- **`\ ; , : "` are escaped** in the SSID and the PSK. They are the
+  separators of the URI itself, so one of them unescaped truncates the
+  payload and the phone joins the wrong network, or asks for a password
+  that looks right.
+
+Verified: the panel drew a 222 px symbol for `TDV-OGRENCI-KAT-1B`, which
+is the active connection `nmcli` reports. There is no QR decoder on this
+machine (`zbarimg` is not installed and adding a package to check one file
+is a poor trade), so the render was checked structurally instead — the
+final PNG was compared **module for module** against the one-pixel-per-
+module probe: 37 modules at 6 px each, **0 mismatches**, quiet zone white
+all round. That proves the scaling step did not distort the symbol, which
+is the only step this code adds on top of qrencode.
+
+Refusals are also messages rather than an empty box, because "not
+connected to Wi-Fi", "no stored password for this network" and
+"enterprise networks can't be shared by QR" have three different answers.
+A profile name that does not exist is caught explicitly: every `nmcli -g`
+query answers "" for it, and an empty key-mgmt reads as an OPEN network,
+so a typo would otherwise produce a perfectly valid code for a network
+that does not exist. Those three panels were not photographed — the
+machine is connected to a WPA network and disconnecting it to take a
+screenshot is not worth it — so the *rendering* of the error state is
+argued, not shown; the script side of each was run and prints what the
+panel displays.
 
 The connectivity panels also caught a rescale miss worth recording: their
 size comes from `connectivityDetailWidth` / `Height` on the island window,
@@ -534,6 +619,74 @@ mode and a screen you cannot see to fix:
 | `v`, Enter on a saved layout | restored, through the same countdown |
 | `set --disable` on the only output | refused |
 | `preset external` with no external | refused |
+
+### AudioPopup is done, and the control centre was not already doing it
+
+The easy conclusion — "the island's control centre has a Sound slider, so
+audio is covered" — was wrong, and it is worth writing down why, because
+it is the same shape of mistake as the Wi-Fi one two sections up in
+reverse. That slider is the volume of the **default sink**. qtile's popup
+was about which device the default *is*, and about everything that is not
+the default:
+
+| qtile did | reachable before | now |
+|---|---|---|
+| pick the output **and drag the playing streams onto it** | no | Enter in `outputs` |
+| pick the default microphone | no | Enter in `mics` |
+| per-application volume / mute | no | `playback`, `h`/`l`/`m` |
+| route ONE app to another device | no | Enter on a stream → `move to…` |
+| what is recording right now | no | `recording` |
+| card **profile** (A2DP ↔ HSP/HFP) | no | `p`, or `C` for every card |
+| output **port** (speakers ↔ headphone jack) | no | `Shift+P` |
+| volume above 100% | no | to 150%, red past unity |
+
+`pavucontrol` is not installed on this machine, so the stand-in the table
+above named did not exist either.
+
+`scripts/audio-ctl.py` is the backend and
+`tide-island-fork/qml/audio/AudioPanel.qml` is the keyboard and the
+pixels — the same split as the display panel, and for the same reason.
+Bound to **`$alt 3`**, qtile's own key. Not a submap: it is a layer
+surface with an exclusive grab, so its keys cannot leak.
+
+**The one thing `pactl set-default-sink` will not do is the reason this
+exists.** Pulse routes only *new* streams to a new default, so switching
+output while music plays leaves the music on the old device. `default-sink`
+re-reads the sink-input list and moves every one of them, and the status
+line reports the count.
+
+Four pactl traps are carried over from the qtile file rather than
+rediscovered; they are documented at the top of `audio-ctl.py`. The one
+most likely to bite a future change: **indices are PipeWire serials and
+they move** (a sink's own index changed from 51 to 249079 just from a
+stream move), so everything is addressed by name and the one thing that
+cannot be — a sink-input — is re-read in the pass that uses it.
+
+Verified against the live daemon, by driving the panel and reading `pactl`
+back afterwards:
+
+| action | result |
+|---|---|
+| `h` on a playing stream | row, bar and details all moved to 85%; `pactl` agreed |
+| `m` | `mute: True` in `pactl`, "mute" in red on the row |
+| Enter on the output | `output: … · output set · moved 1 stream` |
+| `p`, Enter on Analog Stereo Output | `active_profile` became `output:analog-stereo`; `k`+Enter put Duplex back |
+| `Shift+P`, Enter on Headphones | refused: "Headphones has nothing plugged in" |
+| `b` `b` | balance `-0.2`, channels 79/63; `0` re-centred |
+| Enter on a stream → Enter | `move to…`, cursor already on the current device |
+
+**`wtype` DOES drive this panel**, which is worth knowing after the
+SUPER+P work concluded the opposite about keybinds. The distinction is
+that a submap is compositor state that a virtual keyboard's arrival and
+departure resets, whereas this panel is an ordinary Wayland client with
+keyboard focus — synthetic keys reach it exactly like real ones. Only the
+`$alt 3` that opens it cannot be synthesised; that was checked with
+`hyprctl binds` instead.
+
+**Not ported, deliberately:** qtile's `_slider()` box-drawing bar (this
+draws a real rectangle) and the busy sweep animation in its footer (the
+status line says what is happening, and pactl reports no progress to
+animate, so the sweep was a fiction).
 
 ## Deferred: app togglers (7 bindings)
 

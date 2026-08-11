@@ -234,6 +234,57 @@ elements render happily on top of each other. In-tile margins use `px` and
 not `pad` for the same reason: inside a 46 px tile, generous padding is
 taken directly out of the two things that need the room.
 
+### `qml/audio/AudioPanel.qml` (new file) — qtile's AudioPopup
+
+Upstream's control centre has one Sound slider, on the default sink. This
+is the other seven-eighths of qtile's popup — output and microphone
+selection, per-app volume and routing, card profiles, ports — on qtile's
+own `$alt 3`. New `audio_panel` island state, a Loader beside the display
+panel's, and a `tide toggleAudioPanel` IPC entry. The pactl side is
+`hypr/scripts/audio-ctl.py`; see MIGRATION.md for what it restores.
+
+**The trap, and it is a general one about this shell's `var` models:**
+mutating a field of a plain JS object that a `ListView` delegate is
+showing changes nothing on screen. There is no notifier — the property
+still points at the same array, and the same object. The first version set
+`item.vol = target` on a volume keypress and the details column updated
+while the list row kept the old number and the bar did not move, which
+reads as "the write failed" rather than as "the view did not refresh".
+`patchSelected()` copies the row, copies the array, and assigns the
+property back. At these list sizes (single digits) copying is free, and it
+is the only change QML actually sees.
+
+Two smaller ones, both already paid for:
+
+- The bar and the readout must not read `modelData.vol` unguarded. Ports,
+  profiles and cards are rows with no volume at all, and their delegates
+  still evaluate those bindings before `visible: false` hides them —
+  `undefined / 150` is NaN, and a NaN width warns every frame.
+- `islandContainer.audioPanelLayerVisible` is spelled through its id in
+  the `focus:` binding where its neighbours are bare names. Quickshell
+  hot-reloads on write, so a save landing between a fork property's use
+  and its declaration compiles a component that really is missing it, and
+  the log fills with `ReferenceError` from a binding that is correct.
+
+### `qml/wifi/WifiQrLayer.qml` (new file) — the Wi-Fi QR
+
+qtile's `popups/WifiQR.py`, on `$mod P` → `SHIFT+S`. New `wifi_qr` island
+state, its own Loader, and a `tide toggleWifiQr` IPC entry. All of the nmcli
+and qrencode work is in `hypr/scripts/wifi-qr.py`; this layer only shows what
+that produced.
+
+Two things in it are not style choices:
+
+- **The symbol is painted at its natural pixel size.** The script is told how
+  much room there is, picks an integer scale that fits, and reports the exact
+  pixel count back; the `Image` is set to that. Letting QML stretch it to the
+  card resamples the modules at a fractional ratio and softens exactly the
+  edges a phone camera needs in poor light.
+- **`cache: false` on the Image.** The path never changes
+  (`~/.cache/hypr/wifi-qr.png`), so Qt's image cache is free to serve the
+  PREVIOUS network's code after a reconnect: right size, right white card,
+  wrong network, and nothing on screen to say so.
+
 ## Pre-existing upstream warning, not ours
 
 ```

@@ -4,11 +4,13 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Services.Mpris
 import IslandBackend
+import "qml/audio"
 import "qml/common"
 import "qml/controlcenter"
 import "qml/connectivity"
 import "qml/display"
 import "qml/island"
+import "qml/wifi"
 import "qml/workspace"
 // FORK: the motion system. Upstream hardcodes Easing.OutQuint / OutCubic
 // durations inline; DESIGN-SPEC.md calls for a generated spring instead.
@@ -165,6 +167,8 @@ PanelWindow {
         || islandContainer.applicationLauncherLayerVisible
         || islandContainer.themePickerLayerVisible
         || islandContainer.displayPanelLayerVisible
+        || islandContainer.audioPanelLayerVisible
+        || islandContainer.wifiQrLayerVisible
         ? WlrLayer.Overlay
         : WlrLayer.Top
     WlrLayershell.keyboardFocus: {
@@ -174,7 +178,9 @@ PanelWindow {
         if (islandContainer.wallpaperPickerLayerVisible
                 || islandContainer.applicationLauncherLayerVisible
                 || islandContainer.themePickerLayerVisible
-                || islandContainer.displayPanelLayerVisible)
+                || islandContainer.displayPanelLayerVisible
+                || islandContainer.audioPanelLayerVisible
+                || islandContainer.wifiQrLayerVisible)
             return WlrKeyboardFocus.Exclusive;
         // Keep keyboard focus on the overview until an overview action closes it.
         // Click-to-focus closes the overview before focusing the selected client.
@@ -768,6 +774,20 @@ PanelWindow {
             islandContainer.showDisplayPanel();
     }
 
+    function toggleAudioPanelWindow() {
+        if (islandContainer.islandState === "audio_panel")
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showAudioPanel();
+    }
+
+    function toggleWifiQrWindow() {
+        if (islandContainer.islandState === "wifi_qr")
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showWifiQr();
+    }
+
     function toggleThemePickerWindow() {
         if (islandContainer.islandState === "theme_picker")
             islandContainer.smartRestoreState();
@@ -934,6 +954,17 @@ PanelWindow {
             || applicationLauncherLayerVisible
             || themePickerLayerVisible
             || displayPanelLayerVisible
+            // Qualified through the id where its neighbours are unqualified.
+            // The bare name logged "audioPanelLayerVisible is not defined"
+            // from this binding while the file was being edited under a live
+            // shell — Quickshell hot-reloads on write, so a save that lands
+            // between the property's USE and its DECLARATION compiles a
+            // component that really is missing it. This form cannot have that
+            // window at all, which is worth the inconsistency: the failure is
+            // a warning per evaluation, and warnings in this log are numerous
+            // enough to be scrolled past.
+            || islandContainer.audioPanelLayerVisible
+            || islandContainer.wifiQrLayerVisible
             || expandedPlayerKeyboardFocusRequested
             || (root.monitorFocused && (root.overviewVisible || root.connectivityPromptActive))
 
@@ -1032,6 +1063,8 @@ PanelWindow {
             || islandState === "application_launcher"
             || islandState === "theme_picker"
             || islandState === "display_panel"
+            || islandState === "audio_panel"
+            || islandState === "wifi_qr"
         readonly property bool splitShowsProgress: islandState === "split" && osdProgress >= 0
         readonly property bool splitShowsText: islandState === "split" && osdProgress < 0 && osdCustomText !== ""
         readonly property bool splitShowsIconOnly: islandState === "split" && osdProgress < 0 && osdCustomText === ""
@@ -1078,6 +1111,11 @@ PanelWindow {
         readonly property bool themePickerLayerVisible: !root.overviewVisible && islandState === "theme_picker"
         // FORK: the display panel, the port of qtile's DisplayPopup.
         readonly property bool displayPanelLayerVisible: !root.overviewVisible && islandState === "display_panel"
+        // FORK: the audio panel, the port of qtile's AudioPopup — the detail
+        // the control centre's single Sound slider does not cover.
+        readonly property bool audioPanelLayerVisible: !root.overviewVisible && islandState === "audio_panel"
+        // FORK: the Wi-Fi QR — qtile's WifiQR, `s` inside its WiFi chord.
+        readonly property bool wifiQrLayerVisible: !root.overviewVisible && islandState === "wifi_qr"
         readonly property var activePlayer: mediaController.activePlayer
         readonly property string lyricsDisplayText: mediaController.displayText
         readonly property string currentTrack: mediaController.currentTrack
@@ -1876,6 +1914,29 @@ PanelWindow {
             stopAutoHideTimer();
         }
 
+        // FORK: the audio panel — qtile's AudioPopup (25 bindings). The
+        // control centre owns a Sound slider on the default sink; this owns
+        // everything else that popup did. See qml/audio/AudioPanel.qml.
+        function showAudioPanel() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "audio_panel";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
+        // FORK: the Wi-Fi QR, so a phone joins by camera instead of by
+        // reading the PSK off the screen. See qml/wifi/WifiQrLayer.qml.
+        function showWifiQr() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "wifi_qr";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
         // FORK: the theme switcher, which DESIGN-SPEC.md lists as one of
         // the island's states and which upstream does not have.
         function showThemePicker() {
@@ -2172,6 +2233,18 @@ PanelWindow {
                     // says what a change did is the worst place to save
                     // width.
                     return Math.min(Metrics.px(900), root.width - Metrics.px(48));
+                case "audio_panel":
+                    // The same list-plus-details shape as the display panel,
+                    // and a touch wider: a device row carries a name, a level
+                    // bar and a readout side by side, and the details column
+                    // holds free text (a bluez profile description, a media
+                    // title) that elides badly.
+                    return Math.min(Metrics.px(940), root.width - Metrics.px(48));
+                case "wifi_qr":
+                    // Square-ish and narrow, because the content is one
+                    // square symbol. Anything wider is white card the phone
+                    // does not need and the eye has to cross.
+                    return Metrics.px(360);
                 case "theme_picker":
                     // 22 tiles in a 4-column grid. Narrower than the
                     // wallpaper picker's 1100 because a theme tile is a
@@ -2216,6 +2289,19 @@ PanelWindow {
                     return Metrics.px(260);
                 case "display_panel":
                     return Metrics.px(300);
+                case "audio_panel":
+                    // Taller than the display panel because the lists are
+                    // open-ended: two monitors is the whole of the display
+                    // world, whereas outputs + microphones + every playing
+                    // stream is routinely six or eight rows, and a list that
+                    // scrolls at four rows hides exactly the row you are
+                    // comparing against.
+                    return Metrics.px(360);
+                case "wifi_qr":
+                    // Room for the symbol at the size wifi-qr.py picked
+                    // (Metrics.px(300) of box) plus its white card, the SSID
+                    // above and the password below.
+                    return Metrics.px(430);
                 case "theme_picker":
                     return Metrics.px(290);
                 case "expanded":
@@ -2247,6 +2333,8 @@ PanelWindow {
                 case "wallpaper_picker":
                 case "application_launcher":
                 case "display_panel":
+                case "audio_panel":
+                case "wifi_qr":
                 case "theme_picker":
                     return Metrics.px(34);
                 case "expanded":
@@ -2998,6 +3086,42 @@ PanelWindow {
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
                         showCondition: islandContainer.displayPanelLayerVisible
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            // FORK: the audio panel — qtile's AudioPopup.
+            Loader {
+                id: audioPanelLoader
+                anchors.fill: parent
+                active: islandContainer.audioPanelLayerVisible
+                asynchronous: false
+                visible: islandContainer.audioPanelLayerVisible
+
+                sourceComponent: Component {
+                    AudioPanel {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        showCondition: islandContainer.audioPanelLayerVisible
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            // FORK: the Wi-Fi QR — qtile's WifiQR.
+            Loader {
+                id: wifiQrLoader
+                anchors.fill: parent
+                active: islandContainer.wifiQrLayerVisible
+                asynchronous: false
+                visible: islandContainer.wifiQrLayerVisible
+
+                sourceComponent: Component {
+                    WifiQrLayer {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        showCondition: islandContainer.wifiQrLayerVisible
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }
