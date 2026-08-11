@@ -635,6 +635,15 @@ PanelWindow {
         showAutoHiddenIsland("manual");
         scheduleAutoHide();
     }
+    function showModeIndicatorWindow(icon, text) {
+        islandContainer.showModeIndicator(icon, text);
+        showAutoHiddenIsland("manual");
+    }
+
+    function clearModeIndicatorWindow() {
+        islandContainer.clearModeIndicator();
+    }
+
     function showCustomInfoWindow() {
         islandContainer.showCustomCapsule();
         showAutoHiddenIsland("manual");
@@ -906,6 +915,24 @@ PanelWindow {
         // not musicPlaying: a paused track is still a media surface worth
         // showing, no player at all is not.
         readonly property bool hasMediaSurface: mediaController.activePlayer !== null
+
+        // FORK: arbitrary, PERSISTENT text in the island.
+        //
+        // Upstream can already draw text in the capsule — showTransientCapsule
+        // does it, and it is what every OSD uses — but it is transient by
+        // construction: it restarts autoHideTimer, which calls
+        // smartRestoreState a couple of seconds later. That is right for a
+        // volume bubble and wrong for a mode indicator, which has to stay up
+        // for exactly as long as the mode is active and not one moment
+        // longer.
+        //
+        // The upstream IPC that sounds like this, `tide showCustom()`, takes
+        // no arguments at all — it switches to the custom-info surface, whose
+        // content comes from the config's own item list. There was no way to
+        // push a string in from outside.
+        property bool modeIndicatorActive: false
+        property string modeIndicatorText: ""
+        property string modeIndicatorIcon: ""
         property real swipeTransitionProgress: 0
         property string workspaceOriginSide: "none"
         property string splitOriginSide: "none"
@@ -1647,6 +1674,56 @@ PanelWindow {
         }
 
         function smartRestoreState() {
+            // FORK: a mode indicator outlives the transients that interrupt
+            // it. Pressing volume-up inside a submap should flash the volume
+            // OSD and then go back to saying which submap you are in — not
+            // silently drop you back to the clock while the chord is still
+            // swallowing your keys. Every path back to rest funnels through
+            // here, so re-asserting here covers all of them.
+            if (modeIndicatorActive) {
+                assertModeIndicator();
+                return;
+            }
+
+            restoreRestingCapsule();
+        }
+
+        function assertModeIndicator() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            splitIcon = modeIndicatorIcon;
+            osdCustomText = modeIndicatorText;
+            setOsdProgress(-1.0, false);
+            splitOriginSide = "none";
+            islandState = "split";
+            swipeTransitionProgress = 0;
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            // The whole point: no restartAutoHideTimer. This stays until
+            // something clears it.
+            stopAutoHideTimer();
+        }
+
+        function showModeIndicator(icon, text) {
+            modeIndicatorIcon = icon === undefined || icon === null ? "" : String(icon);
+            modeIndicatorText = text === undefined || text === null ? "" : String(text);
+
+            if (modeIndicatorText === "") {
+                clearModeIndicator();
+                return;
+            }
+
+            modeIndicatorActive = true;
+            assertModeIndicator();
+        }
+
+        function clearModeIndicator() {
+            if (!modeIndicatorActive && modeIndicatorText === "")
+                return;
+
+            modeIndicatorActive = false;
+            modeIndicatorText = "";
+            modeIndicatorIcon = "";
+            clearTransientCapsule();
             restoreRestingCapsule();
         }
 

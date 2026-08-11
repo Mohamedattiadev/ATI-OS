@@ -158,6 +158,35 @@ the lyrics row, which lives at `clampedProgress` 1. A second, smaller
 4-bar instance now sits on the clock's side of the crossfade, gated on a
 new `musicPlaying` flag, and the collapsed capsule widens to fit it.
 
+### `DynamicIslandWindow.qml` + `shell.qml` — arbitrary, persistent text
+
+Upstream can already draw text in the capsule — `showTransientCapsule` does,
+and every OSD uses it — but it is transient by construction: it restarts
+`autoHideTimer`, which restores the resting state a couple of seconds later.
+Right for a volume bubble, wrong for a mode indicator. And the IPC that
+sounds like this, `tide showCustom()`, takes **no arguments at all**: it
+switches to the custom-info surface, whose content comes from the config's
+own item list. There was no way to push a string in from outside.
+
+New: `modeIndicatorActive` / `modeIndicatorText` on `islandContainer`, with
+`showModeIndicator` / `clearModeIndicator`, exposed as `tide showText`,
+`tide showTextWithIcon` and `tide clearText`. It renders through the
+existing split/OSD text layout, so no new visual component.
+
+`smartRestoreState` re-asserts the indicator when one is active, so a
+transient OSD that interrupts it (volume pressed inside a submap) flashes
+and then returns to the mode name rather than dropping to the clock while
+the chord is still swallowing keys.
+
+**Trap:** the IPC parameter must be declared with a type —
+`function showText(text: string)`. Quickshell marshals IPC arguments by
+declared type, and an untyped parameter is simply not passed: the call
+succeeds, `text` arrives `undefined`, and the handler clears the indicator
+instead of setting it.
+
+First consumer is `hypr/scripts/submap-indicator.sh`, which no longer needs
+dunst.
+
 ## Pre-existing upstream warning, not ours
 
 ```

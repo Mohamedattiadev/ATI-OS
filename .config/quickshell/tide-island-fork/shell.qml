@@ -257,6 +257,40 @@ Scope {
         function toggleThemePicker() {
             shellRoot.forFocusedWindow((window) => window.toggleThemePickerWindow());
         }
+
+        // FORK: arbitrary text in the island, which upstream has no way to
+        // do — its `showCustom()` takes no arguments and renders the config's
+        // own item list.
+        //
+        // The parameter MUST be declared with a type. Quickshell's IPC
+        // marshals arguments by declared type and an untyped parameter is
+        // simply not passed, so `function showText(text)` would accept the
+        // call, arrive with undefined, and clear the indicator instead of
+        // setting it — succeeding loudly at doing the opposite.
+        //
+        // Persistent on purpose: it stays until clearText, and survives any
+        // transient OSD that interrupts it. hypr/scripts/submap-indicator.sh
+        // is the first consumer.
+        function showText(text: string) {
+            shellRoot.forEachWindow((window) => {
+                if (window && window.showModeIndicatorWindow)
+                    window.showModeIndicatorWindow("", text);
+            });
+        }
+
+        function showTextWithIcon(icon: string, text: string) {
+            shellRoot.forEachWindow((window) => {
+                if (window && window.showModeIndicatorWindow)
+                    window.showModeIndicatorWindow(icon, text);
+            });
+        }
+
+        function clearText() {
+            shellRoot.forEachWindow((window) => {
+                if (window && window.clearModeIndicatorWindow)
+                    window.clearModeIndicatorWindow();
+            });
+        }
     }
 
     Connections {
