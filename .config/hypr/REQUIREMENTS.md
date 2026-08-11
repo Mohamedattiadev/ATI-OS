@@ -86,11 +86,13 @@ Tide Island is installed (AUR, `tide-island 1.0.34`) and starts from
 clone in `~/.config/quickshell` cannot work: `shell.qml` imports
 `IslandBackend`, a compiled C++/Qt QML module. It is a package that
 installs to `/usr` and launches via `quickshell -p /usr/share/tide-island`.
-So the fork-and-restyle plan does not apply as written — **only the
-config is ours**, at `~/.config/tide-island/userconfig.json`, stowed from
-this repo.
 
-That turned out to be a good trade. Its `UserConfigBackend` exposes 45
+An earlier revision of this file concluded from that "only the config is
+ours". **That was too pessimistic, and it is now corrected** — see
+"The fork" below. The compiled module is not the obstacle it looked like.
+
+The config is ours regardless, at `~/.config/tide-island/userconfig.json`,
+stowed from this repo. Its `UserConfigBackend` exposes 45
 settings, and its own defaults already sit close to the spec (140x38,
 `Inter Display`). Restyling to DESIGN-SPEC.md needed **no forking at
 all** for the resting state:
@@ -141,6 +143,42 @@ found"; it points at `~/Pictures/Wallpapers` (362 images).
 **A theme picker is not among the island's panels.** `theme-toggle` is
 still the rofi one, on `$mod P` → `c`. Putting it in the island is fork
 work, same bucket as the above.
+
+### The fork — DONE, and cheaper than the earlier note assumed
+
+The compiled `IslandBackend` module blocks *rebuilding* Tide Island. It
+does not block *replacing its QML*, and the QML is where all four
+unreachable things live.
+
+**Verified before anything was written**, because it decides the whole
+approach: copy `/usr/share/tide-island` to an arbitrary path, run
+`quickshell -p <that path>`, and it prints "Configuration Loaded" with no
+`module IslandBackend is not installed`. `/usr/lib/qt6/qml` is one of
+Qt's default import paths and the package installs the module there, so
+a vendored tree at any location still imports it.
+
+So the fork is **QML-only**:
+
+| | |
+|---|---|
+| Vendored into this repo | `.config/quickshell/tide-island-fork/` — `shell.qml`, `DynamicIslandWindow.qml`, the `qml/` tree (44 files) |
+| Kept from the package | `IslandBackend` (compiled), `bin/lyricsmpris` (356K ELF — a binary blob does not belong in a dotfiles repo) |
+| Launched by | `hypr/scripts/island.sh` from `autostart.conf`, replacing the `tide-island` binary |
+
+`island.sh` exports the two env vars the packaged launcher set and we
+would otherwise lose (`QUICKSHELL_LYRICS_BACKEND`, the jemalloc
+`MALLOC_CONF` tuning), and falls back to `exec tide-island` if the fork
+is missing, so a machine where stow has not run yet still gets a bar.
+
+**`$qsi` in `binds.conf` had to move to the fork path in the same
+commit.** Quickshell keys its IPC socket by config path, so
+`qs -p /usr/share/tide-island ipc call ...` against a fork instance
+matches nothing and fails silently from a keybind.
+
+The standing cost is that `pacman -Syu` updates `/usr/share/tide-island`
+and leaves the fork stale. `tide-island-fork/FORK-NOTES.md` records the
+vendored version (1.0.34-1), the diff commands, and every patch applied,
+so the merge is mechanical.
 
 **The remaining popups (audio detail, display, wifi/QR, bluetooth,
 cheatsheets) are untouched** — still the long pole, and each is either a
