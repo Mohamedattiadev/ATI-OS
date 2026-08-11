@@ -269,6 +269,54 @@ function letsgo --description 'Start the X session (qtile) from a TTY'
     dbus-run-session startx
 end
 
+function letshypr --description 'Start the Wayland session (Hyprland) from a TTY'
+    # The Hyprland counterpart to `letsgo`. Deliberately a SEPARATE
+    # function rather than a flag on that one: the two sessions have
+    # different failure modes and different leftovers, and the whole
+    # point of running both in parallel is that neither can break the
+    # other by accident.
+    #
+    # No `exec`, for the same reason letsgo avoids it -- a failed launch
+    # must leave its message on screen instead of dropping you back at
+    # the login prompt with nothing to read.
+    if pgrep -x Xorg >/dev/null
+        echo "X is already running — quit qtile first, or switch to that VT."
+        return 1
+    end
+    if pgrep -x Hyprland >/dev/null
+        echo "Hyprland is already running — switch to that VT."
+        return 1
+    end
+    # Hyprland requires a seat, and a TTY login has one only if logind
+    # is tracking this session. Without it the compositor fails on DRM
+    # master with a message that reads like a GPU fault rather than a
+    # permissions problem, so check it here where it can be explained.
+    if not test -n "$XDG_SESSION_ID"
+        echo "No logind session — Hyprland needs a seat. Log in on a TTY, not via su."
+        return 1
+    end
+    # keyd remaps Caps to Alt below the display server. If it is not up,
+    # ~40 Hyprland bindings are silently dead, and the usual cause is a
+    # kernel upgrade since the last reboot (uinput's module is gone from
+    # /lib/modules until you boot the new kernel). Worth one line now
+    # rather than ten minutes of wondering why Alt does nothing.
+    if not systemctl is-active --quiet keyd
+        echo "WARNING: keyd is not running — Caps will not act as Alt, and ~40 bindings need it."
+        echo "         sudo systemctl status keyd   (after a kernel upgrade: reboot first)"
+    end
+    set -x XDG_SESSION_TYPE wayland
+    set -x XDG_CURRENT_DESKTOP Hyprland
+    set -x XDG_SESSION_DESKTOP Hyprland
+    # Qt apps default to XWayland and then ignore fractional scaling;
+    # qt5-wayland/qt6-wayland are installed precisely so this works.
+    set -x QT_QPA_PLATFORM "wayland;xcb"
+    set -x MOZ_ENABLE_WAYLAND 1
+    # Electron apps (Telegram, Obsidian) need to be told, and silently
+    # fall back to blurry XWayland rendering if they are not.
+    set -x ELECTRON_OZONE_PLATFORM_HINT auto
+    Hyprland
+end
+
 ### END OF FUNCTIONS ###
 
 ### ALIASES ###
