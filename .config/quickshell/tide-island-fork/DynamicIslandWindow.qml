@@ -1164,10 +1164,11 @@ PanelWindow {
         screenObject: root.screen
     }
 
-    // FORK: the live palette, watched from theme-apply's generated file.
-    IslandTheme {
-        id: islandTheme
-    }
+    // FORK: the live palette is a singleton — qml/common/IslandTheme.qml.
+    // It used to be instantiated here AND in shell.qml, with its colours
+    // threaded down to each panel as explicit `panelFill` / `accentColor`
+    // properties. That does not scale past a handful of tokens, and there
+    // are forty now.
 
     IslandClock {
         id: timeObj
@@ -2926,8 +2927,8 @@ PanelWindow {
                 windows: islandFlanks.openWindows
                 activeToplevel: ToplevelManager.activeToplevel
                 textFontFamily: root.textFontFamily
-                accentColor: islandTheme.accent
-                plateColor: islandTheme.shellFill
+                accentColor: IslandTheme.accent
+                plateColor: IslandTheme.shellFill
                 showCondition: islandFlanks.restingNow
                 revealProgress: root.autoHideProgress
             }
@@ -2970,8 +2971,8 @@ PanelWindow {
                 windows: islandFlanks.openWindows
                 activeToplevel: ToplevelManager.activeToplevel
                 textFontFamily: root.textFontFamily
-                accentColor: islandTheme.accent
-                plateColor: islandTheme.shellFill
+                accentColor: IslandTheme.accent
+                plateColor: IslandTheme.shellFill
                 showCondition: islandFlanks.restingNow
                 revealProgress: root.autoHideProgress
             }
@@ -3413,7 +3414,7 @@ PanelWindow {
             // is not read alone and the decision quietly reverted.
             //
             // The spec's actual CONCERN is still answered, which is why this
-            // is a blend rather than a swap: islandTheme.shellFill is the
+            // is a blend rather than a swap: IslandTheme.shellFill is the
             // palette's background slot dragged 45% toward black with 8% of
             // the accent mixed in, so the hue is identifiable beside the
             // wallpaper while the surface stays dark enough to read as bezel.
@@ -3430,10 +3431,10 @@ PanelWindow {
             color: root.overviewContentVisible
                 ? root.overviewCapsuleColor
                 : (notificationHistorySurface
-                    ? Qt.darker(islandTheme.shellFill, 1.6)
-                    : Qt.rgba(islandTheme.shellFill.r,
-                              islandTheme.shellFill.g,
-                              islandTheme.shellFill.b,
+                    ? Qt.darker(IslandTheme.shellFill, 1.6)
+                    : Qt.rgba(IslandTheme.shellFill.r,
+                              IslandTheme.shellFill.g,
+                              IslandTheme.shellFill.b,
                               userConfig.islandBackgroundOpacity / 100.0))
 
             // No `Behavior on color` here: mainCapsule already has one
@@ -3929,7 +3930,7 @@ PanelWindow {
                         // bind to.
                         workspaceShown: true
                         workspaceId: islandContainer.currentWs
-                        accentColor: islandTheme.accent
+                        accentColor: IslandTheme.accent
                         onPreferredWidthChanged: islandContainer.syncLyricsCapsuleWidth()
                     }
                 }
@@ -4127,7 +4128,7 @@ PanelWindow {
                         // ControlSliderCard.qml — the accent is ours rather
                         // than ukishima's fixed vermillion because this
                         // shell follows theme-apply.
-                        accentColor: islandTheme.accent
+                        accentColor: IslandTheme.accent
                         sliderIntroDelay: mainCapsule.morphDuration
                         currentTime: timeObj.currentTime
                         currentDateLabel: timeObj.currentDateLabel
@@ -4208,7 +4209,7 @@ PanelWindow {
                     // FORK: rebuilt from scratch in the audio/display idiom,
                     // replacing ConnectivityPanelLayer + the dual-purpose
                     // ConnectivityDetailPanel. panelFill/accentColor come from
-                    // islandTheme so the panel is the island's colour rather
+                    // IslandTheme so the panel is the island's colour rather
                     // than a fixed near-black — the same reason every other
                     // surface reads them.
                     WifiPanel {
@@ -4217,8 +4218,8 @@ PanelWindow {
                         iconFontFamily: root.iconFontFamily
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
-                        panelFill: islandTheme.shellFill
-                        accentColor: islandTheme.accent
+                        panelFill: IslandTheme.shellFill
+                        accentColor: IslandTheme.accent
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }
@@ -4252,8 +4253,8 @@ PanelWindow {
                         iconFontFamily: root.iconFontFamily
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
-                        panelFill: islandTheme.shellFill
-                        accentColor: islandTheme.accent
+                        panelFill: IslandTheme.shellFill
+                        accentColor: IslandTheme.accent
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }
@@ -4321,7 +4322,7 @@ PanelWindow {
 
             // FORK: the system monitor — CPU, memory and disk.
             //
-            // panelFill is islandTheme.shellFill, the same contract the two
+            // panelFill is IslandTheme.shellFill, the same contract the two
             // connectivity panels take: the capsule's own material, so the
             // panel re-tints with theme_mode instead of being a fixed
             // near-black sitting inside a themed shape.
@@ -4334,8 +4335,8 @@ PanelWindow {
                     SystemMonitorPanel {
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
-                        panelFill: islandTheme.shellFill
-                        accentColor: islandTheme.accent
+                        panelFill: IslandTheme.shellFill
+                        accentColor: IslandTheme.accent
                         showCondition: islandContainer.sysmonPanelLayerVisible
                         onCloseRequested: islandContainer.smartRestoreState()
                     }

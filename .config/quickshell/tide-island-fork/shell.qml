@@ -532,6 +532,22 @@ Scope {
     Component.onCompleted: {
         SystemServices.ensureUserConfigAvailable();
         SystemServices.requestScreenRecordingSnapshot();
+
+        // Force the palette singleton to construct HERE, before any window
+        // exists, rather than lazily on whichever binding happens to read a
+        // colour first.
+        //
+        // A QML singleton is built on first access. Every colour in the
+        // shell now comes from this object, so "first access" would be a
+        // paint binding, and the shell would draw one frame in the doomone
+        // fallback before repainting in the real theme — a visible flash of
+        // the wrong palette across the entire UI, not just the notch.
+        //
+        // `preload: true` on its FileView does NOT cover this; measured, a
+        // probe still reported the fallback on a read 16 ms in, then the
+        // real palette from the next one. With this line the same probe was
+        // correct on its first read. One statement, and it is the whole fix.
+        void IslandTheme.themeName;
     }
 
     // ---- THE FORK'S OWN SETTINGS, FINALLY CONNECTED TO SOMETHING ----
@@ -612,16 +628,17 @@ Scope {
             rawPercent: shellRoot.ringOsdRawPercent
             shown: shellRoot.ringOsdShown
             iconFontFamily: shellRoot.userConfig.iconFontFamily
-            accentColor: ringOsdTheme.accent
-            shellFill: ringOsdTheme.shellFill
+            accentColor: IslandTheme.accent
+            shellFill: IslandTheme.shellFill
         }
     }
 
-    // The ring's own palette source. DynamicIslandWindow has an IslandTheme
-    // with an id, but ids are file-scoped, so this window cannot reach it.
-    // A second instance is cheap — it is a FileView on a small JSON — and
-    // the alternative is threading two colours through the Variants model.
-    IslandTheme { id: ringOsdTheme }
+    // The ring used to need its own IslandTheme instance here, because
+    // DynamicIslandWindow's was an object with an id and ids are
+    // file-scoped. IslandTheme is a singleton now, so there is one palette,
+    // one FileView and no way for the two windows to disagree — which is
+    // the same argument that put the palette in a generated file rather
+    // than in QML in the first place.
 
     // The unanimated theme apply, for when forkThemeTransitionEnabled is
     // off. Its own Process rather than reusing the overlay's: that one
