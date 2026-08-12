@@ -1023,6 +1023,7 @@ FocusScope {
         }
     }
 
+    // The footer hint.
     Text {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
