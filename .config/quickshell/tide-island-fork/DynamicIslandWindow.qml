@@ -4373,7 +4373,14 @@ PanelWindow {
 
             property bool mounted: islandContainer.timerBubbleWanted
             property real reveal: islandContainer.timerBubbleWanted ? 1 : 0
-            readonly property int bubbleSize: 34
+            // 34 -> 32, the window icons' diameter. Their vertical centres
+            // were already the same expression — this bubble uses
+            // `mainCapsule.y + mainCapsule.height / 2` and the flanks use
+            // `restingCenterY`, which is that same value — so what was left
+            // between them was 2 px of diameter, and a circle 2 px larger
+            // than the row it sits beside reads as sitting higher than it
+            // measures.
+            readonly property int bubbleSize: 32
             readonly property real hiddenX: mainCapsule.x + mainCapsule.width - width * 0.62
             readonly property real shownX: mainCapsule.x + mainCapsule.width + 8
             readonly property real centerY: mainCapsule.y + mainCapsule.height / 2 - height / 2

@@ -58,6 +58,25 @@ Item {
     property bool showCondition: true
     property string textFontFamily: ""
     property color accentColor: "#51afef"
+
+    // ---- THE DROP PLAYS ONCE, NOT ON EVERY REBUILD ----
+    //
+    // Reported as the animation repeating. The cause is not the animation: it
+    // is that `windows` is rebuilt whenever the toplevel set OR THE FOCUS
+    // changes, so the Repeater tears its delegates down and builds new ones,
+    // and a fresh delegate has no idea it is replacing one that had already
+    // landed. Every alt-tab re-dropped the whole row.
+    //
+    // So "has this strip already dropped" is state on the STRIP, which
+    // survives delegate churn, rather than on the delegates that are being
+    // destroyed. A delegate created after the drop has finished starts at 1
+    // and animates nothing.
+    //
+    // Re-armed only when the strip actually leaves the screen, so the drop
+    // still plays when the island reveals itself again. That is the one time
+    // it should: the icons are genuinely arriving then.
+    property bool dropDone: false
+    onShowConditionChanged: if (!showCondition) dropDone = false
     // FORK: the disc behind each icon. IslandTheme.shellFill, passed down, so
     // the plate re-tints with theme-apply like the capsule does instead of
     // being a hardcoded black that follows nothing.
@@ -209,6 +228,15 @@ Item {
     // from the island — which is the direction the water is travelling. The
     // Row is built nearest-first for the left strip already (`mine` reverses
     // it), so the model index IS the distance rank on both sides.
+    // Latches the drop closed once the last icon has had time to land, so
+    // every delegate built after this point skips the animation entirely.
+    Timer {
+        interval: 55 * Math.max(0, (root.mine ? root.mine.length : 0)) + Motion.morphDuration()
+        running: root.showCondition && !root.dropDone && root.mine && root.mine.length > 0
+        repeat: false
+        onTriggered: root.dropDone = true
+    }
+
     Row {
         id: strip
         anchors.verticalCenter: parent.verticalCenter
@@ -293,9 +321,10 @@ Item {
                 required property var modelData
                 required property int index
 
-                // 0 while pooled at the island, 1 once landed. Driven by the
-                // timer below so each icon starts after the one before it.
-                property real drop: 0
+                // 0 while pooled at the island, 1 once landed. A delegate
+                // built after the strip has already dropped starts landed —
+                // see dropDone on the root.
+                property real drop: root.dropDone ? 1 : 0
 
                 // Toward the notch: the left strip's icons pull right, the
                 // right strip's pull left. 28 px is a little over the icon's
@@ -330,7 +359,7 @@ Item {
                     // the last icon arrives late enough to look like a
                     // separate event.
                     interval: 55 * winCell.index
-                    running: true
+                    running: !root.dropDone
                     repeat: false
                     onTriggered: winCell.drop = 1
                 }
