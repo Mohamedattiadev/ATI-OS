@@ -1373,9 +1373,26 @@ Item {
                         anchors.rightMargin: Metrics.pad(12)
                         anchors.top: parent.top
                         anchors.topMargin: Metrics.pad(12)
-                        width: Metrics.px(34)
-                        height: Metrics.px(20)
-                        radius: Metrics.px(10)
+                        // 34x20 -> 28x16, matching ukishima's LinkToggle.
+                        // The old track carried a 16 px knob in a 20 px
+                        // groove: 2 px of clearance, so the knob WAS the
+                        // switch and it read as a lozenge with a hole. Their
+                        // proportion is 10-in-16, which leaves the track
+                        // visible as a track on both sides of the knob.
+                        width: Metrics.px(28)
+                        height: Metrics.px(16)
+                        radius: height / 2
+                        // Off gets a hairline instead of only a fill. On a
+                        // near-black surface an unfilled pill with no edge
+                        // reads as absent rather than as off.
+                        border.width: wifiEnabled ? 0 : 1
+                        // An explicit rgba and NOT StyleTokens.hairline:
+                        // that token does not exist anywhere in this tree,
+                        // and an undefined property on a QML singleton
+                        // resolves to `undefined`, which a color property
+                        // takes as transparent WITHOUT an error. The border
+                        // would simply never have drawn.
+                        border.color: Qt.rgba(1, 1, 1, 0.14)
                         // FORK: was StyleTokens.success — a fixed iOS green, the one
                         // element in the panel that ignored the palette
                         // entirely and the brightest thing on a near-black
@@ -1393,11 +1410,17 @@ Item {
                         }
 
                         Rectangle {
-                            width: Metrics.px(16)
-                            height: Metrics.px(16)
-                            radius: Metrics.px(8)
-                            y: Metrics.px(2)
-                            x: wifiEnabled ? 16 : 2
+                            width: Metrics.px(10)
+                            height: Metrics.px(10)
+                            radius: width / 2
+                            // Derived from the track rather than written as
+                            // literals: the old `y: 2` and `x: 16` were
+                            // correct only for a 34x20 track and would have
+                            // parked the knob off-centre the moment the size
+                            // changed — which it just did.
+                            y: (parent.height - height) / 2
+                            x: wifiEnabled ? parent.width - width - Metrics.px(3)
+                                  : Metrics.px(3)
                             color: StyleTokens.white
 
                             Behavior on x {
@@ -1513,9 +1536,26 @@ Item {
                         anchors.rightMargin: Metrics.pad(12)
                         anchors.top: parent.top
                         anchors.topMargin: Metrics.pad(12)
-                        width: Metrics.px(34)
-                        height: Metrics.px(20)
-                        radius: Metrics.px(10)
+                        // 34x20 -> 28x16, matching ukishima's LinkToggle.
+                        // The old track carried a 16 px knob in a 20 px
+                        // groove: 2 px of clearance, so the knob WAS the
+                        // switch and it read as a lozenge with a hole. Their
+                        // proportion is 10-in-16, which leaves the track
+                        // visible as a track on both sides of the knob.
+                        width: Metrics.px(28)
+                        height: Metrics.px(16)
+                        radius: height / 2
+                        // Off gets a hairline instead of only a fill. On a
+                        // near-black surface an unfilled pill with no edge
+                        // reads as absent rather than as off.
+                        border.width: bluetoothEnabled ? 0 : 1
+                        // An explicit rgba and NOT StyleTokens.hairline:
+                        // that token does not exist anywhere in this tree,
+                        // and an undefined property on a QML singleton
+                        // resolves to `undefined`, which a color property
+                        // takes as transparent WITHOUT an error. The border
+                        // would simply never have drawn.
+                        border.color: Qt.rgba(1, 1, 1, 0.14)
                         color: bluetoothEnabled ? controlCenter.accentColor : StyleTokens.switchOff
 
                         Behavior on color {
@@ -1525,11 +1565,17 @@ Item {
                         }
 
                         Rectangle {
-                            width: Metrics.px(16)
-                            height: Metrics.px(16)
-                            radius: Metrics.px(8)
-                            y: Metrics.px(2)
-                            x: bluetoothEnabled ? 16 : 2
+                            width: Metrics.px(10)
+                            height: Metrics.px(10)
+                            radius: width / 2
+                            // Derived from the track rather than written as
+                            // literals: the old `y: 2` and `x: 16` were
+                            // correct only for a 34x20 track and would have
+                            // parked the knob off-centre the moment the size
+                            // changed — which it just did.
+                            y: (parent.height - height) / 2
+                            x: bluetoothEnabled ? parent.width - width - Metrics.px(3)
+                                  : Metrics.px(3)
                             color: StyleTokens.white
 
                             Behavior on x {
