@@ -334,11 +334,31 @@ Item {
                     // 0.45 unfocused, to survive any wallpaper; 0.20 focused,
                     // where the full-strength arc lies over the track and a
                     // heavy track would fight it.
-                    // OsdLayer's own track: white at 0.16. Not the accent
-                    // at 0.45 the previous version used - that was a patch
-                    // for a hollow ring being invisible over a bright
-                    // wallpaper, and the core disc solves that properly now.
-                    trackColor: Qt.rgba(1, 1, 1, 0.16)
+// ---- THE TIMER'S TRACK IS OPAQUE, AND THAT IS THE POINT ----
+                    //
+                    // Five attempts here copied the wrong ring: first
+                    // DisplayPanel's countdown, then OsdLayer's. The ring
+                    // actually meant is the TIMER's, in
+                    // ExpandedPlayerLayer.qml around line 817, and its paint
+                    // call is short enough to quote:
+                    //
+                    //     lineWidth = 5, lineCap round
+                    //     strokeStyle "#2b2e35"  -> full circle  (track)
+                    //     strokeStyle "#ff9f0a"  -> arc          (elapsed)
+                    //
+                    // The track is a SOLID OPAQUE COLOUR. Every version of
+                    // this strip used a translucent one — accent at 0.20,
+                    // then accent at 0.45, then white at 0.16 — and a
+                    // translucent stroke over a photograph is not a stroke,
+                    // it is a tint of whatever is behind it. That is why the
+                    // rings kept reading as faint and wrong however the
+                    // alpha was tuned: the problem was never which alpha, it
+                    // was that there was an alpha at all.
+                    //
+                    // #2b2e35 verbatim, because a ring that is part of this
+                    // shell should be the same grey as the timer's, not a
+                    // near-miss derived from the palette.
+                    trackColor: "#2b2e35"
                     // A window has no 0..1 quantity to show, so the arc
                     // carries the one binary fact: focused sweeps the whole
                     // circle. Animating progress rather than snapping it

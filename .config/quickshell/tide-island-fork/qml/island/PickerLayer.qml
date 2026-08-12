@@ -64,14 +64,59 @@ FocusScope {
 
     readonly property string ctl: Quickshell.env("HOME") + "/.config/hypr/scripts/island-picker.py"
 
-    // Straight from --list. [{ id, label, detail }, ...]
-    property var items: []
-    property string title: ""
+    // ---- THE PAGE STACK ----
+    //
+    // Everything below the first five menus is a CONVERSATION: pick a
+    // screenshot area, then say where it goes; type a sentence, then pick
+    // which mistake to fix; walk a directory tree. The first version of this
+    // panel could not express that and island-picker.py's header said so —
+    // it concluded that a one-shot list was "the wrong primitive for a
+    // conversation" and left four menus on rofi.
+    //
+    // The conclusion was wrong and the fix is two lines of protocol: --run
+    // may answer {"ok":true,"page":{…}} instead of {"ok":true}, and this
+    // holds a stack of the pages it has been given. Escape still closes;
+    // Backspace on an empty field pops one page.
+    //
+    // What this panel deliberately still does NOT know: what any page means.
+    // It does not know that `confedit` is a filesystem or that `spellcheck`
+    // is holding a sentence between pages. A page is {title, mode, items,
+    // …} and an item is still {id, label, detail}; the id goes back and the
+    // script decides. That is the same rule as before, and it is the reason
+    // a stack is safe to add — a stack of opaque pages is still opaque.
+    //
+    // The stack is NOT a history for re-running: popping restores a page
+    // this panel already has in memory, so going back never re-executes
+    // anything. That matters for `pass`, where "back" must not mean "read
+    // the secret again".
+    property var pageStack: []
+    readonly property var page: root.pageStack.length > 0
+        ? root.pageStack[root.pageStack.length - 1] : null
+
+    // list | prompt | message. The panel's whole behaviour keys off this and
+    // nothing else; a menu changes shape by sending a different mode, not by
+    // this file learning its name.
+    readonly property string mode: root.page && root.page.mode !== undefined
+        ? String(root.page.mode) : "list"
+    readonly property var items: root.page && root.page.items !== undefined
+        ? root.page.items : []
+    readonly property string title: root.page && root.page.title !== undefined
+        ? String(root.page.title) : ""
+    readonly property string note: root.page && root.page.note !== undefined
+        ? String(root.page.note) : ""
+
     property bool loading: false
     property string query: ""
     property int selectedIndex: 0
     property string statusText: ""
     property bool statusIsError: false
+
+    // Set for the duration of a `menu` re-target (the `hub` menu's rows do
+    // this). Without it, assigning root.menu fires onMenuChanged, which
+    // re-fetches --list for the new menu and throws away the page the script
+    // just handed us — the hub would flash the right panel and then replace
+    // it with an identical one, at the cost of a second subprocess.
+    property bool retargeting: false
 
     // ---- THE FILTER ----
     //
@@ -203,9 +248,16 @@ FocusScope {
     // scrolls rather than the panel being silently truncated by the clamp
     // with its own footer off the bottom of the screen.
     readonly property int maxVisibleRows: 11
-    readonly property int visibleRows: Math.max(1, Math.min(root.maxVisibleRows, root.items.length))
+    // A prompt and a message have no list, so they must not be given a row's
+    // worth of height "just in case": a one-field panel that is eleven rows
+    // tall is a panel with a hole in it.
+    readonly property int visibleRows: root.mode === "list"
+        ? Math.max(1, Math.min(root.maxVisibleRows, root.items.length)) : 0
+    readonly property real noteHeight:
+        root.note === "" ? 0 : noteLabel.implicitHeight + Metrics.pad(8)
     readonly property real preferredHeight:
         root.headerHeight + root.searchHeight + Metrics.pad(8)
+        + root.noteHeight
         + root.visibleRows * root.rowHeight
         + root.footerHeight + Metrics.pad(16)
 
@@ -250,9 +302,70 @@ FocusScope {
     // not changed, which would quietly reinstate the reuse this avoids.
     function refresh() {
         root.loading = true;
-        root.items = [];
+        root.pageStack = [];
         listLoader.active = false;
         listLoader.active = true;
+    }
+
+    // ---- APPLYING A PAGE ----
+    //
+    // `stack` says what the page does to the stack, and the three values are
+    // each earning their place:
+    //
+    //   push    (default) — a step deeper. Backspace comes back.
+    //   replace          — the spell-checker after a fix, and the translator
+    //                      after a language change. The page you came from
+    //                      describes text that no longer exists, so keeping
+    //                      it on the stack means Backspace goes to a list of
+    //                      mistakes in a sentence that has been rewritten.
+    //   root             — a mutation finished (note saved, task toggled).
+    //                      The whole stack is stale for the same reason.
+    function applyPage(incoming, fallbackStack) {
+        if (!incoming)
+            return;
+        const how = String(incoming.stack !== undefined ? incoming.stack
+                                                        : (fallbackStack || "push"));
+
+        if (incoming.menu !== undefined && String(incoming.menu) !== root.menu) {
+            root.retargeting = true;
+            root.menu = String(incoming.menu);
+            root.retargeting = false;
+        }
+
+        let next = root.pageStack.slice();
+        if (how === "root" || next.length === 0)
+            next = [incoming];
+        else if (how === "replace")
+            next[next.length - 1] = incoming;
+        else
+            next.push(incoming);
+        root.pageStack = next;
+        root.settleField();
+    }
+
+    // A prompt page's field starts holding its prefill; every other page's
+    // field starts empty, because on a list page the field is the FILTER and
+    // carrying the last page's query into a new list is how you arrive at
+    // "no match" for something you did not type.
+    function settleField() {
+        const current = root.page;
+        const prefill = (current && String(current.mode || "list") === "prompt")
+            ? String(current.value || "") : "";
+        searchInput.text = prefill;
+        root.query = prefill;
+        root.selectedIndex = 0;
+        root.statusText = "";
+        root.statusIsError = false;
+    }
+
+    // Returns whether it actually went anywhere, so the key handler can let
+    // Backspace fall through to the field when there is nothing to pop.
+    function popPage() {
+        if (root.pageStack.length < 2)
+            return false;
+        root.pageStack = root.pageStack.slice(0, root.pageStack.length - 1);
+        root.settleField();
+        return true;
     }
 
     // ---- WHY THE OPEN IS IN A FUNCTION AND CALLED FROM TWO PLACES ----
@@ -293,7 +406,7 @@ FocusScope {
     // Changing menus while the panel is open (there is no key for it today,
     // but the IPC can) re-fetches rather than filtering the old rows.
     onMenuChanged: {
-        if (root.showCondition)
+        if (root.showCondition && !root.retargeting)
             root.refresh();
     }
 
@@ -310,8 +423,9 @@ FocusScope {
                         root.loading = false;
                         try {
                             const parsed = JSON.parse(text);
-                            root.items = parsed.items || [];
-                            root.title = String(parsed.title || root.menu);
+                            if (parsed.title === undefined)
+                                parsed.title = root.menu;
+                            root.applyPage(parsed, "root");
                             if (parsed.error !== undefined) {
                                 root.statusText = String(parsed.error);
                                 root.statusIsError = true;
@@ -322,8 +436,7 @@ FocusScope {
                             // indistinguishable from a picker with nothing
                             // in it, and "no windows open" and "the script
                             // is broken" want different reactions.
-                            root.items = [];
-                            root.title = root.menu;
+                            root.applyPage({ "title": root.menu, "items": [] }, "root");
                             root.statusText = "island-picker.py --list " + root.menu
                                 + " produced no readable output";
                             root.statusIsError = true;
@@ -349,13 +462,34 @@ FocusScope {
     // and for `processes` it means two SIGTERMs, the second one landing on
     // whatever inherited the pid.
     property string pendingId: ""
+    // The typed text, passed as ONE argv element however many spaces it
+    // holds. Always sent, empty on a list page: an optional trailing
+    // argument that is sometimes absent is how argv[4] becomes argv[3]'s
+    // problem, and island-picker.py reads it positionally.
+    property string pendingText: ""
 
     function runSelected() {
         const item = root.selected;
         if (!item || root.pendingId !== "")
             return;
         root.pendingId = String(item.id);
+        root.pendingText = "";
         root.statusText = "";
+        root.statusIsError = false;
+        runLoader.active = false;
+        runLoader.active = true;
+    }
+
+    // Enter on a prompt page. The submit id comes from the page, not from a
+    // row — a prompt has no rows — and it is the same `id` contract: the
+    // script named the id when it built the page and knows what it means.
+    function submitPrompt() {
+        const current = root.page;
+        if (!current || current.submit === undefined || root.pendingId !== "")
+            return;
+        root.pendingId = String(current.submit);
+        root.pendingText = searchInput.text;
+        root.statusText = "working…";
         root.statusIsError = false;
         runLoader.active = false;
         runLoader.active = true;
@@ -367,39 +501,53 @@ FocusScope {
 
         sourceComponent: Component {
             Process {
-                command: ["python3", root.ctl, "--run", root.menu, root.pendingId]
+                command: ["python3", root.ctl, "--run", root.menu,
+                          root.pendingId, root.pendingText]
                 running: true
                 stdout: StdioCollector {
                     onStreamFinished: {
                         let ok = false;
                         let message = "";
+                        let nextPage = null;
                         try {
                             const parsed = JSON.parse(text);
                             ok = parsed.ok === true;
                             message = String(parsed.error || "");
+                            if (parsed.page !== undefined && parsed.page !== null)
+                                nextPage = parsed.page;
                         } catch (error) {
                             message = "island-picker.py produced no readable output";
                         }
                         root.pendingId = "";
+                        root.pendingText = "";
 
                         if (!ok) {
                             root.statusText = message !== "" ? message : "failed";
                             root.statusIsError = true;
-                            // Stay open on failure, and re-read. The list is
-                            // the evidence: if the window was already gone,
-                            // the refreshed list is the proof, and closing
-                            // the panel would take that away at the moment
-                            // it was needed.
-                            root.refresh();
+                            // Stay open on failure. Re-read ONLY at the root
+                            // of the stack, and that restriction is the
+                            // whole change here: the list is the evidence
+                            // when a window was already gone, but a refresh
+                            // rebuilds the stack from --list, so doing it
+                            // three pages into a directory walk would answer
+                            // "that file is gone" by teleporting you to the
+                            // top of ~/.config.
+                            if (root.pageStack.length <= 1)
+                                root.refresh();
                             return;
                         }
 
-                        // Closing on success is the rofi behaviour these
-                        // menus are ported from, and it is right for all
-                        // three: every one of them is a one-shot verb. A
-                        // picker that stayed open after `workspace 5` would
-                        // be a panel sitting on top of the workspace you
-                        // just asked to look at.
+                        // A page means the conversation continues. No page
+                        // means the verb is done, and closing on a finished
+                        // verb is the rofi behaviour these menus are ported
+                        // from: a picker that stayed open after `workspace
+                        // 5` would be a panel sitting on top of the
+                        // workspace you just asked to look at.
+                        if (nextPage !== null) {
+                            root.applyPage(nextPage, "push");
+                            root.grabKeyboardFocus();
+                            return;
+                        }
                         root.closeRequested();
                     }
                 }
@@ -457,9 +605,15 @@ FocusScope {
         width: Math.min(implicitWidth, root.width * 0.5)
         horizontalAlignment: Text.AlignRight
         elide: Text.ElideRight
+        // The row count is meaningless on a page with no rows, and "0 of 0"
+        // beside a question reads as a failure. Depth is what a prompt page
+        // can usefully report instead — it is the only thing on screen that
+        // says Backspace has somewhere to go.
         text: root.statusText !== "" ? root.statusText
             : (root.loading ? "reading…"
-                            : root.filtered.length + " of " + root.items.length)
+                : (root.mode === "list"
+                    ? root.filtered.length + " of " + root.items.length
+                    : (root.pageStack.length > 1 ? "step " + root.pageStack.length : "")))
         color: root.statusIsError ? "#ff6b6b" : "#6a6f78"
         font.pixelSize: Metrics.font(11)
         font.family: root.textFontFamily
@@ -490,7 +644,14 @@ FocusScope {
             anchors.left: parent.left
             anchors.leftMargin: Metrics.pad(10)
             anchors.verticalCenter: parent.verticalCenter
-            text: ""
+            // The glyph is the mode indicator, and it is the only one
+            // there is: the field looks identical whether it filters a
+            // list or holds an answer, and "am I searching or am I
+            // typing an answer" is the one thing you must not have to
+            // guess. Magnifier for a filter, chevron for a prompt,
+            // padlock when the prompt masks what you type.
+            text: root.mode !== "prompt" ? ""
+                : (root.page && root.page.secret === true ? "" : "")
             color: searchInput.activeFocus ? "#d1d1d6" : "#8e8e93"
             font.family: root.iconFontFamily
             font.pixelSize: Metrics.font(11)
@@ -510,6 +671,20 @@ FocusScope {
             font.pixelSize: Metrics.font(11)
             clip: true
             selectByMouse: true
+
+            // ---- ONE FIELD, TWO JOBS ----
+            //
+            // A prompt page reuses this field rather than adding a second
+            // TextInput below the list. The reason is focus, not tidiness:
+            // getting the keyboard into a field inside a FocusScope inside a
+            // layer-shell surface is the fiddliest thing on this panel
+            // (grabKeyboardFocus is two steps and a Timer for exactly that
+            // reason), and a second field would mean two more states it can
+            // be wrong in. There is exactly one focusable item here and that
+            // is deliberate — it is also why Tab is swallowed below.
+            echoMode: (root.mode === "prompt" && root.page
+                       && root.page.secret === true)
+                ? TextInput.Password : TextInput.Normal
 
             onTextChanged: {
                 if (root.query !== text)
@@ -543,7 +718,18 @@ FocusScope {
             // with an empty query it closes (SettingsLayer's contract), with
             // a query it types. Escape always closes, which is the promise
             // every submap and panel in this session already makes.
+            //
+            // ---- AND WHY A PROMPT PAGE SUSPENDS ALL OF IT ----
+            //
+            // On a prompt page every letter is content. `q` is not close,
+            // `j` and `k` are not movement even with the field empty, and
+            // Enter submits instead of running a row. So the whole block
+            // above is gated on `list`: the mode is what decides whether a
+            // letter is a command, and there is no state in which a letter
+            // is ambiguous. Escape still closes and Up/Down/Ctrl+n/p still
+            // do nothing harmful on a page with no rows.
             Keys.onPressed: function (event) {
+                const list = root.mode === "list";
                 const empty = searchInput.text === "";
                 const ctrl = (event.modifiers & Qt.ControlModifier) !== 0;
 
@@ -551,19 +737,34 @@ FocusScope {
                     root.closeRequested();
                     event.accepted = true;
                 } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                    root.runSelected();
+                    if (root.mode === "prompt")
+                        root.submitPrompt();
+                    else
+                        root.runSelected();
                     event.accepted = true;
+                } else if (event.key === Qt.Key_Backspace && empty) {
+                    // Backspace on an empty field goes back one page, which
+                    // is the file-manager gesture and the reason `../` is
+                    // NOT a row in the confedit port: a row that duplicates
+                    // a key can disagree with it. When the stack is one deep
+                    // it falls through and Backspace is just Backspace.
+                    event.accepted = root.popPage();
+                } else if (ctrl && event.key === Qt.Key_H) {
+                    // The same, always available — Backspace is spent as
+                    // soon as there is a character in the field, and a
+                    // prompt page is a field with characters in it.
+                    event.accepted = root.popPage();
                 } else if (event.key === Qt.Key_Down
                         || (ctrl && event.key === Qt.Key_N)
-                        || (empty && event.key === Qt.Key_J)) {
+                        || (list && empty && event.key === Qt.Key_J)) {
                     root.move(1);
                     event.accepted = true;
                 } else if (event.key === Qt.Key_Up
                         || (ctrl && event.key === Qt.Key_P)
-                        || (empty && event.key === Qt.Key_K)) {
+                        || (list && empty && event.key === Qt.Key_K)) {
                     root.move(-1);
                     event.accepted = true;
-                } else if (empty && event.key === Qt.Key_Q) {
+                } else if (list && empty && event.key === Qt.Key_Q) {
                     root.closeRequested();
                     event.accepted = true;
                 } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
@@ -587,7 +788,14 @@ FocusScope {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 visible: parent.text === ""
-                text: "type to filter — j/k move, Enter runs, Esc closes"
+                // A prompt's placeholder is written by the SCRIPT, because
+                // the script is the thing that knows whether it is asking
+                // for a URL or a sentence. This file only supplies the
+                // fallback for a page that forgot to say.
+                text: root.mode === "prompt"
+                    ? (root.page && root.page.prompt !== undefined
+                        ? String(root.page.prompt) : "type an answer, Enter submits")
+                    : "type to filter — j/k move, Enter runs, Esc closes"
                 color: "#6b7079"
                 font.family: root.textFontFamily
                 font.pixelSize: Metrics.font(11)
@@ -595,12 +803,35 @@ FocusScope {
         }
     }
 
+    // ---- THE NOTE ----
+    //
+    // Prose the script wants above the list: why a page is asking, where a
+    // file will be written, what a menu deliberately does not do. It spans
+    // the FULL width rather than the list column, because it is a sentence
+    // and the list column is 54% of a 900 px panel — a paragraph in a
+    // half-width column next to an empty details pane reads as a layout
+    // accident.
+    Text {
+        id: noteLabel
+        x: root.horizontalPadding
+        y: root.headerHeight + root.searchHeight + Metrics.pad(8)
+        width: root.width - 2 * root.horizontalPadding
+        visible: root.note !== ""
+        text: root.note
+        wrapMode: Text.WordWrap
+        color: "#8a909a"
+        font.pixelSize: Metrics.font(11)
+        font.family: root.textFontFamily
+        lineHeight: 1.25
+    }
+
     ListView {
         id: list
         x: root.horizontalPadding
-        y: root.headerHeight + root.searchHeight + Metrics.pad(8)
+        y: root.headerHeight + root.searchHeight + Metrics.pad(8) + root.noteHeight
         width: root.listWidth
         height: parent.height - y - root.footerHeight - Metrics.pad(8)
+        visible: root.mode === "list"
         clip: true
         model: root.filtered
         currentIndex: root.selectedIndex
@@ -722,6 +953,10 @@ FocusScope {
         anchors.rightMargin: root.horizontalPadding
         y: list.y + Metrics.px(2)
         spacing: Metrics.px(6)
+        // Nothing is selected on a prompt or a message page, so every Text
+        // below would bind to "" — three invisible empty labels holding a
+        // column open. Hidden as a unit instead.
+        visible: root.mode === "list"
 
         Text {
             width: details.width
@@ -796,9 +1031,18 @@ FocusScope {
         // see THE j/k PROBLEM above. A static "j/k move" would be a lie the
         // moment you typed a character, and a hint that lies is worse than
         // no hint: it is the reason you conclude the panel is broken.
-        text: root.query === ""
-            ? "j/k move  ·  Enter run  ·  type to filter  ·  q close"
-            : "↑/↓ or Ctrl+n/p move  ·  Enter run  ·  Esc close"
+        // …and it changes with the MODE for the same reason it changes with
+        // the query: on a prompt page j/k are letters and Enter submits, so
+        // the list hint would be a lie in three of its four clauses.
+        text: root.mode === "prompt"
+            ? ("Enter submits  ·  "
+               + (root.pageStack.length > 1 ? "Ctrl+h back  ·  " : "")
+               + "Esc closes")
+            : (root.query === ""
+                ? ("j/k move  ·  Enter run  ·  type to filter  ·  "
+                   + (root.pageStack.length > 1 ? "Backspace back  ·  " : "")
+                   + "q close")
+                : "↑/↓ or Ctrl+n/p move  ·  Enter run  ·  Esc close")
         color: "#6a6a6a"
         font.pixelSize: Metrics.font(10)
         font.family: root.textFontFamily

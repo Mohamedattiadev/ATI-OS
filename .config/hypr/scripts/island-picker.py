@@ -860,16 +860,32 @@ def _copy(text):
     return False
 
 
+SELECTION_MAX = 200
+
+
 def _selection():
-    """The PRIMARY selection, as a prefill. Empty when there is none."""
+    """The PRIMARY selection, as a prefill. Empty when there is none.
+
+    Collapsed to one line and capped, which the rofi originals did not need
+    to do and this does. Measured while testing: the primary selection on
+    this session was a 4 KB multi-line briefing document, and a prompt field
+    is a single-line TextInput — the prefill would have been four kilobytes
+    of text scrolled to its end, with the cursor somewhere past the horizon.
+    A prefill that has to be cleared before it can be used is worse than an
+    empty field, so anything over SELECTION_MAX is treated as "that was not
+    a word you meant to check".
+    """
     if not shutil.which("wl-paste"):
         return ""
     try:
         out = subprocess.run(["wl-paste", "-p", "-n"],
                              capture_output=True, text=True, timeout=3)
-        return out.stdout.strip() if out.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
         return ""
+    if out.returncode != 0:
+        return ""
+    text = " ".join(out.stdout.split())
+    return text if len(text) <= SELECTION_MAX else ""
 
 
 def _stamp():
