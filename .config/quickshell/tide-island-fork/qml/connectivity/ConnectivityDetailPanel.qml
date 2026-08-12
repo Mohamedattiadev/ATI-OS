@@ -19,6 +19,11 @@ Item {
     // default is the old hardcoded near-black, so a bare instantiation still
     // renders rather than resolving to transparent.
     property color panelFill: "#101014"
+    // FORK: false when the panel is hosted AS the capsule rather than beside
+    // it — see ConnectivityPanelLayer.qml. The capsule already paints the
+    // island's material, and a second rounded fill inside it at a smaller
+    // radius shows as four pale corner wedges.
+    property bool drawBackground: true
     property real presentationProgress: 1
 
     readonly property bool isWifi: panelKind === "wifi"
@@ -366,6 +371,7 @@ Item {
         radius: Metrics.px(28)
         color: root.panelFill
         opacity: 0.97
+        visible: root.drawBackground
     }
 
     Item {

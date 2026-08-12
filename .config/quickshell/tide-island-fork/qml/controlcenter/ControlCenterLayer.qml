@@ -67,6 +67,29 @@ Item {
     property bool sliderIntroPending: false
     property bool wifiPanelOpen: false
     property bool bluetoothPanelOpen: false
+    // ---- FORK: THIS LAYER IS NOW A DATA PROVIDER WHEN IT IS INVISIBLE ----
+    //
+    // The Wi-Fi and Bluetooth lists are their own island states now (see
+    // qml/connectivity/ConnectivityPanelLayer.qml), and opening one CLOSES
+    // the control centre — the capsule is one shape and it can only be one
+    // panel at a time. But the models both lists read still live here:
+    // wifiController, bluetoothAdapter, the pairing agent, every action
+    // method the rows call. So this layer stays mounted, invisible, purely
+    // as the provider.
+    //
+    // That breaks four guards that were written when "visible" and "in use"
+    // were the same thing. requestWifiStateRefresh and requestWifiListRefresh
+    // both open with `if (!showCondition) return;`, which was correct while
+    // the only way to see a network list was through a visible control
+    // centre, and which under the new arrangement means the standalone Wi-Fi
+    // popup opens onto whatever nmcli last said — with no rescan, ever.
+    //
+    // connectivityHostActive is set by the host while a standalone popup is
+    // up. connectivityDataActive is the predicate those guards should have
+    // been asking about all along: not "is this panel on screen" but "is
+    // anything looking at this data".
+    property bool connectivityHostActive: false
+    readonly property bool connectivityDataActive: showCondition || connectivityHostActive
     property bool batteryDrawerOpen: false
     property bool batteryDrawerDragging: false
     property real batteryDrawerProgress: 0
@@ -493,7 +516,7 @@ Item {
             wifiPanelOpen = nextOpen;
 
             if (nextOpen) {
-                if (showCondition) {
+                if (connectivityDataActive) {
                     requestWifiStateRefresh();
                     if (wifiSupported && wifiEnabled)
                         requestWifiListRefresh(true);
@@ -540,12 +563,12 @@ Item {
     }
 
     function requestWifiStateRefresh() {
-        if (!showCondition || !wifiController) return;
+        if (!connectivityDataActive || !wifiController) return;
         wifiController.refreshState();
     }
 
     function requestWifiListRefresh(rescan) {
-        if (!showCondition || !wifiController) return;
+        if (!connectivityDataActive || !wifiController) return;
         if (!wifiSupported || !wifiAvailable || !wifiEnabled) return;
         wifiController.refreshNetworks(!!rescan);
     }
@@ -883,7 +906,23 @@ Item {
             sliderIntroPending = false;
             displayedBrightness = localBrightness;
             displayedVolume = localVolume;
-            closeConnectivityPanels();
+            // Not while a standalone connectivity popup is the reason this
+            // layer went invisible. Clicking the Wi-Fi row switches the
+            // island from control_center to wifi_panel, which makes
+            // showCondition false in the same turn — and this line, written
+            // when the lists were a wing of a visible control centre, would
+            // then stop the Bluetooth scan and clear the Wi-Fi prompt of the
+            // panel that was just opened.
+            //
+            // The ordering between showCondition and connectivityHostActive
+            // is NOT guaranteed (they are two bindings on the same island
+            // state and QML does not promise which updates first), so the
+            // host also re-asserts the panel through setConnectivityPanelOpen
+            // on the next event-loop turn. This guard is what makes the
+            // common ordering cost nothing; that callLater is what makes the
+            // other ordering harmless.
+            if (!connectivityHostActive)
+                closeConnectivityPanels();
         }
     }
 

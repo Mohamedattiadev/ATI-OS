@@ -1344,16 +1344,20 @@ connect, the lot — and they were reachable only by opening the control
 centre and clicking a chevron. 26 bindings' worth of function was sitting
 there with no key on it.
 
-`tide toggleWifiPanel` / `tide toggleBluetoothPanel` open the control
-centre and its sub-panel in one step, bound to **`n`** and **`b`** in the
-rofi submap, which are the keys qtile's WifiPopup and BluetoothPopup had.
+`tide toggleWifiPanel` / `tide toggleBluetoothPanel` open the list, bound
+to **`n`** and **`b`** in the rofi submap, which are the keys qtile's
+WifiPopup and BluetoothPopup had.
 
-One implementation note that is not obvious: the two cannot be opened in
-the same tick. `controlCenterLoader` is not instantiated until the island
-is already in the `control_center` state, so `controlCenterLoader.item` is
-still null on the line after `showControlCenter()`. Deferred by one
-event-loop turn with `Qt.callLater` — enough, because the Loader is
-synchronous.
+That used to mean "open the control centre and then its sub-panel", and
+this section carried an implementation note about how the two could not
+happen in the same tick. Both are gone. The lists are island states of
+their own now — `wifi_panel` and `bluetooth_panel`, loaded by
+`ConnectivityPanelLayer.qml` — so pressing `n` puts a network list on
+screen and nothing else. The control centre stays mounted underneath as
+their data provider, invisible, because `wifiController` and the Bluetooth
+adapter live there; it is no longer drawn as a side effect of asking for a
+network list. Clicking the Wi-Fi or Bluetooth row inside the control
+centre opens the same popup, so there is one list with two ways in.
 
 **WifiQR is done too**, on **`$mod P` → `SHIFT+S`**.
 

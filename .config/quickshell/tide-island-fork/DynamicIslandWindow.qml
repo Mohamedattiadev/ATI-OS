@@ -116,23 +116,14 @@ PanelWindow {
             width: Math.ceil(mainCapsule.width)
             height: Math.ceil(mainCapsule.height)
         }
-        
-        // Add existing detail shells
-        Region {
-            intersection: Intersection.Combine
-            x: Math.floor(wifiConnectivityDetailShell.x)
-            y: Math.floor(wifiConnectivityDetailShell.y)
-            width: wifiConnectivityDetailShell.visible ? Math.ceil(wifiConnectivityDetailShell.width) : 0
-            height: wifiConnectivityDetailShell.visible ? Math.ceil(wifiConnectivityDetailShell.height) : 0
-        }
 
-        Region {
-            intersection: Intersection.Combine
-            x: Math.floor(bluetoothConnectivityDetailShell.x)
-            y: Math.floor(bluetoothConnectivityDetailShell.y)
-            width: bluetoothConnectivityDetailShell.visible ? Math.ceil(bluetoothConnectivityDetailShell.width) : 0
-            height: bluetoothConnectivityDetailShell.visible ? Math.ceil(bluetoothConnectivityDetailShell.height) : 0
-        }
+        // FORK: the two Regions that used to be here covered the Wi-Fi and
+        // Bluetooth detail shells — rectangles that hung off the side of the
+        // capsule and therefore needed input regions of their own. Those
+        // lists are island STATES now (see ConnectivityPanelLayer.qml): they
+        // are inside the capsule, so the capsule's Region above already
+        // covers them, and a mask entry for a surface that no longer exists
+        // is a mask entry that can only be wrong.
     }
     // FORK: the slack below the capsule is no longer a bare 12.
     //
@@ -159,16 +150,18 @@ PanelWindow {
         userConfig.islandTopMargin + mainCapsule.targetHeight
             + Math.max(12, root.capsuleOvershootAllowance)
     )
-    readonly property real connectivityDetailWindowHeight: root.anyConnectivityDetailMounted
-        ? Math.ceil(userConfig.islandTopMargin + root.connectivityDetailHeight + 12)
-        : 0
+    // FORK: connectivityDetailWindowHeight is gone with the detail shells.
+    // It existed because the Wi-Fi and Bluetooth lists were drawn OUTSIDE
+    // the capsule and the layer surface therefore had to be told about them
+    // separately. They are inside it now, so capsuleWindowHeight — which is
+    // derived from mainCapsule.targetHeight, which the panels' own
+    // preferredHeight feeds — already accounts for them.
     readonly property real overviewWindowHeight: root.overviewVisible
         ? Math.ceil(userConfig.islandTopMargin + root.overviewCapsuleHeight + 8)
         : 0
     readonly property real requestedWindowHeight: Math.max(
         root.notificationCenterWindowHeight,
         root.capsuleWindowHeight,
-        root.connectivityDetailWindowHeight,
         root.overviewWindowHeight,
         Math.ceil(root.controlCenterWindowHeight)
     )
@@ -289,8 +282,16 @@ PanelWindow {
                 // j/k driven, and without the grab those letters go to
                 // whatever window is behind, which for `k` on a terminal is
                 // a command you did not mean to start typing.
-                || root.wifiConnectivityDetailOpen
-                || root.bluetoothConnectivityDetailOpen)
+                //
+                // These read the island STATE now rather than a pair of
+                // wifiConnectivityDetailOpen booleans, because the lists are
+                // states rather than wings. Note they are the *LayerVisible
+                // predicates and not "the loader is alive": PanelLoader keeps
+                // a dismissed layer mounted through its fade-out, and holding
+                // an exclusive keyboard grab for those extra ~200 ms means the
+                // first keystroke after closing a panel lands nowhere.
+                || islandContainer.wifiPanelLayerVisible
+                || islandContainer.bluetoothPanelLayerVisible)
             return WlrKeyboardFocus.Exclusive;
         // Keep keyboard focus on the overview until an overview action closes it.
         // Click-to-focus closes the overview before focusing the selected client.
@@ -440,11 +441,16 @@ PanelWindow {
         && autoHideRestingState
         && !root.overviewVisible
         && !root.connectivityPromptActive
-        && !root.anyConnectivityDetailMounted
+    // The anyConnectivityDetailMounted clause that used to be on both of
+    // these is gone and is not replaced. It was load-bearing while the lists
+    // were wings: the island could be RESTING — a clock in a notch — with a
+    // 404 px network list hanging off its side, so "is the island at rest"
+    // did not answer "may the island hide". A list that is a state cannot be
+    // in that position; autoHideRestingState is false the whole time one is
+    // open, which is what these two lines already test.
     readonly property bool autoHideMustShow: !autoHideRestingState
         || root.overviewVisible
         || root.connectivityPromptActive
-        || root.anyConnectivityDetailMounted
     readonly property bool autoHideTargetVisible: autoHideMustShow
         || (!autoHideForcedHidden && (!autoHideEnabled || autoHideVisible))
     readonly property bool autoHideSuppressesTransientReveal: (autoHideEnabled || autoHideForcedHidden)
@@ -478,18 +484,13 @@ PanelWindow {
     readonly property color overviewCapsuleBorderColor: islandContainer.overviewView
         ? islandContainer.overviewView.cardBorderColor
         : StyleTokens.overviewBorder
-    property bool wifiConnectivityDetailOpen: false
-    property bool wifiConnectivityDetailMounted: false
-    property bool bluetoothConnectivityDetailOpen: false
-    property bool bluetoothConnectivityDetailMounted: false
-    readonly property bool anyConnectivityDetailMounted: wifiConnectivityDetailMounted || bluetoothConnectivityDetailMounted
-    // FORK: these override ConnectivityDetailShell's own defaults, which is
-    // why scaling them there alone changed nothing. Missed on the first
-    // rescale pass because the names are local rather than QML's width and
-    // height; the symptom was an unscaled 318x404 network list hanging off a
-    // 310x221 control centre, nearly twice its height.
-    readonly property real connectivityDetailWidth: Metrics.px(318)
-    readonly property real connectivityDetailHeight: Metrics.px(404)
+    // FORK: the open/mounted pair per panel, the two cleanup timers and the
+    // detail width/height/gap constants are all gone with the detail shells.
+    // Every one of them was the machinery of mounting a surface that was not
+    // the capsule; PanelLoader and the island state machine do the same work
+    // for the ten other panels and now do it for these two as well.
+    readonly property bool connectivityPanelStateActive:
+        islandContainer.wifiPanelLayerVisible || islandContainer.bluetoothPanelLayerVisible
     readonly property real controlCenterMaximumExtraHeight: controlCenterLoader.item
         ? controlCenterLoader.item.controlCenterMaximumExtraHeight
         : 120
@@ -500,8 +501,6 @@ PanelWindow {
     readonly property real notificationCenterWindowHeight: islandContainer.notificationCenterLayerVisible
         ? userConfig.islandTopMargin + (notificationCenterLoader.item ? notificationCenterLoader.item.contentHeight : 400) + 6
         : 0
-    readonly property real connectivityDetailGap: Metrics.px(16)
-    readonly property int connectivityDetailAnimationDuration: 360
     readonly property string overviewWallpaperSource: overviewWallpaperCache.effectiveSource
     property string wallpaperPickerActiveWallpaper: userConfig.wallpaperPath
 
@@ -686,40 +685,34 @@ PanelWindow {
         closeOverview();
     }
 
-    function setConnectivityDetailVisible(kind, open) {
-        const nextOpen = !!open;
-
-        if (kind === "wifi") {
-            if (nextOpen) {
-                wifiConnectivityDetailCleanupTimer.stop();
-                wifiConnectivityDetailMounted = true;
-                wifiConnectivityDetailOpen = true;
-            } else {
-                if (!wifiConnectivityDetailMounted && !wifiConnectivityDetailOpen)
-                    return;
-                wifiConnectivityDetailOpen = false;
-                wifiConnectivityDetailCleanupTimer.restart();
-            }
-            return;
-        }
-
-        if (kind === "bluetooth") {
-            if (nextOpen) {
-                bluetoothConnectivityDetailCleanupTimer.stop();
-                bluetoothConnectivityDetailMounted = true;
-                bluetoothConnectivityDetailOpen = true;
-            } else {
-                if (!bluetoothConnectivityDetailMounted && !bluetoothConnectivityDetailOpen)
-                    return;
-                bluetoothConnectivityDetailOpen = false;
-                bluetoothConnectivityDetailCleanupTimer.restart();
-            }
-        }
-    }
-
-    function closeAllConnectivityDetails() {
-        setConnectivityDetailVisible("wifi", false);
-        setConnectivityDetailVisible("bluetooth", false);
+    // ---- FORK: TELLING THE PROVIDER WHICH LIST IS ON SCREEN ----
+    //
+    // ControlCenterLayer keeps a wifiPanelOpen / bluetoothPanelOpen pair. It
+    // is not decoration: the open transition rescans Wi-Fi, and the close
+    // transition clears the password prompt, cancels an in-flight pairing and
+    // stops Bluetooth discovery. Those side effects are the reason the flags
+    // exist and they still have to happen — a Bluetooth scan left running
+    // after the panel is gone is a radio burning battery for nobody.
+    //
+    // While the lists were wings, the flag WAS the panel's visibility. Now
+    // the island state is, so the flag has to be told. It is a mirror, not a
+    // source: emitSignal is false so setConnectivityPanelOpen does not fire
+    // connectivityPanelRequested straight back at the handler that is in the
+    // middle of causing it.
+    //
+    // Qt.callLater, and not a direct call, for the reason the old
+    // openConnectivityPanelWindow already documented: controlCenterLoader is
+    // a PanelLoader, and on the turn where the island first enters a
+    // connectivity state its `item` may still be null. It is a synchronous
+    // Loader, so one turn is enough. The deferral also puts this AFTER
+    // ControlCenterLayer's own onShowConditionChanged, which is what makes
+    // the binding-order question there harmless.
+    function syncConnectivityProviderPanel(kind, open) {
+        Qt.callLater(function () {
+            if (!controlCenterLoader.item)
+                return;
+            controlCenterLoader.item.setConnectivityPanelOpen(kind, !!open, false);
+        });
     }
 
     function openOverviewEverywhere() {
@@ -880,37 +873,32 @@ PanelWindow {
 
     // FORK: land directly in the Wi-Fi or Bluetooth list, which is what
     // qtile's WifiPopup ($mod P then n) and BluetoothPopup ($mod P then b)
-    // did in one chord. The control centre already owns both lists — they
-    // were simply only reachable by opening it and clicking a chevron, so
-    // 26 bindings' worth of function was present and unbound.
+    // did in one chord.
     //
-    // Opening the control centre and opening the sub-panel cannot happen in
-    // the same tick: controlCenterLoader is not instantiated until the
-    // island is in the control_center state, so `controlCenterLoader.item`
-    // is still null on the line after showControlCenter(). Deferred by one
-    // event-loop turn with Qt.callLater, which is enough — the Loader is
-    // synchronous (asynchronous: false), so it exists by the next turn.
-    function openConnectivityPanelWindow(kind) {
-        const wasOpen = islandContainer.islandState === "control_center"
-            && controlCenterLoader.item
-            && controlCenterLoader.item.isConnectivityPanelOpen(kind);
+    // This used to open the CONTROL CENTRE and then, one event-loop turn
+    // later, ask it to unfurl the sub-panel — because the list was a wing of
+    // the control centre and there was no way to have the wing without the
+    // thing it hung off. So `$mod P n` put a 420 px control centre on screen
+    // as a side effect of asking for a network list, and closing the list
+    // left you looking at a panel you never asked for.
+    //
+    // The lists are their own island states now, so this is the same three
+    // lines every other panel's toggle is. The Qt.callLater is gone from
+    // here; it survives in syncConnectivityProviderPanel, which is where it
+    // was actually needed.
+    function toggleConnectivityPanelWindow(kind) {
+        const state = kind === "bluetooth" ? "bluetooth_panel" : "wifi_panel";
 
-        if (wasOpen) {
-            // Pressing the same chord again closes it, matching the toggle
-            // behaviour every other island panel has.
+        if (islandContainer.islandState === state)
             islandContainer.smartRestoreState();
-            return;
-        }
+        else
+            islandContainer.showConnectivityPanel(kind);
+    }
 
-        if (islandContainer.islandState !== "control_center")
-            islandContainer.showControlCenter();
-
-        Qt.callLater(function() {
-            if (!controlCenterLoader.item)
-                return;
-            controlCenterLoader.item.closeConnectivityPanels(false);
-            controlCenterLoader.item.setConnectivityPanelOpen(kind, true);
-        });
+    // Kept under the old name as well, because the IPC handler and anything
+    // else calling it should not have to care that the panel changed shape.
+    function openConnectivityPanelWindow(kind) {
+        root.toggleConnectivityPanelWindow(kind);
     }
 
     function toggleNotificationCenterWindow() {
@@ -1131,19 +1119,11 @@ PanelWindow {
         repeat: false
     }
 
-    Timer {
-        id: wifiConnectivityDetailCleanupTimer
-        interval: root.connectivityDetailAnimationDuration
-        repeat: false
-        onTriggered: root.wifiConnectivityDetailMounted = false
-    }
-
-    Timer {
-        id: bluetoothConnectivityDetailCleanupTimer
-        interval: root.connectivityDetailAnimationDuration
-        repeat: false
-        onTriggered: root.bluetoothConnectivityDetailMounted = false
-    }
+    // FORK: the two connectivity cleanup timers are gone. They kept a
+    // dismissed detail shell mounted for 360 ms so its close animation could
+    // run — which is precisely what PanelLoader does for every other layer,
+    // off Motion's own durations rather than off a hand-picked constant that
+    // agreed with nothing else in the shell.
 
     OverviewWallpaperCacheController {
         id: overviewWallpaperCache
@@ -1198,6 +1178,12 @@ PanelWindow {
             // declaration compiles a component that really is missing it.
             || islandContainer.pickerLayerVisible
             || islandContainer.polkitPromptLayerVisible
+            // FORK: the connectivity lists. Qualified through the id for the
+            // same reason their neighbours are — a hot reload landing between
+            // a new property's use and its declaration compiles a component
+            // that really is missing it.
+            || islandContainer.wifiPanelLayerVisible
+            || islandContainer.bluetoothPanelLayerVisible
             || expandedPlayerKeyboardFocusRequested
             || (root.monitorFocused && (root.overviewVisible || root.connectivityPromptActive))
 
@@ -1331,6 +1317,8 @@ PanelWindow {
             || islandState === "wallpaper_picker"
             || islandState === "application_launcher"
             || islandState === "theme_picker"
+            || islandState === "wifi_panel"
+            || islandState === "bluetooth_panel"
             || islandState === "display_panel"
             || islandState === "audio_panel"
             || islandState === "wifi_qr"
@@ -1392,6 +1380,18 @@ PanelWindow {
         readonly property bool wallpaperPickerLayerVisible: !root.overviewVisible && islandState === "wallpaper_picker"
         readonly property bool applicationLauncherLayerVisible: !root.overviewVisible && islandState === "application_launcher"
         readonly property bool themePickerLayerVisible: !root.overviewVisible && islandState === "theme_picker"
+
+        // FORK: the Wi-Fi and Bluetooth lists, promoted from wings of the
+        // control centre to states of the one shape. See
+        // qml/connectivity/ConnectivityPanelLayer.qml.
+        readonly property bool wifiPanelLayerVisible: !root.overviewVisible && islandState === "wifi_panel"
+        readonly property bool bluetoothPanelLayerVisible: !root.overviewVisible && islandState === "bluetooth_panel"
+
+        // The provider has to be told which list is on screen, because the
+        // open and close transitions carry the rescan and the scan-stop. It
+        // is driven from the state, so it cannot disagree with what is drawn.
+        onWifiPanelLayerVisibleChanged: root.syncConnectivityProviderPanel("wifi", wifiPanelLayerVisible)
+        onBluetoothPanelLayerVisibleChanged: root.syncConnectivityProviderPanel("bluetooth", bluetoothPanelLayerVisible)
 
         // FORK: the chord heads-up display. NOT in the keyboardFocus or
         // focus lists on purpose — see qml/island/ModeKeysLayer.qml. The
@@ -1459,13 +1459,18 @@ PanelWindow {
                 expandedPlayerKeyboardFocusRequested = false;
         }
 
+        // FORK: the `else root.closeAllConnectivityDetails()` arm is gone
+        // along with the wings — there is nothing left to close that the
+        // control centre's own flags do not cover. And the remaining call is
+        // now conditional on the island NOT having gone straight to a
+        // connectivity panel: clicking the Wi-Fi row makes this fire in the
+        // same turn as the state change, and closing the panel the click just
+        // opened is the one thing this line must not do.
         onControlCenterLayerVisibleChanged: {
-            if (!controlCenterLayerVisible) {
-                if (controlCenterLoader.item)
-                    controlCenterLoader.item.closeConnectivityPanels();
-                else
-                    root.closeAllConnectivityDetails();
-            }
+            if (!controlCenterLayerVisible
+                    && !root.connectivityPanelStateActive
+                    && controlCenterLoader.item)
+                controlCenterLoader.item.closeConnectivityPanels();
         }
 
         // FORK: mirrors onCustomLeftItemsChanged below. When the last
@@ -2458,6 +2463,19 @@ PanelWindow {
             stopAutoHideTimer();
         }
 
+        // FORK: the Wi-Fi and Bluetooth lists as first-class states, on the
+        // same five lines every other panel opens with. That is the whole
+        // point of the change: nothing about opening a network list is
+        // special any more.
+        function showConnectivityPanel(kind) {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = kind === "bluetooth" ? "bluetooth_panel" : "wifi_panel";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
         // FORK: the theme switcher, which DESIGN-SPEC.md lists as one of
         // the island's states and which upstream does not have.
         function showThemePicker() {
@@ -2960,6 +2978,21 @@ PanelWindow {
                     return islandContainer.lyricsCapsuleWidth;
                 case "control_center":
                     return Metrics.px(420);
+                // The same width as the control centre, deliberately. These
+                // two ARE the control centre's rows opened out, and a network
+                // list that snapped to a different width than the panel it
+                // was reached from would read as a different surface rather
+                // than as the same one going deeper.
+                //
+                // It is also wider than the wing was. The wing was
+                // Metrics.px(318) because it had to fit BESIDE a 420 px
+                // control centre on a 1366 px panel with margins — 318 was
+                // what was left over, not what a row needs. A Wi-Fi row is an
+                // SSID, a lock glyph and a signal readout, and at 318 an SSID
+                // like "TP-Link_Guest_5GHz_2" elided.
+                case "wifi_panel":
+                case "bluetooth_panel":
+                    return Metrics.px(420);
                 case "notification_center":
                     return Metrics.px(410);
                 case "wallpaper_picker":
@@ -3080,6 +3113,21 @@ PanelWindow {
                 switch (islandContainer.islandState) {
                 case "control_center":
                     return Metrics.px(320) + (controlCenterLoader.item ? controlCenterLoader.item.controlCenterExtraHeight : Metrics.px(32));
+                case "wifi_panel":
+                    // Clamped against the SCREEN and not against root.height,
+                    // for the reason spelt out at the cheatsheet below: this
+                    // window's height is derived from this switch, so reading
+                    // root.height here is a panel sizing itself from a number
+                    // it is in the middle of producing.
+                    return wifiPanelLoader.item
+                        ? Math.min(wifiPanelLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(404);
+                case "bluetooth_panel":
+                    return bluetoothPanelLoader.item
+                        ? Math.min(bluetoothPanelLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(404);
                 case "notification_center":
                     return notificationCenterLoader.item ? notificationCenterLoader.item.contentHeight : Metrics.px(200);
                 case "wallpaper_picker":
@@ -3229,6 +3277,8 @@ PanelWindow {
                 case "audio_panel":
                 case "wifi_qr":
                 case "theme_picker":
+                case "wifi_panel":
+                case "bluetooth_panel":
                 case "mode_keys":
                 case "cheatsheet":
                 case "calendar":
@@ -3903,7 +3953,20 @@ PanelWindow {
             PanelLoader {
                 id: controlCenterLoader
                 anchors.fill: parent
-                live: islandContainer.controlCenterLayerVisible || root.anyConnectivityDetailMounted
+                // FORK: alive whenever a connectivity panel is, because this
+                // layer is that panel's data provider — wifiController, the
+                // Bluetooth adapter, the pairing agent and every action
+                // method the rows call all live here.
+                //
+                // Bound to the two loaders' `active` and NOT to their
+                // `live`. PanelLoader keeps a dismissed layer mounted for the
+                // length of its fade-out; if this one unloaded on the same
+                // frame the state changed, `provider` would go null under a
+                // panel that is still on screen and the last ~200 ms of every
+                // close would be a fade-out of an empty box.
+                live: islandContainer.controlCenterLayerVisible
+                    || wifiPanelLoader.active
+                    || bluetoothPanelLoader.active
 
                 sourceComponent: Component {
                     ControlCenterLayer {
@@ -3929,6 +3992,10 @@ PanelWindow {
                             ? root.shellRootController.nightLightEnabled
                             : false
                         showCondition: islandContainer.controlCenterLayerVisible
+                        // FORK: "somebody is looking at this data even though
+                        // you are not on screen". See ControlCenterLayer's
+                        // connectivityDataActive.
+                        connectivityHostActive: root.connectivityPanelStateActive
                         onFocusModeChanged: function(enabled) {
                             if (root.shellRootController && root.shellRootController.focusEnabled !== undefined)
                                 root.shellRootController.focusEnabled = enabled;
@@ -3940,9 +4007,77 @@ PanelWindow {
                         onRequestNotification: function(appName, summary, body) {
                             islandContainer.showNotificationCapsule(appName, summary, body);
                         }
+                        // FORK: clicking the Wi-Fi or Bluetooth row in the
+                        // control centre still opens the list — it now opens
+                        // the same standalone popup the chord does, rather
+                        // than a wing only reachable from here. Which is the
+                        // point: one list, one way it looks, two ways in.
+                        //
+                        // Only the OPEN direction is acted on. A close
+                        // arriving from this signal means the provider closed
+                        // its own flag, which by then is a consequence of the
+                        // island state changing, not a cause of it; acting on
+                        // it would be the mirror driving the thing it mirrors.
                         onConnectivityPanelRequested: function(kind, open) {
-                            root.setConnectivityDetailVisible(kind, open);
+                            if (open)
+                                islandContainer.showConnectivityPanel(kind);
                         }
+                    }
+                }
+            }
+
+            // FORK: the Wi-Fi and Bluetooth lists. Two loaders and not one
+            // parameterised loader, because the island state machine already
+            // distinguishes them and a single loader would need a "which
+            // kind" property that could disagree with the state that mounted
+            // it. Cheap: neither is instantiated until its state is entered.
+            PanelLoader {
+                id: wifiPanelLoader
+                anchors.fill: parent
+                live: islandContainer.wifiPanelLayerVisible
+                // The focus grab has to be imperative here, exactly as it is
+                // for the wallpaper picker and the launcher: the Loader
+                // builds the layer with showCondition ALREADY true, so the
+                // layer's own onShowConditionChanged never fires on the open
+                // that matters.
+                onLoaded: {
+                    islandContainer.forceActiveFocus();
+                    if (item && item.grabKeyboardFocus)
+                        item.grabKeyboardFocus();
+                }
+
+                sourceComponent: Component {
+                    ConnectivityPanelLayer {
+                        panelKind: "wifi"
+                        provider: controlCenterLoader.item
+                        showCondition: islandContainer.wifiPanelLayerVisible
+                        iconFontFamily: root.iconFontFamily
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            PanelLoader {
+                id: bluetoothPanelLoader
+                anchors.fill: parent
+                live: islandContainer.bluetoothPanelLayerVisible
+                onLoaded: {
+                    islandContainer.forceActiveFocus();
+                    if (item && item.grabKeyboardFocus)
+                        item.grabKeyboardFocus();
+                }
+
+                sourceComponent: Component {
+                    ConnectivityPanelLayer {
+                        panelKind: "bluetooth"
+                        provider: controlCenterLoader.item
+                        showCondition: islandContainer.bluetoothPanelLayerVisible
+                        iconFontFamily: root.iconFontFamily
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }
             }
@@ -4479,51 +4614,6 @@ PanelWindow {
             }
         }
 
-        ConnectivityDetailShell {
-            id: wifiConnectivityDetailShell
-
-            open: root.wifiConnectivityDetailOpen
-            mounted: root.wifiConnectivityDetailMounted
-            rightSide: false
-            panelKind: "wifi"
-            // Escape / q inside the panel. Routed through the same
-            // setter the toggle uses, so the close animation and the
-            // unmount timer behave identically however it was closed.
-            onCloseRequested: root.setConnectivityDetailVisible("wifi", false)
-            provider: controlCenterLoader.item
-            mainCapsule: mainCapsule
-            availableWidth: root.width
-            detailWidth: root.connectivityDetailWidth
-            detailHeight: root.connectivityDetailHeight
-            detailGap: root.connectivityDetailGap
-            iconFontFamily: root.iconFontFamily
-            textFontFamily: root.textFontFamily
-            heroFontFamily: root.heroFontFamily
-            panelFill: islandTheme.shellFill
-        }
-
-        ConnectivityDetailShell {
-            id: bluetoothConnectivityDetailShell
-
-            open: root.bluetoothConnectivityDetailOpen
-            mounted: root.bluetoothConnectivityDetailMounted
-            rightSide: true
-            panelKind: "bluetooth"
-            // Escape / q inside the panel. Routed through the same
-            // setter the toggle uses, so the close animation and the
-            // unmount timer behave identically however it was closed.
-            onCloseRequested: root.setConnectivityDetailVisible("bluetooth", false)
-            provider: controlCenterLoader.item
-            mainCapsule: mainCapsule
-            availableWidth: root.width
-            detailWidth: root.connectivityDetailWidth
-            detailHeight: root.connectivityDetailHeight
-            detailGap: root.connectivityDetailGap
-            iconFontFamily: root.iconFontFamily
-            textFontFamily: root.textFontFamily
-            heroFontFamily: root.heroFontFamily
-            panelFill: islandTheme.shellFill
-        }
     }
 
     MouseArea {
