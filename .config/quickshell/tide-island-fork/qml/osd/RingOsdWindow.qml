@@ -46,6 +46,12 @@ PanelWindow {
 
     property string iconText: ""
     property real progress: 0
+    // The label's value, which is deliberately NOT derived from `progress`.
+    // progress is clamped to 0..1 so the arc cannot draw past a full circle;
+    // a sink at 125% therefore arrives as progress == 1.0, and so does 120%
+    // and 114%. Reading the number back off the arc printed "100%" for all
+    // three. -1 = no raw value supplied, fall back to progress.
+    property real rawPercent: -1
     property string iconFontFamily: ""
     property color accentColor: "#e0563b"
     property color shellFill: "#1a1a1a"
@@ -135,8 +141,27 @@ PanelWindow {
 
             ProgressRing {
                 id: ring
-                anchors.centerIn: parent
-                width: Metrics.px(84)
+                // NOT centerIn. Centring a 84 px ring in a 128 px plate put
+                // its bottom edge at y=106, and the percentage text — bottom
+                // anchored with an 11 px margin, ~15 px tall — started at
+                // y=103. They were three pixels INTO each other, which is
+                // why the gauge read as cramped: it was not tight spacing,
+                // it was an overlap.
+                //
+                // The ring and the text are now one column: ring hung off the
+                // top edge, text hung off the RING, not off the plate. That
+                // matters because px() and font() scale on different factors
+                // (SCALE vs FONT_SCALE, and pad() carries a further 1.06), so
+                // any layout that computes the gap by subtracting a type size
+                // from a plate height is only correct at the one scale it was
+                // measured on. Anchoring makes the gap a stated quantity.
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.top
+                anchors.topMargin: Metrics.px(15)
+                // 84 -> 76. The eight pixels buy the column its clearance
+                // without shrinking the plate, and against the 4 px stroke
+                // the difference is not visible; the overlap was.
+                width: Metrics.px(76)
                 height: width
                 progress: root.progress
                 lineWidth: Metrics.px(4)
@@ -161,10 +186,19 @@ PanelWindow {
 
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: Metrics.pad(11)
-                text: Math.round(Math.max(0, Math.min(1, root.progress)) * 100) + "%"
-                color: "#a8aeb8"
+                // Hung off the ring, not off the plate's bottom edge — see
+                // the ring's comment. This is the gap the request was about.
+                anchors.top: ring.bottom
+                anchors.topMargin: Metrics.pad(9)
+                text: (root.rawPercent >= 0
+                       ? Math.round(root.rawPercent)
+                       : Math.round(Math.max(0, Math.min(1, root.progress)) * 100)) + "%"
+                // Boosted volume is coloured, because "120%" in the same grey
+                // as "60%" reads as a number rather than as a warning, and
+                // above 100% the arc is pinned full and has stopped being
+                // able to say anything at all. This is the only place the
+                // difference can show.
+                color: root.rawPercent > 100.5 ? root.accentColor : "#a8aeb8"
                 font.pixelSize: Metrics.font(11)
                 font.family: root.iconFontFamily
                 font.weight: Font.DemiBold

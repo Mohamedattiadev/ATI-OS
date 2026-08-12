@@ -9,7 +9,19 @@ Item {
     width: 0
     height: 0
 
-    signal transientRequested(string icon, real progress, string text)
+    // FORK: `rawPercent` is a fourth argument, and it is additive on purpose.
+    // A QML signal handler may declare FEWER parameters than the signal
+    // carries, so every existing `function(icon, progress, text)` handler
+    // keeps working untouched; only the emit sites below had to change.
+    //
+    // It exists because `progress` is a 0..1 quantity to be PLOTTED, and
+    // above 100% volume that is a lossy thing to read a number back out of:
+    // 125%, 120% and 114% are all progress == 1.0, so a readout derived from
+    // progress says "100%" for every one of them. The arc genuinely cannot
+    // show more than a full circle; the LABEL can, and should, tell the
+    // truth. -1 means "no raw value, derive the label from progress" and is
+    // what the non-gauge callers (battery, bluetooth) pass.
+    signal transientRequested(string icon, real progress, string text, real rawPercent)
 
     property var configuredLeftSwipeItems: []
     property string timeText: "00:00"
@@ -54,6 +66,17 @@ Item {
     property real _pendingVolVal: 0.0
     property string _lastVolType: ""
     property real _lastVolVal: -1.0
+    // The volume as PipeWire reports it, 0..150+, NOT clamped to the ring's
+    // 0..1. Two separate gates below ask "did the volume actually change?",
+    // and both used to ask it of the clamped value. Above 100% the clamp
+    // pins every distinct volume to exactly 1.0, so 125% -> 120% -> 115%
+    // all compared equal and the OSD never fired once — on a machine whose
+    // sink sits at 125%, the volume OSD simply did not exist. The ring can
+    // only PLOT 0..1, but that is a drawing limit, not a change-detection
+    // one, so the test is done on these and the clamp is applied only where
+    // the value is drawn.
+    property real _pendingVolRaw: -1.0
+    property real _lastVolRaw: -1.0
     property bool _bluetoothVolumeSuppressed: false
     property real _pendingBrightnessValue: 0.0
     property string _customLeftItemsSignature: ""
@@ -300,14 +323,20 @@ Item {
 
         onTriggered: {
             if (root._bluetoothVolumeSuppressed) return;
+            // The SECOND clamped gate. Fixing only the one in onVolumeChanged
+            // would have changed nothing: above 100% every raw step still
+            // arrived here as _pendingVolVal == 1.0 == _lastVolVal and was
+            // dropped a second time. Both gates test the raw percentage now.
             if (root._pendingVolType !== root._lastVolType
-                    || Math.abs(root._pendingVolVal - root._lastVolVal) > 0.001) {
+                    || Math.abs(root._pendingVolRaw - root._lastVolRaw) > 0.05) {
                 root._lastVolType = root._pendingVolType;
                 root._lastVolVal = root._pendingVolVal;
+                root._lastVolRaw = root._pendingVolRaw;
                 root.transientRequested(
                     root._pendingVolType === "MUTE" ? root.statusIcon("mute") : root.statusIcon("volume"),
                     root._pendingVolVal,
-                    ""
+                    "",
+                    root._pendingVolRaw
                 );
             }
         }
@@ -318,10 +347,14 @@ Item {
 
         interval: 16
 
+        // Brightness cannot exceed 100%, so its raw value is just the
+        // fraction scaled back up — passed explicitly rather than left at -1
+        // so the label goes through one code path, not two.
         onTriggered: root.transientRequested(
             root.brightnessStatusIcon(root._pendingBrightnessValue),
             root._pendingBrightnessValue,
-            ""
+            "",
+            root._pendingBrightnessValue * 100.0
         )
     }
 
@@ -399,16 +432,21 @@ Item {
         function onVolumeChanged(volPercentage, isMuted) {
             const nextVolType = isMuted ? "MUTE" : "VOL";
             const nextVolValue = root.clamp01(volPercentage / 100.0);
+            // Compared on the RAW percentage, not on nextVolValue — see
+            // _pendingVolRaw. 0.05 rather than 0.001 because the unit is now
+            // a percent, not a 0..1 fraction: the smallest step anything
+            // here produces is `wpctl 5%-`, and a hair of float noise on a
+            // percentage must not read as a real change.
             const unchanged = root.isMuted === isMuted
-                && Math.abs(root.currentVolume - nextVolValue) <= 0.001
                 && root._pendingVolType === nextVolType
-                && Math.abs(root._pendingVolVal - nextVolValue) <= 0.001;
+                && Math.abs(root._pendingVolRaw - volPercentage) <= 0.05;
 
             if (unchanged)
                 return;
 
             root._pendingVolType = nextVolType;
             root._pendingVolVal = nextVolValue;
+            root._pendingVolRaw = volPercentage;
             root.currentVolume = nextVolValue;
             root.isMuted = isMuted;
             volumeDebounce.restart();
@@ -419,9 +457,9 @@ Item {
             root.isCharging = (statusString === "Charging" || statusString === "Full");
             if (root._lastChargeStatus !== "" && root._lastChargeStatus !== statusString) {
                 if (statusString === "Charging")
-                    root.transientRequested(root.statusIcon("charging"), -1.0, "");
+                    root.transientRequested(root.statusIcon("charging"), -1.0, "", -1.0);
                 else if (statusString === "Discharging")
-                    root.transientRequested(root.statusIcon("discharging"), -1.0, "");
+                    root.transientRequested(root.statusIcon("discharging"), -1.0, "", -1.0);
             }
             root._lastChargeStatus = statusString;
         }
@@ -438,7 +476,7 @@ Item {
             if (isConnected)
                 return;
 
-            root.transientRequested(root.statusIcon("bluetooth"), -1.0, "Disconnected");
+            root.transientRequested(root.statusIcon("bluetooth"), -1.0, "Disconnected", -1.0);
         }
     }
 }

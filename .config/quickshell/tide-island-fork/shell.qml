@@ -562,10 +562,16 @@ Scope {
     property string ringOsdIcon: ""
     property real ringOsdProgress: 0
     property bool ringOsdShown: false
+    // The true percentage, which is NOT ringOsdProgress * 100 whenever the
+    // sink is boosted past 100%: progress is clamped for the arc, this is
+    // not. -1 means the caller had no raw value and the label falls back to
+    // progress. See the transientRequested signal in IslandSystemState.qml.
+    property real ringOsdRawPercent: -1
 
-    function showRingOsd(icon, progress) {
+    function showRingOsd(icon, progress, rawPercent) {
         shellRoot.ringOsdIcon = String(icon || "");
         shellRoot.ringOsdProgress = Math.max(0, Math.min(1, Number(progress)));
+        shellRoot.ringOsdRawPercent = (rawPercent === undefined) ? -1 : Number(rawPercent);
         shellRoot.ringOsdShown = true;
         // restart(), not start(): holding a volume key fires this many times
         // a second, and a Timer that is already running ignores start(),
@@ -592,6 +598,7 @@ Scope {
             shellRootController: shellRoot
             iconText: shellRoot.ringOsdIcon
             progress: shellRoot.ringOsdProgress
+            rawPercent: shellRoot.ringOsdRawPercent
             shown: shellRoot.ringOsdShown
             iconFontFamily: shellRoot.userConfig.iconFontFamily
             accentColor: ringOsdTheme.accent

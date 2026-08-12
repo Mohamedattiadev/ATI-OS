@@ -1504,8 +1504,8 @@ PanelWindow {
                     && islandContainer.rightSwipeProgress > 0.001)
                 || islandContainer.musicPlaying
 
-            onTransientRequested: function(icon, progress, text) {
-                islandContainer.showTransientCapsule(icon, progress, text);
+            onTransientRequested: function(icon, progress, text, rawPercent) {
+                islandContainer.showTransientCapsule(icon, progress, text, rawPercent);
             }
         }
 
@@ -1965,9 +1965,13 @@ PanelWindow {
             }
         }
 
-        function showTransientCapsule(icon, progress, customText) {
+        function showTransientCapsule(icon, progress, customText, rawPercent) {
             if (progress === undefined)    progress = -1.0;
             if (customText === undefined)  customText = "";
+            // -1 = "no raw value"; the ring then derives its label from
+            // progress, which is correct for everything that cannot exceed
+            // 100%. See the transientRequested signal in IslandSystemState.
+            if (rawPercent === undefined)  rawPercent = -1.0;
 
             // FORK SETTING, forkRingOsdEnabled. Hand GAUGE-shaped calls to
             // the standalone ring window instead of the island's split
@@ -1998,7 +2002,7 @@ PanelWindow {
                     && shellRootController
                     && shellRootController.forkSettings
                     && shellRootController.forkSettings.ringOsdEnabled) {
-                shellRootController.showRingOsd(icon, progress);
+                shellRootController.showRingOsd(icon, progress, rawPercent);
                 return;
             }
 
