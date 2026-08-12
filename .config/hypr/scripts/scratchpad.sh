@@ -64,28 +64,90 @@ count=$(hyprctl clients -j | jq --arg ws "special:$name" '[.[] | select(.workspa
 
 if [ "$count" -eq 0 ]; then
     # Resolve the percentages against the focused monitor.  Sizes are
-    # logical (width/scale), and x/y are global compositor coordinates,
-    # so the monitor's own origin has to be added or the window lands on
-    # the wrong screen entirely once a second monitor is attached.
+    # logical (width/scale).
+    #
+    #  ---- x/y ARE MONITOR-RELATIVE, NOT GLOBAL ----
+    #
+    #  This read the other way round until it was measured on a second
+    #  monitor, and it cost nothing on a single-monitor machine because
+    #  eDP-1 sits at 0,0 — adding an origin of zero twice is still zero.
+    #
+    #  Measured against 0.56.2 with a headless output at 1366,0
+    #  (`hyprctl output create headless`), spawning kitty with
+    #  `move 100 100` as an inline exec rule while that output was
+    #  focused: the window landed at 1466,100.  So Hyprland adds the
+    #  monitor's own origin to a rule's `move`, and a caller that has
+    #  already added it gets the offset twice.
+    #
+    #  The symptom is not a window shifted by one screen width, which is
+    #  what you would look for.  A doubled offset usually pushes the
+    #  window past the monitor's edge, and Hyprland then places it
+    #  somewhere else entirely — a 60%-wide scratchpad came back exactly
+    #  centred, i.e. looking like the `move` had been ignored rather than
+    #  applied twice.
     read -r w h x y < <(
         hyprctl monitors -j | jq -r --argjson g "[$pw,$ph,$px,$py]" '
             .[] | select(.focused)
             | (.width / .scale)  as $lw
             | (.height / .scale) as $lh
-            | "\(($lw * $g[0] / 100) | round) \(($lh * $g[1] / 100) | round) \((.x + $lw * $g[2] / 100) | round) \((.y + $lh * $g[3] / 100) | round)"
+            | "\(($lw * $g[0] / 100) | round) \(($lh * $g[1] / 100) | round) \(($lw * $g[2] / 100) | round) \(($lh * $g[3] / 100) | round)"
         '
     )
 
     rules="workspace special:$name silent; float; size $w $h; move $x $y"
     [ -n "$opacity" ] && rules="$rules; opacity $opacity"
 
-    # Spawn into the special workspace directly, so the window never
-    # flashes on the current one first.
+    #  ---- INLINE EXEC RULES ARE NOT ENOUGH, AND HERE IS WHY ----
+    #
+    #  Hyprland attaches the `[...]` rules of a `dispatch exec` to the
+    #  process it spawns. That works for kitty and qalculate, which map
+    #  their own window. It does NOT work for the three browser
+    #  scratchpads: `brave --app=...` hands the URL to the ALREADY RUNNING
+    #  brave and exits, so the window is created by a process Hyprland
+    #  never spawned and the rules match nothing at all.
+    #
+    #  Measured: `dispatch exec "[workspace 8 silent] brave --app=... "`
+    #  put the window on workspace 4 — the active one — at full tiled size.
+    #  That is the whole of "the chatgpt/deepseek/whatsapp scratchpads do
+    #  not behave like the terminal ones": no workspace, no float, no
+    #  geometry, because the rules were addressed to the wrong process.
+    #
+    #  (Also worth knowing: brave IGNORES --class for --app windows. It
+    #  derives one from the URL and profile instead, e.g.
+    #  `brave-chat.openai.com__-Chatgpt`. So there is no class to hand it
+    #  and nothing to match on until the window exists.)
+    #
+    #  So: spawn, then WAIT for whatever new window appeared and place it
+    #  by address. Dispatchers do not care which process made the window.
+    before=$(hyprctl clients -j | jq -r '.[].address' | sort)
     hyprctl dispatch exec "[$rules] $cmd"
-    # Then reveal it.  The client needs a moment to map before the
-    # toggle registers it; without this the first press appears to do
-    # nothing and the second one hides an already-hidden workspace.
-    sleep 0.35
+
+    # Poll rather than sleep a fixed time. A terminal maps in ~200 ms; a
+    # browser --app window on a cold profile can take several seconds, and
+    # a fixed sleep long enough for the second makes the first feel broken.
+    addr=""
+    for _ in $(seq 1 60); do
+        sleep 0.25
+        addr=$(hyprctl clients -j | jq -r --arg b "$before" '
+            ($b | split("\n")) as $old
+            | [ .[] | select((.address | IN($old[])) | not) ] | .[0].address // empty
+        ')
+        [ -n "$addr" ] && break
+    done
+
+    if [ -n "$addr" ]; then
+        # Place it explicitly. This is a no-op for the windows whose exec
+        # rules already fired, and it is the only thing that works for the
+        # ones whose rules did not.
+        batch="dispatch movetoworkspacesilent special:$name,address:$addr"
+        batch="$batch ; dispatch setfloating address:$addr"
+        batch="$batch ; dispatch resizewindowpixel exact $w $h,address:$addr"
+        # movewindowpixel is monitor-relative, same as the rule form —
+        # see the note above where x and y are computed.
+        batch="$batch ; dispatch movewindowpixel exact $x $y,address:$addr"
+        [ -n "$opacity" ] && batch="$batch ; dispatch setprop address:$addr alpha $opacity"
+        hyprctl --batch "$batch" >/dev/null
+    fi
 fi
 
 hyprctl dispatch togglespecialworkspace "$name"

@@ -54,8 +54,24 @@ current_ws=$(hyprctl activeworkspace -j | jq -r '.name')
 # browser --app windows routinely report one and not the other.
 # `test` is unanchored, so "qutebrowser" still matches the real Wayland
 # app_id org.qutebrowser.qutebrowser.
+#
+# Windows on a SPECIAL workspace are excluded, and that exclusion is the
+# fix for a bug that quietly destroyed scratchpads. A special workspace is
+# a scratchpad's home; a window living there is not "the app, open
+# somewhere", it is somebody else's dropdown. $mod N matched the
+# scratchpad terminals as readily as the real one, and when the scratchpad
+# was first in the list the branch below dragged it onto workspace 4 with
+# `movetoworkspace` — permanently, since nothing puts it back. The
+# scratchpad then read as empty and the next $alt 1 spawned a duplicate.
+#
+# The distinct --class on the scratchpad terminals in binds.conf already
+# stops this for kitty. This stops it for every app anyone adds later,
+# which matters because the failure is silent and looks like the
+# scratchpad "randomly losing" its window.
 matching=$(printf '%s' "$clients" | jq -c --arg c "$class" '
-    [ .[] | select(((.class // "") | test($c; "i")) or ((.initialClass // "") | test($c; "i"))) ]
+    [ .[]
+      | select((.workspace.name // "") | startswith("special:") | not)
+      | select(((.class // "") | test($c; "i")) or ((.initialClass // "") | test($c; "i"))) ]
 ')
 
 # `activewindow`, NOT `focusHistoryID == 0`.
@@ -98,17 +114,11 @@ if [ "$count" -gt 0 ]; then
 
     printf '%s' "$current_ws" > "$state_file"
 
-    # A window parked in a special workspace has to be pulled out first,
-    # or focuswindow drags us into the special workspace instead.
-    case "$ws" in
-        special:*)
-            hyprctl dispatch movetoworkspace "$home_ws,address:$addr"
-            hyprctl dispatch workspace "$home_ws"
-            ;;
-        *)
-            hyprctl dispatch workspace "$ws"
-            ;;
-    esac
+    # No special-workspace case here on purpose: the matcher above cannot
+    # return one any more. It used to, and the `movetoworkspace` that
+    # handled it is what ate the scratchpad terminals — see the comment
+    # there. A scratchpad is toggled by its own key, never by this script.
+    hyprctl dispatch workspace "$ws"
     hyprctl dispatch focuswindow "address:$addr"
 else
     # ---- Branch 3: not running -> land on its workspace and start it ----

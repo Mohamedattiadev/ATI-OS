@@ -7,6 +7,8 @@ import Quickshell.Hyprland
 import Quickshell.Wayland
 import Quickshell.Widgets
 import "../common"
+// FORK: the shared motion system. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 Item {
     id: root
@@ -282,7 +284,14 @@ Item {
 
     // ── visual ───────────────────────────────────────────────
 
-    Behavior on opacity { NumberAnimation { duration: showCondition?180:120; easing.type: Easing.InOutQuad } }
+    // FORK: the shared choreography. See Motion.js.
+    Behavior on opacity {
+        NumberAnimation {
+            duration: showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.fade()   // FORK: was Easing.InOutQuad
+        }
+    }
 
     Rectangle {
         id: overviewCard

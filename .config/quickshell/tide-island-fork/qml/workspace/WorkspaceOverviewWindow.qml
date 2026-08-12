@@ -4,6 +4,9 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Widgets
+// FORK: the shared motion system — one generated spring for geometry,
+// one critically damped curve for opacity. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 Item {
     id: root
@@ -109,7 +112,8 @@ Item {
 
         NumberAnimation {
             duration: 160
-            easing.type: Easing.OutCubic
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
         }
     }
 
@@ -118,21 +122,24 @@ Item {
 
         NumberAnimation {
             duration: 160
-            easing.type: Easing.OutCubic
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
         }
     }
 
     Behavior on width {
         NumberAnimation {
             duration: 160
-            easing.type: Easing.OutCubic
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
         }
     }
 
     Behavior on height {
         NumberAnimation {
             duration: 160
-            easing.type: Easing.OutCubic
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
         }
     }
 

@@ -285,6 +285,138 @@ Two things in it are not style choices:
   PREVIOUS network's code after a reconnect: right size, right white card,
   wrong network, and nothing on screen to say so.
 
+### `qml/island/ModeKeysLayer.qml` (new file) — the chord heads-up display
+
+Reported as "when I open a mode — rofi, media — the island's UI is not
+good". It was a name in a capsule, `ROFI-MODE`, and nothing else.
+
+The name is the half qtile's bar answered and it genuinely matters: without
+it the compositor silently starts swallowing keys and there is no way to
+tell you are in a submap. But it is not the question you have while
+standing in a 26-key chord. qtile got away with it because its chords were
+one-shot and its cheatsheet was one keystroke away; Hyprland submaps are
+sticky, so you sit in them, and the cheatsheet here is itself behind a
+chord.
+
+New `mode_keys` island state, its own Loader, `tide showModeKeys` /
+`tide clearModeKeys`, driven by `hypr/scripts/submap-indicator.sh` off the
+same event socket it already watched. Rows come from `hyprctl binds` at the
+moment the submap is entered, via a new `cheatsheet.py --submap-json` —
+which reuses that file's single `describe()` so the panel and the printed
+sheet can never label a binding differently.
+
+**This layer takes NO keyboard focus, and that is the whole design.** Every
+other panel in this shell (theme picker, display, audio) takes an exclusive
+grab because each reads its own keys. This one must do the exact opposite:
+the keys belong to the compositor's submap, and a grab here would swallow
+the very keys the panel is drawn to advertise — it would appear and the
+mode would stop working. So it is deliberately absent from
+`WlrLayershell.keyboardFocus`, from `islandContainer`'s `focus:` list, and
+from the Overlay-layer list. It is in `blocksTransientSplit` only, so a
+volume OSD cannot replace it mid-chord.
+
+**The trap, and it cost the whole first implementation: Quickshell's IPC
+splits arguments on whitespace, and shell quoting does not survive it.**
+A ONE-parameter call gets the remainder joined back together, which is why
+`tide showText "hello world"` works and hides the problem completely. A
+TWO-parameter call does not: sending the rows as a JSON blob whose actions
+read "wifi panel" and "theme picker" arrived as **27 arguments instead of
+2** and was rejected with `Too many arguments provided`. Percent-encoding
+got past the argument count and still produced an empty grid.
+
+The fix is not a better encoding — it is not sending the data. The IPC
+carries only the mode name, which is one word and cannot have the problem,
+and the panel runs the backend itself. That is also what every other panel
+here already does (`ThemePickerLayer` runs `theme-list.sh`, `DisplayPanel`
+runs `display-ctl.py`), so it is one less thing that is special.
+
+Two smaller notes:
+
+- **Column count follows row count** — three columns above 12 rows, two
+  above 5, one below. `rofi` has 26 rows and `lang` has 4, and four rows in
+  three columns is one row of three plus a widow.
+- **The nine workspace binds every chord repeats are collapsed to one
+  `1-9` row.** They are true, and they were also nine of the twenty rows,
+  crowding out the keys that are specific to the mode.
+
+### Navigation: Tab means "next section", and the cursors wrap
+
+Four files, one complaint — "the vim motions don't work well and there
+should be a Tab to go to the next thing".
+
+**`DisplayPanel.qml`** had `Tab` bound to `move(1)`, i.e. a second `j`. It
+was the only key on the panel that did nothing another key already did,
+while the four views were reachable only through four unrelated letters.
+Tab now cycles the sections, which is what it already meant in
+`AudioPanel.qml` — the two panels were inconsistent with each other, and
+the audio one was right. Shift+Tab goes back. In arrange view Tab keeps
+cycling which output is being dragged, since that is the only thing to step
+through there.
+
+Entering `modes` by Tab has to set `modeOutput`, which until now was only
+ever set by pressing Return on an output row. Without that the list is
+empty and the details column says "no output selected" — which reads as the
+panel having lost the monitor rather than as the view needing a subject.
+
+**`move()` wraps in both panels.** vim clamps, and clamping is right in a
+buffer; these lists are two to five rows long, and `j` stopping dead at the
+second row of a two-output list reads as a dead key. `g`/`G` still go to
+the ends.
+
+**`ThemePickerLayer.qml`** answered only to arrow keys — the one panel in
+this shell that did not read hjkl. It is a grid, so `h`/`l` step one tile
+and `j`/`k` step one row (`columns` tiles), which is what the arrows
+already did. Verified live: from `gruvbox` (index 3), `l l j` landed on
+`kanagawa` (index 9), i.e. +1 +1 +4.
+
+**`WallpaperPickerLayer.qml`** gained `r` for a random wallpaper. With 362
+images in the library, `h`/`l` one thumbnail at a time is not a way to
+reach most of them. It moves the cursor and then applies, rather than
+applying blind, so the picker still shows you what you got; it re-rolls if
+the draw lands on the current index.
+
+## The motion pass — new file `qml/common/PanelLoader.qml`, 24 files touched
+
+The largest single patch in the fork and the one most likely to conflict on
+the next `pacman -Syu`, because it touches nearly every layer file.
+
+**New file.** `qml/common/PanelLoader.qml` — a Loader whose `active` lags
+its `live` by the fade-out duration. Upstream's `Loader { active: <the same
+boolean that drives showCondition> }` destroys the layer in the same
+event-loop turn that queues its fade-out, so **the out-fade in all thirteen
+panel layers had never executed**. Thirteen call sites in
+`DynamicIslandWindow.qml` changed from `Loader { active: X }` to
+`PanelLoader { live: X }`.
+
+**`Motion.js`** gained `fadeInDuration` / `fadeOutDuration` / `contentDelay`
+(one choreography replacing eight in-durations and six out-durations across
+20 layers) and `overshoot()` (published so containers can budget for the
+spring going past its target).
+
+**49 raw `easing.type: Easing.*` converted** to `Easing.BezierSpline` +
+`Motion.spring()` or `Motion.fade()`, classified by whether the property is
+a position or a clamped 0–1 quantity. 17 remain deliberately, listed at the
+bottom of `Motion.js`.
+
+**Three panels became content-sized** (`display_panel`, `audio_panel`,
+`theme_picker` in the `targetHeight` switch), each reading a
+`preferredHeight` off its layer. The theme picker's fixed height had been
+hiding six of 22 themes below the fold.
+
+`r` in the wallpaper picker no longer applies — see the section above,
+which is now out of date on that one point and correct on the rest.
+
+Two traps found the hard way and worth carrying forward:
+
+- Rewriting these blocks mechanically, watch for the **one-line**
+  `NumberAnimation { duration: 180; easing.type: ... }` form. A
+  line-oriented substitution deletes the whole animation and QML then
+  refuses `Behavior` with `Cannot assign to non-existent property "easing"`.
+- **Quickshell does not reload on `.js` changes**, only `.qml`. A new
+  function in `Motion.js` used from QML in the same breath throws
+  `TypeError: ... is not a function` and keeps throwing until some `.qml`
+  file is touched.
+
 ## Pre-existing upstream warning, not ours
 
 ```

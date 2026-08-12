@@ -7,6 +7,9 @@ import IslandBackend
 
 // FORK: the shared scale factor — see qml/common/Metrics.js.
 import "../common/Metrics.js" as Metrics
+// FORK: the shared motion system — one spring for geometry, one
+// critically damped curve for opacity. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 //
 // FORK — new file. The port of qtile's popups/WifiQR.py, which was `s` inside
@@ -56,10 +59,23 @@ FocusScope {
     anchors.fill: parent
     opacity: showCondition ? 1 : 0
 
+    // FORK: one choreography for every layer in the shell.
+    // Was `root.showCondition ? 220 : 120` on Easing.InOutQuad — one of
+    // eight hand-picked in-durations and six out-durations that agreed
+    // with neither each other nor the 400 ms the shape takes. See
+    // Motion.js, "CONTENT CHOREOGRAPHY", for the measurement.
     Behavior on opacity {
-        NumberAnimation {
-            duration: root.showCondition ? 220 : 120
-            easing.type: Easing.InOutQuad
+        SequentialAnimation {
+            // The delay is what keeps the content from being painted
+            // inside a capsule that is still the wrong size for it.
+            PauseAnimation { duration: root.showCondition ? Motion.contentDelay() : 0 }
+            NumberAnimation {
+                duration: root.showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+                // Critically damped: opacity is clamped 0-1 and an
+                // overshooting fade reads as a cut. Motion.js says why.
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()
+            }
         }
     }
 

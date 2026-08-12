@@ -226,17 +226,126 @@ and leaves the fork stale. `tide-island-fork/FORK-NOTES.md` records the
 vendored version (1.0.34-1), the diff commands, and every patch applied,
 so the merge is mechanical.
 
-**The remaining popups (audio detail, display, wifi/QR, bluetooth,
-cheatsheets) are untouched** — still the long pole, and each is either a
-fork of Tide Island or a separate Quickshell surface beside it.
+**The popups this section once called "the long pole" are ALL DONE**, each
+as a layer in the fork with a script behind it. This paragraph said
+"untouched" for far longer than it was true; the list is the status:
 
-**Since written: all of them are done.** Display
-(`$alt 4`), cheatsheets (`$mod SHIFT K`), Wi-Fi and Bluetooth (`$mod P`
-then `n`/`b`) landed first; the audio detail panel (`$alt 3`,
-`qml/audio/AudioPanel.qml` + `hypr/scripts/audio-ctl.py`) closes the
-largest of them at 25 bindings, and the Wi-Fi QR (`$mod P` → `SHIFT+S`,
-`qml/wifi/WifiQrLayer.qml` + `hypr/scripts/wifi-qr.py`) closes the last
-one. MIGRATION.md has the per-item evidence.
+| popup | key | where it lives |
+|---|---|---|
+| Display | `$alt 4` | `qml/display/DisplayPanel.qml` + `hypr/scripts/display-ctl.py` |
+| Audio detail (25 bindings, the largest) | `$alt 3` | `qml/audio/AudioPanel.qml` + `hypr/scripts/audio-ctl.py` |
+| Wi-Fi / Bluetooth lists | `$mod P` → `n` / `b` | the island's own control centre, previously unbound |
+| Wi-Fi QR | `$mod P` → `SHIFT+S` | `qml/wifi/WifiQrLayer.qml` + `hypr/scripts/wifi-qr.py` |
+| Cheatsheets | `$mod SHIFT K` | `qml/cheatsheet/CheatsheetLayer.qml` + `hypr/scripts/cheatsheet.py --sheet-json`. **Was rofi "on purpose" — see below** |
+| Wallpaper picker | `$mod SHIFT B` | upstream's, bound |
+
+MIGRATION.md has the per-item evidence for each.
+
+### The cheatsheets came off rofi, and item 3's rule with them
+
+Item 3 below says: rebuild the *interactive* popups in the shell, leave
+the *launcher* problems on rofi. A cheatsheet is read-and-dismiss, so by
+that rule it stayed on rofi, and `cheatsheet.py` argued the case in its own
+header. The rule lost to a simpler observation — every other surface here
+lives in the notch, and a rofi window over the desktop for the one chord
+that explains the desktop was the odd one out.
+
+The port is not a text dump, because **what rofi actually contributed was
+the typing, not the window**. qtile spent four of CheatSheet-Mode's sixteen
+bindings (`j`, `k`, `Tab`, `Shift+Tab`) moving a viewport around 129 rows;
+rofi replaced all four with a search field. `CheatsheetLayer.qml` is built
+around that field, and adds the one thing neither predecessor had: `k`/`v`/
+`f` choose the sheet it OPENS on, and **Tab cycles all three while it is
+open**, so comparing a vim binding against a WM binding no longer means
+leaving the chord and re-entering it.
+
+`cheatsheet.py hypr` still prints the rofi sheet from a terminal, off the
+same two builders — one copy of the content, and one way to read these keys
+that does not need the shell to be running.
+
+**What the island still does NOT have, measured against DESIGN-SPEC.md's
+own list** ("states of the one shape"):
+
+| spec state | here |
+|---|---|
+| launcher | **exists, and was unbound** — `tide toggleApplicationLauncher`, now on `$mod D`. Same miss as the Wi-Fi and Bluetooth lists, found the same way with `ipc show` |
+| control center | bound, `$mod SHIFT A` |
+| wallpaper picker | bound, `$mod P` → `w` |
+| theme switcher | bound, `$mod P` → `c` |
+| calendar | **DONE**, `$alt 6` — `qml/island/CalendarLayer.qml`. No qtile ancestor at all: qtile had `widget.Clock` and no calendar popup, so this was built from the spec rather than ported |
+| power menu | **DONE**, `$mod SHIFT Q` and `$mod P` → `q` — `qml/island/PowerMenuLayer.qml` over `scripts/power-ctl.sh`. Both keys were `dm-logout -r` (rofi), which is what qtile spawned |
+| settings | **DONE**, `$alt 7` — `qml/island/SettingsLayer.qml`. Not in the spec's list; added because the packaged config app is a compiled binary that a `yay -Syu` would overwrite, and it cannot reach fork-only keys at all |
+| **Polkit password prompt** | **NOT BUILT.** The state, its size cases and its show/clear functions exist; `PolkitPromptLayer.qml` does not, and **nothing registers a polkit agent** — the config key is read into `ForkConfig.polkitAgentEnabled` and no code consumes it. polkit-kde-agent is still the session's agent and is untouched |
+
+The polkit row is the only remainder of item 1. It is also the one with
+teeth: a wrong agent means NO password prompt anywhere on the system — no
+pkexec, no auth dialog — failing silently until you need one. Whenever it
+is built, it must run alongside polkit-kde-agent and be proven before
+replacing it.
+
+**A warning that described an imaginary hazard.** The settings row for it
+previously read "DANGER. Registers this shell as the session polkit
+agent", which was not true of the code at any point — the switch was
+inert. It now reads NOT IMPLEMENTED and is disabled. A false warning on a
+dead control is worse than no row, because it is the kind of thing a later
+reader trusts.
+
+### Still open: the island does not yet LOOK like the video
+
+Reported directly, and it is not one bug: element sizes, icon sizes and
+padding across the panels, and the chord/mode indicator's appearance. The
+scale factor in `qml/common/Metrics.js` made everything proportionally
+smaller from a 38 px design to a 28 px bar, which is a different thing from
+being designed at 28. `pad()` is already super-linear for exactly this
+reason and it is not enough.
+
+This needs looking at each panel against the spec and adjusting, not one
+number changed. It is the largest thing left.
+
+**Since written — it WAS one number, and the paragraph above had the
+diagnosis backwards.** "The sizing of the element and font in all the
+island is not proper" and "some elements look eaten, not full" are the
+same bug, and it is the interaction of two lines in `Metrics.js`:
+
+* `px()` shrank every container by 0.74, while
+* `font()` **floored at 9**.
+
+Below a source size of ~12 that floor did all the work — font(10), font(11)
+and font(12) all returned 9. Boxes kept shrinking, the text in them stopped,
+and the text ran out of its box. That is "eaten" precisely: labels clipped
+at the descender or the last character. It also flattened four deliberate
+type sizes into one.
+
+The premise was the real error. 28/38 exists because qtile's BAR is 28 px
+and the resting notch must match it. **No expanded panel is bound by that**
+— a picker or a sheet hangs below the bar as a free-floating surface. They
+were shrunk to fit a constraint that does not apply to them. Verified
+before changing anything: the resting shape comes from
+`userConfig.islandWidth/islandHeight`, not from Metrics, so the two are
+genuinely separable and raising the panel scale cannot grow the notch.
+
+Now: `SCALE = 0.92` for panels (a little tightening is still right for
+1366x768; a quarter was not), `FONT_SCALE = 1.0` because legibility is an
+absolute rather than a ratio, and `pad()`'s 1.35 boost removed — it existed
+to claw back what the 0.74 took, and keeping both would double-count.
+Measured: mode_keys(rofi) 191 → 232 px, cheatsheet 362 → 446 px, nothing
+clipped in either.
+
+`.pragma library` JS is **cached by the running shell** — editing Metrics.js
+and reloading changes nothing, and the panel measuring the same as before is
+the only symptom. The island process has to be restarted to test a change
+here. That cost a wrong conclusion once already.
+
+The rofi menus were widened in the same pass (`~/.config/rofi/themes/
+base.rasi`): font 12 → 13, window padding 16 → 22, radius 12 → 18, element
+padding 7/10 → 11/14, row spacing 4 → 7. A launcher tighter and
+smaller-typed than everything around it reads as the odd surface. One real
+bug found there: `config.rasi` asks for `icon-size: 24` and the theme forced
+`20px` — a theme rule beats the configuration block, so every icon in every
+menu had been drawn a fifth smaller than configured.
+
+Still open under this heading: the chord/mode indicator's appearance, and
+per-panel composition against the spec (this pass fixed SIZE, not layout).
 The control centre's Sound slider did NOT already cover audio — it is the
 volume of the default sink, and qtile's popup was about everything that
 is not the default. That table is in MIGRATION.md too.
@@ -406,13 +515,22 @@ Already ported (they never touched the WM): `brightness_control.py`,
 `sum_app.py`, `screenshot-area.sh` (→ grim+slurp), and the whole
 Rofi-Mode launcher set — 20 dmscripts/rofi tools, transferred verbatim.
 
-Still to do:
-- **App togglers (7)** — `scripts/toggle_apps.py` imports `libqtile`
-  directly. Rewrite as one generic script: `hyprctl clients -j` lookup,
-  focus if present, spawn if not. Same shape as the `scratchpad.sh`
-  already written.
-- **`sum.md` toggle (1)** — same rewrite.
+Since written, the "still to do" list has emptied:
+- **App togglers (7)** — DONE. `scripts/toggle-app.sh` is the generic
+  rewrite that was called for: `hyprctl clients -j` lookup, focus if
+  present, spawn if not. All seven are bound (`$toggle` in binds.conf).
+  Two bugs found in daily use and fixed there: an unanchored matcher
+  claimed windows belonging to the scratchpads, and any window on a
+  special workspace is now excluded outright.
+- **`sum.md` toggle (1)** — DONE, `$mod SHIFT S`. It only ever *opened*
+  until the class was fixed: qtile matched on TITLE, this script matches
+  on class, and `kitty --title nvimsum` has the class `kitty`.
 - **`qdrop.py` / `qdrop_watch.py`** — superseded by special workspaces.
+
+What remains open under this item is the *rule* it states, not a script:
+the cheatsheets were moved off rofi and into the island anyway (see
+above), so "leave the launcher problems on rofi" now describes the
+`dm-*` launcher set and nothing else.
 
 On the popup-vs-menu question you raised: **rofi already works on Wayland**
 under XWayland, and every one of your `dm-*` scripts runs unchanged. So

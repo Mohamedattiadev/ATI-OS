@@ -218,7 +218,12 @@ c.hints.chars = "asdghjkl"
 c.fonts.default_family = "JetBrainsMono Nerd Font"
 c.fonts.default_size = "9pt"
 c.fonts.prompts = "default_size sans-serif"
-c.fonts.statusbar = '11pt "JetBrainsMono Nerd Font"'
+# JetBrains Mono has no Arabic coverage, so Qt falls back glyph-by-glyph and
+# breaks the shaping run -- Arabic tab titles come out in isolated forms and
+# in reverse. Naming an Arabic face as fallback keeps the run intact.
+c.fonts.statusbar = '11pt "JetBrainsMono Nerd Font", "Noto Naskh Arabic"'
+c.fonts.tabs.selected = '9pt "JetBrainsMono Nerd Font", "Noto Naskh Arabic"'
+c.fonts.tabs.unselected = '9pt "JetBrainsMono Nerd Font", "Noto Naskh Arabic"'
 
 c.content.blocking.method = "auto"
 c.keyhint.blacklist = ["*"]
