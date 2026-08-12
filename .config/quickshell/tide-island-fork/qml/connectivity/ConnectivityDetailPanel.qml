@@ -376,12 +376,31 @@ Item {
             }
         }
 
+        // The one piece of chrome ukishima's connectivity surfaces have: a
+        // single hairline under the header, 9 px below it, and then 8 px of
+        // air before the list. Nothing separates the ROWS — see the note on
+        // sections in the Bluetooth repeaters.
+        //
+        // height 1 and NOT Metrics.px(1): every hairline in their tree is
+        // unscaled on purpose, so it stays exactly one device pixel and
+        // stays crisp instead of rounding to 2 at some scales.
+        Rectangle {
+            id: headerRule
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: headerRow.bottom
+            anchors.topMargin: Metrics.pad(9)
+            height: 1
+            // Theme.hair — cream at 0.13.
+            color: Qt.rgba(0.925, 0.925, 0.925, 0.13)
+        }
+
         Column {
             id: topSection
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.top: headerRow.bottom
-            anchors.topMargin: Metrics.pad(14)
+            anchors.top: headerRule.bottom
+            anchors.topMargin: Metrics.pad(8)
             spacing: Metrics.px(10)
 
             Rectangle {
@@ -863,7 +882,11 @@ Item {
                 Text {
                     width: parent.width
                     visible: root.isWifi && root.provider && root.provider.wifiListRunning
-                    text: "Scanning nearby networks..."
+                    // Their wording and their ellipsis: one U+2026 character,
+                    // not three periods. Three periods in a proportional face
+                    // set wider than the glyph and wobble as the label
+                    // repaints.
+                    text: "Searching networks\u2026"
                     color: StyleTokens.textMuted
                     font.pixelSize: Metrics.font(12)
                     font.family: root.textFontFamily
@@ -882,7 +905,7 @@ Item {
                         // padlock on the right already says, and five
                         // networks then fill a panel that could hold nine.
                         // ukishima's equivalent row is 30 px.
-                        height: visible ? Metrics.px(34) : 0
+                        height: visible ? Metrics.px(30) : 0
                         radius: Metrics.px(9)
                         // Three states, in priority order. The CONNECTED row
                         // is accent-tinted because it is a fact about the
@@ -1118,6 +1141,39 @@ Item {
                                 onVisibleChanged: root.navRevision++
                             }
                         }
+                    }
+                }
+
+                // ---- THE BLUETOOTH EMPTY STATE, WHICH DID NOT EXIST ----
+                //
+                // With no devices in range this panel rendered as a titled
+                // rectangle of nothing. That is indistinguishable from a
+                // panel that has failed, and it is the state a Bluetooth
+                // list is in most of the time it is opened.
+                //
+                // Two different sentences, because "scanning" and "found
+                // nothing" are different facts and collapsing them into one
+                // string is how a spinner that has silently died still looks
+                // like it is working.
+                Item {
+                    width: parent.width
+                    height: visible ? Metrics.px(72) : 0
+                    visible: root.isBluetooth
+                        && root.bluetoothConnectedDevices.length === 0
+                        && root.bluetoothPairedDevices.length === 0
+                        && root.bluetoothAvailableDevices.length === 0
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.bluetoothScanning
+                            ? "Scanning\u2026"
+                            : (root.provider && root.provider.bluetoothEnabled
+                               ? "No devices found"
+                               : "Turn on Bluetooth to see nearby devices.")
+                        color: StyleTokens.textMuted
+                        font.pixelSize: Metrics.font(10.5)
+                        font.family: root.textFontFamily
+                        horizontalAlignment: Text.AlignHCenter
                     }
                 }
             }

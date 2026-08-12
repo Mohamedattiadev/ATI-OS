@@ -37,23 +37,27 @@ Rectangle {
     // Wi-Fi list. See the registry note in ConnectivityDetailPanel.qml.
     property bool navCurrent: false
 
+    // Only the "Pair" affordance is drawn as a chip. Connect/✓ stay as bare
+    // labels, so the one row you can act on to ADD a device is the one with
+    // a hit-looking target on it.
+    readonly property bool isChip: section === "available" && !pairing
+
     width: parent ? parent.width : 0
-    // Matched to the Wi-Fi row's new 34: the two lists sit in panels of the
-    // same size and a device row half again as tall as a network row made
-    // them read as different products.
-    height: Metrics.px(34)
+    // 38 and two lines, NOT the Wi-Fi row's 30. Matching them was the
+    // instinct and it is wrong: ukishima's Bluetooth row is deliberately
+    // taller than its Wi-Fi row because a device carries state a network
+    // does not — paired vs connected vs connecting, plus an address, plus a
+    // battery level. A network is an SSID and a signal, which fits on one
+    // line; a device does not.
+    height: Metrics.px(38)
     radius: Metrics.px(9)
-    // Same three states as the Wi-Fi row, same priority: a CONNECTED device
-    // is accent-tinted (a fact about the system), the keyboard cursor is
-    // neutral white (a fact about the pointer).
-    color: {
-        if (root.connected)
-            return Qt.rgba(StyleTokens.accent.r, StyleTokens.accent.g,
-                           StyleTokens.accent.b, 0.14);
-        if (navCurrent)
-            return Qt.rgba(1, 1, 1, 0.10);
-        return StyleTokens.transparent;
-    }
+    // NO accent tint for the connected device, and that asymmetry with the
+    // Wi-Fi row is theirs and deliberate. Exactly one Wi-Fi network can be
+    // connected, so tinting it marks the singular one; several Bluetooth
+    // devices can be connected at once, and a list with four tinted rows has
+    // stopped pointing at anything. Connection is carried by the tile glyph
+    // and the name's weight instead. The keyboard cursor is the only fill.
+    color: navCurrent ? Qt.rgba(1, 1, 1, 0.10) : StyleTokens.transparent
     clip: true
 
     // One activation path for pointer and keyboard.
@@ -73,56 +77,99 @@ Rectangle {
 
     Item {
         anchors.fill: parent
-        anchors.margins: Metrics.pad(12)
 
-        Text {
+        // The leading tile: 26x26 at radius 8, a glyph inside it. The Wi-Fi
+        // row has no leading element at all — also theirs, also deliberate.
+        // A network has nothing to depict; a device has a KIND, and the
+        // glyph is how you find the mouse among four headsets.
+        Rectangle {
+            id: deviceTile
             anchors.left: parent.left
+            anchors.leftMargin: Metrics.pad(6)
             anchors.verticalCenter: parent.verticalCenter
-            text: root.hasProvider ? root.provider.bluetoothGlyph : ""
-            color: root.iconColor
-            font.pixelSize: Metrics.font(14)
-            font.family: root.iconFontFamily
+            width: Metrics.px(26)
+            height: width
+            radius: Metrics.px(8)
+            color: Qt.rgba(1, 1, 1, 0.04)
+            border.width: 1
+            border.color: Qt.rgba(1, 1, 1, 0.10)
+
+            Text {
+                anchors.centerIn: parent
+                text: root.hasProvider ? root.provider.bluetoothGlyph : ""
+                color: root.connected ? StyleTokens.accent : StyleTokens.textTertiary
+                font.pixelSize: Metrics.font(13)
+                font.family: root.iconFontFamily
+            }
         }
 
-        // One line. The subtitle it replaces said "Connected" on a row
-        // already tinted with the accent and already showing a tick, and a
-        // battery percentage that the action column has room for.
-        Text {
-            anchors.left: parent.left
-            anchors.leftMargin: Metrics.pad(26)
-            anchors.verticalCenter: parent.verticalCenter
+        // Two lines, spacing 1: the name over a meta caption. The caption is
+        // what the single-line version had no room for, and it is the answer
+        // to "which of these two identical headsets is the one that is
+        // actually connected".
+        Column {
+            anchors.left: deviceTile.right
+            anchors.leftMargin: Metrics.pad(10)
             anchors.right: actionLabel.left
             anchors.rightMargin: Metrics.pad(8)
-            text: root.hasProvider && root.provider.bluetoothDeviceName
-                ? root.provider.bluetoothDeviceName(root.device)
-                : ""
-            color: root.connected ? StyleTokens.accent : StyleTokens.textSecondary
-            font.pixelSize: Metrics.font(11.5)
-            font.family: root.textFontFamily
-            font.weight: root.connected ? Font.DemiBold : Font.Medium
-            elide: Text.ElideRight
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 1
+
+            Text {
+                width: parent.width
+                text: root.hasProvider && root.provider.bluetoothDeviceName
+                    ? root.provider.bluetoothDeviceName(root.device)
+                    : ""
+                color: root.connected ? StyleTokens.textPrimary : StyleTokens.textSecondary
+                font.pixelSize: Metrics.font(11.5)
+                font.family: root.textFontFamily
+                font.weight: root.connected ? Font.DemiBold : Font.Medium
+                elide: Text.ElideRight
+            }
+
+            Text {
+                width: parent.width
+                visible: text.length > 0
+                text: root.subtitleText
+                color: StyleTokens.textMuted
+                font.pixelSize: Metrics.font(9.5)
+                font.family: root.textFontFamily
+                font.weight: Font.Medium
+                elide: Text.ElideRight
+            }
         }
 
-        // The action column, in ukishima's register: small, letterspaced,
-        // uppercase, and dim until it is the live one. It was a 18 px tick
-        // and an 11 px "Connect" in full-strength white — two different
-        // sizes of shout in a column that is only ever a hint about what
-        // Enter will do.
-        Text {
+        // The action affordance. For an unpaired device this is their "Pair"
+        // chip: a real chip with a fill and a border, because pairing is the
+        // one thing on this row you can START. For everything else it stays
+        // a small dim label — a hint about what Enter does, not a button.
+        Rectangle {
             id: actionLabel
 
             anchors.right: parent.right
+            anchors.rightMargin: Metrics.pad(8)
             anchors.verticalCenter: parent.verticalCenter
-            text: root.section === "connected" ? "✓" : root.actionText
-            color: root.section === "connected"
-                ? StyleTokens.accent
-                : (root.navCurrent ? StyleTokens.textSecondary : StyleTokens.textTertiary)
-            font.pixelSize: root.section === "connected" ? Metrics.font(12) : Metrics.font(9.5)
-            font.family: root.textFontFamily
-            font.weight: Font.DemiBold
-            font.capitalization: root.section === "connected"
-                ? Font.MixedCase : Font.AllUppercase
-            font.letterSpacing: root.section === "connected" ? 0 : 1.0
+            width: actionText.implicitWidth + (root.isChip ? Metrics.px(16) : 0)
+            height: root.isChip ? Metrics.px(18) : actionText.implicitHeight
+            radius: height / 2
+            color: root.isChip ? Qt.rgba(1, 1, 1, 0.05) : StyleTokens.transparent
+            border.width: root.isChip ? 1 : 0
+            border.color: Qt.rgba(1, 1, 1, 0.12)
+
+            Text {
+                id: actionText
+                anchors.centerIn: parent
+                text: root.section === "connected" ? "\u2713" : root.actionText
+                color: root.section === "connected"
+                    ? StyleTokens.accent
+                    : (root.navCurrent ? StyleTokens.textSecondary : StyleTokens.textTertiary)
+                font.pixelSize: root.section === "connected" ? Metrics.font(12) : Metrics.font(9.5)
+                font.family: root.textFontFamily
+                font.weight: Font.DemiBold
+                font.capitalization: root.section === "connected"
+                    ? Font.MixedCase : Font.AllUppercase
+                font.letterSpacing: root.section === "connected" ? 0 : 1.0
+            }
         }
     }
 
