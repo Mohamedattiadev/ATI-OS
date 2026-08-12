@@ -4109,15 +4109,27 @@ PanelWindow {
                 // Bluetooth adapter, the pairing agent and every action
                 // method the rows call all live here.
                 //
-                // Bound to the two loaders' `active` and NOT to their
+                // Bound to the two loaders' ON-SCREEN lifetime and NOT to their
                 // `live`. PanelLoader keeps a dismissed layer mounted for the
                 // length of its fade-out; if this one unloaded on the same
                 // frame the state changed, `provider` would go null under a
                 // panel that is still on screen and the last ~200 ms of every
                 // close would be a fade-out of an empty box.
+                //
+                // `.visible` and NOT `.active`, which is what this said until
+                // PanelLoader grew `retain`. The two were the same thing then
+                // and are not now: a retained loader is `active` FOREVER, so
+                // the moment either connectivity panel opted into retention
+                // this binding became permanently true and pinned the whole
+                // control centre mounted for the life of the shell. It did not
+                // look broken — the layer's own opacity is gated on
+                // controlCenterLayerVisible, so it sat there at zero — which
+                // is exactly why it is worth a comment rather than a fix and a
+                // shrug. `visible` is `live || holdTimer.running`, which is
+                // precisely what `active` used to mean here.
                 live: islandContainer.controlCenterLayerVisible
-                    || wifiPanelLoader.active
-                    || bluetoothPanelLoader.active
+                    || wifiPanelLoader.visible
+                    || bluetoothPanelLoader.visible
 
                 sourceComponent: Component {
                     ControlCenterLayer {
@@ -4186,6 +4198,14 @@ PanelWindow {
                 id: wifiPanelLoader
                 anchors.fill: parent
                 live: islandContainer.wifiPanelLayerVisible
+                // NOT retained, on measurement rather than on principle.
+                // WifiPanel is the one data panel that already sets a busy
+                // status — "reading networks…" — so there is text on screen
+                // the whole time it waits and its ink never collapses: median
+                // 100% of settled content at the dip across all twelve
+                // sources, the cleanest destination in the matrix. There is
+                // nothing here for retention to fix, and retaining it would
+                // pin the control centre mounted through the binding above.
                 // The focus grab has to be imperative here, exactly as it is
                 // for the wallpaper picker and the launcher: the Loader
                 // builds the layer with showCondition ALREADY true, so the
@@ -4221,6 +4241,17 @@ PanelWindow {
                 id: bluetoothPanelLoader
                 anchors.fill: parent
                 live: islandContainer.bluetoothPanelLayerVisible
+                // NOT retained, and this is a deliberate negative result.
+                // Retention was tried here and MEASURED NO BETTER: with the
+                // panel kept mounted the dip was still 0.07-0.26 of its
+                // settled content (cal->bt 0.073, settings->bt 0.163,
+                // cc->bt 0.262). So bluetooth's empty frame is not the
+                // rebuild-with-an-empty-model cause that display and audio
+                // had. Its rows come from the control centre's adapter via
+                // `provider`, and it has a 400 ms settleTimer of its own;
+                // one of those is the real cause and neither is fixed by
+                // keeping this Loader alive. Left alone rather than shipped
+                // with a change that buys nothing but a permanent mount.
                 onLoaded: {
                     islandContainer.forceActiveFocus();
                     if (item && item.grabKeyboardFocus)
@@ -4285,6 +4316,11 @@ PanelWindow {
                 id: displayPanelLoader
                 anchors.fill: parent
                 live: islandContainer.displayPanelLayerVisible
+                // Measured: as a transition DESTINATION this panel's content
+                // collapsed to a median 16% of itself around t=116ms, because
+                // a rebuilt DisplayPanel starts at `outputs: []` and paints
+                // "no output selected" until hyprctl answers. See PanelLoader.
+                retain: true
 
                 sourceComponent: Component {
                     DisplayPanel {
@@ -4324,6 +4360,10 @@ PanelWindow {
                 id: audioPanelLoader
                 anchors.fill: parent
                 live: islandContainer.audioPanelLayerVisible
+                // Median 15% content at the dip. pollTimer is started and
+                // stopped off showCondition, so retaining this costs nothing
+                // while it is hidden.
+                retain: true
 
                 sourceComponent: Component {
                     AudioPanel {
@@ -4372,6 +4412,15 @@ PanelWindow {
                 id: powerMenuLoader
                 anchors.fill: parent
                 live: islandContainer.powerMenuLayerVisible
+                // Retained for the HEIGHT, not for the ink. Instrumented,
+                // calendar -> power menu moved the capsule 274 -> 71 -> 281 px
+                // with the state already reading "power_menu" at the 71: a
+                // rebuilt PowerMenuLayer has `actions: []` until power-ctl.sh
+                // answers, and 71 is exactly its header plus footer plus
+                // padding with no rows in between. The capsule was animating
+                // to an honest height for an empty list. That is the "up down
+                // glitch". No timers here at all, so retention is free.
+                retain: true
 
                 sourceComponent: Component {
                     PowerMenuLayer {
@@ -4391,6 +4440,10 @@ PanelWindow {
                 id: settingsLoader
                 anchors.fill: parent
                 live: islandContainer.settingsLayerVisible
+                // Same 71 px empty-list height as the power menu, and a worse
+                // excursion because the settled height is taller: measured
+                // 274 -> 71 -> 435. Also timer-free.
+                retain: true
 
                 sourceComponent: Component {
                     SettingsLayer {
@@ -4482,6 +4535,12 @@ PanelWindow {
                 id: themePickerLoader
                 anchors.fill: parent
                 live: islandContainer.themePickerLayerVisible
+                // The last of the empty-model height collapses: measured
+                // 274 -> 114 -> 399 on calendar -> theme picker, because
+                // `themes: []` until theme-apply's preset list is parsed and
+                // preferredHeight is built from that list. Its only Timer is
+                // the one-shot reconcile, so nothing runs while it is hidden.
+                retain: true
 
                 sourceComponent: Component {
                     ThemePickerLayer {

@@ -52,14 +52,71 @@ import "Motion.js" as Motion
 // the same turn but not on the same frame boundary, and unloading one frame
 // early clips the last 16 ms of the fade back into a pop.
 //
+//
+// ---------------------------------------------------------------------------
+// `retain` — THE EMPTY-PANEL FLASH
+// ---------------------------------------------------------------------------
+//
+// The hold above fixed the fade-out. It did not fix what happens on the way
+// back IN, and that turned out to be the bigger of the two.
+//
+// Measured, driving every ordered pair of panels over IPC and counting "ink"
+// (pixels inside the capsule that are not the flat fill) frame by frame at
+// ~45 ms:
+//
+//     wifi     -> bluetooth   ink falls to 17% of the smaller endpoint at 117 ms
+//     settings -> display     ink falls to  9% at 116 ms
+//     audio    -> display     ink falls to 53% at  98 ms
+//     calendar -> power       ink never falls below 97%
+//
+// The capsule is very nearly EMPTY for two to three frames in the middle of
+// the swap, and then the content pops in. That is the "glitchy". Caught in a
+// screenshot at +104 ms, the display panel has drawn its title, its tabs and
+// its footer hints, and its body says "no output selected".
+//
+// The cause is not the fade and not the morph. It is this Loader. A panel is
+// destroyed `fadeOutDuration + 40` ms after it closes, so every open builds a
+// FRESH instance whose model is empty — DisplayPanel starts at `outputs: []`,
+// AudioPanel at no devices — and every one of them fetches asynchronously in
+// `onShowConditionChanged`. So the panel renders its EMPTY STATE first and its
+// real content one process round-trip later. Calendar and the power menu are
+// the control group: their content is computed, not fetched, so they never
+// flash, which is exactly the split the numbers show.
+//
+// `retain` keeps the instance alive once built. `live` still drives
+// `showCondition`, so the fades, the focus grabs and the poll timers behave
+// exactly as before — the only thing that changes is that the panel's
+// last-known data survives the close, so the reopen paints real content on
+// frame one and the refresh updates it in place.
+//
+// It is safe to leave these mounted, and that was checked rather than assumed:
+// AudioPanel and WifiPanel start their poll timers in the `showCondition` true
+// branch and stop them in the false branch, so a retained-but-hidden panel
+// polls nothing. A panel that polled unconditionally would be a battery leak
+// dressed up as a fix.
+//
+// It is opt-in rather than the default because retention costs whatever the
+// panel holds — for the four data panels that is a few rows of text, but the
+// wallpaper picker holds decoded thumbnails and that is a memory question with
+// a different answer.
+//
 Loader {
     id: root
 
     // The panel's actual visibility. Bind this, not `active`.
     property bool live: false
 
-    active: live || holdTimer.running
-    visible: active
+    // Keep the instance once it has been built. See the note above.
+    property bool retain: false
+    property bool everLoaded: false
+
+    active: live || holdTimer.running || (retain && everLoaded)
+
+    // NOT `active`. With `retain` the loader stays active forever, and binding
+    // visibility to it would leave every retained panel painted on top of the
+    // resting island permanently. Visibility is still the panel's real
+    // lifetime — live, plus the hold that lets the out-fade finish.
+    visible: live || holdTimer.running
 
     // asynchronous stays false, deliberately. These panels are opened by a
     // keypress and an asynchronous Loader would put an indeterminate number
@@ -83,6 +140,26 @@ Loader {
             id: holdTimer
             interval: Motion.fadeOutDuration() + 40
             repeat: false
+        },
+
+        // `everLoaded` is latched through a Connections and NOT through a
+        // plain `onLoaded:` handler on this Loader, and that is not style.
+        //
+        // A signal handler written at the INSTANTIATION site replaces the one
+        // written in the component definition — it does not run in addition to
+        // it. bluetoothPanelLoader and wifiPanelLoader both declare their own
+        // `onLoaded:` to grab keyboard focus, so a handler here would have
+        // been silently discarded for exactly the two panels this is for, and
+        // `retain` would have looked like it simply did not work on them —
+        // with no warning, because overriding a handler is legal QML.
+        //
+        // A Connections object is a separate receiver, so it fires alongside
+        // whatever the instantiation site declares.
+        Connections {
+            target: root
+            function onLoaded() {
+                root.everLoaded = true;
+            }
         }
     ]
 }
