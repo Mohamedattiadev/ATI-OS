@@ -6,6 +6,8 @@ import "../common/Metrics.js" as Metrics
 Item {
     id: shell
 
+    signal closeRequested()
+
     property bool open: false
     property bool mounted: false
     property bool rightSide: false
@@ -102,6 +104,13 @@ Item {
                     textFontFamily: shell.textFontFamily
                     heroFontFamily: shell.heroFontFamily
                     presentationProgress: shell.revealProgress
+                    // FORK: keyboard navigation. Gated on `open` and not on
+                    // `mounted` — the panel stays mounted through its
+                    // close animation, and a panel that still answered j/k
+                    // on the way out would be taking keys the user meant
+                    // for the window behind.
+                    keyboardActive: shell.open
+                    onCloseRequested: shell.closeRequested()
                 }
             }
         }

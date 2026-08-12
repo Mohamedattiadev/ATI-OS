@@ -31,20 +31,33 @@ Rectangle {
             : "")
     readonly property color iconColor: section === "available" ? StyleTokens.textTertiary : StyleTokens.accent
 
+    // FORK: keyboard navigation, driven from ConnectivityDetailPanel. The
+    // row does not decide whether it is selected — it is told, so that one
+    // place owns the selection across all three Bluetooth sections plus the
+    // Wi-Fi list. See the registry note in ConnectivityDetailPanel.qml.
+    property bool navCurrent: false
+
     width: parent ? parent.width : 0
     height: Metrics.px(52)
     radius: Metrics.px(14)
-    color: StyleTokens.transparent
+    // Same highlight as the Wi-Fi row, and the same reason for filling
+    // rather than outlining.
+    color: navCurrent ? Qt.rgba(1, 1, 1, 0.10) : StyleTokens.transparent
     clip: true
+
+    // One activation path for pointer and keyboard.
+    function navActivate() {
+        if (!root.canInteract)
+            return;
+        if (root.provider && root.provider.handleBluetoothDevicePressed)
+            root.provider.handleBluetoothDevicePressed(root.device);
+    }
 
     MouseArea {
         anchors.fill: parent
         enabled: root.canInteract
 
-        onClicked: {
-            if (root.provider && root.provider.handleBluetoothDevicePressed)
-                root.provider.handleBluetoothDevicePressed(root.device);
-        }
+        onClicked: root.navActivate()
     }
 
     Item {

@@ -255,7 +255,18 @@ PanelWindow {
                 // and one less obvious one: without the grab, keystrokes
                 // meant for the field land in the window behind, which for
                 // a password means typing it into whatever has focus.
-                || islandContainer.polkitPromptLayerVisible)
+                || islandContainer.polkitPromptLayerVisible
+                // FORK: the Wi-Fi and Bluetooth detail panels. They had NO
+                // keyboard handling of any kind, and this line is half the
+                // reason — focus never rose above None while one was open
+                // unless a password prompt happened to be up, so there was
+                // no keystroke for a Keys handler to receive. Exclusive for
+                // the same reason the theme picker is here: the panels are
+                // j/k driven, and without the grab those letters go to
+                // whatever window is behind, which for `k` on a terminal is
+                // a command you did not mean to start typing.
+                || root.wifiConnectivityDetailOpen
+                || root.bluetoothConnectivityDetailOpen)
             return WlrKeyboardFocus.Exclusive;
         // Keep keyboard focus on the overview until an overview action closes it.
         // Click-to-focus closes the overview before focusing the selected client.
@@ -4350,6 +4361,10 @@ PanelWindow {
             mounted: root.wifiConnectivityDetailMounted
             rightSide: false
             panelKind: "wifi"
+            // Escape / q inside the panel. Routed through the same
+            // setter the toggle uses, so the close animation and the
+            // unmount timer behave identically however it was closed.
+            onCloseRequested: root.setConnectivityDetailVisible("wifi", false)
             provider: controlCenterLoader.item
             mainCapsule: mainCapsule
             availableWidth: root.width
@@ -4368,6 +4383,10 @@ PanelWindow {
             mounted: root.bluetoothConnectivityDetailMounted
             rightSide: true
             panelKind: "bluetooth"
+            // Escape / q inside the panel. Routed through the same
+            // setter the toggle uses, so the close animation and the
+            // unmount timer behave identically however it was closed.
+            onCloseRequested: root.setConnectivityDetailVisible("bluetooth", false)
             provider: controlCenterLoader.item
             mainCapsule: mainCapsule
             availableWidth: root.width

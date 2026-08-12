@@ -65,6 +65,197 @@ Item {
             bluetoothSecretField.forceActiveFocus();
     }
 
+    // ------------------------------------------------------------------
+    //  FORK: keyboard navigation. This panel had no Keys handler at all.
+    // ------------------------------------------------------------------
+    //  It was not that the motions were bound to the wrong keys — there was
+    //  no key handling in this file, none in ConnectivityDetailShell.qml,
+    //  and none in ControlCenterLayer.qml either. The panels were mouse-only
+    //  end to end, and the island's WlrLayershell.keyboardFocus never went
+    //  above None while one was open unless a password prompt was up. So
+    //  nothing could have received a keystroke to ignore.
+    //
+    //  ---- WHY THE ROWS REGISTER THEMSELVES ----
+    //
+    //  The obvious implementation is to flatten the four lists in JS and
+    //  index that array. It cannot be done here: `provider.wifiNetworks` is
+    //  `wifiController.networks` from the COMPILED IslandBackend, and its
+    //  type is not visible from QML — the Wi-Fi delegate reads bare `ssid`
+    //  and `secure`, which is the spelling for a QAbstractListModel with
+    //  roles, and such a model cannot be subscripted from JavaScript at all.
+    //  Bluetooth's three lists ARE plain arrays. Writing one traversal for
+    //  two different kinds of container, one of which may not be traversable,
+    //  is how this ends up with a navigation order that silently disagrees
+    //  with what is on screen.
+    //
+    //  So every row registers itself as it is created and unregisters as it
+    //  is destroyed, and the order comes from (section rank, index within
+    //  section) rather than from re-deriving the models. That is
+    //  container-agnostic, it is exactly the visual order because the four
+    //  Repeaters sit in that order in contentColumn, and a row that is
+    //  filtered out cannot be selected because it never registers.
+    //
+    //  Sorting by mapped y would also give visual order and was rejected:
+    //  positions are not settled while the panel is still animating in, so
+    //  the first keypress after opening would navigate a list sorted by
+    //  wherever the rows happened to be mid-flight.
+
+    signal closeRequested()
+
+    // Set by the host while this panel is the open one. Gates BOTH the
+    // focus grab and the highlight: a highlighted row in a panel that is
+    // sliding away is an invitation to press Enter on it.
+    property bool keyboardActive: false
+
+    property var navEntries: []
+    // Bumped on every registration, removal and visibility change. navRows
+    // reads it so the list recomputes; without it, a row appearing or
+    // vanishing leaves a stale selection pointing at a destroyed item.
+    property int navRevision: 0
+    property int navSelected: 0
+
+    readonly property var navRows: {
+        navRevision;
+        const live = [];
+        for (let index = 0; index < navEntries.length; index++) {
+            const entry = navEntries[index];
+            if (entry && entry.item && entry.item.visible && entry.item.height > 0)
+                live.push(entry);
+        }
+        live.sort(function (left, right) {
+            return left.rank !== right.rank ? left.rank - right.rank
+                                            : left.index - right.index;
+        });
+        return live;
+    }
+
+    readonly property var navCurrent: navRows.length > 0
+        ? navRows[Math.max(0, Math.min(navSelected, navRows.length - 1))]
+        : null
+
+    onNavRowsChanged: {
+        if (navRows.length === 0) {
+            navSelected = 0;
+            return;
+        }
+        if (navSelected > navRows.length - 1)
+            navSelected = navRows.length - 1;
+        if (navSelected < 0)
+            navSelected = 0;
+    }
+
+    function navRegister(rank, index, item) {
+        navEntries.push({ rank: rank, index: index, item: item });
+        navRevision++;
+    }
+
+    function navUnregister(item) {
+        for (let index = 0; index < navEntries.length; index++) {
+            if (navEntries[index].item === item) {
+                navEntries.splice(index, 1);
+                break;
+            }
+        }
+        navRevision++;
+    }
+
+    function navIsCurrent(item) {
+        return keyboardActive && navCurrent !== null && navCurrent.item === item;
+    }
+
+    function navMove(delta) {
+        const count = navRows.length;
+        if (count === 0)
+            return;
+        // Clamped, not wrapped. A list that jumps from the last network back
+        // to the first on one extra `j` is a list you overshoot silently;
+        // these are actions with consequences (joining a network, pairing a
+        // device) and the cursor should stop at the end.
+        navSelected = Math.max(0, Math.min(count - 1, navSelected + delta));
+        navEnsureVisible();
+    }
+
+    function navEnsureVisible() {
+        const current = root.navCurrent;
+        if (!current || !current.item)
+            return;
+        const item = current.item;
+        const position = item.mapToItem(contentColumn, 0, 0);
+        const margin = Metrics.px(8);
+        const top = position.y - margin;
+        const bottom = position.y + item.height + margin;
+        const maxContentY = Math.max(0, contentFlick.contentHeight - contentFlick.height);
+
+        if (top < contentFlick.contentY)
+            contentFlick.contentY = Math.max(0, Math.min(maxContentY, top));
+        else if (bottom > contentFlick.contentY + contentFlick.height)
+            contentFlick.contentY = Math.max(0, Math.min(maxContentY, bottom - contentFlick.height));
+    }
+
+    function navActivate() {
+        const current = root.navCurrent;
+        if (current && current.item && current.item.navActivate)
+            current.item.navActivate();
+    }
+
+    // The password/pairing field wins every key while it is up: typing a
+    // WPA passphrase containing a j or a k must not move the selection.
+    readonly property bool navBlockedByPrompt:
+        wifiPasswordPrompt.visible || bluetoothPairingPrompt.visible
+
+    focus: keyboardActive
+    Keys.onPressed: function (event) {
+        if (root.navBlockedByPrompt) {
+            // Escape still has to work, or a prompt with nothing typed into
+            // it is a panel you can only leave with the mouse.
+            if (event.key === Qt.Key_Escape) {
+                root.closeRequested();
+                event.accepted = true;
+            }
+            return;
+        }
+
+        switch (event.key) {
+        case Qt.Key_Escape:
+        case Qt.Key_Q:
+            root.closeRequested();
+            event.accepted = true;
+            break;
+        case Qt.Key_Down:
+        case Qt.Key_J:
+            root.navMove(1);
+            event.accepted = true;
+            break;
+        case Qt.Key_Up:
+        case Qt.Key_K:
+            root.navMove(-1);
+            event.accepted = true;
+            break;
+        case Qt.Key_Return:
+        case Qt.Key_Enter:
+        case Qt.Key_Space:
+            root.navActivate();
+            event.accepted = true;
+            break;
+        case Qt.Key_G:
+            root.navSelected = (event.modifiers & Qt.ShiftModifier) !== 0
+                ? Math.max(0, root.navRows.length - 1)
+                : 0;
+            root.navEnsureVisible();
+            event.accepted = true;
+            break;
+        default:
+            break;
+        }
+    }
+
+    onKeyboardActiveChanged: {
+        if (keyboardActive) {
+            navSelected = 0;
+            forceActiveFocus();
+        }
+    }
+
     Timer {
         id: promptFocusTimer
         interval: 0
@@ -620,12 +811,49 @@ Item {
                     model: root.isWifi && root.provider ? root.provider.wifiNetworks : null
 
                     delegate: Rectangle {
+                        id: wifiRow
+
                         width: contentColumn.width
                         height: visible ? 52 : 0
                         radius: Metrics.px(14)
-                        color: StyleTokens.transparent
+                        // The keyboard highlight. Deliberately the same
+                        // shape the row already is, filled rather than
+                        // outlined: an outline at this radius reads as a
+                        // text field, and there is one of those on screen.
+                        color: root.navIsCurrent(wifiRow)
+                            ? Qt.rgba(1, 1, 1, 0.10)
+                            : StyleTokens.transparent
                         visible: root.wifiEntryVisible(connected)
                         clip: true
+
+                        // Rank 0: the Wi-Fi list is the only section on this
+                        // panel, and it sits above all three Bluetooth ones
+                        // in contentColumn. See navRegister.
+                        Component.onCompleted: root.navRegister(0, index, wifiRow)
+                        Component.onDestruction: root.navUnregister(wifiRow)
+                        // A filtered-out row keeps its place in the Repeater
+                        // but must leave the navigation, or `j` walks onto a
+                        // zero-height row and appears to do nothing.
+                        onVisibleChanged: root.navRevision++
+
+                        // One activation path for pointer and keyboard. When
+                        // these were two copies, the keyboard one is the copy
+                        // that quietly stops matching.
+                        function navActivate() {
+                            if (!root.provider) return;
+                            if (!(root.provider.wifiSupported
+                                    && root.provider.wifiAvailable
+                                    && root.provider.wifiEnabled
+                                    && !root.provider.wifiBusy))
+                                return;
+                            root.provider.connectWifiNetwork({
+                                ssid: ssid,
+                                type: type,
+                                secure: secure,
+                                savedConnection: savedConnection,
+                                connected: connected
+                            });
+                        }
 
                         MouseArea {
                             anchors.fill: parent
@@ -634,16 +862,7 @@ Item {
                                 && root.provider.wifiAvailable
                                 && root.provider.wifiEnabled
                                 && !root.provider.wifiBusy
-                            onClicked: {
-                                if (!root.provider) return;
-                                root.provider.connectWifiNetwork({
-                                    ssid: ssid,
-                                    type: type,
-                                    secure: secure,
-                                    savedConnection: savedConnection,
-                                    connected: connected
-                                });
-                            }
+                            onClicked: wifiRow.navActivate()
                         }
 
                         Item {
@@ -747,12 +966,20 @@ Item {
                             model: root.bluetoothConnectedDevices
 
                             delegate: BluetoothDeviceRow {
+                                id: connectedRow
                                 width: btConnectedSection.width
                                 provider: root.provider
                                 device: modelData
                                 section: "connected"
                                 iconFontFamily: root.iconFontFamily
                                 textFontFamily: root.textFontFamily
+
+                                // Ranks 1/2/3 follow contentColumn's order:
+                                // connected, then paired, then available.
+                                navCurrent: root.navIsCurrent(connectedRow)
+                                Component.onCompleted: root.navRegister(1, index, connectedRow)
+                                Component.onDestruction: root.navUnregister(connectedRow)
+                                onVisibleChanged: root.navRevision++
                             }
                         }
                     }
@@ -772,12 +999,20 @@ Item {
                             model: root.bluetoothPairedDevices
 
                             delegate: BluetoothDeviceRow {
+                                id: pairedRow
                                 width: btPairedSection.width
                                 provider: root.provider
                                 device: modelData
                                 section: "paired"
                                 iconFontFamily: root.iconFontFamily
                                 textFontFamily: root.textFontFamily
+
+                                // Ranks 1/2/3 follow contentColumn's order:
+                                // connected, then paired, then available.
+                                navCurrent: root.navIsCurrent(pairedRow)
+                                Component.onCompleted: root.navRegister(2, index, pairedRow)
+                                Component.onDestruction: root.navUnregister(pairedRow)
+                                onVisibleChanged: root.navRevision++
                             }
                         }
                     }
@@ -797,12 +1032,20 @@ Item {
                             model: root.bluetoothAvailableDevices
 
                             delegate: BluetoothDeviceRow {
+                                id: availableRow
                                 width: btAvailableSection.width
                                 provider: root.provider
                                 device: modelData
                                 section: "available"
                                 iconFontFamily: root.iconFontFamily
                                 textFontFamily: root.textFontFamily
+
+                                // Ranks 1/2/3 follow contentColumn's order:
+                                // connected, then paired, then available.
+                                navCurrent: root.navIsCurrent(availableRow)
+                                Component.onCompleted: root.navRegister(3, index, availableRow)
+                                Component.onDestruction: root.navUnregister(availableRow)
+                                onVisibleChanged: root.navRevision++
                             }
                         }
                     }
