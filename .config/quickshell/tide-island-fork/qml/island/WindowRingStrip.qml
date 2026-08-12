@@ -135,17 +135,23 @@ Item {
                                                           0.55, 0.66, 1.0)
                 readonly property bool isActive: !!modelData.active
 
-                width: Metrics.px(24)
+                // ---- MATCHED TO THE COUNTDOWN RING, NOT APPROXIMATED ----
+                //
+                // The first pass used ProgressRing but kept showCore on, and
+                // the dark disc is what made these read as filled coins with
+                // a letter stamped on them rather than as rings. The ring
+                // being copied is the timer's — DisplayPanel.qml's
+                // revertRing, the one that appears when a countdown is armed
+                // — and its parameters are: 26 px, lineWidth 2.5, showCore
+                // FALSE, and a track that is the SAME hue as the fill at
+                // about a fifth alpha (#33ffcc66 over #ffcc66). The hole in
+                // the middle is the whole idea; filling it in was the bug.
+                width: Metrics.px(26)
                 height: width
-                // 3.0, not the component's 3.5 default: that value is drawn
-                // for a 30 px ring and these are 24, where it starts closing
-                // up the hole the ring is made of.
-                lineWidth: 3.0
+                lineWidth: 2.5
+                showCore: false
 
                 progress: isActive ? 1 : 0
-                // Animated, so focus MOVES between rings rather than
-                // teleporting — the sweep is the thing that reads as "this
-                // one now".
                 Behavior on progress {
                     NumberAnimation {
                         duration: Motion.morphDuration()
@@ -155,23 +161,13 @@ Item {
                 }
 
                 fillColor: appColor
-                // 0.60 and not 0.42 for the inactive track. Measured
-                // against a bright wallpaper: at 0.42 the unfocused rings
-                // read as a soft halo rather than as a ring — the low alpha
-                // let the background through the stroke and the edge stopped
-                // being an edge. The FOCUSED ring is still unmistakable,
-                // because it is a full-strength arc laid over its own track;
-                // the contrast that matters is solid-vs-translucent, not
-                // visible-vs-faint.
+                // The timer ring's ratio is 0.20. Unfocused rings hold 0.45
+                // rather than 0.20 because that ring sits on a dark panel and
+                // these sit on the wallpaper, where a fifth-alpha stroke
+                // stops being a stroke. The focused ring still separates
+                // cleanly: it lays a full-strength arc over its own track.
                 trackColor: Qt.rgba(appColor.r, appColor.g, appColor.b,
-                                    isActive ? 0.22 : 0.60)
-                // The core disc is what makes it read as the timer's ring
-                // and not as an outline: it gives the glyph a ground to sit
-                // on over a bright wallpaper.
-                showCore: true
-                coreColor: Qt.rgba(root.fillColor.r, root.fillColor.g,
-                                   root.fillColor.b, 0.92)
-                coreBorderColor: Qt.rgba(appColor.r, appColor.g, appColor.b, 0.18)
+                                    isActive ? 0.20 : 0.45)
 
                 Text {
                     anchors.centerIn: parent

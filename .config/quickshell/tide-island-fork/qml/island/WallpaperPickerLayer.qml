@@ -1,5 +1,7 @@
 import QtCore
 import QtQuick
+// MultiEffect, for the neighbour desaturation. See the delegate.
+import QtQuick.Effects
 import Quickshell.Io
 import Quickshell.Widgets
 import IslandBackend
@@ -617,7 +619,15 @@ FocusScope {
     readonly property real spacingFactor: (sideScale + cardGap) / 0.8
     readonly property real outerReach: 2 * (0.8 * spacingFactor) + sideScale / 2
 
-    readonly property real cardAreaH: height - topPad - botPad
+    // The header's height is subtracted here rather than being allowed to
+    // push the strip down. This panel is a FIXED 260 px (see the
+    // wallpaper_picker case in mainCapsule.targetHeight), and cardW/cardH
+    // are both derived from cardAreaH — so leaving the header out of this
+    // sum does not overflow visibly, it silently pushes the bottom row of
+    // filenames past the panel edge where the clip eats them.
+    readonly property real headerH: Metrics.px(20)
+    readonly property real headerGap: Metrics.px(6)
+    readonly property real cardAreaH: height - topPad - botPad - headerH - headerGap
     readonly property real heightLimitedW: (cardAreaH - labelGap - labelH) / cardAspect
     readonly property real widthLimitedW: (width / 2 - hPad) / outerReach
     readonly property real cardW: Math.max(Metrics.px(120),
@@ -634,7 +644,57 @@ FocusScope {
         anchors.leftMargin: root.hPad
         anchors.rightMargin: root.hPad
         anchors.bottomMargin: root.botPad
-        spacing: Metrics.px(6)
+        spacing: root.headerGap
+
+        // ── Header, in ukishima's register ─────────────────────────────────
+        //  Kanji, then the surface name in letterspaced uppercase, then a
+        //  "· n" clause. 壁 is "wall". Named explicitly as Noto Sans CJK
+        //  because the shell's Inter has no kanji and would fall back
+        //  silently — `fc-list :charset=58c1` confirms the coverage.
+        Item {
+            width: parent.width
+            height: root.headerH
+
+            Row {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Metrics.px(8)
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "壁"
+                    color: Qt.rgba(1, 1, 1, 0.88)
+                    font.family: "Noto Sans CJK JP"
+                    font.pixelSize: Metrics.font(14)
+                    font.weight: Font.Medium
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "WALLPAPER"
+                    color: Qt.rgba(1, 1, 1, 0.55)
+                    font.family: root.textFontFamily
+                    font.pixelSize: Metrics.font(9.5)
+                    font.weight: Font.DemiBold
+                    font.capitalization: Font.AllUppercase
+                    font.letterSpacing: 1.6
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.wallpapersLoaded && allWallpapers.count > 0
+                    // The position in the strip, which the filmstrip itself
+                    // cannot show: five cards are visible out of however many
+                    // there are, so "12 / 87" is the only thing on screen that
+                    // says how far in you are.
+                    text: "· " + (pathView.currentIndex + 1) + " / " + allWallpapers.count
+                    color: Qt.rgba(1, 1, 1, 0.34)
+                    font.family: root.textFontFamily
+                    font.pixelSize: Metrics.font(9.5)
+                    font.weight: Font.Medium
+                }
+            }
+        }
 
         // ── Carousel ───────────────────────────────────────────────────────
         Item {
@@ -737,6 +797,33 @@ FocusScope {
                             radius: Metrics.px(14)
                             color: "#1a1a1a"
                             antialiasing: false
+
+                            // ---- THE NEIGHBOURS DESATURATE ----
+                            //
+                            // Scale and opacity alone were already here, and
+                            // they were not enough: five photographs at 0.65
+                            // opacity are still five photographs, all
+                            // competing at full chroma, and the eye has to be
+                            // told which one is selected instead of seeing
+                            // it. ukishima's strip shrinks, dims AND
+                            // desaturates the neighbours, which is what makes
+                            // it read as depth rather than as a row.
+                            //
+                            // MultiEffect and not an overlaid grey veil: a
+                            // veil lightens as well as greys and turns a dark
+                            // wallpaper into a milky one, which is the
+                            // opposite of receding.
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                saturation: del.isCurrent ? 0.0 : -0.72
+                                Behavior on saturation {
+                                    NumberAnimation {
+                                        duration: 200
+                                        easing.type: Easing.BezierSpline
+                                        easing.bezierCurve: Motion.fade()
+                                    }
+                                }
+                            }
 
                             Image {
                                 anchors.fill: parent
