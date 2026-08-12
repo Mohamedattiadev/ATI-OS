@@ -99,7 +99,8 @@ Item {
         // floating on whatever photo is behind it, and the OSD ring brings
         // its own plate. The countdown's hollow 2.5 px ring is right only
         // where the countdown lives, on an already-dark panel.
-        width: Metrics.px(26)
+        // 32, matching the timer ring and the window icons beside it.
+        width: Metrics.px(32)
         height: width
         lineWidth: Metrics.px(4)
         showCore: true

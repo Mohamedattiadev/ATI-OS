@@ -2713,8 +2713,26 @@ PanelWindow {
             id: islandFlanks
             z: 4
 
+            // ---- CENTRED ON THE CAPSULE, NOT ON THE SURFACE ----
+            //
+            // Was `islandTopMargin + islandHeight / 2`, which looks like the
+            // island's centre line and is not. `islandHeight` is the LAYER
+            // SURFACE's height — 58 px here — while the resting pill is only
+            // about 33 px of that, hung from the top. So this centred the
+            // flanks on the whole surface and everything else (the clock, and
+            // the timer ring beside it) centred on the pill.
+            //
+            // Measured on screen rather than reasoned: the timer ring's
+            // centre sits at y 16.5, the app icons' at y 30.5. Exactly the
+            // 14 px this expression is off by, and the reason the icons kept
+            // reading as sitting in the wrong place no matter what was done
+            // to the ring itself.
+            //
+            // mainCapsule's own centre cannot drift from the pill, because it
+            // IS the pill. Only read while restingNow is true, so the
+            // capsule's height here is always the resting height.
             readonly property real restingCenterY:
-                userConfig.islandTopMargin + userConfig.islandHeight / 2
+                mainCapsule.y + mainCapsule.height / 2
             readonly property real pillLeft: mainCapsule.x
             readonly property real pillRight: mainCapsule.x + mainCapsule.width
             readonly property real gap: Metrics.px(14)

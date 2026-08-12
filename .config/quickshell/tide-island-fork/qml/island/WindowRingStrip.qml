@@ -76,7 +76,7 @@ Item {
     }
 
     implicitWidth: strip.implicitWidth
-    implicitHeight: Metrics.px(26)
+    implicitHeight: Metrics.px(32)
 
     opacity: showCondition ? revealProgress : 0
     visible: opacity > 0.01 && mine.length > 0
@@ -268,7 +268,10 @@ Item {
                 // ring's opacity does. Sizing the item to the icon and
                 // growing it for the ring would make the whole strip twitch
                 // sideways on every alt-tab.
-                width: Metrics.px(26)
+                // 32, measured off the timer ring beside the notch: its
+                // amber circle is 32 px across, these were 26. Same size and
+                // same centre line is what makes them one family.
+                width: Metrics.px(32)
                 height: width
 
                 ProgressRing {
