@@ -273,8 +273,34 @@ Item {
 
                 ProgressRing {
                     anchors.fill: parent
-                    lineWidth: 2.5
-                    showCore: false
+                    // ---- THESE ARE OsdLayer'S NUMBERS, NOT THE COUNTDOWN'S ----
+                    //
+                    // Three attempts here copied DisplayPanel's countdown
+                    // ring. Wrong ring. The one actually meant is the one
+                    // that appears beside the notch when the island splits on
+                    // a volume or brightness change - OsdLayer.qml around
+                    // line 107 - and it differs in every way that matters:
+                    //
+                    //   countdown        OSD ring
+                    //   lineWidth 2.5    lineWidth 4
+                    //   showCore false   showCore TRUE  (dark disc)
+                    //   accent fill      WHITE fill, white track at 0.16
+                    //
+                    // The core disc is the whole difference. The countdown is
+                    // hollow because it sits on an already-dark panel, so a
+                    // disc would fight the digit inside it. Out here the
+                    // rings sit on the WALLPAPER, and a hollow ring leaves
+                    // each icon floating on whatever happens to be behind it
+                    // - which over a busy photo is exactly why these read as
+                    // bad no matter how the stroke was tuned. The OSD ring
+                    // brings its own dark plate, and the glyph sits ON it.
+                    //
+                    // White rather than accent for the same reason OsdLayer
+                    // is white: it is the only colour that holds against 22
+                    // palettes and any wallpaper. The accent moves to the
+                    // ARC, which is the one thing that has to mean something.
+                    lineWidth: Metrics.px(4)
+                    showCore: true
                     fillColor: root.accentColor
                     // ---- TWO TRACK ALPHAS, AND THE REASON IS MEASURED ----
                     //
@@ -308,9 +334,11 @@ Item {
                     // 0.45 unfocused, to survive any wallpaper; 0.20 focused,
                     // where the full-strength arc lies over the track and a
                     // heavy track would fight it.
-                    trackColor: Qt.rgba(root.accentColor.r, root.accentColor.g,
-                                        root.accentColor.b,
-                                        winCell.isActive ? 0.20 : 0.45)
+                    // OsdLayer's own track: white at 0.16. Not the accent
+                    // at 0.45 the previous version used - that was a patch
+                    // for a hollow ring being invisible over a bright
+                    // wallpaper, and the core disc solves that properly now.
+                    trackColor: Qt.rgba(1, 1, 1, 0.16)
                     // A window has no 0..1 quantity to show, so the arc
                     // carries the one binary fact: focused sweeps the whole
                     // circle. Animating progress rather than snapping it
@@ -364,6 +392,28 @@ Item {
                     // middle is; the countdown puts its seconds there. Using
                     // it means the icon cannot disagree with the ring,
                     // because it is no longer being positioned independently.
+                    // ---- CLIPPED TO A CIRCLE ----
+                    //
+                    // The core disc gives every icon a dark plate, but a
+                    // themed icon that is itself an opaque SQUARE covers that
+                    // plate completely and reads as a tile sitting in a ring
+                    // instead of a badge. kitty's is exactly this: a solid
+                    // maroon square. Circular ones like brave's already
+                    // looked right, which is why the strip read as a mixed
+                    // set rather than a family.
+                    //
+                    // ClippingRectangle with radius = width/2, the same
+                    // component the wallpaper picker and the workspace
+                    // overview already use for their thumbnails, so every
+                    // icon becomes the same disc whatever shape it shipped
+                    // as, concentric with the ring around it.
+                    ClippingRectangle {
+                        anchors.centerIn: parent
+                        width: appIcon.width
+                        height: width
+                        radius: width / 2
+                        color: "transparent"
+
                     IconImage {
                         id: appIcon
                         anchors.centerIn: parent
@@ -393,6 +443,7 @@ Item {
                         source: winCell.iconSource
                         visible: winCell.iconSource !== ""
                         asynchronous: true
+                    }
                     }
 
                     Text {

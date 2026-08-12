@@ -16,12 +16,15 @@ is: a different program.
 
 WHAT IS NOT HERE, AND WHY
 -------------------------
-Menus that PROMPT — rofi_pass, dm-recordV2, dm-spellcheck, the translator —
-are not ported. Not because the island cannot take text: it can, and this
-file's own panel has a search field. It is that those scripts are
-conversations (ask, branch, ask again), and a one-shot list is the wrong
-primitive for a conversation. Wrapping them would mean reimplementing each
-script's control flow in QML, which is how a port becomes a rewrite.
+rofi_anki (373 lines) and rofi_ilovepdf (1267) are not ported, and the reason
+is the same for both and is not "they are long". Each is a LINEAR WIZARD over
+an external service — eight sequential prompts building an AnkiConnect note,
+and a file-picker/page-range/OCR/watermark pipeline over pdftk-class tools —
+where every step's validity depends on the answers before it. Ported here
+they would not be a menu; they would be this file growing a second copy of
+each script's control flow, with the original left in place as the one that
+still works. See the per-menu note above `MENUS` for what the rofi chord
+still spawns and why.
 
 CORRECTION, and it is worth writing down because it was said three times in
 one session and acted on twice: the claim "the island has no text-entry
@@ -29,25 +32,92 @@ field" is FALSE. There are five TextInputs in the tree — the cheatsheet
 search, the application launcher search, two Wi-Fi password fields and one in
 the expanded player. The settings panel's lack of a string editor is a
 property of that panel, not of the shell, and the rofi port was scoped
-smaller than it needed to be on the strength of it.
+smaller than it needed to be on the strength of it. The prompt mode added in
+this file's second pass is the correction acted on.
 
 THE PROTOCOL
 ------------
-    island-picker.py --list <menu>     -> {"title":..., "items":[...]}
-    island-picker.py --run <menu> <id> -> {"ok":true}
+    island-picker.py --list <menu>            -> <page>
+    island-picker.py --run <menu> <id> [text] -> {"ok":true}
+                                              -> {"ok":true,"page":<page>}
+
+A <page> is
+
+    {"title": str,
+     "mode":  "list" | "prompt" | "message",   (default "list")
+     "items": [{"id":…, "label":…, "detail":…, "icon":…}],
+     "note":  str,          prose above the list / under the prompt
+     "prompt": str,         prompt mode: the placeholder
+     "value": str,          prompt mode: the prefill
+     "secret": bool,        prompt mode: mask the echo
+     "submit": str,         prompt mode: the id that comes back with the text
+     "menu":  str,          re-target the panel at another menu (see `hub`)
+     "stack": "push"|"replace"|"root"}         default "push"
 
 An item is {id, label, detail}. The panel never sees a command: it sends the
 `id` back and this file decides what that means. That is deliberate — a panel
 that executes strings handed to it by a script is a panel that executes
 whatever anything can write into that script's output.
+
+WHY --run CAN ANSWER WITH A PAGE, AND WHY THAT IS THE WHOLE UNLOCK
+------------------------------------------------------------------
+The original version of this file said, in as many words, that the menus
+which PROMPT — rofi_pass, dm-recordV2, dm-spellcheck, the translator — could
+not be ported because "a one-shot list is the wrong primitive for a
+conversation". The premise was right and the conclusion was wrong. A
+conversation is a sequence of one-shot pages, and the only thing missing was
+a way for the script to say "here is the next one".
+
+That is all `{"ok":true,"page":…}` is. The panel keeps a STACK of pages and
+knows nothing about what any of them mean; Escape closes, Backspace on an
+empty query pops. The script stays a pure function of (menu, id, text) —
+there is still no session, no daemon and no state held in the panel.
+
+Where a step genuinely needs to remember something across invocations (the
+spell-checker's working text, which is edited fix by fix) it is written to a
+file under $XDG_RUNTIME_DIR by THIS script, never carried in the panel. An id
+is still opaque to the panel either way.
 """
 
+import html
 import json
 import os
+import re
+import shlex
 import shutil
 import signal
 import subprocess
 import sys
+import time
+import urllib.parse
+import urllib.request
+
+
+RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or "/tmp/island-picker-%d" % os.getuid()
+HOME = os.path.expanduser("~")
+
+
+def _page(title, items=None, **extra):
+    """A page, with the empty keys left out.
+
+    Omitting empties rather than sending nulls is not cosmetic: the panel
+    reads `page.mode || "list"` and `page.note || ""`, and a JSON null would
+    satisfy neither the `||` nor a `!== undefined` test written later.
+    """
+    page = {"title": title, "items": list(items or [])}
+    for key, value in extra.items():
+        if value not in (None, "", False):
+            page[key] = value
+    return page
+
+
+def _prompt(title, submit, prompt="", value="", note="", secret=False, **extra):
+    return _page(title, [], mode="prompt", submit=submit, prompt=prompt,
+                 value=value, note=note, secret=secret, **extra)
+
+
+def _message(title, note, **extra):
+    return _page(title, [], mode="message", note=note, **extra)
 
 
 def _hypr(*args):
@@ -404,37 +474,102 @@ def man_run(item_id):
 
 # ----------------------------------------------------------------- notes --
 #
-#  dm-note's menu is Copy / New / Delete / Quit. Only COPY is here: it is the
-#  one that is a list, and it is the one the chord is pressed for. New needs
-#  a text field and Delete needs a confirmation, and both are conversations
-#  rather than picks — the same reason rofi_pass and dm-spellcheck are not
-#  ported. The file is unchanged either way, so dm-note keeps working for
-#  the other three.
+#  dm-note's menu is Copy / New / Delete / Quit. The first pass of this port
+#  had only COPY, on the stated grounds that New needs a text field and
+#  Delete needs a confirmation. Both are now here, because both are exactly
+#  the shape the prompt mode and the page stack were built for.
+#
+#  WHERE THIS DELIBERATELY DIFFERS FROM dm-note
+#  --------------------------------------------
+#  dm-note opens on a four-row Copy/New/Delete/Quit menu and only THEN shows
+#  the notes. Here the notes are the first thing on screen and New/Delete are
+#  rows among them, because the chord is pressed to copy a note ninety-odd
+#  percent of the time and a menu whose common path costs two keystrokes has
+#  put its rarest actions first.
+#
+#  The other difference is the delete confirmation, which dm-note does not
+#  have at all: it deletes on selection. A fuzzy-matched row that destroys
+#  data without asking is the same failure the `processes` menu refuses
+#  SIGKILL for, and the file is a plain line list with no undo.
 
 NOTE_FILE = os.path.expanduser("~/.config/dmscripts/dmnote")
 
 
-def notes_list():
+def _notes_read():
     try:
         with open(NOTE_FILE) as handle:
-            lines = [line.rstrip("\n") for line in handle]
+            return [line.rstrip("\n") for line in handle if line.strip()]
     except OSError:
-        return {"title": "Copy note", "items": []}
-
-    items = []
-    for line in lines:
-        if not line.strip():
-            continue
-        items.append({"id": line, "label": line, "detail": ""})
-    return {"title": "Copy note", "items": items}
+        return []
 
 
-def notes_run(item_id):
-    # wl-copy and not xclip: this is the Wayland session. The qtile session
-    # keeps dm-note, which keeps using cp2cb.
-    if shutil.which("wl-copy"):
-        subprocess.run(["wl-copy", "--", item_id], capture_output=True, timeout=4)
-    _notify("Note copied", item_id)
+def _notes_write(lines):
+    os.makedirs(os.path.dirname(NOTE_FILE), exist_ok=True)
+    with open(NOTE_FILE, "w") as handle:
+        for line in lines:
+            handle.write(line + "\n")
+
+
+def notes_list():
+    items = [{"id": "new", "label": "New note…",
+              "detail": "type it, Enter saves"}]
+    notes = _notes_read()
+    for line in notes:
+        items.append({"id": "copy:" + line, "label": line, "detail": ""})
+    if notes:
+        items.append({"id": "delmenu", "label": "Delete a note…",
+                      "detail": "%d note%s" % (len(notes),
+                                               "" if len(notes) == 1 else "s")})
+    return _page("Notes", items)
+
+
+def notes_run(item_id, text=""):
+    kind, rest = _split(item_id)
+
+    if kind == "copy":
+        _copy(rest)
+        _notify("Note copied", rest)
+        return None
+
+    if item_id == "new":
+        return _prompt("New note", "save", prompt="the note",
+                       note="One line. Saved to ~/.config/dmscripts/dmnote, "
+                            "which is the same file dm-note reads.")
+
+    if item_id == "save":
+        note = text.strip()
+        if not note:
+            raise ValueError("nothing to save")
+        notes = _notes_read()
+        # dm-note's duplicate guard, ported without its sed dance: it
+        # escapes [ and ] to stop grep reading the note as a regex, which is
+        # a problem only because it is testing membership with a pattern
+        # matcher. A list and `in` has no such problem and no such bug.
+        if note in notes:
+            raise ValueError("that note is already there")
+        _notes_write(notes + [note])
+        _notify("Note created", note)
+        return _page("Notes", notes_list()["items"], stack="root")
+
+    if item_id == "delmenu":
+        return _page("Delete which?", [
+            {"id": "del:" + line, "label": line, "detail": ""}
+            for line in _notes_read()])
+
+    if kind == "del":
+        return _page("Delete this note?", [
+            {"id": "delyes:" + rest, "label": "Delete", "detail": rest},
+        ], note=rest)
+
+    if kind == "delyes":
+        notes = _notes_read()
+        if rest not in notes:
+            raise ValueError("that note is gone already")
+        _notes_write([line for line in notes if line != rest])
+        _notify("Note deleted", rest)
+        return _page("Notes", notes_list()["items"], stack="root")
+
+    raise ValueError("unknown notes step %s" % item_id)
 
 
 # ------------------------------------------------------------ brightness --
@@ -691,6 +826,1276 @@ def clipboard_run(item_id):
                    capture_output=True, text=True, timeout=6)
 
 
+# ================================================================ helpers ==
+#
+#  Shared by everything below the original five menus.
+
+def _spawn_sh(script):
+    """Run a shell fragment detached from this process.
+
+    Several ports below need something to happen AFTER the panel has gone:
+    slurp cannot draw its rectangle while a layer-shell surface holds the
+    keyboard, and rbw's pinentry cannot take a passphrase for the same
+    reason. The panel closes when --run returns, so anything that must
+    outlive that has to be its own session — hence start_new_session, the
+    same reasoning as _spawn's.
+    """
+    subprocess.Popen(["sh", "-c", script], start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _copy(text):
+    """Put text on the Wayland clipboard.
+
+    wl-copy and not xclip throughout this file: the qtile session's scripts
+    keep xclip because they run on X11, and an xclip that "works" under
+    Hyprland is writing to the XWayland selection, which nothing native
+    reads. Measured elsewhere in this port: an x11grab of the Hyprland
+    session is a black frame with a cursor on it, and the selection story
+    is the same story.
+    """
+    if shutil.which("wl-copy"):
+        subprocess.run(["wl-copy", "--", text], capture_output=True, timeout=4)
+        return True
+    return False
+
+
+def _selection():
+    """The PRIMARY selection, as a prefill. Empty when there is none."""
+    if not shutil.which("wl-paste"):
+        return ""
+    try:
+        out = subprocess.run(["wl-paste", "-p", "-n"],
+                             capture_output=True, text=True, timeout=3)
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def _stamp():
+    return time.strftime("%y%m%d-%H%M-%S")
+
+
+def _http_json(url, data=None, headers=None, timeout=15):
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers=dict({"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"},
+                     **(headers or {})))
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8", "replace"))
+
+
+def _state_path(name):
+    return os.path.join(RUNTIME, "island-picker-%s.json" % name)
+
+
+def _state_write(name, value):
+    try:
+        with open(_state_path(name), "w") as handle:
+            json.dump(value, handle)
+    except OSError:
+        pass
+
+
+def _state_read(name):
+    try:
+        with open(_state_path(name)) as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def _split(item_id, count=2):
+    """`kind:rest` → (kind, rest). rest may itself contain colons.
+
+    Every multi-step menu below encodes its step in the id, because the id is
+    the ONLY thing that crosses back from the panel and the panel is not
+    allowed to hold state on the script's behalf.
+    """
+    parts = item_id.split(":", count - 1)
+    while len(parts) < count:
+        parts.append("")
+    return parts
+
+
+# ------------------------------------------------------------ screenshot --
+#
+#  dm-satty, rewritten for Wayland rather than wrapped.
+#
+#  The wrap was never possible: dm-satty is maim + xdotool + xrandr + xclip,
+#  four X11 tools, and it asks xrandr for the monitor list. Under Hyprland
+#  every one of those talks to XWayland, which is not the compositor. The
+#  measurement that settles it is in the `record` note below — an X11 grab of
+#  this session is a black frame — and a screenshot tool that silently
+#  produces black is worse than one that is missing.
+#
+#  So: grim for the capture, slurp for the rectangle, hyprctl for the active
+#  window's geometry, wl-copy for the clipboard. satty is unchanged; it is
+#  Wayland-native already and dm-satty's --output-filename fix is kept.
+#
+#  WHAT IS DROPPED
+#  ---------------
+#  * The per-monitor rows. dm-satty builds one row per xrandr output; this
+#    machine has one monitor, and `grim` with no -o already means "the whole
+#    thing". A monitor list of length one is a step that only ever has one
+#    answer. (`grim -o <name>` is one line away if a second monitor arrives.)
+#  * The delay prompt (0-5 s). It exists so the rofi window can get out of
+#    the frame before the shutter, and the island's panel is already gone by
+#    the time grim runs — see _spawn_sh's 0.4 s. A step whose reason has been
+#    designed out is not worth a keystroke.
+
+SHOT_DIR = os.path.join(HOME, "Screenshots")
+SHOT_PREFIX = "screenshot"
+
+_SHOT_AREAS = {
+    "full": "Fullscreen",
+    "region": "Selected region",
+    "window": "Active window",
+}
+
+
+def screenshot_list():
+    active = _hypr("activewindow")
+    title = (active or {}).get("title", "") if isinstance(active, dict) else ""
+    return _page("Screenshot", [
+        {"id": "area:full", "label": "Fullscreen",
+         "detail": "grim, the whole output"},
+        {"id": "area:region", "label": "Selected region",
+         "detail": "slurp draws the rectangle once this panel is gone"},
+        {"id": "area:window", "label": "Active window",
+         "detail": _ellipsis(title, 80) if title else "nothing focused"},
+    ])
+
+
+def _shot_geometry(area):
+    """The -g argument for grim, or "" for a full-output grab.
+
+    The active window's box is read HERE, while --run is still executing,
+    and not in the spawned shell. By the time the shell runs the panel has
+    closed and the focus has moved back — `hyprctl activewindow` would then
+    answer with whatever the compositor refocused, which is usually the same
+    window and occasionally is not.
+    """
+    if area != "window":
+        return ""
+    active = _hypr("activewindow")
+    if not isinstance(active, dict):
+        return ""
+    at, size = active.get("at"), active.get("size")
+    if not (isinstance(at, list) and isinstance(size, list)):
+        return ""
+    return "%d,%d %dx%d" % (at[0], at[1], size[0], size[1])
+
+
+def screenshot_run(item_id):
+    kind, rest = _split(item_id)
+
+    if kind == "area":
+        satty = shutil.which("satty")
+        items = [
+            {"id": "shot:%s:file" % rest, "label": "Save to file",
+             "detail": SHOT_DIR},
+            {"id": "shot:%s:clipboard" % rest, "label": "Copy to clipboard",
+             "detail": "wl-copy -t image/png"},
+            {"id": "shot:%s:both" % rest, "label": "Both",
+             "detail": "file and clipboard"},
+        ]
+        if rest in ("full", "region"):
+            items.append({
+                "id": "shot:%s:satty" % rest,
+                "label": "Edit in satty",
+                # dm-satty's own comment records that every annotation it
+                # ever made was discarded, because satty was started without
+                # --output-filename and the script then moved the UNEDITED
+                # capture into place. The fix is carried over rather than
+                # rediscovered.
+                "detail": "annotate, then save" if satty
+                          else "satty is not installed",
+            })
+        return _page("%s — where?" % _SHOT_AREAS.get(rest, rest), items)
+
+    if kind != "shot":
+        raise ValueError("unknown screenshot step %s" % item_id)
+
+    area, dest = _split(rest)
+    if dest == "satty" and not shutil.which("satty"):
+        raise ValueError("satty is not installed")
+    if not shutil.which("grim"):
+        raise ValueError("grim is not installed")
+
+    os.makedirs(SHOT_DIR, exist_ok=True)
+    out = os.path.join(SHOT_DIR, "%s-%s%s-%s.png" % (
+        SHOT_PREFIX, area, "-satty" if dest == "satty" else "", _stamp()))
+    quoted_out = shlex.quote(out)
+
+    # The region case is the reason this is a shell fragment and not an argv:
+    # slurp has to run INSIDE the detached session, after the panel is gone,
+    # and its output has to reach grim. A cancelled slurp exits non-zero and
+    # must take the whole thing down quietly — a cancelled selection is a
+    # "no thanks", not a failure to report.
+    if area == "region":
+        capture = 'g=$(slurp) || exit 0; grim -g "$g"'
+    else:
+        geometry = _shot_geometry(area)
+        capture = "grim -g %s" % shlex.quote(geometry) if geometry else "grim"
+
+    if dest == "clipboard":
+        body = "%s - | wl-copy -t image/png && notify-send 'Screenshot copied' 'on the clipboard'" % capture
+    elif dest == "file":
+        body = "%s %s && notify-send 'Screenshot saved' %s" % (
+            capture, quoted_out, quoted_out)
+    elif dest == "both":
+        body = ("%s %s && wl-copy -t image/png < %s && "
+                "notify-send 'Screenshot saved' %s") % (
+            capture, quoted_out, quoted_out, quoted_out)
+    elif dest == "satty":
+        temp = shlex.quote(os.path.join(RUNTIME, "island-satty-%s.png" % _stamp()))
+        body = ("%s %s && satty --filename %s --output-filename %s; rm -f %s; "
+                "[ -s %s ] && notify-send 'Screenshot saved' %s "
+                "|| notify-send 'Screenshot discarded' 'satty closed without saving'") % (
+            capture, temp, temp, quoted_out, temp, quoted_out, quoted_out)
+    else:
+        raise ValueError("unknown destination %s" % dest)
+
+    # 0.4 s, not 0: slurp and the grab both have to happen after the layer
+    # surface has released the keyboard and stopped being painted, or the
+    # picker itself is in the screenshot.
+    _spawn_sh("sleep 0.4; " + body)
+    return None
+
+
+# ---------------------------------------------------------------- record --
+#
+#  dm-recordV2, and the one place in this port where the honest answer is
+#  "most of this cannot work here".
+#
+#  THE MEASUREMENT
+#  ---------------
+#  dm-recordV2 captures with `ffmpeg -f x11grab -i $DISPLAY`. Run under this
+#  Hyprland session and read back with PIL:
+#
+#      ffmpeg -f x11grab -video_size 1366x768 -i :0 -frames:v 1 out.png
+#      -> 1366x768, every pixel (0,0,0) except a cursor at the top left
+#
+#  The XWayland root window is not a mirror of the Wayland output; it is an
+#  empty root that XWayland's own clients are parented into. So screen,
+#  area and GIF capture in dm-recordV2 are not "probably wrong under
+#  Wayland", they produce a black video, and they have been doing so for
+#  every recording made since the session moved.
+#
+#  WHAT THAT MEANS FOR THIS PORT
+#  -----------------------------
+#  The pieces that never touched X11 port straight across and are live:
+#  audio (pulse) and both webcam modes (v4l2). Screen and region need a
+#  Wayland capture tool — wf-recorder is the one this is written against —
+#  and wf-recorder is NOT INSTALLED on this machine. Rather than hide those
+#  rows, they are listed with "wf-recorder is not installed" in the detail
+#  and refuse when run: a missing capability that is visible is a package
+#  away, and one that is hidden is a bug report.
+#
+#  Neither screen path has therefore been exercised. Say so.
+#
+#  DROPPED: the GIF mode. Its value in dm-recordV2 is entirely the two-stage
+#  capture-then-palettegen conversion (its own comment measures 29.6 MB
+#  against 1.3 MB for the same six seconds), and that second stage cannot be
+#  run at all without a first stage that works. Shipping an untestable
+#  conversion pipeline is worse than saying the mode is gone.
+
+RECORD_DIR = os.path.join(HOME, "Videos", "Recordings")
+RECORD_PID = os.path.join(RUNTIME, "island-record.pid")
+
+
+def _record_active():
+    """The live recording's pid, or 0. Clears a stale pidfile as it goes."""
+    try:
+        with open(RECORD_PID) as handle:
+            pid = int(handle.read().strip())
+    except (OSError, ValueError):
+        return 0
+    try:
+        os.kill(pid, 0)
+        return pid
+    except OSError:
+        try:
+            os.unlink(RECORD_PID)
+        except OSError:
+            pass
+        return 0
+
+
+def _webcam_device():
+    for index in range(0, 8):
+        device = "/dev/video%d" % index
+        if not os.path.exists(device):
+            continue
+        if shutil.which("v4l2-ctl"):
+            probe = subprocess.run(["v4l2-ctl", "-d", device, "--all"],
+                                   capture_output=True, text=True, timeout=6)
+            if "Video Capture" not in probe.stdout:
+                continue
+        return device
+    return ""
+
+
+def record_list():
+    pid = _record_active()
+    if pid:
+        target = _state_read("record") or {}
+        return _page("Recording", [{
+            "id": "stop",
+            "label": "Stop recording",
+            "detail": target.get("output", "pid %d" % pid),
+        }], note="A recording is running. Everything else is hidden on "
+                 "purpose: dm-recordV2 has the same one-way door, and a "
+                 "second ffmpeg would overwrite the pidfile that stops the "
+                 "first.")
+
+    have_wf = bool(shutil.which("wf-recorder"))
+    missing = "wf-recorder is not installed"
+    camera = _webcam_device()
+    return _page("Record", [
+        {"id": "screen", "label": "Screen",
+         "detail": "wf-recorder, whole output" if have_wf else missing},
+        {"id": "region", "label": "Screen area",
+         "detail": "wf-recorder + slurp" if have_wf else missing},
+        {"id": "audio", "label": "Audio only",
+         "detail": "ffmpeg -f pulse, mp3"},
+        {"id": "webcam-low", "label": "Webcam (640x480)",
+         "detail": camera or "no capture device under /dev/video*"},
+        {"id": "webcam-hd", "label": "Webcam (1920x1080)",
+         "detail": camera or "no capture device under /dev/video*"},
+    ])
+
+
+def record_run(item_id):
+    if item_id == "stop":
+        pid = _record_active()
+        if not pid:
+            raise ValueError("no active recording")
+        # SIGINT and not SIGTERM. wf-recorder finalises the container on
+        # INT; ffmpeg does so on either, and dm-recordV2's own note is that
+        # a kill before the trailer is written truncates the file — three of
+        # its eight recordings ended that way. Waiting is the fix, so wait.
+        os.kill(pid, signal.SIGINT)
+        for _ in range(300):
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                break
+            time.sleep(0.2)
+        try:
+            os.unlink(RECORD_PID)
+        except OSError:
+            pass
+        target = _state_read("record") or {}
+        _notify("Recording stopped", target.get("output", ""))
+        return None
+
+    os.makedirs(RECORD_DIR, exist_ok=True)
+
+    if item_id in ("screen", "region"):
+        if not shutil.which("wf-recorder"):
+            raise ValueError("wf-recorder is not installed — see the note in "
+                             "island-picker.py: x11grab records a black frame "
+                             "under Hyprland, measured")
+        output = os.path.join(RECORD_DIR, "screen-%s-%s.mp4" % (item_id, _stamp()))
+        geometry = ('-g "$(slurp)" ' if item_id == "region" else "")
+        command = "wf-recorder %s-f %s" % (geometry, shlex.quote(output))
+    elif item_id == "audio":
+        output = os.path.join(RECORD_DIR, "audio-%s.mp3" % _stamp())
+        command = ("ffmpeg -nostdin -y -f pulse -i default "
+                   "-c:a libmp3lame -qscale:a 2 %s" % shlex.quote(output))
+    elif item_id in ("webcam-low", "webcam-hd"):
+        camera = _webcam_device()
+        if not camera:
+            raise ValueError("no capture-capable webcam under /dev/video*")
+        size = "640x480" if item_id == "webcam-low" else "1920x1080"
+        output = os.path.join(RECORD_DIR, "%s-%s.mp4" % (item_id, _stamp()))
+        # -video_size before -i, which is dm-recordV2's own hard-won fix:
+        # after -i it is an output option, silently dropped, and both webcam
+        # modes then recorded at the camera's default while the menu labels
+        # claimed otherwise.
+        command = ("ffmpeg -nostdin -y -f v4l2 -video_size %s -i %s "
+                   "-c:v libx264 %s" % (size, shlex.quote(camera),
+                                        shlex.quote(output)))
+    else:
+        raise ValueError("unknown recording mode %s" % item_id)
+
+    # The pid written is the RECORDER's, not the shell's: `exec` replaces the
+    # shell so there is only ever one process, and the pid in the file is the
+    # one that must be signalled. Without exec, SIGINT reaches sh and the
+    # encoder keeps writing.
+    _spawn_sh("exec %s < /dev/null & echo $! > %s; wait" % (
+        command, shlex.quote(RECORD_PID)))
+    _state_write("record", {"output": output, "mode": item_id})
+    _notify("Recording started", output)
+    return None
+
+
+# ------------------------------------------------------------ confedit --
+#
+#  dm-confedit, which is the only menu in the chord that is a NAVIGATION:
+#  two roots, then a directory tree, then a file into the editor. It is the
+#  page stack's reason for existing, and it is the cheapest possible test of
+#  it — the pages are pure filesystem reads with nothing to undo.
+#
+#  Its exclusion list comes across verbatim. The one change is `../`: the
+#  panel's own Backspace pops the stack, so a row that duplicates a key the
+#  panel already binds is a row that can disagree with it.
+
+CONFEDIT_EXCLUDE = re.compile(
+    r"\.(jpe?g|png|gif|webp|mp4|avi|mov|mkv|mp3|wav|ogg|flac|zip|tar|gz|rar|"
+    r"7z|pdf|docx?|iso|bak|tmp|swp|swo|log|lock|db|sqlite|cache|old|bin|exe|"
+    r"class|pyc|so|out|crt|pem|key)$", re.IGNORECASE)
+CONFEDIT_SKIP_DIRS = {".git", ".github", "node_modules"}
+
+
+def confedit_list():
+    return _page("Edit a config", [
+        {"id": "dir:" + os.path.join(HOME, ".config"),
+         "label": "Config", "detail": "~/.config"},
+        {"id": "dir:" + os.path.join(HOME, ".dotfiles"),
+         "label": "Dotfiles", "detail": "~/.dotfiles"},
+    ], note="Backspace goes back up.")
+
+
+def _confedit_page(path):
+    directories, files = [], []
+    try:
+        with os.scandir(path) as entries:
+            for entry in entries:
+                name = entry.name
+                # follow_symlinks left at its default True, which is find -L:
+                # ~/.config is stow-symlinked into ~/.dotfiles here, so a
+                # symlink-blind walk would show the whole tree as dead ends.
+                if entry.is_dir():
+                    if name in CONFEDIT_SKIP_DIRS:
+                        continue
+                    directories.append({
+                        "id": "dir:" + entry.path,
+                        "label": name + "/",
+                        "detail": "directory",
+                    })
+                elif entry.is_file() and not CONFEDIT_EXCLUDE.search(name):
+                    files.append({
+                        "id": "file:" + entry.path,
+                        "label": name,
+                        "detail": "%d bytes" % entry.stat().st_size,
+                    })
+    except OSError as error:
+        raise ValueError(str(error))
+
+    directories.sort(key=lambda row: row["label"].lower())
+    files.sort(key=lambda row: row["label"].lower())
+    shown = path[len(HOME):] and "~" + path[len(HOME):] or path
+    return _page(shown, directories + files)
+
+
+def confedit_run(item_id):
+    kind, path = _split(item_id)
+    if kind == "dir":
+        return _confedit_page(path)
+    if kind != "file":
+        raise ValueError("unknown confedit step %s" % item_id)
+
+    # realpath, which dm-confedit also does and for the reason it gives:
+    # opening the symlink rather than the target leaves nvim guessing the
+    # filetype from a name like `config` instead of the real path.
+    real = os.path.realpath(path)
+    terminal = _terminal()
+    if not terminal:
+        raise ValueError("no terminal found")
+    _spawn([terminal, "nvim", real] if terminal == "kitty"
+           else [terminal, "-e", "nvim", real])
+    return None
+
+
+# ------------------------------------------------------------ spellcheck --
+#
+#  dm-spellcheck, which is LanguageTool plus a rofi table. The check itself
+#  ports across unchanged — same endpoint, same short-input language
+#  detection through Google's detector, same back-to-front application of
+#  fixes so each offset is still valid when its turn comes.
+#
+#  WHAT CHANGES, AND IT IS ALL RENDERING
+#  ------------------------------------
+#  dm-spellcheck's output is a measured monospace table in pango markup: it
+#  computes column widths in east-asian-width units and pads with spaces,
+#  because a rofi row is one string and the only way to make columns is to
+#  build them yourself. This panel has a label and a detail column, so the
+#  table is the panel's job and the markup is gone: what was a `<span
+#  foreground=…>` is now the label, and what was the third column is the
+#  detail. The bidi isolates go with it — they exist to stop one Arabic word
+#  reversing a row that is three columns glued together, which is not what a
+#  row is here.
+#
+#  THE WORKING TEXT IS THE ONE PIECE OF STATE IN THIS FILE
+#  ------------------------------------------------------
+#  Applying a fix rewrites the sentence, and the next page has to check the
+#  REWRITTEN one. The panel is not allowed to hold that (it holds ids, and
+#  an id is opaque to it), and an id carrying the whole sentence would grow
+#  by a sentence per fix. So the working text lives in a JSON file under
+#  $XDG_RUNTIME_DIR, written by this script and read by the next invocation
+#  of this script. It is per-user, it dies with the session, and nothing
+#  else reads it.
+#
+#  DROPPED: Ctrl+r "other suggestions". dm-spellcheck binds a rofi custom key
+#  to re-open the current mistake with its full ranked list instead of the
+#  top three. Here every mistake's row already opens its own page, and that
+#  page IS the full list — the extra key had nothing left to reach.
+
+LT_API = "https://api.languagetool.org/v2/check"
+LT_DETECT_API = "https://translate.googleapis.com/translate_a/single"
+LT_LANG = {
+    "en": "en-US", "de": "de-DE", "pt": "pt-PT", "ca": "ca-ES",
+    "fr": "fr", "es": "es", "it": "it", "nl": "nl", "ar": "ar",
+    "tr": "tr", "ru": "ru", "pl": "pl", "uk": "uk", "sv": "sv",
+    "da": "da", "el": "el", "fa": "fa", "ga": "ga", "ro": "ro",
+    "sk": "sk", "sl": "sl", "ta": "ta", "ja": "ja", "zh": "zh-CN",
+}
+LT_DEFAULT = "en-US"
+LT_SHORT_WORDS = 4
+
+
+def _detect_language(text):
+    """Google's detector, for short input only.
+
+    dm-spellcheck's reason, kept because it is a real measurement:
+    LanguageTool's own language=auto called `gelest` Dutch and `asdkjhq`
+    Galician and then offered suggestions from those languages. Over four
+    words it is reliable and this does not run at all.
+    """
+    if len(text.split()) >= LT_SHORT_WORDS:
+        return "auto"
+    params = urllib.parse.urlencode([
+        ("client", "gtx"), ("sl", "auto"), ("tl", "en"),
+        ("dj", "1"), ("dt", "t"), ("q", text)])
+    try:
+        return LT_LANG.get(
+            _http_json("%s?%s" % (LT_DETECT_API, params)).get("src", ""),
+            LT_DEFAULT)
+    except Exception:  # noqa: BLE001 — detection is a nicety, not a gate
+        return LT_DEFAULT
+
+
+def _lt_check(text, language):
+    payload = urllib.parse.urlencode({
+        "text": text, "language": language, "level": "default"}).encode()
+    data = _http_json(
+        LT_API, data=payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"})
+    return data.get("matches", []), data.get("language", {}).get("name", "")
+
+
+def _lt_replacements(match, limit=None):
+    values = [r.get("value", "") for r in match.get("replacements", []) if r.get("value")]
+    return values[:limit] if limit else values
+
+
+def spellcheck_list():
+    return _prompt("Spell-check", "check", prompt="word or sentence",
+                   value=_selection(),
+                   note="Prefilled from the primary selection, exactly as "
+                        "dm-spellcheck does — the selection is a prefill, "
+                        "never a decision.")
+
+
+def _spellcheck_page(text):
+    language = _detect_language(text)
+    try:
+        matches, language_name = _lt_check(text, language)
+    except Exception as error:  # noqa: BLE001 — offline is the common case
+        raise ValueError("LanguageTool unreachable: %s" % error)
+
+    _state_write("spell", {"text": text, "matches": matches})
+
+    items = [{
+        "id": "copy",
+        "label": text,
+        "detail": "copy this and close",
+    }]
+    if len(matches) > 1:
+        items.append({"id": "all",
+                      "label": "Fix all %d mistakes" % len(matches),
+                      "detail": "apply every top suggestion"})
+    for index, match in enumerate(matches):
+        bad = text[match["offset"]:match["offset"] + match["length"]]
+        replacements = _lt_replacements(match, 3)
+        best = replacements[0] if replacements else ""
+        items.append({
+            "id": "fix:%d" % index,
+            "label": "%s  →  %s" % (bad, best) if best else bad,
+            "detail": match.get("shortMessage") or match.get("message", ""),
+        })
+
+    return _page(
+        "%s · %s mistake%s" % (language_name or language,
+                               len(matches) or "no",
+                               "" if len(matches) == 1 else "s"),
+        items, stack="replace")
+
+
+def spellcheck_run(item_id, text=""):
+    if item_id == "check":
+        if not text.strip():
+            raise ValueError("nothing to check")
+        return _spellcheck_page(text.strip())
+
+    state = _state_read("spell") or {}
+    working, matches = state.get("text", ""), state.get("matches", [])
+    if not working:
+        raise ValueError("no text in flight — start again")
+
+    if item_id == "copy":
+        _copy(working)
+        _notify("Copied", working)
+        return None
+
+    if item_id == "all":
+        # Back to front. Applying forwards shifts every offset after the
+        # first edit, which is dm-spellcheck's note and is why it sorts.
+        for match in sorted(matches, key=lambda m: m["offset"], reverse=True):
+            best = _lt_replacements(match, 1)
+            if best:
+                working = (working[:match["offset"]] + best[0]
+                           + working[match["offset"] + match["length"]:])
+        return _spellcheck_page(working)
+
+    kind, rest = _split(item_id)
+    if kind == "fix":
+        match = matches[int(rest)]
+        options = _lt_replacements(match)
+        if not options:
+            raise ValueError(match.get("message", "no suggestion"))
+        bad = working[match["offset"]:match["offset"] + match["length"]]
+        return _page("Replace “%s” with" % bad, [
+            {"id": "put:%d:%s" % (int(rest), option), "label": option,
+             "detail": match.get("message", "")}
+            for option in options])
+
+    if kind == "put":
+        index, replacement = _split(rest)
+        match = matches[int(index)]
+        working = (working[:match["offset"]] + replacement
+                   + working[match["offset"] + match["length"]:])
+        return _spellcheck_page(working)
+
+    raise ValueError("unknown spellcheck step %s" % item_id)
+
+
+# ------------------------------------------------------------- translate --
+#
+#  rofi_translator/wordreference.py is 966 lines and most of them are not
+#  translation: they are a pango table renderer, a rofi theme, a Gemini
+#  explanation pass, a disk cache and a spell-check detour. What the chord is
+#  pressed for is the middle: hand it a word or a sentence, get the
+#  translation and the alternatives back.
+#
+#  That middle is one endpoint — Google's translate_a/single, the same one
+#  wordreference.py uses and the same one dm-spellcheck borrows for language
+#  detection — and it is what is here.
+#
+#  KEPT ACROSS: the last target language, read from and written to
+#  ~/.cache/rofi_translator/last_lang. Deliberately THE SAME FILE, not a new
+#  one: the two tools should not disagree about which language you were
+#  working in, and the qtile session's translator is still the one with the
+#  Gemini pass.
+#
+#  DROPPED, and each for its own reason:
+#    * the Gemini explanation and the synonym/example sections. They need
+#      GEMINI_API_KEY out of ~/.config/secrets.env and they are the part of
+#      that script most likely to be slow or absent; a menu that sometimes
+#      takes ten seconds is a menu you stop pressing.
+#    * the disk cache. It exists because the rofi run pays the round trip on
+#      every redraw of the same word; this asks once per open.
+#    * the spell-check detour on a no-result. `spellcheck` is its own menu
+#      now and is one chord away.
+
+TRANSLATE_API = "https://translate.googleapis.com/translate_a/single"
+TRANSLATE_LAST = os.path.expanduser("~/.cache/rofi_translator/last_lang")
+TRANSLATE_LANGS = {
+    "en": "English", "de": "German", "ar": "Arabic", "tr": "Turkish",
+    "fr": "French", "es": "Spanish", "it": "Italian", "nl": "Dutch",
+    "ru": "Russian", "ja": "Japanese", "zh-CN": "Chinese",
+}
+
+
+def _translate_target():
+    try:
+        with open(TRANSLATE_LAST) as handle:
+            code = handle.read().strip()
+        return code if code in TRANSLATE_LANGS else "en"
+    except OSError:
+        return "en"
+
+
+def _translate_set_target(code):
+    try:
+        os.makedirs(os.path.dirname(TRANSLATE_LAST), exist_ok=True)
+        with open(TRANSLATE_LAST, "w") as handle:
+            handle.write(code)
+    except OSError:
+        pass
+
+
+def translate_list():
+    target = _translate_target()
+    return _prompt("Translate → %s" % TRANSLATE_LANGS.get(target, target),
+                   "go", prompt="word or sentence", value=_selection(),
+                   note="Target language is the one the qtile translator left "
+                        "in ~/.cache/rofi_translator/last_lang. Enter "
+                        "translates; the results page can change it.")
+
+
+def _translate_page(text, target):
+    params = urllib.parse.urlencode([
+        ("client", "gtx"), ("sl", "auto"), ("tl", target), ("dj", "1"),
+        ("dt", "t"), ("dt", "bd"), ("dt", "at"), ("q", text)])
+    try:
+        data = _http_json("%s?%s" % (TRANSLATE_API, params))
+    except Exception as error:  # noqa: BLE001
+        raise ValueError("translate endpoint unreachable: %s" % error)
+
+    source = data.get("src", "?")
+    sentences = "".join(part.get("trans", "")
+                        for part in data.get("sentences", []))
+    _state_write("translate", {"text": text, "target": target})
+
+    items = [{
+        "id": "copy:" + sentences,
+        "label": sentences or "(no translation)",
+        "detail": "%s → %s  ·  Enter copies" % (
+            TRANSLATE_LANGS.get(source, source),
+            TRANSLATE_LANGS.get(target, target)),
+    }]
+
+    # `dict` is the dictionary block: part of speech, then the ranked terms.
+    # It is the half of wordreference.py's table that carries the actual
+    # information, and the half a one-line answer throws away.
+    for entry in data.get("dict", []) or []:
+        pos = entry.get("pos", "")
+        for term in entry.get("terms", [])[:6]:
+            items.append({"id": "copy:" + term, "label": term,
+                          "detail": pos or "alternative"})
+
+    items.append({"id": "lang", "label": "Translate to…",
+                  "detail": "change the target language"})
+    return _page(_ellipsis(text, 60), items, stack="replace")
+
+
+def translate_run(item_id, text=""):
+    kind, rest = _split(item_id)
+
+    if item_id == "go":
+        if not text.strip():
+            raise ValueError("nothing to translate")
+        return _translate_page(text.strip(), _translate_target())
+
+    if kind == "copy":
+        _copy(rest)
+        _notify("Copied", rest)
+        return None
+
+    if item_id == "lang":
+        return _page("Translate to", [
+            {"id": "to:" + code, "label": name, "detail": code}
+            for code, name in sorted(TRANSLATE_LANGS.items(),
+                                     key=lambda pair: pair[1])])
+
+    if kind == "to":
+        _translate_set_target(rest)
+        state = _state_read("translate") or {}
+        if not state.get("text"):
+            raise ValueError("nothing in flight — start again")
+        return _translate_page(state["text"], rest)
+
+    raise ValueError("unknown translate step %s" % item_id)
+
+
+# ------------------------------------------------------------------ pass --
+#
+#  rofi_pass, backed by Vaultwarden through rbw. The READ half is here and
+#  the WRITE half is not; the split is deliberate and is spelt out below.
+#
+#  THE LOCKED AGENT
+#  ----------------
+#  rbw keeps the vault decrypted in an agent, and unlocking pops rbw's own
+#  pinentry dialog. That dialog cannot be driven from behind this panel: a
+#  layer-shell surface with an exclusive keyboard grab holds the keyboard,
+#  so pinentry would come up focused and deaf. Rather than pretend, a locked
+#  vault lists exactly one row, and running it spawns `rbw unlock` DETACHED
+#  and closes the panel — which is what hands the keyboard back. Press the
+#  chord again afterwards.
+#
+#  WHAT IS DROPPED, AND WHY EACH
+#    * add / edit / delete / change-username (alt+n, alt+e, alt+x). These are
+#      the parts of rofi_pass with the most careful code in them — the
+#      recreate-then-remove ordering that survives a failure halfway, the
+#      UUID-not-name identity that stops a duplicate becoming unreachable —
+#      and reimplementing that carefully a second time, in another language,
+#      against the same vault, is how the two copies drift and one of them
+#      eats an entry. rofi_pass keeps them and it still runs.
+#    * alt+a, type-into-the-focused-window. It is xdotool, i.e. X11. The
+#      Wayland equivalent is wtype, and wtype creates and destroys a virtual
+#      keyboard — which closes a layer-shell panel that holds the keyboard.
+#      That is the same wall the clipboard port hit and it is written up
+#      there too.
+#    * the 30-second clipboard wipe. It is a background `sleep` that
+#      compares the clipboard before clearing it, and this script exits the
+#      moment --run returns; a detached wiper that outlives the picker and
+#      then clears a clipboard the user has since refilled is worse than no
+#      wiper. Named here rather than silently missing.
+
+
+def _rbw(*args, **kwargs):
+    return subprocess.run(["rbw", *args], capture_output=True, text=True,
+                          timeout=kwargs.get("timeout", 20))
+
+
+def pass_list():
+    if not shutil.which("rbw"):
+        return _message("Pass", "rbw is not installed.")
+
+    if _rbw("unlocked").returncode != 0:
+        return _page("Vault locked", [{
+            "id": "unlock",
+            "label": "Unlock the vault",
+            "detail": "closes this panel so rbw's pinentry can take the keyboard",
+        }], note="rbw's agent is locked. The unlock prompt is a separate "
+                 "window and cannot get the keyboard while this panel holds "
+                 "it, so this closes first. Press the chord again after.")
+
+    out = _rbw("ls", "--fields", "id,name,user,folder")
+    items = []
+    for line in out.stdout.splitlines():
+        fields = line.split("\t")
+        while len(fields) < 4:
+            fields.append("")
+        uuid, name, user, folder = fields[:4]
+        if not name:
+            continue
+        # Everything below addresses the entry by UUID and never by
+        # name+user, which is rofi_pass's own hard-won rule: rbw permits two
+        # entries with the same name and username and then refuses to act on
+        # either ("multiple entries found"), so a name-keyed menu turns a
+        # duplicate into an entry you can neither read nor delete.
+        items.append({
+            "id": "e:" + uuid,
+            "label": name + ("  ·  " + user if user else ""),
+            "detail": folder or "",
+        })
+    return _page("Pass", items)
+
+
+def pass_run(item_id):
+    kind, rest = _split(item_id)
+
+    if item_id == "unlock":
+        _spawn_sh("sleep 0.3; rbw unlock")
+        return None
+
+    if kind == "e":
+        return _page("What from this entry?", [
+            {"id": "f:password:" + rest, "label": "Copy password",
+             "detail": "rbw get"},
+            {"id": "f:user:" + rest, "label": "Copy username",
+             "detail": "rbw ls"},
+            {"id": "f:totp:" + rest, "label": "Copy TOTP code",
+             "detail": "rbw code"},
+            {"id": "f:uri:" + rest, "label": "Open the site",
+             "detail": "the entry's first URI, in $BROWSER"},
+        ])
+
+    if kind != "f":
+        raise ValueError("unknown pass step %s" % item_id)
+
+    field, uuid = _split(rest)
+    if field == "password":
+        value = _rbw("get", uuid).stdout.strip()
+        what = "Password"
+    elif field == "totp":
+        value = _rbw("code", uuid).stdout.strip()
+        what = "TOTP"
+    elif field == "user":
+        value = ""
+        for line in _rbw("ls", "--fields", "id,user").stdout.splitlines():
+            parts = line.split("\t")
+            if parts and parts[0] == uuid and len(parts) > 1:
+                value = parts[1]
+        what = "Username"
+    elif field == "uri":
+        uri = ""
+        for line in _rbw("get", "--full", uuid).stdout.splitlines():
+            if line.startswith("URI: "):
+                uri = line[5:].strip()
+                break
+        if not uri:
+            raise ValueError("entry has no website")
+        _spawn([os.environ.get("BROWSER") or "xdg-open", uri])
+        return None
+    else:
+        raise ValueError("unknown field %s" % field)
+
+    if not value:
+        raise ValueError("entry has no %s" % field)
+    _copy(value)
+    # The value is NEVER in the notification body. rofi_pass says "Password
+    # copied" for the same reason: a dunst notification is on screen for
+    # seconds and is in the notification centre afterwards.
+    _notify("%s copied" % what, "from the vault")
+    return None
+
+
+# ------------------------------------------------------------------ todo --
+#
+#  rofi_todo is 652 lines: four sessions (today / future / general / done),
+#  subtasks with parent-status roll-up, priorities, due dates, tag colouring,
+#  a working-on marker, an edit box and a lock file. What is ported is the
+#  list and the two verbs that change it — toggle done, add a task — and
+#  nothing else.
+#
+#  This is the largest deliberate reduction in the whole port, so here is
+#  the measurement behind it: ~/ATITODOS/TODOS.md, the file rofi_todo reads,
+#  currently contains ZERO lines matching `^\s*- \[[ x]\]`. It is a freeform
+#  numbered list. Every one of those 652 lines of session/subtask/priority
+#  machinery is running over a format the file is not written in, which is
+#  why this port claims only the checkbox lines: they are the part of the
+#  format that is real, and a task list that shows the checkboxes and can add
+#  one is a task list.
+#
+#  rofi_todo is untouched and the qtile session still has all of it.
+
+TODO_FILE = os.path.join(HOME, "%sTODOS" % os.environ.get("USER", "").upper(),
+                         "TODOS.md")
+TODO_LINE = re.compile(r"^(\s*)- \[([ xX])\]\s*(.*)$")
+
+
+def _todo_lines():
+    try:
+        with open(TODO_FILE) as handle:
+            return handle.read().splitlines()
+    except OSError:
+        return []
+
+
+def todo_list():
+    items = [{"id": "new", "label": "New task…",
+              "detail": os.path.basename(TODO_FILE)}]
+    for number, line in enumerate(_todo_lines()):
+        match = TODO_LINE.match(line)
+        if not match:
+            continue
+        indent, mark, body = match.groups()
+        done = mark.lower() == "x"
+        items.append({
+            # The LINE NUMBER is the id, and the label is what it says
+            # today. rofi_todo keys on line numbers too; the difference is
+            # that this list is re-read on every open, so a number is never
+            # older than the panel it is showing.
+            "id": "t:%d" % number,
+            "label": ("✓ " if done else "☐ ") + body,
+            "detail": ("done" if done else "open")
+                      + ("  ·  subtask" if indent else ""),
+        })
+    if len(items) == 1:
+        return _page("Todo", items,
+                     note="No `- [ ]` lines in %s. rofi_todo reads the same "
+                          "file and finds the same nothing — see the note in "
+                          "island-picker.py." % TODO_FILE)
+    return _page("Todo", items)
+
+
+def todo_run(item_id, text=""):
+    kind, rest = _split(item_id)
+
+    if item_id == "new":
+        return _prompt("New task", "add", prompt="what needs doing",
+                       note="Appended to %s as `- [ ] …`." % TODO_FILE)
+
+    if item_id == "add":
+        body = text.strip()
+        if not body:
+            raise ValueError("nothing to add")
+        os.makedirs(os.path.dirname(TODO_FILE), exist_ok=True)
+        lines = _todo_lines()
+        lines.append("- [ ] " + body)
+        with open(TODO_FILE, "w") as handle:
+            handle.write("\n".join(lines) + "\n")
+        _notify("Task added", body)
+        return _page("Todo", todo_list()["items"], stack="root")
+
+    if kind != "t":
+        raise ValueError("unknown todo step %s" % item_id)
+
+    lines = _todo_lines()
+    number = int(rest)
+    match = TODO_LINE.match(lines[number]) if number < len(lines) else None
+    if not match:
+        raise ValueError("that line is not a task any more — reopen the menu")
+    indent, mark, body = match.groups()
+    lines[number] = "%s- [%s] %s" % (indent, " " if mark.lower() == "x" else "x",
+                                     body)
+    with open(TODO_FILE, "w") as handle:
+        handle.write("\n".join(lines) + "\n")
+    return _page("Todo", todo_list()["items"], stack="root")
+
+
+# ---------------------------------------------------------------- shared --
+#
+#  rofi_shared: a markdown file of links, opened in the browser. The list, the
+#  add and the delete are here.
+#
+#  DROPPED: the thumbnails. rofi_shared fetches a YouTube hqdefault (or a
+#  microlink preview) per row into a cache and passes -show-icons, and this
+#  panel CAN draw icons — the clipboard menu does. It is not here because
+#  every one of those is a network fetch and the list is built synchronously
+#  while the panel waits: the clipboard's thumbnails come off the local copyq
+#  database in milliseconds, and a link list that pauses on the wire before
+#  it paints is a list that feels broken. Cached thumbnails that rofi_shared
+#  has ALREADY fetched are used, because reading them costs nothing.
+
+SHARED_FILE = os.path.join(HOME, ".config/rofi/Todo_files/Shared_Links.md")
+SHARED_THUMBS = os.path.join(RUNTIME, "link-thumbs")
+SHARED_MD = re.compile(r"^\s*[-*]?\s*\[([^\]]*)\]\(([^)]+)\)")
+SHARED_BARE = re.compile(r"(https?://\S+)")
+
+
+def _shared_entries():
+    """[(title, url)] from the markdown, whichever of the two shapes it uses."""
+    entries = []
+    try:
+        with open(SHARED_FILE) as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return entries
+    for line in lines:
+        markdown = SHARED_MD.match(line)
+        if markdown:
+            entries.append((markdown.group(1).strip() or markdown.group(2),
+                            markdown.group(2).strip()))
+            continue
+        bare = SHARED_BARE.search(line)
+        if bare:
+            url = bare.group(1)
+            title = line.replace(url, "").strip(" -*|\t") or url
+            entries.append((title, url))
+    return entries
+
+
+def _shared_thumb(url):
+    """rofi_shared's cache path for a url: md5 of the url, .jpg."""
+    import hashlib
+    path = os.path.join(SHARED_THUMBS,
+                        hashlib.md5(url.encode()).hexdigest() + ".jpg")
+    return path if os.path.isfile(path) else ""
+
+
+def shared_list():
+    items = [{"id": "new", "label": "Add a link…", "detail": SHARED_FILE}]
+    for title, url in _shared_entries():
+        row = {"id": "open:" + url, "label": title, "detail": url}
+        thumb = _shared_thumb(url)
+        if thumb:
+            row["icon"] = thumb
+        items.append(row)
+    if len(items) > 1:
+        items.append({"id": "delmenu", "label": "Remove a link…",
+                      "detail": "%d saved" % (len(items) - 1)})
+    return _page("Shared links", items)
+
+
+def shared_run(item_id, text=""):
+    kind, rest = _split(item_id)
+
+    if kind == "open":
+        _spawn([os.environ.get("BROWSER") or "xdg-open", rest])
+        return None
+
+    if item_id == "new":
+        return _prompt("Add a link", "save", prompt="url", value=_selection(),
+                       note="Prefilled from the primary selection, which is "
+                            "how a link usually arrives.")
+
+    if item_id == "save":
+        url = text.strip()
+        if not url.startswith(("http://", "https://")):
+            raise ValueError("that is not a URL")
+        os.makedirs(os.path.dirname(SHARED_FILE), exist_ok=True)
+        # Appended as markdown with the url as its own title. rofi_shared
+        # derives a title by fetching the page's <title>, which is a network
+        # round trip in the middle of a keystroke; its "edit title" action
+        # exists precisely because that guess is often wrong.
+        with open(SHARED_FILE, "a") as handle:
+            handle.write("- [%s](%s)\n" % (url, url))
+        _notify("Link saved", url)
+        return _page("Shared links", shared_list()["items"], stack="root")
+
+    if item_id == "delmenu":
+        return _page("Remove which?", [
+            {"id": "del:" + url, "label": title, "detail": url}
+            for title, url in _shared_entries()])
+
+    if kind == "del":
+        try:
+            with open(SHARED_FILE) as handle:
+                lines = handle.read().splitlines()
+        except OSError as error:
+            raise ValueError(str(error))
+        kept = [line for line in lines if rest not in line]
+        with open(SHARED_FILE, "w") as handle:
+            handle.write("\n".join(kept) + ("\n" if kept else ""))
+        _notify("Link removed", rest)
+        return _page("Shared links", shared_list()["items"], stack="root")
+
+    raise ValueError("unknown shared step %s" % item_id)
+
+
+# --------------------------------------------------------------- youtube --
+#
+#  dm-youtube: pick a channel from the dmscripts config, read its RSS feed,
+#  pick a video, open it. Ported whole — it is two lists and a browser — and
+#  it reads THE SAME `youtube_channels` array out of ~/.config/dmscripts/
+#  config, so the two stay in step by construction rather than by discipline.
+#
+#  The channel-id lookup is dm-youtube's: the configured URL is a channel
+#  page, and the feed needs the UC… id, which is only in the page's HTML.
+
+YOUTUBE_CONFIG = os.path.expanduser("~/.config/dmscripts/config")
+YOUTUBE_DECL = re.compile(r'^\s*youtube_channels\[([^\]]+)\]\s*=\s*"([^"]+)"')
+
+
+def _youtube_channels():
+    channels = []
+    try:
+        with open(YOUTUBE_CONFIG) as handle:
+            for line in handle:
+                match = YOUTUBE_DECL.match(line)
+                if match:
+                    channels.append((match.group(1).strip('"\''),
+                                     match.group(2)))
+    except OSError:
+        pass
+    return channels
+
+
+def youtube_list():
+    channels = _youtube_channels()
+    if not channels:
+        return _message("YouTube",
+                        "No youtube_channels[…] lines in %s." % YOUTUBE_CONFIG)
+    return _page("YouTube", [
+        {"id": "c:" + url, "label": name, "detail": url}
+        for name, url in channels])
+
+
+def _fetch(url, timeout=15):
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read().decode("utf-8", "replace")
+
+
+def youtube_run(item_id):
+    kind, rest = _split(item_id)
+
+    if kind == "v":
+        _spawn([os.environ.get("BROWSER") or "xdg-open",
+                "https://www.youtube.com/watch?v=" + rest])
+        return None
+
+    if kind != "c":
+        raise ValueError("unknown youtube step %s" % item_id)
+
+    try:
+        page_html = _fetch(rest)
+    except Exception as error:  # noqa: BLE001
+        raise ValueError("could not read the channel page: %s" % error)
+    found = re.search(r'"channelId":"(UC[\w-]+)"', page_html) \
+        or re.search(r'channel_id=(UC[\w-]+)', page_html)
+    if not found:
+        raise ValueError("no channel id in that page")
+
+    try:
+        feed = _fetch("https://www.youtube.com/feeds/videos.xml?channel_id="
+                      + found.group(1))
+    except Exception as error:  # noqa: BLE001
+        raise ValueError("could not read the feed: %s" % error)
+
+    items = []
+    for entry in re.findall(r"<entry>(.*?)</entry>", feed, re.S):
+        video = re.search(r"<yt:videoId>([^<]+)</yt:videoId>", entry)
+        title = re.search(r"<title>(.*?)</title>", entry, re.S)
+        published = re.search(r"<published>([^<]+)</published>", entry)
+        if not video:
+            continue
+        items.append({
+            "id": "v:" + video.group(1),
+            # unescape, not a raw slice: a feed title is XML-escaped and
+            # "Rust &amp; C" in a row label is the row telling you it was
+            # never decoded.
+            "label": html.unescape(title.group(1).strip()) if title else video.group(1),
+            "detail": (published.group(1)[:16].replace("T", " ")
+                       if published else ""),
+        })
+    return _page("Latest videos", items)
+
+
+# ------------------------------------------------------------------- hub --
+#
+#  dm-hub launches the other dm-* scripts, and that is exactly the reason it
+#  could not be ported as itself: running it from the island would spawn the
+#  rofi menus this whole port exists to stop spawning. A hub whose rows open
+#  rofi windows is the anti-goal with a nicer front door.
+#
+#  So it is ported as what it is FOR — one place that reaches every menu
+#  without having to remember its letter — and its rows open the ISLAND's
+#  menus. The mechanism is the page's optional `menu` key: the panel
+#  re-targets itself at the named menu and the returned page becomes its
+#  root. Nothing about the "the panel never sees a command" rule changes;
+#  a menu name is not a command, and an unknown one produces an error page
+#  rather than an exec.
+#
+#  The keys in the third column are the chord letters from submaps.conf, so
+#  the hub teaches its own obsolescence.
+
+HUB_ROWS = [
+    ("windows", "Close a window", "$mod P, K with shift"),
+    ("processes", "Kill a process", "$mod P, K"),
+    ("workspaces", "Go to a workspace", "$mod P, J"),
+    ("documents", "Open a PDF", "$mod P, D"),
+    ("man", "Read a manpage", "$mod P, M"),
+    ("notes", "Notes", "$mod P, O"),
+    ("brightness", "Brightness", "$mod P, L"),
+    ("clipboard", "Clipboard history", "$alt V"),
+    ("screenshot", "Screenshot", "$mod P, I"),
+    ("record", "Record", "$mod P, R"),
+    ("spellcheck", "Spell-check", "$mod P, S"),
+    ("translate", "Translate", "$mod P, E"),
+    ("pass", "Passwords", "$mod P, P"),
+    ("todo", "Todo", "$mod P, T"),
+    ("shared", "Shared links", "$mod P, Z"),
+    ("youtube", "YouTube", "$mod P, Y"),
+    ("confedit", "Edit a config", "$mod P, F"),
+]
+
+
+def hub_list():
+    return _page("Everything", [
+        {"id": name, "label": label, "detail": key}
+        for name, label, key in HUB_ROWS])
+
+
+def hub_run(item_id):
+    entry = MENUS.get(item_id)
+    if entry is None:
+        raise ValueError("unknown menu %s" % item_id)
+    page = entry[0]()
+    page["menu"] = item_id
+    page["stack"] = "root"
+    return page
+
+
 MENUS = {
     "windows": (windows_list, windows_run),
     "processes": (processes_list, processes_run),
@@ -703,7 +2108,41 @@ MENUS = {
     "notes": (notes_list, notes_run),
     "brightness": (brightness_list, brightness_run),
     "clipboard": (clipboard_list, clipboard_run),
+    # --- the second pass: the menus that needed the page stack or the
+    #     prompt mode. See each function's note for what it dropped.
+    "screenshot": (screenshot_list, screenshot_run),
+    "record": (record_list, record_run),
+    "confedit": (confedit_list, confedit_run),
+    "spellcheck": (spellcheck_list, spellcheck_run),
+    "translate": (translate_list, translate_run),
+    "pass": (pass_list, pass_run),
+    "todo": (todo_list, todo_run),
+    "shared": (shared_list, shared_run),
+    "youtube": (youtube_list, youtube_run),
+    "hub": (hub_list, hub_run),
 }
+
+#  STILL SPAWNED BY THE ROFI CHORD, ON PURPOSE
+#  -------------------------------------------
+#  rofi_anki   ($mod P, A) and
+#  rofi_ilovepdf ($mod P, V) are linear wizards over an external service, not
+#  menus — see "WHAT IS NOT HERE" at the top of this file. They are the only
+#  two keys in the chord that still open a rofi window.
+
+
+def _call_run(function, item_id, text):
+    """Call a run handler, passing the typed text only if it takes one.
+
+    The alternative — giving every handler a `text=""` it ignores — was
+    rejected because the signature is the documentation: `windows_run(id)`
+    says on its face that closing a window cannot involve typing, and a
+    uniform two-argument signature would take that away from all eleven
+    handlers to serve the four that prompt.
+    """
+    import inspect
+    if len(inspect.signature(function).parameters) >= 2:
+        return function(item_id, text)
+    return function(item_id)
 
 
 def main(argv):
@@ -713,7 +2152,11 @@ def main(argv):
             json.dump({"title": "", "items": [], "error": "unknown menu %s" % argv[2]},
                       sys.stdout)
         else:
-            json.dump(entry[0](), sys.stdout)
+            try:
+                json.dump(entry[0](), sys.stdout)
+            except (OSError, ValueError, subprocess.SubprocessError) as error:
+                json.dump({"title": argv[2], "items": [], "error": str(error)},
+                          sys.stdout)
         sys.stdout.write("\n")
         return 0
 
@@ -723,17 +2166,27 @@ def main(argv):
             json.dump({"ok": False, "error": "unknown menu %s" % argv[2]}, sys.stdout)
             sys.stdout.write("\n")
             return 1
+        # argv[4] is the typed text, and it is ONE argument however many
+        # spaces it holds. The panel sends it as a single argv element, which
+        # is the same discipline the IPC layer needs and for the same reason:
+        # anything that splits on whitespace loses a sentence.
+        text = argv[4] if len(argv) >= 5 else ""
         try:
-            entry[1](argv[3])
-        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            page = _call_run(entry[1], argv[3], text)
+        except (OSError, ValueError, KeyError, IndexError,
+                subprocess.SubprocessError) as error:
             json.dump({"ok": False, "error": str(error)}, sys.stdout)
             sys.stdout.write("\n")
             return 1
-        json.dump({"ok": True}, sys.stdout)
+        result = {"ok": True}
+        if isinstance(page, dict):
+            result["page"] = page
+        json.dump(result, sys.stdout)
         sys.stdout.write("\n")
         return 0
 
-    sys.stderr.write("usage: island-picker.py --list <menu> | --run <menu> <id>\n"
+    sys.stderr.write("usage: island-picker.py --list <menu> "
+                     "| --run <menu> <id> [text]\n"
                      "menus: %s\n" % ", ".join(sorted(MENUS)))
     return 2
 

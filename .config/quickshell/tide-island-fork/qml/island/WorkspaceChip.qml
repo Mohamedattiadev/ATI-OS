@@ -93,14 +93,19 @@ Item {
     ProgressRing {
         id: chip
 
+        // OsdLayer's ring, matching the window strip beside it: stroke 4,
+        // white track at 0.16, and the dark CORE DISC. The core is why this
+        // changed again — out on the wallpaper a hollow ring leaves the digit
+        // floating on whatever photo is behind it, and the OSD ring brings
+        // its own plate. The countdown's hollow 2.5 px ring is right only
+        // where the countdown lives, on an already-dark panel.
         width: Metrics.px(26)
         height: width
-        lineWidth: 2.5
-        showCore: false
+        lineWidth: Metrics.px(4)
+        showCore: true
         progress: 1
         fillColor: root.accentColor
-        trackColor: Qt.rgba(root.accentColor.r, root.accentColor.g,
-                            root.accentColor.b, 0.20)
+        trackColor: Qt.rgba(1, 1, 1, 0.16)
 
         // The number is accent-coloured. The ring is small enough that a
         // grey digit inside it reads as disabled.
