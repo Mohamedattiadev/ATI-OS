@@ -90,6 +90,31 @@ Item {
         property color tc: root.trackColor
         property color fc: root.fillColor
 
+        // ---- AND A REPAINT WHEN THE RING BECOMES VISIBLE AT ALL ----
+        //
+        // The list below guards against a ring that stops tracking its
+        // inputs. It does NOT cover a ring created inside a parent that is
+        // not visible yet, and that gap had a real symptom.
+        //
+        // A Canvas does not paint while it is invisible, and it does not
+        // catch up on its own once it becomes visible — it waits for another
+        // repaint request. The window strip builds its rings inside an Item
+        // whose `visible` is false until the strip has windows and has faded
+        // in, so every ring was created unpainted. The ones whose `progress`
+        // then animated 0 -> 1 repainted as a SIDE EFFECT of onPChanged and
+        // looked right; the ones that stayed at 0 never changed a painted
+        // property again and stayed permanently blank.
+        //
+        // The symptom was "only the focused app has a ring, and no track is
+        // ever drawn anywhere", which reads exactly like a colour or alpha
+        // bug and is not one. Isolated by putting this component in a
+        // throwaway window that was visible from creation: an opaque track
+        // drew correctly at progress 0 there, while the identical colours
+        // drew nothing in the live strip.
+        onAvailableChanged: if (available) requestPaint()
+        onVisibleChanged: if (visible) requestPaint()
+        Component.onCompleted: requestPaint()
+
         onPChanged: requestPaint()
         onLwChanged: requestPaint()
         onTcChanged: requestPaint()

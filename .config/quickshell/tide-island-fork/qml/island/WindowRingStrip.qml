@@ -234,11 +234,22 @@ Item {
             // core disc is what made version 2 read as coins, and here it
             // would sit behind the app icon.
             //
-            // The one deliberate departure: this ring is drawn ONLY on the
-            // focused window, so unfocused icons stay bare. Putting a faint
-            // track on all seven would be closer to the countdown still, but
-            // it walks straight back into the seven-rings look that was
-            // rejected three times.
+            // ---- AND NOW EVERY ICON WEARS ONE ----
+            //
+            // The previous version drew the ring on the FOCUSED window only,
+            // on the reasoning that a faint track on all seven walks back
+            // into the seven-rings look rejected three times. Asked to put
+            // the countdown's ring on the apps and the workspace chip alike,
+            // so that reasoning is overruled — and it was wrong in a way
+            // worth recording. What was rejected three times was seven rings
+            // each in a DIFFERENT per-app hue, competing with each other and
+            // with a letter inside. Seven tracks in one accent at a fifth
+            // alpha is not that: they read as a set of identical sockets,
+            // and the eye goes to the single one with a full arc in it.
+            //
+            // So the track is on every icon and the arc still marks exactly
+            // one. That is also what the countdown actually looks like — its
+            // track is always drawn, and only the arc moves.
             delegate: Item {
                 required property var modelData
 
@@ -258,24 +269,52 @@ Item {
                     lineWidth: 2.5
                     showCore: false
                     fillColor: root.accentColor
+                    // ---- TWO TRACK ALPHAS, AND THE REASON IS MEASURED ----
+                    //
+                    // The countdown's track is a flat fifth alpha, and
+                    // copying that number verbatim was wrong here: at 0.20
+                    // over a bright wallpaper the unfocused tracks were
+                    // invisible on screen — the icons sat in nothing and only
+                    // the focused ring existed, which is the design this was
+                    // meant to replace. Confirmed at 9x against a pale sky.
+                    //
+                    // This file's FIRST version already knew it and said so:
+                    // "that ring sits on a dark panel and these sit on the
+                    // wallpaper, where a fifth-alpha stroke stops being a
+                    // stroke." That note was dropped when the rings were
+                    // rebuilt around icons, and the bug came straight back.
+                    //
+                    // So 0.45 unfocused, to survive any wallpaper, and 0.20
+                    // focused — where the full-strength arc is laid over the
+                    // track and a heavy track would fight it.
+                    // ---- TWO TRACK ALPHAS, AND THE REASON IS MEASURED ----
+                    //
+                    // The countdown's track is a flat fifth alpha, and
+                    // copying that number verbatim is wrong out here: at 0.20
+                    // over a bright wallpaper an unfocused track is invisible.
+                    // This file's FIRST version already knew it and said so —
+                    // "that ring sits on a dark panel and these sit on the
+                    // wallpaper, where a fifth-alpha stroke stops being a
+                    // stroke" — and the note was lost when the rings were
+                    // rebuilt around icons.
+                    //
+                    // 0.45 unfocused, to survive any wallpaper; 0.20 focused,
+                    // where the full-strength arc lies over the track and a
+                    // heavy track would fight it.
                     trackColor: Qt.rgba(root.accentColor.r, root.accentColor.g,
-                                        root.accentColor.b, 0.20)
+                                        root.accentColor.b,
+                                        parent.isActive ? 0.20 : 0.45)
                     // A window has no 0..1 quantity to show, so the arc
                     // carries the one binary fact: focused sweeps the whole
                     // circle. Animating progress rather than snapping it
                     // makes the ring DRAW ITSELF round on focus, which is
                     // the countdown's own motion played forwards.
+                    // No opacity gate any more: the track is always on, so
+                    // an unfocused icon sits in a visible socket and the
+                    // strip keeps its rhythm whichever window has focus.
                     progress: parent.isActive ? 1 : 0
-                    opacity: parent.isActive ? 1 : 0
 
                     Behavior on progress {
-                        NumberAnimation {
-                            duration: Motion.morphDuration()
-                            easing.type: Easing.BezierSpline
-                            easing.bezierCurve: Motion.spring()
-                        }
-                    }
-                    Behavior on opacity {
                         NumberAnimation {
                             duration: Motion.morphDuration()
                             easing.type: Easing.BezierSpline

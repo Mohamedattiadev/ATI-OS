@@ -1817,7 +1817,12 @@ Item {
 
             Rectangle {
                 id: quickTogglesCard
-                x: controlCenter.tlpControlsEnabled ? batteryDrawer.cardWidth + connectivityCardsRow.spacing : 0
+                // Same 12 px gutter batteryDrawer.cardWidth is derived from.
+                // Was reading connectivityCardsRow.spacing, which vanished
+                // with the connectivity cards — and an undefined id inside a
+                // binding is only a runtime ReferenceError, so the config
+                // still loaded clean and this card simply sat at x 0.
+                x: controlCenter.tlpControlsEnabled ? batteryDrawer.cardWidth + Metrics.px(12) : 0
                 y: batteryModeCard.y
                 width: batteryDrawer.cardWidth
                 height: controlCenter.batteryModeCardHeight

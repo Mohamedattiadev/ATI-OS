@@ -1,5 +1,8 @@
 import QtQuick
 
+// ProgressRing lives here — the shared ring the countdown, the volume OSD and
+// the window strip all draw. Directory import, not a file import.
+import "../common"
 import "../common/Metrics.js" as Metrics
 import "../common/Motion.js" as Motion
 
@@ -61,23 +64,46 @@ Item {
         }
     }
 
-    Rectangle {
+    // ---- THE CHIP IS THE COUNTDOWN'S RING, NOT A PILL ----
+    //
+    // Was a rounded-rectangle pill: shell fill at 0.92, a 1 px accent border
+    // at 0.45 alpha, and the number inside. It worked, but it was the only
+    // element in the resting bar with its own shape language — a lozenge
+    // sitting next to a row of circles.
+    //
+    // Asked for directly, alongside the same change to the window strip: use
+    // the ring the display panel's countdown draws (DisplayPanel.qml:832).
+    // The fit is unusually exact, because that countdown is ALREADY a ring
+    // with a number in the middle — it puts its remaining seconds there. A
+    // workspace id is the same shape of content in the same size of hole, so
+    // this is the shared component being used for the third time rather than
+    // a pill restyled to look round.
+    //
+    // Its parameters, copied not approximated: 26 px, lineWidth 2.5,
+    // showCore FALSE, track the same colour as the fill at a fifth alpha.
+    // 26 rather than the old 22 so it matches the window rings exactly — the
+    // chip and the icons sit on one line and any difference in diameter
+    // reads as a mistake.
+    //
+    // progress is 1 and does not animate. On the window strip the arc means
+    // "focused" and moves between icons; here there is only ever one
+    // workspace chip and it is always the current one, so a full arc is the
+    // honest reading and a partial one would imply a quantity that does not
+    // exist.
+    ProgressRing {
         id: chip
 
-        width: Math.max(Metrics.px(30), label.implicitWidth + Metrics.pad(18))
-        height: Metrics.px(22)
-        radius: height / 2
+        width: Metrics.px(26)
+        height: width
+        lineWidth: 2.5
+        showCore: false
+        progress: 1
+        fillColor: root.accentColor
+        trackColor: Qt.rgba(root.accentColor.r, root.accentColor.g,
+                            root.accentColor.b, 0.20)
 
-        // Reads as part of the island rather than as a separate widget: the
-        // same shell fill, with the accent mixed in far enough to say "this
-        // is the live one" and not so far that it competes with the pill.
-        color: Qt.rgba(root.fillColor.r, root.fillColor.g, root.fillColor.b, 0.92)
-        border.width: 1
-        border.color: Qt.rgba(root.accentColor.r, root.accentColor.g,
-                              root.accentColor.b, 0.45)
-
-        // The number itself is accent-coloured. The chip is small enough
-        // that a grey digit on a dark fill reads as disabled.
+        // The number is accent-coloured. The ring is small enough that a
+        // grey digit inside it reads as disabled.
         Text {
             id: label
             anchors.centerIn: parent
@@ -86,9 +112,9 @@ Item {
             font.pixelSize: Metrics.font(12)
             font.family: root.textFontFamily
             font.weight: Font.DemiBold
-            // Tabular figures would be ideal; Inter's default figures are
-            // already tabular-width for digits, so a 1 and a 8 do not
-            // resize the chip and make it twitch on every workspace change.
+            // Inter's default figures are already tabular-width for digits,
+            // so a 1 and an 8 do not resize anything and the ring cannot
+            // twitch on a workspace change.
         }
     }
 }
