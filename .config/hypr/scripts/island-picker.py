@@ -274,10 +274,221 @@ def workspaces_run(item_id):
                    capture_output=True, timeout=4)
 
 
+# ------------------------------------------------------------- terminal --
+#
+#  dmscripts' config sets DMTERM="alacritty -e", and dm-man uses it to open
+#  the page it picked. Both terminals are installed here, but the Hyprland
+#  session's terminal is kitty — it is what $mod Return opens and what every
+#  scratchpad rule in rules.conf matches on. Opening a manpage in the OTHER
+#  terminal would give it none of the session's window rules and none of its
+#  theming, so kitty is preferred and alacritty is the fallback, which is
+#  also what DMTERM would have given.
+
+def _terminal():
+    for candidate in ("kitty", "alacritty", "foot", "xterm"):
+        if shutil.which(candidate):
+            return candidate
+    return ""
+
+
+def _spawn(argv):
+    """Detach a GUI process from this script.
+
+    start_new_session, because this script is run by the island's picker
+    panel and exits the moment --run returns. A child in the same process
+    group is a child that dies with it, which for `okular somefile.pdf`
+    means the viewer flashes open and vanishes.
+    """
+    subprocess.Popen(argv, start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _notify(title, body, *extra):
+    if shutil.which("notify-send"):
+        subprocess.run(["notify-send", *extra, title, body],
+                       capture_output=True, timeout=4)
+
+
+# -------------------------------------------------------------- documents --
+#
+#  dm-documents: `find $HOME -maxdepth 4 -iname "*.pdf"`, then open the pick
+#  in $PDF_VIEWER (okular here).
+#
+#  The original abbreviates the path for display — Documents->Dcs,
+#  Downloads->Dwn — and then REVERSES the substitution to rebuild the path it
+#  opens. That round trip is why it cannot handle a PDF in a directory that
+#  happens to contain the string "Pic", and it exists only because a rofi row
+#  is one line of text and the path had to survive in it. Here the row
+#  carries an opaque `id`, so the full path is passed through untouched and
+#  the label is free to be just the filename.
+
+def documents_list():
+    home = os.path.expanduser("~")
+    try:
+        out = subprocess.run(
+            ["find", home, "-maxdepth", "4", "-iname", "*.pdf"],
+            capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return {"title": "Open document", "items": []}
+
+    items = []
+    for path in out.stdout.splitlines():
+        path = path.strip()
+        if not path:
+            continue
+        name = os.path.basename(path)
+        if name.lower().endswith(".pdf"):
+            name = name[:-4]
+        parent = os.path.dirname(path)
+        if parent.startswith(home):
+            parent = "~" + parent[len(home):]
+        items.append({"id": path, "label": name, "detail": parent})
+    items.sort(key=lambda row: row["label"].lower())
+    return {"title": "Open document", "items": items}
+
+
+def documents_run(item_id):
+    viewer = "okular" if shutil.which("okular") else "xdg-open"
+    _spawn([viewer, item_id])
+
+
+# -------------------------------------------------------------- manpages --
+#
+#  dm-man offers three rows — "Search manpages", "Random manpage", "Quit" —
+#  and the first opens a SECOND rofi holding every page on the system.
+#
+#  That middle step is dropped, and deliberately: it exists because rofi's
+#  list is not searchable until you have chosen to search it. This panel has
+#  a filter field that is always live, so "Search manpages" would be a row
+#  whose only effect is to show the list this menu already is. "Quit" goes
+#  for the same reason — Escape closes the panel.
+#
+#  Random is not ported. It is one shuf away in a terminal and it is not a
+#  thing anyone reaches for through a keybinding.
+
+def man_list():
+    try:
+        out = subprocess.run(["man", "-k", "."],
+                             capture_output=True, text=True, timeout=25)
+    except (OSError, subprocess.SubprocessError):
+        return {"title": "Manpage", "items": []}
+
+    items = []
+    for line in out.stdout.splitlines():
+        # `name (section)  - description`. rsplit on " - " because a
+        # description may itself contain " - " and the FIRST one is the
+        # separator; split on "(" for the section because a page name cannot
+        # contain a bracket but a description frequently can.
+        head, _, description = line.partition(" - ")
+        head = head.strip()
+        if not head:
+            continue
+        name = head.split("(")[0].strip()
+        if not name:
+            continue
+        items.append({
+            "id": name,
+            "label": head,
+            "detail": description.strip(),
+        })
+    return {"title": "Manpage", "items": items}
+
+
+def man_run(item_id):
+    terminal = _terminal()
+    if not terminal:
+        return
+    _spawn([terminal, "-e", "man", item_id] if terminal != "kitty"
+           else [terminal, "man", item_id])
+
+
+# ----------------------------------------------------------------- notes --
+#
+#  dm-note's menu is Copy / New / Delete / Quit. Only COPY is here: it is the
+#  one that is a list, and it is the one the chord is pressed for. New needs
+#  a text field and Delete needs a confirmation, and both are conversations
+#  rather than picks — the same reason rofi_pass and dm-spellcheck are not
+#  ported. The file is unchanged either way, so dm-note keeps working for
+#  the other three.
+
+NOTE_FILE = os.path.expanduser("~/.config/dmscripts/dmnote")
+
+
+def notes_list():
+    try:
+        with open(NOTE_FILE) as handle:
+            lines = [line.rstrip("\n") for line in handle]
+    except OSError:
+        return {"title": "Copy note", "items": []}
+
+    items = []
+    for line in lines:
+        if not line.strip():
+            continue
+        items.append({"id": line, "label": line, "detail": ""})
+    return {"title": "Copy note", "items": items}
+
+
+def notes_run(item_id):
+    # wl-copy and not xclip: this is the Wayland session. The qtile session
+    # keeps dm-note, which keeps using cp2cb.
+    if shutil.which("wl-copy"):
+        subprocess.run(["wl-copy", "--", item_id], capture_output=True, timeout=4)
+    _notify("Note copied", item_id)
+
+
+# ------------------------------------------------------------ brightness --
+#
+#  rofi_light's exact ladder — 100 80 60 40 20 10 5 — and its exact action,
+#  `light -S <n>` followed by a dunst-stacked notification. The stack tag is
+#  copied verbatim so repeated changes replace one another in the tray
+#  rather than piling up, which is the behaviour the original was tuned for.
+
+BRIGHTNESS_STEPS = [100, 80, 60, 40, 20, 10, 5]
+
+
+def brightness_list():
+    current = -1
+    if shutil.which("light"):
+        try:
+            out = subprocess.run(["light", "-G"], capture_output=True,
+                                 text=True, timeout=4)
+            current = int(float(out.stdout.strip() or "-1"))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            current = -1
+
+    items = []
+    for step in BRIGHTNESS_STEPS:
+        items.append({
+            "id": str(step),
+            "label": "%d%%" % step,
+            "detail": "current: %d%%" % current if current >= 0 else "",
+        })
+    return {"title": "Brightness", "items": items}
+
+
+def brightness_run(item_id):
+    if not shutil.which("light"):
+        return
+    subprocess.run(["light", "-S", item_id], capture_output=True, timeout=6)
+    _notify("Brightness", "%s%%" % item_id,
+            "-a", "Brightness",
+            "-h", "string:x-dunst-stack-tag:brightness",
+            "-h", "int:value:%s" % item_id,
+            "-i", "display-brightness-medium-symbolic")
+
+
 MENUS = {
     "windows": (windows_list, windows_run),
     "processes": (processes_list, processes_run),
     "workspaces": (workspaces_list, workspaces_run),
+    # --- ported from the rofi/dm-* menus. See each function's note for what
+    #     was dropped and why; nothing here changes the original scripts,
+    #     which the qtile session still uses unchanged.
+    "documents": (documents_list, documents_run),
+    "man": (man_list, man_run),
+    "notes": (notes_list, notes_run),
+    "brightness": (brightness_list, brightness_run),
 }
 
 
