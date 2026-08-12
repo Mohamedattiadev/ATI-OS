@@ -90,6 +90,13 @@ Item {
     // workspace chip and it is always the current one, so a full arc is the
     // honest reading and a partial one would imply a quantity that does not
     // exist.
+    // The timer's disc: black, full diameter of the ring.
+    Rectangle {
+        anchors.fill: chip
+        radius: width / 2
+        color: "#000000"
+    }
+
     ProgressRing {
         id: chip
 
@@ -103,15 +110,16 @@ Item {
         width: Metrics.px(32)
         height: width
         lineWidth: Metrics.px(4)
-        showCore: true
+        // showCore off: its core is only 0.54 of the diameter, which left a
+        // ring of bare wallpaper between the disc and the stroke. The timer's
+        // disc fills its whole circle, so the plate is drawn full-size below.
+        showCore: false
         progress: 1
         fillColor: root.accentColor
         // No border ring - see the note in WindowRingStrip.qml. The dark
         // disc behind the digit carries it; an outline around it turned the
         // strip into a row of bordered buttons.
         trackColor: "transparent"
-        coreColor: "#000000"
-        coreBorderColor: "#000000"
 
         // The number is accent-coloured. The ring is small enough that a
         // grey digit inside it reads as disabled.

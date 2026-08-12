@@ -274,6 +274,15 @@ Item {
                 width: Metrics.px(32)
                 height: width
 
+                // The timer's disc: black, and the FULL diameter of the
+                // ring rather than a smaller inset circle.
+                Rectangle {
+                    id: iconPlate
+                    anchors.fill: parent
+                    radius: width / 2
+                    color: "#000000"
+                }
+
                 ProgressRing {
                     anchors.fill: parent
                     // ---- THESE ARE OsdLayer'S NUMBERS, NOT THE COUNTDOWN'S ----
@@ -303,7 +312,20 @@ Item {
                     // palettes and any wallpaper. The accent moves to the
                     // ARC, which is the one thing that has to mean something.
                     lineWidth: Metrics.px(4)
-                    showCore: true
+                    // ---- THE DISC IS A SIBLING, BECAUSE showCore IS TOO SMALL ----
+                    //
+                    // Measured off the timer in a screenshot: its ring is
+                    // 32 px across and its BLACK DISC is 36 - the disc fills
+                    // the whole circle and then some. ProgressRing's own core
+                    // is `min(width,height) * 0.54`, about 17 px at this
+                    // size, so showCore left each icon on a small disc with a
+                    // ring of bare WALLPAPER between the disc and the stroke.
+                    // That gap is what still read as wrong after the border
+                    // came off, and no icon size could have fixed it.
+                    //
+                    // So the disc is drawn full-size underneath (see
+                    // `iconPlate` below) and showCore stays off.
+                    showCore: false
                     fillColor: root.accentColor
                     // ---- TWO TRACK ALPHAS, AND THE REASON IS MEASURED ----
                     //
@@ -380,11 +402,6 @@ Item {
                     // should: the accent arc on the focused window, the way
                     // the timer's amber arc marks the timer.
                     trackColor: "transparent"
-                    // Black like the timer's core, and no core border: the
-                    // default #1f1f1f edge is a hairline outline, i.e. the
-                    // same border returning at lower contrast.
-                    coreColor: "#000000"
-                    coreBorderColor: "#000000"
                     // A window has no 0..1 quantity to show, so the arc
                     // carries the one binary fact: focused sweeps the whole
                     // circle. Animating progress rather than snapping it
@@ -484,7 +501,13 @@ Item {
                         // inner circle: ~1.3 px of clearance at the corners, so
                         // the ring closes around the icon the way it closes
                         // around the countdown's digits.
-                        width: Metrics.px(13)
+                            // The timer's glyph inks 8 x 11 px inside a 32 px
+                        // ring: about a third of the diameter, so roughly
+                        // 10.5 px of clear disc on each side. 13 px here left
+                        // only 9.5 and read as cramped. 11 px is that same
+                        // ratio at this diameter - the padding asked for,
+                        // taken off the measurement rather than nudged.
+                        width: Metrics.px(11)
                         height: width
                         source: winCell.iconSource
                         visible: winCell.iconSource !== ""
