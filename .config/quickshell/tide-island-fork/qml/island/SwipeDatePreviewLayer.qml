@@ -3,6 +3,9 @@ import IslandBackend
 
 // FORK: one shared scale factor for every island surface.
 import "../common/Metrics.js" as Metrics
+// FORK: the shared motion system — one spring for geometry, one
+// critically damped curve for opacity. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 Item {
     id: root
@@ -32,10 +35,18 @@ Item {
     clip: true
     opacity: showCondition ? 1 : 0
 
+    // FORK: one choreography for every layer in the shell.
+    // Was `showCondition ? 220 : 140` on Easing.InOutQuad — one of
+    // eight hand-picked in-durations and six out-durations that agreed
+    // with neither each other nor the 400 ms the shape takes. See
+    // Motion.js, "CONTENT CHOREOGRAPHY", for the measurement.
     Behavior on opacity {
         NumberAnimation {
-            duration: showCondition ? 220 : 140
-            easing.type: Easing.InOutQuad
+            duration: showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+            // Critically damped: opacity is clamped 0-1 and an
+            // overshooting fade reads as a cut. Motion.js says why.
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.fade()
         }
     }
 

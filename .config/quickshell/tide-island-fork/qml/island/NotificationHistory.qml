@@ -6,6 +6,8 @@ import "../controlcenter"
 
 // FORK: one shared scale factor for every island surface.
 import "../common/Metrics.js" as Metrics
+// FORK: the shared motion system. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 Item {
     id: root
@@ -137,14 +139,16 @@ Item {
                         property: "opacity"
                         to: 0
                         duration: 170
-                        easing.type: Easing.InOutCubic
+                        easing.type: Easing.BezierSpline
+                        easing.bezierCurve: Motion.fade()   // FORK: was Easing.InOutCubic
                     }
 
                     NumberAnimation {
                         property: "scale"
                         to: 0.94
                         duration: 190
-                        easing.type: Easing.InOutCubic
+                        easing.type: Easing.BezierSpline
+                        easing.bezierCurve: Motion.spring()   // FORK: was Easing.InOutCubic
                     }
                 }
             }
@@ -153,7 +157,8 @@ Item {
                 NumberAnimation {
                     properties: "x,y"
                     duration: 260
-                    easing.type: Easing.OutCubic
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
                 }
             }
 

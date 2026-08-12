@@ -2,7 +2,12 @@ import QtQuick
 import IslandBackend
 
 // FORK: one shared scale factor for every island surface.
+// FORK: the shared ring lives in qml/common — see ProgressRing.qml.
+import "../common"
 import "../common/Metrics.js" as Metrics
+// FORK: the shared motion system — one spring for geometry, one
+// critically damped curve for opacity. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 Item {
     id: root
@@ -40,12 +45,20 @@ Item {
     clip: true
     opacity: showCondition ? revealProgress : 0
 
+    // FORK: one choreography for every layer in the shell.
+    // Was `showCondition ? 280 : 200` on Easing.InOutQuad — one of
+    // eight hand-picked in-durations and six out-durations that agreed
+    // with neither each other nor the 400 ms the shape takes. See
+    // Motion.js, "CONTENT CHOREOGRAPHY", for the measurement.
     Behavior on opacity {
         enabled: slideDirection === "none"
 
         NumberAnimation {
-            duration: showCondition ? 280 : 200
-            easing.type: Easing.InOutQuad
+            duration: showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+            // Critically damped: opacity is clamped 0-1 and an
+            // overshooting fade reads as a cut. Motion.js says why.
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.fade()
         }
     }
 
@@ -55,80 +68,72 @@ Item {
         height: parent.height
         visible: showProgress
 
+        // FORK: the volume/brightness OSD, restyled onto the TIMER's ring
+        // idiom — the ring is the element, with the glyph living inside it.
+        //
+        // What it was: icon and "74%" as a text pair on the left, and a
+        // 30 px ring pushed against the right edge. Three separate things
+        // reading left-to-right, and the ring — the only part that shows a
+        // QUANTITY at a glance — was the smallest and furthest from where
+        // the eye lands. The number carried all the information and the ring
+        // was decoration beside it.
+        //
+        // The timer page had already solved this: one large ring with the
+        // value centred in it (ExpandedPlayerLayer.qml ~line 798). That is
+        // the shape a radial indicator wants, and ProgressRing was built for
+        // it — `centerContent` is its default property alias and centreSlot
+        // is sized to 62% of the ring, which is why the glyph needs no
+        // measurements of its own here.
+        //
+        // The ring stays LEFT rather than moving to the timer's centre: this
+        // capsule is the resting notch width, and a centred ring would put
+        // the number where the clock normally is, so a volume nudge would
+        // read as the clock changing.
         Row {
             anchors.left: parent.left
-            anchors.leftMargin: Metrics.pad(18)
+            anchors.leftMargin: Metrics.pad(16)
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Metrics.px(12)
+            spacing: Metrics.px(13)
 
-            Text {
-                text: iconText
-                color: "white"
-                font.pixelSize: userConfig.iconFontSize
-                font.family: iconFontFamily
+            // Sized off the capsule rather than a literal, so it stays a ring
+            // inside the shape at any islandHeight the settings panel sets —
+            // the height is user-editable now and a fixed 30 would overflow a
+            // shorter notch and float in a taller one.
+            Item {
+                width: Math.round(root.height * 0.62)
+                height: width
                 anchors.verticalCenter: parent.verticalCenter
+
+                ProgressRing {
+                    anchors.fill: parent
+                    progress: root.progress
+                    // Thicker than the 3.5 default: at this diameter the
+                    // default reads as a hairline outline rather than as a
+                    // gauge, which is the same complaint in miniature.
+                    lineWidth: Metrics.px(4)
+
+                    // The glyph that says WHICH quantity this is, in the one
+                    // place it cannot be mistaken for anything else.
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.iconText
+                        color: "white"
+                        font.pixelSize: root.userConfig.iconFontSize
+                        font.family: root.iconFontFamily
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
             }
 
             Text {
-                text: Math.round(progress * 100) + "%"
+                text: Math.round(root.progress * 100) + "%"
                 color: "white"
-                font.pixelSize: userConfig.titleFontSize
-                font.family: heroFontFamily
+                font.pixelSize: root.userConfig.titleFontSize
+                font.family: root.heroFontFamily
                 font.weight: Font.Bold
                 font.letterSpacing: -0.35
                 anchors.verticalCenter: parent.verticalCenter
-            }
-        }
-
-        Item {
-            width: Metrics.px(30)
-            height: Metrics.px(30)
-            anchors.right: parent.right
-            anchors.rightMargin: Metrics.pad(16)
-            anchors.verticalCenter: parent.verticalCenter
-
-            Rectangle {
-                anchors.centerIn: parent
-                width: Metrics.px(16)
-                height: Metrics.px(16)
-                radius: Metrics.px(8)
-                color: "#111111"
-                border.color: "#1f1f1f"
-                border.width: 1
-            }
-
-            Canvas {
-                anchors.fill: parent
-                antialiasing: true
-                property real progressValue: Math.max(0, Math.min(1, progress))
-
-                onProgressValueChanged: requestPaint()
-                onWidthChanged: requestPaint()
-                onHeightChanged: requestPaint()
-
-                onPaint: {
-                    var ctx = getContext("2d");
-                    var size = Math.min(width, height);
-                    var lineWidth = 3.5;
-                    var center = size / 2;
-                    var radius = (size - lineWidth) / 2 - 0.5;
-                    var startAngle = -Math.PI / 2;
-                    var endAngle = startAngle + (Math.PI * 2 * progressValue);
-
-                    ctx.clearRect(0, 0, width, height);
-                    ctx.lineCap = "round";
-                    ctx.lineWidth = lineWidth;
-
-                    ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
-                    ctx.beginPath();
-                    ctx.arc(center, center, radius, 0, Math.PI * 2, false);
-                    ctx.stroke();
-
-                    ctx.strokeStyle = "#ffffff";
-                    ctx.beginPath();
-                    ctx.arc(center, center, radius, startAngle, endAngle, false);
-                    ctx.stroke();
-                }
             }
         }
     }

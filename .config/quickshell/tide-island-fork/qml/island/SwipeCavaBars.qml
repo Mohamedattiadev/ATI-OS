@@ -2,6 +2,9 @@ import QtQuick
 
 // FORK: one shared scale factor for every island surface.
 import "../common/Metrics.js" as Metrics
+// FORK: the shared motion system — one generated spring for geometry,
+// one critically damped curve for opacity. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 Item {
     id: root
@@ -53,7 +56,8 @@ Item {
                 Behavior on height {
                     NumberAnimation {
                         duration: 90
-                        easing.type: Easing.InOutQuad
+                        easing.type: Easing.BezierSpline
+                        easing.bezierCurve: Motion.spring()   // FORK: was Easing.InOutQuad
                     }
                 }
             }

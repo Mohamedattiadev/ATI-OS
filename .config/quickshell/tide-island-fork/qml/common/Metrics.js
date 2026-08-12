@@ -41,7 +41,55 @@
 //
 var DESIGN_HEIGHT = 38;
 var ISLAND_HEIGHT = 28;
-var SCALE = ISLAND_HEIGHT / DESIGN_HEIGHT;   // 0.7368…
+var NOTCH_SCALE = ISLAND_HEIGHT / DESIGN_HEIGHT;   // 0.7368…
+
+//
+// ---- WHY THE PANELS ARE NO LONGER SCALED BY NOTCH_SCALE ----
+//
+// The paragraphs above are right about the resting NOTCH and were wrong to
+// apply the same number to everything else. Two reports made it obvious —
+// "the sizing of the element and font in all the island is not proper" and
+// "some elements look eaten, not full" — and they are one bug:
+//
+//   * px() shrank every container by 0.74, while
+//   * font() FLOORED at 9.
+//
+// Below a source size of about 12, that floor is doing all the work:
+// font(10), font(11) and font(12) all returned 9. So the boxes kept
+// shrinking, the text inside them stopped, and the text ran out of its
+// box — which on screen is a label with its descenders or its last
+// characters cut off. Literally eaten. It also flattened the type
+// hierarchy: four deliberately different sizes rendered as one.
+//
+// The deeper mistake is the premise. 28/38 exists because qtile's BAR is
+// 28 px tall and the resting notch has to match it. **No expanded panel is
+// bound by that.** A theme picker or a cheatsheet hangs below the bar as a
+// free-floating surface; the only thing constraining it is the screen. It
+// was being shrunk to fit a constraint that does not apply to it.
+//
+// Verified before changing anything: the resting shape does NOT come from
+// here. It is `userConfig.islandWidth` / `islandHeight` in
+// DynamicIslandWindow.qml, read straight from userconfig.json. So raising
+// the panel scale cannot make the notch grow — the two really are
+// separable, which is what makes this safe.
+//
+// 0.92 rather than 1.0: the vendored upstream numbers were drawn for a
+// 2560x1440 screen and this panel is 1366x768, so a little tightening is
+// still right. What was wrong was tightening by a quarter.
+//
+var SCALE = 0.92;
+
+//
+// Type gets its own scale, and it is 1.0.
+//
+// Legibility is an absolute, not a ratio: 11 px of Inter is the same size
+// on any panel, and shrinking type to match a shape only ever costs
+// readability. The source sizes were already chosen by eye at design size,
+// so the honest transform is none at all. The floor below is kept as a
+// backstop for anything that asks for something silly, not as a working
+// part of the system — if it ever fires again, the fix is the source size.
+//
+var FONT_SCALE = 1.0;
 
 //
 // px(n) — a structural length, scaled and snapped to whole pixels.
@@ -74,8 +122,16 @@ function px(n) {
 // back explicitly. 1.35 recovers the linear loss and adds roughly a third on
 // top, which is what reads as breathing room at this size.
 //
+// The 1.35 boost that used to be here is GONE, and its removal is part of
+// the same fix. It existed to claw back what the 0.74 shrink took out of
+// internal margins — a correction for a scale that is no longer applied.
+// Keeping both would double-count: padding would now grow faster than the
+// boxes it sits inside, and content would drift away from its own edges
+// as surely as it was jammed against them before. 1.06 is a light touch
+// on top of the panel scale, because glyph height still does not shrink
+// and the space around type is the first thing to feel tight.
 function pad(n) {
-    return Math.max(1, Math.round(n * SCALE * 1.35));
+    return Math.max(1, Math.round(n * SCALE * 1.06));
 }
 
 //
@@ -87,5 +143,5 @@ function pad(n) {
 // source rather than to fix here.
 //
 function font(n) {
-    return Math.max(9, Math.round(n * SCALE));
+    return Math.max(9, Math.round(n * FONT_SCALE));
 }

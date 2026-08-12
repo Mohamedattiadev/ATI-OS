@@ -65,6 +65,66 @@ function morphDuration() { return Math.round(MORPH_MS * SCALE); }
 function fadeDuration()  { return Math.round(FADE_MS  * SCALE); }
 
 // ---------------------------------------------------------------------
+//  CONTENT CHOREOGRAPHY — the three numbers that fix "too bad" animations
+// ---------------------------------------------------------------------
+//
+// Everything above governs the SHAPE. Nothing above governed the CONTENT,
+// and that is where the complaint actually lived. Before this section
+// existed, every one of the 20 layers in this shell carried its own
+// hand-picked pair of fade durations on `Easing.InOutQuad`:
+//
+//     in:  160 180 200 220 240 260 280 300
+//     out: 100 120 130 140 150 200
+//
+// Eight in-durations and six out-durations, none of them derived from the
+// 400 ms the shape takes, none of them equal to each other, and none of
+// them the critically damped curve the spec insists opacity must use. A
+// state change therefore ran three clocks at once — old content on one,
+// new content on another, the capsule on a third — and three clocks that
+// disagree is the definition of a stutter.
+//
+// MEASURED, closing the theme picker (10 grim frames, ~66 ms apart, times
+// from `date +%s%N` around the IPC call rather than assumed):
+//
+//   t=+58ms   capsule still ~700 px wide, theme grid ALREADY GONE,
+//             clock ALREADY at full opacity, centred in a huge empty box
+//   t=+196ms  capsule fully collapsed to the notch
+//
+// and opening it:
+//
+//   t=+69ms   capsule barely wider than the notch, "Theme" header already
+//             painted and clipped by the shape's own `clip: true`
+//   t=+138ms  capsule near full width, still only the header
+//   t=+272ms  full grid
+//
+// So content was not fading at all in either direction — it teleported,
+// and it teleported at the WRONG END of the morph both times. See
+// PanelLoader.qml for why the out-fade never even started.
+//
+// The choreography these three numbers encode:
+//
+//   0 .. FADE_OUT_MS          old content leaves, fast, while the shape has
+//                             barely begun to move
+//   0 .. morphDuration()      the shape travels (spring: reaches target at
+//                             ~168 ms, peaks +1.5% at ~210 ms, settles)
+//   CONTENT_DELAY_MS ..
+//     + FADE_IN_MS            new content arrives INTO a shape that is
+//                             already ~72% of the way there at 90 ms and
+//                             within 1% of final by 290 ms
+//
+// The delay is the load-bearing part and it is cheap: 90 ms is below the
+// ~100 ms threshold at which a response stops feeling immediate, so the
+// panel still reads as instant while no longer being drawn inside a box
+// that is the wrong size for it.
+var FADE_IN_MS = 200;
+var FADE_OUT_MS = 130;
+var CONTENT_DELAY_MS = 90;
+
+function fadeInDuration()  { return Math.round(FADE_IN_MS  * SCALE); }
+function fadeOutDuration() { return Math.round(FADE_OUT_MS * SCALE); }
+function contentDelay()    { return Math.round(CONTENT_DELAY_MS * SCALE); }
+
+// ---------------------------------------------------------------------
 //  The oscillator
 // ---------------------------------------------------------------------
 
@@ -245,6 +305,52 @@ function curve(zeta) {
     return _cache[key];
 }
 
+// ---------------------------------------------------------------------
+//  WHAT IS DELIBERATELY *NOT* ON THIS SYSTEM
+// ---------------------------------------------------------------------
+//
+// This file was written and then most of the shell kept upstream's easing
+// presets anyway: an audit counted 66 raw `easing.type: Easing.*` against
+// 23 files that referenced Motion. 49 of those were transitions — sizes,
+// positions, scales, opacities, colours — and are now converted, classified
+// strictly by what the property IS:
+//
+//   spring (zeta 0.8)  width height x y scale rotation radius, and the
+//                      0-1 values that drive a POSITION (animatedGroupShift,
+//                      pageProgress, the timer bubble's reveal)
+//   fade   (zeta 1.0)  opacity, colour, and every 0-1 value that is CLAMPED
+//                      like opacity is — displayedVolume, displayedBrightness,
+//                      batteryDrawerProgress, animatedProgress, slashProgress,
+//                      lyricChangeProgress
+//
+// The second half of that list is the part worth arguing. A volume slider's
+// fill is not opacity, but it is bounded at both ends exactly like opacity,
+// and a spring's 1.5% overshoot on a slider at 100% draws a fill wider than
+// its own track for ~100 ms. Same failure mode, same curve.
+//
+// 17 raw easings remain ON PURPOSE. They are not transitions between two
+// states and the spring says nothing about them:
+//
+//   FavoriteStar (8)          a hand-choreographed pop — outline shrinks,
+//                             filled star overshoots, outline returns. The
+//                             overshoot is already authored into the
+//                             keyframes; adding a second one fights it.
+//   RecordingIndicator (2)    a looping InOutSine breathe. A step response
+//                             has no meaning for something that never stops.
+//   timerCompletion (4)       a bespoke pulse-and-flash celebration, same
+//                             reasoning as the star.
+//   ThemeTransitionWindow (1) the 620 ms circular wipe. Its radius must be
+//                             monotone: an overshoot past maximumRadius is
+//                             off-screen and a rebound would re-cover the
+//                             screen it just revealed.
+//   osdProgress (1)           SmoothedAnimation, not NumberAnimation. It is
+//                             VELOCITY-limited on purpose, because volume
+//                             keys autorepeat and a duration-based animation
+//                             restarts from the beginning on every repeat.
+//   SwipeCavaBars height      converted TO the spring rather than away from
+//                             it, and listed here because it is the one
+//                             non-transition that was: an EQ bar wants mass.
+//
 // The two curves the spec names. Call these, not curve().
 //
 //   spring — geometry: width, height, radius, position, the notch morph.
@@ -254,3 +360,17 @@ function curve(zeta) {
 //            nothing gets clipped.
 function spring() { return curve(0.8); }
 function fade()   { return curve(1.0); }
+
+// How far past its target the spring goes, as a fraction of the travel.
+//
+// Published rather than left implicit because callers have to BUDGET for
+// it. Anything that sizes a container from an animated value's TARGET —
+// the island's own layer surface is the case that bit — is sizing for a
+// height the shape briefly exceeds, and clips the peak of every morph.
+//
+// Theory for zeta = 0.8 is exp(-pi*zeta/sqrt(1-zeta^2)) = 1.52%; the
+// 10-segment spline this file is limited to measures 1.54% against the
+// analytic response at 1001 sample points. The larger of the two is the
+// safe one to hand out.
+function overshoot() { return 0.0154; }
+

@@ -1,4 +1,7 @@
 import QtQuick
+// FORK: the shared motion system — one generated spring for geometry,
+// one critically damped curve for opacity. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 Item {
     id: root
@@ -23,7 +26,8 @@ Item {
     Behavior on opacity {
         NumberAnimation {
             duration: root.active ? 180 : 220
-            easing.type: Easing.InOutQuad
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.fade()   // FORK: was Easing.InOutQuad
         }
     }
 
