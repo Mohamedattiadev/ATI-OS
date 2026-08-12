@@ -64,77 +64,46 @@ Item {
         }
     }
 
-    // ---- THE CHIP IS THE COUNTDOWN'S RING, NOT A PILL ----
+    // ---- INSIDE THE CAPSULE IT IS TYPE, NOT A RING ----
     //
-    // Was a rounded-rectangle pill: shell fill at 0.92, a 1 px accent border
-    // at 0.45 alpha, and the number inside. It worked, but it was the only
-    // element in the resting bar with its own shape language — a lozenge
-    // sitting next to a row of circles.
+    // History, because this element has now been three things and each change
+    // was driven by WHERE it sits rather than by taste.
     //
-    // Asked for directly, alongside the same change to the window strip: use
-    // the ring the display panel's countdown draws (DisplayPanel.qml:832).
-    // The fit is unusually exact, because that countdown is ALREADY a ring
-    // with a number in the middle — it puts its remaining seconds there. A
-    // workspace id is the same shape of content in the same size of hole, so
-    // this is the shared component being used for the third time rather than
-    // a pill restyled to look round.
+    //   1. a rounded pill with a border  - the only lozenge in a row of circles
+    //   2. the timer's ring on a dark disc - correct while it sat OUT ON THE
+    //      WALLPAPER beside the pill, where the disc separated the digit from
+    //      whatever photo was behind it and the ring gave that disc an edge
+    //   3. plain type - now that it lives INSIDE the capsule
     //
-    // Its parameters, copied not approximated: 26 px, lineWidth 2.5,
-    // showCore FALSE, track the same colour as the fill at a fifth alpha.
-    // 26 rather than the old 22 so it matches the window rings exactly — the
-    // chip and the icons sit on one line and any difference in diameter
-    // reads as a mistake.
+    // The ring did not survive the move and could not have. Its disc was
+    // IslandTheme.shellFill, which is the capsule's own material, so against
+    // the capsule the disc is invisible by construction and all that remained
+    // on screen was a heavy 4 px accent stroke floating next to the clock.
+    // Every reason the ring existed was a reason about wallpaper, and there is
+    // no wallpaper in here.
     //
-    // progress is 1 and does not animate. On the window strip the arc means
-    // "focused" and moves between icons; here there is only ever one
-    // workspace chip and it is always the current one, so a full arc is the
-    // honest reading and a partial one would imply a quantity that does not
-    // exist.
-    // The timer's disc: black, full diameter of the ring.
-    Rectangle {
-        anchors.fill: chip
-        radius: width / 2
-        // Theme fill, not a hardcoded black - matches the window plates.
-        color: root.fillColor
-    }
-
-    ProgressRing {
+    // So the workspace id is set as type, in the register the capsule already
+    // speaks: the clock is white hero type, and this is the same type one step
+    // smaller and in the accent, which is exactly how the connectivity headers
+    // carry their "· status" clause. A companion to the clock rather than a
+    // second object competing with it.
+    //
+    // No ring, no plate, no border. The accent alone says "this is the live
+    // workspace"; nothing else in the resting capsule is accent-coloured.
+    Text {
         id: chip
 
-        // OsdLayer's ring, matching the window strip beside it: stroke 4,
-        // white track at 0.16, and the dark CORE DISC. The core is why this
-        // changed again — out on the wallpaper a hollow ring leaves the digit
-        // floating on whatever photo is behind it, and the OSD ring brings
-        // its own plate. The countdown's hollow 2.5 px ring is right only
-        // where the countdown lives, on an already-dark panel.
-        // 32, matching the timer ring and the window icons beside it.
-        width: Metrics.px(32)
-        height: width
-        lineWidth: Metrics.px(4)
-        // showCore off: its core is only 0.54 of the diameter, which left a
-        // ring of bare wallpaper between the disc and the stroke. The timer's
-        // disc fills its whole circle, so the plate is drawn full-size below.
-        showCore: false
-        progress: 1
-        fillColor: root.accentColor
-        // No border ring - see the note in WindowRingStrip.qml. The dark
-        // disc behind the digit carries it; an outline around it turned the
-        // strip into a row of bordered buttons.
-        trackColor: "transparent"
-
-        // The number is accent-coloured. The ring is small enough that a
-        // grey digit inside it reads as disabled.
-        Text {
-            id: label
-            anchors.centerIn: parent
-            text: String(root.workspaceId)
-            color: root.accentColor
-            font.pixelSize: Metrics.font(12)
-            font.family: root.textFontFamily
-            font.weight: Font.DemiBold
-            // Inter's default figures are already tabular-width for digits,
-            // so a 1 and an 8 do not resize anything and the ring cannot
-            // twitch on a workspace change.
-        }
+        text: String(root.workspaceId)
+        color: root.accentColor
+        // A step under the clock. Deliberately not equal to it: two numbers at
+        // the same size next to each other read as one value split in half,
+        // which is how a workspace id starts looking like part of the time.
+        font.pixelSize: Metrics.font(13)
+        font.family: root.textFontFamily
+        font.weight: Font.DemiBold
+        // Tabular figures so a 1 and an 8 occupy the same width. The capsule
+        // reserves a fixed allowance for this, and a proportional digit would
+        // make the clock shift sideways on a workspace change.
+        font.features: ({ "tnum": 1 })
     }
 }

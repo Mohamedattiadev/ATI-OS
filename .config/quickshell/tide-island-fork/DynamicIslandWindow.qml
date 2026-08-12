@@ -424,7 +424,9 @@ PanelWindow {
     // capsule has to carry it the same way it carries the EQ bars — as extra
     // width, not as ink squeezed into the padding. islandWidth is sized for
     // the clock alone. Ring diameter plus the gap to the clock.
-    readonly property real restingWorkspaceAllowance: Metrics.px(32) + Metrics.px(10)
+    // A digit and the gap to the clock, not a 32 px ring — the workspace
+    // readout became type when it moved inside the capsule.
+    readonly property real restingWorkspaceAllowance: Metrics.px(12) + Metrics.px(10)
     readonly property bool hoverExpandEnabled: configuredHoverExpandAction > 0
     readonly property bool topGestureInputActive: !root.overviewVisible && islandContainer.canShowSideSwipe
     readonly property bool autoHideRuntimeEnabled: !shellRootController
