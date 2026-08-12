@@ -638,8 +638,43 @@ FocusScope {
                 radius: Metrics.px(7)
                 color: rowItem.isSelected ? "#2c3038" : "transparent"
 
-                Text {
+                // FORK: the row thumbnail, for menus whose items carry an
+                // `icon` path. Only the clipboard menu does today.
+                //
+                // "image" repeated down a column is not a list of images, it
+                // is the same word eight times — the entry you are looking
+                // for is a picture and the only thing that identifies it is
+                // what it looks like. copyq_rofi knew this and passed
+                // -show-icons; this panel had no way to.
+                //
+                // sourceSize caps the DECODE, not just the draw. Without it
+                // a 1366x768 screenshot is decoded at full resolution into
+                // a 22 px box, once per row, and the clipboard is mostly
+                // screenshots.
+                Image {
+                    id: rowThumb
+                    visible: source !== ""
+                    source: rowItem.modelData.icon !== undefined
+                        ? "file://" + rowItem.modelData.icon : ""
                     anchors.left: parent.left
+                    anchors.leftMargin: Metrics.pad(10)
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: Metrics.px(18)
+                    width: Metrics.px(28)
+                    fillMode: Image.PreserveAspectFit
+                    horizontalAlignment: Image.AlignLeft
+                    sourceSize.width: Metrics.px(56)
+                    sourceSize.height: Metrics.px(36)
+                    asynchronous: true
+                    // The files are rewritten under the same names on every
+                    // --list, so a cached copy is a preview of the previous
+                    // clipboard.
+                    cache: false
+                    smooth: true
+                }
+
+                Text {
+                    anchors.left: rowThumb.visible ? rowThumb.right : parent.left
                     anchors.leftMargin: Metrics.pad(10)
                     anchors.right: parent.right
                     anchors.rightMargin: Metrics.pad(10)
@@ -698,6 +733,34 @@ FocusScope {
             font.pixelSize: Metrics.font(13)
             font.family: root.heroFontFamily
             font.weight: Font.DemiBold
+        }
+
+        // The real preview. The row thumbnail is 28 px and only says
+        // "which one"; this says what it actually is, which for a
+        // screenshot is the entire content of the clipboard entry.
+        Rectangle {
+            visible: preview.source !== ""
+            width: Math.min(details.width, preview.paintedWidth + 2)
+            height: preview.paintedHeight + 2
+            color: "#12141a"
+            radius: Metrics.px(4)
+            border.width: 1
+            border.color: Qt.rgba(1, 1, 1, 0.08)
+
+            Image {
+                id: preview
+                anchors.centerIn: parent
+                source: root.selected && root.selected.icon !== undefined
+                    ? "file://" + root.selected.icon : ""
+                width: details.width - Metrics.px(2)
+                height: Metrics.px(120)
+                fillMode: Image.PreserveAspectFit
+                sourceSize.width: Metrics.px(520)
+                sourceSize.height: Metrics.px(260)
+                asynchronous: true
+                cache: false
+                smooth: true
+            }
         }
 
         Text {

@@ -510,23 +510,49 @@ def brightness_run(item_id):
 
 CLIPBOARD_MAX = 40
 
+# Thumbnails live under the runtime dir, like copyq_rofi's. Wiped on every
+# --list: copyq indices are positional, so item 3 is a different picture
+# after anything new is copied, and a stale 3.png is a preview of whatever
+# used to be there.
+CLIPBOARD_THUMBS = os.path.join(
+    os.environ.get("XDG_RUNTIME_DIR") or "/tmp",
+    "island-picker-thumbs")
+
 _CLIPBOARD_JS = r"""
 var TAB = "&clipboard";
 var MAX = %d;
+var THUMBS = "%s";
 tab(TAB);
 var n = Math.min(count(), MAX);
 var seen = {};
 for (var i = 0; i < n; i++) {
   var d = getitem(i);
   var keys = Object.keys(d);
-  var isImg = false, pinned = false;
+  var pinned = false;
   for (var j = 0; j < keys.length; j++) {
-    if (keys[j].indexOf("image/") == 0) isImg = true;
     if (keys[j] == "application/x-copyq-item-pinned") pinned = true;
   }
-  var label = "", dedupeKey = "", kind = "text";
+  var label = "", dedupeKey = "", kind = "text", icon = "";
+
+  // Ask for the PNG rather than trusting the key list. Several items here
+  // carry image bytes while advertising no image/* key at all, and those
+  // are exactly the rows that used to render as a file signature in the
+  // label. If read() hands back a real buffer, it is an image.
+  var buf = read("image/png", i);
+  var isImg = (buf && buf.size && buf.size() > 24);
+
   if (isImg) {
-    label = "image"; dedupeKey = "img:" + i; kind = "image";
+    icon = THUMBS + "/" + i + ".png";
+    var f = new File(icon); f.open(); f.write(buf); f.close();
+    // Dimensions are NOT parsed here. copyq_rofi does it with
+    // buf.mid(16,8).toString() and charCodeAt, and that is wrong for any
+    // image whose width or height has a byte above 127: toString() decodes
+    // the buffer as text, so 0xAD does not survive as 173. Measured — a
+    // 788x429 screenshot came back as 788x65533. The file is on disk by
+    // this point, so python reads the IHDR from it instead.
+    label = "image";
+    kind = "image";
+    dedupeKey = "img:" + buf.size();
   } else {
     var raw = str(d["text/plain"] || "");
     var t = raw.replace(/[\r\n\t]/g, " ").substring(0, 220);
@@ -541,9 +567,9 @@ for (var i = 0; i < n; i++) {
   }
   if (seen[dedupeKey]) continue;
   seen[dedupeKey] = true;
-  print(i + "\t" + (pinned ? "P" : "-") + "\t" + kind + "\t" + label + "\n");
+  print(i + "\t" + (pinned ? "P" : "-") + "\t" + kind + "\t" + icon + "\t" + label + "\n");
 }
-""" % CLIPBOARD_MAX
+""" % (CLIPBOARD_MAX, CLIPBOARD_THUMBS)
 
 # The classifier's output, spelled for a panel instead of for a Pango
 # markup row. The original prefixed a Nerd Font glyph; a word in the detail
@@ -556,6 +582,24 @@ _CLIPBOARD_KINDS = {
     "image": "image",
     "text": "",
 }
+
+
+def _png_size(path):
+    """(width, height) from a PNG's IHDR, or None.
+
+    Bytes 16..24 are two big-endian uint32. Read as BYTES, which is the
+    whole point — see the note in the copyq script about why doing this in
+    JS produced a height of 65533 for a 429 px image.
+    """
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(24)
+        if len(head) < 24 or head[:8] != b"\x89PNG\r\n\x1a\n":
+            return None
+        return (int.from_bytes(head[16:20], "big"),
+                int.from_bytes(head[20:24], "big"))
+    except OSError:
+        return None
 
 
 def _clipboard_label(text):
@@ -588,17 +632,25 @@ def clipboard_list():
     if not shutil.which("copyq"):
         return {"title": "Clipboard", "items": []}
     try:
+        os.makedirs(CLIPBOARD_THUMBS, exist_ok=True)
+        for stale in os.listdir(CLIPBOARD_THUMBS):
+            if stale.endswith(".png"):
+                os.unlink(os.path.join(CLIPBOARD_THUMBS, stale))
+    except OSError:
+        pass
+
+    try:
         out = subprocess.run(["copyq", "eval", "-"], input=_CLIPBOARD_JS,
-                             capture_output=True, text=True, timeout=8)
+                             capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return {"title": "Clipboard", "items": []}
 
     items = []
     for line in out.stdout.splitlines():
-        parts = line.split("\t", 3)
-        if len(parts) < 4:
+        parts = line.split("\t", 4)
+        if len(parts) < 5:
             continue
-        index, pin, kind, label = parts
+        index, pin, kind, icon, label = parts
         if not index.strip().isdigit():
             continue
         detail = _CLIPBOARD_KINDS.get(kind, "")
@@ -611,11 +663,20 @@ def clipboard_list():
         # the kind it was given is simply wrong.
         if safe == "binary data":
             detail = "binary"
-        items.append({
+        row = {
             "id": index.strip(),
             "label": safe,
             "detail": detail,
-        })
+        }
+        # Only ever set when the file is actually on disk. A row carrying a
+        # path that does not resolve gives QML a broken Image and a warning
+        # per repaint.
+        if icon and os.path.isfile(icon):
+            row["icon"] = icon
+            size = _png_size(icon)
+            if size:
+                row["label"] = "image %d\u00d7%d" % size
+        items.append(row)
     return {"title": "Clipboard", "items": items}
 
 
