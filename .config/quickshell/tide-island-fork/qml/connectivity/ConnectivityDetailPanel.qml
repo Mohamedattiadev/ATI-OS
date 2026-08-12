@@ -20,9 +20,6 @@ Item {
     readonly property bool isWifi: panelKind === "wifi"
     readonly property bool isBluetooth: panelKind === "bluetooth"
     readonly property var bluetoothDevices: provider ? provider.bluetoothDeviceValues || [] : []
-    readonly property var bluetoothConnectedDevices: bluetoothDevicesForSection("connected")
-    readonly property var bluetoothPairedDevices: bluetoothDevicesForSection("paired")
-    readonly property var bluetoothAvailableDevices: bluetoothDevicesForSection("available")
     readonly property bool bluetoothScanning: provider && provider.bluetoothAdapter
         ? provider.bluetoothAdapter.discovering
         : !!(provider && provider.bluetoothListRunning)
@@ -36,23 +33,87 @@ Item {
         return !(connected && root.provider.wifiEnabled && safeString(root.provider.wifiCurrentSsid).length > 0);
     }
 
-    function bluetoothDeviceVisible(device, section) {
-        return root.provider && root.provider.bluetoothDeviceMatchesSection
-            ? root.provider.bluetoothDeviceMatchesSection(device, section)
-            : false;
+    // ------------------------------------------------------------------
+    //  FORK: ONE LIST, SORTED BY RANK — not three labelled sections.
+    // ------------------------------------------------------------------
+    //  The last structural difference between this panel and ukishima's.
+    //  Their BtSurface has no group headers and no hairlines between rows
+    //  at all: the grouping is expressed purely by SORT ORDER, so a
+    //  connected device is at the top because it sorts there, not because
+    //  it lives in a box with a heading over it. Three Repeaters with three
+    //  visibility gates were producing the same visual order by three times
+    //  the machinery.
+    //
+    //  Rank is 0/1/2/3 — connected, paired, named, unnamed — with ties
+    //  broken by localeCompare on the display name. The named/unnamed split
+    //  is theirs and it earns its place: a Bluetooth scan fills up with
+    //  address-only rows from passing phones and earbuds, and without that
+    //  rank they interleave alphabetically with the devices you might
+    //  actually want, since an address sorts as a string like anything else.
+    //
+    //  A REAL BUG THIS REMOVES, not just tidying. The section predicates in
+    //  ControlCenterLayer overlap: "connected" is `device.connected`, but
+    //  "available" is `!paired` — so a device that is connected WITHOUT
+    //  being paired satisfies both, and today it renders twice, once in each
+    //  Repeater. Rank is a single exclusive assignment per device, so a
+    //  device can occupy exactly one position by construction.
+    //
+    //  The `section` string still exists per row, because BluetoothDeviceRow
+    //  reads it for its affordances — the action reads "✓", "Connect" or
+    //  "Pair", and the icon dims for an unknown device. It is now DERIVED
+    //  from the same rank rather than being carried by which Repeater the
+    //  row happened to be in, so the label a row shows and the place it
+    //  sorts to can no longer disagree.
+    function bluetoothRank(device) {
+        if (!device)
+            return 3;
+        if (device.connected)
+            return 0;
+        if (device.paired || device.bonded)
+            return 1;
+        return root.bluetoothDisplayName(device).length > 0 ? 2 : 3;
     }
 
-    function bluetoothDevicesForSection(section) {
-        const devices = root.bluetoothDevices || [];
-        const filtered = [];
+    function bluetoothSectionForRank(rank) {
+        if (rank === 0)
+            return "connected";
+        if (rank === 1)
+            return "paired";
+        return "available";
+    }
 
+    // Name for SORTING only, so it must be empty when the device has no
+    // real name. bluetoothDeviceName() falls back to the address and then
+    // to "Unknown device", which would make every anonymous device look
+    // named and collapse rank 3 into rank 2.
+    function bluetoothDisplayName(device) {
+        if (!device)
+            return "";
+        const preferred = root.safeString(device.deviceName).trim();
+        if (preferred.length > 0)
+            return preferred;
+        return root.safeString(device.name).trim();
+    }
+
+    readonly property var bluetoothSortedDevices: {
+        const devices = root.bluetoothDevices || [];
+        const ranked = [];
         for (let index = 0; index < devices.length; index++) {
             const device = devices[index];
-            if (root.bluetoothDeviceVisible(device, section))
-                filtered.push(device);
+            if (!device)
+                continue;
+            ranked.push({
+                device: device,
+                rank: root.bluetoothRank(device),
+                name: root.bluetoothDisplayName(device)
+            });
         }
-
-        return filtered;
+        ranked.sort(function (left, right) {
+            if (left.rank !== right.rank)
+                return left.rank - right.rank;
+            return left.name.localeCompare(right.name);
+        });
+        return ranked;
     }
 
     function focusPromptField() {
@@ -1045,99 +1106,53 @@ Item {
                     font.family: root.textFontFamily
                 }
 
+                // One Repeater over the rank-sorted list. Was three, one per
+                // section, each wrapped in an Item whose height collapsed to
+                // zero when its section was empty — the wrapper existed only
+                // because an empty Column still contributed its parent's
+                // spacing. With one list there is nothing to collapse.
                 Item {
                     width: parent.width
-                    height: btConnectedSection.visible ? btConnectedSection.implicitHeight : 0
-                    visible: root.isBluetooth && root.bluetoothConnectedDevices.length > 0
+                    height: btDeviceList.visible ? btDeviceList.implicitHeight : 0
+                    visible: root.isBluetooth && root.bluetoothSortedDevices.length > 0
 
                     Column {
-                        id: btConnectedSection
+                        id: btDeviceList
                         width: parent.width
+                        // No hairlines between rows, matching ukishima's
+                        // BtSurface. The 8 px of air IS the separation; a
+                        // rule between every row would reintroduce exactly
+                        // the boxed-group reading the sections were removed
+                        // for.
                         spacing: Metrics.px(8)
 
                         Repeater {
-                            model: root.bluetoothConnectedDevices
+                            model: root.bluetoothSortedDevices
 
                             delegate: BluetoothDeviceRow {
-                                id: connectedRow
-                                width: btConnectedSection.width
+                                id: deviceRow
+                                required property var modelData
+                                required property int index
+
+                                width: btDeviceList.width
                                 provider: root.provider
-                                device: modelData
-                                section: "connected"
+                                device: modelData.device
+                                section: root.bluetoothSectionForRank(modelData.rank)
                                 iconFontFamily: root.iconFontFamily
                                 textFontFamily: root.textFontFamily
 
-                                // Ranks 1/2/3 follow contentColumn's order:
-                                // connected, then paired, then available.
-                                navCurrent: root.navIsCurrent(connectedRow)
-                                Component.onCompleted: root.navRegister(1, index, connectedRow)
-                                Component.onDestruction: root.navUnregister(connectedRow)
-                                onVisibleChanged: root.navRevision++
-                            }
-                        }
-                    }
-                }
-
-                Item {
-                    width: parent.width
-                    height: btPairedSection.visible ? btPairedSection.implicitHeight : 0
-                    visible: root.isBluetooth && root.bluetoothPairedDevices.length > 0
-
-                    Column {
-                        id: btPairedSection
-                        width: parent.width
-                        spacing: Metrics.px(8)
-
-                        Repeater {
-                            model: root.bluetoothPairedDevices
-
-                            delegate: BluetoothDeviceRow {
-                                id: pairedRow
-                                width: btPairedSection.width
-                                provider: root.provider
-                                device: modelData
-                                section: "paired"
-                                iconFontFamily: root.iconFontFamily
-                                textFontFamily: root.textFontFamily
-
-                                // Ranks 1/2/3 follow contentColumn's order:
-                                // connected, then paired, then available.
-                                navCurrent: root.navIsCurrent(pairedRow)
-                                Component.onCompleted: root.navRegister(2, index, pairedRow)
-                                Component.onDestruction: root.navUnregister(pairedRow)
-                                onVisibleChanged: root.navRevision++
-                            }
-                        }
-                    }
-                }
-
-                Item {
-                    width: parent.width
-                    height: btAvailableSection.visible ? btAvailableSection.implicitHeight : 0
-                    visible: root.isBluetooth && root.bluetoothAvailableDevices.length > 0
-
-                    Column {
-                        id: btAvailableSection
-                        width: parent.width
-                        spacing: Metrics.px(8)
-
-                        Repeater {
-                            model: root.bluetoothAvailableDevices
-
-                            delegate: BluetoothDeviceRow {
-                                id: availableRow
-                                width: btAvailableSection.width
-                                provider: root.provider
-                                device: modelData
-                                section: "available"
-                                iconFontFamily: root.iconFontFamily
-                                textFontFamily: root.textFontFamily
-
-                                // Ranks 1/2/3 follow contentColumn's order:
-                                // connected, then paired, then available.
-                                navCurrent: root.navIsCurrent(availableRow)
-                                Component.onCompleted: root.navRegister(3, index, availableRow)
-                                Component.onDestruction: root.navUnregister(availableRow)
+                                // ONE registry rank for every Bluetooth row,
+                                // where there used to be three. The registry
+                                // sorts by (rank, index) and the model is
+                                // already in visual order, so a single rank
+                                // with the model's own index reproduces the
+                                // visual order exactly — which is the whole
+                                // contract that registry was built to keep.
+                                // Wi-Fi rows register rank 0 and are never on
+                                // screen at the same time as these.
+                                navCurrent: root.navIsCurrent(deviceRow)
+                                Component.onCompleted: root.navRegister(1, index, deviceRow)
+                                Component.onDestruction: root.navUnregister(deviceRow)
                                 onVisibleChanged: root.navRevision++
                             }
                         }
@@ -1158,10 +1173,7 @@ Item {
                 Item {
                     width: parent.width
                     height: visible ? Metrics.px(72) : 0
-                    visible: root.isBluetooth
-                        && root.bluetoothConnectedDevices.length === 0
-                        && root.bluetoothPairedDevices.length === 0
-                        && root.bluetoothAvailableDevices.length === 0
+                    visible: root.isBluetooth && root.bluetoothSortedDevices.length === 0
 
                     Text {
                         anchors.centerIn: parent
