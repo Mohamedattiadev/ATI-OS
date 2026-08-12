@@ -303,6 +303,40 @@ Scope {
         // hypr/binds.conf, which is the key it had in qtile.
         // FORK: qtile's WifiPopup and BluetoothPopup keys, landing straight
         // in the control centre's own lists. See openConnectivityPanelWindow.
+        // FORK: the chord heads-up display, driven by
+        // hypr/scripts/submap-indicator.sh off Hyprland's event socket.
+        //
+        // Only the mode NAME crosses the IPC. The rows are fetched by the
+        // panel itself — the reason is written up at length in
+        // qml/island/ModeKeysLayer.qml, and it is that Quickshell's IPC
+        // splits arguments on whitespace in a way shell quoting does not
+        // survive.
+        //
+        // The parameter is typed for the reason in FORK-NOTES.md: an
+        // untyped IPC parameter is silently not passed at all, arrives
+        // `undefined`, and the handler then clears the very thing it was
+        // called to show.
+        function showModeKeys(name: string) {
+            shellRoot.forEachWindow((window) => window.showModeKeysWindow(name));
+        }
+
+        function clearModeKeys() {
+            shellRoot.forEachWindow((window) => window.clearModeKeysWindow());
+        }
+
+        // FORK: qtile's CheatSheet-Mode, which was on rofi until now.
+        // `which` is hypr | vim | fish — one word, so it is safe across an
+        // IPC that splits on whitespace (see ModeKeysLayer.qml for what
+        // happens when an argument is not).
+        //
+        // forFocusedWindow, not forEachWindow: this panel takes an
+        // exclusive keyboard grab, and two of them on two monitors would
+        // be two grabs competing for the same keystrokes. The mode-keys
+        // HUD goes on every screen precisely because it takes no grab.
+        function showCheatsheet(which: string) {
+            shellRoot.forFocusedWindow((window) => window.toggleCheatsheetWindow(which));
+        }
+
         function toggleWifiPanel() {
             shellRoot.forFocusedWindow((window) => window.openConnectivityPanelWindow("wifi"));
         }
@@ -332,6 +366,46 @@ Scope {
 
         function toggleThemePicker() {
             shellRoot.forFocusedWindow((window) => window.toggleThemePickerWindow());
+        }
+
+        // FORK: the states DESIGN-SPEC.md's "states of the one shape" listed
+        // and nothing answered — calendar, power menu, settings — plus the
+        // polkit prompt below.
+        //
+        // `forFocusedWindow`, like every other panel here and unlike the
+        // chord HUD's `forEachWindow`: these take a keyboard grab and read
+        // their own keys, so exactly one screen may own one. The HUD is the
+        // deliberate exception because it is a picture that grabs nothing.
+        function toggleCalendar() {
+            shellRoot.forFocusedWindow((window) => window.toggleCalendarWindow());
+        }
+
+        function togglePowerMenu() {
+            shellRoot.forFocusedWindow((window) => window.togglePowerMenuWindow());
+        }
+
+        function toggleSettings() {
+            shellRoot.forFocusedWindow((window) => window.toggleSettingsWindow());
+        }
+
+        // NOT a toggle, and the asymmetry is the point — the reasoning is on
+        // showPolkitPromptWindow in DynamicIslandWindow.qml: this panel is
+        // opened by a process waiting on an answer, not by a key you pressed,
+        // so a second request arriving while the first is up must REPLACE it
+        // rather than dismiss it.
+        //
+        // Nothing registers this shell as the session polkit agent by
+        // default. polkit-kde-authentication-agent-1 is still the registered
+        // agent in hypr/autostart.conf, and the switch-over is an explicit
+        // opt-in flagged DANGER in island-settings.py, because a broken
+        // agent means NO password prompt anywhere on the system — no pkexec,
+        // no auth dialogs — and it fails silently until you need one.
+        function showPolkitPrompt() {
+            shellRoot.forFocusedWindow((window) => window.showPolkitPromptWindow());
+        }
+
+        function clearPolkitPrompt() {
+            shellRoot.forEachWindow((window) => window.clearPolkitPromptWindow());
         }
 
         // FORK: apply a theme THROUGH the circular reveal. This is what the

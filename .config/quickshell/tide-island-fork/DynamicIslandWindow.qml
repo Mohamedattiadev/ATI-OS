@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import Quickshell.Services.Mpris
 import IslandBackend
 import "qml/audio"
+import "qml/cheatsheet"
 import "qml/common"
 import "qml/controlcenter"
 import "qml/connectivity"
@@ -127,8 +128,30 @@ PanelWindow {
             height: bluetoothConnectivityDetailShell.visible ? Math.ceil(bluetoothConnectivityDetailShell.height) : 0
         }
     }
+    // FORK: the slack below the capsule is no longer a bare 12.
+    //
+    // The layer surface is sized from `targetHeight` — the value the spring
+    // is animating TOWARDS — and a spring at zeta 0.8 deliberately goes
+    // PAST its target: Motion.js measures the overshoot at 1.54% of the
+    // travel. So the surface has to be big enough for the overshoot, not
+    // just for the target, or the tallest ~6 px of the capsule is clipped
+    // by its own window for the ~100 ms around the peak.
+    //
+    // Worked at the two extremes on this 1366x768 panel: the audio panel's
+    // Metrics.px(360) = 331 overshoots by 5.1 px, the cheatsheet's
+    // Metrics.px(460) = 423 by 6.5 px. The old flat 12 happened to cover
+    // both — but only by accident, and it would have stopped covering them
+    // the moment a panel went past ~780 px tall. Deriving it from the same
+    // number Motion.js publishes means it cannot silently stop being true.
+    //
+    // Doubled (2x) rather than exact, because the shadow and the border are
+    // also painted outside the fill, and because a surface a few pixels too
+    // tall is invisible while one a few pixels too short is a clipped edge.
+    readonly property real capsuleOvershootAllowance:
+        Math.ceil(mainCapsule.targetHeight * Motion.overshoot() * 2)
     readonly property real capsuleWindowHeight: Math.ceil(
-        userConfig.islandTopMargin + mainCapsule.targetHeight + 12
+        userConfig.islandTopMargin + mainCapsule.targetHeight
+            + Math.max(12, root.capsuleOvershootAllowance)
     )
     readonly property real connectivityDetailWindowHeight: root.anyConnectivityDetailMounted
         ? Math.ceil(userConfig.islandTopMargin + root.connectivityDetailHeight + 12)
@@ -169,6 +192,14 @@ PanelWindow {
         || islandContainer.displayPanelLayerVisible
         || islandContainer.audioPanelLayerVisible
         || islandContainer.wifiQrLayerVisible
+        || islandContainer.calendarLayerVisible
+        || islandContainer.powerMenuLayerVisible
+        || islandContainer.settingsLayerVisible
+        // Overlay for the polkit prompt is not cosmetic. Whatever asked for
+        // the password is usually a window that just took the focus, and a
+        // prompt on the Top layer sits UNDER a fullscreen surface — which
+        // for an auth dialog means the request appears to hang.
+        || islandContainer.polkitPromptLayerVisible
         ? WlrLayer.Overlay
         : WlrLayer.Top
     WlrLayershell.keyboardFocus: {
@@ -180,7 +211,22 @@ PanelWindow {
                 || islandContainer.themePickerLayerVisible
                 || islandContainer.displayPanelLayerVisible
                 || islandContainer.audioPanelLayerVisible
-                || islandContainer.wifiQrLayerVisible)
+                || islandContainer.wifiQrLayerVisible
+                // The cheatsheet is the one READ-ONLY panel that still
+                // needs an exclusive grab, and the search field is why:
+                // every letter you type has to land in it rather than in
+                // the window behind. ModeKeysLayer, which is also
+                // read-only, deliberately does the opposite — it has no
+                // field to type into and its keys belong to the submap.
+                || islandContainer.cheatsheetLayerVisible
+                || islandContainer.calendarLayerVisible
+                || islandContainer.powerMenuLayerVisible
+                || islandContainer.settingsLayerVisible
+                // Exclusive for the password prompt for the obvious reason
+                // and one less obvious one: without the grab, keystrokes
+                // meant for the field land in the window behind, which for
+                // a password means typing it into whatever has focus.
+                || islandContainer.polkitPromptLayerVisible)
             return WlrKeyboardFocus.Exclusive;
         // Keep keyboard focus on the overview until an overview action closes it.
         // Click-to-focus closes the overview before focusing the selected client.
@@ -659,6 +705,35 @@ PanelWindow {
         showAutoHiddenIsland("manual");
     }
 
+    // FORK: the chord heads-up display's window-level entry points, beside
+    // the mode INDICATOR's. The two are different things and both are kept:
+    // the indicator is a name in the capsule and survives a transient OSD,
+    // this is the expanded key list. showModeKeys clears the indicator so
+    // the two never draw at once.
+    function showModeKeysWindow(name) {
+        islandContainer.clearModeIndicator();
+        islandContainer.showModeKeys(name);
+    }
+
+    function clearModeKeysWindow() {
+        islandContainer.clearModeKeys();
+    }
+
+    // FORK: the cheatsheets. `which` is hypr | vim | fish — the three keys
+    // of qtile's CheatSheet-Mode, which the panel can also cycle with Tab
+    // once it is open.
+    //
+    // Toggling on the SHEET and not just on the state: pressing the chord's
+    // `v` while the WM sheet is open should switch to vim, not close the
+    // panel. Only the same sheet again means "I am done".
+    function toggleCheatsheetWindow(which) {
+        if (islandContainer.islandState === "cheatsheet"
+                && islandContainer.cheatsheetWhich === which)
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showCheatsheet(which);
+    }
+
     function clearModeIndicatorWindow() {
         islandContainer.clearModeIndicator();
     }
@@ -795,6 +870,43 @@ PanelWindow {
             islandContainer.showThemePicker();
     }
 
+    // FORK: the four states DESIGN-SPEC.md listed that nothing answered.
+    function toggleCalendarWindow() {
+        if (islandContainer.islandState === "calendar")
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showCalendar();
+    }
+
+    function togglePowerMenuWindow() {
+        if (islandContainer.islandState === "power_menu")
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showPowerMenu();
+    }
+
+    function toggleSettingsWindow() {
+        if (islandContainer.islandState === "settings")
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showSettings();
+    }
+
+    // NOT a toggle, and that is deliberate. Every other panel here is
+    // opened by a key you pressed, so a second press meaning "close" is
+    // right. This one is opened by a process waiting on an answer, and a
+    // toggle would give the same call two opposite meanings depending on
+    // state — a second authorisation request arriving while the first is up
+    // would DISMISS the prompt instead of showing the new one.
+    function showPolkitPromptWindow() {
+        islandContainer.showPolkitPrompt();
+    }
+
+    function clearPolkitPromptWindow() {
+        if (islandContainer.islandState === "polkit_prompt")
+            islandContainer.smartRestoreState();
+    }
+
     function toggleApplicationLauncherWindow() {
         if (islandContainer.islandState === "application_launcher")
             islandContainer.smartRestoreState();
@@ -862,7 +974,14 @@ PanelWindow {
 
     Timer {
         id: windowShrinkTimer
-        interval: 1000
+        // FORK: derived, not 1000. Its job is to hold the layer surface at
+        // the old extent until the capsule has finished collapsing INTO the
+        // new one — so the number it must cover is the morph, plus the
+        // content fade that now runs alongside it (see PanelLoader.qml,
+        // which keeps a dismissed panel mounted for exactly that long), plus
+        // a frame of slack at 60 Hz. 1000 was a guess that happened to be
+        // long enough; this cannot come adrift if either duration changes.
+        interval: Motion.morphDuration() + Motion.fadeOutDuration() + 32
         repeat: false
         onTriggered: root.retainedWindowHeight = root.requestedWindowHeight
     }
@@ -965,6 +1084,15 @@ PanelWindow {
             // enough to be scrolled past.
             || islandContainer.audioPanelLayerVisible
             || islandContainer.wifiQrLayerVisible
+            || islandContainer.cheatsheetLayerVisible
+            // Qualified through the id, for the same reason the audio panel
+            // above is: a hot reload landing between a new property's use
+            // and its declaration compiles a component that really is
+            // missing it.
+            || islandContainer.calendarLayerVisible
+            || islandContainer.powerMenuLayerVisible
+            || islandContainer.settingsLayerVisible
+            || islandContainer.polkitPromptLayerVisible
             || expandedPlayerKeyboardFocusRequested
             || (root.monitorFocused && (root.overviewVisible || root.connectivityPromptActive))
 
@@ -1055,16 +1183,54 @@ PanelWindow {
         readonly property bool timerBubbleWanted: (timerActive && timerRemainingSeconds > 0 || timerCompletionAnimating)
             && !root.overviewVisible
             && (islandState === "normal" || islandState === "lyrics" || islandState === "custom")
-        readonly property bool blocksTransientSplit: islandState === "expanded"
+        // FORK: split into TWO predicates, because there were two guards in
+        // this file pretending to be one and only ONE of them consulted the
+        // list.
+        //
+        // MEASURED: with the chord HUD up, `hyprctl dispatch workspace 4`
+        // replaced it with the "Workspace 4" long capsule, every time. The
+        // HUD was correctly listed in blocksTransientSplit and it made no
+        // difference, because `showWorkspaceCapsule` never read that
+        // property — it carried its own hand-written guard,
+        //
+        //     if (islandState === "control_center" || islandState === "notification") return;
+        //
+        // written before any of these panels existed and never extended.
+        // `showNotificationCapsule` and `showBluetoothExpanded` carried
+        // their own copies of the same two-item list. So a volume OSD (which
+        // does go through showTransientCapsule) was blocked and a workspace
+        // switch was not — which is the worst possible split, since the
+        // chords themselves bind `1-9 workspace` and therefore fire the one
+        // interrupt that gets through, constantly.
+        //
+        // openPanelState is every state a PERSON deliberately opened and is
+        // looking at. Nothing spontaneous may replace one of those.
+        // blocksTransientSplit adds `notification`, which is itself
+        // transient: an OSD must not stomp a notification, but a second
+        // notification legitimately replaces the first.
+        readonly property bool openPanelState: islandState === "expanded"
             || islandState === "bluetooth_expanded"
             || islandState === "control_center"
-            || islandState === "notification"
+            || islandState === "notification_center"
             || islandState === "wallpaper_picker"
             || islandState === "application_launcher"
             || islandState === "theme_picker"
             || islandState === "display_panel"
             || islandState === "audio_panel"
             || islandState === "wifi_qr"
+            || islandState === "mode_keys"
+            || islandState === "cheatsheet"
+            || islandState === "calendar"
+            || islandState === "power_menu"
+            || islandState === "settings"
+            // The polkit prompt is the one entry here that is NOT opened by
+            // a person — it is opened by whatever asked for authorisation.
+            // It belongs in the list anyway, and more urgently than the
+            // rest: a volume OSD replacing a password field mid-type would
+            // drop the keystrokes into nothing.
+            || islandState === "polkit_prompt"
+        readonly property bool blocksTransientSplit: openPanelState
+            || islandState === "notification"
         readonly property bool splitShowsProgress: islandState === "split" && osdProgress >= 0
         readonly property bool splitShowsText: islandState === "split" && osdProgress < 0 && osdCustomText !== ""
         readonly property bool splitShowsIconOnly: islandState === "split" && osdProgress < 0 && osdCustomText === ""
@@ -1109,6 +1275,31 @@ PanelWindow {
         readonly property bool wallpaperPickerLayerVisible: !root.overviewVisible && islandState === "wallpaper_picker"
         readonly property bool applicationLauncherLayerVisible: !root.overviewVisible && islandState === "application_launcher"
         readonly property bool themePickerLayerVisible: !root.overviewVisible && islandState === "theme_picker"
+
+        // FORK: the chord heads-up display. NOT in the keyboardFocus or
+        // focus lists on purpose — see qml/island/ModeKeysLayer.qml. The
+        // keys belong to the compositor's submap; grabbing them here would
+        // swallow the keys this panel exists to advertise.
+        property string modeKeysName: ""
+        readonly property bool modeKeysLayerVisible: !root.overviewVisible && islandState === "mode_keys"
+        // Height of each submap's key grid, remembered across opens so the
+        // capsule can size itself before `cheatsheet.py` has answered. See
+        // ModeKeysLayer's `pendingHeight` for the measurement that made this
+        // necessary. A plain object and not a notifying property on purpose:
+        // it is read once, imperatively, at the moment the panel opens, so
+        // there is nothing for a missing change signal to get wrong.
+        property var modeKeysHeights: ({})
+        function modeKeysHeightFor(name) {
+            const remembered = modeKeysHeights[name];
+            return remembered === undefined ? 0 : remembered;
+        }
+        function rememberModeKeysHeight(name, height) {
+            if (name !== "" && height > 0)
+                modeKeysHeights[name] = height;
+        }
+        // FORK: the cheatsheets, moved off rofi and into the notch.
+        property string cheatsheetWhich: "hypr"
+        readonly property bool cheatsheetLayerVisible: !root.overviewVisible && islandState === "cheatsheet"
         // FORK: the display panel, the port of qtile's DisplayPopup.
         readonly property bool displayPanelLayerVisible: !root.overviewVisible && islandState === "display_panel"
         // FORK: the audio panel, the port of qtile's AudioPopup — the detail
@@ -1116,6 +1307,14 @@ PanelWindow {
         readonly property bool audioPanelLayerVisible: !root.overviewVisible && islandState === "audio_panel"
         // FORK: the Wi-Fi QR — qtile's WifiQR, `s` inside its WiFi chord.
         readonly property bool wifiQrLayerVisible: !root.overviewVisible && islandState === "wifi_qr"
+        // FORK: the four remaining states from DESIGN-SPEC.md's list. None
+        // of these existed upstream; `calendar`, `power menu` and `Polkit
+        // password prompt` are named in the spec, and the settings surface
+        // is the fork's answer to a packaged config app it must not patch.
+        readonly property bool calendarLayerVisible: !root.overviewVisible && islandState === "calendar"
+        readonly property bool powerMenuLayerVisible: !root.overviewVisible && islandState === "power_menu"
+        readonly property bool settingsLayerVisible: !root.overviewVisible && islandState === "settings"
+        readonly property bool polkitPromptLayerVisible: !root.overviewVisible && islandState === "polkit_prompt"
         readonly property var activePlayer: mediaController.activePlayer
         readonly property string lyricsDisplayText: mediaController.displayText
         readonly property string currentTrack: mediaController.currentTrack
@@ -1703,7 +1902,12 @@ PanelWindow {
         }
 
         function showNotificationCapsule(appName, summary, body) {
-            if (root.overviewVisible || islandState === "control_center" || islandState === "expanded") return;
+            // openPanelState, not blocksTransientSplit: a notification may
+            // replace a notification (that is how a burst reads), but may not
+            // replace a panel someone opened. `theme-apply` fires one on every
+            // theme change, which is how this was first seen landing on top of
+            // an open chord HUD.
+            if (root.overviewVisible || openPanelState) return;
 
             const cleanedAppName = cleanNotificationText(appName);
             const cleanedSummary = cleanNotificationText(summary);
@@ -1795,6 +1999,18 @@ PanelWindow {
             // silently drop you back to the clock while the chord is still
             // swallowing your keys. Every path back to rest funnels through
             // here, so re-asserting here covers all of them.
+            // The key panel outranks the name indicator for the same reason
+            // and by the same mechanism — it is the richer answer to the
+            // same question, and while a submap is active it is what should
+            // be on screen. Seen before this existed: entering `lang`, a
+            // theme-apply notification arriving over it, and the island
+            // then resting on the clock while the submap was still
+            // swallowing every key.
+            if (modeKeysName !== "") {
+                showModeKeys(modeKeysName);
+                return;
+            }
+
             if (modeIndicatorActive) {
                 assertModeIndicator();
                 return;
@@ -1860,7 +2076,9 @@ PanelWindow {
         }
 
         function showBluetoothExpanded(device) {
-            if (!device || root.overviewVisible || islandState === "control_center" || islandState === "notification")
+            // Same correction as showWorkspaceCapsule: a device connecting is
+            // a spontaneous event and must not take over an open panel.
+            if (!device || root.overviewVisible || blocksTransientSplit)
                 return;
 
             cancelSideSwipeSettle();
@@ -1937,6 +2155,96 @@ PanelWindow {
             stopAutoHideTimer();
         }
 
+        // FORK: the calendar — DESIGN-SPEC.md's state list, with no qtile
+        // ancestor at all. See qml/island/CalendarLayer.qml.
+        function showCalendar() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "calendar";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
+        // FORK: the power menu — the island's replacement for `dm-logout -r`
+        // (rofi). See qml/island/PowerMenuLayer.qml.
+        function showPowerMenu() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "power_menu";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
+        // FORK: the settings surface. The packaged tide-island-config-app is
+        // a compiled binary that `yay -Syu` overwrites, so this is a state
+        // rather than a patch. See qml/island/SettingsLayer.qml.
+        function showSettings() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "settings";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
+        // FORK: the polkit password prompt. See qml/island/PolkitPromptLayer.qml
+        // — and read the safety note there before enabling it, because a
+        // wrong polkit agent means NO password prompts anywhere on the
+        // system and fails silently until you need one.
+        function showPolkitPrompt() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "polkit_prompt";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
+        // FORK: the chord heads-up display. Entering a submap calls this;
+        // leaving one calls clearModeKeys. Both come from
+        // hypr/scripts/submap-indicator.sh, which is watching Hyprland's
+        // event socket.
+        //
+        // stopAutoHideTimer, like every other panel: a chord lasts as long
+        // as you are in it, and an auto-hide would take the hints away
+        // while the mode was still swallowing keys — which is exactly the
+        // never-expiring-indicator problem the shell script already had to
+        // solve from the other direction.
+        function showModeKeys(name) {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            modeKeysName = name;
+            islandState = "mode_keys";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
+        function clearModeKeys() {
+            modeKeysName = "";
+            if (islandState === "mode_keys")
+                smartRestoreState();
+        }
+
+        // FORK: the cheatsheets. stopAutoHideTimer for the same reason
+        // every other panel does it — this one is READ, and a sheet that
+        // withdrew itself after a few seconds would be useless at exactly
+        // the moment you were still looking for the key.
+        function showCheatsheet(which) {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            // Set BEFORE the state, so the layer the Loader is about to
+            // build already has the right sheet and fetches it once
+            // instead of loading `hypr` and then switching.
+            cheatsheetWhich = which;
+            islandState = "cheatsheet";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
         // FORK: the theme switcher, which DESIGN-SPEC.md lists as one of
         // the island's states and which upstream does not have.
         function showThemePicker() {
@@ -1976,9 +2284,14 @@ PanelWindow {
         }
 
         function showWorkspaceCapsule(wsId) {
+            // currentWs is updated even when the capsule is suppressed: it is
+            // the resting capsule's own workspace readout, not the OSD.
             currentWs = wsId;
             if (root.autoHideSuppressesTransientReveal) return;
-            if (islandState === "control_center" || islandState === "notification") return;
+            // Was a hand-written two-item list; see blocksTransientSplit for
+            // what that cost. A workspace switch is a transient exactly like
+            // a volume OSD and is now gated by the same list.
+            if (blocksTransientSplit) return;
             const animateFromSide = currentTransientOriginSide();
             clearTransientCapsule();
             sideTransientRestoreTimer.stop();
@@ -2245,6 +2558,50 @@ PanelWindow {
                     // square symbol. Anything wider is white card the phone
                     // does not need and the eye has to cross.
                     return Metrics.px(360);
+                case "calendar":
+                    // Narrow on purpose, and the narrowest panel in the
+                    // shell after the QR. The content is seven columns of
+                    // two-digit numbers; every pixel past what those need is
+                    // black the eye has to cross to get from Monday to
+                    // Sunday. Seven cells at Metrics.px(34) = 31 is 217,
+                    // plus 2 x Metrics.pad(18) = 36 of padding, = 253. 276
+                    // leaves the grid a little air on each side without the
+                    // columns drifting apart.
+                    return Metrics.px(300);
+                case "power_menu":
+                    // Six actions in one column, each a label plus a short
+                    // explanation of what it actually runs ("systemctl
+                    // poweroff", "loginctl terminate-session"). The
+                    // explanation is the reason for the width: a power menu
+                    // where you cannot see which of reboot and shutdown you
+                    // are about to press is the one panel where a misread is
+                    // expensive.
+                    return Metrics.px(400);
+                case "settings":
+                    // The list-plus-details shape the display and audio
+                    // panels use, and sized between them: rows are
+                    // "Notch mode          on", and the details column
+                    // carries a paragraph saying what the key does and
+                    // whether the packaged config app knows about it.
+                    return Math.min(Metrics.px(860), root.width - Metrics.px(48));
+                case "polkit_prompt":
+                    // Deliberately modest. This is a password field and one
+                    // line of "<app> is asking to <do thing>"; a wide panel
+                    // makes the field wide, and a wide field invites reading
+                    // the dots as progress.
+                    return Metrics.px(430);
+                case "mode_keys":
+                    // Wide, because the rows are "KEY  action" in up to
+                    // three columns and a chord's whole value is being
+                    // readable at a glance. Clamped to the screen.
+                    return Math.min(Metrics.px(820), root.width - Metrics.px(48));
+                case "cheatsheet":
+                    // Wider than any other panel and clamped only by the
+                    // screen. The WM sheet's rows are a key chip plus a
+                    // command, some of which are full paths, and the
+                    // alternative to width is eliding the half of the row
+                    // that says what the key does.
+                    return Math.min(Metrics.px(1100), root.width - Metrics.px(40));
                 case "theme_picker":
                     // 22 tiles in a 4-column grid. Narrower than the
                     // wallpaper picker's 1100 because a theme tile is a
@@ -2288,22 +2645,93 @@ PanelWindow {
                 case "application_launcher":
                     return Metrics.px(260);
                 case "display_panel":
-                    return Metrics.px(300);
+                    // Content-sized, like mode_keys and for the same reason:
+                    // the flat Metrics.px(300) was drawn for a multi-monitor
+                    // worst case, and on a one-output laptop it left ~45% of
+                    // the panel as empty black with the key hints stranded on
+                    // the far side of it. Clamped to the screen because a
+                    // 30-entry mode list would otherwise size past it.
+                    return displayPanelLoader.item
+                        ? Math.min(displayPanelLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(300);
                 case "audio_panel":
-                    // Taller than the display panel because the lists are
-                    // open-ended: two monitors is the whole of the display
-                    // world, whereas outputs + microphones + every playing
-                    // stream is routinely six or eight rows, and a list that
-                    // scrolls at four rows hides exactly the row you are
-                    // comparing against.
-                    return Metrics.px(360);
+                    // Content-sized, like the display panel. The comment this
+                    // replaces argued for a tall FIXED panel because "outputs
+                    // + microphones + every playing stream is routinely six or
+                    // eight rows" — true of the busiest tab on a busy machine,
+                    // and true of no tab most of the time. Screenshotted at
+                    // Metrics.px(360) with one output: ~55% of the surface was
+                    // empty black. It can still reach that height; it now has
+                    // to earn it a row at a time. The argument the old comment
+                    // was actually right about survives as `rowsVisible: 6`,
+                    // which is where it stops growing and starts scrolling.
+                    return audioPanelLoader.item
+                        ? Math.min(audioPanelLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(360);
                 case "wifi_qr":
                     // Room for the symbol at the size wifi-qr.py picked
                     // (Metrics.px(300) of box) plus its white card, the SSID
                     // above and the password below.
                     return Metrics.px(430);
+                // All four content-sized, for the reason the display, audio
+                // and theme panels were changed to be: a flat number is a
+                // number drawn for the worst case, and the worst case is not
+                // what is on screen most of the time. The calendar is the
+                // clearest example — February in four rows and August in six
+                // differ by two whole rows of black.
+                case "calendar":
+                    return calendarLoader.item
+                        ? Math.min(calendarLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(290);
+                case "power_menu":
+                    return powerMenuLoader.item
+                        ? Math.min(powerMenuLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(300);
+                case "settings":
+                    return settingsLoader.item
+                        ? Math.min(settingsLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(340);
+                case "polkit_prompt":
+                    return polkitPromptLoader.item
+                        ? Math.min(polkitPromptLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(180);
+                case "mode_keys":
+                    // The layer knows its own row count; nothing else does.
+                    return modeKeysLoader.item
+                        ? modeKeysLoader.item.preferredHeight
+                        : Metrics.px(90);
+                case "cheatsheet":
+                    // FIXED, unlike mode_keys, and that is the difference
+                    // between a panel that lists a chord and a panel that
+                    // lists 192 rows: sizing to content here would mean a
+                    // panel the height of the screen, and one whose height
+                    // jumped on every keystroke as the filter narrowed.
+                    // A fixed frame that scrolls is what a search field
+                    // needs to sit still in.
+                    //
+                    // Clamped against root.screen.height and NOT against
+                    // root.height: this window's height is DERIVED from
+                    // this switch (capsuleWindowHeight -> implicitHeight),
+                    // so reading root.height here would be a binding loop
+                    // — the panel sizing itself from a number it is in the
+                    // middle of producing. The screen is the fixed thing.
+                    return Math.min(Metrics.px(460),
+                                    root.screen.height - Metrics.px(60));
                 case "theme_picker":
-                    return Metrics.px(290);
+                    // Content-sized. The flat Metrics.px(290) showed 3.8 of
+                    // the 6 rows a 22-theme library needs, so SIX THEMES were
+                    // below the fold on every open with nothing on screen
+                    // saying so. See ThemePickerLayer's preferredHeight.
+                    return themePickerLoader.item
+                        ? Math.min(themePickerLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(290);
                 case "expanded":
                     // Deliberately NOT the scaled 165 that bluetooth_expanded
                     // keeps. The media card's content — art, two lines of
@@ -2311,7 +2739,19 @@ PanelWindow {
                     // by glyph height, and glyph height does not scale all the
                     // way down with the shape. At the scaled 122 the transport
                     // row was cut off by the card's own bottom edge.
-                    return Metrics.px(190);
+                    //
+                    // Now content-sized, like every other panel here. The
+                    // literal 190 was the LAST thing pinning the album art
+                    // below spec: DESIGN-SPEC.md calls for 88 px of art, the
+                    // card computes chrome + 88 as its preferredHeight, and
+                    // 190 left only 67 px for it — so the art clamped itself
+                    // down to fit a shape that was never asked to grow. The
+                    // clamp stays in ExpandedPlayerLayer as the floor for the
+                    // frame before the loader exists; this is what lets it
+                    // reach its full size instead of living at the floor.
+                    return expandedPlayerLoader.item
+                        ? expandedPlayerLoader.item.preferredHeight
+                        : Metrics.px(190);
                 case "bluetooth_expanded":
                     return Metrics.px(165);
                 case "notification":
@@ -2336,6 +2776,12 @@ PanelWindow {
                 case "audio_panel":
                 case "wifi_qr":
                 case "theme_picker":
+                case "mode_keys":
+                case "cheatsheet":
+                case "calendar":
+                case "power_menu":
+                case "settings":
+                case "polkit_prompt":
                     return Metrics.px(34);
                 case "expanded":
                 case "bluetooth_expanded":
@@ -2503,7 +2949,8 @@ PanelWindow {
                 Behavior on opacity {
                     NumberAnimation {
                         duration: root.overviewContentVisible ? 260 : 140
-                        easing.type: Easing.InOutQuad
+                        easing.type: Easing.BezierSpline
+                        easing.bezierCurve: Motion.fade()   // FORK: was Easing.InOutQuad
                     }
                 }
             }
@@ -2891,12 +3338,10 @@ PanelWindow {
                 }
             }
 
-            Loader {
+            PanelLoader {
                 id: expandedPlayerLoader
                 anchors.fill: parent
-                active: islandContainer.expandedLayerVisible
-                asynchronous: false
-                visible: active
+                live: islandContainer.expandedLayerVisible
                 onLoaded: {
                     if (islandContainer.openTimerPageWhenExpanded
                             && item && item.openTimerPage) {
@@ -2940,12 +3385,10 @@ PanelWindow {
                 }
             }
 
-            Loader {
+            PanelLoader {
                 id: bluetoothExpandedLoader
                 anchors.fill: parent
-                active: islandContainer.bluetoothExpandedLayerVisible
-                asynchronous: false
-                visible: active
+                live: islandContainer.bluetoothExpandedLayerVisible
 
                 sourceComponent: Component {
                     BluetoothExpandedLayer {
@@ -2959,12 +3402,10 @@ PanelWindow {
                 }
             }
 
-            Loader {
+            PanelLoader {
                 id: notificationLoader
                 anchors.fill: parent
-                active: islandContainer.notificationLayerVisible
-                asynchronous: false
-                visible: active
+                live: islandContainer.notificationLayerVisible
 
                 sourceComponent: Component {
                     NotificationLayer {
@@ -2986,12 +3427,10 @@ PanelWindow {
                 }
             }
 
-            Loader {
+            PanelLoader {
                 id: controlCenterLoader
                 anchors.fill: parent
-                active: islandContainer.controlCenterLayerVisible || root.anyConnectivityDetailMounted
-                asynchronous: false
-                visible: active
+                live: islandContainer.controlCenterLayerVisible || root.anyConnectivityDetailMounted
 
                 sourceComponent: Component {
                     ControlCenterLayer {
@@ -3030,12 +3469,10 @@ PanelWindow {
                 }
             }
 
-            Loader {
+            PanelLoader {
                 id: notificationCenterLoader
                 anchors.fill: parent
-                active: islandContainer.notificationCenterLayerVisible
-                asynchronous: false
-                visible: active
+                live: islandContainer.notificationCenterLayerVisible
 
                 sourceComponent: Component {
                     NotificationCenterLayer {
@@ -3051,12 +3488,10 @@ PanelWindow {
                 }
             }
 
-            Loader {
+            PanelLoader {
                 id: wallpaperPickerLoader
                 anchors.fill: parent
-                active: islandContainer.wallpaperPickerLayerVisible
-                asynchronous: false
-                visible: islandContainer.wallpaperPickerLayerVisible
+                live: islandContainer.wallpaperPickerLayerVisible
                 onLoaded: root.focusWallpaperPicker()
 
                 sourceComponent: Component {
@@ -3074,12 +3509,10 @@ PanelWindow {
 
             // FORK: the display panel. Ordered before the theme picker only
             // for readability; Loaders are mutually exclusive by island state.
-            Loader {
+            PanelLoader {
                 id: displayPanelLoader
                 anchors.fill: parent
-                active: islandContainer.displayPanelLayerVisible
-                asynchronous: false
-                visible: islandContainer.displayPanelLayerVisible
+                live: islandContainer.displayPanelLayerVisible
 
                 sourceComponent: Component {
                     DisplayPanel {
@@ -3092,12 +3525,10 @@ PanelWindow {
             }
 
             // FORK: the audio panel — qtile's AudioPopup.
-            Loader {
+            PanelLoader {
                 id: audioPanelLoader
                 anchors.fill: parent
-                active: islandContainer.audioPanelLayerVisible
-                asynchronous: false
-                visible: islandContainer.audioPanelLayerVisible
+                live: islandContainer.audioPanelLayerVisible
 
                 sourceComponent: Component {
                     AudioPanel {
@@ -3110,12 +3541,10 @@ PanelWindow {
             }
 
             // FORK: the Wi-Fi QR — qtile's WifiQR.
-            Loader {
+            PanelLoader {
                 id: wifiQrLoader
                 anchors.fill: parent
-                active: islandContainer.wifiQrLayerVisible
-                asynchronous: false
-                visible: islandContainer.wifiQrLayerVisible
+                live: islandContainer.wifiQrLayerVisible
 
                 sourceComponent: Component {
                     WifiQrLayer {
@@ -3127,12 +3556,107 @@ PanelWindow {
                 }
             }
 
-            Loader {
+            // FORK: the calendar — DESIGN-SPEC.md's state list, no ancestor.
+            PanelLoader {
+                id: calendarLoader
+                anchors.fill: parent
+                live: islandContainer.calendarLayerVisible
+
+                sourceComponent: Component {
+                    CalendarLayer {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        showCondition: islandContainer.calendarLayerVisible
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            // FORK: the power menu — qtile's `dm-logout -r`, which was rofi.
+            PanelLoader {
+                id: powerMenuLoader
+                anchors.fill: parent
+                live: islandContainer.powerMenuLayerVisible
+
+                sourceComponent: Component {
+                    PowerMenuLayer {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        showCondition: islandContainer.powerMenuLayerVisible
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            // FORK: settings, as a state of the island rather than a patch to
+            // the packaged config app — which is a compiled binary from the
+            // `tide-island` package and would be overwritten by the next
+            // upgrade. See qml/island/SettingsLayer.qml.
+            PanelLoader {
+                id: settingsLoader
+                anchors.fill: parent
+                live: islandContainer.settingsLayerVisible
+
+                sourceComponent: Component {
+                    SettingsLayer {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        showCondition: islandContainer.settingsLayerVisible
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            PanelLoader {
+                id: cheatsheetLoader
+                anchors.fill: parent
+                live: islandContainer.cheatsheetLayerVisible
+                // Same as the application launcher: the search field is
+                // useless without the focus, and the focus has to be taken
+                // after the item exists.
+                onLoaded: {
+                    if (cheatsheetLoader.item && cheatsheetLoader.item.grabKeyboardFocus)
+                        cheatsheetLoader.item.grabKeyboardFocus();
+                }
+
+                sourceComponent: Component {
+                    CheatsheetLayer {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        iconFontFamily: root.iconFontFamily
+                        showCondition: islandContainer.cheatsheetLayerVisible
+                        sheet: islandContainer.cheatsheetWhich
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            PanelLoader {
+                id: modeKeysLoader
+                anchors.fill: parent
+                live: islandContainer.modeKeysLayerVisible
+
+                sourceComponent: Component {
+                    ModeKeysLayer {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        showCondition: islandContainer.modeKeysLayerVisible
+                        modeName: islandContainer.modeKeysName
+                        // See ModeKeysLayer's `pendingHeight`: this is what
+                        // turns the chord HUD's open from two height
+                        // animations into one.
+                        pendingHeight: islandContainer.modeKeysHeightFor(islandContainer.modeKeysName)
+                        onMeasured: function (mode, height) {
+                            islandContainer.rememberModeKeysHeight(mode, height);
+                        }
+                    }
+                }
+            }
+
+            PanelLoader {
                 id: themePickerLoader
                 anchors.fill: parent
-                active: islandContainer.themePickerLayerVisible
-                asynchronous: false
-                visible: islandContainer.themePickerLayerVisible
+                live: islandContainer.themePickerLayerVisible
 
                 sourceComponent: Component {
                     ThemePickerLayer {
@@ -3155,12 +3679,10 @@ PanelWindow {
                 }
             }
 
-            Loader {
+            PanelLoader {
                 id: applicationLauncherLoader
                 anchors.fill: parent
-                active: islandContainer.applicationLauncherLayerVisible
-                asynchronous: false
-                visible: islandContainer.applicationLauncherLayerVisible
+                live: islandContainer.applicationLauncherLayerVisible
                 onLoaded: root.focusApplicationLauncher()
 
                 sourceComponent: Component {
@@ -3267,7 +3789,8 @@ PanelWindow {
                 from: timerBubble.reveal
                 to: 1
                 duration: 360
-                easing.type: Easing.OutCubic
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
             }
 
             NumberAnimation {
@@ -3278,7 +3801,10 @@ PanelWindow {
                 from: timerBubble.reveal
                 to: 0
                 duration: 280
-                easing.type: Easing.InCubic
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()   // FORK: was Easing.InCubic — a
+                // withdrawal, so it must not overshoot past zero and bounce back
+                // into view on its way out.
                 onStopped: {
                     if (!islandContainer.timerBubbleWanted && timerBubble.reveal <= 0.001)
                         timerBubble.mounted = false;
@@ -3512,3 +4038,4 @@ PanelWindow {
         capsule: mainCapsule
     }
 }
+
