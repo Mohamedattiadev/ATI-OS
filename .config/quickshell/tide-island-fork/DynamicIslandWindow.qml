@@ -2798,7 +2798,6 @@ PanelWindow {
                 if (!manager || !manager.toplevels)
                     return out;
                 const values = manager.toplevels.values;
-                const focused = manager.activeToplevel;
 
                 // ---- FILTERED TO THE CURRENT WORKSPACE ----
                 //
@@ -2837,10 +2836,32 @@ PanelWindow {
                         continue;
                     if (canFilter && wsFor.get(entry) !== currentWs)
                         continue;
+                    // ---- appId AND THE OBJECT. NOT title, NOT active ----
+                    //
+                    // This binding re-evaluates whenever anything it READS
+                    // changes, and every rebuild destroys and recreates every
+                    // Repeater delegate. Two things were being read that had
+                    // no business being here:
+                    //
+                    //   title  — a terminal retitles itself constantly (every
+                    //            command, every directory change), so the
+                    //            whole strip was being torn down and rebuilt
+                    //            while you type. Nothing in the strip draws
+                    //            the title. This was almost certainly the
+                    //            "glow on off" flicker on the focused icon.
+                    //
+                    //   active — focus is a property OF a window, not of the
+                    //            window list, and folding it in here meant
+                    //            every alt-tab rebuilt the list too.
+                    //
+                    // The toplevel object itself is carried instead, and the
+                    // delegate compares it against a separately-passed
+                    // activeToplevel. Identity, not appId: three kitty
+                    // windows share an appId and comparing by name would
+                    // light the wrong ring.
                     out.push({
                         appId: entry.appId,
-                        title: entry.title,
-                        active: entry === focused
+                        toplevel: entry
                     });
                 }
                 if (root.flankDebug)
@@ -2927,6 +2948,7 @@ PanelWindow {
                 x: islandFlanks.pillLeft - islandFlanks.gap - width
                 y: islandFlanks.restingCenterY - height / 2
                 windows: islandFlanks.openWindows
+                activeToplevel: ToplevelManager.activeToplevel
                 textFontFamily: root.textFontFamily
                 accentColor: islandTheme.accent
                 plateColor: islandTheme.shellFill
@@ -2970,6 +2992,7 @@ PanelWindow {
                 // cannot tell a 32 px timer nudge from a 400 px morph.
                 y: islandFlanks.restingCenterY - height / 2
                 windows: islandFlanks.openWindows
+                activeToplevel: ToplevelManager.activeToplevel
                 textFontFamily: root.textFontFamily
                 accentColor: islandTheme.accent
                 plateColor: islandTheme.shellFill
@@ -3506,9 +3529,35 @@ PanelWindow {
                     easing.bezierCurve: Motion.spring()
                 }
             }
+            // FORK: radius rides the SAME latched distance as width and
+            // height, and this was the last of the three geometry Behaviors
+            // still on the flat 400 ms.
+            //
+            // The comment on `height` directly above already states the rule
+            // — "giving them independent durations is what makes a morph look
+            // like two animations rather than one shape moving" — and then
+            // radius, three lines later, had an independent duration. The
+            // distance-aware morph was retrofitted onto width and height and
+            // this one was missed.
+            //
+            // How big the desync actually is, measured rather than assumed.
+            // grim of each settled state at 1366x768: resting capsule 156 px
+            // wide, application launcher and wallpaper picker both 1013 px.
+            // That is the shell's largest morph at 857 px, and
+            // Motion.morphDurationFor(857) is
+            //   400 + (760-400) * (857-120)/(900-120) = 740 ms.
+            // Radius was given 400. So on the biggest shape change in the
+            // shell the corners stopped moving at 400 ms while the outline
+            // they belong to kept travelling for another 340 ms — the corners
+            // finish first, by 46% of the animation, and the eye reads the
+            // second half as the box sliding out from under its own corners.
+            //
+            // On the small morphs nothing changes: below REF_PX both are
+            // MORPH_MS, so this is a no-op for the resting pill's own nudges
+            // and only bites where it was visible.
             Behavior on radius {
                 NumberAnimation {
-                    duration: mainCapsule.morphDuration
+                    duration: mainCapsule.distanceMorphDuration
                     easing.type: Easing.BezierSpline
                     easing.bezierCurve: Motion.spring()
                 }
