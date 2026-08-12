@@ -1220,38 +1220,61 @@ Item {
         anchors.fill: parent
         spacing: Metrics.px(12)
 
+        // ---- THE HEADER IS A HERO NUMBER, NOT A TITLE BAR ----
+        //
+        // Was `16:37  Wed, Aug 12` set side by side on one baseline, which is
+        // the layout of a status bar: two facts of apparently equal weight,
+        // the clock only larger because it is a clock. ukishima never sets
+        // two things on one baseline like that. Their pattern — Calendar.qml
+        // around line 261, and the battery surface's percentage — is a HERO
+        // NUMBER with a small caption beneath it: 26 px DemiBold over a
+        // 10 px sub, stacked, with the number owning the block.
+        //
+        // So the date drops under the clock and becomes a caption in the
+        // letterspaced-uppercase register this shell already uses for every
+        // field name (the faders, and ConnectivityDetailPanel's own header,
+        // which was ported from ukishima and kept). Nothing is invented here
+        // and nothing is lost: the same two facts, re-ranked.
+        //
+        // font.features tnum: tabular figures, so the clock does not shuffle
+        // sideways as the minute digits change width. ukishima sets it on
+        // every number that updates in place.
         Item {
             width: parent.width
-            height: Metrics.px(28)
+            height: Metrics.px(42)
 
-            Item {
+            Column {
                 anchors.left: parent.left
                 anchors.leftMargin: Metrics.pad(6)
                 anchors.verticalCenter: parent.verticalCenter
-                width: Metrics.px(220)
-                height: parent.height
+                spacing: Metrics.px(1)
 
                 Text {
                     id: timeLabel
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
                     text: currentTime
                     color: StyleTokens.textPrimaryBright
-                    font.pixelSize: Metrics.font(19)
+                    // 19 -> 24 and Bold -> DemiBold. A hero number carries by
+                    // SIZE; at 19 px it needed Bold to look deliberate, and
+                    // bold-plus-negative-tracking is the register of a badge,
+                    // not of a display figure.
+                    font.pixelSize: Metrics.font(24)
                     font.family: heroFontFamily
-                    font.weight: Font.Bold
-                    font.letterSpacing: -0.45
+                    font.weight: Font.DemiBold
+                    font.features: ({ "tnum": 1 })
                 }
 
                 Text {
-                    anchors.left: timeLabel.right
-                    anchors.leftMargin: Metrics.pad(10)
-                    anchors.baseline: timeLabel.baseline
                     text: currentDateLabel
-                    color: textSecondary
-                    font.pixelSize: Metrics.font(12)
+                    color: StyleTokens.textMuted
+                    font.pixelSize: Metrics.font(10)
                     font.family: textFontFamily
                     font.weight: Font.Medium
+                    font.capitalization: Font.AllUppercase
+                    // The letterspacing is the treatment. Without it this is
+                    // just a small grey date. 1.0 rather than the header
+                    // rule's 1.6 because this sits UNDER a number and has to
+                    // read as its caption, not as a second heading.
+                    font.letterSpacing: 1.0
                 }
             }
 
@@ -1327,338 +1350,256 @@ Item {
             }
         }
 
-        Item {
+        // ---- FLAT ROWS WITH A HAIRLINE, NOT TWO ROUNDED CARDS ----
+        //
+        // Was two 80 px cards side by side, radius 13, each on its own matte
+        // surface — the last structural thing in this panel that ukishima
+        // does not do anywhere. Their settings surfaces have NO cards: every
+        // line is a full-width row on the panel's own material, transparent
+        // until hovered, separated only by a one-pixel hairline, and the last
+        // row in a group drops its hairline (components/SettingsRow.qml).
+        //
+        // A card says "this is a separate object on a background". A row says
+        // "this is a line in a list". Wi-Fi and Bluetooth are two lines in the
+        // same list, and boxing them was making the panel read as a grid of
+        // widgets rather than as one instrument.
+        //
+        // Going full-width also buys back what the cards were short of: the
+        // SSID had half a panel to elide into and routinely lost its tail.
+        //
+        // Numbers taken from SettingsRow.qml rather than chosen: hover fill
+        // is cream at 0.055 (Theme.frameBg) with radius 9 inset 3 px top and
+        // bottom, the name is 12.5 px DemiBold over a 10.5 px faint sub, and
+        // the hairline is cream at 0.08 (Theme.hairSoft). height 1 unscaled,
+        // like every other hairline in this tree, so it stays exactly one
+        // device pixel instead of rounding to 2 at some scales.
+        Column {
+            id: connectivityRows
             width: parent.width
-            height: Metrics.px(80)
+            spacing: 0
 
-            Row {
-                id: connectivityCardsRow
-                anchors.fill: parent
-                spacing: Metrics.px(12)
+            // The two rows are near-identical, so they are ONE inline
+            // component instantiated twice rather than two copies. The
+            // previous cards were copy-pasted, and the pair had already
+            // drifted — the comment block on the switch track existed
+            // verbatim in both, and a fix to one would have missed the other.
+            component ConnectivityRow: Item {
+                id: crow
+
+                property string glyph: ""
+                property string label: ""
+                property string status: ""
+                property bool on: false
+                property bool panelOpen: false
+                property bool toggleEnabled: true
+                property bool last: false
+
+                signal toggled()
+                signal opened()
+
+                width: parent ? parent.width : 0
+                height: Metrics.px(46)
+
+                HoverHandler { id: crowHover }
 
                 Rectangle {
-                    id: wifiCard
-                    width: (connectivityCardsRow.width - connectivityCardsRow.spacing) / 2
-                    height: connectivityCardsRow.height
-                    radius: Metrics.px(13)
-                    color: StyleTokens.clearBlack
-                    clip: true
+                    anchors.fill: parent
+                    anchors.topMargin: Metrics.pad(3)
+                    anchors.bottomMargin: Metrics.pad(3)
+                    radius: Metrics.px(9)
+                    color: (crowHover.hovered || crow.panelOpen)
+                        ? Qt.rgba(0.925, 0.925, 0.925, 0.055)
+                        : StyleTokens.transparent
 
-                    MatteSurface {
-                        anchors.fill: parent
-                        radius: parent.radius
-                        hovered: wifiCardMouse.containsMouse || wifiPanelOpen
+                    Behavior on color {
+                        ColorAnimation { duration: StyleTokens.durationFast }
                     }
+                }
 
-                    MouseArea {
-                        id: wifiCardMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: crow.opened()
+                }
+
+                // A FIXED-WIDTH SLOT, not a bare Text. Measured on screen:
+                // anchoring the label column to the glyph's own right edge
+                // started "Wi-Fi" and "Bluetooth" at different x, because the
+                // wifi arc glyph is visibly wider than the bluetooth rune in
+                // this icon font. ukishima never hits this — its GlyphIcon is
+                // a fixed 17x17 box and the glyph is centred inside it — so
+                // the slot is what has to be fixed here too, not the margin.
+                Item {
+                    id: crowGlyph
+                    anchors.left: parent.left
+                    anchors.leftMargin: Metrics.pad(12)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Metrics.px(18)
+                    height: width
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: crow.glyph
+                        color: crow.on ? controlCenter.cardAccent : StyleTokens.textDisabled
+                        font.pixelSize: Metrics.font(18)
+                        font.family: controlCenter.iconFontFamily
+                    }
+                }
+
+                Column {
+                    anchors.left: crowGlyph.right
+                    anchors.leftMargin: Metrics.pad(13)
+                    anchors.right: crowChevron.left
+                    anchors.rightMargin: Metrics.pad(10)
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Metrics.px(2)
+
+                    Text {
+                        width: parent.width
+                        // Sentence case, not uppercase. The cards shouted
+                        // "WI-FI" because a card needs a heading; a row's
+                        // name sits in the body register and the uppercase
+                        // letterspaced treatment is reserved for field names
+                        // and section headers, which is where ukishima keeps
+                        // it too.
+                        text: crow.label
+                        color: controlCenter.textPrimary
+                        font.pixelSize: Metrics.font(12.5)
+                        font.family: controlCenter.textFontFamily
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
                     }
 
                     Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: Metrics.pad(14)
-                        anchors.top: parent.top
-                        anchors.topMargin: Metrics.pad(12)
-                        text: wifiGlyph
-                        color: wifiEnabled ? cardAccent : StyleTokens.textDisabled
-                        font.pixelSize: Metrics.font(18)
-                        font.family: iconFontFamily
+                        width: parent.width
+                        visible: crow.status.length > 0
+                        text: crow.status
+                        color: StyleTokens.textMuted
+                        font.pixelSize: Metrics.font(10.5)
+                        font.family: controlCenter.textFontFamily
+                        font.weight: Font.Medium
+                        elide: Text.ElideRight
+                    }
+                }
+
+                Text {
+                    id: crowChevron
+                    anchors.right: crowToggle.left
+                    anchors.rightMargin: Metrics.pad(12)
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "›"
+                    color: crow.panelOpen ? "#c7c9cf" : StyleTokens.textSubtle
+                    font.pixelSize: Metrics.font(17)
+                    font.family: controlCenter.textFontFamily
+                    font.weight: Font.DemiBold
+                }
+
+                Rectangle {
+                    id: crowToggle
+                    anchors.right: parent.right
+                    anchors.rightMargin: Metrics.pad(12)
+                    anchors.verticalCenter: parent.verticalCenter
+                    // 28x16 with a 10 px knob, matching ukishima's
+                    // LinkToggle — unchanged from the cards, this part was
+                    // already right.
+                    width: Metrics.px(28)
+                    height: Metrics.px(16)
+                    radius: height / 2
+                    // Off gets a hairline instead of only a fill. On a
+                    // near-black surface an unfilled pill with no edge reads
+                    // as absent rather than as off.
+                    border.width: crow.on ? 0 : 1
+                    // An explicit rgba and NOT StyleTokens.hairline: that
+                    // token does not exist anywhere in this tree, and an
+                    // undefined property on a QML singleton resolves to
+                    // `undefined`, which a color property takes as
+                    // transparent WITHOUT an error. The border would simply
+                    // never have drawn.
+                    border.color: Qt.rgba(1, 1, 1, 0.14)
+                    // Accent, not a fixed iOS green: green here carries no
+                    // meaning that "on" does not already carry, and it was
+                    // the one element in the panel ignoring the palette. The
+                    // battery bar keeps success/warning/danger, where the
+                    // colour IS the information.
+                    color: crow.on ? controlCenter.accentColor : StyleTokens.switchOff
+
+                    Behavior on color {
+                        ColorAnimation { duration: StyleTokens.durationFast }
                     }
 
                     Rectangle {
-                        id: wifiSwitchTrack
-                        anchors.right: parent.right
-                        anchors.rightMargin: Metrics.pad(12)
-                        anchors.top: parent.top
-                        anchors.topMargin: Metrics.pad(12)
-                        // 34x20 -> 28x16, matching ukishima's LinkToggle.
-                        // The old track carried a 16 px knob in a 20 px
-                        // groove: 2 px of clearance, so the knob WAS the
-                        // switch and it read as a lozenge with a hole. Their
-                        // proportion is 10-in-16, which leaves the track
-                        // visible as a track on both sides of the knob.
-                        width: Metrics.px(28)
-                        height: Metrics.px(16)
-                        radius: height / 2
-                        // Off gets a hairline instead of only a fill. On a
-                        // near-black surface an unfilled pill with no edge
-                        // reads as absent rather than as off.
-                        border.width: wifiEnabled ? 0 : 1
-                        // An explicit rgba and NOT StyleTokens.hairline:
-                        // that token does not exist anywhere in this tree,
-                        // and an undefined property on a QML singleton
-                        // resolves to `undefined`, which a color property
-                        // takes as transparent WITHOUT an error. The border
-                        // would simply never have drawn.
-                        border.color: Qt.rgba(1, 1, 1, 0.14)
-                        // FORK: was StyleTokens.success — a fixed iOS green, the one
-                        // element in the panel that ignored the palette
-                        // entirely and the brightest thing on a near-black
-                        // surface. ukishima tints its toggles with the accent
-                        // ramp (LinkToggle.qml); green here is not carrying
-                        // any meaning that "on" does not already carry.
-                        // The battery bar keeps success/warning/danger, where
-                        // the colour IS the information.
-                        color: wifiEnabled ? controlCenter.accentColor : StyleTokens.switchOff
+                        width: Metrics.px(10)
+                        height: Metrics.px(10)
+                        radius: width / 2
+                        // Derived from the track, never literals: a hardcoded
+                        // x/y is correct for exactly one track size.
+                        y: (parent.height - height) / 2
+                        x: crow.on ? parent.width - width - Metrics.px(3)
+                                   : Metrics.px(3)
+                        color: StyleTokens.white
 
-                        Behavior on color {
-                            ColorAnimation {
-                                duration: StyleTokens.durationFast
+                        Behavior on x {
+                            NumberAnimation {
+                                duration: 140
+                                easing.type: Easing.BezierSpline
+                                easing.bezierCurve: Motion.spring()
                             }
-                        }
-
-                        Rectangle {
-                            width: Metrics.px(10)
-                            height: Metrics.px(10)
-                            radius: width / 2
-                            // Derived from the track rather than written as
-                            // literals: the old `y: 2` and `x: 16` were
-                            // correct only for a 34x20 track and would have
-                            // parked the knob off-centre the moment the size
-                            // changed — which it just did.
-                            y: (parent.height - height) / 2
-                            x: wifiEnabled ? parent.width - width - Metrics.px(3)
-                                  : Metrics.px(3)
-                            color: StyleTokens.white
-
-                            Behavior on x {
-                                NumberAnimation {
-                                    duration: 140
-                                    easing.type: Easing.BezierSpline
-                                    easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
-                                }
-                            }
-                        }
-
-                        MouseArea {
-                            id: wifiToggleArea
-                            anchors.fill: parent
-                            enabled: wifiSupported && wifiAvailable && !wifiBusy
-                            onClicked: controlCenter.toggleWifiEnabled()
                         }
                     }
 
-                    Item {
-                        id: wifiDetailButton
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        anchors.leftMargin: Metrics.pad(12)
-                        anchors.rightMargin: Metrics.pad(12)
-                        anchors.bottomMargin: Metrics.pad(8)
-                        height: Metrics.px(30)
-
-                        Text {
-                            anchors.left: parent.left
-                            anchors.right: wifiChevron.left
-                            anchors.rightMargin: Metrics.pad(8)
-                            anchors.top: parent.top
-                            // FORK: uppercase and letterspaced, the same field-name
-                            // treatment the faders and every ukishima
-                            // header use. 13 -> 11 because uppercase
-                            // reads larger at the same pixel size.
-                            text: "Wi-Fi".toUpperCase()
-                            color: textPrimary
-                            font.pixelSize: Metrics.font(11)
-                            font.family: textFontFamily
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: 0.8
-                            elide: Text.ElideRight
-                        }
-
-                        Text {
-                            anchors.left: parent.left
-                            anchors.right: wifiChevron.left
-                            anchors.rightMargin: Metrics.pad(8)
-                            anchors.bottom: parent.bottom
-                            text: wifiStatusText
-                            color: StyleTokens.textMuted
-                            font.pixelSize: Metrics.font(10)
-                            font.family: textFontFamily
-                            font.weight: Font.Medium
-                            elide: Text.ElideRight
-                        }
-
-                        Text {
-                            id: wifiChevron
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "›"
-                            color: wifiPanelOpen ? "#c7c9cf" : StyleTokens.textSubtle
-                            font.pixelSize: Metrics.font(17)
-                            font.family: textFontFamily
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: controlCenter.toggleConnectivityOverlay("wifi")
-                        }
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: crow.toggleEnabled
+                        onClicked: crow.toggled()
                     }
                 }
 
                 Rectangle {
-                    id: bluetoothCard
-                    width: (connectivityCardsRow.width - connectivityCardsRow.spacing) / 2
-                    height: connectivityCardsRow.height
-                    radius: Metrics.px(13)
-                    color: StyleTokens.clearBlack
-                    clip: true
-
-                    MatteSurface {
-                        anchors.fill: parent
-                        radius: parent.radius
-                        hovered: bluetoothCardMouse.containsMouse || bluetoothPanelOpen
-                    }
-
-                    MouseArea {
-                        id: bluetoothCardMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                    }
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: Metrics.pad(14)
-                        anchors.top: parent.top
-                        anchors.topMargin: Metrics.pad(12)
-                        text: bluetoothGlyph
-                        color: bluetoothEnabled ? cardAccent : StyleTokens.textDisabled
-                        font.pixelSize: Metrics.font(18)
-                        font.family: iconFontFamily
-                    }
-
-                    Rectangle {
-                        id: bluetoothSwitchTrack
-                        anchors.right: parent.right
-                        anchors.rightMargin: Metrics.pad(12)
-                        anchors.top: parent.top
-                        anchors.topMargin: Metrics.pad(12)
-                        // 34x20 -> 28x16, matching ukishima's LinkToggle.
-                        // The old track carried a 16 px knob in a 20 px
-                        // groove: 2 px of clearance, so the knob WAS the
-                        // switch and it read as a lozenge with a hole. Their
-                        // proportion is 10-in-16, which leaves the track
-                        // visible as a track on both sides of the knob.
-                        width: Metrics.px(28)
-                        height: Metrics.px(16)
-                        radius: height / 2
-                        // Off gets a hairline instead of only a fill. On a
-                        // near-black surface an unfilled pill with no edge
-                        // reads as absent rather than as off.
-                        border.width: bluetoothEnabled ? 0 : 1
-                        // An explicit rgba and NOT StyleTokens.hairline:
-                        // that token does not exist anywhere in this tree,
-                        // and an undefined property on a QML singleton
-                        // resolves to `undefined`, which a color property
-                        // takes as transparent WITHOUT an error. The border
-                        // would simply never have drawn.
-                        border.color: Qt.rgba(1, 1, 1, 0.14)
-                        color: bluetoothEnabled ? controlCenter.accentColor : StyleTokens.switchOff
-
-                        Behavior on color {
-                            ColorAnimation {
-                                duration: StyleTokens.durationFast
-                            }
-                        }
-
-                        Rectangle {
-                            width: Metrics.px(10)
-                            height: Metrics.px(10)
-                            radius: width / 2
-                            // Derived from the track rather than written as
-                            // literals: the old `y: 2` and `x: 16` were
-                            // correct only for a 34x20 track and would have
-                            // parked the knob off-centre the moment the size
-                            // changed — which it just did.
-                            y: (parent.height - height) / 2
-                            x: bluetoothEnabled ? parent.width - width - Metrics.px(3)
-                                  : Metrics.px(3)
-                            color: StyleTokens.white
-
-                            Behavior on x {
-                                NumberAnimation {
-                                    duration: 140
-                                    easing.type: Easing.BezierSpline
-                                    easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
-                                }
-                            }
-                        }
-
-                        MouseArea {
-                            id: bluetoothToggleArea
-                            anchors.fill: parent
-                            enabled: bluetoothAvailable && !bluetoothBusy
-                            onClicked: controlCenter.toggleBluetoothEnabled()
-                        }
-                    }
-
-                    Item {
-                        id: bluetoothDetailButton
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        anchors.leftMargin: Metrics.pad(12)
-                        anchors.rightMargin: Metrics.pad(12)
-                        anchors.bottomMargin: Metrics.pad(8)
-                        height: Metrics.px(30)
-
-                        Text {
-                            anchors.left: parent.left
-                            anchors.right: bluetoothChevron.left
-                            anchors.rightMargin: Metrics.pad(8)
-                            anchors.top: parent.top
-                            // FORK: uppercase and letterspaced, the same field-name
-                            // treatment the faders and every ukishima
-                            // header use. 13 -> 11 because uppercase
-                            // reads larger at the same pixel size.
-                            text: "Bluetooth".toUpperCase()
-                            color: textPrimary
-                            font.pixelSize: Metrics.font(11)
-                            font.family: textFontFamily
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: 0.8
-                            elide: Text.ElideRight
-                        }
-
-                        Text {
-                            anchors.left: parent.left
-                            anchors.right: bluetoothChevron.left
-                            anchors.rightMargin: Metrics.pad(8)
-                            anchors.bottom: parent.bottom
-                            text: bluetoothStatusText
-                            color: StyleTokens.textMuted
-                            font.pixelSize: Metrics.font(10)
-                            font.family: textFontFamily
-                            font.weight: Font.Medium
-                            elide: Text.ElideRight
-                        }
-
-                        Text {
-                            id: bluetoothChevron
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "›"
-                            color: bluetoothPanelOpen ? "#c7c9cf" : StyleTokens.textSubtle
-                            font.pixelSize: Metrics.font(17)
-                            font.family: textFontFamily
-                            font.weight: Font.DemiBold
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: controlCenter.toggleConnectivityOverlay("bluetooth")
-                        }
-                    }
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    visible: !crow.last
+                    height: 1
+                    // Theme.hairSoft — cream at 0.08. Softer than the
+                    // header rule's 0.13: that one separates a heading from
+                    // its content, these only separate peers.
+                    color: Qt.rgba(0.925, 0.925, 0.925, 0.08)
                 }
+            }
+
+            ConnectivityRow {
+                glyph: controlCenter.wifiGlyph
+                label: "Wi-Fi"
+                status: controlCenter.wifiStatusText
+                on: controlCenter.wifiEnabled
+                panelOpen: controlCenter.wifiPanelOpen
+                toggleEnabled: controlCenter.wifiSupported
+                    && controlCenter.wifiAvailable && !controlCenter.wifiBusy
+                onToggled: controlCenter.toggleWifiEnabled()
+                onOpened: controlCenter.toggleConnectivityOverlay("wifi")
+            }
+
+            ConnectivityRow {
+                glyph: controlCenter.bluetoothGlyph
+                label: "Bluetooth"
+                status: controlCenter.bluetoothStatusText
+                on: controlCenter.bluetoothEnabled
+                panelOpen: controlCenter.bluetoothPanelOpen
+                toggleEnabled: controlCenter.bluetoothAvailable
+                    && !controlCenter.bluetoothBusy
+                onToggled: controlCenter.toggleBluetoothEnabled()
+                onOpened: controlCenter.toggleConnectivityOverlay("bluetooth")
+                last: true
             }
         }
 
         Item {
             id: batteryDrawer
-            readonly property real cardWidth: (width - connectivityCardsRow.spacing) / 2
+            // Was `(width - connectivityCardsRow.spacing) / 2`, which is how
+            // this drawer inherited its half-width from the two connectivity
+            // cards that used to sit above it. Those are rows now and there
+            // is no card grid to line up with, so the 12 px gutter is stated
+            // here instead of being read off a sibling that no longer exists.
+            readonly property real cardWidth: (width - Metrics.px(12)) / 2
             readonly property real modeSlotWidth: 44
             readonly property real openDistance: controlCenter.batteryModeCardHeight
                 + controlCenter.batteryDrawerContentGap
