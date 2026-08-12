@@ -358,10 +358,33 @@ Item {
                     // alpha was tuned: the problem was never which alpha, it
                     // was that there was an alpha at all.
                     //
-                    // #2b2e35 verbatim, because a ring that is part of this
-                    // shell should be the same grey as the timer's, not a
-                    // near-miss derived from the palette.
-                    trackColor: "#2b2e35"
+// ---- NO BORDER. THE BACKGROUND IS THE ELEMENT ----
+                    //
+                    // The track is transparent: nothing is stroked around an
+                    // unfocused icon at all.
+                    //
+                    // Every earlier version drew one - accent at 0.20, then
+                    // 0.45, then white at 0.16, then the timer's opaque
+                    // #2b2e35 - and the last was closest and still wrong.
+                    // Putting both in one screenshot shows why: the timer is
+                    // a SOLID BLACK DISC carrying a single thin bright ring.
+                    // Copying its track colour onto every icon gave each one
+                    // a heavy grey border instead, so the strip read as a row
+                    // of bordered buttons, which is precisely the complaint
+                    // the very first version got, reached from the opposite
+                    // direction.
+                    //
+                    // What carries these is the dark disc BEHIND the icon,
+                    // not an outline around it. The disc stays, the border
+                    // goes, and the stroke is left to mean the only thing it
+                    // should: the accent arc on the focused window, the way
+                    // the timer's amber arc marks the timer.
+                    trackColor: "transparent"
+                    // Black like the timer's core, and no core border: the
+                    // default #1f1f1f edge is a hairline outline, i.e. the
+                    // same border returning at lower contrast.
+                    coreColor: "#000000"
+                    coreBorderColor: "#000000"
                     // A window has no 0..1 quantity to show, so the arc
                     // carries the one binary fact: focused sweeps the whole
                     // circle. Animating progress rather than snapping it

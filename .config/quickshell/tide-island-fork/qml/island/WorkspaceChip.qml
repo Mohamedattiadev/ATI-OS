@@ -106,10 +106,12 @@ Item {
         showCore: true
         progress: 1
         fillColor: root.accentColor
-        // The timer's own track colour, opaque - see the long note in
-        // WindowRingStrip.qml. A translucent track over a wallpaper is a
-        // tint, not a stroke, which is why every earlier alpha looked wrong.
-        trackColor: "#2b2e35"
+        // No border ring - see the note in WindowRingStrip.qml. The dark
+        // disc behind the digit carries it; an outline around it turned the
+        // strip into a row of bordered buttons.
+        trackColor: "transparent"
+        coreColor: "#000000"
+        coreBorderColor: "#000000"
 
         // The number is accent-coloured. The ring is small enough that a
         // grey digit inside it reads as disabled.
