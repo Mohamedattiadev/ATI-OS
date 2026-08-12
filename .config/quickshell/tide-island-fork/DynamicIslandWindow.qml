@@ -2658,6 +2658,108 @@ PanelWindow {
             }
         }
 
+        // ------------------------------------------------------------
+        //  FORK: the island's flanks.
+        // ------------------------------------------------------------
+        //  A workspace chip and one ring per open window, living in the
+        //  empty bar either side of the notch. SIBLINGS of mainCapsule and
+        //  never children: every one of the ~20 islandState cases in
+        //  baseTargetWidth is arithmetic against islandWidth, and a second
+        //  permanent occupant of the capsule means revisiting all of them.
+        //  Out here the pill's geometry is untouched.
+        //
+        //  z:4 keeps them UNDER mainCapsule (z:5), so a panel that morphs
+        //  out to 980 px simply covers them rather than having to fight
+        //  them for the same pixels.
+        //
+        //  Positioned against the RESTING band, not against mainCapsule's
+        //  animating y/height. Anchoring to a rectangle that springs and
+        //  overshoots would make the flanks bounce in sympathy with every
+        //  panel that opens, and they are not part of that motion.
+        //
+        //  They are drawn but not clickable: the window's input Region is
+        //  built from mainCapsule's rectangle alone. That is deliberate —
+        //  see the mask near the top of this file.
+        Item {
+            id: islandFlanks
+            z: 4
+
+            readonly property real restingCenterY:
+                userConfig.islandTopMargin + userConfig.islandHeight / 2
+            readonly property real pillLeft: mainCapsule.x
+            readonly property real pillRight: mainCapsule.x + mainCapsule.width
+            readonly property real gap: Metrics.px(14)
+
+            // Shown only while the capsule is at its RESTING size. Tested on
+            // targetHeight rather than on the state NAME: targetHeight jumps
+            // the instant a state changes, so the flanks start fading as the
+            // panel starts growing, and the test cannot rot when a new
+            // islandState is added and nobody updates a list of names here.
+            readonly property bool restingNow:
+                !root.overviewVisible
+                && mainCapsule.targetHeight <= userConfig.islandHeight + 1
+
+            // ToplevelManager, not `hyprctl clients`: the foreign-toplevel
+            // protocol is live, so this updates on open/close with no poll.
+            readonly property var openWindows: {
+                const out = [];
+                const manager = ToplevelManager;
+                if (!manager || !manager.toplevels)
+                    return out;
+                const values = manager.toplevels.values;
+                const focused = manager.activeToplevel;
+                for (let index = 0; index < values.length; index++) {
+                    const entry = values[index];
+                    if (!entry)
+                        continue;
+                    out.push({
+                        appId: entry.appId,
+                        title: entry.title,
+                        active: entry === focused
+                    });
+                }
+                return out;
+            }
+
+            WorkspaceChip {
+                id: workspaceChip
+                x: islandFlanks.pillLeft - islandFlanks.gap - width
+                y: islandFlanks.restingCenterY - height / 2
+                workspaceId: islandContainer.currentWs
+                textFontFamily: root.textFontFamily
+                accentColor: islandTheme.accent
+                fillColor: islandTheme.shellFill
+                showCondition: islandFlanks.restingNow
+                revealProgress: root.autoHideProgress
+            }
+
+            WindowRingStrip {
+                id: leftRings
+                side: "left"
+                x: workspaceChip.x - islandFlanks.gap - width
+                y: islandFlanks.restingCenterY - height / 2
+                windows: islandFlanks.openWindows
+                textFontFamily: root.textFontFamily
+                accentColor: islandTheme.accent
+                fillColor: islandTheme.shellFill
+                showCondition: islandFlanks.restingNow
+                revealProgress: root.autoHideProgress
+            }
+
+            WindowRingStrip {
+                id: rightRings
+                side: "right"
+                x: islandFlanks.pillRight + islandFlanks.gap
+                y: islandFlanks.restingCenterY - height / 2
+                windows: islandFlanks.openWindows
+                textFontFamily: root.textFontFamily
+                accentColor: islandTheme.accent
+                fillColor: islandTheme.shellFill
+                showCondition: islandFlanks.restingNow
+                revealProgress: root.autoHideProgress
+            }
+        }
+
         // --- UI 渲染：灵动岛主干 ---
         Rectangle {
             id: mainCapsule
