@@ -46,6 +46,8 @@ from scripts.brightness_control import brightness_change
 
 # from scripts.float_windows import ( float_satty, float_edit_nvim, float_imv, float_feh, float_link_preview)
 from scripts.mpv_manager import mpv_manager
+from scripts.mode_overlay import mode_overlay
+from scripts.above_fullscreen import is_promoted as _promoted_above_fullscreen
 from scripts.toggle_apps import (
     toggle_qutebrowser,
     toggle_obsidian,
@@ -299,6 +301,45 @@ def hintium_mode_text():
     if not name:
         return ""
     return f" {HINTIUM_MODE_LABELS.get(name, name.upper())} "
+
+
+# What each qtile chord shows on the mode chip. Three places render this now
+# -- the Chord widget in normal_user_bar(), the one in right_side_widgets(),
+# and the fullscreen overlay in scripts/mode_overlay.py -- and it lived as two
+# byte-identical inline dicts before the third arrived, which is one copy too
+# many to keep in step by hand.
+#
+# The five popup-backed modes show only their name: each of those popups draws
+# its own hint bar listing the same keys, and repeating them here only made
+# the bar 200px wider for nothing. The modes with no popup keep their letters
+# -- for those, this chip is the only place the keys are shown.
+CHORD_CHIP_LABELS = {
+    "Resize-Mode": "󰩨   RESIZE : H, J, N",
+    "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
+    "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
+    "Scratch-Mode": "󰈆   SCRATCH",
+    "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
+    "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
+    "Lang-Switch": "   LANG : a , e , t , d ",
+    "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , j/k scroll , TAB , ESC ",
+    "WallpaperPicker": "󰸉   WALLPAPERS",
+    "PASSTHROUGH": "   PASSTHROUGH : ESC",
+    "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
+    "Bluetooth-Mode": "󰂯   BLUETOOTH",
+    "Audio-Mode": "󰕾   AUDIO",
+    "Display-Mode": "󰍹   DISPLAY",
+    "Wifi-Mode": "󰤨   WIFI",
+    "Wifi-QR": "   WIFI QR : ESC to close ",
+    # NOTE: updates popup  will be used later
+    # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
+}
+
+
+def chord_chip_label(name):
+    """Chord name -> the text its chip shows. Unknown chords show their name."""
+    return CHORD_CHIP_LABELS.get(name, (name or "").upper())
+
+
 myTerm = "kitty"  # My terminal of choice
 my2ndTerm = "alacritty"  # My terminal of choice
 myFullScreenTerm = "kitty --start-as=fullscreen"
@@ -3121,6 +3162,73 @@ def chord_chip_leave():
     w.bar.draw()
 
 
+# -------------------------------------------------------------------
+# 12.2- the same chip again, over fullscreen windows
+#
+# A focused fullscreen window covers the bar, and with it both mode
+# chips, so from inside a fullscreen video there was nothing on screen
+# to say which mode was open. scripts/mode_overlay.py puts the label
+# back as a floating chip at the top centre for as long as the bar is
+# hidden; the two providers below are what tell it WHAT to draw, so the
+# overlay stays a mirror of the bar rather than a second definition of
+# it -- same label table, same per-mode colour map.
+# -------------------------------------------------------------------
+
+
+def _solid(colour):
+    """One hex string out of a palette entry.
+
+    Palette slots here are two-element [start, end] gradient rows for the
+    bar's decorations; a popup control takes a plain colour.
+    """
+    if isinstance(colour, (list, tuple)):
+        return colour[0] if colour else "#000000"
+    return colour
+
+
+def _chord_overlay_chip():
+    if not ACTIVE_CHORD:
+        return None
+    return (
+        chord_chip_label(ACTIVE_CHORD),
+        _solid(CHORD_CHIP_COLORS.get(ACTIVE_CHORD, DEFAULT_CHIP_COLOR)),
+        _solid(colors[0]),
+    )
+
+
+def _hintium_overlay_chip():
+    # hintium_mode_text() is the bar widget's own poll function, so the
+    # overlay shows exactly what the hintium chip would have shown.
+    text = hintium_mode_text().strip()
+    if not text:
+        return None
+    return (text, _solid(colors[4]), _solid(colors[0]))
+
+
+mode_overlay.set_providers([_chord_overlay_chip, _hintium_overlay_chip])
+
+
+# Subscribed AFTER the handlers that maintain ACTIVE_CHORD (chord_enter above,
+# and the leave_chord handler that clears it) -- qtile runs a hook's callbacks
+# in subscription order, so registering these earlier would refresh the
+# overlay against the previous chord. The overlay polls as well, but only
+# every 250ms; these two are what make the chip appear on the same frame as
+# the mode.
+@hook.subscribe.enter_chord
+def _mode_overlay_enter_chord(_chord_name):
+    mode_overlay.refresh()
+
+
+@hook.subscribe.leave_chord
+def _mode_overlay_leave_chord():
+    mode_overlay.refresh()
+
+
+@hook.subscribe.startup_complete
+def _mode_overlay_startup():
+    mode_overlay.start()
+
+
 # ----------------------------------------------------------------
 # 12.5- On chord enter: close any open SmartWidgetBox and remember
 #       which ones were open. On chord leave: reopen exactly those.
@@ -3610,29 +3718,7 @@ def normal_user_bar():
             padding=11,
             foreground=colors[7],
             background=None,
-            # The five popup-backed modes show only their name here: each
-            # of those popups draws its own hint bar listing the same keys,
-            # and the chip repeating them just made the bar 200px wider for
-            # nothing. The modes below that have no popup keep their letters
-            # -- for those, this chip is the only place the keys are shown.
-            name_transform=lambda name: {
-                "Resize-Mode": "󰩨   RESIZE : H, J, N",
-                "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
-                "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
-                "Scratch-Mode": "󰈆   SCRATCH",
-                "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
-                "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
-                "Lang-Switch": "   LANG : a , e , t , d ",
-                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , j/k scroll , TAB , ESC ",
-                "WallpaperPicker": "󰸉   WALLPAPERS",
-                "PASSTHROUGH": "   PASSTHROUGH : ESC",
-                "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
-                "Bluetooth-Mode": "󰂯   BLUETOOTH",
-                "Audio-Mode": "󰕾   AUDIO",
-                "Display-Mode": "󰍹   DISPLAY",
-                "Wifi-Mode": "󰤨   WIFI",
-                "Wifi-QR": "   WIFI QR : ESC to close ",
-            }.get(name, name.upper()),
+            name_transform=chord_chip_label,
         ),
         # Hintium mode chip — see the matching one in right_side_widgets()
         # and hintium_mode_text() near the top of the file for why this
@@ -3973,26 +4059,7 @@ def right_side_widgets():
             # accent.
             foreground=colors[0],
             background=None,
-            name_transform=lambda name: {
-                "Resize-Mode": "󰩨   RESIZE : H, J, N",
-                "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
-                "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
-                "Scratch-Mode": "󰈆   SCRATCH",
-                "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
-                "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
-                "Lang-Switch": "   LANG : a , e , t , d ",
-                "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , j/k scroll , TAB , ESC ",
-                "WallpaperPicker": "󰸉   WALLPAPERS",
-                "PASSTHROUGH": "   PASSTHROUGH : ESC",
-                "PASSTHROUGH-CONFIRM": "   EXIT PASSTHROUGH ? y , n , ESC",
-                "Bluetooth-Mode": "󰂯   BLUETOOTH",
-                "Audio-Mode": "󰕾   AUDIO",
-                "Display-Mode": "󰍹   DISPLAY",
-                "Wifi-Mode": "󰤨   WIFI",
-                "Wifi-QR": "   WIFI QR : ESC to close ",
-                # NOTE: updates popup  will be used later
-                # "Updates-Mode": "󰏖   UPDATES : j , k , h , l , space , Enter , y , n , ESC",
-            }.get(name, name.upper()),
+            name_transform=chord_chip_label,
         ),
         # Hintium mode chip — same idea as the Chord widget above, but for
         # hintium's direct alt+space/j//c bindings, which are not qtile
@@ -7071,7 +7138,7 @@ groups.append(
 
 
 # --------------------------------------------------------------------------
-# Keep dropdowns above fullscreen windows.
+# Keep dropdowns -- and the mpv PiP window -- above fullscreen windows.
 #
 # Symptom: with a dropdown open, fullscreening any other window buried the
 # dropdown for good -- toggling it off and on did not lift it back, the
@@ -7107,6 +7174,21 @@ groups.append(
 # True, ordered so that a SMALLER tuple is a higher layer (index 0 is
 # _NET_WM_TYPE_DESKTOP at the bottom), which puts index 5 on top.
 #
+# The mpv PiP window had the same problem from the other direction, and it
+# needs one more step than the dropdowns do. set_pip_mode() marks it with
+# keep_above(True), which is _NET_WM_STATE_ABOVE -- layer 3, together with
+# the docks. Both a focused fullscreen window (layer 4) and any dropdown
+# (layer 5) therefore sit above it, which is the two symptoms seen: opening
+# a dropdown covered the PiP, and fullscreening anything buried it. A PiP
+# that can be covered is not much of a PiP, so it goes above BOTH.
+#
+# There is no seventh flag to set for that, but there does not need to be:
+# these tuples are only ever compared with each other, smaller meaning
+# higher, so the all-False tuple is a valid layer one step above the
+# scratchpad one. Nothing in change_layer() cares how many Trues a tuple
+# holds -- it sorts windows into `lower`, `higher` and `same` by <, > and ==
+# and does nothing else with the value.
+#
 # X11 only -- guarded so that the config still loads under the Wayland
 # backend, where this module does not exist.
 # --------------------------------------------------------------------------
@@ -7120,6 +7202,7 @@ else:
     # restart: without it each restart would wrap the previous wrapper.
     if not getattr(_X11Window.get_layering_information, "_scratchpads_on_top", False):
         _SCRATCHPAD_LAYER = (False, False, False, False, False, True)
+        _PIP_LAYER = (False, False, False, False, False, False)
         _layering_unpatched = _X11Window.get_layering_information
 
         def _owned_by_scratchpad(win):
@@ -7133,8 +7216,30 @@ else:
                             return True
             return False
 
+        def _is_pip_mpv(win):
+            """True only for an mpv window currently in PiP, not every mpv.
+
+            A centred mpv is an ordinary window and must stack like one --
+            pinning every tracked mpv on top would make Mod+f on a video
+            behave as if nothing were fullscreen.
+            """
+            entry = mpv_manager.tracked.get(getattr(win, "wid", None))
+            # `entry["win"] is win` because wids are reused by the X server
+            # once a window is destroyed, and _live() only prunes the tracked
+            # dict when something asks it to.
+            return bool(entry and entry.get("pip") and entry.get("win") is win)
+
         def _layering_with_scratchpads_on_top(self):
-            if _owned_by_scratchpad(self):
+            # This runs once per window per restack, so both tests are
+            # deliberately cheap: a dict lookup, then a walk of the (single)
+            # ScratchPad group's handful of dropdowns.
+            if _is_pip_mpv(self):
+                return _PIP_LAYER
+            # An app that opened while something was fullscreen shares the
+            # scratchpad layer for as long as that fullscreen lasts -- there
+            # is no bool tuple strictly between the two. See
+            # scripts/above_fullscreen.py.
+            if _owned_by_scratchpad(self) or _promoted_above_fullscreen(self):
                 return _SCRATCHPAD_LAYER
             return _layering_unpatched(self)
 

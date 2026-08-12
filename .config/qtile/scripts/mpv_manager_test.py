@@ -50,6 +50,7 @@ class FakeGroup:
     def __init__(self, screen=None, name="1"):
         self.screen = screen
         self.name = name
+        self.windows = []  # only _is_buried reads this
 
 
 class FakeWindow:
@@ -64,6 +65,7 @@ class FakeWindow:
         self.kept_above = None
         self.placements = []
         self.togroup_calls = []
+        self.layer_raises = 0
 
     def get_wm_class(self):
         return self._wm_class
@@ -76,6 +78,9 @@ class FakeWindow:
 
     def bring_to_front(self):
         pass
+
+    def change_layer(self, up=True, top_bottom=False):
+        self.layer_raises += 1
 
     def _enablefloating(self, x=None, y=None, w=None, h=None, new_float_state=None):
         self.x, self.y, self.width, self.height = x, y, w, h
@@ -215,6 +220,52 @@ m.on_mpv_killed(a)
 check("survivor moves into the freed slot", b.placements[-1][1] == screen.height - 180 - M.PIP_MARGIN,
       f"y={b.placements[-1][1] if b.placements else None}")
 check("killed window is untracked", 10 not in m.tracked)
+
+# ------------------------------------------------------------------- restacking
+# The PiP layer config.py installs only holds against windows that restack
+# themselves through change_layer(). bring_to_front() and a freshly mapped
+# window both go over its head, so the hooks re-assert it -- see raise_pips().
+print("pip re-raising")
+a = FakeWindow(wid=10, group=FakeGroup(screen))
+b = FakeWindow(wid=11, group=FakeGroup(screen))
+m = make_manager(a, b)
+m.tracked[10]["pip"] = True
+m.raise_pips()
+check("pip window is re-raised", a.layer_raises == 1, f"raises={a.layer_raises}")
+check("a centred mpv is left where it is", b.layer_raises == 0, f"raises={b.layer_raises}")
+
+# The order check is what stops the hover flicker: raise_pips runs on every
+# focus change, so it has to send nothing when the PiP is already on top.
+# _is_buried takes the stack bottom-first, and reads the window's own group.
+shared = FakeGroup(screen)
+pip = FakeWindow(wid=20, group=shared)
+other = FakeWindow(wid=21, group=shared)
+shared.windows = [pip, other]
+check("not buried when the pip is on top", not M.MPVManager._is_buried(pip, [other.wid, pip.wid]))
+check("buried when something is above it", M.MPVManager._is_buried(pip, [pip.wid, other.wid]))
+check("a window missing from the stack is ignored",
+      not M.MPVManager._is_buried(pip, [other.wid, pip.wid, 999]))
+check("a pip missing from the stack is not 'buried'",
+      not M.MPVManager._is_buried(pip, [other.wid]))
+
+check("has_pip is true with one in pip", m.has_pip())
+m.tracked[10]["pip"] = False
+check("has_pip is false with none in pip", not m.has_pip())
+
+# No PiP window means nothing to defer -- the hooks fire on every focus
+# change, so this is the common case and it must not schedule work.
+a.layer_raises = 0
+m.raise_pips_soon()
+check("nothing scheduled when no window is in pip", a.layer_raises == 0 and not m._raise_pending)
+
+# With no event loop to defer onto, raise_pips_soon must fall through to doing
+# the work rather than latch _raise_pending and no-op forever after.
+m.tracked[10]["pip"] = True
+m.raise_pips_soon()
+check("falls back to an immediate raise without a loop", a.layer_raises == 1, f"raises={a.layer_raises}")
+check("pending flag is cleared for the next call", not m._raise_pending)
+m.raise_pips_soon()
+check("a later call still raises", a.layer_raises == 2, f"raises={a.layer_raises}")
 
 # ------------------------------------------------------------------- state I/O
 print("state persistence")

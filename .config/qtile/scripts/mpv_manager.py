@@ -28,6 +28,7 @@ REQUIRED_WINDOW_API = (
     "togroup",
     "keep_above",
     "bring_to_front",
+    "change_layer",
     "enable_floating",
     "set_size_floating",
     "set_position_floating",
@@ -139,6 +140,7 @@ class MPVManager:
     def __init__(self):
         self.tracked = {}  # wid -> {"win": Window, "aspect": float, "pip": bool}
         self.last_wid = None
+        self._raise_pending = False
 
     # ------------------------------------------------------------------
     # state
@@ -401,6 +403,111 @@ class MPVManager:
         else:
             self.set_center_mode(window)
 
+    def has_pip(self):
+        return any(entry["pip"] for entry in self.tracked.values())
+
+    def raise_pips(self):
+        """Put every PiP window back on top of the window stack.
+
+        config.py gives a PiP window a stacking layer of its own, above both
+        the fullscreen and the scratchpad layers, and that is enough for
+        anything that restacks itself through qtile's change_layer(): it
+        computes its new position relative to the layers around it and stays
+        underneath. It is NOT enough for the two paths that bypass layering
+        altogether:
+
+        * bring_to_front() is a raw `configure(stackmode=Above)` -- straight
+          to the top of the server's stack, layers ignored. qdrop calls it on
+          purpose (qdrop.py: "bring_to_front() is deliberately the *only*
+          thing done here"), and so does this module's own _place().
+        * X maps a newly created window on top of its siblings, before qtile
+          has any say in it.
+
+        Either one leaves a window above the PiP, and from there the error
+        spreads, because change_layer() places windows RELATIVE to each
+        other: a window entering the fullscreen layer goes "above the last
+        window in the lower layers", and if that window is the one which
+        jumped the queue, the fullscreen window clears the PiP as well. That
+        is the reported symptom -- hover another window while something is
+        fullscreen and the PiP sinks.
+
+        change_layer(up=True), rather than bring_to_front(), because it fixes
+        the neighbours too: with the PiP alone in its layer it takes the
+        branch that walks every window in a lower layer sitting above it and
+        restacks each one below. bring_to_front() would only move the PiP,
+        leaving the wrong relative order for the next window to inherit.
+        """
+        pips = [
+            self.tracked[wid]["win"]
+            for wid in list(self._live())
+            if self.tracked.get(wid, {}).get("pip")
+        ]
+        if not pips:
+            return
+        try:
+            stack = list(qtile.core._root.query_tree())
+        except Exception:
+            # Can't read the stack, so can't tell -- raise rather than leave
+            # the PiP buried.
+            stack = None
+        for win in pips:
+            if stack is not None and not self._is_buried(win, stack):
+                continue
+            try:
+                win.change_layer(up=True)
+            except Exception:
+                logger.exception("mpv_manager: could not raise the PiP window")
+
+    @staticmethod
+    def _is_buried(window, stack):
+        """True if any window on the PiP's group is stacked above it.
+
+        Asking before acting is what keeps this quiet. raise_pips() runs on
+        every focus change, and with follow_mouse_focus that is every time the
+        pointer crosses a window edge; change_layer() queries the server stack
+        and issues a ConfigureWindow per window it pushes back down, so
+        calling it unconditionally several times a second kept the compositor
+        redrawing. In the steady state this sends nothing.
+        """
+        try:
+            index = stack.index(window.wid)
+        except ValueError:
+            return False
+        group = getattr(window, "group", None)
+        for other in getattr(group, "windows", ()) or ():
+            if other is window or other.wid not in stack:
+                continue
+            if stack.index(other.wid) > index:
+                return True
+        return False
+
+    def raise_pips_soon(self):
+        """raise_pips(), but after the event that disturbed the stack is done.
+
+        Several restacks happen AFTER the hook that announces them: focusing a
+        fullscreen window fires client_focus from _Window.focus() and only
+        then calls change_layer() (x11/window.py, Window.focus). Raising from
+        inside the hook would be undone one line later, so this defers to the
+        next turn of the event loop instead.
+
+        Coalesced, because one user action can fire several of these hooks and
+        the work is identical each time.
+        """
+        if self._raise_pending or not self.has_pip():
+            return
+        self._raise_pending = True
+        try:
+            qtile.call_later(0, self._deferred_raise)
+        except Exception:
+            # No loop to defer onto (tests, or a teardown race): do it now
+            # rather than leave the flag set and every later call a no-op.
+            self._raise_pending = False
+            self.raise_pips()
+
+    def _deferred_raise(self):
+        self._raise_pending = False
+        self.raise_pips()
+
     def restack_pips(self):
         """Re-place every PiP window so the stack has no gaps."""
         for wid in list(self._live()):
@@ -452,6 +559,17 @@ mpv_manager = MPVManager()
 @hook.subscribe.client_managed
 def _mpv_client_managed(window):
     mpv_manager.setup_mpv(window)
+    # A window the server has just mapped is on top of everything, PiP
+    # included, until someone says otherwise.
+    mpv_manager.raise_pips_soon()
+
+
+@hook.subscribe.client_focus
+def _mpv_client_focus(_window):
+    # The one that matters day to day: with follow_mouse_focus on, moving the
+    # pointer onto another window is a focus change, and a focus change can
+    # restack. See raise_pips().
+    mpv_manager.raise_pips_soon()
 
 
 @hook.subscribe.client_killed
