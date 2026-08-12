@@ -43,7 +43,15 @@ packages:
   - hyprland
   - xdg-desktop-portal-hyprland   # screen sharing, file pickers, and the
                                   # portal every Electron app asks for
-  - hyprpaper                     # wallpaper; fed by hypr/scripts/wallpaper-sync.sh
+  # Wallpaper, fed by hypr/scripts/wallpaper-sync.sh. This was hyprpaper
+  # until the transition work: hyprpaper has no transition of any kind --
+  # `hyprctl hyprpaper wallpaper` swaps the buffer between two frames, so
+  # every change was a hard cut. awww is what swww was renamed to, and
+  # Arch ships it as extra/awww (NOT the AUR, and NOT under `swww` --
+  # every guide still says swww, which is why the first attempt here
+  # failed against a hyprpaper-only machine and looked like a bad
+  # parameter name rather than a missing package).
+  - awww
   - hypridle
   - hyprlock
   - qt5-wayland                   # without these, Qt apps fall back to

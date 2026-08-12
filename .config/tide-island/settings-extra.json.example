@@ -1,0 +1,101 @@
+[
+    {
+        "key": "islandHeight",
+        "max": 80,
+        "detail": "OVERRIDE EXAMPLE. Only `max` and `detail` are given, so the label, min, step, default and scope all stay as island-settings.py defines them. This widens the ceiling from 60 to 80; note that raising `min` instead would need a new `default` too, because the built-in default of 32 would fall outside the new range and the row would be rejected."
+    },
+    {
+        "key": "islandPositionX",
+        "label": "Horizontal position",
+        "type": "int",
+        "min": 0,
+        "max": 100,
+        "step": 5,
+        "default": 50,
+        "scope": "packaged",
+        "order": 85,
+        "detail": "Percent across the screen for the island's centre. 50 is centred, which is the only value that makes sense while it is imitating a notch — the rest of the range is for the floating form. Ordered 85 to sit between the width and top-margin rows it belongs with."
+    },
+    {
+        "key": "dynamicIslandPrimaryAction",
+        "label": "Left click opens",
+        "type": "enum",
+        "values": ["toggleControlCenter", "toggleExpandedPlayer", "toggleNotificationCenter", "toggleOverview", "toggleLyrics", "none"],
+        "default": "toggleControlCenter",
+        "scope": "packaged",
+        "order": 25,
+        "detail": "The full action vocabulary is DynamicIslandWindow.qml's handleConfiguredClickAction switch; these six are the ones worth a click. Both click actions were UNSET until now, so they ran on the packaged binary's defaults — left toggleExpandedPlayer, right toggleControlCenter — which nothing on this machine recorded. They are now written down and swapped; put them back by stepping these two rows."
+    },
+    {
+        "key": "dynamicIslandSecondaryAction",
+        "label": "Right click opens",
+        "type": "enum",
+        "values": ["toggleExpandedPlayer", "toggleControlCenter", "toggleNotificationCenter", "toggleOverview", "toggleLyrics", "none"],
+        "default": "toggleExpandedPlayer",
+        "scope": "packaged",
+        "order": 26,
+        "detail": "The secondary button's action. Note the BUTTON is a separate key: this row says what the secondary click does, dynamicIslandSecondaryButton says which physical button is secondary."
+    },
+    {
+        "key": "dynamicIslandPrimaryButton",
+        "label": "Primary button",
+        "type": "int",
+        "min": 1,
+        "max": 3,
+        "step": 1,
+        "default": 1,
+        "scope": "packaged",
+        "order": 27,
+        "detail": "1 Left, 2 Middle, 3 Right — the numbering is stated in the packaged config app's own source, /usr/lib/qt6/qml/TideIsland/Interaction.qml, which lists {Left:1, Middle:2, Right:3}. Do not set this equal to the secondary button; that app actively pushes them apart when they collide and this panel has no such interlock."
+    },
+    {
+        "key": "dynamicIslandSecondaryButton",
+        "label": "Secondary button",
+        "type": "int",
+        "min": 1,
+        "max": 3,
+        "step": 1,
+        "default": 3,
+        "scope": "packaged",
+        "order": 28,
+        "detail": "1 Left, 2 Middle, 3 Right. Middle is free by default and is the one to use if you want a third action rather than a swap."
+    },
+    {
+        "key": "hoverExpandAction",
+        "label": "Hover expands to",
+        "type": "int",
+        "min": 0,
+        "max": 2,
+        "step": 1,
+        "default": 0,
+        "scope": "packaged",
+        "detail": "0 off, 1 the expanded player, 2 the control centre — read out of DynamicIslandWindow.qml's configuredHoverExpandAction, which clamps to 0..2 and treats anything above 0 as enabled. 0 here because the spec pins expansion to a click; hover-expand fires while you are only crossing the top edge on the way to a window button."
+    },
+    {
+        "key": "disableAutoExpandOnTrackChange",
+        "label": "Stay collapsed on track change",
+        "type": "bool",
+        "default": true,
+        "scope": "packaged",
+        "detail": "On, and this is the setting behind userconfig.json's `_expansion` note: the spec says media and notifications do NOT expand the island, they swap its content while the shape stays put. Turning this off gives you upstream's behaviour, where every track change reshapes the top of the screen."
+    },
+    {
+        "key": "bodyFontSize",
+        "label": "Body text size",
+        "type": "int",
+        "min": 8,
+        "max": 20,
+        "step": 1,
+        "default": 12,
+        "scope": "packaged",
+        "detail": "The one font size worth a row, because the resting clock is derived from it: SwipeLyricsLayer renders at bodyFontSize+1, so 12 puts the clock at 13 and lands on qtile's widget_defaults fontsize 10 (pango points at 96dpi) exactly. See `_fontSizes` in userconfig.json — titleFontSize and iconFontSize follow the same ratio and are better changed there, together."
+    },
+    {
+        "key": "wallpaperPywalEnabled",
+        "label": "Island owns pywal",
+        "type": "bool",
+        "default": false,
+        "scope": "packaged",
+        "detail": "LEAVE OFF. userconfig.json's `_wallpaper` note is the reason: AtiScriptsV1/theme-apply already owns pywal for both the qtile and Hyprland sessions, and hypr/scripts/wallpaper-sync.sh feeds hyprpaper from that same cache. Turning this on gives two independent things opinions about one wallpaper, and the qtile session is the one that drifts."
+    }
+]

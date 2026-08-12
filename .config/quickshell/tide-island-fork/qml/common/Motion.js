@@ -61,8 +61,62 @@ var FADE_MS = 220;
 // hunt through 92 hardcoded durations.
 var SCALE = 1.0;
 
+// ---------------------------------------------------------------------
+//  ONE DURATION FOR A 40 px MOVE AND A 1000 px ONE WAS THE BUG
+// ---------------------------------------------------------------------
+//
+// MORPH_MS was applied flat to every shape change. The island's smallest
+// morph is the resting capsule gaining the EQ allowance, ~40 px of width.
+// Its largest is resting -> control centre: 120 px to 1100 px, a 980 px
+// change, plus roughly 300 px of height. Both took 400 ms.
+//
+// Those cannot both be right, and the failure is asymmetric. A 40 px move
+// given 400 ms is watchable but slow — it is the one that reads as
+// "laggy". A 980 px move given 400 ms has to cover 2.45 px per ms, which
+// no spring curve can make read as mass; it reads as a jump with a
+// wobble on the end. The complaint that the animation is "not smooth"
+// is mostly this second case.
+//
+// amanhex/ukishima, which was the comparison, does not do this: its
+// Motion singleton carries BOTH `morph: 420` and `shapeshift: 820`, and
+// the big surfaces use the second. That is the idea borrowed here — the
+// implementation is ours, because a two-value step still picks the wrong
+// one at the boundary.
+//
+// So the duration interpolates on distance instead. Below REF_PX the
+// duration is MORPH_MS; at or above LARGE_PX it is LARGE_MORPH_MS; in
+// between it is linear. Linear and not the square-root law that physical
+// motion suggests: sqrt compresses the middle of the range hard, and the
+// island's most common non-trivial morphs (resting -> expanded player,
+// ~500 px) sit exactly in that middle.
+//
+// The spec's 400 ms is preserved as the SMALL-morph duration, which is
+// what it was measured on — the spec describes the resting pill's own
+// motion, not a full-width panel.
+
+// Distance, in px, at or below which a morph is "small" and gets MORPH_MS.
+var REF_PX = 120;
+// Distance at or above which it is "large" and gets LARGE_MORPH_MS.
+var LARGE_PX = 900;
+// Ukishima's shapeshift is 820. 760 here: our curve is a real spring with
+// an overshoot that already reads as arrival, so it needs slightly less
+// wall-clock time than their monotone bezier to feel equally settled.
+var LARGE_MORPH_MS = 760;
+
 function morphDuration() { return Math.round(MORPH_MS * SCALE); }
 function fadeDuration()  { return Math.round(FADE_MS  * SCALE); }
+
+// The duration for a morph that travels `px`. Callers that do not know
+// their distance keep using morphDuration() and get the old behaviour.
+function morphDurationFor(px) {
+    var d = Math.abs(Number(px));
+    if (!isFinite(d) || d <= REF_PX)
+        return morphDuration();
+    if (d >= LARGE_PX)
+        return Math.round(LARGE_MORPH_MS * SCALE);
+    var t = (d - REF_PX) / (LARGE_PX - REF_PX);
+    return Math.round((MORPH_MS + (LARGE_MORPH_MS - MORPH_MS) * t) * SCALE);
+}
 
 // ---------------------------------------------------------------------
 //  CONTENT CHOREOGRAPHY — the three numbers that fix "too bad" animations

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
-#  wallpaper-sync — point hyprpaper at the session's current wallpaper
+#  wallpaper-sync — point the wallpaper daemon at the session's current
+#  wallpaper, with an animated transition.
 #
 #  ---- WHY NOT ~/.cache/wal/wal ----
 #
@@ -13,9 +14,8 @@
 #
 #  The symptom was silent and total: the script printed "no pywal record,
 #  nothing to do", exited 0, and the Hyprland session simply had NO
-#  wallpaper — hyprpaper running with nothing loaded, a flat colour
-#  behind every window. Nothing in the logs, and exit 0 meant even a
-#  careful reading of autostart looked fine.
+#  wallpaper — a flat colour behind every window. Nothing in the logs, and
+#  exit 0 meant even a careful reading of autostart looked fine.
 #
 #  The real record is ~/.cache/wall, which is what theme-apply itself
 #  uses (WALL_LINK, line ~145) for EVERY mode, wal included, and what
@@ -26,6 +26,40 @@
 #  It is normally a symlink to the image; older dm-setbg versions wrote a
 #  plain text file containing the path, and theme-apply still handles
 #  both, so this does too.
+#
+#  ---- WHY awww AND NOT hyprpaper ----
+#
+#  hyprpaper has no transition of any kind: `hyprctl hyprpaper wallpaper`
+#  swaps the buffer between two frames. Every wallpaper change in this
+#  session was therefore a hard cut, which is what "the other repo's
+#  wallpaper changing animation was perfect" was actually comparing
+#  against.
+#
+#  The comparison was amanhex/ukishima, and the thing doing the work there
+#  is not QML — it is `awww` driven from scripts/wallpaper.sh with a wave
+#  transition. awww is the current name of the project that used to be
+#  swww (Arch ships it as extra/awww 0.12.1-1); every guide still calls it
+#  swww, which is why searching for the package under that name finds
+#  nothing.
+#
+#  The flags below are ukishima's, adopted wholesale because they were the
+#  known-good reference: type wave, angle 30, wave "60,30", fps 60,
+#  step 90. Nothing here was arrived at independently.
+#
+#  MEASURED, and the reason this mattered: tide-island's own config has
+#  carried `wallpaperTransitionType: "center"` the whole time. That is a
+#  swww/awww parameter name, and with only hyprpaper installed it was
+#  configuring a program that was not there — inert, and looking exactly
+#  like a setting that simply did not work.
+#
+#  ---- THE FIRST SET AT LOGIN IS DELIBERATELY NOT ANIMATED ----
+#
+#  If we had to start the daemon ourselves there is nothing on screen to
+#  transition FROM, so a wave would sweep the new wallpaper in over a bare
+#  colour — an animation whose whole job is disguising a swap, played over
+#  the one case where there is no swap. Same reasoning ukishima's script
+#  uses for its animated picks. So: daemon started by us -> instant;
+#  daemon already up -> wave.
 #
 #  Run at startup, and again after any wallpaper change.
 # ============================================================
@@ -50,28 +84,31 @@ if [ ! -r "$img" ]; then
     exit 1
 fi
 
-# ---- hyprpaper 0.8.4 dropped most of the IPC this script used ----
+# ---- daemon ----
 #
-# Probed against the running daemon; only two of the five requests this
-# script was built on still exist:
-#
-#     wallpaper ,<path>   OK — and it preloads the image itself now
-#     listactive          OK — reports "eDP-1: /path"
-#     preload <path>      error: invalid hyprpaper request
-#     unload unused       error: invalid hyprpaper request
-#     listloaded          error: invalid hyprpaper request
-#
-# So `preload` is gone (folded into `wallpaper`), and `unload` with it —
-# which also removes the reason the old version called it. Note `set -e`
-# made this fatal rather than cosmetic: preload failed, the script died
-# before ever reaching the `wallpaper` line, and no wallpaper was set.
-#
-# The readiness probe uses listactive for the same reason — listloaded
-# always errored, so the old loop never broke early and burned its full
-# 4 seconds on every single login before continuing anyway.
-for _ in $(seq 1 40); do
-    hyprctl hyprpaper listactive >/dev/null 2>&1 && break
-    sleep 0.1
-done
+# `awww query` is the readiness probe as well as the liveness check: it
+# fails while the daemon is absent AND while it is still coming up, so the
+# same loop covers both. Without the wait, the first `awww img` after a
+# cold start races the socket and exits non-zero — which `set -e` would
+# turn into no wallpaper at login, the exact failure this file already
+# documents once.
+daemon_was_running=true
+if ! awww query >/dev/null 2>&1; then
+    daemon_was_running=false
+    awww-daemon >/dev/null 2>&1 &
+    for _ in $(seq 1 40); do
+        awww query >/dev/null 2>&1 && break
+        sleep 0.1
+    done
+fi
 
-hyprctl hyprpaper wallpaper ",$img" >/dev/null
+if [ "$daemon_was_running" = true ]; then
+    awww img "$img" \
+        --transition-type wave \
+        --transition-angle 30 \
+        --transition-wave "60,30" \
+        --transition-fps 60 \
+        --transition-step 90 >/dev/null
+else
+    awww img "$img" --transition-type none >/dev/null
+fi

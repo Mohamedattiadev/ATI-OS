@@ -24,6 +24,13 @@ Item {
     property string iconFontFamily: userConfig.iconFontFamily
     property string textFontFamily: userConfig.textFontFamily
     property string heroFontFamily: userConfig.heroFontFamily
+
+    // FORK: the live palette accent, for the filament faders. Passed down
+    // from DynamicIslandWindow's IslandTheme rather than read here — this
+    // file has no theme object of its own, and every colour in it comes
+    // from the packaged StyleTokens, which has no accent slot that follows
+    // theme-apply.
+    property color accentColor: "#e0563b"
     // ... rest of properties ...
 
     scale: showCondition ? 1.0 : 0.12
@@ -1333,7 +1340,7 @@ Item {
                     id: wifiCard
                     width: (connectivityCardsRow.width - connectivityCardsRow.spacing) / 2
                     height: connectivityCardsRow.height
-                    radius: Metrics.px(20)
+                    radius: Metrics.px(13)
                     color: StyleTokens.clearBlack
                     clip: true
 
@@ -1369,7 +1376,15 @@ Item {
                         width: Metrics.px(34)
                         height: Metrics.px(20)
                         radius: Metrics.px(10)
-                        color: wifiEnabled ? StyleTokens.success : StyleTokens.switchOff
+                        // FORK: was StyleTokens.success — a fixed iOS green, the one
+                        // element in the panel that ignored the palette
+                        // entirely and the brightest thing on a near-black
+                        // surface. ukishima tints its toggles with the accent
+                        // ramp (LinkToggle.qml); green here is not carrying
+                        // any meaning that "on" does not already carry.
+                        // The battery bar keeps success/warning/danger, where
+                        // the colour IS the information.
+                        color: wifiEnabled ? controlCenter.accentColor : StyleTokens.switchOff
 
                         Behavior on color {
                             ColorAnimation {
@@ -1417,11 +1432,16 @@ Item {
                             anchors.right: wifiChevron.left
                             anchors.rightMargin: Metrics.pad(8)
                             anchors.top: parent.top
-                            text: "Wi-Fi"
+                            // FORK: uppercase and letterspaced, the same field-name
+                            // treatment the faders and every ukishima
+                            // header use. 13 -> 11 because uppercase
+                            // reads larger at the same pixel size.
+                            text: "Wi-Fi".toUpperCase()
                             color: textPrimary
-                            font.pixelSize: Metrics.font(13)
+                            font.pixelSize: Metrics.font(11)
                             font.family: textFontFamily
                             font.weight: Font.DemiBold
+                            font.letterSpacing: 0.8
                             elide: Text.ElideRight
                         }
 
@@ -1460,7 +1480,7 @@ Item {
                     id: bluetoothCard
                     width: (connectivityCardsRow.width - connectivityCardsRow.spacing) / 2
                     height: connectivityCardsRow.height
-                    radius: Metrics.px(20)
+                    radius: Metrics.px(13)
                     color: StyleTokens.clearBlack
                     clip: true
 
@@ -1496,7 +1516,7 @@ Item {
                         width: Metrics.px(34)
                         height: Metrics.px(20)
                         radius: Metrics.px(10)
-                        color: bluetoothEnabled ? StyleTokens.success : StyleTokens.switchOff
+                        color: bluetoothEnabled ? controlCenter.accentColor : StyleTokens.switchOff
 
                         Behavior on color {
                             ColorAnimation {
@@ -1544,11 +1564,16 @@ Item {
                             anchors.right: bluetoothChevron.left
                             anchors.rightMargin: Metrics.pad(8)
                             anchors.top: parent.top
-                            text: "Bluetooth"
+                            // FORK: uppercase and letterspaced, the same field-name
+                            // treatment the faders and every ukishima
+                            // header use. 13 -> 11 because uppercase
+                            // reads larger at the same pixel size.
+                            text: "Bluetooth".toUpperCase()
                             color: textPrimary
-                            font.pixelSize: Metrics.font(13)
+                            font.pixelSize: Metrics.font(11)
                             font.family: textFontFamily
                             font.weight: Font.DemiBold
+                            font.letterSpacing: 0.8
                             elide: Text.ElideRight
                         }
 
@@ -2130,7 +2155,11 @@ Item {
         ControlSliderCard {
             id: brightnessCard
             width: parent.width
-            height: Metrics.px(76)
+            // 76 -> 62. The old card carried a 30 px pill track plus its own
+            // padding; the fader is a label row and a 2 px thread, so the
+            // remaining 14 px was empty card.
+            height: Metrics.px(62)
+            accentColor: controlCenter.accentColor
             title: "Display"
             iconText: controlCenter.brightnessIconGlyph
             iconFontFamily: controlCenter.iconFontFamily
@@ -2164,7 +2193,8 @@ Item {
         ControlSliderCard {
             id: volumeCard
             width: parent.width
-            height: Metrics.px(76)
+            height: Metrics.px(62)
+            accentColor: controlCenter.accentColor
             title: "Sound"
             iconText: controlCenter.volumeIconGlyph
             iconFontFamily: controlCenter.iconFontFamily

@@ -74,16 +74,50 @@ Item {
     // background slot is ALREADY near-black, so darkening it by three
     // quarters put doomone at #0b0c0f and gruvbox at #0b0b0b, four points
     // apart on one channel. The theme was being followed and no human eye
-    // could tell. 0.35 keeps the shape unmistakably dark while leaving the
-    // hue readable: doomone #1a1d22 (cool), gruvbox #1a1a1a (neutral),
-    // nord #1e2129 (blue).
-    readonly property real darkenTowardBlack: 0.35
+    // could tell.
+    //
+    // ---- WHY DARKENING ALONE COULD NEVER WORK ----
+    //
+    // 0.35 was still the wrong shape of fix, and gruvbox is the proof. Its
+    // background slot is #282828: R, G and B are IDENTICAL. Channel spread
+    // zero. Scaling all three by any constant leaves them identical, so
+    // every value of this knob yields a pure grey — 0.35 gives #1a1a1a and
+    // 0.15 just gives a lighter #222222. The island was reported as "always
+    // black" on gruvbox and it was, unavoidably, because the slot being
+    // followed HAS no hue to follow. Darkening controls how dark it is; it
+    // cannot control whether it is coloured at all.
+    //
+    // So the hue now comes from the ACCENT, which every palette defines as
+    // a saturated colour, and the background keeps its job of being dark.
+    // MEASURED across four palettes, fill luminance % and channel spread:
+    //
+    //              0.35 / no mix        0.45 + 8% accent
+    //   gruvbox    #1a1a1a  10.2   0    #282318  13.8  16
+    //   doomone    #1a1d22  11.3   8    #1b242d  13.6  18
+    //   nord       #1e222a  13.2  12    #222a31  16.0  15
+    //   dracula    #1a1b23  10.7   9    #23212f  13.5  14
+    //
+    // Spread goes from 0..12 to 14..18 — every theme, including the neutral
+    // one, now has a hue the eye can name. The darken went 0.35 -> 0.45 in
+    // the same change and that pairing is the point: mixing in accent LIFTS
+    // luminance, so without the extra darkening this landed at 15-18% and
+    // stopped reading as bezel. Together they cost ~3 points of luminance.
+    //
+    // 8% and not more: at 16% gruvbox reaches #3e341d, a brown that reads as
+    // a tinted surface rather than a dark one, which is the "coloured blob"
+    // DESIGN-SPEC.md warns about arriving by a different road.
+    readonly property real darkenTowardBlack: 0.45
+    readonly property real accentMix: 0.08
 
-    readonly property color shellFill: Qt.rgba(
-        root.background.r * (1 - root.darkenTowardBlack),
-        root.background.g * (1 - root.darkenTowardBlack),
-        root.background.b * (1 - root.darkenTowardBlack),
-        1)
+    readonly property color shellFill: {
+        const k = 1 - root.darkenTowardBlack;
+        const m = root.accentMix;
+        return Qt.rgba(
+            root.background.r * k * (1 - m) + root.accent.r * m,
+            root.background.g * k * (1 - m) + root.accent.g * m,
+            root.background.b * k * (1 - m) + root.accent.b * m,
+            1);
+    }
 
     function applyJson(text) {
         try {

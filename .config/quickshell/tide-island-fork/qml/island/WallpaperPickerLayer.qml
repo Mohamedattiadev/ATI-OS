@@ -113,23 +113,28 @@ FocusScope {
         + "        os.makedirs(os.path.dirname(target) or '.',exist_ok=True)\n"
         + "        shutil.copy2(source,target)\n"
         + "    applied=target\n"
-        // FORK: hyprpaper, not swww.
+        // FORK: routed through wallpaper-set.sh, not run directly.
         //
-        // Upstream runs `awww img <path> --transition-*` — i.e. swww, a
-        // daemon that is not installed on this machine and never has been.
-        // Clicking a thumbnail therefore did NOTHING, and said nothing: a
-        // missing binary exits non-zero, the picker only checks
-        // `exitCode === 0` before emitting "applied", so it just closed.
-        //
-        // hypr/scripts/wallpaper-set.sh both records the choice in
+        // Upstream runs `awww img <path> --transition-*` itself. This calls
+        // hypr/scripts/wallpaper-set.sh instead, which records the choice in
         // ~/.cache/wall — the single source of truth theme-apply and the
-        // still-running qtile session both read — and points hyprpaper at
-        // it. Everything hyprpaper-specific lives there, including the
-        // 0.8.4 API trap that `preload` no longer exists.
+        // still-running qtile session both read — and then hands off to
+        // wallpaper-sync.sh. Going through the script is what keeps the two
+        // sessions from disagreeing about the wallpaper; running awww here
+        // would set it without recording it, and qtile would revert on its
+        // next login.
         //
-        // The transition-* settings above are swww's and have no hyprpaper
-        // equivalent; they are left in the config so the diff against
-        // upstream stays honest, and are simply not passed.
+        // UPDATED: this comment used to read "hyprpaper, not swww", because
+        // awww (which is what swww is called now — Arch ships extra/awww,
+        // and searching for "swww" finds nothing) was not installed and
+        // clicking a thumbnail did NOTHING while saying nothing: a missing
+        // binary exits non-zero, the picker only checks `exitCode === 0`
+        // before emitting "applied", so it just closed. awww is installed
+        // now and wallpaper-sync.sh drives it with a wave transition, so the
+        // transition-* settings in userconfig.json — which are awww's
+        // parameter names and were configuring a program that was not there
+        // — finally have something behind them. The hyprpaper-specific
+        // trap that `preload` no longer exists in 0.8.4 is gone with it.
         + "cmd=[os.path.expanduser('~/.config/hypr/scripts/wallpaper-set.sh'),applied]\n"
         + "result=subprocess.run(cmd,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
         + "if result.returncode == 0 and pywal_enabled == 'true':\n"
@@ -562,15 +567,40 @@ FocusScope {
     // give 322 px of width, so there is a second limit — the one that keeps
     // all five cards on the panel.
     //
-    // Where 1.638 comes from. PathView distributes items over
+    // Where the width limit comes from. PathView distributes items over
     // pathLength / pathItemCount, NOT / (count - 1) — which is why the
     // measured gap between card centres was 190 and not the 237 that
-    // `slotW * 1.20` reads like. With pathLength = 4 * spacing and
-    // spacing = 0.78 * cardW, the interval is 0.624 * cardW, so the outermost
-    // card's outer edge sits at 2 * 0.624 * cardW + sideScale * cardW / 2
-    // = 1.638 * cardW from the centre. Hold that under half the panel minus
-    // hPad and the fifth card cannot be sliced off by the capsule's own
-    // clip — the failure mode the theme picker was caught in.
+    // `slotW * 1.20` reads like. With pathLength = 4 * spacing the interval
+    // between card centres is 0.8 * spacing.
+    //
+    // ---- THE CARDS WERE OVERLAPPING, and that is what "too big" was ----
+    //
+    // `spacing` was `cardW * sideScale`, which ties the gap between cards to
+    // how small the side cards are drawn. Those are unrelated quantities and
+    // tying them together is what broke it:
+    //
+    //     interval  = 0.8 * spacing = 0.8 * 0.78 * cardW = 0.624 * cardW
+    //     side card = sideScale * cardW                  = 0.780 * cardW
+    //
+    // The interval is SMALLER than the card, so every neighbour overlapped
+    // its neighbour by 0.156 * cardW — a measured 47 px at the 301 px card
+    // this panel was computing, with the left pair visibly sitting on top of
+    // one another and the outermost card running under the capsule's clip.
+    // The previous pass fixed the card being too SMALL for its panel and in
+    // doing so drove it past the point where five of them still fit.
+    //
+    // So spacing is now derived from what it actually has to clear: a side
+    // card plus a visible gap. Solving 0.8 * spacingFactor = sideScale + gap
+    // for the factor gives (0.78 + 0.06) / 0.8 = 1.05.
+    //
+    // The outermost card's outer edge then sits at
+    //     2 * interval + sideScale * cardW / 2
+    //   = 2 * 0.84 * cardW + 0.39 * cardW
+    //   = 2.07 * cardW
+    // from the centre. Holding that under half the panel minus hPad is what
+    // keeps the fifth card off the clip — the failure the theme picker was
+    // caught in — and on this 1012-wide panel it is now the binding limit:
+    // 238 px card, against the 307 the height alone would have allowed.
     //
     readonly property real topPad: Metrics.pad(14)
     readonly property real botPad: Metrics.pad(10)
@@ -581,13 +611,19 @@ FocusScope {
     readonly property real sideScale: 0.78
     readonly property real cardAspect: 0.58
 
+    // The clear gap between adjacent side cards, as a fraction of cardW.
+    readonly property real cardGap: 0.06
+    // 0.8 is PathView's interval-per-spacing for pathItemCount 5.
+    readonly property real spacingFactor: (sideScale + cardGap) / 0.8
+    readonly property real outerReach: 2 * (0.8 * spacingFactor) + sideScale / 2
+
     readonly property real cardAreaH: height - topPad - botPad
     readonly property real heightLimitedW: (cardAreaH - labelGap - labelH) / cardAspect
-    readonly property real widthLimitedW: (width / 2 - hPad) / 1.638
+    readonly property real widthLimitedW: (width / 2 - hPad) / outerReach
     readonly property real cardW: Math.max(Metrics.px(120),
         Math.round(Math.min(heightLimitedW, widthLimitedW)))
     readonly property real cardH: Math.round(cardW * cardAspect)
-    readonly property real spacing: cardW * sideScale
+    readonly property real spacing: cardW * spacingFactor
 
     readonly property real cardPathY: cardAreaH / 2
 

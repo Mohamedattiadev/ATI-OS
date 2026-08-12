@@ -79,10 +79,22 @@ FocusScope {
     property bool statusIsError: false
     property string configPath: ""
 
+    // Problems in settings-extra.json, from --list. A row rejected for a typo
+    // is SKIPPED rather than fatal (island-settings.py, load_extra), which is
+    // the right call and is also completely invisible — the panel just has
+    // one fewer row than the file asked for. This is the half that makes it
+    // visible.
+    property var warnings: []
+
     readonly property real horizontalPadding: Metrics.pad(18)
     readonly property real headerHeight: Metrics.pad(36)
     readonly property real rowHeight: Metrics.px(30)
-    readonly property real footerHeight: Metrics.px(22)
+    readonly property real baseFooterHeight: Metrics.px(22)
+    readonly property int warningLines: Math.min(root.warnings.length, 3)
+    readonly property real warningHeight:
+        root.warningLines > 0
+            ? root.warningLines * Metrics.px(14) + Metrics.pad(8) : 0
+    readonly property real footerHeight: root.baseFooterHeight + root.warningHeight
 
     // The list is the tall half; the details column beside it is bounded by
     // the list, not the other way round. Same list-plus-details shape the
@@ -136,8 +148,15 @@ FocusScope {
                     const parsed = JSON.parse(text);
                     root.settings = parsed.settings || [];
                     root.configPath = String(parsed.path || "");
+                    root.warnings = parsed.warnings || [];
+                    // Clamp after a re-read: the list can get SHORTER than it
+                    // was, because a --set re-reads settings-extra.json too
+                    // and it may have been edited since the panel opened.
+                    if (root.selectedIndex > root.settings.length - 1)
+                        root.selectedIndex = Math.max(0, root.settings.length - 1);
                 } catch (error) {
                     root.settings = [];
+                    root.warnings = [];
                     root.statusText = "could not read island-settings.py --list";
                     root.statusIsError = true;
                 }
@@ -472,6 +491,35 @@ FocusScope {
                     font.weight: Font.Medium
                 }
             }
+
+            // The provenance chip, beside the scope chip and only when there
+            // is something to say. `scope` answers "can the packaged app
+            // change this too"; this answers "where did this ROW come from",
+            // and they are different questions the moment settings-extra.json
+            // exists. It matters most for "edited": that row's detail may be
+            // the user's own words, so the reasoning it shows is no longer
+            // necessarily the reasoning this repo recorded.
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.selected !== null
+                    && root.selected.source !== undefined
+                    && root.selected.source !== "builtin"
+                width: sourceLabel.implicitWidth + Metrics.pad(10)
+                height: Metrics.px(16)
+                radius: Metrics.px(5)
+                color: "#3a3327"
+
+                Text {
+                    id: sourceLabel
+                    anchors.centerIn: parent
+                    text: (root.selected && root.selected.source === "user")
+                        ? "yours" : "edited"
+                    color: "#e0b072"
+                    font.pixelSize: Metrics.font(9)
+                    font.family: root.textFontFamily
+                    font.weight: Font.Medium
+                }
+            }
         }
 
         Text {
@@ -494,6 +542,43 @@ FocusScope {
             font.pixelSize: Metrics.font(10)
             font.family: root.textFontFamily
         }
+    }
+
+    // ---- WARNINGS FROM settings-extra.json ----
+    //
+    // Amber, not red: nothing is broken. The built-in rows are all present
+    // and working; some row the user's file asked for is not. Red here would
+    // put the panel's most alarming colour on the least alarming failure,
+    // next to a polkit row that earned it.
+    //
+    // Three lines and no more. The full list is `island-settings.py --check`,
+    // which is where you would be anyway if you were fixing the file, and a
+    // banner that can grow without limit eats the list it is reporting on.
+    Text {
+        id: warningBanner
+        visible: root.warnings.length > 0
+        // anchors.left AND anchors.right, not `x` plus anchors.right. With
+        // only one horizontal anchor the Text keeps its implicitWidth, which
+        // for one long line is far wider than the panel — wrapMode then has
+        // nothing to wrap against and the string runs out past the rounded
+        // left edge instead of onto a second line. This is what it did.
+        anchors.left: parent.left
+        anchors.leftMargin: root.horizontalPadding
+        anchors.right: parent.right
+        anchors.rightMargin: root.horizontalPadding
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: root.baseFooterHeight + Metrics.pad(4)
+        wrapMode: Text.WordWrap
+        maximumLineCount: root.warningLines
+        elide: Text.ElideRight
+        text: root.warnings.length > 0
+            ? "settings-extra.json: " + root.warnings.join("  ·  ")
+              + (root.warnings.length > 3 ? "   (--check for all)" : "")
+            : ""
+        color: "#e0b072"
+        font.pixelSize: Metrics.font(10)
+        font.family: root.textFontFamily
+        lineHeight: 1.2
     }
 
     Text {

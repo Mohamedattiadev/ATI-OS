@@ -45,6 +45,16 @@ packages:
                      # config launches it any more. Harmless to leave, not
                      # worth reproducing on a fresh machine.
 
+  - hyprpaper        # superseded by awww (wm.yaml). Nothing in the Hyprland
+                     # session calls it any more: wallpaper-set.sh only
+                     # resolves the path and execs wallpaper-sync.sh, which
+                     # drives `awww img`. The remaining mentions are prose
+                     # in REQUIREMENTS.md and comments recording the swap.
+                     # qtile cannot want it back -- hyprpaper is Wayland-only
+                     # and that session is X11. Left installed rather than
+                     # removed, per the rule above: pacman -Rns hyprpaper
+                     # whenever you like.
+
   # --- conflicts with a declared package; must NOT be reproduced ---
   - power-profiles-daemon
                      # fights auto-cpufreq (system-tools.yaml) for the CPU

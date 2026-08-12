@@ -5,6 +5,10 @@ import IslandBackend
 
 // FORK: the circular theme-change reveal — REQUIREMENTS.md item 5.
 import "qml/theme"
+// FORK: ForkConfig and IslandTheme live here — see the ForkConfig block below.
+import "qml/common"
+// FORK: the standalone ring OSD — see showRingOsd().
+import "qml/osd"
 
 Scope {
     id: shellRoot
@@ -167,6 +171,28 @@ Scope {
     function startThemeTransition(themeName) {
         if (!themeName)
             return;
+
+        // FORK SETTING, forkThemeTransitionEnabled. Off applies the theme
+        // DIRECTLY — theme-apply repaints the desktop in stages, which is
+        // the unanimated behaviour the settings row describes and which was
+        // previously unreachable because nothing read the switch.
+        //
+        // The early return has to run theme-apply itself rather than just
+        // skipping: begin() is what invokes it behind the frozen screenshot,
+        // so returning without it would make the toggle mean "do not change
+        // the theme at all".
+        // Same absolute path the overlay uses (see ThemeTransitionWindow's
+        // themeApplyPath below) and NOT a bare "theme-apply": Quickshell is
+        // started by the compositor, so its PATH is the session's, and
+        // ~/.dotfiles/.config/AtiScriptsV1 is not on it.
+        if (forkConfig && !forkConfig.themeTransitionEnabled) {
+            themeApplyDirect.command = [
+                Quickshell.env("HOME") + "/.dotfiles/.config/AtiScriptsV1/theme-apply",
+                String(themeName)];
+            themeApplyDirect.running = true;
+            return;
+        }
+
         const windows = themeTransitionVariants.instances
             ? themeTransitionVariants.instances : [];
         if (windows.length === 0)
@@ -388,6 +414,35 @@ Scope {
             shellRoot.forFocusedWindow((window) => window.toggleSettingsWindow());
         }
 
+        // FORK: the generic list picker — one panel behind what were three
+        // separate rofi menus (close a window, kill a process, go to a
+        // workspace). `which` is the menu name understood by
+        // hypr/scripts/island-picker.py: windows | processes | workspaces.
+        //
+        // The parameter is typed, and it is NOT decoration. Quickshell
+        // marshals IPC arguments by declared type, so `function
+        // showPicker(which)` would accept the call and arrive with
+        // `undefined` — the panel would then open on the string "undefined",
+        // island-picker.py would answer `unknown menu undefined`, and the
+        // failure would look like a broken script rather than a missing
+        // annotation. The same trap is written up on showText below and in
+        // FORK-NOTES.md; it has now cost this shell three separate calls.
+        //
+        // One word, so it also survives the OTHER IPC trap: arguments are
+        // split on whitespace in a way shell quoting does not survive. See
+        // qml/island/ModeKeysLayer.qml.
+        //
+        // forFocusedWindow, like every panel that reads its own keys: this
+        // one takes an exclusive keyboard grab, and two of them on two
+        // monitors would be two grabs competing for the same keystrokes.
+        function showPicker(which: string) {
+            shellRoot.forFocusedWindow((window) => window.showPickerWindow(which));
+        }
+
+        function clearPicker() {
+            shellRoot.forEachWindow((window) => window.clearPickerWindow());
+        }
+
         // NOT a toggle, and the asymmetry is the point — the reasoning is on
         // showPolkitPromptWindow in DynamicIslandWindow.qml: this panel is
         // opened by a process waiting on an answer, not by a key you pressed,
@@ -467,6 +522,94 @@ Scope {
         SystemServices.ensureUserConfigAvailable();
         SystemServices.requestScreenRecordingSnapshot();
     }
+
+    // ---- THE FORK'S OWN SETTINGS, FINALLY CONNECTED TO SOMETHING ----
+    //
+    // qml/common/ForkConfig.qml was written, documented and never
+    // instantiated. Not once, anywhere — the only occurrences of the name
+    // in the tree were two comments in SettingsLayer.qml describing what it
+    // would do. So every `fork*` key in userconfig.json was inert, and the
+    // settings panel offered four switches that changed nothing:
+    //
+    //   forkNotchMode              DynamicIslandWindow kept its hardcoded
+    //                              `property bool notchModeEnabled: true`,
+    //                              the literal ForkConfig was written to
+    //                              replace. Its comment claims it is
+    //                              "toggled live over IPC (island
+    //                              setNotchMode)"; there is no such IPC.
+    //   forkModeKeysEnabled        the name appears nowhere outside
+    //   forkRestingEqEnabled       ForkConfig.qml itself.
+    //   forkThemeTransitionEnabled
+    //
+    // That is the same failure REQUIREMENTS.md already records once for the
+    // polkit row — a control that describes behaviour it does not have —
+    // except it was four rows rather than one, and they were the four the
+    // panel presented as its working half. Instantiated here, once for the
+    // whole shell rather than per screen, because it is a file watcher and
+    // every DynamicIslandWindow would otherwise open its own on the same
+    // path.
+    ForkConfig { id: forkConfig }
+    readonly property var forkSettings: forkConfig
+
+    // ---- THE STANDALONE RING OSD ----
+    //
+    // State lives HERE rather than in DynamicIslandWindow because the ring
+    // is a different window, and QML ids do not cross component files. The
+    // island calls up into showRingOsd(); the ring windows bind down to
+    // these three properties. One state for all monitors on purpose — a
+    // volume change is a machine-wide event and showing it on the focused
+    // screen only means it appears wherever the pointer happens to be.
+    property string ringOsdIcon: ""
+    property real ringOsdProgress: 0
+    property bool ringOsdShown: false
+
+    function showRingOsd(icon, progress) {
+        shellRoot.ringOsdIcon = String(icon || "");
+        shellRoot.ringOsdProgress = Math.max(0, Math.min(1, Number(progress)));
+        shellRoot.ringOsdShown = true;
+        // restart(), not start(): holding a volume key fires this many times
+        // a second, and a Timer that is already running ignores start(),
+        // so the OSD would vanish 1.4 s after the FIRST keypress while the
+        // level was still moving.
+        ringOsdHideTimer.restart();
+    }
+
+    Timer {
+        id: ringOsdHideTimer
+        interval: 1400
+        repeat: false
+        onTriggered: shellRoot.ringOsdShown = false
+    }
+
+    Variants {
+        id: ringOsdVariants
+        model: Quickshell.screens
+
+        RingOsdWindow {
+            required property var modelData
+
+            screen: modelData
+            shellRootController: shellRoot
+            iconText: shellRoot.ringOsdIcon
+            progress: shellRoot.ringOsdProgress
+            shown: shellRoot.ringOsdShown
+            iconFontFamily: shellRoot.userConfig.iconFontFamily
+            accentColor: ringOsdTheme.accent
+            shellFill: ringOsdTheme.shellFill
+        }
+    }
+
+    // The ring's own palette source. DynamicIslandWindow has an IslandTheme
+    // with an id, but ids are file-scoped, so this window cannot reach it.
+    // A second instance is cheap — it is a FileView on a small JSON — and
+    // the alternative is threading two colours through the Variants model.
+    IslandTheme { id: ringOsdTheme }
+
+    // The unanimated theme apply, for when forkThemeTransitionEnabled is
+    // off. Its own Process rather than reusing the overlay's: that one
+    // belongs to a per-screen window which, with the transition disabled,
+    // is exactly the object we are declining to involve.
+    Process { id: themeApplyDirect }
 
     Variants {
         id: panelVariants

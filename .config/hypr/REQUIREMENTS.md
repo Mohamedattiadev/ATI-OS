@@ -274,7 +274,7 @@ own list** ("states of the one shape"):
 | theme switcher | bound, `$mod P` → `c` |
 | calendar | **DONE**, `$alt 6` — `qml/island/CalendarLayer.qml`. No qtile ancestor at all: qtile had `widget.Clock` and no calendar popup, so this was built from the spec rather than ported |
 | power menu | **DONE**, `$mod SHIFT Q` and `$mod P` → `q` — `qml/island/PowerMenuLayer.qml` over `scripts/power-ctl.sh`. Both keys were `dm-logout -r` (rofi), which is what qtile spawned |
-| settings | **DONE**, `$alt 7` — `qml/island/SettingsLayer.qml`. Not in the spec's list; added because the packaged config app is a compiled binary that a `yay -Syu` would overwrite, and it cannot reach fork-only keys at all |
+| settings | **DONE**, `$alt 7` — `qml/island/SettingsLayer.qml`. Not in the spec's list; added because the packaged config app is a compiled binary that a `yay -Syu` would overwrite, and it cannot reach fork-only keys at all. Now **user-extensible**, see below |
 | **Polkit password prompt** | **NOT BUILT.** The state, its size cases and its show/clear functions exist; `PolkitPromptLayer.qml` does not, and **nothing registers a polkit agent** — the config key is read into `ForkConfig.polkitAgentEnabled` and no code consumes it. polkit-kde-agent is still the session's agent and is untouched |
 
 The polkit row is the only remainder of item 1. It is also the one with
@@ -289,6 +289,218 @@ agent", which was not true of the code at any point — the switch was
 inert. It now reads NOT IMPLEMENTED and is disabled. A false warning on a
 dead control is worse than no row, because it is the kind of thing a later
 reader trusts.
+
+#### The ring OSD, off the notch
+
+`forkRingOsdEnabled`. The island already *had* a ring — `OsdLayer.qml` draws
+one with the shared `ProgressRing` — so this was never "build a ring", it was
+"stop it being part of the notch". A strip at the top edge that grows sideways
+reads as *the bar changed*; the thing being adjusted is the whole machine.
+
+Now its own layer-shell surface, lower third, Overlay layer (a volume OSD you
+cannot see in fullscreen is one that fails exactly when it is most used).
+
+**Two things that would have broken the desktop:**
+
+- **The input mask.** A fullscreen transparent surface with the default mask
+  eats every click on the desktop for as long as it is mapped. `mask: Region {}`
+  — an empty region — makes it fully click-through. Verified: with the pointer
+  over the ring, `hyprctl activewindow` still reported the terminal, and the
+  layer unmaps entirely once hidden.
+- **`restart()`, not `start()`.** Holding a volume key fires the OSD many times
+  a second, and a `Timer` already running ignores `start()` — the ring would
+  vanish 1.4 s after the *first* keypress while the level was still moving.
+
+Routing is on `progress >= 0`, which is not a proxy for "is this volume". That
+one function is also how the mode indicator and every `showText` IPC reaches
+the island, and those pass `-1`. Routing on whether there is **a value to
+plot** is exactly the question a ring answers; the ones without a value have
+nothing to draw in it.
+
+#### The control centre, restyled from ukishima
+
+The Display/Sound sliders were a 30 px pill with an `#eceef2` fill and a **24 px
+`#f4f5f7` knob** — the brightest and largest element in a shell whose identity
+is near-black imitating bezel. Replaced with ukishima's filament fader
+(`components/VFader.qml`): a 2 px matte thread, a gradient fill, a small flat
+tick and no knob, with the percentage readout appearing **only while touched**
+— at rest the fill length *is* the value.
+
+Two departures: **horizontal**, because theirs is four columns in a wide panel
+and ours is two rows in a 385 px one (the idiom is the thread, not the axis);
+and **our accent**, because their `Theme.qml` hardcodes `#c0442b` for a
+single-identity shell and a fixed vermillion would be the one element ignoring
+theme-apply.
+
+The Wi-Fi/Bluetooth toggles were `StyleTokens.success`, a fixed iOS green — the
+only thing in the panel ignoring the palette. Now the accent. The battery bar
+keeps success/warning/danger, where the colour *is* the information.
+
+#### Qt theming — verified, it works
+
+`env = QT_QPA_PLATFORMTHEME,qt6ct` **does** reach spawned processes (dumped the
+environment of a Hyprland-spawned process), and `pcmanfm-qt` renders dark with
+the gruvbox palette — cream `#ebdbb2` on `#282828`. The open question from the
+earlier handoff is closed.
+
+#### ForkConfig was never instantiated — four more dead switches
+
+**The single worst thing found so far, and it invalidated the settings panel
+that was built on top of it.** `qml/common/ForkConfig.qml` was written,
+documented at length, and **never instantiated anywhere in the tree**. The
+only occurrences of the name were two comments in `SettingsLayer.qml`
+describing what it would do. So every `fork*` key in `userconfig.json` was
+inert and four of the panel's twelve rows changed nothing:
+
+| row | what it actually did |
+|---|---|
+| Notch mode | nothing — `DynamicIslandWindow` kept `property bool notchModeEnabled: true`, the hardcoded literal ForkConfig existed to replace. Its comment claimed it was "toggled live over IPC (`island setNotchMode`)"; **no such IPC exists** |
+| Chord key HUD | nothing — name appears nowhere outside ForkConfig.qml |
+| Resting EQ bars | nothing — as above |
+| Theme reveal animation | nothing — as above |
+
+With the polkit row that is **five of twelve** controls doing nothing, in a
+panel whose whole justification is reaching keys the packaged app cannot.
+This is the same failure this document already records once ("a warning that
+described an imaginary hazard") — it was simply never checked whether the
+rows *around* that one were any better.
+
+Now wired: instantiated once in `shell.qml` (not per screen — it is a file
+watcher, and one `Variants` delegate per monitor would open one FileView per
+monitor on the same path), exposed as `shellRoot.forkSettings`, and consumed
+at four points. `restingEqEnabled` is folded into `islandContainer.musicPlaying`
+rather than into the bars, because that one property gates **both** the bars
+and the 21 px `restingEqAllowance` the collapsed capsule grows by — gating
+only the bars would leave a resting notch silently too wide.
+
+**PROVEN, not assumed:** `forkNotchMode false` now redraws the resting shape
+as a floating pill with four round corners and a gap below the screen edge;
+`true` returns it to flush with the concave flare. Screenshotted both ways.
+
+#### The notch was invisible in fullscreen
+
+Reported as "in fullscreen I open `$mod P` and cannot see the notch".
+Hyprland draws a fullscreen window **above the Top layer and below the
+Overlay layer**, and the island sits on Top, so the chord HUD was underneath
+it.
+
+The layer promotion was a hand-written list of nine panels — and the list
+*was* the bug. It named the ones somebody had hit the problem with, so the
+wallpaper picker and settings panel appeared over fullscreen while the chord
+HUD, cheatsheet, notifications, notification centre, control centre,
+expanded player and workspace indicator did not, and every panel added later
+would default to invisible with nothing to suggest why.
+
+Replaced by the general rule: **Top while resting, Overlay while showing
+anything.** Resting is the same three states the file already tests for
+elsewhere — `normal`, `lyrics`, `custom`. Resting must stay on Top or the
+notch would sit over fullscreen video permanently, which is the opposite
+complaint. Verified both directions against a real fullscreen window: HUD
+visible at layer level 3, resting back at level 2 and correctly hidden.
+
+#### awww replaces hyprpaper (wallpaper transitions)
+
+hyprpaper has no transition: `hyprctl hyprpaper wallpaper` swaps the buffer
+between two frames, so every wallpaper change was a hard cut. `awww` — which
+is what `swww` is called now, shipped as `extra/awww`, so searching for the
+old name finds nothing — replaces it in `autostart.conf` and
+`scripts/wallpaper-sync.sh`, driven with amanhex/ukishima's flags: type
+`wave`, angle 30, wave `60,30`, fps 60, step 90. The first set at login is
+deliberately `none`: there is nothing to transition FROM, so a wave would
+play over a bare colour.
+
+**MEASURED, and the reason this was worth doing:** `userconfig.json` has
+carried `wallpaperTransitionType: "center"` the whole time. That is an
+awww/swww parameter name, and with only hyprpaper installed it was
+configuring a program that was not present — inert, and indistinguishable
+from a setting that simply did not work.
+
+`wallpaper-set.sh` → `wallpaper-sync.sh` remains the single choke point, so
+the island's own picker inherits the transition without changes.
+
+#### The island fill on a neutral theme
+
+Reported as "always black". It was, and darkening was the wrong knob.
+gruvbox's background slot is `#282828` — R, G and B **identical**, channel
+spread zero. Scaling all three by any constant leaves them identical, so
+every value of `darkenTowardBlack` yields a grey. The hue now comes from the
+**accent** instead: `darkenTowardBlack` 0.35 → 0.45 with `accentMix` 0.08.
+Measured across four palettes, spread goes from 0–12 to 14–18 at ~3 points
+less luminance. Sampled from the framebuffer afterwards: `#282318`, spread
+16, matching the prediction exactly.
+
+#### One morph duration for every distance
+
+The resting capsule gaining its EQ allowance (~40 px) and resting →
+control centre (~980 px) both ran at 400 ms. A 980 px move in 400 ms covers
+2.45 px/ms, which no curve makes read as mass — it reads as a jump with a
+wobble, and that is most of "the animation is not smooth". `Motion.js` now
+interpolates duration on distance, 400 ms below 120 px to 760 ms at 900 px.
+The idea is ukishima's (its Motion singleton carries both `morph: 420` and
+`shapeshift: 820`); the implementation is ours, because a two-value step
+picks the wrong one at the boundary.
+
+**The trap:** the obvious spelling, `duration:
+Motion.morphDurationFor(target - displayedWidth)`, reads the property the
+Behavior is animating, so the distance falls to zero mid-flight and Qt
+applies a `setDuration` under the running animation. Latched in a
+`ScriptAction` at the head of the Behavior instead, which runs once before
+the first frame.
+
+#### Left and right click were never configured
+
+`dynamicIslandPrimaryButton/Action` and `dynamicIslandSecondaryButton/Action`
+were all absent, so clicks ran on the compiled binary's defaults with
+nothing on this machine recording what they were. They are stated outright
+in the packaged config app's own source,
+`/usr/lib/qt6/qml/TideIsland/Interaction.qml`: buttons `{Left:1, Middle:2,
+Right:3}`, `playerAction "toggleExpandedPlayer"` on 1 and `controlAction
+"toggleControlCenter"` on 3. Now written explicitly and swapped on request —
+left opens the control centre, right the expanded player — with all four
+exposed as panel rows so reversing it is a keypress.
+
+#### Adding your own settings rows
+
+`~/.config/tide-island/settings-extra.json` is a JSON array of descriptors
+merged over the twelve curated rows in `island-settings.py`. A matching key
+overrides that row field by field; a new key appends; `order` places it
+(built-ins are implicitly 10, 20, 30 …). A template with six working rows is
+`.config/tide-island/settings-extra.json.example` — `cp` it across to switch
+it on. `island-settings.py --check` validates the file from a shell, and the
+panel shows any problems in an amber banner along its bottom edge.
+
+A bad row is **skipped, not fatal**, and the panel chips every row that did
+not come from the script — `yours` for a new one, `edited` for an override.
+That second chip is doing real work: an override may replace a `detail`, and
+those details are where this repo recorded why a default is what it is, so a
+row showing reasoning that is no longer the repo's has to say so.
+
+**The trap the whole design is arranged around: a row cannot make a key
+MEAN anything.** A descriptor is a writer, not an implementation. Packaged
+keys work because `UserConfigBackend` has a property of that name; `fork*`
+keys work because `ForkConfig.qml` reads them and fork QML consumes them. A
+key neither reads is INERT — the panel shows it, the write succeeds, the
+file gains the key, nothing happens. That is exactly the
+`forkPolkitAgentEnabled` situation above, which is why `scope: "packaged"`
+keys are checked against the backend's real property list and warned about,
+and why the docstring says so twice.
+
+**MEASURED, and a correction.** `island-settings.py` claimed
+`IslandBackend.qmltypes` lists "exactly 39 properties". It lists **44** on
+tide-island 1.0.34-1. The count was wrong; the load-bearing half of the
+claim — that none of them is a `fork*` key — was re-checked and still holds,
+so the conclusion stood. The 44 are now enumerated in the script rather than
+described, which is what the miscount cost.
+
+Two smaller things fell out of building it. `type: "string"` is **not**
+supported: `SettingsLayer.qml`'s `change()` has branches for bool, enum and
+int and there is no text-entry field in a panel that lives under a keyboard
+grab, so a string row would render and ignore every keypress — an enum
+covers the case where the string is one of a known few. And `default` is not
+a preference: it is what the panel DISPLAYS for a key absent from
+`userconfig.json`, so it must equal the consumer's own fallback, or the
+panel opens reading 12 for a key the shell treats as 14 with nothing on
+screen to say which is real.
 
 ### Still open: the island does not yet LOOK like the video
 

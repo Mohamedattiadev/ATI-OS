@@ -43,13 +43,37 @@ KEYS THE PACKAGED APP DOES NOT KNOW
 -----------------------------------
 `fork*` keys are read by fork QML (qml/common/ForkConfig.qml) and by nothing
 else. UserConfigBackend ignores keys it has no property for — verified from
-its own type registration, /usr/lib/qt6/qml/IslandBackend/IslandBackend.qmltypes,
-which lists exactly 39 properties and no fork ones — so they are inert to the
-packaged app and to the packaged config app, and survive both.
+its own type registration,
+/usr/lib/qt6/qml/IslandBackend/IslandBackend.qmltypes — so they are inert to
+the packaged app and to the packaged config app, and survive both.
+
+CORRECTION, measured 2026-08-12: this paragraph previously said that file
+"lists exactly 39 properties". It lists 44 on tide-island 1.0.34-1. The count
+was wrong; the load-bearing half of the claim — that NONE of them is a fork
+key — re-checked and still true, which is why the conclusion stands. The 44
+are enumerated in BACKEND_PROPERTIES below, and the miscount is the reason
+they are now written down rather than described.
+
+USER-DEFINED ROWS
+-----------------
+The table below is curated and deliberately short (see "WHAT EARNED A ROW
+HERE"). ~/.config/tide-island/settings-extra.json extends it without editing
+this script: see load_extra() for the format and the merge rules.
+
+The thing that file cannot do is make a key MEAN anything. A row here is a
+writer, not an implementation — the packaged keys work because
+UserConfigBackend has a property of that name, and the `fork*` keys work
+because ForkConfig.qml reads them and fork QML consumes them. A key that
+neither reads is INERT: the panel will show it, the write will succeed, the
+file will gain the key, and nothing will happen. That is exactly the
+forkPolkitAgentEnabled situation annotated below, and it is the single most
+likely way to be confused by this feature, so scope="packaged" keys are
+checked against BACKEND_PROPERTIES and warned about.
 
 Usage:
     island-settings.py --list                 # descriptors + current values
     island-settings.py --set <key> <value>    # write one key, atomically
+    island-settings.py --check                # validate settings-extra.json
 """
 
 import json
@@ -59,6 +83,52 @@ import sys
 import tempfile
 
 CONFIG = os.path.expanduser("~/.config/tide-island/userconfig.json")
+
+# The user's own rows. Beside userconfig.json rather than in the fork tree,
+# because the fork tree is a vendored copy that gets diffed against upstream
+# and this is personal configuration, not a fork change.
+EXTRA = os.path.expanduser("~/.config/tide-island/settings-extra.json")
+
+# Every property UserConfigBackend actually has, read out of
+# /usr/lib/qt6/qml/IslandBackend/IslandBackend.qmltypes on tide-island
+# 1.0.34-1. Used for ONE thing: warning when a user row claims
+# scope="packaged" for a name the backend has never heard of, which is the
+# inert-key trap in the module docstring.
+#
+# A warning and not a rejection, deliberately — this list is a snapshot of a
+# packaged file and a package update that adds a key would otherwise turn a
+# correct row into an error. Being out of date should cost a spurious note,
+# never a working setting.
+BACKEND_PROPERTIES = frozenset([
+    "userConfigPath", "configError",
+    "defaultWallpaperPath", "defaultTlpSudoPassword",
+    "wallpaperPath", "wallpaperLibraryPath", "wallpaperPywalEnabled",
+    "wallpaperCustomCommandEnabled", "wallpaperCustomCommand",
+    "wallpaperTransitionType", "wallpaperTransitionStep",
+    "wallpaperTransitionDuration", "wallpaperTransitionFps",
+    "wallpaperTransitionAngle", "wallpaperTransitionPosition",
+    "wallpaperTransitionBezier", "wallpaperTransitionWave",
+    "wallpaperTransitionInvertY",
+    "iconFontFamily", "textFontFamily", "heroFontFamily", "timeFontFamily",
+    "clockFormat", "tlpSudoPassword", "tlpPermissionMode",
+    "workspaceOverviewWindowDragButton",
+    "dynamicIslandPrimaryButton", "dynamicIslandPrimaryAction",
+    "dynamicIslandSecondaryButton", "dynamicIslandSecondaryAction",
+    "dynamicIslandLeftSwipeItems", "disableAutoExpandOnTrackChange",
+    "hoverExpandAction",
+    "islandAutoHideEnabled", "islandAutoHideDelayMs",
+    "islandWidth", "islandHeight", "islandExclusiveZone", "islandTopMargin",
+    "islandPositionX", "islandBackgroundOpacity",
+    "bodyFontSize", "titleFontSize", "iconFontSize",
+])
+
+# No "string". SettingsLayer.qml's change() has a branch for bool, enum and
+# int and none for free text — there is no keyboard-entry field in this panel
+# and adding one to a layer that lives under a Hyprland keyboard grab is a
+# different piece of work. A string row would render, show its value, and
+# ignore every keypress, which is the inert-row failure again. An enum covers
+# the case where the string is one of a known few (clockFormat is one).
+TYPES = ("bool", "int", "enum")
 
 # The settings the panel offers, in the order it shows them.
 #
@@ -154,6 +224,20 @@ SETTINGS = [
                   "session's agent and is unaffected.",
     },
     {
+        "key": "forkRingOsdEnabled",
+        "label": "Ring OSD",
+        "type": "bool",
+        "default": False,
+        "scope": "fork",
+        "detail": "Draws volume and brightness as a circular ring in the "
+                  "lower third of the screen instead of in the island's "
+                  "split capsule. The island already had a ring — this moves "
+                  "it off the notch, which is what a machine-wide change "
+                  "should look like. Only GAUGE calls move: the mode "
+                  "indicator and showText have no value to plot and stay in "
+                  "the island.",
+    },
+    {
         "key": "clockFormat",
         "label": "Clock format",
         "type": "enum",
@@ -236,7 +320,201 @@ SETTINGS = [
     },
 ]
 
-BY_KEY = {entry["key"]: entry for entry in SETTINGS}
+def validate(row):
+    """Every reason `row` is not a usable descriptor, as a list of strings.
+
+    Run on the row AFTER merging, never on the user's fragment alone. An
+    override that sets `"type": "int"` on a bool row is only wrong once you
+    can see that the result has no min/max, and validating the fragment would
+    have called it fine.
+    """
+    errors = []
+    kind = row.get("type")
+
+    if kind not in TYPES:
+        errors.append("type must be one of %s, got %r" % ("/".join(TYPES), kind))
+        # Nothing below can be judged without knowing the type.
+        return errors
+
+    for field in ("label", "scope"):
+        if not isinstance(row.get(field), str) or not row[field]:
+            errors.append("%s must be a non-empty string" % field)
+
+    # Two values and no "user", because scope answers "which consumer reads
+    # this key" and there are exactly two consumers: UserConfigBackend, and
+    # fork QML via ForkConfig.qml. Where the ROW came from is a different
+    # question and `source` answers it — a third scope value would put
+    # provenance and consumer in one field and the panel chips them apart.
+    if row.get("scope") not in ("packaged", "fork"):
+        errors.append('scope must be "packaged" or "fork"')
+
+    if kind == "int":
+        for bound in ("min", "max"):
+            if not isinstance(row.get(bound), int) or isinstance(row.get(bound), bool):
+                errors.append("int rows need an integer %s" % bound)
+        if not errors and row["min"] > row["max"]:
+            errors.append("min %d is above max %d" % (row["min"], row["max"]))
+        step = row.get("step", 1)
+        if not isinstance(step, int) or isinstance(step, bool) or step <= 0:
+            errors.append("step must be a positive integer")
+
+    if kind == "enum":
+        values = row.get("values")
+        if not isinstance(values, list) or not values:
+            errors.append("enum rows need a non-empty values list")
+        elif not all(isinstance(value, str) for value in values):
+            errors.append("enum values must all be strings")
+
+    # The default has to survive the same coercion a written value does,
+    # because it is what --list reports for a key the file has not got yet. A
+    # default outside its own min/max would show one number and write another.
+    if "default" not in row:
+        errors.append("no default")
+    elif not errors:
+        # Checked against the DECLARED type rather than pushed through
+        # coerce(), because coerce is deliberately lenient — it turns the
+        # string "banana" into the bool False rather than raising, since it
+        # exists to parse a command line. A default is written by hand in a
+        # JSON file where `false` is spellable, so it is held to the stricter
+        # standard and a wrong-typed one is reported instead of absorbed.
+        default = row["default"]
+        if kind == "bool" and not isinstance(default, bool):
+            errors.append("default must be true or false, got %r" % (default,))
+        elif kind == "int":
+            if not isinstance(default, int) or isinstance(default, bool):
+                errors.append("default must be an integer, got %r" % (default,))
+            elif not row["min"] <= default <= row["max"]:
+                errors.append(
+                    "default %d is outside min/max %d..%d"
+                    % (default, row["min"], row["max"]))
+        elif kind == "enum" and default not in row["values"]:
+            errors.append("default %r is not one of values" % (default,))
+
+    return errors
+
+
+def load_extra():
+    """The user's rows from EXTRA, as (entries, warnings).
+
+    FORMAT — a JSON array of descriptor objects, the same shape as the table
+    above:
+
+        [
+          { "key": "islandPositionX", "label": "Horizontal position",
+            "type": "int", "min": 0, "max": 100, "step": 5,
+            "default": 50, "scope": "packaged",
+            "detail": "Why I changed this.", "order": 75 }
+        ]
+
+    MERGE RULES
+    -----------
+    * A key that matches a built-in row OVERRIDES it, field by field. Fields
+      the entry does not mention keep the built-in value, so `{"key":
+      "islandHeight", "max": 80}` widens the range and keeps the label and
+      the detail. Overriding `detail` replaces reasoning this repo wrote down
+      on purpose — that is allowed, and it is why override rows are marked
+      and chipped differently in the panel.
+    * A key that matches nothing is a NEW row and must be complete: label,
+      type, default and scope at minimum.
+    * `order` places a row. Built-ins are implicitly 10, 20, 30 … in the
+      order they appear above, so `"order": 75` lands between the seventh and
+      eighth. Rows without one keep their natural position. Sorting is
+      stable, so equal orders stay in the order given.
+
+    `default` IS NOT A PREFERENCE. It is what the panel DISPLAYS for a key
+    that userconfig.json has not got yet, so it has to be the value the
+    consumer already falls back to — the backend's own default for a packaged
+    key, ForkConfig.qml's for a fork one. Get it wrong and the panel opens
+    reading 12 for a key the shell is actually treating as 14, with nothing
+    on screen to say which is real, until the first write makes the panel
+    retroactively correct. The safe way to add a row is to write the key into
+    userconfig.json by hand first, at the value it already behaves as, and
+    put that same value here.
+
+    A BAD ENTRY IS SKIPPED, NOT FATAL. Same argument load() makes: the panel
+    is the only place some of these keys exist, and taking all thirteen away
+    because the fourteenth has a typo turns a small mistake into a broken
+    shell. The warnings ride along in --list so the panel can say so.
+    """
+    if not os.path.exists(EXTRA):
+        return [], []
+
+    try:
+        with open(EXTRA, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except OSError as error:
+        return [], ["cannot read settings-extra.json: %s" % error]
+    except ValueError as error:
+        return [], ["settings-extra.json is not valid JSON: %s" % error]
+
+    # A bare array is the documented form; {"settings": [...]} is accepted so
+    # that a file copied from --list output works.
+    if isinstance(data, dict):
+        data = data.get("settings", None)
+    if not isinstance(data, list):
+        return [], ["settings-extra.json must contain a JSON array of rows"]
+
+    entries, warnings = [], []
+    for index, entry in enumerate(data):
+        if not isinstance(entry, dict):
+            warnings.append("row %d is not an object" % index)
+            continue
+        key = entry.get("key")
+        if not isinstance(key, str) or not key:
+            warnings.append("row %d has no key" % index)
+            continue
+        entries.append(entry)
+
+    return entries, warnings
+
+
+def merged():
+    """The full descriptor table as (rows, warnings), built-ins plus EXTRA."""
+    rows = []
+    for ordinal, entry in enumerate(SETTINGS, start=1):
+        row = dict(entry)
+        row["order"] = ordinal * 10
+        row["source"] = "builtin"
+        rows.append(row)
+
+    by_key = {row["key"]: row for row in rows}
+    entries, warnings = load_extra()
+
+    for entry in entries:
+        key = entry["key"]
+        existing = by_key.get(key)
+
+        if existing is not None:
+            candidate = dict(existing)
+            candidate.update(entry)
+            candidate["source"] = "override"
+        else:
+            candidate = dict(entry)
+            candidate.setdefault("order", 10_000 + len(rows))
+            candidate["source"] = "user"
+
+        problems = validate(candidate)
+        if problems:
+            warnings.append("%s: %s" % (key, "; ".join(problems)))
+            continue
+
+        # Inert-key check. Only for packaged scope: a fork key's consumer is
+        # QML in the fork tree and there is no list of those to check against,
+        # so claiming fork scope is taken at face value.
+        if candidate["scope"] == "packaged" and key not in BACKEND_PROPERTIES:
+            warnings.append(
+                "%s: scope is \"packaged\" but UserConfigBackend has no such "
+                "property, so writing it will do nothing" % key)
+
+        if existing is not None:
+            rows[rows.index(existing)] = candidate
+            by_key[key] = candidate
+        else:
+            rows.append(candidate)
+            by_key[key] = candidate
+
+    rows.sort(key=lambda row: row["order"])
+    return rows, warnings
 
 
 def load():
@@ -278,7 +556,10 @@ def coerce(entry, raw):
 
 
 def write(key, raw):
-    entry = BY_KEY.get(key)
+    # Built from merged(), not from the built-in table, or a user-defined row
+    # would render in the panel and then reject every write against it.
+    rows, _ = merged()
+    entry = {row["key"]: row for row in rows}.get(key)
     if entry is None:
         raise ValueError("unknown key %s" % key)
 
@@ -325,12 +606,17 @@ def write(key, raw):
 
 def describe():
     data = load()
-    rows = []
-    for entry in SETTINGS:
-        row = dict(entry)
-        row["value"] = data.get(entry["key"], entry["default"])
-        rows.append(row)
-    return {"path": CONFIG, "settings": rows}
+    rows, warnings = merged()
+    for row in rows:
+        row["value"] = data.get(row["key"], row["default"])
+    return {
+        "path": CONFIG,
+        "extraPath": EXTRA,
+        "settings": rows,
+        # The panel shows these. A row silently vanishing because of a typo
+        # three keys up is the failure this is here to prevent.
+        "warnings": warnings,
+    }
 
 
 def main(argv):
@@ -338,6 +624,22 @@ def main(argv):
         json.dump(describe(), sys.stdout)
         sys.stdout.write("\n")
         return 0
+
+    # Writing settings-extra.json is the one part of this with no visual
+    # feedback until you next open the panel, so it gets a way to be checked
+    # from the shell you are editing it in.
+    if len(argv) >= 2 and argv[1] == "--check":
+        rows, warnings = merged()
+        for warning in warnings:
+            sys.stderr.write("warning: %s\n" % warning)
+        counts = {}
+        for row in rows:
+            counts[row["source"]] = counts.get(row["source"], 0) + 1
+        sys.stdout.write(
+            "%d rows: %d built-in, %d overridden, %d user-defined\n"
+            % (len(rows), counts.get("builtin", 0),
+               counts.get("override", 0), counts.get("user", 0)))
+        return 1 if warnings else 0
 
     if len(argv) >= 4 and argv[1] == "--set":
         try:
@@ -350,7 +652,11 @@ def main(argv):
         sys.stdout.write("\n")
         return 0
 
-    sys.stderr.write(__doc__.strip().splitlines()[-2] + "\n")
+    # Sliced from "Usage:" rather than by line index, which is what this was
+    # and which silently printed the wrong line the moment a mode was added.
+    lines = __doc__.strip().splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("Usage:"))
+    sys.stderr.write("\n".join(lines[start:]) + "\n")
     return 2
 
 

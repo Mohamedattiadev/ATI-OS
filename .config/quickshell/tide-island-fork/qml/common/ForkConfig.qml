@@ -70,6 +70,13 @@ Item {
     property bool themeTransitionEnabled: true
     property bool polkitAgentEnabled: false
 
+    // The volume/brightness OSD as a separate circular ring in the middle of
+    // the screen, instead of the island's split capsule. Defaults FALSE for
+    // the same reason every other switch here defaults to current behaviour:
+    // a config file that does not mention it must leave the shell exactly as
+    // it was. See qml/osd/RingOsdWindow.qml.
+    property bool ringOsdEnabled: false
+
     // True once the file has been read at all. Distinguishes "the defaults,
     // because there is no config" from "the defaults, because that is what
     // the config says" — which matters for the polkit switch, where the two
@@ -97,6 +104,7 @@ Item {
             root.restingEqEnabled = root.boolAt(parsed, "forkRestingEqEnabled", true);
             root.themeTransitionEnabled = root.boolAt(parsed, "forkThemeTransitionEnabled", true);
             root.polkitAgentEnabled = root.boolAt(parsed, "forkPolkitAgentEnabled", false);
+            root.ringOsdEnabled = root.boolAt(parsed, "forkRingOsdEnabled", false);
             root.loaded = true;
         } catch (error) {
             // Keep whatever is already loaded, and do NOT set `loaded`. A

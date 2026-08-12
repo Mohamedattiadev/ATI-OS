@@ -186,22 +186,44 @@ PanelWindow {
     Component.onCompleted: root.retainedWindowHeight = root.requestedWindowHeight
 
     exclusiveZone: Math.ceil(root.baseExclusiveZone * root.exclusiveZoneProgress)
-    WlrLayershell.layer: islandContainer.wallpaperPickerLayerVisible
-        || islandContainer.applicationLauncherLayerVisible
-        || islandContainer.themePickerLayerVisible
-        || islandContainer.displayPanelLayerVisible
-        || islandContainer.audioPanelLayerVisible
-        || islandContainer.wifiQrLayerVisible
-        || islandContainer.calendarLayerVisible
-        || islandContainer.powerMenuLayerVisible
-        || islandContainer.settingsLayerVisible
-        // Overlay for the polkit prompt is not cosmetic. Whatever asked for
-        // the password is usually a window that just took the focus, and a
-        // prompt on the Top layer sits UNDER a fullscreen surface — which
-        // for an auth dialog means the request appears to hang.
-        || islandContainer.polkitPromptLayerVisible
-        ? WlrLayer.Overlay
-        : WlrLayer.Top
+    // ---- Top WHILE RESTING, Overlay WHILE SHOWING ANYTHING ----
+    //
+    // Hyprland draws a fullscreen window ABOVE the Top layer and BELOW the
+    // Overlay layer. So anything the island puts on Top is invisible the
+    // moment a window goes fullscreen — which was reported as "in
+    // fullscreen I open $mod P and cannot see the notch", and was exactly
+    // that: the chord HUD is a Top-layer surface underneath the fullscreen
+    // window.
+    //
+    // This used to be a hand-written list of nine panels. The list was the
+    // bug. It named the ones somebody had hit the problem with, so the
+    // wallpaper picker and the settings panel were visible in fullscreen
+    // while the chord HUD, the cheatsheet, notifications, the notification
+    // centre, the control centre, the expanded player and the workspace
+    // indicator were not — and every panel added later would default to
+    // invisible-in-fullscreen with nothing to suggest why.
+    //
+    // The general rule instead: the island is on Top while it is RESTING,
+    // and on Overlay whenever it is showing something. "Resting" is the
+    // same three states the rest of this file already tests for (see
+    // canShowSideSwipe and the sideSwipe guards) — normal, lyrics, custom.
+    //
+    // Why resting must stay on Top: a resting notch on Overlay would sit on
+    // top of fullscreen video permanently, which is the opposite complaint.
+    // Only transient content earns the promotion, and all of it is
+    // transient by construction — every non-resting state returns to a
+    // resting one.
+    //
+    // The polkit prompt kept its own note because the reasoning is stronger
+    // there than convenience: whatever asked for the password is usually a
+    // window that just took the focus, and a prompt underneath a fullscreen
+    // surface means the request appears to hang. It is covered by the
+    // general rule now, and would have been covered by it anyway.
+    readonly property bool islandRestingSurface:
+        islandContainer.islandState === "normal"
+        || islandContainer.islandState === "lyrics"
+        || islandContainer.islandState === "custom"
+    WlrLayershell.layer: root.islandRestingSurface ? WlrLayer.Top : WlrLayer.Overlay
     WlrLayershell.keyboardFocus: {
         // Exclusive, not OnDemand: the theme picker is arrow-key driven,
         // and without an exclusive grab the arrows go to whatever window
@@ -222,6 +244,13 @@ PanelWindow {
                 || islandContainer.calendarLayerVisible
                 || islandContainer.powerMenuLayerVisible
                 || islandContainer.settingsLayerVisible
+                // The generic picker, for the reason the cheatsheet is here
+                // and ModeKeysLayer deliberately is not: it has a search
+                // field, so every letter typed has to land in it rather
+                // than in the window behind. On the `processes` menu that
+                // window is frequently a terminal, and a stray "kill" typed
+                // into a shell is a keystroke you cannot take back.
+                || islandContainer.pickerLayerVisible
                 // Exclusive for the password prompt for the obvious reason
                 // and one less obvious one: without the grab, keystrokes
                 // meant for the field land in the window behind, which for
@@ -294,8 +323,22 @@ PanelWindow {
     // Default form. The spec's whole argument is that a notch is
     // pretending to be bezel — so the resting, everyday state is the
     // flush one, and the floating pill is the alternative rather than the
-    // norm. Toggled live over IPC (`island setNotchMode`).
-    property bool notchModeEnabled: true
+    // norm.
+    //
+    // NOW READ FROM CONFIG. This was `property bool notchModeEnabled: true`
+    // — a hardcoded literal — under a comment claiming it was "toggled live
+    // over IPC (`island setNotchMode`)". No such IPC exists: `qs ipc show`
+    // lists setNotchMode nowhere, and nothing in the tree assigned this
+    // property. So the settings panel's "Notch mode" switch wrote
+    // forkNotchMode to userconfig.json and the shape never moved.
+    //
+    // The fallback stays `true` so a shell with no config, or one whose
+    // ForkConfig has not loaded yet, draws the same resting shape it always
+    // did rather than flickering through the floating pill on startup —
+    // which is the reason ForkConfig's FileView sets preload.
+    property bool notchModeEnabled: shellRootController && shellRootController.forkSettings
+        ? shellRootController.forkSettings.notchMode
+        : true
 
     readonly property real notchUnround: Math.max(0, Math.min(1, root.notchProgress * 2))
     readonly property real notchFlareProgress: Math.max(0, Math.min(1, root.notchProgress * 2 - 1))
@@ -885,6 +928,24 @@ PanelWindow {
             islandContainer.showPowerMenu();
     }
 
+    // FORK: the generic list picker. Toggling on the MENU and not just on
+    // the state, exactly like toggleCheatsheetWindow: pressing the chord's
+    // key for `processes` while the `windows` picker is open should switch
+    // menus, not close the panel. Only the same menu again means "done".
+    function showPickerWindow(name) {
+        console.log("PICKERDBG name=" + name + " state=" + islandContainer.islandState
+                    + " menu=" + islandContainer.pickerMenu);
+        if (islandContainer.islandState === "picker"
+                && islandContainer.pickerMenu === name)
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showPicker(name);
+    }
+
+    function clearPickerWindow() {
+        islandContainer.clearPicker();
+    }
+
     function toggleSettingsWindow() {
         if (islandContainer.islandState === "settings")
             islandContainer.smartRestoreState();
@@ -1092,6 +1153,10 @@ PanelWindow {
             || islandContainer.calendarLayerVisible
             || islandContainer.powerMenuLayerVisible
             || islandContainer.settingsLayerVisible
+            // Qualified through the id, for the same reason its neighbours
+            // are: a hot reload landing between a new property's use and its
+            // declaration compiles a component that really is missing it.
+            || islandContainer.pickerLayerVisible
             || islandContainer.polkitPromptLayerVisible
             || expandedPlayerKeyboardFocusRequested
             || (root.monitorFocused && (root.overviewVisible || root.connectivityPromptActive))
@@ -1117,7 +1182,18 @@ PanelWindow {
         property var notificationHistoryModel: ListModel {}
         readonly property var cavaLevels: systemState.cavaLevels
         // FORK: gates the resting-state EQ. See SwipeLyricsLayer.restingEq.
+        //
+        // forkRestingEqEnabled is folded in HERE rather than at the bars
+        // themselves, because this one property gates both halves of the
+        // feature: the bars' visibility in SwipeLyricsLayer, and the
+        // restingEqAllowance the collapsed capsule grows by (line ~2701).
+        // Gating only the bars would have left the capsule widening by 21 px
+        // for an EQ that was not drawn — a resting notch that is silently
+        // too wide, which is the kind of thing that gets measured later and
+        // blamed on islandWidth.
         readonly property bool musicPlaying: mediaController.musicPlaying
+            && !(shellRootController && shellRootController.forkSettings
+                 && !shellRootController.forkSettings.restingEqEnabled)
 
         // FORK: whether the media/lyrics surface has anything to be ABOUT.
         // Upstream guards the left-hand custom surface on
@@ -1223,6 +1299,7 @@ PanelWindow {
             || islandState === "calendar"
             || islandState === "power_menu"
             || islandState === "settings"
+            || islandState === "picker"
             // The polkit prompt is the one entry here that is NOT opened by
             // a person — it is opened by whatever asked for authorisation.
             // It belongs in the list anyway, and more urgently than the
@@ -1314,6 +1391,14 @@ PanelWindow {
         readonly property bool calendarLayerVisible: !root.overviewVisible && islandState === "calendar"
         readonly property bool powerMenuLayerVisible: !root.overviewVisible && islandState === "power_menu"
         readonly property bool settingsLayerVisible: !root.overviewVisible && islandState === "settings"
+        // FORK: the generic list picker — one panel behind three (so far) of
+        // the rofi chord's menus. `pickerMenu` is the menu name the backing
+        // script builds, and it is set BEFORE islandState flips so the
+        // Loader's first fetch is already the right one; showCheatsheet does
+        // the same with cheatsheetWhich and for the same reason.
+        // See qml/island/PickerLayer.qml.
+        property string pickerMenu: "windows"
+        readonly property bool pickerLayerVisible: !root.overviewVisible && islandState === "picker"
         readonly property bool polkitPromptLayerVisible: !root.overviewVisible && islandState === "polkit_prompt"
         readonly property var activePlayer: mediaController.activePlayer
         readonly property string lyricsDisplayText: mediaController.displayText
@@ -1884,9 +1969,50 @@ PanelWindow {
             if (progress === undefined)    progress = -1.0;
             if (customText === undefined)  customText = "";
 
+            // FORK SETTING, forkRingOsdEnabled. Hand GAUGE-shaped calls to
+            // the standalone ring window instead of the island's split
+            // capsule. See qml/osd/RingOsdWindow.qml.
+            //
+            // ---- THIS MUST COME BEFORE THE TWO GUARDS BELOW ----
+            //
+            // It did not, and the bug was reported as "in media mode the
+            // volume/brightness ring does not appear". Both guards exist to
+            // protect the ISLAND's split capsule:
+            //
+            //   autoHideSuppressesTransientReveal — do not un-hide a hidden
+            //     island just because the volume moved.
+            //   blocksTransientSplit (openPanelState || "notification") — do
+            //     not let an OSD replace a panel the user deliberately
+            //     opened.
+            //
+            // The ring is a different SURFACE. It cannot un-hide the island
+            // because it is not the island, and it cannot overwrite an open
+            // panel because it does not share the capsule with one. Sitting
+            // behind those returns meant the ring was suppressed in exactly
+            // the state where an on-screen volume readout is most wanted:
+            // the expanded player is an openPanelState, so adjusting volume
+            // while looking at what is playing showed nothing at all.
+            //
+            // The guards still run, unchanged, for the island path below.
+            if (progress >= 0
+                    && shellRootController
+                    && shellRootController.forkSettings
+                    && shellRootController.forkSettings.ringOsdEnabled) {
+                shellRootController.showRingOsd(icon, progress);
+                return;
+            }
+
             if (root.autoHideSuppressesTransientReveal) return;
             if (blocksTransientSplit) return;
-
+            //
+            // `progress >= 0` is the whole test, and it is not a proxy for
+            // "is this volume or brightness": this one function is also how
+            // the mode indicator and every showText/showTextWithIcon IPC
+            // reaches the island, and those pass -1. Routing on the caller's
+            // identity would need a fifth argument threaded through six call
+            // sites; routing on whether there is a VALUE TO PLOT is exactly
+            // the question a ring answers, and the ones with no value have
+            // nothing to draw in it.
             const nextProgress = progress >= 0 ? progress : -1.0;
             const animateProgress = islandState === "split" && osdProgress >= 0 && nextProgress >= 0;
             const animateFromSide = currentTransientOriginSide();
@@ -2189,6 +2315,37 @@ PanelWindow {
             stopAutoHideTimer();
         }
 
+        // FORK: the generic list picker. `name` is one word — windows,
+        // processes, workspaces — which is what makes it safe across an IPC
+        // that splits arguments on whitespace (ModeKeysLayer.qml has the
+        // full account of what happens when an argument is not).
+        //
+        // pickerMenu is assigned BEFORE islandState, so the PanelLoader
+        // builds a PickerLayer that already knows its menu and fetches it
+        // once. The other order works too and costs one wasted `--list` of
+        // the previous menu, plus a frame of the wrong title in the header.
+        //
+        // clearPicker exists as the counterpart to showPicker for the same
+        // reason clearModeKeys does — something outside the shell may need
+        // to take the panel down without knowing whether it is up — but
+        // unlike the chord HUD nothing drives it yet: the picker is closed
+        // by its own Esc, or by running a row. It is here so that a caller
+        // that needs it does not have to reach for smartRestoreState.
+        function showPicker(name) {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            pickerMenu = name;
+            islandState = "picker";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
+        function clearPicker() {
+            if (islandState === "picker")
+                smartRestoreState();
+        }
+
         // FORK: the polkit password prompt. See qml/island/PolkitPromptLayer.qml
         // — and read the safety note there before enabling it, because a
         // wrong polkit agent means NO password prompts anywhere on the
@@ -2213,6 +2370,18 @@ PanelWindow {
         // never-expiring-indicator problem the shell script already had to
         // solve from the other direction.
         function showModeKeys(name) {
+            // FORK SETTING, forkModeKeysEnabled. Off falls back to the mode
+            // NAME alone in the transient capsule — which is precisely what
+            // submap-indicator.sh did before ModeKeysLayer existed, and what
+            // the settings row for this switch has always promised it would
+            // do. Until now the switch was read by nothing and both
+            // positions drew the full key grid.
+            if (shellRootController && shellRootController.forkSettings
+                    && !shellRootController.forkSettings.modeKeysEnabled) {
+                showTransientCapsule("", -1, String(name).toUpperCase());
+                return;
+            }
+
             cancelSideSwipeSettle();
             abortSideTransientMode();
             clearTransientCapsule();
@@ -2499,6 +2668,26 @@ PanelWindow {
             // value and the SHAPE of the curve does the speeding up.
             // Nothing assigns to it, so readonly is safe.
             readonly property int morphDuration: Motion.morphDuration()
+
+            // ---- DISTANCE-AWARE MORPH ----
+            //
+            // See Motion.js, "ONE DURATION FOR A 40 px MOVE AND A 1000 px
+            // ONE WAS THE BUG". The 980 px resting -> control-centre morph
+            // and the 40 px EQ allowance both ran at 400 ms; this latches
+            // how far the shape is about to travel so the duration can
+            // scale with it.
+            //
+            // LATCHED IN A ScriptAction, not bound. The obvious spelling,
+            //     duration: Motion.morphDurationFor(baseTargetWidth - displayedWidth)
+            // reads the property the Behavior is animating, so as
+            // displayedWidth closes on its target the distance falls to
+            // zero and the duration is rewritten UNDER the running
+            // animation — Qt applies a mid-flight setDuration, and the
+            // morph snaps. A ScriptAction at the head of the Behavior runs
+            // once, before the first frame, while displayedWidth is still
+            // the OLD value and baseTargetWidth is already the new one.
+            property int pendingMorphPx: 0
+            readonly property int distanceMorphDuration: Motion.morphDurationFor(pendingMorphPx)
             readonly property bool notificationHistorySurface: islandContainer.islandState === "notification_center"
             property real outlineWidth: root.overviewContentVisible || notificationHistorySurface ? 1 : 0
             property color outlineColor: root.overviewContentVisible
@@ -2583,6 +2772,18 @@ PanelWindow {
                     // "Notch mode          on", and the details column
                     // carries a paragraph saying what the key does and
                     // whether the packaged config app knows about it.
+                    return Math.min(Metrics.px(860), root.width - Metrics.px(48));
+                case "picker":
+                    // The same list-plus-details shape as settings, and the
+                    // same width, because the content is the same size:
+                    // a row is one elided line and the column beside it
+                    // carries the thing that disambiguates it. Measured on
+                    // the `windows` menu, whose worst row on this session is
+                    // "Reacher (2022) — Watch on Cineby - Brave" against a
+                    // detail of "brave-browser · workspace 5" — narrower
+                    // than 860 and the title elides while its own
+                    // disambiguator is still on screen, which is the one
+                    // thing this panel must not do.
                     return Math.min(Metrics.px(860), root.width - Metrics.px(48));
                 case "polkit_prompt":
                     // Deliberately modest. This is a password field and one
@@ -2696,6 +2897,18 @@ PanelWindow {
                         ? Math.min(settingsLoader.item.preferredHeight,
                                    root.screen.height - Metrics.px(60))
                         : Metrics.px(340);
+                case "picker":
+                    // Content-sized like the rest, and the layer is the only
+                    // thing that can compute it: it knows the row count and
+                    // the 11-row cap it applies to it. Deliberately NOT
+                    // sized to the FILTERED count — see the long note on
+                    // PickerLayer's preferredHeight; a panel that changed
+                    // height on every keystroke would walk the search field
+                    // out from under the eye that is using it.
+                    return pickerLoader.item
+                        ? Math.min(pickerLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(340);
                 case "polkit_prompt":
                     return polkitPromptLoader.item
                         ? Math.min(polkitPromptLoader.item.preferredHeight,
@@ -2781,6 +2994,7 @@ PanelWindow {
                 case "calendar":
                 case "power_menu":
                 case "settings":
+                case "picker":
                 case "polkit_prompt":
                     return Metrics.px(34);
                 case "expanded":
@@ -2816,9 +3030,16 @@ PanelWindow {
             //
             // The spec's actual CONCERN is still answered, which is why this
             // is a blend rather than a swap: islandTheme.shellFill is the
-            // palette's background slot dragged 72% toward black, so the hue
-            // is identifiable beside the wallpaper while the surface stays
-            // dark enough to read as bezel. See qml/common/IslandTheme.qml.
+            // palette's background slot dragged 45% toward black with 8% of
+            // the accent mixed in, so the hue is identifiable beside the
+            // wallpaper while the surface stays dark enough to read as bezel.
+            // See qml/common/IslandTheme.qml.
+            //
+            // This comment said "72% toward black" long after that value was
+            // changed to 0.35, and then to the present 0.45 + accent. The
+            // number lives in IslandTheme.qml; repeating it here is what let
+            // it go stale, so it is repeated once more only because the
+            // reasoning above is meaningless without knowing it is a BLEND.
             //
             // islandBackgroundOpacity still governs the alpha, so a user who
             // wants the old translucent pill keeps that control.
@@ -2887,17 +3108,29 @@ PanelWindow {
             // distance in ~105ms, overshoots 1.5%, and settles — same 400ms
             // budget, completely different perceived speed.
             Behavior on displayedWidth  {
-                NumberAnimation {
-                    duration: capsuleMouseArea.sideSwipeInteractive ? 0 : mainCapsule.morphDuration
-                    easing.type: Easing.BezierSpline
-                    easing.bezierCurve: Motion.spring()
+                SequentialAnimation {
+                    ScriptAction {
+                        script: mainCapsule.pendingMorphPx =
+                            Math.abs(mainCapsule.baseTargetWidth - mainCapsule.displayedWidth)
+                    }
+                    NumberAnimation {
+                        duration: capsuleMouseArea.sideSwipeInteractive
+                            ? 0 : mainCapsule.distanceMorphDuration
+                        easing.type: Easing.BezierSpline
+                        easing.bezierCurve: Motion.spring()
+                    }
                 }
             }
             Behavior on height {
                 enabled: !(controlCenterLoader.item && controlCenterLoader.item.batteryDrawerMoving)
 
+                // Height rides the width's latched distance rather than
+                // latching its own. The two change together — every state
+                // that widens the capsule also makes it taller — and giving
+                // them independent durations is what makes a morph look
+                // like two animations rather than one shape moving.
                 NumberAnimation {
-                    duration: mainCapsule.morphDuration
+                    duration: mainCapsule.distanceMorphDuration
                     easing.type: Easing.BezierSpline
                     easing.bezierCurve: Motion.spring()
                 }
@@ -3437,6 +3670,11 @@ PanelWindow {
                         iconFontFamily: root.iconFontFamily
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
+                        // FORK: the filament faders' fill colour. See
+                        // ControlSliderCard.qml — the accent is ours rather
+                        // than ukishima's fixed vermillion because this
+                        // shell follows theme-apply.
+                        accentColor: islandTheme.accent
                         sliderIntroDelay: mainCapsule.morphDuration
                         currentTime: timeObj.currentTime
                         currentDateLabel: timeObj.currentDateLabel
@@ -3602,6 +3840,36 @@ PanelWindow {
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
                         showCondition: islandContainer.settingsLayerVisible
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            // FORK: the generic list picker — the shape three of the rofi
+            // chord's menus share, as one panel. See qml/island/PickerLayer.qml.
+            PanelLoader {
+                id: pickerLoader
+                anchors.fill: parent
+                live: islandContainer.pickerLayerVisible
+                // Same as the application launcher and the cheatsheet: the
+                // search field is useless without the focus, and the focus
+                // has to be taken AFTER the item exists — which is what this
+                // signal is for and why the layer's own onShowConditionChanged
+                // is not enough on the first open (showCondition is already
+                // true by the time the item is constructed, so the handler
+                // that would have grabbed the focus never runs).
+                onLoaded: {
+                    if (pickerLoader.item && pickerLoader.item.grabKeyboardFocus)
+                        pickerLoader.item.grabKeyboardFocus();
+                }
+
+                sourceComponent: Component {
+                    PickerLayer {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        iconFontFamily: root.iconFontFamily
+                        showCondition: islandContainer.pickerLayerVisible
+                        menu: islandContainer.pickerMenu
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }
