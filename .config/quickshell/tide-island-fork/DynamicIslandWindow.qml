@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Shapes
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Hyprland
 import Quickshell.Services.Mpris
 import IslandBackend
 import "qml/audio"
@@ -69,6 +70,11 @@ PanelWindow {
         && shellRootController.screenRecordingActive !== undefined
         ? !!shellRootController.screenRecordingActive
         : false
+    // Diagnostic for the flank workspace filter, off by default. Left in
+    // because the filter fails OPEN: if it silently stopped filtering, the
+    // strip would look merely busy rather than broken, and this is the only
+    // thing that tells the two apart. Flip to true and read `qs log`.
+    property bool flankDebug: false
     property bool autoHideVisible: false
     property bool autoHidePointerInside: false
     property bool autoHideForcedHidden: false
@@ -2755,9 +2761,43 @@ PanelWindow {
                     return out;
                 const values = manager.toplevels.values;
                 const focused = manager.activeToplevel;
+
+                // ---- FILTERED TO THE CURRENT WORKSPACE ----
+                //
+                // ToplevelManager is the foreign-toplevel protocol, which is
+                // live and carries appId and title but knows nothing about
+                // workspaces — Wayland has no such concept. Hyprland does, so
+                // the workspace comes from Quickshell.Hyprland, which keeps a
+                // HyprlandToplevel per surface with a `wayland` back-pointer
+                // to exactly these objects. Matching on that pointer rather
+                // than on title or appId matters: two kitty windows share
+                // both, and a match by either would put them on the wrong
+                // workspace half the time.
+                //
+                // GUARDED, AND DELIBERATELY FAILING OPEN. If the Hyprland
+                // list is empty — which is what a throwaway instance reports,
+                // the same way ToplevelManager does before the shell owns a
+                // surface — every window is shown rather than none. A strip
+                // that silently empties itself is indistinguishable from a
+                // broken strip; showing too much is at least legible.
+                const hlValues = (typeof Hyprland !== "undefined" && Hyprland
+                                  && Hyprland.toplevels)
+                    ? Hyprland.toplevels.values : [];
+                const currentWs = Hyprland && Hyprland.focusedWorkspace
+                    ? Hyprland.focusedWorkspace.id : -1;
+                const wsFor = new Map();
+                for (let h = 0; h < hlValues.length; h++) {
+                    const ht = hlValues[h];
+                    if (ht && ht.wayland && ht.workspace)
+                        wsFor.set(ht.wayland, ht.workspace.id);
+                }
+                const canFilter = wsFor.size > 0 && currentWs > 0;
+
                 for (let index = 0; index < values.length; index++) {
                     const entry = values[index];
                     if (!entry)
+                        continue;
+                    if (canFilter && wsFor.get(entry) !== currentWs)
                         continue;
                     out.push({
                         appId: entry.appId,
@@ -2765,6 +2805,10 @@ PanelWindow {
                         active: entry === focused
                     });
                 }
+                if (root.flankDebug)
+                    console.log("FLANK| hl=" + hlValues.length + " ws=" + currentWs
+                                + " canFilter=" + canFilter
+                                + " in=" + values.length + " out=" + out.length);
                 return out;
             }
 
