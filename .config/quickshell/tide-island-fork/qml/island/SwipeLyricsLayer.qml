@@ -29,6 +29,28 @@ Item {
     property bool recordingActive: false
     property real transitionProgress: 0
     property int textPixelSize: userConfig.bodyFontSize
+    // FORK: the workspace digit is CONTENT OF THIS LAYER now, not an overlay.
+    //
+    // It began life as a sibling of mainCapsule positioned by absolute x over
+    // the capsule (see the deleted WorkspaceChip wiring in
+    // DynamicIslandWindow.qml). That worked for exactly one state and broke in
+    // every other, because an absolutely-placed overlay knows nothing about
+    // the layers crossfading underneath it — swiping to lyrics or to the
+    // custom card left the digit sitting on top of whatever had replaced the
+    // clock. The workaround was a four-clause `visible` gate naming every
+    // state it must not appear in, and that gate was recorded at the time as a
+    // workaround rather than a fix.
+    //
+    // This is the fix. The digit is laid out beside the clock, in the clock's
+    // own layer, so it inherits the clock's entire life cycle for free:
+    // it fades on `1 - clampedProgress` with the time text on a lyrics swipe,
+    // it is unloaded with this whole layer on a left swipe (lyricsSwipeVisible
+    // goes false the moment swipeTransitionProgress does), and it disappears
+    // for the workspace popup because showSecondaryText already does.
+    property int workspaceId: 1
+    property bool workspaceShown: false
+    property color accentColor: "#51afef"
+
     property real minimumWidth: Metrics.px(220)
     property real maximumWidth: minimumWidth
     property real horizontalPadding: Metrics.pad(14)
@@ -48,14 +70,47 @@ Item {
     readonly property real restingEqGap: 7
     readonly property real restingEqWidth: 4 * 3 + 3 * 3
     readonly property real restingEqAllowance: restingEqWidth + restingEqGap
+
+    // The same two numbers for the workspace digit. They are deliberately
+    // IDENTICAL to root.restingWorkspaceAllowance in DynamicIslandWindow.qml,
+    // which is what the collapsed capsule actually grows by — restingEq
+    // already duplicates its allowance the same way, with the same
+    // cross-reference, because the capsule has to know the width without
+    // instantiating this component to ask it.
+    //
+    // FIXED and not measured off the glyph, unlike the EQ's placement which
+    // reads visibleTimeWidth. A width derived from the digit's own ink would
+    // change when you move from workspace 9 to workspace 10, and since the
+    // capsule sizes itself from this number, the capsule would MORPH on a
+    // workspace switch — a shape change caused by a text change, which is the
+    // opposite of everything else in this shell. Two tabular figures at 13 px
+    // DemiBold fit inside the slot; a third would clip, and a machine with
+    // 100 workspaces has other problems.
+    readonly property real restingWorkspaceGap: Metrics.px(12)
+    readonly property real restingWorkspaceWidth: Metrics.px(10)
+    readonly property real restingWorkspaceAllowance:
+        restingWorkspaceWidth + restingWorkspaceGap
+    readonly property bool workspaceVisible:
+        workspaceShown && showSecondaryText && timeText !== ""
+
     // The clock and the EQ are one centred group, so the clock slides left
     // by half the allowance when the bars appear rather than staying put
     // and letting the pair sit off-centre. Animated on its own short curve
     // because it is content shifting inside the capsule, not the capsule
     // moving — those two settling at different times is what makes the
     // bars look bolted on.
-    readonly property real restingGroupShift:
-        (musicPlaying && showSecondaryText) ? restingEqAllowance / 2 : 0
+    //
+    // FORK: the digit is a second trailing occupant of that same group, so it
+    // enters the same sum rather than getting a shift of its own. Both sit to
+    // the RIGHT of the clock's ink — the digit first, then the bars — so the
+    // group's total trailing width is the sum of the two allowances and the
+    // clock slides left by half of it. Trailing and not leading was decided
+    // in 4a0e2ac and is kept: the clock is the subject and the workspace
+    // qualifies it, so it reads as a suffix rather than as a heading.
+    readonly property real restingTrailingAllowance:
+        ((musicPlaying && showSecondaryText) ? restingEqAllowance : 0)
+        + (workspaceVisible ? restingWorkspaceAllowance : 0)
+    readonly property real restingGroupShift: restingTrailingAllowance / 2
 
     readonly property real clampedProgress: Math.max(0, Math.min(1, transitionProgress))
     readonly property bool lyricMostlyVisible: clampedProgress > 0.92
@@ -74,6 +129,15 @@ Item {
     readonly property real timeX: centeredX + clampedProgress * dragDistance
     property real animatedGroupShift: restingGroupShift
     readonly property real shiftedTimeX: timeX - animatedGroupShift
+
+    // The right-hand edge of the clock's ACTUAL INK, not of its full-width
+    // centred box. Everything that trails the clock hangs off this, so the
+    // group reads as one centred cluster instead of three things scattered
+    // across a 220 px box. Was inlined in restingEq's x; pulled out because
+    // the digit now needs the same origin and two copies of this expression
+    // drifting apart is how the bars ended up misplaced once already.
+    readonly property real restingInkRight:
+        shiftedTimeX + (textWidth + visibleTimeWidth) / 2
 
     Behavior on animatedGroupShift {
         NumberAnimation {
@@ -332,6 +396,55 @@ Item {
         wrapMode: Text.NoWrap
     }
 
+    // FORK: the workspace digit, laid out with the clock rather than floated
+    // over it. See the property block at the top of this file for why it moved
+    // here; this is the drawing half.
+    //
+    // Everything about how it LOOKS was settled while it was still
+    // WorkspaceChip.qml and is carried over unchanged: plain type and not a
+    // ring, because a ring's dark disc was IslandTheme.shellFill and is
+    // therefore invisible against the capsule made of the same material; one
+    // step under the clock's size, because two numbers at the same size beside
+    // each other read as one value split in half; the accent, because nothing
+    // else in the resting capsule is accent-coloured and that alone says "this
+    // is live"; tabular figures, so a 1 and an 8 occupy the same width and the
+    // clock does not shuffle sideways on a workspace change.
+    //
+    // What is NEW is that it has no life cycle of its own. No Behavior on
+    // opacity, no reveal progress, no visibility gate naming island states:
+    //
+    //   * `1 - clampedProgress` is the identical expression the time text
+    //     uses, so a lyrics swipe carries the two off together. This is the
+    //     whole point of the move — the digit cannot outlive the clock,
+    //     because it is drawn by the same thing on the same term.
+    //   * autoHide is already applied to mainCapsule's own opacity, so the old
+    //     `revealProgress: root.autoHideProgress` was a second, redundant
+    //     multiplier on a value the parent had already faded.
+    //   * showSecondaryText is false whenever the workspace popup or the split
+    //     view owns this side, which covers the popup case the old gate
+    //     handled explicitly: the popup says the workspace in words, and
+    //     showing the digit at the same moment states one fact twice.
+    Text {
+        id: workspaceDigit
+
+        visible: root.workspaceVisible
+        // Left edge of the slot, which starts one gap past the clock's ink.
+        // The glyph is centred in the slot rather than left-aligned in it, so
+        // a two-digit workspace grows symmetrically and does not walk into the
+        // EQ.
+        x: root.restingInkRight + root.restingWorkspaceGap
+            + (root.restingWorkspaceWidth - width) / 2
+        y: root.timeBaselineY - baselineOffset
+        opacity: 1 - root.clampedProgress
+
+        text: String(root.workspaceId)
+        color: root.accentColor
+        font.pixelSize: Metrics.font(13)
+        font.family: root.textFontFamily
+        font.weight: Font.DemiBold
+        font.features: ({ "tnum": 1 })
+    }
+
     // FORK: the resting-state EQ. DESIGN-SPEC.md's resting island shows
     // exactly two things — "the time, and a 4-bar EQ visualiser that
     // animates only while music actually plays".
@@ -369,8 +482,12 @@ Item {
 
         anchors.verticalCenter: parent.verticalCenter
         // Sits just right of the clock's own ink, not of its full-width
-        // centred box, so the pair reads as one centred group.
-        x: root.shiftedTimeX + (root.textWidth + root.visibleTimeWidth) / 2 + root.restingEqGap
+        // centred box, so the pair reads as one centred group — and now to
+        // the right of the workspace digit as well when that is showing, so
+        // the two trailing occupants queue rather than overlap.
+        x: root.restingInkRight
+            + (root.workspaceVisible ? root.restingWorkspaceAllowance : 0)
+            + root.restingEqGap
         opacity: shown ? (1 - root.clampedProgress) : 0
         visible: opacity > 0.001
 

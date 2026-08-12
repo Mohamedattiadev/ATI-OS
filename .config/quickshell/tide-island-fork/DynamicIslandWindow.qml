@@ -2871,76 +2871,23 @@ PanelWindow {
                 return out;
             }
 
-            WorkspaceChip {
-                id: workspaceChip
-                // ---- INSIDE THE CAPSULE, NOT BESIDE IT ----
-                //
-                // Was `pillLeft - gap - width`, i.e. out on the wallpaper to
-                // the left of the pill. WorkspaceChip's own header explains
-                // why it started there: putting it in the capsule means the
-                // capsule has to grow, and ~20 islandState cases in
-                // baseTargetWidth do arithmetic against that width.
-                //
-                // Asked for anyway, and the objection is answered rather than
-                // ignored: only the RESTING width grows, through
-                // restingWorkspaceAllowance, exactly as musicPlaying already
-                // grows it for the EQ bars. Every other islandState case is
-                // untouched, because every other state replaces the resting
-                // content wholesale rather than adding to it.
-                //
-                // Hung off the capsule's own left edge with the same inner
-                // padding the clock uses, and centred on the capsule rather
-                // than on the layer surface — see restingCenterY.
-                // Above mainCapsule, which sits at z 5. The flanks are a
-                // sibling of the capsule and default to z 0, so the moment
-                // this moved from beside the pill to inside it the chip went
-                // BEHIND the pill and vanished — drawn, composited under an
-                // opaque rounded rectangle, and completely invisible.
-                z: 6
-                // ---- TRAILING THE CLOCK, NOT LEADING IT ----
-                //
-                // Was hard against the capsule's left edge, which put a lone
-                // digit in the position a heading occupies and left a wide
-                // gap between it and the centred clock — it read as a stray
-                // number rather than as part of the readout. Trailing the
-                // clock instead makes it a suffix, which is what it is: the
-                // clock is the subject and the workspace qualifies it.
-                x: mainCapsule.x + mainCapsule.width - width - Metrics.pad(12)
-                y: islandFlanks.restingCenterY - height / 2
-
-                // ---- ONLY IN THE PLAIN RESTING CLOCK, NOTHING ELSE ----
-                //
-                // Reported as the digit coming over other elements when
-                // swiping left or right. It does, and the cause is that this
-                // is a SIBLING of mainCapsule positioned over it, not a child
-                // of the capsule's content. The swipe layers (lyrics, custom
-                // info) crossfade their own content through the same
-                // rectangle, and nothing about an absolutely-placed overlay
-                // knows they are there.
-                //
-                // The correct end state is for the digit to live in the
-                // resting content's own row beside the clock, so it is laid
-                // out with the clock and leaves with it. Short of that, it is
-                // gated to exactly the moment the plain clock is on screen:
-                // the resting state, with no swipe in flight in either
-                // direction. Anything else — the workspace popup, a lyrics
-                // swipe, the custom info card — and it is simply not drawn,
-                // which is strictly better than drawing it over something.
-                //
-                // The popup case matters on its own: it already says the
-                // workspace in words, so showing the digit at the same time
-                // states one fact twice in a glance.
-                visible: islandContainer.islandState === "normal"
-                    && Math.abs(islandContainer.swipeTransitionProgress) < 0.001
-                    && Math.abs(islandContainer.rightSwipeProgress) < 0.001
-                    && !customSwipeLoader.active
-                workspaceId: islandContainer.currentWs
-                textFontFamily: root.textFontFamily
-                accentColor: islandTheme.accent
-                fillColor: islandTheme.shellFill
-                showCondition: islandFlanks.restingNow
-                revealProgress: root.autoHideProgress
-            }
+            // FORK: the WorkspaceChip that stood here is gone.
+            //
+            // It was a SIBLING of mainCapsule placed by absolute x over the
+            // capsule, which is why it drew on top of the swipe layers and why
+            // it needed a four-clause `visible` gate naming every state it
+            // must not appear in. That gate was recorded in 4a0e2ac as a
+            // workaround and the real fix named in the same comment: put the
+            // digit in the resting content's own layout beside the clock, so
+            // it is laid out with the clock and leaves with it. Done — see
+            // SwipeLyricsLayer.qml, and the workspace properties on the
+            // SwipeLyricsLayer instance further down this file.
+            //
+            // root.restingWorkspaceAllowance survives the move and is still
+            // correct: the collapsed capsule still has to grow to carry the
+            // digit, for exactly the reason it grows for the EQ bars, and the
+            // layer now duplicates the same two numbers with a cross-reference
+            // in the way restingEqAllowance already did.
 
             WindowRingStrip {
                 id: leftRings
@@ -3922,6 +3869,24 @@ PanelWindow {
                         showSecondaryText: islandContainer.workspaceOriginSide !== "right"
                             && islandContainer.splitOriginSide !== "right"
                         showCondition: true
+                        // FORK: the workspace digit lives in the resting
+                        // content now, beside the clock, instead of being a
+                        // sibling of mainCapsule positioned by absolute x over
+                        // it. The old WorkspaceChip that stood here is gone
+                        // along with the four-clause `visible` gate it needed;
+                        // this layer's own life cycle replaces every clause of
+                        // it. See SwipeLyricsLayer.qml.
+                        //
+                        // `workspaceShown` is a plain true rather than a
+                        // condition. It is kept as a property, and not folded
+                        // into the layer, because the layer should not have to
+                        // know whether the shell wants a workspace readout at
+                        // all — that is a question for whoever owns the
+                        // config, and this is the seam a settings toggle would
+                        // bind to.
+                        workspaceShown: true
+                        workspaceId: islandContainer.currentWs
+                        accentColor: islandTheme.accent
                         onPreferredWidthChanged: islandContainer.syncLyricsCapsuleWidth()
                     }
                 }
