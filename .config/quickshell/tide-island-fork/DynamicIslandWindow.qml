@@ -420,6 +420,11 @@ PanelWindow {
     // without instantiating SwipeLyricsLayer to ask it. 4 bars of 3 px with
     // 3 px gaps, plus the 7 px gap after the clock.
     readonly property real restingEqAllowance: 4 * 3 + 3 * 3 + 7
+    // FORK: the workspace ring now rides INSIDE the resting capsule, so the
+    // capsule has to carry it the same way it carries the EQ bars — as extra
+    // width, not as ink squeezed into the padding. islandWidth is sized for
+    // the clock alone. Ring diameter plus the gap to the clock.
+    readonly property real restingWorkspaceAllowance: Metrics.px(32) + Metrics.px(10)
     readonly property bool hoverExpandEnabled: configuredHoverExpandAction > 0
     readonly property bool topGestureInputActive: !root.overviewVisible && islandContainer.canShowSideSwipe
     readonly property bool autoHideRuntimeEnabled: !shellRootController
@@ -2717,7 +2722,20 @@ PanelWindow {
         //  see the mask near the top of this file.
         Item {
             id: islandFlanks
-            z: 4
+            // 4 -> 6, ABOVE mainCapsule's z 5.
+            //
+            // The workspace ring now sits inside the capsule, and z is
+            // resolved among SIBLINGS: raising the chip inside this Item
+            // reorders it against the other flank children and does nothing
+            // against the capsule, which is a sibling of this whole Item.
+            // The chip was drawn, composited under an opaque rounded
+            // rectangle, and completely invisible — with no warning, because
+            // nothing was wrong.
+            //
+            // Safe for the rest of the flanks: the icons sit outside the pill
+            // where there is nothing to be above, and the whole strip is
+            // hidden unless restingNow.
+            z: 6
 
             // ---- CENTRED ON THE CAPSULE, NOT ON THE SURFACE ----
             //
@@ -2814,7 +2832,31 @@ PanelWindow {
 
             WorkspaceChip {
                 id: workspaceChip
-                x: islandFlanks.pillLeft - islandFlanks.gap - width
+                // ---- INSIDE THE CAPSULE, NOT BESIDE IT ----
+                //
+                // Was `pillLeft - gap - width`, i.e. out on the wallpaper to
+                // the left of the pill. WorkspaceChip's own header explains
+                // why it started there: putting it in the capsule means the
+                // capsule has to grow, and ~20 islandState cases in
+                // baseTargetWidth do arithmetic against that width.
+                //
+                // Asked for anyway, and the objection is answered rather than
+                // ignored: only the RESTING width grows, through
+                // restingWorkspaceAllowance, exactly as musicPlaying already
+                // grows it for the EQ bars. Every other islandState case is
+                // untouched, because every other state replaces the resting
+                // content wholesale rather than adding to it.
+                //
+                // Hung off the capsule's own left edge with the same inner
+                // padding the clock uses, and centred on the capsule rather
+                // than on the layer surface — see restingCenterY.
+                // Above mainCapsule, which sits at z 5. The flanks are a
+                // sibling of the capsule and default to z 0, so the moment
+                // this moved from beside the pill to inside it the chip went
+                // BEHIND the pill and vanished — drawn, composited under an
+                // opaque rounded rectangle, and completely invisible.
+                z: 6
+                x: mainCapsule.x + Metrics.pad(10)
                 y: islandFlanks.restingCenterY - height / 2
                 workspaceId: islandContainer.currentWs
                 textFontFamily: root.textFontFamily
@@ -2827,7 +2869,7 @@ PanelWindow {
             WindowRingStrip {
                 id: leftRings
                 side: "left"
-                x: workspaceChip.x - islandFlanks.gap - width
+                x: islandFlanks.pillLeft - islandFlanks.gap - width
                 y: islandFlanks.restingCenterY - height / 2
                 windows: islandFlanks.openWindows
                 textFontFamily: root.textFontFamily
@@ -3026,7 +3068,8 @@ PanelWindow {
                     // takes 400: the shape arrives first and the content
                     // lands inside it.
                     return userConfig.islandWidth
-                        + (islandContainer.musicPlaying ? root.restingEqAllowance : 0);
+                        + (islandContainer.musicPlaying ? root.restingEqAllowance : 0)
+                        + root.restingWorkspaceAllowance;
                 }
             }
             readonly property real targetHeight: {
