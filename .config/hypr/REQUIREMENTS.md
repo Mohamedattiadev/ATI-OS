@@ -1420,22 +1420,56 @@ session. It fails visibly and explains itself, which is the right shape,
 but it is the one qtile capability that is simply absent.
 `sudo pacman -S wf-recorder`.
 
-**4. `phone_screen` (`$mod SHIFT F6`) opens a rofi window** and no
-document says so, while `binds.conf` states that `rofi_anki` and
-`rofi_ilovepdf` are "the only two". Decide it and correct the claim.
+**4. ~~`phone_screen` (`$mod SHIFT F6`) opens a rofi window~~ CLOSED —
+decided and the claim corrected.** It does open one, through
+`rofi -dmenu -i -format f` in `AtiScriptsV1/phone_screen`, and
+`binds.conf`'s note that the only rofi routes left were "the two wizards
+named in submaps.conf" was wrong by one. Three routes, not two; the note
+now says so, and the bind carries a pointer to it. It **stays** on rofi,
+under item 3's standing policy that rofi keeps the list-and-pick problems
+it already solves: an mDNS device list that appears, is picked from once
+and goes away is the purest example of that shape in the tree, and porting
+it into the island would cost the one property that makes it useful — it
+works with the island down, which is exactly when you are most likely to
+be attaching a phone to a laptop to find out what is wrong.
 
-**5. Two clocks, ~10 px apart, whenever music is playing.** Confirmed in
-code this session rather than only by report. `SwipeLyricsLayer.qml:384`
-draws its clock at `x: shiftedTimeX` — `timeX` minus `animatedGroupShift`,
-the offset that keeps the clock/workspace/EQ cluster optically centred.
-`SwipeCustomInfoLayer.qml:292` draws its clock at plain `x: timeX`, and
-that layer has no group-shift concept at all. Both are gated on
-`timeText !== "" && showSecondaryText`, so with music up both are visible
-and they differ by exactly `animatedGroupShift`. The fix is to give
-`SwipeCustomInfoLayer` the same trailing-allowance arithmetic, or to make
-one of the two the only clock — the second is probably right, since two
-layers each drawing the same clock is the real fault and the offset is
-only how it became visible.
+**5. Two clocks, ~10 px apart, whenever music is playing. NOT REPRODUCED,
+and the mechanism this item gave is wrong.** Left open, but re-scoped, so
+the next attempt does not start from the same false premise.
+
+What the item said is half true. `SwipeLyricsLayer.qml` does draw its
+clock at `x: shiftedTimeX` (`timeX` minus `animatedGroupShift`, the offset
+that keeps the clock/workspace/EQ cluster optically centred) and
+`SwipeCustomInfoLayer.qml` does draw its clock at plain `x: timeX` with no
+group-shift concept at all. The conclusion — "both are gated on
+`timeText !== "" && showSecondaryText`, so with music up both are visible"
+— does not follow, because the gate that decides it is not on either
+`Text`. It is `customSwipeVisible` / `lyricsSwipeVisible` in
+`DynamicIslandWindow.qml`, driving two separate `Loader`s, and those two
+conditions are complementary: one wants `swipeTransitionProgress < 0` and
+the other `>= 0`, one wants `splitOriginSide === "left"` and the other
+`"right"`, and in the one state that could satisfy both (`long_capsule`)
+`showSecondaryText` is false on whichever side the workspace came from.
+**`musicPlaying` appears in neither condition**, so music cannot be what
+mounts both.
+
+Measured, not argued:
+
+- At rest the island renders **one** clock. Framebuffer capture, with
+  `lyricsSwipeLoader` as the live one.
+- An instrumented build logging whenever both `Loader`s reported `active`
+  fired 5 times in 10 swipes, always at `state=normal`, `p ≈ +0.010` —
+  the instant the swipe crosses zero. That is a binding-evaluation
+  ordering artefact inside a single frame, not two painted clocks: the
+  render happens after bindings settle.
+
+What would settle it is a real MPRIS player, and this machine cannot
+provide one — `mpv` has no mpris script installed and nothing else
+registers on the bus. If the doubled clock is seen again, capture a
+**frame**, and suspect `animatedGroupShift` animating while the layer that
+owns it is being torn down. The `Text` gates are innocent. The reasoning
+is also written at the site, above `expandedLayerVisible`, so the next
+reader of the code meets it before the next reader of this file does.
 
 **6. `PanelLoader.retain` does not survive a config reload**, so the first
 open of each retained panel per session still pays one empty-model frame.
@@ -1459,12 +1493,16 @@ QML: `ShaderEffect` needs a build step this config does not have, and
 `Canvas` does not paint while invisible. A ~260-slice `Repeater` is the
 noted fallback.
 
-**10. Updates has no home anywhere.** qtile's `2nd_system_widgetbox` label
-was `Updates · Disk · Volume`; the sysmon panel covers Disk, the control
-centre covers Volume, and Updates never ported — qtile's own Updates-Mode
-is commented out in its `config.py`, so this is arguably closed by
-abandonment rather than open. Recorded so the label table stops looking
-two-thirds ported with no explanation.
+**10. ~~Updates has no home anywhere.~~ CLOSED — by abandonment, which is
+the honest disposition rather than a dodge.** qtile's
+`2nd_system_widgetbox` label was `Updates · Disk · Volume`; the sysmon
+panel covers Disk, the control centre covers Volume, and Updates never
+ported. The reason it never ported is that **there was nothing to port**:
+qtile's own Updates-Mode is commented out in its `config.py`, so the
+feature was already dead in the session being migrated from. Porting it
+would not be finishing the migration, it would be building something new
+and calling it parity. Recorded here so the label table stops reading as
+two-thirds ported with no explanation, and so nobody re-opens it as a gap.
 
 ### Superseded / abandoned, so they stop being counted as open
 

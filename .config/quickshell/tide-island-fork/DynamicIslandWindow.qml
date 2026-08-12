@@ -1399,6 +1399,40 @@ PanelWindow {
                     && (workspaceOriginSide === "right" || swipeTransitionProgress > 0))
             )
         )
+        // ---- THE "TWO CLOCKS" REPORT, AND WHAT IS ACTUALLY HERE ----
+        //
+        // REQUIREMENTS.md item 5 recorded "two clocks, ~10 px apart,
+        // whenever music is playing", reasoning that SwipeLyricsLayer draws
+        // its clock at `shiftedTimeX` and SwipeCustomInfoLayer at plain
+        // `timeX`, and that both are gated on
+        // `timeText !== "" && showSecondaryText`.
+        //
+        // Those two facts are true and the conclusion does not follow,
+        // because the gate that matters is HERE rather than on either Text:
+        // `customSwipeVisible` and `lyricsSwipeVisible` drive two separate
+        // Loaders, and they are complementary — one wants
+        // swipeTransitionProgress < 0 and the other >= 0, one wants
+        // splitOriginSide "left" and the other "right", and where
+        // long_capsule could satisfy both, showSecondaryText is false on
+        // whichever side the workspace came from. `musicPlaying` appears in
+        // neither condition, so music cannot mount both.
+        //
+        // Measured rather than argued: at rest the island renders ONE clock
+        // (framebuffer capture) and `lyricsSwipeLoader` is the live one. An
+        // instrumented build that logged whenever both Loaders reported
+        // `active` fired five times in ten swipes, always at
+        // state=normal, p≈+0.010, i.e. the instant the swipe crosses zero —
+        // and that is a binding-evaluation ordering artefact inside one
+        // frame, not two painted clocks; the render happens after bindings
+        // settle.
+        //
+        // So the item is NOT closed and NOT reproduced. What would settle
+        // it is a real MPRIS player, which this machine cannot provide
+        // (mpv has no mpris script installed and nothing else registers on
+        // the bus). If the doubled clock is ever seen again, the thing to
+        // capture is a frame, and the thing to suspect is
+        // `animatedGroupShift` animating while the layer that owns it is
+        // being torn down — not the Text gates, which are innocent.
         readonly property bool expandedLayerVisible: !root.overviewVisible && islandState === "expanded"
         readonly property bool bluetoothExpandedLayerVisible: !root.overviewVisible && islandState === "bluetooth_expanded"
         readonly property bool notificationLayerVisible: !root.overviewVisible && islandState === "notification"

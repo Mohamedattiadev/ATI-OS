@@ -320,7 +320,53 @@ for judging anything visual, because until the tokens are live and the
 duplicate notification is gone, every "does this look right" question has two
 answers.
 
-## Phase 1 — one colour system (P0-2)
+## Phase 1 — one colour system (P0-2) — **DONE**
+
+> **Closed.** `IslandTheme.qml` is a `pragma Singleton` publishing ~45
+> derived roles; all 291 hex literals and all 121 `StyleTokens` reads are
+> gone except **twelve**, and those twelve are exactly the four documented
+> exceptions, each now carrying its reason at the site rather than only in
+> this file. `StyleTokens` is not "demoted to a fallback" — it is gone
+> from the tree entirely, along with the `IslandBackend` import in the
+> eight files that only held it for that.
+>
+> **Four corrections to what this section assumed.**
+>
+> 1. **`StyleTokens`'s values CAN be extracted**, and P0-2's parenthetical
+>    says they cannot. `quickshell -p` on a four-line config that imports
+>    `IslandBackend` and logs each property prints all 55 exactly. The
+>    earlier attempt used a bare `qml6` harness, which produces no console
+>    output in this environment — the tool was the obstacle, not the
+>    binary. Every derived role therefore starts from the value it
+>    replaces instead of from taste. (The *structural* claim stands: all
+>    55 really are `isReadonly` **and** `isPropertyConstant`.)
+>
+> 2. **"Mirror every `StyleTokens` role that is actually used — 37" was
+>    the wrong instruction.** Mirroring 37 names would have carried the
+>    inventory across intact, which is the disease rather than the cure:
+>    eight of them were text greys with nothing anywhere saying what
+>    distinguished any two. They collapse onto **four** text roles, and
+>    each collapse is a decision recorded at its call site.
+>
+> 3. **Deriving is not enough on its own — legibility has to be
+>    computed.** `textPrimary = fg` is correct on 20 palettes and
+>    unreadable on `mono-light`, whose fill lands at #81818b (22%
+>    luminance) with a BLACK `fg`. Text is now solved by walking the
+>    palette colour toward whichever extreme the surface is not until WCAG
+>    contrast clears the target. Modelled across all 21 named palettes
+>    before any QML was written: 5.45:1 worst case.
+>
+> 4. **The verification step is not a formality, and it is where the real
+>    bugs were.** Cycling five palettes found four faults that had
+>    produced no log line of any kind:
+>    `mix()`/`alpha()` receiving strings and returning `Qt.rgba(NaN…)`,
+>    i.e. transparent black, which shipped **six roles invisible**;
+>    three roles named `onAccent` / `onInverseSurface` / `onOverviewPlate`
+>    whose bindings silently never ran because a QML property beginning
+>    with `on` collides with signal-handler syntax; a name plate that
+>    needed its ink solved against itself rather than against the panel;
+>    and two `Canvas` rings that never repainted on a theme change because
+>    a Canvas is not a binding. **Do not name a token `onAnything`.**
 
 The goal is a single token layer that every surface reads and `theme-apply`
 drives, with `StyleTokens` demoted to a fallback rather than a source.
