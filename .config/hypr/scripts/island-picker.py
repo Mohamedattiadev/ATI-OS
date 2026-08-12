@@ -478,6 +478,158 @@ def brightness_run(item_id):
             "-i", "display-brightness-medium-symbolic")
 
 
+# ------------------------------------------------------------- clipboard --
+#
+#  copyq_rofi, ported. The list comes from the same `copyq eval` walk over
+#  the &clipboard tab, with the same classifying glyphs (URL, path, shell
+#  command, multi-line) and the same de-duplication.
+#
+#  ---- THE ONE BEHAVIOUR THAT COULD NOT COME ACROSS ----
+#
+#  The original ends with:
+#
+#      copyq select($idx)  ;  xdotool key --clearmodifiers ctrl+v
+#
+#  xdotool is X11. It talks XTEST to an X server, and under Wayland there is
+#  no X server to talk to and no way for an ordinary client to synthesise a
+#  keystroke into another client. The Wayland equivalent is wtype, and wtype
+#  is specifically the wrong tool here: it creates and destroys a virtual
+#  keyboard, and doing that while a layer-shell panel holds the keyboard
+#  closes the panel — measured on this shell's own connectivity panel, and
+#  already recorded in submaps.conf for the pickers.
+#
+#  So this port stops at `select`, which is what actually puts the entry on
+#  the clipboard, and the paste is left to the user's own Ctrl+V. That is a
+#  real difference from the rofi version and not an oversight: one keystroke
+#  instead of zero, in exchange for the panel not fighting the compositor.
+#
+#  MAX is 40 rather than the original's 15. That default is a rofi
+#  constraint — an unfiltered list you scroll with arrow keys stops being
+#  useful somewhere around a screenful — and this panel has a live filter,
+#  so the ceiling can be the useful one instead of the legible one.
+
+CLIPBOARD_MAX = 40
+
+_CLIPBOARD_JS = r"""
+var TAB = "&clipboard";
+var MAX = %d;
+tab(TAB);
+var n = Math.min(count(), MAX);
+var seen = {};
+for (var i = 0; i < n; i++) {
+  var d = getitem(i);
+  var keys = Object.keys(d);
+  var isImg = false, pinned = false;
+  for (var j = 0; j < keys.length; j++) {
+    if (keys[j].indexOf("image/") == 0) isImg = true;
+    if (keys[j] == "application/x-copyq-item-pinned") pinned = true;
+  }
+  var label = "", dedupeKey = "", kind = "text";
+  if (isImg) {
+    label = "image"; dedupeKey = "img:" + i; kind = "image";
+  } else {
+    var raw = str(d["text/plain"] || "");
+    var t = raw.replace(/[\r\n\t]/g, " ").substring(0, 220);
+    if (!t.length) { label = "<empty>"; dedupeKey = "empty:" + i; }
+    else {
+      if (/^https?:\/\//.test(raw)) kind = "url";
+      else if (/^(\/|~\/|\.\/)/.test(raw)) kind = "path";
+      else if (/^\s*(git|sudo|cd|ls|npm|pnpm|yarn|cargo|python|node|pip|systemctl|docker|make|curl|wget|ssh|rsync)\s/.test(raw)) kind = "command";
+      else if (raw.indexOf("\n") >= 0) kind = "multiline";
+      label = t; dedupeKey = "txt:" + raw;
+    }
+  }
+  if (seen[dedupeKey]) continue;
+  seen[dedupeKey] = true;
+  print(i + "\t" + (pinned ? "P" : "-") + "\t" + kind + "\t" + label + "\n");
+}
+""" % CLIPBOARD_MAX
+
+# The classifier's output, spelled for a panel instead of for a Pango
+# markup row. The original prefixed a Nerd Font glyph; a word in the detail
+# column survives a missing font, which a private-use codepoint does not.
+_CLIPBOARD_KINDS = {
+    "url": "link",
+    "path": "path",
+    "command": "shell command",
+    "multiline": "multi-line",
+    "image": "image",
+    "text": "",
+}
+
+
+def _clipboard_label(text):
+    """A row label that is safe to draw.
+
+    copyq items are not tidily typed: several entries here carry PNG bytes
+    in `text/plain` while exposing no `image/*` key at all, so the upstream
+    `isImg` test misses them and the raw file signature lands in the label.
+    Rendered, that is a row of replacement glyphs and stray control
+    characters wide enough to push the panel around.
+
+    Control characters are stripped rather than escaped, and a row that is
+    mostly unprintable after that is reported as what it is instead of being
+    shown as damaged text.
+    """
+    if text.startswith("\x89PNG") or text.startswith("\xff\xd8\xff"):
+        return "binary data"
+    cleaned = "".join(ch for ch in text if ch.isprintable() or ch == " ")
+    stripped = cleaned.strip()
+    if not stripped:
+        return "<empty>"
+    # More than a fifth of the characters lost to the filter means this was
+    # never text; a normal string loses none.
+    if len(cleaned) < len(text) * 0.8:
+        return "binary data"
+    return stripped
+
+
+def clipboard_list():
+    if not shutil.which("copyq"):
+        return {"title": "Clipboard", "items": []}
+    try:
+        out = subprocess.run(["copyq", "eval", "-"], input=_CLIPBOARD_JS,
+                             capture_output=True, text=True, timeout=8)
+    except (OSError, subprocess.SubprocessError):
+        return {"title": "Clipboard", "items": []}
+
+    items = []
+    for line in out.stdout.splitlines():
+        parts = line.split("\t", 3)
+        if len(parts) < 4:
+            continue
+        index, pin, kind, label = parts
+        if not index.strip().isdigit():
+            continue
+        detail = _CLIPBOARD_KINDS.get(kind, "")
+        if pin == "P":
+            detail = ("pinned  ·  " + detail) if detail else "pinned"
+        safe = _clipboard_label(label)
+        # Overrides the classifier rather than filling a gap in it. The JS
+        # calls PNG bytes "multi-line" because they contain newlines, which
+        # is true and useless; once the label has been recognised as binary
+        # the kind it was given is simply wrong.
+        if safe == "binary data":
+            detail = "binary"
+        items.append({
+            "id": index.strip(),
+            "label": safe,
+            "detail": detail,
+        })
+    return {"title": "Clipboard", "items": items}
+
+
+def clipboard_run(item_id):
+    if not shutil.which("copyq"):
+        return
+    # select() both raises the entry to the top of the tab and puts it on the
+    # clipboard, which is the whole of what this needs to do. See the header
+    # for why the xdotool paste that followed it upstream is not here.
+    subprocess.run(["copyq", "eval", "-"],
+                   input='tab("&clipboard"); select(%s);' % int(item_id),
+                   capture_output=True, text=True, timeout=6)
+
+
 MENUS = {
     "windows": (windows_list, windows_run),
     "processes": (processes_list, processes_run),
@@ -489,6 +641,7 @@ MENUS = {
     "man": (man_list, man_run),
     "notes": (notes_list, notes_run),
     "brightness": (brightness_list, brightness_run),
+    "clipboard": (clipboard_list, clipboard_run),
 }
 
 
