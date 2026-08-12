@@ -15,6 +15,10 @@ Item {
     property string iconFontFamily: ""
     property string textFontFamily: ""
     property string heroFontFamily: textFontFamily
+    // FORK: IslandTheme.shellFill, passed down from DynamicIslandWindow. The
+    // default is the old hardcoded near-black, so a bare instantiation still
+    // renders rather than resolving to transparent.
+    property color panelFill: "#101014"
     property real presentationProgress: 1
 
     readonly property bool isWifi: panelKind === "wifi"
@@ -337,11 +341,31 @@ Item {
         }
     }
 
+    // ---- THE PANEL IS MADE OF THE SAME MATERIAL AS THE ISLAND ----
+    //
+    // Was StyleTokens.module at 0.9 opacity — a FIXED near-black from the
+    // packaged tokens, which follows nothing. Reported as: every popup looks
+    // the same colour as the terminal behind it, and it should be the
+    // island's colour instead. That is exactly right, and it is the same
+    // class of bug as the toggles that were a hardcoded iOS green: an
+    // element that ignores the palette while everything around it follows
+    // it.
+    //
+    // panelFill is IslandTheme.shellFill, the capsule's own material —
+    // the theme background darkened 45% toward black with 8% of the accent
+    // mixed in, so the panel is recognisably a piece of the island rather
+    // than a grey box that happens to be near it, and it re-tints with
+    // every theme-apply like the notch does.
+    //
+    // Opacity 0.9 -> 0.97. At 0.9 over a dark terminal the wallpaper and the
+    // text behind bled through enough to muddy the tint that is the whole
+    // point of the change; 0.97 is what RingOsdWindow already uses for the
+    // same material over the same wallpaper.
     Rectangle {
         anchors.fill: parent
         radius: Metrics.px(28)
-        color: StyleTokens.module
-        opacity: 0.9
+        color: root.panelFill
+        opacity: 0.97
     }
 
     Item {
@@ -367,11 +391,16 @@ Item {
         // a window title, which is the whole difference between their panels
         // and a 15 px bold "Wi-Fi".
         //
-        // The kanji is behind a real check, not a hope: this repo has been
-        // caught before by a font family name that silently resolved to
-        // something else. `fc-list :charset=6ce2` confirms Noto Sans CJK
-        // covers 波, and the family is named explicitly — inheriting the
-        // shell's Inter would render tofu or fall back invisibly.
+        // THE KANJI IS GONE, and everything else about the register stays.
+        // There was a 波 ("wave") here for Wi-Fi and a 藍 ("indigo") for
+        // Bluetooth. Removed on request — the ask was about the wallpaper
+        // picker's 壁, but removing it there and keeping these would leave
+        // the shell speaking two languages depending on which popup you
+        // opened, which is worse than either choice on its own. It is also
+        // the one part of ukishima's identity that is theirs rather than a
+        // technique worth adapting; the fork's own rule is adapt, never
+        // transplant. The letterspaced uppercase label is the part of that
+        // header doing the work, and it stays.
         Row {
             id: headerRow
             anchors.left: parent.left
@@ -379,18 +408,6 @@ Item {
             anchors.top: parent.top
             height: Metrics.px(24)
             spacing: Metrics.px(8)
-
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                // 波 "wave" for Wi-Fi, 藍 "indigo" for Bluetooth — the tooth
-                // is Harald Bluetooth's and does not translate, so the colour
-                // the name comes from does the work instead.
-                text: root.isWifi ? "波" : "藍"
-                color: StyleTokens.textPrimary
-                font.family: "Noto Sans CJK JP"
-                font.pixelSize: Metrics.font(16)
-                font.weight: Font.Medium
-            }
 
             Text {
                 anchors.verticalCenter: parent.verticalCenter

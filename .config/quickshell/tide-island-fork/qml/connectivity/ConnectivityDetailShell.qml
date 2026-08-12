@@ -27,6 +27,10 @@ Item {
     property string iconFontFamily: ""
     property string textFontFamily: ""
     property string heroFontFamily: ""
+    // FORK: the island's own material, passed straight through to the panel.
+    // Default matches the old hardcoded fill so this file still renders
+    // sanely if it is ever instantiated without a theme.
+    property color panelFill: "#101014"
 
     property real revealProgress: 0
 
@@ -103,6 +107,7 @@ Item {
                     iconFontFamily: shell.iconFontFamily
                     textFontFamily: shell.textFontFamily
                     heroFontFamily: shell.heroFontFamily
+                    panelFill: shell.panelFill
                     presentationProgress: shell.revealProgress
                     // FORK: keyboard navigation. Gated on `open` and not on
                     // `mounted` — the panel stays mounted through its

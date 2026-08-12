@@ -646,11 +646,15 @@ FocusScope {
         anchors.bottomMargin: root.botPad
         spacing: root.headerGap
 
-        // ── Header, in ukishima's register ─────────────────────────────────
-        //  Kanji, then the surface name in letterspaced uppercase, then a
-        //  "· n" clause. 壁 is "wall". Named explicitly as Noto Sans CJK
-        //  because the shell's Inter has no kanji and would fall back
-        //  silently — `fc-list :charset=58c1` confirms the coverage.
+        // ── Header, in ukishima's register, minus the kanji ────────────────
+        //  The surface name in letterspaced uppercase, then a "· n" clause.
+        //
+        //  There WAS a 壁 ("wall") glyph in front of the label, carried over
+        //  from ukishima, where every surface header opens with a kanji.
+        //  Removed on request — it is the one piece of their identity that
+        //  is theirs rather than a technique worth adapting, and this shell
+        //  reads in one language. The letterspaced uppercase label is the
+        //  part of that header doing the actual work, and it stays.
         Item {
             width: parent.width
             height: root.headerH
@@ -659,15 +663,6 @@ FocusScope {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Metrics.px(8)
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "壁"
-                    color: Qt.rgba(1, 1, 1, 0.88)
-                    font.family: "Noto Sans CJK JP"
-                    font.pixelSize: Metrics.font(14)
-                    font.weight: Font.Medium
-                }
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter

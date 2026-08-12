@@ -208,22 +208,42 @@ PanelWindow {
     // same three states the rest of this file already tests for (see
     // canShowSideSwipe and the sideSwipe guards) — normal, lyrics, custom.
     //
-    // Why resting must stay on Top: a resting notch on Overlay would sit on
-    // top of fullscreen video permanently, which is the opposite complaint.
-    // Only transient content earns the promotion, and all of it is
-    // transient by construction — every non-resting state returns to a
-    // resting one.
-    //
     // The polkit prompt kept its own note because the reasoning is stronger
     // there than convenience: whatever asked for the password is usually a
     // window that just took the focus, and a prompt underneath a fullscreen
     // surface means the request appears to hang. It is covered by the
     // general rule now, and would have been covered by it anyway.
+    //
+    // ---- AND THEN RESTING WAS PROMOTED TO Overlay AS WELL ----
+    //
+    // The rule above USED to end `? WlrLayer.Top : WlrLayer.Overlay`, with
+    // this reason: "a resting notch on Overlay would sit on top of
+    // fullscreen video permanently, which is the opposite complaint."
+    // That reason was sound and it is now overruled deliberately, because
+    // the cost of the other side turned out to be larger than it looked.
+    //
+    // Reported as "I cannot take a screenshot of the island". It is not a
+    // screenshot bug — grim captures layer surfaces faithfully, and the
+    // whole grim -> wl-copy -> copyq chain was measured clean this session
+    // (identical mean and size at every stage). The island simply WAS NOT
+    // ON SCREEN. Reproduced directly: with one fullscreen window up, a
+    // capture of the top strip contains no island at all, only the window's
+    // own content, because a fullscreen window draws above Top and below
+    // Overlay.
+    //
+    // So resting on Top does not merely lose screenshots. It means the
+    // clock, the workspace chip and the window icons are all silently gone
+    // for as long as anything is fullscreen — the shell disappears exactly
+    // when you have the least other chrome to orient by. Weighed against a
+    // notch over fullscreen video, the user chose visibility.
+    //
+    // The property is kept even though both branches now agree: it is read
+    // elsewhere in this file, and it still names a real distinction.
     readonly property bool islandRestingSurface:
         islandContainer.islandState === "normal"
         || islandContainer.islandState === "lyrics"
         || islandContainer.islandState === "custom"
-    WlrLayershell.layer: root.islandRestingSurface ? WlrLayer.Top : WlrLayer.Overlay
+    WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: {
         // Exclusive, not OnDemand: the theme picker is arrow-key driven,
         // and without an exclusive grab the arrows go to whatever window
@@ -4372,6 +4392,7 @@ PanelWindow {
             iconFontFamily: root.iconFontFamily
             textFontFamily: root.textFontFamily
             heroFontFamily: root.heroFontFamily
+            panelFill: islandTheme.shellFill
         }
 
         ConnectivityDetailShell {
@@ -4394,6 +4415,7 @@ PanelWindow {
             iconFontFamily: root.iconFontFamily
             textFontFamily: root.textFontFamily
             heroFontFamily: root.heroFontFamily
+            panelFill: islandTheme.shellFill
         }
     }
 
