@@ -1,5 +1,4 @@
 import QtQuick
-import IslandBackend
 
 // FORK: one shared scale factor for every island surface.
 import "../common/Metrics.js" as Metrics

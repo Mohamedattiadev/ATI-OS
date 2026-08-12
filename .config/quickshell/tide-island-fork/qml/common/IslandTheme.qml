@@ -166,15 +166,35 @@ Singleton {
     //  Colour maths
     // ---------------------------------------------------------------
 
+    // Coerce whatever was passed into a real colour before reading .r/.g/.b
+    // off it. This is not defensive tidying, it is a bug fix: a STRING
+    // reaches these functions whenever a caller writes `mix(surface,
+    // "#000000", 0.55)`, and `"#000000".r` is `undefined`, so every channel
+    // becomes NaN and `Qt.rgba(NaN, NaN, NaN, NaN)` is TRANSPARENT BLACK.
+    // No error, no warning — the surface simply is not painted.
+    //
+    // Six roles shipped broken that way and the palette-cycling probe is
+    // what found them: surfaceSunken, inputFill (which reads it),
+    // surfaceScrim, accentPressed, overviewCard and both overview overlays
+    // all resolved to #00000000 on every one of the five themes tested.
+    // `Qt.darker(x, 1.0)` is the coercion because it takes a string or a
+    // colour and returns the same colour either way.
+    function toColor(v) {
+        return Qt.darker(v, 1.0);
+    }
+
     function mix(a, b, t) {
-        return Qt.rgba(a.r + (b.r - a.r) * t,
-                       a.g + (b.g - a.g) * t,
-                       a.b + (b.b - a.b) * t,
-                       a.a + (b.a - a.a) * t);
+        const ca = root.toColor(a);
+        const cb = root.toColor(b);
+        return Qt.rgba(ca.r + (cb.r - ca.r) * t,
+                       ca.g + (cb.g - ca.g) * t,
+                       ca.b + (cb.b - ca.b) * t,
+                       ca.a + (cb.a - ca.a) * t);
     }
 
     function alpha(c, a) {
-        return Qt.rgba(c.r, c.g, c.b, a);
+        const cc = root.toColor(c);
+        return Qt.rgba(cc.r, cc.g, cc.b, a);
     }
 
     // WCAG relative luminance. The gamma expansion is not decoration: a
@@ -326,7 +346,7 @@ Singleton {
     readonly property color inverseSurface: root.textPrimary
     readonly property color inverseSurfaceHover: root.mix(root.textPrimary, root.ink, 0.35)
     readonly property color inverseSurfacePressed: root.mix(root.textPrimary, root.surface, 0.12)
-    readonly property color onInverseSurface: root.surface
+    readonly property color inverseSurfaceInk: root.surface
 
     // The search / text field. Its own roles rather than reuse of
     // surfaceSunken, and that is a FINDING rather than a preference:
@@ -375,7 +395,19 @@ Singleton {
     // accent is #fabd2f and matrix's is #00ff9f, and white text on either
     // is unreadable while black is fine — the opposite of every dark theme
     // in the list.
-    readonly property color onAccent: root.luminance(root.accent) > 0.18 ? "#000000" : "#ffffff"
+    // NAMED `accentInk` AND NOT `onAccent`, WHICH IS THE OBVIOUS NAME AND
+    // IS A TRAP. In QML a property whose name begins with `on` collides
+    // with the signal-handler syntax: `readonly property color onAccent:
+    // <expr>` parses, loads, produces no error of any kind — and the
+    // binding never runs, so the property sits at a `color`'s default,
+    // which is opaque BLACK. Three roles were written that way here
+    // (`onAccent`, `onInverseSurface`, `onOverviewPlate`) and all three
+    // resolved to #000000 on all five themes the probe cycled, including
+    // the ones where the correct answer is white. Black glyphs on a navy
+    // accent, and nothing in the log.
+    //
+    // Do not name a token `onAnything`.
+    readonly property color accentInk: root.luminance(root.accent) > 0.18 ? "#000000" : "#ffffff"
 
     // ---------------------------------------------------------------
     //  Accent and selection
@@ -450,6 +482,26 @@ Singleton {
     readonly property color overviewOverlay: root.alpha(root.mix(root.surface, "#000000", 0.6), 0.26)
     readonly property color overviewOverlayHover: root.alpha(root.mix(root.surface, "#000000", 0.4), 0.16)
     readonly property color overviewActiveBorder: root.accent
+
+    // The window-name plate in the overview, and the one place in the shell
+    // where the token layer cannot simply follow the surface.
+    //
+    // That label sits on a LIVE PREVIEW of the user's own window, so there
+    // is no background to solve against — it is whatever is on screen, and
+    // it changes while they look at it. No text colour survives both a
+    // white page and a black terminal, which is why the plate exists at
+    // all. The plate is therefore forced dark on EVERY theme (55% toward
+    // black) rather than taking the surface as-is, and its ink is solved
+    // against the plate rather than against the panel.
+    //
+    // Doing it the ordinary way would have broken exactly one theme, in
+    // exactly the silent manner this file exists to prevent: on mono-light
+    // the surface is #81818b, so `surface` at 0.88 is a mid grey plate and
+    // `textPrimary` is BLACK — black on grey over a photograph.
+    readonly property color plateBase: root.mix(root.surface, "#000000", 0.55)
+    readonly property color overviewPlate: root.alpha(root.plateBase, 0.88)
+    readonly property color overviewPlateBorder: root.alpha("#ffffff", 0.14)
+    readonly property color overviewPlateInk: root._toContrast(root.foreground, root.plateBase, "#ffffff", 4.5)
 
     // ---------------------------------------------------------------
     //  Radii and durations — mirrored, not derived

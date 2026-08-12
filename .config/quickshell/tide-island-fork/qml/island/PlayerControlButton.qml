@@ -3,6 +3,7 @@ import IslandBackend
 
 // FORK: one shared scale factor for every island surface.
 import "../common/Metrics.js" as Metrics
+import "../common"
 
 Item {
     id: root
@@ -36,7 +37,7 @@ Item {
     Text {
         anchors.centerIn: parent
         text: root.iconText
-        color: controlArea.pressed ? "#888888" : "#ffffff"
+        color: controlArea.pressed ? IslandTheme.textMuted : IslandTheme.textPrimary
         // The transport glyphs are the one place where scaling by the shared
         // factor was not enough. Upstream sized them at iconFontSize + 7/+5
         // against an 18px icon font — 25 and 23 px in a 28px box, a ratio of

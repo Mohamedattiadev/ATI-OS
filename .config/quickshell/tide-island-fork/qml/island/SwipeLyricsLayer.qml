@@ -7,6 +7,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 Item {
     id: root
@@ -49,7 +50,7 @@ Item {
     // for the workspace popup because showSecondaryText already does.
     property int workspaceId: 1
     property bool workspaceShown: false
-    property color accentColor: "#51afef"
+    property color accentColor: IslandTheme.accent
 
     property real minimumWidth: Metrics.px(220)
     property real maximumWidth: minimumWidth
@@ -295,7 +296,7 @@ Item {
             width: root.coverSize
             height: root.coverSize
             radius: root.coverRadius
-            color: "#2c2c2e"
+            color: IslandTheme.surfaceRaised
             antialiasing: true
 
             Rectangle {

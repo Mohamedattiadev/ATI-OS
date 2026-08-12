@@ -53,8 +53,8 @@ PanelWindow {
     // three. -1 = no raw value supplied, fall back to progress.
     property real rawPercent: -1
     property string iconFontFamily: ""
-    property color accentColor: "#e0563b"
-    property color shellFill: "#1a1a1a"
+    property color accentColor: IslandTheme.accent
+    property color shellFill: IslandTheme.surface
     property bool shown: false
 
     // Full-screen surface, anchored on all four sides, with the ring placed
@@ -175,7 +175,7 @@ PanelWindow {
                 Text {
                     anchors.centerIn: parent
                     text: root.iconText
-                    color: "#f2f4f7"
+                    color: IslandTheme.textPrimary
                     // 40% of the ring, matching OsdLayer's 62%-of-a-smaller
                     // ring: this ring is bigger, so the same glyph ratio
                     // would crowd the stroke.
@@ -198,7 +198,7 @@ PanelWindow {
                 // above 100% the arc is pinned full and has stopped being
                 // able to say anything at all. This is the only place the
                 // difference can show.
-                color: root.rawPercent > 100.5 ? root.accentColor : "#a8aeb8"
+                color: root.rawPercent > 100.5 ? root.accentColor : IslandTheme.textSecondary
                 font.pixelSize: Metrics.font(11)
                 font.family: root.iconFontFamily
                 font.weight: Font.DemiBold

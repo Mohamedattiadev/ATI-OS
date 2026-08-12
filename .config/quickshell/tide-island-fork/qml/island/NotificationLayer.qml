@@ -6,6 +6,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 Item {
     id: root
@@ -142,7 +143,7 @@ Item {
             width: iconSlotWidth
             anchors.verticalCenter: parent.verticalCenter
             text: iconText
-            color: "#f4f5f7"
+            color: IslandTheme.textPrimary
             font.pixelSize: userConfig.iconFontSize
             font.family: iconFontFamily
             horizontalAlignment: Text.AlignHCenter

@@ -3,13 +3,13 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import IslandBackend
 
 // FORK: the shared scale factor — see qml/common/Metrics.js.
 import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 //
 // FORK — new file. The theme switcher DESIGN-SPEC.md lists as one of the
@@ -24,11 +24,20 @@ import "../common/Motion.js" as Motion
 // theme-apply offers and runs theme-apply. Anything smarter here would be a
 // second opinion about the same state.
 //
-// The colour of the shell shape stays #000000 regardless of what is picked
-// in here. That is the spec's one hard rule about theming and it is worth
-// restating at the site that would otherwise be tempted to break it: the
-// notch is imitating bezel, "tint it and it stops being a notch and becomes
-// a colored blob". Theme the contents, never the shape.
+// This file used to state the spec's one hard rule about theming — "the
+// colour of the shell shape stays #000000 regardless of what is picked in
+// here… theme the contents, never the shape" — and that has been REVERSED
+// by the user, deliberately, and is recorded as reversed in
+// REQUIREMENTS.md item 1, upgread_UI_UX.md Part 3 and
+// qml/common/IslandTheme.qml. Picking a theme in here now repaints the
+// notch too.
+//
+// The spec's actual concern is still answered, just not by its rule: the
+// fill is the palette's background slot dragged 45% toward black with 8%
+// accent mixed in, which reads as tinted bezel rather than as the
+// "coloured blob" the spec warns about. The measurement is in
+// IslandTheme.qml. This note is here so nobody reads the spec alone and
+// "fixes" the shape back to black.
 //
 FocusScope {
     id: root
@@ -276,7 +285,7 @@ FocusScope {
         y: Metrics.pad(12)
         height: root.headerHeight - Metrics.pad(12)
         text: root.errorText !== "" ? root.errorText : "Theme"
-        color: root.errorText !== "" ? "#ff6b6b" : "white"
+        color: root.errorText !== "" ? IslandTheme.danger : IslandTheme.textPrimary
         font.pixelSize: Metrics.font(15)
         font.family: root.heroFontFamily
         font.weight: Font.DemiBold
@@ -289,7 +298,7 @@ FocusScope {
         y: Metrics.pad(12)
         height: root.headerHeight - Metrics.pad(12)
         text: root.pendingTheme !== "" ? "applying " + root.pendingTheme + "…" : root.currentTheme
-        color: "#8a8a8a"
+        color: IslandTheme.textMuted
         font.pixelSize: Metrics.font(13)
         font.family: root.textFontFamily
     }
@@ -348,6 +357,16 @@ FocusScope {
                 radius: Metrics.px(10)
                 // The swatch IS the tile background, so the list previews
                 // itself: every tile is painted in the palette it applies.
+                //
+                // ONE OF THE FOUR DELIBERATE EXCEPTIONS TO THE TOKEN LAYER,
+                // and the one whose reason is easiest to state: bound to
+                // IslandTheme this picker would be twenty-two identical
+                // swatches in the theme you already have. The chrome around
+                // them — the header, the hint footer, the status line — does
+                // follow the palette, and does so a few lines above and
+                // below. Only the tiles and their borders opt out, because a
+                // fixed white-alpha edge is the only edge that reads on all
+                // twenty-two backgrounds at once.
                 color: tile.modelData.bg || "#1a1a1a"
                 border.width: tile.isActive ? 2 : (tile.isSelected ? 1 : 0)
                 border.color: tile.isActive
@@ -407,7 +426,7 @@ FocusScope {
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: Metrics.px(9)
                     text: "from wallpaper"
-                    color: "#8a8a8a"
+                    color: IslandTheme.textMuted
                     font.pixelSize: Metrics.font(9)
                     font.family: root.textFontFamily
                 }

@@ -98,7 +98,7 @@ PanelWindow {
         when: hyprlandIntegrationLoader.item !== null
     }
 
-    color: StyleTokens.transparent
+    color: "transparent"
     anchors { top: true; left: true; right: true }
     mask: Region {
         // Input is the union of the island's visible surfaces plus a compact top
@@ -477,10 +477,10 @@ PanelWindow {
         : 44
     readonly property color overviewCapsuleColor: islandContainer.overviewView
         ? islandContainer.overviewView.cardColor
-        : StyleTokens.overviewCard
+        : IslandTheme.overviewCard
     readonly property color overviewCapsuleBorderColor: islandContainer.overviewView
         ? islandContainer.overviewView.cardBorderColor
-        : StyleTokens.overviewBorder
+        : IslandTheme.overviewBorder
     // FORK: the open/mounted pair per panel, the two cleanup timers and the
     // detail width/height/gap constants are all gone with the detail shells.
     // Every one of them was the machinery of mounting a surface that was not
@@ -3014,7 +3014,7 @@ PanelWindow {
             property real outlineWidth: root.overviewContentVisible || notificationHistorySurface ? 1 : 0
             property color outlineColor: root.overviewContentVisible
                 ? root.overviewCapsuleBorderColor
-                : (notificationHistorySurface ? "#1affffff" : StyleTokens.clearBlack)
+                : (notificationHistorySurface ? IslandTheme.hairline : "transparent")
             property real displayedWidth: baseTargetWidth
             readonly property real baseTargetWidth: {
                 if (root.overviewVisible) return root.overviewCapsuleWidth;
@@ -3585,9 +3585,9 @@ PanelWindow {
                 anchors.fill: parent
                 anchors.margins: 1
                 radius: Math.max(parent.radius - 1, 0)
-                color: StyleTokens.transparent
+                color: "transparent"
                 border.width: 1
-                border.color: StyleTokens.overviewInnerBorder
+                border.color: IslandTheme.overviewInnerBorder
                 opacity: root.overviewContentVisible ? 1 : 0
 
                 Behavior on opacity {
@@ -4759,7 +4759,7 @@ PanelWindow {
                 anchors.fill: parent
                 anchors.margins: 2
                 radius: width / 2
-                color: StyleTokens.black
+                color: IslandTheme.surface
             }
 
             Canvas {
@@ -4772,6 +4772,15 @@ PanelWindow {
                 onVisibleChanged: requestPaint()
                 onWidthChanged: requestPaint()
                 onHeightChanged: requestPaint()
+
+                // A Canvas is not a binding. Its colours are now read from
+                // IslandTheme inside onPaint, and onPaint runs when someone
+                // asks it to — so without this the ring keeps the previous
+                // palette until the timer next ticks, which for a paused or
+                // finished timer is never. The property is a plain trigger;
+                // its value is irrelevant.
+                readonly property color repaintOnThemeChange: IslandTheme.accent
+                onRepaintOnThemeChangeChanged: requestPaint()
 
                 onPaint: {
                     const ctx = getContext("2d");
@@ -4790,7 +4799,7 @@ PanelWindow {
                     ctx.lineWidth = lineWidth;
 
                     ctx.beginPath();
-                    ctx.strokeStyle = "#303036";
+                    ctx.strokeStyle = IslandTheme.trackEmpty;
                     ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
                     ctx.stroke();
 
@@ -4798,19 +4807,19 @@ PanelWindow {
                         if (flash > 0) {
                             ctx.beginPath();
                             ctx.lineWidth = lineWidth + 1.5;
-                            ctx.strokeStyle = "rgba(255, 204, 0, " + (0.18 * flash) + ")";
+                            ctx.strokeStyle = Qt.rgba(IslandTheme.accent.r, IslandTheme.accent.g, IslandTheme.accent.b, 0.18 * flash);
                             ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
                             ctx.stroke();
                         }
 
                         ctx.beginPath();
                         ctx.lineWidth = lineWidth;
-                        ctx.strokeStyle = "rgba(255, 204, 0, " + (0.72 + 0.28 * flash) + ")";
+                        ctx.strokeStyle = Qt.rgba(IslandTheme.accent.r, IslandTheme.accent.g, IslandTheme.accent.b, 0.72 + 0.28 * flash);
                         ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
                         ctx.stroke();
                     } else if (progress > 0) {
                         ctx.beginPath();
-                        ctx.strokeStyle = "#ffcc00";
+                        ctx.strokeStyle = IslandTheme.accent;
                         ctx.arc(centerX, centerY, radius, startAngle, endAngle, true);
                         ctx.stroke();
                     }

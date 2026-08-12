@@ -9,6 +9,7 @@ import Quickshell.Widgets
 // one critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
 import "../common/Metrics.js" as Metrics
+import "../common"
 
 Item {
     id: root
@@ -266,7 +267,7 @@ Item {
         bottomLeftRadius: root.bottomLeftRadius
         bottomRightRadius: root.bottomRightRadius
         border.width: 1
-        border.color: root.hovered ? "#77ffffff" : "#33ffffff"
+        border.color: root.hovered ? IslandTheme.hairlineStrong : IslandTheme.overviewBorder
 
         ScreencopyView {
             anchors.fill: parent
@@ -278,10 +279,10 @@ Item {
         Rectangle {
             anchors.fill: parent
             color: root.draggingActive
-                ? "#14ffffff"
+                ? IslandTheme.alpha(IslandTheme.ink, 0.08)
                 : (root.pressed
-                    ? "#26000000"
-                    : (root.hovered ? "#10ffffff" : "transparent"))
+                    ? IslandTheme.alpha(IslandTheme.inverseSurfaceInk, 0.15)
+                    : (root.hovered ? IslandTheme.alpha(IslandTheme.ink, 0.06) : "transparent"))
         }
 
         Image {
@@ -349,9 +350,9 @@ Item {
         // terminal. An opaque-ish plate is the only fix that is not a bet on
         // the wallpaper.
         //
-        // Contrast, computed rather than eyeballed, worst case first. Plate is
-        // StyleTokens.module (#1c1c1e) at 0.88 alpha; text is
-        // StyleTokens.textPrimary (#f5f5f7, relative luminance 0.913).
+        // Contrast, computed rather than eyeballed. The original arithmetic,
+        // against the compiled StyleTokens.module (#1c1c1e) at 0.88 alpha
+        // with StyleTokens.textPrimary (#f5f5f7):
         //
         //   over pure WHITE: composite = 0.88*0.1098 + 0.12*1.0 = 0.2166
         //                    -> luminance 0.0384 -> contrast 10.9:1
@@ -364,10 +365,20 @@ Item {
         // at 0.88 the preview ghosts through just enough to read as part of
         // the same surface, and the arithmetic above says it costs nothing.
         //
-        // Colour comes from StyleTokens with an explicit alpha rather than a
-        // literal rgba: a hardcoded hex that ignores theme_mode has been a
-        // repeat complaint in this shell, and Qt.rgba(0,0,0,0.88) would be
-        // exactly that wearing a different syntax.
+        // ---- AND WHY IT IS NOT SIMPLY IslandTheme.surface NOW ----
+        //
+        // Both colours moved to IslandTheme, but NOT to the ordinary surface
+        // and text roles, because this is the one surface in the shell whose
+        // background is not the shell. `IslandTheme.overviewPlate` forces the
+        // plate dark on every palette (55% toward black) and
+        // `overviewPlateInk` solves its ink against the PLATE rather than
+        // against the panel — which is what keeps the arithmetic above true
+        // for all 22 themes instead of only for the one it was measured on.
+        //
+        // Taking `surface` and `textPrimary` here would have broken exactly
+        // one theme and broken it silently: on mono-light the surface is
+        // #81818b, so the plate would be a mid grey and textPrimary would be
+        // BLACK — black on grey, over a photograph.
         Rectangle {
             id: namePlate
 
@@ -387,11 +398,9 @@ Item {
             width: Math.min(nameLabel.implicitWidth + hPad * 2, maxWidth)
             height: Metrics.px(19)
             radius: height / 2
-            color: Qt.rgba(StyleTokens.module.r, StyleTokens.module.g,
-                           StyleTokens.module.b, 0.88)
+            color: IslandTheme.overviewPlate
             border.width: 1
-            border.color: Qt.rgba(StyleTokens.white.r, StyleTokens.white.g,
-                                  StyleTokens.white.b, 0.14)
+            border.color: IslandTheme.overviewPlateBorder
 
             Text {
                 id: nameLabel
@@ -399,7 +408,7 @@ Item {
                 anchors.centerIn: parent
                 width: Math.min(implicitWidth, namePlate.maxWidth - namePlate.hPad * 2)
                 text: root.displayName
-                color: StyleTokens.textPrimary
+                color: IslandTheme.overviewPlateInk
                 font.family: root.labelFontFamily
                 font.pixelSize: Metrics.font(11)
                 font.weight: Font.DemiBold

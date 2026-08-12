@@ -1758,7 +1758,7 @@ Item {
                         y: (parent.height - height) / 2
                         x: crow.on ? parent.width - width - Metrics.px(3)
                                    : Metrics.px(3)
-                        color: IslandTheme.onAccent
+                        color: IslandTheme.accentInk
 
                         Behavior on x {
                             NumberAnimation {
@@ -1960,7 +1960,7 @@ Item {
                                     Text {
                                         anchors.centerIn: parent
                                         text: controlCenter.batteryModeGlyphs[index]
-                                        color: index === controlCenter.batteryModeIndex ? IslandTheme.onInverseSurface : IslandTheme.textSecondary
+                                        color: index === controlCenter.batteryModeIndex ? IslandTheme.inverseSurfaceInk : IslandTheme.textSecondary
                                         font.pixelSize: index === controlCenter.batteryModeIndex ? Metrics.font(15) : Metrics.font(13)
                                         font.family: iconFontFamily
                                     }
@@ -2274,7 +2274,7 @@ Item {
                             anchors.centerIn: parent
                             anchors.verticalCenterOffset: 1
                             text: controlCenter.nightLightGlyph
-                            color: IslandTheme.alpha(IslandTheme.onInverseSurface, 0.27)
+                            color: IslandTheme.alpha(IslandTheme.inverseSurfaceInk, 0.27)
                             font.pixelSize: Metrics.font(29)
                             font.family: iconFontFamily
                             scale: nightLightButtonMouse.pressed ? 0.94 : 1.0
@@ -2328,7 +2328,7 @@ Item {
                 gradient: Gradient {
                     GradientStop {
                         position: 0
-                        color: IslandTheme.alpha(IslandTheme.onInverseSurface, 0.60)
+                        color: IslandTheme.alpha(IslandTheme.inverseSurfaceInk, 0.60)
                     }
                     GradientStop {
                         position: 1

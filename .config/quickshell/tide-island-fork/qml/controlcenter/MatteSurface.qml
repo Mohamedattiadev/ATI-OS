@@ -1,5 +1,4 @@
 import QtQuick
-import IslandBackend
 import "../common"
 
 Item {

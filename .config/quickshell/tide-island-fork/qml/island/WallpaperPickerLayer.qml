@@ -11,6 +11,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 FocusScope {
     id: root
@@ -790,7 +791,7 @@ FocusScope {
                             width: root.cardW
                             height: root.cardH
                             radius: Metrics.px(14)
-                            color: "#1a1a1a"
+                            color: IslandTheme.surfaceSunken
                             antialiasing: false
 
                             // ---- THE NEIGHBOURS DESATURATE ----
@@ -832,7 +833,7 @@ FocusScope {
 
                                 Rectangle {
                                     anchors.fill: parent
-                                    color: "#282828"
+                                    color: IslandTheme.surfaceRaised
                                     opacity: parent.status === Image.Ready ? 0 : 1
                                     Behavior on opacity {
                                         NumberAnimation {
@@ -852,7 +853,7 @@ FocusScope {
                             radius: Metrics.px(14)
                             color: "transparent"
                             border.width: (model.filePath === root.effectiveActiveWallpaper) ? 2.5 : 0
-                            border.color: "#60a5fa"
+                            border.color: IslandTheme.accent
                             Behavior on border.width {
                                 NumberAnimation {
                                     duration: 150

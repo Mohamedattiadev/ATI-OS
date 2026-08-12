@@ -3,13 +3,13 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import IslandBackend
 
 // FORK: the shared scale factor — see qml/common/Metrics.js.
 import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 //
 // FORK — new file. The port of qtile's popups/WifiQR.py, which was `s` inside
@@ -165,7 +165,7 @@ FocusScope {
         horizontalAlignment: Text.AlignRight
         elide: Text.ElideRight
         text: root.ssid !== "" ? root.ssid : "—"
-        color: root.failed ? "#ff6b6b" : "#9ad18a"
+        color: root.failed ? IslandTheme.danger : IslandTheme.success
         font.pixelSize: Metrics.font(12)
         font.family: root.textFontFamily
         font.weight: Font.DemiBold
@@ -174,6 +174,15 @@ FocusScope {
     // The white card. It is not decoration: the quiet zone is part of the QR
     // spec, and a dark desktop bleeding up to the modules costs a decoder the
     // margin it uses to find the symbol in the first place.
+    //
+    // ONE OF THE FOUR DELIBERATE EXCEPTIONS TO THE TOKEN LAYER. Every other
+    // colour in this file now reads IslandTheme; this one must not. A themed
+    // card is a QR code that phones refuse — the standard wants dark modules
+    // on a light field with a four-module quiet zone, and "light field" means
+    // white, not gruvbox #282828. The one place where following the palette
+    // would stop the feature working rather than just look wrong.
+    //
+    // The other three are listed in qml/common/IslandTheme.qml.
     Rectangle {
         id: card
         visible: root.imagePath !== "" && !root.failed
@@ -211,7 +220,7 @@ FocusScope {
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.WordWrap
         text: root.statusText
-        color: root.failed ? "#ff6b6b" : "#8a8a8a"
+        color: root.failed ? IslandTheme.danger : IslandTheme.textMuted
         font.pixelSize: Metrics.font(12)
         font.family: root.textFontFamily
     }
@@ -226,14 +235,14 @@ FocusScope {
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.password !== "" ? root.password : "(open network)"
-            color: "#d0d0d0"
+            color: IslandTheme.textPrimary
             font.pixelSize: Metrics.font(12)
             font.family: root.textFontFamily
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "scan with a phone  ·  q or Esc to close"
-            color: "#6a6a6a"
+            color: IslandTheme.textDisabled
             font.pixelSize: Metrics.font(10)
             font.family: root.textFontFamily
         }

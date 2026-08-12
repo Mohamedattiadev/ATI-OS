@@ -61,7 +61,7 @@ Item {
     property real revealProgress: 1
     property bool showCondition: true
     property string textFontFamily: ""
-    property color accentColor: "#51afef"
+    property color accentColor: IslandTheme.accent
 
     // ---- THE DROP PLAYS ONCE, NOT ON EVERY REBUILD ----
     //
@@ -84,7 +84,7 @@ Item {
     // FORK: the disc behind each icon. IslandTheme.shellFill, passed down, so
     // the plate re-tints with theme-apply like the capsule does instead of
     // being a hardcoded black that follows nothing.
-    property color plateColor: "#000000"
+    property color plateColor: IslandTheme.surface
 
     readonly property int parity: side === "left" ? 0 : 1
 

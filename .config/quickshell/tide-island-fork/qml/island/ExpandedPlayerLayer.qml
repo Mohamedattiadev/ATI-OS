@@ -849,6 +849,13 @@ Item {
                     width: Metrics.px(104)
                     height: Metrics.px(104)
 
+                    // A Canvas is not a binding: its colours are read inside
+                    // onPaint, and onPaint only runs when asked. Without this
+                    // the ring keeps the previous palette until the timer
+                    // next advances — which for a paused timer is never.
+                    readonly property color repaintOnThemeChange: IslandTheme.accent
+                    onRepaintOnThemeChangeChanged: requestPaint()
+
                     onPaint: {
                         const ctx = getContext("2d");
                         const centerX = width / 2;
@@ -1046,7 +1053,7 @@ Item {
                     property bool sanitizing: false
                     color: IslandTheme.textPrimary
                     selectionColor: IslandTheme.accent
-                    selectedTextColor: IslandTheme.onAccent
+                    selectedTextColor: IslandTheme.accentInk
                     font.pixelSize: UserConfig.bodyFontSize + Metrics.px(2)
                     font.family: inputRoot.textFontFamily
                     font.weight: Font.DemiBold
@@ -1131,7 +1138,7 @@ Item {
         Text {
             anchors.centerIn: parent
             text: buttonRoot.label
-            color: buttonRoot.accent ? IslandTheme.onAccent : IslandTheme.textPrimary
+            color: buttonRoot.accent ? IslandTheme.accentInk : IslandTheme.textPrimary
             font.pixelSize: UserConfig.bodyFontSize - Metrics.px(2)
             font.family: buttonRoot.textFontFamily
             font.weight: Font.DemiBold

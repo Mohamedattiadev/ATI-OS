@@ -107,8 +107,8 @@ FocusScope {
     // smaller radius shows as four pale corner wedges. The fill stays so the
     // panel is instantiable on its own and so the colour it WOULD use is
     // written down rather than assumed.
-    property color panelFill: "#101014"
-    property color accentColor: StyleTokens.accent
+    property color panelFill: IslandTheme.surface
+    property color accentColor: IslandTheme.accent
     property bool drawBackground: false
 
     // --- live readings -----------------------------------------------------
@@ -273,14 +273,22 @@ FocusScope {
     // only. Everything animated in this file is a value, so everything in it
     // uses fade().
     function ringColorFor(percent) {
-        // Tokens, not literals — StyleTokens.warning and .danger are theme
-        // colours the rest of the shell already uses for exactly this
-        // meaning, and a fixed red here would be the hardcode this panel's
-        // header note promises to avoid.
+        // Tokens, not literals — and the claim this comment used to make is
+        // now true. It said StyleTokens.warning and .danger "are theme
+        // colours"; they are not, they are C++ constants compiled into
+        // libIslandBackendplugin.so, so the ring was as hardcoded as the
+        // literal it was congratulating itself for avoiding. IslandTheme's
+        // are the palette's own yellow and red, made legible against the
+        // surface.
+        //
+        // Not one of the battery exceptions, despite the same shape: a load
+        // ring is a MEASUREMENT that happens to be coloured, whereas the
+        // battery bar is read by its colour alone. The ring always shows
+        // its number.
         if (percent >= 90)
-            return StyleTokens.danger;
+            return IslandTheme.danger;
         if (percent >= 75)
-            return StyleTokens.warning;
+            return IslandTheme.warning;
         return root.accentColor;
     }
 
@@ -581,7 +589,7 @@ FocusScope {
         x: root.horizontalPadding
         y: Metrics.pad(12)
         text: "SYSTEM"
-        color: StyleTokens.textMuted
+        color: IslandTheme.textMuted
         font.family: root.textFontFamily
         font.pixelSize: Metrics.font(10)
         font.weight: Font.DemiBold
@@ -598,7 +606,7 @@ FocusScope {
         // all, only a primed counter. The clause says which of those two the
         // dials are showing, and takes the accent only in the second.
         text: root.sampling ? "· sampling" : "· priming"
-        color: root.sampling ? root.accentColor : StyleTokens.textTertiary
+        color: root.sampling ? root.accentColor : IslandTheme.textMuted
         font.family: root.textFontFamily
         font.pixelSize: Metrics.font(10)
         font.weight: Font.Medium
@@ -617,7 +625,7 @@ FocusScope {
         horizontalAlignment: Text.AlignRight
         elide: Text.ElideRight
         text: root.uptimeSeconds > 0 ? root.formatUptime(root.uptimeSeconds) : ""
-        color: StyleTokens.textTertiary
+        color: IslandTheme.textMuted
         font.family: root.textFontFamily
         font.pixelSize: Metrics.font(11)
     }
@@ -684,7 +692,7 @@ FocusScope {
                 Text {
                     id: percentText
                     text: String(dial.percent)
-                    color: StyleTokens.textPrimary
+                    color: IslandTheme.textPrimary
                     font.family: root.heroFontFamily
                     font.pixelSize: Metrics.font(19)
                     font.weight: Font.DemiBold
@@ -697,7 +705,7 @@ FocusScope {
                 Text {
                     anchors.baseline: percentText.baseline
                     text: "%"
-                    color: StyleTokens.textTertiary
+                    color: IslandTheme.textMuted
                     font.family: root.textFontFamily
                     font.pixelSize: Metrics.font(10)
                     font.weight: Font.DemiBold
@@ -711,7 +719,7 @@ FocusScope {
             anchors.top: ring.bottom
             anchors.topMargin: Metrics.pad(8)
             text: dial.label
-            color: StyleTokens.textMuted
+            color: IslandTheme.textMuted
             font.family: root.textFontFamily
             font.pixelSize: Metrics.font(10)
             font.weight: Font.DemiBold
@@ -725,7 +733,7 @@ FocusScope {
             anchors.top: dialLabel.bottom
             anchors.topMargin: Metrics.pad(4)
             text: dial.detail
-            color: StyleTokens.textSecondary
+            color: IslandTheme.textSecondary
             font.family: root.textFontFamily
             font.pixelSize: Metrics.font(11)
             font.features: ({ "tnum": 1 })
@@ -742,7 +750,7 @@ FocusScope {
             // hairline and the whole disk section up and down under it.
             visible: dial.subDetail !== ""
             text: dial.subDetail
-            color: StyleTokens.textTertiary
+            color: IslandTheme.textMuted
             font.family: root.textFontFamily
             font.pixelSize: Metrics.font(10)
             font.features: ({ "tnum": 1 })
@@ -812,11 +820,18 @@ FocusScope {
         y: dialRow.y + dialRow.height + Metrics.pad(14)
         width: root.width - root.horizontalPadding * 2
         height: 1
-        // NOT StyleTokens.hairline — that property does not exist, and an
-        // unknown property on a QML singleton is not an error: it resolves to
-        // `undefined`, which a `color` silently accepts as transparent. The
-        // separator would simply not be there, with nothing in the log.
-        color: Qt.rgba(1, 1, 1, 0.08)
+        // This was an explicit Qt.rgba(1, 1, 1, 0.08), carrying a note that
+        // StyleTokens.hairline does not exist and that an unknown property
+        // on a QML singleton is not an error — it resolves to `undefined`,
+        // which a `color` silently accepts as transparent, so the separator
+        // would have been absent with nothing in the log to say so.
+        //
+        // The trap is real and still worth knowing; it no longer applies.
+        // IslandTheme.hairline exists, and being a token it also inverts on
+        // a light palette, which a literal white at 0.08 cannot. 0.13 rather
+        // than 0.08 because one hairline for the shell is the point, and
+        // this was the fainter of the two values that were in use.
+        color: IslandTheme.hairline
     }
 
     // --- the disk section --------------------------------------------------
@@ -839,7 +854,7 @@ FocusScope {
                 height: root.diskRowHeight
                 radius: Metrics.px(7)
                 // The same selection wash as every other list in this shell.
-                color: diskRow.index === root.selectedIndex ? "#22ffffff" : "transparent"
+                color: diskRow.index === root.selectedIndex ? IslandTheme.selectionFill : "transparent"
 
                 Text {
                     id: mountText
@@ -850,8 +865,8 @@ FocusScope {
                     elide: Text.ElideMiddle
                     text: diskRow.modelData.mount
                     color: diskRow.index === root.selectedIndex
-                        ? StyleTokens.textPrimary
-                        : StyleTokens.textSecondary
+                        ? IslandTheme.textPrimary
+                        : IslandTheme.textSecondary
                     font.family: root.textFontFamily
                     font.pixelSize: Metrics.font(11)
                 }
@@ -915,7 +930,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     elide: Text.ElideRight
                     text: root.formatKb(diskRow.modelData.availKb) + " free"
-                    color: StyleTokens.textTertiary
+                    color: IslandTheme.textMuted
                     font.family: root.textFontFamily
                     font.pixelSize: Metrics.font(11)
                     font.features: ({ "tnum": 1 })
@@ -931,7 +946,7 @@ FocusScope {
         anchors.bottomMargin: Metrics.pad(10)
         width: root.width - root.horizontalPadding * 2
         elide: Text.ElideRight
-        color: StyleTokens.textTertiary
+        color: IslandTheme.textMuted
         font.family: root.textFontFamily
         font.pixelSize: Metrics.font(10)
         text: "j/k filesystem · g/G first-last · r refresh · q close"

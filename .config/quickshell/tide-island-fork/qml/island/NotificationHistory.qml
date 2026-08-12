@@ -8,6 +8,7 @@ import "../controlcenter"
 import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 Item {
     id: root
@@ -62,8 +63,8 @@ Item {
                     preferredRendererType: Shape.CurveRenderer
 
                     ShapePath {
-                        fillColor: StyleTokens.transparent
-                        strokeColor: "#c5c5c8"
+                        fillColor: "transparent"
+                        strokeColor: IslandTheme.textSecondary
                         strokeWidth: 1.8
                         capStyle: ShapePath.RoundCap
                         joinStyle: ShapePath.RoundJoin
@@ -74,8 +75,8 @@ Item {
                     }
 
                     ShapePath {
-                        fillColor: StyleTokens.transparent
-                        strokeColor: "#c5c5c8"
+                        fillColor: "transparent"
+                        strokeColor: IslandTheme.textSecondary
                         strokeWidth: 1.8
                         capStyle: ShapePath.RoundCap
                         joinStyle: ShapePath.RoundJoin
@@ -91,7 +92,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Notification History"
                 textFormat: Text.PlainText
-                color: "#f7f7f7"
+                color: IslandTheme.textPrimary
                 font.pixelSize: Metrics.font(15)
                 font.family: root.textFontFamily
                 font.weight: Font.Bold
@@ -115,7 +116,7 @@ Item {
             anchors.centerIn: parent
             text: "No notifications"
             textFormat: Text.PlainText
-            color: "#6f6f74"
+            color: IslandTheme.textDisabled
             font.pixelSize: Metrics.font(10)
             font.family: root.textFontFamily
             font.weight: Font.Medium
@@ -169,11 +170,11 @@ Item {
 
                 contentItem: Rectangle {
                     radius: Metrics.px(1.5)
-                    color: "#5b5b60"
+                    color: IslandTheme.textDisabled
                 }
 
                 background: Rectangle {
-                    color: StyleTokens.transparent
+                    color: "transparent"
                 }
             }
 
@@ -213,7 +214,7 @@ Item {
                         height: Metrics.px(18)
                         text: delegateItem.titleText
                         textFormat: Text.PlainText
-                        color: "#f7f7f7"
+                        color: IslandTheme.textPrimary
                         font.pixelSize: Metrics.font(15)
                         font.family: root.textFontFamily
                         font.weight: Font.Bold
@@ -227,7 +228,7 @@ Item {
                         height: Metrics.px(16)
                         text: delegateItem.bodyText
                         textFormat: Text.PlainText
-                        color: "#c8c8cc"
+                        color: IslandTheme.textSecondary
                         font.pixelSize: Metrics.font(13)
                         font.family: root.textFontFamily
                         verticalAlignment: Text.AlignVCenter

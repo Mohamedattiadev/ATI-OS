@@ -6,6 +6,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 Item {
     id: root
@@ -161,7 +162,7 @@ Item {
                             if (charging)
                                 return "white";
                             if (level <= 20)
-                                return "#ff3b30";
+                                return IslandTheme.danger;
                             return "white";
                         }
                         readonly property color emptyColor: Qt.rgba(1, 1, 1, 0.56)
@@ -222,7 +223,7 @@ Item {
 
                                 Text {
                                     text: root.chargingIconGlyph
-                                    color: "#242424"
+                                    color: IslandTheme.surfaceRaised
                                     font.pixelSize: root.batteryBoltSize
                                     font.family: root.iconFontFamily
                                     verticalAlignment: Text.AlignVCenter

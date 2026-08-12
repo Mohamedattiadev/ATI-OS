@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Shapes
-import IslandBackend
 import "../island"
 
 // FORK: one shared scale factor for every island surface.
@@ -8,6 +7,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one generated spring for geometry,
 // one critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 Item {
     id: notificationCenter
@@ -127,8 +127,8 @@ Item {
                 }
 
                 ShapePath {
-                    fillColor: StyleTokens.transparent
-                    strokeColor: StyleTokens.textDim
+                    fillColor: "transparent"
+                    strokeColor: IslandTheme.textSecondary
                     strokeWidth: 1.8
                     capStyle: ShapePath.RoundCap
                     joinStyle: ShapePath.RoundJoin
@@ -170,8 +170,8 @@ Item {
                     preferredRendererType: Shape.CurveRenderer
 
                     ShapePath {
-                        fillColor: StyleTokens.transparent
-                        strokeColor: StyleTokens.textDim
+                        fillColor: "transparent"
+                        strokeColor: IslandTheme.textSecondary
                         strokeWidth: 1.8
                         capStyle: ShapePath.RoundCap
                         joinStyle: ShapePath.RoundJoin

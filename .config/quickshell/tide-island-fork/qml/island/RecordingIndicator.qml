@@ -2,6 +2,7 @@ import QtQuick
 // FORK: the shared motion system — one generated spring for geometry,
 // one critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 Item {
     id: root
@@ -9,7 +10,7 @@ Item {
     property bool active: false
     property real contentOpacity: 1
     property int dotSize: 4
-    property color dotColor: "#ff453a"
+    property color dotColor: IslandTheme.danger
 
     implicitWidth: dotSize
     implicitHeight: dotSize

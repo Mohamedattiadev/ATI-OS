@@ -7,6 +7,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 //
 // FORK — new file. The chord/submap heads-up display.
@@ -265,7 +266,7 @@ Item {
         // one's own entry combination toggles it. Escape is the one that is
         // true of all of them, so it is the one worth the pixels.
         text: "Esc"
-        color: "#8a8f98"
+        color: IslandTheme.textSecondary
         font.family: root.textFontFamily
         font.pixelSize: Metrics.font(11)
     }
@@ -298,13 +299,13 @@ Item {
                     width: Math.max(Metrics.px(24), label.implicitWidth + Metrics.pad(12))
                     height: Metrics.px(19)
                     radius: Metrics.px(6)
-                    color: "#2c3038"
+                    color: IslandTheme.surfaceRaisedActive
 
                     Text {
                         id: label
                         anchors.centerIn: parent
                         text: cell.modelData.key
-                        color: "#f2f4f7"
+                        color: IslandTheme.textPrimary
                         font.family: root.textFontFamily
                         font.pixelSize: Metrics.font(11)
                         font.weight: Font.Medium
@@ -317,7 +318,7 @@ Item {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: cell.modelData.action
-                    color: "#c6ccd6"
+                    color: IslandTheme.textSecondary
                     font.family: root.textFontFamily
                     font.pixelSize: Metrics.font(11)
                     elide: Text.ElideRight

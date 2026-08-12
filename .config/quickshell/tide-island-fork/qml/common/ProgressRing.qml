@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import "../common/Metrics.js" as Metrics
+import "../common"
 
 //
 // FORK — new file. The island's ring, extracted so more than one thing can
@@ -50,14 +51,14 @@ Item {
     // with it every parent up to shell.qml. Moving the value out of the
     // paint call and into a property is exactly what changed its type.
     property color trackColor: Qt.rgba(1, 1, 1, 0.16)
-    property color fillColor: "#ffffff"
+    property color fillColor: IslandTheme.textPrimary
 
     // The dark disc behind the arc. OsdLayer's ring has one; a ring drawn
     // over an already-dark panel does not need it, so it can be switched
     // off rather than being painted in a colour that hopes to match.
     property bool showCore: true
-    property color coreColor: "#111111"
-    property color coreBorderColor: "#1f1f1f"
+    property color coreColor: IslandTheme.surface
+    property color coreBorderColor: IslandTheme.hairlineStrong
 
     default property alias centerContent: centerSlot.data
 

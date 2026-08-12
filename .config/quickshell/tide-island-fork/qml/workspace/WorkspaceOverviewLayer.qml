@@ -50,12 +50,12 @@ Item {
     readonly property real outerPadding: 14
     readonly property real largeWorkspaceRadius: 30
     readonly property real smallWorkspaceRadius: 16
-    readonly property color activeBorderColor: StyleTokens.workspaceActiveBorder
-    readonly property color cardColor: StyleTokens.overviewCard
-    readonly property color cardBorderColor: StyleTokens.overviewBorder
-    readonly property color workspaceColor: StyleTokens.workspaceCell
-    readonly property color workspaceHoverColor: "#ff25272c"
-    readonly property color workspaceBorderHoverColor: "#3dd9f6ff"
+    readonly property color activeBorderColor: IslandTheme.overviewActiveBorder
+    readonly property color cardColor: IslandTheme.overviewCard
+    readonly property color cardBorderColor: IslandTheme.overviewBorder
+    readonly property color workspaceColor: IslandTheme.overviewCell
+    readonly property color workspaceHoverColor: IslandTheme.overviewCellHover
+    readonly property color workspaceBorderHoverColor: IslandTheme.overviewCellBorderHover
     readonly property real workspaceImplicitWidth: {
         const res = monitorData && monitorData.reserved ? monitorData.reserved : [0,0,0,0]
         const sw = monitor ? monitor.width : (screen ? screen.width : 1920)
@@ -305,8 +305,8 @@ Item {
 
         Rectangle {
             anchors.fill: parent; anchors.margins: 1
-            radius: parent.radius-1; color: StyleTokens.transparent
-            border.width: 1; border.color: StyleTokens.overviewInnerBorder
+            radius: parent.radius-1; color: "transparent"
+            border.width: 1; border.color: IslandTheme.overviewInnerBorder
         }
 
         Item {
@@ -349,12 +349,12 @@ Item {
                                 bottomLeftRadius: atLeft&&atBottom ? root.largeWorkspaceRadius : root.smallWorkspaceRadius
                                 bottomRightRadius: atRight&&atBottom ? root.largeWorkspaceRadius : root.smallWorkspaceRadius
                                 border.width: 1
-                                border.color: hoveredDrag ? root.workspaceBorderHoverColor : StyleTokens.workspaceCellBorder
+                                border.color: hoveredDrag ? root.workspaceBorderHoverColor : IslandTheme.overviewCellBorder
                                 clip: true
 
                                 ClippingRectangle {
                                     anchors.fill: parent; anchors.margins: 1
-                                    color: StyleTokens.transparent; antialiasing: true
+                                    color: "transparent"; antialiasing: true
                                     contentUnderBorder: true
                                     topLeftRadius: Math.max(wsCell.topLeftRadius-1,0)
                                     topRightRadius: Math.max(wsCell.topRightRadius-1,0)
@@ -371,7 +371,7 @@ Item {
                                     }
                                     Rectangle {
                                         anchors.fill: parent
-                                        color: hoveredDrag ? "#360d131a" : StyleTokens.workspaceOverlay
+                                        color: hoveredDrag ? IslandTheme.overviewOverlayHover : IslandTheme.overviewOverlay
                                     }
 
                                     Item {
@@ -638,7 +638,7 @@ Item {
                     x: (root.workspaceImplicitWidth+root.workspaceSpacing)*ci
                     y: (root.workspaceImplicitHeight+root.workspaceSpacing)*ri
                     width: root.workspaceImplicitWidth; height: root.workspaceImplicitHeight
-                    color: StyleTokens.transparent
+                    color: "transparent"
                     border.width: 2; border.color: root.activeBorderColor
                     topLeftRadius: ci===0&&ri===0?root.largeWorkspaceRadius:root.smallWorkspaceRadius
                     topRightRadius: ci===root.columns-1&&ri===0?root.largeWorkspaceRadius:root.smallWorkspaceRadius

@@ -3,7 +3,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import IslandBackend
 // FORK: the shared ring lives in qml/common — see ProgressRing.qml.
 import "../common"
 // FORK: the shared motion system — one spring for geometry, one

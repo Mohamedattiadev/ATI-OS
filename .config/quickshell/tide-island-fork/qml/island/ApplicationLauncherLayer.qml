@@ -538,7 +538,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     color: IslandTheme.textPrimary
                     selectionColor: IslandTheme.accent
-                    selectedTextColor: IslandTheme.onAccent
+                    selectedTextColor: IslandTheme.accentInk
                     font.family: root.textFontFamily
                     font.pixelSize: Metrics.font(15)
                     clip: true
