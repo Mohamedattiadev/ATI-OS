@@ -7,6 +7,9 @@ import IslandBackend
 
 // FORK: the shared scale factor — see qml/common/Metrics.js.
 import "../common/Metrics.js" as Metrics
+// FORK: the shared motion system — one spring for geometry, one
+// critically damped curve for opacity. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 //
 // FORK — new file. The port of qtile's popups/AudioPopup.py (25 bindings),
@@ -96,16 +99,62 @@ FocusScope {
     readonly property real horizontalPadding: Metrics.pad(18)
     readonly property real headerHeight: Metrics.pad(34)
     readonly property real rowHeight: Metrics.px(26)
+    // Ceiling on the self-sizing below. Six is the same number the
+    // display panel uses and is about where a list stops being
+    // scannable at a glance anyway.
+    readonly property int rowsVisible: 6
+
+    // ---- WHY THE PANEL SIZES ITSELF ----
+    //
+    // Identical reasoning to DisplayPanel, and the screenshot was worse:
+    // a flat Metrics.px(360) gave an 870x310 surface holding ONE output row
+    // and a seven-line details column, both ending 160 px from the top,
+    // with the key hints pinned to the bottom edge. Roughly 55% of the panel
+    // was empty black. The fixed height was chosen against the comment above
+    // targetHeight — "outputs + microphones + every playing stream is
+    // routinely six or eight rows" — which is true of the WORST tab on a
+    // busy machine and true of no tab most of the time.
+    //
+    // The panel is still allowed to reach that size; it just has to earn it
+    // a row at a time.
+    readonly property real rowSpacing: 2
+    readonly property real hintHeight: Metrics.pad(26)
+    readonly property real listBodyHeight:
+        Math.max(0, root.currentItems.length) * (root.rowHeight + root.rowSpacing) - root.rowSpacing
+    // Off the Column, not off a row count: this panel's details block is
+    // between three and eight rows depending on the tab and the selection,
+    // so any fixed count would be wrong on most of them.
+    readonly property real detailsBodyHeight: detailsColumn.height
+    readonly property real bodyHeight: Math.max(
+        4 * (root.rowHeight + root.rowSpacing),
+        Math.min(root.rowsVisible * (root.rowHeight + root.rowSpacing), root.listBodyHeight),
+        root.detailsBodyHeight)
+    readonly property real preferredHeight:
+        root.headerHeight + Metrics.pad(4) + root.bodyHeight
+            + Metrics.pad(8) + root.hintHeight
 
     focus: showCondition
     activeFocusOnTab: true
     anchors.fill: parent
     opacity: showCondition ? 1 : 0
 
+    // FORK: one choreography for every layer in the shell.
+    // Was `root.showCondition ? 220 : 120` on Easing.InOutQuad — one of
+    // eight hand-picked in-durations and six out-durations that agreed
+    // with neither each other nor the 400 ms the shape takes. See
+    // Motion.js, "CONTENT CHOREOGRAPHY", for the measurement.
     Behavior on opacity {
-        NumberAnimation {
-            duration: root.showCondition ? 220 : 120
-            easing.type: Easing.InOutQuad
+        SequentialAnimation {
+            // The delay is what keeps the content from being painted
+            // inside a capsule that is still the wrong size for it.
+            PauseAnimation { duration: root.showCondition ? Motion.contentDelay() : 0 }
+            NumberAnimation {
+                duration: root.showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+                // Critically damped: opacity is clamped 0-1 and an
+                // overshooting fade reads as a cut. Motion.js says why.
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()
+            }
         }
     }
 
@@ -441,11 +490,14 @@ FocusScope {
     }
 
     // --- navigation --------------------------------------------------------
+    // Wraps — see the same note in display/DisplayPanel.qml. These lists are
+    // short, and a cursor that stops dead at the last row reads as a dead
+    // key. g / G still go to the ends.
     function move(step) {
         const count = root.currentItems.length;
         if (count === 0)
             return;
-        root.setCursor(Math.max(0, Math.min(count - 1, root.selectedIndex + step)));
+        root.setCursor(((root.selectedIndex + step) % count + count) % count);
     }
 
     function jump(where) {
@@ -921,7 +973,9 @@ FocusScope {
         x: root.horizontalPadding
         y: root.headerHeight + Metrics.pad(4)
         width: parent.width * 0.56 - root.horizontalPadding
-        height: parent.height - root.headerHeight - Metrics.pad(30)
+        // Same numbers preferredHeight is built from, so the list and the
+        // shape around it cannot disagree.
+        height: root.bodyHeight
         clip: true
         model: root.currentItems
         currentIndex: root.selectedIndex
@@ -1084,6 +1138,7 @@ FocusScope {
     // is plugged into a port — and those are exactly the fields with no cue
     // anywhere else on the system.
     Column {
+        id: detailsColumn
         x: parent.width * 0.58
         y: root.headerHeight + Metrics.pad(6)
         width: parent.width * 0.42 - root.horizontalPadding

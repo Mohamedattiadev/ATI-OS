@@ -7,6 +7,9 @@ import IslandBackend
 
 // FORK: the shared scale factor — see qml/common/Metrics.js.
 import "../common/Metrics.js" as Metrics
+// FORK: the shared motion system — one spring for geometry, one
+// critically damped curve for opacity. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 //
 // FORK — new file. The theme switcher DESIGN-SPEC.md lists as one of the
@@ -56,15 +59,54 @@ FocusScope {
     readonly property real horizontalPadding: Metrics.pad(18)
     readonly property real headerHeight: Metrics.pad(34)
 
+    // ---- WHY THE PICKER SIZES ITSELF ----
+    //
+    // MEASURED: 22 themes in 4 columns is 6 rows at cellHeight
+    // Metrics.px(62) = 57, so the grid wants 342 px. The capsule gave it
+    // Metrics.px(290) = 267, of which the header takes 31 and the bottom
+    // gap 18 — 218 px, or 3.8 rows. **Six of the 22 themes were below the
+    // fold on every open**, and a GridView with `clip: true` says nothing
+    // about that; the 19th tile simply is not there.
+    //
+    // A picker whose entire job is "show me what I can pick" hiding a
+    // quarter of the options is the worst version of the "does not look
+    // like the video" complaint, and it is not a styling problem — no
+    // amount of padding fixes a missing row.
+    //
+    // The grid is not bound by the bar height (Metrics.js says why in its
+    // second section): it hangs below the notch as a free-floating
+    // surface, and the only thing constraining it is the screen. 6 rows
+    // comes to 397 px on a 768 px panel. The clamp against the screen in
+    // DynamicIslandWindow is what makes a 40-theme library scroll instead
+    // of running off the bottom.
+    readonly property int rowCount: Math.max(1, Math.ceil(root.themes.length / root.columns))
+    readonly property real gridHeight: root.rowCount * root.cellHeight
+    readonly property real cellHeight: Metrics.px(62)
+    readonly property real preferredHeight:
+        root.headerHeight + Metrics.pad(6) + root.gridHeight + Metrics.pad(18)
+
     focus: showCondition
     activeFocusOnTab: true
     anchors.fill: parent
     opacity: showCondition ? 1 : 0
 
+    // FORK: one choreography for every layer in the shell.
+    // Was `root.showCondition ? 220 : 120` on Easing.InOutQuad — one of
+    // eight hand-picked in-durations and six out-durations that agreed
+    // with neither each other nor the 400 ms the shape takes. See
+    // Motion.js, "CONTENT CHOREOGRAPHY", for the measurement.
     Behavior on opacity {
-        NumberAnimation {
-            duration: root.showCondition ? 220 : 120
-            easing.type: Easing.InOutQuad
+        SequentialAnimation {
+            // The delay is what keeps the content from being painted
+            // inside a capsule that is still the wrong size for it.
+            PauseAnimation { duration: root.showCondition ? Motion.contentDelay() : 0 }
+            NumberAnimation {
+                duration: root.showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+                // Critically damped: opacity is clamped 0-1 and an
+                // overshooting fade reads as a cut. Motion.js says why.
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()
+            }
         }
     }
 
@@ -114,6 +156,13 @@ FocusScope {
         let next = root.selectedIndex + delta;
         if (next < 0) next = 0;
         if (next > root.themes.length - 1) next = root.themes.length - 1;
+        root.setSelection(next);
+    }
+
+    function setSelection(index) {
+        if (root.themes.length === 0)
+            return;
+        const next = Math.max(0, Math.min(root.themes.length - 1, index));
         root.selectedIndex = next;
         themeGrid.positionViewAtIndex(next, GridView.Contain);
     }
@@ -177,20 +226,36 @@ FocusScope {
             root.closeRequested();
             event.accepted = true;
             break;
+        // hjkl beside the arrows. This is a grid, so h/l step one tile and
+        // j/k step one ROW — `root.columns` tiles — which is what the arrow
+        // keys already did and what the hand expects from a grid. Every
+        // other panel in this shell reads vim motions; the theme picker was
+        // the one that did not, and there is no reason for it to be the
+        // exception.
         case Qt.Key_Left:
+        case Qt.Key_H:
             root.moveSelection(-1);
             event.accepted = true;
             break;
         case Qt.Key_Right:
+        case Qt.Key_L:
             root.moveSelection(1);
             event.accepted = true;
             break;
         case Qt.Key_Up:
+        case Qt.Key_K:
             root.moveSelection(-root.columns);
             event.accepted = true;
             break;
         case Qt.Key_Down:
+        case Qt.Key_J:
             root.moveSelection(root.columns);
+            event.accepted = true;
+            break;
+        // g / G to the ends, same as the audio and display panels.
+        case Qt.Key_G:
+            root.setSelection((event.modifiers & Qt.ShiftModifier) !== 0
+                              ? root.themes.length - 1 : 0);
             event.accepted = true;
             break;
         case Qt.Key_Return:
@@ -241,7 +306,10 @@ FocusScope {
         // usable height is cellHeight MINUS tileSpacing (the delegate insets
         // itself by tileSpacing/2 on each side), which is what made the first
         // scaled attempt overlap: 41 looked like plenty and was 34 in practice.
-        cellHeight: Metrics.px(62)
+        // Lives on root now, because preferredHeight is built from it and a
+        // grid sized off a different cell height than the shape around it is
+        // a grid with a clipped last row.
+        cellHeight: root.cellHeight
         model: root.themes
         currentIndex: root.selectedIndex
         boundsBehavior: Flickable.StopAtBounds

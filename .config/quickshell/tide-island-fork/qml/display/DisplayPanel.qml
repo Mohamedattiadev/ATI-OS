@@ -4,6 +4,11 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import IslandBackend
+// FORK: the shared ring lives in qml/common — see ProgressRing.qml.
+import "../common"
+// FORK: the shared motion system — one spring for geometry, one
+// critically damped curve for opacity. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 //
 // FORK — new file. The port of qtile's popups/DisplayPopup.py (28 bindings),
@@ -24,9 +29,9 @@ import IslandBackend
 //
 // KEYMAP — qtile's Display-Mode, key for key
 // ------------------------------------------
-//   j / k          move the cursor         (in arrange: nudge the output)
+//   Tab / ⇧Tab     next / previous SECTION  (arrange: pick which output moves)
+//   j / k          move the cursor          (in arrange: nudge the output)
 //   g / G          top / bottom
-//   Tab            pick the next output    (arrange: which one moves)
 //   Return         open the mode list · apply a mode · restore a layout
 //   BackSpace      back to the output list
 //   i / e / m      preset: internal only · external only · mirror
@@ -87,15 +92,69 @@ FocusScope {
     readonly property real headerHeight: 34
     readonly property int rowsVisible: 6
 
+    // ---- WHY THE PANEL SIZES ITSELF ----
+    //
+    // It used to be a flat Metrics.px(300) in DynamicIslandWindow's
+    // targetHeight switch, chosen for the worst case. On this machine the
+    // worst case is not the case: there is ONE output. Screenshotted, that
+    // gave an 830x270 surface with the list and the details column both
+    // ending 160 px from the top and the key-hint line pinned to the
+    // bottom — roughly 45% of the panel was black nothing, with a hint
+    // stranded on the far side of it. A void reads as "something failed to
+    // load", not as generosity.
+    //
+    // Sizing to content also makes the panel HONEST about how much there
+    // is, which for a display panel is the whole question you opened it to
+    // answer.
+    //
+    // rowHeight/rowSpacing/detailRowHeight are the delegates' own numbers,
+    // named here rather than repeated as literals, because a panel that
+    // computes its height from a different row height than it draws is a
+    // panel that clips its last row.
+    readonly property real rowHeight: 26
+    readonly property real rowSpacing: 2
+    readonly property real hintHeight: 24          // 10px type + its 10px bottom margin
+    readonly property real listBodyHeight:
+        Math.max(0, root.currentItems.length) * (root.rowHeight + root.rowSpacing) - root.rowSpacing
+    // Read off the Column rather than recomputed from a row count: the
+    // details list is 7 rows here but the audio panel's equivalent is
+    // between 3 and 8 depending on the tab, and a height computed from a
+    // DIFFERENT row count than the one drawn is a panel that clips its own
+    // last line. Column.height is implicit from its children, so there is
+    // no loop — nothing in the Column depends on the panel's height.
+    readonly property real detailsBodyHeight: detailsColumn.height
+    // Floors at four rows so a single-output machine still gets a panel and
+    // not a strip, and ceilings at rowsVisible so a 30-mode list scrolls
+    // instead of growing past the screen — the ListView already clips.
+    readonly property real bodyHeight: Math.max(
+        4 * (root.rowHeight + root.rowSpacing),
+        Math.min(root.rowsVisible * (root.rowHeight + root.rowSpacing), root.listBodyHeight),
+        root.detailsBodyHeight)
+    readonly property real preferredHeight:
+        root.headerHeight + 4 + root.bodyHeight + 10 + root.hintHeight
+
     focus: showCondition
     activeFocusOnTab: true
     anchors.fill: parent
     opacity: showCondition ? 1 : 0
 
+    // FORK: one choreography for every layer in the shell.
+    // Was `root.showCondition ? 220 : 120` on Easing.InOutQuad — one of
+    // eight hand-picked in-durations and six out-durations that agreed
+    // with neither each other nor the 400 ms the shape takes. See
+    // Motion.js, "CONTENT CHOREOGRAPHY", for the measurement.
     Behavior on opacity {
-        NumberAnimation {
-            duration: root.showCondition ? 220 : 120
-            easing.type: Easing.InOutQuad
+        SequentialAnimation {
+            // The delay is what keeps the content from being painted
+            // inside a capsule that is still the wrong size for it.
+            PauseAnimation { duration: root.showCondition ? Motion.contentDelay() : 0 }
+            NumberAnimation {
+                duration: root.showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+                // Critically damped: opacity is clamped 0-1 and an
+                // overshooting fade reads as a cut. Motion.js says why.
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()
+            }
         }
     }
 
@@ -317,11 +376,16 @@ FocusScope {
         root.selectedIndex = Math.max(0, Math.min(root.selectedIndex, Math.max(0, count - 1)));
     }
 
+    // Wraps. vim itself clamps at the ends, and clamping is right in a
+    // buffer — but these lists are two to five rows long, and on a
+    // two-output list "j" stopping dead at the second row reads as the key
+    // not working rather than as the cursor being at the bottom. G and gg
+    // are still there for the ends, so nothing is lost by wrapping.
     function move(step) {
         const count = root.currentItems.length;
         if (count === 0)
             return;
-        root.selectedIndex = Math.max(0, Math.min(count - 1, root.selectedIndex + step));
+        root.selectedIndex = ((root.selectedIndex + step) % count + count) % count;
         listView.positionViewAtIndex(root.selectedIndex, ListView.Contain);
     }
 
@@ -337,6 +401,44 @@ FocusScope {
         root.view = next;
         root.selectedIndex = 0;
         root.clampIndex();
+    }
+
+    // The four views, in the order the header prints them, so Tab walks the
+    // tabs left to right exactly as they are drawn. Entering `arrange` this
+    // way has to do what pressing `a` does — seed arrangePick from the
+    // cursor — or the outline lands on whichever output was picked last time
+    // and the first hjkl drags the wrong screen.
+    readonly property var tabs: ["outputs", "modes", "layouts", "arrange"]
+
+    function cycleView(step) {
+        const at = root.tabs.indexOf(root.view);
+        const from = at < 0 ? 0 : at;
+        const next = root.tabs[((from + step) % root.tabs.length + root.tabs.length) % root.tabs.length];
+        if (next === "arrange") {
+            // startArrange() refuses with one output and says so, which is
+            // the right answer — Tab must not silently skip a tab it is
+            // printing in the header.
+            root.startArrange();
+            return;
+        }
+        if (root.view === "arrange")
+            root.arrangePositions = ({});
+        // `modes` is the one view that describes a PARTICULAR output rather
+        // than standing beside the others, and modeOutput is set by Return on
+        // an output row. Arriving by Tab has to set it too, or the list is
+        // empty and the details column reads "no output selected" — which
+        // looks like the panel lost the monitor rather than like the view
+        // needing a subject.
+        if (next === "modes") {
+            const out = root.view === "outputs" ? root.selectedOutput()
+                                                : (root.outputs[0] || null);
+            if (out === null) {
+                root.setStatus("no outputs to show modes for", "idle");
+                return;
+            }
+            root.modeOutput = out.name;
+        }
+        root.setView(next);
     }
 
     function back() {
@@ -586,11 +688,23 @@ FocusScope {
         case Qt.Key_G:
             root.jump(shift ? "bottom" : "top");
             break;
+        // Tab is the "next thing" key, and it means the same thing here as
+        // it does in the audio panel: the next SECTION, not the next row.
+        // It used to be a second `j`, which made it the only key on the
+        // panel that did nothing you could not already do — and left the
+        // four views reachable only through four unrelated letters.
+        //
+        // In arrange view Tab still cycles which output you are dragging,
+        // because that is the only thing to step through there, and Shift+Tab
+        // leaves the view. The footer says so in both states.
         case Qt.Key_Tab:
             if (root.view === "arrange")
                 root.arrangePick = (root.arrangePick + 1) % Math.max(1, root.outputs.length);
             else
-                root.move(1);
+                root.cycleView(1);
+            break;
+        case Qt.Key_Backtab:
+            root.cycleView(-1);
             break;
         case Qt.Key_Return:
         case Qt.Key_Enter:
@@ -700,15 +814,62 @@ FocusScope {
         }
     }
 
+    // FORK: the countdown draws the island's ring as well as saying the
+    // number.
+    //
+    // This is the second user of qml/common/ProgressRing.qml, and the reason
+    // it was worth extracting from OsdLayer at all. A deadline is exactly
+    // what that shape is for — it is the one state on this panel where the
+    // useful information is "how much time is left", and a number alone
+    // makes you read and subtract where an arc is a glance.
+    //
+    // showCore is off: OsdLayer's ring floats over the desktop and needs its
+    // own dark disc to sit on, this one is already over a dark panel and the
+    // disc would only fight the digit in the middle.
+    //
+    // The colour is the same amber the text uses, so the two read as one
+    // element rather than as a warning next to a decoration.
+    ProgressRing {
+        id: revertRing
+        visible: root.revertSpecs !== null
+        anchors.right: parent.right
+        anchors.rightMargin: root.horizontalPadding
+        y: 8
+        // Raw numbers, not Metrics.px(): this file sizes everything with
+        // literals (horizontalPadding 18, headerHeight 34, 11px type) and
+        // does not import Metrics at all. Mixing one scaled dimension into
+        // an unscaled panel would put the ring out of step with the header
+        // it sits in.
+        width: 26
+        height: 26
+        showCore: false
+        lineWidth: 2.5
+        fillColor: "#ffcc66"
+        trackColor: "#33ffcc66"
+        // Counts DOWN: full at the moment it is armed, empty at zero.
+        progress: root.confirmSeconds > 0
+            ? root.revertLeft / root.confirmSeconds
+            : 0
+
+        Text {
+            anchors.centerIn: parent
+            text: root.revertLeft
+            color: "#ffcc66"
+            font.pixelSize: 10
+            font.family: root.textFontFamily
+            font.weight: Font.DemiBold
+        }
+    }
+
     // The countdown takes the header's right-hand slot when armed, because a
     // provisional change is the single most important thing on the panel —
     // it is the only state with a deadline.
     Text {
-        anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
+        anchors.right: revertRing.visible ? revertRing.left : parent.right
+        anchors.rightMargin: revertRing.visible ? 8 : root.horizontalPadding
         y: 12
         text: root.revertSpecs !== null
-            ? "reverting in " + root.revertLeft + "s — y to keep, c to revert"
+            ? "y to keep, c to revert"
             : root.statusText
         color: root.revertSpecs !== null
             ? "#ffcc66"
@@ -726,7 +887,9 @@ FocusScope {
         x: root.horizontalPadding
         y: root.headerHeight + 4
         width: parent.width * 0.56 - root.horizontalPadding
-        height: parent.height - root.headerHeight - 40
+        // Sized from the same numbers preferredHeight is built out of, so
+        // the list and the shape around it cannot disagree.
+        height: root.bodyHeight
         clip: true
         model: root.currentItems
         currentIndex: root.selectedIndex
@@ -784,6 +947,7 @@ FocusScope {
     // change would do; this is where scale, transform and mirror live, and
     // they are precisely the fields with no visible cue anywhere else.
     Column {
+        id: detailsColumn
         x: parent.width * 0.58
         y: root.headerHeight + 6
         width: parent.width * 0.42 - root.horizontalPadding
@@ -837,7 +1001,7 @@ FocusScope {
         font.pixelSize: 10
         font.family: root.textFontFamily
         text: root.view === "arrange"
-            ? "hjkl move · Tab pick · = align · Enter apply · BkSp cancel"
-            : "j/k move · Enter modes · i/e/m preset · h/l/u/d place · t rotate · f flip · o on-off · p scale · v layouts · s save · q close"
+            ? "hjkl move · Tab pick · ⇧Tab leave · = align · Enter apply · BkSp cancel"
+            : "Tab section · j/k move · Enter modes · i/e/m preset · h/l/u/d place · t rotate · f flip · o on-off · p scale · v layouts · s save · q close"
     }
 }

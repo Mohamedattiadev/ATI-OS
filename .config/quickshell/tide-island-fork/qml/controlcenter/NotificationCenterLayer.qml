@@ -5,6 +5,9 @@ import "../island"
 
 // FORK: one shared scale factor for every island surface.
 import "../common/Metrics.js" as Metrics
+// FORK: the shared motion system — one generated spring for geometry,
+// one critically damped curve for opacity. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 Item {
     id: notificationCenter
@@ -17,9 +20,42 @@ Item {
     property string heroFontFamily: userConfig.heroFontFamily
 
     readonly property bool hasNotifications: notificationModel && notificationModel.count > 0
-    readonly property real contentHeight: 218
     readonly property real verticalPadding: Metrics.pad(10)
     readonly property real horizontalPadding: Metrics.pad(22)
+
+    //
+    // FORK — content-sized, like the display and audio panels and for the
+    // same reason.
+    //
+    // `contentHeight` was the literal 218, which DynamicIslandWindow.qml
+    // reads straight through as the capsule's height for `notification_center`.
+    // Work out where 218 came from and it is not a design decision at all:
+    // 2 x pad(10) + header 28 + gap 9 + (3 cards x 49 + 2 gaps x 7 = 161)
+    // = 218. It is the THREE-notification height — NotificationHistory's own
+    // `maxVisibleItems` ceiling — hardcoded as the height for every case.
+    //
+    // Every real open is smaller than its worst case. Screenshotted with the
+    // one notification actually in history: content ended 106 px down and the
+    // remaining 112 px — 51% of the panel — was empty black with a scrollbar
+    // track's worth of nothing in it.
+    //
+    // The list already publishes exactly the number needed:
+    // `listContentHeight` is min(actual rows, 3 rows), which is why the
+    // ceiling survives this change untouched — a fourth notification scrolls
+    // rather than growing the capsule, same as before. Reading it here rather
+    // than recomputing a row count is deliberate: a height derived from a
+    // different count than the one drawn is a panel that clips its own last
+    // card.
+    //
+    // The empty case gets one card's worth of floor rather than collapsing to
+    // 57, because "No notifications" is centred in that space and a panel
+    // barely taller than its own title bar reads as a rendering failure.
+    //
+    readonly property real contentHeight: verticalPadding * 2
+        + notificationHistory.headerHeight
+        + notificationHistory.listTopGap
+        + Math.max(notificationHistory.cardHeight,
+                   notificationHistory.listContentHeight)
 
     NotificationHistory {
         id: notificationHistory
@@ -52,7 +88,8 @@ Item {
         Behavior on opacity {
             NumberAnimation {
                 duration: 180
-                easing.type: Easing.OutCubic
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()   // FORK: was Easing.OutCubic
             }
         }
 
@@ -67,7 +104,8 @@ Item {
             Behavior on scale {
                 NumberAnimation {
                     duration: 280
-                    easing.type: Easing.OutCubic
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
                 }
             }
 
@@ -83,7 +121,8 @@ Item {
                 Behavior on y {
                     NumberAnimation {
                         duration: 360
-                        easing.type: Easing.OutCubic
+                        easing.type: Easing.BezierSpline
+                        easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
                     }
                 }
 
@@ -113,14 +152,16 @@ Item {
                 Behavior on y {
                     NumberAnimation {
                         duration: 360
-                        easing.type: Easing.OutCubic
+                        easing.type: Easing.BezierSpline
+                        easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
                     }
                 }
 
                 Behavior on rotation {
                     NumberAnimation {
                         duration: 360
-                        easing.type: Easing.OutCubic
+                        easing.type: Easing.BezierSpline
+                        easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
                     }
                 }
 

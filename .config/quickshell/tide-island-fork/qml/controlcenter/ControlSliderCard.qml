@@ -59,8 +59,16 @@ Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: Metrics.px(22)
-            radius: Metrics.px(11)
+            // FORK: 22 -> 30. The card is Metrics.px(76) = 70 tall and was
+            // spending 20 of that on the track and the rest on nothing: a
+            // 13px label at the top, a 20px bar at the bottom, and a ~25px
+            // band of empty module colour between them that reads as a
+            // half-drawn card. macOS's own control-centre sliders are a
+            // TRACK with a label over it, not a label with a hairline under
+            // it. 30 makes the track the body of the card, which is also
+            // what makes the icon inside it legible at 13px.
+            height: Metrics.px(30)
+            radius: height / 2
             color: "#1d1f24"
             border.width: 1
             border.color: "#30333a"
@@ -70,9 +78,9 @@ Rectangle {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.leftMargin: Metrics.pad(10)
-                width: Metrics.px(18)
-                height: Metrics.px(18)
-                radius: Metrics.px(9)
+                width: Metrics.px(22)
+                height: Metrics.px(22)
+                radius: width / 2
                 color: StyleTokens.transparent
 
                 Text {
@@ -85,9 +93,12 @@ Rectangle {
             }
 
             Rectangle {
+                // Floors at the track height rather than at a bare 34, so a
+                // near-zero value still draws a ROUND cap instead of a
+                // lozenge narrower than its own corner radius.
                 width: root.value <= 0.001
                     ? 0
-                    : Math.max(34, Math.min(sliderTrack.width, sliderTrack.width * root.value + 1))
+                    : Math.max(sliderTrack.height, Math.min(sliderTrack.width, sliderTrack.width * root.value + 1))
                 height: parent.height
                 radius: parent.radius
                 color: "#eceef2"

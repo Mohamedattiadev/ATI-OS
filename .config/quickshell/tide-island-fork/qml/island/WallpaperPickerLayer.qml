@@ -6,6 +6,9 @@ import IslandBackend
 
 // FORK: one shared scale factor for every island surface.
 import "../common/Metrics.js" as Metrics
+// FORK: the shared motion system — one spring for geometry, one
+// critically damped curve for opacity. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 FocusScope {
     id: root
@@ -144,10 +147,23 @@ FocusScope {
     anchors.fill: parent
     opacity: showCondition ? 1 : 0
 
+    // FORK: one choreography for every layer in the shell.
+    // Was `showCondition ? 240 : 120` on Easing.InOutQuad — one of
+    // eight hand-picked in-durations and six out-durations that agreed
+    // with neither each other nor the 400 ms the shape takes. See
+    // Motion.js, "CONTENT CHOREOGRAPHY", for the measurement.
     Behavior on opacity {
-        NumberAnimation {
-            duration: showCondition ? 240 : 120
-            easing.type: Easing.InOutQuad
+        SequentialAnimation {
+            // The delay is what keeps the content from being painted
+            // inside a capsule that is still the wrong size for it.
+            PauseAnimation { duration: showCondition ? Motion.contentDelay() : 0 }
+            NumberAnimation {
+                duration: showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+                // Critically damped: opacity is clamped 0-1 and an
+                // overshooting fade reads as a cut. Motion.js says why.
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()
+            }
         }
     }
 
@@ -362,6 +378,37 @@ FocusScope {
                 root.applyWallpaper(allWallpapers.get(pathView.currentIndex).filePath);
             event.accepted = true;
             break;
+        // FORK — `r` for a random wallpaper. With 362 images in the library
+        // this is the only way to actually use most of them: h/l walks the
+        // list one thumbnail at a time and nobody walks 362.
+        //
+        // It MOVES the cursor only. It used to apply as well, and that was
+        // wrong for the reason the user gave when they asked for it changed:
+        // "it should switch and go to wallpaper randomly but not select it".
+        //
+        // A random JUMP and a random COMMIT are different tools. The jump is
+        // navigation — it is `l` pressed 200 times, and navigation in this
+        // picker has never had a side effect. The commit is Enter, and it is
+        // the only key that writes anything. Folding the two together meant
+        // there was no way to browse the library at random: every look cost
+        // a wallpaper change (and, through theme-apply, a palette change),
+        // and getting back to where you started meant remembering where that
+        // was. Now `r` re-rolls as many times as you like, Enter takes the
+        // one you stopped on, and Escape leaves the wallpaper untouched.
+        //
+        // Re-rolls if the draw lands on the current index, which with a
+        // library this size is rare and with a library of two is not —
+        // and matters more now than it did, because a self-draw used to
+        // still apply something and now would look like a dead key.
+        case Qt.Key_R:
+            if (allWallpapers.count > 1) {
+                let next = pathView.currentIndex;
+                while (next === pathView.currentIndex)
+                    next = Math.floor(Math.random() * allWallpapers.count);
+                pathView.currentIndex = next;
+            }
+            event.accepted = true;
+            break;
         }
     }
 
@@ -497,23 +544,51 @@ FocusScope {
         }
     }
 
-    readonly property real topPad: 14
-    readonly property real botPad: 8
-    readonly property real hPad: 12
-    readonly property real headerH: 0
-    readonly property real headerGap: 0
-    readonly property real labelH: 22
-    readonly property real labelGap: 5
-
-    readonly property real cardW: Math.round(slotW * 1.15)
-    readonly property real cardH: Math.round(cardW * 0.58)
-    readonly property real spacing: slotW * 1.20
+    //
+    // FORK — the carousel is sized from the HEIGHT it is given, not from a
+    // fifth of its width.
+    //
+    // The old chain was slotW = (width - 24) / 5, cardW = slotW * 1.15,
+    // cardH = cardW * 0.58. Every number in it is horizontal, so the panel's
+    // height never entered the calculation at all: on this 1012 x 239 panel
+    // it produced a 227 x 132 hero card inside 217 px of usable vertical
+    // space, and screenshotted that way — 159 px of delegate in 217, with an
+    // ~47 px band of empty black under the labels. A picker whose entire job
+    // is showing you a photograph was showing it a third smaller than the
+    // shape it sits in allows.
+    //
+    // Turned around: the card fills the height, then takes its width from the
+    // 0.58 aspect the thumbnails are generated at (640x360). That alone would
+    // give 322 px of width, so there is a second limit — the one that keeps
+    // all five cards on the panel.
+    //
+    // Where 1.638 comes from. PathView distributes items over
+    // pathLength / pathItemCount, NOT / (count - 1) — which is why the
+    // measured gap between card centres was 190 and not the 237 that
+    // `slotW * 1.20` reads like. With pathLength = 4 * spacing and
+    // spacing = 0.78 * cardW, the interval is 0.624 * cardW, so the outermost
+    // card's outer edge sits at 2 * 0.624 * cardW + sideScale * cardW / 2
+    // = 1.638 * cardW from the centre. Hold that under half the panel minus
+    // hPad and the fifth card cannot be sliced off by the capsule's own
+    // clip — the failure mode the theme picker was caught in.
+    //
+    readonly property real topPad: Metrics.pad(14)
+    readonly property real botPad: Metrics.pad(10)
+    readonly property real hPad: Metrics.pad(12)
+    readonly property real labelH: Metrics.px(24)
+    readonly property real labelGap: Metrics.px(6)
 
     readonly property real sideScale: 0.78
+    readonly property real cardAspect: 0.58
 
-    readonly property real slotW: (width - hPad * 2) / 5
+    readonly property real cardAreaH: height - topPad - botPad
+    readonly property real heightLimitedW: (cardAreaH - labelGap - labelH) / cardAspect
+    readonly property real widthLimitedW: (width / 2 - hPad) / 1.638
+    readonly property real cardW: Math.max(Metrics.px(120),
+        Math.round(Math.min(heightLimitedW, widthLimitedW)))
+    readonly property real cardH: Math.round(cardW * cardAspect)
+    readonly property real spacing: cardW * sideScale
 
-    readonly property real cardAreaH: height - topPad - headerH - headerGap - botPad
     readonly property real cardPathY: cardAreaH / 2
 
     // ── UI ────────────────────────────────────────────────────────────────────
@@ -592,7 +667,8 @@ FocusScope {
                     Behavior on sc {
                         NumberAnimation {
                             duration: 200
-                            easing.type: Easing.OutCubic
+                            easing.type: Easing.BezierSpline
+                            easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
                         }
                     }
 
@@ -600,7 +676,8 @@ FocusScope {
                     Behavior on op {
                         NumberAnimation {
                             duration: 180
-                            easing.type: Easing.OutCubic
+                            easing.type: Easing.BezierSpline
+                            easing.bezierCurve: Motion.fade()   // FORK: was Easing.OutCubic
                         }
                     }
 

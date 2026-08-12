@@ -5,6 +5,9 @@ import "../controlcenter"
 
 // FORK: one shared scale factor for every island surface.
 import "../common/Metrics.js" as Metrics
+// FORK: the shared motion system — one spring for geometry, one
+// critically damped curve for opacity. See qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 Item {
     id: root
@@ -45,6 +48,43 @@ Item {
     readonly property real pageSlideDistance: Math.max(1, viewport.width + 24)
 
     readonly property bool isPlaying: activePlayer && activePlayer.playbackState === MprisPlaybackState.Playing
+
+    // FORK — the album line the spec asks for, taken straight off the player
+    // rather than plumbed through DynamicIslandWindow: `activePlayer` is
+    // already handed to this layer, and MprisPlayer publishes trackAlbum next
+    // to the title and artist this card was already drawing.
+    readonly property string currentAlbum: activePlayer && activePlayer.trackAlbum
+        ? String(activePlayer.trackAlbum) : ""
+
+    //
+    // FORK — the media card's own measurements, and the one number it
+    // publishes upwards.
+    //
+    // DESIGN-SPEC.md's media card is "88 px album art · bold two-line title ·
+    // album and artist underneath · transport controls". The art was 60 in
+    // source and Metrics.px(60) = 55 on screen — a third of the size the
+    // design calls for, on the one element of the card that is a picture.
+    //
+    // artSize is a min() and not the flat Metrics.px(88) on purpose. The
+    // capsule's height for `expanded` is a literal in DynamicIslandWindow.qml
+    // (Metrics.px(190) = 175) and that file is not this pass's to edit, so a
+    // flat 81 would draw a card 20 px taller than the shape holding it and
+    // the capsule's own `clip: true` would eat the transport row — exactly
+    // the failure the old comment on that literal records happening at 122.
+    // Clamping instead means the card is right at whatever height it is
+    // given: 67 px of art today, 81 the moment the capsule reads
+    // preferredHeight below, and never a row cut off in between.
+    //
+    readonly property real cardMargin: Metrics.pad(18)
+    readonly property real rowGap: Metrics.px(12)
+    readonly property real scrubberHeight: Metrics.px(18)
+    readonly property real transportHeight: Metrics.px(36)
+    readonly property real chromeHeight: cardMargin * 2 + rowGap * 2
+        + scrubberHeight + transportHeight
+    readonly property real desiredArtSize: Metrics.px(88)
+    readonly property real artSize: Math.max(Metrics.px(52),
+        Math.min(desiredArtSize, height - chromeHeight))
+    readonly property real preferredHeight: chromeHeight + desiredArtSize
 
     function visualizerLevel(index) {
         const phase = visualizerPhase + index * 0.78;
@@ -135,10 +175,23 @@ Item {
         updateKeyboardFocusForPage();
     }
 
+    // FORK: one choreography for every layer in the shell.
+    // Was `showCondition ? 300 : 100` on Easing.InOutQuad — one of
+    // eight hand-picked in-durations and six out-durations that agreed
+    // with neither each other nor the 400 ms the shape takes. See
+    // Motion.js, "CONTENT CHOREOGRAPHY", for the measurement.
     Behavior on opacity {
-        NumberAnimation {
-            duration: showCondition ? 300 : 100
-            easing.type: Easing.InOutQuad
+        SequentialAnimation {
+            // The delay is what keeps the content from being painted
+            // inside a capsule that is still the wrong size for it.
+            PauseAnimation { duration: showCondition ? Motion.contentDelay() : 0 }
+            NumberAnimation {
+                duration: showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+                // Critically damped: opacity is clamped 0-1 and an
+                // overshooting fade reads as a cut. Motion.js says why.
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()
+            }
         }
     }
 
@@ -154,7 +207,8 @@ Item {
             from: pageSettleAnimation.startProgress
             to: pageSettleAnimation.endProgress
             duration: 220
-            easing.type: Easing.OutCubic
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
         }
 
         ScriptAction {
@@ -259,22 +313,29 @@ Item {
 
                 Column {
                     anchors.fill: parent
-                    anchors.margins: Metrics.pad(20)
-                    spacing: Metrics.px(14)
+                    anchors.margins: root.cardMargin
+                    spacing: root.rowGap
 
                     Item {
+                        id: headerRow
                         width: parent.width
-                        height: Metrics.px(60)
+                        height: root.artSize
 
                         Row {
+                            id: artRow
                             anchors.left: parent.left
+                            anchors.right: eqBlock.left
+                            anchors.rightMargin: Metrics.px(10)
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: Metrics.px(16)
+                            spacing: Metrics.px(14)
 
                             Rectangle {
-                                width: Metrics.px(60)
-                                height: Metrics.px(60)
-                                radius: Metrics.px(14)
+                                width: root.artSize
+                                height: root.artSize
+                                // Radius tracks the art rather than sitting at
+                                // a literal 14: the same corner on a 55 px
+                                // square and an 81 px one are different shapes.
+                                radius: Math.round(root.artSize * 0.22)
                                 color: "#2c2c2e"
                                 clip: true
 
@@ -283,38 +344,61 @@ Item {
                                     source: currentArtUrl
                                     fillMode: Image.PreserveAspectCrop
                                     visible: source.toString() !== ""
-                                    sourceSize: Qt.size(120, 120)
+                                    // Was a flat 120 — half the pixels the art
+                                    // now asks for on a hidpi-ish redraw.
+                                    sourceSize: Qt.size(root.artSize * 2, root.artSize * 2)
                                 }
                             }
 
                             Column {
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: Metrics.px(4)
+                                width: parent.width - root.artSize - artRow.spacing
+                                spacing: Metrics.px(3)
 
+                                // Two lines, per the spec, and wrapped rather
+                                // than elided on the first: a single elided
+                                // line of a long title is the half of the card
+                                // that says what is playing.
                                 Text {
+                                    width: parent.width
                                     text: currentTrack
                                     color: "white"
-                                    font.pixelSize: userConfig.bodyFontSize
+                                    font.pixelSize: Metrics.font(userConfig.bodyFontSize + 2)
                                     font.family: textFontFamily
                                     font.weight: Font.DemiBold
                                     font.letterSpacing: -0.15
-                                    width: Metrics.px(180)
+                                    wrapMode: Text.WordWrap
+                                    maximumLineCount: 2
+                                    elide: Text.ElideRight
+                                    lineHeight: 1.15
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    text: currentArtist
+                                    color: "#8e8e93"
+                                    font.pixelSize: Metrics.font(userConfig.bodyFontSize - 1)
+                                    font.family: textFontFamily
+                                    font.weight: Font.Medium
                                     elide: Text.ElideRight
                                 }
 
                                 Text {
-                                    text: currentArtist
-                                    color: "#8e8e93"
-                                    font.pixelSize: userConfig.bodyFontSize - Metrics.px(2)
+                                    width: parent.width
+                                    visible: root.currentAlbum !== ""
+                                             && root.currentAlbum !== currentTrack
+                                    text: root.currentAlbum
+                                    color: "#6e6e73"
+                                    font.pixelSize: Metrics.font(userConfig.bodyFontSize - 1)
                                     font.family: textFontFamily
-                                    font.weight: Font.Medium
-                                    width: Metrics.px(200)
+                                    font.weight: Font.Normal
                                     elide: Text.ElideRight
                                 }
                             }
                         }
 
                         Item {
+                            id: eqBlock
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             width: Metrics.px(44)
@@ -340,14 +424,16 @@ Item {
                                         Behavior on height {
                                             NumberAnimation {
                                                 duration: isPlaying ? 120 : 260
-                                                easing.type: Easing.InOutQuad
+                                                easing.type: Easing.BezierSpline
+                                                easing.bezierCurve: Motion.spring()   // FORK: was Easing.InOutQuad
                                             }
                                         }
 
                                         Behavior on color {
                                             ColorAnimation {
                                                 duration: isPlaying ? 140 : 280
-                                                easing.type: Easing.InOutQuad
+                                                easing.type: Easing.BezierSpline
+                                                easing.bezierCurve: Motion.fade()   // FORK: was Easing.InOutQuad
                                             }
                                         }
                                     }
@@ -358,14 +444,20 @@ Item {
 
                     Item {
                         width: parent.width
-                        height: Metrics.px(16)
+                        height: root.scrubberHeight
 
+                        // FORK: was `bodyFontSize - Metrics.px(4)` = 8 px.
+                        // These two labels bypassed Metrics.font(), so the 9 px
+                        // floor never saw them and they rendered a full size
+                        // below anything else on the card. 10 px, and through
+                        // font() this time, so the floor applies.
                         Text {
                             id: timeL
                             anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
                             text: timePlayed
                             color: "#8e8e93"
-                            font.pixelSize: userConfig.bodyFontSize - Metrics.px(4)
+                            font.pixelSize: Metrics.font(userConfig.bodyFontSize - 2)
                             font.family: textFontFamily
                             font.weight: Font.Medium
                         }
@@ -388,7 +480,8 @@ Item {
                                 Behavior on width {
                                     NumberAnimation {
                                         duration: 500
-                                        easing.type: Easing.OutCubic
+                                        easing.type: Easing.BezierSpline
+                                        easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
                                     }
                                 }
                             }
@@ -397,9 +490,10 @@ Item {
                         Text {
                             id: timeR
                             anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
                             text: timeTotal
                             color: "#8e8e93"
-                            font.pixelSize: userConfig.bodyFontSize - Metrics.px(4)
+                            font.pixelSize: Metrics.font(userConfig.bodyFontSize - 2)
                             font.family: textFontFamily
                             font.weight: Font.Medium
                         }
@@ -407,7 +501,7 @@ Item {
 
                     Item {
                         width: parent.width
-                        height: Metrics.px(36)
+                        height: root.transportHeight
 
                         Row {
                             anchors.centerIn: parent
@@ -686,7 +780,8 @@ Item {
         Behavior on animatedProgress {
             NumberAnimation {
                 duration: 700
-                easing.type: Easing.InOutCubic
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()   // FORK: was Easing.InOutCubic
             }
         }
 
@@ -959,7 +1054,8 @@ Item {
         Behavior on scale {
             NumberAnimation {
                 duration: 90
-                easing.type: Easing.OutCubic
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
             }
         }
 
