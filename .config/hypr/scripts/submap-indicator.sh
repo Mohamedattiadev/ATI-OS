@@ -19,6 +19,11 @@
 #  never-expiring, replace-in-place behaviour this needs. So the mode name
 #  goes where qtile put it: in the bar.
 #
+#  AND NOW THE KEYS, not just the name — `tide showModeKeys`, the island's
+#  mode_keys state. See island_show_keys() for why the rows are read from
+#  the compositor rather than from hint_for(), and why they are
+#  percent-encoded on the way. The capsule remains the fallback.
+#
 #  dunst remains as a fallback, not as a preference — see NOTIFY_FALLBACK.
 # ============================================================
 set -euo pipefail
@@ -32,6 +37,11 @@ NOTIFY_ID=99101
 
 ISLAND_DIR="${TIDE_ISLAND_FORK_DIR:-$HOME/.config/quickshell/tide-island-fork}"
 LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/submap-indicator.lock"
+
+# Beside this script, and resolved through the symlink because ~/.config is
+# stowed: $0 is the link, its target is the checkout, and cheatsheet.py is
+# next to the real file rather than next to the link.
+CHEATSHEET="$(dirname "$(readlink -f "$0")")/cheatsheet.py"
 
 # ------------------------------------------------------------
 #  Only one of us
@@ -83,6 +93,58 @@ island_show() {
 
 island_clear() {
     qs -p "$ISLAND_DIR" ipc call tide clearText >/dev/null 2>&1
+    qs -p "$ISLAND_DIR" ipc call tide clearModeKeys >/dev/null 2>&1
+}
+
+# ------------------------------------------------------------
+#  The key list, which is the half the NAME never answered
+# ------------------------------------------------------------
+#  The capsule above answers "am I in a mode", and that was the missing
+#  half when this script was written. It is not the question you have
+#  while standing inside a 26-key chord, which is "and what are the keys".
+#  qtile got away with the name alone because its chords were one-shot and
+#  its cheatsheet was one keystroke away; Hyprland submaps are sticky, so
+#  you sit in them, and the cheatsheet here is itself behind a chord.
+#
+#  The rows are READ FROM THE COMPOSITOR — `cheatsheet.py --submap-json`
+#  over `hyprctl binds` — and not from the table below, for the same
+#  reason the printed sheet reads itself: a hand-written key list is only
+#  ever as true as the last person to edit it, and a wrong hint still
+#  renders confidently. hint_for() stays as the dunst fallback's text,
+#  where there is no island to ask.
+#
+#  ONLY THE MODE NAME CROSSES THE IPC, and the reason is the one thing
+#  worth carrying away from building this: **Quickshell's IPC splits
+#  arguments on whitespace, and shell quoting does not survive the split.**
+#  A one-parameter call gets the remainder joined back up, which is why
+#  `tide showText "hello world"` works and hides the problem completely; a
+#  two-parameter call does not. Sending the rows as JSON therefore arrived
+#  as 27 arguments instead of 2 ("wifi panel", "theme picker" — every space
+#  is a new argument) and was rejected outright. Percent-encoding got past
+#  the argument count and still produced an empty grid.
+#
+#  So the panel fetches its own rows, by running the very command below.
+#  That is also the pattern every other panel in this shell already uses.
+#  What is left here is the DECISION: ask first, and if this submap has no
+#  readable keys, return non-zero so the caller falls back to the capsule
+#  rather than drawing a title over an empty grid.
+island_show_keys() {
+    local map="$1"
+
+    [ -x "$CHEATSHEET" ] || return 1
+
+    # Failure here is not fatal and must not be: hyprctl can be slow or
+    # absent mid-reload, and a mode with no readable keys is still worth
+    # announcing by name. Returning non-zero drops us to island_show.
+    "$CHEATSHEET" --submap-json "$map" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    sys.exit(0 if json.load(sys.stdin)["keys"] else 1)
+except Exception:
+    sys.exit(1)
+' 2>/dev/null || return 1
+
+    qs -p "$ISLAND_DIR" ipc call tide showModeKeys "$map" >/dev/null 2>&1
 }
 
 notify_show() {
@@ -104,6 +166,15 @@ notify_clear() {
 show() {
     local map="$1"
     local title="${map^^}-MODE"
+
+    # Three backends, best first. The key panel needs the island AND a
+    # submap the compositor has bindings for; the capsule needs only the
+    # island; dunst needs neither. Each falls through to the next, which
+    # is why the panel's failure is silent rather than loud.
+    if island_show_keys "$map"; then
+        notify_clear
+        return
+    fi
 
     if island_show "$title"; then
         # Belt and braces: if a previous event fell back to dunst (island
