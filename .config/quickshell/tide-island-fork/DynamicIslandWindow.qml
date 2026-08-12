@@ -2876,8 +2876,23 @@ PanelWindow {
                 // BEHIND the pill and vanished — drawn, composited under an
                 // opaque rounded rectangle, and completely invisible.
                 z: 6
-                x: mainCapsule.x + Metrics.pad(10)
+                // ---- TRAILING THE CLOCK, NOT LEADING IT ----
+                //
+                // Was hard against the capsule's left edge, which put a lone
+                // digit in the position a heading occupies and left a wide
+                // gap between it and the centred clock — it read as a stray
+                // number rather than as part of the readout. Trailing the
+                // clock instead makes it a suffix, which is what it is: the
+                // clock is the subject and the workspace qualifies it.
+                x: mainCapsule.x + mainCapsule.width - width - Metrics.pad(12)
                 y: islandFlanks.restingCenterY - height / 2
+
+                // Hidden while the "Workspace N" capsule is up. That popup
+                // already says the workspace in words, and showing the digit
+                // at the same time states the same fact twice in one glance —
+                // asked for directly. long_capsule is the state that popup
+                // owns, so this cannot drift from it.
+                visible: islandContainer.islandState !== "long_capsule"
                 workspaceId: islandContainer.currentWs
                 textFontFamily: root.textFontFamily
                 accentColor: islandTheme.accent
@@ -2925,16 +2940,14 @@ PanelWindow {
                    + (islandContainer.timerBubbleWanted
                       ? timerBubble.bubbleSize + islandFlanks.gap : 0)
 
-                // Slides rather than jumps when a timer starts or ends. This
-                // is geometry, so it takes the spring the rest of the shell's
-                // geometry uses.
-                Behavior on x {
-                    NumberAnimation {
-                        duration: Motion.morphDuration()
-                        easing.type: Easing.BezierSpline
-                        easing.bezierCurve: Motion.spring()
-                    }
-                }
+                // NO Behavior on x, and this is a regression I introduced
+                // and am removing. It was added so the strip would slide
+                // aside when a timer appears. But x is derived from
+                // pillRight, and pillRight moves by hundreds of pixels every
+                // time the island opens or closes — so the icons flew in from
+                // far off screen on every panel open, which is exactly what
+                // was reported. A Behavior on a value that tracks the capsule
+                // cannot tell a 32 px timer nudge from a 400 px morph.
                 y: islandFlanks.restingCenterY - height / 2
                 windows: islandFlanks.openWindows
                 textFontFamily: root.textFontFamily

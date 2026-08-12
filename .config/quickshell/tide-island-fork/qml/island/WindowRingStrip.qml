@@ -549,13 +549,20 @@ Item {
                     // it is a 0..1 amount with a hard ceiling, and any
                     // overshoot on it is visible as a bounce rather than as
                     // mass. fade() reaches 1 and stops.
-                    Behavior on progress {
-                        NumberAnimation {
-                            duration: Motion.morphDuration()
-                            easing.type: Easing.BezierSpline
-                            easing.bezierCurve: Motion.fade()
-                        }
-                    }
+                    // NO Behavior. The arc snaps.
+                    //
+                    // This animated twice and glitched both times: first on
+                    // Motion.spring(), whose overshoot on a clamped 0..1 read
+                    // as a throb, then on Motion.fade(), which still showed a
+                    // glitch because the model rebuilds on every focus change
+                    // and the delegate carrying the animation is destroyed
+                    // mid-flight. An animation that is routinely interrupted
+                    // by the destruction of the thing running it cannot be
+                    // made smooth by choosing a better curve.
+                    //
+                    // Focus is instantaneous in fact, so it is now
+                    // instantaneous on screen. Asked for directly after two
+                    // failed attempts to animate it well.
 
                     // ---- THE ICON GOES IN THE RING'S OWN CENTRE SLOT ----
                     //
