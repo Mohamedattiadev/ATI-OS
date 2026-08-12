@@ -1243,14 +1243,65 @@ fi
 # the GTK pcmanfm is still installed as an LXDE dep, so handle both. Note
 # the flags differ: `-d` vs `--daemon-mode`, and the WM_CLASS xdotool wants
 # is "pcmanfm-qt" (lowercase, both fields) vs GTK's "Pcmanfm".
-_restart_fm() {  # $1=binary  $2=WM_CLASS for xdotool  $3=daemon flag
+#
+# ---- WHY THE WINDOW PROBE IS NOT JUST xdotool ANY MORE ----
+#
+# `xdotool search --class` cannot see a Wayland client. Under Hyprland it
+# does not error in any visible way — it simply finds nothing and exits
+# non-zero — so had_windows stayed 0, and the branch below relaunched
+# pcmanfm-qt in daemon mode ONLY. Net effect of every theme change on this
+# session: the file manager window you had open on workspace 3 was killed
+# and never came back, silently, with the daemon running so `pgrep` still
+# said the app was alive. Measured: pcmanfm-qt was running with one window
+# on workspace 3 (`hyprctl clients`), and `xdotool search --class
+# pcmanfm-qt` under Wayland returns nothing.
+#
+# So: ask the compositor when there is one, and keep xdotool for the X11
+# session, which shares this script. hyprctl's `class` is the xdg-shell
+# app_id, and for both file managers it happens to equal the WM_CLASS
+# spelling already passed in ($2) — pcmanfm-qt reports "pcmanfm-qt", which
+# is why the same argument serves both probes.
+_fm_has_windows() {  # $1=class
+  if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && command -v hyprctl >/dev/null 2>&1; then
+    hyprctl clients -j 2>/dev/null |
+      python3 -c "
+import json,sys
+try: cs = json.load(sys.stdin)
+except Exception: sys.exit(1)
+sys.exit(0 if any(c.get('class','').lower() == sys.argv[1].lower() for c in cs) else 1)
+" "$1"
+    return $?
+  fi
+  xdotool search --class "$1" >/dev/null 2>&1
+}
+
+_restart_fm() {  # $1=binary  $2=WM_CLASS / app_id  $3=daemon flag
   pgrep -x "$1" >/dev/null 2>&1 || return 0
   local had_windows=0
-  xdotool search --class "$2" >/dev/null 2>&1 && had_windows=1
+  _fm_has_windows "$2" && had_windows=1
   pkill -x "$1" 2>/dev/null || true
+  # The two invocations are SERIALISED, and that is not tidiness.
+  #
+  # They used to be fired as two background jobs from the same subshell,
+  # 0.3s after the kill and with nothing between them. That was invisible
+  # for as long as _fm_has_windows could not see a Wayland window, because
+  # the second one never ran. The first apply after that probe was fixed
+  # produced TWO pcmanfm-qt windows from ONE pid (measured: addresses
+  # 0x55f99c861e40 and 0x55f99c8b1410, both titled "ati", both pid 1354594,
+  # both on workspace 3) — the daemon had not finished claiming the
+  # single-instance socket when the second invocation checked for it, so
+  # both calls asked for a window and the surviving instance opened both.
+  # Waiting for the daemon to actually exist before asking it for a window
+  # is what makes the second call a request to an existing instance rather
+  # than a race with one that is still starting.
   ( sleep 0.3
     DISPLAY="${DISPLAY:-:0}" "$1" "$3" >/dev/null 2>&1 &
     if [[ "$had_windows" == 1 ]]; then
+      for _ in $(seq 20); do
+        pgrep -x "$1" >/dev/null 2>&1 && break
+        sleep 0.1
+      done
+      sleep 0.4
       DISPLAY="${DISPLAY:-:0}" "$1" "$HOME" >/dev/null 2>&1 &
     fi ) &
   disown
@@ -1317,28 +1368,52 @@ if command -v qtile >/dev/null; then
   ' >/dev/null 2>&1 </dev/null || true
 fi
 
-# Reload qutebrowser + notify chrome/brave. qb has IPC; brave-family
-# has no live-reload path (GTK theme change requires restart), so we
-# notify the user instead of killing browser tabs.
+# Reload qutebrowser. It has real IPC, so it is the one browser here that
+# never needs to be killed.
+#
+# ---- THE `:restart` THAT USED TO BE HERE, AND THE STALE CLAIM BEHIND IT ----
+#
+# This block used to end with `qutebrowser ":restart"`, justified in a
+# comment reading ":config-source alone doesn't re-read wal cache colors".
+# That was true when it was written and has not been true for a long time.
+# It described a qb config.py that read ~/.cache/wal/colors.json at import
+# time only. The current ~/.config/qutebrowser/config.py has _apply_palette()
+# (config.py:22), which opens ~/.cache/qtile/current_palette.json and sets
+# c.colors.* from it, and is CALLED at the bottom of the file — its own
+# comment says "`:config-source` (fired by theme-apply) re-runs this whole
+# file, so switching theme or wallpaper re-applies live". `:config-source`
+# re-executes config.py, config.py re-opens the palette file, so the palette
+# is re-read. The restart was buying nothing that the line above it had not
+# already bought.
+#
+# What it cost was the complaint this change exists to fix: a restarting qb
+# maps a fresh window, and a fresh window matching the `workspace 2` rule in
+# hypr/rules.conf used to drag the whole session onto workspace 2. Those
+# rules are `silent` now, so even a restart would no longer teleport you —
+# but the cheapest window to not get teleported by is the one that is never
+# created.
+#
+# What is genuinely lost, recorded so it is not mistaken for a bug: the
+# homepage. gen_qb_css above rewrites the :root block inside
+# html/homepage.html, and an already-loaded tab keeps the HTML it parsed. A
+# restart re-opened the start page and so re-read it; :config-source cannot.
+# An open homepage tab therefore keeps the previous palette until it is
+# reloaded (:r) or navigated to again. Every other qb surface — tabs,
+# statusbar, completion, hints, prompts, downloads, webpage bg — is a
+# c.colors.* setting and does change immediately. One stale tab is a much
+# smaller price than losing your place in the session on every theme click,
+# and `:reload-all` was rejected as the fix because reloading every open tab
+# to retint one of them is worse than the disease.
+#
+# The `|| true` and the generous timeout stay, and the reason is unchanged:
+# this subshell inherits `set -e`, and the qb IPC client spawns a full
+# python that takes ~2s even idle, so a tight timeout returns 124 and tears
+# the subshell down. setsid detaches it from theme-apply's process group so
+# it survives both this script exiting and the preemption `kill` that a
+# rapid second theme switch sends.
 if pgrep -x qutebrowser >/dev/null; then
-  # :config-source alone doesn't re-read wal cache colors. :restart
-  # reboots the qb process preserving open tabs via session
-  # save/restore, and is what actually re-runs config.py end to end.
-  #
-  # Both calls MUST be `|| true`. This subshell inherits `set -e`, and
-  # each qb IPC call spawns a full python client that takes ~2s idle --
-  # far longer while qtile is restarting from this same script. The old
-  # `timeout 3` therefore expired routinely, returned 124, and `set -e`
-  # tore the subshell down *after* :config-source and *before*
-  # :restart. That is why qb never restarted on its own even though the
-  # exact same command works when run by hand.
-  #
-  # setsid detaches from theme-apply's process group so the restart
-  # still completes after this script exits (and survives the
-  # preemption `kill` a rapid second theme switch sends).
   setsid -f bash -c '
     timeout 15 qutebrowser ":config-source" >/dev/null 2>&1 || true
-    timeout 30 qutebrowser ":restart"       >/dev/null 2>&1 || true
   ' >/dev/null 2>&1 </dev/null || true
 fi
 # Resolve the four palette roles (background / foreground / alt-surface /
