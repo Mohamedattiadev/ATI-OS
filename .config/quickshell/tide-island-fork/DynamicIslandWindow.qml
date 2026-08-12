@@ -2887,12 +2887,32 @@ PanelWindow {
                 x: mainCapsule.x + mainCapsule.width - width - Metrics.pad(12)
                 y: islandFlanks.restingCenterY - height / 2
 
-                // Hidden while the "Workspace N" capsule is up. That popup
-                // already says the workspace in words, and showing the digit
-                // at the same time states the same fact twice in one glance —
-                // asked for directly. long_capsule is the state that popup
-                // owns, so this cannot drift from it.
-                visible: islandContainer.islandState !== "long_capsule"
+                // ---- ONLY IN THE PLAIN RESTING CLOCK, NOTHING ELSE ----
+                //
+                // Reported as the digit coming over other elements when
+                // swiping left or right. It does, and the cause is that this
+                // is a SIBLING of mainCapsule positioned over it, not a child
+                // of the capsule's content. The swipe layers (lyrics, custom
+                // info) crossfade their own content through the same
+                // rectangle, and nothing about an absolutely-placed overlay
+                // knows they are there.
+                //
+                // The correct end state is for the digit to live in the
+                // resting content's own row beside the clock, so it is laid
+                // out with the clock and leaves with it. Short of that, it is
+                // gated to exactly the moment the plain clock is on screen:
+                // the resting state, with no swipe in flight in either
+                // direction. Anything else — the workspace popup, a lyrics
+                // swipe, the custom info card — and it is simply not drawn,
+                // which is strictly better than drawing it over something.
+                //
+                // The popup case matters on its own: it already says the
+                // workspace in words, so showing the digit at the same time
+                // states one fact twice in a glance.
+                visible: islandContainer.islandState === "normal"
+                    && Math.abs(islandContainer.swipeTransitionProgress) < 0.001
+                    && Math.abs(islandContainer.rightSwipeProgress) < 0.001
+                    && !customSwipeLoader.active
                 workspaceId: islandContainer.currentWs
                 textFontFamily: root.textFontFamily
                 accentColor: islandTheme.accent
@@ -3037,7 +3057,23 @@ PanelWindow {
                 // like "TP-Link_Guest_5GHz_2" elided.
                 case "wifi_panel":
                 case "bluetooth_panel":
-                    return Metrics.px(420);
+                    // 420 -> the display panel's shape, because the panels
+                    // behind these two states are now the display panel's
+                    // shape: a list AND a details column side by side, rebuilt
+                    // from scratch in that idiom (qml/connectivity/
+                    // WifiPanel.qml, BluetoothPanel.qml).
+                    //
+                    // The comment this replaces argued 420 was right because
+                    // "these two ARE the control centre's rows opened out" and
+                    // should not snap to a different width than the panel they
+                    // were reached from. That argument is now wrong twice
+                    // over: they are reached from a keybind (Super+n, Super+b
+                    // in the rofi submap) far more often than from the control
+                    // centre, and at 420 the details column has ~176 px for a
+                    // value like "TDV-OGRENCI-KAT-2B" or a MAC address, both
+                    // of which elide there and neither of which elides
+                    // usefully.
+                    return Math.min(Metrics.px(860), root.width - Metrics.px(48));
                 case "notification_center":
                     return Metrics.px(410);
                 case "wallpaper_picker":
@@ -4092,13 +4128,20 @@ PanelWindow {
                 }
 
                 sourceComponent: Component {
-                    ConnectivityPanelLayer {
-                        panelKind: "wifi"
+                    // FORK: rebuilt from scratch in the audio/display idiom,
+                    // replacing ConnectivityPanelLayer + the dual-purpose
+                    // ConnectivityDetailPanel. panelFill/accentColor come from
+                    // islandTheme so the panel is the island's colour rather
+                    // than a fixed near-black — the same reason every other
+                    // surface reads them.
+                    WifiPanel {
                         provider: controlCenterLoader.item
                         showCondition: islandContainer.wifiPanelLayerVisible
                         iconFontFamily: root.iconFontFamily
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
+                        panelFill: islandTheme.shellFill
+                        accentColor: islandTheme.accent
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }
@@ -4115,13 +4158,14 @@ PanelWindow {
                 }
 
                 sourceComponent: Component {
-                    ConnectivityPanelLayer {
-                        panelKind: "bluetooth"
+                    BluetoothPanel {
                         provider: controlCenterLoader.item
                         showCondition: islandContainer.bluetoothPanelLayerVisible
                         iconFontFamily: root.iconFontFamily
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
+                        panelFill: islandTheme.shellFill
+                        accentColor: islandTheme.accent
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }
