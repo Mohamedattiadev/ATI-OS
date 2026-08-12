@@ -111,9 +111,20 @@ if [ -z "$win" ]; then
     # kitty is (unlike `brave --app`, see scratchpad.sh). Pixels because the
     # percentage has already been resolved against the focused monitor
     # above, which is the only way this holds on both screens.
+    # `-o background_opacity` for the same reason $term carries it in
+    # binds.conf: hyprglass refracts what is BEHIND a window, and
+    # kitty.conf's own 0.95 leaves nothing to refract, so a kitty spawned
+    # without it is a flat rectangle while every other terminal on the
+    # desktop is glass. This one was spawned bare and was the odd one out —
+    # visible only by putting it beside another terminal, which is exactly
+    # the kind of thing that never gets noticed on its own.
+    #
+    # It is NOT taken from $term: that is a Hyprland variable in binds.conf
+    # and this is a shell script, which cannot see it. Duplicated
+    # deliberately, and this comment is the pointer between the two.
     pull_sum
     exec hyprctl dispatch exec "[float; size $w $h; center 1] \
-        kitty --name $cls --class $cls --title sum.md \
+        kitty -o background_opacity=0.70 --name $cls --class $cls --title sum.md \
         -e nvim -c':set nonumber norelativenumber' $file"
 fi
 
