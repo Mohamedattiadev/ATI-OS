@@ -297,20 +297,82 @@ Item {
             }
         }
 
+        // ---- HEADER, in ukishima's vocabulary ----
+        //
+        // Their surfaces open with a kanji glyph, then the surface name in
+        // letterspaced uppercase at a much smaller size than you would
+        // expect, then a "· status" clause that carries the accent when the
+        // thing is live. It reads as a label on an instrument rather than as
+        // a window title, which is the whole difference between their panels
+        // and a 15 px bold "Wi-Fi".
+        //
+        // The kanji is behind a real check, not a hope: this repo has been
+        // caught before by a font family name that silently resolved to
+        // something else. `fc-list :charset=6ce2` confirms Noto Sans CJK
+        // covers 波, and the family is named explicitly — inheriting the
+        // shell's Inter would render tofu or fall back invisibly.
         Row {
             id: headerRow
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
             height: Metrics.px(24)
+            spacing: Metrics.px(8)
 
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.isWifi ? "Wi-Fi" : "Bluetooth"
+                // 波 "wave" for Wi-Fi, 藍 "indigo" for Bluetooth — the tooth
+                // is Harald Bluetooth's and does not translate, so the colour
+                // the name comes from does the work instead.
+                text: root.isWifi ? "波" : "藍"
                 color: StyleTokens.textPrimary
-                font.pixelSize: Metrics.font(15)
-                font.family: root.heroFontFamily
-                font.weight: Font.Bold
+                font.family: "Noto Sans CJK JP"
+                font.pixelSize: Metrics.font(16)
+                font.weight: Font.Medium
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.isWifi ? "WIFI" : "BLUETOOTH"
+                color: StyleTokens.textMuted
+                font.family: root.textFontFamily
+                font.pixelSize: Metrics.font(10)
+                font.weight: Font.DemiBold
+                font.capitalization: Font.AllUppercase
+                // The letterspacing is the point of the treatment. Without
+                // it this is just a small grey word.
+                font.letterSpacing: 1.6
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(0, headerRow.width - x - Metrics.px(4))
+                text: {
+                    if (!root.provider)
+                        return "";
+                    if (root.isWifi) {
+                        if (!root.provider.wifiEnabled)
+                            return "· off";
+                        const ssid = root.safeString(root.provider.wifiCurrentSsid);
+                        return ssid.length > 0 ? "· " + ssid : "· not connected";
+                    }
+                    return root.provider.bluetoothEnabled ? "· on" : "· off";
+                }
+                // Accent only when there is something live to point at. A
+                // status clause that is always accented stops being a status.
+                color: {
+                    if (!root.provider)
+                        return StyleTokens.textTertiary;
+                    const live = root.isWifi
+                        ? (root.provider.wifiEnabled
+                           && root.safeString(root.provider.wifiCurrentSsid).length > 0)
+                        : !!root.provider.bluetoothEnabled;
+                    return live ? StyleTokens.accent : StyleTokens.textTertiary;
+                }
+                font.family: root.textFontFamily
+                font.pixelSize: Metrics.font(10)
+                font.weight: Font.Medium
+                elide: Text.ElideRight
             }
         }
 
@@ -814,15 +876,28 @@ Item {
                         id: wifiRow
 
                         width: contentColumn.width
-                        height: visible ? 52 : 0
-                        radius: Metrics.px(14)
-                        // The keyboard highlight. Deliberately the same
-                        // shape the row already is, filled rather than
-                        // outlined: an outline at this radius reads as a
-                        // text field, and there is one of those on screen.
-                        color: root.navIsCurrent(wifiRow)
-                            ? Qt.rgba(1, 1, 1, 0.10)
-                            : StyleTokens.transparent
+                        // 52 -> 34, and the subtitle line went with it. A
+                        // two-line row carrying "Secure network" under every
+                        // SSID spends half its height restating what the
+                        // padlock on the right already says, and five
+                        // networks then fill a panel that could hold nine.
+                        // ukishima's equivalent row is 30 px.
+                        height: visible ? Metrics.px(34) : 0
+                        radius: Metrics.px(9)
+                        // Three states, in priority order. The CONNECTED row
+                        // is accent-tinted because it is a fact about the
+                        // system; the keyboard cursor is neutral white
+                        // because it is a fact about the pointer. If the
+                        // cursor also used the accent, moving it would look
+                        // like connecting.
+                        color: {
+                            if (connected)
+                                return Qt.rgba(StyleTokens.accent.r, StyleTokens.accent.g,
+                                               StyleTokens.accent.b, 0.14);
+                            if (root.navIsCurrent(wifiRow))
+                                return Qt.rgba(1, 1, 1, 0.10);
+                            return StyleTokens.transparent;
+                        }
                         visible: root.wifiEntryVisible(connected)
                         clip: true
 
@@ -878,30 +953,20 @@ Item {
                                 font.family: root.iconFontFamily
                             }
 
+                            // One line, centred. The weight and colour carry
+                            // "this is the one you are on" — ukishima leans
+                            // on exactly this rather than on a badge.
                             Text {
                                 anchors.left: parent.left
                                 anchors.leftMargin: Metrics.pad(26)
-                                anchors.top: parent.top
+                                anchors.verticalCenter: parent.verticalCenter
                                 anchors.right: rightInfo.left
                                 anchors.rightMargin: Metrics.pad(8)
                                 text: displayName
-                                color: StyleTokens.textPrimary
-                                font.pixelSize: Metrics.font(12)
+                                color: connected ? StyleTokens.accent : StyleTokens.textSecondary
+                                font.pixelSize: Metrics.font(11.5)
                                 font.family: root.textFontFamily
-                                font.weight: Font.DemiBold
-                                elide: Text.ElideRight
-                            }
-
-                            Text {
-                                anchors.left: parent.left
-                                anchors.leftMargin: Metrics.pad(26)
-                                anchors.bottom: parent.bottom
-                                anchors.right: rightInfo.left
-                                anchors.rightMargin: Metrics.pad(8)
-                                text: secure ? "Secure network" : "Open network"
-                                color: StyleTokens.textMuted
-                                font.pixelSize: Metrics.font(10)
-                                font.family: root.textFontFamily
+                                font.weight: connected ? Font.DemiBold : Font.Medium
                                 elide: Text.ElideRight
                             }
 
@@ -911,10 +976,15 @@ Item {
                                 anchors.verticalCenter: parent.verticalCenter
                                 spacing: Metrics.px(6)
 
+                                // Dimmed and smaller. Signal strength is a
+                                // tiebreak between two networks you already
+                                // recognise, never the thing you are reading
+                                // the row for, and at #f0f0f3 it was
+                                // outshouting the SSID beside it.
                                 Text {
                                     text: signal + "%"
-                                    color: "#f0f0f3"
-                                    font.pixelSize: Metrics.font(11)
+                                    color: StyleTokens.textTertiary
+                                    font.pixelSize: Metrics.font(10)
                                     font.family: root.textFontFamily
                                     visible: signal >= 0
                                 }

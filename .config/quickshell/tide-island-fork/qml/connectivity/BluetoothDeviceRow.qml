@@ -38,11 +38,22 @@ Rectangle {
     property bool navCurrent: false
 
     width: parent ? parent.width : 0
-    height: Metrics.px(52)
-    radius: Metrics.px(14)
-    // Same highlight as the Wi-Fi row, and the same reason for filling
-    // rather than outlining.
-    color: navCurrent ? Qt.rgba(1, 1, 1, 0.10) : StyleTokens.transparent
+    // Matched to the Wi-Fi row's new 34: the two lists sit in panels of the
+    // same size and a device row half again as tall as a network row made
+    // them read as different products.
+    height: Metrics.px(34)
+    radius: Metrics.px(9)
+    // Same three states as the Wi-Fi row, same priority: a CONNECTED device
+    // is accent-tinted (a fact about the system), the keyboard cursor is
+    // neutral white (a fact about the pointer).
+    color: {
+        if (root.connected)
+            return Qt.rgba(StyleTokens.accent.r, StyleTokens.accent.g,
+                           StyleTokens.accent.b, 0.14);
+        if (navCurrent)
+            return Qt.rgba(1, 1, 1, 0.10);
+        return StyleTokens.transparent;
+    }
     clip: true
 
     // One activation path for pointer and keyboard.
@@ -73,45 +84,45 @@ Rectangle {
             font.family: root.iconFontFamily
         }
 
+        // One line. The subtitle it replaces said "Connected" on a row
+        // already tinted with the accent and already showing a tick, and a
+        // battery percentage that the action column has room for.
         Text {
             anchors.left: parent.left
             anchors.leftMargin: Metrics.pad(26)
-            anchors.top: parent.top
+            anchors.verticalCenter: parent.verticalCenter
             anchors.right: actionLabel.left
             anchors.rightMargin: Metrics.pad(8)
             text: root.hasProvider && root.provider.bluetoothDeviceName
                 ? root.provider.bluetoothDeviceName(root.device)
                 : ""
-            color: StyleTokens.textPrimary
-            font.pixelSize: Metrics.font(12)
+            color: root.connected ? StyleTokens.accent : StyleTokens.textSecondary
+            font.pixelSize: Metrics.font(11.5)
             font.family: root.textFontFamily
-            font.weight: Font.DemiBold
+            font.weight: root.connected ? Font.DemiBold : Font.Medium
             elide: Text.ElideRight
         }
 
-        Text {
-            anchors.left: parent.left
-            anchors.leftMargin: Metrics.pad(26)
-            anchors.bottom: parent.bottom
-            anchors.right: actionLabel.left
-            anchors.rightMargin: Metrics.pad(8)
-            text: root.subtitleText
-            color: StyleTokens.textMuted
-            font.pixelSize: Metrics.font(10)
-            font.family: root.textFontFamily
-            elide: Text.ElideRight
-        }
-
+        // The action column, in ukishima's register: small, letterspaced,
+        // uppercase, and dim until it is the live one. It was a 18 px tick
+        // and an 11 px "Connect" in full-strength white — two different
+        // sizes of shout in a column that is only ever a hint about what
+        // Enter will do.
         Text {
             id: actionLabel
 
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            text: root.actionText
-            color: root.section === "connected" ? StyleTokens.success : StyleTokens.textPrimary
-            font.pixelSize: root.section === "connected" ? Metrics.font(18) : Metrics.font(11)
+            text: root.section === "connected" ? "✓" : root.actionText
+            color: root.section === "connected"
+                ? StyleTokens.accent
+                : (root.navCurrent ? StyleTokens.textSecondary : StyleTokens.textTertiary)
+            font.pixelSize: root.section === "connected" ? Metrics.font(12) : Metrics.font(9.5)
             font.family: root.textFontFamily
             font.weight: Font.DemiBold
+            font.capitalization: root.section === "connected"
+                ? Font.MixedCase : Font.AllUppercase
+            font.letterSpacing: root.section === "connected" ? 0 : 1.0
         }
     }
 
