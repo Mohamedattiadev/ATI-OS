@@ -12,6 +12,7 @@ import "qml/controlcenter"
 import "qml/connectivity"
 import "qml/display"
 import "qml/island"
+import "qml/sysmon"
 import "qml/wifi"
 import "qml/workspace"
 // FORK: the motion system. Upstream hardcodes Easing.OutQuint / OutCubic
@@ -250,6 +251,7 @@ PanelWindow {
                 || islandContainer.themePickerLayerVisible
                 || islandContainer.displayPanelLayerVisible
                 || islandContainer.audioPanelLayerVisible
+                || islandContainer.sysmonPanelLayerVisible
                 || islandContainer.wifiQrLayerVisible
                 // The cheatsheet is the one READ-ONLY panel that still
                 // needs an exclusive grab, and the search field is why:
@@ -929,6 +931,15 @@ PanelWindow {
             islandContainer.showAudioPanel();
     }
 
+    // FORK: the system monitor — CPU, memory and disk. $mod+` in
+    // hypr/binds.conf, which is the key qtile's system widget box had.
+    function toggleSysmonPanelWindow() {
+        if (islandContainer.islandState === "sysmon_panel")
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showSysmonPanel();
+    }
+
     function toggleWifiQrWindow() {
         if (islandContainer.islandState === "wifi_qr")
             islandContainer.smartRestoreState();
@@ -1164,6 +1175,10 @@ PanelWindow {
             // a warning per evaluation, and warnings in this log are numerous
             // enough to be scrolled past.
             || islandContainer.audioPanelLayerVisible
+            // Qualified through the id, for the same reason the audio panel
+            // above is: a hot reload landing between a new property's use and
+            // its declaration compiles a component that really is missing it.
+            || islandContainer.sysmonPanelLayerVisible
             || islandContainer.wifiQrLayerVisible
             || islandContainer.cheatsheetLayerVisible
             // Qualified through the id, for the same reason the audio panel
@@ -1321,6 +1336,7 @@ PanelWindow {
             || islandState === "bluetooth_panel"
             || islandState === "display_panel"
             || islandState === "audio_panel"
+            || islandState === "sysmon_panel"
             || islandState === "wifi_qr"
             || islandState === "mode_keys"
             || islandState === "cheatsheet"
@@ -1422,6 +1438,9 @@ PanelWindow {
         // FORK: the audio panel, the port of qtile's AudioPopup — the detail
         // the control centre's single Sound slider does not cover.
         readonly property bool audioPanelLayerVisible: !root.overviewVisible && islandState === "audio_panel"
+        // FORK: the system monitor — CPU, memory and disk. The content the
+        // control centre never had, on the key qtile's system widget box had.
+        readonly property bool sysmonPanelLayerVisible: !root.overviewVisible && islandState === "sysmon_panel"
         // FORK: the Wi-Fi QR — qtile's WifiQR, `s` inside its WiFi chord.
         readonly property bool wifiQrLayerVisible: !root.overviewVisible && islandState === "wifi_qr"
         // FORK: the four remaining states from DESIGN-SPEC.md's list. None
@@ -2319,6 +2338,17 @@ PanelWindow {
             stopAutoHideTimer();
         }
 
+        // FORK: the system monitor. See qml/sysmon/SystemMonitorPanel.qml,
+        // whose header carries the argument for why it is on $mod+` .
+        function showSysmonPanel() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "sysmon_panel";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
         // FORK: the Wi-Fi QR, so a phone joins by camera instead of by
         // reading the PSK off the screen. See qml/wifi/WifiQrLayer.qml.
         function showWifiQr() {
@@ -3065,6 +3095,19 @@ PanelWindow {
                     // holds free text (a bluez profile description, a media
                     // title) that elides badly.
                     return Math.min(Metrics.px(940), root.width - Metrics.px(48));
+                case "sysmon_panel":
+                    // Much narrower than its neighbours, and deliberately so.
+                    // The display and audio panels are wide because they hold
+                    // free text that elides badly; this one holds NUMBERS,
+                    // and the widest thing in it is a disk row — a mount
+                    // point, a bar, a percentage and a free figure. Measured
+                    // at Metrics: pad(10) + px(90) + pad(10) + px(150) +
+                    // pad(10) + px(34) + pad(14) for the row's own parts,
+                    // about 90 for "201 GB free", and 2 x pad(18) of panel
+                    // padding — 422 all told. 515 leaves the free column its
+                    // air without the three dials drifting so far apart that
+                    // they stop reading as one row.
+                    return Math.min(Metrics.px(560), root.width - Metrics.px(48));
                 case "wifi_qr":
                     // Square-ish and narrow, because the content is one
                     // square symbol. Anything wider is white card the phone
@@ -3210,6 +3253,18 @@ PanelWindow {
                         ? Math.min(audioPanelLoader.item.preferredHeight,
                                    root.screen.height - Metrics.px(60))
                         : Metrics.px(360);
+                case "sysmon_panel":
+                    // Content-sized like the rest. It genuinely varies: the
+                    // panel is three dials plus one row per mounted
+                    // filesystem, which is three rows here and would be one
+                    // on a single-partition machine. Measured at 296 on this
+                    // session with /, /home and /boot. The fallback is that
+                    // number rounded up, so a frame drawn before the loader
+                    // reports is the right shape rather than a guess.
+                    return sysmonPanelLoader.item
+                        ? Math.min(sysmonPanelLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(300);
                 case "wifi_qr":
                     // Room for the symbol at the size wifi-qr.py picked
                     // (Metrics.px(300) of box) plus its white card, the SSID
@@ -3326,6 +3381,7 @@ PanelWindow {
                 case "application_launcher":
                 case "display_panel":
                 case "audio_panel":
+                case "sysmon_panel":
                 case "wifi_qr":
                 case "theme_picker":
                 case "wifi_panel":
@@ -4235,6 +4291,29 @@ PanelWindow {
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
                         showCondition: islandContainer.displayPanelLayerVisible
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            // FORK: the system monitor — CPU, memory and disk.
+            //
+            // panelFill is islandTheme.shellFill, the same contract the two
+            // connectivity panels take: the capsule's own material, so the
+            // panel re-tints with theme_mode instead of being a fixed
+            // near-black sitting inside a themed shape.
+            PanelLoader {
+                id: sysmonPanelLoader
+                anchors.fill: parent
+                live: islandContainer.sysmonPanelLayerVisible
+
+                sourceComponent: Component {
+                    SystemMonitorPanel {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        panelFill: islandTheme.shellFill
+                        accentColor: islandTheme.accent
+                        showCondition: islandContainer.sysmonPanelLayerVisible
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }

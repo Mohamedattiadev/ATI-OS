@@ -384,6 +384,22 @@ Scope {
             shellRoot.forFocusedWindow((window) => window.toggleAudioPanelWindow());
         }
 
+        // FORK: the system monitor — CPU, memory and disk. Bound to $mod+`
+        // in hypr/binds.conf, which is the key qtile's "toggle 2nd system
+        // widget box" had; that binding's own comment named disk usage as a
+        // content gap it was standing in for, and this closes it.
+        //
+        // forFocusedWindow, like every other panel here: it takes an
+        // exclusive keyboard grab to read j/k, and two of them on two
+        // monitors would be two grabs competing for the same keystrokes.
+        //
+        // A TOGGLE, like its neighbours — calling it twice closes the panel.
+        // That is also what makes it safe as a single key: the same press
+        // that opened it puts it away.
+        function toggleSysmon() {
+            shellRoot.forFocusedWindow((window) => window.toggleSysmonPanelWindow());
+        }
+
         // FORK: qtile's WifiQR — `s` inside its WiFi chord. Bound to SHIFT+S
         // in the rofi submap, beside the `n` that opens the network list.
         function toggleWifiQr() {
