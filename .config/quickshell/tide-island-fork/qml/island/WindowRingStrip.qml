@@ -58,6 +58,10 @@ Item {
     property bool showCondition: true
     property string textFontFamily: ""
     property color accentColor: "#51afef"
+    // FORK: the disc behind each icon. IslandTheme.shellFill, passed down, so
+    // the plate re-tints with theme-apply like the capsule does instead of
+    // being a hardcoded black that follows nothing.
+    property color plateColor: "#000000"
 
     readonly property int parity: side === "left" ? 0 : 1
 
@@ -280,7 +284,7 @@ Item {
                     id: iconPlate
                     anchors.fill: parent
                     radius: width / 2
-                    color: "#000000"
+                    color: root.plateColor
                 }
 
                 ProgressRing {
@@ -412,11 +416,31 @@ Item {
                     // strip keeps its rhythm whichever window has focus.
                     progress: winCell.isActive ? 1 : 0
 
+                    // ---- fade(), NOT spring(). THIS IS THE "GLOW" BUG ----
+                    //
+                    // Reported as the focused icon's ring glowing up and
+                    // down. It is not a glow and nothing is pulsing: the
+                    // spring curve is zeta 0.8, deliberately UNDERDAMPED, so
+                    // progress overshoots 1 on the way in. ProgressRing
+                    // clamps to 1, which hides the overshoot itself, but the
+                    // spring's return dips BACK BELOW 1 before settling - so
+                    // the arc closes, retracts a sliver, then closes again.
+                    // Read as a throb, and it is really the ring being drawn
+                    // one and a bit times.
+                    //
+                    // Motion.js already states the rule this broke, at the
+                    // top of the file: spring (zeta 0.8) for GEOMETRY, fade
+                    // (zeta 1.0, critically damped) for opacity and colour,
+                    // and "using spring on an opacity Behavior is a real bug,
+                    // not a taste choice". Progress is not geometry either -
+                    // it is a 0..1 amount with a hard ceiling, and any
+                    // overshoot on it is visible as a bounce rather than as
+                    // mass. fade() reaches 1 and stops.
                     Behavior on progress {
                         NumberAnimation {
                             duration: Motion.morphDuration()
                             easing.type: Easing.BezierSpline
-                            easing.bezierCurve: Motion.spring()
+                            easing.bezierCurve: Motion.fade()
                         }
                     }
 

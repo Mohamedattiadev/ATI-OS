@@ -94,7 +94,8 @@ Item {
     Rectangle {
         anchors.fill: chip
         radius: width / 2
-        color: "#000000"
+        // Theme fill, not a hardcoded black - matches the window plates.
+        color: root.fillColor
     }
 
     ProgressRing {

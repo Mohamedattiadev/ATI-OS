@@ -2788,6 +2788,7 @@ PanelWindow {
                 windows: islandFlanks.openWindows
                 textFontFamily: root.textFontFamily
                 accentColor: islandTheme.accent
+                plateColor: islandTheme.shellFill
                 showCondition: islandFlanks.restingNow
                 revealProgress: root.autoHideProgress
             }
@@ -2800,6 +2801,7 @@ PanelWindow {
                 windows: islandFlanks.openWindows
                 textFontFamily: root.textFontFamily
                 accentColor: islandTheme.accent
+                plateColor: islandTheme.shellFill
                 showCondition: islandFlanks.restingNow
                 revealProgress: root.autoHideProgress
             }
