@@ -36,7 +36,7 @@ import "../common/Motion.js" as Motion
 // roughly "changed more than once in practice", or "FORK-ONLY".
 //
 // The fork-only ones are the point. Notch mode, the chord HUD, the resting
-// EQ, the theme reveal and the polkit prompt do not exist upstream, so
+// EQ and the theme reveal do not exist upstream, so
 // UserConfigBackend has no property for them, so the packaged config app
 // cannot show them and never will. Before this panel the only way to change
 // one was to edit a QML literal. `scope` is on every row for exactly that
@@ -411,14 +411,13 @@ FocusScope {
                     text: rowItem.modelData.type === "bool"
                         ? (rowItem.modelData.value === true ? "on" : "off")
                         : String(rowItem.modelData.value)
-                    // The dangerous switch is coloured when it is ON, and
-                    // only then. Every other value is neutral, so the one
-                    // row that can take the system's password prompts away
-                    // is the one row that is not.
-                    color: (rowItem.modelData.key === "forkPolkitAgentEnabled"
-                            && rowItem.modelData.value === true)
-                        ? "#ff6b6b"
-                        : (rowItem.modelData.value === true ? "#9ad18a" : "#8a8f98")
+                    // There was a red case here for `forkPolkitAgentEnabled`
+                    // when ON — the one row that could supposedly take the
+                    // system's password prompts away. That row is gone (it
+                    // never did anything; see island-settings.py), so the
+                    // red is gone with it rather than sitting here waiting
+                    // for a key that will never arrive.
+                    color: rowItem.modelData.value === true ? "#9ad18a" : "#8a8f98"
                     font.pixelSize: Metrics.font(12)
                     font.family: root.textFontFamily
                     font.weight: Font.DemiBold
@@ -526,10 +525,10 @@ FocusScope {
             width: details.width
             wrapMode: Text.WordWrap
             text: root.selected ? String(root.selected.detail || "") : ""
-            // The polkit row's explanation is a warning, so it is coloured
-            // as one. It is the only row whose detail can cost you something.
-            color: (root.selected && root.selected.key === "forkPolkitAgentEnabled")
-                ? "#ffb3b8" : "#a8aeb8"
+            // This was pink for the polkit row, whose detail was the only
+            // one that claimed it could cost you something. With that row
+            // removed no detail is a warning, so they are all neutral.
+            color: "#a8aeb8"
             font.pixelSize: Metrics.font(11)
             font.family: root.textFontFamily
             lineHeight: 1.25
@@ -548,8 +547,9 @@ FocusScope {
     //
     // Amber, not red: nothing is broken. The built-in rows are all present
     // and working; some row the user's file asked for is not. Red here would
-    // put the panel's most alarming colour on the least alarming failure,
-    // next to a polkit row that earned it.
+    // put the panel's most alarming colour on the least alarming failure.
+    // It used to sit next to a red polkit row, which made the contrast the
+    // argument; that row is gone and amber is still right on its own.
     //
     // Three lines and no more. The full list is `island-settings.py --check`,
     // which is where you would be anyway if you were fixing the file, and a

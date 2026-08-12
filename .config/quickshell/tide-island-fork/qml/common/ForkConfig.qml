@@ -15,7 +15,7 @@ import Quickshell.Io
 // QML. There is no way to add one without recompiling the package.
 //
 // Everything this fork added is in that blind spot. Notch mode, the chord
-// HUD, the resting EQ, the theme reveal, the polkit prompt — none of them
+// HUD, the resting EQ, the theme reveal — none of them
 // exist upstream, so none of them can have a backend property, so they were
 // all hardcoded literals in QML (`property bool notchModeEnabled: true`).
 // That is fine right up until someone wants to turn one off, at which point
@@ -59,16 +59,18 @@ Item {
     // that "improved" something here would be a silent behaviour change
     // shipped under the name of a config file.
     //
-    // The exception, and it is deliberate: forkPolkitAgentEnabled defaults
-    // FALSE, and there is no prior behaviour it is matching because the
-    // island has never been the polkit agent. Default-off is the only safe
-    // default for a switch whose failure mode is "no password prompt appears
-    // anywhere on the system and nothing says why". See PolkitPromptLayer.qml.
+    // There was an exception here, `forkPolkitAgentEnabled`, defaulting
+    // FALSE because "the island has never been the polkit agent". That was
+    // true and it undersold the problem: the key was parsed into
+    // `polkitAgentEnabled` and NO code ever read that property, so the
+    // switch was inert in both positions. The island state it nominally
+    // controlled had no renderer either. Both are removed; see the note in
+    // DynamicIslandWindow.qml below clearPickerWindow. A key that is only
+    // ever written is not a setting, it is a rumour.
     property bool notchMode: true
     property bool modeKeysEnabled: true
     property bool restingEqEnabled: true
     property bool themeTransitionEnabled: true
-    property bool polkitAgentEnabled: false
 
     // The volume/brightness OSD as a separate circular ring in the middle of
     // the screen, instead of the island's split capsule. Defaults FALSE for
@@ -79,8 +81,9 @@ Item {
 
     // True once the file has been read at all. Distinguishes "the defaults,
     // because there is no config" from "the defaults, because that is what
-    // the config says" — which matters for the polkit switch, where the two
-    // are the same value and only one of them is a decision.
+    // the config says". It mattered most for the polkit switch, where the
+    // two were the same value and only one of them was a decision; that
+    // switch is gone, but the distinction is still the right one to keep.
     property bool loaded: false
 
     function boolAt(parsed, key, fallback) {
@@ -103,13 +106,12 @@ Item {
             root.modeKeysEnabled = root.boolAt(parsed, "forkModeKeysEnabled", true);
             root.restingEqEnabled = root.boolAt(parsed, "forkRestingEqEnabled", true);
             root.themeTransitionEnabled = root.boolAt(parsed, "forkThemeTransitionEnabled", true);
-            root.polkitAgentEnabled = root.boolAt(parsed, "forkPolkitAgentEnabled", false);
             root.ringOsdEnabled = root.boolAt(parsed, "forkRingOsdEnabled", false);
             root.loaded = true;
         } catch (error) {
             // Keep whatever is already loaded, and do NOT set `loaded`. A
-            // half-written or corrupt config must not be able to flip the
-            // polkit switch in either direction — the writer renames the file
+            // half-written or corrupt config must not be able to flip a
+            // switch in either direction — the writer renames the file
             // into place atomically so this should be unreachable, and it is
             // here because "should be" is not a guarantee about a file
             // another process writes.

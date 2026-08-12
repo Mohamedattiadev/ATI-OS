@@ -411,8 +411,8 @@ Scope {
         }
 
         // FORK: the states DESIGN-SPEC.md's "states of the one shape" listed
-        // and nothing answered — calendar, power menu, settings — plus the
-        // polkit prompt below.
+        // and nothing answered — calendar, power menu, settings. The spec's
+        // fourth, the polkit prompt, is deliberately not among them.
         //
         // `forFocusedWindow`, like every other panel here and unlike the
         // chord HUD's `forEachWindow`: these take a keyboard grab and read
@@ -459,26 +459,21 @@ Scope {
             shellRoot.forEachWindow((window) => window.clearPickerWindow());
         }
 
-        // NOT a toggle, and the asymmetry is the point — the reasoning is on
-        // showPolkitPromptWindow in DynamicIslandWindow.qml: this panel is
-        // opened by a process waiting on an answer, not by a key you pressed,
-        // so a second request arriving while the first is up must REPLACE it
-        // rather than dismiss it.
+        // `showPolkitPrompt` and `clearPolkitPrompt` were registered here and
+        // are deliberately gone. They routed to an island state that had no
+        // renderer, so calling the first one threw a ReferenceError and left
+        // the island invisible on the Overlay layer above everything. The
+        // full reasoning, including why building the panel would not have
+        // helped, is in DynamicIslandWindow.qml below clearPickerWindow.
         //
-        // Nothing registers this shell as the session polkit agent by
-        // default. polkit-kde-authentication-agent-1 is still the registered
-        // agent in hypr/autostart.conf, and the switch-over is an explicit
-        // opt-in flagged DANGER in island-settings.py, because a broken
-        // agent means NO password prompt anywhere on the system — no pkexec,
-        // no auth dialogs — and it fails silently until you need one.
-        function showPolkitPrompt() {
-            shellRoot.forFocusedWindow((window) => window.showPolkitPromptWindow());
-        }
-
-        function clearPolkitPrompt() {
-            shellRoot.forEachWindow((window) => window.clearPolkitPromptWindow());
-        }
-
+        // The short version: this shell never registered as a polkit agent
+        // on D-Bus, so the prompt had no transaction to answer, and
+        // polkit-kde-authentication-agent-1 (hypr/autostart.conf:23) already
+        // does the job correctly.
+        //
+        // An IPC function is a promise that something will happen. Leaving
+        // these registered but broken is worse than not having them: a
+        // caller gets a success and no prompt.
         // FORK: apply a theme THROUGH the circular reveal. This is what the
         // theme picker calls instead of running theme-apply itself, and it is
         // exposed on the IPC so `theme-toggle` (the rofi picker, which the

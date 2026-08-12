@@ -352,83 +352,100 @@ own list** ("states of the one shape"):
 | calendar | **DONE**, `$alt 6` — `qml/island/CalendarLayer.qml`. No qtile ancestor at all: qtile had `widget.Clock` and no calendar popup, so this was built from the spec rather than ported |
 | power menu | **DONE**, `$mod SHIFT Q` and `$mod P` → `q` — `qml/island/PowerMenuLayer.qml` over `scripts/power-ctl.sh`. Both keys were `dm-logout -r` (rofi), which is what qtile spawned |
 | settings | **DONE**, `$alt 7` — `qml/island/SettingsLayer.qml`. Not in the spec's list; added because the packaged config app is a compiled binary that a `yay -Syu` would overwrite, and it cannot reach fork-only keys at all. Now **user-extensible**, see below |
-| **Polkit password prompt** | **NOT BUILT, AND WORSE THAN THIS ROW SAID.** See below — it is not an absence, it is a live IPC call that throws |
+| **Polkit password prompt** | **REMOVED, and that is the closed state — not a deferral.** See below. polkit-kde-agent has this job and does it correctly |
 
-The polkit row is the only remainder of item 1's feature list. It is also
-the one with teeth: a wrong agent means NO password prompt anywhere on the
-system — no pkexec, no auth dialog — failing silently until you need one.
-Whenever it is built, it must run alongside polkit-kde-agent and be proven
-before replacing it.
+The polkit prompt was the only remainder of item 1's feature list. It is
+now removed rather than outstanding, and the section below is kept in full
+because the reasoning that got it there is worth more than the conclusion.
 
-##### The polkit prompt is not merely missing — it is a reachable crash
+##### It was not merely missing — it was a reachable crash
 
-**This is new, it was found by driving the IPC rather than by reading the
-code, and it is the third instance of this document's recurring failure
-shape: something that looks wired up and is not.** The row above used to
-say the layer "does not exist", which read as a gap. A gap is inert. This
-is not inert.
+**This was found by driving the IPC rather than by reading the code, and it
+is the third instance of this document's recurring failure shape: something
+that looks wired up and is not.** The row above used to say the layer "does
+not exist", which read as a gap. A gap is inert. This was not inert.
 
-What actually exists:
+What existed:
 
-* `tide showPolkitPrompt` and `tide clearPolkitPrompt` are **registered on
-  the live IPC** — they are in `qs -p ~/.config/quickshell/tide-island-fork
-  ipc show` today, alongside every working call.
-* `shell.qml` routes both to `showPolkitPromptWindow()` /
-  `clearPolkitPromptWindow()`, which exist in `DynamicIslandWindow.qml` and
-  set `islandState = "polkit_prompt"`.
-* The state has a width case (`Metrics.px(430)`, with a paragraph arguing
+* `tide showPolkitPrompt` and `tide clearPolkitPrompt` were **registered on
+  the live IPC**, alongside every working call.
+* `shell.qml` routed both to `showPolkitPromptWindow()` /
+  `clearPolkitPromptWindow()` in `DynamicIslandWindow.qml`, which set
+  `islandState = "polkit_prompt"`.
+* The state had a width case (`Metrics.px(430)`, with a paragraph arguing
   why a password field should be narrow), a radius case, a
   `polkitPromptLayerVisible` property, and an entry in the
   exclusive-keyboard-focus list.
 
-What does not exist:
+What did not exist:
 
 * `qml/island/PolkitPromptLayer.qml` — the file the comment at
-  `DynamicIslandWindow.qml:2428` explicitly points the reader at.
-* `polkitPromptLoader` — **referenced twice, at lines 3307 and 3308, and
-  declared nowhere.** Every other loader in that switch is declared a few
-  hundred lines below it; this one never was.
+  `DynamicIslandWindow.qml:2428` explicitly pointed the reader at.
+* `polkitPromptLoader` — **referenced twice and declared nowhere.**
 
-So the height case for `polkit_prompt` dereferences an identifier that
-does not resolve. **Driven live and confirmed, not inferred:**
+So the height case dereferenced an identifier that did not resolve, the
+call threw `ReferenceError: polkitPromptLoader is not defined`, and the
+island promoted itself to Overlay (level 2 → 3), grew nothing and drew
+nothing — an invisible surface over fullscreen windows.
+
+##### Why it was removed and not built
+
+The document spent a long time weighing "build it" against "strip it", and
+framed the question as a cost question: stripping is about fifteen lines,
+building is real work plus the agent hazard. **That framing was wrong, and
+it is worth recording as wrong**, because it treats the two options as
+different amounts of the same journey. They are not on the same road at
+all.
+
+The deciding fact is one this document never stated: **the prompt was never
+connected to polkit.** A polkit agent is a D-Bus service — it registers with
+`org.freedesktop.PolicyKit1.Authority` and implements the
+`AuthenticationAgent` interface. Nothing in the fork does either:
 
 ```
-qs -p ~/.config/quickshell/tide-island-fork ipc call tide showPolkitPrompt
+grep -rn 'AuthenticationAgent\|PolicyKit1\|RegisterAuthenticationAgent' \
+     .config/quickshell/tide-island-fork/
 ```
 
-produced, in the shell's own log:
+returns nothing. So `PolkitPromptLayer.qml`, however well built, would have
+been a password field wired to no transaction — a box you can type a
+password into with nothing on the other end to answer. "Build it" was never
+fifteen lines short of working; it was a D-Bus agent short of working, and
+Quickshell has no binding for one.
 
-```
-@DynamicIslandWindow.qml[3307:-1]: ReferenceError: polkitPromptLoader is not defined
-```
+And the job is already done. `/usr/lib/polkit-kde-authentication-agent-1`
+was running when this was checked (pid 2009), started from
+`hypr/autostart.conf:23`. **Checked before deciding, not after** — had
+nothing been handling polkit, `sudo`-requiring GUI actions would have been
+failing silently and building would have been the fix. Something was, so
+building a second agent would mean unregistering a working one, whose
+failure mode this document already describes: no password prompt anywhere
+on the system, silently, until you need one.
 
-and on screen: the island promoted itself to Overlay —
-`hyprctl layers -j` went from level 2 to level 3 — grew nothing, and drew
-nothing. A `grim` of the top 400 px shows the flank icons and an empty
-capsule. `tide clearPolkitPrompt` recovered it cleanly to level 2 at
-1366x58, so it is not a wedge, but it is a state any script or any typo
-can put the island into where the bar stops being a bar and sits over
-fullscreen windows doing nothing.
+##### What was removed
 
-The safety note is therefore **inverted from what it has said all along**.
-The document has been warning about the hazard of building this feature —
-registering a wrong polkit agent. That hazard is real and unchanged. But
-the hazard that exists *today*, with nothing built, is that half of it
-shipped: the front door is unlocked and there is no room behind it.
-Recorded, not fixed, per this session's brief.
+The IPC pair in `shell.qml`; `showPolkitPromptWindow` / 
+`clearPolkitPromptWindow` and `islandContainer.showPolkitPrompt()` in
+`DynamicIslandWindow.qml`; the width, height, radius, keyboard-focus and
+`openPanelState` cases; the `polkitPromptLayerVisible` property; the
+dangling `polkitPromptLoader` reference; `ForkConfig.polkitAgentEnabled`
+and its `forkPolkitAgentEnabled` parse; the settings row in
+`island-settings.py` and the two colour special-cases in `SettingsLayer.qml`
+that keyed on it. Every removal site carries a comment saying what stood
+there and why it is gone.
 
-The cheapest correct action is not to build the layer. It is to **remove
-the two IPC calls and the state's three switch cases** until there is a
-layer to open, so that the feature's absence is honest again. That is
-about fifteen lines. Building `PolkitPromptLayer.qml` is the real work and
-still carries the agent hazard above.
+Verified after restarting the shell: `ipc show` contains **zero** polkit
+entries, `ipc call tide showPolkitPrompt` answers `Function not found.`
+rather than throwing, and the island stays at level 2, 1366x58. The
+settings panel went from 13 rows to 12 with no warnings.
 
-**A warning that described an imaginary hazard.** The settings row for it
+**A warning that described an imaginary hazard.** The settings row
 previously read "DANGER. Registers this shell as the session polkit
-agent", which was not true of the code at any point — the switch was
-inert. It now reads NOT IMPLEMENTED and is disabled. A false warning on a
-dead control is worse than no row, because it is the kind of thing a later
-reader trusts.
+agent", which was not true of the code at any point — the switch was inert.
+A later wording was honest about being inert but still put a switch on
+screen for a feature nobody was going to finish. The row was never the
+problem; the half-built state behind it was, and that state was reachable
+over IPC without touching the panel at all.
 
 #### The ring OSD, off the notch
 
@@ -543,8 +560,11 @@ inert and four of the panel's twelve rows changed nothing:
 | Resting EQ bars | nothing — as above |
 | Theme reveal animation | nothing — as above |
 
-With the polkit row that is **five of twelve** controls doing nothing, in a
-panel whose whole justification is reaching keys the packaged app cannot.
+With the polkit row that was **five of twelve** controls doing nothing, in
+a panel whose whole justification is reaching keys the packaged app cannot.
+The polkit row has since been deleted outright with the feature behind it,
+taking the count to four of twelve — deleted rather than fixed, because
+there was no behaviour for it to describe.
 This is the same failure this document already records once ("a warning that
 described an imaginary hazard") — it was simply never checked whether the
 rows *around* that one were any better.
@@ -665,7 +685,8 @@ keys work because `UserConfigBackend` has a property of that name; `fork*`
 keys work because `ForkConfig.qml` reads them and fork QML consumes them. A
 key neither reads is INERT — the panel shows it, the write succeeds, the
 file gains the key, nothing happens. That is exactly the
-`forkPolkitAgentEnabled` situation above, which is why `scope: "packaged"`
+`forkPolkitAgentEnabled` situation described above (that row is now gone
+entirely), which is why `scope: "packaged"`
 keys are checked against the backend's real property list and warned about,
 and why the docstring says so twice.
 
@@ -1371,7 +1392,7 @@ being filed as either done or open.
 | item | status | evidence |
 |---|---|---|
 | 0. Install Hyprland | **done** | running 0.56.2; keyd bound; `inter-font` now installed and `fc-match` resolves both families to the real font |
-| 1. Notch + popups | **done bar one**, and that one is worse than "not built" — see the polkit section | every panel in the spec's state list is bound and opens; verified against `ipc show` and `hyprctl binds -j` |
+| 1. Notch + popups | **done**, and the one outstanding item is now closed by removal rather than by building — see the polkit section | every panel in the spec's state list is bound and opens; verified against `ipc show` and `hyprctl binds -j` |
 | 2. Liquid glass | **done** | `hyprctl plugin list` reports hyprglass 1.0.0 loaded; `configerrors` empty |
 | 3. Scripts / keymaps | **partial** — one missing package, one undecided rofi surface | see below |
 | 4. System-wide theming | **done for what it claims, and it claims less than a reader assumes** — see the caveat below | `theme-apply` drives borders and the island fill live; measured |
@@ -1381,11 +1402,12 @@ being filed as either done or open.
 
 Ordered by how much it costs to be wrong about, not by size.
 
-**1. The polkit prompt is half-shipped and throws.** Not a gap — a live
-IPC call that puts the island into a stateless Overlay limbo and logs
-`ReferenceError: polkitPromptLoader is not defined`. Driven and captured
-this session. Full write-up under item 1. The cheap correct action is to
-*remove* the half that shipped, not to build the other half.
+**1. ~~The polkit prompt is half-shipped and throws.~~ CLOSED — removed.**
+It was a live IPC call that put the island into a stateless Overlay limbo
+and logged `ReferenceError: polkitPromptLoader is not defined`. Removed
+rather than built, because the prompt was never wired to polkit's D-Bus
+agent interface at all and polkit-kde-agent was already running and
+working. Full write-up under item 1.
 
 **2. The control centre's Focus / DND row does nothing.** `swaync-client`
 is not installed; `dunst` is the daemon. Read, write and state-poll all
@@ -1519,9 +1541,10 @@ fold it into this file, and do not delete it.** Reasons, in order:
    code without redoing the counting.
 
 The one edit it needs: its opening says items 1–5 are "closed except the
-polkit prompt", which was true when written and is now the understatement
-described above. A one-line pointer from there to this file's polkit
-section is enough.
+polkit prompt". That was true when written, then became an understatement
+(the prompt was not absent, it threw), and is now simply stale — the
+prompt was removed, so items 1–5 really are closed. A one-line pointer
+from there to this file's polkit section is enough.
 
 ---
 
@@ -1574,6 +1597,8 @@ section is enough.
 3. **Screen corners** — DESIGN-SPEC.md specifies them, nothing draws them,
    and the notch's whole argument is that it is bezel. But they are also
    permanent furniture over every fullscreen video.
-4. **The polkit half-ship** — remove the two IPC calls and the three switch
-   cases now (about fifteen lines, and it makes the absence honest), or
-   leave it and build `PolkitPromptLayer.qml`?
+4. ~~**The polkit half-ship**~~ — **decided: removed.** The question was
+   posed as fifteen lines of stripping versus building
+   `PolkitPromptLayer.qml`. That was a false choice; building was never
+   fifteen lines short of working, it was a whole D-Bus agent short. See
+   item 1.

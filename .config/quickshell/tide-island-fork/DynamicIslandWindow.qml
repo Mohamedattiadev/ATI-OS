@@ -208,11 +208,11 @@ PanelWindow {
     // same three states the rest of this file already tests for (see
     // canShowSideSwipe and the sideSwipe guards) — normal, lyrics, custom.
     //
-    // The polkit prompt kept its own note because the reasoning is stronger
-    // there than convenience: whatever asked for the password is usually a
-    // window that just took the focus, and a prompt underneath a fullscreen
-    // surface means the request appears to hang. It is covered by the
-    // general rule now, and would have been covered by it anyway.
+    // There was a paragraph here about the polkit prompt earning its own
+    // entry, because whatever asked for the password is usually a window
+    // that just took the focus. The reasoning was sound and the state it
+    // described never rendered anything — the prompt was removed entire
+    // rather than finished. See the removal note below clearPickerWindow.
     //
     // Why resting stays on Top: a resting notch on Overlay would sit on top
     // of fullscreen video permanently, which is the opposite complaint. Only
@@ -270,11 +270,6 @@ PanelWindow {
                 // window is frequently a terminal, and a stray "kill" typed
                 // into a shell is a keystroke you cannot take back.
                 || islandContainer.pickerLayerVisible
-                // Exclusive for the password prompt for the obvious reason
-                // and one less obvious one: without the grab, keystrokes
-                // meant for the field land in the window behind, which for
-                // a password means typing it into whatever has focus.
-                || islandContainer.polkitPromptLayerVisible
                 // FORK: the Wi-Fi and Bluetooth detail panels. They had NO
                 // keyboard handling of any kind, and this line is half the
                 // reason — focus never rose above None while one was open
@@ -992,21 +987,43 @@ PanelWindow {
             islandContainer.showSettings();
     }
 
-    // NOT a toggle, and that is deliberate. Every other panel here is
-    // opened by a key you pressed, so a second press meaning "close" is
-    // right. This one is opened by a process waiting on an answer, and a
-    // toggle would give the same call two opposite meanings depending on
-    // state — a second authorisation request arriving while the first is up
-    // would DISMISS the prompt instead of showing the new one.
-    function showPolkitPromptWindow() {
-        islandContainer.showPolkitPrompt();
-    }
-
-    function clearPolkitPromptWindow() {
-        if (islandContainer.islandState === "polkit_prompt")
-            islandContainer.smartRestoreState();
-    }
-
+    // ---- THE POLKIT PROMPT USED TO BE HERE, AND IT IS GONE ----
+    //
+    // `showPolkitPromptWindow` / `clearPolkitPromptWindow` lived here and
+    // routed `tide showPolkitPrompt` into `islandState = "polkit_prompt"`.
+    // That state had a width case, a radius case, a height case, a
+    // keyboard-focus case and a `polkitPromptLayerVisible` property. What it
+    // never had was a renderer: `qml/island/PolkitPromptLayer.qml` was never
+    // written, and the height case dereferenced a `polkitPromptLoader` that
+    // was declared nowhere. Driving the IPC threw
+    //
+    //     ReferenceError: polkitPromptLoader is not defined
+    //
+    // and left the island promoted to Overlay, drawing nothing, on top of
+    // everything — an invisible modal you cannot answer or dismiss.
+    //
+    // Removed rather than finished, and the deciding evidence is NOT that
+    // the layer was missing. It is that the prompt was never connected to
+    // polkit at all. A polkit agent is a D-Bus service: it registers on
+    // org.freedesktop.PolicyKit1.Authority and implements the
+    // AuthenticationAgent interface, and nothing in this fork does either —
+    // `grep -rn 'AuthenticationAgent|PolicyKit1|RegisterAuthenticationAgent'`
+    // over the whole tree returns nothing. So even a perfect
+    // PolkitPromptLayer.qml would have been a password field wired to no
+    // transaction: you could type into it and there would be nothing on the
+    // other end to answer.
+    //
+    // And the job it was going to do is already done. This machine runs
+    // /usr/lib/polkit-kde-authentication-agent-1 (pid 2009 when this was
+    // checked), started from hypr/autostart.conf:23, and it works. Building
+    // a second agent means UNREGISTERING that one, whose failure mode this
+    // file and island-settings.py both already describe: no password prompt
+    // anywhere on the system, silently, until the moment you need one.
+    //
+    // The `forkPolkitAgentEnabled` config key went with it. It was read into
+    // ForkConfig.polkitAgentEnabled and no code ever consumed that property,
+    // so the settings row offering it was a switch wired to nothing.
+    //
     function toggleApplicationLauncherWindow() {
         if (islandContainer.islandState === "application_launcher")
             islandContainer.smartRestoreState();
@@ -1192,7 +1209,6 @@ PanelWindow {
             // are: a hot reload landing between a new property's use and its
             // declaration compiles a component that really is missing it.
             || islandContainer.pickerLayerVisible
-            || islandContainer.polkitPromptLayerVisible
             // FORK: the connectivity lists. Qualified through the id for the
             // same reason their neighbours are — a hot reload landing between
             // a new property's use and its declaration compiles a component
@@ -1344,12 +1360,6 @@ PanelWindow {
             || islandState === "power_menu"
             || islandState === "settings"
             || islandState === "picker"
-            // The polkit prompt is the one entry here that is NOT opened by
-            // a person — it is opened by whatever asked for authorisation.
-            // It belongs in the list anyway, and more urgently than the
-            // rest: a volume OSD replacing a password field mid-type would
-            // drop the keystrokes into nothing.
-            || islandState === "polkit_prompt"
         readonly property bool blocksTransientSplit: openPanelState
             || islandState === "notification"
         readonly property bool splitShowsProgress: islandState === "split" && osdProgress >= 0
@@ -1443,10 +1453,13 @@ PanelWindow {
         readonly property bool sysmonPanelLayerVisible: !root.overviewVisible && islandState === "sysmon_panel"
         // FORK: the Wi-Fi QR — qtile's WifiQR, `s` inside its WiFi chord.
         readonly property bool wifiQrLayerVisible: !root.overviewVisible && islandState === "wifi_qr"
-        // FORK: the four remaining states from DESIGN-SPEC.md's list. None
-        // of these existed upstream; `calendar`, `power menu` and `Polkit
-        // password prompt` are named in the spec, and the settings surface
-        // is the fork's answer to a packaged config app it must not patch.
+        // FORK: the remaining states from DESIGN-SPEC.md's list. None of
+        // these existed upstream; `calendar` and `power menu` are named in
+        // the spec, and the settings surface is the fork's answer to a
+        // packaged config app it must not patch. The spec's fourth name,
+        // `Polkit password prompt`, is deliberately NOT here — see the
+        // removal note below clearPickerWindow. polkit-kde-agent has that
+        // job and does it correctly.
         readonly property bool calendarLayerVisible: !root.overviewVisible && islandState === "calendar"
         readonly property bool powerMenuLayerVisible: !root.overviewVisible && islandState === "power_menu"
         readonly property bool settingsLayerVisible: !root.overviewVisible && islandState === "settings"
@@ -1458,7 +1471,6 @@ PanelWindow {
         // See qml/island/PickerLayer.qml.
         property string pickerMenu: "windows"
         readonly property bool pickerLayerVisible: !root.overviewVisible && islandState === "picker"
-        readonly property bool polkitPromptLayerVisible: !root.overviewVisible && islandState === "polkit_prompt"
         readonly property var activePlayer: mediaController.activePlayer
         readonly property string lyricsDisplayText: mediaController.displayText
         readonly property string currentTrack: mediaController.currentTrack
@@ -2425,19 +2437,6 @@ PanelWindow {
                 smartRestoreState();
         }
 
-        // FORK: the polkit password prompt. See qml/island/PolkitPromptLayer.qml
-        // — and read the safety note there before enabling it, because a
-        // wrong polkit agent means NO password prompts anywhere on the
-        // system and fails silently until you need one.
-        function showPolkitPrompt() {
-            cancelSideSwipeSettle();
-            abortSideTransientMode();
-            clearTransientCapsule();
-            islandState = "polkit_prompt";
-            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
-            stopAutoHideTimer();
-        }
-
         // FORK: the chord heads-up display. Entering a submap calls this;
         // leaving one calls clearModeKeys. Both come from
         // hypr/scripts/submap-indicator.sh, which is watching Hyprland's
@@ -3151,12 +3150,6 @@ PanelWindow {
                     // disambiguator is still on screen, which is the one
                     // thing this panel must not do.
                     return Math.min(Metrics.px(860), root.width - Metrics.px(48));
-                case "polkit_prompt":
-                    // Deliberately modest. This is a password field and one
-                    // line of "<app> is asking to <do thing>"; a wide panel
-                    // makes the field wide, and a wide field invites reading
-                    // the dots as progress.
-                    return Metrics.px(430);
                 case "mode_keys":
                     // Wide, because the rows are "KEY  action" in up to
                     // three columns and a chord's whole value is being
@@ -3303,11 +3296,6 @@ PanelWindow {
                         ? Math.min(pickerLoader.item.preferredHeight,
                                    root.screen.height - Metrics.px(60))
                         : Metrics.px(340);
-                case "polkit_prompt":
-                    return polkitPromptLoader.item
-                        ? Math.min(polkitPromptLoader.item.preferredHeight,
-                                   root.screen.height - Metrics.px(60))
-                        : Metrics.px(180);
                 case "mode_keys":
                     // The layer knows its own row count; nothing else does.
                     return modeKeysLoader.item
@@ -3392,7 +3380,6 @@ PanelWindow {
                 case "power_menu":
                 case "settings":
                 case "picker":
-                case "polkit_prompt":
                     return Metrics.px(34);
                 case "expanded":
                 case "bluetooth_expanded":

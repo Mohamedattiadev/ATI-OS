@@ -65,10 +65,11 @@ writer, not an implementation — the packaged keys work because
 UserConfigBackend has a property of that name, and the `fork*` keys work
 because ForkConfig.qml reads them and fork QML consumes them. A key that
 neither reads is INERT: the panel will show it, the write will succeed, the
-file will gain the key, and nothing will happen. That is exactly the
-forkPolkitAgentEnabled situation annotated below, and it is the single most
-likely way to be confused by this feature, so scope="packaged" keys are
-checked against BACKEND_PROPERTIES and warned about.
+file will gain the key, and nothing will happen. That was exactly the
+forkPolkitAgentEnabled situation — see the note where its row used to be —
+and it is the single most likely way to be confused by this feature, so
+scope="packaged" keys are checked against BACKEND_PROPERTIES and warned
+about.
 
 Usage:
     island-settings.py --list                 # descriptors + current values
@@ -190,39 +191,21 @@ SETTINGS = [
                   "wipe (REQUIREMENTS.md item 5). Off applies theme-apply "
                   "directly, which repaints the desktop in stages.",
     },
-    # NOT IMPLEMENTED, and listed anyway so the half that exists is visible
-    # rather than lurking.
+    # There was a `forkPolkitAgentEnabled` row here, labelled "Island polkit
+    # prompt", carrying a detail that began "NOT IMPLEMENTED". It is gone,
+    # along with the island state, the IPC calls and the ForkConfig key it
+    # nominally controlled.
     #
-    # The island state, its size cases and its show/clear functions were
-    # written; `qml/island/PolkitPromptLayer.qml` was NOT, and nothing
-    # anywhere registers a polkit agent — this key is read into
-    # ForkConfig.polkitAgentEnabled and no code consumes that property. So
-    # the toggle is INERT: it cannot replace the KDE agent and cannot show a
-    # prompt.
+    # Two earlier wordings of that row are worth keeping as wrong answers.
+    # The first said "DANGER. Registers this shell as the session polkit
+    # agent" — a warning about a hazard that did not exist, on a control that
+    # did nothing. The second, honest about being inert, still left a switch
+    # on screen for a feature nobody was going to finish. The row was never
+    # the problem; the half-built state behind it was, and that state could
+    # be reached over IPC without touching this panel at all.
     #
-    # The previous wording on this row said "DANGER. Registers this shell as
-    # the session polkit agent", which described behaviour that does not
-    # exist — a warning about an imaginary hazard, on a control that does
-    # nothing. That is worse than either a real warning or no row, because it
-    # is the kind of thing a future reader trusts.
-    #
-    # polkit-kde-authentication-agent-1 remains the registered agent in
-    # autostart.conf and is untouched. The real hazard, whenever this IS
-    # built: a wrong agent means NO password prompt anywhere on the system —
-    # no pkexec, no auth dialog — and it fails silently until you need one.
-    # So it must be proven alongside the KDE agent before replacing it.
-    {
-        "key": "forkPolkitAgentEnabled",
-        "label": "Island polkit prompt",
-        "type": "bool",
-        "default": False,
-        "scope": "fork",
-        "enabled": False,
-        "detail": "NOT IMPLEMENTED. The panel was never written and no polkit "
-                  "agent is registered by this shell, so this switch does "
-                  "nothing. polkit-kde-authentication-agent-1 is still the "
-                  "session's agent and is unaffected.",
-    },
+    # polkit-kde-authentication-agent-1 (autostart.conf:23) is the session's
+    # agent, was never displaced, and is untouched.
     {
         "key": "forkRingOsdEnabled",
         "label": "Ring OSD",
