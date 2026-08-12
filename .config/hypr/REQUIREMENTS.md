@@ -12,15 +12,24 @@ enabled, and confirmed bound to `AT Translated Set 2 keyboard`. See the
 "Runtime verification" section of MIGRATION.md for what first login
 proved.
 
-One package is still missing and matters for items 1 and 5:
+**The one missing package is now installed.** `pacman -Q inter-font`
+reports 4.1-1, and the two families that mattered resolve to the real
+font rather than to a substitute: `fc-match "Inter Display"` →
+`Inter.ttc: "Inter Display" "Regular"`, `fc-match "Inter Medium"` →
+`Inter.ttc: "Inter" "Medium"`. That closes the silent-substitution
+hazard for every `Inter` / `Inter Display` family in `hyprlock.conf` and
+for every one DESIGN-SPEC.md specifies for the notch — until it was
+installed they all resolved to Noto Sans CJK KR with no warning
+anywhere.
+
+**One package is still missing, and it is a different one:** `wf-recorder`.
+See item 3 — the ported screen and region recording rows are present,
+labelled, and refuse to run.
 
 ```
-sudo pacman -S inter-font
+sudo pacman -S inter-font   # done
+sudo pacman -S wf-recorder  # NOT done — see item 3
 ```
-
-Without it every `Inter` / `Inter Display` family in `hyprlock.conf` —
-and every one DESIGN-SPEC.md specifies for the notch — silently resolves
-to Noto Sans CJK KR. `fc-match "Inter Medium"` confirms it.
 
 Original install command, for reference:
 
@@ -234,12 +243,80 @@ as a layer in the fork with a script behind it. This paragraph said
 |---|---|---|
 | Display | `$alt 4` | `qml/display/DisplayPanel.qml` + `hypr/scripts/display-ctl.py` |
 | Audio detail (25 bindings, the largest) | `$alt 3` | `qml/audio/AudioPanel.qml` + `hypr/scripts/audio-ctl.py` |
-| Wi-Fi / Bluetooth lists | `$mod P` → `n` / `b` | the island's own control centre, previously unbound |
+| Wi-Fi / Bluetooth lists | `$mod P` → `n` / `b` | **rebuilt from scratch as two separate vim-navigable panels** — `qml/connectivity/WifiPanel.qml` and `BluetoothPanel.qml`. Was the control centre with a wing unfolded off its side; see below |
+| System monitor | `$mod ` `` ` `` | `qml/sysmon/` — **new, no qtile popup ancestor and not in the spec's list** — see below |
 | Wi-Fi QR | `$mod P` → `SHIFT+S` | `qml/wifi/WifiQrLayer.qml` + `hypr/scripts/wifi-qr.py` |
 | Cheatsheets | `$mod SHIFT K` | `qml/cheatsheet/CheatsheetLayer.qml` + `hypr/scripts/cheatsheet.py --sheet-json`. **Was rofi "on purpose" — see below** |
 | Wallpaper picker | `$mod SHIFT B` | upstream's, bound |
 
 MIGRATION.md has the per-item evidence for each.
+
+#### The connectivity panels stopped being wings of the control centre
+
+`$mod P` → `n` and `b` used to open the control centre with a side panel
+unfolded off it. That was never what the qtile chord reached — qtile's
+WifiPopup and BluetoothPopup were standalone popups — and it made the two
+most-used lists in the chord the only surfaces that arrived attached to
+something else. They are now two independent popups in their own right
+(`ca8be05`, `5c3e9ea`), the same shape the wallpaper and theme pickers
+open in, each taking the keyboard itself and doing its own navigation.
+
+The control centre is still mounted underneath, and that is deliberate
+rather than left over: it is the panels' **data provider** — the Wi-Fi
+controller, the Bluetooth adapter, the pairing agent and every action
+method the rows call live in `ControlCenterLayer.qml`. The binding that
+keeps it alive is `wifiPanelLoader.visible || bluetoothPanelLoader.visible`
+and NOT `.active`, which is a near-miss worth keeping: `retain` makes a
+loader `active` forever, so the obvious spelling would have pinned the
+entire control centre mounted for the life of the shell, invisibly, at
+opacity zero (`0c124cf`).
+
+Bluetooth also collapsed from several lists into **one rank-sorted list**
+(`786272c`), which as a side effect fixed a device that could render twice
+— once under "paired" and once under "nearby".
+
+**One thing on the old outstanding list is now closed:**
+`toggleBluetoothScan` was recorded as having no caller, meaning the panel
+could display a scan it could never start. It has one:
+`BluetoothPanel.qml:476`, inside `toggleScan()`, which is bound to a key at
+`:544` and sets a "scanning…" / "scan stopped" status either side of it.
+
+#### The system monitor — a key that had been pointing at nothing
+
+qtile's `$mod` + `` ` `` was "toggle 2nd system widget box", labelled
+`Updates · Disk · Volume`, with `mod2` + `` ` `` as `CPU + Memory`. Nothing
+in the island answered that, so the key had been aimed at the control
+centre as the nearest surface whose job is status rather than a task, and
+`binds.conf` said plainly what was wrong with the substitution: no Disk and
+no Updates.
+
+`qml/sysmon/` is the content (`8a2c3c1`) and `84a32b7` is the wiring —
+eleven registration sites in `DynamicIslandWindow.qml`, an IPC toggle, and
+the binding. Against qtile's own label table it covers `system_widgetbox`
+entirely and two thirds of the other. Volume stays in the control centre
+because it is a control and not a readout; **Updates never ported at all**,
+qtile's Updates-Mode being commented out in its own `config.py`, and that
+remains the one label-table entry with no home anywhere.
+
+Three dials on the shared `ProgressRing` rather than a fourth hand-rolled
+Canvas, disk as a row per filesystem rather than ukishima's single figure
+for `/` (on this machine `/` is 31.2 GB at 81% and `/home` is 201 GB at
+91%, so one number answers the least interesting third of the question),
+and both timers gated on `showCondition`. Numbers checked against `df -P`
+and `free -m` in the same second and agreeing to the byte on disk.
+
+**The wrong theory it cost, kept because it is the more useful half.** The
+panel appeared to open and close itself after two to three seconds, and
+increasingly elaborate probes were built for a self-closing panel. Two of
+the probes were themselves wrong — `pgrep -f` matched its own pattern, and
+a mean-brightness comparison over a screenshot region was measuring the
+terminal behind the island rather than the panel. The panel was fine the
+whole time: another agent was driving every popup transition on this same
+shell, and `smartRestoreState` was faithfully restoring whatever it had
+left open. The lesson generalises the one already in this repo — a
+screenshot is evidence about the running process, and *a derived statistic
+over a screenshot is evidence about whatever is in the crop*. Look at the
+picture first.
 
 ### The cheatsheets came off rofi, and item 3's rule with them
 
@@ -275,13 +352,76 @@ own list** ("states of the one shape"):
 | calendar | **DONE**, `$alt 6` — `qml/island/CalendarLayer.qml`. No qtile ancestor at all: qtile had `widget.Clock` and no calendar popup, so this was built from the spec rather than ported |
 | power menu | **DONE**, `$mod SHIFT Q` and `$mod P` → `q` — `qml/island/PowerMenuLayer.qml` over `scripts/power-ctl.sh`. Both keys were `dm-logout -r` (rofi), which is what qtile spawned |
 | settings | **DONE**, `$alt 7` — `qml/island/SettingsLayer.qml`. Not in the spec's list; added because the packaged config app is a compiled binary that a `yay -Syu` would overwrite, and it cannot reach fork-only keys at all. Now **user-extensible**, see below |
-| **Polkit password prompt** | **NOT BUILT.** The state, its size cases and its show/clear functions exist; `PolkitPromptLayer.qml` does not, and **nothing registers a polkit agent** — the config key is read into `ForkConfig.polkitAgentEnabled` and no code consumes it. polkit-kde-agent is still the session's agent and is untouched |
+| **Polkit password prompt** | **NOT BUILT, AND WORSE THAN THIS ROW SAID.** See below — it is not an absence, it is a live IPC call that throws |
 
-The polkit row is the only remainder of item 1. It is also the one with
-teeth: a wrong agent means NO password prompt anywhere on the system — no
-pkexec, no auth dialog — failing silently until you need one. Whenever it
-is built, it must run alongside polkit-kde-agent and be proven before
-replacing it.
+The polkit row is the only remainder of item 1's feature list. It is also
+the one with teeth: a wrong agent means NO password prompt anywhere on the
+system — no pkexec, no auth dialog — failing silently until you need one.
+Whenever it is built, it must run alongside polkit-kde-agent and be proven
+before replacing it.
+
+##### The polkit prompt is not merely missing — it is a reachable crash
+
+**This is new, it was found by driving the IPC rather than by reading the
+code, and it is the third instance of this document's recurring failure
+shape: something that looks wired up and is not.** The row above used to
+say the layer "does not exist", which read as a gap. A gap is inert. This
+is not inert.
+
+What actually exists:
+
+* `tide showPolkitPrompt` and `tide clearPolkitPrompt` are **registered on
+  the live IPC** — they are in `qs -p ~/.config/quickshell/tide-island-fork
+  ipc show` today, alongside every working call.
+* `shell.qml` routes both to `showPolkitPromptWindow()` /
+  `clearPolkitPromptWindow()`, which exist in `DynamicIslandWindow.qml` and
+  set `islandState = "polkit_prompt"`.
+* The state has a width case (`Metrics.px(430)`, with a paragraph arguing
+  why a password field should be narrow), a radius case, a
+  `polkitPromptLayerVisible` property, and an entry in the
+  exclusive-keyboard-focus list.
+
+What does not exist:
+
+* `qml/island/PolkitPromptLayer.qml` — the file the comment at
+  `DynamicIslandWindow.qml:2428` explicitly points the reader at.
+* `polkitPromptLoader` — **referenced twice, at lines 3307 and 3308, and
+  declared nowhere.** Every other loader in that switch is declared a few
+  hundred lines below it; this one never was.
+
+So the height case for `polkit_prompt` dereferences an identifier that
+does not resolve. **Driven live and confirmed, not inferred:**
+
+```
+qs -p ~/.config/quickshell/tide-island-fork ipc call tide showPolkitPrompt
+```
+
+produced, in the shell's own log:
+
+```
+@DynamicIslandWindow.qml[3307:-1]: ReferenceError: polkitPromptLoader is not defined
+```
+
+and on screen: the island promoted itself to Overlay —
+`hyprctl layers -j` went from level 2 to level 3 — grew nothing, and drew
+nothing. A `grim` of the top 400 px shows the flank icons and an empty
+capsule. `tide clearPolkitPrompt` recovered it cleanly to level 2 at
+1366x58, so it is not a wedge, but it is a state any script or any typo
+can put the island into where the bar stops being a bar and sits over
+fullscreen windows doing nothing.
+
+The safety note is therefore **inverted from what it has said all along**.
+The document has been warning about the hazard of building this feature —
+registering a wrong polkit agent. That hazard is real and unchanged. But
+the hazard that exists *today*, with nothing built, is that half of it
+shipped: the front door is unlocked and there is no room behind it.
+Recorded, not fixed, per this session's brief.
+
+The cheapest correct action is not to build the layer. It is to **remove
+the two IPC calls and the state's three switch cases** until there is a
+layer to open, so that the feature's absence is honest again. That is
+about fifteen lines. Building `PolkitPromptLayer.qml` is the real work and
+still carries the agent hazard above.
 
 **A warning that described an imaginary hazard.** The settings row for it
 previously read "DANGER. Registers this shell as the session polkit
@@ -335,6 +475,50 @@ theme-apply.
 The Wi-Fi/Bluetooth toggles were `StyleTokens.success`, a fixed iOS green — the
 only thing in the panel ignoring the palette. Now the accent. The battery bar
 keeps success/warning/danger, where the colour *is* the information.
+
+Since then the header and the connectivity rows were restyled the same way
+ukishima sets them — a hero number and two rows (`71b4c65`) — and the
+panel's own morph was put on `Motion.SCALE` so it stops being the one
+surface that opens on a different curve from everything else (`cfb46b5`).
+
+##### A sixth dead control, and this one is in the control centre itself
+
+**Found by reading the running shell's log rather than the code**, which is
+how it stayed hidden: it produces a warning on a timer and nothing on
+screen. The control centre's Focus / Do-Not-Disturb row shells out to
+`swaync-client`:
+
+| what | where |
+|---|---|
+| read the current state | `ControlCenterLayer.qml:1008` — `["swaync-client", "--get-dnd"]` |
+| turn it on | `:1098` — `["swaync-client", "-dn"]` |
+| turn it off | `:1112` — `["swaync-client", "-df"]` |
+
+**`swaync-client` is not installed on this machine and never has been.**
+`dunst` is the notification daemon and is the process holding
+`org.freedesktop.Notifications` — PID confirmed in the process table. The
+log shows the consequence repeating for as long as the panel is open:
+
+```
+WARN: Process failed to start, likely because the binary could not be
+      found. Command: QList("swaync-client", "--get-dnd")
+```
+
+The read fails, so `focusEnabled` never updates from reality. The write
+fails, and because `focusEnableProcess.onExited` sets
+`focusEnabled = exitCode === 0`, a failure-to-start flips the row to
+**off** — so the control does not even fail visibly stuck, it fails by
+silently agreeing with itself. Notifications keep arriving either way.
+
+This is exactly the class of bug this document already records twice — the
+imaginary polkit warning, and the four inert `fork*` settings rows — and
+it was missed both times because those audits swept the *fork's* files.
+This one is upstream code the fork vendored and never checked. **The audit
+question that would have caught it, and should be the standing one: for
+every external binary this shell shells out to, is it installed?**
+
+The fix, when it is time, is `dunstctl`: `dunstctl is-paused` reads it,
+`dunstctl set-paused true|false` writes it. Recorded, not fixed.
 
 #### Qt theming — verified, it works
 
@@ -502,7 +686,7 @@ a preference: it is what the panel DISPLAYS for a key absent from
 panel opens reading 12 for a key the shell treats as 14 with nothing on
 screen to say which is real.
 
-### Still open: the island does not yet LOOK like the video
+### WAS open: the island does not yet LOOK like the video — now largely closed
 
 Reported directly, and it is not one bug: element sizes, icon sizes and
 padding across the panels, and the chord/mode indicator's appearance. The
@@ -556,11 +740,78 @@ bug found there: `config.rasi` asks for `icon-size: 24` and the theme forced
 `20px` — a theme rule beats the configuration block, so every icon in every
 menu had been drawn a fifth smaller than configured.
 
-Still open under this heading: the chord/mode indicator's appearance, and
-per-panel composition against the spec (this pass fixed SIZE, not layout).
 The control centre's Sound slider did NOT already cover audio — it is the
 volume of the default sink, and qtile's popup was about everything that
 is not the default. That table is in MIGRATION.md too.
+
+#### Since that pass: the resting state was rebuilt, and it is what closed this
+
+The paragraph above ended by saying SIZE was fixed and LAYOUT was not.
+Layout is what the 35 commits since have been. The resting island is no
+longer a clock in a black box — it is a composed row, and each piece of it
+was argued and measured:
+
+| what changed | commits | how it is known |
+|---|---|---|
+| Flank icons are real application icons, not glyphs — a dark plate, a circular clip, sized off the ring's own diagonal, padded on the timer's padding | `0e29f6d` `0230d1f` `acae9c9` `c44999e` `f49cf5a` | screenshotted at each step; the "glow" that looked like a rendering artefact turned out to be an underdamped spring (`4e04f2f`) |
+| The focus ring is the countdown's ring — `OsdLayer`'s `ProgressRing`, not a round CSS-style border — and thinned to an accent rather than a frame | `4edeb81` `9d13ea4` `fdd0e60` | `93ded25` also records a Canvas bug that was hiding the rings entirely |
+| Icons are filtered to the current workspace, off Hyprland toplevels | `28ac816` | — |
+| Water-drop entry animation, playing once rather than on every model change | `e2cd506` `0fa0432` | the flicker behind it was the model reading the window TITLE, so any title change rebuilt the row (`94e44d0`) |
+| The workspace readout stopped being a ring and became type, then moved INSIDE the capsule as real content rather than an overlay floated over it | `ead5311` `7a5a43f` `2a078a1` `4a0e2ac` `35accc4` | it now shows only on the plain resting clock |
+| The capsule's corners stop finishing 340 ms before the capsule does | `0dc2480` | — |
+| The resting surface is back on Top after a spell on Overlay; the kanji are gone; popups take the island's colour | `e38f549` `4965022` | verified live: `hyprctl layers -j` reports the quickshell layer at 1366x58, level 2 |
+
+So the honest status of this heading is: **the resting state and panel
+sizing are done; per-state LAYOUT against the reference video is
+UNVERIFIABLE from here and always was.** I still cannot see video frames.
+What was checked was DESIGN-SPEC.md, which is a transcript of the author
+narrating his own numbers, and the shell now matches it everywhere the
+spec gives a number. Where the spec gives only a description, this is a
+judgement call that has been made and cannot be measured. Saying "still
+open" would imply there is a test that has not been run; there is not.
+
+**The chord/mode indicator's appearance is still genuinely open.**
+`ModeKeysLayer.qml` exists, is reached from `submap-indicator.sh` via
+`tide showModeKeys` / `tide clearModeKeys`, and renders — it was never the
+functionality that was in question. It has had none of the restyling pass
+that the connectivity panels and the control centre header got, and it is
+the one surface that appears on every chord entry.
+
+#### Motion, and the panel-to-panel glitch
+
+Reported as "going from one popup to another is laggy and glitchy", then
+more precisely as "it goes up down glitch for 0.1 s". Both were the same
+bug and it was in none of the places it looked like it was.
+
+A panel is destroyed shortly after it closes, so every open constructed a
+fresh one whose model was empty and which fetched asynchronously. For one
+to three frames the panel was therefore real, laid out, and CONTENTLESS,
+and the capsule was faithfully animating to the correct height for an
+empty list before animating to the real one. Measured across all 156
+ordered pairs of the thirteen panels: 71 collapsed below 60% of their
+settled content mid-swap, and it is a property of the DESTINATION, not the
+source. `PanelLoader` gained `retain`, applied at five sites — display,
+audio, power menu, settings, theme picker. Full write-up in `0c124cf`.
+
+**Two things deliberately left alone, on measurement rather than taste.**
+Wi-Fi measured the cleanest destination in the matrix because it already
+sets a "reading networks…" status, so there is nothing for retention to
+fix. Bluetooth was tried WITH retain and measured no better — its empty
+frame is a different bug, still undiagnosed, and it was left alone rather
+than shipped with a change that buys a permanent mount and nothing else.
+
+**Still open, and stated in the commit itself:** retention does not
+survive a config reload, so the first open of each retained panel per
+session still pays the empty-model frame once. Verified as still true —
+`retain: true` appears at exactly five sites in `DynamicIslandWindow.qml`
+and `PanelLoader.qml`'s `active` is `live || holdTimer.running || (retain
+&& everLoaded)`, with `everLoaded` latched at runtime and therefore reset
+by every reload.
+
+The rest of the motion pass: the capsule radius duration (`0dc2480`), the
+player's progress bar animating progress rather than width (`0a67d60`),
+and the control centre's own morph following `Motion.SCALE` like
+everything else (`cfb46b5`).
 
 Original notes below.
 
@@ -739,10 +990,96 @@ Since written, the "still to do" list has emptied:
   on class, and `kitty --title nvimsum` has the class `kitty`.
 - **`qdrop.py` / `qdrop_watch.py`** — superseded by special workspaces.
 
-What remains open under this item is the *rule* it states, not a script:
-the cheatsheets were moved off rofi and into the island anyway (see
-above), so "leave the launcher problems on rofi" now describes the
-`dm-*` launcher set and nothing else.
+**The rule this item states has now lost almost entirely, and that is a
+change of policy, not a slip.** It said: rebuild the *interactive* popups
+in the shell, leave the *launcher* problems on rofi. The cheatsheets went
+first, for the reason argued above. Then the rest of the chord followed
+(`c42cfac`, `9981bf5`, and the clipboard in `8d788ba` / `bc87691`).
+
+The simpler observation that beat the rule twice is the same one both
+times: every other surface on this desktop lives in the notch, and a rofi
+window over the desktop is the odd one out. What rofi actually contributed
+was *the typing, not the window* — so a picker with a search field keeps
+everything rofi was good for.
+
+`$mod P` is now the island's `PickerLayer` on every key but two. The four
+list-shaped menus went first; the other ten needed the panel to grow **a
+page stack and a prompt mode**, because they are not single lists — a
+screenshot asks "where does it go", a spell-check asks for a sentence and
+then which mistake to fix, and `dm-confedit` is a directory walk. The
+panel holds a stack of opaque pages and `hypr/scripts/island-picker.py`
+decides what each id means. The panel is never handed a command: the
+script returns rows of `{id, label, detail}` and takes an `id` back,
+because a picker that executes strings supplied by a script executes
+whatever can write to that script.
+
+**Three ports drop something real, and all three say so at the site:**
+`dm-recordV2`'s screen capture (below), `rofi_pass`'s write half, and
+`rofi_todo`'s sessions. The rofi originals are untouched on disk and the
+qtile session still uses every one of them.
+
+##### What still opens a rofi window under Hyprland — the count was wrong
+
+`rofi_anki` (`$mod P` → `a`) and `rofi_ilovepdf` (`$mod P` → `v`) are the
+deliberate exceptions, and `binds.conf` calls them "the only two keys in
+this chord that are still rofi". Within the chord that is true. **As a
+statement about the session it is not**, and cross-referencing
+`hyprctl binds -j` against every script in `.config/AtiScriptsV1/` found
+the others:
+
+| bind | script | rofi? |
+|---|---|---|
+| `$mod P` → `a` | `rofi_anki` | yes — deliberate, a linear eight-prompt wizard over AnkiConnect |
+| `$mod P` → `v` | `rofi_ilovepdf` | yes — deliberate, a file-picker/page-range/OCR pipeline |
+| `$mod P` → `SHIFT c` | `theme-toggle` | yes — deliberate and documented; it is the qtile session's picker and it keeps working when the island is down |
+| **`$mod SHIFT F6`** | **`phone_screen`** | **yes, and undocumented anywhere.** Its QR/pairing path calls `require_cmd qrencode rofi` and pipes into `rofi -dmenu -i -format f` against `~/.config/rofi/themes/base.rasi` |
+
+`phone_screen` is a fourth rofi surface that nothing recorded. It is not
+obviously wrong — it is a wizard like the other two deliberate ones, and
+by that reasoning it belongs with them rather than in the picker. But it
+was never *decided*, and "the only two" has been stated in `binds.conf`
+and in this file while a third was one keypress away. **Open: decide it
+explicitly and correct the claim in `binds.conf` either way.**
+
+Method note, because the claim had gone unchecked for several sessions:
+seven `AtiScriptsV1` scripts are reachable from a Hyprland bind at all —
+`clock_popup`, `phone_screen`, `rofi_anki`, `rofi_ilovepdf`,
+`theme-toggle`, `voice_dictate`, `voice_dictate_live`. `clock_popup`
+mentions rofi only in comments. Everything else in that directory is
+qtile's, or is called by another script, and cannot be reached from this
+session.
+
+##### Screen capture: the X11 tools, and what actually replaced them
+
+The outstanding list has been carrying "`dm-satty` uses `maim`/`xdotool`/
+`xclip` — X11 tools that produce BLACK output under Wayland". That is
+still true of the file, and it is now **irrelevant to this session**:
+`dm-satty` is not reachable from any Hyprland bind. It was not wrapped, it
+was rewritten. `$mod P` → `i` opens the picker's screenshot menu, which is
+`grim` for the capture, `slurp` for the rectangle, `hyprctl` for the active
+window's geometry, `wl-copy` for the clipboard, and satty unchanged
+because satty is Wayland-native already. `Print` on its own is a direct
+`grim -g "$(slurp …)" | wl-copy`. Both verified present in
+`hyprctl binds -j` with the command fully expanded.
+
+`dm-satty` stays on disk because the qtile session still uses it. The
+correct record is that it is X11-only *and unreachable from here*, not
+that it is a Hyprland bug waiting to bite.
+
+**`wf-recorder` is genuinely missing, and this one is unresolved.**
+`command -v wf-recorder` finds nothing. `$mod P` → `r` opens the record
+menu, which lists its rows with the detail "wf-recorder is not installed"
+rather than hiding them, and refuses on selection with the same message
+pointing at the note in `island-picker.py`. That is the right failure
+shape — visible, explained, not silent — but it means `dm-recordV2`'s
+screen and region recording is the one qtile capability with no working
+equivalent in this session. `sudo pacman -S wf-recorder` closes it. The
+same X11 root cause is what made `ffmpeg -f x11grab` record black video.
+
+Also verified while sweeping: **no keybind points at a binary or script
+that does not exist.** Every `exec` in `hyprctl binds -j` resolves, and
+every script in `hypr/scripts/` is referenced by something — several only
+by QML, which is why a grep of `binds.conf` alone under-reports them.
 
 On the popup-vs-menu question you raised: **rofi already works on Wayland**
 under XWayland, and every one of your `dm-*` scripts runs unchanged. So
@@ -882,6 +1219,89 @@ only place the new wallpaper shows. Measured: the
 90 ms + 620 ms, and a frame grabbed right after it appears still shows the
 OLD wallpaper that hyprpaper had already been told to replace.
 
+### Except that it had never once animated, and the trick above is why
+
+**Everything above this line was true and the feature still did not
+exist.** `9574390`. The measurement that "proved" it — the layer being up
+for ~600 ms — proved the overlay was *mapped*, which it was. It did not
+prove the overlay had anything in it, and it did not.
+
+The `Image` was bound to `capturePath`, which is assigned at the TOP of
+`begin()`, because grim has to be told where to write before it is
+started. So the Image was pointed, **by construction**, at a file
+guaranteed not to exist yet. Qt opened it immediately, failed, and a
+failed `Image` does not retry when the file later appears. The animation
+then ran its full course masking an image that was never there, which is
+invisible. The theme still changed, so the whole thing read as "the theme
+just switches" — and nobody could describe what the theme change looked
+like because it looked like nothing.
+
+The only trace was one line per theme change in the log:
+
+```
+Cannot open: file:///tmp/tide-theme-transition-1786567236546.jpg
+```
+
+The fix is a second property. `frozenSource` is assigned in
+`beginReveal()`, which only runs once grim has exited 0, and the `Image`
+reads that with an explicit empty-string guard. **Re-verified this
+session**: driving `tide applyThemeAnimated` against the live shell and
+reading only the log lines produced afterwards emits no `Cannot open`
+warning at all. (The one `file://undefined` still visible further up that
+log is at `ThemeTransitionWindow.qml[280:9]`; the guard now sits at 292,
+so that line predates the current file and is history, not a live fault.)
+
+This is the fourth entry in this document's running list of *things that
+looked wired up and were not* — after the false polkit warning, the
+never-instantiated `ForkConfig`, and the `FileView` on a bare `QtObject` —
+and it is the most instructive, because unlike the others it had a
+measurement behind it. The measurement was of the wrong thing.
+
+### And the gesture was wrong too — it is a wipe now, not a circle
+
+The circle came from Aylur's Marble Shell. **A wallpaper change on this
+machine is not a circle.** `hypr/scripts/wallpaper-sync.sh` drives awww
+with `--transition-type wave --transition-angle 30`, so what every
+wallpaper change here has trained the eye on is a front crossing the
+screen at 30 degrees. The ask was for the theme change to animate "like
+the wallpaper changing", and it now is the same gesture: a rotated
+rectangle sweeping along its own local axis.
+
+**Measured rather than eyeballed, and the first attempt to measure it was
+garbage.** Fitting the frozen/revealed boundary gave 6.5 degrees —
+nonsense, because only ~13% of the screen differs between two dark themes,
+so the fit was tracking the browser's page content rather than the front.
+The right instrument is the band of pixels that changes between
+CONSECUTIVE frames, which is exactly the strip the front swept. Its
+principal axis came out at **120.0 ± 0.4 degrees over 18 consecutive
+intervals**, with the cloud up to 21× longer than it is wide. A front
+travelling along a 30-degree axis is a line at 30+90 = 120, so the angle
+is right to within half a degree.
+
+Two things the file records at their sites because getting them wrong is
+subtle rather than loud:
+
+- **The transform order is load-bearing.** `Translate` is listed FIRST so
+  the rotation applies to already-translated geometry and the net motion
+  is along the ROTATED axis. Listing `Rotation` first gives a shape that
+  sits at an angle while sliding horizontally — a different and much worse
+  effect, and one that would have measured as a front angle not matching
+  its direction of travel, which is precisely what the 120 degrees rules
+  out.
+- **Easing went from `InOutQuad` to `Linear`.** A circle's area grows as
+  r², so easing its radius is what stops the middle feeling like a burst.
+  A straight front already covers area at a constant rate, and easing it
+  makes the front visibly accelerate and brake, which awww does not do.
+
+**Not reproduced, and open:** awww's `--transition-wave "60,30"` gives its
+front a 60 px period, 30 px amplitude sine edge. A sine edge in QML needs
+either a `ShaderEffect`, which wants a precompiled `.qsb` and therefore a
+build step this config does not have, or a `Canvas`, which does not paint
+while its item is invisible — and this mask is `visible: false` by
+construction. At 60 px period on a 1366 px screen the ripple is fine
+detail and the angle is what carries the resemblance. A `Repeater` of ~260
+thin slices is the fallback and is noted in the file.
+
 Original notes below.
 
 **Was: NOT STARTED**
@@ -932,6 +1352,179 @@ Depends on: item 1 (needs the Quickshell shell to live in) and item 4
 
 ---
 
+## What is actually left — audited against the tree and the running shell
+
+Written because the sections above are a reasoned record and not a status
+board, and after 35 commits in one session nobody could answer "what is
+left" by reading them. **Nothing in this section is taken from what the
+document said.** Each row was established by one of: `grep` over the tree,
+`hyprctl binds -j` (the only truth for a keybind — an empty
+`hyprctl configerrors` never catches a bind that stored a literal `$var`),
+`qs -p … ipc show` cross-referenced against every bind, driving the IPC and
+reading a `grim` capture, reading the shell's own log, or `pacman -Q`.
+
+Where a thing could not be verified, it says so and says why, rather than
+being filed as either done or open.
+
+### Items 0–5, at the top level
+
+| item | status | evidence |
+|---|---|---|
+| 0. Install Hyprland | **done** | running 0.56.2; keyd bound; `inter-font` now installed and `fc-match` resolves both families to the real font |
+| 1. Notch + popups | **done bar one**, and that one is worse than "not built" — see the polkit section | every panel in the spec's state list is bound and opens; verified against `ipc show` and `hyprctl binds -j` |
+| 2. Liquid glass | **done** | `hyprctl plugin list` reports hyprglass 1.0.0 loaded; `configerrors` empty |
+| 3. Scripts / keymaps | **partial** — one missing package, one undecided rofi surface | see below |
+| 4. System-wide theming | **done for what it claims, and it claims less than a reader assumes** — see the caveat below | `theme-apply` drives borders and the island fill live; measured |
+| 5. Circular theme animation | **done, and it is no longer circular** | re-verified live this session: no `Cannot open` warning, front angle measured at 120.0 ± 0.4° |
+
+### The genuinely open list
+
+Ordered by how much it costs to be wrong about, not by size.
+
+**1. The polkit prompt is half-shipped and throws.** Not a gap — a live
+IPC call that puts the island into a stateless Overlay limbo and logs
+`ReferenceError: polkitPromptLoader is not defined`. Driven and captured
+this session. Full write-up under item 1. The cheap correct action is to
+*remove* the half that shipped, not to build the other half.
+
+**2. The control centre's Focus / DND row does nothing.** `swaync-client`
+is not installed; `dunst` is the daemon. Read, write and state-poll all
+fail; the write failure silently flips the row to off. Full write-up under
+item 1. `dunstctl` is the fix.
+
+**3. `wf-recorder` is not installed**, so screen and region recording —
+`dm-recordV2`'s half that did not port — has no working equivalent in this
+session. It fails visibly and explains itself, which is the right shape,
+but it is the one qtile capability that is simply absent.
+`sudo pacman -S wf-recorder`.
+
+**4. `phone_screen` (`$mod SHIFT F6`) opens a rofi window** and no
+document says so, while `binds.conf` states that `rofi_anki` and
+`rofi_ilovepdf` are "the only two". Decide it and correct the claim.
+
+**5. Two clocks, ~10 px apart, whenever music is playing.** Confirmed in
+code this session rather than only by report. `SwipeLyricsLayer.qml:384`
+draws its clock at `x: shiftedTimeX` — `timeX` minus `animatedGroupShift`,
+the offset that keeps the clock/workspace/EQ cluster optically centred.
+`SwipeCustomInfoLayer.qml:292` draws its clock at plain `x: timeX`, and
+that layer has no group-shift concept at all. Both are gated on
+`timeText !== "" && showSecondaryText`, so with music up both are visible
+and they differ by exactly `animatedGroupShift`. The fix is to give
+`SwipeCustomInfoLayer` the same trailing-allowance arithmetic, or to make
+one of the two the only clock — the second is probably right, since two
+layers each drawing the same clock is the real fault and the offset is
+only how it became visible.
+
+**6. `PanelLoader.retain` does not survive a config reload**, so the first
+open of each retained panel per session still pays one empty-model frame.
+Stated in `0c124cf` and re-verified: `everLoaded` is latched at runtime, so
+a reload resets it. Five panels affected.
+
+**7. Bluetooth's empty first frame is a different, undiagnosed bug.**
+`retain` was tried on it and measured no better (0.07–0.26 ink either way),
+so it was correctly left alone. Its rows come from the control centre via
+`provider` and it has a 400 ms `settleTimer` of its own; one of those is
+the cause and neither has been ruled out.
+
+**8. The chord/mode indicator's appearance.** `ModeKeysLayer.qml` works
+and is reached on every submap entry; it has had none of the restyling the
+other panels got. The one surface you see most often and the one least
+designed.
+
+**9. awww's sine-edged wave front is not reproduced** in the theme
+transition — angle matches to half a degree, ripple does not. Blocked on
+QML: `ShaderEffect` needs a build step this config does not have, and
+`Canvas` does not paint while invisible. A ~260-slice `Repeater` is the
+noted fallback.
+
+**10. Updates has no home anywhere.** qtile's `2nd_system_widgetbox` label
+was `Updates · Disk · Volume`; the sysmon panel covers Disk, the control
+centre covers Volume, and Updates never ported — qtile's own Updates-Mode
+is commented out in its `config.py`, so this is arguably closed by
+abandonment rather than open. Recorded so the label table stops looking
+two-thirds ported with no explanation.
+
+### Superseded / abandoned, so they stop being counted as open
+
+| | why |
+|---|---|
+| `dm-satty`'s X11 tools | **superseded.** Rewritten, not wrapped: the picker's screenshot menu is grim + slurp + hyprctl + wl-copy + satty. `dm-satty` is unreachable from any Hyprland bind and stays on disk for the qtile session |
+| `qdrop.py` / `qdrop_watch.py` | **superseded** by special workspaces |
+| "leave the launcher problems on rofi" | **superseded as policy.** The chord is the island's picker on every key but two, plus the three surfaces listed under item 3 |
+| Per-state layout vs the reference video | **abandoned as a test, not as work.** I cannot see video frames and never could. DESIGN-SPEC.md — a transcript of the author narrating his own numbers — is matched everywhere it gives a number. Where it gives only a description this is a judgement call that has been made. Calling it "open" implies an unrun test; there is none |
+
+### Could not verify, and why
+
+- **Anything requiring a real keypress.** `wtype` sends to the focused
+  surface, not through compositor bindings, and there is no `ydotool`
+  here. Every binding in this document is verified through
+  `hyprctl binds -j` — modmask, key, submap and the fully expanded
+  command — and by executing the dispatcher or IPC call directly. The
+  physical keystroke itself is unverified for all of them. `hyprctl
+  binds -j` was swept for unexpanded `$` variables, which is the failure
+  `configerrors` does not catch: two hits, both false positives (a `$` regex
+  anchor in a `toggle-app.sh` matcher, and a `$(slurp …)` command
+  substitution on `Print`).
+- **The reference video's appearance.** As above.
+- **Whether the ~10 px clock gap is exactly 10 px.** The code path is
+  proven; the number is the original report's and was not re-measured,
+  because doing so means driving music through the live shell.
+
+### A caveat on item 4 that its own section does not carry
+
+Item 4 says theming is "DONE and verified live", and for what it covers
+that is true. It covers less than a reader assumes: the shell *fill* and
+the window borders. `upgread_UI_UX.md` counted the rest — 115 distinct raw
+hex literals across 33 files at 288 sites, plus 112 uses of `StyleTokens`,
+whose 55 properties are read out of `IslandBackend.qmltypes` as
+`isReadonly: true` **and** `isPropertyConstant: true`, i.e. C++ constants
+in a package binary that no amount of QML makes follow gruvbox. So there
+are at least two different "accents" on screen at any moment. Item 4 is
+done as scoped; the scope is narrow, and that is a design finding rather
+than a bug.
+
+---
+
+## `upgread_UI_UX.md` — commit it, standalone, and link it from here
+
+It is currently untracked. **Recommendation: `git add` it as-is, do not
+fold it into this file, and do not delete it.** Reasons, in order:
+
+1. **It is a different question.** This file asks *does the feature
+   exist*. That file asks *does this read as one designed system*. Both
+   are legitimate and the answers do not interleave — folding 487 lines of
+   design-system analysis into a scope document would destroy the one
+   thing this file is good at, which is being the record of what was asked
+   for and what happened to it.
+2. **Its measurements re-verified.** Spot-checked this session:
+   `DynamicIslandWindow.qml` is still 4,897 lines; the tree is still 61
+   QML/JS files and 28,127 lines; `grep -i corner` still finds no screen
+   corners; `dunst` still owns `org.freedesktop.Notifications`. One number
+   has moved and in the wrong direction — it counted **six** raw `Loader`s
+   in `DynamicIslandWindow.qml` and there are now **seven** (lines 86,
+   3871, 3902, 3951, 3969, 3991, 4582), against 20 `PanelLoader`s. Its
+   P1-4 finding is not going stale, it is growing.
+3. **It found things this file had not**, and they are cheap and real: the
+   `IslandTheme.qml` comment that contradicts MIGRATION.md item 4 (it says
+   `theme-apply` renames atomically; MIGRATION records that the rename was
+   *removed* because `FileView` watches the inode — the code is right, the
+   comment is stale), and MIGRATION.md's own headline table still reading
+   123 of 291 bindings at 42.3% when `hyprctl binds -j` reports **244**
+   live. Both re-confirmed this session. Anyone reading that percentage as
+   status gets a wrong picture of the whole port.
+4. **Untracked is the one state it must not stay in.** It is the only
+   written record of several measurements that cost real time to take —
+   the 288 hex literals, the 55 constant `StyleTokens`, the MouseArea/Keys
+   split across every panel — and none of them are recoverable from the
+   code without redoing the counting.
+
+The one edit it needs: its opening says items 1–5 are "closed except the
+polkit prompt", which was true when written and is now the understatement
+described above. A one-line pointer from there to this file's polkit
+section is enough.
+
+---
+
 ## Dependency order
 
 ```
@@ -949,13 +1542,38 @@ Depends on: item 1 (needs the Quickshell shell to live in) and item 4
 
 ---
 
-## Open questions I need you to answer
+## Open questions — three of the original four are now answered
 
-1. **Screenshots of both videos**, or a description of the notch's shape,
-   what it shows idle vs expanded, and how it animates. I cannot see them.
-2. Is video 1 actually Tide-island, or a different shell? If different and
-   you can find the repo, that changes the base.
-3. hyprglass on **windows only**, or on the notch bar too? Bar glass is the
-   fragile path (private Hyprland internals).
-4. Keep rofi for launchers, or go all-Quickshell? My recommendation is keep
-   rofi — see item 3.
+1. ~~**Screenshots of both videos.**~~ **Answered by other means.** Both
+   transcripts were pulled with `yt-dlp` and read in full, and everything
+   structural is in DESIGN-SPEC.md. I still cannot see frames, and that is
+   now a permanent condition of this project rather than a pending request
+   — see "abandoned as a test, not as work" above.
+2. ~~Is video 1 actually Tide-island?~~ **Answered: no.** It is an
+   unreleased 7,500-line shell with no public repo, taught only through
+   the author's paid course. Restyling Tide Island was therefore the only
+   available route and remains the right one.
+3. ~~hyprglass on windows only, or the bar too?~~ **Answered: windows
+   only.** Layers stay off — layer support hooks Hyprland's private render
+   pipeline, and an empty `namespaces` means *all* layers rather than none.
+4. ~~Keep rofi for launchers?~~ **Answered, and the answer reversed.** The
+   recommendation was to keep rofi; the chord is now the island's picker on
+   every key but two, for the reason argued under item 3. Rofi remains
+   installed and every `dm-*` script works unchanged, which is what makes
+   the reversal safe.
+
+### Still needing a decision from you
+
+1. **`phone_screen`'s rofi window** — leave it as a third deliberate
+   wizard, or port it? Either is defensible; what is not defensible is
+   `binds.conf` claiming there are two.
+2. **Notifications: island or dunst?** Both draw every notification right
+   now, in two design languages, at the same moment. `upgread_UI_UX.md`
+   P0-1 has the proof and Phase 2 has the plan; it is the only choice in
+   that plan that throws finished work away whichever way it goes.
+3. **Screen corners** — DESIGN-SPEC.md specifies them, nothing draws them,
+   and the notch's whole argument is that it is bezel. But they are also
+   permanent furniture over every fullscreen video.
+4. **The polkit half-ship** — remove the two IPC calls and the three switch
+   cases now (about fifteen lines, and it makes the absence honest), or
+   leave it and build `PolkitPromptLayer.qml`?
