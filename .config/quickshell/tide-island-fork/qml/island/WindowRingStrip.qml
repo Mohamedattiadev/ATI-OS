@@ -2,6 +2,11 @@ import QtQuick
 import Quickshell
 import Quickshell.Widgets
 
+// ProgressRing lives here — the shared ring the countdown and the volume OSD
+// draw, and now the focus ring too. Importing the DIRECTORY, not the file: a
+// QML component is reached through its module path, and only the two .js
+// helpers below are imported by filename.
+import "../common"
 import "../common/Metrics.js" as Metrics
 import "../common/Motion.js" as Motion
 
@@ -71,7 +76,7 @@ Item {
     }
 
     implicitWidth: strip.implicitWidth
-    implicitHeight: Metrics.px(24)
+    implicitHeight: Metrics.px(26)
 
     opacity: showCondition ? revealProgress : 0
     visible: opacity > 0.01 && mine.length > 0
@@ -204,10 +209,36 @@ Item {
             //
             // So the letter is gone, and with it the reason for seven
             // coloured rings. The ring survives as exactly one ring — around
-            // the FOCUSED window, in the theme accent — which is the single
-            // fact the strip needs to carry and now the only ornament on it.
-            // Chosen by the user from ASCII previews rather than by building
-            // a fourth version and asking.
+            // the FOCUSED window — which is the single fact the strip needs
+            // to carry and now the only ornament on it. Chosen by the user
+            // from ASCII previews rather than by building a fourth version
+            // and asking.
+            //
+            // ---- AND THAT RING IS ProgressRing, NOT A BORDERED Rectangle ----
+            //
+            // The first icon version drew the focus ring as a Rectangle with
+            // radius width/2 and a flat 1.5 px border, and it was rejected on
+            // sight: "if they were like the clock timer one it will be
+            // better". That ring is qml/common/ProgressRing.qml as the
+            // display panel's countdown draws it — DisplayPanel.qml:832 —
+            // and its look does not come from being round, it comes from a
+            // faint TRACK circle with a full-strength ARC laid over it in
+            // round caps. A plain border has neither, which is why a shape
+            // with the same diameter and the same colour still read as a
+            // different object.
+            //
+            // Copied from that countdown exactly, not approximated:
+            // lineWidth 2.5, showCore FALSE, and a track that is the same
+            // colour as the fill at a fifth alpha (#33ffcc66 over #ffcc66).
+            // showCore stays off for the same reason it is off there — the
+            // core disc is what made version 2 read as coins, and here it
+            // would sit behind the app icon.
+            //
+            // The one deliberate departure: this ring is drawn ONLY on the
+            // focused window, so unfocused icons stay bare. Putting a faint
+            // track on all seven would be closer to the countdown still, but
+            // it walks straight back into the seven-rings look that was
+            // rejected three times.
             delegate: Item {
                 required property var modelData
 
@@ -219,17 +250,31 @@ Item {
                 // ring's opacity does. Sizing the item to the icon and
                 // growing it for the ring would make the whole strip twitch
                 // sideways on every alt-tab.
-                width: Metrics.px(24)
+                width: Metrics.px(26)
                 height: width
 
-                Rectangle {
+                ProgressRing {
                     anchors.fill: parent
-                    radius: width / 2
-                    color: "transparent"
-                    border.width: Math.max(1, Metrics.px(1.5))
-                    border.color: root.accentColor
+                    lineWidth: 2.5
+                    showCore: false
+                    fillColor: root.accentColor
+                    trackColor: Qt.rgba(root.accentColor.r, root.accentColor.g,
+                                        root.accentColor.b, 0.20)
+                    // A window has no 0..1 quantity to show, so the arc
+                    // carries the one binary fact: focused sweeps the whole
+                    // circle. Animating progress rather than snapping it
+                    // makes the ring DRAW ITSELF round on focus, which is
+                    // the countdown's own motion played forwards.
+                    progress: parent.isActive ? 1 : 0
                     opacity: parent.isActive ? 1 : 0
 
+                    Behavior on progress {
+                        NumberAnimation {
+                            duration: Motion.morphDuration()
+                            easing.type: Easing.BezierSpline
+                            easing.bezierCurve: Motion.spring()
+                        }
+                    }
                     Behavior on opacity {
                         NumberAnimation {
                             duration: Motion.morphDuration()
@@ -243,9 +288,9 @@ Item {
                     id: appIcon
                     anchors.centerIn: parent
                     // Inside the ring with a clear gap: the ring is the
-                    // outer 24, this is 15, so ~3 px of air on each side
-                    // after the 1.5 px stroke. Butting the icon against the
-                    // stroke was how version 1 turned into a button.
+                    // outer 26 with a 2.5 px stroke, this is 15, so ~3 px of
+                    // air on each side. Butting the icon against the stroke
+                    // was how version 1 turned into a button.
                     width: Metrics.px(15)
                     height: width
                     source: parent.iconSource
