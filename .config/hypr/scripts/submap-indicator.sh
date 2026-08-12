@@ -68,7 +68,12 @@ fi
 # compositor is swallowing your keys, and which map is doing it.
 hint_for() {
     case "$1" in
-        rofi) printf 'a anki · c theme · C island theme · d docs · e translate · f config · h hub\ni satty · k kill · l light · m man · o note · p pass · q logout\nr record · s spell · t todo · v pdf · x notif · y youtube · z shared\n1-9 workspace' ;;
+        # Kept in the SAME ORDER as the binds in submaps.conf, so the two can
+        # be diffed by eye. This list had drifted: n, b, w and SHIFT+S were
+        # all bound and none of them appeared here, which is worse than a
+        # missing HUD — a key list that omits a third of the map teaches you
+        # the map is wrong. j and SHIFT+K are the picker's, added with it.
+        rofi) printf 'a anki · b bluetooth · c island theme · C theme · d docs · e translate\nf config · h hub · i satty · j workspaces · k kill · K close window\nl light · m man · n wifi · o note · p pass · q logout · r record\ns spell · S wifi qr · t todo · v pdf · w wallpaper · x notif\ny youtube · z shared · 1-9 workspace' ;;
         resize)      printf 'h j k l  resize · escape/q exit' ;;
         lang)        printf 'e english · a arabic · t turkish · d german' ;;
         draw)        printf 'gromit-mpx drawing · escape/q exit' ;;

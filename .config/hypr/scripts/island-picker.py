@@ -89,6 +89,94 @@ def windows_run(item_id):
 
 
 # --------------------------------------------------------------- processes --
+#
+#  ---- WHY THIS LIST JOINS AGAINST THE WINDOW LIST ----
+#
+#  A memory-sorted process list on a browsing machine is mostly one word
+#  repeated: brave, brave, brave, brave. The command line does not rescue it
+#  either, because a Chromium helper's args are
+#  `--type=renderer --crashpad-handler-pid=513495 --enable-crash-reporter=…`
+#  — the same string, modulo digits, for every one of them. So the list said
+#  "brave (243 MB)" six times and there was no way to tell which was the
+#  video, which was the mail tab, and which was safe to kill.
+#
+#  The missing fact is which WINDOW a process belongs to, and Hyprland knows
+#  it: `hyprctl clients -j` carries a `pid` per window. A direct pid match
+#  covers the process that owns the window. It does NOT cover the helpers,
+#  which is most of the list — Chromium's renderers are grandchildren of the
+#  browser through a zygote, and QtWebEngine's are three deep. Measured on
+#  this machine:
+#
+#    513611 -> 513555 -> 513483(brave, owns the window)
+#    516487 -> 513566 -> 513562 -> 513483
+#    514293 -> 514255 -> 514253 -> 514228(qutebrowser, owns the window)
+#
+#  So the lookup walks /proc/<pid>/stat upward until it hits a pid that owns
+#  a window, and reports the process as a helper OF that window. Depth is
+#  capped and visited pids are remembered: a pid table is read
+#  non-atomically and a cycle in it, however unlikely, must not hang a menu.
+
+def _ppid(pid):
+    """Parent of `pid`, 0 if it cannot be read.
+
+    Split on the LAST ')' rather than by whitespace: field 2 is the comm and
+    it is neither quoted nor escaped, so a process named `foo bar)baz` — any
+    user can make one — shifts every field after it if parsed naively.
+    """
+    try:
+        with open("/proc/%d/stat" % pid) as handle:
+            return int(handle.read().rsplit(")", 1)[1].split()[1])
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
+def _window_owners():
+    """pid -> [(title, class, workspace)], one entry per window it owns."""
+    owners = {}
+    for client in _hypr("clients"):
+        pid = client.get("pid")
+        if not isinstance(pid, int) or pid <= 0:
+            continue
+        owners.setdefault(pid, []).append((
+            (client.get("title") or "").strip(),
+            (client.get("class") or "").strip(),
+            str(client.get("workspace", {}).get("name", "?")),
+        ))
+    return owners
+
+
+def _owning_window(pid, owners, max_depth=12):
+    """(title, class, workspace, hops) for the nearest window-owning ancestor.
+
+    hops == 0 means this process owns the window itself. None when nothing
+    in the ancestry owns one — a daemon, a compiler, a shell.
+    """
+    current, hops, seen = pid, 0, set()
+    while current > 1 and hops <= max_depth and current not in seen:
+        seen.add(current)
+        windows = owners.get(current)
+        if windows:
+            title, cls, workspace = windows[0]
+            if len(windows) > 1:
+                title = "%s  (+%d more)" % (title, len(windows) - 1)
+            return title, cls, workspace, hops
+        current = _ppid(current)
+        hops += 1
+    return None
+
+
+def _helper_role(args):
+    """Chromium/QtWebEngine `--type=` value, e.g. renderer, gpu-process."""
+    for token in args.split():
+        if token.startswith("--type="):
+            return token.split("=", 1)[1]
+    return ""
+
+
+def _ellipsis(text, limit):
+    text = text.strip()
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
 
 def processes_list():
     """Top processes by RSS.
@@ -105,6 +193,7 @@ def processes_list():
     except (OSError, subprocess.SubprocessError):
         return {"title": "Kill process", "items": []}
 
+    owners = _window_owners()
     items = []
     own = os.getpid()
     for line in out.stdout.splitlines()[:40]:
@@ -119,10 +208,37 @@ def processes_list():
             continue
         if pid_i == own:
             continue
+
+        megabytes = rss_i // 1024
+        window = _owning_window(pid_i, owners)
+
+        if window is None:
+            # Nothing in the ancestry has a window: a daemon or a build. The
+            # command line is the only identifying thing there is.
+            label = "%d MB  ·  %s" % (megabytes, comm)
+            detail = _ellipsis(args or comm, 150)
+        else:
+            title, cls, workspace, hops = window
+            role = _helper_role(args)
+            if hops == 0:
+                label = "%d MB  ·  %s — %s" % (megabytes, comm, _ellipsis(title, 46))
+                detail = "window: %s  ·  %s  ·  workspace %s" % (title, cls or "?", workspace)
+            else:
+                # The helper case, and the one this join exists for. Naming
+                # the role as well as the window is what separates the four
+                # renderers of one browser from its gpu process.
+                label = "%d MB  ·  %s%s — %s" % (
+                    megabytes,
+                    comm,
+                    " (%s)" % role if role else "",
+                    _ellipsis(title, 42))
+                detail = "%s for: %s  ·  %s  ·  workspace %s" % (
+                    role or "helper", title, cls or "?", workspace)
+
         items.append({
             "id": str(pid_i),
-            "label": "%s  (%d MB)" % (comm, rss_i // 1024),
-            "detail": (args or comm)[:150],
+            "label": label,
+            "detail": detail,
         })
     return {"title": "Kill process", "items": items}
 

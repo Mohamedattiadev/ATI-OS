@@ -933,8 +933,6 @@ PanelWindow {
     // key for `processes` while the `windows` picker is open should switch
     // menus, not close the panel. Only the same menu again means "done".
     function showPickerWindow(name) {
-        console.log("PICKERDBG name=" + name + " state=" + islandContainer.islandState
-                    + " menu=" + islandContainer.pickerMenu);
         if (islandContainer.islandState === "picker"
                 && islandContainer.pickerMenu === name)
             islandContainer.smartRestoreState();
