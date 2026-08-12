@@ -402,6 +402,7 @@ Item {
                                                 positionOverride: ph; scale: root.scale
                                                 monitorData: srcMon||root.monitorData; widgetMonitor: root.monitorData
                                                 xOffset: 0; yOffset: 0; centerIcons: root.centerIcons
+                                                labelFontFamily: root.textFontFamily
                                                 visibilityOpacity: addr===root.draggingAddress||addr===root.settlingAddress ? 0 : 1
                                                 hovered: root.hoveredAddress===addr
                                                 pressed: root.pressedAddress===addr
@@ -500,6 +501,7 @@ Item {
                         scale: root.scale
                         monitorData: srcMon||root.monitorData; widgetMonitor: root.monitorData
                         xOffset: offX; yOffset: offY; centerIcons: root.centerIcons
+                        labelFontFamily: root.textFontFamily
                         draggingActive: Drag.active
                         visibilityOpacity: Drag.active||settling ? 1 : 0
                         pressed: drag.pressed; hovered: drag.containsMouse
