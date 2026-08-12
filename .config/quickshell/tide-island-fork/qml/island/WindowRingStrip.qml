@@ -251,6 +251,13 @@ Item {
             // one. That is also what the countdown actually looks like — its
             // track is always drawn, and only the arc moves.
             delegate: Item {
+                // Named, because the icon and the ring both need to read the
+                // delegate's own properties and they now sit at different
+                // depths: the ring is a child of this Item, the icon is a
+                // child of the RING. A bare `parent` would mean two different
+                // things in the two places, which is how `winCell.iconSource`
+                // silently became undefined once the icon moved inward.
+                id: winCell
                 required property var modelData
 
                 readonly property bool isActive: !!modelData.active
@@ -303,7 +310,7 @@ Item {
                     // heavy track would fight it.
                     trackColor: Qt.rgba(root.accentColor.r, root.accentColor.g,
                                         root.accentColor.b,
-                                        parent.isActive ? 0.20 : 0.45)
+                                        winCell.isActive ? 0.20 : 0.45)
                     // A window has no 0..1 quantity to show, so the arc
                     // carries the one binary fact: focused sweeps the whole
                     // circle. Animating progress rather than snapping it
@@ -312,7 +319,7 @@ Item {
                     // No opacity gate any more: the track is always on, so
                     // an unfocused icon sits in a visible socket and the
                     // strip keeps its rhythm whichever window has focus.
-                    progress: parent.isActive ? 1 : 0
+                    progress: winCell.isActive ? 1 : 0
 
                     Behavior on progress {
                         NumberAnimation {
@@ -321,31 +328,84 @@ Item {
                             easing.bezierCurve: Motion.spring()
                         }
                     }
+
+                    // ---- THE ICON GOES IN THE RING'S OWN CENTRE SLOT ----
+                    //
+                    // It used to be a SIBLING of the ring, centred by its own
+                    // `anchors.centerIn: parent` on the delegate. That is one
+                    // centring too many: the ring paints its circle on a
+                    // Canvas that is sized to min(width, height) and centred
+                    // in ITS box, while the icon centred itself in the
+                    // delegate's box. The two boxes agree only when
+                    // everything is exactly square and unrounded.
+                    //
+                    // HONESTY NOTE, because this repo keeps wrong theories.
+                    // The change was made after reading a 10x screenshot as
+                    // "the icons sit ~2.5 px below their rings". That reading
+                    // was WRONG. Measured properly afterwards - masking the
+                    // accent stroke and the icon's own colour and taking both
+                    // centroids - it comes out dx -0.8 px, dy -0.2 px, i.e.
+                    // concentric to well under a pixel, and the sibling
+                    // layout it replaced was concentric too. The apparent
+                    // offset was the blur of a NEAREST upscale over a busy
+                    // wallpaper, plus a colour mask that caught blue
+                    // wallpaper pixels and dragged the ring's centroid.
+                    //
+                    // The change is kept anyway, on the narrower ground that
+                    // one centring beats two: the icon can no longer disagree
+                    // with the ring under a future size change, because it is
+                    // not positioned independently any more.
+                    //
+                    // ProgressRing already has a `default property alias
+                    // centerContent` — a slot it positions itself, concentric
+                    // with the circle it draws, sized to 0.62 of the ring.
+                    // That slot exists precisely so a caller can put a glyph
+                    // or a number in the middle without knowing where the
+                    // middle is; the countdown puts its seconds there. Using
+                    // it means the icon cannot disagree with the ring,
+                    // because it is no longer being positioned independently.
+                    IconImage {
+                        id: appIcon
+                        anchors.centerIn: parent
+                        // ---- SIZED OFF THE DIAGONAL, NOT THE WIDTH ----
+                        //
+                        // Was 15, reasoned as "26 minus the stroke minus a few px
+                        // of air". Right sum, wrong shape. The countdown ring
+                        // this copies holds a NUMBER, and a digit is narrow, so
+                        // its width is what must clear the stroke. An app icon is
+                        // a SQUARE, and what must clear the stroke is its
+                        // DIAGONAL.
+                        //
+                        // The arithmetic, which is why the icons read as sitting
+                        // wrong rather than merely tight: a 26 px ring with a
+                        // 2.5 px stroke leaves an inner circle about 21 px
+                        // across. A 15 px square has a diagonal of 15 * 1.414 =
+                        // 21.2 px. All four corners therefore landed exactly ON
+                        // the stroke - each icon was inscribed in its ring rather
+                        // than sitting inside it, touching at four points.
+                        //
+                        // 13 px gives an 18.4 px diagonal against that same 21 px
+                        // inner circle: ~1.3 px of clearance at the corners, so
+                        // the ring closes around the icon the way it closes
+                        // around the countdown's digits.
+                        width: Metrics.px(13)
+                        height: width
+                        source: winCell.iconSource
+                        visible: winCell.iconSource !== ""
+                        asynchronous: true
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: winCell.iconSource === ""
+                        text: root.initialFor(modelData.appId)
+                        color: root.accentColor
+                        font.pixelSize: Metrics.font(9)
+                        font.family: root.textFontFamily
+                        font.weight: Font.DemiBold
+                    }
                 }
 
-                IconImage {
-                    id: appIcon
-                    anchors.centerIn: parent
-                    // Inside the ring with a clear gap: the ring is the
-                    // outer 26 with a 2.5 px stroke, this is 15, so ~3 px of
-                    // air on each side. Butting the icon against the stroke
-                    // was how version 1 turned into a button.
-                    width: Metrics.px(15)
-                    height: width
-                    source: parent.iconSource
-                    visible: parent.iconSource !== ""
-                    asynchronous: true
-                }
-
-                Text {
-                    anchors.centerIn: parent
-                    visible: parent.iconSource === ""
-                    text: root.initialFor(modelData.appId)
-                    color: root.accentColor
-                    font.pixelSize: Metrics.font(9)
-                    font.family: root.textFontFamily
-                    font.weight: Font.DemiBold
-                }
             }
         }
     }
