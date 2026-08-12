@@ -25,6 +25,17 @@ are structural rather than cosmetic.
 >
 > Both are written up in `REQUIREMENTS.md`. They belong to Phase 6 and
 > Phase 2 respectively.
+>
+> **Both are now closed.** The polkit prompt was *removed* rather than
+> finished — the right call, since nothing registered an agent, so there
+> was no half-feature left to trip over; `showPolkitPrompt` is gone from
+> `ipc show`. The Focus/DND row was rewritten onto `dunstctl`, and the
+> rewrite went further than swapping the binary: state is no longer
+> inferred from an exit code anywhere in that row, because "the command
+> failed" and "the answer is false" are the same value and that is what
+> made the original invisible. Polarity was measured from the daemon side
+> rather than taken from the brief, which had it backwards. Unavailable is
+> now drawn as well as refused.
 
 Everything below was **measured against the running shell** (quickshell PID
 1156732, Hyprland 0.56.2, eDP-1 1366×768) or counted out of the tree at
@@ -148,18 +159,44 @@ that fades:
 
 | layer | line | its own fade | reached by |
 |---|---|---|---|
-| `OsdLayer` | 3969 | `opacity: showCondition ? … : 0` + Behavior | **every volume / brightness key** |
-| `WorkspaceLayer` | 3991 | same | **every workspace switch** |
-| `SplitIconLayer` | 3951 | same | app-icon split state |
+| `WorkspaceLayer` | 3991 | `opacity: showCondition ? … : 0` + Behavior | **every workspace switch** |
+| `SwipeCustomInfoLayer` | 3871 | same | `showText` / the mode indicator |
 | `SwipeLyricsLayer` | 3902 | same | media playback |
-| `SwipeCustomInfoLayer` | 3871 | same | `showText` / mode indicator |
+| `SplitIconLayer` | 3951 | same | app-icon split state |
+| `OsdLayer` | 3969 | same | `showText` **with a value**, and volume only when the ring is off |
 
-`OsdLayer` is instantiated as `OsdLayer { showCondition: true }` — a literal
+Each is instantiated as `<Layer> { showCondition: true }` — a literal
 constant — inside `Loader { active: … }`. The property that drives the fade
 can never go false, so the fade-out is unreachable code, exactly as the
 thirteen panels were before `PanelLoader` existed. The write-up in
 `MIGRATION.md` ("Cause 1 — the out-fade had never once executed") is still
-true of the highest-traffic transitions in the shell.
+true of these five.
+
+> **Two corrections, from trying to fix this.** The heading said "the five
+> you see most" and the `OsdLayer` row said "every volume / brightness
+> key". **Both were wrong**, and the reason is one branch this document
+> did not follow:
+>
+> `userconfig.json` has `forkRingOsdEnabled: true`, and
+> `showTransientSplit` returns early into `shellRootController.showRingOsd`
+> whenever `progress >= 0`. So volume and brightness never reach
+> `OsdLayer` at all — they reach `RingOsdWindow`, which is **not** behind a
+> Loader and holds itself up correctly with
+> `visible: root.shown || fade.opacity > 0.01`. The most-pressed keys in
+> the shell already fade properly. `OsdLayer` gets only the `progress < 0`
+> traffic, plus volume on a machine with the ring switched off.
+>
+> **And the fix is not the mechanical sweep Phase 5 called it.** All five
+> of these are swipe layers: their opacity is already
+> `showCondition ? revealProgress : 0`, where `revealProgress` is driven by
+> `transitionProgress` — so several of them *are* animated out today, by
+> the slide rather than by the fade. Binding `showCondition` to `live`
+> would add a cross-fade on top of a slide that is already running, and on
+> a swipe that means the outgoing layer lingering over the incoming one.
+> `WorkspaceLayer` is the clearest genuine win (it carries
+> `animateVisibility` and is a plain cut when resting); the swipe pair
+> needs a decision about which animation owns the exit, per layer, not one
+> substitution applied five times.
 
 ## P1-5. No type ramp, no spacing grid, no radius scale
 
@@ -402,10 +439,15 @@ through each with the pointer.
    input, one `PanelWindow` per screen through `Variants` — the shape
    `ThemeTransitionWindow` and `RingOsdWindow` already use. Radius should match
    the notch's own so the two read as one piece of bezel.
-2. **Convert the six remaining raw `Loader`s to `PanelLoader`**, and delete
-   `OsdLayer { showCondition: true }` in favour of the real condition. This is
-   small, and it is the difference between every volume nudge ending in a fade
-   and every volume nudge ending in a cut.
+2. **Give the five swipe layers a real exit — one decision per layer, not one
+   substitution five times.** See the correction under P1-4: these are not
+   panels, they are swipe layers whose opacity is already driven by
+   `transitionProgress`, so `PanelLoader` alone would cross-fade on top of a
+   slide that is already running. Start with `WorkspaceLayer`, which is a
+   plain cut when resting and is hit on every workspace switch; then decide,
+   for each of the swipe pair, whether the slide or the fade owns the exit.
+   The sixth raw `Loader` (`hyprlandIntegrationLoader`, line 86) is not a
+   visual layer and is correctly a plain `Loader` — leave it.
 3. **Re-audit the 17 deliberate raw easings** listed at the bottom of
    `Motion.js` — they were justified once and the list should be confirmed
    still true rather than inherited.
@@ -468,7 +510,8 @@ So, per phase:
 | 6 polkit | a real `pkexec` with the island's agent AND with it killed |
 | 7 search | filter a 362-item list and commit from the filtered set |
 
-Two environment facts that will otherwise cost a wrong conclusion:
+Five environment facts that will otherwise cost a wrong conclusion. The last
+three were each paid for during the Silent-row work, in one sitting.
 
 - **`.pragma library` JS is cached by the running shell.** Editing
   `Metrics.js` or `Motion.js` and reloading changes nothing; the panel
@@ -476,6 +519,24 @@ Two environment facts that will otherwise cost a wrong conclusion:
 - **A failed reload is survivable and therefore invisible.** A broken edit
   logs `Failed to load configuration` and the *previous* config keeps running,
   so "it still works" is not evidence that the edit loaded.
+- **Read the log before believing a screenshot.** The fact above is not
+  theoretical: a `readonly property` with a `Behavior` on it failed *every*
+  reload for eight minutes while the desktop looked entirely normal, because
+  the last good config was still running. Two screenshots were taken and
+  reasoned about in that window and both were of stale pixels. The log is at
+  `$XDG_RUNTIME_DIR/quickshell/by-id/<id>/log.log`, and the id is reachable
+  through `by-pid/$(pgrep quickshell)`.
+- **`sed -i` does not trigger a reload.** It writes a temp file and renames it
+  into place, and quickshell's watcher — a `QFileSystemWatcher`, so an *inode*
+  watch — is left pointing at the unlinked original. The edit is in the file
+  and the shell never sees it, which reads exactly like "the change had no
+  effect". This is the same inode trap `MIGRATION.md` records for
+  `theme-apply`'s `mv`, arriving from the other direction. The Edit tool
+  writes in place and is fine; after any `sed -i`, `touch shell.qml`.
+- **A `Behavior` writes the property it animates**, so it cannot be attached
+  to a `readonly property`. QML reports this as `Invalid property assignment`
+  and fails the whole config load — not just that component — because the
+  error propagates up through every enclosing type to `shell.qml`.
 
 ---
 
