@@ -36,9 +36,25 @@ Item {
     scale: showCondition ? 1.0 : 0.12
     transformOrigin: Item.Top
 
+    // FORK: the last literal 400 in the shell that was really MORPH_MS.
+    //
+    // The curve was converted to the spring but the duration was left as a
+    // bare number, so Motion.SCALE — the one knob the whole motion system is
+    // supposed to hang off — would have moved every other geometry animation
+    // in the shell and left this one where it was. That is not a taste
+    // difference the comments elsewhere defend; it is the number simply not
+    // having been noticed. Same 400 today, sourced.
+    //
+    // Deliberately morphDuration() and not morphDurationFor(). This is a
+    // SCALE, 0.12 to 1, so it has no pixel distance to hand the interpolator,
+    // and the capsule it lives inside is a 156 -> 387 px morph on this screen
+    // (measured with grim) which morphDurationFor puts at 451 ms. The panel
+    // arriving marginally before the shape settles is the choreography
+    // Motion.js describes — content lands INSIDE a shape that is already
+    // most of the way there — so the shorter of the two is the right one.
     Behavior on scale {
         NumberAnimation {
-            duration: 400
+            duration: Motion.morphDuration()
             easing.type: Easing.BezierSpline
             easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutQuint
         }
