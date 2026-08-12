@@ -315,7 +315,20 @@ Item {
                     // is white: it is the only colour that holds against 22
                     // palettes and any wallpaper. The accent moves to the
                     // ARC, which is the one thing that has to mean something.
-                    lineWidth: Metrics.px(4)
+                    // ---- 4 -> 2. THE STROKE IS AN ACCENT, NOT A FRAME ----
+                    //
+                    // 4 px came from the timer, where it is right: that ring
+                    // IS the element, a gauge you read the sweep of. Here the
+                    // ring is not the element — the icon is — and the stroke
+                    // only has to say "this one has focus". At 4 px on a 32 px
+                    // disc it was a seventh of the diameter, which frames the
+                    // icon rather than marking it, and a frame around a small
+                    // picture always reads as heavier than it measures.
+                    //
+                    // 2 px still separates cleanly at this size (the OSD ring
+                    // reads as a ring at 3.5 on a much larger circle) while
+                    // leaving the icon as the thing you look at.
+                    lineWidth: Metrics.px(2)
                     // ---- THE DISC IS A SIBLING, BECAUSE showCore IS TOO SMALL ----
                     //
                     // Measured off the timer in a screenshot: its ring is
