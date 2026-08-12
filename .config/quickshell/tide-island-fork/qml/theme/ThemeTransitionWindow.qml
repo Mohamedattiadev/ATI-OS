@@ -72,7 +72,14 @@ PanelWindow {
     property bool active: false
     property string pendingTheme: ""
     property string capturePath: ""
-    property real holeRadius: 0
+
+    // Where grim WILL write (capturePath) versus what the Image is allowed to
+    // read (frozenSource). They are deliberately two properties; see the note
+    // on the Image below.
+    property string frozenSource: ""
+
+    // 0 = the frozen frame is untouched, 1 = it has been swept away entirely.
+    property real sweep: 0
 
     signal finished(string theme)
 
@@ -96,8 +103,36 @@ PanelWindow {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     mask: Region {}
 
-    readonly property real maximumRadius:
-        Math.sqrt(root.width * root.width + root.height * root.height) / 2
+    // ---- THE SWEEP GEOMETRY -------------------------------------------------
+    //
+    // This used to be a circle growing from the centre (Aylur's Marble Shell).
+    // It is now a diagonal wipe, because the ask was for the theme change to
+    // animate "like the wallpaper change does" and the wallpaper change is not
+    // a circle. hypr/scripts/wallpaper-sync.sh drives awww with
+    //
+    //     --transition-type wave --transition-angle 30
+    //     --transition-wave "60,30" --transition-fps 60 --transition-step 90
+    //
+    // so what the eye has been trained on by every wallpaper change on this
+    // machine is a front crossing the screen at 30 degrees. Matching the ANGLE
+    // is what makes the two read as the same gesture; see the note on
+    // wavefront below for the part of awww's wave that is deliberately not
+    // reproduced.
+    readonly property real sweepAngle: 30
+
+    // How far the front must travel to clear the screen: the screen's extent
+    // measured along the sweep axis, which for a rotated rectangle is
+    // W|cos| + H|sin| -- NOT the diagonal. Using the diagonal would overshoot
+    // by ~200px here and spend the last fifth of the animation with the screen
+    // already fully cleared, which reads as the effect hanging at the end.
+    readonly property real sweepLength: {
+        const r = root.sweepAngle * Math.PI / 180;
+        return root.width * Math.abs(Math.cos(r))
+             + root.height * Math.abs(Math.sin(r));
+    }
+
+    readonly property real diagonal:
+        Math.sqrt(root.width * root.width + root.height * root.height)
 
     // --- sequence ----------------------------------------------------------
     function begin(themeName) {
@@ -140,7 +175,9 @@ PanelWindow {
             return;
         }
 
-        root.holeRadius = 0;
+        root.sweep = 0;
+        // Only now, with the file known to be on disk and grim exited 0.
+        root.frozenSource = root.capturePath;
         root.active = true;
         // Trap 4: let the decode and the shader compile happen on a frame
         // where nothing needs to move.
@@ -158,7 +195,10 @@ PanelWindow {
         const theme = root.pendingTheme;
         root.active = false;
         root.pendingTheme = "";
-        root.holeRadius = 0;
+        root.sweep = 0;
+        // Released before the file is deleted below, so the Image is not
+        // holding a path that cleanupProcess is about to remove.
+        root.frozenSource = "";
         if (root.capturePath !== "") {
             cleanupProcess.command = ["rm", "-f", root.capturePath];
             cleanupProcess.running = true;
@@ -204,14 +244,20 @@ PanelWindow {
     NumberAnimation {
         id: revealAnimation
         target: root
-        property: "holeRadius"
+        property: "sweep"
         from: 0
-        to: root.maximumRadius
-        // 620 ms across the diagonal of a 1366x768 panel is ~1.3 screen
-        // widths a second — fast enough not to be a wait, slow enough that
-        // the circle reads as a circle rather than as a flash.
+        to: 1
+        // 620 ms was tuned for the circle and is kept: over the 1567 px this
+        // front has to travel it is ~2.5 screen widths a second, which is the
+        // same order as awww's own wave at step 90 / 60 fps.
         duration: 620
-        easing.type: Easing.InOutQuad
+        // LINEAR, where the circle used InOutQuad. A wipe and a circle want
+        // different curves: a circle's area grows as r^2, so easing the radius
+        // is what stops the middle of the animation from feeling like a burst.
+        // A straight front covers area at a constant rate already, and easing
+        // it makes the front visibly accelerate and brake — which awww does
+        // not do. Constant velocity is what reads as "the same effect".
+        easing.type: Easing.Linear
         onFinished: root.finish()
     }
 
@@ -224,30 +270,86 @@ PanelWindow {
         anchors.fill: parent
         visible: false
 
+        // Bound to `frozenSource` and NOT to `capturePath`, and this is the
+        // difference between the effect existing and not existing.
+        //
+        // `capturePath` is assigned at the TOP of begin(), because grim needs
+        // to be told where to write before it is started. Binding the Image to
+        // it therefore pointed the Image at a file that was, by construction,
+        // guaranteed not to exist yet: Qt tried to open it on the spot, failed
+        // with "Cannot open: file:///tmp/tide-theme-transition-<ts>.jpg" in
+        // the log, and — because a failed Image does not retry when the file
+        // later appears — never loaded it at all. The overlay then ran its
+        // whole animation masking an image that was never there, which is
+        // invisible. The theme changed, nothing moved, and nothing errored
+        // loudly enough to notice; the only trace was one WARN per theme
+        // change.
+        //
+        // `frozenSource` is assigned in beginReveal(), which only runs once
+        // grim has exited 0, so the file is on disk before anything reads it.
         Image {
             anchors.fill: parent
-            source: root.capturePath === "" ? "" : "file://" + root.capturePath
+            source: root.frozenSource === "" ? "" : "file://" + root.frozenSource
             fillMode: Image.PreserveAspectCrop
             cache: false
             asynchronous: false
         }
     }
 
-    // The mask. Its ALPHA is what OpacityMask reads, so the circle is opaque
-    // black and everything else is nothing — with `invert: true` that makes
-    // the circle the hole and the rest the surviving screenshot.
+    // The mask. Its ALPHA is what OpacityMask reads, so the swept region is
+    // opaque black and everything else is nothing — with `invert: true` that
+    // makes the swept region the hole and the rest the surviving screenshot.
     Item {
         id: revealMask
         anchors.fill: parent
         visible: false
         layer.enabled: true
 
+        // THE FRONT.
+        //
+        // A plain Rectangle rotated to the sweep angle, translated along its
+        // own local x. Order matters and is the whole trick: Translate is
+        // listed FIRST, so the rotation is applied to the already-translated
+        // geometry and the net motion is R(p + t*x) = R(p) + t*R(x) — i.e.
+        // travel along the ROTATED axis, which is what a wipe at 30 degrees
+        // is. Listing Rotation first instead gives a shape that slides
+        // horizontally while sitting at an angle, which is a different and
+        // much worse-looking effect.
+        //
+        // width is the sweep length so that sweep=1 covers exactly the
+        // screen's extent along the axis and no more; height is 2x the
+        // diagonal purely so the front is long enough that its ends never
+        // come into view at any angle.
+        //
+        // ---- WHAT IS DELIBERATELY NOT REPRODUCED ----
+        //
+        // awww's front is not straight: --transition-wave "60,30" gives it a
+        // 60 px period, 30 px amplitude sine edge. That is not reproduced
+        // here, and the honest reason is the tooling rather than taste. A sine
+        // edge in QML means either a ShaderEffect — which needs a precompiled
+        // .qsb and therefore a build step this config does not have — or a
+        // Canvas, which per this tree's own notes does not paint while its
+        // item is invisible, and this mask is `visible: false` by
+        // construction. A Repeater of ~260 thin slices would resolve a 60 px
+        // period across 1567 px, and is the fallback if the straight edge ever
+        // reads as too clean. At 60 px period on a 1366 px screen the ripple
+        // is a fine detail; the angle is what carries the resemblance.
         Rectangle {
+            id: wavefront
             anchors.centerIn: parent
-            width: root.holeRadius * 2
-            height: root.holeRadius * 2
-            radius: root.holeRadius
+            width: root.sweepLength
+            height: root.diagonal * 2
             color: "black"
+            transform: [
+                Translate {
+                    x: (root.sweep - 1) * root.sweepLength
+                },
+                Rotation {
+                    origin.x: wavefront.width / 2
+                    origin.y: wavefront.height / 2
+                    angle: root.sweepAngle
+                }
+            ]
         }
     }
 
