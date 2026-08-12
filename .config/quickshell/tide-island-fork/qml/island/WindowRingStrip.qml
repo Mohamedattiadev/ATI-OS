@@ -181,6 +181,34 @@ Item {
         return text.length ? text.charAt(0).toUpperCase() : "?";
     }
 
+    // ---- THE DROP: EACH ICON FALLS OUT OF THE ISLAND ----
+    //
+    // Asked for as "like when you drop water" — the circles should come FROM
+    // the island to their position rather than simply being there.
+    //
+    // A droplet has three readable parts, and the third is the one that sells
+    // it: it starts small and concentrated at the source, it travels, and it
+    // ARRIVES SLIGHTLY TOO FAR and settles back. That last part is why this
+    // uses Motion.spring() and nothing else in this file does — spring is
+    // zeta 0.8, underdamped, so it overshoots by design. Everywhere else in
+    // this shell that overshoot has been a bug (a clamped 0..1 progress read
+    // as a throb, see the arc below), but here it IS the effect: it is the
+    // difference between a drop landing and a card sliding into place.
+    //
+    // The travel is expressed as a horizontal OFFSET toward the notch, not as
+    // an absolute start position. The strip does not know where the pill is —
+    // it is placed by DynamicIslandWindow, which anchors the left strip's
+    // right edge and the right strip's left edge to the pill. So "toward the
+    // island" is simply +x for the left strip and -x for the right one, and
+    // collapsing the whole strip to the pill edge is the same motion for
+    // both sides without either needing the capsule's geometry.
+    //
+    // STAGGERED, because simultaneity is what makes an animation read as a
+    // panel appearing rather than as objects arriving. The icon nearest the
+    // notch leads and the outer ones follow, so the sequence reads outward
+    // from the island — which is the direction the water is travelling. The
+    // Row is built nearest-first for the left strip already (`mine` reverses
+    // it), so the model index IS the distance rank on both sides.
     Row {
         id: strip
         anchors.verticalCenter: parent.verticalCenter
@@ -263,6 +291,49 @@ Item {
                 // silently became undefined once the icon moved inward.
                 id: winCell
                 required property var modelData
+                required property int index
+
+                // 0 while pooled at the island, 1 once landed. Driven by the
+                // timer below so each icon starts after the one before it.
+                property real drop: 0
+
+                // Toward the notch: the left strip's icons pull right, the
+                // right strip's pull left. 28 px is a little over the icon's
+                // own diameter, which is enough for the eye to read it as
+                // travel rather than as a nudge.
+                transform: Translate {
+                    x: (1 - winCell.drop) * (root.side === "left"
+                        ? Metrics.px(28) : -Metrics.px(28))
+                }
+
+                // Small at the source and full size on landing, with the
+                // scale riding the same 0..1 as the travel so the two cannot
+                // drift apart. 0.35 rather than 0 because a dot growing from
+                // nothing reads as a pop; a droplet already has volume when
+                // it leaves.
+                scale: 0.35 + winCell.drop * 0.65
+                opacity: winCell.drop
+
+                Behavior on drop {
+                    NumberAnimation {
+                        duration: Motion.morphDuration()
+                        easing.type: Easing.BezierSpline
+                        // The one deliberate spring in this file. See the
+                        // note on the Row: the overshoot is the drop.
+                        easing.bezierCurve: Motion.spring()
+                    }
+                }
+
+                Timer {
+                    // 55 ms apart. Below about 40 the stagger stops being
+                    // legible and the row reads as one block; above about 80
+                    // the last icon arrives late enough to look like a
+                    // separate event.
+                    interval: 55 * winCell.index
+                    running: true
+                    repeat: false
+                    onTriggered: winCell.drop = 1
+                }
 
                 readonly property bool isActive: !!modelData.active
                 readonly property string iconSource: root.iconFor(modelData.appId)
