@@ -316,6 +316,76 @@ def short_label(entry):
     return describe(entry)
 
 
+# ---------------------------------------------------------------- island --
+#
+#  ---- THIS TABLE IS HAND-MAINTAINED, AND THAT IS NOT A SHORTCUT ----
+#
+#  Every other sheet in this file is DERIVED. The Hyprland one reads
+#  `hyprctl binds`, so it cannot disagree with the compositor; the vim and
+#  fish ones parse the qtile popup sources, so they cannot disagree with
+#  those. This one has nothing to read. The island's keys are
+#  `Keys.onPressed` switch statements inside QML components, and there is no
+#  runtime that will enumerate them — Quickshell has no equivalent of
+#  `hyprctl binds`, and a QML key handler is a function body, not data.
+#
+#  So it is a copy, and copies rot. The mitigation is to name the file each
+#  section was read out of, so checking a row is opening one file rather
+#  than searching the tree:
+#
+#    Settings panel     qml/island/SettingsLayer.qml
+#    List picker        qml/island/PickerLayer.qml
+#    Wi-Fi / Bluetooth  qml/connectivity/ConnectivityDetailPanel.qml
+#    Theme picker       qml/island/ThemePickerLayer.qml
+#    Wallpaper picker   qml/island/WallpaperPickerLayer.qml
+#
+#  The alternative was to leave the settings panel undocumented, which is
+#  what it was: it has had h/j/k/l, g/G and three separate keys that mean
+#  "change this value" since it was written, and nothing on screen said so.
+
+ISLAND_SECTIONS = [
+    ("SETTINGS PANEL", [
+        ("next setting", "j  /  Down"),
+        ("previous setting", "k  /  Up"),
+        ("decrease, or previous value", "h  /  Left"),
+        ("increase, next value, or toggle", "l  /  Right  /  Enter  /  Space"),
+        ("first setting", "g"),
+        ("last setting", "Shift g"),
+        ("close", "q  /  Escape"),
+    ]),
+    ("LIST PICKER", [
+        ("move down / up", "j  /  k"),
+        ("run the selected row", "Enter"),
+        ("filter the list", "just type"),
+        ("close", "q  /  Escape"),
+    ]),
+    ("WI-FI  /  BLUETOOTH", [
+        ("move down / up", "j  /  k  /  Down  /  Up"),
+        ("join network, pair or connect device", "Enter  /  Space"),
+        ("first / last row", "g  /  Shift g"),
+        ("close", "q  /  Escape"),
+    ]),
+    ("THEME  /  WALLPAPER PICKER", [
+        ("move", "Left  /  Right"),
+        ("apply", "Enter"),
+        ("close", "Escape"),
+    ]),
+    ("REACHING THESE PANELS", [
+        ("island settings", "ALT 7"),
+        ("kill a process", "SUPER p  then  k"),
+        ("close a window", "SUPER p  then  Shift k"),
+        ("go to workspace", "SUPER p  then  j"),
+        ("Wi-Fi list", "SUPER p  then  n"),
+        ("Bluetooth list", "SUPER p  then  b"),
+        ("this sheet", "SUPER Shift k  then  i"),
+    ]),
+]
+
+
+def island_rows():
+    """The island's own keymaps. See the note above on why this is a copy."""
+    return [(title, list(rows)) for title, rows in ISLAND_SECTIONS]
+
+
 def sheet_json(which):
     """A WHOLE cheatsheet as JSON, for the island's panel.
 
@@ -332,6 +402,10 @@ def sheet_json(which):
     if which in ("hypr", "hyprland", "qtile"):
         sections = hyprland_rows(short_label)
         title, note = "HYPRLAND KEYS", ALT_NOTE
+    elif which == "island":
+        sections = island_rows()
+        title = "TIDE ISLAND KEYS"
+        note = "These live in QML, not in hyprctl binds -- see cheatsheet.py."
     elif which in SOURCES:
         filename, title = SOURCES[which]
         sections, note = parsed_rows(filename), ""
@@ -433,12 +507,16 @@ def main(argv):
         show(render(hyprland_rows(), "HYPRLAND KEYS", ALT_NOTE), "hypr")
         return 0
 
+    if which == "island":
+        show(render(island_rows(), "TIDE ISLAND KEYS"), "island")
+        return 0
+
     if which in SOURCES:
         filename, title = SOURCES[which]
         show(render(parsed_rows(filename), title), which)
         return 0
 
-    print("usage: cheatsheet.py hypr|vim|fish", file=sys.stderr)
+    print("usage: cheatsheet.py hypr|vim|fish|island", file=sys.stderr)
     return 2
 
 

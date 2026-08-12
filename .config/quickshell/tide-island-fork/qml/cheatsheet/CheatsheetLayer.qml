@@ -68,8 +68,13 @@ Item {
 
     readonly property string ctl: Quickshell.env("HOME") + "/.config/hypr/scripts/cheatsheet.py"
 
-    readonly property var sheetOrder: ["hypr", "vim", "fish"]
-    readonly property var sheetLabels: ({ "hypr": "WM", "vim": "VIM", "fish": "FISH / KITTY" })
+    // "island" is last on purpose: the three before it are the sheets you
+    // reach for while using something ELSE, and this one is about the shell
+    // drawing the sheet. Adding it here is what puts it in the Tab cycle —
+    // showCheatsheet("island") worked without it, but the sheet was then
+    // reachable only by knowing its name, and invisible from the other three.
+    readonly property var sheetOrder: ["hypr", "vim", "fish", "island"]
+    readonly property var sheetLabels: ({ "hypr": "WM", "vim": "VIM", "fish": "FISH / KITTY", "island": "ISLAND" })
 
     // ---- THE FLAT MODEL, AND WHY FILTERING DROPS HEADERS ----
     //
