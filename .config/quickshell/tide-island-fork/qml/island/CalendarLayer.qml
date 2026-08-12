@@ -9,6 +9,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 //
 // FORK — new file. The CALENDAR, which DESIGN-SPEC.md lists as one of the
@@ -385,7 +386,7 @@ FocusScope {
         // you have paged away from is visibly not now. This is the same
         // green the Wi-Fi QR uses for a good state, rather than a fourth
         // accent invented here.
-        color: root.cursorIsToday ? "#9ad18a" : "#8a8f98"
+        color: root.cursorIsToday ? IslandTheme.success : IslandTheme.textSecondary
         font.pixelSize: Metrics.font(12)
         font.family: root.textFontFamily
         font.weight: Font.DemiBold
@@ -412,7 +413,7 @@ FocusScope {
                 // the same numbering weekStart uses, so the column index
                 // maps straight through.
                 text: Qt.locale().dayName((root.weekStart + index) % 7, Locale.ShortFormat)
-                color: "#6a6f78"
+                color: IslandTheme.textDisabled
                 font.pixelSize: Metrics.font(10)
                 font.family: root.textFontFamily
                 font.weight: Font.Medium
@@ -468,15 +469,15 @@ FocusScope {
                     // gets the filled chip plus the outline. The first
                     // version used the same fill for both and paging away
                     // from today looked like today had moved.
-                    color: cell.isNow ? "#2f4b34" : "transparent"
+                    color: cell.isNow ? IslandTheme.successFill : "transparent"
                     border.width: cell.isSelected ? 1 : 0
-                    border.color: "#9ad18a"
+                    border.color: IslandTheme.success
 
                     Text {
                         anchors.centerIn: parent
                         text: cell.day
-                        color: cell.isNow ? "#c9efbe"
-                             : (cell.isSelected ? "#f2f4f7" : "#c6ccd6")
+                        color: cell.isNow ? IslandTheme.success
+                             : (cell.isSelected ? IslandTheme.textPrimary : IslandTheme.textSecondary)
                         font.pixelSize: Metrics.font(12)
                         font.family: root.textFontFamily
                         font.weight: (cell.isNow || cell.isSelected) ? Font.DemiBold : Font.Normal
@@ -494,7 +495,7 @@ FocusScope {
                         width: Metrics.px(4)
                         height: width
                         radius: width / 2
-                        color: "#e0a458"
+                        color: IslandTheme.warning
                     }
 
                     MouseArea {
@@ -523,7 +524,7 @@ FocusScope {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Metrics.pad(8)
         text: "hjkl move  ·  n/p month  ·  t today  ·  q close"
-        color: "#6a6a6a"
+        color: IslandTheme.textDisabled
         font.pixelSize: Metrics.font(10)
         font.family: root.textFontFamily
     }

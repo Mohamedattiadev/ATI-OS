@@ -806,7 +806,7 @@ FocusScope {
             delegate: Text {
                 required property var modelData
                 text: modelData
-                color: root.view === modelData ? "white" : "#6a6a6a"
+                color: root.view === modelData ? IslandTheme.textPrimary : IslandTheme.textDisabled
                 font.pixelSize: 11
                 font.family: root.textFontFamily
                 font.weight: root.view === modelData ? Font.DemiBold : Font.Normal
@@ -844,8 +844,8 @@ FocusScope {
         height: 26
         showCore: false
         lineWidth: 2.5
-        fillColor: "#ffcc66"
-        trackColor: "#33ffcc66"
+        fillColor: IslandTheme.accent
+        trackColor: IslandTheme.alpha(IslandTheme.accent, 0.2)
         // Counts DOWN: full at the moment it is armed, empty at zero.
         progress: root.confirmSeconds > 0
             ? root.revertLeft / root.confirmSeconds
@@ -854,7 +854,7 @@ FocusScope {
         Text {
             anchors.centerIn: parent
             text: root.revertLeft
-            color: "#ffcc66"
+            color: IslandTheme.accent
             font.pixelSize: 10
             font.family: root.textFontFamily
             font.weight: Font.DemiBold
@@ -872,9 +872,9 @@ FocusScope {
             ? "y to keep, c to revert"
             : root.statusText
         color: root.revertSpecs !== null
-            ? "#ffcc66"
-            : (root.statusLevel === "error" ? "#ff6b6b"
-               : (root.statusLevel === "ok" ? "#9ad18a" : "#8a8a8a"))
+            ? IslandTheme.warning
+            : (root.statusLevel === "error" ? IslandTheme.danger
+               : (root.statusLevel === "ok" ? IslandTheme.success : IslandTheme.textMuted))
         font.pixelSize: 11
         font.family: root.textFontFamily
         elide: Text.ElideRight
@@ -904,9 +904,9 @@ FocusScope {
             width: listView.width
             height: 26
             radius: 7
-            color: row.index === root.selectedIndex ? "#22ffffff" : "transparent"
+            color: row.index === root.selectedIndex ? IslandTheme.selectionFill : "transparent"
             border.width: (root.view === "arrange" && row.index === root.arrangePick) ? 1 : 0
-            border.color: "#ffcc66"
+            border.color: IslandTheme.accent
 
             Text {
                 anchors.left: parent.left
@@ -916,7 +916,7 @@ FocusScope {
                 elide: Text.ElideRight
                 color: {
                     if (root.view === "outputs" || root.view === "arrange")
-                        return row.modelData.enabled ? "white" : "#6a6a6a";
+                        return row.modelData.enabled ? IslandTheme.textPrimary : IslandTheme.textDisabled;
                     return "white";
                 }
                 font.pixelSize: 12
@@ -973,14 +973,14 @@ FocusScope {
                 spacing: 8
                 Text {
                     text: modelData[0]
-                    color: "#6a6a6a"
+                    color: IslandTheme.textDisabled
                     font.pixelSize: 11
                     font.family: root.textFontFamily
                     width: 62
                 }
                 Text {
                     text: String(modelData[1] || "—")
-                    color: "#d0d0d0"
+                    color: IslandTheme.textPrimary
                     font.pixelSize: 11
                     font.family: root.textFontFamily
                     elide: Text.ElideRight
@@ -997,7 +997,7 @@ FocusScope {
         anchors.bottomMargin: 10
         width: parent.width - root.horizontalPadding * 2
         elide: Text.ElideRight
-        color: "#6a6a6a"
+        color: IslandTheme.textDisabled
         font.pixelSize: 10
         font.family: root.textFontFamily
         text: root.view === "arrange"

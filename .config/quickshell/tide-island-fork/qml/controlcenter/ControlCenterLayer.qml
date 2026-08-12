@@ -9,6 +9,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 Item {
     id: controlCenter
@@ -30,7 +31,7 @@ Item {
     // file has no theme object of its own, and every colour in it comes
     // from the packaged StyleTokens, which has no accent slot that follows
     // theme-apply.
-    property color accentColor: "#e0563b"
+    property color accentColor: IslandTheme.accent
     // ... rest of properties ...
 
     scale: showCondition ? 1.0 : 0.12
@@ -157,19 +158,19 @@ Item {
     readonly property var wifiNetworks: wifiController ? wifiController.networks : null
 
     readonly property real sliderKnobSize: 24
-    readonly property color panelColor: StyleTokens.panel
-    readonly property color moduleColor: StyleTokens.module
-    readonly property color moduleHover: StyleTokens.moduleHover
-    readonly property color trackColor: StyleTokens.track
-    readonly property color textPrimary: StyleTokens.textPrimary
-    readonly property color textSecondary: StyleTokens.textSecondary
-    readonly property color cardAccent: StyleTokens.accent
-    readonly property color cardAccentPressed: StyleTokens.accentPressed
-    readonly property color cardFillActive: StyleTokens.cardFillActive
-    readonly property color cardFillHover: StyleTokens.cardFillHover
-    readonly property color buttonFill: StyleTokens.buttonFill
-    readonly property color buttonFillHover: StyleTokens.buttonFillHover
-    readonly property color buttonFillPressed: StyleTokens.buttonFillPressed
+    readonly property color panelColor: IslandTheme.surface
+    readonly property color moduleColor: IslandTheme.surfaceRaised
+    readonly property color moduleHover: IslandTheme.surfaceRaisedHover
+    readonly property color trackColor: IslandTheme.trackEmpty
+    readonly property color textPrimary: IslandTheme.textPrimary
+    readonly property color textSecondary: IslandTheme.textSecondary
+    readonly property color cardAccent: IslandTheme.accent
+    readonly property color cardAccentPressed: IslandTheme.accentPressed
+    readonly property color cardFillActive: IslandTheme.surfaceRaisedActive
+    readonly property color cardFillHover: IslandTheme.surfaceRaisedHover
+    readonly property color buttonFill: IslandTheme.inverseSurface
+    readonly property color buttonFillHover: IslandTheme.inverseSurfaceHover
+    readonly property color buttonFillPressed: IslandTheme.inverseSurfacePressed
     readonly property string wifiGlyph: ""
     readonly property string bluetoothGlyph: ""
     readonly property string chargingIconGlyph: "\uf0e7"
@@ -1457,7 +1458,7 @@ Item {
                 Text {
                     id: timeLabel
                     text: currentTime
-                    color: StyleTokens.textPrimaryBright
+                    color: IslandTheme.textPrimary
                     // 19 -> 24 and Bold -> DemiBold. A hero number carries by
                     // SIZE; at 19 px it needed Bold to look deliberate, and
                     // bold-plus-negative-tracking is the register of a badge,
@@ -1470,7 +1471,7 @@ Item {
 
                 Text {
                     text: currentDateLabel
-                    color: StyleTokens.textMuted
+                    color: IslandTheme.textMuted
                     font.pixelSize: Metrics.font(10)
                     font.family: textFontFamily
                     font.weight: Font.Medium
@@ -1491,7 +1492,7 @@ Item {
 
                 Text {
                     text: controlCenter.chargingIconGlyph
-                    color: StyleTokens.white
+                    color: IslandTheme.textPrimary
                     font.pixelSize: Metrics.font(13)
                     font.family: iconFontFamily
                     visible: isCharging
@@ -1500,7 +1501,7 @@ Item {
 
                 Text {
                     text: batteryCapacity + "%"
-                    color: StyleTokens.white
+                    color: IslandTheme.textPrimary
                     font.pixelSize: Metrics.font(13)
                     font.family: textFontFamily
                     font.weight: Font.DemiBold
@@ -1516,8 +1517,8 @@ Item {
                         anchors.fill: parent
                         anchors.rightMargin: Metrics.pad(2)
                         radius: Metrics.px(4)
-                        color: StyleTokens.transparent
-                        border.color: StyleTokens.textSecondary
+                        color: "transparent"
+                        border.color: IslandTheme.textSecondary
                         border.width: 1
 
                         Rectangle {
@@ -1527,10 +1528,27 @@ Item {
                             anchors.margins: Metrics.pad(2)
                             radius: Metrics.px(2)
                             width: (parent.width - 4) * (batteryCapacity / 100.0)
+                            // ONE OF THE FOUR DELIBERATE EXCEPTIONS TO THE
+                            // TOKEN LAYER — the battery bar, where the
+                            // colour IS the reading rather than the
+                            // styling. Bound to IslandTheme.danger /
+                            // warning / success, "8% battery" would draw in
+                            // gruvbox yellow on one theme and matrix green
+                            // on another.
+                            //
+                            // Written as literals rather than left on
+                            // StyleTokens, which happens to freeze them to
+                            // exactly these three values but freezes them
+                            // by accident — the reason would have lived in
+                            // a package binary instead of here, and the
+                            // next person removing the last StyleTokens
+                            // import would have taken the exception with
+                            // it without noticing. Same ladder as
+                            // BluetoothExpandedLayer.qml, same values.
                             color: {
-                                if (batteryCapacity <= 10) return StyleTokens.danger;
-                                if (batteryCapacity <= 20) return StyleTokens.warning;
-                                return StyleTokens.success;
+                                if (batteryCapacity <= 10) return "#ff3b30";
+                                if (batteryCapacity <= 20) return "#ffcc00";
+                                return "#34c759";
                             }
 
                             Behavior on width {
@@ -1547,7 +1565,7 @@ Item {
                         width: Metrics.px(2)
                         height: Metrics.px(6)
                         radius: 1
-                        color: StyleTokens.textSecondary
+                        color: IslandTheme.textSecondary
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                     }
@@ -1614,10 +1632,10 @@ Item {
                     radius: Metrics.px(9)
                     color: (crowHover.hovered || crow.panelOpen)
                         ? Qt.rgba(0.925, 0.925, 0.925, 0.055)
-                        : StyleTokens.transparent
+                        : "transparent"
 
                     Behavior on color {
-                        ColorAnimation { duration: StyleTokens.durationFast }
+                        ColorAnimation { duration: IslandTheme.durationFast }
                     }
                 }
 
@@ -1644,7 +1662,7 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         text: crow.glyph
-                        color: crow.on ? controlCenter.cardAccent : StyleTokens.textDisabled
+                        color: crow.on ? controlCenter.cardAccent : IslandTheme.textDisabled
                         font.pixelSize: Metrics.font(18)
                         font.family: controlCenter.iconFontFamily
                     }
@@ -1678,7 +1696,7 @@ Item {
                         width: parent.width
                         visible: crow.status.length > 0
                         text: crow.status
-                        color: StyleTokens.textMuted
+                        color: IslandTheme.textMuted
                         font.pixelSize: Metrics.font(10.5)
                         font.family: controlCenter.textFontFamily
                         font.weight: Font.Medium
@@ -1692,7 +1710,7 @@ Item {
                     anchors.rightMargin: Metrics.pad(12)
                     anchors.verticalCenter: parent.verticalCenter
                     text: "›"
-                    color: crow.panelOpen ? "#c7c9cf" : StyleTokens.textSubtle
+                    color: crow.panelOpen ? IslandTheme.textSecondary : IslandTheme.textMuted
                     font.pixelSize: Metrics.font(17)
                     font.family: controlCenter.textFontFamily
                     font.weight: Font.DemiBold
@@ -1725,10 +1743,10 @@ Item {
                     // the one element in the panel ignoring the palette. The
                     // battery bar keeps success/warning/danger, where the
                     // colour IS the information.
-                    color: crow.on ? controlCenter.accentColor : StyleTokens.switchOff
+                    color: crow.on ? controlCenter.accentColor : IslandTheme.trackEmpty
 
                     Behavior on color {
-                        ColorAnimation { duration: StyleTokens.durationFast }
+                        ColorAnimation { duration: IslandTheme.durationFast }
                     }
 
                     Rectangle {
@@ -1740,7 +1758,7 @@ Item {
                         y: (parent.height - height) / 2
                         x: crow.on ? parent.width - width - Metrics.px(3)
                                    : Metrics.px(3)
-                        color: StyleTokens.white
+                        color: IslandTheme.onAccent
 
                         Behavior on x {
                             NumberAnimation {
@@ -1821,7 +1839,7 @@ Item {
                 width: batteryDrawer.cardWidth
                 height: controlCenter.batteryModeCardHeight
                 radius: Metrics.px(20)
-                color: StyleTokens.clearBlack
+                color: "transparent"
                 visible: controlCenter.tlpControlsEnabled
                 opacity: controlCenter.tlpControlsEnabled ? Math.min(1, controlCenter.batteryDrawerProgress * 1.35) : 0
                 clip: true
@@ -1855,7 +1873,7 @@ Item {
                         : (controlCenter.batteryModeInfoMessage.length > 0
                             ? controlCenter.batteryModeInfoMessage
                             : controlCenter.batteryModeStatusText)
-                    color: controlCenter.batteryModeError.length > 0 ? StyleTokens.error : StyleTokens.textMuted
+                    color: controlCenter.batteryModeError.length > 0 ? IslandTheme.danger : IslandTheme.textMuted
                     horizontalAlignment: Text.AlignRight
                     font.pixelSize: Metrics.font(9)
                     font.family: textFontFamily
@@ -1915,7 +1933,7 @@ Item {
                                     width: index === controlCenter.batteryModeIndex ? 32 : 28
                                     height: index === controlCenter.batteryModeIndex ? 28 : 24
                                     radius: Metrics.px(12)
-                                    color: index === controlCenter.batteryModeIndex ? StyleTokens.textPrimary : "#292a2f"
+                                    color: index === controlCenter.batteryModeIndex ? IslandTheme.textPrimary : IslandTheme.surfaceRaised
 
                                     Behavior on width {
                                         NumberAnimation {
@@ -1942,7 +1960,7 @@ Item {
                                     Text {
                                         anchors.centerIn: parent
                                         text: controlCenter.batteryModeGlyphs[index]
-                                        color: index === controlCenter.batteryModeIndex ? StyleTokens.module : StyleTokens.textDim
+                                        color: index === controlCenter.batteryModeIndex ? IslandTheme.onInverseSurface : IslandTheme.textSecondary
                                         font.pixelSize: index === controlCenter.batteryModeIndex ? Metrics.font(15) : Metrics.font(13)
                                         font.family: iconFontFamily
                                     }
@@ -1957,7 +1975,7 @@ Item {
                         width: Metrics.px(22)
                         height: Metrics.px(2)
                         radius: 1
-                        color: "#5d6068"
+                        color: IslandTheme.textDisabled
                         opacity: 0.75
                     }
 
@@ -2032,7 +2050,7 @@ Item {
                 width: batteryDrawer.cardWidth
                 height: controlCenter.batteryModeCardHeight
                 radius: Metrics.px(20)
-                color: StyleTokens.clearBlack
+                color: "transparent"
                 opacity: Math.min(1, controlCenter.batteryDrawerProgress * 1.35)
                 clip: true
                 readonly property real toggleIconTop: 12
@@ -2060,7 +2078,7 @@ Item {
                     width: 1
                     height: parent.height - 34
                     radius: 1
-                    color: "#1cffffff"
+                    color: IslandTheme.hairline
                 }
 
                 Item {
@@ -2070,7 +2088,7 @@ Item {
                     anchors.bottom: parent.bottom
                     width: parent.width / 2
                     property real slashProgress: controlCenter.focusEnabled ? 1 : 0
-                    property color iconColor: controlCenter.focusEnabled ? StyleTokens.textPrimaryBright : "#c8cad1"
+                    property color iconColor: controlCenter.focusEnabled ? IslandTheme.textPrimary : IslandTheme.textSecondary
 
                     // The click is already refused when the daemon cannot be
                     // reached; this is what SAYS so. Without it the row
@@ -2124,11 +2142,11 @@ Item {
                         anchors.fill: parent
                         anchors.margins: Metrics.pad(4)
                         radius: Metrics.px(16)
-                        color: focusButtonMouse.containsMouse ? "#08ffffff" : StyleTokens.clearBlack
+                        color: focusButtonMouse.containsMouse ? IslandTheme.alpha(IslandTheme.ink, 0.03) : "transparent"
 
                         Behavior on color {
                             ColorAnimation {
-                                duration: StyleTokens.durationFast
+                                duration: IslandTheme.durationFast
                             }
                         }
                     }
@@ -2171,7 +2189,7 @@ Item {
                             }
 
                             ShapePath {
-                                fillColor: StyleTokens.transparent
+                                fillColor: "transparent"
                                 strokeColor: focusButton.iconColor
                                 strokeWidth: 2
                                 capStyle: ShapePath.RoundCap
@@ -2183,7 +2201,7 @@ Item {
                             }
 
                             ShapePath {
-                                fillColor: StyleTokens.transparent
+                                fillColor: "transparent"
                                 strokeColor: focusButton.iconColor
                                 strokeWidth: 2.1
                                 capStyle: ShapePath.RoundCap
@@ -2207,7 +2225,7 @@ Item {
                         y: quickTogglesCard.toggleLabelTop
                         width: parent.width
                         text: "Silent"
-                        color: controlCenter.focusEnabled ? StyleTokens.textPrimaryBright : StyleTokens.textMuted
+                        color: controlCenter.focusEnabled ? IslandTheme.textPrimary : IslandTheme.textMuted
                         horizontalAlignment: Text.AlignHCenter
                         font.pixelSize: Metrics.font(10)
                         font.family: textFontFamily
@@ -2236,11 +2254,11 @@ Item {
                         anchors.fill: parent
                         anchors.margins: Metrics.pad(4)
                         radius: Metrics.px(16)
-                        color: nightLightButtonMouse.containsMouse ? "#08ffffff" : StyleTokens.clearBlack
+                        color: nightLightButtonMouse.containsMouse ? IslandTheme.alpha(IslandTheme.ink, 0.03) : "transparent"
 
                         Behavior on color {
                             ColorAnimation {
-                                duration: StyleTokens.durationFast
+                                duration: IslandTheme.durationFast
                             }
                         }
                     }
@@ -2256,7 +2274,7 @@ Item {
                             anchors.centerIn: parent
                             anchors.verticalCenterOffset: 1
                             text: controlCenter.nightLightGlyph
-                            color: "#45000000"
+                            color: IslandTheme.alpha(IslandTheme.onInverseSurface, 0.27)
                             font.pixelSize: Metrics.font(29)
                             font.family: iconFontFamily
                             scale: nightLightButtonMouse.pressed ? 0.94 : 1.0
@@ -2267,7 +2285,7 @@ Item {
                             id: nightLightIcon
                             anchors.centerIn: parent
                             text: controlCenter.nightLightGlyph
-                            color: controlCenter.nightLightEnabled ? StyleTokens.textPrimaryBright : "#c8cad1"
+                            color: controlCenter.nightLightEnabled ? IslandTheme.textPrimary : IslandTheme.textSecondary
                             font.pixelSize: Metrics.font(29)
                             font.family: iconFontFamily
                             scale: nightLightButtonMouse.pressed ? 0.94 : 1.0
@@ -2288,7 +2306,7 @@ Item {
                         y: quickTogglesCard.toggleLabelTop
                         width: parent.width
                         text: "Night mode"
-                        color: controlCenter.nightLightEnabled ? StyleTokens.textPrimaryBright : StyleTokens.textMuted
+                        color: controlCenter.nightLightEnabled ? IslandTheme.textPrimary : IslandTheme.textMuted
                         horizontalAlignment: Text.AlignHCenter
                         font.pixelSize: Metrics.font(10)
                         font.family: textFontFamily
@@ -2310,11 +2328,11 @@ Item {
                 gradient: Gradient {
                     GradientStop {
                         position: 0
-                        color: "#9a000000"
+                        color: IslandTheme.alpha(IslandTheme.onInverseSurface, 0.60)
                     }
                     GradientStop {
                         position: 1
-                        color: StyleTokens.clearBlack
+                        color: "transparent"
                     }
                 }
             }
@@ -2333,7 +2351,7 @@ Item {
                     width: Metrics.px(48)
                     height: Metrics.px(5)
                     radius: Metrics.px(3)
-                    color: controlCenter.batteryDrawerOpen ? "#d4d6dc" : StyleTokens.textSubtle
+                    color: controlCenter.batteryDrawerOpen ? IslandTheme.textSecondary : IslandTheme.textMuted
                     opacity: 0.88
                 }
 

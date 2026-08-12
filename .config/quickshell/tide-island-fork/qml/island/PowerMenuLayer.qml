@@ -9,6 +9,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 //
 // FORK — new file. The POWER MENU, one of DESIGN-SPEC.md's states of the one
@@ -292,7 +293,7 @@ FocusScope {
         x: root.horizontalPadding
         y: Metrics.pad(11)
         text: root.errorText !== "" ? root.errorText : "Power"
-        color: root.errorText !== "" ? "#ff6b6b" : "white"
+        color: root.errorText !== "" ? IslandTheme.danger : IslandTheme.textPrimary
         font.pixelSize: Metrics.font(15)
         font.family: root.heroFontFamily
         font.weight: Font.DemiBold
@@ -304,7 +305,7 @@ FocusScope {
         anchors.rightMargin: root.horizontalPadding
         y: Metrics.pad(13)
         text: root.runningAction !== "" ? root.runningAction + "…" : ""
-        color: "#8a8f98"
+        color: IslandTheme.textSecondary
         font.pixelSize: Metrics.font(12)
         font.family: root.textFontFamily
     }
@@ -340,8 +341,8 @@ FocusScope {
                     // this", and a selection colour is what the row already
                     // had — a second shade of the same thing would be a
                     // change you can miss.
-                    color: rowItem.isConfirming ? "#4a2226"
-                         : (rowItem.isSelected ? "#2c3038" : "transparent")
+                    color: rowItem.isConfirming ? IslandTheme.dangerFill
+                         : (rowItem.isSelected ? IslandTheme.selectionFill : "transparent")
 
                     Behavior on color {
                         ColorAnimation {
@@ -359,7 +360,7 @@ FocusScope {
                         text: rowItem.isConfirming
                             ? rowItem.modelData.label + "?   y / n"
                             : rowItem.modelData.label
-                        color: rowItem.isConfirming ? "#ffb3b8" : "#f2f4f7"
+                        color: rowItem.isConfirming ? IslandTheme.danger : IslandTheme.textPrimary
                         font.pixelSize: Metrics.font(13)
                         font.family: root.textFontFamily
                         font.weight: (rowItem.isSelected || rowItem.isConfirming)
@@ -382,7 +383,7 @@ FocusScope {
                         horizontalAlignment: Text.AlignRight
                         elide: Text.ElideRight
                         text: rowItem.modelData.detail
-                        color: "#6a6f78"
+                        color: IslandTheme.textDisabled
                         font.pixelSize: Metrics.font(10)
                         font.family: root.textFontFamily
                     }
@@ -415,7 +416,7 @@ FocusScope {
         text: root.pendingConfirm !== ""
             ? "y confirm  ·  n cancel"
             : "j/k move  ·  Enter select  ·  q close"
-        color: "#6a6a6a"
+        color: IslandTheme.textDisabled
         font.pixelSize: Metrics.font(10)
         font.family: root.textFontFamily
     }

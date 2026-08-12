@@ -4,6 +4,7 @@ import IslandBackend
 // FORK: one shared scale factor for every island surface.
 import "../common/Metrics.js" as Metrics
 import "../common/Motion.js" as Motion
+import "../common"
 
 //
 // FORK — the Display/Sound control, restyled onto amanhex/ukishima's
@@ -58,12 +59,12 @@ Item {
     // has no knob, so it is deliberately unused — removing it would mean
     // editing two instantiation sites for no visual gain.
     property real knobSize: 24
-    property color moduleColor: StyleTokens.module
-    property color moduleHover: StyleTokens.moduleHover
-    property color trackColor: StyleTokens.track
-    property color textPrimary: StyleTokens.textPrimary
-    property color textSecondary: StyleTokens.textSecondary
-    property color accentColor: "#e0563b"
+    property color moduleColor: IslandTheme.surfaceRaised
+    property color moduleHover: IslandTheme.surfaceRaisedHover
+    property color trackColor: IslandTheme.trackEmpty
+    property color textPrimary: IslandTheme.textPrimary
+    property color textSecondary: IslandTheme.textSecondary
+    property color accentColor: IslandTheme.accent
 
     readonly property bool pressed: sliderArea.pressed
     // "lit" is ukishima's word for it: hovered or being dragged. Everything
@@ -79,9 +80,9 @@ Item {
     // that ratio is what keeps the unfilled thread visible on a near-black
     // surface without becoming a line you read as content.
     readonly property color threadBg: Qt.rgba(0.925, 0.925, 0.925, 0.13)
-    readonly property color creamColor: "#ececec"
-    readonly property color dimColor: "#8c8c8c"
-    readonly property color faintColor: "#6a6a6a"
+    readonly property color creamColor: IslandTheme.textPrimary
+    readonly property color dimColor: IslandTheme.textMuted
+    readonly property color faintColor: IslandTheme.textDisabled
 
     // No card. The old one drew a rounded rectangle with a MatteSurface over
     // it; ukishima's mixer draws faders straight onto the panel and lets the
@@ -212,7 +213,7 @@ Item {
                 width: Metrics.px(2.5)
                 height: Metrics.px(11)
                 radius: Metrics.px(2)
-                color: "#c2c2c2"
+                color: IslandTheme.textSecondary
                 opacity: root.lit ? 0 : 1
                 Behavior on opacity { NumberAnimation { duration: Motion.fadeOutDuration() } }
                 Behavior on x {
