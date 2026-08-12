@@ -471,19 +471,65 @@ Item {
                             radius: Metrics.px(3)
                             color: "#333333"
 
+                            // FORK: the fill animates its PROGRESS, not its
+                            // width, and it does so on the critically damped
+                            // curve rather than the spring. Two separate bugs
+                            // shared one Behavior.
+                            //
+                            // 1. The spring overshoots ~1.54% of the travel by
+                            //    construction (Motion.overshoot()). This width
+                            //    is `parent.width * trackProgress` with
+                            //    trackProgress clamped 0..1, so it is the
+                            //    slider case Motion.js's own header already
+                            //    calls out: at the end of a track the fill is
+                            //    drawn ~1.5% wider than the grey track behind
+                            //    it, white spilling past a rounded end cap,
+                            //    for the ~100 ms the peak lasts. The header
+                            //    lists `animatedProgress` under fade for
+                            //    exactly this reason; the timer ring 230 lines
+                            //    down this same file already does it right.
+                            //
+                            // 2. Worse, and the reason this is a motion bug
+                            //    and not a pedantry: `parent.width` is not
+                            //    constant. The player lives inside mainCapsule
+                            //    and the capsule morphs from 156 px to its
+                            //    expanded width when the panel opens
+                            //    (measured with grim). A Behavior on `width`
+                            //    cannot distinguish "the song advanced one
+                            //    second" from "the container just grew 400 px"
+                            //    — so every open ran a 500 ms animation on the
+                            //    fill that was chasing the capsule instead of
+                            //    riding inside it. Same failure as the icon
+                            //    strip's Behavior on x, which was removed for
+                            //    it two commits ago.
+                            //
+                            // Moving the Behavior onto the 0..1 lets the
+                            // parent.width term pass through untouched, so the
+                            // fill scales with the capsule frame-for-frame and
+                            // only genuine progress changes animate.
+                            //
+                            // 500 ms is kept. mpris position updates land
+                            // roughly once a second, so the animation has to
+                            // occupy a good fraction of the gap or the bar
+                            // ticks; the timer ring uses 700 for the same
+                            // reason and is fed at the same rate.
                             Rectangle {
-                                height: parent.height
-                                radius: Metrics.px(3)
-                                color: "white"
-                                width: parent.width * trackProgress
+                                id: trackFill
 
-                                Behavior on width {
+                                property real animatedTrackProgress: root.trackProgress
+
+                                Behavior on animatedTrackProgress {
                                     NumberAnimation {
                                         duration: 500
                                         easing.type: Easing.BezierSpline
-                                        easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
+                                        easing.bezierCurve: Motion.fade()
                                     }
                                 }
+
+                                height: parent.height
+                                radius: Metrics.px(3)
+                                color: "white"
+                                width: parent.width * trackFill.animatedTrackProgress
                             }
                         }
 

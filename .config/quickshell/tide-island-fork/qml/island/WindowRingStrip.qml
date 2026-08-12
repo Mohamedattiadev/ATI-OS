@@ -50,8 +50,12 @@ import "../common/Motion.js" as Motion
 Item {
     id: root
 
-    // Array of { appId, title, active }.
+    // Array of { appId, toplevel }. Deliberately does NOT carry focus or
+    // title — see the note at openWindows in DynamicIslandWindow.qml.
     property var windows: []
+    // The focused toplevel, passed separately so a focus change updates one
+    // binding instead of rebuilding the whole model and every delegate.
+    property var activeToplevel: null
     // "left" takes the even indices, "right" the odd ones.
     property string side: "left"
     property real revealProgress: 1
@@ -364,7 +368,8 @@ Item {
                     onTriggered: winCell.drop = 1
                 }
 
-                readonly property bool isActive: !!modelData.active
+                readonly property bool isActive: modelData.toplevel !== null
+                    && modelData.toplevel === root.activeToplevel
                 readonly property string iconSource: root.iconFor(modelData.appId)
 
                 // The outer box is the FOCUS RING's size and never changes,
