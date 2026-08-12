@@ -214,36 +214,34 @@ PanelWindow {
     // surface means the request appears to hang. It is covered by the
     // general rule now, and would have been covered by it anyway.
     //
-    // ---- AND THEN RESTING WAS PROMOTED TO Overlay AS WELL ----
+    // Why resting stays on Top: a resting notch on Overlay would sit on top
+    // of fullscreen video permanently, which is the opposite complaint. Only
+    // transient content earns the promotion, and all of it is transient by
+    // construction — every non-resting state returns to a resting one.
     //
-    // The rule above USED to end `? WlrLayer.Top : WlrLayer.Overlay`, with
-    // this reason: "a resting notch on Overlay would sit on top of
-    // fullscreen video permanently, which is the opposite complaint."
-    // That reason was sound and it is now overruled deliberately, because
-    // the cost of the other side turned out to be larger than it looked.
+    // ---- THIS WAS BRIEFLY Overlay ALWAYS, AND IS PUT BACK ----
     //
-    // Reported as "I cannot take a screenshot of the island". It is not a
-    // screenshot bug — grim captures layer surfaces faithfully, and the
-    // whole grim -> wl-copy -> copyq chain was measured clean this session
-    // (identical mean and size at every stage). The island simply WAS NOT
-    // ON SCREEN. Reproduced directly: with one fullscreen window up, a
-    // capture of the top strip contains no island at all, only the window's
-    // own content, because a fullscreen window draws above Top and below
-    // Overlay.
+    // Reported as "I cannot screenshot the island", so resting was promoted
+    // to Overlay unconditionally. The diagnosis was right and the fix was
+    // wrong, and the mechanism is worth keeping written down: a fullscreen
+    // window draws ABOVE Top and BELOW Overlay, so a resting island on Top
+    // is genuinely not on screen while anything is fullscreen. Reproduced by
+    // fullscreening a throwaway window and capturing the top strip, which
+    // came back with no island in it at all — it is not a capture bug, the
+    // pixels were never there.
     //
-    // So resting on Top does not merely lose screenshots. It means the
-    // clock, the workspace chip and the window icons are all silently gone
-    // for as long as anything is fullscreen — the shell disappears exactly
-    // when you have the least other chrome to orient by. Weighed against a
-    // notch over fullscreen video, the user chose visibility.
-    //
-    // The property is kept even though both branches now agree: it is read
-    // elsewhere in this file, and it still names a real distinction.
+    // But the answer to that is not to pin the notch over fullscreen video.
+    // Asked for directly afterwards: in fullscreen there is no need to show
+    // the icons or the island, only when a mode opens. Which is what this
+    // conditional already did — resting hides under fullscreen, and any
+    // panel, OSD or mode promotes the surface to Overlay and draws over it.
+    // So the original rule is restored unchanged, and the round trip is
+    // recorded so it is not "fixed" a third time.
     readonly property bool islandRestingSurface:
         islandContainer.islandState === "normal"
         || islandContainer.islandState === "lyrics"
         || islandContainer.islandState === "custom"
-    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.layer: root.islandRestingSurface ? WlrLayer.Top : WlrLayer.Overlay
     WlrLayershell.keyboardFocus: {
         // Exclusive, not OnDemand: the theme picker is arrow-key driven,
         // and without an exclusive grab the arrows go to whatever window
