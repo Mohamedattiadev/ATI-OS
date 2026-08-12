@@ -8,6 +8,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 Item {
     id: root
@@ -336,7 +337,7 @@ Item {
                                 // a literal 14: the same corner on a 55 px
                                 // square and an 81 px one are different shapes.
                                 radius: Math.round(root.artSize * 0.22)
-                                color: "#2c2c2e"
+                                color: IslandTheme.surfaceRaised
                                 clip: true
 
                                 Image {
@@ -376,7 +377,7 @@ Item {
                                 Text {
                                     width: parent.width
                                     text: currentArtist
-                                    color: "#8e8e93"
+                                    color: IslandTheme.textSecondary
                                     font.pixelSize: Metrics.font(userConfig.bodyFontSize - 1)
                                     font.family: textFontFamily
                                     font.weight: Font.Medium
@@ -388,7 +389,7 @@ Item {
                                     visible: root.currentAlbum !== ""
                                              && root.currentAlbum !== currentTrack
                                     text: root.currentAlbum
-                                    color: "#6e6e73"
+                                    color: IslandTheme.textMuted
                                     font.pixelSize: Metrics.font(userConfig.bodyFontSize - 1)
                                     font.family: textFontFamily
                                     font.weight: Font.Normal
@@ -418,7 +419,7 @@ Item {
                                             ? 6 + (parent.height - 6) * visualizerLevel(index)
                                             : 6 + (parent.height - 6) * pausedVisualizerLevel(index)
                                         radius: Metrics.px(2)
-                                        color: isPlaying ? "#b56cff" : "#5f4b72"
+                                        color: isPlaying ? IslandTheme.accent : IslandTheme.accentSoft
                                         anchors.verticalCenter: parent.verticalCenter
 
                                         Behavior on height {
@@ -456,7 +457,7 @@ Item {
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
                             text: timePlayed
-                            color: "#8e8e93"
+                            color: IslandTheme.textSecondary
                             font.pixelSize: Metrics.font(userConfig.bodyFontSize - 2)
                             font.family: textFontFamily
                             font.weight: Font.Medium
@@ -469,7 +470,7 @@ Item {
                             anchors.margins: Metrics.pad(12)
                             height: Metrics.px(6)
                             radius: Metrics.px(3)
-                            color: "#333333"
+                            color: IslandTheme.trackEmpty
 
                             // FORK: the fill animates its PROGRESS, not its
                             // width, and it does so on the critically damped
@@ -538,7 +539,7 @@ Item {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             text: timeTotal
-                            color: "#8e8e93"
+                            color: IslandTheme.textSecondary
                             font.pixelSize: Metrics.font(userConfig.bodyFontSize - 2)
                             font.family: textFontFamily
                             font.weight: Font.Medium
@@ -564,7 +565,7 @@ Item {
 
                                 Canvas {
                                     anchors.fill: parent
-                                    property color fillColor: prevArea.pressed ? "#888" : "white"
+                                    property color fillColor: prevArea.pressed ? IslandTheme.textMuted : IslandTheme.textPrimary
 
                                     onFillColorChanged: requestPaint()
                                     onPaint: {
@@ -616,14 +617,14 @@ Item {
                                     spacing: Metrics.px(6)
                                     visible: activePlayer && activePlayer.playbackState === MprisPlaybackState.Playing
 
-                                    Rectangle { width: 6; height: 20; radius: 2; color: playArea.pressed ? "#888" : "white" }
-                                    Rectangle { width: 6; height: 20; radius: 2; color: playArea.pressed ? "#888" : "white" }
+                                    Rectangle { width: 6; height: 20; radius: 2; color: playArea.pressed ? IslandTheme.textMuted : IslandTheme.textPrimary }
+                                    Rectangle { width: 6; height: 20; radius: 2; color: playArea.pressed ? IslandTheme.textMuted : IslandTheme.textPrimary }
                                 }
 
                                 Canvas {
                                     anchors.fill: parent
                                     visible: !activePlayer || activePlayer.playbackState !== MprisPlaybackState.Playing
-                                    property color fillColor: playArea.pressed ? "#888" : "white"
+                                    property color fillColor: playArea.pressed ? IslandTheme.textMuted : IslandTheme.textPrimary
 
                                     onFillColorChanged: requestPaint()
                                     onPaint: {
@@ -667,7 +668,7 @@ Item {
 
                                 Canvas {
                                     anchors.fill: parent
-                                    property color fillColor: nextArea.pressed ? "#888" : "white"
+                                    property color fillColor: nextArea.pressed ? IslandTheme.textMuted : IslandTheme.textPrimary
 
                                     onFillColorChanged: requestPaint()
                                     onPaint: {
@@ -863,13 +864,13 @@ Item {
                         ctx.lineWidth = lineWidth;
 
                         ctx.beginPath();
-                        ctx.strokeStyle = "#2b2e35";
+                        ctx.strokeStyle = IslandTheme.trackEmpty;
                         ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
                         ctx.stroke();
 
                         if (progress > 0) {
                             ctx.beginPath();
-                            ctx.strokeStyle = "#ff9f0a";
+                            ctx.strokeStyle = IslandTheme.accent;
                             ctx.arc(centerX, centerY, radius, startAngle, endAngle, true);
                             ctx.stroke();
                         }
@@ -879,7 +880,7 @@ Item {
                 Text {
                     anchors.centerIn: progressRing
                     text: timerRoot.timeText
-                    color: "#ffffff"
+                    color: IslandTheme.textPrimary
                     font.pixelSize: timerRoot.displaySeconds >= 3600 ? timerRoot.userConfig.bodyFontSize + Metrics.px(2) : timerRoot.userConfig.bodyFontSize + Metrics.px(8)
                     font.family: timerRoot.textFontFamily
                     font.weight: Font.DemiBold
@@ -1011,9 +1012,9 @@ Item {
                 anchors.fill: parent
                 anchors.margins: 1
                 radius: Metrics.px(9)
-                color: StyleTokens.transparent
+                color: "transparent"
                 border.width: 1
-                border.color: input.activeFocus ? "#ff9f0a" : "#2b2e35"
+                border.color: input.activeFocus ? IslandTheme.accent : IslandTheme.hairlineStrong
             }
 
             MouseArea {
@@ -1043,9 +1044,9 @@ Item {
 
                     width: Metrics.px(42)
                     property bool sanitizing: false
-                    color: "#f5f5f7"
-                    selectionColor: "#ff9f0a"
-                    selectedTextColor: "#111111"
+                    color: IslandTheme.textPrimary
+                    selectionColor: IslandTheme.accent
+                    selectedTextColor: IslandTheme.onAccent
                     font.pixelSize: UserConfig.bodyFontSize + Metrics.px(2)
                     font.family: inputRoot.textFontFamily
                     font.weight: Font.DemiBold
@@ -1075,7 +1076,7 @@ Item {
 
                 Text {
                     text: inputRoot.label
-                    color: "#9b9da4"
+                    color: IslandTheme.textMuted
                     font.pixelSize: UserConfig.bodyFontSize - Metrics.px(3)
                     font.family: inputRoot.textFontFamily
                     font.weight: Font.Medium
@@ -1120,17 +1121,17 @@ Item {
                 anchors.margins: 1
                 radius: Metrics.px(9)
                 color: buttonRoot.accent
-                    ? (buttonArea.pressed ? "#d98500" : "#ff9f0a")
-                    : StyleTokens.transparent
+                    ? (buttonArea.pressed ? IslandTheme.accentPressed : IslandTheme.accent)
+                    : "transparent"
                 border.width: 1
-                border.color: buttonRoot.accent ? "#ff9f0a" : "#2b2e35"
+                border.color: buttonRoot.accent ? IslandTheme.accent : IslandTheme.hairlineStrong
             }
         }
 
         Text {
             anchors.centerIn: parent
             text: buttonRoot.label
-            color: buttonRoot.accent ? "#111111" : "#f5f5f7"
+            color: buttonRoot.accent ? IslandTheme.onAccent : IslandTheme.textPrimary
             font.pixelSize: UserConfig.bodyFontSize - Metrics.px(2)
             font.family: buttonRoot.textFontFamily
             font.weight: Font.DemiBold

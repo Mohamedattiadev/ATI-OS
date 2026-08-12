@@ -6,6 +6,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 Item {
     id: root
@@ -40,6 +41,18 @@ Item {
     readonly property int volumePercent: volumeAvailable
         ? Math.max(0, Math.min(100, Math.round(volumeLevel * 100)))
         : -1
+    // ONE OF THE FOUR DELIBERATE EXCEPTIONS TO THE TOKEN LAYER.
+    //
+    // Everything else in this file now reads IslandTheme. This ladder does
+    // not, and must not: here the colour IS the reading. A user glances at
+    // a red bar and knows to charge the headphones — nobody reads the
+    // number. Bound to IslandTheme.danger/warning/success it would be
+    // gruvbox yellow at 10% on one theme and matrix green at 10% on
+    // another, i.e. "10% battery" rendered in the colour of "fine".
+    //
+    // The other three are listed in qml/common/IslandTheme.qml: the Wi-Fi
+    // QR card, the theme picker's 22 tiles, and the theme-transition
+    // overlay.
     readonly property color batteryColor: {
         if (!batteryAvailable) return "#5d6068";
         if (batteryPercent <= 10) return "#ff3b30";
@@ -89,7 +102,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: root.iconText
-                    color: "#0a84ff"
+                    color: IslandTheme.accent
                     font.pixelSize: userConfig.iconFontSize + Metrics.px(16)
                     font.family: root.iconFontFamily
                 }
@@ -107,7 +120,7 @@ Item {
                     anchors.rightMargin: Metrics.pad(2)
                     radius: Metrics.px(4)
                     color: "transparent"
-                    border.color: "#8e8e93"
+                    border.color: IslandTheme.textSecondary
                     border.width: 1
 
                     Rectangle {
@@ -137,7 +150,7 @@ Item {
                     width: Metrics.px(2)
                     height: Metrics.px(6)
                     radius: 1
-                    color: "#8e8e93"
+                    color: IslandTheme.textSecondary
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                 }
@@ -164,7 +177,7 @@ Item {
                         width: Math.max(0, parent.width - batteryText.implicitWidth - parent.spacing)
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.deviceName
-                        color: "#ffffff"
+                        color: IslandTheme.textPrimary
                         font.pixelSize: userConfig.bodyFontSize - 1
                         font.family: root.textFontFamily
                         font.weight: Font.DemiBold
@@ -175,7 +188,7 @@ Item {
                         id: batteryText
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.batteryAvailable ? root.batteryPercent + "%" : "--"
-                        color: root.batteryAvailable ? "#cfd2d8" : "#8e8e93"
+                        color: root.batteryAvailable ? IslandTheme.textSecondary : IslandTheme.textMuted
                         font.pixelSize: userConfig.bodyFontSize - 3
                         font.family: root.textFontFamily
                         font.weight: Font.DemiBold
@@ -187,7 +200,7 @@ Item {
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     text: "Connected"
-                    color: "#34c759"
+                    color: IslandTheme.success
                     font.pixelSize: userConfig.bodyFontSize - 4
                     font.family: root.textFontFamily
                     font.weight: Font.Medium
@@ -206,7 +219,7 @@ Item {
                 anchors.leftMargin: Metrics.pad(12)
                 anchors.baseline: volumeValue.baseline
                 text: "vol"
-                color: "#f5f5f7"
+                color: IslandTheme.textPrimary
                 font.pixelSize: Metrics.font(12)
                 font.family: root.textFontFamily
                 font.weight: Font.Medium
@@ -218,7 +231,7 @@ Item {
                 anchors.rightMargin: Metrics.pad(12)
                 anchors.verticalCenter: volumeTrack.verticalCenter
                 text: root.volumeAvailable ? root.volumePercent : "--"
-                color: "#8e8e93"
+                color: IslandTheme.textSecondary
                 font.pixelSize: Metrics.font(12)
                 font.family: root.textFontFamily
                 font.weight: Font.Medium
@@ -234,13 +247,13 @@ Item {
                 anchors.bottomMargin: Metrics.pad(15)
                 height: Metrics.px(8)
                 radius: Metrics.px(4)
-                color: "#2c2c2e"
+                color: IslandTheme.surfaceRaised
 
                 Rectangle {
                     width: root.volumeAvailable ? parent.width * (root.volumePercent / 100.0) : 0
                     height: parent.height
                     radius: parent.radius
-                    color: "#ffffff"
+                    color: IslandTheme.textPrimary
 
                     Behavior on width {
                         NumberAnimation {

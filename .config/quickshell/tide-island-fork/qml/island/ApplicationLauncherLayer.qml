@@ -12,6 +12,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 FocusScope {
     id: root
@@ -511,9 +512,9 @@ FocusScope {
                 width: Math.min(650, parent.width - 120)
                 height: parent.height
                 radius: Metrics.px(17)
-                color: searchInput.activeFocus ? "#17181c" : "#111216"
+                color: searchInput.activeFocus ? IslandTheme.inputFillFocused : IslandTheme.inputFill
                 border.width: 1
-                border.color: searchInput.activeFocus ? "#3d3f47" : "#292a30"
+                border.color: searchInput.activeFocus ? IslandTheme.inputBorderFocused : IslandTheme.inputBorder
 
                 Behavior on color { ColorAnimation { duration: 140 } }
                 Behavior on border.color { ColorAnimation { duration: 140 } }
@@ -523,7 +524,7 @@ FocusScope {
                     anchors.leftMargin: Metrics.pad(16)
                     anchors.verticalCenter: parent.verticalCenter
                     text: "\uf002"
-                    color: searchInput.activeFocus ? "#d1d1d6" : "#8e8e93"
+                    color: searchInput.activeFocus ? IslandTheme.textSecondary : IslandTheme.textMuted
                     font.family: root.iconFontFamily
                     font.pixelSize: Metrics.font(15)
                 }
@@ -535,9 +536,9 @@ FocusScope {
                     anchors.right: parent.right
                     anchors.rightMargin: root.query === "" ? 16 : 42
                     anchors.verticalCenter: parent.verticalCenter
-                    color: "#f5f5f7"
-                    selectionColor: "#0a84ff"
-                    selectedTextColor: "#ffffff"
+                    color: IslandTheme.textPrimary
+                    selectionColor: IslandTheme.accent
+                    selectedTextColor: IslandTheme.onAccent
                     font.family: root.textFontFamily
                     font.pixelSize: Metrics.font(15)
                     clip: true
@@ -583,12 +584,12 @@ FocusScope {
                     width: Metrics.px(24)
                     height: Metrics.px(24)
                     radius: Metrics.px(12)
-                    color: clearSearchArea.containsMouse ? "#34353b" : "#24252a"
+                    color: clearSearchArea.containsMouse ? IslandTheme.surfaceRaisedHover : IslandTheme.surfaceRaised
 
                     Text {
                         anchors.centerIn: parent
                         text: "\uf00d"
-                        color: "#a5a6ac"
+                        color: IslandTheme.textSecondary
                         font.family: root.iconFontFamily
                         font.pixelSize: Metrics.font(10)
                     }
@@ -718,7 +719,7 @@ FocusScope {
                             anchors.leftMargin: Metrics.pad(-2)
                             visible: appDelegate.favoriteNumber > 0
                             text: appDelegate.favoriteNumber
-                            color: "#a5a6ac"
+                            color: IslandTheme.textSecondary
                             font.family: root.textFontFamily
                             font.pixelSize: Metrics.font(12)
                             font.weight: Font.DemiBold
@@ -731,7 +732,7 @@ FocusScope {
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: parent.width - 8
                         text: appDelegate.entry.name
-                        color: appDelegate.selected ? "#f5f5f7" : "#d0d1d5"
+                        color: appDelegate.selected ? IslandTheme.textPrimary : IslandTheme.textSecondary
                         horizontalAlignment: Text.AlignHCenter
                         elide: Text.ElideRight
                         font.family: root.textFontFamily
@@ -810,7 +811,7 @@ FocusScope {
                 anchors.centerIn: parent
                 visible: root.visibleApplicationCount === 0
                 text: root.query === "" ? "没有找到可启动的应用" : "没有找到“" + root.query + "”"
-                color: "#696b72"
+                color: IslandTheme.textDisabled
                 font.family: root.textFontFamily
                 font.pixelSize: Metrics.font(13)
             }

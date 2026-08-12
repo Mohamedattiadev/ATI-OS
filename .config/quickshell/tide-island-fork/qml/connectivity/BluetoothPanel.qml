@@ -8,6 +8,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one critically
 // damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 //
 // FORK — new file. The Bluetooth panel, rebuilt from scratch in the idiom of
@@ -84,8 +85,8 @@ FocusScope {
     // island because the capsule the panel fills is already painted in this
     // exact colour, and a second rounded fill inside it at a smaller radius
     // shows as four pale corner wedges. See WifiPanel.qml for the long form.
-    property color panelFill: "#101014"
-    property color accentColor: StyleTokens.accent
+    property color panelFill: IslandTheme.surface
+    property color accentColor: IslandTheme.accent
     property bool drawBackground: false
 
     property string statusText: "Ready"
@@ -585,7 +586,7 @@ FocusScope {
         x: root.horizontalPadding
         y: Metrics.pad(12)
         text: "BLUETOOTH"
-        color: StyleTokens.textMuted
+        color: IslandTheme.textMuted
         font.family: root.textFontFamily
         font.pixelSize: Metrics.font(10)
         font.weight: Font.DemiBold
@@ -613,13 +614,13 @@ FocusScope {
         // the radio is on. "On" is not a thing to point at.
         color: {
             if (!root.provider || !root.provider.bluetoothEnabled)
-                return StyleTokens.textTertiary;
+                return IslandTheme.textMuted;
             const pool = root.currentItems;
             for (let index = 0; index < pool.length; index++) {
                 if (pool[index].device && pool[index].device.connected)
                     return root.accentColor;
             }
-            return StyleTokens.textTertiary;
+            return IslandTheme.textMuted;
         }
         font.family: root.textFontFamily
         font.pixelSize: Metrics.font(10)
@@ -637,9 +638,9 @@ FocusScope {
         elide: Text.ElideRight
         font.pixelSize: Metrics.font(11)
         font.family: root.textFontFamily
-        color: root.statusLevel === "error" ? "#ff6b6b"
-             : (root.statusLevel === "ok" ? "#9ad18a"
-             : (root.statusLevel === "busy" ? "#ffcc66" : "#8a8a8a"))
+        color: root.statusLevel === "error" ? IslandTheme.danger
+             : (root.statusLevel === "ok" ? IslandTheme.success
+             : (root.statusLevel === "busy" ? IslandTheme.warning : IslandTheme.textMuted))
         text: {
             if (root.provider && String(root.provider.bluetoothError || "").length > 0)
                 return String(root.provider.bluetoothError);
@@ -670,7 +671,7 @@ FocusScope {
             width: listView.width - Metrics.pad(16)
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
-            color: "#6a6a6a"
+            color: IslandTheme.textDisabled
             font.pixelSize: Metrics.font(11)
             font.family: root.textFontFamily
             text: {
@@ -710,7 +711,7 @@ FocusScope {
             // four tinted rows has stopped pointing at anything. Connection
             // is carried by the name's weight and colour instead, and the
             // only fill on this list is the keyboard cursor.
-            color: deviceRow.index === root.selectedIndex ? "#22ffffff" : "transparent"
+            color: deviceRow.index === root.selectedIndex ? IslandTheme.selectionFill : "transparent"
 
             Text {
                 id: rowName
@@ -738,7 +739,7 @@ FocusScope {
                 anchors.rightMargin: Metrics.pad(8)
                 anchors.top: rowName.bottom
                 elide: Text.ElideRight
-                color: "#6a6a6a"
+                color: IslandTheme.textDisabled
                 font.pixelSize: Metrics.font(9.5)
                 font.family: root.textFontFamily
                 text: root.provider ? root.provider.bluetoothDeviceSubtitle(deviceRow.device) : ""
@@ -762,7 +763,7 @@ FocusScope {
                     return deviceRow.paired ? "connect" : "pair";
                 }
                 color: deviceRow.connected ? root.accentColor
-                     : (deviceRow.index === root.selectedIndex ? "#d0d0d0" : "#6a6a6a")
+                     : (deviceRow.index === root.selectedIndex ? IslandTheme.textPrimary : IslandTheme.textDisabled)
                 font.pixelSize: Metrics.font(9.5)
                 font.family: root.textFontFamily
                 font.weight: Font.DemiBold
@@ -813,14 +814,14 @@ FocusScope {
                 spacing: Metrics.pad(8)
                 Text {
                     text: modelData[0]
-                    color: "#6a6a6a"
+                    color: IslandTheme.textDisabled
                     font.pixelSize: Metrics.font(11)
                     font.family: root.textFontFamily
                     width: Metrics.px(66)
                 }
                 Text {
                     text: String(modelData[1] || "—")
-                    color: "#d0d0d0"
+                    color: IslandTheme.textPrimary
                     font.pixelSize: Metrics.font(11)
                     font.family: root.textFontFamily
                     elide: Text.ElideRight
@@ -862,7 +863,7 @@ FocusScope {
                 const message = String(root.provider.bluetoothPairingMessage || "");
                 return message.length > 0 ? title + " — " + message : title;
             }
-            color: "#d0d0d0"
+            color: IslandTheme.textPrimary
             font.pixelSize: Metrics.font(11)
             font.family: root.textFontFamily
             elide: Text.ElideRight
@@ -877,7 +878,7 @@ FocusScope {
             text: root.provider && root.provider.bluetoothPairingRequiresConfirmation
                 ? "Enter to confirm · Escape to reject"
                 : "Escape to cancel"
-            color: "#6a6a6a"
+            color: IslandTheme.textDisabled
             font.pixelSize: Metrics.font(10)
             font.family: root.textFontFamily
         }
@@ -938,7 +939,7 @@ FocusScope {
                     visible: secretField.text.length === 0
                     text: root.provider && root.provider.bluetoothPairingNumericInput
                         ? "passkey · Enter to send" : "PIN · Enter to send"
-                    color: "#6a6a6a"
+                    color: IslandTheme.textDisabled
                     font.pixelSize: Metrics.font(10)
                     font.family: root.textFontFamily
                 }
@@ -953,7 +954,7 @@ FocusScope {
         anchors.bottomMargin: Metrics.pad(8)
         width: parent.width - root.horizontalPadding * 2
         elide: Text.ElideRight
-        color: "#6a6a6a"
+        color: IslandTheme.textDisabled
         font.pixelSize: Metrics.font(10)
         font.family: root.textFontFamily
         text: root.promptVisible

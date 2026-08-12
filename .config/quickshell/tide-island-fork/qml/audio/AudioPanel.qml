@@ -10,6 +10,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 //
 // FORK — new file. The port of qtile's popups/AudioPopup.py (25 bindings),
@@ -942,7 +943,7 @@ FocusScope {
             delegate: Text {
                 required property var modelData
                 text: modelData[1]
-                color: root.view === modelData[0] ? "white" : "#6a6a6a"
+                color: root.view === modelData[0] ? IslandTheme.textPrimary : IslandTheme.textDisabled
                 font.pixelSize: Metrics.font(11)
                 font.family: root.textFontFamily
                 font.weight: root.view === modelData[0] ? Font.DemiBold : Font.Normal
@@ -962,9 +963,9 @@ FocusScope {
         elide: Text.ElideRight
         font.pixelSize: Metrics.font(11)
         font.family: root.textFontFamily
-        color: root.statusLevel === "error" ? "#ff6b6b"
-             : (root.statusLevel === "ok" ? "#9ad18a"
-             : (root.statusLevel === "busy" ? "#ffcc66" : "#8a8a8a"))
+        color: root.statusLevel === "error" ? IslandTheme.danger
+             : (root.statusLevel === "ok" ? IslandTheme.success
+             : (root.statusLevel === "busy" ? IslandTheme.warning : IslandTheme.textMuted))
         text: root.statusText
     }
 
@@ -988,7 +989,7 @@ FocusScope {
         Text {
             anchors.centerIn: parent
             visible: listView.count === 0
-            color: "#6a6a6a"
+            color: IslandTheme.textDisabled
             font.pixelSize: Metrics.font(11)
             font.family: root.textFontFamily
             text: {
@@ -1014,7 +1015,7 @@ FocusScope {
             width: listView.width
             height: root.rowHeight
             radius: Metrics.px(7)
-            color: row.index === root.selectedIndex ? "#22ffffff" : "transparent"
+            color: row.index === root.selectedIndex ? IslandTheme.selectionFill : "transparent"
 
             // Ports, profiles and cards are rows with no volume at all, and
             // their delegates still evaluate the bar's bindings before
@@ -1042,7 +1043,7 @@ FocusScope {
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width * (root.hasVolume ? 0.56 : 0.95) - Metrics.pad(14)
                 elide: Text.ElideRight
-                color: row.isDefault ? "#9ad18a" : "white"
+                color: row.isDefault ? IslandTheme.success : IslandTheme.textPrimary
                 font.pixelSize: Metrics.font(12)
                 font.family: root.textFontFamily
                 font.weight: row.isDefault ? Font.DemiBold : Font.Normal
@@ -1090,7 +1091,7 @@ FocusScope {
                 Rectangle {
                     anchors.fill: parent
                     radius: height / 2
-                    color: "#26ffffff"
+                    color: IslandTheme.trackSubtle
                 }
                 Rectangle {
                     height: parent.height
@@ -1098,7 +1099,7 @@ FocusScope {
                     width: row.muted
                         ? 0
                         : parent.width * Math.max(0, Math.min(1, row.vol / root.volumeMax))
-                    color: row.vol > root.volumeUnity ? "#ff6b6b" : "#9ad18a"
+                    color: row.vol > root.volumeUnity ? IslandTheme.danger : IslandTheme.success
                 }
                 // The unity mark, so 100% is a place on the bar and not just
                 // a number in the readout.
@@ -1106,7 +1107,7 @@ FocusScope {
                     x: parent.width * root.volumeUnity / root.volumeMax
                     width: 1
                     height: parent.height
-                    color: "#88ffffff"
+                    color: IslandTheme.textSecondary
                 }
             }
 
@@ -1120,7 +1121,7 @@ FocusScope {
                 width: Metrics.px(44)
                 font.pixelSize: Metrics.font(11)
                 font.family: root.textFontFamily
-                color: (row.muted || row.vol > root.volumeUnity) ? "#ff6b6b" : "#d0d0d0"
+                color: (row.muted || row.vol > root.volumeUnity) ? IslandTheme.danger : IslandTheme.textPrimary
                 text: row.muted ? "mute" : row.vol + "%"
             }
 
@@ -1240,14 +1241,14 @@ FocusScope {
                 spacing: Metrics.pad(8)
                 Text {
                     text: modelData[0]
-                    color: "#6a6a6a"
+                    color: IslandTheme.textDisabled
                     font.pixelSize: Metrics.font(11)
                     font.family: root.textFontFamily
                     width: Metrics.px(72)
                 }
                 Text {
                     text: String(modelData[1] || "—")
-                    color: "#d0d0d0"
+                    color: IslandTheme.textPrimary
                     font.pixelSize: Metrics.font(11)
                     font.family: root.textFontFamily
                     elide: Text.ElideRight
@@ -1264,7 +1265,7 @@ FocusScope {
         anchors.bottomMargin: Metrics.pad(8)
         width: parent.width - root.horizontalPadding * 2
         elide: Text.ElideRight
-        color: "#6a6a6a"
+        color: IslandTheme.textDisabled
         font.pixelSize: Metrics.font(10)
         font.family: root.textFontFamily
         text: root.isStreamView

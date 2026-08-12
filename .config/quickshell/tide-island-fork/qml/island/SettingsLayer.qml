@@ -10,6 +10,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 //
 // FORK — new file. The SETTINGS surface.
@@ -353,8 +354,8 @@ FocusScope {
         horizontalAlignment: Text.AlignRight
         elide: Text.ElideLeft
         text: root.statusText !== "" ? root.statusText : root.configPath
-        color: root.statusIsError ? "#ff6b6b"
-             : (root.statusText !== "" ? "#9ad18a" : "#6a6f78")
+        color: root.statusIsError ? IslandTheme.danger
+             : (root.statusText !== "" ? IslandTheme.success : IslandTheme.textDisabled)
         font.pixelSize: Metrics.font(11)
         font.family: root.textFontFamily
     }
@@ -385,7 +386,7 @@ FocusScope {
                 anchors.topMargin: Metrics.px(2)
                 anchors.bottomMargin: Metrics.px(2)
                 radius: Metrics.px(7)
-                color: rowItem.isSelected ? "#2c3038" : "transparent"
+                color: rowItem.isSelected ? IslandTheme.selectionFill : "transparent"
 
                 Text {
                     id: rowLabel
@@ -393,7 +394,7 @@ FocusScope {
                     anchors.leftMargin: Metrics.pad(10)
                     anchors.verticalCenter: parent.verticalCenter
                     text: rowItem.modelData.label
-                    color: "#f2f4f7"
+                    color: IslandTheme.textPrimary
                     font.pixelSize: Metrics.font(12)
                     font.family: root.textFontFamily
                     font.weight: rowItem.isSelected ? Font.DemiBold : Font.Normal
@@ -417,7 +418,7 @@ FocusScope {
                     // never did anything; see island-settings.py), so the
                     // red is gone with it rather than sitting here waiting
                     // for a key that will never arrive.
-                    color: rowItem.modelData.value === true ? "#9ad18a" : "#8a8f98"
+                    color: rowItem.modelData.value === true ? IslandTheme.success : IslandTheme.textSecondary
                     font.pixelSize: Metrics.font(12)
                     font.family: root.textFontFamily
                     font.weight: Font.DemiBold
@@ -475,7 +476,7 @@ FocusScope {
                 height: Metrics.px(16)
                 radius: Metrics.px(5)
                 color: (root.selected && root.selected.scope === "fork")
-                    ? "#2f3f52" : "#2c3038"
+                    ? IslandTheme.selectionFill : IslandTheme.surfaceRaisedActive
 
                 Text {
                     id: scopeLabel
@@ -484,7 +485,7 @@ FocusScope {
                         ? (root.selected.scope === "fork" ? "fork only" : "packaged")
                         : ""
                     color: (root.selected && root.selected.scope === "fork")
-                        ? "#8fc0ef" : "#8a8f98"
+                        ? IslandTheme.accentText : IslandTheme.textSecondary
                     font.pixelSize: Metrics.font(9)
                     font.family: root.textFontFamily
                     font.weight: Font.Medium
@@ -506,14 +507,14 @@ FocusScope {
                 width: sourceLabel.implicitWidth + Metrics.pad(10)
                 height: Metrics.px(16)
                 radius: Metrics.px(5)
-                color: "#3a3327"
+                color: IslandTheme.warningFill
 
                 Text {
                     id: sourceLabel
                     anchors.centerIn: parent
                     text: (root.selected && root.selected.source === "user")
                         ? "yours" : "edited"
-                    color: "#e0b072"
+                    color: IslandTheme.warning
                     font.pixelSize: Metrics.font(9)
                     font.family: root.textFontFamily
                     font.weight: Font.Medium
@@ -528,7 +529,7 @@ FocusScope {
             // This was pink for the polkit row, whose detail was the only
             // one that claimed it could cost you something. With that row
             // removed no detail is a warning, so they are all neutral.
-            color: "#a8aeb8"
+            color: IslandTheme.textSecondary
             font.pixelSize: Metrics.font(11)
             font.family: root.textFontFamily
             lineHeight: 1.25
@@ -537,7 +538,7 @@ FocusScope {
         // The key name, so the row can be found in the file it edits.
         Text {
             text: root.selected ? root.selected.key : ""
-            color: "#5a5f68"
+            color: IslandTheme.textDisabled
             font.pixelSize: Metrics.font(10)
             font.family: root.textFontFamily
         }
@@ -575,7 +576,7 @@ FocusScope {
             ? "settings-extra.json: " + root.warnings.join("  ·  ")
               + (root.warnings.length > 3 ? "   (--check for all)" : "")
             : ""
-        color: "#e0b072"
+        color: IslandTheme.warning
         font.pixelSize: Metrics.font(10)
         font.family: root.textFontFamily
         lineHeight: 1.2
@@ -586,7 +587,7 @@ FocusScope {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Metrics.pad(8)
         text: "j/k move  ·  h/l or Enter change  ·  q close"
-        color: "#6a6a6a"
+        color: IslandTheme.textDisabled
         font.pixelSize: Metrics.font(10)
         font.family: root.textFontFamily
     }

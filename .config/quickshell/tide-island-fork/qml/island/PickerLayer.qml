@@ -9,6 +9,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 //
 // FORK — new file. The GENERIC LIST PICKER.
@@ -614,7 +615,7 @@ FocusScope {
                 : (root.mode === "list"
                     ? root.filtered.length + " of " + root.items.length
                     : (root.pageStack.length > 1 ? "step " + root.pageStack.length : "")))
-        color: root.statusIsError ? "#ff6b6b" : "#6a6f78"
+        color: root.statusIsError ? IslandTheme.danger : IslandTheme.textDisabled
         font.pixelSize: Metrics.font(11)
         font.family: root.textFontFamily
     }
@@ -632,9 +633,9 @@ FocusScope {
         width: root.width - 2 * root.horizontalPadding
         height: root.searchHeight
         radius: Metrics.px(8)
-        color: searchInput.activeFocus ? "#17181c" : "#111216"
+        color: searchInput.activeFocus ? IslandTheme.inputFillFocused : IslandTheme.inputFill
         border.width: 1
-        border.color: searchInput.activeFocus ? "#3d3f47" : "#292a30"
+        border.color: searchInput.activeFocus ? IslandTheme.inputBorderFocused : IslandTheme.inputBorder
 
         Behavior on color { ColorAnimation { duration: 140 } }
         Behavior on border.color { ColorAnimation { duration: 140 } }
@@ -652,7 +653,7 @@ FocusScope {
             // padlock when the prompt masks what you type.
             text: root.mode !== "prompt" ? ""
                 : (root.page && root.page.secret === true ? "" : "")
-            color: searchInput.activeFocus ? "#d1d1d6" : "#8e8e93"
+            color: searchInput.activeFocus ? IslandTheme.textSecondary : IslandTheme.textMuted
             font.family: root.iconFontFamily
             font.pixelSize: Metrics.font(11)
         }
@@ -664,9 +665,9 @@ FocusScope {
             anchors.right: parent.right
             anchors.rightMargin: Metrics.pad(10)
             anchors.verticalCenter: parent.verticalCenter
-            color: "#f5f5f7"
-            selectionColor: "#0a84ff"
-            selectedTextColor: "#ffffff"
+            color: IslandTheme.textPrimary
+            selectionColor: IslandTheme.accent
+            selectedTextColor: IslandTheme.onAccent
             font.family: root.textFontFamily
             font.pixelSize: Metrics.font(11)
             clip: true
@@ -796,7 +797,7 @@ FocusScope {
                     ? (root.page && root.page.prompt !== undefined
                         ? String(root.page.prompt) : "type an answer, Enter submits")
                     : "type to filter — j/k move, Enter runs, Esc closes"
-                color: "#6b7079"
+                color: IslandTheme.textDisabled
                 font.family: root.textFontFamily
                 font.pixelSize: Metrics.font(11)
             }
@@ -819,7 +820,7 @@ FocusScope {
         visible: root.note !== ""
         text: root.note
         wrapMode: Text.WordWrap
-        color: "#8a909a"
+        color: IslandTheme.textMuted
         font.pixelSize: Metrics.font(11)
         font.family: root.textFontFamily
         lineHeight: 1.25
@@ -847,7 +848,7 @@ FocusScope {
             text: root.items.length === 0
                 ? "nothing to pick"
                 : "no match for “" + root.query + "”"
-            color: "#6b7079"
+            color: IslandTheme.textDisabled
             font.family: root.textFontFamily
             font.pixelSize: Metrics.font(11)
         }
@@ -867,7 +868,7 @@ FocusScope {
                 anchors.topMargin: Metrics.px(2)
                 anchors.bottomMargin: Metrics.px(2)
                 radius: Metrics.px(7)
-                color: rowItem.isSelected ? "#2c3038" : "transparent"
+                color: rowItem.isSelected ? IslandTheme.selectionFill : "transparent"
 
                 // FORK: the row thumbnail, for menus whose items carry an
                 // `icon` path. Only the clipboard menu does today.
@@ -918,7 +919,7 @@ FocusScope {
                     // which has room and wraps.
                     elide: Text.ElideRight
                     text: rowItem.modelData.label
-                    color: "#f2f4f7"
+                    color: IslandTheme.textPrimary
                     font.pixelSize: Metrics.font(12)
                     font.family: root.textFontFamily
                     font.weight: rowItem.isSelected ? Font.DemiBold : Font.Normal
@@ -977,7 +978,7 @@ FocusScope {
             visible: preview.source !== ""
             width: Math.min(details.width, preview.paintedWidth + 2)
             height: preview.paintedHeight + 2
-            color: "#12141a"
+            color: IslandTheme.surfaceSunken
             radius: Metrics.px(4)
             border.width: 1
             border.color: Qt.rgba(1, 1, 1, 0.08)
@@ -1004,7 +1005,7 @@ FocusScope {
             maximumLineCount: 4
             elide: Text.ElideRight
             text: root.selected ? String(root.selected.detail || "") : ""
-            color: "#a8aeb8"
+            color: IslandTheme.textSecondary
             font.pixelSize: Metrics.font(11)
             font.family: root.textFontFamily
             lineHeight: 1.25
@@ -1017,7 +1018,7 @@ FocusScope {
         // config key here for the same reason.
         Text {
             text: root.selected ? String(root.selected.id || "") : ""
-            color: "#5a5f68"
+            color: IslandTheme.textDisabled
             font.pixelSize: Metrics.font(10)
             font.family: root.textFontFamily
         }
@@ -1044,7 +1045,7 @@ FocusScope {
                    + (root.pageStack.length > 1 ? "Backspace back  ·  " : "")
                    + "q close")
                 : "↑/↓ or Ctrl+n/p move  ·  Enter run  ·  Esc close")
-        color: "#6a6a6a"
+        color: IslandTheme.textDisabled
         font.pixelSize: Metrics.font(10)
         font.family: root.textFontFamily
     }

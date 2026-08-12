@@ -8,6 +8,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one critically
 // damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 //
 // FORK — new file. The Wi-Fi panel, rebuilt from scratch in the idiom of
@@ -93,8 +94,8 @@ FocusScope {
     // where the smaller radius cuts inside the larger one. The fill stays in
     // the file so the panel is instantiable on its own — and so the colour it
     // would use is stated here rather than assumed.
-    property color panelFill: "#101014"
-    property color accentColor: StyleTokens.accent
+    property color panelFill: IslandTheme.surface
+    property color accentColor: IslandTheme.accent
     property bool drawBackground: false
 
     property string statusText: "Ready"
@@ -495,7 +496,7 @@ FocusScope {
         x: root.horizontalPadding
         y: Metrics.pad(12)
         text: "WI-FI"
-        color: StyleTokens.textMuted
+        color: IslandTheme.textMuted
         font.family: root.textFontFamily
         font.pixelSize: Metrics.font(10)
         font.weight: Font.DemiBold
@@ -522,10 +523,10 @@ FocusScope {
         // clause that is always accented has stopped being a status.
         color: {
             if (!root.provider)
-                return StyleTokens.textTertiary;
+                return IslandTheme.textMuted;
             const live = root.provider.wifiEnabled
                 && String(root.provider.wifiCurrentSsid || "").length > 0;
-            return live ? root.accentColor : StyleTokens.textTertiary;
+            return live ? root.accentColor : IslandTheme.textMuted;
         }
         font.family: root.textFontFamily
         font.pixelSize: Metrics.font(10)
@@ -545,9 +546,9 @@ FocusScope {
         elide: Text.ElideRight
         font.pixelSize: Metrics.font(11)
         font.family: root.textFontFamily
-        color: root.statusLevel === "error" ? "#ff6b6b"
-             : (root.statusLevel === "ok" ? "#9ad18a"
-             : (root.statusLevel === "busy" ? "#ffcc66" : "#8a8a8a"))
+        color: root.statusLevel === "error" ? IslandTheme.danger
+             : (root.statusLevel === "ok" ? IslandTheme.success
+             : (root.statusLevel === "busy" ? IslandTheme.warning : IslandTheme.textMuted))
         text: {
             if (root.provider) {
                 if (String(root.provider.wifiError || "").length > 0)
@@ -598,7 +599,7 @@ FocusScope {
         Text {
             anchors.centerIn: parent
             visible: listView.count === 0
-            color: "#6a6a6a"
+            color: IslandTheme.textDisabled
             font.pixelSize: Metrics.font(11)
             font.family: root.textFontFamily
             text: {
@@ -640,7 +641,7 @@ FocusScope {
                     return Qt.rgba(root.accentColor.r, root.accentColor.g,
                                    root.accentColor.b, 0.16);
                 if (wifiRow.index === root.selectedIndex)
-                    return "#22ffffff";
+                    return IslandTheme.hairline;
                 return "transparent";
             }
 
@@ -689,7 +690,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     text: ""
                     visible: wifiRow.secure
-                    color: wifiRow.savedConnection ? "#9ad18a" : StyleTokens.textSubtle
+                    color: wifiRow.savedConnection ? IslandTheme.success : IslandTheme.textMuted
                     font.pixelSize: Metrics.font(10)
                     font.family: root.iconFontFamily
                 }
@@ -707,14 +708,14 @@ FocusScope {
                     Rectangle {
                         anchors.fill: parent
                         radius: height / 2
-                        color: "#26ffffff"
+                        color: IslandTheme.trackSubtle
                     }
                     Rectangle {
                         height: parent.height
                         radius: height / 2
                         width: parent.width * Math.max(0, Math.min(1, wifiRow.signal / 100))
-                        color: wifiRow.signal < 30 ? "#ff6b6b"
-                             : (wifiRow.connected ? root.accentColor : "#9ad18a")
+                        color: wifiRow.signal < 30 ? IslandTheme.danger
+                             : (wifiRow.connected ? root.accentColor : IslandTheme.success)
                     }
                 }
 
@@ -723,7 +724,7 @@ FocusScope {
                     horizontalAlignment: Text.AlignRight
                     width: Metrics.px(30)
                     text: wifiRow.signal + "%"
-                    color: "#8a8a8a"
+                    color: IslandTheme.textMuted
                     font.pixelSize: Metrics.font(10)
                     font.family: root.textFontFamily
                 }
@@ -779,14 +780,14 @@ FocusScope {
                 spacing: Metrics.pad(8)
                 Text {
                     text: modelData[0]
-                    color: "#6a6a6a"
+                    color: IslandTheme.textDisabled
                     font.pixelSize: Metrics.font(11)
                     font.family: root.textFontFamily
                     width: Metrics.px(66)
                 }
                 Text {
                     text: String(modelData[1] || "—")
-                    color: "#d0d0d0"
+                    color: IslandTheme.textPrimary
                     font.pixelSize: Metrics.font(11)
                     font.family: root.textFontFamily
                     elide: Text.ElideRight
@@ -818,7 +819,7 @@ FocusScope {
             anchors.top: parent.top
             anchors.topMargin: Metrics.pad(8)
             text: "password for " + (root.provider ? root.provider.wifiPendingPasswordSsid : "")
-            color: "#d0d0d0"
+            color: IslandTheme.textPrimary
             font.pixelSize: Metrics.font(11)
             font.family: root.textFontFamily
             elide: Text.ElideRight
@@ -882,7 +883,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: wifiPasswordField.text.length === 0
                     text: "Enter to join · Escape to cancel"
-                    color: "#6a6a6a"
+                    color: IslandTheme.textDisabled
                     font.pixelSize: Metrics.font(10)
                     font.family: root.textFontFamily
                 }
@@ -897,7 +898,7 @@ FocusScope {
         anchors.bottomMargin: Metrics.pad(8)
         width: parent.width - root.horizontalPadding * 2
         elide: Text.ElideRight
-        color: "#6a6a6a"
+        color: IslandTheme.textDisabled
         font.pixelSize: Metrics.font(10)
         font.family: root.textFontFamily
         text: root.promptVisible

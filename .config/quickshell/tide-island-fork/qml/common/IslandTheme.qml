@@ -328,6 +328,25 @@ Singleton {
     readonly property color inverseSurfacePressed: root.mix(root.textPrimary, root.surface, 0.12)
     readonly property color onInverseSurface: root.surface
 
+    // The search / text field. Its own roles rather than reuse of
+    // surfaceSunken, and that is a FINDING rather than a preference:
+    // every panel with a filter draws a four-state input (fill and border
+    // × focused and not) and each one had spelled the four out as
+    // literals — #111216/#17181c/#292a30/#3d3f47 in the cheatsheet and
+    // the picker, #212226/#3f4046 in the compiled tokens. Four values
+    // that always move together are one role with four faces, and the
+    // migration is what made that visible.
+    //
+    // Focus is drawn in a stronger HAIRLINE, not in the accent. That is a
+    // translation and not a design change — the literals it replaces were
+    // greys — and it is left that way deliberately, since the panels also
+    // draw a selected ROW in the accent and a focused field ringed in the
+    // same colour would compete with it.
+    readonly property color inputFill: root.surfaceSunken
+    readonly property color inputFillFocused: root.mix(root.surfaceSunken, root.ink, 0.05)
+    readonly property color inputBorder: root.hairline
+    readonly property color inputBorderFocused: root.hairlineStrong
+
     // Dividers. Alpha rather than a mixed opaque colour, because a
     // hairline crosses a card edge as often as it crosses the panel and
     // has to sit correctly on both. Was a literal "#22ffffff" at six
@@ -390,11 +409,25 @@ Singleton {
     readonly property color danger: root._toContrast(root.red, root.surface, root.ink, 3.0)
     readonly property color info: root._toContrast(root.blue, root.surface, root.ink, 3.0)
 
+    // The tinted chip a status word sits in — `selectionFill` is the same
+    // idea in the accent, and these are its status siblings. Same 0.18 so
+    // a warning chip and a selected row read as one family.
+    readonly property color successFill: root.alpha(root.success, 0.18)
+    readonly property color warningFill: root.alpha(root.warning, 0.18)
+    readonly property color dangerFill: root.alpha(root.danger, 0.18)
+
     // ---------------------------------------------------------------
     //  Tracks
     // ---------------------------------------------------------------
     readonly property color trackEmpty: root.surfaceSunken
     readonly property color trackFill: root.accent
+
+    // The same groove drawn ON a card rather than on the panel — a signal
+    // strength bar, a per-stream volume bar. Alpha, because the thing
+    // behind it is already a raised surface and an opaque sunken colour
+    // would read as a hole in it. Was "#26ffffff" at two sites, which is
+    // this value on a dark theme and a white smear on a light one.
+    readonly property color trackSubtle: root.alpha(root.ink, 0.15)
 
     // ---------------------------------------------------------------
     //  The workspace overview

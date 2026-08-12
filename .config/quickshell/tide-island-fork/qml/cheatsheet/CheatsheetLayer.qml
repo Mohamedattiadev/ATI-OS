@@ -7,6 +7,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common"
 
 //
 // FORK — new file. The cheatsheets, in the island instead of in rofi.
@@ -275,7 +276,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.max(0, tabRow.x - x - Metrics.pad(10))
                 text: root.note
-                color: "#7c828c"
+                color: IslandTheme.textMuted
                 font.family: root.textFontFamily
                 font.pixelSize: Metrics.font(10)
                 font.italic: true
@@ -299,7 +300,7 @@ Item {
                         width: tabLabel.implicitWidth + Metrics.pad(14)
                         height: Metrics.px(17)
                         radius: Metrics.px(5)
-                        color: active ? "#3a3f48" : "#212429"
+                        color: active ? IslandTheme.surfaceRaisedActive : IslandTheme.surfaceRaised
 
                         Behavior on color { ColorAnimation { duration: 120 } }
 
@@ -307,7 +308,7 @@ Item {
                             id: tabLabel
                             anchors.centerIn: parent
                             text: root.sheetLabels[parent.modelData] || parent.modelData
-                            color: parent.active ? "#ffffff" : "#8a8f98"
+                            color: parent.active ? IslandTheme.textPrimary : IslandTheme.textSecondary
                             font.family: root.textFontFamily
                             font.pixelSize: Metrics.font(9)
                             font.weight: parent.active ? Font.DemiBold : Font.Normal
@@ -337,9 +338,9 @@ Item {
             width: parent.width
             height: Metrics.px(26)
             radius: Metrics.px(8)
-            color: searchInput.activeFocus ? "#17181c" : "#111216"
+            color: searchInput.activeFocus ? IslandTheme.inputFillFocused : IslandTheme.inputFill
             border.width: 1
-            border.color: searchInput.activeFocus ? "#3d3f47" : "#292a30"
+            border.color: searchInput.activeFocus ? IslandTheme.inputBorderFocused : IslandTheme.inputBorder
 
             Behavior on color { ColorAnimation { duration: 140 } }
             Behavior on border.color { ColorAnimation { duration: 140 } }
@@ -350,7 +351,7 @@ Item {
                 anchors.leftMargin: Metrics.pad(10)
                 anchors.verticalCenter: parent.verticalCenter
                 text: ""
-                color: searchInput.activeFocus ? "#d1d1d6" : "#8e8e93"
+                color: searchInput.activeFocus ? IslandTheme.textSecondary : IslandTheme.textMuted
                 font.family: root.iconFontFamily
                 font.pixelSize: Metrics.font(11)
             }
@@ -362,9 +363,9 @@ Item {
                 anchors.right: countLabel.left
                 anchors.rightMargin: Metrics.pad(9)
                 anchors.verticalCenter: parent.verticalCenter
-                color: "#f5f5f7"
-                selectionColor: "#0a84ff"
-                selectedTextColor: "#ffffff"
+                color: IslandTheme.textPrimary
+                selectionColor: IslandTheme.accent
+                selectedTextColor: IslandTheme.onAccent
                 font.family: root.textFontFamily
                 font.pixelSize: Metrics.font(11)
                 clip: true
@@ -415,7 +416,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: parent.text === ""
                     text: "type to filter — Tab switches sheet, Esc closes"
-                    color: "#6b7079"
+                    color: IslandTheme.textDisabled
                     font.family: root.textFontFamily
                     font.pixelSize: Metrics.font(11)
                 }
@@ -427,7 +428,7 @@ Item {
                 anchors.rightMargin: Metrics.pad(10)
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.loading ? "…" : (root.matchCount + (root.query === "" ? "" : " match"))
-                color: "#6b7079"
+                color: IslandTheme.textDisabled
                 font.family: root.textFontFamily
                 font.pixelSize: Metrics.font(10)
             }
@@ -449,7 +450,7 @@ Item {
                 anchors.centerIn: parent
                 visible: !root.loading && root.matchCount === 0
                 text: root.query === "" ? "nothing in this sheet" : "no key matches “" + root.query + "”"
-                color: "#6b7079"
+                color: IslandTheme.textDisabled
                 font.family: root.textFontFamily
                 font.pixelSize: Metrics.font(11)
             }
@@ -468,7 +469,7 @@ Item {
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: Metrics.px(3)
                     text: entryItem.modelData.header ? entryItem.modelData.text : ""
-                    color: "#6f7681"
+                    color: IslandTheme.textDisabled
                     font.family: root.textFontFamily
                     font.pixelSize: Metrics.font(9)
                     font.weight: Font.DemiBold
@@ -491,14 +492,14 @@ Item {
                         width: Math.max(Metrics.px(22), comboText.implicitWidth + Metrics.pad(10))
                         height: Metrics.px(14)
                         radius: Metrics.px(4)
-                        color: "#26292f"
+                        color: IslandTheme.surfaceRaised
                         visible: comboText.text !== ""
 
                         Text {
                             id: comboText
                             anchors.centerIn: parent
                             text: entryItem.modelData.header ? "" : entryItem.modelData.combo
-                            color: "#e8eaed"
+                            color: IslandTheme.textPrimary
                             font.family: root.textFontFamily
                             font.pixelSize: Metrics.font(9)
                             font.weight: Font.Medium
@@ -511,7 +512,7 @@ Item {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                         text: entryItem.modelData.header ? "" : entryItem.modelData.label
-                        color: "#b9bec7"
+                        color: IslandTheme.textSecondary
                         font.family: root.textFontFamily
                         font.pixelSize: Metrics.font(10)
                         elide: Text.ElideRight
