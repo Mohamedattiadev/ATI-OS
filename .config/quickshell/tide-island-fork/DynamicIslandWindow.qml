@@ -2902,7 +2902,39 @@ PanelWindow {
             WindowRingStrip {
                 id: rightRings
                 side: "right"
+                // ---- MAKE ROOM FOR THE TIMER BUBBLE ----
+                //
+                // Reported as the stopwatch icon sitting "above" the app
+                // icons. It is not above them vertically — measured on
+                // screen, the bubble, the app icons and the pill all centre
+                // on cy 17.0, to the pixel, because both are anchored to
+                // mainCapsule's centre. "Above" meant ON TOP OF.
+                //
+                // The bubble is placed at `mainCapsule.x + width + 8` and
+                // this strip started at `pillRight + gap`, which is +14. Two
+                // things 6 px apart, each about 30 px wide, on the same
+                // centre line: they simply overlapped, and since both sit at
+                // z 6 the bubble drew over the first icon.
+                //
+                // So the strip steps aside when the bubble is up, and the two
+                // read as neighbours in one row instead of a collision. The
+                // offset is the bubble's own width plus a gap, taken from the
+                // same properties that place it, so it cannot drift if either
+                // is retuned.
                 x: islandFlanks.pillRight + islandFlanks.gap
+                   + (islandContainer.timerBubbleWanted
+                      ? timerBubble.bubbleSize + islandFlanks.gap : 0)
+
+                // Slides rather than jumps when a timer starts or ends. This
+                // is geometry, so it takes the spring the rest of the shell's
+                // geometry uses.
+                Behavior on x {
+                    NumberAnimation {
+                        duration: Motion.morphDuration()
+                        easing.type: Easing.BezierSpline
+                        easing.bezierCurve: Motion.spring()
+                    }
+                }
                 y: islandFlanks.restingCenterY - height / 2
                 windows: islandFlanks.openWindows
                 textFontFamily: root.textFontFamily
