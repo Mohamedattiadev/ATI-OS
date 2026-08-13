@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import Quickshell.Services.Mpris
+import Quickshell.Services.Notifications
 import IslandBackend
 import "qml/audio"
 import "qml/cheatsheet"
@@ -766,8 +767,8 @@ PanelWindow {
             prewarmWallpaperCache();
     }
 
-    function showNotification(appName, summary, body) {
-        islandContainer.showNotificationCapsule(appName, summary, body);
+    function showNotification(notification) {
+        islandContainer.showNotificationCapsule(notification);
     }
 
     function showClockWindow() {
@@ -896,6 +897,14 @@ PanelWindow {
     // else calling it should not have to care that the panel changed shape.
     function openConnectivityPanelWindow(kind) {
         root.toggleConnectivityPanelWindow(kind);
+    }
+
+    function dismissNotificationWindow() {
+        islandContainer.dismissNotification();
+    }
+
+    function notificationActionWindow(index) {
+        islandContainer.invokeNotificationAction(index);
     }
 
     function toggleNotificationCenterWindow() {
@@ -1236,6 +1245,11 @@ PanelWindow {
         property string notificationSummary: ""
         property string notificationBody: ""
         property bool notificationExpanded: false
+        // NotificationUrgency.Low / Normal / Critical. Normal is the default
+        // the bus assigns when a sender says nothing, so it is the right
+        // resting value here too.
+        property int notificationUrgency: NotificationUrgency.Normal
+        property var notificationActions: []
         property var bluetoothExpandedDevice: null
         property var notificationHistoryModel: ListModel {}
         readonly property var cavaLevels: systemState.cavaLevels
@@ -2142,41 +2156,98 @@ PanelWindow {
             restartAutoHideTimer();
         }
 
-        function showNotificationCapsule(appName, summary, body) {
+        // The live Notification object behind the capsule, or null. Held so
+        // that dismiss and the action buttons have something to act ON — the
+        // old three-string signal gave the capsule text and nothing to
+        // answer with, which is why neither existed.
+        //
+        // It is also what makes REPLACE work, and replace needed no code at
+        // all: the server hands back the SAME object for a `replaces_id`, so
+        // a sender rewriting its own notification rewrites this capsule
+        // rather than stacking a second one behind it.
+        property var activeNotification: null
+
+        function showNotificationCapsule(notification) {
             // openPanelState, not blocksTransientSplit: a notification may
             // replace a notification (that is how a burst reads), but may not
             // replace a panel someone opened. `theme-apply` fires one on every
             // theme change, which is how this was first seen landing on top of
             // an open chord HUD.
             if (root.overviewVisible || openPanelState) return;
+            if (!notification) return;
 
-            const cleanedAppName = cleanNotificationText(appName);
-            const cleanedSummary = cleanNotificationText(summary);
-            const cleanedBody = cleanNotificationText(body);
+            const cleanedAppName = cleanNotificationText(notification.appName);
+            const cleanedSummary = cleanNotificationText(notification.summary);
+            const cleanedBody = cleanNotificationText(notification.body);
             const resolvedSummary = cleanedSummary !== ""
                 ? cleanedSummary
                 : (cleanedBody !== "" ? cleanedBody : "New notification");
 
             abortSideTransientMode();
             clearTransientCapsule();
+            activeNotification = notification;
             notificationAppName = cleanedAppName !== "" ? cleanedAppName : "Notification";
             notificationSummary = resolvedSummary;
             notificationBody = cleanedSummary !== "" ? cleanedBody : "";
+            notificationUrgency = notification.urgency;
+            notificationActions = notification.actions || [];
             notificationExpanded = false;
             islandState = "notification";
-            restartAutoHideTimer(notificationAutoHideInterval);
-            // Store in notification history
-                if (notificationHistoryModel) {
-                    notificationHistoryModel.insert(0, {
-                        appName: cleanedAppName !== "" ? cleanedAppName : "Notification",
-                        summary: resolvedSummary,
-                        body: cleanedSummary !== "" ? cleanedBody : "",
-                        timestamp: new Date()
-                    });
-                    if (notificationHistoryModel.count > 50)
-                        notificationHistoryModel.remove(50, notificationHistoryModel.count - 50);
-                }
 
+            // CRITICAL DOES NOT AUTO-EXPIRE, and that is the specification
+            // rather than a preference: the freedesktop note says a critical
+            // notification must stay until the user acts on it. A low battery
+            // warning that vanishes after 4.2 seconds while you are looking
+            // at another workspace has not warned anybody.
+            //
+            // The escape route is the same one every other state has —
+            // Escape, or clicking it — so this cannot wedge the island.
+            if (notification.urgency === NotificationUrgency.Critical)
+                stopAutoHideTimer();
+            else
+                restartAutoHideTimer(notificationAutoHideInterval);
+
+            // History. Stores the OBJECT and not a copy of its three
+            // strings, so an entry that is later replaced or edited by its
+            // sender updates in the centre too, and so a row there can still
+            // offer dismiss and actions.
+            if (notificationHistoryModel) {
+                notificationHistoryModel.insert(0, {
+                    appName: cleanedAppName !== "" ? cleanedAppName : "Notification",
+                    summary: resolvedSummary,
+                    body: cleanedSummary !== "" ? cleanedBody : "",
+                    urgency: notification.urgency,
+                    notification: notification,
+                    timestamp: new Date()
+                });
+                if (notificationHistoryModel.count > 50)
+                    notificationHistoryModel.remove(50, notificationHistoryModel.count - 50);
+            }
+        }
+
+        // Close the notification the way the sender is told it was closed:
+        // `dismiss()` reports Dismissed on the bus, which is what lets an
+        // app know its message was seen rather than timed out. `expire()`
+        // would lie about it.
+        function dismissNotification() {
+            if (activeNotification && activeNotification.dismiss)
+                activeNotification.dismiss();
+            activeNotification = null;
+            if (islandState === "notification")
+                smartRestoreState();
+        }
+
+        function invokeNotificationAction(index) {
+            if (!activeNotification || !activeNotification.actions) return false;
+            const list = activeNotification.actions;
+            if (index < 0 || index >= list.length) return false;
+            list[index].invoke();
+            // Invoking an action closes the notification for every sender
+            // that is not `resident` — that flag exists precisely to say
+            // "keep me up, I expect more than one press".
+            if (!activeNotification.resident)
+                dismissNotification();
+            return true;
         }
 
         function toggleNotificationExpansionIfNeeded() {
@@ -4109,6 +4180,8 @@ PanelWindow {
                         summary: islandContainer.notificationSummary
                         body: islandContainer.notificationBody
                         expanded: islandContainer.notificationExpanded
+                        urgency: islandContainer.notificationUrgency
+                        actions: islandContainer.notificationActions
                         toggleButton: userConfig.mouseButton(userConfig.dynamicIslandPrimaryButton)
                         iconText: root.notificationStatusIcon
                         iconFontFamily: root.iconFontFamily
@@ -4118,6 +4191,14 @@ PanelWindow {
                         onExpansionToggleRequested: {
                             islandContainer.suppressCapsuleClick(true);
                             islandContainer.toggleNotificationExpansionIfNeeded();
+                        }
+                        onDismissRequested: {
+                            islandContainer.suppressCapsuleClick(true);
+                            islandContainer.dismissNotification();
+                        }
+                        onActionRequested: function (index) {
+                            islandContainer.suppressCapsuleClick(true);
+                            islandContainer.invokeNotificationAction(index);
                         }
                     }
                 }
@@ -4181,6 +4262,16 @@ PanelWindow {
                         // you are not on screen". See ControlCenterLayer's
                         // connectivityDataActive.
                         connectivityHostActive: root.connectivityPanelStateActive
+                        // Silent / DND, read back DOWN from the shell root.
+                        // The row asks the thing that actually decides
+                        // whether a notification is drawn — showNotificationAll
+                        // returns early on this exact property — instead of
+                        // asking a daemon that is no longer running. See the
+                        // long note in ControlCenterLayer.qml.
+                        hostFocusEnabled: root.shellRootController
+                            && root.shellRootController.focusEnabled !== undefined
+                            ? root.shellRootController.focusEnabled
+                            : false
                         onFocusModeChanged: function(enabled) {
                             if (root.shellRootController && root.shellRootController.focusEnabled !== undefined)
                                 root.shellRootController.focusEnabled = enabled;
@@ -4189,8 +4280,28 @@ PanelWindow {
                             if (root.shellRootController && root.shellRootController.nightLightEnabled !== undefined)
                                 root.shellRootController.nightLightEnabled = enabled;
                         }
+                        // The control centre's own toasts — "Night Light
+                        // enabled", and so on. They are NOT bus
+                        // notifications and must not become them: sending
+                        // them through org.freedesktop.Notifications would
+                        // have the island notify itself in a round trip,
+                        // and would put shell chrome into the user's
+                        // notification HISTORY alongside real messages.
+                        //
+                        // So they are handed in as a plain object with the
+                        // same shape a Notification has. showNotificationCapsule
+                        // reads properties rather than requiring the type,
+                        // and dismissNotification() guards on `dismiss`
+                        // existing — which it does not here, correctly:
+                        // there is no sender on a bus to tell.
                         onRequestNotification: function(appName, summary, body) {
-                            islandContainer.showNotificationCapsule(appName, summary, body);
+                            islandContainer.showNotificationCapsule({
+                                appName: appName,
+                                summary: summary,
+                                body: body,
+                                urgency: NotificationUrgency.Normal,
+                                actions: []
+                            });
                         }
                         // FORK: clicking the Wi-Fi or Bluetooth row in the
                         // control centre still opens the list — it now opens

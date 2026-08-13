@@ -133,6 +133,12 @@ Item {
     property int nightLightTemperature: 4500
     readonly property bool hyprlandNightLight: CompositorBackend.compositor === "hyprland"
     property bool focusEnabled: false
+    // Kept as a property and permanently false. It gated the row while a
+    // subprocess was in flight; there is no subprocess now, so there is no
+    // in-flight state to gate. Left in place rather than threaded out of
+    // three bindings, because the day this row grows an async step again is
+    // the day it will be wanted back — and a property that is always false
+    // costs nothing, while a half-removed one costs a rebinding.
     property bool focusBusy: false
     // FORK: three-state, and that is the entire point of the rewrite below.
     // `focusEnabled` alone could only say on or off, so "the tool is not
@@ -461,25 +467,47 @@ Item {
     // restarted while already running: Quickshell treats `running = true` on
     // a live Process as a no-op, but the guard makes the intent explicit and
     // means a slow read cannot be interleaved with a second one.
+    // ---- SILENT IS THE ISLAND'S OWN STATE NOW, NOT DUNST'S ----
+    //
+    // This row used to shell out to `dunstctl is-paused` / `set-paused`,
+    // and before that to `swaync-client`, which was not installed at all —
+    // the write failure silently flipped the row to off, which is the bug
+    // the dunstctl rewrite existed to fix.
+    //
+    // The dunstctl version was correct and is now pointing at nothing. The
+    // island SERVES org.freedesktop.Notifications itself, and dunst is out
+    // of autostart.conf, so `dunstctl is-paused` fails and the row goes
+    // permanently "unavailable" — honest, and useless.
+    //
+    // So Silent stops asking a daemon and reads the thing that actually
+    // decides: `shellRoot.focusEnabled`, which showNotificationAll already
+    // checks before drawing anything. That is a strictly better position
+    // than any of the three that came before it — there is no subprocess to
+    // fail, no exit code to misread, and no second opinion to drift from.
+    // `focusAvailable` is therefore always true: the island can always
+    // answer a question about itself.
+    //
+    // The state still comes from the host rather than being written here,
+    // for the same reason the dunstctl version re-read the daemon: one
+    // owner, asked every time, so a write that did not land shows up as the
+    // row not moving.
+    property bool hostFocusEnabled: false
+
     function refreshFocusState() {
-        if (!focusStateProcess.running)
-            focusStateProcess.running = true;
+        controlCenter.focusAvailable = true;
+        controlCenter.focusEnabled = controlCenter.hostFocusEnabled;
     }
+
+    onHostFocusEnabledChanged: refreshFocusState()
 
     function toggleFocus() {
         if (focusBusy)
             return;
-        // Nothing to toggle if the daemon could not be reached. Without this
-        // the click would fire a command already known to fail, and the
-        // failure path would re-notify on every press.
-        if (!focusAvailable)
-            return;
 
-        focusBusy = true;
-        if (focusEnabled)
-            focusDisableProcess.running = true;
-        else
-            focusEnableProcess.running = true;
+        // No busy window any more — there is no process to wait for. The
+        // property is set on the shell root and comes straight back down
+        // through hostFocusEnabled, within the same frame.
+        controlCenter.focusModeChanged(!controlCenter.focusEnabled);
     }
 
     function clearWifiPrompt() {
@@ -1028,112 +1056,37 @@ Item {
         }
     }
 
-    // ---- FOCUS / "SILENT", READ OFF THE DAEMON THAT IS ACTUALLY RUNNING ----
+    // ---- WHY THERE IS NO FOCUS PROCESS HERE ANY MORE ----
     //
-    // This was `["swaync-client", "--get-dnd"]`. swaync-client is not
-    // installed on this machine and never has been: the notification daemon
-    // is dunst, which owns org.freedesktop.Notifications, and `command -v
-    // swaync-client` finds nothing. All three of the row's commands — read,
-    // enable, disable — failed to start.
+    // Two rewrites of this row are gone from this file, and the reasoning
+    // is worth keeping even though the code is not, because the SHAPE of
+    // the bug recurs:
     //
-    // The read failing was harmless-looking; the WRITES were the bug. Both
-    // wrote `focusEnabled = exitCode === 0`, so a command that could not
-    // start reported "not enabled" and the row settled to off. It did not
-    // fail visibly stuck. It failed by silently agreeing with itself, which
-    // is why it looked like it worked.
+    //   1. It was `["swaync-client", "--get-dnd"]`. swaync-client is not
+    //      installed on this machine and never has been. All three of the
+    //      row's commands — read, enable, disable — failed to start. The
+    //      read failing was harmless-looking; the WRITES were the bug, both
+    //      writing `focusEnabled = exitCode === 0`, so a command that could
+    //      not start reported "not enabled" and the row settled to off. It
+    //      did not fail visibly stuck. It failed by silently agreeing with
+    //      itself, which is why it looked like it worked.
     //
-    // So renaming the binary is only half a fix. A control whose state is
-    // derived from an exit code will lie again the next time a tool is
-    // missing, and the shape of the lie is always the same: "the command
-    // failed" and "the answer is false" are the same value. The rewrite
-    // separates them, and it does it by never inferring state from an exit
-    // code at all.
+    //   2. Rewritten onto `dunstctl is-paused` / `set-paused`, which was
+    //      right — dunst owned the bus then — and which took care never to
+    //      infer state from an exit code, because "the command failed" and
+    //      "the answer is false" are the same value. It also measured the
+    //      polarity from the daemon rather than taking it from the brief,
+    //      which had it backwards.
     //
-    // ---- THE SCRIPT ANSWERS IN THREE WORDS, AND ALWAYS EXITS 0 ----
+    // Both are now moot: the island SERVES org.freedesktop.Notifications
+    // itself and dunst is out of autostart.conf, so `dunstctl is-paused`
+    // asks a daemon that is not running and the row would sit permanently
+    // "unavailable" — honest, and useless.
     //
-    // true / false / unavailable, on stdout. Exit status carries nothing,
-    // deliberately, because there is nothing it could carry that stdout is
-    // not already carrying unambiguously.
-    //
-    // MEASURED on this machine, because the brief's description of the
-    // polarity was worth checking and turned out to be worth checking:
-    //
-    //   dunstctl is-paused          -> prints "false", exit 0   (not paused)
-    //   dunstctl set-paused true    -> exit 0
-    //   dunstctl is-paused          -> prints "true",  exit 0   (paused)
-    //   dunstctl set-paused false   -> exit 0
-    //   dunstctl is-paused          -> prints "false", exit 0
-    //
-    // Note the exit code is 0 in BOTH readings — the text is the answer,
-    // the status is not. There is a `dunstctl is-paused -e` that puts the
-    // answer in the exit code instead, and it is measured here too:
-    //
-    //   dunstctl is-paused -e       -> exit 1 while NOT paused
-    //
-    // which is exactly the form this rewrite exists to avoid. Exit 1 would
-    // mean "not paused", and exit 1 is also what a hundred other failures
-    // look like, so `-e` reintroduces the original bug in a new binary. It
-    // is not used.
-    //
-    // ---- A WRONG POLARITY I WAS TOLD AND DID NOT INHERIT ----
-    //
-    // The brief for this work said `is-paused` prints true/false "inverted
-    // relative to a Focus mode enabled reading". It is NOT inverted, and
-    // the table above is why: paused means notifications are suppressed,
-    // suppressed is what this row calls Silent, and Silent is
-    // `focusEnabled`. So `is-paused` == `focusEnabled`, directly. Confirmed
-    // from the other side too — shell.qml's showNotificationAll returns
-    // early when focusEnabled, i.e. focusEnabled means "do not show me
-    // things", the same thing pausing dunst means. Had I taken the warning
-    // on trust and added a `!`, the row would have been backwards in a way
-    // that still toggled, which is the hardest kind of wrong to see.
-    readonly property string focusStateScript:
-        "if ! command -v dunstctl >/dev/null 2>&1; then echo unavailable; exit 0; fi\n"
-        // `|| echo ""` rather than letting the failure through: if dunst is
-        // not running, dunstctl's D-Bus call fails, and that is "unavailable"
-        // and not "false". This is the case the old code could not express.
-        + "state=$(dunstctl is-paused 2>/dev/null) || state=\"\"\n"
-        + "case \"$state\" in\n"
-        + "  true|false) echo \"$state\" ;;\n"
-        // Anything else — empty, an error string, a future dunst that
-        // answers differently — is unknown, and unknown is reported as
-        // unknown rather than rounded down to off.
-        + "  *) echo unavailable ;;\n"
-        + "esac"
-
-    Process {
-        id: focusStateProcess
-        command: ["sh", "-c", controlCenter.focusStateScript]
-        running: false
-
-        // SplitParser, not StdioCollector, and it was already SplitParser
-        // before this change — which is lucky, because this Process is
-        // polled repeatedly (every write re-reads through it). A reused
-        // Process with a StdioCollector hands back the PREVIOUS run's text
-        // on the second and later runs; the trap is written up at length in
-        // ModeKeysLayer.qml and SettingsLayer.qml. SplitParser is the
-        // fork's proven repeated-poll idiom and is kept for that reason.
-        stdout: SplitParser {
-            onRead: function(line) {
-                const answer = line.trim().toLowerCase();
-                if (answer === "unavailable") {
-                    controlCenter.focusAvailable = false;
-                    // focusEnabled is deliberately NOT touched. There is no
-                    // honest value for it here, and writing one is the whole
-                    // bug this is replacing. The row goes disabled instead,
-                    // which says "I cannot tell you" rather than "off".
-                    return;
-                }
-                if (answer !== "true" && answer !== "false")
-                    return;
-
-                controlCenter.focusAvailable = true;
-                const enabled = answer === "true";
-                controlCenter.focusEnabled = enabled;
-                controlCenter.focusModeChanged(enabled);
-            }
-        }
-    }
+    // The general lesson survives all three versions and is the reason this
+    // comment stays: a control whose state is derived from a subprocess
+    // will lie the next time the tool is missing. The current version has
+    // no subprocess at all. See toggleFocus() and hostFocusEnabled.
 
     Process {
         id: nightLightEnableProcess
@@ -1211,66 +1164,6 @@ Item {
         }
     }
 
-    // ---- THE WRITES DO NOT DECIDE WHAT THE STATE BECAME ----
-    //
-    // Both of these used to end with the state assignment: enable wrote
-    // `focusEnabled = exitCode === 0` and disable wrote `focusEnabled =
-    // false` unconditionally. The second is worth staring at — it set the
-    // row to off even when the command it was reporting on had failed to
-    // run at all, so "turn Silent off" always succeeded on screen and
-    // sometimes nowhere else.
-    //
-    // Neither writes the state now. They run the command, and then re-read
-    // the DAEMON through focusStateProcess. The daemon is the only thing
-    // that knows, so it is the only thing asked; a write that silently did
-    // nothing now shows up as the row not moving, which is the truth.
-    //
-    // The 127 is the shell's own "command not found", the same convention
-    // the night-light processes above use, and it is produced explicitly by
-    // the `command -v` guard rather than relied on from sh — the guard is
-    // what makes a missing dunstctl distinguishable from a dunstctl that
-    // ran and refused.
-    readonly property string focusWriteScript:
-        "if ! command -v dunstctl >/dev/null 2>&1; then exit 127; fi\n"
-        + "dunstctl set-paused \"$1\" >/dev/null 2>&1"
-
-    Process {
-        id: focusEnableProcess
-        command: ["sh", "-c", controlCenter.focusWriteScript, "tide-focus", "true"]
-        running: false
-
-        onExited: function(exitCode) {
-            controlCenter.focusBusy = false;
-            if (exitCode !== 0) {
-                controlCenter.focusAvailable = false;
-                controlCenter.requestNotification("Focus", "Focus unavailable",
-                    "Install dunst to pause notifications.");
-                return;
-            }
-            controlCenter.focusAvailable = true;
-            controlCenter.requestNotification("Focus", "Focus enabled", "Notifications paused");
-            controlCenter.refreshFocusState();
-        }
-    }
-
-    Process {
-        id: focusDisableProcess
-        command: ["sh", "-c", controlCenter.focusWriteScript, "tide-focus", "false"]
-        running: false
-
-        onExited: function(exitCode) {
-            controlCenter.focusBusy = false;
-            if (exitCode !== 0) {
-                controlCenter.focusAvailable = false;
-                controlCenter.requestNotification("Focus", "Focus unavailable",
-                    "Install dunst to resume notifications.");
-                return;
-            }
-            controlCenter.focusAvailable = true;
-            controlCenter.requestNotification("Focus", "Focus disabled", "");
-            controlCenter.refreshFocusState();
-        }
-    }
 
     Connections {
         target: SystemServices

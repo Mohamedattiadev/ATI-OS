@@ -65,4 +65,41 @@ export QUICKSHELL_LYRICS_BACKEND="${QUICKSHELL_LYRICS_BACKEND:-$PKG_DIR/bin/lyri
 # wallpaper thumbnails.
 export MALLOC_CONF="${MALLOC_CONF:-narenas:2,background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000}"
 
+# ---- CLEAR DUNST OFF THE NOTIFICATION BUS BEFORE STARTING ----
+#
+# The island SERVES org.freedesktop.Notifications now (see
+# quickshell/tide-island-fork/qml/common/NotificationService.qml), and dunst
+# is no longer in autostart.conf. That is not enough on its own, because
+# dunst ships a D-Bus ACTIVATION file:
+#
+#     /usr/share/dbus-1/services/org.knopwob.dunst.service
+#
+# so the bus starts it on demand whenever a notification is sent and nobody
+# owns the name. That is a feature — it is what makes notifications keep
+# working with the shell down, and it is why removing dunst from autostart
+# carries none of the "notifications stop system-wide" hazard the plan
+# feared. Measured: with the island killed, `busctl --user list` reports the
+# name as "(activatable)" and `notify-send` still succeeds.
+#
+# The cost is an ordering trap. A well-known bus name has ONE owner: island
+# down, something notifies, dunst is activated and takes the name; the
+# island then starts and cannot have it. Nothing errors. The island runs,
+# draws, answers its IPC — and never receives a notification, which looks
+# exactly like the feature was never built.
+#
+# What happens next was measured twice and came out DIFFERENTLY each time.
+# Once, an island started under dunst took the name the instant dunst
+# exited, i.e. it had queued. Once, killing dunst left the name unowned with
+# the island still running and still not serving. Non-deterministic is worse
+# than either answer, and this line removes the question rather than betting
+# on which behaviour is the real one.
+#
+# Safe, because dunst is activatable: anything that needs it later starts it
+# again by itself. Deliberately not `dunstctl close-all` or any graceful
+# variant — the point is to release the NAME, and only exiting does that.
+#
+# Verified end to end: with dunst holding the name and no island running,
+# this script produces owner=quickshell, dunst gone, in one step.
+pkill -x dunst 2>/dev/null || true
+
 exec quickshell -p "$FORK_DIR" "$@"

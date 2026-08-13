@@ -30,13 +30,13 @@ Scope {
         }
     }
 
-    function showNotificationAll(appName, summary, body) {
+    function showNotificationAll(notification) {
         if (focusEnabled)
             return;
 
         shellRoot.forEachWindow((window) => {
             if (window && window.showNotification)
-                window.showNotification(appName, summary, body);
+                window.showNotification(notification);
         });
     }
 
@@ -314,6 +314,51 @@ Scope {
             shellRoot.forFocusedWindow((window) => window.toggleNotificationCenterWindow());
         }
 
+        // The KEYBOARD route to dismissing a notification, and it has to be
+        // IPC rather than a `Keys.onPressed` anywhere in the notch.
+        //
+        // The notification layer takes no keyboard focus and must not: the
+        // shell would be stealing the keyboard from whatever you were typing
+        // in, every time a message arrived. So there is no focused surface to
+        // press Escape into, and the only key that can reach a shell which is
+        // not focused is a COMPOSITOR bind. `$alt N` calls this.
+        //
+        // It matters more since urgency landed: a critical notification does
+        // not auto-expire, by design, so without a reachable dismiss it would
+        // sit in the notch until something else replaced it. Right-clicking
+        // the capsule does the same thing for a hand already on the mouse.
+        function dismissNotification() {
+            shellRoot.forEachWindow((window) => {
+                if (window && window.dismissNotificationWindow)
+                    window.dismissNotificationWindow();
+            });
+        }
+
+        // Invoke the notification's Nth action from outside, for the same
+        // reason dismiss is out here: the capsule has no keyboard focus to
+        // press a key into, so a compositor bind is the only route. 0 is the
+        // first action, which for almost every sender is the "default" one —
+        // the thing clicking the card in any other shell would do.
+        //
+        // Unbound in binds.conf on purpose for now. It exists because the UI
+        // path is a mouse click on a button that is only drawn when the
+        // capsule is expanded, and a feature reachable one way only is a
+        // feature half the shell's own rules reject. Phase 3 is where the
+        // keyboard story gets decided panel by panel; this is the seam it
+        // will bind to.
+        // `index: int` and not a bare `index`, which is not a style
+        // preference: an IpcHandler function with an UNTYPED parameter is
+        // dropped from the IPC surface entirely. It does not error, it does
+        // not warn — `qs ipc show` simply does not list it, and calling it
+        // reports an unknown function. Written untyped first, and the only
+        // symptom was an action round-trip that produced no ActionInvoked.
+        function notificationAction(index: int) {
+            shellRoot.forEachWindow((window) => {
+                if (window && window.notificationActionWindow)
+                    window.notificationActionWindow(index);
+            });
+        }
+
         function toggleWallpaperPicker() {
             shellRoot.forFocusedWindow((window) => window.toggleWallpaperPickerWindow());
         }
@@ -517,11 +562,20 @@ Scope {
         }
     }
 
+    // The island's own notification server — qml/common/NotificationService.
+    //
+    // This used to be `target: SystemServices` and
+    // `onNotificationReceived(appName, summary, body)`, a spy signal that
+    // WATCHED the bus while dunst served it. Both drew every notification,
+    // simultaneously, in two design languages; and three strings could not
+    // express dismiss, urgency, actions or replace no matter what was built
+    // on top of them. See the file header for the whole argument and for
+    // the bus-ownership hazard.
     Connections {
-        target: SystemServices
+        target: NotificationService
 
-        function onNotificationReceived(appName, summary, body) {
-            shellRoot.showNotificationAll(appName, summary, body);
+        function onPosted(notification) {
+            shellRoot.showNotificationAll(notification);
         }
     }
 
