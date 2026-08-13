@@ -2068,9 +2068,29 @@ Item {
                 // machinery for an 18 px mark, and the only icon in the
                 // panel not coming from the icon font, so also the only one
                 // that would not follow a font change.
+                //
+                // The pair is written as \u escapes and NOT as literal
+                // private-use characters. Same codepoints, same order —
+                // U+F1F6 bell-slash when focus is on, U+F0F3 bell when it is
+                // off — but a literal U+F0F3 is three bytes of private-use
+                // plane that tooling can drop without saying so, and a
+                // dropped glyph is invisible in a diff. nightLightGlyph two
+                // tiles over is already written this way; wifiGlyph and
+                // bluetoothGlyph are still literals.
+                //
+                // Coverage checked rather than assumed, per the rule about
+                // font families falling back silently: U+F0F3 and U+F1F6 are
+                // both in JetBrainsMono Nerd Font, the configured
+                // iconFontFamily, confirmed with fc-list :charset=.
+                //
+                // This tile was REPORTED as the icon-less one and it is not:
+                // magnified 3x it draws its bell correctly. At 1:1 an 18 px
+                // glyph in textSecondary on an unlit plate is faint enough
+                // to read as an empty square, which is a contrast finding
+                // about the unlit state, not a missing asset.
                 QuickButton {
                     index: 2
-                    glyph: controlCenter.focusEnabled ? "" : ""
+                    glyph: controlCenter.focusEnabled ? "\uf1f6" : "\uf0f3"
                     label: "Focus"
                     on: controlCenter.focusEnabled
                     busy: controlCenter.focusBusy
