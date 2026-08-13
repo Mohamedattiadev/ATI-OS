@@ -307,10 +307,40 @@ Scope {
             shellRoot.islandAutoHideRuntimeEnabled = false;
             shellRoot.showIslandAll();
         }
+
     }
 
     IpcHandler {
         target: "tide"
+
+        // ---- FOCUS OVER IPC, FOR TWO REASONS ----
+        //
+        // The first is that it makes Focus BINDABLE. Until now the only way
+        // to reach do-not-disturb was to open the control centre and click a
+        // tile, which is a lot of ceremony for the one control you reach for
+        // when you are already trying to concentrate. `tide toggleFocus` is
+        // a keybinding.
+        //
+        // The second is that it makes Focus TESTABLE, and that is not a
+        // luxury here. Focus was reported broken and could not be driven
+        // from outside the shell at all: there was no IPC, and synthesising
+        // a keystroke into the control centre is forbidden. So the only
+        // available evidence was reading the code, which said it was fine.
+        // A control with no way in from a script is a control whose bugs can
+        // only be found by the user.
+        //
+        // The parameter is TYPED. An IpcHandler function with an untyped
+        // parameter is accepted by Quickshell and arrives `undefined`, which
+        // for a bool means every call reads as false — setFocus(true) would
+        // silently turn Focus OFF. That trap is written up on showPicker and
+        // showText and has now cost this shell three calls.
+        function setFocus(enabled: bool) {
+            shellRoot.focusEnabled = enabled;
+        }
+
+        function toggleFocus() {
+            shellRoot.focusEnabled = !shellRoot.focusEnabled;
+        }
 
         function showClock() {
             shellRoot.forFocusedWindow((window) => window.showClockWindow());

@@ -72,6 +72,40 @@ PanelWindow {
         && shellRootController.screenRecordingActive !== undefined
         ? !!shellRootController.screenRecordingActive
         : false
+
+    // ---- FOCUS, AND WHY IT NEEDED TO BE READABLE HERE ----
+    //
+    // Focus was one line: showNotificationAll returned early, so the
+    // notification capsule did not draw. Reported as "focus is not working",
+    // and the wiring was intact — the complaint was about SCOPE. "It should
+    // silence everything, not just the capsule."
+    //
+    // Everything is a smaller word than it sounds, and it is worth being
+    // exact about what this shell can silence. THE SHELL PLAYS NO SOUND. It
+    // serves org.freedesktop.Notifications itself and never emits audio, so
+    // there is no notification tone here for Focus to suppress; a chime
+    // heard while Focus is on came from the application that sent the
+    // notification, through its own PulseAudio stream, and is not reachable
+    // from this process.
+    //
+    // What the shell CAN silence is every interruption it draws. The test
+    // for each one is whether the user asked for it:
+    //
+    //   suppressed  a notification arriving        nobody asked
+    //   suppressed  a bluetooth device connecting  nobody asked
+    //   suppressed  the player expanding on a
+    //               track change                   nobody asked
+    //   kept        the workspace capsule          you pressed the key
+    //   kept        volume / brightness OSDs       you pressed the key
+    //   kept        every panel and picker         you opened it
+    //
+    // Focus is do-not-disturb, not do-not-respond: a control that swallowed
+    // the feedback for your own keypresses would read as the shell being
+    // broken, which is the opposite of calm.
+    readonly property bool focusEnabled: shellRootController
+        && shellRootController.focusEnabled !== undefined
+        ? !!shellRootController.focusEnabled
+        : false
     // Diagnostic for the flank workspace filter, off by default. Left in
     // because the filter fails OPEN: if it silently stopped filtering, the
     // strip would look merely busy rather than broken, and this is the only
@@ -2517,7 +2551,10 @@ PanelWindow {
         function showBluetoothExpanded(device) {
             // Same correction as showWorkspaceCapsule: a device connecting is
             // a spontaneous event and must not take over an open panel.
-            if (!device || root.overviewVisible || blocksTransientSplit)
+            // And spontaneous is exactly what Focus is for — nobody asked for
+            // their headphones to reconnect. See root.focusEnabled.
+            if (!device || root.overviewVisible || blocksTransientSplit
+                    || root.focusEnabled)
                 return;
 
             cancelSideSwipeSettle();
@@ -2896,6 +2933,10 @@ PanelWindow {
 
         onCurrentTrackChanged: {
             if (userConfig.disableAutoExpandOnTrackChange) return;
+            // A track changing is the player talking, not you. Focus silences
+            // it — and note this is the auto-EXPAND only: the capsule still
+            // shows what is playing if you go and look.
+            if (root.focusEnabled) return;
             if (currentTrack !== ""
                     && islandState !== "control_center"
                     && islandState !== "notification"
