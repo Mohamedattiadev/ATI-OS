@@ -145,3 +145,77 @@ function pad(n) {
 function font(n) {
     return Math.max(9, Math.round(n * FONT_SCALE));
 }
+
+// ---------------------------------------------------------------------
+//  THE RAMP AND THE SCALE — measured before being named
+// ---------------------------------------------------------------------
+//
+// upgread_UI_UX.md P1-5 calls the type and radius numbers "inventories, not
+// systems" and sets a target of 11 -> 6 sizes and 16 -> 4 radii. Counted
+// across the tree before touching anything, the premise is mostly already
+// false, and the real state is worth writing down because it changes what
+// the remaining work IS:
+//
+//     font sizes   151 uses, 10 distinct     143 already go through font()
+//     radii         64 uses, 18 distinct      55 already go through px()
+//
+// So the funnel exists. What is missing is NAMES for the steps, not a
+// funnel — and the distribution says the steps are already there: 145 of
+// the 151 type uses fall in 9..15, i.e. six values, with the remaining six
+// uses being 18/19/24/29, which are display sizes and legitimately not on
+// the body ramp.
+//
+// TWO THINGS THAT LOOK LIKE BUGS AND ARE NOT
+// ------------------------------------------
+// The 8 raw `font.pixelSize: N` literals are ALL in DisplayPanel.qml, which
+// does not import Metrics at all and says so in a comment: it sizes
+// everything with literals and mixing one scaled dimension into an unscaled
+// panel would put that element out of step with the header around it. That
+// is internally consistent rather than a miss. Captured beside AudioPanel,
+// which uses Metrics 35 times, the two panels are indistinguishable in type
+// size — which brings us to the reason why:
+//
+// **FONT_SCALE IS 1.0, SO font(n) IS THE IDENTITY ABOVE 9.** Every
+// `Metrics.font(11)` in this tree evaluates to exactly 11, the same number
+// DisplayPanel writes directly. The type "system" therefore has no
+// mechanical effect at all today; it is a naming convention and a single
+// place to change later, which is worth having and is not worth pretending
+// is more than it is.
+//
+// The remaining raw radii are `0` and `1`. px(0) returns 0 and px(1) is
+// floored at 1, so routing them through px() would be churn that provably
+// cannot change a pixel.
+//
+// WHAT THESE CONSTANTS ARE FOR
+// ----------------------------
+// New code, and one place to look when deciding a size. They are NOT
+// applied retroactively over 198 call sites: that would be a large diff
+// whose only verification is "every panel still looks right", which is the
+// class of change this repo has twice been burned by. The steps below are
+// the values already in use, named — so adopting one is a no-op by
+// construction and any future change to the ramp is one edit here.
+//
+var TYPE = {
+    caption:  9,   // 12 uses — key hints, footnotes
+    small:   10,   // 42 uses — secondary labels, list subtitles
+    body:    11,   // 47 uses — the workhorse
+    reading: 12,   // 19 uses — body where the line is long enough to matter
+    strong:  13,   // 13 uses — emphasised body
+    title:   15    // 12 uses — panel headings
+};
+
+// Display sizes, off the body ramp on purpose: 18/19/24/29 in the tree, all
+// of them single-purpose (the timer, the OSD numeral, the clock at size).
+var DISPLAY = { small: 18, medium: 24, large: 29 };
+
+// Radius. Four steps against 18 values in use, and deliberately NOT applied
+// yet — a radius change alters a shape's character, nested shapes need
+// concentric radii (outer = inner + padding), and there is no measurement
+// that says which of the 18 are deliberate. Named here so the next radius
+// written has somewhere to come from.
+var RADIUS = {
+    hairline: 1,   // dividers and 1 px rules
+    tight:    4,   // chips, small controls
+    card:     8,   // list rows, cards
+    panel:   16    // the big surfaces
+};

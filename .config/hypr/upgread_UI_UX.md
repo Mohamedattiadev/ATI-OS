@@ -1046,3 +1046,53 @@ window management, real scrolling, a file chooser for the wallpaper paths,
 a font chooser for the four families — and those are free in GTK and hand-
 built in QML. It also keeps it in the same language as the schema it
 drives, so the descriptor types are defined once in Python.
+
+## P1-5 / Phase 4 — **the premise was mostly wrong, measured**
+
+This document calls the type and radius numbers "inventories, not systems"
+and sets 11 -> 6 sizes, 16 -> 4 radii. Counted across the tree before
+changing anything:
+
+    font sizes   151 uses, 10 distinct     143 already go through font()
+    radii         64 uses, 18 distinct      55 already go through px()
+
+**The funnel already exists.** What is missing is names for the steps. And
+the steps are already there: 145 of the 151 type uses fall in 9..15 — six
+values — with the other six being 18/19/24/29, which are display sizes and
+legitimately off the body ramp.
+
+Two things that look like the bug this phase describes and are not:
+
+1. **All 8 raw `font.pixelSize: N` literals are in DisplayPanel.qml**, which
+   does not import Metrics at all and says so: it sizes everything with
+   literals, and mixing one scaled dimension into an unscaled panel would
+   put that element out of step with the header around it. Internally
+   consistent, not a miss. Captured beside AudioPanel — which uses Metrics
+   35 times — the two are indistinguishable in type size.
+
+2. **`FONT_SCALE` is 1.0, so `font(n)` is the identity above 9.** Every
+   `Metrics.font(11)` evaluates to exactly 11, the same number DisplayPanel
+   writes directly. The type system has no mechanical effect today. It is a
+   naming convention and one place to change later — worth having, not worth
+   pretending is more.
+
+   That is also why point 1 is invisible: there is nothing to see, because
+   the two paths compute the same number.
+
+The remaining raw radii are `0` and `1`; `px(0)` is 0 and `px(1)` is floored
+at 1, so routing them through `px()` is churn that provably cannot move a
+pixel.
+
+**What was done:** `TYPE`, `DISPLAY` and `RADIUS` are now named in
+Metrics.js, set to the values already in use, so adopting one is a no-op by
+construction. **Not applied over the 198 existing call sites** — that is a
+large diff whose only verification is "every panel still looks right", which
+is the class of change that produced two wrong conclusions earlier in this
+same session.
+
+**What is left, and it is a decision rather than work:** whether
+DisplayPanel should join the scale. Converting it means every literal in the
+file, not the 8 type ones — `horizontalPadding` 18, `headerHeight` 34, the
+ring at 26 — and at SCALE 0.92 that shrinks the panel ~8%. It is a visible
+change to one panel that currently looks correct, so it wants an explicit
+yes rather than being swept in.
