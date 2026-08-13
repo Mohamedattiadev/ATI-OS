@@ -8,19 +8,65 @@ and every binding that did not depend on qtile's Python API or on X11.
 
 ## Numbers
 
+> **Read the warning under the table before quoting any percentage from
+> it.** The 42.3% row is a first-pass snapshot and has been wrong for a
+> long time; it is kept because the denominators are still the right ones,
+> not because the status is current.
+
 Verified by diffing this config against qtile's own resolved binding table,
 not by hand — see `audit.py` in the migration scratchpad.
+
+**The first pass, as originally measured:**
 
 | | count | |
 |---|---|---|
 | Bindings in qtile | 291 | |
-| **Implemented here** | **123** | 42.3% |
+| Implemented at that time | 123 | 42.3% |
 | Deferred | 142 | 48.8% |
 | Blocked (X11-only) | 26 | 8.9% |
 
-Deferred breaks down as 121 popup-chord bindings, 18 root bindings, and 3
+Deferred broke down as 121 popup-chord bindings, 18 root bindings, and 3
 nested chord entries. Blocked is Hintium (6 root + all 19 of Hint-Mode)
 plus the xmodmap reapply binding.
+
+**What the running config actually carries now**, from
+`hyprctl binds -j` against the live session:
+
+| | count |
+|---|---|
+| **Total live binds** | **244** |
+| root (no submap) | 91 |
+| inside a submap | 153 |
+
+and the submaps are `rofi` 65, `resize` 21, `cheatsheet` 20, `media` 18,
+`draw` 17, `lang` 11, `passthrough` 1.
+
+### The two tables do not divide into each other, and that is the point
+
+244 is not "123 grown to 244 out of 291", and anyone reading it that way
+gets a wrong picture of the port in both directions. They count different
+things:
+
+- **The 291 is a qtile figure** — bindings resolved out of `config.py`.
+  The 244 is a *Hyprland* figure, and this config has binds qtile never
+  had (the island's own panels, the submap indicators, the layout cycle).
+- **The deferred 121 popup-chord bindings were not ported one-for-one.**
+  They were *replaced* by panels that answer the same need with a
+  different, usually smaller, key surface — the cheatsheet came off rofi
+  because "what rofi actually contributed was the typing, not the window",
+  and four of qtile's sixteen cheatsheet bindings existed only to move a
+  viewport. A panel that needs 4 keys where qtile needed 16 is progress
+  that a binding count scores as regression.
+- **Some qtile bindings were deliberately dropped**, not deferred. See
+  "Deliberate behaviour changes" below.
+
+So the honest status is not a percentage. It is: **every popup in the
+deferred table below is now built** (see the table's own DONE markers),
+the blocked set is unchanged, and what is genuinely outstanding is listed
+in `REQUIREMENTS.md`'s "The genuinely open list" and in
+`upgread_UI_UX.md`'s phases 3–7. A re-run of `audit.py` mapping qtile's
+291 onto today's 244 has **not** been done; until it is, no percentage in
+this file should be quoted as current.
 
 **Hyprland 0.56.2 is installed and has now been run.** See
 "Runtime verification" below for what first login actually proved —
@@ -1330,12 +1376,23 @@ to translate.
 | DisplayPopup | 28 | **DONE** — rebuilt, see below |
 | WifiPopup + WifiQR | 14 | **DONE** — see below |
 | BluetoothPopup | 12 | **done** — see below |
-| WallpaperPopup | 9 | `waypaper` |
-| Cheatsheets (Qtile/Vim/Fish) | 16 | **DONE** — rofi, see below |
+| WallpaperPopup | 9 | **DONE** — `WallpaperPickerLayer.qml`, 362 images, not `waypaper` |
+| Cheatsheets (Qtile/Vim/Fish) | 16 | **DONE** — in the island, not rofi; see below |
 | UpdatesPopup | — | `qupdate.py` daemon still runs |
 
 These are the natural second phase, rebuilt as Quickshell/QML pages inside
 the Tide-island bar — which is where they arguably belong anyway.
+
+> **The whole table is now DONE, and two of its rows were stale for
+> months.** WallpaperPopup said `waypaper`; the island has shipped its own
+> picker for a while, routed through `hypr/scripts/wallpaper-set.sh` so
+> both sessions agree on `~/.cache/wall`. The cheatsheet row said "rofi",
+> which was true of the interim and is not true now — it came off rofi
+> deliberately, and that argument is written up under item 3 of
+> `REQUIREMENTS.md`.
+>
+> The heading still says "Deferred: the 13 popups" because that is what
+> this section was; treat the heading as history and the table as status.
 
 ### Wi-Fi and Bluetooth were already built, and simply unbound
 
@@ -1569,12 +1626,32 @@ a scratchpad. They are listed commented in `binds.conf`.
 Tide Island is running, and the QML is vendored and patched at
 `.config/quickshell/tide-island-fork/` (launched by `scripts/island.sh`).
 The resting shape is the notch from DESIGN-SPEC.md: flush to the top
-edge, top corners square, a 9 px concave flare each side, pure black.
+edge, top corners square, a 9 px concave flare each side.
+
+> **It is no longer "pure black", and that is a decision, not drift.**
+> The island fill follows the palette — `IslandTheme.shellFill`, the
+> background darkened toward black by 0.45 with an 0.08 accent mix,
+> measured across four palettes. It is a direct user override of
+> `DESIGN-SPEC.md`'s rule that the notch must stay `#000000`, and
+> `upgread_UI_UX.md` Part 3 lists it among the things that look like
+> inconsistencies and must not be "fixed" back.
+>
+> The resting CONTENT has also moved on from the spec, also deliberately:
+> it is the layout glyph, the clock, the workspace digit and the flanking
+> app pucks — not the spec's clock + 4-bar EQ.
 
 Four things landed in the fork that no config key could reach — the notch
 morph, a generated spring, arbitrary text, and a theme picker. Each is
 written up with its traps in `tide-island-fork/FORK-NOTES.md`, which is
 also the merge list for the next `pacman -Syu` of `tide-island`.
+
+**That list of four is now badly out of date** — the fork has since taken
+over notifications from dunst, replaced every hardcoded colour with a
+derived token layer, gained a system monitor, a display panel, an
+application launcher and a layout indicator, and had its theme-change
+animation rebuilt twice. `FORK-NOTES.md` is still the merge list; treat
+"four things" as the state at the time of writing and the git log as the
+truth.
 
 The two traps most likely to bite again:
 
@@ -1806,3 +1883,66 @@ closed on the first press, which is what applying does.
   configuration` and the *previous* config keeps running, so a syntax error
   mid-session does not take the shell down. It also means "it still works"
   is not evidence that your edit loaded — check the log.
+
+## Traps found while making the chrome follow the theme
+
+Four things in this session looked like separate bugs and were one shape:
+a setting nobody had ever written down, so a default was in force and the
+default was not themed.
+
+- **Hyprland's groupbar had never been configured.** Every option under
+  `group:groupbar:` read `set: false` from `hyprctl getoption`, so the
+  TreeTab tab bar ran the built-in defaults — `col.active 66ffff00`, i.e.
+  **yellow at 40% alpha**, with `text_color` opaque white at `font_size 8`.
+  It was the one piece of window chrome that ignored `theme-apply` on all
+  21 palettes, and its titles floated unreadably over the wallpaper.
+  `hyprctl getoption <key>` and its `set:` field is the way to find this
+  class of bug: an unset option is invisible in the config and very loud
+  on screen.
+
+- **Hyprland's groupbar does not fill its tabs.** `col.active` /
+  `col.inactive` paint ONLY the `indicator_height` strip; the tab body is
+  whatever is behind the window, and the title is drawn over the gap.
+  `gradients = true` does not change this and neither does a full-height
+  indicator. A port that assumes qtile's filled-row model — qtile's
+  TreeTab really does fill, with `active_bg` / `inactive_bg` — puts dark
+  ink on the desktop and reinvents the unreadable-title bug from the other
+  side. Measured with `grim`: the tab body samples the desktop colour on
+  both the active and the inactive tab.
+
+- **In `wal` mode a wallpaper change did not change the palette.** On the
+  21 named themes the palette is fixed and a wallpaper change must not
+  touch it, which is why this hid for so long. In `wal` the palette is
+  DERIVED from the image, and `wallpaper-set.sh` recorded the wallpaper,
+  pointed the daemon at it and `exec`'d away without re-running
+  `theme-apply` — so every colour in both sessions stayed derived from the
+  previous image until something else triggered a theme change. Window
+  borders are the visible half. Fixed in `wallpaper-set.sh`, gated on the
+  mode, and deliberately not in `wallpaper-sync.sh`, which is also
+  `autostart.conf`'s login hook and would then regenerate the whole theme
+  on every boot.
+
+- **A staleness test has to read a field that actually moves.** The first
+  attempt to prove the bug above compared `$border_active` across two
+  wallpapers and found it unchanged — which looks exactly like the bug and
+  is not evidence of it, because the `wal` generator emits the same first
+  and last accent for both images. `$bg` varies; the accent slots may not.
+
+- **`hyprctl getoption` on a colour returns the packed int, not a hex
+  string.** `text_color` reads `4294967295`; that is `0xFFFFFFFF`. Reading
+  it as a decimal and concluding "some huge number" is how the white-on-
+  yellow default went unnoticed.
+
+### And one that is not Hyprland's fault
+
+**qtile's `font="Ubuntu Bold"` does not exist on this machine.**
+`fc-match "Ubuntu Bold"` returns `NotoSansCJK-Regular.ttc` — fontconfig
+substitutes a CJK face rather than failing, with nothing in any log. Any
+font family carried across from `../qtile/config.py` must be `fc-match`ed
+before it is trusted. `Inter Medium` and `JetBrainsMono Nerd Font` both
+resolve correctly here; `Ubuntu Bold` does not, and neither does anything
+else that only ever existed as a Pango description string.
+
+The same applies to Nerd Font glyphs: `fc-list ":charset=<cp>"` proves the
+codepoint is covered, which is NOT the same as the shape being legible at
+11 px. Render it before shipping it.
