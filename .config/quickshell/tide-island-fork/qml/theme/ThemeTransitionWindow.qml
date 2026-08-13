@@ -47,12 +47,37 @@ import Qt5Compat.GraphicalEffects
 // 4. A ~90 ms DELAY before animating. The first frame is heavy — JPEG decode
 //    plus the OpacityMask's shader compile — and if it lands inside the
 //    animation the whole thing stutters at exactly the moment it should be
-//    smooth. Do the expensive frame while nothing is moving.
+//    smooth. Do the expensive frame while nothing is moving. `warmupTimer`
+//    below still owns that delay; what it no longer owns is the start of the
+//    sweep, for the reason in the sixth trap.
 //
 // 5. HIDDEN ITEMS SIT AT BARELY ABOVE ZERO, not at zero, because Qt skips
 //    buffer allocation for a fully transparent item and you pay for it on the
 //    frame it becomes visible. The exception is on the way OUT, which goes to
 //    true zero — otherwise you catch a ghost frame of the old desktop.
+//
+// THE SIXTH TRAP, which is this machine's own
+// -------------------------------------------
+// 6. THE SWEEP MUST WAIT FOR theme-apply, NOT FOR A TIMER. warmupTimer used
+//    to call applyTheme() and revealAnimation.restart() on the SAME tick, so
+//    the frozen frame was guaranteed to be gone 620 ms later no matter what
+//    the script was doing. Nothing in this file ever read applyProcess's
+//    exit — it had no onExited at all.
+//
+//    Measured on this machine (1366x768, 4 cores): theme-apply takes 1.6 s
+//    idle with the browser restart skipped, 3.7–9.6 s under load with it,
+//    median ~5 s. That is 3 to 15 times the length of the sweep. So the
+//    frozen frame was always swept away mid-change and the remaining two
+//    thirds of the theme then popped in AFTER the animation had ended —
+//    which is the exact opposite of the effect's whole premise, that the new
+//    screen was always there and only the old one gets destroyed. Reported
+//    as "the animation finishes before it fully changed the theme".
+//
+//    The reveal is now gated on applyProcess exiting. Same idempotent-race
+//    shape as beginReveal(): `sweepStarted` is the boolean, and the script
+//    exiting and `applyCapTimer` both call beginSweep(), whichever gets
+//    there first. The cap exists because a hung or missing theme-apply must
+//    never leave a fullscreen frozen frame on the desktop forever.
 //
 PanelWindow {
     id: root
@@ -145,6 +170,7 @@ PanelWindow {
         // looks like the animation running backwards.
         root.capturePath = "/tmp/tide-theme-transition-" + Date.now() + ".jpg";
         root.revealStarted = false;
+        root.sweepStarted = false;
 
         // JPEG, quality 85. Trap 1.
         // -o <output>: capture THIS screen only. Without it grim writes
@@ -158,6 +184,20 @@ PanelWindow {
     }
 
     property bool revealStarted: false
+
+    // The second of the two races, and deliberately a SECOND boolean rather
+    // than a reuse of revealStarted: that one means "the frozen frame is up
+    // and grim is no longer being waited on", this one means "the frame is on
+    // its way out". Between them is the window in which theme-apply runs, and
+    // it is the whole point of the file. Collapsing them into one flag is what
+    // the old code effectively did.
+    property bool sweepStarted: false
+
+    // Emitted by the window that owns theme-apply, once the script has exited.
+    // shell.qml relays it to every other output's window, because those never
+    // run applyProcess and so have no exit of their own to wait on; see
+    // noteThemeApplied().
+    signal themeApplied()
 
     function beginReveal(haveCapture) {
         // Idempotent: grim finishing and the safety timer firing are a race
@@ -191,11 +231,39 @@ PanelWindow {
         applyProcess.running = true;
     }
 
+    // theme-apply has finished. Called on THIS window by applyProcess's own
+    // onExited, and on every other output's window by shell.qml relaying
+    // themeApplied() — a window with ownsThemeApply false has no process of
+    // its own and would otherwise sit frozen until the cap fired, revealing
+    // seconds after its neighbour.
+    //
+    // Not straight to beginSweep(): the script exits when it has finished
+    // WRITING configs and sending reloads, and the reloaded programs repaint
+    // slightly after that. See settleTimer.
+    function noteThemeApplied() {
+        if (!root.active || root.sweepStarted || settleTimer.running)
+            return;
+        settleTimer.restart();
+    }
+
+    function beginSweep() {
+        // Idempotent, exactly as beginReveal() is: the script exiting and the
+        // cap timer firing are a race by design and both land here.
+        if (root.sweepStarted)
+            return;
+        root.sweepStarted = true;
+        applyCapTimer.stop();
+        settleTimer.stop();
+        revealAnimation.restart();
+    }
+
     function finish() {
         const theme = root.pendingTheme;
         root.active = false;
         root.pendingTheme = "";
         root.sweep = 0;
+        applyCapTimer.stop();
+        settleTimer.stop();
         // Released before the file is deleted below, so the Image is not
         // holding a path that cleanupProcess is about to remove.
         root.frozenSource = "";
@@ -232,12 +300,65 @@ PanelWindow {
         interval: 90
         repeat: false
         onTriggered: {
-            // The theme is applied UNDER the frozen frame, so the repaint
-            // happens where it cannot be seen and the reveal shows a desktop
-            // that has already finished changing. Applying it after the
-            // animation would show the old desktop through the hole.
+            // Trap 4's delay, and now ONLY trap 4's delay. The theme is
+            // applied UNDER the frozen frame, so the repaint happens where it
+            // cannot be seen and the reveal shows a desktop that has already
+            // finished changing. Applying it after the animation would show
+            // the old desktop through the hole.
+            //
+            // The sweep is NOT started here. It used to be, on this same
+            // tick, and that is the sixth trap: 90 ms + 620 ms is a promise
+            // about theme-apply that theme-apply cannot keep. beginSweep()
+            // is reached from applyProcess.onExited or from applyCapTimer.
             root.applyTheme();
-            revealAnimation.restart();
+            // Started unconditionally, including on the outputs where
+            // applyTheme() just returned without doing anything: the cap is
+            // the only thing that is guaranteed to fire on every window.
+            applyCapTimer.restart();
+        }
+    }
+
+    Timer {
+        id: settleTimer
+        // theme-apply's exit is not the last repaint. Measured by capturing
+        // timed grim frames across a run and diffing each against the settled
+        // desktop: the script exited at 1974 ms, the bulk of the visible swap
+        // landed at 2078 ms, and the frame difference reached its noise floor
+        // (clock digits and the cursor) at 2269 ms. So the desktop finishes
+        // changing 100–300 ms after the process is reaped, because the exit
+        // means "configs written, reloads SENT" and kitty, dunst, rofi and
+        // Hyprland each repaint on their own next frame.
+        //
+        // 260 ms covers the measured tail. It is charged only on the path
+        // where the script exited normally; the cap path skips it, having
+        // already waited far longer than this.
+        interval: 260
+        repeat: false
+        onTriggered: root.beginSweep()
+    }
+
+    Timer {
+        id: applyCapTimer
+        // THE HARD CAP. Not a tuning knob — a guarantee that a theme-apply
+        // that hangs, or that is not on disk at all, cannot leave a
+        // fullscreen frozen screenshot sitting on the user's desktop for the
+        // rest of the session. Whichever of this and the script's exit
+        // arrives first wins; beginSweep() is idempotent.
+        //
+        // 12 s against a measured 1.6 s idle / 3.7–9.6 s under load (the tail
+        // is the browser kill, .crx repack and relaunch at the end of the
+        // script). That is only ~25% over the worst run seen, and it is meant
+        // to be: when this timer fires the cost is merely the old racing
+        // behaviour for one theme change, whereas a cap set generously enough
+        // to never lose means staring at a dead desktop for half a minute
+        // when the script genuinely wedges.
+        interval: 12000
+        repeat: false
+        onTriggered: {
+            // Straight to the sweep, not via noteThemeApplied(): there is no
+            // repaint to settle for, because as far as this window knows
+            // nothing has happened yet.
+            root.beginSweep();
         }
     }
 
@@ -261,7 +382,24 @@ PanelWindow {
         onFinished: root.finish()
     }
 
-    Process { id: applyProcess }
+    Process {
+        id: applyProcess
+        // The thing that was missing. Without this the frozen frame had no
+        // way of knowing the theme had changed and could only guess with a
+        // timer; see the sixth trap.
+        //
+        // The exit code is deliberately ignored. theme-apply exiting non-zero
+        // means part of the theme did not apply, which is a reason to show
+        // the user the desktop, not a reason to keep it frozen. The only
+        // question this handler answers is "has it stopped running".
+        onExited: {
+            running = false;
+            root.noteThemeApplied();
+            // The other outputs, which never ran the script; shell.qml
+            // relays this to them.
+            root.themeApplied();
+        }
+    }
     Process { id: cleanupProcess }
 
     // --- the frozen frame --------------------------------------------------

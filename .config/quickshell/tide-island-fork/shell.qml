@@ -203,6 +203,21 @@ Scope {
         }
     }
 
+    // Only the first screen's overlay runs theme-apply, so only it learns when
+    // theme-apply has finished — and since the fix for the sixth trap that is
+    // the event the whole sweep now waits on. Without this relay every other
+    // output would sit on a frozen screenshot until its 12 s cap fired, long
+    // after its neighbour had revealed. noteThemeApplied() is idempotent, so
+    // relaying to the emitter as well is free and keeps this one loop.
+    function relayThemeApplied() {
+        const windows = themeTransitionVariants.instances
+            ? themeTransitionVariants.instances : [];
+        for (let index = 0; index < windows.length; index++) {
+            if (windows[index])
+                windows[index].noteThemeApplied();
+        }
+    }
+
     Variants {
         id: themeTransitionVariants
 
@@ -222,6 +237,8 @@ Scope {
             // gives no index.
             ownsThemeApply: Quickshell.screens.length === 0
                 || modelData === Quickshell.screens[0]
+
+            onThemeApplied: shellRoot.relayThemeApplied()
         }
     }
 
