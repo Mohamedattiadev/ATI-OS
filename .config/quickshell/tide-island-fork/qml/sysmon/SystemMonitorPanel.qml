@@ -147,6 +147,26 @@ FocusScope {
     // FORK: header height, content inset and the key-hint strip are
     // PanelChrome's now. See qml/common/PanelChrome.qml.
     readonly property real ringSize: Metrics.px(86)
+
+    // How many columns the dial row divides into. See Dial.slot.
+    readonly property int dialCount: 4
+
+    // --- battery -----------------------------------------------------------
+    //
+    // Straight off SysBackend, which is where IslandSystemState reads it and
+    // therefore the only figure in the shell that can agree with the island's
+    // own battery capsule. Not a second /sys/class/power_supply reader: two
+    // pollers on one file is how a panel ends up disagreeing with the bar
+    // above it by one percent for a few seconds at a time.
+    //
+    // -1 is "no battery in this machine", and it hides the dial rather than
+    // drawing a 0% ring. A desktop showing an empty battery is a fault
+    // report, not a reading.
+    readonly property int batteryPercent: SysBackend.batteryCapacity
+    readonly property string batteryStatus: SysBackend.batteryStatus
+    readonly property bool batteryPresent: root.batteryPercent >= 0
+    readonly property bool batteryCharging:
+        root.batteryStatus === "Charging" || root.batteryStatus === "Full"
     // ---- MEASURED OFF A DIAL, NOT ADDED UP ----
     //
     // This was `ringSize + pad(8) + font(10) + pad(4) + font(11) + pad(4)`,
@@ -301,6 +321,24 @@ FocusScope {
         if (percent >= 90)
             return IslandTheme.danger;
         if (percent >= 75)
+            return IslandTheme.warning;
+        return root.accentColor;
+    }
+
+    // The battery's ring runs the other way, and it is the one dial here that
+    // is not a load. 90% CPU is the alarming end; 90% battery is the good
+    // one. Reusing ringColorFor would paint a full battery red and a nearly
+    // dead one in the accent — the exact inversion of what the colour is for.
+    //
+    // Charging is accent at any level: a battery at 8% that is plugged in is
+    // not a problem, and a red ring that stays red while the number climbs
+    // trains you to ignore red.
+    function batteryRingColor(percent, charging) {
+        if (charging)
+            return root.accentColor;
+        if (percent <= 10)
+            return IslandTheme.danger;
+        if (percent <= 25)
             return IslandTheme.warning;
         return root.accentColor;
     }
@@ -635,6 +673,22 @@ FocusScope {
         property string detail: ""
         property string subDetail: ""
 
+        // Overridable so the battery can invert the ramp. Defaults to the
+        // load ramp, which is what the other three want.
+        property color ringColor: root.ringColorFor(dial.percent)
+
+        // 0-based slot in the dial row. The row divides its width into
+        // `dialCount` equal columns and centres each dial in its own — which
+        // is not what this row did when it had three. It pinned them to
+        // x=0 / centre / right edge, so the OUTER two hung their detail text
+        // off the ends of the content box and the gaps between them were
+        // whatever was left. That works for exactly three and for no other
+        // number, and a fourth dial made it obvious. Equal columns instead:
+        // every dial gets the same width, the text centres under its own ring
+        // rather than over its neighbour, and adding a fifth is one constant.
+        property int slot: 0
+        x: dialRow.width * (dial.slot + 0.5) / root.dialCount - dial.width / 2
+
         // The animated 0..1 the ring actually draws, kept separate from
         // `percent` so the arc eases while the digits step. Faded, never
         // sprung — see ringColorFor's note; this is the clamped value the
@@ -667,14 +721,15 @@ FocusScope {
             showCore: false
             lineWidth: Metrics.px(6)
             progress: dial.shown
-            fillColor: root.ringColorFor(dial.percent)
+            // Through `dial.ringColor` rather than calling ringColorFor here,
+            // so the battery dial can supply its own inverted ramp. The
+            // default IS ringColorFor, so the three load dials are unchanged.
+            fillColor: dial.ringColor
             // The arc's own colour at low alpha, not a grey: a track in a
             // fixed grey drifts away from the arc as the theme moves, and on
             // a light accent it reads as a second, darker ring.
-            trackColor: Qt.rgba(root.ringColorFor(dial.percent).r,
-                                root.ringColorFor(dial.percent).g,
-                                root.ringColorFor(dial.percent).b,
-                                0.18)
+            trackColor: Qt.rgba(dial.ringColor.r, dial.ringColor.g,
+                                dial.ringColor.b, 0.18)
 
             Row {
                 anchors.centerIn: parent
@@ -757,7 +812,7 @@ FocusScope {
 
         Dial {
             id: cpuDial
-            x: 0
+            slot: 0
             percent: root.cpuPercent
             label: "CPU"
             detail: root.loadAverage === "" ? "" : root.loadAverage.split(" ")[0] + " load"
@@ -766,7 +821,7 @@ FocusScope {
 
         Dial {
             id: memDial
-            x: (dialRow.width - width) / 2
+            slot: 1
             percent: root.memPercent
             label: "Memory"
             detail: root.memTotalGb > 0
@@ -783,7 +838,7 @@ FocusScope {
 
         Dial {
             id: diskDial
-            x: dialRow.width - width
+            slot: 2
             percent: {
                 const fs = root.selectedFilesystem();
                 return fs ? fs.percent : 0;
@@ -802,6 +857,32 @@ FocusScope {
                 const fs = root.selectedFilesystem();
                 return fs ? "on " + fs.mount : "";
             }
+        }
+
+        Dial {
+            id: batteryDial
+            slot: 3
+            // Hidden, not zeroed, on a machine with no battery. See
+            // root.batteryPresent.
+            visible: root.batteryPresent
+            percent: Math.max(0, Math.min(100, root.batteryPercent))
+            label: "Battery"
+            ringColor: root.batteryRingColor(batteryDial.percent,
+                                             root.batteryCharging)
+            // The status word, lowercased, because the label above it is
+            // already shouting in caps and two levels of emphasis on a
+            // four-word column is one too many. SysBackend hands these
+            // through from /sys as "Discharging", "Charging", "Full",
+            // "Not charging" -- passed through rather than mapped, so an
+            // unexpected state shows up as itself instead of as "unknown".
+            detail: root.batteryStatus === ""
+                ? "" : root.batteryStatus.toLowerCase()
+            // Deliberately empty. The other three dials use the third line
+            // for a second measurement (cores, swap, mount); the battery's
+            // second measurement is time-to-empty, which SysBackend does not
+            // expose, and inventing it from a percentage delta is how you get
+            // a "3 h left" that changes to "40 min" when a build starts.
+            subDetail: ""
         }
     }
 
