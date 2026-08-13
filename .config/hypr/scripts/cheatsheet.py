@@ -334,6 +334,7 @@ def short_label(entry):
 #
 #    Settings panel     qml/island/SettingsLayer.qml
 #    List picker        qml/island/PickerLayer.qml
+#    App launcher       qml/island/ApplicationLauncherLayer.qml
 #    Wi-Fi / Bluetooth  qml/connectivity/ConnectivityDetailPanel.qml
 #    Theme picker       qml/island/ThemePickerLayer.qml
 #    Wallpaper picker   qml/island/WallpaperPickerLayer.qml
@@ -358,6 +359,24 @@ ISLAND_SECTIONS = [
         ("filter the list", "just type"),
         ("close", "q  /  Escape"),
     ]),
+    # The launcher is the one panel whose motions carry Ctrl, and the sheet
+    # has to say so rather than list "j / k" like its neighbours above. Its
+    # field is cleared on every open, so a bare letter there is always a
+    # letter — see the long comment in ApplicationLauncherLayer.qml. Left and
+    # Right are listed second because they are the ones that stop working
+    # once there is text in the box (they become cursor keys, which is what
+    # you want them to be).
+    ("APPLICATION LAUNCHER", [
+        ("next app", "Ctrl l  /  Ctrl j  /  Ctrl n"),
+        ("previous app", "Ctrl h  /  Ctrl k  /  Ctrl p"),
+        ("next / previous, empty box only", "Right  /  Left"),
+        ("next / previous, always", "Down  /  Tab  /  Up  /  Shift Tab"),
+        ("search", "just type"),
+        ("launch", "Enter"),
+        ("launch a favourite", "1 - 9, on an empty box"),
+        ("favourite / unfavourite", "right-click an app"),
+        ("close", "Escape"),
+    ]),
     ("WI-FI  /  BLUETOOTH", [
         ("move down / up", "j  /  k  /  Down  /  Up"),
         ("join network, pair or connect device", "Enter  /  Space"),
@@ -371,6 +390,7 @@ ISLAND_SECTIONS = [
     ]),
     ("REACHING THESE PANELS", [
         ("island settings", "ALT 7"),
+        ("application launcher", "SUPER Shift Return  /  SUPER d"),
         ("kill a process", "SUPER p  then  k"),
         ("close a window", "SUPER p  then  Shift k"),
         ("go to workspace", "SUPER p  then  j"),
