@@ -126,19 +126,52 @@ Item {
     // Reading four numbers from here instead is a one-line change per panel
     // and puts the same four numbers in every one of them.
     readonly property real padX: Metrics.chromePadX()
-    readonly property real headerHeight: Metrics.chromeHeader()
+
+    // ---- ONLY A REPLACED HEADER MAY CHOOSE ITS OWN HEIGHT ----
+    //
+    // The STANDARD title row is always chromeHeader(). That is the whole
+    // point — pad(34)/pad(36)/pad(38)/raw-34 was the spread, and letting a
+    // caller pass a height would put it straight back.
+    //
+    // A REPLACED header is different in kind: it is the panel's own content,
+    // not chrome, and the control centre's is a 24 px hero number over a 10 px
+    // caption, which does not fit in 33 and should not be asked to. So the
+    // override exists and applies only in that case, and it is measured from
+    // the same chromeTop() the title's baseline uses so a hero block and a
+    // title start at the same distance from the capsule's edge.
+    property real heroHeaderHeight: Metrics.px(42)
+
+    readonly property real headerHeight: root.headerReplaced
+        ? Metrics.chromeTop() + root.heroHeaderHeight
+        : Metrics.chromeHeader()
+
     readonly property real tabsHeight: (root.tabs && root.tabs.length > 0)
         ? tabStrip.implicitHeight + Metrics.pad(6) : 0
     readonly property real footerHeight: Metrics.chromeFooter()
     readonly property real gap: Metrics.chromeGap()
+    readonly property real bodyGap: Metrics.chromeBodyGap()
+
+    // ---- EXTRA AIR UNDER THE HEADER, DECLARED RATHER THAN ADDED ----
+    //
+    // A caller wanting more room below its header must say so here instead of
+    // adding it to its own `y`, and the difference is not style: the chrome
+    // centres the header RULE in this gap, so a gap it cannot see is a rule
+    // drawn in the wrong place.
+    //
+    // That is not hypothetical. The control centre added px(8) to its own
+    // Column and the rule landed on top of "THU, AUG 13" — the caption sits at
+    // the very bottom of a hero slot its own content exactly fills, so the
+    // chrome's idea of "just below the header" was inside the text.
+    property real bodyOffset: 0
 
     // Everything the chrome costs vertically. A caller's preferredHeight is
     // `chrome.chromeHeight + bodyHeight` and nothing else.
-    readonly property real chromeHeight:
-        root.headerHeight + root.tabsHeight + root.gap + root.footerHeight
+    readonly property real chromeHeight: root.headerHeight + root.tabsHeight
+        + root.bodyGap + root.bodyOffset + root.gap + root.footerHeight
 
     readonly property real contentX: root.padX
-    readonly property real contentY: root.headerHeight + root.tabsHeight
+    readonly property real contentY:
+        root.headerHeight + root.tabsHeight + root.bodyGap + root.bodyOffset
     readonly property real contentWidth: Math.max(0, root.width - root.padX * 2)
     readonly property real contentHeight:
         Math.max(0, root.height - root.contentY - root.gap - root.footerHeight)
@@ -171,9 +204,9 @@ Item {
     Item {
         id: headerSlot
         x: root.padX
-        y: 0
+        y: Metrics.chromeTop()
         width: root.width - root.padX * 2
-        height: root.headerHeight
+        height: root.heroHeaderHeight
         visible: root.headerReplaced
     }
 
@@ -249,10 +282,14 @@ Item {
 
     // --- the two rules -------------------------------------------------------
 
+    // Centred in the gap between the header and the body rather than hung off
+    // either edge of it, so it reads as the boundary between them however much
+    // air the caller asked for.
     Rectangle {
         id: headerRule
         x: root.padX
-        y: root.contentY - Metrics.pad(4)
+        y: root.headerHeight + root.tabsHeight
+            + (root.bodyGap + root.bodyOffset - height) / 2
         width: root.contentWidth
         height: Metrics.RADIUS.hairline
         color: IslandTheme.hairline

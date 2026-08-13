@@ -541,19 +541,26 @@ Singleton {
     // `IslandBackend` for one integer. They are NOT theme-driven and are
     // not supposed to be; they are here for reach, not for colour.
     //
-    // upgread_UI_UX.md P1-5 wants sixteen radii collapsed onto these four
-    // and eleven type sizes onto a named ramp. That is Phase 4 and it is a
-    // separate argument — this file's job is that there is one place to
-    // make it in.
-    readonly property int radiusPanel: 28
-    readonly property int radiusModule: 24
-    readonly property int radiusPrompt: 16
-    readonly property int radiusButton: 12
-
-    readonly property int durationFast: 120
-    readonly property int durationControl: 130
-    readonly property int durationQuick: 140
-    readonly property int durationStandard: 280
+    // ---- DELETED, AND COUNTED BEFORE DELETING ----
+    //
+    // There were eight of these — four radii and four durations, mirrored from
+    // the packaged `StyleTokens` so a file migrating off it did not have to
+    // import `IslandBackend` for one integer. Counted across the whole tree:
+    //
+    //     radiusPanel radiusModule radiusPrompt radiusButton     0 callers
+    //     durationControl durationQuick durationStandard         0 callers
+    //     durationFast                                           7 callers
+    //
+    // Seven of eight were an inventory nobody shopped from, which is the exact
+    // thing P1-5 called out about the type and radius numbers and which the
+    // audit then found was mostly already false ELSEWHERE — here it was true.
+    // The radius argument now lives in Metrics.RADIUS, which is derived from
+    // the padding rather than mirrored from a package, and the durations live
+    // in Motion.js, which is the file that owns time in this shell.
+    //
+    // durationFast's 120 ms is not lost: it IS Motion.CONTROL_MS, and its
+    // seven callers were moved to Motion.controlDuration() in the same commit
+    // that took these out, so nothing on screen changed.
 
     // ---------------------------------------------------------------
     //  The source

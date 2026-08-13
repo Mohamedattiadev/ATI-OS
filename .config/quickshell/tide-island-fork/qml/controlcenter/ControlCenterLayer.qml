@@ -259,9 +259,21 @@ Item {
     readonly property real batteryModeCardHeight: 80
     readonly property real roundToggleButtonSize: 58
     readonly property real roundToggleButtonGap: 18
+    // ---- WHAT THE FOOTER COSTS, WRITTEN AS THE DIFFERENCE IT IS ----
+    //
+    // The panel used to end at a pad(12) bottom margin; it now ends at the
+    // chrome's gap plus its key-hint strip. Spelt as the DELTA rather than
+    // folded into a new constant so that the height this panel asks the island
+    // for still visibly derives from the same px(320) it always did, and so
+    // that changing chromeFooter() moves this panel with it.
+    readonly property real chromeFooterCost:
+        Metrics.chromeGap() + Metrics.chromeFooter() - Metrics.pad(12)
+
     readonly property real controlCenterExtraHeight: 12 + batteryDrawerHandleHeight
+        + chromeFooterCost
         + batteryDrawerProgress * (batteryDrawerContentGap + batteryModeCardHeight)
     readonly property real controlCenterMaximumExtraHeight: 12 + batteryDrawerHandleHeight
+        + chromeFooterCost
         + batteryDrawerContentGap + batteryModeCardHeight
     readonly property bool bluetoothAvailable: !!bluetoothAdapter
     readonly property var bluetoothAdapter: Bluetooth.defaultAdapter
@@ -1021,8 +1033,17 @@ Item {
         device.forget();
     }
 
+    // ---- THE MARGIN MOVED INTO PanelChrome ----
+    //
+    // This was `anchors.margins: Metrics.pad(12)`, and combined with the
+    // header's own `leftMargin: Metrics.pad(6)` it put the clock at 18 from
+    // the capsule — which is exactly Metrics.chromePadX(), arrived at by two
+    // numbers that did not know about each other. The sliders, which took the
+    // root margin and added nothing, sat at 12.
+    //
+    // PanelChrome owns the inset now, so both land on 18 and the panel gains a
+    // footer where the bottom margin used to be. The sliders move in by 6.
     anchors.fill: parent
-    anchors.margins: Metrics.pad(12)
     opacity: showCondition ? 1 : 0
     visible: opacity > 0
 
@@ -1530,9 +1551,41 @@ Item {
         }
     }
 
-    Column {
-        anchors.fill: parent
-        spacing: Metrics.px(12)
+    // ---- THE CHROME, SHARED WITH NINETEEN OTHER SURFACES ----
+    //
+    // This panel keeps its own header — see the hero-number note below, which
+    // is why PanelChrome has a replaceable header slot at all — and takes the
+    // rules, the footer and the four content-geometry numbers from the shared
+    // component.
+    //
+    // The key hints are NEW. This panel is opened by a keyboard chord, has
+    // arrows and hjkl, Space/Enter to toggle, Right to open a list and an
+    // Escape that unwinds cursor -> drawer -> panel, and it had no legend for
+    // any of it — the one panel in the shell with the richest keyboard model
+    // and the only one of the nine that never got a hint strip.
+    PanelChrome {
+        id: chrome
+        textFontFamily: controlCenter.textFontFamily
+        heroHeaderHeight: Metrics.px(42)
+        // A hero block needs more air under it than a 10 px label does — the
+        // old layout gave it the Column's own px(12) spacing. Declared here
+        // rather than added to the Column's y so the chrome can centre its
+        // header rule in the gap; see PanelChrome.bodyOffset.
+        bodyOffset: Metrics.px(8)
+        hints: controlCenter.batteryDrawerOpen
+            ? [
+                { key: "h/l", label: "move" },
+                { key: "Space", label: "toggle" },
+                { key: "→", label: "list" },
+                { key: "Esc", label: "close drawer" }
+              ]
+            : [
+                { key: "h/l", label: "move" },
+                { key: "Space", label: "toggle" },
+                { key: "→", label: "list" },
+                { key: "↓", label: "battery" },
+                { key: "q", label: "close" }
+              ]
 
         // ---- THE HEADER IS A HERO NUMBER, NOT A TITLE BAR ----
         //
@@ -1554,12 +1607,14 @@ Item {
         // sideways as the minute digits change width. ukishima sets it on
         // every number that updates in place.
         Item {
-            width: parent.width
-            height: Metrics.px(42)
+            // The header SLOT, so `parent` is already inset by chrome.padX and
+            // sits at chromeTop(). The pad(6) and pad(2) edge margins that used
+            // to be here are gone with it — they were the second half of the
+            // 12 + 6 that added up to 18.
+            anchors.fill: parent
 
             Column {
                 anchors.left: parent.left
-                anchors.leftMargin: Metrics.pad(6)
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Metrics.px(1)
 
@@ -1594,7 +1649,6 @@ Item {
 
             Row {
                 anchors.right: parent.right
-                anchors.rightMargin: Metrics.pad(2)
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Metrics.px(5)
 
@@ -1680,6 +1734,15 @@ Item {
                 }
             }
         }
+    }
+
+    // The body, in the region the chrome reserves for it. The extra air under
+    // the hero header is chrome.bodyOffset and is already in contentY.
+    Column {
+        x: chrome.contentX
+        y: chrome.contentY
+        width: chrome.contentWidth
+        spacing: Metrics.px(12)
 
         // ---- FLAT ROWS WITH A HAIRLINE, NOT TWO ROUNDED CARDS ----
         //
@@ -1839,15 +1902,27 @@ Item {
                     // a light source above. On is the accent, near-solid, so
                     // a lit button is unmistakably a different material and
                     // not merely a slightly bluer rectangle.
+                    //
+                    // The two off-state fills were `Qt.rgba(0.925, 0.925,
+                    // 0.925, 0.105)` and the same at 0.06 — a cream wash,
+                    // written as a literal, which is the one thing a shell
+                    // with 45 derived colour roles must not do. It is the
+                    // "white" problem in another spelling: a light wash over a
+                    // LIGHT surface is not raised, it is invisible, and
+                    // mono-light is a real palette on this machine.
+                    //
+                    // surfaceRaised / surfaceRaisedHover are 7% and 12% toward
+                    // the ink, i.e. the same two steps in the direction that is
+                    // actually "up" for whatever surface is underneath.
                     color: qb.on
                         ? IslandTheme.alpha(controlCenter.accentColor, 0.92)
                         : (qbHover.hovered
-                            ? Qt.rgba(0.925, 0.925, 0.925, 0.105)
-                            : Qt.rgba(0.925, 0.925, 0.925, 0.06))
+                            ? IslandTheme.surfaceRaisedHover
+                            : IslandTheme.surfaceRaised)
                     opacity: qb.available ? 1 : 0.35
 
-                    Behavior on color { ColorAnimation { duration: IslandTheme.durationFast } }
-                    Behavior on opacity { NumberAnimation { duration: IslandTheme.durationFast } }
+                    Behavior on color { ColorAnimation { duration: Motion.controlDuration() } }
+                    Behavior on opacity { NumberAnimation { duration: Motion.controlDuration() } }
 
                     // The top-edge highlight. Inset by the radius so it does
                     // not run past the curve and read as a stray line, and
@@ -1860,7 +1935,11 @@ Item {
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: parent.width - parent.radius
                         height: 1
-                        color: Qt.rgba(1, 1, 1, 0.07)
+                        // Toward the INK, not toward white. A highlight is
+                        // "the side the light comes from"; on a light surface
+                        // that direction is darker, not brighter, and
+                        // `Qt.rgba(1,1,1,0.07)` gets it backwards there.
+                        color: IslandTheme.alpha(IslandTheme.ink, 0.07)
                     }
 
                     // The keyboard cursor. A ring OUTSIDE the fill rather
@@ -1890,7 +1969,7 @@ Item {
                         font.family: controlCenter.iconFontFamily
                         opacity: qb.busy ? 0.45 : 1
 
-                        Behavior on color { ColorAnimation { duration: IslandTheme.durationFast } }
+                        Behavior on color { ColorAnimation { duration: Motion.controlDuration() } }
                     }
 
                     // The list affordance, as a corner dot rather than a
@@ -2350,7 +2429,7 @@ Item {
 
                         Behavior on color {
                             ColorAnimation {
-                                duration: IslandTheme.durationFast
+                                duration: Motion.controlDuration()
                             }
                         }
                     }
@@ -2462,7 +2541,7 @@ Item {
 
                         Behavior on color {
                             ColorAnimation {
-                                duration: IslandTheme.durationFast
+                                duration: Motion.controlDuration()
                             }
                         }
                     }

@@ -270,3 +270,4 @@ function chromeHeader()  { return pad(34); }   // 33 — title baseline to body
 function chromeFooter()  { return pad(26); }   // 25 — the key-hint strip
 function chromeGap()     { return pad(8);  }   //  8 — body to footer
 function chromeTop()     { return pad(12); }   // 12 — title's own baseline
+function chromeBodyGap() { return pad(4);  }   //  4 — header rule to body

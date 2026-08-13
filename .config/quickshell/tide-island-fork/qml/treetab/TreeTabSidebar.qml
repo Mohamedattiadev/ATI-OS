@@ -696,7 +696,7 @@ PanelWindow {
                                         : rowItem.fillColor
 
                                     Behavior on color {
-                                        ColorAnimation { duration: IslandTheme.durationFast }
+                                        ColorAnimation { duration: Motion.controlDuration() }
                                     }
 
                                     Text {

@@ -806,7 +806,7 @@ FocusScope {
         opacity: root.listEditActive ? 1 : 0
 
         Behavior on opacity {
-            NumberAnimation { duration: IslandTheme.durationFast }
+            NumberAnimation { duration: Motion.controlDuration() }
         }
 
         // Swallows clicks so a stray press does not reach the rows behind
