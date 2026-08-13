@@ -353,11 +353,18 @@ ISLAND_SECTIONS = [
         ("last setting", "Shift g"),
         ("close", "q  /  Escape"),
     ]),
+    # j/k and q are qualified because the panel qualifies them: they are
+    # movement while the box is empty and letters the moment it is not, or
+    # "jack" and "qutebrowser" would be untypeable. Ctrl+n/p are the pair
+    # that works in both states, so they are listed first.
     ("LIST PICKER", [
-        ("move down / up", "j  /  k"),
+        ("move down / up", "Ctrl n  /  Ctrl p  /  Down  /  Up"),
+        ("move down / up, empty box only", "j  /  k"),
         ("run the selected row", "Enter"),
         ("filter the list", "just type"),
-        ("close", "q  /  Escape"),
+        ("back one page", "Backspace on an empty box  /  Ctrl h"),
+        ("re-read the list", "Ctrl r"),
+        ("close", "q on an empty box  /  Escape"),
     ]),
     # The launcher is the one panel whose motions carry Ctrl, and the sheet
     # has to say so rather than list "j / k" like its neighbours above. Its
@@ -383,9 +390,22 @@ ISLAND_SECTIONS = [
         ("first / last row", "g  /  Shift g"),
         ("close", "q  /  Escape"),
     ]),
-    ("THEME  /  WALLPAPER PICKER", [
-        ("move", "Left  /  Right"),
-        ("apply", "Enter"),
+    # These were one row reading "move — Left / Right" and are now two
+    # sections, because the two panels stopped having the same keys: the
+    # theme picker is a grid and grew j/k and g/G with it, and the wallpaper
+    # picker is a carousel with a random jump. Neither has a search box, so
+    # both can spend bare letters and both do.
+    ("THEME PICKER", [
+        ("move within a row", "h  /  l  /  Left  /  Right"),
+        ("move a whole row", "j  /  k  /  Down  /  Up"),
+        ("first / last theme", "g  /  Shift g"),
+        ("apply", "Enter  /  Space"),
+        ("close", "Escape"),
+    ]),
+    ("WALLPAPER PICKER", [
+        ("move", "h  /  l  /  Left  /  Right  /  Tab  /  Shift Tab"),
+        ("jump to a random wallpaper", "r"),
+        ("apply — the only key that writes", "Enter"),
         ("close", "Escape"),
     ]),
     ("REACHING THESE PANELS", [
