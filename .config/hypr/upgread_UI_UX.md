@@ -647,3 +647,105 @@ visual judgement meaningful. Phase 2 is the largest *risk* and the largest
 visible win. Phase 5's second item — six `Loader`s — is an afternoon and
 improves the two transitions you see hundreds of times a day. Phase 4 is
 where the shell stops needing this document.
+
+---
+
+# Audit — 2026-08-13
+
+Measured against the running shell, not inferred. What this session changed,
+and what each phase actually stands at now.
+
+## Phase 3 — one interaction model — **PARTIALLY DONE**
+
+The control centre is done and was the worst offender: it is opened by
+`$mod SHIFT A`, a keyboard binding, and had 6 MouseAreas and 0 Keys
+handlers. It now has hover on every button, a keyboard cursor drawn
+separately from hover, arrows **and hjkl**, Space/Enter to toggle, Right to
+open a list, and Escape unwinding cursor -> drawer -> panel.
+
+The cause of "the panels have Keys handlers that never fire" is found and
+worth recording, because it is one mechanism and it defeated three panels:
+
+> `islandContainer` is a **FocusScope**, and `keyPanelFocusTimer` calls
+> `forceActiveFocus()` on it. A FocusScope hands active focus to ITS focus
+> child and recurses. **14 of 20 PanelLoaders had no focus claim at all**, so
+> the chain stopped at the scope and the layer one level below could never
+> be reached. Fixed on the control centre, expanded player and notification
+> centre, each bound to its own panel's visibility rather than a bare
+> `true` — they are siblings in one scope and two are retained, so
+> unconditional claims would leave the focus child decided by declaration
+> order.
+
+Escape/q now works on all three. The remaining 12 loaders are listed in the
+commit; **`modeKeysLoader` must not get one** — Part 3 of this document
+lists "the mode-keys panel takes no keyboard grab" under what not to touch.
+
+Still open: hover states and click-to-commit on the nine fork panels, and
+wheel scrolling with a visible indicator (still 2 ScrollBars in the tree).
+
+## Phase 4 — the design system — **P2-9 CLOSED**
+
+The upstream Chinese is gone. It was not only cosmetic: `lyricBaselineGuide`
+is an `opacity: 0` Text reading `"Ag国"`, and Qt must SHAPE a glyph to
+measure it — so three invisible characters mapped **NotoSansCJK at 27.6 MB**
+into a shell that renders no CJK. Dropping the kanji is also more correct,
+since the guide exists to stabilise the baseline of the Inter text actually
+drawn there. Verified zero baseline shift by diffing the clock's ink rows.
+
+The launcher's empty state genuinely read `没有找到` in daily use.
+
+Type ramp, spacing grid and radius scale are untouched.
+
+## Phase 5 — motion — **NOT STARTED**; the five dead fade-outs remain
+
+## Phase 7 — search — **NOT STARTED**
+
+## Corrections to this document's own method
+
+Two findings this session were **wrong in a way worth naming**, both from
+the same mistake — believing a capture over a measurement.
+
+1. "The window border does not follow the theme" was reported from a
+   framebuffer sample taken **inside the window** rather than on the 2 px
+   border. The border had always followed. What was genuinely wrong is that
+   it followed the CYAN slot while the island's layout glyph and workspace
+   digit follow `accent` — so the two never agreed on any palette. Now the
+   identical byte by construction, verified on five palettes.
+
+2. "The settings panel receives no keyboard input" was filed as a task
+   after three runs. The panel works. Every capture had been **cropped at
+   ~420 px**, below which the selection had scrolled.
+
+That second one has a cost attached and a rule that follows from it:
+
+> **Do not test a settings panel by synthesising keystrokes into it.** Every
+> press that lands is a write to the user's configuration; the ones that do
+> not land make the result unreadable; and from a screenshot the two are
+> indistinguishable. `wtype` drops events on rapid successive invocations,
+> which is what made it look intermittent. Stray presses wrote
+> `islandPositionX` 50 -> 70 — reported by the user as "the island is not in
+> center" — and `clockFormat` 24 -> 12. Both reverted; the whole config was
+> then audited against its session-start values. Test the schema over its
+> CLI, which is fully covered, and let a human press the keys.
+
+## Performance, measured — and the number not to act on
+
+    CPU  0.8% of one core at rest
+    RSS  482 MB      <- misleading
+    PSS  162 MB
+    Anon  87 MB      <- the real private cost
+
+The largest mapping is Inter.ttc at 144.7 MB, a file-backed **shared**
+mapping counted in full against every process that maps it. libLLVM and
+libgallium are Mesa's. 87 MB private is unremarkable for a shell with this
+many layers, and "reduce the RAM" against the RSS figure would have been
+chasing a number that is not real.
+
+**Layout switching, measured: 0.30-0.39 s**, and the cost is process
+spawns, not the compositor — `layout-cycle.sh` makes **7 `hyprctl`
+invocations per switch**, of which three are separate `hyprctl clients -j`
+queries. Caching that query once and batching the dispatches through
+`hyprctl --batch` is the fix; not attempted here rather than half-done.
+
+The TreeTab sidebar **is live** — `quickshell-treetab`, 180x768, exclusive
+zone working, confirmed in `hyprctl layers`.
