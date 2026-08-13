@@ -1416,6 +1416,56 @@ if pgrep -x qutebrowser >/dev/null; then
     timeout 15 qutebrowser ":config-source" >/dev/null 2>&1 || true
   ' >/dev/null 2>&1 </dev/null || true
 fi
+
+# ---------------------------------------------------------------------
+# THE VISIBLE-REPAINT MARKER
+# ---------------------------------------------------------------------
+# One line on stdout, at the point after which nothing this script does
+# repaints a window that is ALREADY ON SCREEN.
+#
+# It exists for the Hyprland session's theme-change animation
+# (quickshell tide-island-fork, qml/theme/ThemeTransitionWindow.qml),
+# which freezes the desktop as a screenshot, runs this script underneath
+# it, and then wipes the frozen frame away. That wipe has to start when
+# the desktop under the frame has finished changing. Gating it on this
+# script EXITING was the obvious reading of "finished" and it is wrong by
+# a factor of three: measured with `bash -x` and PS4=$EPOCHREALTIME on
+# this machine (5 kitty, brave and qutebrowser up), the last visible
+# repaint is dispatched at 1.27 s and the script exits at 3.39 s. The
+# user spent the difference looking at a screenshot with a pixel-diff of
+# exactly 0.00 between consecutive frames.
+#
+# WHAT IS BEHIND THIS LINE, i.e. what the wipe is allowed to wait for:
+#   hyprctl reload (L462) .................... 0.11 s  borders, gaps, blur
+#   ~/.cache/tide-island/colors.json (L466) .. 0.11 s  the island itself
+#   eww reload/restart (L949) ................ 0.24 s  backgrounded
+#   kitty set-colors + SIGUSR1 (L982) ........ 0.86 s  every open terminal
+#   dunstrc + dunst restart (L1050) .......... 1.10 s
+#   GTK overlay css + settings.ini (L1056) ... 1.14 s
+#   papirus-folders (L1150) .................. backgrounded
+#   file-manager restart (L1279) ............. backgrounded
+#   qtile restart (L1316) .................... detached, other session
+#   qutebrowser :config-source (L1414) ....... 1.27 s  detached
+#
+# WHAT IS AHEAD OF IT, and why none of it can be waited for:
+#   the Chromium theme extension is repacked and brave/chrome are KILLED
+#   and relaunched (1.27 s -> 3.28 s, the whole remaining two thirds);
+#   firefox likewise; boot-splash is backgrounded and outlives this
+#   script by minutes. A killed browser does not repaint, it disappears
+#   and comes back seconds later on its own schedule — no overlay can
+#   cover that, so holding the frozen frame for it buys nothing and costs
+#   two seconds of dead screen.
+#
+# Printed unconditionally, including on the qtile session and on a bare
+# terminal invocation, because a marker that only appears under one
+# session is a marker that rots. Nothing captures this script's stdout
+# (checked across the tree: every caller either discards it or runs the
+# script with `exec`), so a single extra line is inert everywhere it is
+# not wanted. bash's printf builtin flushes to a pipe per call — verified,
+# because a marker sitting in a 4 KB stdio buffer until exit would be a
+# silent no-op that looks exactly like the bug it fixes.
+printf '%s\n' 'THEME_APPLY_VISIBLE_DONE'
+
 # Resolve the four palette roles (background / foreground / alt-surface /
 # accent) for the active $MODE, as four space-separated #rrggbb values.
 #
