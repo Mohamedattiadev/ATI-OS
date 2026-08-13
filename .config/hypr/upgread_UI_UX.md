@@ -1131,3 +1131,54 @@ selection written as two, in three places. `reanchorSelection` uses the
 MOUNT to keep the cursor on the same filesystem across a poll, so an index
 moved without it re-anchors to the wrong row on the next refresh. Adding the
 pointer as a fourth writer is what made one `selectAt()` worth having.
+
+## Phase 3.4 — the workspace overview — **CLOSED, and every one of its keys had been inert**
+
+P0-3 counts `WorkspaceOverviewLayer.qml` at 11 hover states and **0 Keys
+handlers**. The symptom was real and the location was wrong: a handler
+existed, in `DynamicIslandWindow.qml`, covering h/j/k/l and Tab/Shift-Tab.
+It had never worked.
+
+**One cause for all six.** They dispatched a workspace change while the
+overview was still on screen, and the compositor accepts that silently.
+Measured with the control that settles it:
+
+    overview OPEN    hyprctl dispatch workspace 5  ->  "ok", stays on 4
+    overview CLOSED  hyprctl dispatch workspace 5  ->  moves 4 -> 5 -> 4
+
+So it is not the island's dispatcher — an external `hyprctl` is blocked
+too. `dispatchExpression` compounded it by returning `true` for "we sent
+it" rather than "it happened", so nothing anywhere reported a failure.
+
+`closeAndFocusWorkspace` is the path that always worked and is what
+**clicking a tile has always used**: set the pending id, close, let
+`deferredWorkspaceFocusTimer` focus once the surface is down. All six keys
+route through it now, which is Phase 3's "one action, two ways in" exactly.
+
+An arrow therefore COMMITS rather than browses. Not a compromise — the
+compositor will not let the workspace change underneath this surface, so
+there is no browse state available to offer.
+
+**A wrong instinct, twice in one fix, worth recording.** The first pass
+kept Tab/Shift-Tab in place on the assumption that `r+1`/`r-1` were
+RELATIVE dispatches and so exempt from the block. They are not: Tab left
+the workspace on 4 with the overview still up. The block is on the switch,
+not on how the target is spelled.
+
+`focusAdjacentWorkspace` was **deleted**, not kept. A correct-looking
+helper that silently does nothing is the exact failure this tree keeps
+paying for.
+
+Escape and `q` are new — the old handler had neither, so the only way out
+was the pointer or pressing the opening chord again. Measured, all six:
+
+    Right 4->5   Left 5->4   Down 4->9   Up 9->4   Tab 4->5   S-Tab 5->4
+    Escape/q     close, workspace unchanged
+
+Also fixed on the way: the focus chain. The window already took an
+Exclusive grab for the overview (it always did), but `focus:` only
+NOMINATES a focus child — something must walk the chain, and
+`keyPanelFocusTimer` is restarted for three panels and not for this one.
+The scene claims focus from its own `onShowConditionChanged`, which is
+what NotificationCenterLayer settled on, because the item exists by
+definition at the moment its own handler runs.

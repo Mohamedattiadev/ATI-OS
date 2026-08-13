@@ -15,6 +15,78 @@ Item {
 
     readonly property var userConfig: UserConfig
 
+    // ---- KEYBOARD, AND THE FUNCTION THAT WAS ALREADY WRITTEN ----
+    //
+    // FORK: P0-3 counted this layer at 11 hover states and 0 Keys handlers,
+    // and it is the same complaint the control centre earned: the overview
+    // is opened by `$mod SHIFT GRAVE`, a KEYBOARD binding, and then could
+    // not be driven, dismissed or even closed from the keyboard. There is no
+    // submap and no compositor-side navigation while it is up, so the only
+    // way out was the pointer or pressing the opening chord again.
+    //
+    // `focusAdjacentWorkspace(rowDelta, columnDelta)` already existed, fully
+    // written, with the grid maths and the bounds check — it simply had no
+    // caller that was not a mouse. That is the same shape as the dead
+    // fade-outs and the mirrored swipe: the behaviour was built and left
+    // unreachable.
+    //
+    // Navigation DISPATCHES rather than moving a cursor, because that is
+    // this surface's model — the overview shows where you are, so moving the
+    // selection IS switching workspace, and there is no separate "commit".
+    // Enter therefore only has to close, and Escape does the same thing;
+    // both are offered because either is the one a given person reaches for.
+    Keys.onPressed: function(event) {
+        switch (event.key) {
+        case Qt.Key_Escape:
+        case Qt.Key_Q:
+            root.closeRequested();
+            event.accepted = true;
+            return;
+        case Qt.Key_Return:
+        case Qt.Key_Enter:
+            root.closeRequested();
+            event.accepted = true;
+            return;
+        case Qt.Key_H:
+        case Qt.Key_Left:
+            event.accepted = root.pickAdjacentWorkspace(0, -1);
+            return;
+        case Qt.Key_L:
+        case Qt.Key_Right:
+            event.accepted = root.pickAdjacentWorkspace(0, 1);
+            return;
+        case Qt.Key_K:
+        case Qt.Key_Up:
+            event.accepted = root.pickAdjacentWorkspace(-1, 0);
+            return;
+        case Qt.Key_J:
+        case Qt.Key_Down:
+            event.accepted = root.pickAdjacentWorkspace(1, 0);
+            return;
+        // Tab / Shift-Tab moved here from DynamicIslandWindow for the same
+        // reason the arrows did, and it was NOT obvious: they dispatched
+        // `r+1` / `r-1` through hyprlandIntegration, and a first pass at
+        // this assumed a RELATIVE dispatch would escape the block that
+        // stops an absolute one. Measured, it does not — Tab left the
+        // workspace on 4 with the overview still up. The block is on the
+        // switch, not on how the target is spelled.
+        //
+        // They are grid-order next/previous now rather than Hyprland's
+        // `r±1`, which is the honest translation: this surface IS the grid,
+        // and cycling by anything other than what is drawn would move the
+        // highlight somewhere the user did not point at.
+        case Qt.Key_Backtab:
+            event.accepted = root.pickSequentialWorkspace(-1);
+            return;
+        case Qt.Key_Tab:
+            event.accepted = root.pickSequentialWorkspace(
+                (event.modifiers & Qt.ShiftModifier) ? -1 : 1);
+            return;
+        default:
+            return;
+        }
+    }
+
     HyprlandDispatch { id: hyprDispatch }
 
     required property var screen
@@ -117,7 +189,50 @@ Item {
         const s = wsId>0?wsId:1
         return { x:(workspaceImplicitWidth+workspaceSpacing)*getWsColumn(s), y:(workspaceImplicitHeight+workspaceSpacing)*getWsRow(s) }
     }
-    function focusAdjacentWorkspace(rowDelta, columnDelta) {
+    // FORK: this replaces `focusAdjacentWorkspace`, which is DELETED rather
+    // than kept alongside.
+    //
+    // That function computed the neighbour correctly and then dispatched a
+    // workspace change while the overview was still on screen, which cannot
+    // work — and it reported success either way, because
+    // `dispatchExpression` returns true for "we sent it", not for "it
+    // happened". Measured rather than reasoned about: with the overview
+    // OPEN, even a bare external `hyprctl dispatch workspace 5` prints `ok`
+    // and nothing moves; with it CLOSED the identical command moves
+    // 4 -> 5 -> 4. The surface blocks the switch and the dispatch is
+    // discarded.
+    //
+    // It is deleted because a correct-looking helper that silently does
+    // nothing is precisely the failure this tree keeps paying for — the
+    // dead fade-outs, the mirrored swipe, the inert settings rows. Leaving
+    // it would leave the next reader a function that looks like the one to
+    // call.
+    //
+    // `closeAndFocusWorkspace` is the path that already works and is what
+    // clicking a tile has always used: set the pending id, close, and let
+    // deferredWorkspaceFocusTimer focus once the overview is down. Routing
+    // the keys through it makes one behaviour with two ways in, which is
+    // Phase 3's whole point.
+    //
+    // It means an arrow COMMITS rather than browses. That is not a
+    // compromise: the compositor will not let the workspace change
+    // underneath this surface, so there is no browse state to offer, and it
+    // is exactly what a click already does.
+    // Grid-order cycling for Tab / Shift-Tab. Wraps within the visible
+    // group rather than running off the end, because the group is what is
+    // on screen and Tab falling out of the drawn set would look like a
+    // dead key.
+    function pickSequentialWorkspace(step) {
+        const count = rows * columns
+        const currentCell = getWsRow(effectiveActiveWorkspaceId) * columns
+            + getWsColumn(effectiveActiveWorkspaceId)
+        const nextCell = ((currentCell + step) % count + count) % count
+        return closeAndFocusWorkspace(
+            workspaceGroup * workspacesShown
+            + getWsInCell(Math.floor(nextCell / columns), nextCell % columns))
+    }
+
+    function pickAdjacentWorkspace(rowDelta, columnDelta) {
         const currentRow = getWsRow(effectiveActiveWorkspaceId)
         const currentColumn = getWsColumn(effectiveActiveWorkspaceId)
         const targetRow = currentRow + rowDelta
@@ -125,9 +240,10 @@ Item {
         if (targetRow < 0 || targetRow >= rows || targetColumn < 0 || targetColumn >= columns)
             return false
 
-        const targetWorkspace = workspaceGroup * workspacesShown + getWsInCell(targetRow, targetColumn)
-        return hyprDispatch.focusWorkspace(targetWorkspace)
+        return closeAndFocusWorkspace(
+            workspaceGroup * workspacesShown + getWsInCell(targetRow, targetColumn))
     }
+
     function closeAndFocusWorkspace(workspaceId) {
         if (workspaceId < 1)
             return false

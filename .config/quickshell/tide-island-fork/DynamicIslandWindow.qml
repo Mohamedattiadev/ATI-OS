@@ -1777,36 +1777,29 @@ PanelWindow {
             }
         }
 
-        Keys.onPressed: (event) => {
-            if (!root.overviewVisible) return;
-
-            const view = islandContainer.overviewView;
-            if (event.key === Qt.Key_H) {
-                if (view)
-                    view.focusAdjacentWorkspace(0, -1);
-                event.accepted = true;
-            } else if (event.key === Qt.Key_J) {
-                if (view)
-                    view.focusAdjacentWorkspace(1, 0);
-                event.accepted = true;
-            } else if (event.key === Qt.Key_K) {
-                if (view)
-                    view.focusAdjacentWorkspace(-1, 0);
-                event.accepted = true;
-            } else if (event.key === Qt.Key_L) {
-                if (view)
-                    view.focusAdjacentWorkspace(0, 1);
-                event.accepted = true;
-            } else if ((event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier)) || event.key === Qt.Key_Backtab) {
-                if (root.hyprlandIntegration)
-                    root.hyprlandIntegration.focusWorkspace("r-1");
-                event.accepted = true;
-            } else if (event.key === Qt.Key_Tab) {
-                if (root.hyprlandIntegration)
-                    root.hyprlandIntegration.focusWorkspace("r+1");
-                event.accepted = true;
-            }
-        }
+        // FORK: this handler's ENTIRE overview block is gone — h/j/k/l and
+        // Tab/Shift-Tab alike — and WorkspaceOverviewLayer owns all six now.
+        //
+        // Every one of them was inert, for one reason. They dispatched a
+        // workspace change while the overview was still on screen, and the
+        // compositor accepts that silently and does nothing: measured, with
+        // the overview OPEN even a bare external `hyprctl dispatch workspace
+        // 5` prints `ok` and the workspace does not move, while with it
+        // CLOSED the identical command moves 4 -> 5 -> 4.
+        //
+        // That is also why P0-3 could report this layer at "0 Keys handlers"
+        // and be describing a real symptom while looking at the wrong file.
+        // The handler existed — here — and had never worked.
+        //
+        // A first pass at the fix kept Tab/Shift-Tab here on the assumption
+        // that `r+1`/`r-1` were RELATIVE dispatches and so exempt. They are
+        // not: Tab left the workspace on 4 with the overview still up. The
+        // block is on the switch, not on how the target is spelled. Worth
+        // recording, because it is the same wrong instinct twice in one fix.
+        //
+        // The layer routes all six through `closeAndFocusWorkspace`, which
+        // closes first and focuses on the deferred timer — the path clicking
+        // a tile has always used and the only one that works.
 
         function handleConfiguredClickAction(actionName) {
             switch (actionName) {
@@ -5010,6 +5003,12 @@ PanelWindow {
                 active: root.overviewLoaderActive
                 asynchronous: false
                 visible: root.overviewContentVisible
+                // FORK: the missing link, same as the three panels the
+                // earlier audit fixed. `active` here is `!compositorIsNiri`,
+                // so this loader is up permanently and a bare `focus: true`
+                // would claim the scope's focus child forever — bound to the
+                // overview's own visibility instead.
+                focus: root.overviewVisible
 
                 onStatusChanged: {
                     if (status === Loader.Ready && root.overviewPreparing) {
