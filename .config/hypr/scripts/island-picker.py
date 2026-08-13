@@ -959,16 +959,37 @@ def _split(item_id, count=2):
 #  window's geometry, wl-copy for the clipboard. satty is unchanged; it is
 #  Wayland-native already and dm-satty's --output-filename fix is kept.
 #
-#  WHAT IS DROPPED
-#  ---------------
-#  * The per-monitor rows. dm-satty builds one row per xrandr output; this
-#    machine has one monitor, and `grim` with no -o already means "the whole
-#    thing". A monitor list of length one is a step that only ever has one
-#    answer. (`grim -o <name>` is one line away if a second monitor arrives.)
-#  * The delay prompt (0-5 s). It exists so the rofi window can get out of
-#    the frame before the shutter, and the island's panel is already gone by
-#    the time grim runs — see _spawn_sh's 0.4 s. A step whose reason has been
-#    designed out is not worth a keystroke.
+#  WHAT WAS DROPPED, AND WHY IT CAME BACK
+#  --------------------------------------
+#  This port originally dropped two of dm-satty's steps, and the arguments
+#  for dropping them were about the SHUTTER. Both were beside the point.
+#
+#  * The delay prompt (0-5 s) was dropped because the island's panel is gone
+#    before grim runs anyway — see _spawn_sh's 0.4 s — so the delay had no
+#    window left to hide. True, and irrelevant: a delay is also how you
+#    screenshot a menu you have to open by hand, a hover state, or anything
+#    that dies the moment it loses focus. And the deciding argument is not
+#    even that one. Three keystrokes in a fixed order are a THING THE HANDS
+#    KNOW; removing the middle one does not make the menu shorter, it makes
+#    every remaining keystroke land on the wrong row. Restored, 0-5, same
+#    prompt text.
+#  * The per-monitor rows were dropped because this machine has one monitor.
+#    Restored CONDITIONALLY: they appear only when the compositor reports
+#    more than one output, which is dm-satty's behaviour on a single-head
+#    machine as well (xrandr lists one, the row is the same answer as
+#    "Fullscreen"). `grim -o <name>` is the capture.
+#
+#  THE LABELS ARE dm-satty'S, VERBATIM
+#  -----------------------------------
+#  "Fullscreen" / "Active window" / "Selected region" / "Fullscreen (edit
+#  with satty)" / "Selected region (edit with satty)", in that order, then
+#  "Delay (in seconds):" 0-5, then "File" / "Clipboard" / "Both". The page
+#  titles are dm-satty's rofi PROMPTS, colon and all, for the same reason.
+#  Do not improve this wording. It is an interface to a person's hands, and
+#  the first port rewrote every string in it — "Save to file" for "File",
+#  "Copy to clipboard" for "Clipboard", "Edit in satty" as a fourth
+#  destination rather than a mode, and the area order reshuffled so that
+#  "Active window" and "Selected region" swapped places.
 
 SHOT_DIR = os.path.join(HOME, "Screenshots")
 SHOT_PREFIX = "screenshot"
@@ -979,28 +1000,65 @@ _SHOT_AREAS = {
     "window": "Active window",
 }
 
+#  dm-satty prompts for the delay with `seq 0 5`, and treats anything
+#  non-numeric as none. There is no non-numeric row here, so 0 is the none.
+_SHOT_DELAYS = range(0, 6)
+
+
+def _shot_monitors():
+    """Extra area rows, one per output, or [] on a single-head machine.
+
+    dm-satty's rows are `xrandr --listactivemonitors`; these are the
+    compositor's own, which is the only list that is true under Hyprland.
+    """
+    monitors = _hypr("monitors")
+    if not isinstance(monitors, list) or len(monitors) < 2:
+        return []
+    rows = []
+    for monitor in monitors:
+        name = monitor.get("name") if isinstance(monitor, dict) else None
+        if not name:
+            continue
+        rows.append({
+            "id": "area:mon-%s:" % name,
+            "label": name,
+            "detail": "%sx%s at %s,%s" % (
+                monitor.get("width", "?"), monitor.get("height", "?"),
+                monitor.get("x", "?"), monitor.get("y", "?")),
+        })
+    return rows
+
 
 def screenshot_list():
     active = _hypr("activewindow")
     title = (active or {}).get("title", "") if isinstance(active, dict) else ""
-    return _page("Screenshot", [
-        {"id": "area:full", "label": "Fullscreen",
+    satty = "annotate, then save" if shutil.which("satty") \
+        else "satty is not installed"
+    return _page("Take screenshot of:", [
+        {"id": "area:full:", "label": "Fullscreen",
          "detail": "grim, the whole output"},
-        {"id": "area:region", "label": "Selected region",
-         "detail": "slurp draws the rectangle once this panel is gone"},
-        {"id": "area:window", "label": "Active window",
+        {"id": "area:window:", "label": "Active window",
          "detail": _ellipsis(title, 80) if title else "nothing focused"},
-    ])
+        {"id": "area:region:", "label": "Selected region",
+         "detail": "slurp draws the rectangle once this panel is gone"},
+        {"id": "area:full:satty", "label": "Fullscreen (edit with satty)",
+         "detail": satty},
+        {"id": "area:region:satty",
+         "label": "Selected region (edit with satty)", "detail": satty},
+    ] + _shot_monitors())
 
 
 def _shot_geometry(area):
     """The -g argument for grim, or "" for a full-output grab.
 
-    The active window's box is read HERE, while --run is still executing,
+    The active window's box is read HERE, at the moment the AREA IS CHOSEN,
     and not in the spawned shell. By the time the shell runs the panel has
     closed and the focus has moved back — `hyprctl activewindow` would then
     answer with whatever the compositor refocused, which is usually the same
-    window and occasionally is not.
+    window and occasionally is not. With the delay step restored the gap is
+    wider still: up to five seconds, during which the user may well have
+    clicked somewhere. Reading it early is what makes "Active window" mean
+    the window that was active when they said "Active window".
     """
     if area != "window":
         return ""
@@ -1013,37 +1071,79 @@ def _shot_geometry(area):
     return "%d,%d %dx%d" % (at[0], at[1], size[0], size[1])
 
 
+def _shot_capture(area, geometry):
+    """The shell fragment that puts one PNG on stdout or in a named file.
+
+    Returns (prefix, capture): `prefix` runs BEFORE the delay, `capture` is
+    the grim invocation. They are separate because of where the delay goes
+    for a region: dm-satty ran `maim -s --delay=N`, and maim takes the
+    selection FIRST and delays after it, so the rectangle is drawn
+    immediately and the shutter is what waits. A `sleep N; slurp` would
+    invert that and make the delay useless — you would be dragging a
+    rectangle over the state you were trying to give yourself time to set up.
+    """
+    if area == "region":
+        # A cancelled slurp exits non-zero and must take the whole thing
+        # down quietly — a cancelled selection is a "no thanks", not a
+        # failure to report.
+        return 'g=$(slurp) || exit 0; ', 'grim -g "$g"'
+    if area.startswith("mon-"):
+        return "", "grim -o %s" % shlex.quote(area[4:])
+    if geometry:
+        return "", "grim -g %s" % shlex.quote(geometry)
+    return "", "grim"
+
+
 def screenshot_run(item_id):
+    """The three dm-satty steps, in dm-satty's order.
+
+    `area:<area>:<edit>` → the delay page
+    `delay:<area>:<edit>:<n>` → the destination page, or straight to satty
+    `shot:<area>:<edit>:<n>:<dest>` → the capture
+
+    Every step carries the whole answer forward in its id, because the id is
+    the only thing that crosses back from the panel.
+    """
     kind, rest = _split(item_id)
 
     if kind == "area":
-        satty = shutil.which("satty")
-        items = [
-            {"id": "shot:%s:file" % rest, "label": "Save to file",
+        area, edit = _split(rest)
+        # The active window's box has to be resolved NOW — see
+        # _shot_geometry. It rides the id from here on.
+        geometry = _shot_geometry(area).replace(":", "")
+        return _page("Delay (in seconds):", [
+            {"id": "delay:%s:%s:%s:%d" % (area, edit, geometry, n),
+             "label": str(n),
+             "detail": "no delay" if n == 0
+                       else "shutter fires %d s later" % n}
+            for n in _SHOT_DELAYS
+        ])
+
+    if kind == "delay":
+        area, edit, geometry, delay = _split(rest, 4)
+        carry = "%s:%s:%s:%s" % (area, edit, geometry, delay)
+        # dm-satty prompts for the delay BEFORE branching on satty, and the
+        # satty branch never reaches the Destination prompt — its
+        # destination is the editor. Same shape here.
+        if edit == "satty":
+            return _shot_fire(area, geometry, delay, "satty")
+        return _page("Destination:", [
+            {"id": "shot:%s:file" % carry, "label": "File",
              "detail": SHOT_DIR},
-            {"id": "shot:%s:clipboard" % rest, "label": "Copy to clipboard",
+            {"id": "shot:%s:clipboard" % carry, "label": "Clipboard",
              "detail": "wl-copy -t image/png"},
-            {"id": "shot:%s:both" % rest, "label": "Both",
+            {"id": "shot:%s:both" % carry, "label": "Both",
              "detail": "file and clipboard"},
-        ]
-        if rest in ("full", "region"):
-            items.append({
-                "id": "shot:%s:satty" % rest,
-                "label": "Edit in satty",
-                # dm-satty's own comment records that every annotation it
-                # ever made was discarded, because satty was started without
-                # --output-filename and the script then moved the UNEDITED
-                # capture into place. The fix is carried over rather than
-                # rediscovered.
-                "detail": "annotate, then save" if satty
-                          else "satty is not installed",
-            })
-        return _page("%s — where?" % _SHOT_AREAS.get(rest, rest), items)
+        ])
 
     if kind != "shot":
         raise ValueError("unknown screenshot step %s" % item_id)
 
-    area, dest = _split(rest)
+    area, edit, geometry, delay, dest = _split(rest, 5)
+    return _shot_fire(area, geometry, delay, dest)
+
+
+def _shot_fire(area, geometry, delay, dest):
     if dest == "satty" and not shutil.which("satty"):
         raise ValueError("satty is not installed")
     if not shutil.which("grim"):
@@ -1056,14 +1156,8 @@ def screenshot_run(item_id):
 
     # The region case is the reason this is a shell fragment and not an argv:
     # slurp has to run INSIDE the detached session, after the panel is gone,
-    # and its output has to reach grim. A cancelled slurp exits non-zero and
-    # must take the whole thing down quietly — a cancelled selection is a
-    # "no thanks", not a failure to report.
-    if area == "region":
-        capture = 'g=$(slurp) || exit 0; grim -g "$g"'
-    else:
-        geometry = _shot_geometry(area)
-        capture = "grim -g %s" % shlex.quote(geometry) if geometry else "grim"
+    # and its output has to reach grim.
+    prefix, capture = _shot_capture(area, geometry)
 
     if dest == "clipboard":
         body = "%s - | wl-copy -t image/png && notify-send 'Screenshot copied' 'on the clipboard'" % capture
@@ -1076,6 +1170,10 @@ def screenshot_run(item_id):
             capture, quoted_out, quoted_out, quoted_out)
     elif dest == "satty":
         temp = shlex.quote(os.path.join(RUNTIME, "island-satty-%s.png" % _stamp()))
+        # dm-satty's own comment records that every annotation it ever made
+        # was discarded, because satty was started without --output-filename
+        # and the script then moved the UNEDITED capture into place. The fix
+        # is carried over rather than rediscovered.
         body = ("%s %s && satty --filename %s --output-filename %s; rm -f %s; "
                 "[ -s %s ] && notify-send 'Screenshot saved' %s "
                 "|| notify-send 'Screenshot discarded' 'satty closed without saving'") % (
@@ -1085,8 +1183,14 @@ def screenshot_run(item_id):
 
     # 0.4 s, not 0: slurp and the grab both have to happen after the layer
     # surface has released the keyboard and stopped being painted, or the
-    # picker itself is in the screenshot.
-    _spawn_sh("sleep 0.4; " + body)
+    # picker itself is in the screenshot. The chosen delay is added to it,
+    # and lands AFTER `prefix` so that a region selection is drawn first —
+    # see _shot_capture.
+    try:
+        wait = 0.4 + int(delay or 0)
+    except ValueError:
+        wait = 0.4
+    _spawn_sh("%ssleep %s; %s" % (prefix, wait, body))
     return None
 
 
