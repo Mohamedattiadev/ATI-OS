@@ -144,8 +144,8 @@ FocusScope {
     property int cpuSampleCount: 0
 
     // --- geometry ----------------------------------------------------------
-    readonly property real horizontalPadding: Metrics.pad(18)
-    readonly property real headerHeight: Metrics.pad(34)
+    // FORK: header height, content inset and the key-hint strip are
+    // PanelChrome's now. See qml/common/PanelChrome.qml.
     readonly property real ringSize: Metrics.px(86)
     // ---- MEASURED OFF A DIAL, NOT ADDED UP ----
     //
@@ -164,20 +164,21 @@ FocusScope {
     readonly property real ringBlockHeight: cpuDial.height
     readonly property real diskRowHeight: Metrics.px(24)
     readonly property real diskRowSpacing: 2
-    readonly property real hintHeight: Metrics.pad(26)
 
     // Floors the disk block at two rows so a single-filesystem machine still
     // gets a panel with a section in it rather than a strip with one line.
     readonly property real diskBlockHeight:
         Math.max(2, root.filesystems.length) * (root.diskRowHeight + root.diskRowSpacing) - root.diskRowSpacing
 
+    // Metrics and not chrome.chromeHeight: this sizes the capsule the panel is
+    // drawn inside, so reading it off a child of that panel is a loop waiting
+    // for one more term.
     readonly property real preferredHeight:
-        root.headerHeight
+        Metrics.chromeTotal()
         + root.ringBlockHeight
         + Metrics.pad(14) + 1 + Metrics.pad(10)      // hairline and its air
         + root.diskBlockHeight
-        + Metrics.pad(10)
-        + root.hintHeight
+        + Metrics.pad(2)
 
     // --- selection ---------------------------------------------------------
     // Re-anchored by MOUNT POINT, not by index, for the reason WifiPanel
@@ -578,14 +579,7 @@ FocusScope {
         event.accepted = true;
     }
 
-    // See panelFill. Off in the island, kept so the panel renders standalone.
-    Rectangle {
-        anchors.fill: parent
-        radius: Metrics.px(28)
-        color: root.panelFill
-        opacity: 0.97
-        visible: root.drawBackground
-    }
+    // The standalone-render capsule is PanelChrome's now.
 
     // --- chrome ------------------------------------------------------------
     //
@@ -595,51 +589,36 @@ FocusScope {
     // that carries the accent only when something is live. It reads as a
     // label on an instrument rather than as a window title. No kanji — there
     // was a 系 in the surface this is adapted from and it does not come with
-    // it; the letterspacing is what was doing the work anyway.
-    Text {
-        id: header
-        x: root.horizontalPadding
-        y: Metrics.pad(12)
-        text: "SYSTEM"
-        color: IslandTheme.textMuted
-        font.family: root.textFontFamily
-        font.pixelSize: Metrics.font(10)
-        font.weight: Font.DemiBold
-        font.capitalization: Font.AllUppercase
-        font.letterSpacing: 1.6
-    }
+    // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
+    PanelChrome {
+        id: chrome
+        textFontFamily: root.textFontFamily
+        drawBackground: root.drawBackground
+        panelFill: root.panelFill
 
-    Text {
-        anchors.left: header.right
-        anchors.leftMargin: Metrics.pad(8)
-        y: Metrics.pad(12)
+        title: "system"
+
         // "live" here has a precise meaning and it is not decorative: until
         // two /proc/stat samples have landed there is no CPU measurement at
         // all, only a primed counter. The clause says which of those two the
         // dials are showing, and takes the accent only in the second.
-        text: root.sampling ? "· sampling" : "· priming"
-        color: root.sampling ? root.accentColor : IslandTheme.textMuted
-        font.family: root.textFontFamily
-        font.pixelSize: Metrics.font(10)
-        font.weight: Font.Medium
-    }
+        statusClause: root.sampling ? "· sampling" : "· priming"
+        statusClauseLive: root.sampling
 
-    // The right-hand slot, where the audio, display and connectivity panels
-    // put what the panel is doing. This panel is never doing anything — it
-    // only reads — so the slot carries the one fact that contextualises every
-    // number under it: how long the machine has been accumulating them.
-    Text {
-        id: uptimeText
-        anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
-        y: Metrics.pad(12)
-        width: Math.min(implicitWidth, root.width * 0.45)
-        horizontalAlignment: Text.AlignRight
-        elide: Text.ElideRight
-        text: root.uptimeSeconds > 0 ? root.formatUptime(root.uptimeSeconds) : ""
-        color: IslandTheme.textMuted
-        font.family: root.textFontFamily
-        font.pixelSize: Metrics.font(11)
+        // The right-hand slot, where the audio, display and connectivity
+        // panels put what the panel is doing. This panel is never doing
+        // anything — it only reads — so the slot carries the one fact that
+        // contextualises every number under it: how long the machine has been
+        // accumulating them.
+        status: root.uptimeSeconds > 0 ? root.formatUptime(root.uptimeSeconds) : ""
+        statusLevel: "idle"
+
+        hints: [
+            { key: "j/k", label: "filesystem" },
+            { key: "g/G", label: "first-last" },
+            { key: "r", label: "refresh" },
+            { key: "q", label: "close" }
+        ]
     }
 
     // --- the three dials ---------------------------------------------------
@@ -771,9 +750,9 @@ FocusScope {
 
     Item {
         id: dialRow
-        x: root.horizontalPadding
-        y: root.headerHeight
-        width: root.width - root.horizontalPadding * 2
+        x: chrome.contentX
+        y: chrome.contentY
+        width: chrome.contentWidth
         height: root.ringBlockHeight
 
         Dial {
@@ -828,9 +807,9 @@ FocusScope {
 
     Rectangle {
         id: hairline
-        x: root.horizontalPadding
+        x: chrome.contentX
         y: dialRow.y + dialRow.height + Metrics.pad(14)
-        width: root.width - root.horizontalPadding * 2
+        width: chrome.contentWidth
         height: 1
         // This was an explicit Qt.rgba(1, 1, 1, 0.08), carrying a note that
         // StyleTokens.hairline does not exist and that an unknown property
@@ -849,45 +828,43 @@ FocusScope {
     // --- the disk section --------------------------------------------------
     Column {
         id: diskColumn
-        x: root.horizontalPadding
+        x: chrome.contentX
         y: hairline.y + 1 + Metrics.pad(10)
-        width: root.width - root.horizontalPadding * 2
+        width: chrome.contentWidth
         spacing: root.diskRowSpacing
 
         Repeater {
             model: root.filesystems
 
-            delegate: Rectangle {
+            delegate: PanelRow {
                 id: diskRow
                 required property int index
                 required property var modelData
 
                 width: diskColumn.width
                 height: root.diskRowHeight
-                radius: Metrics.px(7)
-                // The same selection wash as every other list in this shell.
-                color: diskRow.index === root.selectedIndex ? IslandTheme.selectionFill : "transparent"
 
-                // FORK: P1-3, and the same model as WifiPanel and now
-                // DisplayPanel — HOVER MOVES THE CURSOR, one indicator driven
-                // by both input devices. This panel had no MouseArea at all,
-                // so the ring and the detail readout could only be pointed at
-                // a different filesystem with j/k.
+                // `active` is never set on this list: a filesystem is not in a
+                // state the way a connected network or a default sink is —
+                // they are all equally mounted — so the only mark here is the
+                // cursor. That also moves this row off `IslandTheme.selectionFill`,
+                // which was the accent wash, i.e. the shell's "this is a state"
+                // colour used for the one thing on this panel that is not one.
                 //
-                // No click handler, because there is nothing to activate: the
-                // selection IS the whole interaction here, and a click that
-                // silently did what the hover already did would imply an
-                // action that does not exist.
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onEntered: root.selectAt(diskRow.index)
-                }
+                // FORK: P1-3 — HOVER MOVES THE CURSOR, one indicator driven by
+                // both input devices. This panel had no MouseArea at all, so
+                // the ring and the detail readout could only be pointed at a
+                // different filesystem with j/k.
+                //
+                // `activated` is deliberately NOT connected: the selection IS
+                // the whole interaction here, and there is nothing a click
+                // could commit that the hover has not already done.
+                selected: diskRow.index === root.selectedIndex
+                onCursorRequested: root.selectAt(diskRow.index)
 
                 Text {
                     id: mountText
                     anchors.left: parent.left
-                    anchors.leftMargin: Metrics.pad(10)
                     anchors.verticalCenter: parent.verticalCenter
                     width: Metrics.px(90)
                     elide: Text.ElideMiddle
@@ -911,7 +888,7 @@ FocusScope {
                     width: Metrics.px(150)
                     height: Metrics.px(5)
                     radius: height / 2
-                    color: Qt.rgba(1, 1, 1, 0.1)
+                    color: IslandTheme.trackSubtle
 
                     Rectangle {
                         height: parent.height
@@ -967,16 +944,5 @@ FocusScope {
         }
     }
 
-    Text {
-        anchors.left: parent.left
-        anchors.leftMargin: root.horizontalPadding
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Metrics.pad(10)
-        width: root.width - root.horizontalPadding * 2
-        elide: Text.ElideRight
-        color: IslandTheme.textMuted
-        font.family: root.textFontFamily
-        font.pixelSize: Metrics.font(10)
-        text: "j/k filesystem · g/G first-last · r refresh · q close"
-    }
+    // The key-hint Text that used to close this file is `chrome.hints` now.
 }

@@ -97,8 +97,8 @@ FocusScope {
     readonly property int volumeUnity: 100
     readonly property real balanceStep: 0.1
 
-    readonly property real horizontalPadding: Metrics.pad(18)
-    readonly property real headerHeight: Metrics.pad(34)
+    // FORK: header height, content inset and the key-hint strip are
+    // PanelChrome's now. See qml/common/PanelChrome.qml.
     readonly property real rowHeight: Metrics.px(26)
     // Ceiling on the self-sizing below. Six is the same number the
     // display panel uses and is about where a list stops being
@@ -119,7 +119,6 @@ FocusScope {
     // The panel is still allowed to reach that size; it just has to earn it
     // a row at a time.
     readonly property real rowSpacing: 2
-    readonly property real hintHeight: Metrics.pad(26)
     readonly property real listBodyHeight:
         Math.max(0, root.currentItems.length) * (root.rowHeight + root.rowSpacing) - root.rowSpacing
     // Off the Column, not off a row count: this panel's details block is
@@ -130,9 +129,12 @@ FocusScope {
         4 * (root.rowHeight + root.rowSpacing),
         Math.min(root.rowsVisible * (root.rowHeight + root.rowSpacing), root.listBodyHeight),
         root.detailsBodyHeight)
+    // Metrics and not chrome.chromeHeight: this sizes the capsule the panel is
+    // drawn inside, so reading it off a child of that panel is a loop waiting
+    // for one more term. `+ tabsHeight` because this panel has tabs and the
+    // eight-of-nine shorthand does not include them.
     readonly property real preferredHeight:
-        root.headerHeight + Metrics.pad(4) + root.bodyHeight
-            + Metrics.pad(8) + root.hintHeight
+        Metrics.chromeTotal() + chrome.tabsHeight + root.bodyHeight
 
     focus: showCondition
     activeFocusOnTab: true
@@ -903,70 +905,74 @@ FocusScope {
         event.accepted = true;
     }
 
-    // --- chrome ------------------------------------------------------------
-    Text {
-        id: header
-        x: root.horizontalPadding
-        y: Metrics.pad(10)
-        text: "Audio"
-        color: "white"
-        font.pixelSize: Metrics.font(15)
-        font.family: root.heroFontFamily
-        font.weight: Font.DemiBold
-        font.letterSpacing: -0.2
-    }
+    // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
+    //
+    // The header was `color: "white"` at font(15) in heroFontFamily; it is the
+    // instrument register now, which is the one the shell settled on. See the
+    // register argument in PanelChrome for why, and note that the literal
+    // "white" was a real defect rather than a style: on mono-light it is the
+    // wrong ink.
+    PanelChrome {
+        id: chrome
+        textFontFamily: root.textFontFamily
+        // No drawBackground/panelFill here: unlike the connectivity and sysmon
+        // panels this one never rendered standalone and declares neither
+        // property, so binding them would assign undefined to a colour.
 
-    // The four tabs, plus whichever sub-view is open. Ports, profiles, cards
-    // and the move-to picker only appear once something has opened them —
-    // they are not in the Tab cycle, so advertising them permanently would
-    // suggest they are.
-    Row {
-        anchors.left: header.right
-        anchors.leftMargin: Metrics.pad(14)
-        y: Metrics.pad(12)
-        spacing: Metrics.pad(10)
+        title: "audio"
 
-        Repeater {
-            model: {
-                const labels = [["outputs", "outputs"], ["inputs", "mics"],
-                                ["playback", "playback"], ["recording", "recording"]];
-                if (root.portDevice !== null || root.view === "ports")
-                    labels.push(["ports", "ports"]);
-                if (root.profileCard !== null || root.view === "profiles")
-                    labels.push(["profiles", "profiles"]);
-                if (root.view === "cards")
-                    labels.push(["cards", "cards"]);
-                if (root.view === "targets")
-                    labels.push(["targets", "move to…"]);
-                return labels;
-            }
-            delegate: Text {
-                required property var modelData
-                text: modelData[1]
-                color: root.view === modelData[0] ? IslandTheme.textPrimary : IslandTheme.textDisabled
-                font.pixelSize: Metrics.font(11)
-                font.family: root.textFontFamily
-                font.weight: root.view === modelData[0] ? Font.DemiBold : Font.Normal
-            }
+        // The four tabs, plus whichever sub-view is open. Ports, profiles,
+        // cards and the move-to picker only appear once something has opened
+        // them — they are not in the Tab cycle, so advertising them
+        // permanently would suggest they are.
+        tabs: {
+            const labels = [
+                { value: "outputs",   label: "outputs" },
+                { value: "inputs",    label: "mics" },
+                { value: "playback",  label: "playback" },
+                { value: "recording", label: "recording" }
+            ];
+            if (root.portDevice !== null || root.view === "ports")
+                labels.push({ value: "ports", label: "ports" });
+            if (root.profileCard !== null || root.view === "profiles")
+                labels.push({ value: "profiles", label: "profiles" });
+            if (root.view === "cards")
+                labels.push({ value: "cards", label: "cards" });
+            if (root.view === "targets")
+                labels.push({ value: "targets", label: "move to…" });
+            return labels;
         }
-    }
+        currentTab: root.view
+        onTabRequested: name => root.setView(name)
 
-    // The default output, which is what this panel is mostly about, in the
-    // header's right-hand slot — it is the one fact you want without reading
-    // a row, and it is what every other view is relative to.
-    Text {
-        anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
-        y: Metrics.pad(12)
-        width: Math.min(implicitWidth, root.width * 0.5)
-        horizontalAlignment: Text.AlignRight
-        elide: Text.ElideRight
-        font.pixelSize: Metrics.font(11)
-        font.family: root.textFontFamily
-        color: root.statusLevel === "error" ? IslandTheme.danger
-             : (root.statusLevel === "ok" ? IslandTheme.success
-             : (root.statusLevel === "busy" ? IslandTheme.warning : IslandTheme.textMuted))
-        text: root.statusText
+        // The default output, which is what this panel is mostly about, in the
+        // header's right-hand slot — it is the one fact you want without
+        // reading a row, and it is what every other view is relative to.
+        status: root.statusText
+        statusLevel: root.statusLevel
+
+        hints: root.isStreamView
+            ? [
+                { key: "j/k", label: "move" },
+                { key: "Enter", label: "move to…" },
+                { key: "d", label: "to default" },
+                { key: "h/l", label: "vol" },
+                { key: "m", label: "mute" },
+                { key: "Tab", label: "view" },
+                { key: "q", label: "close" }
+              ]
+            : [
+                { key: "j/k", label: "move" },
+                { key: "Enter", label: "use" },
+                { key: "h/l", label: "vol" },
+                { key: "m", label: "mute" },
+                { key: "p", label: "profile" },
+                { key: "P", label: "port" },
+                { key: "C", label: "cards" },
+                { key: "b", label: "balance" },
+                { key: "Tab", label: "view" },
+                { key: "q", label: "close" }
+              ]
     }
 
     ListView {
@@ -974,9 +980,9 @@ FocusScope {
         // FORK: P1-3. One shared indicator; see qml/common/IslandScrollBar.qml
         // for why `active` does not gate on pointer interaction alone.
         ScrollBar.vertical: IslandScrollBar { view: listView }
-        x: root.horizontalPadding
-        y: root.headerHeight + Metrics.pad(4)
-        width: parent.width * 0.56 - root.horizontalPadding
+        x: chrome.contentX
+        y: chrome.contentY
+        width: parent.width * 0.56 - chrome.padX
         // Same numbers preferredHeight is built from, so the list and the
         // shape around it cannot disagree.
         height: root.bodyHeight
@@ -1010,15 +1016,26 @@ FocusScope {
             }
         }
 
-        delegate: Rectangle {
+        delegate: PanelRow {
             id: row
             required property int index
             required property var modelData
 
             width: listView.width
             height: root.rowHeight
-            radius: Metrics.px(7)
-            color: row.index === root.selectedIndex ? IslandTheme.selectionFill : "transparent"
+
+            // `active` is the DEFAULT device — the one fact about the system
+            // this list carries — and `selected` is the cursor. The row used to
+            // draw only the cursor, as `IslandTheme.selectionFill`, and mark
+            // the default with a green name and a bullet. The name keeps its
+            // green (success reads as "this is the one in use" everywhere in
+            // this shell) and now the row carries the accent wash too, so the
+            // default is findable without reading every label.
+            active: row.isDefault
+            selected: row.index === root.selectedIndex
+
+            onCursorRequested: root.setCursor(row.index)
+            onActivated: root.activate()
 
             // Ports, profiles and cards are rows with no volume at all, and
             // their delegates still evaluate the bar's bindings before
@@ -1042,8 +1059,8 @@ FocusScope {
             Text {
                 id: label
                 anchors.left: parent.left
-                anchors.leftMargin: Metrics.pad(10)
                 anchors.verticalCenter: parent.verticalCenter
+                // PanelRow insets its content, so the pad(10) is gone with it.
                 width: parent.width * (root.hasVolume ? 0.56 : 0.95) - Metrics.pad(14)
                 elide: Text.ElideRight
                 color: row.isDefault ? IslandTheme.success : IslandTheme.textPrimary
@@ -1118,7 +1135,6 @@ FocusScope {
                 id: readout
                 visible: root.hasVolume
                 anchors.right: parent.right
-                anchors.rightMargin: Metrics.pad(10)
                 anchors.verticalCenter: parent.verticalCenter
                 horizontalAlignment: Text.AlignRight
                 width: Metrics.px(44)
@@ -1128,12 +1144,7 @@ FocusScope {
                 text: row.muted ? "mute" : row.vol + "%"
             }
 
-            MouseArea {
-                anchors.fill: parent
-                hoverEnabled: true
-                onEntered: root.setCursor(row.index)
-                onClicked: root.activate()
-            }
+            // The MouseArea is PanelRow's; its two signals are wired above.
         }
     }
 
@@ -1144,8 +1155,8 @@ FocusScope {
     Column {
         id: detailsColumn
         x: parent.width * 0.58
-        y: root.headerHeight + Metrics.pad(6)
-        width: parent.width * 0.42 - root.horizontalPadding
+        y: chrome.contentY + Metrics.pad(2)
+        width: parent.width * 0.42 - chrome.padX
         spacing: Metrics.px(3)
 
         Repeater {
@@ -1261,18 +1272,5 @@ FocusScope {
         }
     }
 
-    Text {
-        anchors.left: parent.left
-        anchors.leftMargin: root.horizontalPadding
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Metrics.pad(8)
-        width: parent.width - root.horizontalPadding * 2
-        elide: Text.ElideRight
-        color: IslandTheme.textDisabled
-        font.pixelSize: Metrics.font(10)
-        font.family: root.textFontFamily
-        text: root.isStreamView
-            ? "j/k move · Enter move to… · d to default · h/l vol · m mute · Tab view · q close"
-            : "j/k move · Enter use · h/l vol · m mute · p profile · P port · C cards · b balance · Tab view · q close"
-    }
+    // The key-hint Text that used to close this file is `chrome.hints` now.
 }

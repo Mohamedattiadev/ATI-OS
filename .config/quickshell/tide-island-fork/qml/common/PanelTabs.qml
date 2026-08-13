@@ -44,8 +44,24 @@ import "Motion.js" as Motion
 Item {
     id: root
 
-    // ["outputs", "modes", "layouts", "arrange"]
+    // ["outputs", "modes", "layouts", "arrange"], or, where the word on screen
+    // is not the word in the code, [{ value: "inputs", label: "mics" },
+    // { value: "targets", label: "move to…" }].
+    //
+    // Both forms in one property rather than a parallel `labels` array: two
+    // arrays that must stay the same length and the same order is the
+    // `selectedIndex`/`selectedMount` bug with extra steps.
     property var model: []
+
+    function valueOf(entry) {
+        return (entry && entry.value !== undefined) ? String(entry.value) : String(entry);
+    }
+
+    function labelOf(entry) {
+        if (entry && entry.label !== undefined)
+            return String(entry.label);
+        return (entry && entry.value !== undefined) ? String(entry.value) : String(entry);
+    }
 
     // The selected entry, by value rather than by index — every caller in the
     // tree already stores a `view` string, and an index would make them keep
@@ -91,9 +107,10 @@ Item {
                 id: tab
 
                 required property var modelData
-                readonly property bool isCurrent: root.current === tab.modelData
+                readonly property string value: root.valueOf(tab.modelData)
+                readonly property bool isCurrent: root.current === tab.value
 
-                text: String(tab.modelData)
+                text: root.labelOf(tab.modelData)
                 color: tab.isCurrent ? IslandTheme.textPrimary : IslandTheme.textMuted
                 font.family: root.textFontFamily
                 font.pixelSize: Metrics.TYPE.body
@@ -113,6 +130,11 @@ Item {
                 onXChanged: if (tab.isCurrent) root._placeIndicator(tab.x, tab.width)
                 onWidthChanged: if (tab.isCurrent) root._placeIndicator(tab.x, tab.width)
                 Component.onCompleted: if (tab.isCurrent) root._placeIndicator(tab.x, tab.width)
+                // A tab list that SHRINKS — AudioPanel's ports/profiles/cards
+                // appear only once something opens them — can destroy the
+                // delegate the indicator is sitting under. Nothing else would
+                // ever tell it, so it would keep drawing at a stale x.
+                Component.onDestruction: if (tab.isCurrent) root.indicatorReady = false
 
                 Behavior on color {
                     ColorAnimation {
@@ -127,13 +149,23 @@ Item {
                     // A little slack so a 11 px word is not a 11 px target.
                     anchors.topMargin: -Metrics.pad(4)
                     anchors.bottomMargin: -Metrics.pad(6)
-                    hoverEnabled: true
-                    // Hover moves the cursor here too: pointing at a tab
-                    // SELECTS it, exactly as pointing at a row does. These
-                    // panels have no tab that costs anything to enter — every
-                    // one is a different view of data already fetched.
-                    onEntered: root.tabRequested(String(tab.modelData))
-                    onClicked: root.tabRequested(String(tab.modelData))
+
+                    // ---- A TAB IS CLICKED, NOT HOVERED, AND THAT IS NOT AN
+                    //      EXCEPTION TO "HOVER MOVES THE CURSOR" ----
+                    //
+                    // The rule that rule encodes is that BROWSING is free:
+                    // moving a row cursor has no side effect, so the pointer
+                    // and the keyboard can drive the same indicator. Entering
+                    // a tab is not browsing. It replaces the panel's whole
+                    // body and resets the row selection underneath it, so
+                    // dragging the pointer across the header on its way
+                    // somewhere else would flip AudioPanel through four views
+                    // and land the cursor somewhere it was not.
+                    //
+                    // Same shape of reasoning as the workspace overview, where
+                    // an arrow COMMITS rather than browses: what the action
+                    // costs decides how it is reached, not a blanket rule.
+                    onClicked: root.tabRequested(tab.value)
                 }
             }
         }
