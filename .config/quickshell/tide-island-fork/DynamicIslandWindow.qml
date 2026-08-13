@@ -433,7 +433,7 @@ PanelWindow {
     // from restingLayoutGap/Width there for the same reason the two above are
     // duplicated: the capsule must size itself without instantiating the
     // layer to ask it. The cross-reference is the guard against drift.
-    readonly property real restingLayoutAllowance: Metrics.px(7) + Metrics.px(12)
+    readonly property real restingLayoutAllowance: Metrics.px(7) + Metrics.px(14)
     readonly property bool hoverExpandEnabled: configuredHoverExpandAction > 0
     readonly property bool topGestureInputActive: !root.overviewVisible && islandContainer.canShowSideSwipe
     readonly property bool autoHideRuntimeEnabled: !shellRootController

@@ -123,7 +123,12 @@ Item {
     // The gap is smaller than the workspace gap because this one binds to the
     // capsule's left edge rather than to a neighbour.
     readonly property real restingLayoutGap: Metrics.px(7)
-    readonly property real restingLayoutWidth: Metrics.px(12)
+    // px(14) and not px(12): the glyphs measure 13, 12 and 13 px wide at
+    // font(13), so a px(12) slot — 11 px after SCALE — clipped the two wider
+    // ones. Measured off rendered glyphs rather than guessed, because the
+    // slot is fixed width by design and a fixed slot that is too small is a
+    // silent crop rather than a visible overflow.
+    readonly property real restingLayoutWidth: Metrics.px(14)
     readonly property real restingLayoutAllowance:
         restingLayoutWidth + restingLayoutGap
     readonly property bool layoutVisible:
@@ -520,15 +525,21 @@ Item {
     // island state it must not appear in. Same `1 - clampedProgress`, so a
     // lyrics swipe carries clock, digit and glyph off together.
     //
-    // ---- WHY MUTED AND NOT THE ACCENT ----
+    // ---- IT TAKES THE ACCENT, LIKE THE DIGIT ----
     //
-    // The digit's own note says it is accent-coloured "because nothing else
-    // in the resting capsule is accent-coloured and that alone says 'this is
-    // live'". A second accent element spends exactly that. These two are also
-    // not equals: the workspace is where you ARE and changes constantly; the
-    // layout is how this workspace is arranged and changes rarely. Muted ink
-    // puts the glyph a step behind the digit, which is the true relationship
-    // and keeps the digit's accent doing the job it was chosen for.
+    // This shipped muted first, reasoning that the digit's accent is the only
+    // accent in the resting capsule and a second one spends that distinction.
+    // Overruled by the user, and the counter-argument is the stronger one:
+    // the digit and the glyph are a matched pair answering the same question
+    // — where am I, and how is it arranged — so drawing them in two different
+    // inks says they are two different KINDS of thing, which is exactly what
+    // they are not. Two accent marks flanking the clock read as one readout
+    // with the time in the middle.
+    //
+    // It also solves the theme question by construction, which the muted
+    // version did not: accentColor is handed down from IslandTheme and moves
+    // with theme-apply on all 21 palettes, and it is now the identical
+    // binding the digit uses rather than a second role that could drift.
     Text {
         id: layoutGlyphText
 
@@ -553,14 +564,19 @@ Item {
         opacity: 1 - root.clampedProgress
 
         text: root.layoutGlyph
-        color: IslandTheme.textMuted
+        color: root.accentColor
         // The icon font, not the text font. These are Nerd Font private-use
         // codepoints: in the text font they are not "wrong looking", they are
         // absent, and fontconfig substitutes silently — which in this tree has
         // already meant a family resolving to Noto Sans CJK with nothing in
         // any log to say so.
         font.family: root.iconFontFamily
-        font.pixelSize: Metrics.font(11)
+        // font(13), matching the workspace digit exactly. Was font(11) and
+        // read as small beside it — which is what having them at two sizes
+        // was FOR while the glyph was the subordinate muted mark, and is
+        // wrong now they are a matched accent pair. Same size, same ink, one
+        // readout.
+        font.pixelSize: Metrics.font(13)
     }
 
     // FORK: the resting-state EQ. DESIGN-SPEC.md's resting island shows

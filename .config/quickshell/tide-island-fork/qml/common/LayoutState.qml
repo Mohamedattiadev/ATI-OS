@@ -66,10 +66,23 @@ Item {
     // actually used -- coverage says the codepoint exists, not that the shape
     // survives being 11 px tall.
     //
-    //   monadtall  U+F0DB  two columns.   The layout IS a master column plus
-    //                                     a stack; the glyph is that picture.
-    //   max        U+F0C8  a filled block. One window, whole screen.
-    //   treetab    U+F00B  a list.        This one is exact rather than
+    // ---- THEY ARE ONE FAMILY: THE SAME FRAME, DIFFERENT INTERIORS ----
+    //
+    // This is what picked the middle glyph, after the first attempt used
+    // U+F0C8, a SOLID block, and it was rejected on sight — correctly. Beside
+    // two outlined frames a filled blob is not a third member of the set, it
+    // is a different kind of mark that happens to be square, and it read as a
+    // smudge rather than as a window.
+    //
+    // U+F096 is the same outlined frame as the other two with nothing inside
+    // it, which is precisely what the Max layout is: the frame the other two
+    // subdivide, left undivided. Rendered side by side at 13 px to confirm
+    // the three read as one set before this was committed.
+    //
+    //   monadtall  U+F0DB  the frame split in two. The layout IS a master
+    //                                     column plus a stack.
+    //   max        U+F096  the frame, empty. One window, whole screen.
+    //   treetab    U+F00B  the frame, ruled. This one is exact rather than
     //                                     approximate. layout-cycle.sh's own
     //                                     table says the groupbar "is the only
     //                                     thing TreeTab adds to Max" -- the
@@ -78,13 +91,10 @@ Item {
     //                                     difference. So the glyph that
     //                                     distinguishes them is a list.
     //
-    // A square and a list at 11 px are told apart by their fill, and the
-    // columns glyph by its vertical split, so the three do not rely on fine
-    // interior detail to be distinguishable from each other.
     readonly property string glyph: {
         switch (root.layout) {
         case "monadtall": return "";
-        case "max":       return "";
+        case "max":       return "";
         case "treetab":   return "";
         default:          return "";
         }
