@@ -264,6 +264,18 @@ SETTINGS = [
                   "the island.",
     },
     {
+        "key": "forkScreenCornersEnabled",
+        "label": "Rounded screen corners",
+        "type": "bool",
+        "default": False,
+        "scope": "fork",
+        "detail": "Masks the four display corners with the island's own fill "
+                  "so the screen reads as one rounded slab (P1-6). Off by "
+                  "default: measured at srgb(23,34,44) on all four corners, "
+                  "which is correct and is also indistinguishable from a "
+                  "display that does not reach its own edge.",
+    },
+    {
         "key": "clockFormat",
         "label": "Clock format",
         "type": "enum",

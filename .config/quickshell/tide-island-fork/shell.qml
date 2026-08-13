@@ -710,9 +710,15 @@ Scope {
     // the IslandTheme singleton, and its hide-on-fullscreen behaviour is the
     // Top layer rather than a state anything here would have to feed it. See
     // qml/osd/ScreenCornersWindow.qml.
+    // FORK SETTING, forkScreenCornersEnabled, and it gates the MODEL rather
+    // than each window's `visible`. An invisible layer-shell surface is still
+    // a surface: it is mapped, it is in the compositor's list, and this one
+    // spans the whole output. Emptying the model destroys them, so "off"
+    // costs one comparison per screen and nothing else. Defaults off — see
+    // ForkConfig.qml for the measurement that decided that.
     Variants {
         id: screenCornerVariants
-        model: Quickshell.screens
+        model: forkConfig.screenCornersEnabled ? Quickshell.screens : []
 
         ScreenCornersWindow {
             required property var modelData

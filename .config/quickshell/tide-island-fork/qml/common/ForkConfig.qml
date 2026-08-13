@@ -79,6 +79,24 @@ Item {
     // it was. See qml/osd/RingOsdWindow.qml.
     property bool ringOsdEnabled: false
 
+    // The four rounded display corners (P1-6). Defaults FALSE, and this is
+    // the one switch here whose default is NOT "leave the shell as it was" —
+    // it was built, shipped on, and then reported as a defect:
+    //
+    //   "the edges of the screen, why radius, and it shows black — the
+    //    wallpaper is not filling the screen"
+    //
+    // Measured before changing anything, because "it looks black" and "it IS
+    // black" are different bugs: all four corners sample srgb(23,34,44) at
+    // the corner-most pixel and reach wallpaper by ~14 px in. That is
+    // IslandTheme.shellFill, i.e. the corners were drawing exactly what they
+    // were designed to draw, on all four corners, in the theme's colour.
+    // Nothing is broken — the feature is simply not wanted, and a masked
+    // corner is indistinguishable from a display that does not reach its own
+    // edge. So it becomes a switch that is off, rather than a fix to a thing
+    // that was working. See qml/osd/ScreenCornersWindow.qml.
+    property bool screenCornersEnabled: false
+
     // True once the file has been read at all. Distinguishes "the defaults,
     // because there is no config" from "the defaults, because that is what
     // the config says". It mattered most for the polkit switch, where the
@@ -107,6 +125,7 @@ Item {
             root.restingEqEnabled = root.boolAt(parsed, "forkRestingEqEnabled", true);
             root.themeTransitionEnabled = root.boolAt(parsed, "forkThemeTransitionEnabled", true);
             root.ringOsdEnabled = root.boolAt(parsed, "forkRingOsdEnabled", false);
+            root.screenCornersEnabled = root.boolAt(parsed, "forkScreenCornersEnabled", false);
             root.loaded = true;
         } catch (error) {
             // Keep whatever is already loaded, and do NOT set `loaded`. A
