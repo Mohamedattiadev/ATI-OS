@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Wayland
 
@@ -565,11 +566,17 @@ PanelWindow {
         x: -(1 - root.revealProgress) * root.panelWidth
 
         Flickable {
+            id: sectionFlick
+
             anchors.fill: parent
             contentWidth: width
             contentHeight: sectionColumn.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
+            // FORK: P1-3. This one had no `id` at all, which is itself the
+            // sign — nothing outside referred to it because nothing outside
+            // could say anything about it, including that it scrolls.
+            ScrollBar.vertical: IslandScrollBar { view: sectionFlick }
             // Only scrollable when it has to be: a panel that rubber-bands
             // under the pointer while you are aiming at a row is a panel
             // that loses the click.

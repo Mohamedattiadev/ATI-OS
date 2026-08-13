@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import "../common/Metrics.js" as Metrics
@@ -437,6 +438,9 @@ Item {
         // ---- the rows ----
         ListView {
             id: list
+            // FORK: P1-3. One shared indicator; see qml/common/IslandScrollBar.qml
+            // for why `active` does not gate on pointer interaction alone.
+            ScrollBar.vertical: IslandScrollBar { view: list }
             width: parent.width
             height: parent.height - y
             clip: true

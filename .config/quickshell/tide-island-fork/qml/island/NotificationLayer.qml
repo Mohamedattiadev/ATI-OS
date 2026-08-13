@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import IslandBackend
 
 // FORK: one shared scale factor for every island surface.
@@ -224,6 +225,11 @@ Item {
                 contentWidth: width
                 contentHeight: expandedContentText.implicitHeight
                 interactive: contentHeight > height
+                // FORK: P1-3. Only ever visible when `hasOverflowContent` is
+                // already true, so this indicator appears exactly when there
+                // IS something below the fold and never as decoration on a
+                // notification that fits.
+                ScrollBar.vertical: IslandScrollBar { view: expandedFlickable }
 
                 Text {
                     id: expandedContentText

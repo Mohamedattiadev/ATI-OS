@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 
@@ -828,6 +829,9 @@ FocusScope {
 
     ListView {
         id: list
+        // FORK: P1-3. One shared indicator; see qml/common/IslandScrollBar.qml
+        // for why `active` does not gate on pointer interaction alone.
+        ScrollBar.vertical: IslandScrollBar { view: list }
         x: root.horizontalPadding
         y: root.headerHeight + root.searchHeight + Metrics.pad(8) + root.noteHeight
         width: root.listWidth

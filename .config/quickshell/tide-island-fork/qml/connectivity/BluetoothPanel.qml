@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 
 // FORK: the shared scale factor — see qml/common/Metrics.js.
 import "../common/Metrics.js" as Metrics
@@ -651,6 +652,9 @@ FocusScope {
 
     ListView {
         id: listView
+        // FORK: P1-3. One shared indicator; see qml/common/IslandScrollBar.qml
+        // for why `active` does not gate on pointer interaction alone.
+        ScrollBar.vertical: IslandScrollBar { view: listView }
         x: root.horizontalPadding
         y: root.headerHeight + Metrics.pad(4)
         width: parent.width * 0.56 - root.horizontalPadding
