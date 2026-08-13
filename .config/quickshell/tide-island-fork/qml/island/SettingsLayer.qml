@@ -88,22 +88,25 @@ FocusScope {
     // visible.
     property var warnings: []
 
-    readonly property real horizontalPadding: Metrics.pad(18)
-    readonly property real headerHeight: Metrics.pad(36)
+    // FORK: header height, content inset and the key-hint strip are
+    // PanelChrome's now. The warning band is not chrome — it is this panel's
+    // own content — so it stays here and is declared to the chrome as
+    // footerExtraHeight, which is room reserved above the hints.
     readonly property real rowHeight: Metrics.px(30)
-    readonly property real baseFooterHeight: Metrics.px(22)
     readonly property int warningLines: Math.min(root.warnings.length, 3)
     readonly property real warningHeight:
         root.warningLines > 0
             ? root.warningLines * Metrics.px(14) + Metrics.pad(8) : 0
-    readonly property real footerHeight: root.baseFooterHeight + root.warningHeight
 
     // The list is the tall half; the details column beside it is bounded by
     // the list, not the other way round. Same list-plus-details shape the
     // display and audio panels use.
+    // Metrics and not chrome.chromeHeight: this sizes the capsule the panel is
+    // drawn inside, so reading it off a child of that panel is a loop waiting
+    // for one more term.
     readonly property real preferredHeight:
-        root.headerHeight + root.settings.length * root.rowHeight
-        + root.footerHeight + Metrics.pad(16)
+        Metrics.chromeTotal() + root.settings.length * root.rowHeight
+        + root.warningHeight
 
     readonly property real listWidth: Math.round(root.width * 0.52)
 
@@ -511,41 +514,51 @@ FocusScope {
         }
     }
 
-    Text {
-        id: header
-        x: root.horizontalPadding
-        y: Metrics.pad(11)
-        text: "Island settings"
-        color: "white"
-        font.pixelSize: Metrics.font(15)
-        font.family: root.heroFontFamily
-        font.weight: Font.DemiBold
-        font.letterSpacing: -0.2
-    }
+    // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
+    //
+    // The header was "Island settings" at font(15) in heroFontFamily with
+    // `color: "white"`; instrument register now.
+    PanelChrome {
+        id: chrome
+        textFontFamily: root.textFontFamily
 
-    // The path, on the panel. This surface edits a file that is also edited
-    // by hand and by the packaged app, so which file it is is not trivia —
-    // it is the first thing you need when the panel and the shell disagree.
-    Text {
-        anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
-        y: Metrics.pad(13)
-        width: Math.min(implicitWidth, root.width * 0.55)
-        horizontalAlignment: Text.AlignRight
-        elide: Text.ElideLeft
-        text: root.statusText !== "" ? root.statusText : root.configPath
-        color: root.statusIsError ? IslandTheme.danger
-             : (root.statusText !== "" ? IslandTheme.success : IslandTheme.textDisabled)
-        font.pixelSize: Metrics.font(11)
-        font.family: root.textFontFamily
+        title: "island settings"
+
+        // The path, on the panel. This surface edits a file that is also
+        // edited by hand and by the packaged app, so which file it is is not
+        // trivia — it is the first thing you need when the panel and the shell
+        // disagree.
+        status: root.statusText !== "" ? root.statusText : root.configPath
+        statusLevel: root.statusIsError ? "error"
+                   : (root.statusText !== "" ? "ok" : "idle")
+
+        footerExtraHeight: root.warningHeight
+
+        // The footer follows the mode. A hint row that advertises keys the
+        // current mode does not answer is worse than no hint row — this
+        // panel's own cheatsheet argument, applied to itself.
+        hints: root.listEditActive
+            ? [
+                { key: "j/k", label: "move" },
+                { key: "space", label: "toggle" },
+                { key: "J/K", label: "reorder" },
+                { key: "Enter", label: "save" },
+                { key: "Esc", label: "cancel" }
+              ]
+            : [
+                { key: "j/k", label: "move" },
+                { key: "h/l", label: "change" },
+                { key: "Enter", label: "change" },
+                { key: "q", label: "close" }
+              ]
     }
 
     ListView {
         id: list
-        x: root.horizontalPadding
-        y: root.headerHeight
+        x: chrome.contentX
+        y: chrome.contentY
         width: root.listWidth
-        height: parent.height - root.headerHeight - root.footerHeight - Metrics.pad(8)
+        height: chrome.contentHeight
         clip: true
         model: root.settings
         currentIndex: root.selectedIndex
@@ -558,7 +571,7 @@ FocusScope {
         // selection had simply scrolled below a cropped capture.
         ScrollBar.vertical: IslandScrollBar { view: list }
 
-        delegate: Item {
+        delegate: PanelRow {
             id: rowItem
             required property int index
             required property var modelData
@@ -568,66 +581,58 @@ FocusScope {
             width: list.width
             height: root.rowHeight
 
-            Rectangle {
-                anchors.fill: parent
-                anchors.topMargin: Metrics.px(2)
-                anchors.bottomMargin: Metrics.px(2)
-                radius: Metrics.px(7)
-                color: rowItem.isSelected ? IslandTheme.selectionFill : "transparent"
+            // `active` is never set: a settings row is not in a state — the
+            // VALUE carries that, in the right-hand column, where "on" is
+            // already green. So the only mark here is the cursor, which also
+            // moves this row off IslandTheme.selectionFill, the accent wash
+            // this shell reserves for actual system state.
+            selected: rowItem.isSelected
 
-                Text {
-                    id: rowLabel
-                    anchors.left: parent.left
-                    anchors.leftMargin: Metrics.pad(10)
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: rowItem.modelData.label
-                    color: IslandTheme.textPrimary
-                    font.pixelSize: Metrics.font(12)
-                    font.family: root.textFontFamily
-                    font.weight: rowItem.isSelected ? Font.DemiBold : Font.Normal
+            onCursorRequested: root.selectedIndex = rowItem.index
+            onActivated: root.change(1)
+
+            Text {
+                id: rowLabel
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: rowItem.modelData.label
+                color: IslandTheme.textPrimary
+                font.pixelSize: Metrics.font(12)
+                font.family: root.textFontFamily
+                font.weight: rowItem.isSelected ? Font.DemiBold : Font.Normal
                 }
 
                 // The value, right-aligned. Booleans read "on"/"off" rather
                 // than "true"/"false": the file is JSON and the panel is not,
                 // and "off" is the word the eye is scanning a settings list
                 // for.
-                Text {
-                    id: rowValue
-                    anchors.right: parent.right
-                    anchors.rightMargin: Metrics.pad(10)
-                    anchors.verticalCenter: parent.verticalCenter
-                    // A list renders as its COUNT, not as its contents. The
-                    // value column is ~40% of a 52%-width list and
-                    // "cpu,battery,ram" already elides there; ten items would
-                    // be a row of ellipsis. The contents are one keypress
-                    // away in the editor, where they have room and an order.
-                    text: rowItem.modelData.type === "bool"
-                        ? (rowItem.modelData.value === true ? "on" : "off")
-                        : rowItem.modelData.type === "list"
-                            ? ((rowItem.modelData.value || []).length + " items")
-                            : String(rowItem.modelData.value)
-                    // There was a red case here for `forkPolkitAgentEnabled`
-                    // when ON — the one row that could supposedly take the
-                    // system's password prompts away. That row is gone (it
-                    // never did anything; see island-settings.py), so the
-                    // red is gone with it rather than sitting here waiting
-                    // for a key that will never arrive.
-                    color: rowItem.modelData.value === true ? IslandTheme.success : IslandTheme.textSecondary
-                    font.pixelSize: Metrics.font(12)
-                    font.family: root.textFontFamily
-                    font.weight: Font.DemiBold
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onEntered: root.selectedIndex = rowItem.index
-                    onClicked: {
-                        root.selectedIndex = rowItem.index;
-                        root.change(1);
-                    }
-                }
+            Text {
+                id: rowValue
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                // A list renders as its COUNT, not as its contents. The
+                // value column is ~40% of a 52%-width list and
+                // "cpu,battery,ram" already elides there; ten items would
+                // be a row of ellipsis. The contents are one keypress
+                // away in the editor, where they have room and an order.
+                text: rowItem.modelData.type === "bool"
+                    ? (rowItem.modelData.value === true ? "on" : "off")
+                    : rowItem.modelData.type === "list"
+                        ? ((rowItem.modelData.value || []).length + " items")
+                        : String(rowItem.modelData.value)
+                // There was a red case here for `forkPolkitAgentEnabled`
+                // when ON — the one row that could supposedly take the
+                // system's password prompts away. That row is gone (it
+                // never did anything; see island-settings.py), so the
+                // red is gone with it rather than sitting here waiting
+                // for a key that will never arrive.
+                color: rowItem.modelData.value === true ? IslandTheme.success : IslandTheme.textSecondary
+                font.pixelSize: Metrics.font(12)
+                font.family: root.textFontFamily
+                font.weight: Font.DemiBold
             }
+
+            // The MouseArea is PanelRow's; its two signals are wired above.
         }
     }
 
@@ -642,10 +647,10 @@ FocusScope {
     Column {
         id: details
         anchors.left: parent.left
-        anchors.leftMargin: root.horizontalPadding + root.listWidth + Metrics.pad(16)
+        anchors.leftMargin: chrome.padX + root.listWidth + Metrics.pad(16)
         anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
-        y: root.headerHeight + Metrics.px(2)
+        anchors.rightMargin: chrome.padX
+        y: chrome.contentY + Metrics.px(2)
         spacing: Metrics.px(6)
 
         Row {
@@ -653,7 +658,7 @@ FocusScope {
 
             Text {
                 text: root.selected ? root.selected.label : ""
-                color: "white"
+                color: IslandTheme.textPrimary
                 font.pixelSize: Metrics.font(13)
                 font.family: root.heroFontFamily
                 font.weight: Font.DemiBold
@@ -758,11 +763,13 @@ FocusScope {
         // nothing to wrap against and the string runs out past the rounded
         // left edge instead of onto a second line. This is what it did.
         anchors.left: parent.left
-        anchors.leftMargin: root.horizontalPadding
+        anchors.leftMargin: chrome.padX
         anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
+        anchors.rightMargin: chrome.padX
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.baseFooterHeight + Metrics.pad(4)
+        // Sits in the room the chrome reserved for it, directly above the
+        // hints — see PanelChrome.footerExtraHeight.
+        anchors.bottomMargin: Metrics.chromeFooter()
         wrapMode: Text.WordWrap
         maximumLineCount: root.warningLines
         elide: Text.ElideRight
@@ -776,20 +783,7 @@ FocusScope {
         lineHeight: 1.2
     }
 
-    Text {
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Metrics.pad(8)
-        // The footer follows the mode. A hint row that advertises keys the
-        // current mode does not answer is worse than no hint row — this
-        // panel's own cheatsheet argument, applied to itself.
-        text: root.listEditActive
-            ? "j/k move  ·  space toggle  ·  J/K reorder  ·  Enter save  ·  Esc cancel"
-            : "j/k move  ·  h/l or Enter change  ·  q close"
-        color: IslandTheme.textDisabled
-        font.pixelSize: Metrics.font(10)
-        font.family: root.textFontFamily
-    }
+    // The key-hint Text that used to be here is `chrome.hints` now.
 
     // ---- THE LIST EDITOR OVERLAY ----
     //
@@ -815,7 +809,7 @@ FocusScope {
 
         Text {
             id: editorTitle
-            x: root.horizontalPadding
+            x: chrome.contentX
             y: Metrics.pad(11)
             text: root.selected ? root.selected.label : ""
             color: IslandTheme.textPrimary
@@ -835,9 +829,9 @@ FocusScope {
         }
 
         Column {
-            x: root.horizontalPadding
-            y: root.headerHeight + Metrics.pad(4)
-            width: parent.width - root.horizontalPadding * 2
+            x: chrome.contentX
+            y: chrome.contentY
+            width: chrome.contentWidth
             spacing: Metrics.px(1)
 
             Repeater {

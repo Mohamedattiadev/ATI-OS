@@ -112,6 +112,16 @@ Item {
     // [{ key: "j/k", label: "move" }, …]. See KeyHint for why it is a list.
     property var hints: []
 
+    // Room reserved ABOVE the key hints, inside the footer region, for a panel
+    // that has something to say there. SettingsLayer is the case: it prints
+    // the warnings from settings-extra.json, which are variable in number and
+    // must not push the hints off the panel or sit on top of them.
+    //
+    // A height rather than a slot, for the same reason the body is a set of
+    // numbers rather than a container: the caller keeps its own element and
+    // its own anchors, and only has to tell the chrome how much room to leave.
+    property real footerExtraHeight: 0
+
     // --- shared ------------------------------------------------------------
 
     property string textFontFamily: ""
@@ -153,7 +163,7 @@ Item {
 
     readonly property real tabsHeight: (root.tabs && root.tabs.length > 0)
         ? tabStrip.implicitHeight + Metrics.pad(6) : 0
-    readonly property real footerHeight: Metrics.chromeFooter()
+    readonly property real footerHeight: Metrics.chromeFooter() + root.footerExtraHeight
     readonly property real gap: Metrics.chromeGap()
     readonly property real bodyGap: Metrics.chromeBodyGap()
 

@@ -81,14 +81,15 @@ FocusScope {
 
     readonly property string ctl: Quickshell.env("HOME") + "/.config/hypr/scripts/power-ctl.sh"
 
-    readonly property real horizontalPadding: Metrics.pad(18)
-    readonly property real headerHeight: Metrics.pad(36)
+    // FORK: header height, content inset and the key-hint strip are
+    // PanelChrome's now. See qml/common/PanelChrome.qml.
     readonly property real rowHeight: Metrics.px(38)
-    readonly property real footerHeight: Metrics.px(22)
 
+    // Metrics and not chrome.chromeHeight: this sizes the capsule the panel is
+    // drawn inside, so reading it off a child of that panel is a loop waiting
+    // for one more term.
     readonly property real preferredHeight:
-        root.headerHeight + root.actions.length * root.rowHeight
-        + root.footerHeight + Metrics.pad(16)
+        Metrics.chromeTotal() + root.actions.length * root.rowHeight
 
     readonly property var selectedAction:
         (root.selectedIndex >= 0 && root.selectedIndex < root.actions.length)
@@ -288,38 +289,46 @@ FocusScope {
         }
     }
 
-    Text {
-        id: header
-        x: root.horizontalPadding
-        y: Metrics.pad(11)
-        text: root.errorText !== "" ? root.errorText : "Power"
-        color: root.errorText !== "" ? IslandTheme.danger : IslandTheme.textPrimary
-        font.pixelSize: Metrics.font(15)
-        font.family: root.heroFontFamily
-        font.weight: Font.DemiBold
-        font.letterSpacing: -0.2
-    }
+    // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
+    //
+    // The error text used to REPLACE the header — "Power" became the error
+    // string in danger red. It goes in the status slot instead, which is where
+    // every other panel puts what went wrong and which already colours by
+    // level. A panel whose title changes to an error message is a panel you
+    // cannot tell you are looking at.
+    PanelChrome {
+        id: chrome
+        textFontFamily: root.textFontFamily
 
-    Text {
-        anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
-        y: Metrics.pad(13)
-        text: root.runningAction !== "" ? root.runningAction + "…" : ""
-        color: IslandTheme.textSecondary
-        font.pixelSize: Metrics.font(12)
-        font.family: root.textFontFamily
+        title: "power"
+
+        status: root.errorText !== "" ? root.errorText
+              : (root.runningAction !== "" ? root.runningAction + "…" : "")
+        statusLevel: root.errorText !== "" ? "error"
+                   : (root.runningAction !== "" ? "busy" : "idle")
+
+        hints: root.pendingConfirm !== ""
+            ? [
+                { key: "y", label: "confirm" },
+                { key: "n", label: "cancel" }
+              ]
+            : [
+                { key: "j/k", label: "move" },
+                { key: "Enter", label: "select" },
+                { key: "q", label: "close" }
+              ]
     }
 
     Column {
         id: rows
-        x: root.horizontalPadding
-        y: root.headerHeight
-        width: parent.width - root.horizontalPadding * 2
+        x: chrome.contentX
+        y: chrome.contentY
+        width: chrome.contentWidth
 
         Repeater {
             model: root.actions
 
-            Item {
+            PanelRow {
                 id: rowItem
                 required property int index
                 required property var modelData
@@ -331,93 +340,63 @@ FocusScope {
                 width: rows.width
                 height: root.rowHeight
 
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.topMargin: Metrics.px(2)
-                    anchors.bottomMargin: Metrics.px(2)
-                    radius: Metrics.px(8)
-                    // The confirming row goes RED, not merely highlighted.
-                    // The state it is announcing is "the next keystroke does
-                    // this", and a selection colour is what the row already
-                    // had — a second shade of the same thing would be a
-                    // change you can miss.
-                    color: rowItem.isConfirming ? IslandTheme.dangerFill
-                         : (rowItem.isSelected ? IslandTheme.selectionFill : "transparent")
+                // `armed` is PanelRow's third state and this panel is the
+                // reason it exists — the note that used to be here is now in
+                // that file: the confirming row goes RED, not merely
+                // highlighted, because a selection colour is what the row
+                // already had and a second shade of the same thing is a change
+                // you can miss.
+                armed: rowItem.isConfirming
+                selected: rowItem.isSelected
 
-                    Behavior on color {
-                        ColorAnimation {
-                            duration: Motion.fadeInDuration()
-                            easing.type: Easing.BezierSpline
-                            easing.bezierCurve: Motion.fade()
-                        }
-                    }
-
-                    Text {
-                        id: label
-                        anchors.left: parent.left
-                        anchors.leftMargin: Metrics.pad(12)
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: rowItem.isConfirming
-                            ? rowItem.modelData.label + "?   y / n"
-                            : rowItem.modelData.label
-                        color: rowItem.isConfirming ? IslandTheme.danger : IslandTheme.textPrimary
-                        font.pixelSize: Metrics.font(13)
-                        font.family: root.textFontFamily
-                        font.weight: (rowItem.isSelected || rowItem.isConfirming)
-                            ? Font.DemiBold : Font.Normal
-                    }
-
-                    // The command, on the row. This is the width the panel
-                    // is 400 px wide FOR: "Reboot" and "Shut down" are one
-                    // word apart in a list and `systemctl reboot` versus
-                    // `systemctl poweroff` is not. It also means a keybinding
-                    // that stops working can be diagnosed from the panel
-                    // rather than from this file.
-                    Text {
-                        visible: !rowItem.isConfirming
-                        anchors.right: parent.right
-                        anchors.rightMargin: Metrics.pad(12)
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.left: label.right
-                        anchors.leftMargin: Metrics.pad(12)
-                        horizontalAlignment: Text.AlignRight
-                        elide: Text.ElideRight
-                        text: rowItem.modelData.detail
-                        color: IslandTheme.textDisabled
-                        font.pixelSize: Metrics.font(10)
-                        font.family: root.textFontFamily
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onEntered: {
-                            if (root.pendingConfirm === "")
-                                root.selectedIndex = rowItem.index;
-                        }
-                        // Click goes through activate(), so it gets the same
-                        // confirmation step the keyboard does. A mouse path
-                        // that skipped it would be a one-click shutdown next
-                        // to a two-key one.
-                        onClicked: {
-                            root.selectedIndex = rowItem.index;
-                            root.activate();
-                        }
-                    }
+                onCursorRequested: {
+                    if (root.pendingConfirm === "")
+                        root.selectedIndex = rowItem.index;
                 }
+                // Click goes through activate(), so it gets the same
+                // confirmation step the keyboard does. A mouse path that
+                // skipped it would be a one-click shutdown next to a two-key
+                // one.
+                onActivated: root.activate()
+
+                Text {
+                    id: label
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: rowItem.isConfirming
+                        ? rowItem.modelData.label + "?   y / n"
+                        : rowItem.modelData.label
+                    color: rowItem.isConfirming ? IslandTheme.danger : IslandTheme.textPrimary
+                    font.pixelSize: Metrics.font(13)
+                    font.family: root.textFontFamily
+                    font.weight: (rowItem.isSelected || rowItem.isConfirming)
+                        ? Font.DemiBold : Font.Normal
+                }
+
+                // The command, on the row. This is the width the panel
+                // is 400 px wide FOR: "Reboot" and "Shut down" are one
+                // word apart in a list and `systemctl reboot` versus
+                // `systemctl poweroff` is not. It also means a keybinding
+                // that stops working can be diagnosed from the panel
+                // rather than from this file.
+                Text {
+                    visible: !rowItem.isConfirming
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: label.right
+                    anchors.leftMargin: Metrics.pad(12)
+                    horizontalAlignment: Text.AlignRight
+                    elide: Text.ElideRight
+                    text: rowItem.modelData.detail
+                    color: IslandTheme.textDisabled
+                    font.pixelSize: Metrics.font(10)
+                    font.family: root.textFontFamily
+                }
+
+                // The MouseArea is PanelRow's; its signals are wired above.
             }
         }
     }
 
-    Text {
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Metrics.pad(8)
-        text: root.pendingConfirm !== ""
-            ? "y confirm  ·  n cancel"
-            : "j/k move  ·  Enter select  ·  q close"
-        color: IslandTheme.textDisabled
-        font.pixelSize: Metrics.font(10)
-        font.family: root.textFontFamily
-    }
+    // The key-hint Text that used to be here is `chrome.hints` now.
 }

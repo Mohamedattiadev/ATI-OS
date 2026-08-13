@@ -71,6 +71,18 @@ Rectangle {
     // A fact about the system: connected, current, default. Not the cursor.
     property bool active: false
 
+    // ---- ARMED: THE NEXT KEYSTROKE DOES SOMETHING YOU CANNOT UNDO ----
+    //
+    // PowerMenuLayer is the case and the reason this is a THIRD state rather
+    // than a caller-supplied colour. Its note is the argument: "the confirming
+    // row goes RED, not merely highlighted. The state it is announcing is 'the
+    // next keystroke does this', and a selection colour is what the row already
+    // had — a second shade of the same thing would be a change you can miss."
+    //
+    // It outranks both of the others, because a row can be armed while it is
+    // also the cursor (it always is) and the cursor is the less urgent fact.
+    property bool armed: false
+
     // Rows that cannot be chosen — an unavailable device, a header row in a
     // mixed list. Drawn at rest and takes no pointer.
     property bool enabled: true
@@ -78,7 +90,7 @@ Rectangle {
     // The divider under this row. Defaulted rather than always-on: a rule
     // under a filled row is noise, and the fill already separates it from
     // what follows.
-    property bool dividerVisible: !root.selected && !root.active
+    property bool dividerVisible: !root.selected && !root.active && !root.armed
 
     // Emitted instead of the caller reaching into the MouseArea, so every row
     // in the shell reports the same two events.
@@ -97,6 +109,8 @@ Rectangle {
     radius: Metrics.RADIUS.card
 
     color: {
+        if (root.armed)
+            return IslandTheme.dangerFill;
         if (root.active)
             return IslandTheme.alpha(IslandTheme.accent, 0.14);
         if (root.selected)
@@ -128,7 +142,10 @@ Rectangle {
         width: Metrics.px(2)
         height: parent.height - Metrics.px(8)
         radius: width / 2
-        color: IslandTheme.accent
+        // Danger, not accent, on an armed row: the bar is the cursor and the
+        // cursor is still there — it just stops being the most important
+        // thing about the row.
+        color: root.armed ? IslandTheme.danger : IslandTheme.accent
         opacity: root.selected ? 1 : 0
 
         Behavior on opacity {

@@ -107,11 +107,10 @@ FocusScope {
     property var markedDays: ({})
 
     readonly property int columns: 7
-    readonly property real horizontalPadding: Metrics.pad(18)
-    readonly property real headerHeight: Metrics.pad(38)
+    // FORK: header height, content inset and the key-hint strip are
+    // PanelChrome's now. See qml/common/PanelChrome.qml.
     readonly property real weekdayRowHeight: Metrics.px(18)
     readonly property real cellSize: Metrics.px(34)
-    readonly property real footerHeight: Metrics.px(20)
 
     // The first weekday column, 0=Sunday..6=Saturday, taken from the
     // locale. Qt reports Sunday as 0 in `Locale.Sunday`, which matches
@@ -156,8 +155,7 @@ FocusScope {
     // contract ModeKeysLayer, ThemePickerLayer, DisplayPanel and AudioPanel
     // all use.
     readonly property real preferredHeight:
-        root.headerHeight + root.weekdayRowHeight + root.gridHeight
-        + root.footerHeight + Metrics.pad(16)
+        Metrics.chromeTotal() + root.weekdayRowHeight + root.gridHeight
 
     readonly property bool cursorIsToday:
         root.cursor.getFullYear() === root.today.getFullYear()
@@ -362,42 +360,44 @@ FocusScope {
 
     // ---- HEADER ----
     //
-    // The long-form date, not "August 2026". See the header comment: the
-    // date carousel this is descended from is a human-readable date, and
-    // the month is already spelled out by the grid underneath.
-    Text {
-        id: header
-        x: root.horizontalPadding
-        y: Metrics.pad(11)
-        text: Qt.formatDate(root.cursor, "dddd")
-        color: "white"
-        font.pixelSize: Metrics.font(15)
-        font.family: root.heroFontFamily
-        font.weight: Font.DemiBold
-        font.letterSpacing: -0.2
-    }
+    // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
+    //
+    // The long-form date, not "August 2026". See the header comment: the date
+    // carousel this is descended from is a human-readable date, and the month
+    // is already spelled out by the grid underneath.
+    //
+    // The weekday is the TITLE and the full date is the status clause, which
+    // is a better fit than the hero register this panel used to use: the
+    // weekday is what you opened the panel to see, and the date beside it is
+    // the qualifier. It also loses `color: "white"`, which was wrong ink on
+    // mono-light.
+    PanelChrome {
+        id: chrome
+        textFontFamily: root.textFontFamily
 
-    Text {
-        anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
-        y: Metrics.pad(13)
-        text: Qt.formatDate(root.cursor, "d MMMM yyyy")
-        // Green when the cursor is on today, muted otherwise — so a month
-        // you have paged away from is visibly not now. This is the same
-        // green the Wi-Fi QR uses for a good state, rather than a fourth
-        // accent invented here.
-        color: root.cursorIsToday ? IslandTheme.success : IslandTheme.textSecondary
-        font.pixelSize: Metrics.font(12)
-        font.family: root.textFontFamily
-        font.weight: Font.DemiBold
+        title: Qt.formatDate(root.cursor, "dddd")
+
+        // Green when the cursor is on today, muted otherwise — so a month you
+        // have paged away from is visibly not now. `ok` and not `idle`,
+        // because this is the same "good state" green the Wi-Fi QR uses rather
+        // than a fourth accent invented here.
+        status: Qt.formatDate(root.cursor, "d MMMM yyyy")
+        statusLevel: root.cursorIsToday ? "ok" : "idle"
+
+        hints: [
+            { key: "hjkl", label: "move" },
+            { key: "n/p", label: "month" },
+            { key: "t", label: "today" },
+            { key: "q", label: "close" }
+        ]
     }
 
     // ---- WEEKDAY HEADINGS ----
     Row {
         id: weekdays
-        x: root.horizontalPadding
-        y: root.headerHeight
-        width: parent.width - root.horizontalPadding * 2
+        x: chrome.contentX
+        y: chrome.contentY
+        width: chrome.contentWidth
         height: root.weekdayRowHeight
 
         Repeater {
@@ -429,9 +429,9 @@ FocusScope {
     // the straightforward index-to-day mapping below.
     Grid {
         id: monthGrid
-        x: root.horizontalPadding
-        y: root.headerHeight + root.weekdayRowHeight
-        width: parent.width - root.horizontalPadding * 2
+        x: chrome.contentX
+        y: chrome.contentY + root.weekdayRowHeight
+        width: chrome.contentWidth
         columns: root.columns
         rowSpacing: 0
         columnSpacing: 0
@@ -519,13 +519,5 @@ FocusScope {
     // the reason the chord HUD exists at all: a surface that reads its own
     // keys and does not say which ones is a surface you have to have read
     // the source of.
-    Text {
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Metrics.pad(8)
-        text: "hjkl move  ·  n/p month  ·  t today  ·  q close"
-        color: IslandTheme.textDisabled
-        font.pixelSize: Metrics.font(10)
-        font.family: root.textFontFamily
-    }
+    // The key-hint Text that used to close this file is `chrome.hints` now.
 }
