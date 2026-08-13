@@ -860,34 +860,49 @@ PanelWindow {
         scheduleAutoHide();
     }
 
-    function swipeRightWindow() {
-        if (islandContainer.restingState === "lyrics")
-            islandContainer.showTimeCapsule();
-        else if (islandContainer.restingState === "normal") {
-            if (islandContainer.hasCustomLeftItems)
-                islandContainer.showCustomCapsule();
-            else
-                islandContainer.showLyricsCapsule();
-        }
-        else
+    // FORK: these two were inverted, and neither could tell "the layer that
+    // way is empty" from "there is no layer that way".
+    //
+    // The resting layers are one axis — custom(-1), clock(0), lyrics(+1) —
+    // and `advanceSideSwipeProgress` walks toward custom on NEGATIVE deltaX.
+    // So a left swipe means custom and a right swipe means lyrics. Three
+    // other things in the tree already said so: the config key is
+    // `dynamicIslandLeftSwipeItems` and it feeds the custom layer;
+    // `sideSwipeDragDistanceForDirection` maps "left"->custom; and
+    // SwipeCustomInfoLayer draws its items travelling leftward into place.
+    // Only these two wrappers disagreed — `swipeLeftWindow` called
+    // showLyricsCapsule and `swipeRightWindow` called showCustomCapsule.
+    //
+    // The inversion was invisible while a player was running, because both
+    // layers had content and the pair was merely each other's mirror. With
+    // no player `hasMediaSurface` is false, `normalizeRestingState` refuses
+    // "lyrics", and the left swipe resolved to the state the island was
+    // already in — a no-op that logs nothing. The gesture path had already
+    // been guarded against exactly this at `resolveSideSwipeSettle`; the
+    // IPC path, which is the same decision one level up, never was.
+    function applySwipeStep(step) {
+        const target = islandContainer.stepRestingState(step);
+
+        if (target === "custom")
+            islandContainer.showCustomCapsule();
+        else if (target === "lyrics")
             islandContainer.showLyricsCapsule();
+        else if (target === "normal")
+            islandContainer.showTimeCapsule();
+        // target === "" means there is genuinely nothing that way. Fall
+        // through: the island still un-hides, so the gesture reads as
+        // acknowledged rather than broken, but no state changes.
 
         showAutoHiddenIsland("manual");
         scheduleAutoHide();
     }
 
-    function swipeLeftWindow() {
-        if (islandContainer.restingState === "custom")
-            islandContainer.showTimeCapsule();
-        else if (islandContainer.restingState === "normal")
-            islandContainer.showLyricsCapsule();
-        else if (islandContainer.hasCustomLeftItems)
-            islandContainer.showCustomCapsule();
-        else
-            islandContainer.showTimeCapsule();
+    function swipeRightWindow() {
+        applySwipeStep(1);
+    }
 
-        showAutoHiddenIsland("manual");
-        scheduleAutoHide();
+    function swipeLeftWindow() {
+        applySwipeStep(-1);
     }
 
     function togglePlayerWindow() {
@@ -1889,6 +1904,30 @@ PanelWindow {
             default:
                 return 0;
             }
+        }
+
+        // FORK: one step along the custom(-1) - normal(0) - lyrics(+1) axis,
+        // skipping any layer that currently has no content and returning ""
+        // when there is nothing left in that direction. This is the same
+        // availability test `normalizeRestingState` applies, hoisted so a
+        // swipe can SKIP an empty layer instead of silently collapsing onto
+        // "normal" — which is what made the left swipe look dead.
+        function restingStateAvailable(name) {
+            if (name === "custom") return hasCustomLeftItems;
+            if (name === "lyrics") return hasMediaSurface;
+            return name === "normal";
+        }
+
+        function stepRestingState(step) {
+            const order = ["custom", "normal", "lyrics"];
+            const from = order.indexOf(normalizeRestingState(restingState));
+
+            for (let next = from + step; next >= 0 && next < order.length; next += step) {
+                if (restingStateAvailable(order[next]))
+                    return order[next];
+            }
+
+            return "";
         }
 
         function restingStateSide(nextState) {

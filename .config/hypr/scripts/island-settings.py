@@ -346,7 +346,7 @@ SETTINGS = [
                    "brightness", "workspace", "time", "date", "cava"],
         "default": ["cpu", "battery", "ram"],
         "scope": "packaged",
-        "detail": "What the island shows when you swipe right, and in what "
+        "detail": "What the island shows when you swipe left, and in what "
                   "order. The ten values are exactly the cases "
                   "IslandSystemState.buildCustomSwipeItem answers to — "
                   "anything else renders as an empty slot rather than as an "
