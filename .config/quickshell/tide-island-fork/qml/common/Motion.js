@@ -435,28 +435,75 @@ function curve(zeta) {
 // and a spring's 1.5% overshoot on a slider at 100% draws a fill wider than
 // its own track for ~100 ms. Same failure mode, same curve.
 //
-// 17 raw easings remain ON PURPOSE. They are not transitions between two
-// states and the spring says nothing about them:
+// 16 raw easings remain ON PURPOSE. They are not transitions between two
+// states and the spring says nothing about them.
 //
-//   FavoriteStar (8)          a hand-choreographed pop — outline shrinks,
-//                             filled star overshoots, outline returns. The
-//                             overshoot is already authored into the
-//                             keyframes; adding a second one fights it.
+// ---- RE-AUDITED 2026-08-13, AND THE LIST WAS NOT SIMPLY INHERITED ----
+//
+// The brief asked for this list to be CONFIRMED rather than carried forward,
+// which was the right instinct: three of its claims were wrong, one of them
+// in a way that would have justified the wrong thing next time.
+//
+// Counted first, by grepping `easing.type: Easing.` and discarding
+// BezierSpline (which is this file's own curves being applied):
+//
+//     FavoriteStar          8   (6 InOutCubic, 2 InOutQuad)
+//     timerCompletion       4   (3 OutCubic, 1 InOutQuad)
+//     RecordingIndicator    2   (InOutSine)
+//     ThemeTransitionWindow 1   (Linear)
+//     osdProgress           1   (on a SmoothedAnimation — see below)
+//     ------------------------
+//                          16
+//
+//   * THE COUNT WAS 17 AND IS 16. The seventeenth slot was SwipeCavaBars,
+//     which the list itself describes as having been converted TO the spring
+//     — an entry saying "this is not one of them" was being counted as one of
+//     them. Verified still on `Motion.spring()` in that file.
+//
+//   * FavoriteStar's REASON WAS WRONG, though its conclusion holds. The list
+//     said "the overshoot is already authored into the keyframes; adding a
+//     second one fights it". There is no overshoot in those keyframes: the
+//     eight legs are 1 -> 0.9, 0.9 -> 1, 0.5 -> 1, 1 -> 0.5, 0 -> 1 and
+//     1 -> 0, and nothing exceeds 1. It is a squash-and-return, not an
+//     overshoot. The real reason to leave them raw is stronger and is now
+//     what is written here: they are scripted legs of a SequentialAnimation
+//     rather than a state transition, and a spring on each leg would
+//     compound its 1.5% past the *intermediate* values the choreography was
+//     drawn against.
+//
+//   * osdProgress's easing.type IS DEAD CODE, which the old entry implied and
+//     did not say. `SmoothedAnimation { velocity: 1.2; duration: 180;
+//     easing.type: Easing.InOutQuad }` — SmoothedAnimation solves its own
+//     velocity-limited trajectory (Qt's private header carries `tp`, the time
+//     of peak velocity, and `vi`, the normalised initial velocity) and never
+//     evaluates the easing curve.
+//
+//     MEASURED rather than read: two SmoothedAnimations differing only in
+//     easing type (InOutQuad vs OutBounce), sampled every 16 ms for 30
+//     frames, produce byte-identical trajectories. The same harness on a
+//     plain NumberAnimation reports them different, which is the control that
+//     makes the first result mean anything. So the entry stands — it is
+//     velocity-limited on purpose, because volume keys autorepeat and a
+//     duration-based animation restarts from the beginning on every repeat —
+//     but the easing.type on it is inert and should not be read as a choice.
+//
+// The four that survive unchanged:
+//
+//   FavoriteStar (8)          a hand-choreographed pop, as scripted legs of a
+//                             SequentialAnimation. See above for why the
+//                             original reason was wrong and this one is not.
 //   RecordingIndicator (2)    a looping InOutSine breathe. A step response
 //                             has no meaning for something that never stops.
 //   timerCompletion (4)       a bespoke pulse-and-flash celebration, same
-//                             reasoning as the star.
-//   ThemeTransitionWindow (1) the 620 ms circular wipe. Its radius must be
-//                             monotone: an overshoot past maximumRadius is
-//                             off-screen and a rebound would re-cover the
-//                             screen it just revealed.
-//   osdProgress (1)           SmoothedAnimation, not NumberAnimation. It is
-//                             VELOCITY-limited on purpose, because volume
-//                             keys autorepeat and a duration-based animation
-//                             restarts from the beginning on every repeat.
-//   SwipeCavaBars height      converted TO the spring rather than away from
-//                             it, and listed here because it is the one
-//                             non-transition that was: an EQ bar wants mass.
+//                             reasoning as the star: 0 -> 1 then 1 -> 0 on
+//                             two properties, scripted, not a transition.
+//   ThemeTransitionWindow (1) the 620 ms wipe. Linear, and its own file
+//                             argues it at length: a straight front covers
+//                             area at a constant rate, so easing it makes the
+//                             front visibly accelerate and brake. Its radius
+//                             must also be monotone — an overshoot past
+//                             maximumRadius would re-cover the screen it just
+//                             revealed.
 //
 // The two curves the spec names. Call these, not curve().
 //
