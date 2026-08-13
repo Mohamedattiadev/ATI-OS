@@ -932,3 +932,50 @@ Measured, `showText` then `clearText`, 50 fps burst on the island strip:
 
 A cut is one frame with a large delta and then zero. A monotonically
 decaying ramp over six frames is a fade. It runs.
+
+## Theme change — **MEASURED. 1.77 s of dead screen, and the 622 ms in this document is stale.**
+
+Measured end to end through the real path (`tide applyThemeAnimated`), 50 fps
+burst, re-applying the theme ALREADY active so nothing about the user's
+palette changed — `~/.cache/tide-island/colors.json` reported
+`"theme": "catppuccin"` before and after:
+
+       0 -  239 ms   nothing (IPC spawn, then grim's capture)
+     239 -  408 ms   the frozen frame goes up
+     408 - 2180 ms   ZERO CHANGE. 1.77 s, pixel-diff exactly 0.
+    2180 - 2320 ms   the wipe crosses this region
+    2373 ms          settled
+
+**This document's "622 ms, measured by running theme-apply bare" is wrong
+now.** Timed directly, three runs: **3385 ms, 3232 ms, 7461 ms.** The
+variance is as important as the size — a theme change is not a fixed cost.
+
+The island's gating is **already correct** and should not be touched:
+`ThemeTransitionWindow` watches stdout for `THEME_APPLY_VISIBLE_DONE`
+rather than waiting for the process to exit, which is what keeps the freeze
+at 1.77 s instead of 3.2-7.5 s. theme-apply's own header block explains
+why, and predicted this exact failure mode — "the user spent the difference
+looking at a screenshot with a pixel-diff of exactly 0.00 between
+consecutive frames". The marker fixed two thirds of it. The remaining
+1.77 s is the same complaint, smaller.
+
+Where the remaining time goes, from theme-apply's own breakdown of what is
+BEHIND the marker:
+
+    kitty set-colors + SIGUSR1  0.86 s
+    dunstrc + dunst restart     1.10 s
+    GTK overlay css             1.14 s
+    qutebrowser :config-source  1.27 s   (detached)
+
+**`dunst` is the interesting line.** The island serves
+`org.freedesktop.Notifications` itself and `island.sh` does `pkill -x dunst`
+before starting, so under Hyprland dunst is NOT RUNNING — the wipe is
+waiting ~0.24 s on a restart of a daemon this session deliberately killed.
+That is free to reclaim, but the fix is in `theme-apply`, which lives in
+`/usr/local/bin` from AtiScriptsV1 and is SHARED WITH THE QTILE SESSION,
+where dunst is real. So it needs a session test, not an unconditional cut,
+and it is not a change to make from this repo without one.
+
+The other direction, and the one that is in this repo: 1.77 s of a frozen
+screenshot with no feedback of any kind reads as a hang. Whatever the
+script costs, the overlay should not be blank while it runs.
