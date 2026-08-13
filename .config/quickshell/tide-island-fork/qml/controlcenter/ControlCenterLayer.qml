@@ -1321,10 +1321,25 @@ Item {
                     + "  i=$((i + 1))\n"
                     + "  sleep 0.04\n"
                     + "done\n"
-                    + "exit 1"
+                    + "if command -v gammastep >/dev/null 2>&1; then\n"
+                    + "  pkill -x gammastep >/dev/null 2>&1\n"
+                    + "  if command -v setsid >/dev/null 2>&1; then\n"
+                    + "    setsid gammastep -m wayland -O \"$temp\" >/dev/null 2>&1 < /dev/null &\n"
+                    + "  else\n"
+                    + "    nohup gammastep -m wayland -O \"$temp\" >/dev/null 2>&1 < /dev/null &\n"
+                    + "  fi\n"
+                    + "  exit 0\n"
+                    + "fi\n"
+                    + "exit 127"
                 : "temp=\"$1\"\n"
                     + "if ! command -v gammastep >/dev/null 2>&1; then exit 127; fi\n"
-                    + "gammastep -m wayland -P -O \"$temp\" >/dev/null 2>&1",
+                    + "pkill -x gammastep >/dev/null 2>&1\n"
+                    + "if command -v setsid >/dev/null 2>&1; then\n"
+                    + "  setsid gammastep -m wayland -O \"$temp\" >/dev/null 2>&1 < /dev/null &\n"
+                    + "else\n"
+                    + "  nohup gammastep -m wayland -O \"$temp\" >/dev/null 2>&1 < /dev/null &\n"
+                    + "fi\n"
+                    + "exit 0",
             "tide-night-light",
             controlCenter.nightLightTemperature.toString()
         ]
@@ -1343,9 +1358,12 @@ Item {
             controlCenter.nightLightEnabled = false;
             controlCenter.nightLightModeChanged(false);
             controlCenter.requestNotification("Night Light", "Night Light unavailable",
-                controlCenter.hyprlandNightLight
-                    ? "Install hyprsunset to use Night Light."
-                    : "Install gammastep to use Night Light.");
+                // Names BOTH, because the enable path now tries both:
+                // hyprsunset first on Hyprland, then gammastep. Reaching
+                // this line means neither is installed, so naming only the
+                // one the compositor prefers sends you to install a package
+                // that is not the only thing that would have worked.
+                "Install hyprsunset or gammastep to use Night Light.");
         }
     }
 
@@ -1354,10 +1372,17 @@ Item {
         command: [
             "sh",
             "-c",
-            controlCenter.hyprlandNightLight
-                ? "hyprctl hyprsunset identity >/dev/null 2>&1 || true"
-                : "if ! command -v gammastep >/dev/null 2>&1; then exit 127; fi\n"
-                    + "gammastep -m wayland -x >/dev/null 2>&1 || true"
+            // Both backends are stopped regardless of which one enabled it.
+            // Cheap, and it means a session that started on hyprsunset and
+            // fell back to gammastep after an uninstall does not end up
+            // tinted with no way to clear it from this button.
+            //
+            // `pkill -x`, never `pkill -f`: -f matches this script's own
+            // command line, which is how a pkill takes down the shell that
+            // ran it.
+            "hyprctl hyprsunset identity >/dev/null 2>&1 || true\n"
+                + "pkill -x gammastep >/dev/null 2>&1 || true\n"
+                + "exit 0"
         ]
         running: false
 
@@ -1365,13 +1390,13 @@ Item {
             controlCenter.nightLightBusy = false;
             controlCenter.nightLightEnabled = false;
             controlCenter.nightLightModeChanged(false);
-            if (exitCode === 127)
-                controlCenter.requestNotification("Night Light", "Night Light unavailable",
-                    controlCenter.hyprlandNightLight
-                        ? "Install hyprsunset to use Night Light."
-                        : "Install gammastep to use Night Light.");
-            else
-                controlCenter.requestNotification("Night Light", "Night Light disabled", "");
+            // No 127 branch. Turning night light OFF cannot fail for want of
+            // a tool: the script clears hyprsunset if it is there and kills
+            // gammastep if it is there, and either missing is the same as
+            // either already being off. It exits 0 unconditionally, so a
+            // "Night Light unavailable" here would have been a message that
+            // could only ever appear when nothing was wrong.
+            controlCenter.requestNotification("Night Light", "Night Light disabled", "");
         }
     }
 
