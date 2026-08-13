@@ -146,7 +146,21 @@ FocusScope {
     // --- geometry ----------------------------------------------------------
     // FORK: header height, content inset and the key-hint strip are
     // PanelChrome's now. See qml/common/PanelChrome.qml.
-    readonly property real ringSize: Metrics.px(86)
+    // 86 when there were three dials, and 86 x 4 is where "a bit big, and a
+    // bit of a space issue" comes from. The ring is the panel's single
+    // largest vertical element and the dial block is the largest of its
+    // three sections, so this is the number that decides the panel's height
+    // -- ringBlockHeight is measured from the dial's own last line, and
+    // preferredHeight from that.
+    //
+    // 72 is not a guess at a nicer number: at 86 the four columns are 130 px
+    // wide holding a 86 px ring, so the ring eats two thirds of its own
+    // column and the detail line underneath is wider than the thing it
+    // describes. At 72 the ring is a little over half its column, which is
+    // the proportion the three-dial layout had at 86 in a 515 px panel. The
+    // row keeps the density it was designed with instead of inheriting a
+    // fourth column's worth of crowding.
+    readonly property real ringSize: Metrics.px(72)
 
     // How many columns the dial row divides into. See Dial.slot.
     readonly property int dialCount: 4
@@ -844,9 +858,25 @@ FocusScope {
                 return fs ? fs.percent : 0;
             }
             label: "Disk"
+            // "24.0 / 31.2 GB", not "24.0 GB / 31.2 GB". The unit was
+            // printed twice, which made this the widest string in the row --
+            // and the memory dial two columns to its left has always written
+            // the same fact as "3.4 / 7.6 GB". Two formats for one idea, in
+            // one row, with the wider of the two being the one that had to
+            // fit four abreast. The unit is dropped from the left half only
+            // when both halves resolve to the SAME unit: 900 MB used of a
+            // 2 TB disk is not "900 / 2.0 TB".
             detail: {
                 const fs = root.selectedFilesystem();
-                return fs ? root.formatKb(fs.usedKb) + " / " + root.formatKb(fs.sizeKb) : "";
+                if (!fs)
+                    return "";
+                const used = root.formatKb(fs.usedKb);
+                const size = root.formatKb(fs.sizeKb);
+                const usedUnit = used.slice(used.indexOf(" ") + 1);
+                const sizeUnit = size.slice(size.indexOf(" ") + 1);
+                return usedUnit === sizeUnit
+                    ? used.slice(0, used.indexOf(" ")) + " / " + size
+                    : used + " / " + size;
             }
             // "on /", not a bare "/". Screenshotted as the bare mount and it
             // read as a stray slash under a size rather than as the subject
