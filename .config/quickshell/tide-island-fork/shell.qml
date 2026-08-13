@@ -209,6 +209,13 @@ Scope {
     // output would sit on a frozen screenshot until its 12 s cap fired, long
     // after its neighbour had revealed. noteThemeApplied() is idempotent, so
     // relaying to the emitter as well is free and keeps this one loop.
+    //
+    // This machine has ONE output, so the relay is unreachable in daily use and
+    // would rot silently. It was checked by making a second one for the test —
+    // `hyprctl output create headless`, removed again after — which is enough
+    // for Quickshell to build a second overlay window: both mapped (112 ms and
+    // 180 ms) and both unmapped on the same poll at 5998 ms. Without the relay
+    // the second would have held its frozen frame until its own 12 s cap.
     function relayThemeApplied() {
         const windows = themeTransitionVariants.instances
             ? themeTransitionVariants.instances : [];

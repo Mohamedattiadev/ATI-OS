@@ -392,6 +392,19 @@ PanelWindow {
         // means part of the theme did not apply, which is a reason to show
         // the user the desktop, not a reason to keep it frozen. The only
         // question this handler answers is "has it stopped running".
+        //
+        // The thing that could have sunk this and does not: theme-apply's
+        // last act is to background `boot-splash generate && boot-splash
+        // autosync`, which rebuilds the initramfs and therefore OUTLIVES its
+        // parent by minutes — a `theme-apply` from four minutes ago is still
+        // visible in ps with a boot-splash child. That grandchild inherits
+        // this Process's stdout and stderr, so if Quickshell waited for the
+        // pipes to close rather than for the child to be reaped, onExited
+        // would land minutes late and the overlay would sit frozen until the
+        // cap saved it. Measured instead of assumed, from the shell's own
+        // log: applyTheme at t=...029492, onExited at t=...034504, i.e. 5.0 s,
+        // matching theme-apply's own runtime — the backgrounded grandchild
+        // does not hold this open.
         onExited: {
             running = false;
             root.noteThemeApplied();
