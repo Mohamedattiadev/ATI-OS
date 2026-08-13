@@ -52,6 +52,15 @@ Item {
     property bool workspaceShown: false
     property color accentColor: IslandTheme.accent
 
+    // FORK: the layout indicator — qtile's CurrentLayout widget, which the
+    // island has never had. Same argument as the workspace digit above and
+    // the same seam: a glyph handed down rather than a state this layer
+    // fetches, so the layer draws and the shell decides. Empty string means
+    // "nothing to say" and draws nothing at all — see LayoutState.known.
+    property string layoutGlyph: ""
+    property bool layoutShown: false
+    property string iconFontFamily: ""
+
     property real minimumWidth: Metrics.px(220)
     property real maximumWidth: minimumWidth
     property real horizontalPadding: Metrics.pad(14)
@@ -94,6 +103,32 @@ Item {
     readonly property bool workspaceVisible:
         workspaceShown && showSecondaryText && timeText !== ""
 
+    // The same two numbers again for the layout glyph, and deliberately a
+    // FIXED slot width for the same reason the digit has one: the capsule
+    // sizes itself from this sum, so a width taken from the glyph's own ink
+    // would morph the capsule whenever the layout changed. A square, a
+    // columns pair and a list do not have identical advance widths.
+    //
+    // ---- IT LEADS THE CLOCK, IT DOES NOT TRAIL IT ----
+    //
+    // User-directed, and it also happens to be the better reading. The digit
+    // and the EQ both QUALIFY the clock — which workspace, what is playing —
+    // and the digit's own note argues they trail it because "the clock is the
+    // subject and the workspace qualifies it, so it reads as a suffix". The
+    // layout is not a qualifier of the time at all; it is a property of the
+    // whole session. Putting it on the far side keeps the clock's suffixes
+    // together and stops a third trailing item turning the group into a row
+    // of four.
+    //
+    // The gap is smaller than the workspace gap because this one binds to the
+    // capsule's left edge rather than to a neighbour.
+    readonly property real restingLayoutGap: Metrics.px(7)
+    readonly property real restingLayoutWidth: Metrics.px(12)
+    readonly property real restingLayoutAllowance:
+        restingLayoutWidth + restingLayoutGap
+    readonly property bool layoutVisible:
+        layoutShown && layoutGlyph !== "" && showSecondaryText && timeText !== ""
+
     // The clock and the EQ are one centred group, so the clock slides left
     // by half the allowance when the bars appear rather than staying put
     // and letting the pair sit off-centre. Animated on its own short curve
@@ -111,7 +146,28 @@ Item {
     readonly property real restingTrailingAllowance:
         ((musicPlaying && showSecondaryText) ? restingEqAllowance : 0)
         + (workspaceVisible ? restingWorkspaceAllowance : 0)
-    readonly property real restingGroupShift: restingTrailingAllowance / 2
+
+    // FORK: the layout glyph LEADS the clock, so it is the first thing this
+    // group has ever had on that side. Order left to right is now
+    // glyph · clock · digit · EQ.
+    readonly property real restingLeadingAllowance:
+        layoutVisible ? restingLayoutAllowance : 0
+
+    // ---- WHY THIS IS A DIFFERENCE AND NOT A SUM ----
+    //
+    // The shift exists to keep the whole cluster optically centred in the
+    // capsule: the clock slides LEFT by half of whatever hangs off its right,
+    // so the pair reads as centred rather than as a clock sitting dead centre
+    // with things bolted to one side.
+    //
+    // A leading occupant pushes the other way, so it SUBTRACTS. Adding it —
+    // the obvious edit — would slide the clock left to make room for
+    // something that is already to its left, moving the group off centre by
+    // the full width of the glyph and in the wrong direction. When both are
+    // present the shifts partly cancel, which is correct: the group is more
+    // nearly symmetric than it was, so it needs less correction, not more.
+    readonly property real restingGroupShift:
+        (restingTrailingAllowance - restingLeadingAllowance) / 2
 
     readonly property real clampedProgress: Math.max(0, Math.min(1, transitionProgress))
     readonly property bool lyricMostlyVisible: clampedProgress > 0.92
@@ -139,6 +195,14 @@ Item {
     // drifting apart is how the bars ended up misplaced once already.
     readonly property real restingInkRight:
         shiftedTimeX + (textWidth + visibleTimeWidth) / 2
+
+    // The other edge of the same ink, for the one thing that leads the clock.
+    // Same construction, minus instead of plus: the time Text is a full-width
+    // centred box, so its visible ink starts half the slack in from the box's
+    // left edge. Derived rather than measured off the glyph's neighbours so
+    // it cannot drift from restingInkRight above.
+    readonly property real restingInkLeft:
+        shiftedTimeX + (textWidth - visibleTimeWidth) / 2
 
     Behavior on animatedGroupShift {
         NumberAnimation {
@@ -444,6 +508,59 @@ Item {
         font.family: root.textFontFamily
         font.weight: Font.DemiBold
         font.features: ({ "tnum": 1 })
+    }
+
+    // FORK: the layout indicator. qtile's bar had a CurrentLayout widget and
+    // this shell has never had one; hypr/scripts/layout-cycle.sh says so in
+    // its own comment and its transient showText popup was the stand-in.
+    //
+    // It sits here, in the clock's layer, for the same reason the digit was
+    // moved here rather than left as a floating sibling: it inherits the
+    // clock's whole life cycle instead of needing a gate that names every
+    // island state it must not appear in. Same `1 - clampedProgress`, so a
+    // lyrics swipe carries clock, digit and glyph off together.
+    //
+    // ---- WHY MUTED AND NOT THE ACCENT ----
+    //
+    // The digit's own note says it is accent-coloured "because nothing else
+    // in the resting capsule is accent-coloured and that alone says 'this is
+    // live'". A second accent element spends exactly that. These two are also
+    // not equals: the workspace is where you ARE and changes constantly; the
+    // layout is how this workspace is arranged and changes rarely. Muted ink
+    // puts the glyph a step behind the digit, which is the true relationship
+    // and keeps the digit's accent doing the job it was chosen for.
+    Text {
+        id: layoutGlyphText
+
+        visible: root.layoutVisible
+        // LEADS the clock: one gap to the left of the clock's ink, with the
+        // glyph centred in its fixed slot so the three different glyph widths
+        // all sit on the same centre line and none of them walks into the
+        // clock. Hung off restingInkLeft — the ink, not the box — for the
+        // reason everything trailing hangs off restingInkRight: the time Text
+        // is a 220 px centred box and its left edge is nowhere near its
+        // first digit.
+        x: root.restingInkLeft - root.restingLayoutGap - root.restingLayoutWidth
+            + (root.restingLayoutWidth - width) / 2
+        // Centred on the DIGIT's box, not sat on the clock's baseline. A Nerd
+        // Font box glyph has no descender and nearly fills its em, so sharing
+        // the digits' baseline hangs it visibly low beside them. Expressed
+        // against workspaceDigit rather than as an offset from timeBaselineY
+        // so the two cannot drift apart if either font size is ever changed;
+        // an invisible Item still has valid geometry, so this holds when the
+        // digit is hidden.
+        y: workspaceDigit.y + (workspaceDigit.height - height) / 2
+        opacity: 1 - root.clampedProgress
+
+        text: root.layoutGlyph
+        color: IslandTheme.textMuted
+        // The icon font, not the text font. These are Nerd Font private-use
+        // codepoints: in the text font they are not "wrong looking", they are
+        // absent, and fontconfig substitutes silently — which in this tree has
+        // already meant a family resolving to Noto Sans CJK with nothing in
+        // any log to say so.
+        font.family: root.iconFontFamily
+        font.pixelSize: Metrics.font(11)
     }
 
     // FORK: the resting-state EQ. DESIGN-SPEC.md's resting island shows

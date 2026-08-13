@@ -426,6 +426,14 @@ PanelWindow {
     // A digit and the gap to the clock, not a 32 px ring — the workspace
     // readout became type when it moved inside the capsule.
     readonly property real restingWorkspaceAllowance: Metrics.px(12) + Metrics.px(10)
+    // FORK: the layout glyph, which rides on the LEFT of the clock. Which
+    // side it sits on makes no difference to the capsule — the shape has to
+    // grow by the same amount either way — but it makes all the difference to
+    // the clock's own offset, which is SwipeLyricsLayer's problem. Duplicated
+    // from restingLayoutGap/Width there for the same reason the two above are
+    // duplicated: the capsule must size itself without instantiating the
+    // layer to ask it. The cross-reference is the guard against drift.
+    readonly property real restingLayoutAllowance: Metrics.px(7) + Metrics.px(12)
     readonly property bool hoverExpandEnabled: configuredHoverExpandAction > 0
     readonly property bool topGestureInputActive: !root.overviewVisible && islandContainer.canShowSideSwipe
     readonly property bool autoHideRuntimeEnabled: !shellRootController
@@ -1593,6 +1601,15 @@ PanelWindow {
 
             expanded: islandContainer.islandState === "expanded"
             clientId: "island-mpris-" + root.screenOutputName
+        }
+
+        // FORK: the current layout, watched out of
+        // $XDG_RUNTIME_DIR/hypr-layouts/current. Non-visual and self-
+        // contained — see qml/common/LayoutState.qml for why the file watcher
+        // lives in its own component rather than being a tenth thing this
+        // 5,000-line file owns.
+        LayoutState {
+            id: layoutState
         }
 
         BluetoothConnectionTracker {
@@ -3297,7 +3314,15 @@ PanelWindow {
                     // lands inside it.
                     return userConfig.islandWidth
                         + (islandContainer.musicPlaying ? root.restingEqAllowance : 0)
-                        + root.restingWorkspaceAllowance;
+                        + root.restingWorkspaceAllowance
+                        // Gated on `known`, unlike the workspace allowance
+                        // above which is unconditional: the workspace digit is
+                        // always there, whereas the layout glyph is absent on
+                        // a special workspace and until layout-cycle.sh has
+                        // run once. Reserving its width unconditionally would
+                        // leave the resting capsule permanently 19 px wider
+                        // than its content on a machine that never groups.
+                        + (layoutState.known ? root.restingLayoutAllowance : 0);
                 }
             }
             readonly property real targetHeight: {
@@ -4036,6 +4061,16 @@ PanelWindow {
                         workspaceShown: true
                         workspaceId: islandContainer.currentWs
                         accentColor: IslandTheme.accent
+                        // FORK: qtile's CurrentLayout widget, finally. Same
+                        // seam as workspaceShown above — the layer is handed
+                        // a glyph and a flag and does not know where the
+                        // layout comes from, so this is where a settings
+                        // toggle would bind. `known` rather than a non-empty
+                        // string: an unrecognised layout draws nothing at
+                        // all, see LayoutState.qml.
+                        layoutShown: layoutState.known
+                        layoutGlyph: layoutState.glyph
+                        iconFontFamily: root.iconFontFamily
                         onPreferredWidthChanged: islandContainer.syncLyricsCapsuleWidth()
                     }
                 }
