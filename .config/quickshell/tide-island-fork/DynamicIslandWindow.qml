@@ -4207,15 +4207,42 @@ PanelWindow {
                 }
             }
 
-            Loader {
+            // ---- THE WORKSPACE LAYER'S FADE-OUT HAD NEVER RUN ----
+            //
+            // FORK: upgread_UI_UX.md P1-4. This was a raw `Loader` with
+            // `active:` on the visibility condition, wrapping a layer
+            // instantiated as `showCondition: true` — a literal constant. So
+            // the property driving the layer's own
+            // `opacity: showCondition ? … : 0` could never go false, and the
+            // Behavior on it was unreachable code. The layer was destroyed in
+            // the same event-loop turn the fade was queued in, which is the
+            // exact bug PanelLoader was written to fix and which it had
+            // already fixed at 46 other sites.
+            //
+            // WorkspaceLayer is the one of the five worth doing on its own,
+            // and P1-4's own correction says why: the other four are swipe
+            // layers whose opacity is already driven by `transitionProgress`,
+            // so cross-fading them would put an outgoing layer on top of an
+            // incoming one during a slide that is already animating. This one
+            // carries `animateVisibility` and is a plain CUT when resting —
+            // and it is hit on every workspace switch, which is the most
+            // frequent transition in the shell.
+            //
+            // `live` takes the old `active` expression unchanged and
+            // `showCondition` binds to it, so the layer now knows when it is
+            // going away. PanelLoader holds the item up for
+            // fadeOutDuration + 40 ms so the Behavior can actually run.
+            //
+            // NOT retained: this rebuilds from three bound properties with no
+            // async fetch behind it, so there is no empty-state flash to
+            // avoid — which is the only thing `retain` buys.
+            PanelLoader {
                 id: workspaceLayerLoader
                 anchors.fill: parent
-                active: !root.overviewVisible
+                live: !root.overviewVisible
                     && islandContainer.islandState === "long_capsule"
                     && (islandContainer.workspaceOriginSide !== "none"
                         || Math.abs(islandContainer.swipeTransitionProgress) < 0.001)
-                asynchronous: false
-                visible: active
 
                 sourceComponent: Component {
                     WorkspaceLayer {
@@ -4225,7 +4252,7 @@ PanelWindow {
                         textPixelSize: root.bodyFontSize
                         animateVisibility: islandContainer.restingState === "normal"
                         transitionProgress: islandContainer.swipeTransitionProgress
-                        showCondition: true
+                        showCondition: workspaceLayerLoader.live
                         slideDirection: islandContainer.workspaceOriginSide
                     }
                 }
