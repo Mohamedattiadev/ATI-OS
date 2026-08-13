@@ -868,3 +868,28 @@ the nine fork panels, wheel scrolling); Phase 4 (type ramp, 4 px spacing
 grid, radius scale); the theme-change transition, which is serial —
 capture, then `theme-apply` at ~622 ms, then a 620 ms wipe — and so
 cannot be under ~1.2 s as currently sequenced.
+
+## Second monitor — **VERIFIED, no defects**
+
+Tested live with `hyprctl output create headless` (1920x1080 beside the
+1366x768 panel), then removed.
+
+All four surfaces are per-output by construction — `Variants { model:
+Quickshell.screens }` for `panelVariants`, `ringOsdVariants`,
+`treeTabVariants` and `themeTransitionVariants`, each passing `screen:
+modelData` and an `outputName` down.
+
+Measured rather than assumed:
+
+    resting              eDP-1 1366x58   HEADLESS-1 1920x58
+    control centre open  eDP-1 1366x463  HEADLESS-1 1920x58
+    closed               eDP-1 1366x58   HEADLESS-1 1920x58
+
+So the island exists on both outputs and sizes itself to each, and
+`monitorFocused` correctly confines an opened panel to the focused screen
+rather than opening it twice.
+
+TreeTabSidebar gates on `layoutIsTreeTab && monitorFocused && rowCount > 0`
+and its exclusive zone is `panelWidth * revealProgress` per instance, so
+the 180 px reservation is per-output and animated rather than a constant
+claimed on every screen.
