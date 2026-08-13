@@ -36,6 +36,48 @@ PIPER_VOICE_DE="$HOME/.config/piper-voices/de_DE-thorsten-high.onnx"
 cleanup() { rm -f ${TMP_DIR}/anki_tts_temp_*; }
 trap cleanup EXIT
 
+# --- Answers can come from a file instead of from rofi -------------------
+#
+#     rofi_anki                    -- the eight rofi prompts, unchanged
+#     rofi_anki --answers FILE     -- the same eight answers, read from JSON
+#
+# WHY THIS EXISTS RATHER THAN A SECOND SCRIPT
+# -------------------------------------------
+# The Hyprland session asks the eight questions in the island's picker
+# panel (hypr/scripts/island-picker.py, menu `anki`) so that the chord
+# stops opening a rofi window over the desktop. Everything AFTER the
+# eighth answer -- the AnkiConnect handshake, deck provisioning, the
+# Gemini/translate-shell fallback, IPA, three flavours of TTS concatenated
+# by ffmpeg, the image fetch, the HTML assembly and addNote -- is 200
+# lines that have nothing to do with which window asked the questions.
+#
+# So the picker does NOT reimplement any of it. It collects answers and
+# runs this file with them. There is exactly one copy of the card logic,
+# the qtile session's rofi path is the default and is untouched, and a fix
+# to either half lands in both sessions at once.
+#
+# The keys, all optional except front_lang and text:
+#
+#   {"front_lang":"en"|"de", "text":"...", "tags":"space separated",
+#    "voice_normal":"yes"|"no", "voice_repeat":"yes"|"no",
+#    "voice_spell":"yes"|"no", "image_url":"https://..."}
+#
+# A FILE, not argv: the card text is arbitrary user input and argv is
+# world-readable through /proc. It is the same reasoning rofi_common.sh
+# gives for reading a password off rofi's stdout rather than passing it.
+ANSWERS_FILE=""
+if [[ "${1:-}" == "--answers" ]]; then
+  ANSWERS_FILE="${2:-}"
+  if [[ -z "$ANSWERS_FILE" || ! -r "$ANSWERS_FILE" ]]; then
+    echo "rofi_anki: --answers needs a readable file" >&2
+    exit 1
+  fi
+fi
+
+# `// ""` covers both a missing key and an explicit null, so every optional
+# answer defaults to empty and the `== "yes"` tests below simply fail.
+answer() { jq -r --arg k "$1" '.[$k] // ""' "$ANSWERS_FILE"; }
+
 # --- Read Gemini API Key ---
 #
 # This used to grep /etc/environment for ^GEMINI_API_KEY=. Both lines
@@ -55,7 +97,13 @@ HAVE_GEMINI=0
 # piper is NOT hard-required: it only matters for German audio, which is
 # opt-in per card. Requiring it up front meant a missing optional TTS
 # engine blocked plain text cards.
-require_cmd rofi jq curl ffmpeg file python3 || exit 1
+#
+# rofi is required only when rofi is what asks the questions. Demanding it
+# in --answers mode would make the island's route fail on a machine where
+# rofi is absent, for a window it never opens.
+REQUIRED=(jq curl ffmpeg file python3)
+[[ -z "$ANSWERS_FILE" ]] && REQUIRED+=(rofi)
+require_cmd "${REQUIRED[@]}" || exit 1
 
 # =================== Helper Functions ===================
 html_escape() { python3 -c 'import html, sys; print(html.escape(sys.argv[1]))' "$1"; }
@@ -178,7 +226,11 @@ if ! anki_call '{"action":"modelNames","version":6}' |
 fi
 
 # 1. Get user input for card content
-CHOICE=$(echo -e "en (front: English)\nde (front: German)" | rofi -dmenu -p "Choose front language")
+if [[ -n "$ANSWERS_FILE" ]]; then
+  CHOICE=$(answer front_lang)
+else
+  CHOICE=$(echo -e "en (front: English)\nde (front: German)" | rofi -dmenu -p "Choose front language")
+fi
 [ -z "$CHOICE" ] && exit 0
 if [[ "$CHOICE" == en* ]]; then
   FRONT_LANG="en"
@@ -195,9 +247,15 @@ else
   FRONT_LANG_NAME="German"
   BACK_LANG_NAME="English"
 fi
-TEXT=$(rofi_input "Enter word / sentence (front)")
+if [[ -n "$ANSWERS_FILE" ]]; then
+  TEXT=$(answer text)
+  TAGS_INPUT=$(answer tags)
+else
+  TEXT=$(rofi_input "Enter word / sentence (front)")
+  [ -z "$TEXT" ] && exit 0
+  TAGS_INPUT=$(rofi_input "Tags (space separated) — optional")
+fi
 [ -z "$TEXT" ] && exit 0
-TAGS_INPUT=$(rofi_input "Tags (space separated) — optional")
 TAGS_JSON="[]"
 if [[ -n "$TAGS_INPUT" ]]; then
   read -r -a tagsarr <<<"$TAGS_INPUT"
@@ -205,10 +263,21 @@ if [[ -n "$TAGS_INPUT" ]]; then
 fi
 
 # 2. Ask for optional components
-WANT_VOICE_NORMAL=$(echo -e "yes\nno" | rofi -dmenu -i -p "Include 'Word once' audio?")
-WANT_VOICE_REPEAT=$(echo -e "yes\nno" | rofi -dmenu -i -p "Include 'Word Three Times' audio?")
-WANT_VOICE_SPELL=$(echo -e "yes\nno" | rofi -dmenu -i -p "Include 'Spelling' audio?")
-WANT_IMAGE=$(echo -e "yes\nno" | rofi -dmenu -i -p "Add an image?")
+if [[ -n "$ANSWERS_FILE" ]]; then
+  WANT_VOICE_NORMAL=$(answer voice_normal)
+  WANT_VOICE_REPEAT=$(answer voice_repeat)
+  WANT_VOICE_SPELL=$(answer voice_spell)
+  # There is no separate "add an image?" answer: the picker asks for the
+  # URL or nothing, so a non-empty url IS the yes. Four sequential yes/no
+  # rofi windows collapse to four toggles on one page there.
+  IMG_URL_ANSWER=$(answer image_url)
+  WANT_IMAGE=$([[ -n "$IMG_URL_ANSWER" ]] && echo yes || echo no)
+else
+  WANT_VOICE_NORMAL=$(echo -e "yes\nno" | rofi -dmenu -i -p "Include 'Word once' audio?")
+  WANT_VOICE_REPEAT=$(echo -e "yes\nno" | rofi -dmenu -i -p "Include 'Word Three Times' audio?")
+  WANT_VOICE_SPELL=$(echo -e "yes\nno" | rofi -dmenu -i -p "Include 'Spelling' audio?")
+  WANT_IMAGE=$(echo -e "yes\nno" | rofi -dmenu -i -p "Add an image?")
+fi
 TS=$(date +%s)
 
 # 3. Get AI data (optional — never fatal)
@@ -302,7 +371,11 @@ fi
 # 5. Get image
 IMG_FILE=""
 if [[ "$WANT_IMAGE" == "yes" ]]; then
-  IMG_URL_INPUT=$(rofi_input "Paste image URL (or leave blank)")
+  if [[ -n "$ANSWERS_FILE" ]]; then
+    IMG_URL_INPUT="$IMG_URL_ANSWER"
+  else
+    IMG_URL_INPUT=$(rofi_input "Paste image URL (or leave blank)")
+  fi
   if [[ -n "$IMG_URL_INPUT" ]]; then
     notify-send "Anki Rofi" "Downloading image..." || true
     IMG_FILE_TMP="${TMP_DIR}/anki_tts_temp_img_${TS}"
