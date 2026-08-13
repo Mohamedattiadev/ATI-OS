@@ -34,24 +34,15 @@
 * {
     background-color: transparent;
     text-color:       @foreground;
-    font:             "Noto Sans CJK KR 13";
+    font:             "Noto Sans CJK KR 12";
 }
 
-/* ---- SPACING PASS ----
-   "The rofi popups need an upgrade in UI/UX and spacing, the font is a bit
-   small." Every number below moved in one direction: outward. They are
-   sized to sit beside the island rather than against it — the island's
-   panels were rescaled in the same pass (qml/common/Metrics.js) and a
-   launcher that is tighter and smaller-typed than everything around it
-   reads as the odd surface, which is what it had become.
-
-   The radius is 18 to match the island's panel corners, not 12. */
 window {
     background-color: @background;
     location:         center;
     anchor:           center;
-    padding:          22px;
-    border-radius:    18px;
+    padding:          16px;
+    border-radius:    12px;
     border:           1px;
     border-color:     @selected;
 }
@@ -67,30 +58,26 @@ mainbox {
     children: [ inputbar, message, listview ];
     border:   0;
     padding:  0;
-    spacing:  12px;
+    spacing:  8px;
 }
 
 listview {
     fixed-height: 0;
-    spacing:      7px;
+    spacing:      4px;
     scrollbar:    false;
-    padding:      10px 0px 0px;
+    padding:      6px 0px 0px;
     border:       0;
 }
 
 element {
-    padding:       11px 14px;
-    border-radius: 10px;
+    padding:       7px 10px;
+    border-radius: 8px;
     border:        0;
-    spacing:       13px;
+    spacing:       10px;
 }
 
-/* 24, which is what config.rasi's `icon-size: 24` has been asking for all
-   along. A theme rule beats the configuration block, so this 20 was quietly
-   overriding it and every icon in every menu was drawn a fifth smaller than
-   configured. Now the two agree. */
 element-icon {
-    size:             24px;
+    size:             20px;
     background-color: inherit;
     padding:          0 6px 0 0;
 }
@@ -110,7 +97,7 @@ element.alternate.normal {
 element.selected.normal {
     background-color: @background-alt;
     border:           1px;
-    border-radius:    10px;
+    border-radius:    8px;
     border-color:     @selectedone;
     text-color:       #ffffff;
 }
@@ -137,10 +124,10 @@ scrollbar {
 }
 
 inputbar {
-    padding:          13px 15px;
-    spacing:          10px;
+    padding:          8px 10px;
+    spacing:          8px;
     background-color: @background-alt;
-    border-radius:    10px;
+    border-radius:    8px;
     children:         [ prompt, entry, num-filtered-rows, textbox-num-sep, num-rows ];
 }
 
@@ -180,9 +167,9 @@ num-rows {
 }
 
 message {
-    padding:          13px;
+    padding:          10px;
     border:           0px;
-    border-radius:    10px;
+    border-radius:    8px;
     background-color: @background-alt;
 }
 
