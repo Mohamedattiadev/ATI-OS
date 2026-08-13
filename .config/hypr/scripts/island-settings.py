@@ -301,6 +301,163 @@ SETTINGS = [
         "detail": "Off because the spec's pill is permanently present rather "
                   "than summoned. There is no bar behind it to fall back to.",
     },
+    # ================================================================
+    #  TYPOGRAPHY, INTERACTION AND PLACEMENT
+    # ================================================================
+    #
+    # FORK: asked for as "a fully controlled customizable app ... to add
+    # whatever I want in whatever place in the island and control anything".
+    #
+    # Every row below is a key that something ALREADY READS. That is the
+    # whole selection rule and it is not a formality: this tree's own
+    # history is a list of controls that ran a binary which did not exist,
+    # wrote a state nobody polled, or drove a loader that was never
+    # declared. A settings panel is the worst possible place to add another,
+    # because a row that does nothing looks exactly like a row that works
+    # until the moment you need it.
+    #
+    # So these were checked one at a time against userconfig.json and
+    # against the QML that consumes them, and keys that LOOK configurable
+    # but are inert were left out. Notably absent, and deliberately:
+    #
+    #   dynamicIslandLeftSwipeItems  — the cpu/battery/ram row. This is the
+    #       one the request most obviously means, and it cannot be added
+    #       yet: it is a LIST, and the schema here has bool, int and enum.
+    #       A list needs a reorderable multi-select in SettingsLayer, which
+    #       is a UI change rather than a row. Written up rather than faked
+    #       as three booleans, which would lose the ordering that is half
+    #       the point of the setting.
+    #
+    #   forkStatHighThreshold — the 85% at which a stat glyph turns red.
+    #       Lives in SwipeCustomInfoLayer as a QML property with no
+    #       userconfig key behind it, so a row would write a value nothing
+    #       reads.
+    {
+        "key": "bodyFontSize",
+        "label": "Body text size",
+        "type": "int",
+        "min": 8,
+        "max": 20,
+        "step": 1,
+        "default": 12,
+        "scope": "packaged",
+        "detail": "The base size for every label, status line and readout. "
+                  "The resting clock renders at bodyFontSize + 1, so 12 puts "
+                  "it at 13 and lands exactly on qtile's widget_defaults "
+                  "fontsize 10, which is ~13px at 96dpi.",
+    },
+    {
+        "key": "titleFontSize",
+        "label": "Title text size",
+        "type": "int",
+        "min": 10,
+        "max": 26,
+        "step": 1,
+        "default": 15,
+        "scope": "packaged",
+        "detail": "Panel headings only. Kept in ratio with body — the pair "
+                  "was 20/16 in a 38px shape and is 15/12 in this one.",
+    },
+    {
+        "key": "iconFontSize",
+        "label": "Icon size",
+        "type": "int",
+        "min": 8,
+        "max": 24,
+        "step": 1,
+        "default": 13,
+        "scope": "packaged",
+        "detail": "Nerd Font glyphs. Note the swipe row's stat pictograms "
+                  "deliberately render at this + 5: a chip or a memory stick "
+                  "needs ~1.5x a cap height to resolve, where a plain symbol "
+                  "does not. Raising this raises both.",
+    },
+    {
+        "key": "islandPositionX",
+        "label": "Horizontal position",
+        "type": "int",
+        "min": 0,
+        "max": 100,
+        "step": 5,
+        "default": 50,
+        "scope": "packaged",
+        "detail": "Percent across the output. 50 centres the notch. Only "
+                  "meaningful in floating form — a notch is bezel and bezel "
+                  "that is off-centre reads as a mistake.",
+    },
+    {
+        "key": "hoverExpandAction",
+        "label": "Hover opens",
+        "type": "enum",
+        "values": ["0", "1", "2"],
+        "default": "0",
+        "scope": "packaged",
+        "detail": "What merely passing the pointer over the notch opens. "
+                  "0 nothing, 1 the media player, 2 the control centre. Held "
+                  "at 0 here on purpose: a panel that appears on hover also "
+                  "declines the keyboard grab, because taking one on a hover "
+                  "would send the next character you type to the island "
+                  "instead of your window.",
+    },
+    {
+        "key": "dynamicIslandPrimaryAction",
+        "label": "Left click",
+        "type": "enum",
+        "values": ["toggleControlCenter", "toggleExpandedPlayer",
+                   "toggleNotificationCenter", "none"],
+        "default": "toggleControlCenter",
+        "scope": "packaged",
+        "detail": "Swapped from the packaged default on request: upstream "
+                  "puts the player on button 1 and the control centre on "
+                  "button 3. Written down explicitly rather than left unset, "
+                  "because an unset key means the behaviour lives in a "
+                  "compiled binary where nothing on this machine records it.",
+    },
+    {
+        "key": "dynamicIslandSecondaryAction",
+        "label": "Right click",
+        "type": "enum",
+        "values": ["toggleExpandedPlayer", "toggleControlCenter",
+                   "toggleNotificationCenter", "none"],
+        "default": "toggleExpandedPlayer",
+        "scope": "packaged",
+        "detail": "The other half of the swap above.",
+    },
+    {
+        "key": "disableAutoExpandOnTrackChange",
+        "label": "Stay collapsed on track change",
+        "type": "bool",
+        "default": True,
+        "scope": "packaged",
+        "detail": "DESIGN-SPEC.md is explicit that media must NOT expand the "
+                  "shape — it swaps the content while the geometry stays put, "
+                  "'a different mechanism entirely'. On means the spec's "
+                  "behaviour; off restores upstream's pop-out.",
+    },
+    {
+        "key": "islandShowWorkspaceOnAutoHide",
+        "label": "Peek workspace when hidden",
+        "type": "bool",
+        "default": False,
+        "scope": "packaged",
+        "detail": "Only has an effect with Auto-hide on, which it is not by "
+                  "default — so this row is inert until that one is switched, "
+                  "and that is a property of the feature rather than a fault "
+                  "in the row.",
+    },
+    {
+        "key": "wallpaperPywalEnabled",
+        "label": "Wallpaper drives the palette",
+        "type": "bool",
+        "default": False,
+        "scope": "packaged",
+        "detail": "OFF deliberately, and turning it on is a real hazard "
+                  "rather than a preference. AtiScriptsV1/theme-apply already "
+                  "owns pywal for BOTH sessions and wallpaper-sync.sh feeds "
+                  "hyprpaper from the same cache. Enabling this gives two "
+                  "independent things an opinion about one palette, and the "
+                  "qtile session is the one that drifts.",
+    },
 ]
 
 def validate(row):
