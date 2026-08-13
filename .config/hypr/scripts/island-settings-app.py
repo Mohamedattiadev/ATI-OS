@@ -374,7 +374,10 @@ class SettingsWindow(Adw.ApplicationWindow):
             row.connect("notify::selected", self.on_combo, descriptor)
             return self.decorate(row, descriptor)
 
-        if kind in ("string", "path", "font", "list"):
+        if kind == "list":
+            return self.make_list_row(descriptor)
+
+        if kind in ("string", "path", "font"):
             text = ",".join(value) if isinstance(value, list) else str(value or "")
 
             entry = Adw.EntryRow(title=descriptor.get("label", key))
@@ -409,11 +412,6 @@ class SettingsWindow(Adw.ApplicationWindow):
                 button.add_css_class("flat")
                 button.connect("clicked", self.on_pick_folder, entry, descriptor)
                 entry.add_suffix(button)
-            elif kind == "list":
-                entry.set_tooltip_text(
-                    "Comma-separated and ORDERED. Allowed: "
-                    + ", ".join(descriptor.get("values", [])))
-
             # Open the ones that are wrong, so a font that does not resolve is
             # visible without hunting for it.
             if kind == "font" and not descriptor.get("resolves", True):
@@ -431,6 +429,94 @@ class SettingsWindow(Adw.ApplicationWindow):
         row.add_suffix(label)
         row.set_subtitle(self.subtitle_for(descriptor)
                          + "\n\nUnknown type %r — this app cannot edit it." % kind)
+        return row
+
+    def make_list_row(self, descriptor):
+        """An ORDERED subset, edited as an order rather than as a string.
+
+        `list` is the one type where a text entry is not merely inelegant but
+        actively loses the setting's meaning. `dynamicIslandLeftSwipeItems` is
+        an ordered subset of ten values, and island-settings.py's own comment
+        is explicit that modelling it as one boolean per item would throw the
+        ordering away — "which is half of what the row is for". A
+        comma-separated entry keeps the ordering but hands the user the job of
+        not typo-ing a member of a closed set, which is the same trade in the
+        other direction.
+
+        So: selected items in their real order, each able to move; unselected
+        items below, each able to join at the end. Every mutation rewrites the
+        whole list through --set, so the CLI still does the membership and
+        duplicate checks — this widget cannot produce a value the schema would
+        reject, but it is not TRUSTED not to.
+        """
+        key = descriptor["key"]
+        values = list(descriptor.get("values", []))
+        current = list(descriptor.get("value") or [])
+        # Defensive: a value the schema no longer offers would otherwise be
+        # invisible here and then be silently dropped by the first edit.
+        current = [item for item in current if item in values]
+
+        row = Adw.ExpanderRow()
+        self.decorate(row, descriptor)
+        row.set_expanded(False)
+
+        summary = Gtk.Label(label=" → ".join(current) if current else "empty",
+                            valign=Gtk.Align.CENTER)
+        summary.add_css_class("dim-label")
+        summary.add_css_class("caption")
+        row.add_suffix(summary)
+
+        def rewrite(new_items):
+            self.commit(key, ",".join(new_items), lambda: None)
+
+        for index, item in enumerate(current):
+            child = Adw.ActionRow(title="%d. %s" % (index + 1, item))
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2,
+                          valign=Gtk.Align.CENTER)
+
+            up = Gtk.Button(icon_name="go-up-symbolic", tooltip_text="Move earlier")
+            up.add_css_class("flat")
+            up.set_sensitive(index > 0)
+            up.connect("clicked", lambda _b, i=index: rewrite(
+                current[:i - 1] + [current[i], current[i - 1]] + current[i + 1:]))
+
+            down = Gtk.Button(icon_name="go-down-symbolic", tooltip_text="Move later")
+            down.add_css_class("flat")
+            down.set_sensitive(index < len(current) - 1)
+            down.connect("clicked", lambda _b, i=index: rewrite(
+                current[:i] + [current[i + 1], current[i]] + current[i + 2:]))
+
+            remove = Gtk.Button(icon_name="list-remove-symbolic", tooltip_text="Remove")
+            remove.add_css_class("flat")
+            remove.connect("clicked", lambda _b, i=index: rewrite(
+                current[:i] + current[i + 1:]))
+
+            for button in (up, down, remove):
+                box.append(button)
+            child.add_suffix(box)
+            row.add_row(child)
+
+        available = [item for item in values if item not in current]
+        for item in available:
+            child = Adw.ActionRow(title=item)
+            child.add_css_class("dim-label")
+            add = Gtk.Button(icon_name="list-add-symbolic",
+                             valign=Gtk.Align.CENTER, tooltip_text="Add to the end")
+            add.add_css_class("flat")
+            add.connect("clicked", lambda _b, it=item: rewrite(current + [it]))
+            child.add_suffix(add)
+            row.add_row(child)
+
+        if not current:
+            # The empty list is a LEGAL answer — "show nothing in the swipe
+            # row" — and island-settings.py goes out of its way to keep it
+            # spellable. Say so, rather than leaving a section that looks
+            # broken.
+            note = Adw.ActionRow(
+                title="Nothing selected",
+                subtitle="A legal choice: the swipe row shows nothing.")
+            row.add_row(note)
+
         return row
 
     # ---- handlers --------------------------------------------------
@@ -544,10 +630,11 @@ class SettingsWindow(Adw.ApplicationWindow):
 
 
 class App(Adw.Application):
-    def __init__(self, selftest=False):
+    def __init__(self, selftest=False, initial_filter=""):
         super().__init__(application_id="dev.ati.IslandSettings",
                          flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
         self.selftest = selftest
+        self.initial_filter = initial_filter
 
     def do_activate(self):
         window = self.props.active_window or SettingsWindow(self)
@@ -557,6 +644,12 @@ class App(Adw.Application):
                 exercise_writes(window)
             self.quit()
             return
+        # `--filter cpu` opens straight at the swipe readout. Useful on its
+        # own — a settings app with 30 rows should be launchable AT a setting
+        # rather than only at the top — and it is also the only way to get a
+        # row below the fold into a screenshot without synthesising input.
+        if self.initial_filter:
+            window.search.set_text(self.initial_filter)
         window.present()
 
 
@@ -639,5 +732,12 @@ if __name__ == "__main__":
         mode = "write"
     elif "--selftest" in sys.argv:
         mode = True
-    args = [a for a in sys.argv if not a.startswith("--selftest")]
-    sys.exit(App(selftest=mode).run(args))
+
+    initial = ""
+    if "--filter" in sys.argv:
+        index = sys.argv.index("--filter")
+        if index + 1 < len(sys.argv):
+            initial = sys.argv[index + 1]
+
+    args = [sys.argv[0]]
+    sys.exit(App(selftest=mode, initial_filter=initial).run(args))
