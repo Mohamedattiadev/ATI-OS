@@ -129,7 +129,13 @@ BACKEND_PROPERTIES = frozenset([
 # different piece of work. A string row would render, show its value, and
 # ignore every keypress, which is the inert-row failure again. An enum covers
 # the case where the string is one of a known few (clockFormat is one).
-TYPES = ("bool", "int", "enum")
+# "list" is an ORDERED SUBSET of `values`, and both halves of that matter.
+# It exists for dynamicIslandLeftSwipeItems — the cpu/battery/ram readout —
+# where the answer to "what is in the island" and the answer to "in what
+# order" are the same setting. Modelling it as one boolean per item would
+# have been a smaller change to this file and would have thrown the ordering
+# away, which is half of what the row is for.
+TYPES = ("bool", "int", "enum", "list")
 
 # The settings the panel offers, in the order it shows them.
 #
@@ -333,6 +339,25 @@ SETTINGS = [
     #       userconfig key behind it, so a row would write a value nothing
     #       reads.
     {
+        "key": "dynamicIslandLeftSwipeItems",
+        "label": "Swipe readout",
+        "type": "list",
+        "values": ["cpu", "ram", "storage", "battery", "volume",
+                   "brightness", "workspace", "time", "date", "cava"],
+        "default": ["cpu", "battery", "ram"],
+        "scope": "packaged",
+        "detail": "What the island shows when you swipe right, and in what "
+                  "order. The ten values are exactly the cases "
+                  "IslandSystemState.buildCustomSwipeItem answers to — "
+                  "anything else renders as an empty slot rather than as an "
+                  "error, which is why this is a closed list and not free "
+                  "text. Order is left to right. `cava` is the audio "
+                  "visualiser and draws bars instead of a number; `time` and "
+                  "`date` duplicate the resting clock and are offered because "
+                  "the swipe row is also what shows while the clock is "
+                  "covered.",
+    },
+    {
         "key": "bodyFontSize",
         "label": "Body text size",
         "type": "int",
@@ -498,12 +523,12 @@ def validate(row):
         if not isinstance(step, int) or isinstance(step, bool) or step <= 0:
             errors.append("step must be a positive integer")
 
-    if kind == "enum":
+    if kind in ("enum", "list"):
         values = row.get("values")
         if not isinstance(values, list) or not values:
-            errors.append("enum rows need a non-empty values list")
+            errors.append("%s rows need a non-empty values list" % kind)
         elif not all(isinstance(value, str) for value in values):
-            errors.append("enum values must all be strings")
+            errors.append("%s values must all be strings" % kind)
 
     # The default has to survive the same coercion a written value does,
     # because it is what --list reports for a key the file has not got yet. A
@@ -529,6 +554,16 @@ def validate(row):
                     % (default, row["min"], row["max"]))
         elif kind == "enum" and default not in row["values"]:
             errors.append("default %r is not one of values" % (default,))
+        elif kind == "list":
+            if not isinstance(default, list):
+                errors.append("default must be a list, got %r" % (default,))
+            else:
+                unknown = [v for v in default if v not in row["values"]]
+                if unknown:
+                    errors.append("default has unknown items: %s"
+                                  % ", ".join(map(repr, unknown)))
+                if len(set(default)) != len(default):
+                    errors.append("default repeats an item")
 
     return errors
 
@@ -692,6 +727,21 @@ def coerce(entry, raw):
         if text not in entry["values"]:
             raise ValueError("not one of %s" % ", ".join(entry["values"]))
         return text
+    if kind == "list":
+        # Comma-separated on the command line, because the caller is a QML
+        # Process and building a JSON argv from QML is more rope than this
+        # needs. An EMPTY string is a legal answer and means the empty list —
+        # "show nothing in the swipe row" is a real choice, and `"".split(",")`
+        # returning [""] rather than [] is exactly the kind of thing that
+        # would have written one bogus item instead.
+        text = str(raw).strip()
+        items = [part.strip() for part in text.split(",") if part.strip()] if text else []
+        unknown = [item for item in items if item not in entry["values"]]
+        if unknown:
+            raise ValueError("unknown items: %s" % ", ".join(unknown))
+        if len(set(items)) != len(items):
+            raise ValueError("an item is repeated")
+        return items
     return str(raw)
 
 

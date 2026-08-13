@@ -4752,6 +4752,18 @@ PanelWindow {
             PanelLoader {
                 id: settingsLoader
                 anchors.fill: parent
+                // Same missing link as the other three — see the long note on
+                // controlCenterLoader. Found while testing the swipe-readout
+                // list editor: twelve `j` presses at 120 ms apart moved the
+                // selection zero rows, so the panel that is entirely a
+                // keyboard-driven list was not receiving a key.
+                //
+                // `focus: live` rather than naming the property, because here
+                // `live` IS exactly the panel's visibility — unlike the
+                // control centre, whose `live` also covers the two
+                // connectivity panels it acts as data provider for. Binding
+                // to `live` where the two are the same keeps them the same.
+                focus: live
                 live: islandContainer.settingsLayerVisible
                 // Same 71 px empty-list height as the power menu, and a worse
                 // excursion because the settled height is taller: measured

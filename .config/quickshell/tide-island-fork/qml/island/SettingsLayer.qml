@@ -136,7 +136,25 @@ FocusScope {
             root.statusText = "";
             root.statusIsError = false;
             listProcess.running = true;
-            forceActiveFocus();
+            // DEFERRED, where this used to be a bare forceActiveFocus().
+            //
+            // The direct call runs in the same event-loop turn as the
+            // showCondition change, and so does islandContainer's own
+            // forceActiveFocus() — the FocusScope hands focus to its focus
+            // child and recurses, so whichever of the two runs LAST decides
+            // who ends up with it. That is why this panel's keyboard was
+            // intermittent rather than dead: measured, one run of twelve
+            // paced `j` presses moved the selection four rows and the next
+            // moved it none, with nothing changed in between.
+            //
+            // Qt.callLater puts the claim in the turn after both, which is
+            // the same fix NotificationCenterLayer needed and for the same
+            // reason. The guard matters because the panel can be closed
+            // inside that one turn.
+            Qt.callLater(function() {
+                if (root.showCondition)
+                    root.forceActiveFocus();
+            });
         }
     }
 
@@ -246,10 +264,106 @@ FocusScope {
     // what the hand expects), for an enum it steps the list, for an int it
     // adds a step. Enter is +1, which makes the common case — flipping a
     // switch — a single key.
+    // ---- THE LIST EDITOR ----
+    //
+    // FORK: `list` is an ORDERED SUBSET, and it needs a sub-mode because it
+    // is the only row type where one keystroke cannot express the change.
+    // bool has two states, enum and int step along one axis — all three are
+    // answered by h/l on the row itself. "Which of ten items, in which
+    // order" is two questions, so it gets its own mode with its own cursor
+    // and an explicit commit.
+    //
+    // Edited against a DRAFT rather than committing per keystroke. Every
+    // other row in this panel writes on the key press, which is right when
+    // the change is one value and instantly reversible. Here a single edit
+    // is several presses — add three items, move one up twice — and writing
+    // each intermediate state would put four or five half-finished readouts
+    // through the island, each triggering a config reload. Escape therefore
+    // means "throw the draft away", which it cannot mean anywhere else in
+    // this panel.
+    property bool listEditActive: false
+    property int listCursor: 0
+    property var listDraft: []
+
+    function listBegin() {
+        const entry = root.selected;
+        if (!entry || entry.type !== "list")
+            return;
+        // slice() rather than assigning the model's array: QML hands out the
+        // same JS array object the model holds, so mutating it in place would
+        // edit the live row and leave Escape with nothing to restore.
+        root.listDraft = (entry.value || []).slice();
+        root.listCursor = 0;
+        root.listEditActive = true;
+    }
+
+    function listCancel() {
+        root.listEditActive = false;
+        root.listDraft = [];
+    }
+
+    function listCommit() {
+        const entry = root.selected;
+        if (!entry) return;
+        // Comma-separated, matching island-settings.py's `list` coercion. An
+        // empty draft sends an empty string, which that end reads as the
+        // empty list — a legal answer meaning "show nothing here".
+        root.commit(entry.key, root.listDraft.join(","));
+        root.listEditActive = false;
+    }
+
+    function listMoveCursor(delta) {
+        const values = (root.selected && root.selected.values) || [];
+        if (values.length === 0) return;
+        let next = root.listCursor + delta;
+        if (next < 0) next = values.length - 1;
+        if (next > values.length - 1) next = 0;
+        root.listCursor = next;
+    }
+
+    function listToggle() {
+        const values = (root.selected && root.selected.values) || [];
+        const item = values[root.listCursor];
+        if (item === undefined) return;
+        const draft = root.listDraft.slice();
+        const at = draft.indexOf(item);
+        if (at >= 0) draft.splice(at, 1);
+        else draft.push(item);          // appended, so order is the order you added them
+        root.listDraft = draft;
+    }
+
+    // Reorder within the draft. Operates on the item under the CANDIDATE
+    // cursor, not on a second cursor over the draft — one cursor is enough
+    // because an item's position in the draft is shown next to it, so you
+    // can see what you are moving without looking somewhere else.
+    function listShift(delta) {
+        const values = (root.selected && root.selected.values) || [];
+        const item = values[root.listCursor];
+        if (item === undefined) return;
+        const draft = root.listDraft.slice();
+        const at = draft.indexOf(item);
+        if (at < 0) return;             // not included; nothing to reorder
+        const to = at + delta;
+        if (to < 0 || to > draft.length - 1) return;
+        draft.splice(at, 1);
+        draft.splice(to, 0, item);
+        root.listDraft = draft;
+    }
+
     function change(delta) {
         const entry = root.selected;
         if (!entry || root.pendingKey !== "")
             return;
+
+        if (entry.type === "list") {
+            // Only forward (l / Enter / Space) opens it. `h` on a list row
+            // does nothing rather than opening the same mode, so the two
+            // directions do not both mean "enter", which on every other row
+            // type they emphatically do not.
+            if (delta > 0)
+                root.listBegin();
+            return;
+        }
 
         if (entry.type === "bool") {
             root.commit(entry.key, entry.value === true ? "false" : "true");
@@ -291,6 +405,49 @@ FocusScope {
     }
 
     Keys.onPressed: function(event) {
+        // The list sub-mode owns the keyboard entirely while it is open, and
+        // returns early rather than falling through. Sharing the switch below
+        // would mean j/k moving the ROW selection out from under the draft —
+        // and the draft belongs to the row you opened it on.
+        if (root.listEditActive) {
+            switch (event.key) {
+            case Qt.Key_Escape:
+                root.listCancel();          // the draft is discarded; see listBegin
+                event.accepted = true;
+                return;
+            case Qt.Key_Return:
+            case Qt.Key_Enter:
+                root.listCommit();
+                event.accepted = true;
+                return;
+            case Qt.Key_Space:
+                root.listToggle();
+                event.accepted = true;
+                return;
+            case Qt.Key_Down:
+            case Qt.Key_J:
+                // Shift is reorder, plain is move. J/K rather than a separate
+                // pair of keys because "move the thing" and "move the cursor"
+                // are the same gesture with and without a modifier, which is
+                // the convention every list-reorder UI already uses.
+                if ((event.modifiers & Qt.ShiftModifier) !== 0) root.listShift(1);
+                else root.listMoveCursor(1);
+                event.accepted = true;
+                return;
+            case Qt.Key_Up:
+            case Qt.Key_K:
+                if ((event.modifiers & Qt.ShiftModifier) !== 0) root.listShift(-1);
+                else root.listMoveCursor(-1);
+                event.accepted = true;
+                return;
+            default:
+                // Swallowed on purpose. `q` must not close the panel from
+                // inside the sub-mode with an uncommitted draft on screen.
+                event.accepted = true;
+                return;
+            }
+        }
+
         switch (event.key) {
         case Qt.Key_Escape:
         case Qt.Key_Q:
@@ -409,9 +566,16 @@ FocusScope {
                     anchors.right: parent.right
                     anchors.rightMargin: Metrics.pad(10)
                     anchors.verticalCenter: parent.verticalCenter
+                    // A list renders as its COUNT, not as its contents. The
+                    // value column is ~40% of a 52%-width list and
+                    // "cpu,battery,ram" already elides there; ten items would
+                    // be a row of ellipsis. The contents are one keypress
+                    // away in the editor, where they have room and an order.
                     text: rowItem.modelData.type === "bool"
                         ? (rowItem.modelData.value === true ? "on" : "off")
-                        : String(rowItem.modelData.value)
+                        : rowItem.modelData.type === "list"
+                            ? ((rowItem.modelData.value || []).length + " items")
+                            : String(rowItem.modelData.value)
                     // There was a red case here for `forkPolkitAgentEnabled`
                     // when ON — the one row that could supposedly take the
                     // system's password prompts away. That row is gone (it
@@ -586,9 +750,116 @@ FocusScope {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Metrics.pad(8)
-        text: "j/k move  ·  h/l or Enter change  ·  q close"
+        // The footer follows the mode. A hint row that advertises keys the
+        // current mode does not answer is worse than no hint row — this
+        // panel's own cheatsheet argument, applied to itself.
+        text: root.listEditActive
+            ? "j/k move  ·  space toggle  ·  J/K reorder  ·  Enter save  ·  Esc cancel"
+            : "j/k move  ·  h/l or Enter change  ·  q close"
         color: IslandTheme.textDisabled
         font.pixelSize: Metrics.font(10)
         font.family: root.textFontFamily
+    }
+
+    // ---- THE LIST EDITOR OVERLAY ----
+    //
+    // Covers the whole panel rather than living in the detail column. The
+    // detail column is 48% of the width and this needs ten rows with an
+    // order badge on each; squeezed in there it would be the same mistake
+    // the control centre's first tile grid made. It is a MODE, so it looks
+    // like one.
+    Rectangle {
+        id: listEditor
+        anchors.fill: parent
+        visible: root.listEditActive
+        color: IslandTheme.surface
+        opacity: root.listEditActive ? 1 : 0
+
+        Behavior on opacity {
+            NumberAnimation { duration: IslandTheme.durationFast }
+        }
+
+        // Swallows clicks so a stray press does not reach the rows behind
+        // the overlay and move a selection the draft is anchored to.
+        MouseArea { anchors.fill: parent }
+
+        Text {
+            id: editorTitle
+            x: root.horizontalPadding
+            y: Metrics.pad(11)
+            text: root.selected ? root.selected.label : ""
+            color: IslandTheme.textPrimary
+            font.pixelSize: Metrics.font(15)
+            font.family: root.heroFontFamily
+            font.weight: Font.DemiBold
+        }
+
+        Text {
+            anchors.left: editorTitle.right
+            anchors.leftMargin: Metrics.pad(8)
+            anchors.baseline: editorTitle.baseline
+            text: root.listDraft.length + " shown, left to right"
+            color: IslandTheme.textMuted
+            font.pixelSize: Metrics.font(10)
+            font.family: root.textFontFamily
+        }
+
+        Column {
+            x: root.horizontalPadding
+            y: root.headerHeight + Metrics.pad(4)
+            width: parent.width - root.horizontalPadding * 2
+            spacing: Metrics.px(1)
+
+            Repeater {
+                model: (root.selected && root.selected.values) || []
+
+                delegate: Item {
+                    id: cand
+                    required property int index
+                    required property string modelData
+
+                    readonly property int orderAt: root.listDraft.indexOf(cand.modelData)
+                    readonly property bool included: cand.orderAt >= 0
+                    readonly property bool isCursor: root.listCursor === cand.index
+
+                    width: parent.width
+                    height: Metrics.px(22)
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Metrics.px(6)
+                        color: cand.isCursor ? IslandTheme.selectionFill : "transparent"
+                        border.width: cand.isCursor ? 1 : 0
+                        border.color: IslandTheme.selectionBorder
+                    }
+
+                    // The order badge IS the inclusion state — a number when
+                    // in, a dash when out. A separate tick plus a separate
+                    // number would be two marks for one fact, and the number
+                    // is the one that carries more.
+                    Text {
+                        id: badge
+                        x: Metrics.pad(8)
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Metrics.px(18)
+                        text: cand.included ? String(cand.orderAt + 1) : "–"
+                        color: cand.included ? IslandTheme.accentText : IslandTheme.textDisabled
+                        font.pixelSize: Metrics.font(11)
+                        font.family: root.textFontFamily
+                        font.weight: Font.DemiBold
+                    }
+
+                    Text {
+                        anchors.left: badge.right
+                        anchors.leftMargin: Metrics.pad(6)
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: cand.modelData
+                        color: cand.included ? IslandTheme.textPrimary : IslandTheme.textMuted
+                        font.pixelSize: Metrics.font(12)
+                        font.family: root.textFontFamily
+                    }
+                }
+            }
+        }
     }
 }
