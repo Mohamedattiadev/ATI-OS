@@ -8,6 +8,10 @@ import Quickshell.Io
 import "../common"
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
+// FORK: the shared scale factor. This file used to import NEITHER Metrics
+// nor a chrome component and sized everything with literals; see the note on
+// the geometry block below for why that stopped being right.
+import "../common/Metrics.js" as Metrics
 import "../common/Motion.js" as Motion
 
 //
@@ -88,8 +92,28 @@ FocusScope {
     readonly property var alignments: ["start", "centre", "end"]
     property int alignIndex: 0
 
-    readonly property real horizontalPadding: 18
-    readonly property real headerHeight: 34
+    // ---- THIS PANEL NOW JOINS THE SCALE. IT DID NOT, AND SAID WHY. ----
+    //
+    // The note that used to be here was right for as long as it held: this
+    // file sized everything with literals and did not import Metrics at all,
+    // so mixing ONE scaled dimension into an unscaled panel would put that
+    // element out of step with the header around it. Internally consistent
+    // rather than a miss — and captured beside AudioPanel, which uses Metrics
+    // 35 times, the two were indistinguishable in type size, because
+    // FONT_SCALE is 1.0 and font(n) is the identity above 9.
+    //
+    // What changed is not the argument, it is the premise. Taking PanelChrome
+    // means the header, the tabs, the rules and the footer are Metrics-driven
+    // whether or not the body is, so "unscaled panel" stops being available:
+    // the choice is now between a panel that is scaled throughout and one with
+    // a scaled frame around an unscaled interior, which is the seam the
+    // original note existed to avoid.
+    //
+    // So every literal goes, not just the eight `font.pixelSize` ones —
+    // horizontalPadding 18, headerHeight 34, the 26 px ring, hintHeight 24.
+    // At SCALE 0.92 the panel shrinks about 8%. That is a visible change to a
+    // panel that looked correct, which is why it was asked about rather than
+    // swept in.
     readonly property int rowsVisible: 6
 
     // ---- WHY THE PANEL SIZES ITSELF ----
@@ -111,9 +135,8 @@ FocusScope {
     // named here rather than repeated as literals, because a panel that
     // computes its height from a different row height than it draws is a
     // panel that clips its last row.
-    readonly property real rowHeight: 26
+    readonly property real rowHeight: Metrics.px(26)
     readonly property real rowSpacing: 2
-    readonly property real hintHeight: 24          // 10px type + its 10px bottom margin
     readonly property real listBodyHeight:
         Math.max(0, root.currentItems.length) * (root.rowHeight + root.rowSpacing) - root.rowSpacing
     // Read off the Column rather than recomputed from a row count: the
@@ -130,8 +153,11 @@ FocusScope {
         4 * (root.rowHeight + root.rowSpacing),
         Math.min(root.rowsVisible * (root.rowHeight + root.rowSpacing), root.listBodyHeight),
         root.detailsBodyHeight)
+    // Metrics and not chrome.chromeHeight: this sizes the capsule the panel is
+    // drawn inside, so reading it off a child of that panel is a loop waiting
+    // for one more term. `+ tabsHeight` because this panel has tabs.
     readonly property real preferredHeight:
-        root.headerHeight + 4 + root.bodyHeight + 10 + root.hintHeight
+        Metrics.chromeTotal() + chrome.tabsHeight + root.bodyHeight
 
     focus: showCondition
     activeFocusOnTab: true
@@ -782,36 +808,55 @@ FocusScope {
         event.accepted = true;
     }
 
-    // --- chrome ------------------------------------------------------------
-    Text {
-        id: header
-        x: root.horizontalPadding
-        y: 10
-        text: "Display"
-        color: "white"
-        font.pixelSize: 15
-        font.family: root.heroFontFamily
-        font.weight: Font.DemiBold
-        font.letterSpacing: -0.2
-    }
+    // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
+    //
+    // The header was "Display" at pixelSize 15 in heroFontFamily with
+    // `color: "white"`; it is the instrument register now. The literal white
+    // was not merely a style — on mono-light, the one palette of 21 whose
+    // surface lands on the light side, it is the wrong ink.
+    PanelChrome {
+        id: chrome
+        textFontFamily: root.textFontFamily
 
-    Row {
-        anchors.left: header.right
-        anchors.leftMargin: 14
-        y: 12
-        spacing: 10
+        title: "display"
 
-        Repeater {
-            model: ["outputs", "modes", "layouts", "arrange"]
-            delegate: Text {
-                required property var modelData
-                text: modelData
-                color: root.view === modelData ? IslandTheme.textPrimary : IslandTheme.textDisabled
-                font.pixelSize: 11
-                font.family: root.textFontFamily
-                font.weight: root.view === modelData ? Font.DemiBold : Font.Normal
-            }
-        }
+        tabs: root.tabs
+        currentTab: root.view
+        onTabRequested: name => root.setView(name)
+
+        // The countdown takes the header's right-hand slot when armed, because
+        // a provisional change is the single most important thing on the panel
+        // — it is the only state with a deadline. So the status text moves over
+        // for the ring rather than under it.
+        statusRightInset: revertRing.visible
+            ? revertRing.width + Metrics.pad(8) : 0
+
+        status: root.revertSpecs !== null ? "y to keep, c to revert" : root.statusText
+        statusLevel: root.revertSpecs !== null ? "busy" : root.statusLevel
+
+        hints: root.view === "arrange"
+            ? [
+                { key: "hjkl", label: "move" },
+                { key: "Tab", label: "pick" },
+                { key: "⇧Tab", label: "leave" },
+                { key: "=", label: "align" },
+                { key: "Enter", label: "apply" },
+                { key: "BkSp", label: "cancel" }
+              ]
+            : [
+                { key: "Tab", label: "section" },
+                { key: "j/k", label: "move" },
+                { key: "Enter", label: "modes" },
+                { key: "i/e/m", label: "preset" },
+                { key: "h/l/u/d", label: "place" },
+                { key: "t", label: "rotate" },
+                { key: "f", label: "flip" },
+                { key: "o", label: "on-off" },
+                { key: "p", label: "scale" },
+                { key: "v", label: "layouts" },
+                { key: "s", label: "save" },
+                { key: "q", label: "close" }
+              ]
     }
 
     // FORK: the countdown draws the island's ring as well as saying the
@@ -833,15 +878,14 @@ FocusScope {
         id: revertRing
         visible: root.revertSpecs !== null
         anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
-        y: 8
-        // Raw numbers, not Metrics.px(): this file sizes everything with
-        // literals (horizontalPadding 18, headerHeight 34, 11px type) and
-        // does not import Metrics at all. Mixing one scaled dimension into
-        // an unscaled panel would put the ring out of step with the header
-        // it sits in.
-        width: 26
-        height: 26
+        anchors.rightMargin: chrome.padX
+        y: Metrics.pad(8)
+        // Metrics.px() now, for the reason the geometry block above gives:
+        // the header this ring sits in is PanelChrome's and is scaled, so a
+        // raw 26 here is the mixed-scale seam the old note was avoiding, just
+        // pointing the other way.
+        width: Metrics.px(26)
+        height: Metrics.px(26)
         showCore: false
         lineWidth: 2.5
         fillColor: IslandTheme.accent
@@ -855,31 +899,10 @@ FocusScope {
             anchors.centerIn: parent
             text: root.revertLeft
             color: IslandTheme.accent
-            font.pixelSize: 10
+            font.pixelSize: Metrics.TYPE.small
             font.family: root.textFontFamily
             font.weight: Font.DemiBold
         }
-    }
-
-    // The countdown takes the header's right-hand slot when armed, because a
-    // provisional change is the single most important thing on the panel —
-    // it is the only state with a deadline.
-    Text {
-        anchors.right: revertRing.visible ? revertRing.left : parent.right
-        anchors.rightMargin: revertRing.visible ? 8 : root.horizontalPadding
-        y: 12
-        text: root.revertSpecs !== null
-            ? "y to keep, c to revert"
-            : root.statusText
-        color: root.revertSpecs !== null
-            ? IslandTheme.warning
-            : (root.statusLevel === "error" ? IslandTheme.danger
-               : (root.statusLevel === "ok" ? IslandTheme.success : IslandTheme.textMuted))
-        font.pixelSize: 11
-        font.family: root.textFontFamily
-        elide: Text.ElideRight
-        width: Math.min(implicitWidth, root.width * 0.55)
-        horizontalAlignment: Text.AlignRight
     }
 
     ListView {
@@ -887,9 +910,9 @@ FocusScope {
         // FORK: P1-3. One shared indicator; see qml/common/IslandScrollBar.qml
         // for why `active` does not gate on pointer interaction alone.
         ScrollBar.vertical: IslandScrollBar { view: listView }
-        x: root.horizontalPadding
-        y: root.headerHeight + 4
-        width: parent.width * 0.56 - root.horizontalPadding
+        x: chrome.contentX
+        y: chrome.contentY
+        width: parent.width * 0.56 - chrome.padX
         // Sized from the same numbers preferredHeight is built out of, so
         // the list and the shape around it cannot disagree.
         height: root.bodyHeight
@@ -897,32 +920,39 @@ FocusScope {
         model: root.currentItems
         currentIndex: root.selectedIndex
         boundsBehavior: Flickable.StopAtBounds
-        spacing: 2
+        spacing: root.rowSpacing
 
-        delegate: Rectangle {
+        delegate: PanelRow {
             id: row
             required property int index
             required property var modelData
 
             width: listView.width
-            height: 26
-            radius: 7
-            color: row.index === root.selectedIndex ? IslandTheme.selectionFill : "transparent"
-            border.width: (root.view === "arrange" && row.index === root.arrangePick) ? 1 : 0
-            border.color: IslandTheme.accent
+            height: root.rowHeight
+
+            // `active` is the ARRANGE PICK — the output you are currently
+            // dragging — which is the one thing on this list that is a fact
+            // about the system rather than about the cursor. It was drawn as a
+            // 1 px accent border, which is the weakest mark in the shell and
+            // is invisible next to a filled row; it is the accent wash now,
+            // the same one a connected network gets.
+            active: root.view === "arrange" && row.index === root.arrangePick
+            selected: row.index === root.selectedIndex
+
+            onCursorRequested: root.selectedIndex = row.index
+            onActivated: root.activate()
 
             Text {
                 anchors.left: parent.left
-                anchors.leftMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - 20
+                width: parent.width
                 elide: Text.ElideRight
                 color: {
                     if (root.view === "outputs" || root.view === "arrange")
                         return row.modelData.enabled ? IslandTheme.textPrimary : IslandTheme.textDisabled;
-                    return "white";
+                    return IslandTheme.textPrimary;
                 }
-                font.pixelSize: 12
+                font.pixelSize: Metrics.TYPE.reading
                 font.family: root.textFontFamily
                 text: {
                     if (root.view === "layouts")
@@ -946,33 +976,18 @@ FocusScope {
 
             // FORK: P1-3. This panel had ZERO MouseAreas — every other fork
             // panel could at least be pointed at, and this one was keyboard
-            // only, with no cue that it was.
-            //
-            // Deliberately the same shape as WifiPanel's, because Phase 3 is
-            // "one interaction model" and the model this shell settled on is
-            // not hover-highlight-plus-separate-selection. It is: HOVER MOVES
-            // THE CURSOR. One indicator, driven by both the keyboard and the
-            // pointer, so the details column on the right previews whatever
-            // you are pointing at and `Enter` and a click mean the same
-            // thing on the same row. That is also why `containsMouse` appears
-            // nowhere in these panels and why its absence is not the gap it
-            // looks like in a grep.
+            // only, with no cue that it was. The MouseArea is PanelRow's now
+            // and its two signals are wired at the top of this delegate, but
+            // the model is unchanged and is the shell's: HOVER MOVES THE
+            // CURSOR — one indicator driven by both the keyboard and the
+            // pointer, so the details column previews whatever you point at
+            // and `Enter` and a click mean the same thing on the same row.
             //
             // Click activates, which for the two destructive views — a mode
             // change and a layout restore — is the same call `Enter` already
             // made, and both already run behind the revert countdown that
             // `revertRing` draws. Clicking cannot commit anything the panel
             // does not already offer to undo.
-            MouseArea {
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onEntered: root.selectedIndex = row.index
-                onClicked: {
-                    root.selectedIndex = row.index;
-                    root.activate();
-                }
-            }
         }
     }
 
@@ -982,9 +997,9 @@ FocusScope {
     Column {
         id: detailsColumn
         x: parent.width * 0.58
-        y: root.headerHeight + 6
-        width: parent.width * 0.42 - root.horizontalPadding
-        spacing: 3
+        y: chrome.contentY + Metrics.pad(2)
+        width: parent.width * 0.42 - chrome.padX
+        spacing: Metrics.px(3)
 
         Repeater {
             model: {
@@ -1003,38 +1018,25 @@ FocusScope {
             }
             delegate: Row {
                 required property var modelData
-                spacing: 8
+                spacing: Metrics.px(8)
                 Text {
                     text: modelData[0]
                     color: IslandTheme.textDisabled
-                    font.pixelSize: 11
+                    font.pixelSize: Metrics.TYPE.body
                     font.family: root.textFontFamily
-                    width: 62
+                    width: Metrics.px(62)
                 }
                 Text {
                     text: String(modelData[1] || "—")
                     color: IslandTheme.textPrimary
-                    font.pixelSize: 11
+                    font.pixelSize: Metrics.TYPE.body
                     font.family: root.textFontFamily
                     elide: Text.ElideRight
-                    width: 190
+                    width: Metrics.px(190)
                 }
             }
         }
     }
 
-    Text {
-        anchors.left: parent.left
-        anchors.leftMargin: root.horizontalPadding
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 10
-        width: parent.width - root.horizontalPadding * 2
-        elide: Text.ElideRight
-        color: IslandTheme.textDisabled
-        font.pixelSize: 10
-        font.family: root.textFontFamily
-        text: root.view === "arrange"
-            ? "hjkl move · Tab pick · ⇧Tab leave · = align · Enter apply · BkSp cancel"
-            : "Tab section · j/k move · Enter modes · i/e/m preset · h/l/u/d place · t rotate · f flip · o on-off · p scale · v layouts · s save · q close"
-    }
+    // The key-hint Text that used to close this file is `chrome.hints` now.
 }

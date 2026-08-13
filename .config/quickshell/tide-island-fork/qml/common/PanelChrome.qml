@@ -95,6 +95,12 @@ Item {
     property string status: ""
     property string statusLevel: "idle"        // idle | busy | ok | error
 
+    // Extra room to the right of the status text, for a panel that puts
+    // something else in that corner. DisplayPanel's revert countdown is the
+    // one case: an armed provisional change draws a ProgressRing there, and
+    // the status has to move over rather than under it.
+    property real statusRightInset: 0
+
     // --- the tabs ---------------------------------------------------------
 
     property var tabs: []
@@ -252,7 +258,7 @@ Item {
     Text {
         id: statusText
         anchors.right: parent.right
-        anchors.rightMargin: root.padX
+        anchors.rightMargin: root.padX + root.statusRightInset
         y: Metrics.chromeTop()
         visible: root.status.length > 0
         width: Math.min(implicitWidth, root.width * 0.45)
