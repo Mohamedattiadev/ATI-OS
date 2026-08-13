@@ -75,4 +75,46 @@ ln -sfn -- "$img" "$WALL_LINK"
 # Delegate the actual set, so there is exactly ONE place that knows how to
 # talk to hyprpaper. Duplicating the hyprctl call here is how the preload
 # trap above would come back in a second copy that nobody re-probes.
-exec "$(dirname "$(readlink -f "$0")")/wallpaper-sync.sh"
+#
+# NOT `exec` any more -- see the re-derive below, which has to run after it.
+"$(dirname "$(readlink -f "$0")")/wallpaper-sync.sh"
+
+#  ---- IN `wal` MODE THE WALLPAPER *IS* THE PALETTE ----
+#
+#  On the 21 named themes the palette is fixed and a wallpaper change must
+#  NOT touch it. In `wal` mode it is derived from the image, and nothing
+#  here re-derived it: this script recorded the new wallpaper and pointed
+#  the daemon at it, and stopped. theme-apply was never re-run, so every
+#  colour in both sessions stayed derived from the PREVIOUS image.
+#
+#  MEASURED, switching 0182.jpg -> 0071.jpg through this script with the
+#  mode set to wal: ~/.cache/wall followed, and colors.conf's $bg stayed
+#  0b0f13 -- 0182's background -- where 0071's precompiled palette gives
+#  0c1013. Window borders are the visible half of that, which is the
+#  reported "the border of the apps not following the color theme
+#  sometimes": only in wal mode, and only until the next theme change.
+#
+#  (A first attempt to prove this compared $border_active and found it
+#  UNCHANGED across both wallpapers, which looked like the bug and was not
+#  evidence of it -- the wal generator emits the same first and last accent
+#  for both images (#ee5b2b, #3cc2dd), so the cyan slot is simply not a
+#  slot that varies. A staleness test has to read a field that moves.)
+#
+#  Guarded on the mode rather than run unconditionally, and placed here
+#  rather than in wallpaper-sync.sh, because sync is also autostart.conf's
+#  login hook -- re-deriving there would run a full theme regeneration on
+#  every boot. This script is the "the user picked a new wallpaper" entry
+#  point, which is exactly the event that should re-derive.
+#
+#  No recursion: theme-apply never calls back into either wallpaper script.
+MODE_FILE="$HOME/.cache/qtile/theme_mode"
+if [ -r "$MODE_FILE" ] && [ "$(cat "$MODE_FILE" 2>/dev/null)" = "wal" ]; then
+    # The wallpaper is already set and recorded by this point, so a
+    # theme-apply failure must not fail this script: the island's picker
+    # reads the exit code to decide whether to report "applied", and the
+    # wallpaper genuinely was. Loud on stderr, non-fatal to the exit code.
+    if ! theme-apply wal; then
+        echo "wallpaper-set: wallpaper applied, but theme-apply wal failed;" \
+             "colours are still from the previous image" >&2
+    fi
+fi
