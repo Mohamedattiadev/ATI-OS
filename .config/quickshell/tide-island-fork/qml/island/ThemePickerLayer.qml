@@ -66,8 +66,56 @@ FocusScope {
 
     readonly property int columns: 4
     readonly property real tileSpacing: Metrics.px(10)
-    readonly property real horizontalPadding: Metrics.pad(18)
-    readonly property real headerHeight: Metrics.pad(34)
+    // FORK: header height, content inset and the key-hint strip are
+    // PanelChrome's now. See qml/common/PanelChrome.qml.
+
+    // ---- SEARCH: A REAL FILTER, AND THIS TIME THAT IS THE RIGHT ANSWER ----
+    //
+    // The wallpaper picker got type-to-jump and its file explains why a filter
+    // was wrong THERE: `allWallpapers` is a ListModel carrying per-item
+    // thumbnail state (thumbnailReady, thumbnailSource, cacheRevision) and
+    // `wallpaperIndexByPath` maps a path to its index in that model, so
+    // rebuilding it to show a subset invalidates every index and throws away
+    // the generated-thumbnail bookkeeping — a re-scan per keystroke.
+    //
+    // NONE OF THAT IS TRUE HERE, and it is worth being explicit rather than
+    // copying the other panel's conclusion:
+    //
+    //   * `themes` is a plain JS array of {name, colors} parsed once from
+    //     theme-list.sh. No per-item cache state, nothing keyed by index.
+    //   * it is a GridView, not a PathView. A grid of 22 with 6 hidden is a
+    //     grid you scroll; a grid of 3 is just a smaller grid. A carousel of
+    //     3 is a different component.
+    //   * 22 items, not 362. Filtering the whole array on every keystroke is
+    //     22 string compares.
+    //
+    // So `/` narrows the grid, and the count is drawn beside the query for
+    // the reason the wallpaper picker draws its own: a search with nothing on
+    // screen is indistinguishable from a stuck keyboard, and the count is
+    // what separates "no such theme" from "you typo'd".
+    property bool searching: false
+    property string searchQuery: ""
+
+    // The grid's model. `themes` stays the unfiltered truth — applyTheme and
+    // the active-tile check both read names, not indices, so nothing outside
+    // this property has to know the list narrowed.
+    readonly property var visibleThemes: {
+        const needle = root.searchQuery.trim().toLowerCase();
+        if (needle === "")
+            return root.themes;
+        const out = [];
+        for (let i = 0; i < root.themes.length; i++) {
+            if (String(root.themes[i].name).toLowerCase().indexOf(needle) >= 0)
+                out.push(root.themes[i]);
+        }
+        return out;
+    }
+
+    function endSearch() {
+        root.searching = false;
+        root.searchQuery = "";
+        root.setSelection(0);
+    }
 
     // ---- WHY THE PICKER SIZES ITSELF ----
     //
@@ -89,11 +137,20 @@ FocusScope {
     // comes to 397 px on a 768 px panel. The clamp against the screen in
     // DynamicIslandWindow is what makes a 40-theme library scroll instead
     // of running off the bottom.
-    readonly property int rowCount: Math.max(1, Math.ceil(root.themes.length / root.columns))
+    readonly property int rowCount: Math.max(1, Math.ceil(root.visibleThemes.length / root.columns))
     readonly property real gridHeight: root.rowCount * root.cellHeight
     readonly property real cellHeight: Metrics.px(62)
+    // ---- THE PANEL DOES NOT SHRINK WHILE YOU TYPE ----
+    //
+    // Sized from the UNFILTERED count on purpose, and it is PickerLayer's
+    // argument applied to a grid: a panel that re-sizes on every keystroke
+    // makes the query line — the one element that must stay under your eyes
+    // while you type — walk up the screen as the list narrows. `rowCount`
+    // follows the filter so the GRID lays out correctly; the frame does not.
+    readonly property int fullRowCount:
+        Math.max(1, Math.ceil(root.themes.length / root.columns))
     readonly property real preferredHeight:
-        root.headerHeight + Metrics.pad(6) + root.gridHeight + Metrics.pad(18)
+        Metrics.chromeTotal() + root.fullRowCount * root.cellHeight
 
     focus: showCondition
     activeFocusOnTab: true
@@ -130,6 +187,10 @@ FocusScope {
             forceActiveFocus();
         } else {
             root.errorText = "";
+            // A query left over from the last open is a picker that comes up
+            // showing three of twenty-two themes with no memory of why.
+            root.searching = false;
+            root.searchQuery = "";
         }
     }
 
@@ -160,19 +221,24 @@ FocusScope {
         applyProcess.running = true;
     }
 
+    // Both walk `visibleThemes`, not `themes`: with a query active the grid IS
+    // the filtered list, and clamping to the unfiltered length would let the
+    // cursor run off the end of what is drawn.
     function moveSelection(delta) {
-        if (root.themes.length === 0)
+        if (root.visibleThemes.length === 0)
             return;
         let next = root.selectedIndex + delta;
         if (next < 0) next = 0;
-        if (next > root.themes.length - 1) next = root.themes.length - 1;
+        if (next > root.visibleThemes.length - 1) next = root.visibleThemes.length - 1;
         root.setSelection(next);
     }
 
     function setSelection(index) {
-        if (root.themes.length === 0)
+        if (root.visibleThemes.length === 0) {
+            root.selectedIndex = 0;
             return;
-        const next = Math.max(0, Math.min(root.themes.length - 1, index));
+        }
+        const next = Math.max(0, Math.min(root.visibleThemes.length - 1, index));
         root.selectedIndex = next;
         themeGrid.positionViewAtIndex(next, GridView.Contain);
     }
@@ -222,16 +288,87 @@ FocusScope {
         }
     }
 
+    // Over the VISIBLE list, because its one caller positions the cursor and
+    // the cursor indexes what is drawn. With no query the two lists are the
+    // same object, so this is unchanged in the normal case.
     function indexOfTheme(name) {
-        for (let index = 0; index < root.themes.length; index++) {
-            if (String(root.themes[index].name) === String(name))
+        for (let index = 0; index < root.visibleThemes.length; index++) {
+            if (String(root.visibleThemes[index].name) === String(name))
                 return index;
         }
         return -1;
     }
 
     Keys.onPressed: function(event) {
+        // SEARCH MODE FIRST, as a separate branch rather than extra cases in
+        // the switch, and for the same reason WallpaperPickerLayer does it:
+        // every navigation key in this panel is a LETTER. h, j, k, l, g and q
+        // are all things you type into a theme name — "gruvbox" alone would
+        // hit g, k and l — so while a query is being typed the single-key
+        // bindings must be off entirely.
+        //
+        // Escape unwinds one level at a time, query then panel, which is the
+        // control centre's cursor -> drawer -> panel rule again.
+        if (root.searching) {
+            if (event.key === Qt.Key_Escape) {
+                root.endSearch();
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                if (root.selectedIndex >= 0 && root.selectedIndex < root.visibleThemes.length)
+                    root.applyTheme(String(root.visibleThemes[root.selectedIndex].name));
+                root.endSearch();
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Backspace) {
+                root.searchQuery = root.searchQuery.slice(0, -1);
+                root.setSelection(0);
+                event.accepted = true;
+                return;
+            }
+            // The arrows still navigate what the filter left, so you can
+            // narrow to four themes and then pick among them without leaving
+            // search. hjkl cannot: they are letters here.
+            if (event.key === Qt.Key_Left) {
+                root.moveSelection(-1);
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Right) {
+                root.moveSelection(1);
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Up) {
+                root.moveSelection(-root.columns);
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Down) {
+                root.moveSelection(root.columns);
+                event.accepted = true;
+                return;
+            }
+            if (event.text && event.text.length === 1 && event.text >= " ") {
+                root.searchQuery += event.text;
+                // Back to the first match: unlike the carousel there is no
+                // "current item" worth preserving across a narrowing, because
+                // the grid has re-laid out under the cursor entirely.
+                root.setSelection(0);
+                event.accepted = true;
+                return;
+            }
+            return;
+        }
+
         switch (event.key) {
+        case Qt.Key_Slash:
+            root.searching = true;
+            root.searchQuery = "";
+            event.accepted = true;
+            break;
         case Qt.Key_Escape:
             root.closeRequested();
             event.accepted = true;
@@ -265,14 +402,14 @@ FocusScope {
         // g / G to the ends, same as the audio and display panels.
         case Qt.Key_G:
             root.setSelection((event.modifiers & Qt.ShiftModifier) !== 0
-                              ? root.themes.length - 1 : 0);
+                              ? root.visibleThemes.length - 1 : 0);
             event.accepted = true;
             break;
         case Qt.Key_Return:
         case Qt.Key_Enter:
         case Qt.Key_Space:
-            if (root.selectedIndex >= 0 && root.selectedIndex < root.themes.length)
-                root.applyTheme(String(root.themes[root.selectedIndex].name));
+            if (root.selectedIndex >= 0 && root.selectedIndex < root.visibleThemes.length)
+                root.applyTheme(String(root.visibleThemes[root.selectedIndex].name));
             event.accepted = true;
             break;
         default:
@@ -280,36 +417,59 @@ FocusScope {
         }
     }
 
-    Text {
-        id: header
-        x: root.horizontalPadding
-        y: Metrics.pad(12)
-        height: root.headerHeight - Metrics.pad(12)
-        text: root.errorText !== "" ? root.errorText : "Theme"
-        color: root.errorText !== "" ? IslandTheme.danger : IslandTheme.textPrimary
-        font.pixelSize: Metrics.font(15)
-        font.family: root.heroFontFamily
-        font.weight: Font.DemiBold
-        font.letterSpacing: -0.2
-    }
+    // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
+    //
+    // The error used to REPLACE the title, exactly as the power menu's did —
+    // the panel stopped saying what it was at the moment something failed. It
+    // is in the status slot now, which already colours by level.
+    PanelChrome {
+        id: chrome
+        textFontFamily: root.textFontFamily
 
-    Text {
-        anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
-        y: Metrics.pad(12)
-        height: root.headerHeight - Metrics.pad(12)
-        text: root.pendingTheme !== "" ? "applying " + root.pendingTheme + "…" : root.currentTheme
-        color: IslandTheme.textMuted
-        font.pixelSize: Metrics.font(13)
-        font.family: root.textFontFamily
+        title: "theme"
+
+        // The query, and the match count beside it. Both are load-bearing: a
+        // search with nothing on screen is indistinguishable from a stuck
+        // keyboard, and the count is what separates "no such theme" from "you
+        // typo'd". Red at zero matches, for the same reason.
+        statusClause: root.searching
+            ? "/" + root.searchQuery + "  " + root.visibleThemes.length + " of " + root.themes.length
+            : ""
+        statusClauseLive: root.searching && root.visibleThemes.length > 0
+        statusClauseAlert: root.searching && root.visibleThemes.length === 0
+
+        status: {
+            if (root.errorText !== "")
+                return root.errorText;
+            if (root.pendingTheme !== "")
+                return "applying " + root.pendingTheme + "…";
+            return root.currentTheme;
+        }
+        statusLevel: root.errorText !== "" ? "error"
+                   : (root.pendingTheme !== "" ? "busy" : "idle")
+
+        hints: root.searching
+            ? [
+                { key: "type", label: "filter" },
+                { key: "←↑↓→", label: "move" },
+                { key: "Enter", label: "apply" },
+                { key: "Esc", label: "clear" }
+              ]
+            : [
+                { key: "hjkl", label: "move" },
+                { key: "/", label: "search" },
+                { key: "g/G", label: "first-last" },
+                { key: "Enter", label: "apply" },
+                { key: "q", label: "close" }
+              ]
     }
 
     GridView {
         id: themeGrid
-        x: root.horizontalPadding
-        y: root.headerHeight + Metrics.pad(6)
-        width: parent.width - root.horizontalPadding * 2
-        height: parent.height - root.headerHeight - Metrics.pad(18)
+        x: chrome.contentX
+        y: chrome.contentY
+        width: chrome.contentWidth
+        height: chrome.contentHeight
         clip: true
 
         // FORK: P1-3, and the note at the top of this file already said it —
@@ -326,7 +486,7 @@ FocusScope {
         // grid sized off a different cell height than the shape around it is
         // a grid with a clipped last row.
         cellHeight: root.cellHeight
-        model: root.themes
+        model: root.visibleThemes
         currentIndex: root.selectedIndex
         boundsBehavior: Flickable.StopAtBounds
 

@@ -89,6 +89,17 @@ Item {
     // a status clause that is ALWAYS accented has stopped being a status.
     property bool statusClauseLive: false
 
+    // The clause is reporting a DEAD END: a search with no matches, a filter
+    // that emptied the list. Outranks `live`, and it is a separate flag rather
+    // than a third value of one enum because the two answer different
+    // questions — "is this pointing at something" and "is this pointing at
+    // nothing on purpose".
+    //
+    // The wallpaper picker already drew its own zero-match count in red for
+    // the reason this generalises: the count is what separates "no such thing"
+    // from "you typo'd", and it can only do that if zero LOOKS different.
+    property bool statusClauseAlert: false
+
     // The right-hand slot: what the panel is doing right now, in the colour of
     // how it went. Audio, Wi-Fi, Bluetooth and Display all had this in the
     // same corner already; it is promoted rather than invented.
@@ -249,7 +260,8 @@ Item {
         y: Metrics.chromeTop()
         visible: !root.headerReplaced && root.statusClause.length > 0
         text: root.statusClause
-        color: root.statusClauseLive ? IslandTheme.accent : IslandTheme.textMuted
+        color: root.statusClauseAlert ? IslandTheme.danger
+             : (root.statusClauseLive ? IslandTheme.accent : IslandTheme.textMuted)
         font.family: root.textFontFamily
         font.pixelSize: Metrics.TYPE.small
         font.weight: Font.Medium

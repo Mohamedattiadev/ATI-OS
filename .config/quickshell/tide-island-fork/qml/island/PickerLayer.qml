@@ -226,11 +226,10 @@ FocusScope {
             root.selectedIndex = 0;
     }
 
-    readonly property real horizontalPadding: Metrics.pad(18)
-    readonly property real headerHeight: Metrics.pad(34)
+    // FORK: header height, content inset and the key-hint strip are
+    // PanelChrome's now. See qml/common/PanelChrome.qml.
     readonly property real searchHeight: Metrics.px(26)
     readonly property real rowHeight: Metrics.px(30)
-    readonly property real footerHeight: Metrics.px(22)
 
     // ---- WHY THE HEIGHT IS COMPUTED FROM `items` AND NOT `filtered` ----
     //
@@ -257,11 +256,13 @@ FocusScope {
         ? Math.max(1, Math.min(root.maxVisibleRows, root.items.length)) : 0
     readonly property real noteHeight:
         root.note === "" ? 0 : noteLabel.implicitHeight + Metrics.pad(8)
+    // Metrics and not chrome.chromeHeight: this sizes the capsule the panel is
+    // drawn inside, so reading it off a child of that panel is a loop waiting
+    // for one more term.
     readonly property real preferredHeight:
-        root.headerHeight + root.searchHeight + Metrics.pad(8)
+        Metrics.chromeTotal() + root.searchHeight + Metrics.pad(8)
         + root.noteHeight
         + root.visibleRows * root.rowHeight
-        + root.footerHeight + Metrics.pad(16)
 
     readonly property real listWidth: Math.round(root.width * 0.54)
 
@@ -584,41 +585,59 @@ FocusScope {
         list.positionViewAtIndex(next, ListView.Contain);
     }
 
-    Text {
-        id: header
-        x: root.horizontalPadding
-        y: Metrics.pad(10)
-        // The script owns the title ("Close window", "Kill process"), not
-        // this file. The title is the sentence the Enter key completes, so
-        // it belongs beside the code that decides what Enter does.
-        text: root.title !== "" ? root.title : root.menu
-        color: "white"
-        font.pixelSize: Metrics.font(15)
-        font.family: root.heroFontFamily
-        font.weight: Font.DemiBold
-        font.letterSpacing: -0.2
-    }
+    // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
+    PanelChrome {
+        id: chrome
+        textFontFamily: root.textFontFamily
 
-    Text {
-        id: statusLabel
-        anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
-        y: Metrics.pad(13)
-        width: Math.min(implicitWidth, root.width * 0.5)
-        horizontalAlignment: Text.AlignRight
-        elide: Text.ElideRight
+        // The script owns the title ("Close window", "Kill process"), not this
+        // file. The title is the sentence the Enter key completes, so it
+        // belongs beside the code that decides what Enter does.
+        title: root.title !== "" ? root.title : root.menu
+
         // The row count is meaningless on a page with no rows, and "0 of 0"
         // beside a question reads as a failure. Depth is what a prompt page
         // can usefully report instead — it is the only thing on screen that
         // says Backspace has somewhere to go.
-        text: root.statusText !== "" ? root.statusText
+        status: root.statusText !== "" ? root.statusText
             : (root.loading ? "reading…"
                 : (root.mode === "list"
                     ? root.filtered.length + " of " + root.items.length
                     : (root.pageStack.length > 1 ? "step " + root.pageStack.length : "")))
-        color: root.statusIsError ? IslandTheme.danger : IslandTheme.textDisabled
-        font.pixelSize: Metrics.font(11)
-        font.family: root.textFontFamily
+        statusLevel: root.statusIsError ? "error" : (root.loading ? "busy" : "idle")
+
+        // The hints CHANGE with the query, because the keys change with it —
+        // see THE j/k PROBLEM above. A static "j/k move" would be a lie the
+        // moment you typed a character, and a hint that lies is worse than no
+        // hint: it is the reason you conclude the panel is broken. They change
+        // with the MODE for the same reason: on a prompt page j/k are letters
+        // and Enter submits.
+        hints: {
+            if (root.mode === "prompt") {
+                const h = [{ key: "Enter", label: "submit" }];
+                if (root.pageStack.length > 1)
+                    h.push({ key: "Ctrl+h", label: "back" });
+                h.push({ key: "Esc", label: "close" });
+                return h;
+            }
+            if (root.query === "") {
+                const h = [
+                    { key: "j/k", label: "move" },
+                    { key: "Enter", label: "run" },
+                    { key: "type", label: "filter" }
+                ];
+                if (root.pageStack.length > 1)
+                    h.push({ key: "BkSp", label: "back" });
+                h.push({ key: "q", label: "close" });
+                return h;
+            }
+            return [
+                { key: "↑/↓", label: "move" },
+                { key: "Ctrl+n/p", label: "move" },
+                { key: "Enter", label: "run" },
+                { key: "Esc", label: "close" }
+            ];
+        }
     }
 
     // ---- THE SEARCH FIELD ----
@@ -629,9 +648,9 @@ FocusScope {
     // panel whose subject is the list.
     Rectangle {
         id: searchField
-        x: root.horizontalPadding
-        y: root.headerHeight
-        width: root.width - 2 * root.horizontalPadding
+        x: chrome.contentX
+        y: chrome.contentY
+        width: chrome.contentWidth
         height: root.searchHeight
         radius: Metrics.px(8)
         color: searchInput.activeFocus ? IslandTheme.inputFillFocused : IslandTheme.inputFill
@@ -815,9 +834,9 @@ FocusScope {
     // accident.
     Text {
         id: noteLabel
-        x: root.horizontalPadding
-        y: root.headerHeight + root.searchHeight + Metrics.pad(8)
-        width: root.width - 2 * root.horizontalPadding
+        x: chrome.contentX
+        y: chrome.contentY + root.searchHeight + Metrics.pad(8)
+        width: chrome.contentWidth
         visible: root.note !== ""
         text: root.note
         wrapMode: Text.WordWrap
@@ -832,10 +851,10 @@ FocusScope {
         // FORK: P1-3. One shared indicator; see qml/common/IslandScrollBar.qml
         // for why `active` does not gate on pointer interaction alone.
         ScrollBar.vertical: IslandScrollBar { view: list }
-        x: root.horizontalPadding
-        y: root.headerHeight + root.searchHeight + Metrics.pad(8) + root.noteHeight
+        x: chrome.contentX
+        y: chrome.contentY + root.searchHeight + Metrics.pad(8) + root.noteHeight
         width: root.listWidth
-        height: parent.height - y - root.footerHeight - Metrics.pad(8)
+        height: parent.height - y - Metrics.chromeFooter() - chrome.gap
         visible: root.mode === "list"
         clip: true
         model: root.filtered
@@ -857,7 +876,7 @@ FocusScope {
             font.pixelSize: Metrics.font(11)
         }
 
-        delegate: Item {
+        delegate: PanelRow {
             id: rowItem
             required property int index
             required property var modelData
@@ -867,78 +886,69 @@ FocusScope {
             width: list.width
             height: root.rowHeight
 
-            Rectangle {
-                anchors.fill: parent
-                anchors.topMargin: Metrics.px(2)
-                anchors.bottomMargin: Metrics.px(2)
-                radius: Metrics.px(7)
-                color: rowItem.isSelected ? IslandTheme.selectionFill : "transparent"
+            // `active` is never set: every row in a picker menu is an equally
+            // available choice, so there is no system state to mark and the
+            // cursor is the whole of it. That also moves this list off
+            // IslandTheme.selectionFill, which is the accent wash.
+            selected: rowItem.isSelected
 
-                // FORK: the row thumbnail, for menus whose items carry an
-                // `icon` path. Only the clipboard menu does today.
-                //
-                // "image" repeated down a column is not a list of images, it
-                // is the same word eight times — the entry you are looking
-                // for is a picture and the only thing that identifies it is
-                // what it looks like. copyq_rofi knew this and passed
-                // -show-icons; this panel had no way to.
-                //
-                // sourceSize caps the DECODE, not just the draw. Without it
-                // a 1366x768 screenshot is decoded at full resolution into
-                // a 22 px box, once per row, and the clipboard is mostly
-                // screenshots.
-                Image {
-                    id: rowThumb
-                    visible: source !== ""
-                    source: rowItem.modelData.icon !== undefined
-                        ? "file://" + rowItem.modelData.icon : ""
-                    anchors.left: parent.left
-                    anchors.leftMargin: Metrics.pad(10)
-                    anchors.verticalCenter: parent.verticalCenter
-                    height: Metrics.px(18)
-                    width: Metrics.px(28)
-                    fillMode: Image.PreserveAspectFit
-                    horizontalAlignment: Image.AlignLeft
-                    sourceSize.width: Metrics.px(56)
-                    sourceSize.height: Metrics.px(36)
-                    asynchronous: true
-                    // The files are rewritten under the same names on every
-                    // --list, so a cached copy is a preview of the previous
-                    // clipboard.
-                    cache: false
-                    smooth: true
+            onCursorRequested: root.selectedIndex = rowItem.index
+            onActivated: root.runSelected()
+
+            // FORK: the row thumbnail, for menus whose items carry an
+            // `icon` path. Only the clipboard menu does today.
+            //
+            // "image" repeated down a column is not a list of images, it
+            // is the same word eight times — the entry you are looking
+            // for is a picture and the only thing that identifies it is
+            // what it looks like. copyq_rofi knew this and passed
+            // -show-icons; this panel had no way to.
+            //
+            // sourceSize caps the DECODE, not just the draw. Without it
+            // a 1366x768 screenshot is decoded at full resolution into
+            // a 22 px box, once per row, and the clipboard is mostly
+            // screenshots.
+            Image {
+                id: rowThumb
+                visible: source !== ""
+                source: rowItem.modelData.icon !== undefined
+                    ? "file://" + rowItem.modelData.icon : ""
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                height: Metrics.px(18)
+                width: Metrics.px(28)
+                fillMode: Image.PreserveAspectFit
+                horizontalAlignment: Image.AlignLeft
+                sourceSize.width: Metrics.px(56)
+                sourceSize.height: Metrics.px(36)
+                asynchronous: true
+                // The files are rewritten under the same names on every
+                // --list, so a cached copy is a preview of the previous
+                // clipboard.
+                cache: false
+                smooth: true
                 }
 
                 Text {
-                    anchors.left: rowThumb.visible ? rowThumb.right : parent.left
-                    anchors.leftMargin: Metrics.pad(10)
-                    anchors.right: parent.right
-                    anchors.rightMargin: Metrics.pad(10)
-                    anchors.verticalCenter: parent.verticalCenter
-                    // Elided, not wrapped. A window title can be a whole
-                    // sentence ("Reacher (2022) — Watch on Cineby - Brave")
-                    // and a row that grew to fit one would break the fixed
-                    // row height every height calculation on this panel
-                    // depends on. The full string is in the details column,
-                    // which has room and wraps.
-                    elide: Text.ElideRight
-                    text: rowItem.modelData.label
-                    color: IslandTheme.textPrimary
-                    font.pixelSize: Metrics.font(12)
-                    font.family: root.textFontFamily
-                    font.weight: rowItem.isSelected ? Font.DemiBold : Font.Normal
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onEntered: root.selectedIndex = rowItem.index
-                    onClicked: {
-                        root.selectedIndex = rowItem.index;
-                        root.runSelected();
-                    }
-                }
+                anchors.left: rowThumb.visible ? rowThumb.right : parent.left
+                anchors.leftMargin: rowThumb.visible ? Metrics.pad(10) : 0
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                // Elided, not wrapped. A window title can be a whole
+                // sentence ("Reacher (2022) — Watch on Cineby - Brave")
+                // and a row that grew to fit one would break the fixed
+                // row height every height calculation on this panel
+                // depends on. The full string is in the details column,
+                // which has room and wraps.
+                elide: Text.ElideRight
+                text: rowItem.modelData.label
+                color: IslandTheme.textPrimary
+                font.pixelSize: Metrics.font(12)
+                font.family: root.textFontFamily
+                font.weight: rowItem.isSelected ? Font.DemiBold : Font.Normal
             }
+
+            // The MouseArea is PanelRow's; its two signals are wired above.
         }
     }
 
@@ -953,9 +963,9 @@ FocusScope {
     Column {
         id: details
         anchors.left: parent.left
-        anchors.leftMargin: root.horizontalPadding + root.listWidth + Metrics.pad(16)
+        anchors.leftMargin: chrome.padX + root.listWidth + Metrics.pad(16)
         anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
+        anchors.rightMargin: chrome.padX
         y: list.y + Metrics.px(2)
         spacing: Metrics.px(6)
         // Nothing is selected on a prompt or a message page, so every Text
@@ -969,7 +979,7 @@ FocusScope {
             maximumLineCount: 2
             elide: Text.ElideRight
             text: root.selected ? String(root.selected.label || "") : ""
-            color: "white"
+            color: IslandTheme.textPrimary
             font.pixelSize: Metrics.font(13)
             font.family: root.heroFontFamily
             font.weight: Font.DemiBold
@@ -1029,28 +1039,5 @@ FocusScope {
     }
 
     // The footer hint.
-    Text {
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Metrics.pad(8)
-        // The hint CHANGES with the query, because the keys change with it —
-        // see THE j/k PROBLEM above. A static "j/k move" would be a lie the
-        // moment you typed a character, and a hint that lies is worse than
-        // no hint: it is the reason you conclude the panel is broken.
-        // …and it changes with the MODE for the same reason it changes with
-        // the query: on a prompt page j/k are letters and Enter submits, so
-        // the list hint would be a lie in three of its four clauses.
-        text: root.mode === "prompt"
-            ? ("Enter submits  ·  "
-               + (root.pageStack.length > 1 ? "Ctrl+h back  ·  " : "")
-               + "Esc closes")
-            : (root.query === ""
-                ? ("j/k move  ·  Enter run  ·  type to filter  ·  "
-                   + (root.pageStack.length > 1 ? "Backspace back  ·  " : "")
-                   + "q close")
-                : "↑/↓ or Ctrl+n/p move  ·  Enter run  ·  Esc close")
-        color: IslandTheme.textDisabled
-        font.pixelSize: Metrics.font(10)
-        font.family: root.textFontFamily
-    }
+    // The key-hint Text that used to close this file is `chrome.hints` now.
 }
