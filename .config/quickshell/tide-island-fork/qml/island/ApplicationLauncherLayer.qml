@@ -551,11 +551,70 @@ FocusScope {
                         root.rebuildApplications();
                     }
 
+                    // ---- FORK: VIM MOTIONS, AND WHY THEY CARRY CTRL ----
+                    //
+                    // Reported as "I cannot use vim motions there", and the
+                    // reason is the field: this TextInput holds the keyboard
+                    // for the whole life of the panel, so a bare `j` is a
+                    // letter and always was. Measured before changing
+                    // anything — `wtype j` with the launcher open put a `j`
+                    // in the box and filtered the row down to five apps.
+                    //
+                    // PickerLayer solves the same conflict by letting bare
+                    // j/k move WHILE THE QUERY IS EMPTY, and that rule is
+                    // deliberately NOT copied here. Its own comment says why,
+                    // about this very panel: "the application launcher can
+                    // spend Left/Right on it because its own field takes the
+                    // letters." The launcher opens with the field cleared
+                    // every single time (onShowConditionChanged), so "empty"
+                    // is not a state you pass through — it is the state every
+                    // search starts in. Spending bare h/j/k/l there would
+                    // mean the first keystroke after opening is never a
+                    // letter, and gimp, htop, kitty and libreoffice all start
+                    // with one of the four.
+                    //
+                    // So the motions carry Ctrl and are therefore unambiguous
+                    // in BOTH states — they keep working after you have typed
+                    // half a name, which is the state this panel spends most
+                    // of its time in and the state PickerLayer's rule gives
+                    // up on.
+                    //
+                    //   Ctrl+l / Ctrl+j / Ctrl+n   next
+                    //   Ctrl+h / Ctrl+k / Ctrl+p   previous
+                    //
+                    // h/l and j/k both appear because the row is horizontal
+                    // and the shell is not: h/l is the axis actually on
+                    // screen (the same pairing WallpaperPickerLayer and
+                    // ThemePickerLayer use for their horizontal moves), while
+                    // j/k is what every list in this shell answers to and
+                    // what the existing Down/Up already do here. Ctrl+n/p are
+                    // PickerLayer's readline pair, kept identical so one hand
+                    // position works on both panels.
+                    //
+                    // The cost, stated because it is invisible: Qt's X11 key
+                    // bindings give a text field Ctrl+H as Backspace and
+                    // Ctrl+K as delete-to-end-of-line, and a Keys.onPressed
+                    // handler runs BEFORE the item, so accepting these takes
+                    // both away inside this field. PickerLayer already spends
+                    // Ctrl+H the same way (it pops a page), so this panel is
+                    // following the shell rather than setting a precedent.
                     Keys.onPressed: event => {
+                        const ctrl = (event.modifiers & Qt.ControlModifier) !== 0;
+
                         if (event.key === Qt.Key_Escape) {
                             root.closeRequested();
                             event.accepted = true;
                         } else if (root.launchFavoriteShortcut(event)) {
+                            event.accepted = true;
+                        } else if (ctrl && (event.key === Qt.Key_L
+                                || event.key === Qt.Key_J
+                                || event.key === Qt.Key_N)) {
+                            root.moveSelection(1);
+                            event.accepted = true;
+                        } else if (ctrl && (event.key === Qt.Key_H
+                                || event.key === Qt.Key_K
+                                || event.key === Qt.Key_P)) {
+                            root.moveSelection(-1);
                             event.accepted = true;
                         } else if (event.key === Qt.Key_Right && text === "") {
                             root.moveSelection(1);
@@ -573,6 +632,22 @@ FocusScope {
                             root.launchSelected();
                             event.accepted = true;
                         }
+                    }
+
+                    // FORK: the panel had no placeholder of any kind, so an
+                    // empty field said nothing about what the keys are —
+                    // which is most of why the motions read as missing rather
+                    // than as unbound. Same sentence shape as PickerLayer's
+                    // and CheatsheetLayer's, so the three search fields in
+                    // this shell introduce themselves the same way.
+                    Text {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: parent.text === ""
+                        text: "type to search — Ctrl+h/j/k/l move, Enter launches, Esc closes"
+                        color: IslandTheme.textDisabled
+                        font.family: root.textFontFamily
+                        font.pixelSize: Metrics.font(13)
                     }
                 }
 
