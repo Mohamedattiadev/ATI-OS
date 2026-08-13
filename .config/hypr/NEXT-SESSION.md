@@ -82,8 +82,14 @@ remaining UI complaint and it is blocked on one cheap fact-finding step.
    under "Focus has no icon" — the glyph is there and correct; at 1:1, 18 px
    in `textSecondary` on an unlit plate reads as an empty square.
 
-3. **The two sliders show no value.** Display and Sound are bars with no
-   number, so you cannot tell what level you are at.
+3. ~~The two sliders show no value.~~ **WRONG — do not "fix" this.** The
+   readout exists, `ControlSliderCard.qml:129`, at `opacity: root.lit ? 1 : 0`
+   — it appears while you are touching the slider and hides at rest, with the
+   argument written above it: at rest the fill length IS the value, and a
+   number that is always on screen is a number you stop reading. I called it
+   missing from a screenshot of the resting state. That is the THIRD time
+   this session I have read a deliberate resting state as an absent feature
+   (the Focus glyph twice, this once). See the rule below.
 
 4. **`↓ battery` in the control centre's key hints** advertises a section
    that was never got on screen. Verify it exists.
@@ -137,6 +143,12 @@ remaining UI complaint and it is blocked on one cheap fact-finding step.
   an untinted one are byte-identical to grim. Night light needs eyes.
 - **Magnify before believing a glyph is absent.** An 18 px icon in a muted
   colour reads as a blank tile in a 1:1 screenshot.
+- **A screenshot shows one STATE, not the feature.** NEW, and it caught me
+  three times in one session: the Focus bell (present, faint), and the
+  slider readouts (present, revealed on touch). Before filing "X is
+  missing", grep for X in the component — this shell hides things on
+  purpose and writes down why. An absent feature has no code; a hidden one
+  has a binding with a condition in it.
 - **`.pragma library` JS is cached.** Editing `Metrics.js` or `Motion.js` and
   reloading does nothing. **Restart the island.**
 - **A file that has never been instantiated is not being watched.**
