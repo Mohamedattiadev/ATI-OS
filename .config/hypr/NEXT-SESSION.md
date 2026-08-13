@@ -57,12 +57,15 @@ Two hypotheses are already disproven and should not be re-tried:
    and the swipe layers have NOT been converted. Some should not be — the
    swipe layers are not panels — so this is a per-file decision, not a sweep.
 
-2. **Font rows in the in-island panel — a DECISION, not a task.** The GTK app
-   already has them. The island panel does not, because `PANEL_TYPES` in
-   `island-settings.py` derives `panel` from the type and excludes `font`:
-   there is no text entry under a keyboard grab. The theme picker's filter now
-   makes a text-entry-free font picker possible, which would mean adding
-   `font` to `PANEL_TYPES`. Worth asking the user before building.
+2. **Press `l` on a font row in the island settings panel.** The font picker
+   is built and the parts that can be verified without a keypress are — schema,
+   rendered rows, the 716-family `fc-list` pipeline, and the CLI write path
+   including a bogus family being rejected by name. What is NOT verified is
+   the overlay and its filter, because reaching them needs a keystroke into a
+   settings panel and that is forbidden here: every press that lands writes
+   real config. The pointer does not reach that panel either, so hover could
+   not substitute. Open Island settings, move to "Interface font", press `l`,
+   type a few letters, and press **Escape** — Escape cancels without writing.
 
 3. **The theme change's 1.77 s freeze.** Unchanged. The remaining win is that
    `theme-apply` spends ~0.24 s restarting dunst, which is not running under
