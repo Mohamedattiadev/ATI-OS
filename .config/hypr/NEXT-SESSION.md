@@ -35,30 +35,31 @@ except where each commit says otherwise.
 
 ---
 
+# FOCUS — CLOSED, and the answer was scope, not wiring
+
+Resolved in `8c40699`. The wiring was never broken; Focus simply knew about
+one interruption. It now suppresses every interruption the shell DRAWS and
+nothing you asked for:
+
+  suppressed  notification arriving · bluetooth device connecting ·
+              the player auto-expanding on a track change
+  kept        workspace capsule · volume/brightness OSDs · panels and pickers
+
+**The shell plays no sound**, so there was never a tone here to silence. A
+chime heard during Focus came from the sending application's own PulseAudio
+stream and is not reachable from this process. If the user still reports
+noise, that is where it is, and muting it is a per-application job.
+
+`tide setFocus(bool)` and `tide toggleFocus` exist now. **Focus is not bound
+to a key** — that was left for the user to choose. Binding it is one line in
+`binds.conf`.
+
+---
+
 # THE FIRST THING TO DO
 
-**Focus mode. The user reports it does not work and I could not reproduce it.**
-
-Everything I could check is intact, and this is the list so it is not
-re-derived:
-
-  * `focusModeChanged` IS handled — `DynamicIslandWindow.qml:4568`.
-  * `shellRootController` IS assigned — `shell.qml:737` and `:827`.
-  * There is exactly ONE notification entry path, `shell.qml:608` →
-    `showNotificationAll`, and it IS guarded by `focusEnabled` at `shell.qml:40`.
-
-So the chain reads correct end to end. Two candidates left, in order:
-
-1. **Focus's only effect is suppressing the island capsule.** It does not
-   silence audio, and the notification still lands in the notification
-   centre. If "does not work" means "I still get notified", the code is
-   behaving as written and the FEATURE is wrong, not the wiring.
-2. It could not be driven from here. There is no IPC to set `focusEnabled`,
-   and synthesising a keystroke into the panel is forbidden. **Add a
-   `tide setFocus(bool)` IPC purely to make this testable** — that is the
-   cheapest way to settle it and it is useful beyond the test.
-
-Ask the user what they expect Focus to DO before changing behaviour.
+**The notification centre rebuild** — item 1 below. It is the biggest
+remaining UI complaint and it is blocked on one cheap fact-finding step.
 
 ---
 
@@ -139,7 +140,13 @@ Ask the user what they expect Focus to DO before changing behaviour.
 - **`.pragma library` JS is cached.** Editing `Metrics.js` or `Motion.js` and
   reloading does nothing. **Restart the island.**
 - **A file that has never been instantiated is not being watched.**
-- **Never synthesise keystrokes into a settings panel.**
+- **Never synthesise keystrokes into a settings panel.** Corollary, learned
+  on Focus: a control with no way in from a script is a control whose bugs
+  can only be found by the user. If a feature cannot be driven over IPC,
+  ADD THE IPC — that is a fix, not scaffolding.
+- **`qs ipc call` prints "Function not found" and still EXITS 0.** So the
+  exit code is not the check; read the output. Same shape as the
+  shell-variable trap above.
 - **Close a panel that commits on click before leaving it on screen.**
 - **`pkill -f <pattern>` matches its own command line.** Use `pkill -x`.
 - **hyprlock is tested in a NESTED Hyprland, never by locking the session.**
