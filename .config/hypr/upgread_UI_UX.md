@@ -979,3 +979,70 @@ and it is not a change to make from this repo without one.
 The other direction, and the one that is in this repo: 1.77 s of a frozen
 screenshot with no feedback of any kind reads as a hang. Whatever the
 script costs, the overlay should not be blank while it runs.
+
+---
+
+# Phase 8 — a full settings APP (requested 2026-08-13)
+
+> "a full detailed customizable app for settings for the island … like the
+> app tide island settings but more professional and more detailed"
+
+## Why this is not just a bigger SettingsLayer
+
+The in-island panel cannot grow into this, and the reason is structural
+rather than effort. `island-settings.py` records it already: there is no
+`string` type because **SettingsLayer has no keyboard-entry field**, and it
+cannot have one, because the panel lives under a Hyprland keyboard grab —
+a text field there would swallow the next character you type into your
+window. That single constraint is why the four font families, both
+wallpaper paths, the custom wallpaper command and the nine wallpaper
+transition parameters have no rows.
+
+So the app is not a duplicate of the panel. **It is the client that can
+cover the keys the panel structurally cannot**: 43 keys are read by the
+QML, 25 have rows, and most of the missing 18 are missing for exactly this
+reason.
+
+## The architecture that keeps one source of truth
+
+`island-settings.py` stays the only thing that writes config. It already
+has the whole contract:
+
+    --list    JSON: descriptors + current values + warnings
+    --set     one key, atomically, typed and validated
+    --check   validate the schema itself
+
+The app is a **GUI client of that CLI**, exactly as SettingsLayer is. No
+second writer, no second copy of the defaults, no drift. Anything the app
+needs that the schema cannot express is a schema change first.
+
+## The schema work that comes first
+
+1. **A `panel` field on every row** — whether the in-island panel can render
+   it. This is what makes the next item safe: adding a `string` row today
+   would put an inert row in SettingsLayer, which is the exact failure the
+   whole schema exists to prevent. With the flag, SettingsLayer filters and
+   the app does not.
+2. **New types**: `string`, `path`, `font`.
+3. **`font` must validate with fc-match.** A bad family name does NOT fail
+   — it falls back silently, and on this machine it falls back to Noto Sans
+   CJK KR, confirmed against a deliberately bogus name. So the check is
+   that the REQUESTED family appears in what `fc-match` returns, not that
+   fc-match succeeded, because it always succeeds.
+4. **`tlpSudoPassword` still gets no row**, in the app either.
+
+## What the app should have that the panel does not
+
+Search across key, label and detail; grouped categories rather than one
+flat list of 40+; the `detail` prose shown as help rather than hidden;
+live preview where it is cheap (sizes, opacity, position); reset-to-default
+per row; and a visible diff of what differs from the packaged defaults.
+
+## Toolkit
+
+Recommend **GTK4 + PyGObject**, not QML. The app's whole reason to exist is
+the capabilities the layer-shell panel lacks — real text entry, real
+window management, real scrolling, a file chooser for the wallpaper paths,
+a font chooser for the four families — and those are free in GTK and hand-
+built in QML. It also keeps it in the same language as the schema it
+drives, so the descriptor types are defined once in Python.
