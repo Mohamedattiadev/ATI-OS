@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import IslandBackend
@@ -527,6 +528,13 @@ FocusScope {
         model: root.settings
         currentIndex: root.selectedIndex
         boundsBehavior: Flickable.StopAtBounds
+
+        // FORK: P1-3. This list is 25 rows in a viewport that shows about
+        // eight, it is driven entirely from the keyboard, and it drew nothing
+        // at all to say so — the same silent fold that made "the settings
+        // panel receives no keyboard input" look true for three runs when the
+        // selection had simply scrolled below a cropped capture.
+        ScrollBar.vertical: IslandScrollBar { view: list }
 
         delegate: Item {
             id: rowItem

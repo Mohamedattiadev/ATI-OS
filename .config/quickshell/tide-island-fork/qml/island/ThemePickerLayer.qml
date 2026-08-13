@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 
@@ -310,6 +311,12 @@ FocusScope {
         width: parent.width - root.horizontalPadding * 2
         height: parent.height - root.headerHeight - Metrics.pad(18)
         clip: true
+
+        // FORK: P1-3, and the note at the top of this file already said it —
+        // "a GridView with `clip: true` says nothing" about the rows below
+        // the fold. Now it does.
+        ScrollBar.vertical: IslandScrollBar { view: themeGrid }
+
         cellWidth: Math.floor(width / root.columns)
         // Tall enough that the label and the swatch chips cannot meet. The tile's
         // usable height is cellHeight MINUS tileSpacing (the delegate insets

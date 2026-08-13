@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtCore
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import Quickshell.Widgets
@@ -699,6 +700,13 @@ FocusScope {
             cellHeight: height
             flow: GridView.FlowTopToBottom
             clip: true
+
+            // FORK: P1-3. HORIZONTAL, not vertical — this grid flows
+            // TopToBottom with cellHeight bound to its own height, so it is
+            // one tall row that scrolls sideways, and a vertical bar here
+            // would be an indicator for an axis that never moves.
+            ScrollBar.horizontal: IslandScrollBar { view: appGrid }
+
             interactive: !root.favoriteDragActive
             boundsBehavior: Flickable.StopAtBounds
             flickDeceleration: 1800
