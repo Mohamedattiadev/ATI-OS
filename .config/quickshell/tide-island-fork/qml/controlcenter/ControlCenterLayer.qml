@@ -15,6 +15,14 @@ Item {
     id: controlCenter
 
     signal connectivityPanelRequested(string kind, bool open)
+    // FORK: Escape / q, which this layer was the last big panel not to have.
+    // Every other surface in the shell — the pickers, the display and audio
+    // panels, the calendar, the power menu, the settings sheet, both
+    // connectivity lists — closes on Escape or q, and the control centre
+    // could only be dismissed by clicking the capsule again. See the
+    // keyboard grab note in DynamicIslandWindow.qml: this layer was never in
+    // the keyboardFocus list either, so there was no keystroke to handle.
+    signal closeRequested()
     signal focusModeChanged(bool enabled)
     signal nightLightModeChanged(bool enabled)
     signal requestNotification(string appName, string summary, string body)
@@ -956,6 +964,34 @@ Item {
     opacity: showCondition ? 1 : 0
     visible: opacity > 0
 
+    // Not `focus: true`. This layer outlives its own visibility — it stays
+    // mounted as the data provider for the standalone Wi-Fi and Bluetooth
+    // lists (see connectivityDataActive above), and an invisible provider
+    // holding the focus item would eat the keys of the panel that is
+    // actually on screen.
+    focus: showCondition
+    activeFocusOnTab: true
+
+    Keys.onPressed: function(event) {
+        switch (event.key) {
+        case Qt.Key_Escape:
+        case Qt.Key_Q:
+            // The battery drawer first, the panel second — the same
+            // innermost-thing-first rule the power menu applies to its
+            // confirm step. A drawer you pulled open is the thing Escape
+            // most obviously means, and closing the whole control centre
+            // out from under it would lose the pull as well as the panel.
+            if (controlCenter.batteryDrawerOpen)
+                controlCenter.setBatteryDrawerOpen(false);
+            else
+                controlCenter.closeRequested();
+            event.accepted = true;
+            break;
+        default:
+            break;
+        }
+    }
+
     onBrightnessLevelChanged: syncBrightnessFromLevel(brightnessLevel)
     onVolumeLevelChanged: syncVolumeFromLevel(volumeLevel)
     onShowConditionChanged: {
@@ -1277,18 +1313,43 @@ Item {
     Connections {
         target: bluetoothAdapter
 
+        // FORK: `bluetoothScanStopTimer`, NOT `controlCenter.bluetoothScanStopTimer`.
+        //
+        // An `id` is not a property. It is a name in the component's
+        // compilation scope, so it resolves bare from anywhere inside this
+        // file — which is how the three other call sites (614, 921, 925)
+        // have always written it — but it is NOT a member of the root
+        // object, so qualifying it returns `undefined` and calling `.stop()`
+        // on that throws.
+        //
+        // Both handlers in this Connections block had the qualified form and
+        // both were dead. Found in the live log rather than by reading:
+        //
+        //   WARN scene: ControlCenterLayer.qml[1327]: TypeError:
+        //   Cannot read property 'stop' of undefined
+        //
+        // repeating on a 60 s cadence, which is the scan poll.
+        //
+        // The consequence is not cosmetic and is visible on the panel: these
+        // are the two paths that stop a Bluetooth discovery scan when the
+        // adapter is switched off or the daemon reports discovery already
+        // ended. Neither ever ran, so the timer kept restarting the scan, the
+        // row read "Scanning" permanently, and the adapter logged
+        // "Failed to stop discovery ... No discovery started" in pairs for
+        // the life of the session. A radio scanning forever on a laptop is a
+        // battery cost, not just a wrong label.
         function onEnabledChanged() {
             if (!controlCenter.bluetoothAdapter.enabled) {
                 controlCenter.bluetoothPairAndConnectPath = "";
                 controlCenter.bluetoothInfoMessage = "";
                 controlCenter.bluetoothError = "";
-                controlCenter.bluetoothScanStopTimer.stop();
+                bluetoothScanStopTimer.stop();
             }
         }
 
         function onDiscoveringChanged() {
             if (!controlCenter.bluetoothAdapter.discovering)
-                controlCenter.bluetoothScanStopTimer.stop();
+                bluetoothScanStopTimer.stop();
         }
     }
 

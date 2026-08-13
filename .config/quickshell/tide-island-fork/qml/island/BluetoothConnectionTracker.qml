@@ -149,9 +149,39 @@ Item {
             property var bluetoothDevice: modelData
 
             Component.onCompleted: root.sync(true)
-            Component.onDestruction: Qt.callLater(function() {
-                root.sync(true);
-            })
+
+            // FORK: `root` is captured into a local BEFORE the deferral, and
+            // that is the whole fix. The previous form was
+            //
+            //     Component.onDestruction: Qt.callLater(function() {
+            //         root.sync(true);
+            //     })
+            //
+            // which threw on every device removal:
+            //
+            //   WARN scene: BluetoothConnectionTracker.qml[153]:
+            //   ReferenceError: root is not defined
+            //   (exception occurred during delayed function evaluation)
+            //
+            // `root` is not a captured variable there — it is a name resolved
+            // through the QML scope chain at CALL time, and the call is the
+            // one thing that has been deferred. By the time Qt.callLater runs
+            // the closure, the delegate whose scope would have resolved it has
+            // finished being destroyed, so the lookup fails. The deferral is
+            // the point of the code and is also what breaks it.
+            //
+            // Assigning to a plain JS local first puts the object reference in
+            // the closure's own environment, which is heap-allocated and
+            // outlives the delegate. The deferral itself must stay: sync()
+            // walks `root.devices`, and during onDestruction the Repeater has
+            // not yet dropped this delegate, so calling it synchronously
+            // counts a device that is on its way out.
+            Component.onDestruction: {
+                const tracker = root;
+                Qt.callLater(function() {
+                    tracker.sync(true);
+                });
+            }
 
             Connections {
                 target: bluetoothDevice
