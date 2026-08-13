@@ -893,3 +893,42 @@ TreeTabSidebar gates on `layoutIsTreeTab && monitorFocused && rowCount > 0`
 and its exclusive zone is `panelWidth * revealProgress` per instance, so
 the 180 px reservation is per-output and animated rather than a constant
 claimed on every screen.
+
+## P1-4 — **CLOSED. The layers decided it, not a sweep.**
+
+The remaining four were `customSwipeLoader`, `lyricsSwipeLoader`,
+`splitIconLoader` and `osdLayerLoader`. The per-layer decision P1-4 asked
+for turns out to be written inside the layers themselves:
+
+    opacity: showCondition ? revealProgress : 0
+    revealProgress: slideDirection === "none" ? 1 : (1 - clampedProgress)
+    Behavior on opacity { enabled: slideDirection === "none" }
+
+**The Behavior is enabled only when there is no slide.** So the question
+is not per file, it is per case, and both cases are already separated:
+
+- `slideDirection` "left"/"right" — the layer arrived on a swipe,
+  `revealProgress` IS the slide, the Behavior is disabled. The slide owns
+  the exit. Adding a cross-fade here is precisely what P1-4 warns against.
+- `slideDirection` "none" — `revealProgress` is the constant 1, opacity is
+  purely `showCondition`, the Behavior is enabled. The fade owns the exit
+  — and could never run, because `showCondition` was the literal `true`.
+
+So `splitIconLoader` and `osdLayerLoader` are the WorkspaceLayer bug again,
+confined to the no-slide case, and the swipe case is protected by the
+layer's own guard rather than by us remembering to be careful. Both are now
+`PanelLoader` with `showCondition: <loader>.live`.
+
+**`customSwipeLoader` and `lyricsSwipeLoader` need no change at all**, and
+this is the finding worth keeping: their `active` predicates are on
+`swipeTransitionProgress` — the *animated* property — so they already
+outlive their own slide by construction. `lyricsSwipeVisible` is `>= 0`
+rather than `> 0` because that layer also draws the resting clock, so it
+is mounted at rest and never has an exit to run.
+
+Measured, `showText` then `clearText`, 50 fps burst on the island strip:
+
+    changed px/frame: 152 153 134 111 77 42 0   over ~170 ms
+
+A cut is one frame with a large delta and then zero. A monotonically
+decaying ramp over six frames is a fade. It runs.

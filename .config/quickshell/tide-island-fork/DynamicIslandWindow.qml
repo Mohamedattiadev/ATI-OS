@@ -4206,12 +4206,47 @@ PanelWindow {
                 }
             }
 
-            Loader {
+            // ---- THE OTHER TWO OF THE FIVE, AND THE LAYERS DECIDED IT ----
+            //
+            // FORK: upgread_UI_UX.md P1-4 demanded "one decision per layer,
+            // not one substitution applied five times", on the grounds that a
+            // swipe layer cross-faded on top of a slide already running is
+            // worse than no fade at all. That is right, and these two turn out
+            // to answer the question themselves:
+            //
+            //     opacity: showCondition ? revealProgress : 0
+            //     revealProgress: slideDirection === "none" ? 1 : (1 - clampedProgress)
+            //     Behavior on opacity { enabled: slideDirection === "none" }
+            //
+            // The Behavior is enabled ONLY when there is no slide. So the two
+            // cases are already separated inside the layer, and the answer
+            // differs per CASE rather than per file:
+            //
+            //   slideDirection "left"/"right"  the layer came in on a swipe,
+            //       revealProgress IS the slide, and the Behavior is disabled.
+            //       The slide owns the exit. Nothing to add, and adding a
+            //       cross-fade here is exactly what P1-4 warns against.
+            //
+            //   slideDirection "none"          revealProgress is the constant
+            //       1, so opacity is purely showCondition, and the Behavior is
+            //       enabled. The FADE owns the exit — and it could never run,
+            //       because `showCondition` was the literal `true`.
+            //
+            // So this is the WorkspaceLayer bug in both files, confined to the
+            // no-slide case, and the swipe case is untouched BY THE LAYER'S OWN
+            // GUARD rather than by us being careful. Binding showCondition to
+            // `live` is therefore safe here in a way it would not be for
+            // customSwipeLoader/lyricsSwipeLoader — those two are gated on
+            // `swipeTransitionProgress` itself, the animated property, so they
+            // already outlive their own slide and need no change at all.
+            //
+            // Neither is retained: both rebuild from bound properties with no
+            // async fetch behind them, so there is no empty-state flash to
+            // avoid, which is the only thing `retain` buys.
+            PanelLoader {
                 id: splitIconLoader
                 anchors.fill: parent
-                active: !root.overviewVisible && islandContainer.splitShowsIconOnly
-                asynchronous: false
-                visible: active
+                live: !root.overviewVisible && islandContainer.splitShowsIconOnly
 
                 sourceComponent: Component {
                     SplitIconLayer {
@@ -4219,17 +4254,15 @@ PanelWindow {
                         iconFontFamily: root.iconFontFamily
                         transitionProgress: islandContainer.swipeTransitionProgress
                         slideDirection: islandContainer.splitOriginSide
-                        showCondition: true
+                        showCondition: splitIconLoader.live
                     }
                 }
             }
 
-            Loader {
+            PanelLoader {
                 id: osdLayerLoader
                 anchors.fill: parent
-                active: !root.overviewVisible && islandContainer.splitUsesExtendedLayout
-                asynchronous: false
-                visible: active
+                live: !root.overviewVisible && islandContainer.splitUsesExtendedLayout
 
                 sourceComponent: Component {
                     OsdLayer {
@@ -4241,7 +4274,7 @@ PanelWindow {
                         heroFontFamily: root.heroFontFamily
                         transitionProgress: islandContainer.swipeTransitionProgress
                         slideDirection: islandContainer.splitOriginSide
-                        showCondition: true
+                        showCondition: osdLayerLoader.live
                     }
                 }
             }
