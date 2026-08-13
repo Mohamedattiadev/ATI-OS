@@ -402,7 +402,42 @@ and sampling the framebuffer at named points in each panel — the same method
 that caught the `#282828` zero-channel-spread bug. A token that does not move
 across four palettes is not wired up.
 
-## Phase 2 — own the notification (P0-1)
+## Phase 2 — own the notification (P0-1) — **DONE**
+
+> **Closed.** The island serves `org.freedesktop.Notifications` through
+> `Quickshell.Services.Notifications`; dunst is out of `autostart.conf`
+> and still installed. `busctl --user` reports quickshell as the owner,
+> `hyprctl layers` shows one surface with a notification up, dismiss /
+> urgency / actions / replace-in-place all round-trip on the bus.
+>
+> **The stated hazard does not exist on this machine**, and that is the
+> finding, not a caveat. "If the island takes the bus name and its server
+> has a bug, notifications stop system-wide and fail silently" assumed
+> nothing else could answer. dunst ships
+> `/usr/share/dbus-1/services/org.knopwob.dunst.service` — it is D-Bus
+> **activatable**, so with the island killed the name reports as
+> `(activatable)` and `notify-send` still succeeds, because the bus starts
+> dunst on demand. Measured by killing the island and sending one.
+>
+> The real hazard is the opposite one and nobody had named it: an
+> activated dunst HOLDS the name, and a later island start then runs,
+> draws, answers IPC and never receives a notification. `island.sh` clears
+> dunst before launching for that reason.
+>
+> **Two things this phase broke and had to fix in the same pass**, both of
+> which were consequences rather than bugs: the control centre's
+> Silent/DND row was on `dunstctl` and now reads the island's own
+> `focusEnabled`; and the control centre's internal toasts had to stop
+> going through the same path as bus notifications, or shell chrome would
+> land in the user's notification history.
+>
+> **One design decision was reversed by the user mid-build.** Urgency was
+> drawn as a coloured edge down the left of the capsule; it was rejected
+> on sight, correctly — it adds a second element to a shape whose whole
+> argument is that it is one shape. Urgency colours the existing icon
+> instead, which costs no geometry, and the content is centred.
+
+## Phase 2 — the original plan, for the record
 
 1. **Decide the owner.** Recommended: the island serves the bus, dunst is
    removed from `autostart.conf`. The alternative — keep dunst and delete the
