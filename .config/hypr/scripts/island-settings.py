@@ -307,6 +307,41 @@ SETTINGS = [
         "detail": "Off because the spec's pill is permanently present rather "
                   "than summoned. There is no bar behind it to fall back to.",
     },
+    {
+        "key": "islandAutoHideDelayMs",
+        "label": "Auto-hide delay",
+        "type": "int",
+        "min": 100,
+        "max": 10000,
+        "step": 100,
+        "default": 2500,
+        "scope": "packaged",
+        "detail": "How long the island stays up after being summoned, before "
+                  "hiding again. Bounded at 100 and 10000 here because "
+                  "DynamicIslandWindow clamps it to exactly that range in two "
+                  "places before handing it to autoHideHideTimer, and a row "
+                  "whose limits disagree with its consumer's is a row that "
+                  "reports a value the shell is not using. Inert while "
+                  "Auto-hide is off, which is a property of the feature and "
+                  "not a fault in the row — the same is already true of Peek "
+                  "workspace when hidden.",
+    },
+    {
+        "key": "tlpPermissionMode",
+        "label": "TLP battery mode auth",
+        "type": "enum",
+        "values": ["ask", "password", "skip"],
+        "default": "ask",
+        "scope": "packaged",
+        "detail": "How the control centre's battery-mode switch gets root. "
+                  "`ask` runs pkexec and lets the agent prompt; `password` "
+                  "uses the stored tlpSudoPassword; `skip` disables the "
+                  "control entirely and the card reads 'TLP disabled'. These "
+                  "are exactly the three strings ControlCenterLayer branches "
+                  "on. tlpSudoPassword itself deliberately has NO row: a "
+                  "settings list that renders a password back to the screen "
+                  "is a worse place to keep one than the file.",
+    },
     # ================================================================
     #  TYPOGRAPHY, INTERACTION AND PLACEMENT
     # ================================================================
