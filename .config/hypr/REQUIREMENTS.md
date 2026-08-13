@@ -1023,7 +1023,8 @@ window over the desktop is the odd one out. What rofi actually contributed
 was *the typing, not the window* — so a picker with a search field keeps
 everything rofi was good for.
 
-`$mod P` is now the island's `PickerLayer` on every key but two. The four
+`$mod P` is now the island's `PickerLayer` on every key but one — it was
+two until `rofi_anki` moved as well, see below. The four
 list-shaped menus went first; the other ten needed the panel to grow **a
 page stack and a prompt mode**, because they are not single lists — a
 screenshot asks "where does it go", a spell-check asks for a sentence and
@@ -1050,7 +1051,7 @@ the others:
 
 | bind | script | rofi? |
 |---|---|---|
-| `$mod P` → `a` | `rofi_anki` | yes — deliberate, a linear eight-prompt wizard over AnkiConnect |
+| `$mod P` → `a` | `rofi_anki` | **no longer — PORTED, see below** |
 | `$mod P` → `v` | `rofi_ilovepdf` | yes — deliberate, a file-picker/page-range/OCR pipeline |
 | `$mod P` → `SHIFT c` | `theme-toggle` | yes — deliberate and documented; it is the qtile session's picker and it keeps working when the island is down |
 | **`$mod SHIFT F6`** | **`phone_screen`** | **yes, and undocumented anywhere.** Its QR/pairing path calls `require_cmd qrencode rofi` and pipes into `rofi -dmenu -i -format f` against `~/.config/rofi/themes/base.rasi` |
@@ -1061,6 +1062,59 @@ by that reasoning it belongs with them rather than in the picker. But it
 was never *decided*, and "the only two" has been stated in `binds.conf`
 and in this file while a third was one keypress away. **Open: decide it
 explicitly and correct the claim in `binds.conf` either way.**
+
+##### `rofi_anki` is ported, and the reason it was "unportable" was avoidable
+
+Asked for directly — "anki and some other things still as rofi, change
+them" — so the four routes above were revisited one at a time rather than
+ported wholesale. Only one moved.
+
+`island-picker.py` had argued rofi_anki could not be ported because it is a
+linear wizard where each step depends on the last, so porting it "would
+mean this file growing a second copy of each script's control flow, with
+the original left in place as the one that still works". **The first half
+is not an obstacle and the second half is not forced.** A page stack IS a
+linear wizard — this file already runs three — and the duplication the note
+feared is avoidable by moving the PROMPTS instead of the logic.
+
+Counted rather than recalled: rofi_anki's eight prompts are lines 181–305
+of 373. The other 343 — the AnkiConnect handshake and 45 s poll,
+`createDeck`, the model check, Gemini with a translate-shell fallback,
+espeak-ng IPA, three flavours of TTS concatenated by ffmpeg,
+`storeMediaFile`, the HTML assembly, `addNote` — do not care which window
+asked the questions.
+
+So `rofi_anki` gained `--answers FILE`, the picker's `anki` menu asks the
+eight questions and hands them over, and there is still exactly one copy of
+the card logic. The default invocation is unchanged, so the qtile session
+keeps the rofi prompts.
+
+Two places the port is better rather than merely elsewhere: the four yes/no
+audio-and-image questions were four sequential rofi windows answered blind
+with no way back, and are one page of four toggles now; and "Add an image?"
+followed by "paste the URL" said one thing in two steps, so a non-empty URL
+is the yes.
+
+Measured against a live AnkiConnect: every step driven through the
+protocol, `go` produced a real note (Front `Fahrrad`, Back carrying the IPA
+and the translation), deleted afterwards. Against the running shell:
+`showPicker anki` promoted the island to level 3 and grew it 58 → 206 px,
+screenshotted; `configerrors` empty; the bind reads back fully expanded
+from `hyprctl binds -j`.
+
+**The other three stay, and each for its own reason — not for one policy.**
+
+| route | why it stays |
+|---|---|
+| `rofi_ilovepdf` (`$mod P` → `v`) | it is a **file manager**, not a wizard. `order_files` selects SEVERAL files and orders them so merge has an order to merge in, and the picker protocol carries exactly one id back per page. Porting it means building selection state into `PickerLayer.qml` or shipping a PDF toolkit that has lost merge |
+| `theme-toggle` (`$mod P` → `SHIFT c`) | `c` is already the island's theme picker on the same chord. This one exists to keep working when the island is down, and it is the qtile session's picker |
+| `phone_screen` (`$mod SHIFT F6`) | decided above and unchanged |
+
+The standing policy in this item — "rofi keeps the `dm-*` launchers" — was
+treated as rebuttable and it lost once and held twice. What decided each
+case was not launcher-versus-popup but whether the picker's one-id-per-page
+protocol can express the interaction, and whether the route has to survive
+the shell being down.
 
 Method note, because the claim had gone unchecked for several sessions:
 seven `AtiScriptsV1` scripts are reachable from a Hyprland bind at all —
@@ -1510,7 +1564,7 @@ two-thirds ported with no explanation, and so nobody re-opens it as a gap.
 |---|---|
 | `dm-satty`'s X11 tools | **superseded.** Rewritten, not wrapped: the picker's screenshot menu is grim + slurp + hyprctl + wl-copy + satty. `dm-satty` is unreachable from any Hyprland bind and stays on disk for the qtile session |
 | `qdrop.py` / `qdrop_watch.py` | **superseded** by special workspaces |
-| "leave the launcher problems on rofi" | **superseded as policy.** The chord is the island's picker on every key but two, plus the three surfaces listed under item 3 |
+| "leave the launcher problems on rofi" | **superseded as policy.** The chord is the island's picker on every key but ONE (`v`, rofi_ilovepdf), plus `theme-toggle` and `phone_screen`. `rofi_anki` was the last wizard to move, and what decided it was not the launcher/popup split at all — see item 3 |
 | Per-state layout vs the reference video | **abandoned as a test, not as work.** I cannot see video frames and never could. DESIGN-SPEC.md — a transcript of the author narrating his own numbers — is matched everywhere it gives a number. Where it gives only a description this is a judgement call that has been made. Calling it "open" implies an unrun test; there is none |
 
 ### Could not verify, and why
@@ -1619,9 +1673,10 @@ from there to this file's polkit section is enough.
    pipeline, and an empty `namespaces` means *all* layers rather than none.
 4. ~~Keep rofi for launchers?~~ **Answered, and the answer reversed.** The
    recommendation was to keep rofi; the chord is now the island's picker on
-   every key but two, for the reason argued under item 3. Rofi remains
-   installed and every `dm-*` script works unchanged, which is what makes
-   the reversal safe.
+   every key but one, for the reason argued under item 3 — and that reason
+   turned out not to be the launcher/popup split it was framed as. Rofi
+   remains installed and every `dm-*` script works unchanged, which is what
+   makes the reversal safe.
 
 ### Still needing a decision from you
 
