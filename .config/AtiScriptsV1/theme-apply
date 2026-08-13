@@ -437,17 +437,39 @@ gen_hypr_colors() {
 \$accent   = rgb($h_accent)
 \$inactive = rgb($h_bg_alt)
 
-# Window borders, matched to qtile. qtile's layout_theme sets
-# border_focus = colors[8], which is the CYAN slot of the 9-slot palette
-# (DoomOne: #46d9ff) -- not the accent and not the green. Keeping this a
-# separate role from \$accent means hyprlock's field colour and the
-# border can differ per theme exactly as they do under qtile.
+# Window borders. WAS the CYAN slot, for qtile parity: qtile's
+# layout_theme sets border_focus = colors[8]. That parity is now
+# DELIBERATELY BROKEN, on request, and the reason is that the reference
+# point moved.
+#
+# Under qtile the bar and the border were drawn by the same program out
+# of the same palette module, so "match qtile" and "match the bar" were
+# one instruction. Under Hyprland the thing at the top of the screen is
+# the island, and it does not use the cyan slot for anything. Its
+# layout glyph and its workspace digit — the two marks that flank the
+# clock, and the only persistent coloured ink on the resting desktop —
+# are both bound to \`IslandTheme.accent\`, which is the raw \`accent\`
+# key of ~/.cache/tide-island/colors.json, which gen_island_colors
+# writes from accent_of_mode. The same function that fills \$accent
+# three lines above.
+#
+# So on gruvbox the island drew its glyph and digit in #fabd2f and the
+# focused border came out #8ec07c, and there was no palette in which the
+# two agreed. Pointing the border at \$accent makes it the same value by
+# construction rather than by coincidence, on all 21 palettes plus wal —
+# not "a colour that looks similar", the identical byte, because both
+# now read accent_of_mode.
+#
+# \$accent is kept as a separate NAME rather than collapsing the two,
+# because hyprlock.conf reads \$accent for its field colour and a future
+# palette may well want the border and the lock field to diverge again.
+# What is fixed here is the VALUE they resolve to today.
 #
 # qtile uses border_normal = colors[1] (the FG slot, a light grey). That
 # is deliberately not mirrored here: at border_size 2 a bright border on
 # every unfocused window reads as noise under Hyprland's gaps. Swap
 # \$border_inactive to rgb($h_fg) if you want literal parity.
-\$border_active   = rgb($h_cyan)
+\$border_active   = rgb($h_accent)
 \$border_inactive = rgb($h_bg_alt)
 
 # hyprglass tint: 0xRRGGBBAA, alpha last. 0x40 == 25%, a gentle tint
