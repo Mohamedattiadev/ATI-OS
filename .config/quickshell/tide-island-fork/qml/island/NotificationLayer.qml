@@ -64,10 +64,39 @@ Item {
         : (urgency === 0 ? IslandTheme.textMuted : IslandTheme.textPrimary)
     readonly property bool hasActions: actions && actions.length > 0
 
-    readonly property string contentText: {
+    // ---- WHY THE TEXT IS LATCHED ----
+    //
+    // `clearTransientCapsule()` sets notificationSummary and
+    // notificationBody to "" on the way out, and this layer outlives that by
+    // PanelLoader's fadeOutDuration + 40 ms so its out-fade can run. For
+    // those frames both were empty and the fallback below was the honest
+    // answer to "what should I say", so the LAST THING the user saw of their
+    // notification was the words "New notification" replacing the message
+    // they had not finished reading -- and, because contentText also drives
+    // compactPreferredWidth, the capsule re-measured itself to the
+    // placeholder's width in the middle of collapsing.
+    //
+    // Latching the last non-empty value fixes both: the message stays put
+    // and the width keeps shrinking from where it actually was. The fallback
+    // survives for its real case, a notification that genuinely arrives with
+    // no summary and no body.
+    property string latchedContent: ""
+
+    readonly property string resolvedContent: {
         if (summary !== "" && body !== "" && body !== summary) return summary + "  " + body;
         if (summary !== "") return summary;
         if (body !== "") return body;
+        return "";
+    }
+
+    onResolvedContentChanged: {
+        if (resolvedContent !== "")
+            latchedContent = resolvedContent;
+    }
+
+    readonly property string contentText: {
+        if (resolvedContent !== "") return resolvedContent;
+        if (latchedContent !== "") return latchedContent;
         return "New notification";
     }
     readonly property real minimumWidth: Metrics.px(272)

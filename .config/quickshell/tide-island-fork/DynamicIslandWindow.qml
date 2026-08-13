@@ -4419,7 +4419,31 @@ PanelWindow {
                         iconFontFamily: root.iconFontFamily
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
-                        showCondition: true
+                        // ---- THIS WAS `true`, AND IT IS THE ISLAND'S
+                        //      "CLUNK" ON THE WAY BACK TO THE CLOCK ----
+                        //
+                        // Same defect as the workspace layer above, in the
+                        // layer you see most often. P1-4's correction said
+                        // the four remaining literals were swipe layers whose
+                        // opacity is driven by transitionProgress and so must
+                        // NOT cross-fade. That is true of the two side
+                        // layers. It is not true of this one, and it was
+                        // swept up with them.
+                        //
+                        // With the literal, `opacity: showCondition ? 1 : 0`
+                        // could never go false, so PanelLoader's hold -- the
+                        // fadeOutDuration + 40 ms that exists precisely so an
+                        // out-fade can finish -- held a FULLY OPAQUE
+                        // notification over the resting clock for its whole
+                        // duration, and then cut it.
+                        //
+                        // Measured, notify-send to rest, frames at ~45 ms:
+                        // from +4821 ms to +5124 ms the capsule collapses
+                        // with the notification text and the clock "01:50"
+                        // superimposed on each other, both solid. That
+                        // overlap IS the glitch; the geometry underneath it
+                        // eases cleanly the whole way and never stalls.
+                        showCondition: notificationLoader.live
                         onExpansionToggleRequested: {
                             islandContainer.suppressCapsuleClick(true);
                             islandContainer.toggleNotificationExpansionIfNeeded();
