@@ -141,23 +141,38 @@ TYPES = ("bool", "int", "enum", "list", "string", "path", "font")
 # The types the IN-ISLAND panel can render. Everything above this line is a
 # type; this is the subset SettingsLayer has an editor for.
 #
-# The paragraph above is still true and this is how it stays true. There is
-# no keyboard-entry field in SettingsLayer and there cannot be one, because
-# the panel lives under a Hyprland keyboard grab and a text field there would
-# swallow the next character typed into the focused window. So a `string`,
-# `path` or `font` row rendered in the panel would show its value and ignore
-# every keypress — the inert-row failure the whole schema exists to prevent.
-#
 # DERIVED from the type rather than declared per row, and that is the load-
-# bearing choice. A hand-written `"panel": true` on a font row is a lie that
-# validates, and it would be found the way every other silent failure in this
-# tree was found — by a user pressing a key that does nothing. Deriving it
-# makes the wrong state unspellable.
+# bearing choice. A hand-written `"panel": true` on a row the panel cannot
+# edit is a lie that validates, and it would be found the way every other
+# silent failure in this tree was found — by a user pressing a key that does
+# nothing. Deriving it makes the wrong state unspellable.
 #
 # `--list` reports it per row so a client can filter without knowing this
 # table: SettingsLayer takes the ones where it is true, the full settings app
 # takes all of them.
-PANEL_TYPES = ("bool", "int", "enum", "list")
+#
+# ---- `font` MOVED IN, AND THE OLD REASON IT WAS OUT IS WORTH KEEPING ----
+#
+# This tuple used to be ("bool", "int", "enum", "list"), and the note here
+# said: there is no keyboard-entry field in SettingsLayer and there cannot be
+# one, because the panel lives under a Hyprland keyboard grab and a text field
+# there would swallow the next character typed into the focused window. So a
+# `string`, `path` or `font` row would render, show its value, and ignore
+# every keypress — the inert-row failure this schema exists to prevent.
+#
+# Every word of that is still true about TEXT ENTRY. What changed is that
+# picking a font never needed text entry. The theme picker proved the
+# mechanism: `/` opens a filter, letters narrow a list, Backspace widens, and
+# there is no TextInput anywhere — the panel's own Keys handler owns the
+# characters, so nothing is typed INTO anything and the keyboard grab is
+# irrelevant. A font is a choice from a known set (716 families from
+# `fc-list`), which is an enum too large to page through, not a string.
+#
+# `string` and `path` STAY OUT, and that is not an oversight. A path is not a
+# choice from a set — it is arbitrary text, and a filter over a set you cannot
+# enumerate is a text field wearing a costume. Those remain the settings app's
+# job, which is exactly the split Phase 8 describes.
+PANEL_TYPES = ("bool", "int", "enum", "list", "font")
 
 # The settings the panel offers, in the order it shows them.
 #

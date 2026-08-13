@@ -338,6 +338,113 @@ FocusScope {
         root.listEditActive = false;
     }
 
+    // ---- THE FONT PICKER ----
+    //
+    // A `font` row is 716 choices, which is an enum too large to page through
+    // with h/l and not a string. So it opens a sub-mode with a filter, and the
+    // filter is the theme picker's: `/` is not needed because the whole mode
+    // IS the search, letters narrow, Backspace widens, and THERE IS NO
+    // TextInput ANYWHERE.
+    //
+    // That last part is the entire reason this row can exist in this panel at
+    // all. island-settings.py's note is right that a text field under a
+    // Hyprland keyboard grab would swallow the next character typed into the
+    // focused window — so the panel's own Keys handler owns the characters
+    // instead, exactly as the theme picker and the wallpaper picker do, and
+    // nothing is ever typed INTO a widget.
+    //
+    // The families come from fc-list rather than from the schema. A schema
+    // that enumerated 716 values would put them in every `--list` response,
+    // on every panel open, to answer a question only this sub-mode asks.
+    property bool fontEditActive: false
+    property int fontCursor: 0
+    property string fontQuery: ""
+    property var fontFamilies: []
+    property bool fontListLoaded: false
+
+    readonly property var fontMatches: {
+        const needle = root.fontQuery.trim().toLowerCase();
+        if (needle === "")
+            return root.fontFamilies;
+        const out = [];
+        for (let i = 0; i < root.fontFamilies.length; i++) {
+            if (root.fontFamilies[i].toLowerCase().indexOf(needle) >= 0)
+                out.push(root.fontFamilies[i]);
+        }
+        return out;
+    }
+
+    function fontBegin() {
+        const entry = root.selected;
+        if (!entry || entry.type !== "font")
+            return;
+        root.fontQuery = "";
+        root.fontEditActive = true;
+        // Start on the family the row already holds, so opening the picker on
+        // a set value and pressing Enter is a no-op rather than a silent
+        // change to whatever happens to sort first.
+        const current = String(entry.value || "");
+        const at = root.fontFamilies.indexOf(current);
+        root.fontCursor = at >= 0 ? at : 0;
+        if (!root.fontListLoaded)
+            fontListProcess.running = true;
+    }
+
+    function fontCancel() {
+        root.fontEditActive = false;
+        root.fontQuery = "";
+    }
+
+    function fontCommit() {
+        const entry = root.selected;
+        if (!entry)
+            return;
+        const matches = root.fontMatches;
+        if (root.fontCursor < 0 || root.fontCursor >= matches.length) {
+            // Nothing to commit is not an error and must not write: a query
+            // with no matches would otherwise send an empty family, and
+            // fontconfig resolves empty to Noto Sans CJK without complaining.
+            root.fontCancel();
+            return;
+        }
+        root.commit(entry.key, matches[root.fontCursor]);
+        root.fontEditActive = false;
+        root.fontQuery = "";
+    }
+
+    function fontMoveCursor(delta) {
+        const matches = root.fontMatches;
+        if (matches.length === 0)
+            return;
+        let next = root.fontCursor + delta;
+        if (next < 0) next = 0;
+        if (next > matches.length - 1) next = matches.length - 1;
+        root.fontCursor = next;
+        fontList.positionViewAtIndex(next, ListView.Contain);
+    }
+
+    // `fc-list : family` prints one line per FILE, comma-separated aliases,
+    // with heavy duplication — 3000+ lines for 716 families on this machine.
+    // Split, dedupe and sort here rather than in QML per keystroke.
+    Process {
+        id: fontListProcess
+        command: ["sh", "-c",
+                  "fc-list : family | tr ',' '\\n' | sed 's/^ *//; s/ *$//' | sort -u | grep -v '^$'"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const lines = String(text).split("\n").filter(l => l.length > 0);
+                root.fontFamilies = lines;
+                root.fontListLoaded = true;
+                const entry = root.selected;
+                if (entry && entry.type === "font") {
+                    const at = lines.indexOf(String(entry.value || ""));
+                    root.fontCursor = at >= 0 ? at : 0;
+                    fontList.positionViewAtIndex(root.fontCursor, ListView.Contain);
+                }
+            }
+        }
+    }
+
     function listMoveCursor(delta) {
         const values = (root.selected && root.selected.values) || [];
         if (values.length === 0) return;
@@ -380,6 +487,15 @@ FocusScope {
         const entry = root.selected;
         if (!entry || root.pendingKey !== "")
             return;
+
+        if (entry.type === "font") {
+            // Forward only, like `list`: `h` on a font row does nothing rather
+            // than opening the same mode, so the two directions do not both
+            // mean "enter".
+            if (delta > 0)
+                root.fontBegin();
+            return;
+        }
 
         if (entry.type === "list") {
             // Only forward (l / Enter / Space) opens it. `h` on a list row
@@ -431,6 +547,67 @@ FocusScope {
     }
 
     Keys.onPressed: function(event) {
+        // ---- THE FONT SUB-MODE OWNS THE KEYBOARD, LETTERS INCLUDED ----
+        //
+        // Ahead of everything else and returning early, for the reason the
+        // wallpaper and theme pickers give: every navigation key in this panel
+        // is a LETTER, and a font family is letters. "Inter" alone would hit
+        // `t` — and on this panel `j`/`k` move the ROW selection, which is the
+        // row the draft belongs to.
+        //
+        // This branch is also the whole reason a `font` row is renderable here
+        // at all: the characters are consumed by a Keys handler, not by a
+        // TextInput, so nothing competes with the Hyprland keyboard grab.
+        if (root.fontEditActive) {
+            if (event.key === Qt.Key_Escape) {
+                root.fontCancel();
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                root.fontCommit();
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Backspace) {
+                root.fontQuery = root.fontQuery.slice(0, -1);
+                root.fontCursor = 0;
+                event.accepted = true;
+                return;
+            }
+            // Arrows only. j/k are letters here and belong to the query.
+            if (event.key === Qt.Key_Down) {
+                root.fontMoveCursor(1);
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Up) {
+                root.fontMoveCursor(-1);
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_PageDown) {
+                root.fontMoveCursor(10);
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_PageUp) {
+                root.fontMoveCursor(-10);
+                event.accepted = true;
+                return;
+            }
+            if (event.text && event.text.length === 1 && event.text >= " ") {
+                root.fontQuery += event.text;
+                // Back to the first match: the list has re-laid out under the
+                // cursor entirely, so holding the old index would land on an
+                // unrelated family.
+                root.fontCursor = 0;
+                event.accepted = true;
+                return;
+            }
+            return;
+        }
+
         // The list sub-mode owns the keyboard entirely while it is open, and
         // returns early rather than falling through. Sharing the switch below
         // would mean j/k moving the ROW selection out from under the draft —
@@ -537,7 +714,18 @@ FocusScope {
         // The footer follows the mode. A hint row that advertises keys the
         // current mode does not answer is worse than no hint row — this
         // panel's own cheatsheet argument, applied to itself.
-        hints: root.listEditActive
+        // The footer follows the MODE. A hint row advertising keys the current
+        // mode does not answer is worse than no hint row — and in the font
+        // mode j/k are letters, which is precisely the lie that would make
+        // someone conclude the panel is broken.
+        hints: root.fontEditActive
+            ? [
+                { key: "type", label: "filter" },
+                { key: "↑↓", label: "move" },
+                { key: "Enter", label: "use" },
+                { key: "Esc", label: "cancel" }
+              ]
+            : root.listEditActive
             ? [
                 { key: "j/k", label: "move" },
                 { key: "space", label: "toggle" },
@@ -792,6 +980,139 @@ FocusScope {
     // order badge on each; squeezed in there it would be the same mistake
     // the control centre's first tile grid made. It is a MODE, so it looks
     // like one.
+    // ---- THE FONT PICKER OVERLAY ----
+    //
+    // A MODE, so it looks like one — same full-panel treatment the list editor
+    // uses and for the same reason: this needs a scrolling list of hundreds
+    // and the detail column is 48% of the width.
+    //
+    // Note what is NOT here: a TextInput. The query is drawn as text and
+    // built by the Keys handler above. See the note there.
+    Rectangle {
+        id: fontEditor
+        anchors.fill: parent
+        visible: root.fontEditActive
+        color: IslandTheme.surface
+        opacity: root.fontEditActive ? 1 : 0
+
+        Behavior on opacity {
+            NumberAnimation { duration: Motion.controlDuration() }
+        }
+
+        // Swallows clicks so a stray press does not reach the rows behind the
+        // overlay and move the selection this draft is anchored to.
+        MouseArea { anchors.fill: parent }
+
+        Text {
+            id: fontTitle
+            x: chrome.contentX
+            y: Metrics.pad(11)
+            text: root.selected ? root.selected.label : ""
+            color: IslandTheme.textPrimary
+            font.pixelSize: Metrics.font(15)
+            font.family: root.heroFontFamily
+            font.weight: Font.DemiBold
+        }
+
+        // The query and the match count, both load-bearing for the reason the
+        // wallpaper picker records: a search with nothing on screen is
+        // indistinguishable from a stuck keyboard, and the count is what
+        // separates "no such family" from "you typo'd". Red at zero.
+        Text {
+            anchors.left: fontTitle.right
+            anchors.leftMargin: Metrics.pad(8)
+            anchors.baseline: fontTitle.baseline
+            text: {
+                if (!root.fontListLoaded)
+                    return "reading families…";
+                const q = root.fontQuery === "" ? "" : "/" + root.fontQuery + "   ";
+                return q + root.fontMatches.length + " of " + root.fontFamilies.length;
+            }
+            color: (root.fontListLoaded && root.fontMatches.length === 0)
+                ? IslandTheme.danger : IslandTheme.textMuted
+            font.pixelSize: Metrics.font(10)
+            font.family: root.textFontFamily
+        }
+
+        ListView {
+            id: fontList
+            x: chrome.contentX
+            y: chrome.contentY
+            width: chrome.contentWidth
+            height: chrome.contentHeight
+            clip: true
+            model: root.fontMatches
+            currentIndex: root.fontCursor
+            boundsBehavior: Flickable.StopAtBounds
+            spacing: Metrics.px(1)
+
+            ScrollBar.vertical: IslandScrollBar { view: fontList }
+
+            Text {
+                anchors.centerIn: parent
+                visible: root.fontListLoaded && root.fontMatches.length === 0
+                text: "no family matches " + root.fontQuery
+                color: IslandTheme.textDisabled
+                font.pixelSize: Metrics.font(11)
+                font.family: root.textFontFamily
+            }
+
+            delegate: PanelRow {
+                id: fontRow
+                required property int index
+                required property var modelData
+
+                width: fontList.width
+                height: Metrics.px(26)
+
+                // `active` is the family the row currently HOLDS — a fact
+                // about the system — and `selected` is the cursor. Opening the
+                // picker on a set value shows both on the same row, which is
+                // exactly the state PanelRow was built to render legibly.
+                active: root.selected
+                    && String(fontRow.modelData) === String(root.selected.value)
+                selected: fontRow.index === root.fontCursor
+
+                onCursorRequested: root.fontCursor = fontRow.index
+                onActivated: root.fontCommit()
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width * 0.5
+                    elide: Text.ElideRight
+                    text: String(fontRow.modelData)
+                    color: IslandTheme.textPrimary
+                    font.pixelSize: Metrics.font(12)
+                    font.family: root.textFontFamily
+                }
+
+                // ---- THE PREVIEW IS THE POINT ----
+                //
+                // A font list that does not show the fonts is a list of
+                // strings. This is the one thing the GTK app's Gtk.FontDialog
+                // gives for free and the reason a bare filtered list would
+                // have been a worse answer than no row at all.
+                //
+                // Latin only, deliberately: every family name in fc-list is
+                // Latin and the sample is fixed ASCII, so this cannot map a
+                // CJK or Arabic face by shaping it. That is the `"Ag国"`
+                // lesson — a visible Text is still a shaped Text.
+                Text {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width * 0.45
+                    horizontalAlignment: Text.AlignRight
+                    elide: Text.ElideRight
+                    text: "Ag 0123"
+                    color: IslandTheme.textSecondary
+                    font.pixelSize: Metrics.font(13)
+                    font.family: String(fontRow.modelData)
+                }
+            }
+        }
+    }
+
     Rectangle {
         id: listEditor
         anchors.fill: parent
