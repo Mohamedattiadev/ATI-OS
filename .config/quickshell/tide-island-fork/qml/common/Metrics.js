@@ -208,14 +208,65 @@ var TYPE = {
 // of them single-purpose (the timer, the OSD numeral, the clock at size).
 var DISPLAY = { small: 18, medium: 24, large: 29 };
 
-// Radius. Four steps against 18 values in use, and deliberately NOT applied
-// yet — a radius change alters a shape's character, nested shapes need
-// concentric radii (outer = inner + padding), and there is no measurement
-// that says which of the 18 are deliberate. Named here so the next radius
-// written has somewhere to come from.
+// Radius. Four steps against 18 values in use.
+//
+// ---- THE LADDER IS ALREADY CONCENTRIC, AND THAT WAS NOT PLANNED ----
+//
+// The note that used to sit here said a radius change "cannot be a
+// find-and-replace" because nested shapes need concentric radii — outer =
+// inner + padding — and there was no measurement saying which of the 18
+// values were deliberate. The measurement is now here, and it is a happier
+// answer than expected. Against the padding this shell actually uses:
+//
+//     panel shell   px(28)  = 26      the capsule every panel draws
+//     minus padX    pad(18) = 18
+//     ------------------------------
+//     inner card              8       == RADIUS.card, exactly
+//     minus a chip's pad(4) = 4
+//     ------------------------------
+//     chip                    4       == RADIUS.tight, exactly
+//
+// So `card` and `tight` are not a proposal laid over the tree — they are
+// what concentricity DERIVES from the horizontal padding that nine panels
+// already agreed on. A row drawn at 8 inside a panel drawn at 26 with 18 px
+// of padding has a curve parallel to the shell around it, and that is the
+// whole of what "concentric" buys.
+//
+// `panel` at 16 is NOT the outer capsule. The capsule is px(28) and is the
+// island's own shape — settled, and not this table's business. 16 is for
+// large surfaces INSIDE a panel: a drawer, a tab body, a hero card.
 var RADIUS = {
     hairline: 1,   // dividers and 1 px rules
-    tight:    4,   // chips, small controls
-    card:     8,   // list rows, cards
-    panel:   16    // the big surfaces
+    tight:    4,   // chips, small controls    = card - pad(4)
+    card:     8,   // list rows, cards         = px(28) - pad(18)
+    panel:   16    // large surfaces inside a panel, not the capsule
 };
+
+// ---------------------------------------------------------------------
+//  CHROME — the numbers nine panels each picked separately
+// ---------------------------------------------------------------------
+//
+// Counted before choosing: the key-hint footer exists on 9 panels under TWO
+// property names (`hintHeight` on 5, `footerHeight` on 4) at FOUR heights
+// (pad(26), px(22), px(20), and a raw 24). The header is `pad(34)` on six
+// panels, `pad(36)` on two, `pad(38)` on one and a raw 34 on DisplayPanel.
+// The horizontal padding is `pad(18)` on nine and a raw 18 on DisplayPanel.
+//
+// None of that spread is a decision anyone made. It is nine files each
+// answering the same question once, which is exactly what extracting
+// PanelChrome exists to stop happening a tenth time.
+//
+// The values below are the MAJORITY of what is already there, not new
+// numbers — pad(18), pad(34), pad(26) each won their own vote. So the panels
+// that already agreed do not move at all, and the outliers converge onto
+// what most of the shell was already drawing.
+//
+// Functions rather than a table of pre-scaled numbers, because SCALE is a
+// literal in this file and a table would freeze at whatever it was when the
+// file was parsed. These are cheap and called at binding time.
+//
+function chromePadX()    { return pad(18); }   // 18 — the content inset
+function chromeHeader()  { return pad(34); }   // 33 — title baseline to body
+function chromeFooter()  { return pad(26); }   // 25 — the key-hint strip
+function chromeGap()     { return pad(8);  }   //  8 — body to footer
+function chromeTop()     { return pad(12); }   // 12 — title's own baseline

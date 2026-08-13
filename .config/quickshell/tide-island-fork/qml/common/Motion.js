@@ -205,6 +205,33 @@ function fadeOutDuration() { return Math.round(FADE_OUT_MS * SCALE); }
 function contentDelay()    { return Math.round(CONTENT_DELAY_MS * SCALE); }
 
 // ---------------------------------------------------------------------
+//  CONTROL_MS — geometry INSIDE a panel that has already arrived
+// ---------------------------------------------------------------------
+//
+// Everything above this line times the CAPSULE: a shape crossing most of a
+// screen, where mass is the point and 400 ms reads as considered. A tab
+// underline sliding 60 px is not that movement, and borrowing the capsule's
+// clock for it is what makes an in-panel control feel like it is lagging
+// behind the finger that moved it. `morphDurationFor()` cannot help — it
+// floors at `morphDuration()` for anything under REF_PX, which is every
+// control this is for.
+//
+// This is a CONSOLIDATION and not a new number. `IslandTheme.durationFast`
+// is 120 ms and is already on screen in seven places; its three siblings
+// (durationControl 130, durationQuick 140, durationStandard 280) have zero
+// callers between them, which is the same "inventory, not system" the type
+// and radius tables were. 120 is therefore the value the shell already
+// settled on for this class of movement, named here so the next in-panel
+// control has one place to take it from and the dead tokens can go.
+//
+// Paired with spring() rather than fade() wherever it moves a shape: this
+// shell's geometry overshoots ~1.5% and stopping dead is the tell that
+// something is a rectangle rather than an object.
+var CONTROL_MS = 120;
+
+function controlDuration() { return Math.round(CONTROL_MS * SCALE); }
+
+// ---------------------------------------------------------------------
 //  The oscillator
 // ---------------------------------------------------------------------
 
