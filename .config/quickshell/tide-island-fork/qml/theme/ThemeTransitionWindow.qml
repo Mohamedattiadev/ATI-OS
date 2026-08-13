@@ -73,11 +73,68 @@ import Qt5Compat.GraphicalEffects
 //    screen was always there and only the old one gets destroyed. Reported
 //    as "the animation finishes before it fully changed the theme".
 //
-//    The reveal is now gated on applyProcess exiting. Same idempotent-race
-//    shape as beginReveal(): `sweepStarted` is the boolean, and the script
-//    exiting and `applyCapTimer` both call beginSweep(), whichever gets
-//    there first. The cap exists because a hung or missing theme-apply must
-//    never leave a fullscreen frozen frame on the desktop forever.
+//    The reveal is now gated on theme-apply, in the idempotent-race shape
+//    beginReveal() already used: `sweepStarted` is the boolean, and the
+//    script's signal and `applyCapTimer` both call beginSweep(), whichever
+//    gets there first. The cap exists because a hung or missing theme-apply
+//    must never leave a fullscreen frozen frame on the desktop forever.
+//
+// THE SEVENTH TRAP, which is the sixth one's own bill
+// ----------------------------------------------------
+// 7. "theme-apply HAS EXITED" IS NOT "THE DESKTOP HAS FINISHED CHANGING",
+//    and gating on the exit bought correctness by paying five seconds of
+//    dead screen for it. Reported the same day as "the theming thing is
+//    still too clunky, the change animation" — and it was worse than the
+//    bug it replaced, because a wipe that lands early is a wrong-looking
+//    animation whereas this was a desktop that appeared to have HUNG.
+//
+//    Measured, one theme change, timed grim frames diffed against each
+//    other (`magick compare -metric RMSE`), overlay map/unmap taken from
+//    Hyprland's socket2 openlayer/closelayer rather than by polling:
+//
+//        t=  155 ms   overlay maps, frozen frame up
+//        t=  537 ms   last change of any kind
+//        t=  888 ms   \
+//        ...           |  d(prev) = 0.00, TWELVE consecutive frames,
+//        t= 4039 ms   /   3.5 seconds of a literally identical image
+//        t= 4293 ms   the sweep finally starts
+//        t= 5051 ms   overlay unmaps
+//
+//    Not "barely moving" — a pixel difference of exactly zero, for three
+//    and a half seconds, on a fullscreen surface.
+//
+//    The fix is that the script now says when the VISIBLE part is done
+//    instead of only when it is done. theme-apply prints one line,
+//    THEME_APPLY_VISIBLE_DONE, at the point past which everything it still
+//    has to do is invisible under a frozen frame — the Chromium theme
+//    repack, the brave/chrome kill-and-relaunch, firefox's userChrome, and
+//    a backgrounded initramfs rebuild. Two thirds of its runtime, and none
+//    of it repaints a window that is on screen: a killed browser does not
+//    repaint, it vanishes and returns seconds later on its own schedule,
+//    which no overlay of any length can cover.
+//
+//    Measured with the marker, same clock and same method:
+//
+//        t=  174 ms   overlay maps
+//        t=  858 ms   \  d(prev) = 0.00, the static stretch, now 960 ms
+//        t= 1818 ms   /   instead of 3151 ms
+//        t= 2122 ms   the sweep runs
+//        t= 2485 ms   overlay unmaps
+//        t= 4106 ms   theme-apply finally exits, behind a live desktop
+//
+//    Overlay lifetime 4896 -> 2311 ms, static stretch 3151 -> 960 ms, and
+//    the sweep now starts 2.5 s before the script it used to wait for.
+//
+//    And the sweep still does not lie about what it is revealing: the
+//    frame right after the wipe differs from the fully settled desktop by
+//    an RMSE of 0.76, which is the clock digits and the cursor. The
+//    desktop under the frozen frame really had finished changing — at
+//    622 ms, in fact, measured by running theme-apply bare against timed
+//    frames, which is 836 ms before the marker even fires. See settleTimer.
+//
+//    The exit is KEPT as a fallback, not deleted — an older theme-apply,
+//    or one that dies under `set -e` before the marker, prints nothing and
+//    must still reveal without waiting for the cap.
 //
 PanelWindow {
     id: root
@@ -320,19 +377,39 @@ PanelWindow {
 
     Timer {
         id: settleTimer
-        // theme-apply's exit is not the last repaint. Measured by capturing
-        // timed grim frames across a run and diffing each against the settled
-        // desktop: the script exited at 1974 ms, the bulk of the visible swap
-        // landed at 2078 ms, and the frame difference reached its noise floor
-        // (clock digits and the cursor) at 2269 ms. So the desktop finishes
-        // changing 100–300 ms after the process is reaped, because the exit
-        // means "configs written, reloads SENT" and kitty, dunst, rofi and
-        // Hyprland each repaint on their own next frame.
+        // A signal from theme-apply is not the last repaint: it means
+        // "configs written, reloads SENT", and Hyprland, kitty and dunst each
+        // repaint on their own next frame. This absorbs that tail.
         //
-        // 260 ms covers the measured tail. It is charged only on the path
-        // where the script exited normally; the cap path skips it, having
-        // already waited far longer than this.
-        interval: 260
+        // It was 260 ms, measured against the script's EXIT: the script
+        // exited at 1974 ms, the bulk of the visible swap landed at 2078 ms,
+        // and the frame difference reached its noise floor at 2269 ms — a
+        // 100–300 ms tail, because the last reloads were dispatched moments
+        // before that exit.
+        //
+        // The gate is now the visible-repaint marker, which sits ~2.5 s
+        // EARLIER in the script, so the tail had to be re-measured rather
+        // than inherited. Ran theme-apply bare with no overlay at all,
+        // timestamping its marker line on stdout against timed grim frames of
+        // the real desktop, and diffed every frame against the settled one:
+        //
+        //     t= 182 ms   d=9.55   hyprctl reload landing
+        //     t= 622 ms   d=0.86   <- the visible swap is DONE here
+        //     t= 755..1605         d flat at 0.86-0.98 (clock digits, cursor)
+        //     marker at 1458 ms
+        //
+        // The desktop stopped changing 836 ms BEFORE the marker, not after
+        // it. That is not luck: the last dispatch that repaints an
+        // already-open window (dunst restart, GTK settings.ini) happens at
+        // 1.10 s, so the marker at ~1.3-1.5 s already absorbs ~350 ms of its
+        // own settle.
+        //
+        // So the honest requirement here is close to zero, and 140 ms is
+        // slack rather than a measured need — a handful of frames against a
+        // machine more loaded than this one was. Charged only on the
+        // signalled path; the cap path skips it, having already waited far
+        // longer.
+        interval: 140
         repeat: false
         onTriggered: root.beginSweep()
     }
@@ -342,17 +419,38 @@ PanelWindow {
         // THE HARD CAP. Not a tuning knob — a guarantee that a theme-apply
         // that hangs, or that is not on disk at all, cannot leave a
         // fullscreen frozen screenshot sitting on the user's desktop for the
-        // rest of the session. Whichever of this and the script's exit
+        // rest of the session. Whichever of this and theme-apply's marker
         // arrives first wins; beginSweep() is idempotent.
         //
-        // 12 s against a measured 1.6 s idle / 3.7–9.6 s under load (the tail
-        // is the browser kill, .crx repack and relaunch at the end of the
-        // script). That is only ~25% over the worst run seen, and it is meant
-        // to be: when this timer fires the cost is merely the old racing
-        // behaviour for one theme change, whereas a cap set generously enough
-        // to never lose means staring at a dead desktop for half a minute
-        // when the script genuinely wedges.
-        interval: 12000
+        // 12 s when the gate was the script's EXIT, sized against a whole run
+        // (1.6 s idle, 3.7–9.6 s under load — the tail being the browser
+        // kill, .crx repack and relaunch). The gate is now the marker, and
+        // the marker is reached at 1.27–1.46 s measured, so the cap is
+        // guarding a much shorter stretch of script and 12 s of frozen
+        // desktop is no longer a proportionate failure mode.
+        //
+        // 8 s, and the number is set by the SECOND click, not the first.
+        // Measured marker times on this machine:
+        //
+        //     settled, 5 kitty + brave + qutebrowser up ... 1.27–1.46 s
+        //     second theme change fired while the previous
+        //     one's brave relaunch was still starting ..... 4.57 s, 5.21 s
+        //
+        // The slow case is self-inflicted and unavoidable: every apply kills
+        // and relaunches brave, so flicking through themes — which
+        // theme-apply's own comments call out as the expected way to use it
+        // — means each run's pgreps and hyprctl calls land on a box that is
+        // busy starting twelve brave processes. 4x the settled path.
+        //
+        // Everything else before the marker is bounded or backgrounded: the
+        // kitty fan-out is `timeout 1` in parallel behind one `wait`; dunst
+        // is a fixed `sleep 0.2`; papirus-folders, the eww restart, the file
+        // manager and the qtile restart are all `& disown` or `setsid -f`
+        // and cannot hold it. So 8 s is ~55% over the worst run seen rather
+        // than the ~25% the old 12 s allowed itself, because a cap that
+        // fires is the sixth trap coming back for one theme change and the
+        // rapid-switch case must not trip it.
+        interval: 8000
         repeat: false
         onTriggered: {
             // Straight to the sweep, not via noteThemeApplied(): there is no
@@ -382,6 +480,11 @@ PanelWindow {
         onFinished: root.finish()
     }
 
+    // The token theme-apply prints at its visible-repaint marker. Kept as a
+    // property rather than inlined so the string that has to match the
+    // script's `printf` is stated once, next to the comment that explains it.
+    readonly property string visibleDoneToken: "THEME_APPLY_VISIBLE_DONE"
+
     Process {
         id: applyProcess
         // The thing that was missing. Without this the frozen frame had no
@@ -391,7 +494,41 @@ PanelWindow {
         // The exit code is deliberately ignored. theme-apply exiting non-zero
         // means part of the theme did not apply, which is a reason to show
         // the user the desktop, not a reason to keep it frozen. The only
-        // question this handler answers is "has it stopped running".
+        // question these handlers answer is "has the desktop finished
+        // changing".
+
+        // SplitParser and not StdioCollector, for the same reason
+        // SystemMonitorPanel gives: a collector hands back its text once, at
+        // EOF, which is precisely the event this is trying not to wait for.
+        // The whole point is to hear a line while the process is still
+        // running.
+        //
+        // The compare is against a trimmed line and an exact token, not a
+        // prefix or a substring match. theme-apply's backgrounded children
+        // (papirus-folders' notify-send fallback, the file-manager relaunch)
+        // inherit this pipe, so this parser is not guaranteed to see only
+        // lines the script meant to send it.
+        stdout: SplitParser {
+            onRead: function (line) {
+                if (String(line).trim() !== root.visibleDoneToken)
+                    return;
+                root.noteThemeApplied();
+                // The other outputs, which never ran the script; shell.qml
+                // relays this to them. Emitted here rather than only at exit
+                // so every screen sweeps on the same tick — a relay that
+                // fired at exit would hold the second monitor's frozen frame
+                // for the two seconds of browser restarts this marker exists
+                // to skip.
+                root.themeApplied();
+            }
+        }
+
+        // THE FALLBACK, not the gate. It still has to exist: a theme-apply
+        // that dies under `set -e` before reaching the marker, or an older
+        // copy of the script that does not print one at all, must not strand
+        // the overlay on the cap. noteThemeApplied() is idempotent, so on the
+        // normal path — marker at 1.27 s, exit at 3.39 s — this is a no-op
+        // that runs after the sweep has already finished.
         //
         // The thing that could have sunk this and does not: theme-apply's
         // last act is to background `boot-splash generate && boot-splash
@@ -400,16 +537,15 @@ PanelWindow {
         // visible in ps with a boot-splash child. That grandchild inherits
         // this Process's stdout and stderr, so if Quickshell waited for the
         // pipes to close rather than for the child to be reaped, onExited
-        // would land minutes late and the overlay would sit frozen until the
-        // cap saved it. Measured instead of assumed, from the shell's own
-        // log: applyTheme at t=...029492, onExited at t=...034504, i.e. 5.0 s,
-        // matching theme-apply's own runtime — the backgrounded grandchild
-        // does not hold this open.
+        // would land minutes late. That would no longer delay the sweep, but
+        // it WOULD leave `running` true, and applyTheme() assigns to
+        // `command` — which Quickshell refuses on a running Process, so the
+        // NEXT theme change would silently not run the script at all.
+        // Measured with the pipe in place rather than assumed: marker at
+        // 1.46 s, onExited at 4.11 s, matching theme-apply's own runtime.
         onExited: {
             running = false;
             root.noteThemeApplied();
-            // The other outputs, which never ran the script; shell.qml
-            // relays this to them.
             root.themeApplied();
         }
     }
