@@ -218,6 +218,32 @@ esac
 put_focus_back
 printf '%s' "$want" > "$state_file"
 
+# ---- THE ISLAND'S LAYOUT INDICATOR READS THIS ----
+#
+# The per-workspace files above are the AUTHORITY, and they are the wrong
+# shape for a widget: the island would have to know which workspace is
+# active, build a path from it, and re-point a FileView at a different
+# inode on every switch. So the same value is also published to ONE stable
+# path, which is what a FileView can actually watch.
+#
+# Written on EVERY path, `apply` included -- and that is the difference
+# between this and the showText notify below, which is deliberately not on
+# the apply path. A transient popup firing on every workspace switch is
+# noise; a persistent indicator that did NOT update on every workspace
+# switch would be a widget displaying the wrong layout, which is worse than
+# no widget. qtile's CurrentLayout widget updated on both, because it read
+# state rather than reacting to an event.
+#
+# Truncate-and-write, never write-then-rename. A FileView is a
+# QFileSystemWatcher underneath and QFileSystemWatcher watches the INODE:
+# an atomic `mv` swaps the inode and the watch is left pointing at the
+# unlinked original, so the island keeps whatever it read at startup
+# forever. That trap is already written up twice in this tree -- in
+# theme-apply's gen_island_colors, and in MIGRATION.md item 4 -- and it is
+# the same mistake arriving at a third file. `printf >` truncates in place
+# and keeps the inode.
+printf '%s' "$want" > "$state_dir/current"
+
 [ "$quiet" = 1 ] && exit 0
 
 # qtile's bar had a CurrentLayout widget, so switching layouts always said
