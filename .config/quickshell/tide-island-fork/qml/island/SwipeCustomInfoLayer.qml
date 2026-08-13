@@ -392,7 +392,7 @@ Item {
                     anchors.leftMargin: parent.hasLeadingVisual && !parent.isBattery ? root.iconSpacing : 0
                     anchors.verticalCenter: parent.verticalCenter
                     text: modelData.text || ""
-                    color: "white"
+                    color: IslandTheme.textPrimary
                     font.pixelSize: root.textPixelSize
                     font.family: root.textFontFamily
                     font.weight: Font.Bold
@@ -420,7 +420,7 @@ Item {
         width: textWidth
         anchors.verticalCenter: parent.verticalCenter
         text: timeText
-        color: "white"
+        color: IslandTheme.textPrimary
         opacity: 1 - clampedProgress
         font.pixelSize: root.textPixelSize + 1
         font.family: timeFontFamily

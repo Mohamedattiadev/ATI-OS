@@ -402,7 +402,7 @@ Item {
                                 Text {
                                     width: parent.width
                                     text: currentTrack
-                                    color: "white"
+                                    color: IslandTheme.textPrimary
                                     font.pixelSize: Metrics.font(userConfig.bodyFontSize + 2)
                                     font.family: textFontFamily
                                     font.weight: Font.DemiBold
@@ -568,7 +568,11 @@ Item {
 
                                 height: parent.height
                                 radius: Metrics.px(3)
-                                color: "white"
+                                // The played portion of the seek bar. `trackFill` is the
+                                // role for exactly this and follows the accent, so the
+                                // bar agrees with the rest of the shell instead of
+                                // being the one white element on a themed surface.
+                                color: IslandTheme.trackFill
                                 width: parent.width * trackFill.animatedTrackProgress
                             }
                         }

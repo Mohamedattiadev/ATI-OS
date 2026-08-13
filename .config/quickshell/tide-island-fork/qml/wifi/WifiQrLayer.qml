@@ -150,7 +150,7 @@ FocusScope {
         x: root.horizontalPadding
         y: Metrics.pad(10)
         text: "Share Wi-Fi"
-        color: "white"
+        color: IslandTheme.textPrimary
         font.pixelSize: Metrics.font(15)
         font.family: root.heroFontFamily
         font.weight: Font.DemiBold

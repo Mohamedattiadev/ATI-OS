@@ -789,7 +789,7 @@ FocusScope {
                             z: 100
                             visible: appIcon.source.toString() === ""
                             text: String(appDelegate.entry.name).charAt(0).toLocaleUpperCase()
-                            color: "white"
+                            color: IslandTheme.textPrimary
                             font.family: root.textFontFamily
                             font.pixelSize: Metrics.font(24)
                             font.weight: Font.DemiBold

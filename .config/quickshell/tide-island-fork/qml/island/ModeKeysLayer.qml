@@ -251,7 +251,7 @@ Item {
         x: Metrics.pad(18)
         y: Metrics.pad(10)
         text: root.modeName.toUpperCase()
-        color: "white"
+        color: IslandTheme.textPrimary
         font.family: root.heroFontFamily
         font.pixelSize: Metrics.font(15)
         font.weight: Font.DemiBold

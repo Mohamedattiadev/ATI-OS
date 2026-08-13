@@ -3,6 +3,9 @@ import IslandBackend
 
 // FORK: one shared scale factor for every island surface.
 import "../common/Metrics.js" as Metrics
+// FORK: IslandTheme, for the text colour — see the sweep that removed the
+// 29 hardcoded `color: "white"` from this tree.
+import "../common"
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
@@ -59,7 +62,7 @@ Item {
         width: parent.width
         anchors.verticalCenter: parent.verticalCenter
         text: iconText
-        color: "white"
+        color: IslandTheme.textPrimary
         font.pixelSize: userConfig.iconFontSize
         font.family: iconFontFamily
         horizontalAlignment: Text.AlignHCenter

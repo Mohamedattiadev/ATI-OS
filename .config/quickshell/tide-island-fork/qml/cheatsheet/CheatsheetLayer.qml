@@ -261,7 +261,7 @@ Item {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.title
-                color: "white"
+                color: IslandTheme.textPrimary
                 font.family: root.heroFontFamily
                 font.pixelSize: Metrics.font(13)
                 font.weight: Font.DemiBold

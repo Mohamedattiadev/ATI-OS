@@ -117,7 +117,7 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         text: root.iconText
-                        color: "white"
+                        color: IslandTheme.textPrimary
                         font.pixelSize: root.userConfig.iconFontSize
                         font.family: root.iconFontFamily
                         horizontalAlignment: Text.AlignHCenter
@@ -128,7 +128,7 @@ Item {
 
             Text {
                 text: Math.round(root.progress * 100) + "%"
-                color: "white"
+                color: IslandTheme.textPrimary
                 font.pixelSize: root.userConfig.titleFontSize
                 font.family: root.heroFontFamily
                 font.weight: Font.Bold
@@ -150,7 +150,7 @@ Item {
 
             Text {
                 text: iconText
-                color: "white"
+                color: IslandTheme.textPrimary
                 font.pixelSize: userConfig.iconFontSize
                 font.family: iconFontFamily
                 anchors.verticalCenter: parent.verticalCenter
@@ -158,7 +158,7 @@ Item {
 
             Text {
                 text: customText
-                color: "white"
+                color: IslandTheme.textPrimary
                 font.pixelSize: userConfig.bodyFontSize
                 font.family: textFontFamily
                 font.weight: Font.DemiBold

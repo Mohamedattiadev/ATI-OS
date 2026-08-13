@@ -3,6 +3,9 @@ import IslandBackend
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+// FORK: IslandTheme, for the clock's colour — see the sweep that removed the
+// 29 hardcoded `color: "white"` from this tree.
+import "../common"
 
 Item {
     id: root
@@ -49,7 +52,7 @@ Item {
         Text {
             anchors.centerIn: parent
             text: currentTime
-            color: "white"
+            color: IslandTheme.textPrimary
             font.pixelSize: textPixelSize
             font.family: heroFontFamily
             font.weight: Font.Bold

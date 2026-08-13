@@ -3,6 +3,9 @@ import IslandBackend
 
 // FORK: one shared scale factor for every island surface.
 import "../common/Metrics.js" as Metrics
+// FORK: IslandTheme, for the text colour — see the sweep that removed the
+// 29 hardcoded `color: "white"` from this tree.
+import "../common"
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
@@ -68,7 +71,7 @@ Item {
         width: textWidth
         anchors.verticalCenter: parent.verticalCenter
         text: displayText
-        color: "white"
+        color: IslandTheme.textPrimary
         opacity: revealProgress
         font.pixelSize: textPixelSize
         font.family: textFontFamily
