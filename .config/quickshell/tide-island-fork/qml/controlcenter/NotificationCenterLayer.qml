@@ -67,6 +67,36 @@ Item {
     focus: showCondition
     activeFocusOnTab: true
 
+    // The same explicit claim ControlCenterLayer makes, and the reason this
+    // panel was the one of the three still not closing on Escape after the
+    // loaders were put into the focus chain.
+    //
+    // `focus: showCondition` nominates this item as its parent scope's focus
+    // child. That is enough ONCE something walks the chain — which is what
+    // keyPanelFocusTimer's islandContainer.forceActiveFocus() does. But the
+    // timer is restarted from onNotificationCenterLayerVisibleChanged in
+    // DynamicIslandWindow, i.e. from the property change, while this item is
+    // built by a Loader reacting to the same change. Whether the item exists
+    // when the timer fires is a race between two observers of one boolean,
+    // and on this panel it lost: interval 0 is the next event-loop turn, and
+    // the notification centre's loader has more to build than the other two
+    // (NotificationHistory instantiates a ListView over the history model)
+    // so it is the one that is reliably not ready in time.
+    //
+    // Claiming from the item itself removes the race entirely — this runs
+    // when the item is up, by definition, because it IS the item running it.
+    // Qt.callLater rather than a direct call for the ordering reason given
+    // at the control centre: the timer may still fire after us and hand
+    // focus back to the scope, so the claim has to land in the same turn the
+    // timer does rather than before it.
+    onShowConditionChanged: {
+        if (showCondition)
+            Qt.callLater(function() {
+                if (notificationCenter.showCondition)
+                    notificationCenter.forceActiveFocus();
+            });
+    }
+
     Keys.onPressed: function(event) {
         switch (event.key) {
         case Qt.Key_Escape:
