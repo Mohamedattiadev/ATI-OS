@@ -16,15 +16,24 @@ is: a different program.
 
 WHAT IS NOT HERE, AND WHY
 -------------------------
-rofi_anki (373 lines) and rofi_ilovepdf (1267) are not ported, and the reason
-is the same for both and is not "they are long". Each is a LINEAR WIZARD over
-an external service — eight sequential prompts building an AnkiConnect note,
-and a file-picker/page-range/OCR/watermark pipeline over pdftk-class tools —
-where every step's validity depends on the answers before it. Ported here
-they would not be a menu; they would be this file growing a second copy of
-each script's control flow, with the original left in place as the one that
-still works. See the per-menu note above `MENUS` for what the rofi chord
-still spawns and why.
+This paragraph used to name rofi_anki (373 lines) and rofi_ilovepdf (1267)
+together, on one argument: each is a LINEAR WIZARD over an external service
+where every step's validity depends on the answers before it, so porting
+either would mean "this file growing a second copy of each script's control
+flow, with the original left in place as the one that still works".
+
+**Half of that is now done, and the argument was wrong in a specific and
+useful way.** A linear wizard is not the obstacle — a page stack IS a linear
+wizard, and this file already runs three of them. The obstacle named was the
+DUPLICATION, and duplication is avoidable: rofi_anki's eight prompts are 30
+of its 373 lines and the other 343 are card logic that does not care which
+window asked. So the `anki` menu below asks the eight questions and hands
+the answers to `rofi_anki --answers FILE`. There is still exactly one copy
+of the card logic, and the qtile session's rofi path is its default.
+
+rofi_ilovepdf stays, and for a reason this paragraph never gave: it is a
+file manager with multi-select, and the protocol below carries one id per
+page. See the note above `MENUS`.
 
 CORRECTION, and it is worth writing down because it was said three times in
 one session and acted on twice: the claim "the island has no text-entry
@@ -2057,6 +2066,173 @@ def youtube_run(item_id):
     return _page("Latest videos", items)
 
 
+# ------------------------------------------------------------------ anki --
+#
+#  rofi_anki, and the header of this file used to say it could not be ported.
+#  The reason it gave was right about the shape and wrong about the
+#  consequence: it IS a linear wizard over an external service where each
+#  step depends on the last, and a page stack is exactly that. What the note
+#  actually feared was the second half — "this file growing a second copy of
+#  each script's control flow, with the original left in place as the one
+#  that still works" — and that fear is answered by not copying anything.
+#
+#  MEASURED BEFORE DECIDING: of rofi_anki's 373 lines, the eight prompts are
+#  lines 181-305. Everything else — the AnkiConnect handshake, deck
+#  provisioning, the Gemini call with a translate-shell fallback, espeak-ng
+#  IPA, three flavours of TTS glued together by ffmpeg, storeMediaFile,
+#  the HTML assembly, addNote — is card logic that does not care which window
+#  asked. So this menu asks the eight questions and hands them to
+#  `rofi_anki --answers FILE`. One copy of the card logic, and the qtile
+#  session keeps the rofi prompts as its default path.
+#
+#  WHAT THIS IS BETTER AT THAN THE ROFI ORIGINAL, rather than merely
+#  elsewhere:
+#    * the four yes/no audio-and-image questions were four sequential rofi
+#      windows, each a two-row list. They are ONE page of four toggles here,
+#      so you can see and change all four at once instead of answering blind
+#      and having no way back.
+#    * "Add an image?" then "paste the URL" was two steps to express one
+#      fact. A URL or nothing says it once — a non-empty url IS the yes, and
+#      rofi_anki derives WANT_IMAGE from it in answers mode.
+#
+#  WHAT IS DELIBERATELY NOT DONE HERE: the AnkiConnect wait. rofi_anki
+#  already starts Anki and polls the port for 45 s, and `--list` runs
+#  synchronously under the panel — a 45 s block would freeze the picker on
+#  open. This probes for 2 s and says so in the note if nothing answers; the
+#  real wait happens in the detached run where it costs nothing.
+#
+#  THE SUBMIT IS DETACHED, AND THAT IS NOT AN OPTIMISATION. Building a card
+#  with spelling audio runs gtts-cli once per CHARACTER; the run is tens of
+#  seconds. Holding the panel open on it would make the shell look hung, so
+#  the panel closes and rofi_anki's own notify-send calls become the
+#  progress report — the same ones the rofi path has always emitted.
+
+ANKI_URL = "http://127.0.0.1:8765"
+
+ANKI_TOGGLES = [
+    ("voice_normal", "Word once", "audio of the front, spoken once"),
+    ("voice_repeat", "Word three times", "the same clip, three times, spaced"),
+    ("voice_spell", "Spelling", "letter by letter, then the whole word"),
+]
+
+ANKI_DEFAULTS = {
+    "front_lang": "en", "text": "", "tags": "",
+    "voice_normal": "no", "voice_repeat": "no", "voice_spell": "no",
+    "image_url": "",
+}
+
+
+def _anki_up():
+    """True when AnkiConnect answers within 2 s."""
+    try:
+        _http_json(ANKI_URL, data=b'{"action":"version","version":6}',
+                   headers={"Content-Type": "application/json"}, timeout=2)
+        return True
+    except Exception:  # noqa: BLE001 — any failure means "not answering"
+        return False
+
+
+def _anki_state(**changes):
+    state = dict(ANKI_DEFAULTS, **(_state_read("anki") or {}))
+    state.update(changes)
+    _state_write("anki", state)
+    return state
+
+
+def anki_list():
+    _state_write("anki", dict(ANKI_DEFAULTS))
+    note = ("Front language picks the deck: English or German.")
+    if not _anki_up():
+        note += ("  Anki is not answering on 127.0.0.1:8765 — it will be "
+                 "started and waited for when the card is submitted.")
+    return _page("Anki card", [
+        {"id": "lang:en", "label": "English front",
+         "detail": "deck English · back in German"},
+        {"id": "lang:de", "label": "German front",
+         "detail": "deck German · back in English"},
+    ], note=note)
+
+
+def _anki_options_page(state):
+    items = [{
+        "id": "toggle:" + key,
+        "label": ("● " if state.get(key) == "yes" else "○ ") + label,
+        "detail": detail,
+    } for key, label, detail in ANKI_TOGGLES]
+    url = state.get("image_url", "")
+    items.append({
+        "id": "image",
+        "label": ("● " if url else "○ ") + "Image",
+        "detail": _ellipsis(url, 46) if url
+                  else "next page asks for a URL; blank means no image",
+    })
+    items.append({"id": "go", "label": "Create the card",
+                  "detail": "front “%s”%s" % (
+                      _ellipsis(state.get("text", ""), 40),
+                      " · tags " + state["tags"] if state.get("tags") else "")})
+    return _page("Anki · what to include", items, stack="replace",
+                 note="Enter toggles a row and stays here. "
+                      "Choose “Create the card” when the four read right.")
+
+
+def anki_run(item_id, text=""):
+    kind, rest = _split(item_id)
+
+    if kind == "lang":
+        _anki_state(front_lang=rest)
+        return _prompt("Anki · front", "text",
+                       prompt="word or sentence for the front",
+                       value=_selection(),
+                       note="Prefilled from the primary selection, the same "
+                            "way spellcheck and translate are.")
+
+    if item_id == "text":
+        if not text.strip():
+            raise ValueError("a card needs a front")
+        _anki_state(text=text.strip())
+        return _prompt("Anki · tags", "tags",
+                       prompt="space separated — Enter with nothing skips",
+                       note="Optional. rofi_anki splits on whitespace and "
+                            "sends them as the note's tags.")
+
+    if item_id == "tags":
+        return _anki_options_page(_anki_state(tags=text.strip()))
+
+    if kind == "toggle":
+        state = _state_read("anki") or {}
+        return _anki_options_page(
+            _anki_state(**{rest: "no" if state.get(rest) == "yes" else "yes"}))
+
+    if item_id == "image":
+        state = _state_read("anki") or {}
+        return _prompt("Anki · image", "imageurl", prompt="image URL",
+                       value=state.get("image_url", ""),
+                       note="Enter with nothing leaves the card without an "
+                            "image. rofi_anki checks the MIME type of what "
+                            "comes back and drops it if it is not an image.")
+
+    if item_id == "imageurl":
+        return _anki_options_page(_anki_state(image_url=text.strip()))
+
+    if item_id == "go":
+        state = _state_read("anki") or {}
+        if not state.get("text"):
+            raise ValueError("no text in flight — start again")
+        script = shutil.which("rofi_anki") or os.path.join(
+            HOME, ".dotfiles/.config/AtiScriptsV1/rofi_anki")
+        if not os.path.exists(script):
+            raise ValueError("rofi_anki not found")
+        # The state file IS the answers file — the wizard's state and
+        # rofi_anki's input are the same seven values, so writing a second
+        # copy would only create a way for them to disagree. It lives in
+        # $XDG_RUNTIME_DIR, which is 0700 and dies with the session.
+        _spawn([script, "--answers", _state_path("anki")])
+        _notify("Anki", "Building “%s”…" % _ellipsis(state["text"], 40))
+        return None
+
+    raise ValueError("unknown anki step %s" % item_id)
+
+
 # ------------------------------------------------------------------- hub --
 #
 #  dm-hub launches the other dm-* scripts, and that is exactly the reason it
@@ -2093,6 +2269,7 @@ HUB_ROWS = [
     ("shared", "Shared links", "$mod P, Z"),
     ("youtube", "YouTube", "$mod P, Y"),
     ("confedit", "Edit a config", "$mod P, F"),
+    ("anki", "Add an Anki card", "$mod P, A"),
 ]
 
 
@@ -2135,15 +2312,27 @@ MENUS = {
     "todo": (todo_list, todo_run),
     "shared": (shared_list, shared_run),
     "youtube": (youtube_list, youtube_run),
+    # --- the third pass: a wizard, ported by moving its PROMPTS rather than
+    #     its logic. See the note above `anki`.
+    "anki": (anki_list, anki_run),
     "hub": (hub_list, hub_run),
 }
 
 #  STILL SPAWNED BY THE ROFI CHORD, ON PURPOSE
 #  -------------------------------------------
-#  rofi_anki   ($mod P, A) and
-#  rofi_ilovepdf ($mod P, V) are linear wizards over an external service, not
-#  menus — see "WHAT IS NOT HERE" at the top of this file. They are the only
-#  two keys in the chord that still open a rofi window.
+#  rofi_ilovepdf ($mod P, V) is the one key in this chord that still opens a
+#  rofi window, and the reason is not its length. It is a FILE MANAGER: it
+#  walks directories, and `order_files` selects SEVERAL files and orders them
+#  so that merge has an order to merge in. This protocol carries exactly one
+#  id back per page, so multi-select cannot be expressed at all — porting it
+#  means either building selection state into PickerLayer.qml or shipping a
+#  PDF toolkit that has lost merge. Neither is worth it for a menu that ends
+#  by opening a file manager anyway.
+#
+#  Outside the chord, `phone_screen` ($mod SHIFT F6) and `theme-toggle`
+#  ($mod P, SHIFT C) also stay on rofi, each for a reason recorded at its
+#  bind in binds.conf / submaps.conf: both must keep working with this shell
+#  down, which is precisely when they are reached for.
 
 
 def _call_run(function, item_id, text):
