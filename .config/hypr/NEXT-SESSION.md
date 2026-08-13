@@ -2,124 +2,80 @@
 
 Continue the Hyprland / Tide-Island work in `~/.dotfiles` (branch `test`).
 
-**Read first:** `.config/hypr/upgread_UI_UX.md`. The two "Audit — 2026-08-13"
-sections at the end are the measured state; the numbered findings above them
-(P0-1 … P3-10) are the ORIGINAL plan and several are now stale — the audits
-say which. Where the plan and an audit disagree, the audit measured it.
-
-There are two jobs. **Job B is the one that matters most to me.**
+**Read first:** `.config/hypr/upgread_UI_UX.md`. The audit sections at the end
+are the measured state, newest last; the numbered findings above them
+(P0-1 … P3-10) are the ORIGINAL plan and most are now closed or stale. Where
+the plan and an audit disagree, the audit measured it.
 
 ---
 
-# JOB A — finish the plan
+# WHAT THE LAST SESSION DID
 
-In this order. Each is small enough to prove.
+Job B — "restyle every popup" — done as P2-7 rather than beside it, because
+extracting the chrome is the only moment at which changing the look is a
+four-file edit instead of a twenty-file one.
 
-1. **Theme picker search.** Phase 7. The wallpaper picker got type-to-jump
-   this session; the theme picker (22 items) still has none. It is a
-   **GridView, not a PathView**, and its model is not carrying thumbnail
-   cache state — so unlike the wallpaper picker a REAL FILTER is correct
-   here. Do not copy the carousel's approach; the reason it was type-to-jump
-   is written in `WallpaperPickerLayer.qml` and does not apply.
+**Ten surfaces are on `PanelChrome` / `PanelRow` / `PanelTabs` / `KeyHint`.**
+The style lives in `qml/common/` now. Read those four files before restyling
+anything — the arguments in their headers are load-bearing, especially:
 
-2. **`/` for the font picker in the settings app.** `island-settings.py`
-   has `font` rows (textFontFamily, timeFontFamily, heroFontFamily,
-   iconFontFamily) and 716 families are installed. The GTK app has a
-   `Gtk.FontDialog` already; the ISLAND panel still cannot offer these at
-   all (`panel: false`). If the in-island panel should ever have them, it
-   needs the filtered-list component, which is the same component the theme
-   picker wants.
+  * the header register (one of two, and why it is the instrument one)
+  * accent EDGE = "you are here", accent WASH = "this is true of the system",
+    danger fill = "the next keystroke is irreversible"
+  * `Metrics.chromeTotal()` for a panel's own height, never `chrome.chromeHeight`
 
-3. **P2-7 — the shared components.** This is the prerequisite for Job B, so
-   read Job B before starting it. Measured, still true:
-   the key-hint footer exists on **9 panels** under **two** property names
-   (`hintHeight` on 5, `footerHeight` on 4) at **four** heights
-   (`Metrics.pad(26)`, `px(22)`, `px(20)`, raw `24`). Extract `PanelChrome`
-   (header + body + footer), `PanelRow`, `PanelTabs`, `KeyHint`.
-
-4. **Motion.js — re-audit the 17 "deliberate raw easings"** listed at the
-   bottom of that file. They were justified once; confirm each is still
-   true rather than inheriting the list.
-
-5. **Lock screen** (Phase 6.2): user avatar, username, soft top gradient
-   behind the clock. Small, and it is the one surface a stranger sees.
+Also closed: P1-6 screen corners, Phase 7 search (theme picker filter), the
+Motion.js easing re-audit, the 29 hardcoded whites, and Phase 6.2's lock
+screen additions.
 
 ---
 
-# JOB B — restyle every popup. This is the main request.
+# THE FIRST THING TO DO
 
-> "I want to upgrade the style and the UI/UX of all the island things — a
-> really different upgrade style in all the popups, to be proper and good."
+**Re-measure the ~800 ms panel settle.** It is the best remaining lead on "the
+popups feel laggy", and the control centre's layout CHANGED last session — it
+gained a footer, lost 6 px of slider width and moved to shared chrome. The
+previously measured symptom was:
 
-## Read this before writing any QML
+> between +560 ms and +1080 ms the entire content block below the clock shifts
+> ~17 px vertically, every open; the clock and battery row do not move.
 
-**Do not restyle 20 panels one at a time.** The reason is measured, not
-aesthetic: the 9 fork panels each rebuilt their own header, their own
-selected-row treatment and their own footer, which is why one footer has
-two names and four heights. Restyling them individually means making the
-same decision 9 times and getting 9 answers — which is exactly how the
-current inconsistency was created.
+Do not assume that is still true, and do not assume the restyle fixed it.
+Measure it again the way it was measured before — 50 fps grim burst, PPM, a
+capture region containing nothing but the panel, and **difference two frames**
+rather than counting changed pixels.
 
-**So Job A item 3 and Job B are the same piece of work.** Extracting
-`PanelChrome` / `PanelRow` / `PanelTabs` / `KeyHint` is the moment to change
-the look, because after it the style lives in four files instead of twenty.
-Do the extraction AS the restyle, not before it.
+Two hypotheses are already disproven and should not be re-tried:
+`morphDurationFor` (760 vs 520 measured identical) and the slider intro gate.
 
-## What is already in place, so do not rebuild it
+---
 
-- **Colour is done.** `IslandTheme.qml` is a singleton publishing ~45 derived
-  roles, all driven by `theme-apply`, with WCAG-solved text contrast
-  (5.45:1 worst case across 21 palettes). Use the roles. Do not add hex.
-- **`Metrics.js` now names the ramp** — `TYPE` (caption 9 / small 10 /
-  body 11 / reading 12 / strong 13 / title 15), `DISPLAY` (18/24/29) and
-  `RADIUS` (hairline 1 / tight 4 / card 8 / panel 16). They are set to the
-  values already in use, so adopting one is a **no-op by construction**.
-  **They are not applied anywhere yet — Job B is what applies them.**
-- **`Motion.js`** is a generated spring (zeta 0.8 geometry, 1.0 opacity).
-  Use `Motion.spring()` / `Motion.fade()`, never an easing preset.
-- **The interaction model is settled**: *hover moves the cursor.* One
-  selection indicator driven by both keyboard and pointer. Do not add a
-  separate hover highlight beside a selection — that is why `containsMouse`
-  appears zero times and it is deliberate.
+# THEN, IN ROUGH ORDER
 
-## Two numbers that will save you a wrong assumption
+1. **The remaining ten surfaces.** The launcher, cheatsheet, notification
+   centre, expanded player, mode-keys HUD, Wi-Fi QR, the workspace overview
+   and the swipe layers have NOT been converted. Some should not be — the
+   swipe layers are not panels — so this is a per-file decision, not a sweep.
 
-- **`FONT_SCALE` is 1.0, so `Metrics.font(n)` is the identity above 9.**
-  Changing type sizes means changing the SOURCE numbers or the `TYPE` table.
-  Wrapping something in `font()` changes nothing.
-- **18 distinct corner radii are in use** and `RADIUS` proposes 4. Radius is
-  the single highest-leverage visual change in the shell — but nested shapes
-  need concentric radii (outer = inner + padding), so this cannot be a
-  find-and-replace.
+2. **Font rows in the in-island panel — a DECISION, not a task.** The GTK app
+   already has them. The island panel does not, because `PANEL_TYPES` in
+   `island-settings.py` derives `panel` from the type and excludes `font`:
+   there is no text entry under a keyboard grab. The theme picker's filter now
+   makes a text-entry-free font picker possible, which would mean adding
+   `font` to `PANEL_TYPES`. Worth asking the user before building.
 
-## How to decide the style, rather than guessing at mine
+3. **The theme change's 1.77 s freeze.** Unchanged. The remaining win is that
+   `theme-apply` spends ~0.24 s restarting dunst, which is not running under
+   Hyprland — but that script is in `/usr/local/bin` from AtiScriptsV1 and is
+   SHARED WITH THE QTILE SESSION, so it needs a per-session guard proven on
+   both.
 
-I could not resolve "really different" from the request, and neither will
-you. **Do not restyle everything and then ask.** Instead:
+4. **Keybind latency.** Every island binding spawns a fresh `qs ... ipc call`:
+   ~50 ms round trip, measured five times, paid before any animation starts.
 
-1. Pick **one** panel that exercises everything — the control centre (header,
-   tabs, rows, sliders, toggles, footer) is the right one.
-2. Build **two or three genuinely different directions** on it. Not three
-   shades of the same thing — e.g. (a) denser and flatter with hairline
-   dividers, (b) more spacious with raised cards and stronger radius, (c)
-   high-contrast with heavier type and tighter chrome.
-3. **Capture each** and show them side by side. Ask which, then roll the
-   winner out through the shared components.
-
-That costs one panel's work to avoid twenty panels' rework.
-
-## Things the user has already said about style
-
-From this session and the plan's Part 3 — these are settled, do not "fix" them:
-
-- The island fill follows the theme (explicit override of `DESIGN-SPEC.md`).
-- `islandHeight` 35, `islandWidth` 135 — user values, not the spec's.
-- Resting state is clock + workspace digit + app pucks, not the spec's EQ.
-- Notification urgency colours the ICON. A coloured edge down the capsule was
-  built, shipped once, and **rejected on sight** — it adds a second element
-  to a shape whose whole argument is that it is one shape.
-- The notification centre's type ramp was just fixed to 15 heading / 12 title
-  / 11 body, from config. Do not regress it to hardcoded sizes.
+5. **`layout-cycle.sh` makes 7 `hyprctl` invocations per switch**, three of
+   them separate `hyprctl clients -j` queries. Cache once, batch the
+   dispatches.
 
 ---
 
@@ -131,52 +87,38 @@ From this session and the plan's Part 3 — these are settled, do not "fix" them
 - **`.pragma library` JS is cached.** Editing `Metrics.js` or `Motion.js` and
   reloading does nothing. **Restart the island.**
 - **A file that has never been instantiated is not being watched.** Editing a
-  panel you have not opened since the last restart will not trigger a reload,
-  and you will test the old code. Open the panel, or restart.
+  panel you have not opened since the last restart will not trigger a reload.
 - **Never synthesise keystrokes into a settings panel.** Every press that
-  lands writes real config. Test schemas over `island-settings.py`. Other
-  panels are fine — the wallpaper picker and the overview were driven with
-  `wtype` this session, safely, because navigation there has no side effects.
-- **Difference two frames; do not just count changed pixels.** Every real
-  finding this session was invisible in a magnitude curve and obvious in a
-  diff.
+  lands writes real config.
+- **Close a panel that commits on click before leaving it on screen.** NEW,
+  and it cost a theme change last session: the theme picker was left open on
+  the live screen and the desktop theme changed twice from stray clicks. The
+  keystroke rule above did not cover the mouse.
+- **`pkill -f <pattern>` matches its own command line.** It killed the shell
+  running it twice last session, once taking the island down for ~90 s because
+  the restart line never ran. Use `pkill -x <name>`, or bracket the pattern.
+- **hyprlock is tested in a NESTED Hyprland, never by locking the session.**
+  This caught four failures in a row last session, one of which was hyprlock
+  EXITING at the moment of lock. Note that killing hyprlock poisons the nested
+  compositor's lock state permanently — each test needs a fresh one.
+- **Difference two frames; do not just count changed pixels.**
 - **The capture region must contain nothing but the thing under test**, and
-  the console must be quiet before sampling. A ~790 ms "settle" was measured
-  three times before it turned out to be the terminal behind the island
-  repainting. A measurement of the wrong region is as wrong as a screenshot
-  and comes with a number attached, which makes it worse.
+  the console must be quiet before sampling. A measurement of the wrong region
+  is as wrong as a screenshot and comes with a number attached.
 - **Back up `~/.config/tide-island/userconfig.json` before any test that
   writes, and diff it afterwards.** It has been byte-identical at the end of
-  every session so far. Keep that true.
+  every session so far. Keep that true. Snapshot
+  `~/.cache/tide-island/colors.json` too — the theme is state as well.
 
 ---
 
 # OPEN, UNSOLVED — do not re-derive these
 
-- **The ~800 ms panel settle.** Control centre open takes 767–807 ms to
-  settle, cold or warm. **Not** `morphDurationFor` (760 vs 520 measured
-  identical), **not** the slider intro gate, **not** a cold loader. The
-  visible symptom: between +560 ms and +1080 ms the entire content block
-  below the clock shifts **~17 px vertically**, every open; the clock and
-  battery row do not move. Cause unknown. This is the best remaining lead on
-  "the popups feel laggy".
-- **The theme change's 1.77 s frozen screen.** The island is already correct
-  (it gates on `THEME_APPLY_VISIBLE_DONE`, not on process exit). The
-  remaining win is that `theme-apply` spends ~0.24 s restarting **dunst**,
-  which is not running under Hyprland at all — the island serves the
-  notification bus and `island.sh` pkills dunst. But `theme-apply` is
-  `/usr/local/bin` from AtiScriptsV1 and is **shared with the qtile session**
-  where dunst is real, so it needs a per-session guard proven on both.
-
----
-
-# DECISIONS I NEED FROM YOU (ask, do not assume)
-
-1. **Screen corners (P1-6)?** Specified in `DESIGN-SPEC.md`, would complete
-   the bezel argument, and the risky part (empty input region) is already
-   solved in `RingOsdWindow`. But they are permanent furniture over every
-   fullscreen video.
-2. **Should `DisplayPanel` join the `Metrics` scale?** It deliberately opts
-   out and documents why, and it currently looks correct. Converting means
-   every literal in the file, and at `SCALE 0.92` it shrinks the panel ~8%.
-3. **Which style direction**, once the two or three mockups exist.
+- **The ~800 ms panel settle.** See above. Cause unknown; two hypotheses
+  disproven.
+- **The theme change's 1.77 s frozen screen.** The island's gating is already
+  correct (it waits on `THEME_APPLY_VISIBLE_DONE`, not process exit). The
+  remaining time is behind that marker, in a shared script.
+- **The gradient's on-screen height on the lock screen** is arithmetic from a
+  measured aspect ratio, not a measured distance — every nested lock
+  screenshots a different desktop, so the obvious A/B is confounded.

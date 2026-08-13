@@ -1229,3 +1229,195 @@ prove nothing was written:
 **Still open in Phase 7:** the theme picker (22 items, a GridView rather
 than a carousel, so a real filter IS appropriate there), and the font
 picker the settings app needs.
+
+---
+
+# Audit — 2026-08-14, the restyle session
+
+Job B, done as P2-7 rather than beside it. What follows is measured, not
+inferred, and is written so none of it is re-derived.
+
+## The four components — and the count that justified them
+
+`PanelChrome`, `PanelRow`, `PanelTabs`, `KeyHint` in `qml/common/`. Counted
+before choosing anything:
+
+    the key-hint footer   9 panels, TWO property names (hintHeight x5,
+                          footerHeight x4), FOUR heights, TWO colours,
+                          THREE bottom margins
+    the header height     pad(34) x6, pad(36) x2, pad(38) x1, raw 34 x1
+    the content inset     pad(18) x9, raw 18 x1
+
+All of that is now `Metrics.chromeTotal()` and friends. **Ten surfaces
+converted**: control centre, Wi-Fi, Bluetooth, audio, system monitor, display,
+settings, power, calendar, picker, theme picker.
+
+## The header register — one of two, and the reason is not taste
+
+The tree had two, cleanly split:
+
+  A. hero        heroFontFamily, font(15), DemiBold, `color: "white"`
+                 — Audio, Settings, Calendar, Power, Display
+  B. instrument  textFontFamily, font(10), DemiBold, AllUppercase,
+                 letterSpacing 1.6, textMuted, plus an accent-when-live
+                 status clause — Wi-Fi, Bluetooth, System monitor
+
+**B wins because A cannot compose with a panel whose header is its own
+content** — the control centre's header is a hero battery number and register
+A puts a window title exactly where that number goes — and because A's colour
+is the literal `"white"`, which on `mono-light` is the wrong ink.
+
+## One vocabulary for position, and it came out of WifiPanel
+
+    accent EDGE  = "you are here"       PanelRow's leading bar, PanelTabs'
+                                        sliding underline
+    accent WASH  = "this is true of     the connected network, the default
+                    the system"          sink, the arrange pick
+    danger fill  = "the next keystroke   PanelMenu's armed row
+                    does something you
+                    cannot undo"
+
+That is WifiPanel's own rule promoted: *"if the cursor used the accent too,
+moving it would look like connecting."* Four panels were violating it by using
+`IslandTheme.selectionFill` — the accent wash — for a plain cursor.
+
+## `color: "white"` — 29 of them, and it was a real defect
+
+Across 19 files. On `mono-light`, the one palette of 21 whose surface lands on
+the light side of IslandTheme's 0.18 threshold, white is the wrong ink, and
+the island's fill FOLLOWS THE THEME by the user's explicit override of
+DESIGN-SPEC.md. All 29 are roles now.
+
+**Four files referenced `IslandTheme` without importing `"../common"`** —
+ClockLayer, WorkspaceLayer, SplitIconLayer, SwipeDatePreviewLayer, i.e. the
+resting clock, the workspace digit and the layout glyph. Caught by grepping
+every file that mentions the singleton for the import *before* restarting.
+
+## RADIUS was already concentric and nobody had noticed
+
+    panel shell   px(28)  = 26
+    minus padX    pad(18) = 18
+    ------------------------------
+    inner card              8      == RADIUS.card, exactly
+    minus a chip's pad(4) = 4
+    ------------------------------
+    chip                    4      == RADIUS.tight, exactly
+
+The table is not a proposal laid over the tree; it is what concentricity
+derives from padding nine panels already agreed on.
+
+## Bugs found that the code could not show
+
+1. **`Repeater.itemAt()` is not bindable.** PanelTabs' indicator read its
+   geometry through it and drew NOTHING — no error, no warning. The binding
+   evaluated once at construction against a Repeater with no delegates and
+   never re-ran. Same shape as the Keys handlers that never fired: right about
+   what it wants, wrong about when it runs. The delegate pushes now.
+2. **A rule drawn through a caption.** The control centre added px(8) of
+   header air to its own Column's `y`, so the chrome centred its header rule
+   in a gap it could not see and put it inside "THU, AUG 13". That air is
+   `PanelChrome.bodyOffset` now.
+3. **Two undefined bindings with no visible symptom.** AudioPanel never
+   rendered standalone and declares neither `drawBackground` nor `panelFill`;
+   binding them assigned undefined to a colour and a bool. Log only.
+
+## Phase 7 — CLOSED. The theme picker got a real filter.
+
+And the reason it is a filter here and type-to-jump in the wallpaper picker is
+specific rather than a preference: `themes` is a plain array with no per-item
+cache state and nothing keyed by index, it is a GridView (a grid of 3 is just
+a smaller grid; a carousel of 3 is a different component), and it is 22 items.
+
+The panel does NOT shrink while you type — sized from the unfiltered count, so
+the query line stays under your eyes. Measured: `/mono` -> 3 of 22 accented,
+`/zzz` -> 0 of 22 in red with the frame unmoved, Escape -> all 22 back.
+
+## P1-6 screen corners — CLOSED, and the hide cost nothing
+
+User's call: build them, hidden over fullscreen. **No fullscreen-state
+tracking was needed.** Hyprland draws a fullscreen window above Top and below
+Overlay, which is already the mechanism behind the island's own
+`islandRestingSurface` rule. The corners are on Top and the compositor hides
+them — so the bezel appears and disappears as ONE piece.
+
+Two things measured:
+
+    surface came up 1366x735 at y=33   the island's exclusive zone; fixed with
+                                       exclusionMode: Ignore. Writing
+                                       `exclusiveZone: 0` alongside it SILENTLY
+                                       UNDID the fix — assigning exclusiveZone
+                                       at all forces Normal mode
+    corner pixel, normal    (15,25,32) the shell fill
+    corner pixel, fullscreen (20,20,19) the window underneath
+    corner pixel, restored  (15,25,32) byte-identical
+
+Input mask proven through the compositor: with focus_follows_mouse, the
+pointer at (6,6) — inside a painted corner — still activates the window
+underneath.
+
+## Motion.js — re-audited, and three claims were wrong
+
+  * **The count was 17 and is 16.** The seventeenth entry was SwipeCavaBars,
+    which the list itself describes as converted TO the spring.
+  * **FavoriteStar's reason was wrong**, its conclusion right. "The overshoot
+    is already authored into the keyframes" — there is no overshoot; the legs
+    are 1->0.9, 0.9->1, 0.5->1, 1->0.5, 0->1, 1->0. The real reason is that
+    they are scripted legs of a SequentialAnimation, which is the rule that
+    actually separates the 16 from the 49 that were converted.
+  * **osdProgress's easing.type is dead code.** SmoothedAnimation solves its
+    own velocity-limited trajectory. Measured: two SmoothedAnimations
+    differing only in easing type produce byte-identical trajectories, and the
+    same harness on a plain NumberAnimation reports them different — which is
+    the control that makes the first result mean anything.
+
+## Lock screen (Phase 6.2) — avatar, username, top gradient
+
+**The nested-compositor rule earned itself.** Four failures in a row, three of
+them config errors invisible to `hyprctl configerrors`, and one that was not a
+config error at all:
+
+    shape { color = <gradient> }  shape takes a FLAT colour
+    image { size = W, H }         size is ONE int
+    image { size = 100% }         rejected
+    `size` IS THE WIDTH           an 8x1024 source at size 2400 asked for a
+                                  2400x307200 texture, the framebuffer failed,
+                                  and HYPRLOCK EXITED — on a real session, a
+                                  lock screen that dies at the instant you lock
+
+Also: `-font "Inter-SemiBold"` resolves to Inter **Regular** and fc-match
+reports success. Settled by ink coverage, not by fc-match.
+
+**Not verified, and stated as such:** the gradient's on-screen HEIGHT. Every
+nested lock screenshots a different desktop, so an A/B against a no-gradient
+run showed darkening even where the image is fully transparent. 420 px is
+arithmetic from a measured aspect ratio, not a measured distance.
+
+## Still open
+
+  * **The ~800 ms panel settle.** Untouched by this session and NOT to be
+    assumed fixed by it: the control centre's layout changed, so the ~17 px
+    content shift needs re-measuring before anything is concluded.
+  * **The theme change's 1.77 s freeze**, unchanged — the remaining win is in
+    `theme-apply`, shared with the qtile session.
+  * **Font rows in the in-island panel.** The GTK app already has them
+    (`Gtk.FontDialog`, four families, marked app-only). The island panel does
+    not, because `PANEL_TYPES` derives `panel` from the type and `font` is
+    excluded — the panel has no text entry under a keyboard grab. The theme
+    picker's filter now makes a text-entry-free font picker POSSIBLE, which
+    would mean adding `font` to `PANEL_TYPES`. That is an architectural
+    decision, not a task.
+
+## A method note that cost a theme
+
+The theme picker was left open on the live screen between commands and the
+desktop theme changed twice while it was up. Verified NOT to be the code —
+with the panel open and no input the theme is stable for 15 s. It was pointer
+clicks on a panel this session had opened. Restored to oxocarbon.
+
+> **Close a panel that commits on click before leaving it on screen.** The
+> existing rule covers synthesised keystrokes into a settings panel; this is
+> the same hazard reached with the mouse and nobody had written it down.
+
+And twice, `pkill -f <pattern>` matched its own command line and killed the
+shell running it — once taking the island down for ~90 s because the restart
+line never ran. `pkill -x` on the process name, or the pattern in brackets.
