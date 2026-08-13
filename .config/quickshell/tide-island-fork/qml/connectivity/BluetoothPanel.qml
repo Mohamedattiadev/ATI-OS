@@ -109,8 +109,8 @@ FocusScope {
     // whose Enter can disconnect a headset, that is not cosmetic.
     property string selectedAddress: ""
 
-    readonly property real horizontalPadding: Metrics.pad(18)
-    readonly property real headerHeight: Metrics.pad(34)
+    // FORK: header height, content inset and the key-hint strip are
+    // PanelChrome's now. See qml/common/PanelChrome.qml.
     // 30 rather than the Wi-Fi panel's 26. A device carries state a network
     // does not — paired vs connected vs connecting, plus a battery level —
     // and the extra four pixels are what let the meta caption sit under the
@@ -118,7 +118,6 @@ FocusScope {
     readonly property real rowHeight: Metrics.px(30)
     readonly property real rowSpacing: 2
     readonly property int rowsVisible: 6
-    readonly property real hintHeight: Metrics.pad(26)
 
     readonly property bool promptVisible:
         provider !== null && !!provider.bluetoothPairingActive
@@ -232,10 +231,12 @@ FocusScope {
         4 * (root.rowHeight + root.rowSpacing),
         Math.min(root.rowsVisible * (root.rowHeight + root.rowSpacing), root.listBodyHeight),
         root.detailsBodyHeight)
+    // Metrics.chromeTotal(), not chrome.chromeHeight — this sizes the capsule
+    // this panel is drawn inside, so reading it off a child of that panel is a
+    // loop waiting for one more term. Same value as the old arithmetic.
     readonly property real preferredHeight:
-        root.headerHeight + Metrics.pad(4) + root.bodyHeight
+        Metrics.chromeTotal() + root.bodyHeight
             + (root.promptVisible ? root.promptHeight + Metrics.pad(6) : 0)
-            + Metrics.pad(8) + root.hintHeight
 
     focus: showCondition
     activeFocusOnTab: true
@@ -567,38 +568,16 @@ FocusScope {
         onTriggered: secretField.forceActiveFocus()
     }
 
-    // See panelFill. Off in the island, kept so the panel renders standalone.
-    Rectangle {
-        anchors.fill: parent
-        radius: Metrics.px(28)
-        color: root.panelFill
-        opacity: 0.97
-        visible: root.drawBackground
-    }
+    // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
+    PanelChrome {
+        id: chrome
+        textFontFamily: root.textFontFamily
+        drawBackground: root.drawBackground
+        panelFill: root.panelFill
 
-    // --- chrome ------------------------------------------------------------
-    //
-    // Letterspaced uppercase at a much smaller size than a title would be,
-    // then a "· status" clause carrying the accent only when something is
-    // live. No kanji: there was a 藍 here and it was removed on request.
-    Text {
-        id: header
-        x: root.horizontalPadding
-        y: Metrics.pad(12)
-        text: "BLUETOOTH"
-        color: IslandTheme.textMuted
-        font.family: root.textFontFamily
-        font.pixelSize: Metrics.font(10)
-        font.weight: Font.DemiBold
-        font.capitalization: Font.AllUppercase
-        font.letterSpacing: 1.6
-    }
+        title: "bluetooth"
 
-    Text {
-        anchors.left: header.right
-        anchors.leftMargin: Metrics.pad(8)
-        y: Metrics.pad(12)
-        text: {
+        statusClause: {
             if (!root.provider)
                 return "";
             if (!root.provider.bluetoothAvailable)
@@ -612,42 +591,40 @@ FocusScope {
         }
         // Accent only when a device is actually connected — not merely when
         // the radio is on. "On" is not a thing to point at.
-        color: {
+        statusClauseLive: {
             if (!root.provider || !root.provider.bluetoothEnabled)
-                return IslandTheme.textMuted;
+                return false;
             const pool = root.currentItems;
             for (let index = 0; index < pool.length; index++) {
                 if (pool[index].device && pool[index].device.connected)
-                    return root.accentColor;
+                    return true;
             }
-            return IslandTheme.textMuted;
+            return false;
         }
-        font.family: root.textFontFamily
-        font.pixelSize: Metrics.font(10)
-        font.weight: Font.Medium
-        elide: Text.ElideRight
-        width: Math.min(implicitWidth, root.width * 0.35)
-    }
 
-    Text {
-        anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
-        y: Metrics.pad(12)
-        width: Math.min(implicitWidth, root.width * 0.45)
-        horizontalAlignment: Text.AlignRight
-        elide: Text.ElideRight
-        font.pixelSize: Metrics.font(11)
-        font.family: root.textFontFamily
-        color: root.statusLevel === "error" ? IslandTheme.danger
-             : (root.statusLevel === "ok" ? IslandTheme.success
-             : (root.statusLevel === "busy" ? IslandTheme.warning : IslandTheme.textMuted))
-        text: {
+        status: {
             if (root.provider && String(root.provider.bluetoothError || "").length > 0)
                 return String(root.provider.bluetoothError);
             if (root.scanning)
                 return "scanning…";
             return root.statusText;
         }
+        statusLevel: root.statusLevel
+
+        hints: root.promptVisible
+            ? [
+                { key: "Enter", label: "accept pairing" },
+                { key: "Esc", label: "cancel" }
+              ]
+            : [
+                { key: "j/k", label: "move" },
+                { key: "Enter", label: "connect" },
+                { key: "d", label: "disconnect" },
+                { key: "x", label: "forget" },
+                { key: "s", label: "scan" },
+                { key: "t", label: "adapter" },
+                { key: "q", label: "close" }
+              ]
     }
 
     ListView {
@@ -655,9 +632,9 @@ FocusScope {
         // FORK: P1-3. One shared indicator; see qml/common/IslandScrollBar.qml
         // for why `active` does not gate on pointer interaction alone.
         ScrollBar.vertical: IslandScrollBar { view: listView }
-        x: root.horizontalPadding
-        y: root.headerHeight + Metrics.pad(4)
-        width: parent.width * 0.56 - root.horizontalPadding
+        x: chrome.contentX
+        y: chrome.contentY
+        width: parent.width * 0.56 - chrome.padX
         height: root.bodyHeight
         clip: true
         model: root.currentItems
@@ -692,7 +669,7 @@ FocusScope {
         // headers and no hairlines. The row spacing IS the separation; a rule
         // between rows would reintroduce exactly the boxed-group reading the
         // sections were removed for.
-        delegate: Rectangle {
+        delegate: PanelRow {
             id: deviceRow
 
             required property int index
@@ -706,26 +683,39 @@ FocusScope {
 
             width: listView.width
             height: root.rowHeight
-            radius: Metrics.px(7)
-            // NO accent tint for a connected device, and that asymmetry with
-            // the Wi-Fi row is deliberate. Exactly one network can be
-            // connected, so tinting it marks the singular one; several
-            // Bluetooth devices can be connected at once, and a list with
-            // four tinted rows has stopped pointing at anything. Connection
-            // is carried by the name's weight and colour instead, and the
-            // only fill on this list is the keyboard cursor.
-            color: deviceRow.index === root.selectedIndex ? IslandTheme.selectionFill : "transparent"
+
+            // ---- `active` STAYS FALSE HERE, AND THE ASYMMETRY IS THE POINT ----
+            //
+            // PanelRow's accent wash means "this is true of the system", and
+            // on the Wi-Fi list the connected network takes it. This list does
+            // not, deliberately: exactly one network can be connected, so
+            // tinting it marks the singular one, whereas several Bluetooth
+            // devices can be connected at once and a list with four tinted
+            // rows has stopped pointing at anything. Connection is carried by
+            // the name's weight and colour instead.
+            //
+            // So the only mark on this list is the cursor — which is now the
+            // leading bar rather than the accent fill it used to be, and that
+            // is a strict improvement here: `selectionFill` was accent at 0.18,
+            // i.e. the shell's "state" colour used for the one thing on this
+            // panel that is NOT a state.
+            selected: deviceRow.index === root.selectedIndex
+
+            onCursorRequested: root.setCursor(deviceRow.index)
+            onActivated: root.activateAt(deviceRow.index)
 
             Text {
                 id: rowName
                 anchors.left: parent.left
-                anchors.leftMargin: Metrics.pad(10)
                 anchors.right: rowAction.left
                 anchors.rightMargin: Metrics.pad(8)
                 anchors.top: parent.top
                 anchors.topMargin: Metrics.px(3)
                 elide: Text.ElideRight
-                color: deviceRow.connected ? root.accentColor : "white"
+                // PanelRow's content item is already inset by contentPadding,
+                // so the pad(10) that used to be here is gone with it; and the
+                // literal "white" is a role now.
+                color: deviceRow.connected ? root.accentColor : IslandTheme.textPrimary
                 font.pixelSize: Metrics.font(12)
                 font.family: root.textFontFamily
                 font.weight: deviceRow.connected ? Font.DemiBold : Font.Normal
@@ -756,7 +746,6 @@ FocusScope {
             Text {
                 id: rowAction
                 anchors.right: parent.right
-                anchors.rightMargin: Metrics.pad(10)
                 anchors.verticalCenter: parent.verticalCenter
                 text: {
                     if (deviceRow.device && deviceRow.device.pairing)
@@ -774,12 +763,7 @@ FocusScope {
                 font.letterSpacing: 1.0
             }
 
-            MouseArea {
-                anchors.fill: parent
-                hoverEnabled: true
-                onEntered: root.setCursor(deviceRow.index)
-                onClicked: root.activateAt(deviceRow.index)
-            }
+            // The MouseArea is PanelRow's; its two signals are wired above.
         }
     }
 
@@ -789,8 +773,8 @@ FocusScope {
     Column {
         id: detailsColumn
         x: parent.width * 0.58
-        y: root.headerHeight + Metrics.pad(6)
-        width: parent.width * 0.42 - root.horizontalPadding
+        y: chrome.contentY + Metrics.pad(2)
+        width: parent.width * 0.42 - chrome.padX
         spacing: Metrics.px(3)
 
         Repeater {
@@ -844,12 +828,13 @@ FocusScope {
     Rectangle {
         id: pairingPrompt
         visible: root.promptVisible
-        x: root.horizontalPadding
-        y: root.headerHeight + Metrics.pad(4) + root.bodyHeight + Metrics.pad(6)
-        width: parent.width - root.horizontalPadding * 2
+        x: chrome.contentX
+        y: chrome.contentY + root.bodyHeight + Metrics.pad(6)
+        width: chrome.contentWidth
         height: root.promptHeight
-        radius: Metrics.px(12)
-        color: Qt.rgba(1, 1, 1, 0.05)
+        // Concentric: px(28) shell less pad(18) inset is RADIUS.card.
+        radius: Metrics.RADIUS.card
+        color: IslandTheme.surfaceRaised
 
         Text {
             id: promptTitle
@@ -896,9 +881,9 @@ FocusScope {
             anchors.bottomMargin: Metrics.pad(8)
             height: Metrics.px(26)
             radius: Metrics.px(8)
-            color: Qt.rgba(0, 0, 0, 0.35)
+            color: IslandTheme.inputFill
             border.width: 1
-            border.color: secretField.activeFocus ? root.accentColor : Qt.rgba(1, 1, 1, 0.12)
+            border.color: secretField.activeFocus ? root.accentColor : IslandTheme.inputBorder
 
             TextInput {
                 id: secretField
@@ -906,7 +891,7 @@ FocusScope {
                 anchors.leftMargin: Metrics.pad(10)
                 anchors.rightMargin: Metrics.pad(10)
                 verticalAlignment: TextInput.AlignVCenter
-                color: "white"
+                color: IslandTheme.textPrimary
                 font.pixelSize: Metrics.font(11)
                 font.family: root.textFontFamily
                 clip: true
@@ -950,18 +935,5 @@ FocusScope {
         }
     }
 
-    Text {
-        anchors.left: parent.left
-        anchors.leftMargin: root.horizontalPadding
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Metrics.pad(8)
-        width: parent.width - root.horizontalPadding * 2
-        elide: Text.ElideRight
-        color: IslandTheme.textDisabled
-        font.pixelSize: Metrics.font(10)
-        font.family: root.textFontFamily
-        text: root.promptVisible
-            ? "answer the pairing request · Escape cancels"
-            : "j/k move · Enter connect · d disconnect · x forget · s scan · t adapter · q close"
-    }
+    // The key-hint Text that used to close this file is `chrome.hints` now.
 }

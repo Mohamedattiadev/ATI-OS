@@ -117,15 +117,16 @@ FocusScope {
     // the cursor MEANS, and only the second one survives a rescan.
     property string selectedSsid: ""
 
-    readonly property real horizontalPadding: Metrics.pad(18)
-    readonly property real headerHeight: Metrics.pad(34)
+    // FORK: header height, content inset and the key-hint strip all moved into
+    // PanelChrome — see qml/common/PanelChrome.qml for the count of how far
+    // nine panels had drifted apart on those three numbers. What is left here
+    // is what is genuinely this panel's own.
     readonly property real rowHeight: Metrics.px(26)
     readonly property real rowSpacing: 2
     // Seven rather than the audio panel's six. A Wi-Fi list is longer than a
     // device list by nature — this machine sees ten networks from one desk —
     // and the extra row is one more SSID visible before it starts scrolling.
     readonly property int rowsVisible: 7
-    readonly property real hintHeight: Metrics.pad(26)
 
     readonly property bool promptVisible:
         provider !== null && String(provider.wifiPendingPasswordSsid || "").length > 0
@@ -151,10 +152,15 @@ FocusScope {
         4 * (root.rowHeight + root.rowSpacing),
         Math.min(root.rowsVisible * (root.rowHeight + root.rowSpacing), root.listBodyHeight),
         root.detailsBodyHeight)
+    // Metrics.chromeTotal() and not chrome.chromeHeight: this is read by
+    // DynamicIslandWindow to size the capsule this panel is drawn inside, so
+    // deriving it from a child of that panel is a loop waiting to happen. The
+    // constants cannot loop and cannot disagree with the chrome, which reads
+    // the same ones. The value is unchanged — the old arithmetic was
+    // 33 + 4 + 8 + 25 and so is this.
     readonly property real preferredHeight:
-        root.headerHeight + Metrics.pad(4) + root.bodyHeight
+        Metrics.chromeTotal() + root.bodyHeight
             + (root.promptVisible ? root.promptHeight + Metrics.pad(6) : 0)
-            + Metrics.pad(8) + root.hintHeight
 
     focus: showCondition
     activeFocusOnTab: true
@@ -474,43 +480,22 @@ FocusScope {
         onTriggered: wifiPasswordField.forceActiveFocus()
     }
 
-    // See panelFill. Off in the island, kept so the panel renders standalone.
-    Rectangle {
-        anchors.fill: parent
-        radius: Metrics.px(28)
-        color: root.panelFill
-        opacity: 0.97
-        visible: root.drawBackground
-    }
-
-    // --- chrome ------------------------------------------------------------
+    // ---- CHROME, SHARED ----
     //
-    // ---- THE HEADER REGISTER ----
-    //
-    // Letterspaced uppercase at a much smaller size than a title would be,
-    // then a "· status" clause that carries the accent only when something is
-    // live. It reads as a label on an instrument rather than as a window
-    // title. No kanji: there was a 波 here and it was removed on request, and
-    // the letterspacing is the part of that treatment doing the work anyway.
-    Text {
-        id: header
-        x: root.horizontalPadding
-        y: Metrics.pad(12)
-        text: "WI-FI"
-        color: IslandTheme.textMuted
-        font.family: root.textFontFamily
-        font.pixelSize: Metrics.font(10)
-        font.weight: Font.DemiBold
-        font.capitalization: Font.AllUppercase
-        font.letterSpacing: 1.6
-    }
+    // Was five separate elements in this file: the standalone-render capsule,
+    // the letterspaced header, its "· status" clause, the right-hand status
+    // slot and, 400 lines lower, the key-hint Text. All five are PanelChrome
+    // now, and this panel's own version of that header is the one the shared
+    // component was modelled on — see the register argument in PanelChrome.
+    PanelChrome {
+        id: chrome
+        textFontFamily: root.textFontFamily
+        drawBackground: root.drawBackground
+        panelFill: root.panelFill
 
-    Text {
-        id: headerStatus
-        anchors.left: header.right
-        anchors.leftMargin: Metrics.pad(8)
-        y: Metrics.pad(12)
-        text: {
+        title: "wi-fi"
+
+        statusClause: {
             if (!root.provider)
                 return "";
             if (!root.provider.wifiSupported || !root.provider.wifiAvailable)
@@ -520,37 +505,11 @@ FocusScope {
             const ssid = String(root.provider.wifiCurrentSsid || "");
             return ssid.length > 0 ? "· " + ssid : "· not connected";
         }
-        // Accent only when there is something live to point at. A status
-        // clause that is always accented has stopped being a status.
-        color: {
-            if (!root.provider)
-                return IslandTheme.textMuted;
-            const live = root.provider.wifiEnabled
-                && String(root.provider.wifiCurrentSsid || "").length > 0;
-            return live ? root.accentColor : IslandTheme.textMuted;
-        }
-        font.family: root.textFontFamily
-        font.pixelSize: Metrics.font(10)
-        font.weight: Font.Medium
-        elide: Text.ElideRight
-        width: Math.min(implicitWidth, root.width * 0.35)
-    }
+        statusClauseLive: !!root.provider
+            && root.provider.wifiEnabled
+            && String(root.provider.wifiCurrentSsid || "").length > 0
 
-    // The right-hand slot, exactly where the audio and display panels put it:
-    // what the panel is doing right now, in the colour of how it went.
-    Text {
-        anchors.right: parent.right
-        anchors.rightMargin: root.horizontalPadding
-        y: Metrics.pad(12)
-        width: Math.min(implicitWidth, root.width * 0.45)
-        horizontalAlignment: Text.AlignRight
-        elide: Text.ElideRight
-        font.pixelSize: Metrics.font(11)
-        font.family: root.textFontFamily
-        color: root.statusLevel === "error" ? IslandTheme.danger
-             : (root.statusLevel === "ok" ? IslandTheme.success
-             : (root.statusLevel === "busy" ? IslandTheme.warning : IslandTheme.textMuted))
-        text: {
+        status: {
             if (root.provider) {
                 if (String(root.provider.wifiError || "").length > 0)
                     return String(root.provider.wifiError);
@@ -559,6 +518,22 @@ FocusScope {
             }
             return root.statusText;
         }
+        statusLevel: root.statusLevel
+
+        hints: root.promptVisible
+            ? [
+                { key: "type", label: "password" },
+                { key: "Enter", label: "join" },
+                { key: "Esc", label: "cancel" }
+              ]
+            : [
+                { key: "j/k", label: "move" },
+                { key: "Enter", label: "join" },
+                { key: "d", label: "disconnect" },
+                { key: "r", label: "rescan" },
+                { key: "t", label: "radio" },
+                { key: "q", label: "close" }
+              ]
     }
 
     ListView {
@@ -566,9 +541,9 @@ FocusScope {
         // FORK: P1-3. One shared indicator; see qml/common/IslandScrollBar.qml
         // for why `active` does not gate on pointer interaction alone.
         ScrollBar.vertical: IslandScrollBar { view: listView }
-        x: root.horizontalPadding
-        y: root.headerHeight + Metrics.pad(4)
-        width: parent.width * 0.56 - root.horizontalPadding
+        x: chrome.contentX
+        y: chrome.contentY
+        width: parent.width * 0.56 - chrome.padX
         // Built from the same numbers preferredHeight is, so the list and the
         // shape around it cannot disagree about how tall a row is.
         height: root.bodyHeight
@@ -620,7 +595,16 @@ FocusScope {
             }
         }
 
-        delegate: Rectangle {
+        // ---- THIS ROW'S RULE IS NOW EVERY ROW'S RULE ----
+        //
+        // The colour logic that used to be written out here — connected takes
+        // an accent tint because it is a fact about the SYSTEM, the cursor
+        // takes a neutral because it is a fact about the POINTER, and if the
+        // cursor used the accent too then moving it would look like connecting
+        // — is the argument PanelRow is built on, and it came from this file.
+        // What it gains in the move is the leading accent bar, because a
+        // neutral fill alone was too weak to find on the lighter palettes.
+        delegate: PanelRow {
             id: wifiRow
 
             required property int index
@@ -634,20 +618,12 @@ FocusScope {
 
             width: listView.width
             height: root.rowHeight
-            radius: Metrics.px(7)
-            // Two facts, two colours, in priority order. The CONNECTED row is
-            // accent-tinted because it is a fact about the system; the
-            // keyboard cursor is neutral white because it is a fact about the
-            // pointer. If the cursor used the accent too, moving it would
-            // look like connecting.
-            color: {
-                if (wifiRow.connected)
-                    return Qt.rgba(root.accentColor.r, root.accentColor.g,
-                                   root.accentColor.b, 0.16);
-                if (wifiRow.index === root.selectedIndex)
-                    return IslandTheme.hairline;
-                return "transparent";
-            }
+
+            active: wifiRow.connected
+            selected: wifiRow.index === root.selectedIndex
+
+            onCursorRequested: root.setCursor(wifiRow.index)
+            onActivated: root.activateRow(wifiRow)
 
             // ---- RE-ANCHORING, the whole of it ----
             //
@@ -667,12 +643,14 @@ FocusScope {
             Text {
                 id: rowLabel
                 anchors.left: parent.left
-                anchors.leftMargin: Metrics.pad(10)
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.right: rowMeta.left
                 anchors.rightMargin: Metrics.pad(8)
                 elide: Text.ElideRight
-                color: wifiRow.connected ? root.accentColor : "white"
+                // textPrimary, not the literal "white". PanelRow's content
+                // item is already inset by contentPadding, so the pad(10)
+                // left margin that used to be here is gone with it.
+                color: wifiRow.connected ? root.accentColor : IslandTheme.textPrimary
                 font.pixelSize: Metrics.font(12)
                 font.family: root.textFontFamily
                 font.weight: wifiRow.connected ? Font.DemiBold : Font.Normal
@@ -683,7 +661,6 @@ FocusScope {
             Row {
                 id: rowMeta
                 anchors.right: parent.right
-                anchors.rightMargin: Metrics.pad(10)
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Metrics.px(6)
 
@@ -734,15 +711,10 @@ FocusScope {
                 }
             }
 
-            MouseArea {
-                anchors.fill: parent
-                hoverEnabled: true
-                onEntered: root.setCursor(wifiRow.index)
-                onClicked: {
-                    root.setCursor(wifiRow.index);
-                    root.activateRow(wifiRow);
-                }
-            }
+            // The MouseArea is PanelRow's, and its two signals are wired at the
+            // top of this delegate. Hover still moves the cursor rather than
+            // lighting a second highlight — see PanelRow for why
+            // `containsMouse` appears nowhere in this tree.
         }
     }
 
@@ -758,8 +730,8 @@ FocusScope {
     Column {
         id: detailsColumn
         x: parent.width * 0.58
-        y: root.headerHeight + Metrics.pad(6)
-        width: parent.width * 0.42 - root.horizontalPadding
+        y: chrome.contentY + Metrics.pad(2)
+        width: parent.width * 0.42 - chrome.padX
         spacing: Metrics.px(3)
 
         Repeater {
@@ -809,12 +781,14 @@ FocusScope {
     Rectangle {
         id: passwordPrompt
         visible: root.promptVisible
-        x: root.horizontalPadding
-        y: root.headerHeight + Metrics.pad(4) + root.bodyHeight + Metrics.pad(6)
-        width: parent.width - root.horizontalPadding * 2
+        x: chrome.contentX
+        y: chrome.contentY + root.bodyHeight + Metrics.pad(6)
+        width: chrome.contentWidth
         height: root.promptHeight
-        radius: Metrics.px(12)
-        color: Qt.rgba(1, 1, 1, 0.05)
+        // Concentric with the capsule: px(28) shell less the chrome's pad(18)
+        // inset is 8, which is RADIUS.card. See the ladder note in Metrics.js.
+        radius: Metrics.RADIUS.card
+        color: IslandTheme.surfaceRaised
 
         Text {
             id: promptTitle
@@ -839,11 +813,14 @@ FocusScope {
             anchors.bottomMargin: Metrics.pad(8)
             height: Metrics.px(26)
             radius: Metrics.px(8)
-            color: Qt.rgba(0, 0, 0, 0.35)
+            // The input roles, not two more literals. `inputFill` is the
+            // surface cut INTO rather than laid on it, and it stays a recess
+            // on a light palette instead of inverting into a black hole.
+            color: IslandTheme.inputFill
             border.width: 1
             border.color: wifiPasswordField.activeFocus
                 ? root.accentColor
-                : Qt.rgba(1, 1, 1, 0.12)
+                : IslandTheme.inputBorder
 
             TextInput {
                 id: wifiPasswordField
@@ -851,7 +828,7 @@ FocusScope {
                 anchors.leftMargin: Metrics.pad(10)
                 anchors.rightMargin: Metrics.pad(10)
                 verticalAlignment: TextInput.AlignVCenter
-                color: "white"
+                color: IslandTheme.textPrimary
                 font.pixelSize: Metrics.font(11)
                 font.family: root.textFontFamily
                 echoMode: TextInput.Password
@@ -895,18 +872,5 @@ FocusScope {
         }
     }
 
-    Text {
-        anchors.left: parent.left
-        anchors.leftMargin: root.horizontalPadding
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Metrics.pad(8)
-        width: parent.width - root.horizontalPadding * 2
-        elide: Text.ElideRight
-        color: IslandTheme.textDisabled
-        font.pixelSize: Metrics.font(10)
-        font.family: root.textFontFamily
-        text: root.promptVisible
-            ? "type the password · Enter join · Escape cancel"
-            : "j/k move · Enter join · d disconnect · r rescan · t radio · q close"
-    }
+    // The key-hint Text that used to close this file is `chrome.hints` now.
 }

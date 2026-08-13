@@ -271,3 +271,22 @@ function chromeFooter()  { return pad(26); }   // 25 — the key-hint strip
 function chromeGap()     { return pad(8);  }   //  8 — body to footer
 function chromeTop()     { return pad(12); }   // 12 — title's own baseline
 function chromeBodyGap() { return pad(4);  }   //  4 — header rule to body
+
+// Everything the chrome costs vertically on a panel with a standard header
+// and no tabs, which is eight of the nine. A panel's own height is then
+// `chromeTotal() + bodyHeight` and nothing else.
+//
+// Offered here as well as on the component so a panel can compute the height
+// it asks the island for WITHOUT reading it back off its own chrome item.
+// `preferredHeight` is consumed by DynamicIslandWindow to size the capsule
+// this panel is drawn inside; deriving it from a child of that panel is a
+// loop waiting for someone to add one term to it. Reading it from the same
+// constants the chrome uses cannot loop and cannot disagree.
+//
+// It is 70, and that is not a new number: the old arithmetic on every one of
+// these panels was `headerHeight + pad(4) + bodyHeight + pad(8) + hintHeight`
+// — 33 + 4 + 8 + 25. The panels that already used pad(34) and pad(26) do not
+// move at all.
+function chromeTotal() {
+    return chromeHeader() + chromeBodyGap() + chromeGap() + chromeFooter();
+}
