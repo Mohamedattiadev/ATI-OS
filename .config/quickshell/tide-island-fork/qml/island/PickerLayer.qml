@@ -223,18 +223,34 @@ FocusScope {
     // score: rows still cannot overtake each other WITHIN a bucket, so the
     // list still does not reshuffle under the cursor as you type. That was
     // the reason for not ranking in the first place, and it survives.
+    // ---- THE BUCKETS ARE DERIVED FROM matchRank, NOT LISTED HERE ----
+    //
+    // This loop used to name its two ranks as literals -- `rank === 2` into
+    // `strong`, `rank === 1` into `weak`. When matchRank grew to four ranks
+    // (see its note), every row that came back 4 or 3 fell through BOTH
+    // tests and vanished. An empty query returns the top rank for every row,
+    // so the failure was not "the filter is wrong", it was every menu
+    // opening completely empty with "no match" under it, before a key was
+    // pressed. It shipped that way.
+    //
+    // So: no literals. `matchRank` decides how many ranks exist, this walks
+    // down from the highest, and anything above 0 lands in the bucket for
+    // its own rank. Adding a fifth rank needs no edit here.
+    readonly property int matchRankBest: 4
     readonly property var filtered: {
         const needle = root.query.trim().toLowerCase();
-        const strong = [];
-        const weak = [];
+        const buckets = [];
+        for (let i = 0; i <= root.matchRankBest; i++)
+            buckets.push([]);
         for (const item of root.items) {
             const rank = root.matchRank(item, needle);
-            if (rank === 2)
-                strong.push(item);
-            else if (rank === 1)
-                weak.push(item);
+            if (rank > 0)
+                buckets[Math.min(rank, root.matchRankBest)].push(item);
         }
-        return strong.concat(weak);
+        let out = [];
+        for (let rank = root.matchRankBest; rank >= 1; rank--)
+            out = out.concat(buckets[rank]);
+        return out;
     }
 
     readonly property var selected:
