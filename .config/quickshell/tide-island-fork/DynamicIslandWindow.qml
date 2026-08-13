@@ -291,6 +291,33 @@ PanelWindow {
                 || islandContainer.wifiPanelLayerVisible
                 || islandContainer.bluetoothPanelLayerVisible)
             return WlrKeyboardFocus.Exclusive;
+        // FORK: the control centre, the notification centre and the expanded
+        // player. All three had NO keyboard handling for the reason written
+        // against the connectivity lists above — focus never rose above None
+        // while they were open, so there was no keystroke for a Keys handler
+        // to receive, so none was ever written, and Escape did nothing on the
+        // three panels people open most.
+        //
+        // `!hoverExpandedActive` is the whole reason this is a second branch
+        // rather than three more lines in the list above. Every panel in that
+        // list is opened by a deliberate act — a bind, a submap key, a click
+        // on a row. These three are the only surfaces that can appear because
+        // the pointer merely PASSED OVER the notch (hoverExpandAction 1 opens
+        // the player, 2 opens the control centre), and taking an exclusive
+        // keyboard grab on a hover would mean the next character you typed
+        // into the window below went to the island instead. hoverExpandedActive
+        // is cleared by the capsule's own onClicked, so a click-opened panel
+        // takes the grab and a hover-opened one does not.
+        //
+        // The expanded player also arrives on its own — showExpandedPlayer(true)
+        // on a track change — and expandedByPlayerAutoOpen marks exactly that
+        // call, so an auto-reveal is silent for the same reason a hover is.
+        if (!islandContainer.hoverExpandedActive
+                && (islandContainer.controlCenterLayerVisible
+                    || islandContainer.notificationCenterLayerVisible
+                    || (islandContainer.expandedLayerVisible
+                        && !islandContainer.expandedByPlayerAutoOpen)))
+            return WlrKeyboardFocus.Exclusive;
         // Keep keyboard focus on the overview until an overview action closes it.
         // Click-to-focus closes the overview before focusing the selected client.
         if (root.monitorFocused && root.overviewVisible)
@@ -1106,6 +1133,27 @@ PanelWindow {
         }
     }
 
+    // FORK: the focus grab for the control centre, the notification centre
+    // and the expanded player, which now read Escape / q.
+    //
+    // Deferred by a turn for the same reason its three neighbours above are.
+    // These panels are opened by setting islandState, and the PanelLoader
+    // that builds the layer is driven off a binding on that state — so at the
+    // instant the state changes the item does not exist yet, and a
+    // forceActiveFocus() in the same turn hands focus to a FocusScope with
+    // nothing in it to receive it. interval 0 puts it in the next event-loop
+    // turn, by which time the loader has run.
+    //
+    // One timer for the three, rather than one each: they are mutually
+    // exclusive island states, so two of these can never be in flight at
+    // once, and restart() on an already-pending timer is exactly right.
+    Timer {
+        id: keyPanelFocusTimer
+        interval: 0
+        repeat: false
+        onTriggered: islandContainer.forceActiveFocus()
+    }
+
     Timer {
         id: windowShrinkTimer
         // FORK: derived, not 1000. Its job is to hold the layer surface at
@@ -1233,7 +1281,23 @@ PanelWindow {
             // that really is missing it.
             || islandContainer.wifiPanelLayerVisible
             || islandContainer.bluetoothPanelLayerVisible
-            || expandedPlayerKeyboardFocusRequested
+            // FORK: the three panels that grew Escape / q. Note these are
+            // UNCONDITIONAL here while the compositor grab above is gated on
+            // hoverExpandedActive, and the asymmetry is deliberate: this
+            // binding only decides which item inside the window owns the
+            // keys, which costs nothing when the window has no keyboard
+            // focus to give. The hover guard belongs on the grab, which is
+            // the thing that can take keys away from another window.
+            //
+            // expandedLayerVisible rather than the old
+            // expandedPlayerKeyboardFocusRequested, which it strictly
+            // contains — that flag is the timer field's OnDemand request and
+            // is reset whenever the layer goes away (see
+            // onExpandedLayerVisibleChanged). It stays in the keyboardFocus
+            // binding, where it still means something on its own.
+            || islandContainer.controlCenterLayerVisible
+            || islandContainer.notificationCenterLayerVisible
+            || islandContainer.expandedLayerVisible
             || (root.monitorFocused && (root.overviewVisible || root.connectivityPromptActive))
 
         property string islandState: "normal"
@@ -1545,6 +1609,13 @@ PanelWindow {
         onExpandedLayerVisibleChanged: {
             if (!expandedLayerVisible)
                 expandedPlayerKeyboardFocusRequested = false;
+            else
+                keyPanelFocusTimer.restart();
+        }
+
+        onNotificationCenterLayerVisibleChanged: {
+            if (notificationCenterLayerVisible)
+                keyPanelFocusTimer.restart();
         }
 
         // FORK: the `else root.closeAllConnectivityDetails()` arm is gone
@@ -1559,6 +1630,8 @@ PanelWindow {
                     && !root.connectivityPanelStateActive
                     && controlCenterLoader.item)
                 controlCenterLoader.item.closeConnectivityPanels();
+            if (controlCenterLayerVisible)
+                keyPanelFocusTimer.restart();
         }
 
         // FORK: mirrors onCustomLeftItemsChanged below. When the last
@@ -2400,6 +2473,11 @@ PanelWindow {
             islandState = "expanded";
             mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
             expandedByPlayerAutoOpen = autoOpened;
+            // Deliberate until the hover handler says otherwise; see the note
+            // there. This is what makes `togglePlayer` from a keybind take the
+            // keyboard grab even when the pointer happens to be parked on the
+            // notch from an earlier hover-expand.
+            hoverExpandedActive = false;
             if (autoOpened) restartAutoHideTimer();
             else stopAutoHideTimer();
         }
@@ -2426,6 +2504,7 @@ PanelWindow {
             clearTransientCapsule();
             islandState = "control_center";
             mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            hoverExpandedActive = false;   // see showExpandedPlayer
             stopAutoHideTimer();
         }
 
@@ -2435,6 +2514,7 @@ PanelWindow {
             clearTransientCapsule();
             islandState = "notification_center";
             mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            hoverExpandedActive = false;   // see showExpandedPlayer
             stopAutoHideTimer();
         }
 
@@ -2740,11 +2820,22 @@ PanelWindow {
                 if (current !== "normal" && current !== "custom" && current !== "lyrics")
                     return;
 
-                islandContainer.hoverExpandedActive = true;
+                // FORK: the flag is set AFTER the show call, not before it.
+                // The three panels that read Escape decide whether to take an
+                // exclusive keyboard grab by asking whether they were opened
+                // by a hover, and to answer that honestly each show function
+                // now CLEARS this flag — an open that goes through it is a
+                // deliberate one until something says otherwise. This is the
+                // one caller that says otherwise, so it has to speak last.
+                //
+                // Nothing observes the flag in between: this is one
+                // synchronous turn, and its only other reader
+                // (hoverCollapseDelayTimer) runs on a timer.
                 if (root.configuredHoverExpandAction === 2)
                     islandContainer.showControlCenter();
                 else
                     islandContainer.showExpandedPlayer(false);
+                islandContainer.hoverExpandedActive = true;
             }
         }
         Timer {
@@ -4172,6 +4263,11 @@ PanelWindow {
                         showCondition: islandContainer.expandedLayerVisible
                         onControlPressed: islandContainer.suppressCapsuleClick()
                         onBackgroundClicked: islandContainer.smartRestoreState()
+                        // The same destination as the background click: this
+                        // is a dismissal, not a close-to-nothing, and the
+                        // resting capsule is what dismissing an island panel
+                        // has always meant.
+                        onCloseRequested: islandContainer.smartRestoreState()
                         onKeyboardFocusRequested: islandContainer.requestExpandedPlayerKeyboardFocus()
                         onKeyboardFocusReleased: islandContainer.releaseExpandedPlayerKeyboardFocus()
                         onPreviousRequested: mediaController.previous()
@@ -4293,6 +4389,7 @@ PanelWindow {
                             ? root.shellRootController.nightLightEnabled
                             : false
                         showCondition: islandContainer.controlCenterLayerVisible
+                        onCloseRequested: islandContainer.smartRestoreState()
                         // FORK: "somebody is looking at this data even though
                         // you are not on screen". See ControlCenterLayer's
                         // connectivityDataActive.
@@ -4451,6 +4548,8 @@ PanelWindow {
                         iconFontFamily: root.iconFontFamily
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
+                        showCondition: islandContainer.notificationCenterLayerVisible
+                        onCloseRequested: islandContainer.smartRestoreState()
 
                         onClearAllRequested: {
                             islandContainer.notificationHistoryModel.clear();

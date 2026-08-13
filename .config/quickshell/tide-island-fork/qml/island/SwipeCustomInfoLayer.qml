@@ -80,14 +80,44 @@ Item {
     // overridden.
     property int statIconPixelSize: userConfig.iconFontSize + 5
     property int iconBoxSize: 20
-    property int batteryIconWidth: 37
-    property int batteryIconHeight: 17
-    property int batteryFontSize: 13
-    property int batteryFontSizeCharging: 12
-    property int batteryBoltSize: 10
+    // ---- THE BATTERY PILL, SCALED DOWN ONE STEP ----
+    //
+    // FORK: asked for after the stat glyphs went up — "the battery icon when
+    // I swipe to right needs to be a bit smaller". The two changes are
+    // related and the order matters: the pill did not grow, its neighbours
+    // did, and a pill that read as balanced against 10 px of glyph ink reads
+    // as heavy against 15.
+    //
+    // It also carries a weight the glyphs do not. The cpu and ram marks are
+    // strokes on the shell fill; the battery is a FILLED white capsule with
+    // dark numerals inside it, so at equal height it has several times the
+    // ink and pulls the eye first. It is the one item on the row that is not
+    // an outline, which is deliberate — charge is the reading you glance for
+    // — but it was overshooting that job rather than doing it.
+    //
+    // Scaled as a set at ~0.87 rather than by shaving the one dimension that
+    // looked worst, because the tip, the radii and the numerals are all in
+    // proportion to the body and moving one alone is what makes a drawn
+    // object look wrong in a way nobody can name:
+    //
+    //     width   37 -> 32     font          13 -> 11
+    //     height  17 -> 15     font charging 12 -> 10
+    //     radius   6 ->  5     bolt          10 ->  9
+    //     tip h    5 ->  4
+    //
+    // tipWidth and innerRadius hold at 2 and 3: both are already at the
+    // smallest value that survives rounding at this scale, and taking either
+    // to 1 and 2 loses the shape rather than shrinking it. "100" at font 11
+    // is ~19 px of Inter against 32 px of body, so the widest reading still
+    // clears its capsule.
+    property int batteryIconWidth: 32
+    property int batteryIconHeight: 15
+    property int batteryFontSize: 11
+    property int batteryFontSizeCharging: 10
+    property int batteryBoltSize: 9
     property int batteryTipWidth: 2
-    property int batteryTipHeight: 5
-    property int batteryOuterRadius: 6
+    property int batteryTipHeight: 4
+    property int batteryOuterRadius: 5
     property int batteryInnerRadius: 3
     property real iconVerticalOffset: 1
     property int recordingDotSpacing: 12

@@ -1003,10 +1003,24 @@ Item {
         // The arrows adopt the grid on first press rather than requiring a
         // separate "enter grid" key: with cursor at -1 any direction lands
         // on tile 0, which is what someone who just pressed Right meant.
+        // hjkl alongside the arrows, on request. Every OTHER panel in this
+        // shell is already j/k driven — the pickers, the audio and display
+        // panels, both connectivity lists — so the arrows were the odd
+        // convention here, not the vim keys. They are listed as fallthrough
+        // cases on the same branches rather than as a second block, because
+        // two branches doing the same thing is how the pair drifts.
+        //
+        // `q` is NOT remapped to anything vim-ish and stays as close. It is
+        // already the quit key on every panel in the tree and vim's own
+        // habit agrees with that.
+        case Qt.Key_H:
         case Qt.Key_Left:   quickGrid.moveCursor(-1, 0); event.accepted = true; break;
+        case Qt.Key_K:
         case Qt.Key_Up:     quickGrid.moveCursor(0, -1); event.accepted = true; break;
+        case Qt.Key_J:
         case Qt.Key_Down:   quickGrid.moveCursor(0, 1);  event.accepted = true; break;
 
+        case Qt.Key_L:
         case Qt.Key_Right:
             // Right is overloaded and the order matters. On a tile that owns
             // a list, Right opens it — mirroring the chevron, which points
@@ -1039,6 +1053,41 @@ Item {
     onVolumeLevelChanged: syncVolumeFromLevel(volumeLevel)
     onShowConditionChanged: {
         if (showCondition) {
+            // ---- THE PANEL HAD KEYS AND NEVER RECEIVED ONE ----
+            //
+            // FORK: `focus: showCondition` above is necessary and is NOT
+            // sufficient, and this is the line that was missing. Proven
+            // rather than reasoned: with the control centre open, `wtype j`
+            // and `wtype l` did nothing, while the same wtype typing "zqx"
+            // into the application launcher's search field landed all three
+            // characters. So the compositor grab is fine, the island is
+            // receiving keys, and the problem is entirely inside the scene.
+            //
+            // `focus: true` only nominates an item as the focus child OF ITS
+            // PARENT SCOPE. The parent here is a PanelLoader, and a Loader
+            // is not a FocusScope — so the nomination stops there and never
+            // reaches the window. islandContainer.forceActiveFocus(), which
+            // DynamicIslandWindow fires on a 0 ms timer for exactly this
+            // purpose, gives focus to the FocusScope and then hands it to
+            // ITS focus child, which is the loader, not the layer inside it.
+            //
+            // The panels that do work are the ones whose loaders declare
+            // `onLoaded: item.forceActiveFocus()` — PanelLoader's own header
+            // records that wifiPanelLoader and bluetoothPanelLoader do this.
+            // The control centre's loader never did.
+            //
+            // Claiming it from the layer rather than adding a fourth
+            // onLoaded at the instantiation site, because forceActiveFocus()
+            // walks UP and takes focus for this item regardless of how many
+            // non-scope wrappers are in between — so it cannot be broken
+            // again by someone changing the loader. And on showCondition
+            // rather than onLoaded, because `retain` keeps this instance
+            // alive across closes: onLoaded fires once ever, and the panel
+            // is opened many times.
+            Qt.callLater(function() {
+                if (controlCenter.showCondition)
+                    controlCenter.forceActiveFocus();
+            });
             syncLevelsFromProps();
             sliderIntroPending = true;
             displayedBrightness = localBrightness;

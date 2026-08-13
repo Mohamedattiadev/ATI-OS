@@ -15,6 +15,11 @@ Item {
 
     signal controlPressed()
     signal backgroundClicked()
+    // FORK: Escape / q. Same gap as the control centre — this layer already
+    // had the ONE keyboard path the shell needed for it (the timer field's
+    // OnDemand grab), so it was easy to miss that there was no way to
+    // dismiss the player from the keyboard at all.
+    signal closeRequested()
     signal keyboardFocusRequested()
     signal keyboardFocusReleased()
     signal previousRequested()
@@ -165,6 +170,40 @@ Item {
 
     anchors.fill: parent
     opacity: showCondition ? 1 : 0
+    focus: showCondition
+    activeFocusOnTab: true
+
+    Keys.onPressed: function(event) {
+        switch (event.key) {
+        case Qt.Key_Escape:
+        case Qt.Key_Q:
+            // The timer page first. Escape reaches this handler by bubbling
+            // out of the hour/minute TextInput, which does not consume it —
+            // so on page 1 the first Escape is nearly always "get me out of
+            // this field", and dismissing the whole player on it would throw
+            // away a duration the user was halfway through typing. Paging
+            // back also has to take the focus item away from the input by
+            // hand: settlePage releases the shell's keyboard GRAB, but the
+            // TextInput keeps Qt's focus and would go on swallowing letters
+            // typed at a page it is no longer on.
+            //
+            // `q` is deliberately not given the same step-back. While the
+            // input has focus it never reaches this switch — TextInput
+            // consumes printable keys whether or not IntValidator accepts
+            // them — so a `q` that arrives here was typed at the player
+            // itself, where it can only mean close.
+            if (event.key === Qt.Key_Escape && root.currentPage === 1) {
+                root.showPage(0);
+                root.forceActiveFocus();
+            } else {
+                root.closeRequested();
+            }
+            event.accepted = true;
+            break;
+        default:
+            break;
+        }
+    }
 
     onShowConditionChanged: {
         if (!showCondition) {

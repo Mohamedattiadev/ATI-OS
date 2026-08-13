@@ -13,7 +13,14 @@ Item {
     id: notificationCenter
 
     signal clearAllRequested()
+    // FORK: Escape / q, the third of the three panels that had no keyboard
+    // dismissal. Listed with the control centre and the expanded player
+    // rather than left for later because the three share one cause — none of
+    // them appeared in DynamicIslandWindow's keyboardFocus list, so none of
+    // them could receive a keystroke, so none of them grew a handler.
+    signal closeRequested()
 
+    property bool showCondition: false
     property var notificationModel: null
     property string iconFontFamily: userConfig.iconFontFamily
     property string textFontFamily: userConfig.textFontFamily
@@ -56,6 +63,21 @@ Item {
         + notificationHistory.listTopGap
         + Math.max(notificationHistory.cardHeight,
                    notificationHistory.listContentHeight)
+
+    focus: showCondition
+    activeFocusOnTab: true
+
+    Keys.onPressed: function(event) {
+        switch (event.key) {
+        case Qt.Key_Escape:
+        case Qt.Key_Q:
+            notificationCenter.closeRequested();
+            event.accepted = true;
+            break;
+        default:
+            break;
+        }
+    }
 
     NotificationHistory {
         id: notificationHistory

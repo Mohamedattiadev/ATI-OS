@@ -9,6 +9,12 @@ import "qml/theme"
 import "qml/common"
 // FORK: the standalone ring OSD — see showRingOsd().
 import "qml/osd"
+// FORK: qtile's TreeTab panel as a left sidebar — see the treeTab block near
+// the bottom of this file, and the long header in TreeTabSidebar.qml.
+import "qml/treetab"
+// FORK: HyprlandData, the shared `hyprctl clients` feed. Owned here rather
+// than by the sidebar so it exists once per machine and not once per output.
+import "qml/workspace"
 
 Scope {
     id: shellRoot
@@ -723,6 +729,63 @@ Scope {
     // belongs to a per-screen window which, with the transition disabled,
     // is exactly the object we are declining to involve.
     Process { id: themeApplyDirect }
+
+    // ---- qtile's TreeTab, AS qtile DREW IT ----
+    //
+    // hypr/scripts/layout-cycle.sh mapped TreeTab onto "a Hyprland group
+    // with the groupbar switched on", and its own header admits the whole
+    // of the claim: the groupbar "is the only thing TreeTab adds to Max".
+    // That is right about the information and wrong about the shape —
+    // qtile's TreeTab is a 180 px panel down the LEFT EDGE, subtracted from
+    // the tiling area, and Hyprland's groupbar is a strip of tabs across
+    // the top of the window. Same list, different surface, and the surface
+    // was what was asked for.
+    //
+    // The panel is drawn here rather than by the compositor because there
+    // is nothing in Hyprland to draw it with: groups are the only stacking
+    // primitive and the groupbar is the only chrome they have. A layer-shell
+    // surface with an exclusive zone is the same bargain qtile struck —
+    // tree.py's `layout()` hsplits panel_width off the screen rect before
+    // placing any window.
+    //
+    // ---- WHY THE DATA FEED IS BEHIND A LOADER ----
+    //
+    // HyprlandData re-runs `hyprctl clients`, `monitors`, `workspaces` and
+    // `activeworkspace` on every window event, debounced 90 ms. That is
+    // cheap for a panel that is open, and it is four processes per window
+    // event for the entire session on a machine whose user never touches
+    // treetab. It is constructed only while a treetab workspace is focused,
+    // which is exactly when the sidebar can be visible at all.
+    //
+    // ONE instance, not one per screen: it is a machine-wide snapshot and N
+    // copies would be N times the subprocesses for identical answers.
+    LayoutState { id: treeTabLayoutState }
+
+    Loader {
+        id: treeTabDataLoader
+
+        active: treeTabLayoutState.layout === "treetab"
+        sourceComponent: Component { HyprlandData {} }
+    }
+
+    Variants {
+        id: treeTabVariants
+
+        model: Quickshell.screens
+
+        TreeTabSidebar {
+            required property var modelData
+
+            screen: modelData
+            outputName: modelData && modelData.name !== undefined
+                ? String(modelData.name) : ""
+            layoutIsTreeTab: treeTabLayoutState.layout === "treetab"
+            // Null while the loader is inactive. The sidebar treats that as
+            // "nothing to list" and stays retracted, which is the same state
+            // it is in on every non-treetab workspace anyway.
+            hyprlandData: treeTabDataLoader.item
+        }
+    }
 
     Variants {
         id: panelVariants

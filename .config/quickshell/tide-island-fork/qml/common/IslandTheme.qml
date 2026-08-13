@@ -407,7 +407,22 @@ Singleton {
     // accent, and nothing in the log.
     //
     // Do not name a token `onAnything`.
-    readonly property color accentInk: root.luminance(root.accent) > 0.18 ? "#000000" : "#ffffff"
+    readonly property color accentInk: root.inkOn(root.accent)
+
+    // The same decision for ANY fill, not just the accent. `accentInk` was
+    // the only place in the shell that painted text on a coloured chip, so
+    // the rule lived inside it; qtile's TreeTab sidebar paints every
+    // inactive row on the palette's RED and needed the identical answer.
+    //
+    // Generalised rather than copied, because the copy is the failure mode
+    // this file exists to stop: a second site would have restated the 0.18
+    // threshold, and the two would have disagreed the first time one of
+    // them was adjusted. `toColor` first for the reason above — a caller
+    // handing this a string would otherwise read NaN off it and get a
+    // luminance of NaN, which compares false and silently returns white.
+    function inkOn(c) {
+        return root.luminance(root.toColor(c)) > 0.18 ? "#000000" : "#ffffff";
+    }
 
     // ---------------------------------------------------------------
     //  Accent and selection
@@ -440,6 +455,20 @@ Singleton {
     readonly property color warning: root._toContrast(root.yellow, root.surface, root.ink, 3.0)
     readonly property color danger: root._toContrast(root.red, root.surface, root.ink, 3.0)
     readonly property color info: root._toContrast(root.blue, root.surface, root.ink, 3.0)
+
+    // The fifth palette slot, and the only one that had no legible form.
+    // success/warning/danger/info solve green, yellow, red and blue; purple
+    // was reachable only as the raw `purple`, which is a FILL colour and
+    // carries no promise about being readable on the surface.
+    //
+    // Added because qtile's TreeTab uses colors[7] — purple — for its
+    // section headings (config.py:7332, `section_fg`), and a heading is
+    // text. Named after the slot rather than after a meaning, like
+    // `accentText` beside it, because purple has no status meaning here;
+    // it is the palette's fifth signature colour and nothing more. Same
+    // 3.0 target as its four neighbours: these are all label weight, never
+    // body copy.
+    readonly property color purpleText: root._toContrast(root.purple, root.surface, root.ink, 3.0)
 
     // The tinted chip a status word sits in — `selectionFill` is the same
     // idea in the accent, and these are its status siblings. Same 0.18 so

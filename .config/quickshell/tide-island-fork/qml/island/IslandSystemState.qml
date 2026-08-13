@@ -240,16 +240,30 @@ Item {
             };
         case "workspace":
             return { id: itemId, icon: "", text: "Workspace " + currentWorkspace };
+        // FORK: `value` is the reading as a 0..100 PERCENT, carried beside the
+        // already-formatted `text`. The card colours a glyph red once the
+        // thing it names is in trouble, and it cannot get that out of `text`:
+        // "43%" is a string, and parsing a number back out of a label that is
+        // "--%" whenever the value is missing is exactly the kind of thing
+        // that reads 0 and calls it healthy. -1 means "no reading yet" and is
+        // what the layer tests, so a stat that has not been sampled is drawn
+        // neutral rather than accidentally alarming.
+        //
+        // Only the three LOAD readings carry it. Volume and brightness have
+        // no bad end — 100% brightness is not a fault — so giving them a
+        // severity would make the colour mean nothing.
         case "cpu":
             return {
                 id: itemId,
                 icon: statusIcon("cpu"),
+                value: currentCpuUsage >= 0 ? currentCpuUsage * 100 : -1,
                 text: currentCpuUsage >= 0 ? formatPercentText(currentCpuUsage) : "--%"
             };
         case "ram":
             return {
                 id: itemId,
                 icon: statusIcon("ram"),
+                value: currentRamUsage >= 0 ? currentRamUsage * 100 : -1,
                 text: currentRamUsage >= 0 ? formatPercentText(currentRamUsage) : "--%"
             };
         case "cava":
@@ -258,6 +272,7 @@ Item {
             return {
                 id: itemId,
                 icon: storageStatusIcon,
+                value: currentStorageUsage >= 0 ? currentStorageUsage : -1,
                 text: currentStorageUsage >= 0 ? Math.round(currentStorageUsage) + "%" : "--%"
             };
         default:
