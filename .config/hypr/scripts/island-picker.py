@@ -606,9 +606,15 @@ def brightness_list():
         items.append({
             "id": str(step),
             "label": "%d%%" % step,
-            "detail": "current: %d%%" % current if current >= 0 else "",
+            # The current level marks the row it IS, and says nothing on the
+            # others. rofi_light showed it once, as a -mesg above the list;
+            # repeating "current: 47%" down every row of a list of levels is
+            # the one place it cannot be read as "this row".
+            "detail": "current" if current >= 0 and step == current else "",
         })
-    return {"title": "Brightness", "items": items}
+    # rofi_light's -mesg, with its capital C.
+    return _page("Brightness", items,
+                 note="Current: %d%%" % current if current >= 0 else "")
 
 
 def brightness_run(item_id):
@@ -1283,16 +1289,22 @@ def record_list():
     have_wf = bool(shutil.which("wf-recorder"))
     missing = "wf-recorder is not installed"
     camera = _webcam_device()
-    return _page("Record", [
-        {"id": "screen", "label": "Screen",
+    # dm-recordV2's rows, its wording, its order. Its mode 7 (GIF) is still
+    # gone for the reason in the note above; every other row is here,
+    # including "Screen + Audio", which the first port dropped without
+    # saying so — it is dm-recordV2's FIRST row and the one the hand goes to.
+    return _page("Select recording mode:", [
+        {"id": "screen-audio", "label": "Screen + Audio (full display)",
+         "detail": "wf-recorder --audio" if have_wf else missing},
+        {"id": "screen", "label": "Screen Only (full display)",
          "detail": "wf-recorder, whole output" if have_wf else missing},
-        {"id": "region", "label": "Screen area",
+        {"id": "region", "label": "Screen Area (selection)",
          "detail": "wf-recorder + slurp" if have_wf else missing},
-        {"id": "audio", "label": "Audio only",
+        {"id": "audio", "label": "Audio Only",
          "detail": "ffmpeg -f pulse, mp3"},
-        {"id": "webcam-low", "label": "Webcam (640x480)",
+        {"id": "webcam-low", "label": "Webcam (low-res 640x480)",
          "detail": camera or "no capture device under /dev/video*"},
-        {"id": "webcam-hd", "label": "Webcam (1920x1080)",
+        {"id": "webcam-hd", "label": "Webcam (HD 1920x1080)",
          "detail": camera or "no capture device under /dev/video*"},
     ])
 
@@ -1323,14 +1335,21 @@ def record_run(item_id):
 
     os.makedirs(RECORD_DIR, exist_ok=True)
 
-    if item_id in ("screen", "region"):
+    if item_id in ("screen", "region", "screen-audio"):
         if not shutil.which("wf-recorder"):
             raise ValueError("wf-recorder is not installed — see the note in "
                              "island-picker.py: x11grab records a black frame "
                              "under Hyprland, measured")
         output = os.path.join(RECORD_DIR, "screen-%s-%s.mp4" % (item_id, _stamp()))
         geometry = ('-g "$(slurp)" ' if item_id == "region" else "")
-        command = "wf-recorder %s-f %s" % (geometry, shlex.quote(output))
+        # dm-recordV2 mixes a second ffmpeg input (`-f pulse -i default`);
+        # wf-recorder takes the same PulseAudio default with one flag, and
+        # its own muxer keeps the two streams in step. `--audio` with no
+        # device argument is the default sink's monitor, which is what
+        # dm-recordV2's `-i default` resolves to as well.
+        audio = "--audio " if item_id == "screen-audio" else ""
+        command = "wf-recorder %s%s-f %s" % (
+            audio, geometry, shlex.quote(output))
     elif item_id == "audio":
         output = os.path.join(RECORD_DIR, "audio-%s.mp3" % _stamp())
         command = ("ffmpeg -nostdin -y -f pulse -i default "
@@ -2213,9 +2232,13 @@ def youtube_run(item_id):
 
 ANKI_URL = "http://127.0.0.1:8765"
 
+#  The three labels are rofi_anki's prompts with the "Include"/"audio?"
+#  scaffolding removed, because here they are rows on a page headed "what to
+#  include" rather than four separate questions. The quoted names inside them
+#  -- 'Word once', 'Word Three Times', 'Spelling' -- are verbatim.
 ANKI_TOGGLES = [
     ("voice_normal", "Word once", "audio of the front, spoken once"),
-    ("voice_repeat", "Word three times", "the same clip, three times, spaced"),
+    ("voice_repeat", "Word Three Times", "the same clip, three times, spaced"),
     ("voice_spell", "Spelling", "letter by letter, then the whole word"),
 ]
 
@@ -2249,10 +2272,10 @@ def anki_list():
     if not _anki_up():
         note += ("  Anki is not answering on 127.0.0.1:8765 — it will be "
                  "started and waited for when the card is submitted.")
-    return _page("Anki card", [
-        {"id": "lang:en", "label": "English front",
+    return _page("Choose front language", [
+        {"id": "lang:en", "label": "en (front: English)",
          "detail": "deck English · back in German"},
-        {"id": "lang:de", "label": "German front",
+        {"id": "lang:de", "label": "de (front: German)",
          "detail": "deck German · back in English"},
     ], note=note)
 
@@ -2284,7 +2307,7 @@ def anki_run(item_id, text=""):
 
     if kind == "lang":
         _anki_state(front_lang=rest)
-        return _prompt("Anki · front", "text",
+        return _prompt("Enter word / sentence (front)", "text",
                        prompt="word or sentence for the front",
                        value=_selection(),
                        note="Prefilled from the primary selection, the same "
@@ -2294,7 +2317,7 @@ def anki_run(item_id, text=""):
         if not text.strip():
             raise ValueError("a card needs a front")
         _anki_state(text=text.strip())
-        return _prompt("Anki · tags", "tags",
+        return _prompt("Tags (space separated) — optional", "tags",
                        prompt="space separated — Enter with nothing skips",
                        note="Optional. rofi_anki splits on whitespace and "
                             "sends them as the note's tags.")
@@ -2309,7 +2332,7 @@ def anki_run(item_id, text=""):
 
     if item_id == "image":
         state = _state_read("anki") or {}
-        return _prompt("Anki · image", "imageurl", prompt="image URL",
+        return _prompt("Paste image URL (or leave blank)", "imageurl", prompt="image URL",
                        value=state.get("image_url", ""),
                        note="Enter with nothing leaves the card without an "
                             "image. rofi_anki checks the MIME type of what "

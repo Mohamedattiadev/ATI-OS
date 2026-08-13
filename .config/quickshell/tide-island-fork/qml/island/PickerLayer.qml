@@ -144,8 +144,32 @@ FocusScope {
     // whatever the script sent.
     function matchRank(item, needle) {
         if (needle === "")
-            return 2;
-        const hay = ((item.label || "") + " " + (item.detail || "")).toLowerCase();
+            return 4;
+        const label = (item.label || "").toLowerCase();
+        const hay = (label + " " + (item.detail || "")).toLowerCase();
+        // ---- WHY THE LABEL OUTRANKS THE DETAIL ----
+        //
+        // Reported as a case-sensitivity bug -- "I type c and Clipboard does
+        // not come up" -- and it is not one: both sides have been lowercased
+        // since this was written. The real cause is that `hay` is label AND
+        // detail, so on the screenshot menu's Destination page all three
+        // rows tied at 2 for the query "c":
+        //
+        //     File       detail "/home/ati/Screenshots"   <- the c is here
+        //     Clipboard  label starts with it
+        //     Both       detail "file and clipboard"      <- and here
+        //
+        // A tie keeps the script's order, so File stayed first and Enter ran
+        // it. The row whose NAME you typed lost to two rows that happened to
+        // spell the letter somewhere in a path.
+        //
+        // Four buckets instead of two. Still not a score -- order inside a
+        // bucket is whatever the script sent, so the list does not reshuffle
+        // under the cursor beyond the one regrouping the keystroke caused.
+        if (label.startsWith(needle))
+            return 4;
+        if (label.includes(needle))
+            return 3;
         if (hay.includes(needle))
             return 2;
         // Otherwise: every character of the needle, in order, somewhere in
