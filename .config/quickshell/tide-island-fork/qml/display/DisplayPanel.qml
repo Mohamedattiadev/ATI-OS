@@ -943,6 +943,36 @@ FocusScope {
                     return label;
                 }
             }
+
+            // FORK: P1-3. This panel had ZERO MouseAreas — every other fork
+            // panel could at least be pointed at, and this one was keyboard
+            // only, with no cue that it was.
+            //
+            // Deliberately the same shape as WifiPanel's, because Phase 3 is
+            // "one interaction model" and the model this shell settled on is
+            // not hover-highlight-plus-separate-selection. It is: HOVER MOVES
+            // THE CURSOR. One indicator, driven by both the keyboard and the
+            // pointer, so the details column on the right previews whatever
+            // you are pointing at and `Enter` and a click mean the same
+            // thing on the same row. That is also why `containsMouse` appears
+            // nowhere in these panels and why its absence is not the gap it
+            // looks like in a grep.
+            //
+            // Click activates, which for the two destructive views — a mode
+            // change and a layout restore — is the same call `Enter` already
+            // made, and both already run behind the revert countdown that
+            // `revertRing` draws. Clicking cannot commit anything the panel
+            // does not already offer to undo.
+            MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onEntered: root.selectedIndex = row.index
+                onClicked: {
+                    root.selectedIndex = row.index;
+                    root.activate();
+                }
+            }
         }
     }
 

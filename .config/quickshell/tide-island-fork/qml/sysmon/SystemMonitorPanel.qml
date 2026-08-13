@@ -211,6 +211,20 @@ FocusScope {
         root.selectedMount = root.filesystems[root.selectedIndex].mount;
     }
 
+    // FORK: the index and the MOUNT are one selection and were being written
+    // as two, in three places. `selectedMount` is what reanchorSelection uses
+    // to keep the cursor on the same filesystem across a refresh, so an index
+    // moved without it silently re-anchors to the wrong row the next time the
+    // poll lands. Adding the pointer as a fourth writer of that pair is what
+    // made it worth having one.
+    function selectAt(index) {
+        const count = root.filesystems.length;
+        if (count === 0 || index < 0 || index >= count)
+            return;
+        root.selectedIndex = index;
+        root.selectedMount = root.filesystems[index].mount;
+    }
+
     function move(step) {
         const count = root.filesystems.length;
         if (count === 0)
@@ -218,16 +232,14 @@ FocusScope {
         // Wraps, for the reason DisplayPanel's does: this list is three rows
         // long on this machine, and `j` stopping dead on the third reads as
         // the key not working rather than as the end of a buffer.
-        root.selectedIndex = ((root.selectedIndex + step) % count + count) % count;
-        root.selectedMount = root.filesystems[root.selectedIndex].mount;
+        root.selectAt(((root.selectedIndex + step) % count + count) % count);
     }
 
     function jump(where) {
         const count = root.filesystems.length;
         if (count === 0)
             return;
-        root.selectedIndex = where === "top" ? 0 : count - 1;
-        root.selectedMount = root.filesystems[root.selectedIndex].mount;
+        root.selectAt(where === "top" ? 0 : count - 1);
     }
 
     // --- formatting --------------------------------------------------------
@@ -855,6 +867,22 @@ FocusScope {
                 radius: Metrics.px(7)
                 // The same selection wash as every other list in this shell.
                 color: diskRow.index === root.selectedIndex ? IslandTheme.selectionFill : "transparent"
+
+                // FORK: P1-3, and the same model as WifiPanel and now
+                // DisplayPanel — HOVER MOVES THE CURSOR, one indicator driven
+                // by both input devices. This panel had no MouseArea at all,
+                // so the ring and the detail readout could only be pointed at
+                // a different filesystem with j/k.
+                //
+                // No click handler, because there is nothing to activate: the
+                // selection IS the whole interaction here, and a click that
+                // silently did what the hover already did would imply an
+                // action that does not exist.
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onEntered: root.selectAt(diskRow.index)
+                }
 
                 Text {
                     id: mountText

@@ -1096,3 +1096,38 @@ file, not the 8 type ones — `horizontalPadding` 18, `headerHeight` 34, the
 ring at 26 — and at SCALE 0.92 that shrinks the panel ~8%. It is a visible
 change to one panel that currently looks correct, so it wants an explicit
 yes rather than being swept in.
+
+## P1-3 interaction — **CLOSED**, and the grep that suggested it was open was misleading
+
+Audited all nine fork panels. `containsMouse` appears **zero** times across
+every one of them, which reads like nine panels with no hover states. It is
+not, and the reason is the model this shell settled on:
+
+> **Hover moves the CURSOR.** One selection indicator, driven by both the
+> keyboard and the pointer, rather than a hover highlight sitting beside a
+> separate selection. So `onEntered: setCursor(index)` is the hover state,
+> and `containsMouse` is absent because nothing needs a second visual.
+
+WifiPanel, BluetoothPanel, AudioPanel, PickerLayer, ThemePickerLayer and
+SettingsLayer already did this. Two did not, and they were the two with
+**zero MouseAreas** — pointer could not reach them at all:
+
+  DisplayPanel   now hovers to move the cursor and clicks to activate. The
+                 two destructive views, a mode change and a layout restore,
+                 are the same call `Enter` already made and both already run
+                 behind the revert countdown `revertRing` draws, so a click
+                 cannot commit anything the panel does not offer to undo.
+
+  SystemMonitorPanel  hovers to move the cursor. NO click handler: the
+                 selection is the whole interaction, and a click that did
+                 what the hover already did would imply an action that does
+                 not exist.
+
+CheatsheetLayer keeps none — it has a delegate but no `selectedIndex`, so
+there is nothing to select; it is reference text.
+
+Found while wiring sysmon: `selectedIndex` and `selectedMount` are one
+selection written as two, in three places. `reanchorSelection` uses the
+MOUNT to keep the cursor on the same filesystem across a poll, so an index
+moved without it re-anchors to the wrong row on the next refresh. Adding the
+pointer as a fourth writer is what made one `selectAt()` worth having.
