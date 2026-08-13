@@ -166,7 +166,29 @@ FocusScope {
             onStreamFinished: {
                 try {
                     const parsed = JSON.parse(text);
-                    root.settings = parsed.settings || [];
+                    // FORK: filtered on `panel`, not taken whole.
+                    //
+                    // The schema now carries rows this panel has no editor
+                    // for — the four font families and the wallpaper folder,
+                    // which are `font` and `path` and need a text field.
+                    // There is no text field here and there cannot be one:
+                    // this layer lives under a Hyprland keyboard grab, and a
+                    // field would swallow the next character typed into the
+                    // focused window.
+                    //
+                    // island-settings.py derives `panel` from the type and
+                    // reports it per row, so the test is on DATA rather than
+                    // on a copy of that table living here and drifting from
+                    // it. Without this line those five rows would render,
+                    // show their values and ignore every keypress — which is
+                    // the inert-row failure the schema exists to prevent,
+                    // reintroduced by the schema itself.
+                    //
+                    // `!== false` rather than `=== true` so a hand-written
+                    // row in settings-extra.json that predates the field
+                    // still shows up instead of silently vanishing.
+                    root.settings = (parsed.settings || [])
+                        .filter(function(row) { return row.panel !== false; });
                     root.configPath = String(parsed.path || "");
                     root.warnings = parsed.warnings || [];
                     // Clamp after a re-read: the list can get SHORTER than it

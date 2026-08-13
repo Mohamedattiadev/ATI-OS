@@ -80,6 +80,7 @@ Usage:
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -135,7 +136,28 @@ BACKEND_PROPERTIES = frozenset([
 # order" are the same setting. Modelling it as one boolean per item would
 # have been a smaller change to this file and would have thrown the ordering
 # away, which is half of what the row is for.
-TYPES = ("bool", "int", "enum", "list")
+TYPES = ("bool", "int", "enum", "list", "string", "path", "font")
+
+# The types the IN-ISLAND panel can render. Everything above this line is a
+# type; this is the subset SettingsLayer has an editor for.
+#
+# The paragraph above is still true and this is how it stays true. There is
+# no keyboard-entry field in SettingsLayer and there cannot be one, because
+# the panel lives under a Hyprland keyboard grab and a text field there would
+# swallow the next character typed into the focused window. So a `string`,
+# `path` or `font` row rendered in the panel would show its value and ignore
+# every keypress — the inert-row failure the whole schema exists to prevent.
+#
+# DERIVED from the type rather than declared per row, and that is the load-
+# bearing choice. A hand-written `"panel": true` on a font row is a lie that
+# validates, and it would be found the way every other silent failure in this
+# tree was found — by a user pressing a key that does nothing. Deriving it
+# makes the wrong state unspellable.
+#
+# `--list` reports it per row so a client can filter without knowing this
+# table: SettingsLayer takes the ones where it is true, the full settings app
+# takes all of them.
+PANEL_TYPES = ("bool", "int", "enum", "list")
 
 # The settings the panel offers, in the order it shows them.
 #
@@ -432,6 +454,79 @@ SETTINGS = [
                   "needs ~1.5x a cap height to resolve, where a plain symbol "
                   "does not. Raising this raises both.",
     },
+    # ================================================================
+    # THE FOUR FAMILIES — `font`, and therefore NOT in the island panel.
+    #
+    # These are the keys the panel structurally cannot hold: there is no
+    # keyboard-entry field in SettingsLayer and there cannot be one under a
+    # Hyprland keyboard grab. They are here for the full settings app, and
+    # `--list` marks them `"panel": false` so the panel filters them out
+    # rather than rendering four rows that ignore every keypress.
+    #
+    # Every write goes through fc-match first, because a wrong family name
+    # does not fail — it SUBSTITUTES, silently, and this shell renders in the
+    # wrong face with nothing logged. See font_resolves().
+    # ================================================================
+    {
+        "key": "textFontFamily",
+        "label": "Interface font",
+        "type": "font",
+        "default": "Inter Medium",
+        "scope": "packaged",
+        "detail": "Every label, list row and body string in the shell. "
+                  "DESIGN-SPEC.md substitutes Inter for SF Pro Text, and the "
+                  "weight is in the family name rather than in a separate "
+                  "weight key because that is how the backend passes it to "
+                  "Qt. Note that fontconfig resolves 'Inter Medium' to the "
+                  "Inter family with a Medium face, which is why the check "
+                  "here looks for the requested name ANYWHERE in what "
+                  "fc-match returns rather than expecting it back verbatim.",
+    },
+    {
+        "key": "timeFontFamily",
+        "label": "Clock font",
+        "type": "font",
+        "default": "Inter Display",
+        "scope": "packaged",
+        "detail": "The resting clock only. Display rather than text because "
+                  "the clock is the one string in the shell that is set "
+                  "large enough for a display cut to read as intended.",
+    },
+    {
+        "key": "heroFontFamily",
+        "label": "Headline font",
+        "type": "font",
+        "default": "Inter Display",
+        "scope": "packaged",
+        "detail": "Panel headings and the large numerals in the OSD and the "
+                  "timer. Shares Inter Display with the clock deliberately: "
+                  "two display faces in one shell is the kind of thing that "
+                  "reads as inconsistency rather than as hierarchy.",
+    },
+    {
+        "key": "iconFontFamily",
+        "label": "Icon font",
+        "type": "font",
+        "default": "JetBrainsMono Nerd Font",
+        "scope": "packaged",
+        "detail": "The Nerd Font supplying every glyph in the shell. This is "
+                  "the row where a typo is most expensive and least visible: "
+                  "a non-Nerd fallback still renders, as tofu or as unrelated "
+                  "CJK, and nothing reports it. fc-match refuses the write.",
+    },
+    {
+        "key": "wallpaperLibraryPath",
+        "label": "Wallpaper folder",
+        "type": "path",
+        "default": "~/Pictures/Wallpapers",
+        "scope": "packaged",
+        "detail": "What the island's wallpaper picker lists. `~` is expanded "
+                  "on write, not stored: the consumer is a C++ backend "
+                  "reading a QString and doing no shell expansion, so a "
+                  "stored '~/Pictures' would be a literal directory named "
+                  "'~' and the failure would be an empty picker rather than "
+                  "an error.",
+    },
     {
         "key": "islandPositionX",
         "label": "Horizontal position",
@@ -520,6 +615,48 @@ SETTINGS = [
     },
 ]
 
+def font_resolves(name):
+    """(ok, detail) for whether `name` is a real installed family.
+
+    THE POINT OF THIS FUNCTION: fc-match never fails. Asked for a family that
+    does not exist it returns the best substitute it can find and exits 0 —
+    on this machine "Totally Fake Font XYZ" comes back as "Noto Sans CJK KR".
+    So "did fc-match succeed" is not a test of anything, and a font name typo
+    is invisible: the shell renders, in the wrong face, with no warning. That
+    is already recorded in this repo as a class of bug.
+
+    The real test is whether the family we ASKED for is in what came back.
+    fc-match prints the matched face's family names comma-separated, so
+    "Inter Medium" returns "Inter,Inter Medium" and is a match, while a bogus
+    name returns something with no relation to the request.
+
+    Missing fc-match is NOT an error. It means we cannot check, which is a
+    different thing from having checked and failed, and refusing the write
+    would make an unvalidatable box a locked one.
+    """
+    wanted = str(name).strip()
+    if not wanted:
+        return False, "empty"
+
+    try:
+        result = subprocess.run(
+            ["fc-match", wanted, "family"],
+            capture_output=True, text=True, timeout=5)
+    except FileNotFoundError:
+        return True, "fc-match not installed; not checked"
+    except (subprocess.SubprocessError, OSError) as exc:
+        return True, "fc-match failed (%s); not checked" % exc
+
+    got = [part.strip() for part in result.stdout.strip().split(",") if part.strip()]
+    if not got:
+        return True, "fc-match returned nothing; not checked"
+
+    if wanted.casefold() in [part.casefold() for part in got]:
+        return True, ""
+
+    return False, "falls back to %r" % got[0]
+
+
 def validate(row):
     """Every reason `row` is not a usable descriptor, as a list of strings.
 
@@ -565,6 +702,13 @@ def validate(row):
         elif not all(isinstance(value, str) for value in values):
             errors.append("%s values must all be strings" % kind)
 
+    # string/path/font take no extra descriptor fields. Deliberately: the
+    # obvious additions are a length cap and a regex, and both are checks that
+    # belong to the CONSUMER rather than to the schema. A font is valid if
+    # fontconfig can resolve it (see font_resolves), a path is valid if the
+    # backend can read it, and a schema that guesses at either would reject
+    # legal values with a message written before the case existed.
+
     # The default has to survive the same coercion a written value does,
     # because it is what --list reports for a key the file has not got yet. A
     # default outside its own min/max would show one number and write another.
@@ -599,6 +743,19 @@ def validate(row):
                                   % ", ".join(map(repr, unknown)))
                 if len(set(default)) != len(default):
                     errors.append("default repeats an item")
+        elif kind in ("string", "path", "font"):
+            if not isinstance(default, str):
+                errors.append("default must be a string, got %r" % (default,))
+            # A font DEFAULT that does not resolve is a schema bug and is
+            # reported here rather than at write time, because --check is
+            # where a packaged row gets to be wrong in front of somebody who
+            # can fix it. Not fatal for path/string: a default path pointing
+            # at a directory this machine has not got yet is normal.
+            elif kind == "font":
+                ok, detail = font_resolves(default)
+                if not ok:
+                    errors.append("default font %r does not resolve (%s)"
+                                  % (default, detail))
 
     return errors
 
@@ -777,6 +934,26 @@ def coerce(entry, raw):
         if len(set(items)) != len(items):
             raise ValueError("an item is repeated")
         return items
+    if kind == "path":
+        # `~` expanded here rather than stored, because the consumer is a C++
+        # backend reading a QString: it does no shell expansion, so a stored
+        # "~/Pictures" is a literal directory named "~" and the failure is a
+        # picker that finds no wallpapers rather than an error.
+        return os.path.expanduser(str(raw).strip())
+    if kind == "font":
+        name = str(raw).strip()
+        ok, detail = font_resolves(name)
+        if not ok:
+            # REFUSED, not warned. This is the whole reason the type exists:
+            # fontconfig will happily substitute, the shell will render in
+            # the wrong face, and nothing anywhere will say so. A rejected
+            # write is recoverable; a silent substitution is the bug class
+            # this repo keeps paying for.
+            raise ValueError("%r is not an installed font family (%s)"
+                             % (name, detail))
+        return name
+    if kind == "string":
+        return str(raw)
     return str(raw)
 
 
@@ -834,6 +1011,19 @@ def describe():
     rows, warnings = merged()
     for row in rows:
         row["value"] = data.get(row["key"], row["default"])
+        # Whether the IN-ISLAND panel has an editor for this row. Derived from
+        # the type (see PANEL_TYPES) and reported per row so a client filters
+        # on data rather than on a copy of that table: SettingsLayer keeps the
+        # true ones, the full settings app keeps everything.
+        row["panel"] = row["type"] in PANEL_TYPES
+        # Only meaningful for `font`, and only as a HINT — the write path
+        # re-checks. Present so the app can grey a family out before the user
+        # commits it rather than only after.
+        if row["type"] == "font":
+            ok, detail = font_resolves(row["value"])
+            row["resolves"] = ok
+            if detail:
+                row["resolveDetail"] = detail
     return {
         "path": CONFIG,
         "extraPath": EXTRA,
