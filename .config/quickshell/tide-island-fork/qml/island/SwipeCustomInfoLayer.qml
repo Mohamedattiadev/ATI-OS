@@ -34,7 +34,52 @@ Item {
     property real iconSpacing: 8
     property int textPixelSize: userConfig.bodyFontSize
     property int iconPixelSize: userConfig.iconFontSize
-    property int iconBoxSize: 18
+
+    // ---- WHY THE STAT GLYPHS GET THEIR OWN, LARGER SIZE ----
+    //
+    // FORK: reported as "the icon of ram and cpu in the swipe to right is
+    // too small". The obvious reading — that iconFontSize is below
+    // bodyFontSize — is FALSE, and checking it is what found the real
+    // cause. `iconFontSize` is 13 against `bodyFontSize` 12, so the glyphs
+    // are nominally the LARGER of the two, which is why nobody had touched
+    // this.
+    //
+    // Nominal size is the wrong measure. Rendered with PIL against the
+    // actual faces fontconfig resolves (JetBrainsMonoNerdFont-Regular.ttf
+    // and Inter.ttc), measuring INK bounding boxes rather than em boxes:
+    //
+    //     Inter Medium @12   digit "3"        cap height   9 px
+    //     Nerd Font    @13   cpu  U+F035B     ink height  11 px
+    //     Nerd Font    @13   ram  U+F061A     ink height  10 px
+    //
+    // So the glyph is 1-2 px taller than the digit beside it and still
+    // reads smaller — because a digit is one stroke and these are
+    // PICTOGRAMS. U+F035B is a chip with eight pins and a lettered core;
+    // U+F061A is a memory stick with a notch and contact fingers. At 10 px
+    // of ink that detail is below the point where it resolves, so the
+    // shape turns to grey texture while the numeral beside it stays sharp.
+    // A pictogram needs roughly 1.5x a cap height to carry the same
+    // presence, not 1.0x.
+    //
+    // Solved for from the same measurements — target ink ~14-15 px:
+    //
+    //     size   cpu ink   ram ink   max width
+    //       13      11        10        11
+    //       17      14        12        14
+    //       18      15        13        15     <- chosen
+    //
+    // 18 rather than 17 because `ram` is the laggard of the pair and 13 px
+    // is where its contact fingers separate. Width 15 still clears
+    // `iconBoxSize`, which goes to 20 below for the same reason — the box
+    // was sized for the old ink and would now clip the disk glyph
+    // (U+F1C0, ink 17 at this size) if that slot is ever configured.
+    //
+    // Derived from `iconFontSize` rather than written as a literal 18, so
+    // a user who scales the island's icon font still gets the correction
+    // applied on top of their choice instead of having it silently
+    // overridden.
+    property int statIconPixelSize: userConfig.iconFontSize + 5
+    property int iconBoxSize: 20
     property int batteryIconWidth: 37
     property int batteryIconHeight: 17
     property int batteryFontSize: 13
@@ -49,6 +94,41 @@ Item {
     property real batteryChargingXOffset: 0
     property real batteryChargingYOffset: 0
     readonly property string chargingIconGlyph: "\uf0e7"
+
+    // ---- COLOUR ON THIS CARD ----
+    //
+    // FORK: every glyph and every numeral here was the literal "white". That
+    // is not a neutral choice on a shell whose whole surface follows pywal \u2014
+    // it is the one colour that cannot follow it, so the card stayed the same
+    // card under every theme while the notch around it changed.
+    //
+    // The rule is: the ACCENT identifies, the DANGER colour warns, and both
+    // come from IslandTheme, which derives them from the palette and then
+    // runs them through _toContrast against the shell fill. No literal hues
+    // are introduced \u2014 a red invented here would be the one thing on the card
+    // that a theme switch could not reach.
+    //
+    // Only the numerals stay ink-white while healthy. Tinting the glyph AND
+    // its number in the accent gives a row of three identical blue blocks
+    // with no focal point; the glyph carries the hue, the number carries the
+    // reading, and they agree only when the reading is bad.
+    property real highUsageThreshold: 85
+    readonly property color iconColor: IslandTheme.accent
+    readonly property color valueColor: "white"
+    readonly property color alarmColor: IslandTheme.danger
+
+    // A stat is in trouble when it has an actual reading (-1 is "not sampled
+    // yet", see IslandSystemState.buildCustomSwipeItem) and that reading is
+    // at or past the threshold. Items with no `value` at all \u2014 volume,
+    // brightness, the clock \u2014 are never in trouble.
+    function usageIsHigh(rawValue) {
+        if (rawValue === undefined || rawValue === null)
+            return false;
+        const numericValue = Number(rawValue);
+        return isFinite(numericValue)
+            && numericValue >= 0
+            && numericValue >= highUsageThreshold;
+    }
 
     readonly property real clampedProgress: Math.max(0, Math.min(1, -transitionProgress))
     readonly property real textWidth: Math.max(0, width - horizontalPadding * 2)
@@ -114,6 +194,7 @@ Item {
                 readonly property bool isCava: modelData.kind === "cava"
                 readonly property bool isBattery: modelData.kind === "battery"
                 readonly property bool hasLeadingVisual: hasIcon || isBattery
+                readonly property bool usageHigh: root.usageIsHigh(modelData.value)
                 implicitWidth: isCava
                     ? cavaBars.implicitWidth
                     : isBattery
@@ -143,9 +224,22 @@ Item {
                         anchors.verticalCenterOffset: root.iconVerticalOffset
                         visible: parent.parent.hasIcon && !parent.parent.isBattery
                         text: modelData.icon || ""
-                        color: "white"
-                        font.pixelSize: root.iconPixelSize
+                        color: parent.parent.usageHigh ? root.alarmColor : root.iconColor
+                        // statIconPixelSize, not iconPixelSize — see the
+                        // measurement block at the top of this file. These
+                        // are pictograms sitting next to numerals and need
+                        // the optical correction; `iconPixelSize` stays as
+                        // it was for anything that is a plain symbol.
+                        font.pixelSize: root.statIconPixelSize
                         font.family: root.iconFontFamily
+
+                        // The same 300 ms the battery's fill and tip already
+                        // use. A glyph that SNAPS to red on one 3-second poll
+                        // and back on the next reads as a rendering glitch;
+                        // crossed on a fade it reads as a reading changing.
+                        Behavior on color {
+                            ColorAnimation { duration: 300 }
+                        }
                     }
 
                     Item {
