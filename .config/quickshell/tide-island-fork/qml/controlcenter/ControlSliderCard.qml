@@ -146,14 +146,38 @@ Item {
             anchors.right: parent.right
             anchors.top: label.bottom
             anchors.topMargin: Metrics.pad(13)
-            height: Metrics.px(14)
+            height: Metrics.px(30)
 
+            // ---- THE TRACK WAS A 2 PX HAIRLINE ----
+            //
+            // FORK: "the sliders look cheap", and this line was the whole of
+            // it. The upstream design is a "filament fader" — a 2 px thread
+            // with a glowing fill — which is a real idea and reads well at
+            // the size it was drawn for. Here it sat under two 44 px toggle
+            // buttons and a 29 px clock, so the two controls used most often
+            // in the panel were also the thinnest marks on it. Weight should
+            // follow use, and it was inverted.
+            //
+            // 22 px track inside a 30 px row.
+            //
+            // SCOPE, stated because the obvious next step is not taken here:
+            // the caption row above ("DISPLAY", "SOUND", with its icon) is
+            // UNCHANGED and still present. Moving the icon inside the track
+            // and dropping the words — which a sun and a speaker say without
+            // them — would buy back another ~20 px per slider and is the
+            // right end state, but it means reworking this component's
+            // header, its focus ring and the label's intro animation, and
+            // that is a separate change from making the track legible.
+            //
+            // The fill keeps its gradient and its focus behaviour untouched
+            // — the filament idea survives, it is just no longer a filament
+            // in a room full of slabs.
             Rectangle {
                 id: thread
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                height: Metrics.px(2)
+                height: Metrics.px(22)
                 radius: height / 2
                 color: root.threadBg
 

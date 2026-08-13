@@ -82,11 +82,26 @@ while true; do
 
   echo "$DHIKR" > "$HISTORY_FILE"
 
-  # Send notification
+  # Send notification.
+  #
+  # ONE ARGUMENT, NOT TWO. Requested: "the notification of adhkar, no need
+  # to show ذكر". $TITLE was passed as the summary and the dhikr as the
+  # body, so every card read "🌙 ذكر" above the actual remembrance — a
+  # label repeating what the Arabic already says, on a surface where the
+  # dhikr is the whole content.
+  #
+  # notify-send takes the summary as its only required argument, so
+  # dropping the body and promoting the dhikr into the summary slot is
+  # what removes the heading rather than blanking it. Passing an empty
+  # summary instead would leave the island drawing an empty first line and
+  # the history card an empty bold row.
+  #
+  # $TITLE is kept defined above and unused on purpose: it is what the
+  # desktop-entry name and any future --app-name would be built from, and
+  # deleting it would lose the one place the script says what it is.
   notify-send \
     -u normal \
     -t "$NOTIFY_TIME" \
-    "$TITLE" \
     "$DHIKR"
 
   # Random sleep between MIN and MAX

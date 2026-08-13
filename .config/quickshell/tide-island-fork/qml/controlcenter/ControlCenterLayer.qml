@@ -1643,79 +1643,69 @@ Item {
         // like every other hairline in this tree, so it stays exactly one
         // device pixel instead of rounding to 2 at some scales.
         // ============================================================
-        //  THE QUICK GRID
+        //  THE QUICK ROW
         // ============================================================
         //
-        // FORK — this replaces the two-row Wi-Fi / Bluetooth list that used
-        // to sit here, and it is a restructure rather than a restyle.
+        // FORK. This is the second pass at the same problem and the first
+        // one is worth recording, because the mistake was a process mistake
+        // rather than a taste one.
         //
-        // WHAT WAS ACTUALLY WRONG. Reported as "the control system ui not
-        // good ... and u missed the nightlight eff add it also". The second
-        // half is the one that explains the first, and it is not what it
-        // looks like: Night mode was never missing. `toggleNightLight()` has
-        // always been here, wired to a real daemon, and so has Focus — both
-        // fully built, both with busy and unavailable states.
+        // The panel originally showed two full-width rows, Wi-Fi and
+        // Bluetooth, and nothing else — Focus and Night mode existed, fully
+        // wired, but lived inside the BATTERY DRAWER, which defaults closed.
+        // Pass one promoted all four into a 2x2 grid of large tiles. That
+        // fixed the real bug (the toggles are reachable now) and produced a
+        // worse-looking panel: four 76 px slabs, each holding a 17 px glyph
+        // and two short strings, so most of every tile was empty. Rejected
+        // on sight, correctly.
         //
-        // They were inside `quickTogglesCard`, which lives inside the
-        // BATTERY DRAWER, and `batteryDrawerOpen` defaults to false. So the
-        // two most useful switches in the panel were behind a 40 px pull
-        // handle that gives no indication of what it is hiding, and the
-        // panel that opened on $mod SHIFT A showed exactly two controls.
-        // That is the whole of "the UI is not good": it was not sparse
-        // because nothing had been built, it was sparse because half of what
-        // had been built was filed inside a drawer about batteries.
+        // The lesson is that the grid was designed in an ASCII sketch, where
+        // a tile is as big as the words inside it. On a real 1366 px panel a
+        // half-width tile is 300 px wide and the words do not grow to fill
+        // it. A sketch cannot show you dead space; only a capture can.
         //
-        // So the fix is promotion, not addition. All four toggles come up to
-        // one grid at the top of the panel, at equal weight, because they
-        // are peers — none of them is a sub-setting of the battery.
+        // WHAT THIS DOES INSTEAD. The toggles stop being cards and become
+        // what they actually are — four buttons. A 44 px square each, in one
+        // row, icon centred, name underneath in the caption register. That
+        // is the smallest form that still gives a comfortable pointer target
+        // (44 is the usual floor for a touch/pointer hit area, and it is
+        // also exactly `iconBox * 2 + padding` here), and it returns roughly
+        // 90 px of panel height to the sliders, which are the controls
+        // actually used every day.
         //
-        // WHY A GRID AND NOT FOUR MORE ROWS. Four full-width rows is 184 px
-        // of panel to say four words. These are binary switches with a
-        // one-line status; the row form spends its width on a gutter between
-        // the label and a toggle pill parked at the right margin, and at
-        // four items that gutter becomes the dominant feature. A tile puts
-        // the state in the FILL, which needs no width at all, and gets the
-        // whole set into two rows instead of four.
-        //
-        // TWO ACTIONS PER TILE, AND WHY THE CHEVRON IS A SEPARATE TARGET.
-        // Wi-Fi and Bluetooth each do two things: toggle the radio, and open
-        // a list. The old row gave the toggle a 28 px pill and the list the
-        // entire rest of the row, which is backwards — turning Wi-Fi off is
-        // the rarer act and it had the smaller target only by accident of
-        // where a switch conventionally sits. Here the tile BODY toggles and
-        // the chevron opens, so the common action gets the large target. The
-        // chevron carries `Metrics.px(30)` of hit area rather than its own
-        // ink size, because a 10 px glyph is not a pointer target.
-        //
-        // Focus and Night mode have no list, so they have no chevron, and
-        // their tile body is the only target. The absence is the signal.
+        // WHAT IS LOST, DELIBERATELY. The per-tile status line goes —
+        // "TDV-OGRENCI-ORTAK", "Scanning", "Notifications on". A 44 px
+        // button has no room for it and shrinking the type to fit is how
+        // panels end up with 8 px text nobody reads. The network name still
+        // has a home: it is one chevron away, in the list the tile opens,
+        // where it is the heading rather than a subtitle. What the button
+        // must convey is ON or OFF, and the fill says that at a glance from
+        // across the room, which the old subtitle never did.
         Item {
             id: quickGrid
             width: parent.width
-            height: gridFlow.height
+            height: quickRow.height
 
-            // -1 is "the pointer is driving". Any arrow key adopts the grid
-            // and lights a tile; Escape hands it back. Kept on the grid
-            // rather than on the root because the root's Keys handler is
-            // shared with the battery drawer and the connectivity overlays,
-            // and a cursor that survived those would light a tile behind an
+            // -1 is "the pointer is driving". Any motion key adopts the row
+            // and lights a button; Escape hands it back. Kept here rather
+            // than on the root because the root's Keys handler is shared
+            // with the battery drawer and the connectivity overlays, and a
+            // cursor that survived those would light a button behind an
             // open list.
             property int cursor: -1
-            readonly property int columns: 2
             readonly property int count: 4
 
+            // One row now, so vertical motion has nothing to move BETWEEN
+            // and is folded onto the horizontal axis. j/k and Up/Down still
+            // work rather than being dead keys — they just step along the
+            // row, which is what someone pressing them here means.
             function moveCursor(dx, dy) {
                 if (cursor < 0) {
                     cursor = 0;
                     return;
                 }
-                let col = cursor % columns;
-                let row = Math.floor(cursor / columns);
-                col = Math.max(0, Math.min(columns - 1, col + dx));
-                row = Math.max(0, Math.min(Math.ceil(count / columns) - 1, row + dy));
-                const next = row * columns + col;
-                if (next < count)
-                    cursor = next;
+                const step = dx !== 0 ? dx : dy;
+                cursor = Math.max(0, Math.min(count - 1, cursor + step));
             }
 
             function activate() {
@@ -1728,8 +1718,8 @@ Item {
             }
 
             // Only the two that have one. Returns false so the caller can
-            // fall through and let the key mean something else on a tile
-            // with no list, rather than silently swallowing it.
+            // fall through and let the key mean movement on a button with no
+            // list, rather than silently swallowing it.
             function openList() {
                 if (cursor === 0) {
                     controlCenter.toggleConnectivityOverlay("wifi");
@@ -1742,12 +1732,11 @@ Item {
                 return false;
             }
 
-            component QuickTile: Item {
-                id: tile
+            component QuickButton: Item {
+                id: qb
 
                 property string glyph: ""
                 property string label: ""
-                property string status: ""
                 property bool on: false
                 property bool busy: false
                 property bool available: true
@@ -1758,192 +1747,158 @@ Item {
                 signal toggled()
                 signal listRequested()
 
-                readonly property bool cursored: quickGrid.cursor === tile.index
-                readonly property bool interactive: tile.available && !tile.busy
+                readonly property bool cursored: quickGrid.cursor === qb.index
+                readonly property bool interactive: qb.available && !qb.busy
 
-                width: (quickGrid.width - Metrics.px(10)) / 2
-                // 76, not 62. At 62 the glyph and the label OVERLAPPED —
-                // caught in the first capture, not in the source, because
-                // nothing about anchoring a label to the bottom and a glyph
-                // to the top says they will collide; the arithmetic does.
-                // Glyph 17 px from a top pad of 10 runs to ~31, and a
-                // 12.5 px label sitting above a 10.5 px status inside a
-                // 10 px bottom pad starts at ~28. Three stacked elements
-                // need to be anchored as a stack, which is what they are
-                // below — top-down off each other, so the height is a
-                // consequence of the content instead of a guess the content
-                // has to fit into.
-                height: Metrics.px(76)
+                width: Metrics.px(44)
+                height: buttonPlate.height + Metrics.px(5) + qbLabel.height
 
                 HoverHandler {
-                    id: tileHover
-                    enabled: tile.interactive
+                    id: qbHover
+                    enabled: qb.interactive
                 }
 
                 Rectangle {
-                    id: tilePlate
-                    anchors.fill: parent
-                    radius: Metrics.px(12)
+                    id: buttonPlate
+                    width: parent.width
+                    height: Metrics.px(44)
+                    radius: Metrics.px(14)
 
-                    // The fill IS the state. On is the accent at low alpha —
-                    // the same 0.18 `selectionFill` uses, so a lit tile and a
-                    // selected row read as one family rather than as two
-                    // different ideas about "active".
-                    color: tile.on
-                        ? IslandTheme.alpha(controlCenter.accentColor, 0.18)
-                        : (tileHover.hovered
-                            ? Qt.rgba(0.925, 0.925, 0.925, 0.075)
-                            : Qt.rgba(0.925, 0.925, 0.925, 0.035))
+                    // ---- DEPTH, WHICH THE FLAT VERSION HAD NONE OF ----
+                    //
+                    // "The whole thing feels flat" was the third complaint
+                    // and it is a separate fault from the sizing. Every
+                    // surface in the old panel was one cream wash at one
+                    // alpha on one background, so nothing sat in front of
+                    // anything.
+                    //
+                    // Off is a RAISED plate: a lighter fill with a hairline
+                    // top edge, which is the cheapest honest way to suggest
+                    // a light source above. On is the accent, near-solid, so
+                    // a lit button is unmistakably a different material and
+                    // not merely a slightly bluer rectangle.
+                    color: qb.on
+                        ? IslandTheme.alpha(controlCenter.accentColor, 0.92)
+                        : (qbHover.hovered
+                            ? Qt.rgba(0.925, 0.925, 0.925, 0.105)
+                            : Qt.rgba(0.925, 0.925, 0.925, 0.06))
+                    opacity: qb.available ? 1 : 0.35
 
-                    // Focus and hover are two different states and both are
-                    // drawn — the rule Phase 3 of upgread_UI_UX.md adopts.
-                    // Hover is a fill change, the keyboard cursor is a
-                    // border, so a hovered tile under a moved cursor shows
-                    // both at once without either hiding the other.
-                    border.width: tile.cursored ? 1 : 0
-                    border.color: IslandTheme.alpha(controlCenter.accentColor, 0.85)
+                    Behavior on color { ColorAnimation { duration: IslandTheme.durationFast } }
+                    Behavior on opacity { NumberAnimation { duration: IslandTheme.durationFast } }
 
-                    opacity: tile.available ? 1 : 0.38
-
-                    Behavior on color {
-                        ColorAnimation { duration: IslandTheme.durationFast }
+                    // The top-edge highlight. Inset by the radius so it does
+                    // not run past the curve and read as a stray line, and
+                    // hidden when the button is lit — a raised edge on a
+                    // solid accent looks like a rendering seam.
+                    Rectangle {
+                        visible: !qb.on
+                        anchors.top: parent.top
+                        anchors.topMargin: 1
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: parent.width - parent.radius
+                        height: 1
+                        color: Qt.rgba(1, 1, 1, 0.07)
                     }
-                    Behavior on opacity {
-                        NumberAnimation { duration: IslandTheme.durationFast }
+
+                    // The keyboard cursor. A ring OUTSIDE the fill rather
+                    // than a border on it, so it reads at a glance on both
+                    // the lit and unlit state — a 1 px border inside a solid
+                    // accent plate is invisible.
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: parent.width + Metrics.px(6)
+                        height: parent.height + Metrics.px(6)
+                        radius: parent.radius + Metrics.px(3)
+                        color: "transparent"
+                        border.width: qb.cursored ? 2 : 0
+                        border.color: IslandTheme.alpha(controlCenter.accentColor, 0.9)
+                        visible: qb.cursored
                     }
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    enabled: tile.interactive
-                    hoverEnabled: true
-                    onClicked: {
-                        quickGrid.cursor = tile.index;
-                        tile.toggled();
-                    }
-                }
-
-                Text {
-                    id: tileGlyph
-                    anchors.left: parent.left
-                    anchors.leftMargin: Metrics.pad(12)
-                    anchors.top: parent.top
-                    anchors.topMargin: Metrics.pad(11)
-                    text: tile.glyph
-                    // The glyph takes the accent when lit and the muted ink
-                    // when not. It is NOT accentInk: the plate behind it is
-                    // the accent at 18%, i.e. still essentially the surface,
-                    // so ink solved against a solid accent would be the
-                    // wrong answer to a question nobody asked here.
-                    color: tile.on ? controlCenter.accentColor : IslandTheme.textDisabled
-                    font.pixelSize: Metrics.font(17)
-                    font.family: controlCenter.iconFontFamily
-                    opacity: tile.busy ? 0.45 : 1
-
-                    Behavior on color {
-                        ColorAnimation { duration: IslandTheme.durationFast }
-                    }
-                }
-
-                // The list affordance. A 30 px box around a small glyph —
-                // see the note at the top of the grid about pointer targets.
-                Item {
-                    id: tileChevron
-                    visible: tile.hasList
-                    anchors.right: parent.right
-                    anchors.rightMargin: Metrics.pad(4)
-                    anchors.top: parent.top
-                    anchors.topMargin: Metrics.pad(3)
-                    width: Metrics.px(30)
-                    height: Metrics.px(30)
-
-                    HoverHandler { id: chevHover }
 
                     Text {
                         anchors.centerIn: parent
-                        text: "›"
-                        color: (tile.listOpen || chevHover.hovered)
-                            ? IslandTheme.textPrimary : IslandTheme.textMuted
-                        font.pixelSize: Metrics.font(17)
-                        font.family: controlCenter.textFontFamily
-                        font.weight: Font.DemiBold
+                        text: qb.glyph
+                        // Ink solved against the plate, which is now a real
+                        // fill rather than an 18% tint — so on a lit button
+                        // this genuinely has to be accentInk, and on an
+                        // unlit one it must not be.
+                        color: qb.on ? IslandTheme.accentInk : IslandTheme.textSecondary
+                        font.pixelSize: Metrics.font(18)
+                        font.family: controlCenter.iconFontFamily
+                        opacity: qb.busy ? 0.45 : 1
+
+                        Behavior on color { ColorAnimation { duration: IslandTheme.durationFast } }
+                    }
+
+                    // The list affordance, as a corner dot rather than a
+                    // chevron. At 44 px there is no room for a 30 px chevron
+                    // box beside the glyph, and the dot says the same thing
+                    // — "there is more behind this" — in 5 px. The whole
+                    // button opens the list on a RIGHT click for the same
+                    // reason, since the dot itself is too small to aim at.
+                    Rectangle {
+                        visible: qb.hasList
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: Metrics.px(6)
+                        width: Metrics.px(4)
+                        height: width
+                        radius: width / 2
+                        color: qb.on
+                            ? IslandTheme.alpha(IslandTheme.accentInk, qb.listOpen ? 0.95 : 0.5)
+                            : IslandTheme.alpha(IslandTheme.textPrimary, qb.listOpen ? 0.95 : 0.35)
                     }
 
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: {
-                            quickGrid.cursor = tile.index;
-                            tile.listRequested();
+                        enabled: qb.interactive
+                        hoverEnabled: true
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        onClicked: function(mouse) {
+                            quickGrid.cursor = qb.index;
+                            if (mouse.button === Qt.RightButton && qb.hasList)
+                                qb.listRequested();
+                            else
+                                qb.toggled();
                         }
                     }
                 }
 
                 Text {
-                    id: tileLabel
-                    anchors.left: parent.left
-                    anchors.leftMargin: Metrics.pad(12)
-                    anchors.right: parent.right
-                    anchors.rightMargin: Metrics.pad(10)
-                    // Hung off the GLYPH, not off the tile's bottom edge.
-                    // The bottom-anchored version is what collided with the
-                    // glyph at the old height: two elements measured from
-                    // opposite edges of a fixed box will meet in the middle
-                    // as soon as the box is a little too small, and neither
-                    // one's declaration shows it.
-                    anchors.top: tileGlyph.bottom
+                    id: qbLabel
+                    anchors.top: buttonPlate.bottom
                     anchors.topMargin: Metrics.px(5)
-                    // EXPLICIT height, and this is the second correction to
-                    // this stack. Anchoring `tileStatus.top` to
-                    // `tileLabel.bottom` is right and still produced an
-                    // overlap, because a Text's implicit height is its FONT
-                    // line height and these two are anchored the moment they
-                    // are constructed — before the font is resolved and the
-                    // line box is measured. The anchor is then evaluated
-                    // against a height that is not yet the final one, and
-                    // nothing re-runs it, so the pair settles ~9 px too
-                    // close. Stating the height makes the anchor arithmetic
-                    // independent of when the font arrives.
-                    height: Metrics.px(16)
+                    // WIDER THAN THE BUTTON, centred on it. At the button's
+                    // own 44 px "Bluetooth" elided to "Blueto..." — caught in
+                    // a capture. A caption under an icon is not constrained
+                    // by the icon's box in any other design and should not be
+                    // here: the Row's 14 px gap absorbs the overhang, and the
+                    // label is centred on its button so the association is
+                    // unambiguous even when it is wider than what it names.
+                    width: parent.width + Metrics.px(14)
+                    x: -Metrics.px(7)
+                    height: Metrics.px(13)
+                    horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    text: tile.label
-                    color: tile.on ? controlCenter.textPrimary : IslandTheme.textSecondary
-                    font.pixelSize: Metrics.font(12.5)
-                    font.family: controlCenter.textFontFamily
-                    font.weight: Font.DemiBold
-                    elide: Text.ElideRight
-                }
-
-                Text {
-                    id: tileStatus
-                    anchors.left: parent.left
-                    anchors.leftMargin: Metrics.pad(12)
-                    anchors.right: parent.right
-                    anchors.rightMargin: Metrics.pad(10)
-                    anchors.top: tileLabel.bottom
-                    anchors.topMargin: Metrics.px(1)
-                    height: Metrics.px(14)   // see tileLabel
-                    verticalAlignment: Text.AlignVCenter
-                    text: tile.status
-                    color: IslandTheme.textMuted
-                    font.pixelSize: Metrics.font(10.5)
+                    text: qb.label
+                    color: qb.on ? controlCenter.textPrimary : IslandTheme.textMuted
+                    font.pixelSize: Metrics.font(10)
                     font.family: controlCenter.textFontFamily
                     font.weight: Font.Medium
                     elide: Text.ElideRight
                 }
             }
 
-            Grid {
-                id: gridFlow
-                width: parent.width
-                columns: quickGrid.columns
-                columnSpacing: Metrics.px(10)
-                rowSpacing: Metrics.px(10)
+            Row {
+                id: quickRow
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: Metrics.px(14)
 
-                QuickTile {
+                QuickButton {
                     index: 0
                     glyph: controlCenter.wifiGlyph
                     label: "Wi-Fi"
-                    status: controlCenter.wifiStatusText
                     on: controlCenter.wifiEnabled
                     busy: controlCenter.wifiBusy
                     available: controlCenter.wifiSupported && controlCenter.wifiAvailable
@@ -1953,11 +1908,10 @@ Item {
                     onListRequested: controlCenter.toggleConnectivityOverlay("wifi")
                 }
 
-                QuickTile {
+                QuickButton {
                     index: 1
                     glyph: controlCenter.bluetoothGlyph
                     label: "Bluetooth"
-                    status: controlCenter.bluetoothStatusText
                     on: controlCenter.bluetoothEnabled
                     busy: controlCenter.bluetoothBusy
                     available: controlCenter.bluetoothAvailable
@@ -1969,31 +1923,24 @@ Item {
 
                 // Focus keeps the bell/bell-slash pair rather than the Shape
                 // the drawer version drew. That Shape was a hand-built path
-                // with a CurveRenderer and an animated slash, which is a lot
-                // of machinery for a 17 px mark, and it was the only icon in
-                // the panel not coming from the icon font — so it was also
-                // the only one that would not follow a font change. The
-                // glyph swap says the same thing in the same typeface as its
-                // three neighbours.
-                QuickTile {
+                // with a CurveRenderer and an animated slash — a lot of
+                // machinery for an 18 px mark, and the only icon in the
+                // panel not coming from the icon font, so also the only one
+                // that would not follow a font change.
+                QuickButton {
                     index: 2
-                    glyph: controlCenter.focusEnabled ? "" : ""
+                    glyph: controlCenter.focusEnabled ? "" : ""
                     label: "Focus"
-                    // Silent is the island's own state and always knowable —
-                    // see the long note on refreshFocusState. So this never
-                    // says "unavailable", unlike the three before it.
-                    status: controlCenter.focusEnabled ? "Notifications silenced" : "Notifications on"
                     on: controlCenter.focusEnabled
                     busy: controlCenter.focusBusy
                     available: controlCenter.focusAvailable
                     onToggled: controlCenter.toggleFocus()
                 }
 
-                QuickTile {
+                QuickButton {
                     index: 3
                     glyph: controlCenter.nightLightGlyph
-                    label: "Night mode"
-                    status: controlCenter.nightLightEnabled ? "Warm" : "Off"
+                    label: "Night"
                     on: controlCenter.nightLightEnabled
                     busy: controlCenter.nightLightBusy
                     onToggled: controlCenter.toggleNightLight()
@@ -2001,20 +1948,13 @@ Item {
             }
         }
 
-        // The rule that used to be the last ConnectivityRow's bottom border.
-        // It is a separate element now because the grid's tiles have their
-        // own plates and a border on the bottom pair would sit inside the
-        // rounded corners rather than under them.
+        // Air between the buttons and the sliders. No hairline: with the
+        // buttons now reading as raised objects on a field, a rule under
+        // them would be a second, weaker way of saying the same separation
+        // the depth already says.
         Item {
             width: parent.width
-            height: Metrics.px(9)
-
-            Rectangle {
-                anchors.verticalCenter: parent.verticalCenter
-                width: parent.width
-                height: 1
-                color: Qt.rgba(0.925, 0.925, 0.925, 0.08)
-            }
+            height: Metrics.px(14)
         }
 
         Item {

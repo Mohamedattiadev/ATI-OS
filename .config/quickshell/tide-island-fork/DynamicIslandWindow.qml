@@ -4234,6 +4234,15 @@ PanelWindow {
             PanelLoader {
                 id: expandedPlayerLoader
                 anchors.fill: parent
+                // Same fix as controlCenterLoader — see the long note there.
+                // Asked for separately ("the popup of music not closing with
+                // q and esc"), and it is not a separate bug: all three of
+                // the panels that grew Escape handlers sit behind a Loader
+                // that was not in the focus chain, so islandContainer kept
+                // the active focus and the layer below it never saw a key.
+                // The handler in ExpandedPlayerLayer was correct the whole
+                // time and had simply never been reached.
+                focus: islandContainer.expandedLayerVisible
                 live: islandContainer.expandedLayerVisible
                 onLoaded: {
                     if (islandContainer.openTimerPageWhenExpanded
@@ -4338,6 +4347,42 @@ PanelWindow {
             PanelLoader {
                 id: controlCenterLoader
                 anchors.fill: parent
+                // FORK: the loader has to be IN the focus chain, and this one
+                // line is why the control centre could never read a key.
+                //
+                // islandContainer is a FocusScope and keyPanelFocusTimer
+                // calls islandContainer.forceActiveFocus() when this panel
+                // opens. A FocusScope hands active focus to ITS focus child
+                // and recurses; if no child claims it, the scope keeps it
+                // itself. This Loader defaulted to focus:false, so the chain
+                // stopped at islandContainer — which then held the active
+                // focus while ControlCenterLayer, one level below, had
+                // `focus: showCondition` and no way to be reached.
+                //
+                // That is exactly what the instrumentation showed and it is
+                // why the symptom was so confusing: the compositor grab
+                // resolved to Exclusive (logged, with cc=true hover=false),
+                // the layer briefly reported activeFocus=true from its own
+                // forceActiveFocus(), and its Keys handler still never fired
+                // — because the timer fired afterwards and took focus back
+                // up to the scope. Two things both claiming focus, the wrong
+                // one winning by ordering.
+                //
+                // A Loader is not a FocusScope, so this does not trap
+                // focus; it only marks this branch as the one to descend.
+                // The layer's own `focus: showCondition` still decides
+                // whether it takes it.
+                //
+                // Bound to the panel's own visibility rather than a bare
+                // `true`, and that is not tidiness. All three of these
+                // loaders are siblings in one FocusScope and two of them are
+                // RETAINED, so three unconditional claims would leave the
+                // scope's focus child decided by declaration order and by
+                // whichever wrote last — a fight that would surface as one
+                // panel stealing another's keys, intermittently. Each claims
+                // only while it is the panel on screen, so at most one ever
+                // claims.
+                focus: islandContainer.controlCenterLayerVisible
                 // FORK: alive whenever a connectivity panel is, because this
                 // layer is that panel's data provider — wifiController, the
                 // Bluetooth adapter, the pairing agent and every action
@@ -4540,6 +4585,7 @@ PanelWindow {
             PanelLoader {
                 id: notificationCenterLoader
                 anchors.fill: parent
+                focus: islandContainer.notificationCenterLayerVisible   // see controlCenterLoader
                 live: islandContainer.notificationCenterLayerVisible
 
                 sourceComponent: Component {
