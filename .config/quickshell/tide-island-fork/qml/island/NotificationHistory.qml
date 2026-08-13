@@ -46,12 +46,85 @@ Item {
     readonly property real titleLineHeight: Math.round(cardTitleSize * 1.75)
     readonly property real bodyLineHeight: Math.round(cardBodySize * 1.75)
 
+    // ---- THE META LINE: WHO SENT IT, HOW URGENT, HOW LONG AGO ----
+    //
+    // The card used to be a title and a body and nothing else, which is the
+    // "notification centre UI is too bad". Three facts were missing and all
+    // three were already in the model — `notificationHistoryModel` is a
+    // plain ListModel filled at DynamicIslandWindow.qml:2371 with appName,
+    // urgency, timestamp and the live notification object. Nothing had to be
+    // plumbed; the delegate simply never read past summary and body.
+    //
+    // What that cost: a CRITICAL low-battery warning and a "now playing"
+    // from a music player were pixel-identical rows. The capsule has had an
+    // urgency ramp the whole time (NotificationLayer.qml's urgencyColor);
+    // the centre, where you go to catch up on what you missed, threw it away.
+    //
+    // Same 1.75x line box as the other two, and for the same reason — see
+    // the note above. This row is Latin-only in practice (app names, a
+    // relative time) but it sits in the same column as text that is not, and
+    // a row that changed height with the script would shift every card below
+    // it.
+    readonly property int metaSize: Metrics.font(userConfig.bodyFontSize - 2)
+    readonly property real metaLineHeight: Math.round(metaSize * 1.75)
+
+    // ---- RELATIVE TIME, AND WHY IT TICKS ----
+    //
+    // "2m", not "14:32". The centre answers "what did I miss", and the
+    // useful axis for that is how long ago, not what the clock said. An
+    // absolute time makes you do the subtraction yourself.
+    //
+    // `nowTick` is what makes it live. A binding on `new Date()` computes
+    // once and never again, so a card posted "now" would still say "now" an
+    // hour later — the kind of wrong that looks like a working feature.
+    // Every relative time in the list reads this, so one timer updates all
+    // of them, and it only runs while the panel is on screen.
+    property date nowTick: new Date()
+
+    Timer {
+        // 20 s, which is the coarsest interval that cannot show a stale
+        // "now": "now" covers the first 45 s, so a 20 s tick redraws it at
+        // least twice before it becomes a lie. Minutes and hours change far
+        // more slowly than they are checked.
+        interval: 20000
+        running: root.visible
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.nowTick = new Date()
+    }
+
+    function relativeTime(when) {
+        if (!when || isNaN(when.getTime()))
+            return "";
+        const seconds = Math.max(0, (root.nowTick.getTime() - when.getTime()) / 1000);
+        if (seconds < 45) return "now";
+        const minutes = Math.round(seconds / 60);
+        if (minutes < 60) return minutes + "m";
+        const hours = Math.round(minutes / 60);
+        if (hours < 24) return hours + "h";
+        // Days rather than a date, because the model keeps 50 entries and
+        // drops the rest — nothing here is old enough for a calendar date to
+        // be the clearer answer.
+        return Math.round(hours / 24) + "d";
+    }
+
+    // The capsule's ramp, deliberately reused rather than re-picked.
+    // NotificationLayer.qml solved this once — critical is danger, low is
+    // muted, normal is the ordinary text colour — and two surfaces showing
+    // the same notification in two different colour languages is worse than
+    // either language.
+    function urgencyColor(urgency) {
+        if (urgency === 2) return IslandTheme.danger;
+        if (urgency === 0) return IslandTheme.textMuted;
+        return IslandTheme.textSecondary;
+    }
+
     readonly property real headerHeight: 28
     readonly property real listTopGap: 9
     readonly property real cardTopPad: Metrics.pad(3)
     readonly property real cardBottomPad: Metrics.pad(6)
-    readonly property real cardHeight: titleLineHeight + bodyLineHeight
-        + cardTopPad + cardBottomPad + Metrics.px(2)
+    readonly property real cardHeight: metaLineHeight + titleLineHeight
+        + bodyLineHeight + cardTopPad + cardBottomPad + Metrics.px(2)
     readonly property real cardRadius: 16
     readonly property real cardGap: 7
     readonly property int maxVisibleItems: 3
@@ -220,6 +293,19 @@ Item {
                     ? model.body
                     : ""
 
+                // Defaulted at the READ, not assumed present. These three
+                // roles are written by DynamicIslandWindow.qml:2371 on every
+                // insert, so in practice they are always there — but a
+                // ListModel role that is undefined for one row silently
+                // poisons every binding that touches it, and the failure
+                // shows up as a blank column rather than as an error.
+                readonly property string appNameText:
+                    model.appName !== undefined && model.appName !== ""
+                        ? model.appName : "Notification"
+                readonly property int urgencyValue:
+                    model.urgency !== undefined ? model.urgency : 1
+                readonly property var postedAt: model.timestamp
+
                 MatteSurface {
                     anchors.fill: parent
                     radius: root.cardRadius
@@ -251,6 +337,77 @@ Item {
                     anchors.rightMargin: Metrics.pad(16)
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Metrics.px(2)
+
+                    // ---- THE META ROW ----
+                    //
+                    // Sender on the left, age on the right, and an urgency
+                    // dot that appears ONLY when the urgency is not normal.
+                    // A dot that is always present in the same colour says
+                    // nothing; one that shows up is a mark you can scan a
+                    // list for.
+                    //
+                    // A dot and not a coloured left edge on the card. The
+                    // capsule rejected a leading edge and the argument there
+                    // was that it pushes content off the centre line of a
+                    // shape whose whole point is being one shape. A list
+                    // card is not that shape and the argument does not
+                    // transfer — but the OTHER half of that note does:
+                    // urgency belongs on a mark, not on the text, because
+                    // colouring the words makes a low-urgency message less
+                    // legible than a normal one and punishes the reader for
+                    // the sender's choice.
+                    Item {
+                        width: parent.width
+                        height: root.metaLineHeight
+
+                        Rectangle {
+                            id: urgencyDot
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Metrics.px(5)
+                            height: width
+                            radius: width / 2
+                            color: root.urgencyColor(delegateItem.urgencyValue)
+                            visible: delegateItem.urgencyValue !== 1
+                        }
+
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: urgencyDot.visible
+                                ? urgencyDot.width + Metrics.pad(6) : 0
+                            anchors.right: ageText.left
+                            anchors.rightMargin: Metrics.pad(8)
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: delegateItem.appNameText
+                            textFormat: Text.PlainText
+                            // Critical says so in the sender's name as well
+                            // as the dot. A 5 px dot is a fine scanning mark
+                            // and a poor alarm.
+                            color: delegateItem.urgencyValue === 2
+                                ? IslandTheme.danger : IslandTheme.textMuted
+                            font.pixelSize: root.metaSize
+                            font.family: root.textFontFamily
+                            font.weight: Font.DemiBold
+                            font.capitalization: Font.AllUppercase
+                            font.letterSpacing: 0.6
+                            elide: Text.ElideRight
+                        }
+
+                        Text {
+                            id: ageText
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: root.relativeTime(delegateItem.postedAt)
+                            textFormat: Text.PlainText
+                            color: IslandTheme.textMuted
+                            font.pixelSize: root.metaSize
+                            font.family: root.textFontFamily
+                            // Tabular figures: this number rewrites itself
+                            // under a 20 s timer, and without them the row's
+                            // right edge twitches every time a digit's
+                            // advance width changes.
+                            font.features: ({ "tnum": 1 })
+                        }
+                    }
 
                     Text {
                         width: parent.width
