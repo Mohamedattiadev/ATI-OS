@@ -307,7 +307,31 @@ Item {
     Text {
         id: lyricBaselineGuide
         anchors.verticalCenter: parent.verticalCenter
-        text: "Ag国"
+        // ---- WAS "Ag国", AND THE KANJI COST 27.6 MB ----
+        //
+        // FORK: this Text is `opacity: 0` — it exists only so the lyric row
+        // has a stable baseline regardless of what the current line
+        // contains. "Ag" supplies an ascender and a descender; the 国 was
+        // there to add CJK ascent on top of that.
+        //
+        // It is invisible and it was still expensive, which is the part
+        // that is easy to miss: Qt has to SHAPE a glyph to measure it, and
+        // shaping 国 loads the font that can draw it. Measured in
+        // /proc/<pid>/smaps on the live shell:
+        //
+        //     NotoSansCJK-Medium.ttc    19.3 MB
+        //     NotoSansCJK-Regular.ttc    8.3 MB
+        //
+        // mapped into a shell that renders no CJK anywhere, pulled in by
+        // three invisible characters. (Shared file mappings, so the private
+        // cost is far smaller than the RSS suggests — but the mapping and
+        // the fontconfig work behind it are real.)
+        //
+        // Dropping it is also more CORRECT, not just cheaper. The guide's
+        // job is to stabilise the baseline of the text actually drawn here,
+        // which is Inter; sizing the line box to a script that never
+        // appears made the row taller than its own content ever needs.
+        text: "Ag"
         opacity: 0
         font.pixelSize: textPixelSize
         font.family: textFontFamily

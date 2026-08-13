@@ -885,7 +885,7 @@ FocusScope {
             Text {
                 anchors.centerIn: parent
                 visible: root.visibleApplicationCount === 0
-                text: root.query === "" ? "没有找到可启动的应用" : "没有找到“" + root.query + "”"
+                text: root.query === "" ? "No launchable applications" : "No match for \u201c" + root.query + "\u201d"
                 color: IslandTheme.textDisabled
                 font.family: root.textFontFamily
                 font.pixelSize: Metrics.font(13)

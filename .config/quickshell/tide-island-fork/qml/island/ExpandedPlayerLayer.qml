@@ -950,7 +950,7 @@ Item {
 
                         width: (parent.width - 8) / 2
                         height: parent.height
-                        label: "时"
+                        label: "hr"
                         text: "0"
                         textFontFamily: timerRoot.textFontFamily
                         onKeyboardFocusRequested: {
@@ -968,7 +968,7 @@ Item {
 
                         width: (parent.width - 8) / 2
                         height: parent.height
-                        label: "分"
+                        label: "min"
                         text: "05"
                         textFontFamily: timerRoot.textFontFamily
                         onKeyboardFocusRequested: {
