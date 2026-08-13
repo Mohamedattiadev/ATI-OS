@@ -362,8 +362,139 @@ FocusScope {
         pathView.decrementCurrentIndex();
     }
 
+    // ---- TYPE-TO-JUMP, AND WHY IT IS NOT A FILTER ----
+    //
+    // FORK: P2-8. This file's own `r` comment makes the case better than the
+    // plan does — "with 362 images in the library this is the only way to
+    // actually use most of them: h/l walks the list one thumbnail at a time
+    // and nobody walks 362". `r` answered that for browsing. It cannot
+    // answer "I want the one with 'forest' in the name".
+    //
+    // Phase 7 specifies a FILTER, and a filter is the wrong mechanism here,
+    // for a reason specific to this panel rather than a preference:
+    // `allWallpapers` is a ListModel that carries per-item thumbnail state —
+    // `thumbnailReady`, `thumbnailSource`, `cacheRevision` — and
+    // `wallpaperIndexByPath` maps a path to its INDEX in that model.
+    // Rebuilding the model to show a subset invalidates every one of those
+    // indices and throws away the generated-thumbnail bookkeeping, so a
+    // filter would cost a re-scan on every keystroke.
+    //
+    // Type-to-jump moves the cursor instead and touches nothing. It is also
+    // the right idiom for a PathView, which is a carousel — a filtered
+    // carousel is a different component, not a smaller one — and it keeps
+    // this panel's standing rule that navigation has no side effects and
+    // Enter is the only key that writes.
+    property bool searching: false
+    property string searchQuery: ""
+    property int searchMatches: 0
+
+    function matchesQuery(index, needle) {
+        if (index < 0 || index >= allWallpapers.count)
+            return false;
+        const entry = allWallpapers.get(index);
+        const name = String(entry.fileName !== undefined ? entry.fileName : entry.filePath);
+        return name.toLowerCase().indexOf(needle) >= 0;
+    }
+
+    // Counts matches AND jumps to the first one at or after `from`, wrapping.
+    // Wrapping rather than stopping, because a carousel has no ends — the
+    // cursor is already free to run off either side, so a search that stopped
+    // dead would be the only thing in the panel that did.
+    function jumpToMatch(from, forward) {
+        const needle = root.searchQuery.trim().toLowerCase();
+        if (needle === "") {
+            root.searchMatches = 0;
+            return;
+        }
+
+        const count = allWallpapers.count;
+        let found = 0;
+        for (let i = 0; i < count; i++)
+            if (root.matchesQuery(i, needle))
+                found++;
+        root.searchMatches = found;
+        if (found === 0)
+            return;
+
+        const step = forward ? 1 : -1;
+        for (let n = 1; n <= count; n++) {
+            const candidate = ((from + step * n) % count + count) % count;
+            if (root.matchesQuery(candidate, needle)) {
+                pathView.currentIndex = candidate;
+                return;
+            }
+        }
+    }
+
+    function endSearch() {
+        root.searching = false;
+        root.searchQuery = "";
+        root.searchMatches = 0;
+    }
+
     Keys.onPressed: event => {
+        // SEARCH MODE FIRST, and it has to be a separate branch rather than
+        // extra cases below, because every navigation key in this panel is a
+        // LETTER. `h`, `l`, `r` and `q` are all things you type into a
+        // filename, so while a query is being typed the single-key bindings
+        // must be off entirely — otherwise typing "roses" jumps randomly on
+        // the `r` and walks the carousel on the `s`.
+        //
+        // Escape unwinds one level at a time — query first, panel second —
+        // which is the behaviour Phase 7 specifies and the same unwinding
+        // the control centre does for cursor -> drawer -> panel.
+        if (root.searching) {
+            if (event.key === Qt.Key_Escape) {
+                root.endSearch();
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                // Commit what the search landed on, and leave search mode.
+                // Enter is still the only key in this panel that writes.
+                if (allWallpapers.count > 0)
+                    root.applyWallpaper(allWallpapers.get(pathView.currentIndex).filePath);
+                root.endSearch();
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Backspace) {
+                root.searchQuery = root.searchQuery.slice(0, -1);
+                root.jumpToMatch(pathView.currentIndex - 1, true);
+                event.accepted = true;
+                return;
+            }
+            // n / N walk between matches without changing the query, which
+            // is what makes a query with 30 hits usable at all.
+            if (event.key === Qt.Key_Down) {
+                root.jumpToMatch(pathView.currentIndex, true);
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Up) {
+                root.jumpToMatch(pathView.currentIndex, false);
+                event.accepted = true;
+                return;
+            }
+            if (event.text && event.text.length === 1 && event.text >= " ") {
+                root.searchQuery += event.text;
+                // Search from the index BEFORE the cursor so the current
+                // item can itself be the first match — otherwise refining a
+                // query jumps off the very entry you were narrowing onto.
+                root.jumpToMatch(pathView.currentIndex - 1, true);
+                event.accepted = true;
+                return;
+            }
+            return;
+        }
+
         switch (event.key) {
+        case Qt.Key_Slash:
+            root.searching = true;
+            root.searchQuery = "";
+            root.searchMatches = 0;
+            event.accepted = true;
+            break;
         case Qt.Key_Escape:
             root.closeRequested();
             event.accepted = true;
@@ -688,6 +819,32 @@ FocusScope {
                     font.family: root.textFontFamily
                     font.pixelSize: Metrics.font(9.5)
                     font.weight: Font.Medium
+                }
+
+                // FORK: the query, and the match count beside it.
+                //
+                // Both are load-bearing rather than decorative. A
+                // type-to-jump search with nothing on screen is
+                // indistinguishable from a stuck keyboard — the carousel
+                // moves and you cannot tell why — and the COUNT is what
+                // separates "no such wallpaper" from "you typo'd", which are
+                // the two states a search is most often in.
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.searching
+                    text: "/" + root.searchQuery
+                          + (root.searchQuery === ""
+                             ? ""
+                             : "  " + root.searchMatches
+                               + (root.searchMatches === 1 ? " match" : " matches"))
+                    // Red on zero, so a query that matches nothing says so in
+                    // the one place the eye is already reading.
+                    color: root.searchQuery !== "" && root.searchMatches === 0
+                        ? IslandTheme.danger
+                        : IslandTheme.accent
+                    font.family: root.textFontFamily
+                    font.pixelSize: Metrics.font(9.5)
+                    font.weight: Font.DemiBold
                 }
             }
         }

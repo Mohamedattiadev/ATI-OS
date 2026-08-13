@@ -1182,3 +1182,50 @@ NOMINATES a focus child — something must walk the chain, and
 The scene claims focus from its own `onShowConditionChanged`, which is
 what NotificationCenterLayer settled on, because the item exists by
 definition at the moment its own handler runs.
+
+## Phase 7 — search — **STARTED. Wallpaper picker done; it is type-to-jump, not a filter.**
+
+`Key_Slash` appeared nowhere in the tree. The wallpaper picker (362 items)
+and the theme picker (22) were the two the plan named, and both genuinely
+had no search — PickerLayer, the launcher and the cheatsheet already have
+fields, so those were never the gap.
+
+**The plan specifies a filter and a filter is the wrong mechanism in this
+panel**, for a reason specific to it rather than a preference:
+`allWallpapers` is a ListModel carrying per-item thumbnail state
+(`thumbnailReady`, `thumbnailSource`, `cacheRevision`) and
+`wallpaperIndexByPath` maps a path to its INDEX in that model. Rebuilding
+it to show a subset invalidates every index and discards the
+generated-thumbnail bookkeeping — a filter would cost a re-scan per
+keystroke.
+
+Type-to-jump moves the cursor and touches nothing. It is also the right
+idiom for a PathView: a filtered carousel is a different component, not a
+smaller one. And it preserves this panel's standing rule, already in Part 3
+— navigation has no side effects, Enter is the only key that writes.
+
+`/` opens it, letters narrow, Backspace widens, Up/Down walk between
+matches, Escape unwinds query-then-panel, Enter commits and exits. The
+query and the MATCH COUNT are both drawn, and both are load-bearing: a
+type-to-jump search with nothing on screen is indistinguishable from a
+stuck keyboard, and the count is what separates "no such wallpaper" from
+"you typo'd".
+
+Search mode is a separate branch ahead of the switch rather than extra
+cases in it, because **every navigation key in this panel is a letter** —
+`h`, `l`, `r`, `q` are all things you type into a filename, so typing
+"roses" would otherwise re-roll on the `r` and walk the carousel on the
+`s`.
+
+Measured, with the wallpaper config value checked before and after to
+prove nothing was written:
+
+    /0234   ->  · 234 / 362   "1 match"    carousel on 0234.jpg
+    /zzzz   ->  · 1 / 362     "0 matches"  in red, cursor held
+    backspace x4 then /0099 -> · 99 / 362  "1 match"
+
+362 items reached in five keystrokes instead of 233 presses of `l`.
+
+**Still open in Phase 7:** the theme picker (22 items, a GridView rather
+than a carousel, so a real filter IS appropriate there), and the font
+picker the settings app needs.
