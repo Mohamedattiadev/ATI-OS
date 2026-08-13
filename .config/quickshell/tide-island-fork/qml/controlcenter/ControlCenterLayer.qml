@@ -74,7 +74,69 @@ Item {
     property bool isCharging: false
     property real volumeLevel: -1
     property real brightnessLevel: -1
-    property int sliderIntroDelay: 400
+    // FORK: 400 -> 1500, and it is now a CEILING rather than the gate.
+    //
+    // What this gate is for: while it is pending the two `displayed*`
+    // Behaviors are disabled, so an assignment SNAPS instead of animating.
+    // That is right — the first reading should appear, not slide in from
+    // wherever the slider happened to be.
+    //
+    // What went wrong is that it closed on a clock while the value it was
+    // waiting for arrives on a process. `volumeLevel` and `brightnessLevel`
+    // default to -1 for "not known yet" and are filled in by SystemServices
+    // asynchronously; measured, that lands WELL after 400 ms. So the gate
+    // opened first, and the real reading then arrived into an enabled
+    // Behavior and animated the slider away from a value that had never
+    // been true.
+    //
+    // Caught by differencing two frames of one control-centre open rather
+    // than by timing it: at +621 ms against +990 ms the brightness bar is
+    // still travelling, long after the shape and the content fade are done.
+    // It is not a flourish — it is a stale value being corrected in public.
+    //
+    // HONESTLY: this is a correctness fix and NOT the cure for the panel's
+    // ~800 ms settle. Measured before and after, same harness, warm loader:
+    // 806 ms against 804 ms. The slider was one of two things still moving
+    // late and it was the smaller one. The other — the whole content block
+    // below the clock shifting ~17 px vertically somewhere between +560 ms
+    // and +1080 ms, on every open, warm or cold — is still unexplained and
+    // is the one that actually owns the number. It is not morphDurationFor
+    // (760 vs 520 measured identical), not this gate, and not the loader
+    // building cold (second and third opens measure the same).
+    //
+    // The gate now closes on DATA (see onSliderLevelsKnownChanged), so the
+    // first real reading snaps. This number is only the fallback for a
+    // reading that never comes, and it can be generous because the cards
+    // stay interactive throughout — `enabled` here is the Behavior's, not
+    // the control's, and a drag cancels the intro explicitly.
+    property int sliderIntroDelay: 1500
+
+    // Both readings present. -1 is SystemServices' "not known yet" sentinel
+    // and is exactly what syncBrightnessFromLevel/syncVolumeFromLevel bail
+    // on, so this is the same test they already make, hoisted to where the
+    // gate can see it.
+    readonly property bool sliderLevelsKnown: brightnessLevel >= 0 && volumeLevel >= 0
+
+    onSliderLevelsKnownChanged: {
+        if (!sliderLevelsKnown || !sliderIntroPending || !showCondition)
+            return;
+
+        localBrightness = clamp01(brightnessLevel);
+        localVolume = clamp01(volumeLevel);
+        pendingBrightness = localBrightness;
+        pendingVolume = localVolume;
+        lastAppliedBrightness = localBrightness;
+        lastAppliedVolume = localVolume;
+
+        // Assigned while sliderIntroPending is STILL true, which is the
+        // whole point: the Behaviors are disabled, so these two land
+        // instantly rather than animating from the placeholder.
+        displayedBrightness = localBrightness;
+        displayedVolume = localVolume;
+
+        sliderIntroTimer.stop();
+        sliderIntroPending = false;
+    }
     property int currentWorkspace: 1
     property string currentTrack: ""
     property string currentArtist: ""

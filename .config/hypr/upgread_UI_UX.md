@@ -749,3 +749,122 @@ queries. Caching that query once and batching the dispatches through
 
 The TreeTab sidebar **is live** — `quickshell-treetab`, 180x768, exclusive
 zone working, confirmed in `hyprctl layers`.
+
+---
+
+# Audit — 2026-08-13, second session
+
+## Swipe left — **FIXED**, and it was not a dead loader
+
+The two IPC wrappers were each other's mirror: `swipeLeftWindow` called
+`showLyricsCapsule` and `swipeRightWindow` called `showCustomCapsule`.
+Three things in the tree already agreed on the direction and all three
+disagreed with the wrappers — `advanceSideSwipeProgress` walks toward
+custom on NEGATIVE deltaX, `sideSwipeDragDistanceForDirection` maps
+`"left"`->custom, and SwipeCustomInfoLayer draws its items travelling
+leftward into place. The config key is `dynamicIslandLeftSwipeItems` and
+it feeds custom.
+
+The inversion was invisible with a player running, because then both
+layers have content and a mirrored pair is still a working pair. With no
+player, `hasMediaSurface` is false, `normalizeRestingState` refuses
+`"lyrics"`, and the left swipe resolved to the state the island was
+already in. **No error, no log line, no movement.** The gesture path had
+been guarded against exactly this at `resolveSideSwipeSettle`; the IPC
+path is the same decision one level up and never was.
+
+Replaced with one step along the custom(-1) - clock(0) - lyrics(+1) axis
+that skips an empty layer. Measured over the full axis with a real MPRIS
+player: 11096 px / 0 px (exact return) / 1011 px / 6 px (end-stop).
+
+## Notification centre — **FIXED**, and the brief's guess was wrong
+
+The cards did NOT carry raw pixelSize; they were already going through
+`Metrics.font()`. Three real defects:
+
+1. **Nothing in the file read `userConfig`**, so this was the one surface
+   in the shell that ignored `bodyFontSize` — turning the shell's type
+   down left this panel where it was. And the hardcoded sizes had no
+   hierarchy: panel heading and card TITLE were both `font(15)` Bold.
+   Now 15 heading / 12 title DemiBold / 11 body, from config.
+2. **The 18/16 px line boxes are Latin measurements.** Reproduced with a
+   real `notify-send` of al-Fatiha: the Arabic title rode over the card's
+   top border and the body was cut off by its bottom one, because harakat
+   sit above the ascender and below the baseline. Texts now take their
+   natural `implicitHeight`; `cardHeight` derives from the type at 1.75x.
+   Derived arithmetically, not probed — a hidden Text would SHAPE Arabic
+   and map an Arabic face permanently, which is the `"Ag国"` mistake.
+3. **The body was anchored to the card's bottom edge**, stranding the
+   title against the ceiling on any notification with no distinct body.
+   A vertically centred Column fixes it.
+
+## The CJK unmapping — **REFUTED at cold start**
+
+P2-9 claimed dropping the kanji would unmap NotoSansCJK. The island has
+now cold-started and it is **still mapped**: 18 MB of address space,
+**8.4 MB resident**, with zero CJK rendered anywhere — every remaining
+CJK codepoint in the tree is inside a comment, and comments are never
+shaped. So the mapping does not come from a shaped glyph and removing the
+glyph did not remove it. Dropping the kanji was still right for the
+reason that actually holds — measuring an Inter baseline with a CJK glyph
+is measuring the wrong face — but the memory saving did not materialise
+and the 27.6 MB figure should not be quoted again.
+
+## Motion — **~800 ms, cause NOT found. Two hypotheses disproven.**
+
+Measured with a 50 fps grim burst (20 ms/frame, PPM so the PNG encode
+stays out of the sample rate). Control centre open, warm loader:
+
+    settle 767-807 ms, reproducible across cold, second and third opens
+
+Two candidate causes were tested and **both came back negative**, which is
+the useful part of this entry:
+
+| tried | result |
+|---|---|
+| `LARGE_MORPH_MS` 760 -> 520 (island restarted, it is `.pragma library`) | 787 ms -> 801 ms. Within noise, wrong direction. Reverted. |
+| `sliderIntroDelay` gate closing on data instead of a 400 ms clock | 806 ms -> 804 ms. Kept anyway — it is a real correctness fix — but it is not the cure. |
+| loader building cold | second and third opens measure the same |
+
+What is actually still moving came out of **differencing two frames either
+side of the tail** rather than measuring the tail's magnitude: between
++560 ms and +1080 ms the **entire content block below the clock shifts
+~17 px vertically**, on every open. The clock and battery row do not move;
+everything below them does. That shift owns the number and is unexplained.
+`controlCenterMaximumExtraHeight` is composed of constants and its
+null-loader fallback of 120 only applies before the item exists, so it is
+not that either.
+
+### A method failure worth more than the result
+
+The first three runs measured a ~790 ms settle that was **the terminal
+behind the island still repainting** from the `echo` that announced the
+test. The capture region included it. Differencing two frames showed the
+transcript text doubled and offset by one line, which is what exposed it.
+
+> A capture region must contain nothing but the thing under test, and the
+> console must be quiet before sampling starts. "Measure, don't
+> screenshot-and-infer" is not enough on its own — a *measurement* of the
+> wrong region is just as confidently wrong as a screenshot, and it comes
+> with a number attached, which makes it more persuasive and therefore
+> worse.
+
+And the positive lesson: **difference two frames, do not just count
+changed pixels.** Every one of the three real findings in this section —
+the terminal contamination, the slider still travelling, the 17 px block
+shift — was invisible in the magnitude curve and obvious in the diff.
+
+## Keybind latency
+
+Every island binding spawns a fresh `qs ... ipc call` process: **~50 ms
+round trip**, measured five times. That is before any animation starts and
+is paid on every panel open from the keyboard.
+
+## Still not started
+
+Second monitor; the remaining four fade-outs (P1-4); full settings
+coverage for the island; Phase 3 leftovers (hover and click-to-commit on
+the nine fork panels, wheel scrolling); Phase 4 (type ramp, 4 px spacing
+grid, radius scale); the theme-change transition, which is serial —
+capture, then `theme-apply` at ~622 ms, then a 620 ms wipe — and so
+cannot be under ~1.2 s as currently sequenced.

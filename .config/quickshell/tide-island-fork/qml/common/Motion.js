@@ -101,6 +101,32 @@ var LARGE_PX = 900;
 // Ukishima's shapeshift is 820. 760 here: our curve is a real spring with
 // an overshoot that already reads as arrival, so it needs slightly less
 // wall-clock time than their monotone bezier to feel equally settled.
+//
+// 760 STAYS, and the attempt to lower it is recorded here because the
+// measurement that killed it is worth more than the change would have been.
+//
+// "From going to popup to another there are laggness" looks like this
+// number's fault, and 760 -> 520 was tried on exactly that reasoning: our
+// spring is zeta 0.8, so the envelope e^(-8t) is at 3% by t=0.42 and the
+// shape is visually THERE at 42% of whatever duration it is given, making
+// the rest a tail. Halving the tail should have halved the complaint.
+//
+// It did nothing. Measured with a 50 fps grim burst (20 ms/frame, PPM so
+// the PNG encode stays out of the sample rate), island RESTARTED between
+// runs because this is a `.pragma library` and the running shell caches it:
+//
+//     LARGE_MORPH_MS = 760    settle 787 ms
+//     LARGE_MORPH_MS = 520    settle 801 ms
+//
+// Within noise, and in the wrong direction. The shape duration is not what
+// the transition is waiting on, so lowering it buys nothing and costs the
+// mass the paragraph above is right to want.
+//
+// What it IS waiting on came out of DIFFERENCING two frames either side of
+// the tail rather than measuring the tail's magnitude: at +621 ms against
+// +990 ms the whole content block is still shifting ~8 px vertically and
+// the brightness slider is still sweeping toward its value. Neither is the
+// morph. See `sliderIntroDelay` in ControlCenterLayer.qml.
 var LARGE_MORPH_MS = 760;
 
 function morphDuration() { return Math.round(MORPH_MS * SCALE); }
