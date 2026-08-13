@@ -78,9 +78,13 @@ remaining UI complaint and it is blocked on one cheap fact-finding step.
    `appName`, `urgency`, or a timestamp AT ALL. If it does not, the rebuild
    needs a different data path and is a much larger job than it looks.
 
-2. **Unlit quick toggles are too low-contrast.** This is the real finding
-   under "Focus has no icon" — the glyph is there and correct; at 1:1, 18 px
-   in `textSecondary` on an unlit plate reads as an empty square.
+2. ~~Unlit quick toggles are too low-contrast.~~ **MEASURED, and it is
+   fine. Do not change it.** Glyph-vs-plate contrast is **7.99:1** on an
+   unlit tile and 17.14:1 on a lit one. 7.99 clears WCAG AAA for text
+   (7:1); the unlit tile is not hard to read, it is RECESSIVE next to an
+   accent-filled neighbour, which is what "off" is supposed to look like.
+   Measure contrast before calling it a contrast problem — min/max
+   luminance within each tile crop is enough and takes one command.
 
 3. ~~The two sliders show no value.~~ **WRONG — do not "fix" this.** The
    readout exists, `ControlSliderCard.qml:129`, at `opacity: root.lit ? 1 : 0`
@@ -143,6 +147,14 @@ remaining UI complaint and it is blocked on one cheap fact-finding step.
   an untinted one are byte-identical to grim. Night light needs eyes.
 - **Magnify before believing a glyph is absent.** An 18 px icon in a muted
   colour reads as a blank tile in a 1:1 screenshot.
+- **Four times this session I filed a deliberate design decision as a
+  defect** — the Focus glyph (twice), the slider readout, the unlit tile
+  contrast. Every one was "I looked at a screenshot of the resting state
+  and something I expected was not shouting at me". The pattern is the
+  finding: this shell de-emphasises and hides things ON PURPOSE and writes
+  down why, so before filing, GREP for the thing and MEASURE the claim. An
+  absent feature has no code; a hidden one has a binding with a condition
+  in it; a low-contrast one has a number you can compute.
 - **A screenshot shows one STATE, not the feature.** NEW, and it caught me
   three times in one session: the Focus bell (present, faint), and the
   slider readouts (present, revealed on touch). Before filing "X is
