@@ -698,6 +698,28 @@ Scope {
         onTriggered: shellRoot.ringOsdShown = false
     }
 
+    // ---- THE SCREEN CORNERS ----
+    //
+    // Per-output through Variants, exactly like the island, the ring OSD, the
+    // TreeTab sidebar and the theme transition — the four surfaces the second-
+    // monitor audit verified are per-output by construction. A single
+    // full-screen corner surface would put four corners on the primary output
+    // and none anywhere else.
+    //
+    // No properties to pass: the shape comes from Metrics and the colour from
+    // the IslandTheme singleton, and its hide-on-fullscreen behaviour is the
+    // Top layer rather than a state anything here would have to feed it. See
+    // qml/osd/ScreenCornersWindow.qml.
+    Variants {
+        id: screenCornerVariants
+        model: Quickshell.screens
+
+        ScreenCornersWindow {
+            required property var modelData
+            screen: modelData
+        }
+    }
+
     Variants {
         id: ringOsdVariants
         model: Quickshell.screens
