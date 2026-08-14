@@ -278,28 +278,202 @@ ShellRoot {
                 // bar.
                 Workspaces {
                     id: centreGroup
-                    anchors.horizontalCenter: parent.horizontalCenter
                     height: parent.height
+
+                    // ---- CENTRING YIELDS TO FITTING ----
+                    //
+                    // It was anchored to horizontalCenter, which is right
+                    // until the right-hand side grows past the middle of the
+                    // bar. With three widget boxes open the expansion area
+                    // reaches x=520 on a 1366 px bar, and the group was drawn
+                    // UNDERNEATH it — present, centred, and invisible.
+                    //
+                    // config.py resolves this the same way and says so: the
+                    // GroupBox "drifts off-centre only once there is no
+                    // alternative", because the alternative is content running
+                    // off the end of the bar. So the true centre is the
+                    // preference and the right-hand edge is the constraint.
+                    //
+                    // Floored at leftFixed's edge: pushed far enough, the
+                    // group stops rather than sliding under the layout chip.
+                    x: Math.max(leftFixed.width + Metrics.s(6),
+                                Math.min((parent.width - width) / 2,
+                                         rightGroup.x - width - Metrics.s(6)))
                 }
 
                 // ================= RIGHT =================
                 //
-                // config.py's order, exactly: tooltip, mpris, system box,
-                // wallpaper toggle, 2nd system box, battery, language, clock,
-                // systray box. Four of these are WidgetBoxes — collapsed to a
-                // toggle glyph until clicked — and that is why this side of
-                // the bar has two widths and why the tasklist cap above has to
-                // survive both.
+                // config.py's order, complete: chord, the shared expansion
+                // area, lamp, mpris, system box, wallpaper toggle, 2nd system
+                // box, battery, language, clock, systray box.
+                //
+                // The EXPANSION AREA sits left of the lamp on request — every
+                // box's contents open there instead of in place. See
+                // BoxContent.qml for why that changes how two open boxes read.
                 Row {
                     id: rightGroup
                     anchors.right: parent.right
                     height: parent.height
                     spacing: 0
 
-                    // tooltip_widgetbox — the lamp. config.py's tooltip text is
-                    // "Tips (lamp) · click → toggle onboarding", so the toggle
-                    // opens the tour rather than a widget group. The island
-                    // owns the onboarding and has an IPC for it.
+                    // chord_chip. qtile shows the active KeyChord; Hyprland's
+                    // equivalent is the SUBMAP, and the island normally draws
+                    // it — but the island is stopped while this bar runs, so
+                    // without this the submap would be invisible in exactly
+                    // the session that has this bar. fmt=" {} " and
+                    // foreground=colors[0], with the plate colour carrying the
+                    // identity, which is CHORD_CHIP_COLORS' whole idea.
+                    Chip {
+                        text: shellRoot.submapLabel === ""
+                            ? "" : " " + shellRoot.submapLabel + " "
+                        foreground: BarTheme.bg          // colors[0]
+                        plate: shellRoot.submapColour
+                        padding: 11
+                        tooltip: "Current mode"
+                        hoverSink: hoverSink
+                        height: parent.height
+                    }
+
+                    // ---- THE SHARED EXPANSION AREA ----
+                    Row {
+                        height: parent.height
+                        spacing: 0
+
+                        // system_widgetbox: CPU and memory.
+                        BoxContent {
+                            open: systemBox.open
+                            Chip {
+                                text: shellRoot.cpuText
+                                tooltip: "CPU load \u00b7 click \u2192 mission-center"
+                                hoverSink: hoverSink
+                                foreground: BarTheme.purple
+                                padding: 11
+                                fontPixelSize: Metrics.s(10)
+                                clickable: true
+                                height: parent.height
+                                onClicked: Quickshell.execDetached(
+                                    ["env", "GTK_THEME=Adwaita:dark", "missioncenter"])
+                            }
+                            Chip {
+                                text: shellRoot.memText
+                                tooltip: "RAM used \u00b7 click \u2192 btop"
+                                hoverSink: hoverSink
+                                foreground: BarTheme.cyan
+                                padding: 11
+                                fontPixelSize: Metrics.s(10)
+                                clickable: true
+                                height: parent.height
+                                onClicked: Quickshell.execDetached(
+                                    ["kitty", "--start-as=fullscreen", "-e", "btop"])
+                            }
+                        }
+
+                        // wallpaper_toggle.
+                        BoxContent {
+                            open: wallpaperBox.open
+                            Chip {
+                                text: "wallpaper"
+                                tooltip: "Wallpaper picker"
+                                hoverSink: hoverSink
+                                foreground: BarTheme.cyan
+                                padding: 11
+                                fontPixelSize: Metrics.s(10)
+                                clickable: true
+                                height: parent.height
+                                onClicked: Quickshell.execDetached(["dm-setbg"])
+                            }
+                        }
+
+                        // 2nd_system_widgetbox: updates, disk, volume — which
+                        // is exactly what its tooltip in config.py promises.
+                        BoxContent {
+                            open: secondBox.open
+                            Chip {
+                                text: shellRoot.updatesText
+                                tooltip: "Pending updates \u00b7 click \u2192 update manager"
+                                hoverSink: hoverSink
+                                foreground: BarTheme.yellow
+                                padding: 11
+                                fontPixelSize: Metrics.s(10)
+                                clickable: true
+                                height: parent.height
+                                onClicked: Quickshell.execDetached(
+                                    ["python3", Quickshell.env("HOME")
+                                        + "/.config/qtile/scripts/qupdate.py", "--toggle"])
+                            }
+                            Chip {
+                                text: shellRoot.diskText
+                                tooltip: "Disk free \u00b7 click \u2192 notify"
+                                hoverSink: hoverSink
+                                foreground: BarTheme.fg
+                                padding: 11
+                                fontPixelSize: Metrics.s(10)
+                                clickable: true
+                                height: parent.height
+                                onClicked: Quickshell.execDetached(["disk_notify"])
+                            }
+                            Chip {
+                                text: shellRoot.volumeText
+                                tooltip: "Volume \u00b7 scroll to change"
+                                hoverSink: hoverSink
+                                foreground: BarTheme.purple
+                                padding: 11
+                                fontPixelSize: Metrics.s(10)
+                                // Inert, as config.py's w_volume is: it has no
+                                // mouse_callbacks either.
+                                height: parent.height
+                            }
+                        }
+
+                        // systray_widgetbox: the tray, then nightlight, then
+                        // the Wi-Fi QR — config.py's order inside the box.
+                        BoxContent {
+                            open: systrayBox.open
+                            Tray {
+                                height: parent.height
+                            }
+                            Chip {
+                                // U+F1A4C, config.py's _nightlight_text glyph.
+                                text: String.fromCodePoint(0xF1A4C)
+                                tooltip: "Nightlight \u00b7 L: on \u00b7 R: off"
+                                hoverSink: hoverSink
+                                foreground: BarTheme.blue      // colors[6]
+                                padding: 11
+                                fontPixelSize: Metrics.s(11)
+                                fontFamily: "Symbols Nerd Font"
+                                clickable: true
+                                height: parent.height
+                                // hyprsunset, not gammastep/redshift: those are
+                                // config.py's X11 answer and do nothing under a
+                                // Wayland compositor. `identity` clears the
+                                // temperature without killing the daemon, which
+                                // is what the island's own night light does.
+                                onClicked: (b) => Quickshell.execDetached(
+                                    ["sh", "-c", b === Qt.RightButton
+                                        ? "hyprctl hyprsunset identity"
+                                        : "pgrep -x hyprsunset >/dev/null 2>&1 || "
+                                          + "setsid hyprsunset >/dev/null 2>&1 & "
+                                          + "sleep 0.2; hyprctl hyprsunset temperature 4000"])
+                            }
+                            Chip {
+                                // U+F029, config.py's w_wifi_qr text.
+                                text: String.fromCodePoint(0xF029)
+                                tooltip: "Wi-Fi QR"
+                                hoverSink: hoverSink
+                                foreground: BarTheme.purple    // colors[5]
+                                padding: 11
+                                fontPixelSize: Metrics.s(11)
+                                fontFamily: "Symbols Nerd Font"
+                                clickable: true
+                                height: parent.height
+                                onClicked: Quickshell.execDetached(
+                                    [Quickshell.env("HOME")
+                                        + "/.config/hypr/scripts/wifi-qr.py"])
+                            }
+                        }
+                    }
+
+                    // tooltip_widgetbox — the lamp.
                     Chip {
                         text: String.fromCodePoint(0xF0336)
                         tooltip: "Tips \u00b7 click \u2192 toggle onboarding"
@@ -310,19 +484,12 @@ ShellRoot {
                         fontFamily: "Symbols Nerd Font"
                         clickable: true
                         height: parent.height
-                        // qtile's toggle_onboarding: `eww open
-                        // onboarding-welcome`. NOT the island's
-                        // showOnboarding — the island is down while this bar
-                        // is up. The eww window is the one both sessions can
-                        // reach.
                         onClicked: Quickshell.execDetached(
                             ["sh", "-c",
                              "eww close onboarding-welcome 2>/dev/null "
                              + "|| eww open onboarding-welcome"])
                     }
 
-                    // MPRIS. Empty with no player, and Chip takes no width at
-                    // all then rather than leaving a bare plate on the bar.
                     Chip {
                         text: shellRoot.mprisText
                         tooltip: "L: play/pause \u00b7 R: next"
@@ -332,114 +499,46 @@ ShellRoot {
                         fontPixelSize: Metrics.s(15)
                         clickable: true
                         height: parent.height
-                        // config.py: L play-pause, R next.
                         onClicked: (b) => Quickshell.execDetached(
                             ["playerctl", b === Qt.RightButton ? "next" : "play-pause"])
                     }
 
-                    // system_widgetbox — CPU and memory.
                     WidgetBox {
+                        id: systemBox
                         codepointClosed: 0xF05AF
+                        codepointOpen: 0xF05B0
                         tooltip: "CPU + Memory"
                         hoverSink: hoverSink
-                        codepointOpen: 0xF05B0
                         foreground: BarTheme.purple      // colors[7]
                         fontPixelSize: Metrics.s(15)
                         padding: 10
                         height: parent.height
-
-                        Chip {
-                            text: shellRoot.cpuText
-                        tooltip: "CPU load \u00b7 click \u2192 mission-center"
-                        hoverSink: hoverSink
-                            foreground: BarTheme.purple
-                            padding: 11
-                            fontPixelSize: Metrics.s(10)
-                            clickable: true
-                            height: parent.height
-                            // config.py: env GTK_THEME=Adwaita:dark missioncenter
-                            onClicked: Quickshell.execDetached(
-                                ["env", "GTK_THEME=Adwaita:dark", "missioncenter"])
-                        }
-                        Chip {
-                            text: shellRoot.memText
-                        tooltip: "RAM used \u00b7 click \u2192 btop"
-                        hoverSink: hoverSink
-                            foreground: BarTheme.cyan
-                            padding: 11
-                            fontPixelSize: Metrics.s(10)
-                            clickable: true
-                            height: parent.height
-                            // config.py: myFullScreenTerm + " -e btop"
-                            onClicked: Quickshell.execDetached(
-                                ["kitty", "--start-as=fullscreen", "-e", "btop"])
-                        }
                     }
 
-                    // wallpaper_toggle. U+2716 is a plain heavy multiplication
-                    // X, not a Nerd Font icon — qtile's choice, kept.
+                    // U+2716 is a plain heavy multiplication X, not a Nerd
+                    // Font icon — qtile's choice, kept.
                     WidgetBox {
+                        id: wallpaperBox
                         codepointClosed: 0x2716
+                        codepointOpen: 0xF035C
                         tooltip: "Wallpaper picker"
                         hoverSink: hoverSink
-                        codepointOpen: 0xF035C
                         foreground: BarTheme.cyan        // colors[8]
                         fontPixelSize: Metrics.s(13)
                         padding: 11
                         height: parent.height
-
-                        Chip {
-                            text: "wallpaper"
-                        tooltip: "Wallpaper picker"
-                        hoverSink: hoverSink
-                            foreground: BarTheme.cyan
-                            padding: 11
-                            fontPixelSize: Metrics.s(10)
-                            clickable: true
-                            height: parent.height
-                            // dm-setbg, the rofi wallpaper picker both
-                            // sessions already have on PATH.
-                            onClicked: Quickshell.execDetached(["dm-setbg"])
-                        }
                     }
 
-                    // 2nd_system_widgetbox — disk and volume. config.py also
-                    // carries CheckUpdates here; that is qupdate.py's, and it
-                    // is left out rather than reimplemented badly, because the
-                    // count it shows comes from a daemon this bar does not own.
                     WidgetBox {
+                        id: secondBox
                         codepointClosed: 0xF0902
+                        codepointOpen: 0xF0042
                         tooltip: "Updates \u00b7 Disk \u00b7 Volume"
                         hoverSink: hoverSink
-                        codepointOpen: 0xF0042
                         foreground: BarTheme.yellow      // colors[5]
                         fontPixelSize: Metrics.s(14)
                         padding: 10
                         height: parent.height
-
-                        Chip {
-                            text: shellRoot.diskText
-                        tooltip: "Disk free \u00b7 click \u2192 notify"
-                        hoverSink: hoverSink
-                            foreground: BarTheme.fg
-                            padding: 11
-                            fontPixelSize: Metrics.s(10)
-                            clickable: true
-                            height: parent.height
-                            onClicked: Quickshell.execDetached(["disk_notify"])
-                        }
-                        Chip {
-                            text: shellRoot.volumeText
-                        tooltip: "Volume \u00b7 scroll to change"
-                        hoverSink: hoverSink
-                            foreground: BarTheme.purple
-                            padding: 11
-                            fontPixelSize: Metrics.s(10)
-                            // Inert, because config.py's w_volume has no
-                            // mouse_callbacks either. Volume is a control the
-                            // keys own on this desktop.
-                            height: parent.height
-                        }
                     }
 
                     // Battery, only on a machine that has one — config.py
@@ -450,8 +549,6 @@ ShellRoot {
                         text: shellRoot.batteryText
                         tooltip: "Battery \u00b7 click \u2192 status"
                         hoverSink: hoverSink
-                        // colors[6], falling to colors[3] under 20%, which is
-                        // config.py's low_foreground / low_percentage pair.
                         foreground: shellRoot.batteryLow ? BarTheme.red : BarTheme.blue
                         padding: 12
                         fontPixelSize: Metrics.s(10)
@@ -460,11 +557,6 @@ ShellRoot {
                         onClicked: Quickshell.execDetached(["battery_notify"])
                     }
 
-                    // Keyboard layout. config.py's display_map, verbatim:
-                    // a flag emoji then the two-letter code, over
-                    // configured_keyboards = ["us", "ara", "tr", "de"].
-                    // The flag is a separate Text inside Chip — see the note
-                    // there for why it cannot share the label's.
                     Chip {
                         emoji: shellRoot.layoutFlag
                         text: shellRoot.layoutCode
@@ -474,15 +566,11 @@ ShellRoot {
                         padding: 11
                         clickable: true
                         height: parent.height
-                        // L cycles forward, R back — config.py's
-                        // _cycle_keyboard(1) / (-1). Hyprland switches the
-                        // layout itself rather than through setxkbmap.
                         onClicked: (b) => Quickshell.execDetached(
                             ["hyprctl", "switchxkblayout", "all",
                              b === Qt.RightButton ? "prev" : "next"])
                     }
 
-                    // format=" %a, %b %d - %H:%M", verbatim.
                     Chip {
                         text: shellRoot.clockText
                         tooltip: "Next prayer \u00b7 USD/EUR rates"
@@ -491,30 +579,25 @@ ShellRoot {
                         padding: 11
                         clickable: true
                         height: parent.height
-                        // config.py: qtile.spawn("clock_popup").
                         onClicked: Quickshell.execDetached(["clock_popup"])
                     }
 
                     // systray_widgetbox. U+25B3 is a plain geometric triangle
-                    // rather than a Nerd Font icon, and config.py is emphatic
-                    // about it: "chosen for its silhouette rather than for
-                    // consistency with the others. Do not correct it to a
-                    // chevron again." The OPEN state is a chevron (U+F053),
-                    // which is the correction it is warning about — the two
-                    // states are deliberately different kinds of mark.
+                    // rather than a Nerd Font icon, and config.py is emphatic:
+                    // "chosen for its silhouette rather than for consistency
+                    // with the others. Do not correct it to a chevron again."
+                    // The OPEN state IS a chevron (U+F053) — the two states are
+                    // deliberately different kinds of mark.
                     WidgetBox {
+                        id: systrayBox
                         codepointClosed: 0x25B3
+                        codepointOpen: 0xF053
                         tooltip: "System tray"
                         hoverSink: hoverSink
-                        codepointOpen: 0xF053
                         foreground: BarTheme.green       // colors[4]
                         fontPixelSize: Metrics.s(11)
                         padding: 11
                         height: parent.height
-
-                        Tray {
-                            height: parent.height
-                        }
                     }
                 }
             }
@@ -553,6 +636,74 @@ ShellRoot {
     //  State the chips read
     // ---------------------------------------------------------------
 
+
+    // ---- THE SUBMAP, WHICH IS qtile's CHORD ----
+    //
+    // config.py's chord_chip names the active KeyChord and colours its PLATE
+    // per chord (CHORD_CHIP_COLORS) rather than its text — the identity is the
+    // colour, which is why the foreground is colors[0] against it.
+    //
+    // The seven Hyprland submaps map one-to-one onto the chord names, so the
+    // chip says the same word in either session. Read out of submaps.conf and
+    // CHORD_CHIP_COLORS respectively; a submap with no entry falls back to its
+    // own name and the accent, which is better than a blank chip for a mode
+    // that IS swallowing your keys.
+    readonly property var submapMap: ({
+        "resize":      { label: "Resize-Mode",     colour: BarTheme.yellow },
+        "rofi":        { label: "Rofi-Mode",       colour: BarTheme.blue   },
+        "media":       { label: "Media-Mode",      colour: BarTheme.cyan   },
+        "lang":        { label: "Lang-Switch",     colour: BarTheme.fg     },
+        "draw":        { label: "Draw-Mode",       colour: BarTheme.red    },
+        "cheatsheet":  { label: "CheatSheet-Mode", colour: BarTheme.red    },
+        "passthrough": { label: "PASSTHROUGH",     colour: BarTheme.cyan   }
+    })
+    property string submap: ""
+    readonly property var submapEntry: submapMap[shellRoot.submap] || null
+    readonly property string submapLabel:
+        shellRoot.submap === "" ? ""
+            : (submapEntry ? submapEntry.label : shellRoot.submap)
+    readonly property color submapColour:
+        submapEntry ? submapEntry.colour : BarTheme.accent
+
+    Connections {
+        target: Hyprland
+        // Hyprland emits `submap>>name`, and an EMPTY name on reset. There is
+        // no polling here on purpose: a submap is entered and left by a
+        // keypress, so the event is exact and a timer would only add latency
+        // to the one widget whose whole job is to be immediate.
+        function onRawEvent(event) {
+            if (String(event.name) === "submap")
+                shellRoot.submap = String(event.data || "").trim();
+        }
+    }
+
+    // ---- PENDING UPDATES ----
+    //
+    // qtile uses widget.CheckUpdates, which shells out to checkupdates itself.
+    // This reads qupdate.py's CACHE instead — ~/.cache/qupdate.json, the list
+    // it already maintains as a daemon in both sessions. Same number, no
+    // second process asking pacman the same question, and it cannot disagree
+    // with the update manager the chip's click opens.
+    property int updateCount: 0
+    readonly property string updatesText:
+        updateCount > 0 ? "Updates: " + updateCount : ""
+
+    FileView {
+        path: Quickshell.env("HOME") + "/.cache/qupdate.json"
+        watchChanges: true
+        preload: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                const list = JSON.parse(text());
+                shellRoot.updateCount = Array.isArray(list) ? list.length : 0;
+            } catch (e) {
+                // Leave the last count. A torn read must not flash "no
+                // updates" at somebody who has some.
+            }
+        }
+    }
 
     // ---- CLOCK ----
     //
