@@ -98,11 +98,31 @@ fi
 # theme change. Same probe-the-config-module pattern as the restart call
 # below (a qtile attribute may not be attached yet; the module function
 # has been there far longer).
+#
+# DISOWNED, and that is not tidiness — without it this job is waited on.
+# The kitty fan-out ~900 lines below ends in a bare `wait`, and a bare
+# `wait` collects EVERY background job the shell still owns, not the ones
+# the line above it started. So this call sat on the critical path to
+# THEME_APPLY_VISIBLE_DONE, which is the marker the Hyprland session's
+# transition cover holds a frozen screenshot until it sees.
+#
+# It costs the most on the session where it can do the least. Under
+# Hyprland qtile is not running, so `qtile cmd-obj` cannot connect and
+# only fails after its own timeout — measured at 503 ms, against ~30 ms
+# for each of the three kitty sockets the `wait` is actually there for.
+# Half a second of frozen desktop, every theme change, spent on an IPC
+# call to a window manager that is not running.
+#
+# The eww block below already disowns for the same reason; this one was
+# missed, and nothing reported it because the veil call is fire-and-forget
+# by design — it fails silently, which is correct, and so the only symptom
+# was the freeze being half a second longer than it needed to be.
 (
   qtile cmd-obj -o cmd -f eval -a \
     "str(__import__(\"sys\").modules[\"config\"]._veil_hold())" \
     >/dev/null 2>&1 || true
 ) &
+disown
 
 KITTY_THEMES="$HOME/.config/kitty/themes"
 ROFI_THEMES="$HOME/.config/rofi/themes"
