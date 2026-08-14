@@ -2947,7 +2947,11 @@ def bars_run(item_id):
         # rather than appearing and then moving. The IPC is a no-op while the
         # topbar is down, which is exactly when the file write is what counts.
         _spawn_sh(
-            "printf '%s\\n' %s > %s; "
+            # %%s, not %s: this string is itself %-formatted below, and
+            # printf's own placeholder was being eaten as a format slot —
+            # "TypeError: not enough arguments for format string", raised only
+            # on the two rows that reach this branch.
+            "printf '%%s\\n' %s > %s; "
             "qs -p ~/.config/quickshell/topbar ipc call topbar %s >/dev/null 2>&1; "
             "bar-switch native"
             % (shlex.quote(item_id), shlex.quote(TOPBAR_POS), shlex.quote(item_id)))
