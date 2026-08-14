@@ -62,6 +62,20 @@ packages:
   # either one breaks the binding outright rather than degrading it.
   - grim
   - slurp
+  # Screen RECORDING, which is a separate capability from screenshots and
+  # was missing outright. dm-recordV2 -- ported to the island's picker with
+  # all six of its rows -- shells out to wf-recorder for every one of them,
+  # so with the package absent each row raised instead of recording, and
+  # screen recording had never once worked in this Hyprland session. The
+  # picker's detail column was honest about it, which is why it read as a
+  # known limitation rather than a missing dependency.
+  #
+  # grim cannot stand in: it captures one frame from the compositor, and
+  # there is no wlroots screen-capture recorder in the repos other than
+  # this one. Kept next to grim/slurp because they are the same class of
+  # thing -- wlr-screencopy clients -- and share the failure mode of
+  # breaking a binding outright rather than degrading it.
+  - wf-recorder
   # wtype synthesises keystrokes through zwp_virtual_keyboard_manager_v1.
   # Not part of any binding -- it exists so hyprlock can be TESTED. A lock
   # screen that accepts any password looks identical to a working one, so
