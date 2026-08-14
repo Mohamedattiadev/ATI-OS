@@ -5239,6 +5239,9 @@ PanelWindow {
                     ThemePickerLayer {
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
+                        // The search field's magnifier; see the note on the
+                        // property in that file.
+                        iconFontFamily: root.iconFontFamily
                         showCondition: islandContainer.themePickerLayerVisible
                         // Guarded on the function existing rather than on the
                         // controller existing: an older shell.qml (or a

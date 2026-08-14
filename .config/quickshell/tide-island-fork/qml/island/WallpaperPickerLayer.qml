@@ -351,7 +351,10 @@ FocusScope {
 
     function grabKeyboardFocus() {
         root.focus = true;
-        root.forceActiveFocus();
+        // The FIELD, not the FocusScope. A rofi-style search you have to
+        // click into first is not one, and this panel opens on an exclusive
+        // keyboard grab with nothing else that wants the keys.
+        searchField.focusField();
     }
 
     function moveNext() {
@@ -384,8 +387,23 @@ FocusScope {
     // carousel is a different component, not a smaller one — and it keeps
     // this panel's standing rule that navigation has no side effects and
     // Enter is the only key that writes.
-    property bool searching: false
-    property string searchQuery: ""
+    // ---- THE FIELD IS ALWAYS THERE; THE SEMANTICS ARE UNCHANGED ----
+    //
+    // `searching` used to be a MODE opened with `/`. That is the half being
+    // reported as wrong — "the power popop theme popup and some other popups
+    // need searchh bar like its rofi one" — and it is the only half that
+    // changes here.
+    //
+    // What does NOT change is that this searches by JUMPING rather than by
+    // filtering, for the reason set out immediately above: rebuilding
+    // `allWallpapers` to show a subset invalidates every index in
+    // `wallpaperIndexByPath` and throws away the per-item thumbnail
+    // bookkeeping, i.e. a re-scan per keystroke over 362 entries. A visible
+    // box does not require a filter behind it, and turning this into one
+    // because the other two panels filter would be copying an appearance and
+    // paying for it in the one place the cost is real.
+    readonly property string searchQuery: searchField.query
+    readonly property bool searching: root.searchQuery !== ""
     property int searchMatches: 0
 
     function matchesQuery(index, needle) {
@@ -427,127 +445,103 @@ FocusScope {
     }
 
     function endSearch() {
-        root.searching = false;
-        root.searchQuery = "";
+        searchField.clear();
         root.searchMatches = 0;
     }
 
+    // Every change of the query re-jumps. Searching from the index BEFORE the
+    // cursor so the current item can itself be the first match — otherwise
+    // refining a query jumps off the very entry you were narrowing onto.
+    onSearchQueryChanged: {
+        if (root.searchQuery === "")
+            root.searchMatches = 0;
+        else
+            root.jumpToMatch(pathView.currentIndex - 1, true);
+    }
+
+    function commitCurrent() {
+        if (allWallpapers.count > 0)
+            root.applyWallpaper(allWallpapers.get(pathView.currentIndex).filePath);
+    }
+
     Keys.onPressed: event => {
-        // SEARCH MODE FIRST, and it has to be a separate branch rather than
-        // extra cases below, because every navigation key in this panel is a
-        // LETTER. `h`, `l`, `r` and `q` are all things you type into a
-        // filename, so while a query is being typed the single-key bindings
-        // must be off entirely — otherwise typing "roses" jumps randomly on
-        // the `r` and walks the carousel on the `s`.
+        // THE FALLBACK PATH. The field holds the keyboard and answers
+        // Escape, Enter, the arrows and Ctrl+HJKL/NP through the signals
+        // wired at the field below; this runs only before focus has landed
+        // there, or after a click elsewhere in the panel.
         //
-        // Escape unwinds one level at a time — query first, panel second —
-        // which is the behaviour Phase 7 specifies and the same unwinding
-        // the control centre does for cursor -> drawer -> panel.
-        if (root.searching) {
-            if (event.key === Qt.Key_Escape) {
-                root.endSearch();
+        // The letters are gone — h, l, r and q were all navigation and are
+        // all things you type into a filename, which the old code handled by
+        // switching them off inside a search MODE. With the field always
+        // present there is no mode to switch, so they are always off. `r`,
+        // the random jump, keeps working on Ctrl+R; it is the one letter
+        // binding here worth a replacement rather than a removal, because it
+        // is the only practical way to see most of a 362-image library.
+        if (event.modifiers & Qt.ControlModifier) {
+            if (event.key === Qt.Key_R) {
+                root.randomJump();
                 event.accepted = true;
-                return;
-            }
-            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                // Commit what the search landed on, and leave search mode.
-                // Enter is still the only key in this panel that writes.
-                if (allWallpapers.count > 0)
-                    root.applyWallpaper(allWallpapers.get(pathView.currentIndex).filePath);
-                root.endSearch();
-                event.accepted = true;
-                return;
-            }
-            if (event.key === Qt.Key_Backspace) {
-                root.searchQuery = root.searchQuery.slice(0, -1);
-                root.jumpToMatch(pathView.currentIndex - 1, true);
-                event.accepted = true;
-                return;
-            }
-            // n / N walk between matches without changing the query, which
-            // is what makes a query with 30 hits usable at all.
-            if (event.key === Qt.Key_Down) {
-                root.jumpToMatch(pathView.currentIndex, true);
-                event.accepted = true;
-                return;
-            }
-            if (event.key === Qt.Key_Up) {
-                root.jumpToMatch(pathView.currentIndex, false);
-                event.accepted = true;
-                return;
-            }
-            if (event.text && event.text.length === 1 && event.text >= " ") {
-                root.searchQuery += event.text;
-                // Search from the index BEFORE the cursor so the current
-                // item can itself be the first match — otherwise refining a
-                // query jumps off the very entry you were narrowing onto.
-                root.jumpToMatch(pathView.currentIndex - 1, true);
-                event.accepted = true;
-                return;
             }
             return;
         }
 
         switch (event.key) {
-        case Qt.Key_Slash:
-            root.searching = true;
-            root.searchQuery = "";
-            root.searchMatches = 0;
-            event.accepted = true;
-            break;
         case Qt.Key_Escape:
             root.closeRequested();
             event.accepted = true;
             break;
         case Qt.Key_Right:
-        case Qt.Key_L:
         case Qt.Key_Tab:
             root.moveNext();
             event.accepted = true;
             break;
         case Qt.Key_Left:
-        case Qt.Key_H:
         case Qt.Key_Backtab:
             root.movePrevious();
             event.accepted = true;
             break;
         case Qt.Key_Return:
         case Qt.Key_Enter:
-            if (allWallpapers.count > 0)
-                root.applyWallpaper(allWallpapers.get(pathView.currentIndex).filePath);
+            root.commitCurrent();
             event.accepted = true;
             break;
-        // FORK — `r` for a random wallpaper. With 362 images in the library
-        // this is the only way to actually use most of them: h/l walks the
-        // list one thumbnail at a time and nobody walks 362.
-        //
-        // It MOVES the cursor only. It used to apply as well, and that was
-        // wrong for the reason the user gave when they asked for it changed:
-        // "it should switch and go to wallpaper randomly but not select it".
-        //
-        // A random JUMP and a random COMMIT are different tools. The jump is
-        // navigation — it is `l` pressed 200 times, and navigation in this
-        // picker has never had a side effect. The commit is Enter, and it is
-        // the only key that writes anything. Folding the two together meant
-        // there was no way to browse the library at random: every look cost
-        // a wallpaper change (and, through theme-apply, a palette change),
-        // and getting back to where you started meant remembering where that
-        // was. Now `r` re-rolls as many times as you like, Enter takes the
-        // one you stopped on, and Escape leaves the wallpaper untouched.
-        //
-        // Re-rolls if the draw lands on the current index, which with a
-        // library this size is rare and with a library of two is not —
-        // and matters more now than it did, because a self-draw used to
-        // still apply something and now would look like a dead key.
-        case Qt.Key_R:
-            if (allWallpapers.count > 1) {
-                let next = pathView.currentIndex;
-                while (next === pathView.currentIndex)
-                    next = Math.floor(Math.random() * allWallpapers.count);
-                pathView.currentIndex = next;
-            }
-            event.accepted = true;
-            break;
+        }
+    }
+
+    // FORK — a random wallpaper. With 362 images in the library this is the
+    // only way to actually use most of them: the arrows walk the list one
+    // thumbnail at a time and nobody walks 362.
+    //
+    // ON Ctrl+R, not `r`. It was a bare `r` until the search field became
+    // permanent, and `r` is a letter you type into a filename — the old code
+    // handled that by disabling the letter bindings inside a search MODE, and
+    // there is no mode left to disable them in. This is the one letter
+    // binding in the panel worth replacing rather than dropping.
+    //
+    // It MOVES the cursor only. It used to apply as well, and that was wrong
+    // for the reason the user gave when they asked for it changed: "it should
+    // switch and go to wallpaper randomly but not select it".
+    //
+    // A random JUMP and a random COMMIT are different tools. The jump is
+    // navigation — it is the right arrow pressed 200 times, and navigation in
+    // this picker has never had a side effect. The commit is Enter, and it is
+    // the only key that writes anything. Folding the two together meant there
+    // was no way to browse the library at random: every look cost a wallpaper
+    // change (and, through theme-apply, a palette change), and getting back to
+    // where you started meant remembering where that was. Now it re-rolls as
+    // many times as you like, Enter takes the one you stopped on, and Escape
+    // leaves the wallpaper untouched.
+    //
+    // Re-rolls if the draw lands on the current index, which with a library
+    // this size is rare and with a library of two is not — and matters more
+    // now than it did, because a self-draw used to still apply something and
+    // now would look like a dead key.
+    function randomJump() {
+        if (allWallpapers.count > 1) {
+            let next = pathView.currentIndex;
+            while (next === pathView.currentIndex)
+                next = Math.floor(Math.random() * allWallpapers.count);
+            pathView.currentIndex = next;
         }
     }
 
@@ -759,7 +753,14 @@ FocusScope {
     // filenames past the panel edge where the clip eats them.
     readonly property real headerH: Metrics.px(20)
     readonly property real headerGap: Metrics.px(6)
-    readonly property real cardAreaH: height - topPad - botPad - headerH - headerGap
+    // The search field is a THIRD child of that Column now, so it costs its
+    // own height and a second gap. Subtracted here for exactly the reason the
+    // header is: this panel is a fixed 260 px, cardW/cardH are derived from
+    // cardAreaH, and a term left out of this sum does not overflow visibly —
+    // it silently pushes the bottom row of filenames past the clip.
+    readonly property real searchH: Metrics.px(26)
+    readonly property real cardAreaH:
+        height - topPad - botPad - headerH - headerGap - searchH - headerGap
     readonly property real heightLimitedW: (cardAreaH - labelGap - labelH) / cardAspect
     readonly property real widthLimitedW: (width / 2 - hPad) / outerReach
     readonly property real cardW: Math.max(Metrics.px(120),
@@ -821,31 +822,47 @@ FocusScope {
                     font.weight: Font.Medium
                 }
 
-                // FORK: the query, and the match count beside it.
-                //
-                // Both are load-bearing rather than decorative. A
-                // type-to-jump search with nothing on screen is
-                // indistinguishable from a stuck keyboard — the carousel
-                // moves and you cannot tell why — and the COUNT is what
-                // separates "no such wallpaper" from "you typo'd", which are
-                // the two states a search is most often in.
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: root.searching
-                    text: "/" + root.searchQuery
-                          + (root.searchQuery === ""
-                             ? ""
-                             : "  " + root.searchMatches
-                               + (root.searchMatches === 1 ? " match" : " matches"))
-                    // Red on zero, so a query that matches nothing says so in
-                    // the one place the eye is already reading.
-                    color: root.searchQuery !== "" && root.searchMatches === 0
-                        ? IslandTheme.danger
-                        : IslandTheme.accent
-                    font.family: root.textFontFamily
-                    font.pixelSize: Metrics.font(9.5)
-                    font.weight: Font.DemiBold
-                }
+                // The query used to be echoed here, as "/roses  3 matches".
+                // It is in the field's own count slot now — see below — and
+                // repeating it in the header would be the same string twice.
+                // What stays here is the POSITION, which the field cannot
+                // show and the filmstrip cannot either.
+            }
+        }
+
+        // FORK: the search field. Always present; see the note on
+        // `searchQuery` for why this JUMPS rather than filters.
+        //
+        // The match count is load-bearing rather than decorative: a
+        // type-to-jump search with nothing on screen is indistinguishable
+        // from a stuck keyboard — the carousel moves and you cannot tell why
+        // — and the count is what separates "no such wallpaper" from "you
+        // typo'd", which are the two states a search is most often in.
+        PanelSearchField {
+            width: parent.width
+            id: searchField
+            textFontFamily: root.textFontFamily
+            iconFontFamily: root.iconFontFamily
+            placeholder: "type to jump — Ctrl+R random, Enter applies"
+            countText: !root.searching ? ""
+                     : (root.searchMatches
+                        + (root.searchMatches === 1 ? " match" : " matches"))
+
+            onSubmitted: root.commitCurrent()
+            onCancelled: root.closeRequested()
+            // Up/Down walk BETWEEN MATCHES without changing the query, which
+            // is what makes a query with 30 hits usable at all. Left/Right
+            // walk the carousel itself, query or no query.
+            onMoved: function(delta) {
+                if (root.searching)
+                    root.jumpToMatch(pathView.currentIndex, delta > 0);
+                else if (delta > 0)
+                    root.moveNext();
+                else
+                    root.movePrevious();
+            }
+            onMovedHorizontally: function(delta) {
+                if (delta > 0) root.moveNext(); else root.movePrevious();
             }
         }
 

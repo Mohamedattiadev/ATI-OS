@@ -57,6 +57,9 @@ FocusScope {
     property bool showCondition: false
     property string textFontFamily: ""
     property string heroFontFamily: ""
+    // For the search field's magnifier. A Nerd Font glyph set in the
+    // text family renders as nothing at all, with no warning.
+    property string iconFontFamily: ""
 
     property var themes: []
     property string currentTheme: ""
@@ -89,12 +92,25 @@ FocusScope {
     //   * 22 items, not 362. Filtering the whole array on every keystroke is
     //     22 string compares.
     //
-    // So `/` narrows the grid, and the count is drawn beside the query for
+    // So the query narrows the grid, and the count is drawn in the field for
     // the reason the wallpaper picker draws its own: a search with nothing on
     // screen is indistinguishable from a stuck keyboard, and the count is
     // what separates "no such theme" from "you typo'd".
-    property bool searching: false
-    property string searchQuery: ""
+    //
+    // ---- THE FIELD IS ALWAYS THERE NOW ----
+    //
+    // `searching` used to be a MODE: `/` opened it, and until you pressed
+    // that key there was no field on screen and letters were motions. That
+    // is vi's search, and what was asked for is rofi's — "the power popop
+    // theme popup and some other popups need searchh bar like its rofi
+    // one" — which has no mode at all. The box is there, it has the
+    // keyboard, and you filter by typing into it like any other box.
+    //
+    // The property survives as a derived one because the chrome's status
+    // clause and the empty-grid message both want "is there a query", and
+    // that question still has a useful answer.
+    readonly property string searchQuery: searchField.query
+    readonly property bool searching: root.searchQuery !== ""
 
     // The grid's model. `themes` stays the unfiltered truth — applyTheme and
     // the active-tile check both read names, not indices, so nothing outside
@@ -112,8 +128,7 @@ FocusScope {
     }
 
     function endSearch() {
-        root.searching = false;
-        root.searchQuery = "";
+        searchField.clear();
         root.setSelection(0);
     }
 
@@ -150,7 +165,12 @@ FocusScope {
     readonly property int fullRowCount:
         Math.max(1, Math.ceil(root.themes.length / root.columns))
     readonly property real preferredHeight:
-        Metrics.chromeTotal() + root.fullRowCount * root.cellHeight
+        Metrics.chromeTotal() + root.searchStripHeight
+        + root.fullRowCount * root.cellHeight
+
+    // The field plus the gap under it. In one place because the height above
+    // and the grid's y and height below all have to agree about it.
+    readonly property real searchStripHeight: Metrics.px(26) + Metrics.px(10)
 
     focus: showCondition
     activeFocusOnTab: true
@@ -184,13 +204,14 @@ FocusScope {
             // ~/.cache/qtile/theme_mode — a stale highlight here would be
             // the picker disagreeing with the desktop it is sitting on.
             themeListProcess.running = true;
-            forceActiveFocus();
+            // The FIELD, not the FocusScope: a rofi-style search you have to
+            // click into first is not one.
+            searchField.focusField();
         } else {
             root.errorText = "";
             // A query left over from the last open is a picker that comes up
             // showing three of twenty-two themes with no memory of why.
-            root.searching = false;
-            root.searchQuery = "";
+            searchField.clear();
         }
     }
 
@@ -309,112 +330,61 @@ FocusScope {
         //
         // Escape unwinds one level at a time, query then panel, which is the
         // control centre's cursor -> drawer -> panel rule again.
-        if (root.searching) {
-            if (event.key === Qt.Key_Escape) {
-                root.endSearch();
-                event.accepted = true;
-                return;
-            }
-            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                if (root.selectedIndex >= 0 && root.selectedIndex < root.visibleThemes.length)
-                    root.applyTheme(String(root.visibleThemes[root.selectedIndex].name));
-                root.endSearch();
-                event.accepted = true;
-                return;
-            }
-            if (event.key === Qt.Key_Backspace) {
-                root.searchQuery = root.searchQuery.slice(0, -1);
-                root.setSelection(0);
-                event.accepted = true;
-                return;
-            }
-            // The arrows still navigate what the filter left, so you can
-            // narrow to four themes and then pick among them without leaving
-            // search. hjkl cannot: they are letters here.
-            if (event.key === Qt.Key_Left) {
-                root.moveSelection(-1);
-                event.accepted = true;
-                return;
-            }
-            if (event.key === Qt.Key_Right) {
-                root.moveSelection(1);
-                event.accepted = true;
-                return;
-            }
-            if (event.key === Qt.Key_Up) {
-                root.moveSelection(-root.columns);
-                event.accepted = true;
-                return;
-            }
-            if (event.key === Qt.Key_Down) {
-                root.moveSelection(root.columns);
-                event.accepted = true;
-                return;
-            }
-            if (event.text && event.text.length === 1 && event.text >= " ") {
-                root.searchQuery += event.text;
-                // Back to the first match: unlike the carousel there is no
-                // "current item" worth preserving across a narrowing, because
-                // the grid has re-laid out under the cursor entirely.
-                root.setSelection(0);
-                event.accepted = true;
-                return;
-            }
-            return;
-        }
-
+        // ---- THE LETTERS ARE GONE, AND THAT IS THE WHOLE CHANGE ----
+        //
+        // hjkl, g/G and q used to move and close. They cannot any more: the
+        // search field is always focused, and the paragraph above this one
+        // already explained why — every one of those keys is a letter you
+        // type into a theme name, and "gruvbox" alone hits g, k and l.
+        //
+        // That was true before too. The difference is that the old panel
+        // resolved it with a MODE, so the motions were live until you pressed
+        // `/`; now the field is always there, so the motions are never live.
+        // rofi makes the same trade for the same reason and nothing about it
+        // is a compromise — it is what "search bar like rofi" means.
+        //
+        // What is left here is the FALLBACK path. The field claims Escape,
+        // Enter, the arrows and Ctrl+HJKL/NP and handles them through the
+        // signals wired below; this runs only when focus has not landed in
+        // the field yet, or after a click somewhere else in the panel.
         switch (event.key) {
-        case Qt.Key_Slash:
-            root.searching = true;
-            root.searchQuery = "";
-            event.accepted = true;
-            break;
         case Qt.Key_Escape:
             root.closeRequested();
             event.accepted = true;
             break;
-        // hjkl beside the arrows. This is a grid, so h/l step one tile and
-        // j/k step one ROW — `root.columns` tiles — which is what the arrow
-        // keys already did and what the hand expects from a grid. Every
-        // other panel in this shell reads vim motions; the theme picker was
-        // the one that did not, and there is no reason for it to be the
-        // exception.
         case Qt.Key_Left:
-        case Qt.Key_H:
             root.moveSelection(-1);
             event.accepted = true;
             break;
         case Qt.Key_Right:
-        case Qt.Key_L:
             root.moveSelection(1);
             event.accepted = true;
             break;
         case Qt.Key_Up:
-        case Qt.Key_K:
             root.moveSelection(-root.columns);
             event.accepted = true;
             break;
         case Qt.Key_Down:
-        case Qt.Key_J:
             root.moveSelection(root.columns);
-            event.accepted = true;
-            break;
-        // g / G to the ends, same as the audio and display panels.
-        case Qt.Key_G:
-            root.setSelection((event.modifiers & Qt.ShiftModifier) !== 0
-                              ? root.visibleThemes.length - 1 : 0);
             event.accepted = true;
             break;
         case Qt.Key_Return:
         case Qt.Key_Enter:
-        case Qt.Key_Space:
-            if (root.selectedIndex >= 0 && root.selectedIndex < root.visibleThemes.length)
-                root.applyTheme(String(root.visibleThemes[root.selectedIndex].name));
+            root.activateSelection();
             event.accepted = true;
             break;
         default:
             break;
         }
+    }
+
+    // One place for "apply what is under the cursor", because the field's
+    // Enter and the fallback Enter must not drift apart — and because the
+    // bounds check is the difference between applying a theme and applying
+    // `undefined` when the filter matched nothing.
+    function activateSelection() {
+        if (root.selectedIndex >= 0 && root.selectedIndex < root.visibleThemes.length)
+            root.applyTheme(String(root.visibleThemes[root.selectedIndex].name));
     }
 
     // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
@@ -428,14 +398,11 @@ FocusScope {
 
         title: "theme"
 
-        // The query, and the match count beside it. Both are load-bearing: a
-        // search with nothing on screen is indistinguishable from a stuck
-        // keyboard, and the count is what separates "no such theme" from "you
-        // typo'd". Red at zero matches, for the same reason.
-        statusClause: root.searching
-            ? "/" + root.searchQuery + "  " + root.visibleThemes.length + " of " + root.themes.length
-            : ""
-        statusClauseLive: root.searching && root.visibleThemes.length > 0
+        // The query itself is in the field now and does not need echoing in
+        // the header. What stays is the ALERT: red when a query matches
+        // nothing, because an empty grid and a stuck keyboard look alike.
+        statusClause: ""
+        statusClauseLive: false
         statusClauseAlert: root.searching && root.visibleThemes.length === 0
 
         status: {
@@ -448,28 +415,49 @@ FocusScope {
         statusLevel: root.errorText !== "" ? "error"
                    : (root.pendingTheme !== "" ? "busy" : "idle")
 
-        hints: root.searching
-            ? [
-                { key: "type", label: "filter" },
-                { key: "←↑↓→", label: "move" },
-                { key: "Enter", label: "apply" },
-                { key: "Esc", label: "clear" }
-              ]
-            : [
-                { key: "hjkl", label: "move" },
-                { key: "/", label: "search" },
-                { key: "g/G", label: "first-last" },
-                { key: "Enter", label: "apply" },
-                { key: "q", label: "close" }
-              ]
+        // One strip in both states. The old panel had two, because it had two
+        // modes to describe; there is one now, and a hint strip that changes
+        // under you is itself a thing to read twice.
+        hints: [
+            { key: "type", label: "filter" },
+            { key: "←↑↓→", label: "move" },
+            { key: "Enter", label: "apply" },
+            { key: "Esc", label: root.searching ? "clear" : "close" }
+        ]
     }
+
+    PanelSearchField {
+        id: searchField
+        x: chrome.contentX
+        y: chrome.contentY
+        width: chrome.contentWidth
+
+        textFontFamily: root.textFontFamily
+        iconFontFamily: root.iconFontFamily
+        placeholder: "type to filter themes"
+        countText: root.searching
+            ? (root.visibleThemes.length + " of " + root.themes.length) : ""
+
+        onSubmitted: root.activateSelection()
+        onCancelled: root.closeRequested()
+        // A grid, so vertical movement is a whole ROW and horizontal is one
+        // tile — the same mapping the arrow keys always had here.
+        onMoved: function(delta) { root.moveSelection(delta * root.columns); }
+        onMovedHorizontally: function(delta) { root.moveSelection(delta); }
+    }
+
+    // Back to the first match on every change of the query. Unlike the
+    // wallpaper carousel there is no "current item" worth preserving across a
+    // narrowing: the grid has re-laid out under the cursor entirely, so
+    // whatever index survived is pointing at a different theme.
+    onSearchQueryChanged: root.setSelection(0)
 
     GridView {
         id: themeGrid
         x: chrome.contentX
-        y: chrome.contentY
+        y: chrome.contentY + root.searchStripHeight
         width: chrome.contentWidth
-        height: chrome.contentHeight
+        height: chrome.contentHeight - root.searchStripHeight
         clip: true
 
         // FORK: P1-3, and the note at the top of this file already said it —
