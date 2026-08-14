@@ -15,6 +15,143 @@ existing history does. **No Co-Authored-By trailer.**
 
 ---
 
+# THE ONE TASK: THE ISLAND STILL GLITCHES UP AND DOWN
+
+Reported again, after a session that thought it had measured this away:
+
+> "fix the height of the island — the animation after closing the popup, the
+> island glitches up and down still. Take a gif or video to see it, and fix."
+
+**TAKE THE VIDEO FIRST.** Every previous attempt at this reasoned from a
+number and got the wrong answer twice. Everything needed is installed:
+
+    wf-recorder -g "0,0 1366x120" -f /tmp/island.mp4     # then Ctrl-C
+    ffmpeg -i /tmp/island.mp4 -vf "fps=30,scale=683:-1" /tmp/island.gif
+
+or the grim burst the RULES describe (PPM, ~50 fps, elapsed-ms filenames).
+Watch it frame by frame before forming a theory.
+
+## What the last session got WRONG about this, and why
+
+It added the three-line `onTargetHeightChanged` probe, drove a rofi popup
+open and closed, and observed **no `targetHeight` change at all on close** —
+then concluded the report was really about the chord HUD's first open, fixed
+that (it was real, and is fixed), and moved on.
+
+That conclusion does not survive the user seeing the glitch again. The probe
+was on the wrong property:
+
+* `targetHeight` is the SPRING'S TARGET. It can be perfectly still while the
+  animated `mainCapsule.height` overshoots and settles — which is a visible
+  bounce that the probe cannot see by construction.
+* the LAYER SURFACE's own height is a third number:
+  `requestedWindowHeight` / `retainedWindowHeight` (DynamicIslandWindow.qml
+  ~line 289), built from `capsuleWindowHeight`, which is
+  `islandTopMargin + targetHeight + max(12, capsuleOvershootAllowance)`.
+  `retainedWindowHeight` shrinks LAZILY — read the note there. A layer
+  surface resizing is a hard jump, not an animation, and it would look
+  exactly like "up and down".
+
+So probe all three, at once, with timestamps:
+
+    onTargetHeightChanged   console.log("TGT",  Date.now(), Math.round(targetHeight))
+    // on mainCapsule:
+    onHeightChanged         console.log("ANIM", Date.now(), Math.round(height))
+    // on the window root:
+    onHeightChanged         console.log("WIN",  Date.now(), Math.round(height))
+
+`.pragma library` JS is cached and a probe in Motion.js will not take —
+restart the island, do not rely on the reload.
+
+## How to drive it without wrecking the session
+
+The island does NOT have to be the active bar. `scripts/island.sh` now stops
+the standalone treetab/popups itself, so this is safe beside the topbar:
+
+    ~/.config/hypr/scripts/island.sh          # island beside the topbar
+    qs -p ~/.config/quickshell/tide-island-fork ipc call tide state
+
+`tide state` reports `{state, height, width, overview}` — added last session
+precisely so a sweep can ask what happened. **Address the island by the
+DIRECTORY**, never by `shell.qml`: `qs -p` keys an instance by the path it
+was given, and the file form addresses a different instance or nothing.
+
+Kill it by ARGV when done (`quickshell -p .../tide-island-fork$`), and check
+`~/.cache/bar-mode` is still what you found — a run last session left it on
+`island` when it started on `native`, cause unestablished.
+
+## The suspects, in the order worth testing
+
+1. **The window height, not the capsule.** `retainedWindowHeight`'s lazy
+   shrink plus `capsuleOvershootAllowance` means the surface is deliberately
+   taller than the capsule and comes back down on its own schedule. Time that
+   against the visible bounce.
+2. **The spring overshoot on the way back to rest.** `Motion.overshoot()` is
+   real and deliberate; the question is whether the popup's close path
+   re-targets mid-flight, which is the picker bug's shape and is explicitly
+   flagged in this file as latent in every other content-sized case.
+3. **The exclusive zone.** `desiredExclusiveZone` animates through
+   `exclusiveZoneProgress`, and windows move with it. A bounce in the ZONE
+   moves every window on screen, which reads as the island moving.
+
+---
+
+# WHAT THE LAST SESSION FINISHED, AND WHAT IS LEFT
+
+Finished and driven (each has its own commit with the measurement in it):
+the four dead controls (Wi-Fi QR, `$alt 4` display, `$alt 5` calculator,
+Bluetooth); the TaskList's five markup states and `parse_task_name`; the
+GroupBox's `box_width`/`spacing` and its wheel; passthrough's full shape
+including the confirm popup; the media-key OSD; the rofi fade over the theme
+sweep; qdrop's drag offset and its surface; dialogs floating and centred; the
+island's exclusive zone when notch mode is off; the vim/fish cheatsheets on
+both bars; the settings app's live preview and drag-in readouts; two-monitor
+and fractional-scale correctness; the chord HUD's height cache; and the
+systematic sweep (`scripts/test/sweep-island.py`, `sweep-topbar.py` —
+22 states, 10 transitions, 41 actions, all passing).
+
+**STILL OPEN**, in the order worth doing:
+
+1. **The island height glitch.** Above. It is the whole reason this file
+   leads with it.
+2. **The rest of the motion matrix's SETTLE.** The sweep proves every
+   transition lands in the right STATE; it says nothing about how it looks
+   getting there. The ~800 ms panel settle is still unmeasured, and the
+   content-sized cases other than `picker` still have the latent re-aim this
+   file has described for four sessions.
+3. **qdrop's BEHAVIOUR as an island surface.** Its look now matches the
+   popups; "behave like the island" — the drag-in/drag-out UX — does not.
+4. **The 12 unchecked picker menus** against their rofi originals: documents,
+   man, notes, clipboard, confedit, spellcheck, translate, pass, todo,
+   shared, youtube, hub. The record menu is DONE.
+5. **`bar-mode` moved on its own.** A sweep run started on `native` and ended
+   on `island`. Only bar-switch and bar-chooser write that file and neither
+   was called. `sweep-island.py` now reports the change; nobody has caught it
+   in the act. `ps -eo pid,ppid,lstart,args` while it happens.
+6. **Scratchpads on a second monitor.** The bars and popups are now tested
+   across two outputs and fractional scale; `scratchpad.sh`'s monitor-relative
+   x/y is still verified-by-history only, and `hyprctl output create headless`
+   is how to test it.
+7. **`topbar.sh` is not idempotent** — running it while a topbar is up starts
+   a SECOND one, and the reserved zone doubles to 76. Caught by hand this
+   session and cleaned up by killing the extra; it should refuse instead, the
+   way island.sh now stops the standalone surfaces.
+8. **The `◐` in window titles.** `parse_task_name` strips braille spinners
+   and `✳ ✓ ✗ ▶ ⏸`, not the half-circle frames this terminal now uses. qtile
+   shows it too, so fixing it means editing `qtile/config.py` and
+   `topbar/TaskList.js` together — the same shape as the CHORD_CHIP_LABELS
+   glyph note below.
+9. **Live preview for the cheap numeric settings keys**, now that the
+   settings app has a preview to put it in.
+10. **`islandShowWorkspaceOnAutoHide`** is still an inert row. Do NOT "fix" it
+    via ForkConfig; see the audit.
+11. **qtile with its OWN bar gets no theme sweep** — the one combination with
+    no Quickshell process at all.
+12. **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
+    ~50 ms before any animation starts.
+
+---
+
 # WHERE THIS DESKTOP IS NOW
 
 **Both sessions have two bars, and they swap.**
@@ -66,7 +203,7 @@ the same circular reveal a theme pick has.
 
 ---
 
-# THE ONE TASK, STILL: THE ISLAND'S MOTION
+# THE MOTION WORK SO FAR (background for the task at the top)
 
 Partly answered, and the answer confirms this file's own lead — **the settle
 is the CONTENT, not the shape.** Found in the user's recording, then
@@ -191,7 +328,12 @@ Sizes differ by up to **857 px** (`long_capsule` 156 -> wallpaper picker
 
 ---
 
-# REPORTED AND NOT YET FIXED
+# THE REPORTED LIST — NEARLY ALL FIXED, KEPT FOR ITS MEASUREMENTS
+
+Everything below came from the user in one pass. Almost every item is
+now done; the causes are kept because they are measurements, and because
+each one records how the wrong answer looked before it was measured.
+What is still open is listed at the top of this file, not here.
 
 Everything here came from the user in one pass at the end of the last
 session. Where a cause is written down it was MEASURED during that session,
