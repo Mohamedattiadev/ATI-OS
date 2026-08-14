@@ -35,6 +35,50 @@ if [[ ! -f "$CONFIG_DIR/shell.qml" ]]; then
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+#  ONE MATCHER, AND THE BAR ITSELF IS SUBJECT TO IT
+# ---------------------------------------------------------------------------
+# This is the argv walk that bar-switch's island_pid() explains at length:
+# find `-p`, compare the NEXT field for EQUALITY. Not `pgrep -f`, which
+# matches this script's own command line, and not a substring, which cannot
+# tell `-p <dir>` from `-p <dir>/popups.qml`.
+#
+# It was written out twice below — once for treetab, once for popups — and
+# NOT AT ALL for the topbar. So the two second-order surfaces were idempotent
+# and the bar this script exists to start was not:
+#
+#     $ ~/.config/hypr/scripts/topbar.sh      # a bar
+#     $ ~/.config/hypr/scripts/topbar.sh      # a SECOND bar, on top of it
+#     $ hyprctl monitors -j | jq '.[0].reserved'
+#     [0, 76, 0, 0]                           # 38 twice
+#
+# Two layer surfaces at the same place, each reserving its own 38 px, and the
+# only visible symptom is that every tiled window sits 38 px lower than it
+# should — which reads as a layout bug, not as a duplicated process. Caught by
+# hand and cleaned up by killing the extra.
+#
+# bar-switch never hit it because topbar_start() has its own `topbar_running`
+# guard. That is exactly the shape of bug island.sh's header argues against:
+# an invariant that lives in ONE caller holds only for that caller, and every
+# other route in — by hand, from a keybind, from a test harness — is free to
+# break it. So the check moves to the thing that can always enforce it.
+entry_running() {
+  # `!/awk/` excludes this awk's own command line, which contains `want`.
+  ps -eo args= | awk -v want="$1" \
+    '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { found = 1 } }
+     END { exit !found }'
+}
+
+# REFUSES rather than starting a second one, and exits 0 while doing it.
+# "The bar you asked for is already up" is the requested state, not a failure,
+# and bar-switch runs under `set -e` with a rollback on any non-zero — so
+# exiting non-zero here would make an idempotent call look like a failed
+# switch and roll ~/.cache/bar-mode back to the bar that is not running.
+if entry_running "$CONFIG_DIR"; then
+  echo "topbar.sh: a topbar is already running for $CONFIG_DIR — not starting a second" >&2
+  exit 0
+fi
+
 # Carried over from island.sh for the same reason it is there: Quickshell uses
 # jemalloc, which otherwise keeps every Loader/image high-water mark resident
 # for the life of the session.
@@ -55,21 +99,12 @@ export MALLOC_CONF="${MALLOC_CONF:-narenas:2,background_thread:true,dirty_decay_
 # possible: Quickshell's scanner refuses a module path outside the config
 # folder, symlink or not.
 #
-# Idempotent, and matched on the argv list rather than with `pgrep -f`, which
-# would match this script's own command line — the trap in NEXT-SESSION.md's
-# RULES. bar-switch stops it when the island comes back, since the island
-# draws its own and two would stack two exclusive zones.
+# Idempotent through the shared `entry_running` above. bar-switch stops it
+# when the island comes back, since the island draws its own and two would
+# stack two exclusive zones.
 TREETAB_ENTRY="${TREETAB_ENTRY:-$HOME/.config/quickshell/tide-island-fork/treetab.qml}"
 
-treetab_running() {
-  # Compared as an ARGUMENT, not as a substring of the command line — see
-  # bar-switch's island_pid() for the outage that distinction cost.
-  ps -eo args= | awk -v want="$TREETAB_ENTRY" \
-    '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { found = 1 } }
-     END { exit !found }'
-}
-
-if [[ -f "$TREETAB_ENTRY" ]] && ! treetab_running; then
+if [[ -f "$TREETAB_ENTRY" ]] && ! entry_running "$TREETAB_ENTRY"; then
   setsid -f quickshell -p "$TREETAB_ENTRY" >/dev/null 2>&1 || true
 fi
 
@@ -83,15 +118,7 @@ fi
 # at once, and an unopened popup is an inactive Loader — no window, no polling.
 POPUPS_ENTRY="${POPUPS_ENTRY:-$HOME/.config/quickshell/tide-island-fork/popups.qml}"
 
-popups_running() {
-  # Compared as an ARGUMENT, not as a substring of the command line — see
-  # bar-switch's island_pid() for the outage that distinction cost.
-  ps -eo args= | awk -v want="$POPUPS_ENTRY" \
-    '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { found = 1 } }
-     END { exit !found }'
-}
-
-if [[ -f "$POPUPS_ENTRY" ]] && ! popups_running; then
+if [[ -f "$POPUPS_ENTRY" ]] && ! entry_running "$POPUPS_ENTRY"; then
   setsid -f quickshell -p "$POPUPS_ENTRY" >/dev/null 2>&1 || true
 fi
 
