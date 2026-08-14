@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 #
 # Script name: dm-satty
-# Description: Take screenshots with maim and optional editing with satty
-# Dependencies: dmenu, maim, satty, xdotool, xclip, xrandr
+# Description: Take screenshots, with optional editing in satty
+# Dependencies: rofi, satty, and ONE of the two backends below
+#   X11:      maim, xdotool, xrandr, xclip
+#   Wayland:  grim, slurp, hyprctl, wl-copy
 # License: MIT
 
 set -euo pipefail
@@ -10,28 +12,154 @@ set -euo pipefail
 # Configuration - customize these paths
 MAIM_DIR="${HOME}/Screenshots"
 MAIM_PREFIX="screenshot"
-RMENU="rofi -dmenu -i -p"
+# Overridable so the script can be DRIVEN without a pointer. Not scaffolding:
+# every path through here is three menus deep, and a screenshot tool whose only
+# test is "take one by hand" is how it came to be captured with an X11 tool in
+# a Wayland session for as long as it was. A stub that echoes a fixed answer
+# turns the whole flow into one command.
+RMENU="${RMENU:-rofi -dmenu -i -p}"
 
 # Create screenshot directory if it doesn't exist
 mkdir -p "${MAIM_DIR}"
+
+# ============================================================
+#  WHICH DISPLAY SERVER — and why every screenshot was BLACK
+# ============================================================
+# Reported: "I use the screenshot from rofi and the screens are black".
+#
+# This script captured with `maim` and listed monitors with `xrandr` and found
+# the active window with `xdotool`. All three are X11 tools. Under Hyprland
+# they still RUN — XWayland answers them — and what maim then captures is the
+# XWayland root window, which no Wayland client ever draws into. So it
+# succeeded, wrote a valid PNG, notified "Screenshot Saved", and the file was
+# solid black. Nothing failed anywhere, which is why it took a report.
+#
+# The clipboard half already knew about the split (copy_to_clipboard has had
+# an x11/wayland case since it was written); the CAPTURE half did not.
+#
+# WAYLAND_DISPLAY rather than XDG_SESSION_TYPE. That variable is set by the
+# display manager and is simply absent or wrong for a session started any
+# other way — and being wrong here means a black screenshot again rather than
+# an error. The socket either exists or it does not.
+if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+	BACKEND=wayland
+else
+	BACKEND=x11
+fi
 
 get_timestamp() {
 	date '+%Y%m%d-%H%M%S'
 }
 
 copy_to_clipboard() {
-	# Defaulted rather than read bare: under `set -u` an unset
-	# XDG_SESSION_TYPE aborts the script instead of reaching the error
-	# message below, and a session started outside a display manager does
-	# not always set it.
-	case "${XDG_SESSION_TYPE:-x11}" in
-	'x11') xclip -selection clipboard -t image/png ;;
-	'wayland') wl-copy -t image/png ;;
-	*)
-		echo "Unknown display server"
-		exit 1
-		;;
+	# Keyed on BACKEND now, not on XDG_SESSION_TYPE. Same reasoning as the
+	# capture: the socket is the fact, the variable is a report of it. This
+	# also means the clipboard and the capture can no longer disagree, which
+	# they could before — a Wayland session with XDG_SESSION_TYPE unset used
+	# to capture with maim AND copy with xclip, consistently wrong.
+	case "$BACKEND" in
+	x11) xclip -selection clipboard -t image/png ;;
+	wayland) wl-copy -t image/png ;;
 	esac
+}
+
+# ============================================================
+#  THE CAPTURE, ONE FUNCTION PER BACKEND
+# ============================================================
+# Both write a PNG to STDOUT. Every call site below then decides what to do
+# with it — file, clipboard, both, or satty — so the two backends differ in
+# exactly one place instead of at every destination.
+#
+# `geom` is empty for a full-screen capture and otherwise the X11 form,
+# "WxH+X+Y", which is what maim's -g takes and what this script has always
+# carried internally.
+#
+# GRIM DOES NOT TAKE THAT FORM. Its -g is "<x>,<y> <w>x<h>" — slurp's own
+# output format — and handed "1346x710+10+48" it prints `invalid geometry` and
+# exits non-zero. Caught here rather than in the field, but it is the shape of
+# thing that would have looked like "the region option is broken" while
+# fullscreen worked, so the conversion is explicit and lives next to the call.
+capture() {
+	local geom="$1" delay="$2"
+
+	if [ "$BACKEND" = wayland ]; then
+		# grim has no delay of its own, so it is a sleep. maim's --delay
+		# below is the same thing inside the tool.
+		[ "$delay" -gt 0 ] && sleep "$delay"
+		if [ -n "$geom" ]; then
+			local w h x y
+			w="${geom%%x*}"
+			h="${geom#*x}"; h="${h%%+*}"
+			x="${geom#*+}"; x="${x%%+*}"
+			y="${geom##*+}"
+			grim -g "${x},${y} ${w}x${h}" -
+		else
+			grim -
+		fi
+		return
+	fi
+
+	# -q quiet, -d 0.5 the settle that lets a menu finish closing before the
+	# shutter — without it every capture has rofi in it.
+	local args="-qd 0.5"
+	[ "$delay" -gt 0 ] && args="$args --delay=$delay"
+	[ -n "$geom" ] && args="$args -g $geom"
+	# Unquoted on purpose: these are several arguments in one string.
+	# shellcheck disable=SC2086
+	maim $args
+}
+
+# The list of monitors, as "NAME WxH+X+Y" lines.
+list_monitors() {
+	if [ "$BACKEND" = wayland ]; then
+		hyprctl -j monitors | python3 -c '
+import json, sys
+for m in json.load(sys.stdin):
+    print("%s %dx%d+%d+%d" % (m["name"], m["width"], m["height"], m["x"], m["y"]))
+'
+		return
+	fi
+	xrandr --listactivemonitors 2>/dev/null |
+		awk '/\+/ {print $4, $3}' |
+		awk -F'[x/+* ]' '{print $1,$2"x"$4"+"$6"+"$7}'
+}
+
+# The focused window, as "WxH+X+Y".
+active_window_geometry() {
+	if [ "$BACKEND" = wayland ]; then
+		hyprctl -j activewindow | python3 -c '
+import json, sys
+w = json.load(sys.stdin)
+if not w or "at" not in w:
+    sys.exit(1)
+print("%dx%d+%d+%d" % (w["size"][0], w["size"][1], w["at"][0], w["at"][1]))
+'
+		return
+	fi
+	command -v xdotool >/dev/null 2>&1 || return 1
+	local id
+	id="$(xdotool getactivewindow)" || return 1
+	# maim can take a window id directly, but returning a geometry keeps
+	# capture() with ONE parameter shape for both backends.
+	xdotool getwindowgeometry --shell "$id" |
+		awk -F= '/^X=/{x=$2} /^Y=/{y=$2} /^WIDTH=/{w=$2} /^HEIGHT=/{h=$2}
+		         END{printf "%dx%d+%d+%d", w, h, x, y}'
+}
+
+# An interactive region, in this script's internal "WxH+X+Y" form.
+#
+# slurp prints GRIM's format, "<x>,<y> <w>x<h>" — the opposite convention from
+# the one everything else here carries — so it is converted at the source
+# rather than at the shutter. Feeding slurp's own string straight to capture()
+# looks right, parses as nonsense, and crops somewhere unrelated.
+slurp_region() {
+	local sel
+	sel="$(slurp)" || return 1
+	printf '%sx%s+%s+%s' \
+		"$(printf '%s' "$sel" | cut -d' ' -f2 | cut -dx -f1)" \
+		"$(printf '%s' "$sel" | cut -d' ' -f2 | cut -dx -f2)" \
+		"$(printf '%s' "$sel" | cut -d' ' -f1 | cut -d, -f1)" \
+		"$(printf '%s' "$sel" | cut -d' ' -f1 | cut -d, -f2)"
 }
 
 show_error() {
@@ -41,7 +169,8 @@ show_error() {
 }
 
 main() {
-	local maim_args=""
+	local geom=""
+	local x11_select=false
 	local file_type=""
 	local use_satty=false
 
@@ -55,13 +184,14 @@ main() {
 	)
 
 	# Get monitor information
-	if ! command -v xrandr &>/dev/null; then
-		show_error "xrandr is required but not installed"
+	if [ "$BACKEND" = wayland ]; then
+		command -v grim &>/dev/null || show_error "grim is required but not installed"
+	else
+		command -v maim &>/dev/null || show_error "maim is required but not installed"
+		command -v xrandr &>/dev/null || show_error "xrandr is required but not installed"
 	fi
 
-	_displays=$(xrandr --listactivemonitors 2>/dev/null | awk '/\+/ {print $4, $3}' | awk -F'[x/+* ]' '{print $1,$2"x"$4"+"$6"+"$7}') || {
-		show_error "Failed to get monitor information"
-	}
+	_displays=$(list_monitors) || show_error "Failed to get monitor information"
 
 	# Add monitor-specific options
 	IFS=$'\n'
@@ -87,26 +217,29 @@ main() {
 		;;
 	esac
 
-	# Set maim arguments based on selection
+	# Resolve the target to a GEOMETRY, whichever backend is up.
 	case "$target" in
 	"Fullscreen")
 		file_type="full"
 		;;
 	"Active window")
-		if ! command -v xdotool &>/dev/null; then
-			show_error "xdotool is required but not installed"
-		fi
-		active_window=$(xdotool getactivewindow)
-		maim_args="-i ${active_window}"
+		geom="$(active_window_geometry)" ||
+			show_error "Could not find the active window"
 		file_type="window"
 		;;
 	"Selected region")
-		maim_args="-s"
+		if [ "$BACKEND" = wayland ]; then
+			# slurp is cancelled with Escape, which is a "no thanks" and
+			# not a failure — exit quietly rather than showing an error.
+			geom="$(slurp_region)" || exit 0
+		else
+			x11_select=true
+		fi
 		file_type="region"
 		;;
 	*)
 		# Monitor selection
-		maim_args="-g ${display_mode[${target}]}"
+		geom="${display_mode[${target}]}"
 		file_type="${target}"
 		;;
 	esac
@@ -116,11 +249,23 @@ main() {
 	# which is an "integer expression expected" error and, under `set -e`,
 	# killed the script with nothing on screen to explain it.
 	delay=$(printf '%s\n' "$(seq 0 5)" | ${RMENU} "Delay (in seconds):") || exit 0
-	if [[ "${delay}" =~ ^[0-9]+$ ]] && [ "${delay}" -gt 0 ]; then
-		maim_args="${maim_args} --delay=${delay}"
+	if ! [[ "${delay}" =~ ^[0-9]+$ ]]; then
+		delay=0
 	fi
 
-	maim_args="${maim_args} -qd 0.5"
+	# X11's interactive region is maim's own selector rather than a geometry,
+	# which is the one asymmetry between the backends; wrapped here so every
+	# call site below stays a plain `shoot`.
+	shoot() {
+		if $x11_select; then
+			local args="-qd 0.5 -s"
+			[ "${delay}" -gt 0 ] && args="$args --delay=${delay}"
+			# shellcheck disable=SC2086
+			maim $args
+		else
+			capture "$geom" "$delay"
+		fi
+	}
 
 	if $use_satty; then
 		# Capture and edit with satty.
@@ -137,7 +282,7 @@ main() {
 		temp_dir="${XDG_RUNTIME_DIR:-/tmp/rofi-$(id -u)}"
 		mkdir -p "${temp_dir}" 2>/dev/null || true
 		temp_file="${temp_dir}/satty-$(get_timestamp).png"
-		maim ${maim_args} >"${temp_file}" || show_error "Failed to capture screenshot"
+		shoot >"${temp_file}" || show_error "Failed to capture screenshot"
 
 		output_file="${MAIM_DIR}/${MAIM_PREFIX}-satty-$(get_timestamp).png"
 
@@ -169,16 +314,16 @@ main() {
 		case "$destination" in
 		"File")
 			output_file="${MAIM_DIR}/${MAIM_PREFIX}-${file_type}-$(get_timestamp).png"
-			maim ${maim_args} "${output_file}" || show_error "Failed to save screenshot"
+			shoot >"${output_file}" || show_error "Failed to save screenshot"
 			notify-send "Screenshot Saved" "${output_file}"
 			;;
 		"Clipboard")
-			maim ${maim_args} | copy_to_clipboard || show_error "Failed to copy to clipboard"
+			shoot | copy_to_clipboard || show_error "Failed to copy to clipboard"
 			notify-send "Screenshot Copied" "Image saved to clipboard"
 			;;
 		"Both")
 			output_file="${MAIM_DIR}/${MAIM_PREFIX}-${file_type}-$(get_timestamp).png"
-			maim ${maim_args} | tee "${output_file}" | copy_to_clipboard || {
+			shoot | tee "${output_file}" | copy_to_clipboard || {
 				show_error "Failed to save and copy screenshot"
 			}
 			notify-send "Screenshot Saved" "${output_file}\nAnd copied to clipboard"
