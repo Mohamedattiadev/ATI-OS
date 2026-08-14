@@ -131,6 +131,40 @@ Item {
         return n;
     }
 
+    // ---- THE HEIGHT THIS SHEET WANTS ----
+    //
+    // Read by DynamicIslandWindow's `case "cheatsheet"`, which clamps it to
+    // the screen. It exists because one fixed height cannot serve six sheets
+    // whose lengths differ by an order of magnitude: the WM sheet is 192
+    // rows and wants every pixel, DOCS is 19 and was drawing a card with 150
+    // px of nothing under the last row.
+    //
+    // IT IS COMPUTED FROM `sections`, NOT FROM `entries`, and that is the
+    // whole design rather than a detail. `sections` is the sheet as fetched;
+    // `entries` is the sheet after the filter. Sizing to `entries` would be
+    // the thing the old fixed height was written to avoid — a panel that
+    // resizes on every keystroke, with the search field you are typing into
+    // sliding up the screen as it narrows. Sizing to `sections` means the
+    // height changes only when the SHEET changes, which happens on Tab: a
+    // deliberate act, already a transition, and nothing is being typed.
+    //
+    // The row heights are the delegate's own two constants and the ListView
+    // has no spacing; if either changes this drifts, which is why they are
+    // named here rather than folded into one magic number.
+    //
+    // `list.y` is safe to read and is not a binding cycle: it is decided by
+    // the fixed-height items above it in the Column — the title row and the
+    // search field — and not by the height this property is producing.
+    readonly property int preferredHeight: {
+        let rows = 0;
+        for (const section of root.sections)
+            rows += Metrics.px(22) + (section.rows || []).length * Metrics.px(18);
+        // A floor, so a sheet that failed to load is still a panel and not a
+        // sliver: "could not read this sheet" has to have somewhere to print.
+        return Math.max(Metrics.px(200),
+                        Math.round(Metrics.pad(12) * 2 + list.y + rows));
+    }
+
     // ---- FETCHING: A FRESH Process EVERY TIME, ON PURPOSE ----
     //
     // Same lesson as ModeKeysLayer.qml, and it cost enough there to be

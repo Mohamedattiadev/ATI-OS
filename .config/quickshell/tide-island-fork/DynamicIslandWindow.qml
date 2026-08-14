@@ -3719,13 +3719,26 @@ PanelWindow {
                             : Metrics.px(390),
                         root.screen.height - Metrics.px(80));
                 case "cheatsheet":
-                    // FIXED, unlike mode_keys, and that is the difference
-                    // between a panel that lists a chord and a panel that
-                    // lists 192 rows: sizing to content here would mean a
-                    // panel the height of the screen, and one whose height
-                    // jumped on every keystroke as the filter narrowed.
-                    // A fixed frame that scrolls is what a search field
-                    // needs to sit still in.
+                    // Sized to the SHEET, clamped to the screen.
+                    //
+                    // This was a flat Metrics.px(460) — 423 px here — with a
+                    // sound argument behind it: sizing to content would give
+                    // a panel whose height jumped on every keystroke as the
+                    // filter narrowed, and a search field has to sit still.
+                    //
+                    // That argument is against sizing to the FILTERED rows,
+                    // and CheatsheetLayer.preferredHeight does not. It reads
+                    // `sections`, the sheet as fetched, so the height moves
+                    // only when the sheet does — which is Tab, a deliberate
+                    // act that is already a transition. Typing still cannot
+                    // resize anything.
+                    //
+                    // What the flat number could not do is serve six sheets
+                    // whose lengths differ by an order of magnitude: the WM
+                    // sheet is 192 rows and wanted every pixel, DOCS is 19
+                    // and drew 150 px of empty card under its last row. Both
+                    // are now right, and `$mod SHIFT /` opening straight onto
+                    // DOCS is what made the small end of that range matter.
                     //
                     // Clamped against root.screen.height and NOT against
                     // root.height: this window's height is DERIVED from
@@ -3733,8 +3746,18 @@ PanelWindow {
                     // so reading root.height here would be a binding loop
                     // — the panel sizing itself from a number it is in the
                     // middle of producing. The screen is the fixed thing.
-                    return Math.min(Metrics.px(460),
-                                    root.screen.height - Metrics.px(60));
+                    //
+                    // The clamp is deliberately a MARGIN and not the whole
+                    // screen: a card with no desktop showing past it reads as
+                    // an application, and this is a panel you dismiss with
+                    // Esc. It is what binds for the long sheets — the WM
+                    // sheet wants far more than 639 px — while DOCS comes in
+                    // under it and gets the height it actually needs.
+                    return Math.min(
+                        cheatsheetLoader.item
+                            ? cheatsheetLoader.item.preferredHeight
+                            : Metrics.px(460),
+                        root.screen.height - Metrics.px(140));
                 case "theme_picker":
                     // Content-sized. The flat Metrics.px(290) showed 3.8 of
                     // the 6 rows a 22-theme library needs, so SIX THEMES were
