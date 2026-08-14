@@ -3,6 +3,9 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import Quickshell
+// Quickshell.Io for the one Process below — backend-neutral, unlike
+// Quickshell.Wayland.
+import Quickshell.Io
 // No `import Quickshell.Wayland` — backend-neutral BASE, must stay parseable
 // under X11 even though nothing instantiates it there. See the note at the
 // PanelWindow root. TreeTabSidebarWayland.qml carries the layer-shell half.
@@ -329,6 +332,87 @@ PanelWindow {
     readonly property bool monitorFocused:
         root.monitorInfo ? root.monitorInfo.focused === true : false
 
+    // ---------------------------------------------------------------
+    //  IT STARTS WHERE THE WINDOWS START
+    // ---------------------------------------------------------------
+    //
+    // Reported with two screenshots: "the stack height should not be that big
+    // — the top of it should be in the same alignment as the opening app."
+    //
+    // It was not, and by a measurable amount. `hyprctl layers` puts this
+    // surface at `xywh: 0 0 180 768` — the FULL height of the output, starting
+    // above the bar — while the first tiled window on this machine starts at
+    // y=46. The two numbers that make up the difference are both the
+    // compositor's and neither is guessable:
+    //
+    //     reserved[1]   38   the bar's exclusive zone
+    //     gaps_out[0]    8   the gap every tiled window is inset by
+    //
+    // So the panel spanned the bar's strip and the window gap, and the rows in
+    // it sat a centimetre above the window they describe.
+    //
+    // Taken from the LIVE values rather than from constants. The bar's zone
+    // changes with the bar — the 28 px top bar and the 40 px bottom one
+    // reserve different amounts, and $mod SHIFT Z swaps them at runtime — and
+    // gaps_out is a setting. A copied 46 would be right until the day it was
+    // not, and wrong in a way that reads as "the sidebar drifted".
+    //
+    // `reserved` is [left, top, right, bottom]. The LEFT entry is this panel's
+    // own 180 and is deliberately not used: insetting horizontally would move
+    // the panel off the screen edge, which qtile's TreeTab is flush against —
+    // tree.py hsplits panel_width off the screen rect, gap and all.
+    property int gapsOut: 0
+
+    Process {
+        id: gapsProc
+        command: ["hyprctl", "-j", "getoption", "general:gaps_out"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    // A "custom type" option: the value arrives as the string
+                    // "8 8 8 8" under `custom`, top first after left. Only the
+                    // vertical pair is wanted and they are equal in every
+                    // config this repo ships, so the first is enough — but it
+                    // is read as the TOP entry rather than as "the gap",
+                    // because a config with four different gaps is legal.
+                    const v = JSON.parse(text);
+                    const parts = String(v.custom || "").trim().split(/\s+/);
+                    if (parts.length >= 2)
+                        root.gapsOut = parseInt(parts[1], 10) || 0;
+                    else if (parts.length === 1)
+                        root.gapsOut = parseInt(parts[0], 10) || 0;
+                } catch (e) {
+                    // Leave it at zero — the panel then sits where it used to,
+                    // which is wrong by 8 px rather than not drawn at all.
+                }
+            }
+        }
+    }
+
+    // Re-read whenever the monitor snapshot does, which is the cheapest hook
+    // that covers a `hyprctl reload` without this file importing
+    // Quickshell.Hyprland — the base is deliberately backend-neutral and the
+    // event socket is the one thing that is not. gaps_out is a SETTING, so it
+    // is not polled; a refresh that arrives a beat after a reload is exactly
+    // as correct as one that arrives with it.
+    onMonitorInfoChanged: gapsProc.running = true
+
+    Component.onCompleted: gapsProc.running = true
+
+    readonly property int topInset: {
+        const m = root.monitorInfo;
+        const reserved = m && m.reserved ? m.reserved : null;
+        const bar = reserved && reserved.length > 1 ? Number(reserved[1]) : 0;
+        return Math.max(0, bar + root.gapsOut);
+    }
+
+    readonly property int bottomInset: {
+        const m = root.monitorInfo;
+        const reserved = m && m.reserved ? m.reserved : null;
+        const bar = reserved && reserved.length > 3 ? Number(reserved[3]) : 0;
+        return Math.max(0, bar + root.gapsOut);
+    }
+
     readonly property string workspaceName:
         (root.monitorInfo && root.monitorInfo.activeWorkspace)
             ? String(root.monitorInfo.activeWorkspace.name) : ""
@@ -571,6 +655,12 @@ PanelWindow {
     anchors.left: true
     anchors.top: true
     anchors.bottom: true
+    // See topInset above: the surface is placed at y=0, over the bar's strip
+    // and the window gap, so the panel is pushed down to where the windows it
+    // lists actually begin. The exclusive zone is horizontal and is unaffected
+    // by either margin, so the tiling area is unchanged by this.
+    margins.top: root.topInset
+    margins.bottom: root.bottomInset
     implicitWidth: root.panelWidth
     // Snap OPEN, animate CLOSED. The long note above this file's surface
     // section has the burst that decided it: an animated zone is a moving
