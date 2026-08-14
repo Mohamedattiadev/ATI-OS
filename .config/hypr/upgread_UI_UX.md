@@ -1809,3 +1809,155 @@ A second monitor. The x/y monitor-relative logic in `scratchpad.sh` was
 measured against a headless output in an earlier session and its reasoning
 is in the header; this pass did not re-create that output, so multi-monitor
 remains verified-by-history rather than verified-today.
+
+---
+
+# Audit — 2026-08-14, the nine-item list
+
+Six of the items were built and verified in this pass. Every claim below
+was measured or looked at; where a premise carried in from the handoff
+turned out to be wrong, the correction is stated rather than quietly
+worked around.
+
+## The S workspace — two bugs, one shape
+
+The root cause named in the handoff was correct and is confirmed: named
+workspaces have NEGATIVE ids (`S` is -1337) and
+`HyprlandWorkspaceTracker.qml`'s `if (monitorWorkspaceId < 1) return;`
+dropped every one of them.
+
+There was a SECOND site with the same shape, and it is the one that
+produced the other half of the report. `DynamicIslandWindow.qml`'s window
+strip computed `canFilter = wsFor.size > 0 && currentWs > 0`; on S that
+went false, the strip took its deliberate fail-open path, and every window
+on every workspace was drawn. Reproduced before the fix: on S the chip
+read `4` and the strip showed all 8 windows.
+
+A third, latent one was found while in there: `handleWorkspaceEvent`
+parsed the workspace out of the event payload, and the v1 `workspace`
+event carries a NAME in arg 0, not an id — so it was `parseInt("S")`, NaN.
+Numbered workspaces hid it because their name and id are the same string.
+The event is now only a trigger and `Hyprland.focusedWorkspace` is read
+back for the answer.
+
+Special workspaces are excluded by NAME (`special:` prefix), not by sign —
+they are also negative (-97, -91), so a sign test would have swallowed S
+along with them.
+
+Tested: S with 2 / 1 / 0 windows, arriving from 4 and from 2, both
+bounce-backs, separate go-back memory, and `special:term1` over S. Worth
+recording for the next person: **anki and obsidian are GROUPED on S**, so
+moving one moves both, which invalidated the first test harness.
+
+## Night light — the fallback was worse than absent
+
+`extra/hyprsunset 0.4.0-3` installed; declared count 295 → 296.
+
+The handoff's measurement of gammastep is right and its conclusion needs
+one correction that changes the consequence: gammastep does **not** exit 0
+on this compositor. It prints "Zero outputs support gamma adjustment" and
+then **hangs**. The old fallback backgrounded it and returned `exit 0`, so
+the row reported "Night Light enabled", the screen never changed, and a
+stuck gammastep was left behind every time. Deleted, not demoted.
+
+gammastep stays installed and declared: qtile drives it under X11 with
+`-m randr`, where it works. Both sessions were checked before touching it.
+
+Two traps recorded in the code:
+
+  * `hyprctl hyprsunset temperature` reports the last temperature
+    REQUESTED, not the effective one — after `identity` it still answers
+    the old value. It is not a state query, and hyprsunset 0.4.0 has none.
+  * **A screenshot genuinely cannot see it.** Measured, not assumed: a
+    3000 K filter moved grim's captured blue mean by 0.2%, against the
+    ~40% a real warm shift is.
+
+The mechanism moved from `ControlCenterLayer` (loaded only while the panel
+is open) to `shell.qml`, and there is now a `nightlight` IPC. That is what
+made it testable at all.
+
+## Theme and wallpaper as one animation
+
+The old ordering was defended by a sound argument with one missing
+premise: awww's wave exists to avoid a hard cut on a LIVE desktop, and
+under the transition cover there is no live desktop. The wave was a second
+animation nobody could see.
+
+Measured on an empty workspace, region containing nothing but wallpaper,
+frames differenced against each other:
+
+    before   marker +1125 ms   wallpaper first changes +2810 ms
+    after    marker +1486 ms   wallpaper changes ONCE, +1565 ms
+
+The seam goes from 1685 ms to 79 ms. **The freeze did grow**, by about
+170 ms — that is what `theme-wallpaper apply` costs, timed directly five
+times at 160-203 ms — against a 1606 ms seam removed and
+time-to-fully-settled dropping from 3071 ms to 1565 ms. Backgrounding the
+apply would buy the 170 ms back and reintroduce a ~90 ms pop, because the
+sweep runs only ~79 ms after the marker here.
+
+Measurement note: the first harness sampled the whole screen on the
+workspace holding the terminal driving it, so the clock and the scrolling
+output changed every frame and the cover's static stretch read as 0 ms.
+Full-screen grim under load also sampled at 576 ms, too coarse to resolve
+a ~960 ms stretch.
+
+## Wallpapers — the scorer was agreeing with everything
+
+3,759 candidates scored from six repositories plus this machine's own 362.
+20 themes get 10 images each; the images are pushed to the user's
+wallpaper repo with a sources table.
+
+The inherited scorer could not see LIGHTNESS. It derives a candidate's
+background from its darkest pixel pushed to near-black, which is right for
+deriving a terminal palette and useless for judging a photograph — so
+3,759 of 3,759 scored under threshold for most themes. The metric was not
+discriminating, it was agreeing. Only a contact sheet showed it: gruvbox
+(bg L* 16.1) had been given images at L* 77-88, github-dark (L* 5.0) at
+75.7 and 81.9.
+
+**mono-light cannot be served by selection at all.** Zero of 3,759 scored
+within 60 of it. Its background is #ffffff and no light wallpaper exists
+in any of these repos — which independently confirms what
+theme-wallpaper-gen's header already recorded. It is generated, via a new
+`--per-theme N`.
+
+`catppuccin/wallpapers` does not exist; it 404s.
+
+## The docs overlay and the tour
+
+`$mod SHIFT /` extends the existing cheatsheet with DOCS and FIXING sheets
+rather than building a second surface — the WM sheet is already generated
+from `hyprctl binds -j` and cannot drift. `$mod SHIFT K` kept as an alias.
+
+The tour is `qml/onboarding/OnboardingLayer.qml`, six pages on the shared
+components, opened by `$mod SHIFT I`.
+
+Four things that went wrong first, all found by looking rather than by
+reasoning:
+
+  * **`$mod SHIFT N` was not free.** It is `toggleNotificationCenter`,
+    written with the panel bindings further down binds.conf, so grepping
+    near the cheatsheet binds missed it. `hyprctl binds -j` after a reload
+    showed two exec binds on modmask 65 key N. This is the third time the
+    live table has caught something this file's text would not have.
+  * The bind was first written with `$qsi`, which is defined ~40 lines
+    below it — the trap binds.conf already documents twice.
+  * `Metrics` was not imported into the new layer. It is a .js library,
+    not a singleton. The file loaded fine and every px()/pad()/font()
+    resolved to undefined at RUNTIME, collapsing every chip to zero width.
+    The only evidence was `ReferenceError: Metrics is not defined` in the
+    shell log.
+  * The panel height was computed from the chrome twice, and both closed a
+    binding cycle: the island's height reads the layer's preferredHeight,
+    PanelChrome fills the island. QML broke the cycle by zeroing
+    everything and the panel rendered as an empty box with a footer.
+
+## Still open
+
+The ~800 ms panel settle, the remaining ~1.0 s of the theme change
+profiled block by block, the 12 unchecked picker menus (record first),
+live preview for the cheap numeric settings keys,
+`islandShowWorkspaceOnAutoHide`, scratchpads on a second monitor, keybind
+latency, `layout-cycle.sh`'s 7 hyprctl invocations, and what killed the
+two socket listeners. None were touched in this pass.

@@ -5,6 +5,23 @@ Standing constraint, applies to everything below:
 
 ---
 
+## Where the 2026-08-14 list landed
+
+A separate nine-item list was given directly by the user and is recorded
+here so it is not lost between documents. The measured detail for each is
+in the audit at the end of `upgread_UI_UX.md`.
+
+| Item | Status |
+| ---- | ------ |
+| Per-theme wallpaper sets, random pick | **DONE.** 20 themes x 10 real photographs, scored; mono-light generated (no light wallpaper exists to find). Pushed to the user's wallpaper repo. |
+| Theme + wallpaper as one animation | **DONE.** Seam 1685 ms -> 79 ms. Freeze grew ~170 ms; the trade is stated in the commit. |
+| `$mod SHIFT O` / `$alt SHIFT A` on S | **DONE.** Two independent bugs, both from treating a negative workspace id as invalid. |
+| Night light | **DONE.** hyprsunset installed and declared; the gammastep path deleted because it cannot work here. Needs the user's eyes to confirm the tint. |
+| Onboarding flow | **DONE.** `qml/onboarding/OnboardingLayer.qml`, `$mod SHIFT I`. |
+| `$mod SHIFT /` docs overlay | **DONE.** Two sheets added to the existing cheatsheet; `$mod SHIFT K` kept as an alias. |
+| Documentation pass | **DONE.** `hypr/README.md` created, arch-config README corrected, audit appended. |
+| The older still-open list | **NOT STARTED.** Unchanged; see the audit's closing section. |
+
 ## 0. Install Hyprland
 
 **Status: DONE.** Hyprland 0.56.2 installed and running; keyd is active,
