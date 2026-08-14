@@ -583,17 +583,30 @@ ShellRoot {
                                 clickable: true
                                 scrollable: true
                                 height: parent.height
+                                // Every branch that CHANGES the volume asks for
+                                // a re-read; see shellRoot.volumeSoon(). The
+                                // readout is on a 2 s poll, which is fine for
+                                // a volume something else changed and is the
+                                // same staleness the language chip was
+                                // reported for when it is YOUR scroll that
+                                // changed it. pavucontrol does not, because
+                                // opening a window changes nothing.
                                 onClicked: (b) => {
-                                    if (b === Qt.RightButton)
+                                    if (b === Qt.RightButton) {
                                         Quickshell.execDetached(["pavucontrol"]);
-                                    else if (b === Qt.LeftButton)
+                                    } else if (b === Qt.LeftButton) {
                                         Quickshell.execDetached(["wpctl", "set-mute",
                                             "@DEFAULT_AUDIO_SINK@", "toggle"]);
+                                        shellRoot.volumeSoon();
+                                    }
                                 }
-                                onScrolled: (d) => Quickshell.execDetached(
-                                    ["wpctl", "set-volume", "-l", "1.5",
-                                     "@DEFAULT_AUDIO_SINK@",
-                                     d > 0 ? "5%+" : "5%-"])
+                                onScrolled: (d) => {
+                                    Quickshell.execDetached(
+                                        ["wpctl", "set-volume", "-l", "1.5",
+                                         "@DEFAULT_AUDIO_SINK@",
+                                         d > 0 ? "5%+" : "5%-"]);
+                                    shellRoot.volumeSoon();
+                                }
                             }
                         }
                     }
@@ -1233,6 +1246,38 @@ ShellRoot {
         repeat: true
         triggeredOnStart: true
         onTriggered: volProc.running = true
+    }
+
+    // ---- A CHIP THAT CHANGES SOMETHING RE-READS IT ----
+    //
+    // Audited alongside the language chip, because the report was that the
+    // others "feel the same". Every timer on this bar was checked:
+    //
+    //     TaskList / Workspaces  90 ms   debounce ON AN EVENT — fine
+    //     clock                   1 s    a clock
+    //     cpu / memory            2 s    /proc readouts nobody drives
+    //     disk                   60 s    a readout nobody drives
+    //     keyboard layout         3 s -> event driven, see the kb section
+    //     VOLUME                  2 s    driven by THIS BAR's own scroll
+    //
+    // Only the volume chip had the language chip's actual shape: a control
+    // whose own action changes the number it displays, with the display on a
+    // poll. Scrolling it moved the volume immediately and the readout caught
+    // up whenever the 2 s tick came round.
+    //
+    // Debounced rather than a poll per scroll event: a wheel sends a burst,
+    // and one `wpctl get-volume` per notch is a process per notch. 80 ms is
+    // after the wpctl that caused it has been applied and short enough that
+    // the readout moves while the wheel is still turning. The 2 s poll stays
+    // for volume changed anywhere else.
+    Timer {
+        id: volSoon
+        interval: 80
+        repeat: false
+        onTriggered: volProc.running = true
+    }
+    function volumeSoon() {
+        volSoon.restart();
     }
 
     // ---- BATTERY ----
