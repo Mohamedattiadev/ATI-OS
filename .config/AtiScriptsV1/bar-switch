@@ -272,8 +272,10 @@ apply() {
     hyprland:native)
       if ! hypr_native_available; then
         die "the Hyprland topbar is not built yet, so 'native' would leave this
-             session with no bar at all. The island stays. See
-             .config/hypr/README.md for where that work stands."
+             session with no bar at all. The island stays.
+             What it has to be, and the order to build it, is written up in
+             .config/hypr/TOPBAR-SPEC.md; .config/hypr/README.md has the
+             shorter version."
       fi
       ;;
 
