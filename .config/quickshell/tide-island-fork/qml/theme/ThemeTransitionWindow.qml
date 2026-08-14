@@ -175,7 +175,36 @@ PanelWindow {
         right: true
     }
 
-    exclusiveZone: 0
+    // ---- IT MUST BE LAID OUT AGAINST THE OUTPUT, NOT AGAINST WHAT IS LEFT ----
+    //
+    // This read `exclusiveZone: 0`, and that is the SAME one-line bug
+    // ScreenCornersWindow.qml already documents at length — including the
+    // detail that writing `exclusiveZone` at all is what causes it, because
+    // assigning it puts the window into Normal mode and Normal mode is laid
+    // out inside other surfaces' reservations. Being explicit about claiming
+    // nothing does not claim nothing; it opts into the thing being avoided.
+    //
+    // Measured here, sampling `hyprctl layers -j` through a real change:
+    //
+    //     L2 quickshell                  1366x58  @ 0,0     the island
+    //     L3 quickshell-theme-transition 1366x735 @ 0,33    the cover
+    //
+    // 33 px is the island's own exclusive zone, and a cover that starts 33 px
+    // down the screen produces every symptom the user reported, in one:
+    //
+    //   * "the island glitch" — the frozen frame is a FULL-SCREEN 1366x768
+    //     grab drawn into a 1366x735 box at y=33, so the island inside the
+    //     image lands 33 px below the live island it is supposed to be
+    //     hiding. You see the notch twice, one ghosted under the other.
+    //   * "a small part of new theme" — the top 33 px of the island is never
+    //     covered at all, so it repaints LIVE the moment theme-apply writes
+    //     colors.json at 0.11 s, while the other 735 px stay frozen on the
+    //     old palette for another second and a half.
+    //   * "and then changes" — the sweep, arriving long afterwards.
+    //
+    // So the cover was never covering the one surface that sits above the
+    // whole desktop. Verified after the change: 1366x768 @ 0,0.
+    exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell-theme-transition"
     // No keyboard focus and no input region at all. This covers the entire

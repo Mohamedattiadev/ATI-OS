@@ -66,7 +66,19 @@ PanelWindow {
     anchors.right: true
 
     color: "transparent"
-    exclusiveZone: 0
+    // Ignore, not `exclusiveZone: 0` — see ScreenCornersWindow.qml, which
+    // documents why assigning `exclusiveZone` at all is what puts a surface
+    // into Normal mode and lays it out inside the island's reservation. The
+    // comment above says "full-screen surface"; with `exclusiveZone: 0` it
+    // was 1366x735 at y=33 and the comment was not true.
+    //
+    // NOTHING MOVES ON SCREEN because of this, and that was checked rather
+    // than assumed: the 33 px was lost off the TOP, and the plate below is
+    // anchored to the BOTTOM edge, which sat at 768 either way. It is fixed
+    // because a decoration of the display has to be laid out against the
+    // display — the day the plate moves up, or the island's zone changes,
+    // this becomes a real misplacement with no obvious cause.
+    exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     WlrLayershell.namespace: "quickshell-ring-osd"
