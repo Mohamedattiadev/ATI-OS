@@ -1505,6 +1505,22 @@ PanelWindow {
             || (root.monitorFocused && (root.overviewVisible || root.connectivityPromptActive))
 
         property string islandState: "normal"
+
+        // ---- THE HEIGHT TO HOLD WHILE AN INCOMING PANEL IS STILL LOADING ----
+        //
+        // Latched in a HANDLER, never in a binding. `targetHeight` reads this,
+        // so binding it to anything that depends on the capsule's size would
+        // be a binding loop — and `mainCapsule.height` is exactly such a
+        // thing. Assigning it from onIslandStateChanged reads the live
+        // animated height once, at the moment the state flips, which is
+        // precisely the value a panel that cannot yet size itself should sit
+        // at rather than guessing.
+        //
+        // See the "picker" case in targetHeight for the measurement that
+        // made this necessary.
+        property real heightBeforeStateChange: Metrics.px(35)
+        onIslandStateChanged: heightBeforeStateChange = mainCapsule.height
+
         property string splitIcon: root.defaultSplitIcon
         property real osdProgress: -1.0
         property bool osdProgressAnimationEnabled: true
@@ -3890,10 +3906,36 @@ PanelWindow {
                     // PickerLayer's preferredHeight; a panel that changed
                     // height on every keystroke would walk the search field
                     // out from under the eye that is using it.
-                    return pickerLoader.item
+                    //
+                    // ---- AND NOT SIZED TO AN EMPTY MODEL EITHER ----
+                    //
+                    // `pickerLoader.item` existing is NOT the same as the
+                    // picker knowing how tall it is, and treating them as the
+                    // same is what made the island visibly bounce. The layer's
+                    // pageStack starts EMPTY and is filled by a `--list`
+                    // script; until that answers, `items` is [] and
+                    // `visibleRows` is `Math.max(1, ...)` — one row. So the
+                    // capsule was handed a one-row height, started springing
+                    // toward it, and was handed the real one mid-flight.
+                    //
+                    // Instrumented on rest -> mode_keys -> picker:
+                    //
+                    //     t+1669  picker  h=130     <- one row
+                    //     t+1820  picker  h=242     <- the truth, 151 ms later
+                    //
+                    // A 112 px re-aim, 151 ms in. That is the "island glitching
+                    // up and down", and it is the CONTENT-not-shape lead that
+                    // NEXT-SESSION.md has been carrying for three sessions.
+                    //
+                    // Holding the height the capsule already has costs a beat
+                    // before it grows — the width morph is already running, so
+                    // the island is not frozen — and buys ONE clean movement
+                    // instead of two opposed ones. `page` and not `items.length`
+                    // because a legitimately empty menu is still an answer.
+                    return (pickerLoader.item && pickerLoader.item.page)
                         ? Math.min(pickerLoader.item.preferredHeight,
                                    root.screen.height - Metrics.px(60))
-                        : Metrics.px(340);
+                        : islandContainer.heightBeforeStateChange;
                 case "mode_keys":
                     // The layer knows its own row count; nothing else does.
                     return modeKeysLoader.item
