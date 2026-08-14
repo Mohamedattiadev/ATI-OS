@@ -83,6 +83,55 @@ done
 # theme simply never changes — a picker that silently does nothing is the
 # worst of the three outcomes here, and the fallback is exactly what
 # theme-animate itself would have done.
+# ---- LET ROFI LEAVE THE SCREEN FIRST ----
+#
+# Reported: picking a theme here makes rofi freeze and glitch for about 0.4 s
+# before the new palette arrives.
+#
+# The 0.4 s is not a coincidence and it is not the theme code. rofi is a LAYER
+# SURFACE, Hyprland drops it from `hyprctl layers` when the close BEGINS and
+# then animates it out, and looks.conf's `animation = fade, 1, 4` is 400 ms.
+# Measured with a CONTROL that changed no theme at all — rofi opened and
+# dismissed with Escape, consecutive frames differenced over the panel:
+#
+#     +3558 ms   the layer disappears from `hyprctl layers`
+#     +3593 ms   the panel starts changing — the fade begins HERE
+#     +3996 ms   d(prev) reaches the noise floor
+#
+# So rofi is still painted for ~400 ms after the compositor says it is gone,
+# theme change or no theme change. What makes it a REPORTED bug is that the
+# overlay screenshots the screen in that window and holds the frame: you get a
+# half-faded rofi frozen in front of you for as long as theme-apply takes.
+#
+# NEXT-SESSION.md guessed "the frozen frame holds a rofi that has already
+# exited". Right about the symptom, wrong about who was late — rofi exits
+# promptly and the COMPOSITOR is the one still drawing it.
+#
+# Two things fix it together. looks.conf now sets `layerrule = animation none`
+# for rofi, which halves the tail (ghost at +50 ms, gone by +200 ms), and this
+# waits out the rest. The first attempt here waited only one frame, on the
+# theory that the race was with rofi's exit; it changed nothing, which is what
+# sent the measurement to the control run above.
+#
+# WAYLAND_DISPLAY, not XDG_SESSION_TYPE: this script is the qtile session's
+# picker too, and that variable is set by the display manager and absent for a
+# session started any other way. The RULES record it.
+#
+# The poll cap is 400 ms so a compositor that never reports the surface gone
+# cannot hang the picker.
+rofi_settle() {
+  if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v hyprctl >/dev/null 2>&1; then
+    local i
+    for ((i = 0; i < 40; i++)); do
+      hyprctl layers -j 2>/dev/null | grep -q '"namespace": *"rofi"' || break
+      sleep 0.01
+    done
+  fi
+  sleep 0.25
+}
+
+rofi_settle
+
 if command -v theme-animate >/dev/null 2>&1; then
   exec theme-animate "$MODE"
 fi
