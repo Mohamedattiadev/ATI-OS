@@ -61,6 +61,20 @@ PanelWindow {
     // [{ key: "hjkl", desc: "move" }, …] — render_hints()' pairs.
     property var hints: []
 
+    // ---- THE OPTIONAL TABS ROW ----
+    //
+    // DisplayPopup.py is the one popup in that folder with FOUR views, and it
+    // has a row the others do not: render_tabs(), at y=126 between the hint
+    // bar and the body, carrying the current view's name in a filled chip
+    // plus a line of keys that only apply inside that view.
+    //
+    // Optional rather than a fifth popup shape: `tabsLabel` empty leaves the
+    // rhythm exactly as the other four have it, so nothing moves for them.
+    // When it is set the body starts lower, by that file's own numbers —
+    // body 138 -> 162, which is the 24 px this row occupies plus its gap.
+    property string tabsLabel: ""
+    property string tabsExtra: ""
+
     // ---- THE GAP BETWEEN KEYCAPS IS PER POPUP, AND MEASURED ----
     //
     // Not one number. render_hints() joins its pairs with a run of spaces and
@@ -277,10 +291,52 @@ PanelWindow {
         // smaller keycaps". Hence the footer is placed from the BOTTOM and
         // the body simply fills what is between them, with the original's
         // 14 px gap (574 -> 588) kept.
+        // render_tabs(): the view chip, then the keys that belong to it.
+        // Drawn only when a popup sets it; see the property's note.
+        Row {
+            id: tabsRow
+            visible: root.tabsLabel !== ""
+            x: root.popupWidth * 0.035
+            y: PopupMetrics.s(126)
+            height: PopupMetrics.s(26)
+            spacing: PopupMetrics.s(8)
+
+            Rectangle {
+                // highlight_bg with highlight_fg on it — the same filled chip
+                // the selected row uses, so "which view" reads the same as
+                // "which row" does.
+                color: root.cHighlight
+                radius: PopupMetrics.s(5)
+                width: tabsLabelText.implicitWidth + PopupMetrics.s(16)
+                height: tabsLabelText.implicitHeight + PopupMetrics.s(6)
+                anchors.verticalCenter: parent.verticalCenter
+                Text {
+                    id: tabsLabelText
+                    anchors.centerIn: parent
+                    text: root.tabsLabel
+                    color: root.cHighlightInk
+                    font.family: PopupMetrics.font
+                    font.pixelSize: PopupMetrics.hintSize
+                    font.bold: true
+                    renderType: Text.NativeRendering
+                }
+            }
+            Text {
+                text: root.tabsExtra
+                color: root.cMuted
+                font.family: PopupMetrics.font
+                font.pixelSize: PopupMetrics.hintSize
+                anchors.verticalCenter: parent.verticalCenter
+                renderType: Text.NativeRendering
+            }
+        }
+
         Item {
             id: bodyArea
             x: root.popupWidth * 0.035
-            y: PopupMetrics.s(138)
+            // 138 without the tabs row, 162 with it — DisplayPopup.py's own
+            // body_y, which is this row's height plus the same gap.
+            y: root.tabsLabel !== "" ? PopupMetrics.s(162) : PopupMetrics.s(138)
             width: root.popupWidth * 0.93
             height: Math.max(0, footerArea.y - y - PopupMetrics.s(14))
         }
