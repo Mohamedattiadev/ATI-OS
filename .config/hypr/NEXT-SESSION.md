@@ -199,13 +199,13 @@ not guessed — start from the measurement, not from the symptom.
 
 ### Dead or missing controls
 
-* **The Wi-Fi QR chip does nothing.** `scripts/wifi-qr.py` is a DATA
-  PRODUCER, not a viewer: run it and it prints
-  `{"ssid": ..., "security": ..., "ok": ...}` on stdout. The island renders
-  that in its `wifi_qr` state; the topbar's chip just runs the script, so
-  nothing appears. It needs a viewer on the topbar side — the natural home is
-  a fourth popup in `tide-island-fork/qml/popups/`, beside the three that
-  exist, since it is the same shape of surface.
+* ~~**The Wi-Fi QR chip does nothing.**~~ **FIXED.** The diagnosis was
+  right and both callers had it: the chip in `topbar/shell.qml` ran the
+  script directly and so did `bar-action`'s `toggleWifiQr`, and the script
+  is a DATA PRODUCER — it writes `~/.cache/hypr/wifi-qr.png` and prints the
+  path. `qml/popups/WifiQrPopup.qml` is the viewer, both callers go through
+  `popups wifiqr`, and it was driven by IPC and by a synthesised click on
+  the chip.
 * **`$alt 5` (calculator) and `$alt 4` (display) do nothing under the
   topbar.** Both are bound and both reach `bar-action`; the NATIVE branch is
   what fails, and the display one has a precise cause worth fixing first:
@@ -268,6 +268,46 @@ not guessed — start from the measurement, not from the symptom.
   on screen when the shot is taken, so the frozen frame contains a rofi that
   has already exited. Look at whether `theme-toggle` should close rofi and
   settle BEFORE calling `theme-animate`.
+
+### The bar's fidelity, and where the divergences actually live
+
+Reported mid-session with a screenshot — "this part not behaving like the
+real qtile, and the workspace a bit weird" — against the TaskList and the
+GroupBox. Three defects came out of it and **not one of them was in
+`config.py`**. Everything config.py sets was already reproduced. They were
+all in the INSTALLED libqtile, which is the rule this tree already has and
+had only ever applied to `w_volume`:
+
+* `TaskList` carries five markup strings and `parse_text=parse_task_name`.
+  The plates and the parser were both missing, which is why titles read
+  `✳ Claude Code` and `No file - mpv`.
+* `GroupBox.box_width` reserves `borderwidth*2` **even in `highlight_method
+  ='text'`**, where no border is ever painted — 'text' passes
+  `bordercolor=None`, which zeroes the border at DRAW time only. And
+  `spacing` defaults to `None`, which `_configure()` resolves to `margin_x`,
+  not to zero. Together that was 56 px of a 136 px widget.
+* Both widgets' Button callbacks come from `__init__`, not from the config:
+  clicking the focused TASK minimizes it, clicking the current GROUP goes
+  back, and the GroupBox takes the wheel.
+
+**The mouse-callback audit is now COMPLETE and clean.** Every widget
+constructed in `config.py` was walked — including the ones built as
+`chip(ewidget.X, …)`, where the class is a POSITIONAL argument and a scan
+keyed on `Call.func` misses it, which is how a first pass here found only
+two of four. `add_callbacks` merges with the user's winning per KEY, so a
+config that sets some buttons still inherits the rest. The result:
+
+    GroupBox   Button1 select_group, Button4 prev, Button5 next   FIXED
+    TaskList   Button1 select_window                              FIXED
+    Volume     Button1 mute, Button3 run_app, Button4/5 vol       already done
+    CheckUpdates / KeyboardLayout / Mpris2                        fully overridden
+
+Nothing else on either bar has a live default. Re-run the walk if a widget
+is added.
+
+TaskList's geometry was checked the same way and agrees:
+`text + 2*(padding_side + borderwidth) + (icon_size + padding_side)` is
+`text + 37` in both, with the markup's two spaces counted as text.
 
 ### The standing requirement
 
@@ -371,6 +411,17 @@ submap.
   sets no mouse_callbacks and was written up here as inert; `Volume.__init__`
   adds mute/run_app/increase/decrease itself, so an empty mouse_callbacks
   means "keep the defaults". Read the installed libqtile, not only config.py.
+  **This is the general case, not a Volume quirk** — it went on to account for
+  every TaskList and GroupBox defect reported this session. A widget's
+  APPEARANCE comes from there too: `GroupBox.box_width` reserves
+  `borderwidth*2` in a highlight mode that never draws a border, and
+  `spacing=None` resolves to `margin_x`. Ask the class, not the config.
+- **`add_callbacks` merges per KEY**, user over default, so a widget whose
+  config sets Button1 still has the library's Button4 and Button5.
+- **Walk `chip(ewidget.X, …)` too.** Most of the top bar is built by a helper
+  that takes the widget class POSITIONALLY, so an AST scan keyed on the call's
+  `func` sees none of them. A first pass here reported two widgets with live
+  defaults where there were four.
 - **Look at the image, not only the number.**
 - **Private-use characters do not survive into what the model reads back.**
   Dump bytes, and write glyphs by codepoint.
