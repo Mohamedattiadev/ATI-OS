@@ -4481,11 +4481,33 @@ PanelWindow {
             // what makes the ring read as "this surface is the active one"
             // rather than as decoration the island happens to have.
             //
-            // And there is no TOP border because the island has no top edge:
-            // it hangs off the screen's top, and `notchUnround` squares its
-            // upper corners flush against it as the panel opens. A line
-            // across the top would be drawing an edge where the shape's whole
-            // premise is that there is not one.
+            // And there is no TOP border WHILE THE NOTCH IS ON, because then
+            // the island has no top edge: it hangs off the screen's top and
+            // `notchUnround` squares its upper corners flush against it as
+            // the panel opens. A line across the top would be drawing an edge
+            // where the shape's whole premise is that there is not one.
+            //
+            // ---- WITH THE NOTCH OFF, IT HAS ALL FOUR ----
+            //
+            // Reported: "when the notch is disabled and the island opens a
+            // popup, the border should be on all the popup; when it is the
+            // notch, leave it as it is."
+            //
+            // Correct, and the sentence above is exactly why it was wrong:
+            // the premise "the island has no top edge" holds only for the
+            // notch form. Switch the notch off and the island FLOATS
+            // islandTopMargin below the edge — it has a top edge, a top
+            // margin and two round top corners — and a panel opening out of
+            // it was still drawing three sides, so the popup hung open at the
+            // top against nothing.
+            //
+            // Driven by `notchUnround`, not by a boolean, because that is the
+            // rule this shape is built on: ONE value, one path, no second
+            // animation. At notchUnround 1 the frame is pushed up and the
+            // clip takes the top away, exactly as before; at 0 it sits flush
+            // with the capsule and all four sides and corners are drawn; and
+            // in between it slides, so toggling the notch morphs the border
+            // with the shape instead of swapping two of them.
             //
             // HOW THREE SIDES ARE DRAWN WITH A Rectangle, which has only a
             // four-sided `border`: this frame is TALLER than the capsule and
@@ -4505,8 +4527,9 @@ PanelWindow {
                 x: 0
                 // Pushed up by more than the radius so the clip removes the
                 // top edge AND both top corners, leaving two straight
-                // verticals that run off the top of the shape.
-                y: -mainCapsule.targetRadius - border.width
+                // verticals that run off the top of the shape — but only as
+                // far as the notch is engaged. See the note above.
+                y: (-mainCapsule.targetRadius - border.width) * root.notchUnround
                 width: parent.width
                 height: parent.height - y
                 color: "transparent"

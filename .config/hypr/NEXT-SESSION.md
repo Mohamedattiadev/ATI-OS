@@ -132,22 +132,34 @@ systematic sweep (`scripts/test/sweep-island.py`, `sweep-topbar.py` —
    across two outputs and fractional scale; `scratchpad.sh`'s monitor-relative
    x/y is still verified-by-history only, and `hyprctl output create headless`
    is how to test it.
-7. **`topbar.sh` is not idempotent** — running it while a topbar is up starts
+7. **The panel border follows the notch now — check the rest of the shape
+   does too.** Reported: "when the notch is disabled and the island opens a
+   popup the border should be on all the popup; when it is the notch, leave
+   it as it is." Fixed — `panelOutlineFrame`'s y is
+   `(-targetRadius - border.width) * notchUnround`, so the clip removes the
+   top edge only as far as the notch is engaged. The capsule's own y and its
+   top corner radii were already driven by `notchUnround`; the OUTLINE was
+   the one thing hardcoded to the notch form, under a comment that argued
+   "the island has no top edge" — true only for the notch. Worth a pass over
+   anything else that assumed the flush form: `notchSkirt`, the overshoot
+   band, and the shadow.
+
+8. **`topbar.sh` is not idempotent** — running it while a topbar is up starts
    a SECOND one, and the reserved zone doubles to 76. Caught by hand this
    session and cleaned up by killing the extra; it should refuse instead, the
    way island.sh now stops the standalone surfaces.
-8. **The `◐` in window titles.** `parse_task_name` strips braille spinners
+9. **The `◐` in window titles.** `parse_task_name` strips braille spinners
    and `✳ ✓ ✗ ▶ ⏸`, not the half-circle frames this terminal now uses. qtile
    shows it too, so fixing it means editing `qtile/config.py` and
    `topbar/TaskList.js` together — the same shape as the CHORD_CHIP_LABELS
    glyph note below.
-9. **Live preview for the cheap numeric settings keys**, now that the
+10. **Live preview for the cheap numeric settings keys**, now that the
    settings app has a preview to put it in.
-10. **`islandShowWorkspaceOnAutoHide`** is still an inert row. Do NOT "fix" it
+11. **`islandShowWorkspaceOnAutoHide`** is still an inert row. Do NOT "fix" it
     via ForkConfig; see the audit.
-11. **qtile with its OWN bar gets no theme sweep** — the one combination with
+12. **qtile with its OWN bar gets no theme sweep** — the one combination with
     no Quickshell process at all.
-12. **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
+13. **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
     ~50 ms before any animation starts.
 
 ---
