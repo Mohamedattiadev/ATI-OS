@@ -291,21 +291,74 @@ while True:
 #  a trapped signal makes it return so the handler runs immediately. It
 #  also means the loop body executes in this shell rather than in a
 #  subshell, so anything it sets survives the iteration.
-exec 8< <(read_events)
-READER_PID=$!
+# ------------------------------------------------------------
+#  RECONNECT, because falling out of the loop used to be fatal
+# ------------------------------------------------------------
+#  This was a single read loop, on the assumption that the only way it
+#  ends is Hyprland going away. That assumption was wrong, and the way it
+#  was wrong is invisible:
+#
+#  Found live. The user reported "the mode popups do not appear at all,
+#  but the mode itself works". Both are true and they have one cause —
+#  Hyprland handles submap keys itself, so the chord keeps working while
+#  the only thing that ANNOUNCES it is gone. There is nothing on screen to
+#  suggest a process is missing rather than a feature being broken.
+#
+#  Measured at the time of the report: this script was not running, its
+#  lock was free, and `workspace-layout.sh` — the other listener on this
+#  same socket, started by the same autostart.conf — was also dead. The
+#  two survivors in that file are `adhkar` and `battery-events`, and those
+#  are precisely the two with a `sleep 40; pgrep -x ... || ...` re-check
+#  behind them. So the pattern that dies is "connect to socket2 once".
+#
+#  The trigger was not recovered — nothing in the repo kills either script
+#  (checked; the only `pkill -f` is rofi_shared's, on a feh title). What
+#  is certain is the shape: if the reader ever returns, the process exits
+#  and never comes back, and the desktop quietly loses a feature.
+#
+#  So a read that ends is now a reconnect, not an exit. Hyprland going
+#  away is still an exit, and it is detected by the SOCKET FILE being gone
+#  rather than by the read ending — that is the distinction the original
+#  loop collapsed.
+RECONNECTS=0
+while [ -S "$SOCKET" ]; do
+    exec 8< <(read_events)
+    READER_PID=$!
 
-while IFS= read -r line <&8; do
-    case "$line" in
-        submap\>\>*)
-            map="${line#submap>>}"
-            if [ -z "$map" ] || [ "$map" = "default" ]; then
-                clear_it
-            else
-                show "$map"
-            fi
-            ;;
-    esac
+    while IFS= read -r line <&8; do
+        case "$line" in
+            submap\>\>*)
+                map="${line#submap>>}"
+                if [ -z "$map" ] || [ "$map" = "default" ]; then
+                    clear_it
+                else
+                    show "$map"
+                fi
+                ;;
+        esac
+    done
+
+    exec 8<&-
+    [ -n "${READER_PID:-}" ] && kill "$READER_PID" 2>/dev/null || true
+
+    # Hyprland really is gone: stop, and let the EXIT trap clean up.
+    [ -S "$SOCKET" ] || break
+
+    # Whatever was on screen describes a submap we can no longer track.
+    clear_it
+
+    # Backoff, so a socket that accepts and immediately closes cannot spin
+    # this into a hot loop. Capped rather than unbounded: the point is to
+    # keep trying for the life of the session, not to give up politely.
+    RECONNECTS=$((RECONNECTS + 1))
+    if [ "$RECONNECTS" -le 5 ]; then
+        sleep 1
+    else
+        sleep 5
+    fi
+    echo "submap-indicator: event socket read ended, reconnecting" \
+         "(attempt $RECONNECTS)" >&2
 done
 
-# Falling out of the loop means the socket closed — Hyprland went away.
-# cleanup runs via the EXIT trap.
+# The socket file is gone — Hyprland went away. cleanup runs via the EXIT
+# trap.

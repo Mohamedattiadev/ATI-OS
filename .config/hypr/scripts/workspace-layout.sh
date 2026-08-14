@@ -140,11 +140,45 @@ while True:
 # without waiting for you to leave it and come back.
 apply
 
-exec 7< <(read_events)
-READER_PID=$!
+# ------------------------------------------------------------
+#  RECONNECT — the same fix as submap-indicator.sh, for the same reason
+# ------------------------------------------------------------
+#  Both scripts listen on socket2 and both were written to read it once.
+#  Both were found dead mid-session while the two autostart entries with a
+#  `pgrep -x ... ||` re-check behind them were still up. This one fails
+#  even more quietly than the indicator does: there is no popup to notice
+#  the absence of, the workspace simply stops getting its layout and looks
+#  like a layout bug.
+#
+#  A read that ends is a reconnect. Hyprland going away is the socket FILE
+#  disappearing, which is a different condition and the only one that
+#  exits. Full reasoning in submap-indicator.sh.
+RECONNECTS=0
+while [ -S "$SOCKET" ]; do
+    exec 7< <(read_events)
+    READER_PID=$!
 
-while IFS= read -r line <&7; do
-    case "$line" in
-        workspacev2\>\>*|focusedmonv2\>\>*|openwindow\>\>*) apply ;;
-    esac
+    while IFS= read -r line <&7; do
+        case "$line" in
+            workspacev2\>\>*|focusedmonv2\>\>*|openwindow\>\>*) apply ;;
+        esac
+    done
+
+    exec 7<&-
+    [ -n "${READER_PID:-}" ] && kill "$READER_PID" 2>/dev/null || true
+
+    [ -S "$SOCKET" ] || break
+
+    RECONNECTS=$((RECONNECTS + 1))
+    if [ "$RECONNECTS" -le 5 ]; then
+        sleep 1
+    else
+        sleep 5
+    fi
+    echo "workspace-layout: event socket read ended, reconnecting" \
+         "(attempt $RECONNECTS)" >&2
+
+    # Re-apply on the way back in: events were missed while disconnected,
+    # so the current workspace's layout may be whatever the last one set.
+    apply
 done
