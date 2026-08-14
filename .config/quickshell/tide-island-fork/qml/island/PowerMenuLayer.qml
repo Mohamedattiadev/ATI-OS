@@ -27,8 +27,9 @@ import "../common"
 //
 // Six of them survive. "Quit" does not appear as a row here because it is
 // not an action — in a rofi menu it is how you dismiss the menu, and this
-// panel already dismisses on Escape and on q, which is the same gesture with
-// no row spent on it.
+// panel already dismisses on Escape, which is the same gesture with no row
+// spent on it. (`q` dismissed it too until the search field arrived and the
+// alphabet had to start typing; see the fallback key handler.)
 //
 // The commands live in hypr/scripts/power-ctl.sh, one to a line, and that
 // file records the two options that could not port verbatim: `betterlockscreen`
@@ -48,13 +49,15 @@ import "../common"
 // safety model of the original and it is reproduced exactly, `confirm` flag
 // for `confirm` flag, out of the same script's --list.
 //
-// It matters MORE here than it did in rofi, not less. In rofi you type to
-// filter and press Return on a highlighted line; here j/k walks a list of
-// six where "Reboot" and "Shut down" are adjacent, and this panel is on the
-// same keyboard grab as every other one, so Return is the key the hand has
-// already been trained to press. A one-keystroke path from "I opened the
-// power menu" to "the machine is off" is the one interaction in this shell
-// where being fast is the wrong goal.
+// It matters MORE here than it did in rofi, not less — and now that this
+// panel HAS rofi's search field, it matters for rofi's own reason as well
+// as for its own. You type to filter and press Return on a highlighted
+// line, in a list of six where "Reboot" and "Shut down" are adjacent and
+// share four letters; and this panel is on the same keyboard grab as every
+// other one, so Return is the key the hand has already been trained to
+// press. A one-keystroke path from "I opened the power menu" to "the
+// machine is off" is the one interaction in this shell where being fast is
+// the wrong goal.
 //
 // The confirm step is a SEPARATE key, not a second Return: y (or Return)
 // confirms, n or Escape backs out. A double-Return would be exactly the
@@ -68,12 +71,50 @@ FocusScope {
     property bool showCondition: false
     property string textFontFamily: ""
     property string heroFontFamily: ""
+    property string iconFontFamily: ""
 
     // [{ id, label, detail, confirm }, ...] — from power-ctl.sh --list, so
     // the panel and the script cannot disagree about what the actions are.
     // Same contract ModeKeysLayer has with cheatsheet.py.
     property var actions: []
     property int selectedIndex: 0
+
+    // ---- THE SEARCH FIELD ---- see qml/common/PanelSearchField.qml.
+    //
+    // Asked for directly: "the power popop theme popup and some other
+    // popups need searchh bar like its rofi one". This panel had none at
+    // all, and it is the one whose ancestor was literally rofi — dm-logout
+    // is a rofi menu, and typing "sh" then Return is how it was used.
+    //
+    // It matches on the DETAIL as well as the label, so "poweroff" finds
+    // Shut down. The detail column is already on screen for exactly that
+    // reason (see the note on the row below), so making it searchable costs
+    // nothing and closes the gap between what you can read and what you can
+    // type.
+    //
+    // THE FIELD OWNS THE TEXT and this is a read-only view of it. The
+    // obvious shape — `property string query` here, `query: root.query` on
+    // the field, `onQueryChanged: root.query = query` back — is a two-way
+    // binding, and QML does not have those: the first character typed makes
+    // the field assign to root.query, which DESTROYS the `query: root.query`
+    // binding that was feeding it. It half-works, which is the bad kind of
+    // wrong — the first keystroke lands and the panel then filters against a
+    // string that no longer tracks the box.
+    readonly property string query: searchField.query
+
+    readonly property var visibleActions: {
+        const needle = root.query.trim().toLowerCase();
+        if (needle === "")
+            return root.actions;
+        const out = [];
+        for (const action of root.actions) {
+            if (String(action.label || "").toLowerCase().includes(needle)
+                    || String(action.detail || "").toLowerCase().includes(needle)
+                    || String(action.id || "").toLowerCase().includes(needle))
+                out.push(action);
+        }
+        return out;
+    }
 
     // "" when no confirmation is pending, otherwise the id awaiting y/n.
     property string pendingConfirm: ""
@@ -88,12 +129,25 @@ FocusScope {
     // Metrics and not chrome.chromeHeight: this sizes the capsule the panel is
     // drawn inside, so reading it off a child of that panel is a loop waiting
     // for one more term.
+    //
+    // It follows the FILTERED list, and here that is right where it would be
+    // wrong in the cheatsheet. Two reasons, both about this panel's shape:
+    // the field is above the rows and the island grows downward from the
+    // notch, so only the bottom edge moves and nothing you are typing into
+    // slides; and this is six rows, so the step is one row rather than the
+    // cheatsheet's 192-to-3. Shrinking as the list narrows is also what rofi
+    // itself does, which is the thing being asked for.
     readonly property real preferredHeight:
-        Metrics.chromeTotal() + root.actions.length * root.rowHeight
+        Metrics.chromeTotal() + root.searchStripHeight
+        + root.visibleActions.length * root.rowHeight
+
+    // The field plus the gap under it, in one place because both the height
+    // above and the rows' y below have to agree about it.
+    readonly property real searchStripHeight: Metrics.px(26) + Metrics.px(10)
 
     readonly property var selectedAction:
-        (root.selectedIndex >= 0 && root.selectedIndex < root.actions.length)
-            ? root.actions[root.selectedIndex] : null
+        (root.selectedIndex >= 0 && root.selectedIndex < root.visibleActions.length)
+            ? root.visibleActions[root.selectedIndex] : null
 
     focus: showCondition
     activeFocusOnTab: true
@@ -117,6 +171,9 @@ FocusScope {
         if (showCondition) {
             root.pendingConfirm = "";
             root.errorText = "";
+            // A stale query would open the panel showing one row and no
+            // obvious reason why. The field is cleared, not remembered.
+            searchField.clear();
             // Always start on the FIRST row, which is Lock screen — the one
             // action in the list that costs nothing if it fires by mistake.
             // Restoring the last selection would mean the panel sometimes
@@ -124,7 +181,10 @@ FocusScope {
             // property no power menu should have.
             root.selectedIndex = 0;
             listProcess.running = true;
-            forceActiveFocus();
+            // The FIELD takes the focus, not the FocusScope. A rofi-style
+            // search you have to click into first is not one, and this panel
+            // opens on a keyboard grab with nothing else to focus.
+            root.syncFocus();
         } else {
             root.pendingConfirm = "";
         }
@@ -218,19 +278,52 @@ FocusScope {
     }
 
     function move(delta) {
-        if (root.actions.length === 0)
+        if (root.visibleActions.length === 0)
             return;
-        // Any movement cancels a pending confirmation. Without this, j then
+        // Any movement cancels a pending confirmation. Without this, Down then
         // Return would confirm the action you moved AWAY from — the cursor
         // would be on Suspend and the machine would shut down.
         root.pendingConfirm = "";
         let next = root.selectedIndex + delta;
         // Wraps, like the display and audio panels' move(): this is a
-        // six-row list and j stopping dead at the bottom reads as a dead
+        // six-row list and Down stopping dead at the bottom reads as a dead
         // key. See FORK-NOTES.md, "the cursors wrap".
-        if (next < 0) next = root.actions.length - 1;
-        if (next > root.actions.length - 1) next = 0;
+        if (next < 0) next = root.visibleActions.length - 1;
+        if (next > root.visibleActions.length - 1) next = 0;
         root.selectedIndex = next;
+    }
+
+    // The filter narrowing can strand the cursor past the end of the list —
+    // and on THIS panel a stranded cursor is not a cosmetic bug: selectedAction
+    // would go null and Return would silently do nothing, or worse, the index
+    // would land on a different row than the one that was highlighted when the
+    // list last redrew. Clamped on every change, and reset to the top whenever
+    // the query itself changes, so what is highlighted is always the first
+    // match rather than whatever survived from the previous search.
+    onQueryChanged: {
+        root.pendingConfirm = "";
+        root.selectedIndex = 0;
+    }
+    onVisibleActionsChanged: {
+        if (root.selectedIndex > root.visibleActions.length - 1)
+            root.selectedIndex = Math.max(0, root.visibleActions.length - 1);
+    }
+
+    // ---- WHO HAS THE KEYBOARD ----
+    //
+    // The search field, always — a field you have to click into first is not
+    // the rofi behaviour being asked for, and this panel opens on a keyboard
+    // grab with nothing else to focus.
+    //
+    // The confirmation step does not take focus AWAY from it; it makes the
+    // field read-only (`searchField.readOnly` below), which stops it
+    // inserting text while leaving every key to bubble up to the branch in
+    // Keys.onPressed. Moving focus was the first attempt and it silently did
+    // nothing — see the note on PanelSearchField.readOnly for what that cost
+    // and how it showed itself.
+    function syncFocus() {
+        if (root.showCondition)
+            searchField.focusField();
     }
 
     Keys.onPressed: function(event) {
@@ -257,26 +350,28 @@ FocusScope {
             return;
         }
 
+        // Below here is the FALLBACK path only. With no confirmation
+        // pending the search field holds focus and answers these itself —
+        // this runs when focus has not landed there yet, or after a click
+        // somewhere that is not the field.
+        //
+        // `q` is deliberately NOT a close key any more, and that is the one
+        // thing this panel gave up for the search bar. It was faithful to
+        // dm-logout, where `q` was a row you selected; here it has to type,
+        // because a field that ignores one letter of the alphabet is worse
+        // than one that has no shortcut. Escape closes, and the hint strip
+        // says so.
         switch (event.key) {
         case Qt.Key_Escape:
-        case Qt.Key_Q:
             root.closeRequested();
             event.accepted = true;
             break;
         case Qt.Key_Down:
-        case Qt.Key_J:
             root.move(1);
             event.accepted = true;
             break;
         case Qt.Key_Up:
-        case Qt.Key_K:
             root.move(-1);
-            event.accepted = true;
-            break;
-        case Qt.Key_G:
-            root.pendingConfirm = "";
-            root.selectedIndex = (event.modifiers & Qt.ShiftModifier) !== 0
-                ? Math.max(0, root.actions.length - 1) : 0;
             event.accepted = true;
             break;
         case Qt.Key_Return:
@@ -313,20 +408,43 @@ FocusScope {
                 { key: "n", label: "cancel" }
               ]
             : [
-                { key: "j/k", label: "move" },
+                // Arrows, not j/k, and Esc, not q — the search field owns
+                // the alphabet now. The hint strip is the only place that
+                // said "q" out loud, so it is the only place that has to
+                // stop saying it.
+                { key: "↑↓", label: "move" },
                 { key: "Enter", label: "select" },
-                { key: "q", label: "close" }
+                { key: "Esc", label: "close" }
               ]
+    }
+
+    PanelSearchField {
+        id: searchField
+        x: chrome.contentX
+        y: chrome.contentY
+        width: chrome.contentWidth
+
+        textFontFamily: root.textFontFamily
+        iconFontFamily: root.iconFontFamily
+        // The confirmation owns the keyboard; see syncFocus() above.
+        readOnly: root.pendingConfirm !== ""
+        placeholder: "type to filter — Enter runs, Esc closes"
+        countText: root.query === "" ? ""
+                 : (root.visibleActions.length + " of " + root.actions.length)
+
+        onSubmitted: root.activate()
+        onCancelled: root.closeRequested()
+        onMoved: function(delta) { root.move(delta); }
     }
 
     Column {
         id: rows
         x: chrome.contentX
-        y: chrome.contentY
+        y: chrome.contentY + root.searchStripHeight
         width: chrome.contentWidth
 
         Repeater {
-            model: root.actions
+            model: root.visibleActions
 
             PanelRow {
                 id: rowItem

@@ -5071,6 +5071,12 @@ PanelWindow {
                     PowerMenuLayer {
                         textFontFamily: root.textFontFamily
                         heroFontFamily: root.heroFontFamily
+                        // For the search field's magnifier. A Nerd Font
+                        // glyph set in the TEXT family renders as nothing at
+                        // all — no box, no fallback, no warning — so the
+                        // field simply loses its icon and looks like a plain
+                        // rectangle. Checked on screen, not assumed.
+                        iconFontFamily: root.iconFontFamily
                         showCondition: islandContainer.powerMenuLayerVisible
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
