@@ -250,6 +250,13 @@ Item {
             out.push({ key: "l/n/Space",
                        label: root.page >= root.pageCount - 1 ? "done" : "next" });
             out.push({ key: "1-" + root.pageCount, label: "jump" });
+            // The gesture is advertised, because a gesture nobody is told
+            // about is one nobody uses — and this is the tour, which is the
+            // one panel whose whole job is telling you what the desktop
+            // does. "swipe" rather than a key chip: it is the only row here
+            // that is not a keystroke, and naming the direction would cost
+            // the width the two directions need.
+            out.push({ key: "swipe", label: "pages · up closes" });
             out.push({ key: "q", label: "close" });
             return out;
         }
@@ -342,6 +349,28 @@ Item {
     // and not an accident: a tour that swallows every key on first login
     // is a tour you cannot escape from on the one day you most want to.
     // Escape and q both leave, and neither is trapped anywhere else.
+    // ---- THE SWIPE ----
+    //
+    // Answers "what is the best behavior for this swaping up or what?" —
+    // horizontal pages, up dismisses. The reasoning for that split, and why
+    // this is a wheel handler rather than a drag, is in
+    // OnboardingGestureArea.qml.
+    //
+    // ABOVE the FocusScope in the file but BELOW it in stacking, because
+    // later siblings paint and receive on top: this must not sit over the
+    // tabs or the footer buttons. It takes no mouse buttons at all, so it is
+    // transparent to clicks either way — the ordering is belt and braces.
+    OnboardingGestureArea {
+        anchors.fill: parent
+        onPaged: function(delta) {
+            if (delta > 0)
+                root.next();
+            else
+                root.prev();
+        }
+        onDismissed: root.closeRequested()
+    }
+
     FocusScope {
         id: keyScope
 
