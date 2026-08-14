@@ -72,6 +72,29 @@ ADHKAR=(
 )
 
 
+# ---- SLEEP FIRST, NOTIFY SECOND ----
+#
+# Reported as part of "when i start the hyperland a lot of notifications
+# appear, like 2-3 ones". This is one of them, on every single session.
+#
+# The loop below used to notify and THEN sleep, so the first dhikr went out
+# the instant the process started. autostart.conf launches this at login
+# (behind a 40 s delay), which put a remembrance card on screen while the bar
+# was still coming up and the desktop was still filling in — the one moment
+# it is certain not to be read.
+#
+# Moving the wait to the top costs nothing the loop was providing: the
+# interval between cards is unchanged, and the only difference is that the
+# FIRST one now arrives 5-10 minutes in, like every one after it, instead of
+# arriving during the login burst. A reminder that fires while you are still
+# logging in is the definition of a notification that trains you to dismiss
+# without reading.
+#
+# Deliberately the same RANDOM draw and not a fixed delay: a constant first
+# interval would make the first card land at a predictable moment after every
+# login, which is the thing this script's randomised spacing exists to avoid.
+sleep $((RANDOM % (MAX_INTERVAL - MIN_INTERVAL + 1) + MIN_INTERVAL))
+
 while true; do
   # Pick random dhikr (avoid repeating last one)
   while :; do

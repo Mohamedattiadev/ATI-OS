@@ -3588,6 +3588,127 @@ PanelWindow {
 
                 PathLine { x: 0; y: 0 }
             }
+
+        }
+
+
+        // ---- THE PANEL BORDER FOLLOWS THE FLARES ----
+        //
+        // Reported: "when a popup is opened and the border is showing — at
+        // the very top, left and right, there is an arch, a radius. That ends
+        // up not having the border; the border goes as one straight line. A
+        // very tiny modification and the border will cover the radius."
+        //
+        // Exactly right, and measurable. grim of an open control centre,
+        // reading the capsule's left edge and the accent line per row:
+        //
+        //     y= 0   shape starts x=481     accent line at x=490
+        //     y= 3   shape starts x=486     accent line at x=490
+        //     y= 6   shape starts x=488     accent line at x=490
+        //     y= 9   shape starts x=492     accent line at x=490
+        //     y=15   shape starts x=492     accent line at x=490
+        //
+        // So for the top nine rows the shape bows out by up to 11 px and the
+        // border does not go with it: the accent is drawn INSIDE the fill and
+        // the flare's own outer edge carries no line at all. The straight
+        // border was correct for the capsule and blind to the skirt, because
+        // the skirt is a sibling and panelOutlineFrame only ever knew about
+        // the rectangle it lives in.
+        //
+        // ---- WHY THIS IS ITS OWN Shape AT z 6 ----
+        //
+        // The obvious place is a second ShapePath inside notchSkirt, sharing
+        // its geometry. Tried first, and it leaves a four-pixel GAP in the
+        // line: the skirt is z 4 and mainCapsule is z 5, so the last stretch
+        // of each fillet — the part that runs from the capsule's edge inward
+        // to the tangent point — is painted UNDER the capsule's fill and
+        // disappears. Measured as accent present to y=8, absent y=9..12,
+        // resuming at y=13.
+        //
+        // An OUTLINE belongs above the fill, which is the same reason
+        // panelOutlineFrame is drawn inside the capsule rather than behind
+        // it. Nothing else moves: this Shape has no fill of its own, so
+        // putting it on top costs two pixels of accent and nothing else, and
+        // the skirt's note about staying under the capsule still holds for
+        // the skirt.
+        //
+        // TWO paths and not one, because the flares are disjoint and a
+        // ShapePath is a single subpath. Each traces only the OUTER
+        // silhouette — the overshoot band's vertical and the fillet — and
+        // stops where the fillet lands tangentially on the capsule's side,
+        // which is where panelOutlineFrame now starts. The seam across the
+        // bottom of the skirt is NOT stroked: that edge is the join with the
+        // capsule's fill and has never been an edge of the shape.
+        //
+        // Shifted 1 px inward, which is the whole of the alignment. A stroke
+        // straddles its path while a Rectangle draws its border INSIDE, so an
+        // unshifted arc meets the vertical half a line off. The shift is pure
+        // x: at the top of the fillet the tangent is horizontal and moving
+        // along x slides the line along itself, and at the bottom it is
+        // vertical and the shift is exactly the inset wanted.
+        Shape {
+            id: notchSkirtOutline
+            z: 6
+            visible: notchSkirt.visible
+            opacity: notchSkirt.opacity
+            preferredRendererType: Shape.CurveRenderer
+
+            x: notchSkirt.x
+            y: notchSkirt.y
+            width: notchSkirt.width
+            height: notchSkirt.height
+
+            readonly property real inset: 1
+
+            ShapePath {
+                fillColor: "transparent"
+                strokeWidth: 2
+                capStyle: ShapePath.FlatCap
+                strokeColor: islandContainer.openPanelState
+                    ? mainCapsule.panelOutline : "transparent"
+                Behavior on strokeColor {
+                    ColorAnimation { duration: Motion.fadeInDuration() }
+                }
+
+                startX: notchSkirtOutline.inset
+                startY: 0
+                PathLine { x: notchSkirtOutline.inset; y: notchSkirt.o }
+                PathCubic {
+                    control1X: notchSkirtOutline.inset + notchSkirt.kappa * notchSkirt.f
+                    control1Y: notchSkirt.o
+                    control2X: notchSkirtOutline.inset + notchSkirt.f
+                    control2Y: notchSkirt.o + notchSkirt.f - notchSkirt.kappa * notchSkirt.f
+                    x: notchSkirtOutline.inset + notchSkirt.f
+                    y: notchSkirt.o + notchSkirt.f
+                }
+            }
+
+            ShapePath {
+                fillColor: "transparent"
+                strokeWidth: 2
+                capStyle: ShapePath.FlatCap
+                strokeColor: islandContainer.openPanelState
+                    ? mainCapsule.panelOutline : "transparent"
+                Behavior on strokeColor {
+                    ColorAnimation { duration: Motion.fadeInDuration() }
+                }
+
+                startX: notchSkirt.width - notchSkirtOutline.inset
+                startY: 0
+                PathLine {
+                    x: notchSkirt.width - notchSkirtOutline.inset
+                    y: notchSkirt.o
+                }
+                PathCubic {
+                    control1X: notchSkirt.width - notchSkirtOutline.inset
+                        - notchSkirt.kappa * notchSkirt.f
+                    control1Y: notchSkirt.o
+                    control2X: notchSkirt.width - notchSkirtOutline.inset - notchSkirt.f
+                    control2Y: notchSkirt.o + notchSkirt.f - notchSkirt.kappa * notchSkirt.f
+                    x: notchSkirt.width - notchSkirtOutline.inset - notchSkirt.f
+                    y: notchSkirt.o + notchSkirt.f
+                }
+            }
         }
 
         // ------------------------------------------------------------
@@ -4636,24 +4757,51 @@ PanelWindow {
             // the overview and the notification centre, and a second binding
             // on one property is "Property value set multiple times", which
             // fails the whole component rather than losing a border.
-            Rectangle {
-                id: panelOutlineFrame
-                visible: islandContainer.openPanelState
-                x: 0
-                // Pushed up by more than the radius so the clip removes the
-                // top edge AND both top corners, leaving two straight
-                // verticals that run off the top of the shape — but only as
-                // far as the notch is engaged. See the note above.
-                y: (-mainCapsule.targetRadius - border.width) * root.notchUnround
-                width: parent.width
-                height: parent.height - y
-                color: "transparent"
-                radius: mainCapsule.targetRadius
-                border.width: 2
-                border.color: mainCapsule.panelOutline
+            // ---- AND THE VERTICALS START WHERE THE FLARES LAND ----
+            //
+            // The clip used to be mainCapsule's own bounds, which put the top
+            // of each vertical at the capsule's top edge — and the capsule's
+            // top edge is not the top of the SHAPE. notchSkirt's fillets carry
+            // the silhouette a further `f` px out and up, and they now carry
+            // the border with them (see the two stroked ShapePaths there). A
+            // straight vertical running up through that band would fork the
+            // line: one arm curving out along the flare, one going straight up
+            // inside the fill.
+            //
+            // So the clip boundary moves down by exactly the flare's height,
+            // which is where the fillet lands tangentially on the capsule's
+            // side. One number, taken from the skirt rather than restated, so
+            // the join cannot drift — and it is ZERO when the notch is off,
+            // where `f` is zero, so the four-sided floating form is untouched.
+            Item {
+                id: panelOutlineClip
+                anchors.fill: parent
+                anchors.topMargin: notchSkirt.f
+                clip: true
 
-                Behavior on border.color {
-                    ColorAnimation { duration: Motion.fadeInDuration() }
+                Rectangle {
+                    id: panelOutlineFrame
+                    visible: islandContainer.openPanelState
+                    x: 0
+                    // Pushed up by more than the radius so the clip removes
+                    // the top edge AND both top corners, leaving two straight
+                    // verticals that run off the top of the shape — but only
+                    // as far as the notch is engaged. See the note above.
+                    y: (-mainCapsule.targetRadius - border.width) * root.notchUnround
+                    width: parent.width
+                    // Against the CLIP, which now stops short of the capsule's
+                    // bottom by nothing and of its top by the flare — so the
+                    // bottom edge and its two corners still land exactly on
+                    // the capsule's.
+                    height: parent.height - y
+                    color: "transparent"
+                    radius: mainCapsule.targetRadius
+                    border.width: 2
+                    border.color: mainCapsule.panelOutline
+
+                    Behavior on border.color {
+                        ColorAnimation { duration: Motion.fadeInDuration() }
+                    }
                 }
             }
 
