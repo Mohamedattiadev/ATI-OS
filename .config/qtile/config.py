@@ -3886,10 +3886,39 @@ def parse_task_name(text):
     # a spinner frame plus the task -- "\u2802 Fix ...", "\u2733 Upgrade ..." --
     # and the frame changes several times a second. In a bar that is a
     # character of pure noise in the highest-value column, and it repaints
-    # the widget every time it ticks. Braille block U+2800-U+28FF is the
-    # spinner; the rest are the done/busy marks that replace it.
+    # the widget every time it ticks.
+    #
+    # RANGES, not a list of the glyphs somebody happened to see. The first
+    # version of this covered braille plus five singles, and then this
+    # terminal changed its spinner to the half-circles and the noise came
+    # straight back -- "\u25d0 Debug height glitch ...", live in the bar, with
+    # nothing in here to suggest why one spinner was stripped and the next
+    # was not. A spinner is a FAMILY of frames from one contiguous run of
+    # codepoints, so the family is what gets named.
+    #
+    # Sampled off `hyprctl clients -j` at 12 Hz for 8 s to find out which
+    # frames this one actually uses: \u25d0 and \u25d1 only, a two-frame
+    # cycle. The range is 25D0-25D3 all the same -- those four are one
+    # "circle with half black" family and the pair that showed up is half of
+    # it, so covering only what was observed would leave the same hole one
+    # terminal release away.
+    SPINNER_RANGES = (
+        (0x2800, 0x28FF),   # Braille Patterns -- the classic dot spinner
+        (0x25D0, 0x25D3),   # half-filled circles -- this terminal, now
+    )
+    # The marks that REPLACE the spinner when it stops. Singles, because
+    # these are picked one at a time for what they mean rather than being
+    # frames of anything: busy, done, failed, running, paused.
+    SPINNER_MARKS = "\u2733\u2713\u2717\u25b6\u23f8"
+
+    def _is_status_glyph(ch):
+        if ch in SPINNER_MARKS:
+            return True
+        code = ord(ch)
+        return any(lo <= code <= hi for lo, hi in SPINNER_RANGES)
+
     text = text.lstrip()
-    while text and (0x2800 <= ord(text[0]) <= 0x28FF or text[0] in "\u2733\u2713\u2717\u25b6\u23f8"):
+    while text and _is_status_glyph(text[0]):
         text = text[1:].lstrip()
 
     return text

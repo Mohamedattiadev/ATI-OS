@@ -104,17 +104,40 @@ function parse(text) {
     // second. In a bar that is a character of pure noise in the highest-value
     // column, and it repaints the widget on every tick.
     //
-    // Braille block U+2800–U+28FF is the spinner; the five singles are the
-    // done/busy/paused marks that replace it when it stops.
+    // RANGES, not a list of the glyphs somebody happened to see. This
+    // covered braille plus five singles, and then the terminal changed its
+    // spinner to the half-circles and the noise came straight back —
+    // "◐ Debug height glitch …", live in the bar. A spinner is a FAMILY of
+    // frames from one contiguous run of codepoints, so the family is what
+    // gets named. qtile's parse_task_name carries the same two tables and
+    // the same reasoning; they have to move together.
+    //
+    // Sampled off `hyprctl clients -j` at 12 Hz for 8 s: this one uses ◐ and
+    // ◑ only. 25D0–25D3 all the same — those four are one "circle with half
+    // black" family and the observed pair is half of it.
+    const SPINNER_RANGES = [
+        [0x2800, 0x28FF],   // Braille Patterns — the classic dot spinner
+        [0x25D0, 0x25D3]    // half-filled circles — this terminal, now
+    ];
+    // The marks that REPLACE the spinner when it stops: busy, done, failed,
+    // running, paused. Singles, because each is picked for what it means
+    // rather than being a frame of anything.
+    const SPINNER_MARKS = [0x2733, 0x2713, 0x2717, 0x25B6, 0x23F8];
+
     out = out.replace(/^\s+/, "");
     while (out.length > 0) {
         const c = out.codePointAt(0);
-        const isSpinner = c >= 0x2800 && c <= 0x28FF;
-        const isMark = c === 0x2733 || c === 0x2713 || c === 0x2717
-            || c === 0x25B6 || c === 0x23F8;
-        if (!isSpinner && !isMark)
+        let strip = SPINNER_MARKS.indexOf(c) >= 0;
+        for (let i = 0; !strip && i < SPINNER_RANGES.length; i++)
+            strip = c >= SPINNER_RANGES[i][0] && c <= SPINNER_RANGES[i][1];
+        if (!strip)
             break;
-        out = out.substring(1).replace(/^\s+/, "");
+        // Advanced by the CODE POINT's length, not by one UTF-16 unit.
+        // Everything in the tables above is BMP today, so `substring(1)`
+        // works — and would leave a lone surrogate the first time an astral
+        // spinner (the moon-phase set is the obvious next one) was added,
+        // which renders as a replacement character rather than as nothing.
+        out = out.substring(c > 0xFFFF ? 2 : 1).replace(/^\s+/, "");
     }
 
     return out;
