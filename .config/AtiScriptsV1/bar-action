@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# bar-action <target> <function> [arg]
+#
+# One keybinding, two answers, decided by which bar the desktop is wearing.
+#
+#     island mode  ->  qs -p <fork> ipc call <target> <function> [arg]
+#     native mode  ->  the rofi menu or script that does the same job
+#
+# Called with EXACTLY the arguments `qs ipc call` takes, so a binding reads the
+# same as it did before:
+#
+#     bind = $mod, D, exec, bar-action tide toggleApplicationLauncher
+#     bind = , V,     exec, bar-action tide showPicker clipboard
+#
+# WHY THIS HAS TO EXIST
+# ---------------------
+# Asked for directly: "if the topbar is the qtile one the keymaps should open
+# the rofi, and if the island so it will open the island popup".
+#
+# It is not only a preference. bar-switch STOPS one bar to start the other, so
+# in native mode there is no island process at all — and `qs ipc call` against
+# a config with no running instance EXITS 0 having done nothing. Every island
+# binding in the Hyprland session was therefore a dead key the moment the
+# topbar was switched on, silently, with no error and no window. That is the
+# same failure mode the topbar's own chips had before they were moved to rofi.
+#
+# WHY A TABLE AND NOT A NAMING CONVENTION
+# ---------------------------------------
+# The two sides do not correspond one-to-one. The island's `showPicker
+# processes` is rofi-kill; its `showPicker brightness` is rofi_light; its
+# power menu is dm-logout. Deriving a script name from an IPC function name
+# would be wrong for most of them, and wrong SILENTLY, because a missing
+# script and a working one both exit without saying much.
+#
+# Anything with no rofi counterpart says so rather than doing nothing — see
+# the fallback at the bottom. A key that reports "island only" is debuggable;
+# a key that does nothing is not.
+
+set -euo pipefail
+
+FORK_DIR="${TIDE_ISLAND_FORK_DIR:-$HOME/.config/quickshell/tide-island-fork}"
+STATE_FILE="$HOME/.cache/bar-mode"
+SCRIPTS_DIR="$HOME/.config/AtiScriptsV1"
+HYPR_SCRIPTS="$HOME/.config/hypr/scripts"
+
+[[ $# -ge 2 ]] || { echo "usage: bar-action <target> <function> [arg]" >&2; exit 2; }
+
+target="$1"; func="$2"; arg="${3:-}"
+
+read_mode() {
+  local m=""
+  [[ -r "$STATE_FILE" ]] && m="$(<"$STATE_FILE")"
+  m="${m//[[:space:]]/}"
+  # Default ISLAND, matching bar-switch's DEFAULT_MODE. On a machine that has
+  # never switched, the Hyprland session has always had the island.
+  case "$m" in native) echo native ;; *) echo island ;; esac
+}
+
+run() { setsid -f "$@" >/dev/null 2>&1 || true; }
+run_sh() { setsid -f sh -c "$1" >/dev/null 2>&1 || true; }
+
+island() {
+  exec qs -p "$FORK_DIR" ipc call "$target" "$func" ${arg:+"$arg"}
+}
+
+[[ "$(read_mode)" == island ]] && island
+
+# ---------------------------------------------------------------------------
+#  native — the qtile-style topbar is up, so the qtile-style menus answer
+# ---------------------------------------------------------------------------
+#
+# Keyed on "<function> <arg>" where an arg exists, because showPicker is one
+# function covering fourteen different menus.
+key="$func"
+[[ -n "$arg" ]] && key="$func $arg"
+
+case "$key" in
+  # ---- launchers and menus ----
+  toggleApplicationLauncher)  run rofi -show drun -show-icons ;;
+  togglePowerMenu)            run dm-logout ;;
+  toggleWallpaperPicker)      run dm-setbg ;;
+  toggleThemePicker)          run python3 "$SCRIPTS_DIR/rofi_palette.py" ;;
+
+  # ---- the picker's menus, one rofi script each ----
+  "showPicker clipboard")     run copyq_rofi ;;
+  "showPicker anki")          run rofi_anki ;;
+  "showPicker documents")     run rofi_docs ;;
+  "showPicker translate")     run rofi_translator ;;
+  "showPicker confedit")      run dm-confedit ;;
+  "showPicker pass")          run rofi_pass ;;
+  "showPicker notes")         run rofi_todo ;;
+  "showPicker todo")          run rofi_todo ;;
+  "showPicker processes")     run rofi-kill ;;
+  "showPicker brightness")    run rofi_light ;;
+  "showPicker ilovepdf")      run rofi_ilovepdf ;;
+  "showPicker spellcheck")    run dm-spellcheck ;;
+  "showPicker record")        run dm-recordV2 ;;
+  "showPicker screenshot")    run dm-satty ;;
+  "showPicker keymaps")       run rofi_keymaps ;;
+
+  # ---- windows and workspaces: rofi has modes for both ----
+  "showPicker windows")       run rofi -show window -show-icons ;;
+  "showPicker workspaces")    run rofi -show window -show-icons ;;
+
+  # ---- the cheatsheets ----
+  "showCheatsheet docs")      run rofi_docs ;;
+  showCheatsheet*)            run rofi_keymaps ;;
+
+  # ---- panels that have a real GUI rather than a rofi menu ----
+  toggleAudioPanel)           run pavucontrol ;;
+  toggleBluetoothPanel)       run blueman-manager ;;
+  toggleSysmon)               run_sh 'env GTK_THEME=Adwaita:dark missioncenter' ;;
+  toggleCalendar)             run clock_popup ;;
+  toggleDisplayPanel)         run_sh "python3 '$HYPR_SCRIPTS/display-ctl.py' --menu || nwg-displays" ;;
+  toggleWifiPanel)            run_sh 'nm-connection-editor || iwgtk' ;;
+  toggleWifiQr)               run "$HYPR_SCRIPTS/wifi-qr.py" ;;
+  toggleCalculator)           run_sh 'rofi -show calc -modi calc -no-show-match -no-sort 2>/dev/null || kitty -e qalc' ;;
+
+  # ---- notifications: dunst serves them while the island is down ----
+  dismissNotification)        run dunstctl close ;;
+  toggleNotificationCenter)   run dunstctl history-pop ;;
+
+  # ---- the tour ----
+  showOnboarding)             run_sh 'eww close onboarding-welcome 2>/dev/null || eww open onboarding-welcome' ;;
+
+  *)
+    # Deliberately loud. These are island-only surfaces with no qtile
+    # counterpart — the control centre, the settings app, focus mode, the
+    # workspace overview — and a key that silently does nothing is exactly
+    # what this script exists to stop happening.
+    notify-send -u low "bar-action" \
+      "\"$key\" is island-only; switch bars with \$mod SHIFT P" 2>/dev/null || true
+    ;;
+esac
