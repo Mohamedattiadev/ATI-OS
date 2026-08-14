@@ -1068,11 +1068,41 @@ if [[ -f "$DUNST_TMPL" ]]; then
     github-dark) render_dunstrc "#0d1117" "#c9d1d9" "#3d1f2a" "#ffdada" "#58a6ff" "#7ee787" "#ff7b72" ;;
     ayu-mirage) render_dunstrc "#1f2430" "#cbccc6" "#3d1f2a" "#ffdada" "#5ccfe6" "#bae67e" "#ff6666" ;;
   esac
-  # Restart dunst so it re-reads dunstrc
-  pkill -x dunst 2>/dev/null || true
-  sleep 0.2
-  dunst >/dev/null 2>&1 &
-  disown
+  # Restart dunst so it re-reads dunstrc — but only if it was RUNNING.
+  #
+  # This used to kill unconditionally, sleep 0.2 s, and start dunst
+  # regardless. On the qtile session that is a restart. On the Hyprland
+  # session it is neither: dunst is not running there, and has not been
+  # since the island took over notifications.
+  #
+  # Two costs, and the second is the one that matters.
+  #
+  #   * 0.24 s on every theme change, all of it inside the window the
+  #     island holds the screen frozen for. That is ~14% of the 1.77 s
+  #     freeze recorded in hypr/upgread_UI_UX.md, spent starting a daemon
+  #     this session does not use.
+  #
+  #   * quickshell owns org.freedesktop.Notifications under Hyprland
+  #     (verified: `busctl --user list` shows the island's pid against
+  #     that name). Launching dunst into a session where the bus name is
+  #     already held either fails silently — which is what has been
+  #     happening, since the output is discarded — or, if it ever won the
+  #     race, would take every notification away from the island. A theme
+  #     change is not allowed to decide who owns notifications.
+  #
+  # `pkill -x` exits 0 only if it actually signalled something, so it is
+  # both the kill and the test for whether there was anything to restart.
+  # That makes this session-agnostic rather than session-detecting: qtile
+  # keeps its restart, Hyprland skips a daemon it does not run, and
+  # neither has to be named here.
+  #
+  # -x, not -f: `pkill -f dunst` matches its own command line. That has
+  # cost this repo a process twice.
+  if pkill -x dunst 2>/dev/null; then
+    sleep 0.2
+    dunst >/dev/null 2>&1 &
+    disown
+  fi
 fi
 
 # ---- GTK overlay (pcmanfm + any GTK3/4 app that picks up @define-color) ----
