@@ -66,7 +66,14 @@ Item {
     // a row that changed height with the script would shift every card below
     // it.
     readonly property int metaSize: Metrics.font(userConfig.bodyFontSize - 2)
-    readonly property real metaLineHeight: Math.round(metaSize * 1.75)
+    // 1.45, not the 1.75 the title and body use. That factor exists for
+    // harakat above the ascender and below the baseline on Arabic TEXT --
+    // and this line is not text, it is a small-caps sender name and a
+    // two-character age. Nothing in it is ever vocalised, so it was paying
+    // for a script feature it cannot use, on every card, three cards deep.
+    // The title and body keep 1.75; they are the lines that carry the
+    // message.
+    readonly property real metaLineHeight: Math.round(metaSize * 1.45)
 
     // ---- RELATIVE TIME, AND WHY IT TICKS ----
     //

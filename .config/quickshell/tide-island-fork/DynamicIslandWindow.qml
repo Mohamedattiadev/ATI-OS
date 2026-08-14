@@ -3658,8 +3658,27 @@ PanelWindow {
                 switch (islandContainer.islandState) {
                 case "control_center":
                     return Metrics.px(34);
+                // ---- THE RADIUS USED TO GROW WITH THE NOTIFICATION COUNT ----
+                //
+                // This case read `mainCapsule.targetHeight * 40 / 165` — a
+                // radius PROPORTIONAL to the panel's height, and the only one
+                // of the eighteen states that was. It gave 40 back when this
+                // panel was a fixed 165 px tall, which is where the constants
+                // come from and why nobody noticed: at one height a ratio and
+                // a constant are the same number.
+                //
+                // Then the panel became content-sized. From that moment the
+                // radius scaled with how many notifications you had — a full
+                // list is ~300 px, which is a 73 px corner — so the bottom
+                // corners swept in far enough to leave the footer's chips
+                // sitting beside bare desktop. Reported exactly that way:
+                // "when it is full of notifications the radius is too much,
+                // I can see the letters outside the frame."
+                //
+                // Metrics.px(34), which is what the other sixteen panels in
+                // this switch already return. A corner is a property of the
+                // SHAPE's material, not of how much is inside it.
                 case "notification_center":
-                    return mainCapsule.targetHeight * 40 / 165;
                 case "wallpaper_picker":
                 case "application_launcher":
                 case "display_panel":

@@ -27,7 +27,13 @@ Item {
     property string heroFontFamily: userConfig.heroFontFamily
 
     readonly property bool hasNotifications: notificationModel && notificationModel.count > 0
-    readonly property real verticalPadding: Metrics.pad(10)
+    // 10 -> 16. The footer sat 10 px above the panel's bottom edge, which is
+    // inside the corner radius rather than clear of it, so the outermost
+    // hint chips had desktop showing beside them where the curve had already
+    // cut the fill away. Fixing the radius (see DynamicIslandWindow's radius
+    // switch) removes most of that; this is the other half, and it is the
+    // half that makes the panel look padded rather than merely correct.
+    readonly property real verticalPadding: Metrics.pad(16)
     readonly property real horizontalPadding: Metrics.pad(22)
 
     //
