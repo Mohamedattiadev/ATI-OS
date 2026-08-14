@@ -97,6 +97,9 @@ case "$key" in
   "showPicker record")        run dm-recordV2 ;;
   "showPicker screenshot")    run dm-satty ;;
   "showPicker keymaps")       run rofi_keymaps ;;
+  # The bar chooser. Its island twin is island-picker.py's `bars` menu, so
+  # this one key asks the question in whichever shell is up.
+  "showPicker bars")          run bar-chooser ;;
 
   # ---- windows and workspaces: rofi has modes for both ----
   "showPicker windows")       run rofi -show window -show-icons ;;

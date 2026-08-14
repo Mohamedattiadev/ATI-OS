@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# bar-chooser — "which shape do you want", in rofi.
+#
+# The ROFI half of the bar chooser. The island half is island-picker.py's
+# `bars` menu, and `bar-action tide showPicker bars` picks between them by the
+# current mode — so one key gives you the chooser in whichever shell is up.
+#
+# Three shapes, not two, because the qtile-style bar genuinely has two forms:
+# its 28 px top bar of chips and its 40 px bottom "normal user" bar with the
+# launcher icons. That is qtile's own $mod SHIFT Z distinction and it belongs
+# in the same list rather than behind a second key.
+#
+# Everything goes through bar-switch and the topbar's IPC rather than writing
+# ~/.cache/bar-mode directly. bar-switch owns the one rule that must not go
+# wrong — no path may leave the session without a bar — and a second writer of
+# that state would be a second owner of it.
+
+set -euo pipefail
+
+STATE_FILE="$HOME/.cache/bar-mode"
+POS_FILE="$HOME/.cache/topbar-position"
+
+read_or() { [[ -r "$1" ]] && tr -d '[:space:]' < "$1" || printf '%s' "$2"; }
+
+mode="$(read_or "$STATE_FILE" island)"
+pos="$(read_or "$POS_FILE" top)"
+[[ "$mode" == native ]] || mode=island
+
+mark() { [[ "$1" == yes ]] && printf '   ✓' || true; }
+
+# The rows carry their marker in the label because rofi -dmenu has no detail
+# column; the island's version puts it in `detail` instead. Same information,
+# each in the form its own menu can show.
+rows="$(printf '%s\n%s\n%s' \
+  "Island$(mark "$([[ $mode == island ]] && echo yes)")" \
+  "Topbar — top$(mark "$([[ $mode == native && $pos == top ]] && echo yes)")" \
+  "Topbar — bottom$(mark "$([[ $mode == native && $pos == bottom ]] && echo yes)")")"
+
+pick="$(printf '%s' "$rows" | rofi -dmenu -i -p "Which bar?" \
+        -theme-str 'window {width: 30%;}' 2>/dev/null)" || exit 0
+[[ -n "$pick" ]] || exit 0
+
+case "$pick" in
+  Island*)          setsid -f bar-switch island >/dev/null 2>&1 ;;
+  "Topbar — top"*|"Topbar — bottom"*)
+    want=top
+    [[ "$pick" == "Topbar — bottom"* ]] && want=bottom
+    # Position FIRST, so the bar comes up already in the requested shape
+    # rather than appearing and then moving. The IPC is a no-op while the
+    # topbar is down, which is exactly when the file write is what counts.
+    printf '%s\n' "$want" > "$POS_FILE"
+    qs -p "$HOME/.config/quickshell/topbar" ipc call topbar "$want" >/dev/null 2>&1 || true
+    setsid -f bar-switch native >/dev/null 2>&1
+    ;;
+esac

@@ -2884,6 +2884,77 @@ def ilovepdf_run(item_id, text=""):
     return _message("iLovePDF", "Unknown step.")
 
 
+# ------------------------------------------------------------------ bars --
+#
+#  "Which shape do you want" — the bar chooser. Asked for as "a way or keymap
+#  or something to click and ask which shape do you want, A or B, as a popup
+#  for the island and as rofi for the qtile".
+#
+#  This is the ISLAND half. The rofi half is AtiScriptsV1/bar-chooser, and
+#  bar-action picks between them by the current mode, so one key gives you the
+#  chooser in whichever shell is up.
+#
+#  Three shapes, not two, because the qtile-style bar genuinely has two forms:
+#  its 28 px top bar of chips and its 40 px bottom "normal user" bar. That is
+#  qtile's own $mod SHIFT Z distinction and it belongs in the same list.
+#
+#  Everything here goes through bar-switch and the topbar's IPC rather than
+#  writing ~/.cache/bar-mode directly: bar-switch owns the ordering rule that
+#  no path may leave the session without a bar, and duplicating that here
+#  would be a second owner of the one thing that must not go wrong.
+
+BAR_STATE = os.path.join(HOME, ".cache", "bar-mode")
+TOPBAR_POS = os.path.join(HOME, ".cache", "topbar-position")
+
+
+def _bar_current():
+    def read(path, default):
+        try:
+            with open(path) as fh:
+                return fh.read().strip() or default
+        except OSError:
+            return default
+    return read(BAR_STATE, "island"), read(TOPBAR_POS, "top")
+
+
+def bars_list():
+    mode, pos = _bar_current()
+    def mark(active):
+        return "  \u2713 current" if active else ""
+    return _page("Which bar?", [
+        {"id": "island",
+         "label": "Island",
+         "detail": "the capsule that becomes a panel" + mark(mode == "island")},
+        {"id": "top",
+         "label": "Topbar \u2014 top",
+         "detail": "qtile's 28 px bar of chips"
+                   + mark(mode == "native" and pos == "top")},
+        {"id": "bottom",
+         "label": "Topbar \u2014 bottom",
+         "detail": "qtile's 40 px normal-user bar, with launchers"
+                   + mark(mode == "native" and pos == "bottom")},
+    ], note="The island and the topbar are separate shells and only one runs "
+            "at a time. Keys follow whichever is up: rofi under the topbar, "
+            "panels under the island.")
+
+
+def bars_run(item_id):
+    if item_id == "island":
+        _spawn_sh("bar-switch island")
+        return None
+    if item_id in ("top", "bottom"):
+        # Position FIRST, so the bar comes up already in the requested shape
+        # rather than appearing and then moving. The IPC is a no-op while the
+        # topbar is down, which is exactly when the file write is what counts.
+        _spawn_sh(
+            "printf '%s\\n' %s > %s; "
+            "qs -p ~/.config/quickshell/topbar ipc call topbar %s >/dev/null 2>&1; "
+            "bar-switch native"
+            % (shlex.quote(item_id), shlex.quote(TOPBAR_POS), shlex.quote(item_id)))
+        return None
+    raise ValueError("unknown bar %s" % item_id)
+
+
 MENUS = {
     "windows": (windows_list, windows_run),
     "processes": (processes_list, processes_run),
@@ -2900,6 +2971,7 @@ MENUS = {
     #     prompt mode. See each function's note for what it dropped.
     "screenshot": (screenshot_list, screenshot_run),
     "record": (record_list, record_run),
+    "bars": (bars_list, bars_run),
     "confedit": (confedit_list, confedit_run),
     "spellcheck": (spellcheck_list, spellcheck_run),
     "translate": (translate_list, translate_run),
