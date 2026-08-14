@@ -132,6 +132,47 @@ problem.
 colour, so there is exactly one accent on screen. It restores at shell
 startup, so a crash with a panel open cannot leave the borders dimmed.
 
+## Two bars, and swapping between them
+
+`$mod SHIFT P` — the same key in both sessions — swaps which bar the
+desktop is wearing. `AtiScriptsV1/bar-switch` owns it, and the choice is
+saved to `~/.cache/bar-mode`, which **both** sessions read at startup. Pick
+a bar in Hyprland, log into qtile, and you are still on the bar you picked.
+
+|  | qtile | Hyprland |
+|---|---|---|
+| `native` | qtile's own `bar.Bar` | the Quickshell topbar — **not built yet** |
+| `island` | the Tide Island, on X11 | the Tide Island |
+
+```
+bar-switch status      # mode, session, whether the island is up
+bar-switch island      # or: native, toggle
+```
+
+**On Hyprland, `native` is currently refused, on purpose.** The topbar that
+mirrors qtile's does not exist yet, so honouring the request would take the
+island away and leave this session with no bar at all. The one rule
+`bar-switch` is built around is that no path may do that: the incoming bar
+comes up and is checked before the outgoing one is allowed to go away.
+
+That is the piece of work this section is here to place. The plan is a
+pixel-faithful reimplementation of the qtile bar in Quickshell — same
+layout, colours, decorations, glyphs and tooltips — reusing this shell's
+theme pipeline, tray, MPRIS and Hyprland workspace feeds. It cannot be
+qtile's actual bar: that bar is part of qtile and cannot run under another
+compositor.
+
+**The island under qtile is a real port, not a second copy.** It took one
+change: five windows carried `WlrLayershell.*` attached properties, which do
+not exist off Wayland, and an attached object that cannot be created fails
+the *whole component* — so under X11 the island rendered nothing while the
+log cheerfully said `Configuration Loaded`. Each is now a backend-neutral
+base plus a thin per-backend wrapper. See
+`quickshell/tide-island-fork/qml/common/BackendSurface.md`, which also lists
+what X11 genuinely does not have (two stacking layers instead of four, no
+exclusive keyboard grab, no layer-surface namespace, and no workspaces,
+overview, window ring or TreeTab — all of those are Hyprland feeds).
+
 ## Troubleshooting
 
 Every failure this desktop has actually produced has been a **silent**

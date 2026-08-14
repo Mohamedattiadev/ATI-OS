@@ -140,9 +140,72 @@ Sizes differ by up to **857 px** (`long_capsule` 156 -> wallpaper picker
 
 ---
 
+# WHAT CHANGED AFTER THIS FILE WAS WRITTEN
+
+Two commits landed a feature this file does not mention, and one of them
+changes what "the island" even means here. **The island is no longer
+Hyprland-only.**
+
+* **`the island runs on X11, so qtile can have it as a bar`.** Under X11 it
+  rendered nothing, with `Configuration Loaded` in the log and no error
+  naming it. Cause: five windows declared `WlrLayershell.*` attached
+  properties, and an attached object that cannot be created fails the WHOLE
+  component. Each is now a backend-neutral base plus a thin per-backend
+  wrapper. Read `../quickshell/tide-island-fork/qml/common/BackendSurface.md`
+  before touching any of those five files — the base keeps the original
+  filename specifically so the FORK-NOTES upstream-diff still works.
+
+* **`a bar you can swap`.** `$mod SHIFT P` in both sessions,
+  `~/.cache/bar-mode`, `AtiScriptsV1/bar-switch`. The qtile half works both
+  ways; the Hyprland half can only go TO the island, because the topbar that
+  would be its `native` does not exist yet.
+
+Three qtile bugs were found and fixed on the way, all recorded in that
+commit message with their measurements: `Bar.is_show()` lying after a
+reconfigure, strut reservations leaking 33 px per switch cycle, and widget
+drawers not surviving their bar's window being unmapped (only
+`reload_config()` brings them back — `reconfigure_screens()` does not).
+
+**The motion task below is still THE task, and is still untouched.** It was
+not attempted, deliberately: the session went to the bar work the user
+asked for, and the motion work needs a session that starts fresh on it.
+
+---
+
 # ALSO OPEN
 
 Ordered by how much they are worth.
+
+* **THE HYPRLAND TOPBAR.** The other half of the swap, and the biggest open
+  item now. A pixel-faithful reimplementation of qtile's bar in Quickshell,
+  agreed explicitly: same layout, colours, decorations, glyphs, tooltips.
+  It cannot be qtile's bar — that bar is part of qtile. Until it lands,
+  `bar-switch native` on Hyprland refuses rather than leaving no bar.
+  Budget it honestly: `qtile/config.py` is 7,900 lines and the bar pulls in
+  `qtile_extras` decorations, `SmartWidgetBox`, the tooltip layer and the
+  TaskList-centring arithmetic in `_center_top_groupbox()`.
+
+* **THE ISLAND SLIDES RIGHT WHEN TREETAB OPENS.** Reported by the user;
+  reproduced and localised, not yet fixed. With the sidebar open,
+  `hyprctl layers` says:
+
+      level=1  ns='quickshell-treetab'  180x768+0+0
+      level=2  ns='quickshell'          1186x58+180+0     <-- was 1366x58+0+0
+
+  So the sidebar's `exclusiveZone` is both NARROWING and OFFSETTING the
+  island's surface. The island should be laid out against the whole output
+  and stay put. The obvious lever is `exclusionMode` on the island window,
+  but read Quickshell's semantics first: `ExclusionMode.Ignore` means
+  "ignore others' zones AND set none of your own", so it would also stop
+  the island reserving its own space — check whether the island still needs
+  to reserve before reaching for it. `RingOsdWindow.qml`'s header documents
+  the same trade for a different surface and is the right precedent.
+
+* **The RectDecoration pills do not come back** after `bar-switch native`
+  rebuilds qtile's bar. The glyphs return, their rounded backgrounds do
+  not, on four of the right-hand chips. Cosmetic, measured: restored bar
+  means 0.0411 against a 0.0479 baseline, otherwise identical chip for
+  chip. A `qtile-extras` decoration-cache question, not a qtile one.
 
 * **The 12 unchecked picker menus** against their rofi originals: documents,
   man, notes, clipboard, confedit, spellcheck, translate, pass, todo,
