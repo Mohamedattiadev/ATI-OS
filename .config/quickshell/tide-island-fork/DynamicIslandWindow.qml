@@ -3833,6 +3833,80 @@ PanelWindow {
             // the OLD value and baseTargetWidth is already the new one.
             property int pendingMorphPx: 0
             readonly property int distanceMorphDuration: Motion.morphDurationFor(pendingMorphPx)
+
+            // ---- THE CURVE IS LATCHED BY THE DESTINATION, NOT BY THE
+            //      Behavior, AND IT TOOK THREE TRIES TO FIND THAT OUT ----
+            //
+            // Motion.springFor() explains the defect: the spring's overshoot
+            // is a fraction of the TRAVEL, so a collapse that crosses a whole
+            // panel and lands on the 35 px notch bounces by 13% of the shape
+            // it landed on. It needs the pair each dimension is about to make
+            // — how far it travels, and how big it ends up.
+            //
+            // The obvious spelling is the one `pendingMorphPx` above uses: a
+            // ScriptAction at the head of the Behavior, latching both numbers
+            // before the first frame. It does not work here, and the reason is
+            // worth writing down because it looks like it should.
+            //
+            // MEASURED. One probe per latch, closing the control centre:
+            //
+            //     LATCH  w 212 -> 174   h   0 -> 323   zeta 0.8
+            //     TGT                        35 normal
+            //     LATCH  w 212 -> 174   h 288 ->  35   zeta 0.9
+            //
+            // The WIDTH Behavior fires first, and inside its ScriptAction
+            // `targetHeight` still reads 323 — the old value. Not because the
+            // state has not changed (`baseTargetWidth` is already the new 174
+            // in the same breath) but because both are bindings on the same
+            // `islandState`, and a QML binding re-evaluates when the notifier
+            // reaches it. Reading a dependent that the cascade has not got to
+            // yet returns the stale value and does NOT force it. That is this
+            // tree's own rule — "two bindings over one model are re-evaluated
+            // in an order Qt does not promise" — applied to geometry instead
+            // of to a list model.
+            //
+            // The second latch is correct and arrives one line too late: the
+            // capsule still undershot to 31, i.e. the height animation ran on
+            // the curve chosen by the FIRST latch. So the easing is read when
+            // the animation JOB is created, BEFORE the ScriptAction at the
+            // head of its own SequentialAnimation runs.
+            //
+            // The obvious repair is then to drop the latch and let the
+            // Behavior read a live expression, on the reasoning that a
+            // `Behavior on X` starts precisely because X's new value is known.
+            // That was tried second and is WORSE: `easing.bezierCurve` is a
+            // binding like any other, so it re-evaluates every time `height`
+            // moves — which is every frame — and the value it happens to hold
+            // when the NEXT job is created is therefore the one from the END
+            // of the last animation, where the travel is zero and springFor()
+            // hands back the undamped default. Measured: identical 31 px dip.
+            //
+            // So the curve has to be a plain property, set from the handler
+            // that runs BEFORE the Behavior can fire. There is exactly one
+            // such handler per dimension and both already exist:
+            //
+            //   width   `onBaseTargetWidthChanged`, which is what assigns
+            //           displayedWidth in the first place — so it is ordered
+            //           by construction, not by luck.
+            //   height  `onTargetHeightChanged`, measured above to fire
+            //           between the two latches, i.e. after targetHeight has
+            //           its new value and before the Behavior starts. `height`
+            //           has not begun to move when it runs, so the travel it
+            //           computes is the whole distance.
+            //
+            // ONE CAP PER DIMENSION, not one curve for both. Width and height
+            // keep their SHARED DURATION, which is what makes a morph read as
+            // one shape moving rather than as two animations — but the
+            // overshoot is capped against each dimension's own extent, which
+            // is the only thing the eye can compare it to. On a control-centre
+            // close that is zeta 0.8 for the width (3.3 px on 174, 1.9%) and
+            // zeta 0.9 for the height (0.4 px on 35), and both sit under the
+            // same 2% budget.
+            property var widthMorphCurve: Motion.spring()
+            property var heightMorphCurve: Motion.spring()
+
+            onTargetHeightChanged: heightMorphCurve =
+                Motion.springFor(targetHeight - height, targetHeight)
             readonly property bool notificationHistorySurface: islandContainer.islandState === "notification_center"
             // The capsule's outline. THREE cases now, in priority order:
             // the overview's own border, the notification centre's hairline,
@@ -4547,6 +4621,12 @@ PanelWindow {
             transformOrigin: Item.Top
 
             onBaseTargetWidthChanged: {
+                // BEFORE the assignment, which is what starts the Behavior.
+                // Unconditional even when the swipe guard below refuses the
+                // assignment: the destination is what the cap is measured
+                // against, and it has just changed either way.
+                widthMorphCurve = Motion.springFor(baseTargetWidth - displayedWidth,
+                                                   baseTargetWidth);
                 if (!capsuleMouseArea.sideSwipeInteractive && !islandContainer.sideSwipeSettling)
                     displayedWidth = baseTargetWidth;
             }
@@ -4571,22 +4651,27 @@ PanelWindow {
                         duration: capsuleMouseArea.sideSwipeInteractive
                             ? 0 : mainCapsule.distanceMorphDuration
                         easing.type: Easing.BezierSpline
-                        easing.bezierCurve: Motion.spring()
+                        easing.bezierCurve: mainCapsule.widthMorphCurve
                     }
                 }
             }
             Behavior on height {
                 enabled: !(controlCenterLoader.item && controlCenterLoader.item.batteryDrawerMoving)
 
-                // Height rides the width's latched distance rather than
-                // latching its own. The two change together — every state
-                // that widens the capsule also makes it taller — and giving
-                // them independent durations is what makes a morph look
-                // like two animations rather than one shape moving.
+                // Height rides the width's latched DISTANCE for its DURATION
+                // rather than latching its own. The two change together —
+                // every state that widens the capsule also makes it taller —
+                // and giving them independent durations is what makes a morph
+                // look like two animations rather than one shape moving.
+                //
+                // The CURVE is its own, and is not latched at all. See above:
+                // the cap is on the overshoot as a fraction of each
+                // dimension's own extent, which is the only thing the eye has
+                // to compare it against.
                 NumberAnimation {
                     duration: mainCapsule.distanceMorphDuration
                     easing.type: Easing.BezierSpline
-                    easing.bezierCurve: Motion.spring()
+                    easing.bezierCurve: mainCapsule.heightMorphCurve
                 }
             }
             // FORK: radius rides the SAME latched distance as width and
@@ -4615,11 +4700,19 @@ PanelWindow {
             // On the small morphs nothing changes: below REF_PX both are
             // MORPH_MS, so this is a no-op for the resting pill's own nudges
             // and only bites where it was visible.
+            //
+            // It takes the capped curve too, and from the WIDTH rather than
+            // from its own travel: a corner radius is a feature OF the
+            // outline, so a radius that keeps its 1.5% bounce while the
+            // outline it belongs to has been damped is the corners-finish-
+            // first defect above with the sign flipped. Its own extent is
+            // also far too small to cap against — every radius change would
+            // damp to a dead stop.
             Behavior on radius {
                 NumberAnimation {
                     duration: mainCapsule.distanceMorphDuration
                     easing.type: Easing.BezierSpline
-                    easing.bezierCurve: Motion.spring()
+                    easing.bezierCurve: mainCapsule.widthMorphCurve
                 }
             }
             // Colour cannot overshoot for the same reason opacity cannot:

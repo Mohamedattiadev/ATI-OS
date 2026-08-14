@@ -515,6 +515,113 @@ function curve(zeta) {
 function spring() { return curve(0.8); }
 function fade()   { return curve(1.0); }
 
+// ---------------------------------------------------------------------
+//  THE OVERSHOOT IS A FRACTION OF THE TRAVEL, AND THE EYE READS IT
+//  AGAINST THE SHAPE IT LANDS ON
+// ---------------------------------------------------------------------
+//
+// This is the island's "glitches up and down after closing a popup", and it
+// is a property of `spring()` rather than a bug anywhere in the window.
+//
+// A step response overshoots by a fixed fraction of the DISTANCE TRAVELLED.
+// 1.54% of the travel is the right amount of bounce when the thing you land
+// on is about as big as the distance you covered — which is every OPEN, and
+// is why opening has never been reported. Closing is the asymmetric case:
+// the travel is the whole panel and the destination is the 35 px notch.
+//
+// MEASURED, closing the control centre. `mainCapsule.height` probed directly
+// (`targetHeight` is the spring's TARGET and sits perfectly still through all
+// of this — which is how a previous session concluded there was nothing to
+// see):
+//
+//     +238 ms   40      still arriving
+//     +285 ms   31      <- 4 px BELOW the resting 35, i.e. an 11% squash
+//     +333 ms   31
+//     +382 ms   33
+//     +429 ms   35      recovered, ~200 ms after it first arrived
+//
+// 323 -> 35 is 288 px of travel; 288 * 0.0154 = 4.43 px, so 30.6 -> 31. The
+// prediction and the measurement agree to the pixel. The same run in a
+// 46 fps wf-recorder capture shows the WIDTH doing it too — the capsule
+// narrows past its resting width to 179 px at +218..+283 ms and comes back
+// to 182 by +458 — which is 213 px of width travel at the same 1.54%.
+//
+// So the shape does not glitch; it bounces exactly as designed, and the
+// design divided by 35 instead of by 323.
+//
+// THE RULE: cap the overshoot at a fraction of the DESTINATION extent, and
+// solve for the zeta that delivers it. Not a clamp on the animated value —
+// clamping a spring flat is the same "arrives and stops dead" the fade curve
+// exists to avoid, and it would put a corner in the middle of the motion.
+// Not a switch to `fade()` either, which throws the mass away entirely on
+// exactly the transitions that most need to read as one object moving.
+//
+// The inverse is closed form. Overshoot for a second-order step response is
+//     f(zeta) = exp(-pi*zeta / sqrt(1 - zeta^2))
+// so with k = -ln(f)/pi,  zeta = k / sqrt(1 + k^2).
+//
+// The cap is `overshoot()` ITSELF, and picking any other number would have
+// been a taste decision dressed as a measurement. Read it as a sentence:
+//
+//     the bounce may never be a larger fraction of the shape than it would
+//     be on a morph that travelled its own length
+//
+// so the island's spring LOOKS the same however far it came, which is the
+// property that was silently untrue. It falls out of the algebra that this
+// leaves every travel <= destination exactly as it was — i.e. every OPEN,
+// since a panel is always bigger than the distance from the notch to it.
+// Worked through, with the two ends of the range measured on this panel:
+//
+//     transition            travel/dest   zeta   dip
+//     rest -> control ctr        0.89     0.80   4.4 px on 323   unchanged
+//     rest -> wallpaper pkr      0.85     0.80   3.1 px on 239   unchanged
+//     control ctr -> rest (w)    1.22     0.82   2.4 px on 174
+//     picker -> control ctr      1.62     0.82   0.9 px on 323
+//     wallpaper pkr -> rest      5.83     0.88   0.6 px on  35
+//     control ctr -> rest        8.23     0.90   0.4 px on  35
+//     cheatsheet -> rest        11.09     0.90   0.6 px on  35
+//
+// The whole correction lands on the closes, which is where the report is,
+// and it never reaches zeta 1.0 — a close still has a spring in it, just one
+// sized for the notch rather than for the panel it came from.
+//
+// zeta is QUANTISED to 0.02 and rounded UP (up = more damping = safer, and
+// it absorbs the 0.0154-vs-0.0152 gap between this file's 10-segment spline
+// and the analytic response). Rounding matters for a second reason: curve()
+// memoises on String(zeta), so an unquantised zeta would build a fresh
+// 10-segment spline per morph and cache it forever. Quantised, the whole
+// shell can only ever hold the 11 curves between 0.80 and 1.00.
+
+// Analytic overshoot of the step response, as a fraction of the travel.
+function overshootOf(zeta) {
+    if (zeta >= 1.0)
+        return 0;
+    return Math.exp(-Math.PI * zeta / Math.sqrt(1 - zeta * zeta));
+}
+
+// The geometry curve for a morph that travels `travelPx` and lands on a
+// shape `destPx` across. Callers that do not know either keep calling
+// spring() and get the flat zeta 0.8 they always had.
+function springFor(travelPx, destPx) {
+    var travel = Math.abs(Number(travelPx));
+    var dest = Math.abs(Number(destPx));
+    if (!isFinite(travel) || !isFinite(dest) || travel <= 0 || dest <= 0)
+        return spring();
+
+    // The overshoot we can afford, expressed the way overshootOf() is: as a
+    // fraction of the TRAVEL.
+    var allowed = overshoot() * dest / travel;
+    if (allowed >= overshootOf(0.8))
+        return spring();
+    if (allowed <= 0)
+        return fade();
+
+    var k = -Math.log(allowed) / Math.PI;
+    var zeta = k / Math.sqrt(1 + k * k);
+    zeta = Math.min(1.0, Math.ceil(zeta * 50) / 50);
+    return curve(zeta);
+}
+
 // How far past its target the spring goes, as a fraction of the travel.
 //
 // Published rather than left implicit because callers have to BUDGET for
