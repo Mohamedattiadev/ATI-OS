@@ -32,6 +32,20 @@
 #   onboarding-first-run [settle-seconds]   # consume the stamp, show tour
 #   onboarding-first-run --arm              # re-arm for the next login
 #   onboarding-first-run --status           # report armed/consumed state
+#   onboarding-first-run --seen             # claim the stamp, show nothing
+#
+# BOTH SESSIONS. qtile drives eww; Hyprland drives the Quickshell layer in
+# qml/onboarding/OnboardingLayer.qml. The stamp, the claim discipline and
+# the arming are shared, because none of that is session-specific -- only
+# the two lines that actually put a tour on screen are.
+#
+# --seen exists because the Hyprland tour is dismissed from INSIDE itself.
+# eww's version is opened here and this script owns its whole life, but
+# the Quickshell layer is also reachable from a keybinding and over IPC,
+# so the thing that knows the tour was completed is the layer. It calls
+# back with --seen, which claims the stamp without opening anything.
+# Reaching the END claims it; closing early deliberately does not, so a
+# tour dismissed by accident on a first login comes back at the next one.
 
 set -uo pipefail
 
@@ -54,6 +68,14 @@ case "${1:-}" in
     echo "onboarding armed — the tour will open at the next login."
     exit 0
     ;;
+  --seen)
+    # Claim without showing. mv, not rm, and tolerant of the stamp already
+    # being gone: finishing the tour twice is not an error, and the second
+    # one must not fail loudly in the shell's log.
+    mkdir -p "$STATE_DIR"
+    mv -f "$PENDING" "$CLAIMED" 2>/dev/null || : >"$CLAIMED"
+    exit 0
+    ;;
   --status)
     if [[ -e "$PENDING" ]]; then
       echo "armed: $PENDING"
@@ -67,6 +89,31 @@ case "${1:-}" in
 esac
 
 [[ -e "$PENDING" ]] || exit 0
+
+# ---- WHICH SESSION IS THIS ----
+#
+# On what is actually RUNNING, not on XDG_SESSION_TYPE alone: this is
+# invoked from autostart and inherits whatever environment that had, and
+# theme-wallpaper carries the same comment for the same reason.
+#
+# Hyprland's tour needs no daemon wait of its own -- `qs ipc call` either
+# reaches a running shell or it does not, and there is no equivalent of
+# eww's slow cold start to sit through. It DOES need the settle, for the
+# same reason eww's does: the island populates last.
+if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && command -v qs >/dev/null 2>&1; then
+  mkdir -p "$STATE_DIR"
+  mv -f "$PENDING" "$CLAIMED" 2>/dev/null || exit 0
+  sleep "${1:-8}"
+  # Explicit page 0, because the parameter is typed and required -- an
+  # omitted int arrives undefined on the other side.
+  if ! qs -p "$HOME/.config/quickshell/tide-island-fork" \
+        ipc call tide showOnboarding 0 >/dev/null 2>&1; then
+    notify-send -a onboarding "Tour unavailable" \
+      "The shell is not running. Press \$mod SHIFT N to open the tour." 2>/dev/null
+    exit 1
+  fi
+  exit 0
+fi
 
 # eww absent is a different thing from eww not up yet, and the loop below
 # cannot tell them apart: it spent 30 seconds printing "eww: command not

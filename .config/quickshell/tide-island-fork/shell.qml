@@ -702,6 +702,26 @@ Scope {
             shellRoot.forFocusedWindow((window) => window.hideCheatsheetWindow());
         }
 
+        // FORK: the tour, over IPC.
+        //
+        // `page` is TYPED and required. An untyped parameter is dropped
+        // from the IPC surface without a word, and an int one that arrives
+        // undefined would read as 0 — which for this call means "silently
+        // reopened at page one" rather than an error, the most annoying
+        // possible failure for the one control whose job is to be
+        // re-readable at the page you wanted.
+        //
+        // forFocusedWindow, not forEachWindow: the layer takes a keyboard
+        // grab, and two grabs on two monitors would compete for the same
+        // keystrokes. Same reason as showCheatsheet above.
+        function showOnboarding(page: int) {
+            shellRoot.forFocusedWindow((window) => window.showOnboardingWindow(page));
+        }
+
+        function hideOnboarding() {
+            shellRoot.forFocusedWindow((window) => window.hideOnboardingWindow());
+        }
+
         function toggleWifiPanel() {
             shellRoot.forFocusedWindow((window) => window.openConnectivityPanelWindow("wifi"));
         }

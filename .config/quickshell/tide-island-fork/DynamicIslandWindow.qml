@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Shapes
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import Quickshell.Services.Mpris
@@ -8,6 +9,7 @@ import Quickshell.Services.Notifications
 import IslandBackend
 import "qml/audio"
 import "qml/cheatsheet"
+import "qml/onboarding"
 import "qml/common"
 import "qml/controlcenter"
 import "qml/connectivity"
@@ -304,6 +306,7 @@ PanelWindow {
                 // read-only, deliberately does the opposite — it has no
                 // field to type into and its keys belong to the submap.
                 || islandContainer.cheatsheetLayerVisible
+                || islandContainer.onboardingLayerVisible
                 || islandContainer.calendarLayerVisible
                 || islandContainer.powerMenuLayerVisible
                 || islandContainer.settingsLayerVisible
@@ -897,9 +900,38 @@ PanelWindow {
     // It also made `showCheatsheet` a toggle in disguise, and toggles go
     // out of phase; a script that wants the panel SHUT should be able to
     // say so without first knowing whether it is open.
+    // FORK: the tour. `page` is an argument so a script can open it at the
+    // page it wants to check, which is what makes each page testable
+    // rather than only the first.
+    function showOnboardingWindow(page) {
+        islandContainer.onboardingPage = Math.max(0, page);
+        islandContainer.showOnboarding();
+    }
+
+    function hideOnboardingWindow() {
+        if (islandContainer.islandState === "onboarding")
+            islandContainer.smartRestoreState();
+    }
+
     function hideCheatsheetWindow() {
         if (islandContainer.islandState === "cheatsheet")
             islandContainer.smartRestoreState();
+    }
+
+    // Claims the first-run stamp, by delegating to the script that already
+    // owns that state rather than reimplementing it here.
+    //
+    // onboarding-first-run's stamp is claimed with `mv`, not `rm`, and only
+    // after the tour actually appeared — so a login where the shell never
+    // came up leaves it for the next one, and two sessions racing cannot
+    // both claim it. That logic is worth reusing exactly, and it is why
+    // this is a Process and not a FileView write.
+    Process {
+        id: onboardingSeenProcess
+        command: ["sh", "-c",
+            "command -v onboarding-first-run >/dev/null 2>&1 "
+            + "&& onboarding-first-run --seen >/dev/null 2>&1 || true"]
+        running: false
     }
 
     function clearModeIndicatorWindow() {
@@ -1644,6 +1676,12 @@ PanelWindow {
         // FORK: the cheatsheets, moved off rofi and into the notch.
         property string cheatsheetWhich: "hypr"
         readonly property bool cheatsheetLayerVisible: !root.overviewVisible && islandState === "cheatsheet"
+        // FORK: the tour. Same shape as the cheatsheet — a read-only panel
+        // that takes the keyboard while it is up. `onboardingPage` lives
+        // here rather than in the layer so a page can be selected BEFORE
+        // the Loader builds it, the same reason cheatsheetWhich does.
+        property int onboardingPage: 0
+        readonly property bool onboardingLayerVisible: !root.overviewVisible && islandState === "onboarding"
         // FORK: the display panel, the port of qtile's DisplayPopup.
         readonly property bool displayPanelLayerVisible: !root.overviewVisible && islandState === "display_panel"
         // FORK: the audio panel, the port of qtile's AudioPopup — the detail
@@ -2799,6 +2837,15 @@ PanelWindow {
             stopAutoHideTimer();
         }
 
+        function showOnboarding() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "onboarding";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
         // FORK: the Wi-Fi and Bluetooth lists as first-class states, on the
         // same five lines every other panel opens with. That is the whole
         // point of the change: nothing about opening a network list is
@@ -3493,6 +3540,12 @@ PanelWindow {
                     // three columns and a chord's whole value is being
                     // readable at a glance. Clamped to the screen.
                     return Math.min(Metrics.px(820), root.width - Metrics.px(48));
+                case "onboarding":
+                    // The tour's rows are a key chip plus a sentence, so it
+                    // wants the cheatsheet's width and not the OSD's. Not
+                    // as wide as the cheatsheet, because six rows of prose
+                    // set at 860 px read as a banner rather than a list.
+                    return Math.min(Metrics.px(680), root.width - Metrics.px(48));
                 case "cheatsheet":
                     // Wider than any other panel and clamped only by the
                     // screen. The WM sheet's rows are a key chip plus a
@@ -3647,6 +3700,24 @@ PanelWindow {
                     return modeKeysLoader.item
                         ? modeKeysLoader.item.preferredHeight
                         : Metrics.px(90);
+                case "onboarding":
+                    // FIXED for the same reason the cheatsheet is, and one
+                    // more: the six pages have different row counts, and a
+                    // panel that changed height on every Next would make
+                    // the tour itself the jumpiest thing in the desktop.
+                    //
+                    // Sized for the LARGEST page, not the average, and asked
+                    // of the LAYER rather than guessed: at 300 and again at
+                    // 390 the seven-row KEYS page ran under its own footer,
+                    // which is the failure a fixed height has to be checked
+                    // against. The layer is the only thing that knows how
+                    // many rows its longest page has — same argument as
+                    // mode_keys, which asks the same question.
+                    return Math.min(
+                        onboardingLoader.item
+                            ? onboardingLoader.item.preferredHeight
+                            : Metrics.px(390),
+                        root.screen.height - Metrics.px(80));
                 case "cheatsheet":
                     // FIXED, unlike mode_keys, and that is the difference
                     // between a panel that lists a chord and a panel that
@@ -3741,6 +3812,7 @@ PanelWindow {
                 case "bluetooth_panel":
                 case "mode_keys":
                 case "cheatsheet":
+                case "onboarding":
                 case "calendar":
                 case "power_menu":
                 case "settings":
@@ -5067,6 +5139,36 @@ PanelWindow {
                         showCondition: islandContainer.cheatsheetLayerVisible
                         sheet: islandContainer.cheatsheetWhich
                         onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            PanelLoader {
+                id: onboardingLoader
+                anchors.fill: parent
+                live: islandContainer.onboardingLayerVisible
+                // Same as the cheatsheet: the key handling is useless
+                // without the focus, and the focus has to be taken after
+                // the item exists.
+                onLoaded: {
+                    if (onboardingLoader.item && onboardingLoader.item.grabKeyboardFocus)
+                        onboardingLoader.item.grabKeyboardFocus();
+                }
+
+                sourceComponent: Component {
+                    OnboardingLayer {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        iconFontFamily: root.iconFontFamily
+                        showCondition: islandContainer.onboardingLayerVisible
+                        page: islandContainer.onboardingPage
+                        onPageChanged: islandContainer.onboardingPage = page
+                        onCloseRequested: islandContainer.smartRestoreState()
+                        // Reaching the end is what claims the first-run
+                        // stamp. Closing early deliberately does NOT, so a
+                        // tour dismissed by accident on first login comes
+                        // back at the next one.
+                        onFinishRequested: onboardingSeenProcess.running = true
                     }
                 }
             }
