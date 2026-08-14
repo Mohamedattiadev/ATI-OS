@@ -46,6 +46,12 @@ import sys
 
 import gi
 
+# Beside this file, so `sys.path` needs the script's own directory:
+# the app is launched by absolute path from a desktop entry and a
+# keybinding, and neither puts the script's directory on the path.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import island_preview  # noqa: E402
+
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
@@ -269,6 +275,73 @@ class SettingsWindow(Adw.ApplicationWindow):
 
     # ---- ui --------------------------------------------------------
 
+    # ---- THE PREVIEW, WHICH IS THE ANSWER TO "JUST TEXT AND NUMBERS" ----
+    #
+    # Every geometry row is a number whose only real readout is the shape it
+    # makes with the others. This group draws that shape, and puts the one
+    # ORDERED setting — the swipe readout — on chips you drag into it.
+    #
+    # It reads through value_of(), so it is correct after every reload without
+    # being told: commit() re-reads and rebuilds, and the preview is rebuilt
+    # with everything else.
+    def preview_values(self):
+        def num(key, fallback):
+            value = self.value_of(key)
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        items = self.value_of("dynamicIslandLeftSwipeItems")
+        if not isinstance(items, list):
+            items = []
+        return {
+            "notch": bool(self.value_of("forkNotchMode")),
+            "height": num("islandHeight", 35),
+            "width": num("islandWidth", 135),
+            "top_margin": num("islandTopMargin", 11),
+            "exclusive": num("islandExclusiveZone", 33),
+            "position_x": num("islandPositionX", 50),
+            "opacity": num("islandBackgroundOpacity", 100),
+            "items": list(items),
+        }
+
+    def make_preview_group(self):
+        group = Adw.PreferencesGroup(
+            title="Preview",
+            description="The island as these settings make it, on a mock screen. "
+                        "Drag a chip into the island to add a readout.")
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(6)
+
+        self.preview = island_preview.IslandPreview(self.preview_values)
+        box.append(self.preview)
+
+        descriptor = None
+        for row in self.rows:
+            if row["key"] == "dynamicIslandLeftSwipeItems":
+                descriptor = row
+                break
+        if descriptor is not None:
+            tray = island_preview.SwipeTray(
+                descriptor.get("values", []),
+                descriptor.get("value") or [])
+            tray.connect("items-changed", self.on_swipe_items_changed)
+            self.swipe_tray = tray
+            box.append(tray)
+
+        group.add(box)
+        return group
+
+    def on_swipe_items_changed(self, tray, csv):
+        # Straight through the CLI like every other row — see this file's
+        # header on why the app never writes the JSON itself. The restore
+        # closure puts the chips back if island-settings.py refuses the list.
+        before = self.value_of("dynamicIslandLeftSwipeItems") or []
+        self.commit("dynamicIslandLeftSwipeItems", csv,
+                    lambda: tray.set_items(before))
+
     def build(self):
         for group in list(self.groups_built()):
             self.page.remove(group)
@@ -292,6 +365,11 @@ class SettingsWindow(Adw.ApplicationWindow):
                 "Other",
                 "Present in the schema but not yet assigned to a section here.",
                 leftover))
+
+        # First, and outside the GROUPS table: it is not a section of
+        # settings, it is the picture of all of them.
+        self.preview_group = self.make_preview_group()
+        self._groups.insert(0, self.preview_group)
 
         for group in self._groups:
             self.page.add(group)
@@ -863,6 +941,23 @@ class SettingsWindow(Adw.ApplicationWindow):
         modified = set(self.modified_keys()) if category == self.MODIFIED else None
 
         for group in self.groups_built():
+            # ---- THE PREVIEW GROUP HOLDS NO ROWS, SO THE GATE BELOW HIDES IT ----
+            #
+            # `any_visible` is only ever set by a registered widget, and the
+            # preview has none — it is a picture of the other groups, not a
+            # section of settings. Without this it was built, listed in the
+            # sidebar, and never drawn: the section selected and the pane
+            # empty, which is exactly how it first appeared.
+            #
+            # Hidden while SEARCHING, deliberately: a query is a request for
+            # rows that match it, and a canvas that matches nothing would sit
+            # at the top of every result list.
+            if group is getattr(self, "preview_group", None):
+                group.set_visible(
+                    not searching
+                    and (category is None or category == "Preview"))
+                continue
+
             any_visible = False
             in_category = searching or category is None \
                 or group.get_title() == category or modified is not None
