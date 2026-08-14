@@ -195,15 +195,24 @@ case "$key" in
   # it in its wifi_qr state. Under the topbar there was no renderer, so the
   # chip did its whole job invisibly. The popup is the missing half.
   toggleWifiQr)               run_popup wifiqr ;;
-  # Was `rofi -show calc || kitty -e qalc`, and both halves were wrong. The
+  # qtile's calculator, because under qtile's bar this is qtile's key.
+  #
+  # It was `rofi -show calc || kitty -e qalc`, and both halves were wrong: the
   # rofi-calc plugin is absent — /usr/lib/rofi does not exist at all — so it
-  # always fell through to a TERMINAL, which is neither a rofi menu nor a
-  # panel. And rofi-calc was never qtile's answer here anyway: qtile's $alt 5
-  # is `dropdown_toggle("calc")`, a scratchpad holding qalculate-gtk.
-  # binds.conf records why that is not what this desktop wants back. The
-  # island's own calculator panel is hosted in a popup now, so both bars
-  # answer this key with the same surface, over the same qalc.
-  toggleCalculator)           run_popup calculator ;;
+  # always fell through to a TERMINAL. rofi-calc was never the target anyway;
+  # config.py's $alt 5 is `dropdown_toggle("calc")` over
+  # `env GTK_THEME=Adwaita:dark qalculate-gtk`.
+  #
+  # Briefly answered with a Quickshell panel over `qalc` instead, on the
+  # argument binds.conf still records — that the GTK_THEME pin is a confession
+  # the app cannot follow theme-apply, so it is the same grey box under all 22
+  # palettes. Asked for directly afterwards: "the calc, you can open the
+  # calculator which is in the config of the qtile, the gtk one". So the
+  # argument stands and the decision does not, which is what this branch is
+  # FOR — the island keeps its own panel on this key, and under the qtile-like
+  # bar the key opens qtile's application, in qtile's scratchpad, at qtile's
+  # geometry.
+  toggleCalculator)           run_sh "$HYPR_SCRIPTS/scratchpad.sh calc env GTK_THEME=Adwaita:dark qalculate-gtk" ;;
 
   # ---- notifications: dunst serves them while the island is down ----
   dismissNotification)        run dunstctl close ;;
