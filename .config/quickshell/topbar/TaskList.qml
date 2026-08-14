@@ -57,6 +57,33 @@ Item {
     implicitHeight: parent ? parent.height : Metrics.barHeight
     clip: true
 
+    // ---- MINIMIZE, WHICH HYPRLAND DOES NOT HAVE ----
+    //
+    // libqtile's select_window has two branches and this bar only had one:
+    // clicking a window that is NOT current focuses it, and clicking the one
+    // that IS current calls toggle_minimize(). So in qtile the focused entry
+    // is a minimise button, and here it was a dispatch to the window you were
+    // already on — nothing.
+    //
+    // Hyprland has no minimize. A special workspace is this config's answer
+    // to that and always has been: sum-toggle.sh stashes on `special:sum` and
+    // its header says so in as many words. This uses `special:minimized`.
+    //
+    // THE FAIL-OPEN RULE: a stashed window is drawn in EVERY workspace's list,
+    // not only in the one it came from. qtile scopes the list to the group and
+    // can afford to, because a minimized window is still in its group and the
+    // group still exists. Here the only record of where a window came from is
+    // this shell's own memory, and a shell that reloads — which it does on
+    // every edit — would strand a window nothing else in this desktop has a
+    // key for. Showing it everywhere costs a stale row and makes losing a
+    // window impossible.
+    readonly property string stash: "special:minimized"
+
+    // address -> the workspace it was minimized FROM, so restore puts it back
+    // rather than dumping it wherever you happen to be standing. Lost on
+    // reload, which is what the fail-open rule above exists to cover.
+    property var homeOf: ({})
+
     // Only the windows on the workspace you are looking at, which is what
     // qtile's TaskList shows: it lists the current GROUP, not every client on
     // the machine. Without this the list is thirteen entries wide on this
@@ -68,12 +95,48 @@ Item {
         for (let i = 0; i < all.length; i++) {
             const o = all[i].lastIpcObject;
             if (!o || !o.workspace) continue;
+            const wsName = o.workspace.name === undefined ? "" : String(o.workspace.name);
+            if (wsName === root.stash) {
+                out.push(o);
+                continue;
+            }
             if (focusedWs && o.workspace.name !== undefined
-                    && String(o.workspace.name) !== String(focusedWs.name))
+                    && wsName !== String(focusedWs.name))
                 continue;
             out.push(o);
         }
         return out;
+    }
+
+    function minimize(o) {
+        const next = {};
+        for (const k in root.homeOf)
+            next[k] = root.homeOf[k];
+        const ws = Hyprland.focusedWorkspace;
+        next[String(o.address)] = ws
+            ? (ws.id < 0 ? "name:" + ws.name : String(ws.id)) : "";
+        root.homeOf = next;
+        // Silent: moving to a special workspace non-silently would SHOW that
+        // workspace, which is the opposite of minimising. sum-toggle.sh's
+        // header records the same trap.
+        Hyprland.dispatch("movetoworkspacesilent " + root.stash
+                          + ",address:" + o.address);
+    }
+
+    function restore(o) {
+        const home = root.homeOf[String(o.address)];
+        const ws = Hyprland.focusedWorkspace;
+        // No memory of home — this shell reloaded since it was stashed — so
+        // it comes back to where you are looking, which is the only answer
+        // that cannot strand it.
+        const target = (home !== undefined && home !== "")
+            ? home
+            : (ws ? (ws.id < 0 ? "name:" + ws.name : String(ws.id)) : "");
+        if (target === "")
+            return;
+        Hyprland.dispatch("movetoworkspacesilent " + target
+                          + ",address:" + o.address);
+        Hyprland.dispatch("focuswindow address:" + o.address);
     }
 
     Component.onCompleted: Hyprland.refreshToplevels()
@@ -122,12 +185,9 @@ Item {
                 // the bare "{}" — so a maximized window deliberately gets NO
                 // plate. Reproduced rather than improved.
                 readonly property bool maximized: entry.modelData.fullscreen === 1
-                // No Hyprland equivalent, so this state is unreachable today
-                // and the branch is here to be correct when it is not: the
-                // minimize this bar would need is a special workspace, which
-                // is how sum-toggle.sh already spells it, and wiring that up
-                // is the click behaviour's problem rather than the paint's.
-                readonly property bool minimized: false
+                readonly property bool minimized:
+                    entry.modelData.workspace
+                    && String(entry.modelData.workspace.name) === root.stash
 
                 // get_taskname()'s priority, top to bottom. Not a set of
                 // independent flags — a focused floating window takes ONE
@@ -231,10 +291,18 @@ Item {
 
                 readonly property real spaceAdvance: Metrics.s(10) * 0.6
 
+                // select_window(), both branches. See root.minimize().
                 MouseArea {
                     anchors.fill: parent
-                    onClicked: Hyprland.dispatch(
-                        "focuswindow address:" + entry.modelData.address)
+                    onClicked: {
+                        if (entry.minimized)
+                            root.restore(entry.modelData);
+                        else if (entry.focused)
+                            root.minimize(entry.modelData);
+                        else
+                            Hyprland.dispatch(
+                                "focuswindow address:" + entry.modelData.address);
+                    }
                 }
             }
         }
