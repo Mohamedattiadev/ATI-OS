@@ -5,9 +5,14 @@
 record of what it was built AGAINST — the inventory below was extracted from
 `qtile/config.py`'s AST and is what fidelity is measured by.
 
-What is live: the logo and layout chips, the TaskList, the GroupBox, all four
-WidgetBoxes with qtile's own toggle glyphs, MPRIS, CPU, memory, disk, volume,
-battery, keyboard layout, the clock, and the tray.
+What is live: the logo and layout chips, the TaskList, the GroupBox with
+qtile's own group ICONS, all four WidgetBoxes with qtile's toggle glyphs,
+MPRIS, CPU, memory, disk, volume, battery, the keyboard layout with its flag,
+the clock, the tray, and TOOLTIP_BY_NAME's tooltips on hover.
+
+Its chips run qtile's commands — **rofi**, not the island's IPC. That is not
+only fidelity: the island is stopped while this bar runs, so an IPC call
+would find no instance and do nothing, silently.
 
 What is not, and why:
 
@@ -18,6 +23,8 @@ What is not, and why:
   copies of one string is worse than one.
 * **`CheckUpdates`** — the count comes from `qupdate.py`'s daemon, which this
   bar does not own. Left out rather than reimplemented badly.
+* **`w_nightlight`, `w_wifi_qr`** — inside qtile's systray box. Not ported
+  yet; both are one script call away.
 
 It is a **reimplementation**, and that is not a shortcut — qtile's bar is part
 of qtile and cannot run under another compositor. The target is
