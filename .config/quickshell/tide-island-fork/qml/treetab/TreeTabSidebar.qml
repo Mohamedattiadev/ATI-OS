@@ -210,17 +210,45 @@ import "../common/Motion.js" as Motion
 // workspace 180 px for a panel that is not on it.
 //
 // So the zone follows `revealProgress`, which is 0 unless this monitor's
-// current workspace is in treetab AND has something to list. It is
-// ANIMATED, on the same critically damped curve and the same asymmetric
-// 140/morph timing DynamicIslandWindow.qml already uses for its own zone,
-// for the reason recorded there: the zone is a compositor-side
-// reservation that the eye does not track, and it must not fight the
-// motion it is causing. Measured on a headless output — the reflow of a
-// 1346 px window down to 1166 and back is Hyprland's own window animation
-// either way; with an instant zone the panel is simply gone one frame
-// before the windows have finished moving into its space, which reads as a
-// gap opening at the left edge. The content slides with the zone so the
-// panel leaves rather than vanishes.
+// current workspace is in treetab AND has something to list.
+//
+// ---- AND IT ANIMATES ON THE WAY OUT ONLY. MEASURED BOTH WAYS. ----
+//
+// It used to animate in BOTH directions, on the argument recorded below for
+// the close. Applying that to the open was wrong, and reported as "showing
+// up and hiding off is too slow".
+//
+// A 33 fps grim burst of a 200 px left strip, differencing consecutive
+// frames, with the trigger at t=350 ms:
+//
+//     +143 ms   first pixel moves        (layout-cycle.sh, then 4 hyprctl
+//                                         calls and a 90 ms debounce)
+//     +609 ms   panel finally in place   — for a 140 ms animation
+//     +914 ms   everything settled
+//
+// A contact sheet of that burst says why: at +609 the panel is fully drawn
+// and the window it displaced has NOT STARTED MOVING. The panel slides in
+// ON TOP of the terminal and the terminal only gets out of the way
+// afterwards.
+//
+// Because an ANIMATED zone is a MOVING RESERVATION. Hyprland re-lays-out
+// the tiling area every time it changes, and each re-layout is its own
+// several-hundred-ms window animation — so eight frames of zone growth
+// start eight window animations, each cancelling the last, and the windows
+// cannot begin arriving until the zone stops moving. The panel and the
+// windows were not "one movement"; they were fighting.
+//
+// Snapping the zone open fixes that: the windows get their final target in
+// one step and start moving IMMEDIATELY, concurrently with the panel's own
+// 140 ms slide, so the panel descends into a gap that is already opening.
+//
+// The close keeps the animation, and the original reasoning holds there
+// unchanged — it was only ever an argument about LEAVING. Measured on a
+// headless output: with an instant zone the panel is gone one frame before
+// the windows have finished moving into its space, which reads as a gap
+// opening at the left edge. The content slides with the zone so the panel
+// leaves rather than vanishes. Nothing about arriving is symmetric with
+// that: a panel that arrives cannot leave a gap behind it.
 //
 // `rowCount > 0` in the gate is not defensive tidying: an empty treetab
 // workspace with a 180 px reservation is 13% of a 1366 px screen given to
@@ -525,7 +553,12 @@ PanelWindow {
 
     Behavior on revealProgress {
         NumberAnimation {
-            duration: root.wanted ? 140 : Motion.morphDuration()
+            // 140 in, and 260 out rather than morphDuration()'s 400. The out
+            // has to outlast Hyprland's own window animation or the gap
+            // described above opens; it does not have to outlast it by the
+            // 400 ms a full island morph gets, and the difference was the
+            // other half of "hiding off is too slow".
+            duration: root.wanted ? 140 : 260
             easing.type: Easing.BezierSpline
             // The critically damped curve, not the spring. `spring()`
             // overshoots past 1 by design, and this value is multiplied
@@ -539,7 +572,16 @@ PanelWindow {
     anchors.top: true
     anchors.bottom: true
     implicitWidth: root.panelWidth
-    exclusiveZone: Math.round(root.panelWidth * root.revealProgress)
+    // Snap OPEN, animate CLOSED. The long note above this file's surface
+    // section has the burst that decided it: an animated zone is a moving
+    // reservation, and Hyprland restarts its window animation on every
+    // change, so the windows could not begin arriving until the zone stopped
+    // growing. `wanted` and not `revealProgress > 0` — the jump has to happen
+    // on the DECISION, one frame before the slide starts, not partway
+    // through it.
+    exclusiveZone: root.wanted
+        ? root.panelWidth
+        : Math.round(root.panelWidth * root.revealProgress)
 
     color: IslandTheme.surface
 
