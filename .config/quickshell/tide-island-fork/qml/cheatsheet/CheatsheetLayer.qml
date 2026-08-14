@@ -75,8 +75,20 @@ Item {
     // drawing the sheet. Adding it here is what puts it in the Tab cycle —
     // showCheatsheet("island") worked without it, but the sheet was then
     // reachable only by knowing its name, and invisible from the other three.
-    readonly property var sheetOrder: ["hypr", "vim", "fish", "island"]
-    readonly property var sheetLabels: ({ "hypr": "WM", "vim": "VIM", "fish": "FISH / KITTY", "island": "ISLAND" })
+    // DOCS and TROUBLE are last on purpose. Tab cycles this list, and the
+    // three key sheets are what you reach for mid-task; the reference
+    // pair is what you reach for when something is already wrong, which
+    // is a moment you are willing to press Tab twice more for.
+    //
+    // Both come from cheatsheet.py like every other sheet, so `$mod SHIFT
+    // /` and `cheatsheet.py trouble` in a terminal cannot disagree — and
+    // the terminal path still works on the day the shell is what broke,
+    // which is exactly the day a troubleshooting sheet is wanted.
+    readonly property var sheetOrder: ["hypr", "vim", "fish", "island", "docs", "trouble"]
+    readonly property var sheetLabels: ({
+        "hypr": "WM", "vim": "VIM", "fish": "FISH / KITTY", "island": "ISLAND",
+        "docs": "DOCS", "trouble": "FIXING"
+    })
 
     // ---- THE FLAT MODEL, AND WHY FILTERING DROPS HEADERS ----
     //

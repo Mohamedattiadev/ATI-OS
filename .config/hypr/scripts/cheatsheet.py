@@ -421,6 +421,135 @@ ISLAND_SECTIONS = [
 ]
 
 
+# ---- THE DOCS AND TROUBLESHOOTING SHEETS -------------------------------
+#
+# `$mod SHIFT /` was asked for as "like i am clicking on win+? ... will show
+# all the documentation keymaps troubleshooting etc". The keymaps half
+# already existed — this file has generated it from `hyprctl binds -j`
+# since the panel was built, which is why it cannot drift. These two
+# sheets are the other half.
+#
+# They are PROSE, not generated, and that is a deliberate difference from
+# the WM sheet. A troubleshooting entry is a claim about what a symptom
+# MEANS, and there is nothing to derive it from; the honest thing is to
+# write it down and let it be reviewed, rather than to synthesise it from
+# something that does not know.
+#
+# Every troubleshooting row is a symptom and the command that PROVES the
+# cause, never a description of the cause. Which of the two is drawn on
+# the left differs between the two renderings and is deliberately not
+# claimed in the note: render() prints the label first, while the panel
+# puts `combo` in the chip because that is the field it sizes to fit. Each of these has actually
+# happened on this machine, and every one of them failed SILENTLY — which
+# is the whole reason the column on the right is a command and not advice.
+TROUBLE_SECTIONS = [
+    ("THE SHELL", [
+        ("reloaded cleanly but nothing changed",
+         "tail $XDG_RUNTIME_DIR/quickshell/by-id/<id>/log.log"),
+        ("which instance is live",
+         "ls -t $XDG_RUNTIME_DIR/quickshell/by-id/ | head -1"),
+        ("edit landed after its own reload",
+         "compare last 'Configuration Loaded' to the file mtime"),
+        ("Metrics.js / Motion.js edit does nothing",
+         ".pragma library JS is cached -- restart the island"),
+        ("an IPC call did nothing",
+         "qs -p ~/.config/quickshell/tide-island-fork ipc show"),
+        ("...and reported success anyway",
+         "qs ipc call prints 'Function not found' and EXITS 0"),
+        ("a function is missing from ipc show",
+         "an untyped IpcHandler parameter is dropped silently"),
+    ]),
+    ("THE COMPOSITOR", [
+        ("island shows the wrong workspace",
+         "hyprctl activeworkspace -j | jq '{id,name}'"),
+        ("...or every window at once",
+         "named workspaces are NEGATIVE -- S is -1337"),
+        ("a keybinding does nothing",
+         "hyprctl binds -j | jq -r '.[]|\"\\(.key) \\(.dispatcher)\"'"),
+        ("a scratchpad lost its window",
+         "hyprctl clients -j | jq -r '.[]|\"\\(.workspace.name) \\(.class)\"'"),
+        ("a listener stopped reacting",
+         "ls -l $XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"),
+    ]),
+    ("COLOUR AND FONTS", [
+        ("night light does nothing",
+         "qs ... ipc call nightlight status ; pacman -Q hyprsunset"),
+        ("gammastep appears to work and does not",
+         "gammastep -P -O 4500   # 'Zero outputs', then it hangs"),
+        ("hyprsunset temperature looks wrong",
+         "it reports the last value REQUESTED, not the effective one"),
+        ("a screenshot shows no gamma change",
+         "it cannot -- the transform is applied at scanout"),
+        ("a font silently became Noto Sans CJK",
+         "fc-match \"Inter Display\""),
+        ("the theme did not reach everything",
+         "theme-apply <theme> ; watch for THEME_APPLY_VISIBLE_DONE"),
+    ]),
+    ("WALLPAPER", [
+        ("a theme change did not change the wallpaper",
+         "theme-wallpaper list"),
+        ("a theme is stuck on one image",
+         "it is bound -- theme-wallpaper forget <theme>"),
+        ("what is in a theme's set",
+         "theme-wallpaper set <theme>"),
+        ("the wallpaper daemon is not answering",
+         "awww query"),
+    ]),
+    ("PROCESS TRAPS", [
+        ("pkill -f killed the wrong thing",
+         "it matches its own command line -- use pkill -x"),
+        ("a pgrep -f check is always true",
+         "ps -eo args | awk '/pat/ && !/awk/'"),
+    ]),
+]
+
+# Where the long-form answers live. A pointer sheet rather than a copy:
+# duplicating MIGRATION.md into a panel would create a second copy to keep
+# true, and the first thing anyone needs is to know which file to open.
+DOCS_SECTIONS = [
+    ("HYPRLAND", [
+        ("overview, and this troubleshooting list in full",
+         "~/.config/hypr/README.md"),
+        ("what every qtile feature became",
+         "~/.config/hypr/MIGRATION.md"),
+        ("the requested scope, and each item's status",
+         "~/.config/hypr/REQUIREMENTS.md"),
+        ("the audit trail -- append, never rewrite",
+         "~/.config/hypr/upgread_UI_UX.md"),
+        ("the visual language the shell is held to",
+         "~/.config/hypr/DESIGN-SPEC.md"),
+    ]),
+    ("CONFIG", [
+        ("keybindings and submaps", "~/.config/hypr/binds.conf"),
+        ("window rules, and workspace homes", "~/.config/hypr/rules.conf"),
+        ("gaps, borders, blur, animations", "~/.config/hypr/looks.conf"),
+        ("written by theme-apply -- do not edit", "~/.config/hypr/colors.conf"),
+        ("the shell", "~/.config/quickshell/tide-island-fork/"),
+    ]),
+    ("PACKAGES", [
+        ("how this machine decides what is installed",
+         "~/.config/arch-config/README.md"),
+        ("both sessions' window-manager packages",
+         "~/.config/arch-config/modules/wm.yaml"),
+        ("what is installed but not declared",
+         "./installScripts/wizard.sh --audit"),
+        ("the gate every commit passes",
+         "./installScripts/validate.sh"),
+    ]),
+    ("THEMES AND WALLPAPER", [
+        ("apply a theme everywhere", "theme-apply <theme>"),
+        ("every theme and its set size", "theme-wallpaper list"),
+        ("bind the current image to a theme", "theme-wallpaper bind <theme> <img>"),
+        ("hand a theme back to its set", "theme-wallpaper forget <theme>"),
+        ("rebuild the per-theme sets", "theme-wallpaper-fetch build --apply"),
+    ]),
+]
+
+
+def prose_rows(sections):
+    return [(title, list(rows)) for title, rows in sections]
+
+
 def island_rows():
     """The island's own keymaps. See the note above on why this is a copy."""
     return [(title, list(rows)) for title, rows in ISLAND_SECTIONS]
@@ -446,6 +575,14 @@ def sheet_json(which):
         sections = island_rows()
         title = "TIDE ISLAND KEYS"
         note = "These live in QML, not in hyprctl binds -- see cheatsheet.py."
+    elif which in ("trouble", "troubleshooting"):
+        sections = prose_rows(TROUBLE_SECTIONS)
+        title = "TROUBLESHOOTING"
+        note = "Each row: a symptom, and the command that PROVES the cause."
+    elif which == "docs":
+        sections = prose_rows(DOCS_SECTIONS)
+        title = "DOCUMENTATION"
+        note = "Where the long-form answers live."
     elif which in SOURCES:
         filename, title = SOURCES[which]
         sections, note = parsed_rows(filename), ""

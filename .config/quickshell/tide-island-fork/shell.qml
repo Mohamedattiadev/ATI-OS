@@ -692,6 +692,16 @@ Scope {
             shellRoot.forFocusedWindow((window) => window.toggleCheatsheetWindow(which));
         }
 
+        // Explicit close. `showCheatsheet` toggles on the sheet — pressing
+        // the chord's `v` while the WM sheet is open switches to vim, and
+        // only the same sheet again means "I am done" — which is right for
+        // a keybinding and wrong for a script, because a toggle whose phase
+        // you have to know is a toggle that goes out of phase. This says
+        // shut, and means it whatever state the panel is in.
+        function hideCheatsheet() {
+            shellRoot.forFocusedWindow((window) => window.hideCheatsheetWindow());
+        }
+
         function toggleWifiPanel() {
             shellRoot.forFocusedWindow((window) => window.openConnectivityPanelWindow("wifi"));
         }

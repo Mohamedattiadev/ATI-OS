@@ -888,6 +888,20 @@ PanelWindow {
             islandContainer.showCheatsheet(which);
     }
 
+    // FORK: an explicit close, because `showCheatsheet` was the only way in
+    // and there was no way out except a keystroke.
+    //
+    // That made the panel undriveable from a script: opening it was one IPC
+    // call and closing it needed a synthesised Escape, which is the shape
+    // the rules warn about — a control whose bugs only the user can find.
+    // It also made `showCheatsheet` a toggle in disguise, and toggles go
+    // out of phase; a script that wants the panel SHUT should be able to
+    // say so without first knowing whether it is open.
+    function hideCheatsheetWindow() {
+        if (islandContainer.islandState === "cheatsheet")
+            islandContainer.smartRestoreState();
+    }
+
     function clearModeIndicatorWindow() {
         islandContainer.clearModeIndicator();
     }
