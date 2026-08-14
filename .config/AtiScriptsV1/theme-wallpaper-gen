@@ -597,14 +597,43 @@ def main():
             "`wal-precompile` first." % PALETTE_CACHE)
 
     per = max(1, args.per_theme)
+
+    # ---- `--only` HAS TO NARROW THE ASSIGNMENT, NOT JUST THE PRINTING ----
+    #
+    # It used to filter in the loop below, after assign() had already run
+    # over every theme — and assign() is a GLOBAL greedy allocation where no
+    # base image is ever used twice. So the themes you were not generating
+    # took their share first and the one you asked for got whatever was
+    # left.
+    #
+    # At the default --per-theme 1 that is invisible: 21 themes want 21
+    # images out of 362 and everyone is served. It only bites at the sizes
+    # the SET feature uses. Measured at --per-theme 25:
+    #
+    #     wanted        21 x 25 = 525
+    #     pool                    362   (the palette cache)
+    #     gruvbox                  25
+    #     matrix                    0
+    #     mono-light                0   <- the one theme this mode exists for
+    #
+    # mono-light is by construction the WORST-scoring theme in the grid —
+    # its background is #ffffff and every candidate is a dark photograph —
+    # so it is always last in a best-first allocation and always the one
+    # starved. `theme-wallpaper-gen --only mono-light --per-theme 25`
+    # printed a header and no rows, exit 0.
+    #
+    # Narrowing first gives the named theme first pick of the whole pool.
+    if args.only:
+        themes = [t for t in themes if t["name"] == args.only]
+        if not themes:
+            raise SystemExit("theme-wallpaper-gen: no such theme: %s" % args.only)
+
     chosen = assign(themes, walls, per)
     os.makedirs(OUT_DIR, exist_ok=True)
 
     print("%-16s %-10s %7s   %s" % ("theme", "base", "score", "output"))
     for t in themes:
         name = t["name"]
-        if args.only and name != args.only:
-            continue
         for i, (base, s) in enumerate(chosen[name], 1):
             if per == 1:
                 out = os.path.join(OUT_DIR, "%s.jpg" % name)
