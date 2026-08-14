@@ -2,7 +2,31 @@ import QtQuick
 import QtQuick.Shapes
 import Quickshell
 import Quickshell.Io
+// Quickshell.Wayland STAYS, even though this file is the backend-neutral BASE
+// that has to load under X11 for the qtile session. Removing it was tried and
+// was WRONG, and the live log caught it within a reload:
+//
+//     WARN scene: @DynamicIslandWindow.qml[3428]: ReferenceError:
+//                 ToplevelManager is not defined
+//
+// The distinction the port turns on is narrower than "no Wayland imports".
+// IMPORTING the module is harmless on X11 — measured: it resolves, and the
+// only cost is the types in it being unusable. What is fatal is DECLARING an
+// attached property from it, because an attached object that cannot be
+// created fails the entire component. So only the `WlrLayershell.*` lines had
+// to leave; `ToplevelManager` and `Toplevel` (~line 3310) stay right here,
+// behind the compositor gate that already guarded them.
+//
+// IslandWindowWayland.qml and IslandWindowX11.qml are the two thin wrappers
+// that carry the backend half; qml/common/BackendSurface.md explains the
+// whole arrangement.
 import Quickshell.Wayland
+// Quickshell.Hyprland below STAYS for the same reason. Importing it
+// under X11 is harmless — measured: the module loads, the Hyprland singleton
+// simply has no socket, and the only output is one warning about
+// hyprland-toplevel-mapping-v1 not being supported. It is USING a Hyprland
+// object that would fail, and every such use in here is already behind a
+// Loader gated on the compositor.
 import Quickshell.Hyprland
 import Quickshell.Services.Mpris
 import Quickshell.Services.Notifications
@@ -292,8 +316,25 @@ PanelWindow {
         islandContainer.islandState === "normal"
         || islandContainer.islandState === "lyrics"
         || islandContainer.islandState === "custom"
-    WlrLayershell.layer: root.islandRestingSurface ? WlrLayer.Top : WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: {
+    // FORK: this was `WlrLayershell.keyboardFocus`, and the layer line above it
+    // was `WlrLayershell.layer`. Both moved out to IslandWindowWayland.qml /
+    // IslandWindowX11.qml — see qml/common/BackendSurface.md for why an
+    // attached property cannot live in a file that has to load on both
+    // backends. `islandRestingSurface` above is what the layer is derived
+    // from, and it was already a readonly property, so the wrappers read it
+    // directly and nothing had to be hoisted for the layer.
+    //
+    // The FOCUS decision did have to be hoisted, because it is ninety lines of
+    // reasoning about this file's own state that no wrapper can see —
+    // `islandContainer` is an id, and ids are file-scoped. So the decision
+    // stays here, in full, and only its SPELLING moves: a string, which the
+    // wrappers map onto WlrKeyboardFocus or onto `focusable`.
+    //
+    // A string rather than an enum on purpose. The whole island already runs
+    // off one string (`islandState`), strings survive into a log line and into
+    // a grep, and there is no third backend coming that would earn the
+    // ceremony. Values: "exclusive", "ondemand", "none".
+    readonly property string islandKeyboardFocus: {
         // Exclusive, not OnDemand: the theme picker is arrow-key driven,
         // and without an exclusive grab the arrows go to whatever window
         // was focused behind it.
@@ -347,7 +388,7 @@ PanelWindow {
                 // first keystroke after closing a panel lands nowhere.
                 || islandContainer.wifiPanelLayerVisible
                 || islandContainer.bluetoothPanelLayerVisible)
-            return WlrKeyboardFocus.Exclusive;
+            return "exclusive";
         // FORK: the control centre, the notification centre and the expanded
         // player. All three had NO keyboard handling for the reason written
         // against the connectivity lists above — focus never rose above None
@@ -374,16 +415,16 @@ PanelWindow {
                     || islandContainer.notificationCenterLayerVisible
                     || (islandContainer.expandedLayerVisible
                         && !islandContainer.expandedByPlayerAutoOpen)))
-            return WlrKeyboardFocus.Exclusive;
+            return "exclusive";
         // Keep keyboard focus on the overview until an overview action closes it.
         // Click-to-focus closes the overview before focusing the selected client.
         if (root.monitorFocused && root.overviewVisible)
-            return WlrKeyboardFocus.Exclusive;
+            return "exclusive";
         if (islandContainer.expandedPlayerKeyboardFocusRequested)
-            return WlrKeyboardFocus.OnDemand;
+            return "ondemand";
         if (root.monitorFocused && root.connectivityPromptActive)
-            return WlrKeyboardFocus.OnDemand;
-        return WlrKeyboardFocus.None;
+            return "ondemand";
+        return "none";
     }
     readonly property string iconFontFamily: userConfig.iconFontFamily
     readonly property string textFontFamily: userConfig.textFontFamily

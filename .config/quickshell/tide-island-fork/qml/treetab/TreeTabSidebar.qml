@@ -3,7 +3,9 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import Quickshell
-import Quickshell.Wayland
+// No `import Quickshell.Wayland` — backend-neutral BASE, must stay parseable
+// under X11 even though nothing instantiates it there. See the note at the
+// PanelWindow root. TreeTabSidebarWayland.qml carries the layer-shell half.
 
 import "../common"
 import "../common/Motion.js" as Motion
@@ -541,9 +543,13 @@ PanelWindow {
 
     color: IslandTheme.surface
 
-    WlrLayershell.layer: WlrLayer.Bottom
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-    WlrLayershell.namespace: "quickshell-treetab"
+    // FORK: the WlrLayershell lines moved to TreeTabSidebarWayland.qml so this
+    // file stays PARSEABLE under X11 — see ../common/BackendSurface.md. There
+    // is no X11 wrapper and that is deliberate, not an omission: this panel
+    // exists to give Hyprland the one thing it has no primitive for, and the
+    // qtile session it was copied from has the real `layout.TreeTab`. Drawing
+    // a replica of qtile's TreeTab inside qtile would be the wrong panel.
+    // shell.qml therefore leaves the whole feature unbuilt on X11.
 
     visible: root.wanted || root.revealProgress > 0.001
 

@@ -1,6 +1,9 @@
 import QtQuick
 import Quickshell
-import Quickshell.Wayland
+// No `import Quickshell.Wayland` — this file is the backend-neutral BASE now
+// and must stay loadable under X11. `ExclusionMode` is on the generic window
+// interface (Quickshell._Window), not the Wayland module, so it survives the
+// import going away. RingOsdWindowWayland.qml holds the Wayland bits.
 
 import "../common"
 import "../common/Metrics.js" as Metrics
@@ -79,9 +82,13 @@ PanelWindow {
     // display — the day the plate moves up, or the island's zone changes,
     // this becomes a real misplacement with no obvious cause.
     exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-    WlrLayershell.namespace: "quickshell-ring-osd"
+    // FORK: the three WlrLayershell lines that used to be here have moved to
+    // RingOsdWindowWayland.qml. They are Wayland-only, and an attached
+    // property that cannot be created fails the ENTIRE component, not the one
+    // line — so declaring them here made this file unloadable under X11 and
+    // took the qtile session's OSD with it. See ../common/BackendSurface.md.
+    // Everything above is backend-neutral: `exclusionMode`, `anchors`,
+    // `mask` and `exclusiveZone` are on the generic PanelWindow interface.
 
     // THE INPUT MASK. See the header — without this the desktop is
     // unclickable. Region with no rects = nothing is interactive.

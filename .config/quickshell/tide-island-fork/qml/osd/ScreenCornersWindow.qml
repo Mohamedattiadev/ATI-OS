@@ -1,7 +1,8 @@
 import QtQuick
 import QtQuick.Shapes
 import Quickshell
-import Quickshell.Wayland
+// No `import Quickshell.Wayland` — backend-neutral BASE, must load under X11.
+// ScreenCornersWindowWayland.qml carries the layer-shell half.
 
 import "../common"
 import "../common/Metrics.js" as Metrics
@@ -88,11 +89,16 @@ PanelWindow {
     // glance.
     exclusionMode: ExclusionMode.Ignore
 
-    // Top, not Overlay. See the header — this IS the hide-on-fullscreen
-    // behaviour, not a compromise with it.
-    WlrLayershell.layer: WlrLayer.Top
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-    WlrLayershell.namespace: "quickshell-screen-corners"
+    // FORK: the WlrLayershell lines moved to ScreenCornersWindowWayland.qml —
+    // see ../common/BackendSurface.md.
+    //
+    // This file is the reason that write-up says "five windows" and not
+    // "four". It did not appear in the X11 failure log at all, and that was
+    // luck, not health: `forkConfig.screenCornersEnabled` defaults OFF, so
+    // shell.qml hands this Variants an empty model and the component is never
+    // instantiated. Turning corners on in a qtile session would have failed
+    // the component exactly like the other four, months later, with the
+    // feature flag as the only clue.
 
     // THE INPUT MASK. See the header. Without this the desktop is unclickable
     // for the entire session.

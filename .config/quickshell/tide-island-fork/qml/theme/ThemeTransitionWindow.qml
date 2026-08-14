@@ -3,7 +3,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import Quickshell.Wayland
+// No `import Quickshell.Wayland` — backend-neutral BASE, must load under X11.
+// ThemeTransitionWindowWayland.qml carries the layer-shell half.
 import Qt5Compat.GraphicalEffects
 
 //
@@ -205,13 +206,19 @@ PanelWindow {
     // So the cover was never covering the one surface that sits above the
     // whole desktop. Verified after the change: 1366x768 @ 0,0.
     exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.namespace: "quickshell-theme-transition"
-    // No keyboard focus and no input region at all. This covers the entire
-    // screen for the better part of a second; taking either would mean a
-    // click or a keystroke during a theme change goes nowhere, which is a
-    // much worse bug than the one it would be protecting against.
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    // FORK: the WlrLayershell lines moved to ThemeTransitionWindowWayland.qml
+    // so this file stays loadable under X11 — see ../common/BackendSurface.md.
+    // Focus is set per-backend in the two wrappers rather than as a generic
+    // `focusable` here, DELIBERATELY: on Wayland `focusable` and
+    // `WlrLayershell.keyboardFocus` both drive the same layer-shell field, and
+    // setting one in the base and the other in the wrapper leaves which wins
+    // to evaluation order. One owner per backend, no interaction to reason
+    // about. Either way the answer is "none" — this surface covers the whole
+    // screen for the better part of a second, and taking a keystroke during a
+    // theme change is a worse bug than the one it protects against.
+    //
+    // The input region IS generic, and stays here: no rects = nothing
+    // interactive, on both backends.
     mask: Region {}
 
     // ---- THE SWEEP GEOMETRY -------------------------------------------------

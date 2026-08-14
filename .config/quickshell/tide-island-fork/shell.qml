@@ -19,6 +19,51 @@ import "qml/workspace"
 Scope {
     id: shellRoot
 
+    // ---- WHICH DISPLAY SERVER, AND WHY IT IS DECIDED ONCE HERE ----
+    //
+    // FORK. The island is the Hyprland session's bar and, since bar-switch,
+    // the qtile session's bar too when qtile is put into island mode. qtile is
+    // X11, so this shell has to come up on both.
+    //
+    // Quickshell's PanelWindow already picks its own backend — verified: a
+    // probe panel under a nested Xephyr rendered its fill colour in the top
+    // strip, so the window type itself needs no help. What DOES need help is
+    // `WlrLayershell.*`, an attached property that does not exist off Wayland
+    // and that fails the WHOLE component when it cannot be created. Four
+    // windows carried such declarations, and under X11 all four silently
+    // failed to instantiate — including the island, which is why the screen
+    // measured `mean=0` with `Configuration Loaded` in the log.
+    //
+    // So each of those four is now a backend-neutral base plus a thin
+    // per-backend wrapper, and this flag picks which wrapper gets built. The
+    // full write-up, including what X11 genuinely cannot do, is in
+    // qml/common/BackendSurface.md.
+    //
+    // WAYLAND_DISPLAY rather than XDG_SESSION_TYPE: it is the variable
+    // Quickshell's own backend selection keys on, so this flag and the window
+    // it is choosing a wrapper for can never disagree. A qtile session has it
+    // unset; Hyprland sets it. Read once — a session does not change display
+    // server under a running shell.
+    readonly property bool onWayland: {
+        const wl = Quickshell.env("WAYLAND_DISPLAY");
+        return wl !== undefined && wl !== null && String(wl) !== "";
+    }
+
+    // The island's per-output windows, whichever backend built them. Four
+    // call sites below iterate this; they must not care which Variants block
+    // is the live one. Exactly one of the two is ever non-empty — the other's
+    // model is `[]`, so it constructs nothing at all rather than constructing
+    // hidden windows.
+    readonly property var islandWindows: shellRoot.onWayland
+        ? (islandVariantsWayland.instances || [])
+        : (islandVariantsX11.instances || [])
+
+    // The same accessor for the theme-sweep overlays, for the same reason:
+    // two call sites below iterate them and neither should know the backend.
+    readonly property var themeTransitionWindows: shellRoot.onWayland
+        ? (themeTransitionVariantsWayland.instances || [])
+        : (themeTransitionVariantsX11.instances || [])
+
     readonly property bool screenRecordingActive: SystemServices.screenRecordingActive
     property bool focusEnabled: false
     property bool nightLightEnabled: false
@@ -84,7 +129,7 @@ Scope {
     readonly property var userConfig: UserConfig
 
     function forEachWindow(callback) {
-        const windows = panelVariants.instances ? panelVariants.instances : [];
+        const windows = shellRoot.islandWindows;
         for (let index = 0; index < windows.length; index++) {
             const window = windows[index];
             if (window)
@@ -106,7 +151,7 @@ Scope {
         if (CompositorBackend.compositor === "niri")
             return false;
 
-        const windows = panelVariants.instances ? panelVariants.instances : [];
+        const windows = shellRoot.islandWindows;
         for (let index = 0; index < windows.length; index++) {
             const window = windows[index];
             if (window && window.overviewPhase !== "closed")
@@ -155,7 +200,7 @@ Scope {
     }
 
     function anyIslandShown() {
-        const windows = panelVariants.instances ? panelVariants.instances : [];
+        const windows = shellRoot.islandWindows;
         for (let index = 0; index < windows.length; index++) {
             const window = windows[index];
             if (window && window.autoHideTargetVisible)
@@ -207,7 +252,7 @@ Scope {
     }
 
     function forFocusedWindow(callback) {
-        const windows = panelVariants.instances ? panelVariants.instances : [];
+        const windows = shellRoot.islandWindows;
         let fallbackWindow = null;
         for (let index = 0; index < windows.length; index++) {
             const window = windows[index];
@@ -255,8 +300,7 @@ Scope {
             return;
         }
 
-        const windows = themeTransitionVariants.instances
-            ? themeTransitionVariants.instances : [];
+        const windows = shellRoot.themeTransitionWindows;
         if (windows.length === 0)
             return;
         for (let index = 0; index < windows.length; index++) {
@@ -279,20 +323,28 @@ Scope {
     // 180 ms) and both unmapped on the same poll at 5998 ms. Without the relay
     // the second would have held its frozen frame until its own 12 s cap.
     function relayThemeApplied() {
-        const windows = themeTransitionVariants.instances
-            ? themeTransitionVariants.instances : [];
+        const windows = shellRoot.themeTransitionWindows;
         for (let index = 0; index < windows.length; index++) {
             if (windows[index])
                 windows[index].noteThemeApplied();
         }
     }
 
+    // FORK: split per backend — see qml/common/BackendSurface.md. As with the
+    // ring OSD, the two delegate bodies are identical by requirement, not by
+    // accident; keep them in sync.
+    //
+    // The theme sweep is the fork feature that matters MOST under X11, which
+    // is why it got a wrapper rather than being left Hyprland-only: the qtile
+    // session and the Hyprland session share one palette pipeline
+    // (AtiScriptsV1/theme-apply), so a theme change made from either has to
+    // look the same from either.
     Variants {
-        id: themeTransitionVariants
+        id: themeTransitionVariantsWayland
 
-        model: Quickshell.screens
+        model: shellRoot.onWayland ? Quickshell.screens : []
 
-        ThemeTransitionWindow {
+        ThemeTransitionWindowWayland {
             required property var modelData
 
             screen: modelData
@@ -304,6 +356,26 @@ Scope {
             // in ThemeTransitionWindow.qml. Compared by identity against the
             // screen list rather than by an index property, because Variants
             // gives no index.
+            ownsThemeApply: Quickshell.screens.length === 0
+                || modelData === Quickshell.screens[0]
+
+            onThemeApplied: shellRoot.relayThemeApplied()
+        }
+    }
+
+    Variants {
+        id: themeTransitionVariantsX11
+
+        model: shellRoot.onWayland ? [] : Quickshell.screens
+
+        ThemeTransitionWindowX11 {
+            required property var modelData
+
+            screen: modelData
+            outputName: modelData && modelData.name !== undefined
+                ? String(modelData.name) : ""
+            themeApplyPath: Quickshell.env("HOME")
+                + "/.dotfiles/.config/AtiScriptsV1/theme-apply"
             ownsThemeApply: Quickshell.screens.length === 0
                 || modelData === Quickshell.screens[0]
 
@@ -1008,21 +1080,63 @@ Scope {
     // spans the whole output. Emptying the model destroys them, so "off"
     // costs one comparison per screen and nothing else. Defaults off — see
     // ForkConfig.qml for the measurement that decided that.
+    // FORK: split per backend — see qml/common/BackendSurface.md. The model
+    // gate that was already here for the feature flag now carries the display
+    // server too, so "off" and "wrong backend" cost the same nothing.
     Variants {
-        id: screenCornerVariants
-        model: forkConfig.screenCornersEnabled ? Quickshell.screens : []
+        id: screenCornerVariantsWayland
+        model: forkConfig.screenCornersEnabled && shellRoot.onWayland
+            ? Quickshell.screens : []
 
-        ScreenCornersWindow {
+        ScreenCornersWindowWayland {
             required property var modelData
             screen: modelData
         }
     }
 
     Variants {
-        id: ringOsdVariants
-        model: Quickshell.screens
+        id: screenCornerVariantsX11
+        model: forkConfig.screenCornersEnabled && !shellRoot.onWayland
+            ? Quickshell.screens : []
 
-        RingOsdWindow {
+        ScreenCornersWindowX11 {
+            required property var modelData
+            screen: modelData
+        }
+    }
+
+    // FORK: split per backend — see qml/common/BackendSurface.md.
+    //
+    // THE TWO DELEGATE BODIES BELOW ARE THE SAME EIGHT ASSIGNMENTS AND MUST
+    // STAY THAT WAY. QML has no conditional delegate type — a delegate is
+    // resolved at compile time — so gating the model is the only form
+    // available, and the price is this one duplicated block. If a ninth
+    // property ever appears, it goes in BOTH, or better, gets a default on
+    // RingOsdWindow itself so neither delegate has to name it.
+    Variants {
+        id: ringOsdVariantsWayland
+        model: shellRoot.onWayland ? Quickshell.screens : []
+
+        RingOsdWindowWayland {
+            required property var modelData
+
+            screen: modelData
+            shellRootController: shellRoot
+            iconText: shellRoot.ringOsdIcon
+            progress: shellRoot.ringOsdProgress
+            rawPercent: shellRoot.ringOsdRawPercent
+            shown: shellRoot.ringOsdShown
+            iconFontFamily: shellRoot.userConfig.iconFontFamily
+            accentColor: IslandTheme.accent
+            shellFill: IslandTheme.shellFill
+        }
+    }
+
+    Variants {
+        id: ringOsdVariantsX11
+        model: shellRoot.onWayland ? [] : Quickshell.screens
+
+        RingOsdWindowX11 {
             required property var modelData
 
             screen: modelData
@@ -1084,16 +1198,25 @@ Scope {
     Loader {
         id: treeTabDataLoader
 
-        active: treeTabLayoutState.layout === "treetab"
+        // `onWayland` first: HyprlandData shells out to hyprctl on every
+        // window event, and under qtile there is no hyprctl to answer. The
+        // sidebar it feeds is not built there either.
+        active: shellRoot.onWayland && treeTabLayoutState.layout === "treetab"
         sourceComponent: Component { HyprlandData {} }
     }
 
+    // FORK: Wayland ONLY, and there is no X11 counterpart on purpose — see
+    // qml/common/BackendSurface.md. This panel exists to give Hyprland the one
+    // thing it has no primitive for, and the session it was copied FROM has
+    // the real `layout.TreeTab`. Building a replica of qtile's TreeTab inside
+    // qtile would be the wrong panel, so under X11 the feature is simply not
+    // constructed — the model is empty and the data Loader below never runs.
     Variants {
         id: treeTabVariants
 
-        model: Quickshell.screens
+        model: shellRoot.onWayland ? Quickshell.screens : []
 
-        TreeTabSidebar {
+        TreeTabSidebarWayland {
             required property var modelData
 
             screen: modelData
@@ -1107,12 +1230,40 @@ Scope {
         }
     }
 
+    // ---- THE ISLAND, ONCE PER OUTPUT, ONCE PER BACKEND ----
+    //
+    // FORK: this was a single `Variants { DynamicIslandWindow { … } }`. It is
+    // two blocks now because the delegate's TYPE has to differ per display
+    // server and QML has no conditional form for that — a delegate is a
+    // compile-time type. Gating the MODEL is the form that does exist, and an
+    // empty model constructs nothing, so the inactive block costs one
+    // comparison and no windows. (Same shape as the screenCornerVariants
+    // block above, which gates its model for the same reason.)
+    //
+    // The delegates are otherwise identical, deliberately: every property
+    // either window needs is on the shared base. If a third property ever has
+    // to be set here, it goes on the base, not into one of these two.
+    //
+    // Read `shellRoot.islandWindows`, never `.instances` on either of these.
     Variants {
-        id: panelVariants
+        id: islandVariantsWayland
 
-        model: Quickshell.screens
+        model: shellRoot.onWayland ? Quickshell.screens : []
 
-        DynamicIslandWindow {
+        IslandWindowWayland {
+            required property var modelData
+
+            screen: modelData
+            shellRootController: shellRoot
+        }
+    }
+
+    Variants {
+        id: islandVariantsX11
+
+        model: shellRoot.onWayland ? [] : Quickshell.screens
+
+        IslandWindowX11 {
             required property var modelData
 
             screen: modelData
