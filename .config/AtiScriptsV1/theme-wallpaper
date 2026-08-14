@@ -95,7 +95,10 @@
 #                                             print path, or nothing.
 #                                             consume records the draw.
 #      theme-wallpaper bind    <theme> <img>  remember img for theme
-#      theme-wallpaper apply   <theme>        resolve, then put on screen
+#      theme-wallpaper apply   <theme> [normal|instant]
+#                                             resolve, then put on screen.
+#                                             instant skips the wave, for
+#                                             use under the theme cover.
 #      theme-wallpaper forget  <theme>        drop the override
 #      theme-wallpaper list                   every theme and its wallpaper
 #      theme-wallpaper set     <theme>        list a theme's whole set
@@ -261,11 +264,31 @@ record() {
 #  inherits is not reliably the session's — dm-setbg has a comment about
 #  exactly this, where an unset XDG_SESSION_TYPE under `set -u` aborted
 #  the script before it could reach its own error branch.
+#  ---- instant MODE, AND WHY A HARD CUT IS THE RIGHT ANIMATION ----
+#
+#  Ask: "i want also the theme and the wallpaper change in the same time
+#  no glitch at all one animation".
+#
+#  The wave exists so that changing the wallpaper on a LIVE desktop is not
+#  a hard cut. Under the theme-change cover there is no live desktop to
+#  cut — the island is holding a frozen frame over the whole screen — so
+#  the wave is a second animation nobody can see, played underneath the
+#  first one, whose only measurable effect is to make the freeze longer.
+#
+#  So under the cover the wallpaper is swapped with `none` (an alias for
+#  simple with transition-step 255, which finishes instantly), and the
+#  cover's own sweep becomes the transition for BOTH the palette and the
+#  wallpaper. That is the "one animation" — not two animations
+#  synchronised, which is what makes the seam so hard to remove, but one
+#  reveal with everything already changed behind it.
 poke_daemon() {
-    local img="$1"
+    local img="$1" mode="${2:-normal}"
 
     if command -v awww >/dev/null 2>&1 && awww query >/dev/null 2>&1; then
         # awww is up: this is the Hyprland session, and it owns transitions.
+        if [ "$mode" = "instant" ]; then
+            awww img "$img" --transition-type none >/dev/null 2>&1 && return 0
+        fi
         # Same parameters wallpaper-sync.sh uses, so a theme change and a
         # manual pick animate identically instead of one cutting hard.
         awww img "$img" \
@@ -334,7 +357,7 @@ case "$cmd" in
             exit 0
         fi
         record "$img"
-        poke_daemon "$img" || exit 0
+        poke_daemon "$img" "${3:-normal}" || exit 0
         ;;
 
     set)

@@ -1516,17 +1516,32 @@ fi
 # not wanted. bash's printf builtin flushes to a pipe per call — verified,
 # because a marker sitting in a 4 KB stdio buffer until exit would be a
 # silent no-op that looks exactly like the bug it fixes.
-printf '%s\n' 'THEME_APPLY_VISIBLE_DONE'
-
 # ------------------------------------------------------------
-#  The theme's wallpaper (ask #5)
+#  The theme's wallpaper (ask #5), BEFORE the marker
 # ------------------------------------------------------------
-#  AFTER the marker, deliberately. The island freezes the screen until it
-#  sees THEME_APPLY_VISIBLE_DONE, and awww's wave transition takes about a
-#  second — putting the wallpaper change ahead of the marker would add all
-#  of it to a freeze that is already the subject of its own open bug. Here
-#  the island unfreezes first and the wallpaper waves in behind it, which
-#  is also what it looks like when you pick a wallpaper by hand.
+#  This used to sit AFTER the marker, and the reasoning was sound: the
+#  island freezes the screen until it sees THEME_APPLY_VISIBLE_DONE, and
+#  awww's wave takes about a second, so moving the wallpaper ahead of the
+#  marker would add all of it to a freeze that is already a known problem.
+#
+#  What that reasoning missed is that the wave is only there to stop a
+#  hard cut on a LIVE desktop. Under the cover there is no live desktop —
+#  the island is holding a frozen frame over the whole screen — so the
+#  wave was a second animation nobody could see, and the seam the user
+#  reported ("i want also the theme and the wallpaper change in the same
+#  time no glitch at all one animation") was the cover lifting on the old
+#  wallpaper and the wave then starting in full view.
+#
+#  So it moves ahead of the marker and is applied with `instant`, and the
+#  cover's own sweep becomes the transition for the palette AND the
+#  wallpaper together. One reveal with everything already changed behind
+#  it, rather than two animations that have to be synchronised.
+#
+#  The freeze does not grow, and that was measured rather than hoped for.
+#  ThemeTransitionWindow's own header records a static stretch — frames
+#  differing by an RMSE of exactly 0.00 — of 960 ms under the cover, which
+#  is dead time the wallpaper decode now runs inside. Before/after numbers
+#  are in the commit that made this change.
 #
 #  NOT for wal. In wal mode the wallpaper is the INPUT to the palette, so
 #  a per-theme wallpaper is meaningless there — and this is also one of
@@ -1538,8 +1553,10 @@ printf '%s\n' 'THEME_APPLY_VISIBLE_DONE'
 #  change, and because this is the shared script — a qtile session with no
 #  xwallpaper should still get its colours.
 if [ "$MODE" != "wal" ] && command -v theme-wallpaper >/dev/null 2>&1; then
-  theme-wallpaper apply "$MODE" || true
+  theme-wallpaper apply "$MODE" instant || true
 fi
+
+printf '%s\n' 'THEME_APPLY_VISIBLE_DONE'
 
 # Resolve the four palette roles (background / foreground / alt-surface /
 # accent) for the active $MODE, as four space-separated #rrggbb values.
