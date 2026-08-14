@@ -6,14 +6,14 @@
 #
 #   native   qtile  -> qtile's bar.Bar (the top bar, or the bottom
 #                      "normal user" bar, whichever BAR_MODE selects)
-#            hypr   -> the Quickshell topbar  [NOT BUILT YET — see below]
+#            hypr   -> the Quickshell topbar, ~/.config/quickshell/topbar
 #   island   either -> the Tide Island, ~/.config/quickshell/tide-island-fork
 #
 # WHY THIS EXISTS
 # ---------------
 # The two sessions had one bar each and no way to trade: qtile had a very
 # elaborate qtile-extras bar and no island, Hyprland had the island and no
-# topbar. Both bars are good at different things — the qtile bar is a dense
+# topbar. Both sessions now have both. Both bars are good at different things — the qtile bar is a dense
 # always-on readout, the island is a quiet capsule that becomes a panel when
 # you ask it to — and which one you want is a mood, not a session.
 #
@@ -44,6 +44,8 @@ set -euo pipefail
 STATE_FILE="$HOME/.cache/bar-mode"
 ISLAND_LAUNCH="$HOME/.config/hypr/scripts/island.sh"
 FORK_DIR="$HOME/.config/quickshell/tide-island-fork"
+TOPBAR_LAUNCH="$HOME/.config/hypr/scripts/topbar.sh"
+TOPBAR_DIR="$HOME/.config/quickshell/topbar"
 DEFAULT_MODE="island"
 
 die() { printf 'bar-switch: %s\n' "$*" >&2; exit 1; }
@@ -191,13 +193,53 @@ PY
 }
 
 # ---------------------------------------------------------------------------
-#  Hyprland's own bar
+#  Hyprland's own bar — the Quickshell topbar that mirrors qtile's
 # ---------------------------------------------------------------------------
-# The Quickshell topbar that mirrors qtile's is not written yet. Until it is,
-# `native` is refused on Hyprland rather than half-done: taking the island
-# away with nothing to replace it is precisely the "no bar" outcome the rule
-# at the top forbids.
-hypr_native_available() { return 1; }
+# This used to `return 1` unconditionally, and `native` was refused on
+# Hyprland, because taking the island away with nothing to replace it is
+# precisely the "no bar" outcome the rule at the top forbids. The bar exists
+# now — ../../.config/quickshell/topbar, launched by hypr/scripts/topbar.sh —
+# so the question becomes a real one: is it actually there to switch TO.
+#
+# Asked of the filesystem rather than assumed, because the answer is "no" on
+# any machine where stow has not run yet, and that is exactly when a wrong
+# answer would leave the desktop bare.
+hypr_native_available() { [[ -f "$TOPBAR_DIR/shell.qml" && -x "$TOPBAR_LAUNCH" ]]; }
+
+# Matched on the argv list rather than with `pkill -f`, for the reason
+# island_pid() gives: `pgrep -f`/`pkill -f` match this script's OWN command
+# line, which is the trap recorded in hypr/NEXT-SESSION.md's RULES.
+topbar_pid() {
+  ps -eo pid=,args= | awk -v d="$TOPBAR_DIR" '$0 ~ ("quickshell -p " d) && !/awk/ {print $1; exit}'
+}
+
+topbar_running() { [[ -n "$(topbar_pid)" ]]; }
+
+topbar_start() {
+  topbar_running && return 0
+  [[ -x "$TOPBAR_LAUNCH" ]] || { note "no topbar launcher at $TOPBAR_LAUNCH"; return 1; }
+  setsid -f "$TOPBAR_LAUNCH" >/dev/null 2>&1 || true
+  # Waited for, not slept on — same reasoning as island_start().
+  for _ in $(seq 1 60); do
+    topbar_running && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+topbar_stop() {
+  local pid
+  pid="$(topbar_pid)" || true
+  [[ -n "$pid" ]] || return 0
+  kill "$pid" 2>/dev/null || true
+  for _ in $(seq 1 40); do
+    topbar_running || return 0
+    sleep 0.1
+  done
+  note "topbar did not exit on SIGTERM; sending SIGKILL"
+  kill -9 "$pid" 2>/dev/null || true
+  return 0
+}
 
 # ---------------------------------------------------------------------------
 #  Applying a mode
@@ -265,18 +307,22 @@ apply() {
       ;;
 
     hyprland:island)
-      island_start || die "the island did not come up"
+      island_start || die "the island did not come up; the topbar is untouched"
       write_mode island
+      # Island up and confirmed BEFORE the topbar goes away, which is the
+      # ordering rule at the top of this file in its literal form.
+      topbar_stop
       ;;
 
     hyprland:native)
       if ! hypr_native_available; then
-        die "the Hyprland topbar is not built yet, so 'native' would leave this
-             session with no bar at all. The island stays.
-             What it has to be, and the order to build it, is written up in
-             .config/hypr/TOPBAR-SPEC.md; .config/hypr/README.md has the
-             shorter version."
+        die "the Hyprland topbar is not installed at $TOPBAR_DIR, so 'native'
+             would leave this session with no bar at all. The island stays.
+             If this is a fresh machine, run installScripts/stow_script.sh."
       fi
+      topbar_start || die "the topbar did not come up; the island stays"
+      write_mode native
+      island_stop
       ;;
 
     unknown:*)
@@ -294,8 +340,10 @@ main() {
 
   case "$action" in
     status)
-      printf 'mode=%s session=%s island=%s\n' \
-        "$current" "$session" "$(island_running && echo up || echo down)"
+      printf 'mode=%s session=%s island=%s topbar=%s\n' \
+        "$current" "$session" \
+        "$(island_running && echo up || echo down)" \
+        "$(topbar_running && echo up || echo down)"
       ;;
     native|island)
       apply "$action" "$session"

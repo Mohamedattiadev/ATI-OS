@@ -141,7 +141,7 @@ a bar in Hyprland, log into qtile, and you are still on the bar you picked.
 
 |  | qtile | Hyprland |
 |---|---|---|
-| `native` | qtile's own `bar.Bar` | the Quickshell topbar — **not built yet** |
+| `native` | qtile's own `bar.Bar` | the Quickshell topbar, `../quickshell/topbar` |
 | `island` | the Tide Island, on X11 | the Tide Island |
 
 ```
@@ -149,18 +149,18 @@ bar-switch status      # mode, session, whether the island is up
 bar-switch island      # or: native, toggle
 ```
 
-**On Hyprland, `native` is currently refused, on purpose.** The topbar that
-mirrors qtile's does not exist yet, so honouring the request would take the
-island away and leave this session with no bar at all. The one rule
-`bar-switch` is built around is that no path may do that: the incoming bar
-comes up and is checked before the outgoing one is allowed to go away.
+Both directions work in both sessions. `bar-switch` still refuses rather
+than leaving you bar-less: the incoming bar comes up and is checked before
+the outgoing one is allowed to go away, and on Hyprland `native` refuses
+outright if the topbar is not installed — which is the state of a machine
+where stow has not run yet.
 
-That is the piece of work this section is here to place. The plan is a
-pixel-faithful reimplementation of the qtile bar in Quickshell — same
-layout, colours, decorations, glyphs and tooltips — reusing this shell's
-theme pipeline, tray, MPRIS and Hyprland workspace feeds. It cannot be
-qtile's actual bar: that bar is part of qtile and cannot run under another
-compositor.
+The topbar is a **reimplementation** of qtile's, not a port: qtile's bar is
+part of qtile and cannot run under another compositor. Its inventory was
+extracted from `qtile/config.py`'s AST rather than read off its comments,
+and it uses qtile's own glyphs, chip decoration and palette — see
+`TOPBAR-SPEC.md`, which also records what is deliberately left out and the
+three Qt layout traps the build hit.
 
 **The island under qtile is a real port, not a second copy.** It took one
 change: five windows carried `WlrLayershell.*` attached properties, which do

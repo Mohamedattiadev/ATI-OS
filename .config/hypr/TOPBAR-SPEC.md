@@ -1,8 +1,23 @@
 # The Hyprland topbar — what it has to be
 
-The `native` half of `bar-switch` on Hyprland. Until it exists,
-`bar-switch native` **refuses** in this session rather than taking the island
-away and leaving no bar at all.
+**BUILT.** `../quickshell/topbar`, launched by `scripts/topbar.sh`, and
+`bar-switch native` no longer refuses on Hyprland. This file stays as the
+record of what it was built AGAINST — the inventory below was extracted from
+`qtile/config.py`'s AST and is what fidelity is measured by.
+
+What is live: the logo and layout chips, the TaskList, the GroupBox, all four
+WidgetBoxes with qtile's own toggle glyphs, MPRIS, CPU, memory, disk, volume,
+battery, keyboard layout, the clock, and the tray.
+
+What is not, and why:
+
+* **`hintium_mode_chip`** — Hintium is X11-native and `binds.conf` records it
+  as BLOCKED rather than unported, so there is no mode for the chip to show.
+* **`chord_chip`** — Hyprland has submaps, not qtile KeyChords, and
+  `submap-indicator.sh` already puts the submap name in the island. Two
+  copies of one string is worse than one.
+* **`CheckUpdates`** — the count comes from `qupdate.py`'s daemon, which this
+  bar does not own. Left out rather than reimplemented badly.
 
 It is a **reimplementation**, and that is not a shortcut — qtile's bar is part
 of qtile and cannot run under another compositor. The target is
@@ -76,7 +91,31 @@ and the pywal output. The island reads the same pipeline through `IslandTheme`,
 so the topbar must take its palette from `IslandTheme` too — one theme change,
 both bars, no third source of truth.
 
-## Order to build it
+## Three things the build turned up
+
+**Supplementary-plane glyphs DO render — the variable is the FACE.**
+`NEXT-SESSION.md` says they paint nothing and concludes everything drawn in
+this shell should stay in the BMP private-use block. Too broad: a probe
+drawing twelve codepoints side by side in a panel showed U+F0570, U+F0336,
+U+F0335, U+F05AF, U+F0902, U+F0042 and U+F035C all rendering correctly, in the
+same run as the BMP ones, in **`Symbols Nerd Font`**. That is why the topbar
+uses qtile's exact codepoints instead of lookalikes — and it is worth trying
+on the island's own missing glyphs. Use `String.fromCodePoint`, never
+`fromCharCode`, which takes a UTF-16 code unit and truncates above U+FFFF.
+
+**A `Row` child must not take its height from its parent.** A Row derives its
+height FROM its children, so `height: parent.height` on a delegate is circular
+and Qt resolves it to zero. It cost three silent failures here — the
+workspaces, the tray and the widget-box contents all rendered nothing while
+their data was demonstrably correct. Take the height from the component root.
+
+**Do not gate a clipper's `visible` on its own width.** `visible: width > 0`
+where the width comes from a Row's `implicitWidth` deadlocks at zero: the Row
+counts only visible children, and a child of an invisible parent is not
+visible. Nothing in the cycle can ever become non-zero. The widget boxes
+toggled their glyph and revealed nothing until that line came out.
+
+## Order it was built in
 
 1. The frame: `PanelWindow`, 28 px, 5/10 margins, transparent, plus the chip
    component (rounded plate, padding, the derived radius).

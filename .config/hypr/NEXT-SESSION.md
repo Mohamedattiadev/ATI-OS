@@ -156,9 +156,9 @@ Hyprland-only.**
   filename specifically so the FORK-NOTES upstream-diff still works.
 
 * **`a bar you can swap`.** `$mod SHIFT P` in both sessions,
-  `~/.cache/bar-mode`, `AtiScriptsV1/bar-switch`. The qtile half works both
-  ways; the Hyprland half can only go TO the island, because the topbar that
-  would be its `native` does not exist yet.
+  `~/.cache/bar-mode`, `AtiScriptsV1/bar-switch`. BOTH halves work both ways
+  now — the Hyprland topbar is built (`../quickshell/topbar`, `TOPBAR-SPEC.md`),
+  so `native` no longer refuses there.
 
 Three qtile bugs were found and fixed on the way, all recorded in that
 commit message with their measurements: `Bar.is_show()` lying after a
@@ -176,14 +176,12 @@ asked for, and the motion work needs a session that starts fresh on it.
 
 Ordered by how much they are worth.
 
-* **THE HYPRLAND TOPBAR.** The other half of the swap, and the biggest open
-  item now. A pixel-faithful reimplementation of qtile's bar in Quickshell,
-  agreed explicitly: same layout, colours, decorations, glyphs, tooltips.
-  It cannot be qtile's bar — that bar is part of qtile. Until it lands,
-  `bar-switch native` on Hyprland refuses rather than leaving no bar.
-  Budget it honestly: `qtile/config.py` is 7,900 lines and the bar pulls in
-  `qtile_extras` decorations, `SmartWidgetBox`, the tooltip layer and the
-  TaskList-centring arithmetic in `_center_top_groupbox()`.
+* **THE HYPRLAND TOPBAR — BUILT.** See `TOPBAR-SPEC.md` for what is live and
+  what is deliberately absent. What it still lacks against qtile's: the
+  per-chip TOOLTIPS (config.py has a whole tooltip layer,
+  `install_bar_tooltips()`), the keyboard-layout FLAG emoji beside "EN", and
+  a `$mod SHIFT Z`-style swap between two Hyprland bars, which binds.conf
+  reserves and which now has something to swap.
 
 * **THE ISLAND SLIDES RIGHT WHEN TREETAB OPENS.** Reported by the user;
   reproduced and localised, not yet fixed. With the sidebar open,
@@ -226,8 +224,15 @@ Ordered by how much they are worth.
 * **Supplementary-plane Nerd Font glyphs do not render** — U+F022C and
   neighbours paint nothing, while BMP ones (U+F002) render in the same
   widget and the same face. The PDF menu drops its icons for this reason.
-  Cause never found. Anything drawn in this shell should stay in the BMP
-  private-use block until it is.
+  **CAUSE FOUND, and this entry was too broad.** It is the FACE, not the
+  plane. Building the topbar, a probe drew twelve codepoints side by side in
+  a panel — U+F0570, U+F0336, U+F0335, U+F05AF, U+F0902, U+F0042 and
+  U+F035C, all supplementary — and every one rendered, in the same run as
+  the BMP ones, in **`Symbols Nerd Font`**. The topbar therefore uses
+  qtile's exact glyphs rather than lookalikes. **Worth retrying on the PDF
+  menu and anywhere else here that dropped an icon**: the fix is likely a
+  font family, not a codepoint. Use `String.fromCodePoint` — `fromCharCode`
+  takes a UTF-16 code unit and silently truncates above U+FFFF.
 * **`islandShowWorkspaceOnAutoHide`** is an inert row — present in both
   clients, no reader anywhere (packaged backend is 1.0.34, the key is
   upstream's from 1.0.35). Goes live on a package upgrade. Do NOT "fix" it
