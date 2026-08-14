@@ -3598,7 +3598,15 @@ PanelWindow {
 
                 switch (islandContainer.islandState) {
                 case "control_center":
-                    return Metrics.px(320) + (controlCenterLoader.item ? controlCenterLoader.item.controlCenterExtraHeight : Metrics.px(32));
+                    // 320 -> 294. The panel's content lost 26 px when the
+                    // redundant spacer between the quick buttons and the
+                    // battery drawer came out (see ControlCenterLayer, "the
+                    // 14 px spacer that used to sit here is GONE"), and this
+                    // base is a CONSTANT rather than a content measurement —
+                    // so leaving it at 320 would have moved the empty space
+                    // from the middle of the panel to the bottom of it
+                    // instead of removing it.
+                    return Metrics.px(294) + (controlCenterLoader.item ? controlCenterLoader.item.controlCenterExtraHeight : Metrics.px(32));
                 case "wifi_panel":
                     // Clamped against the SCREEN and not against root.height,
                     // for the reason spelt out at the cheatsheet below: this

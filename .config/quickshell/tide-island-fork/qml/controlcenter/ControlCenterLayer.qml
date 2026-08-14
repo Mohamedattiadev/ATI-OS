@@ -2012,8 +2012,26 @@ Item {
 
             Row {
                 id: quickRow
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: Metrics.px(14)
+                // ---- SPREAD, NOT CENTRED ----
+                //
+                // Four 44 px buttons at 14 px spacing is 199 px of a ~385 px
+                // panel: the row sat as an island in the middle with ~90 px
+                // of nothing on each side, while the sliders directly under
+                // it ran the full width. That mismatch is the other half of
+                // "a lot of empty spaces no needded" — the panel looked like
+                // two different layouts stacked.
+                //
+                // Spreading to the content width lines the first and last
+                // button up with the ends of the sliders, so the panel reads
+                // as one grid. The buttons keep their 44 px plate: they are
+                // round, and stretching them to fill would make them ovals.
+                //
+                // Math.max keeps the old 14 px as a FLOOR, so a narrow panel
+                // (or a fifth toggle) degrades to the previous layout instead
+                // of computing a negative spacing and overlapping them.
+                width: parent.width
+                spacing: Math.max(Metrics.px(14),
+                                  (width - 4 * Metrics.px(44)) / 3)
 
                 QuickButton {
                     index: 0
@@ -2088,15 +2106,22 @@ Item {
             }
         }
 
-        // Air between the buttons and the sliders. No hairline: with the
-        // buttons now reading as raised objects on a field, a rule under
-        // them would be a second, weaker way of saying the same separation
-        // the depth already says.
-        Item {
-            width: parent.width
-            height: Metrics.px(14)
-        }
-
+        // The 14 px spacer that used to sit here is GONE. Reported as "in the
+        // control center there is a lot of empty spaces no needded", and this
+        // was the largest single one:
+        //
+        //     12  the Column's own spacing after the buttons
+        //     14  this spacer
+        //     12  the Column's spacing after the spacer
+        //     20  the battery drawer's handle — the only thing that draws
+        //     12  the Column's spacing after the drawer
+        //     -- 70 px, of which 20 is ink
+        //
+        // "Air between the buttons and the sliders" was the right instinct
+        // and the Column's own 12 px spacing was already providing it twice
+        // over. A spacer item inside a Column that has spacing costs its own
+        // height AND an extra gap, which is why removing it takes 26 px off
+        // the band rather than 14.
         Item {
             id: batteryDrawer
             // Was `(width - connectivityCardsRow.spacing) / 2`, which is how
