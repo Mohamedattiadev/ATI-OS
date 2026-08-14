@@ -150,7 +150,18 @@ if [ -r "$MODE_FILE" ] && [ "$(cat "$MODE_FILE" 2>/dev/null)" = "wal" ]; then
     # picker only covers the first. It hands the change to whichever shell can
     # draw the circular reveal and falls back to theme-apply when there is
     # none, so the failure branch below still means what it meant.
-    if ! theme-animate wal; then
+    # Guarded for the same reason theme-toggle guards it: theme-animate is a
+    # new script and is absent until AtiScriptsV1/install.sh has been re-run.
+    # `set -e` is on here, so an unguarded call to a missing command would end
+    # this script — after the wallpaper was already applied and recorded, i.e.
+    # at exactly the point where the caller reads the exit code to decide
+    # whether to say "applied".
+    if command -v theme-animate >/dev/null 2>&1; then
+        theme_cmd=theme-animate
+    else
+        theme_cmd=theme-apply
+    fi
+    if ! "$theme_cmd" wal; then
         echo "wallpaper-set: wallpaper applied, but theme-apply wal failed;" \
              "colours are still from the previous image" >&2
     fi

@@ -76,4 +76,14 @@ done
 # Picking a palette here used to repaint the desktop in stages while the
 # island's own picker swept — the same change with two different faces
 # depending on where you started it.
-exec theme-animate "$MODE"
+#
+# Guarded, and not out of politeness: theme-animate is a NEW script, so it is
+# absent on any machine where AtiScriptsV1/install.sh has not been re-run
+# since. `exec` on a missing command takes this shell down with it and the
+# theme simply never changes — a picker that silently does nothing is the
+# worst of the three outcomes here, and the fallback is exactly what
+# theme-animate itself would have done.
+if command -v theme-animate >/dev/null 2>&1; then
+  exec theme-animate "$MODE"
+fi
+exec theme-apply "$MODE"
