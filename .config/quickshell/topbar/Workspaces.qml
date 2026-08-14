@@ -132,14 +132,40 @@ Item {
             ? "Symbols Nerd Font" : "Ubuntu Bold";
     }
 
+    // ---- WHERE "S" GOES, AND WHY SORTING BY ID PUT IT NOWHERE ----
+    //
+    // qtile's group list is 1..8, then S, then 9 — S is a NAMED group and sits
+    // where it was declared, not where its name sorts. Hyprland has the same
+    // group and gives it an id of -1337, because a named workspace there is
+    // allocated out of the negative range.
+    //
+    // Two consequences, and the bar hit both. Sorting on id put S at the far
+    // LEFT, in front of 1; and the delegate's `id > 0` guard — written to keep
+    // scratchpads out — dropped it entirely, which is how it was reported:
+    // "the S session not appearing in the qtile-like bar".
+    //
+    // So the order is qtile's own, by NAME, and anything not in that list
+    // keeps sorting after it by id. Scratchpads are excluded by the thing that
+    // actually identifies them, the "special:" name prefix, rather than by a
+    // sign test that catches every named workspace with them.
+    readonly property var groupOrder: ["1","2","3","4","5","6","7","8","S","9"]
+
+    function orderOf(ws) {
+        const i = root.groupOrder.indexOf(String(ws.name));
+        // 100 + id, so the strays keep their own relative order and none of
+        // them can sort in among the declared groups.
+        return i >= 0 ? i : 100 + ws.id;
+    }
+
     Process {
         id: wsProc
         command: ["hyprctl", "-j", "workspaces"]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
-                    const list = JSON.parse(text);
-                    list.sort((a, b) => a.id - b.id);
+                    const list = JSON.parse(text).filter(
+                        (w) => String(w.name).indexOf("special:") !== 0);
+                    list.sort((a, b) => root.orderOf(a) - root.orderOf(b));
                     root.workspaces = list;
                 } catch (e) {
                     // Keep the last good list. A torn read must not blank the
@@ -207,9 +233,11 @@ Item {
                 // That is also what keeps this group narrow enough to sit at
                 // the bar's true centre with a long TaskList beside it.
                 //
-                // A special workspace (negative id) is a scratchpad and was
-                // never in qtile's group list at all.
-                visible: modelData.id > 0 && (populated || focused)
+                // Scratchpads are already gone — filtered by NAME in wsProc,
+                // not by `id > 0` here, which also swallowed "S": a named
+                // workspace in Hyprland is negative too (S is -1337), so the
+                // sign test could not tell a group from a scratchpad.
+                visible: populated || focused
                 width: visible ? label.implicitWidth + Metrics.s(8) * 2 : 0
                 // root.height, NOT parent.height. The parent is a Row, and a
                 // Row derives its height FROM its children — so a child
@@ -240,7 +268,15 @@ Item {
                 MouseArea {
                     anchors.fill: parent
                     // disable_drag=True in config.py, so clicks only.
-                    onClicked: Hyprland.dispatch("workspace " + wsItem.modelData.id)
+                    //
+                    // By NAME for a named workspace, by id for a numbered one.
+                    // Not interchangeable: the workspace dispatcher reads a
+                    // SIGNED number as a relative move, so "workspace -1337"
+                    // is not S, it is 1337 workspaces backwards.
+                    onClicked: Hyprland.dispatch(
+                        wsItem.modelData.id < 0
+                            ? "workspace name:" + wsItem.modelData.name
+                            : "workspace " + wsItem.modelData.id)
                 }
             }
         }
