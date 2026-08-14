@@ -842,9 +842,27 @@ FocusScope {
         spacing: Metrics.px(6)
 
         Row {
+            id: titleRow
             spacing: Metrics.pad(8)
 
             Text {
+                // ---- BOUNDED, because a Text is not clipped by its width ----
+                //
+                // Found auditing every island detail pane after the record
+                // menu was reported as "over each other and out of the frame".
+                // This one had no width and no elide, and a Qt Text with
+                // neither paints its full contentWidth regardless of the
+                // column it is in — so a long setting label ran out through
+                // the right edge of the panel and under the chips beside it.
+                //
+                // Capped against what the two chips to the right actually
+                // occupy, read off their own widths rather than guessed at, so
+                // the label yields to them instead of overlapping them.
+                width: Math.min(implicitWidth,
+                                details.width - titleRow.spacing * 2
+                                - scopeChip.width - sourceChip.width)
+                elide: Text.ElideRight
+                maximumLineCount: 1
                 text: root.selected ? root.selected.label : ""
                 color: IslandTheme.textPrimary
                 font.pixelSize: Metrics.font(13)
@@ -857,6 +875,7 @@ FocusScope {
             // one, which is the difference between "I could also change this
             // in the other app" and "this is the only place it exists".
             Rectangle {
+                id: scopeChip
                 anchors.verticalCenter: parent.verticalCenter
                 visible: root.selected !== null
                 width: scopeLabel.implicitWidth + Metrics.pad(10)
@@ -887,10 +906,15 @@ FocusScope {
             // the user's own words, so the reasoning it shows is no longer
             // necessarily the reasoning this repo recorded.
             Rectangle {
+                id: sourceChip
                 anchors.verticalCenter: parent.verticalCenter
                 visible: root.selected !== null
                     && root.selected.source !== undefined
                     && root.selected.source !== "builtin"
+                // Width is claimed even while INVISIBLE, which the label's cap
+                // above depends on: an invisible Item still reports a width,
+                // and a Row skips it. Reserving it means the label does not
+                // grow and re-elide as chips come and go with the selection.
                 width: sourceLabel.implicitWidth + Metrics.pad(10)
                 height: Metrics.px(16)
                 radius: Metrics.px(5)

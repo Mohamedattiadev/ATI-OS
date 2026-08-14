@@ -1037,6 +1037,28 @@ FocusScope {
         anchors.rightMargin: chrome.padX
         y: list.y + Metrics.px(2)
         spacing: Metrics.px(6)
+        // ---- BOUNDED AND CLIPPED, EXACTLY LIKE THE LIST BESIDE IT ----
+        //
+        // Reported on the record menu: "the text in right hand side of the
+        // popup was over each other and out of the frame of the popup".
+        //
+        // This Column had NO height and NO clip while `list` — the column on
+        // the other side of the same panel — has both. So the list could never
+        // overflow and the details always could: the capsule's height is
+        // computed from the ROW COUNT (see DynamicIslandWindow's targetHeight
+        // "picker" case), which knows nothing about how tall the selected
+        // row's own label, preview, detail and id add up to. A selection with
+        // a 2-line label, a 120 px preview and a 4-line detail is simply
+        // taller than a six-row panel, and the surplus was painted straight
+        // over the footer hints and out through the bottom of the frame.
+        //
+        // Same height expression as `list`, less the 2 px this is offset by,
+        // so the two columns end on the same line and the footer keeps its
+        // room. Clipping rather than growing the capsule on purpose: the
+        // panel's height must stay a function of the list, or moving the
+        // selection with j/k would resize the whole island on every keypress.
+        height: list.height - Metrics.px(2)
+        clip: true
         // Nothing is selected on a prompt or a message page, so every Text
         // below would bind to "" — three invisible empty labels holding a
         // column open. Hidden as a unit instead.
@@ -1100,6 +1122,19 @@ FocusScope {
         // this wants a real `kill -9` instead. SettingsLayer shows the
         // config key here for the same reason.
         Text {
+            // width + elide, which this one alone was missing while both
+            // Texts above it had them. A Text with no width sizes to its
+            // CONTENT, so a long id — and an id is a window address, a path
+            // or a full command line — drew straight out through the right
+            // edge of the popup. That is the "out of the frame" half of the
+            // report; the clip on the Column above is the other half, and
+            // this is fixed as well as clipped because an id silently sliced
+            // off by a clip is worse than one that shows it was shortened.
+            width: details.width
+            elide: Text.ElideRight
+            // One line. It is an identifier, not prose — wrapping it would
+            // push the column taller for no gain now that it is clipped.
+            maximumLineCount: 1
             text: root.selected ? String(root.selected.id || "") : ""
             color: IslandTheme.textDisabled
             font.pixelSize: Metrics.font(10)
