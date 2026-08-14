@@ -14,19 +14,48 @@ Its chips run qtile's commands — **rofi**, not the island's IPC. That is not
 only fidelity: the island is stopped while this bar runs, so an IPC call
 would find no instance and do nothing, silently.
 
-What is not, and why:
+`chord_chip` is live too, with qtile's own `CHORD_CHIP_LABELS` in it — the
+key list, not the mode's name. It used to be listed below as deliberately
+absent on the grounds that the island already draws the submap; that
+reasoning was wrong in the one way that matters, since the island is STOPPED
+while this bar runs, so there was never a second copy to avoid.
+
+What is not here, and why:
 
 * **`hintium_mode_chip`** — Hintium is X11-native and `binds.conf` records it
   as BLOCKED rather than unported, so there is no mode for the chip to show.
-* **`chord_chip`** — Hyprland has submaps, not qtile KeyChords, and
-  `submap-indicator.sh` already puts the submap name in the island. Two
-  copies of one string is worse than one.
+  On both bars, for the same reason.
 * **`CheckUpdates`** — the count comes from `qupdate.py`'s daemon, which this
-  bar does not own. Left out rather than reimplemented badly.
-* **`hintium_mode_chip`** on the bottom bar too, for the same X11 reason.
+  bar does not own. It reads that daemon's cache instead of asking pacman a
+  second time, so the number cannot disagree with the manager the chip opens.
 * qtile's **`float_extra_qutebrowsers`** — floats the 2nd+ qutebrowser at
   900x600. A rule about how many instances exist, which Hyprland's rule
   language cannot ask; noted in `rules.conf`.
+
+## What the bar does NOT draw, and where it went instead
+
+Three of qtile's chips are buttons onto a POPUP rather than readouts, and the
+popups are Quickshell now — `../quickshell/tide-island-fork/qml/popups/`,
+served by a resident `popups.qml` that `topbar.sh` starts beside this bar:
+
+| chip / key | qtile | here |
+|---|---|---|
+| the ✖ chip | `toggle_wallpaper_picker` | `WallpaperPopup.qml` |
+| `$mod P` then `n` | Wifi-Mode | `NetworkPopup.qml` |
+| `$alt 3` | Audio-Mode | `VolumePopup.qml` |
+
+They share `PopupChrome.qml`, which is `WallpaperPopup.py`'s own frame — its
+vertical rhythm, its card tones, its keycap bar and its JetBrainsMono. Each
+popup's keys are its own file's chord from `config.py`.
+
+Two more things belong to the SESSION rather than to either bar, and are
+hosted by whichever shell is up:
+
+* the **TreeTab sidebar** — `treetab.qml`, because treetab and max are the
+  same arrangement without it;
+* the **theme sweep** — the circular reveal, driven by
+  `AtiScriptsV1/theme-animate`, which hands a theme change to the island, or
+  to the popups shell, or to plain `theme-apply` if neither is up.
 
 ## Both of qtile's bars
 
@@ -97,6 +126,29 @@ onboarding), `w_mpris`, `system_widgetbox`, `wallpaper_toggle`,
 
 Several are `SmartWidgetBox`es that expand in place, so the right-hand side has
 two widths and the centring arithmetic has to survive both.
+
+## The font, which is two things and not one
+
+`widget_defaults` is `font="Ubuntu Bold", fontsize=_s(10)`, and that string is
+a pango font DESCRIPTION — family plus style. Qt parses a FAMILY, so
+`font.family: "Ubuntu Bold"` finds nothing and falls back silently:
+
+    fc-match "Ubuntu Bold"   ->  Noto Sans CJK KR, Regular
+    fc-match "Ubuntu:bold"   ->  Ubuntu-B.ttf, Ubuntu Bold
+
+Split into `Metrics.textFamily` and a bold flag. The flag is NOT applied to a
+named icon face — Qt synthesises a bold cut for a family that has none, which
+draws a heavier glyph than qtile's.
+
+`fontsize` is PIXELS. It reaches pango through `set_absolute_size()`, which
+takes device units — checked in the installed libqtile — so it maps onto
+`font.pixelSize` with no point conversion.
+
+**A pango markup `size=` is not that.** It is in points, so the tray
+triangle's `size="15500"` is not comparable to the widget's `fontsize=_s(11)`
+beside it. Measured rather than converted, by rendering config.py's span
+through `pango-view` and trimming to the ink: 12x9, which is Adwaita Mono Bold
+at **20 px** here and not 11.
 
 ## The chip
 

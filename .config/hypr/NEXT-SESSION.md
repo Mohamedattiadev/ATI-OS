@@ -17,8 +17,7 @@ existing history does. **No Co-Authored-By trailer.**
 
 # WHERE THIS DESKTOP IS NOW
 
-**Both sessions have two bars, and they swap.** This is the big change since
-this file was first written and it reframes half of it.
+**Both sessions have two bars, and they swap.**
 
 | | qtile (X11) | Hyprland (Wayland) |
 |---|---|---|
@@ -28,20 +27,42 @@ this file was first written and it reframes half of it.
 * `AtiScriptsV1/bar-switch` — `$mod SHIFT P`, both sessions. Owns the one rule
   that must not break: **no path may leave the session without a bar.**
 * `AtiScriptsV1/bar-action` — keys follow the bar. Under the island a bind
-  calls island IPC; under the topbar it runs the equivalent rofi menu. This is
-  not cosmetic: bar-switch STOPS one bar to start the other, and `qs ipc call`
-  against a dead config exits 0 having done nothing, so an unrouted island
-  bind is a silent dead key.
-* `$mod SHIFT Y` — the bar chooser, island page or rofi depending on mode.
-* `$mod SHIFT Z` — swaps the topbar's own two forms (28 px chips / 40 px
-  normal-user with launchers), qtile's own key for the same thing.
+  calls island IPC; under the topbar it runs the equivalent rofi menu, script
+  or popup. Its `bar` target is the third shape: keys that address the BAR
+  itself and mean different things on each ($alt `, $mod `, $alt Tab).
+* `$mod SHIFT Y` — the bar chooser. `$mod SHIFT Z` — the topbar's two forms.
 * `~/.cache/bar-mode` (island|native) and `~/.cache/topbar-position`
   (top|bottom). Both read by both sessions.
 
-The topbar lives in `../quickshell/topbar` and is a REIMPLEMENTATION of
-qtile's bar — inventory extracted from `qtile/config.py`'s AST, not read off
-its comments. `TOPBAR-SPEC.md` is the fidelity record and lists what is
-deliberately absent.
+## FOUR Quickshell processes, not two
+
+This is the change that reframes the rest, and the reason for it is one
+measured fact: **Quickshell's QML scanner refuses a module path outside the
+config folder, and a symlink does not get past it** — it resolves the link and
+rejects the real path. So the topbar's config cannot import anything from the
+island's, and the only ways to share are a second COPY or a second ENTRY
+POINT. This tree knows what the copy costs (one duplicated palette made every
+window border green on twenty-two themes, silently).
+
+Hence, all resolving against `tide-island-fork/` so they see `IslandTheme`:
+
+| entry | what it is | started by |
+|---|---|---|
+| `tide-island-fork/shell.qml` | the island | `scripts/island.sh` |
+| `topbar/` | qtile's bar, reimplemented | `scripts/topbar.sh` |
+| `tide-island-fork/treetab.qml` | the TreeTab sidebar | `scripts/topbar.sh` |
+| `tide-island-fork/popups.qml` | wallpaper / network / volume, + the theme sweep | `scripts/topbar.sh` |
+
+The last two exist because **they are SESSION surfaces, not bar widgets**. The
+island's `shell.qml` hosts them when it is up; when bar-switch stops it to
+start the topbar, something else has to. `bar-switch`'s `topbar_stop` stops
+them again, or the island would come back to a second sidebar and a second set
+of popups holding an exclusive keyboard grab.
+
+`AtiScriptsV1/theme-animate` is the one place that decides who draws a theme
+change: island, then the popups shell, then plain `theme-apply`. `theme-toggle`
+and `wallpaper-set.sh` both go through it, which is what gives a wallpaper pick
+the same circular reveal a theme pick has.
 
 ---
 
@@ -90,9 +111,6 @@ There are **24 states**:
     power_menu settings split sysmon_panel theme_picker wallpaper_picker
     wifi_qr   (+ the resting states: normal, lyrics, custom)
 
-plus the transient text capsules (`showText`, `showTextWithIcon`,
-`showClock`, the OSD `split` state).
-
 So "switching from one popup to another" is a single assignment to
 `islandState`. Both loaders are live for the duration of the crossfade, the
 capsule morphs from one size to the other, and the content of the new panel
@@ -101,18 +119,12 @@ coordinator.** That is the shape of the problem.
 
 ## What has ALREADY been disproven — do not retry
 
-1. **`LARGE_MORPH_MS` 760 -> 520.** The reasoning was sound (zeta 0.8, the
-   envelope is at 3% by 42% of the duration, so the rest is tail). Measured
-   with a 50 fps grim burst, island RESTARTED between runs:
+1. **`LARGE_MORPH_MS` 760 -> 520.** Measured with a 50 fps grim burst, island
+   RESTARTED between runs: 760 -> settle 787 ms, 520 -> settle 801 ms. Within
+   noise and in the wrong direction. **The shape duration is not what the
+   transition is waiting on.** Full note in `qml/common/Motion.js`.
 
-       LARGE_MORPH_MS = 760    settle 787 ms
-       LARGE_MORPH_MS = 520    settle 801 ms
-
-   Within noise and in the wrong direction. **The shape duration is not what
-   the transition is waiting on.** Full note in `qml/common/Motion.js`.
-
-2. **`ControlCenterLayer`'s `sliderIntroDelay`.** Also disproven; see the
-   same note.
+2. **`ControlCenterLayer`'s `sliderIntroDelay`.** Also disproven; same note.
 
 3. **The out-fade being dead code.** That WAS real and is already fixed —
    `PanelLoader` (`live` vs `active`, plus `retain`) exists because binding
@@ -145,9 +157,6 @@ Start there.
 
 ## The matrix to actually test
 
-The user asked for "all possibilities". Enumerate and measure, do not spot
-check:
-
 | From | To | Why it is its own case |
 |---|---|---|
 | rest | panel | the common open; capsule grows from the notch |
@@ -172,19 +181,13 @@ Sizes differ by up to **857 px** (`long_capsule` 156 -> wallpaper picker
 * **DIFFERENCE consecutive frames; do not count changed pixels.** A settle
   is "d(prev) reaches its noise floor", not "some pixels changed".
 * **The capture region must contain nothing but the island.** Use an empty
-  workspace — `hyprctl workspaces -j` says which are free. A capture that
-  includes the terminal driving the test measures the terminal.
+  workspace — `hyprctl workspaces -j` says which are free.
 * **`.pragma library` JS is cached.** Editing `Motion.js` or `Metrics.js`
   and reloading does NOTHING. Restart the island:
   `pkill -x quickshell; setsid -f ~/.config/hypr/scripts/island.sh`
-* **A failed reload keeps the OLD BUILD running** and writes no new
-  `Configuration Loaded` line, so it is indistinguishable from a watcher
-  that did not fire. Grep the log for `Failed to load configuration` too.
-  This cost most of a session; the most common cause is `Property value set
-  multiple times` from adding a property a block already sets.
-
----
-
+* **A failed reload keeps the OLD BUILD running.** Grep the log for
+  `Failed to load configuration` too — and see the RULES, because it can
+  also stop the watcher.
 
 ---
 
@@ -194,42 +197,54 @@ Ordered by how much they are worth.
 
 * **The rest of the motion matrix.** See above — the picker case is fixed, the
   other content-sized panels are not measured.
+* **Something leaks `pactl subscribe`, and it broke the audio stack.** Found
+  live: 62 orphaned `pactl subscribe` processes, PPID 1, dating back two days,
+  had exhausted pipewire-pulse's client limit — its journal says "too many
+  client application connections: Connection refused" and EVERY pulse client
+  was failing, including qtile's own AudioPopup. Killing the orphans fixed it
+  immediately. **The source was not found**: nothing in this repo spawns that
+  command, and it is not in `~/.local/bin`, `AtiScriptsV1` or `/usr/local/bin`
+  either. Next time it recurs, catch it with the parent alive
+  (`ps -eo pid,ppid,lstart,args`) rather than after it reparents.
 * **The 12 unchecked picker menus** against their rofi originals: documents,
   man, notes, clipboard, confedit, spellcheck, translate, pass, todo, shared,
-  youtube, hub. The record menu is DONE — it grew GIF back and its rows were
-  re-checked against a wf-recorder that now exists.
-* **Live preview in the settings app** for the cheap numeric keys (sizes,
-  opacity, position). The one Phase 8 item never built.
-* **`hintium_mode_chip`** on both topbar forms. NOT work that was skipped:
-  Hintium is X11-native and `binds.conf` records it as BLOCKED, so there is no
-  mode for the chip to show. It is here so nobody re-adds it as an omission.
-* **Tooltips on the bottom bar's readouts.** The launchers have them; the CPU
-  and memory readouts there do not.
+  youtube, hub. The record menu is DONE.
+* **Live preview in the settings app** for the cheap numeric keys.
+* **`hintium_mode_chip`** on both topbar forms. NOT skipped work: Hintium is
+  X11-native and `binds.conf` records it as BLOCKED, so there is no mode for
+  the chip to show. Here so nobody re-adds it as an omission.
+* **The volume popup's three sub-views** — `p` profiles, `P` ports, `C` cards.
+  Deliberately absent and NOT advertised in its hint bar; a key chip naming a
+  view that does not open is worse than a shorter bar. AudioPopup.py has them
+  in 2,241 lines and pavucontrol has them too.
+* **Tooltips on the bottom bar's readouts.** The launchers have them; CPU and
+  memory do not.
 * **Scratchpads on a second monitor** — never tested. The monitor-relative
   x/y logic is verified-by-history only.
 * **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
-  ~50 ms before any animation starts. Worth measuring inside the motion task.
+  ~50 ms before any animation starts.
 * **`islandShowWorkspaceOnAutoHide`** is an inert row — present in both
   clients, no reader anywhere (packaged backend is 1.0.34, the key is
-  upstream's from 1.0.35). Goes live on a package upgrade. Do NOT "fix" it
-  via ForkConfig; see the audit for the collision that causes.
-* **What killed the two socket listeners** was never recovered. They
-  reconnect on a dropped read now, but a `kill` still ends them silently.
-* **`onedark` and `palenight`** are the only palettes under AAA for body text
-  (6.57:1 and 6.11:1; AA is 4.5:1). Both are the upstream projects' own
-  values, so changing them makes them not-onedark. Recorded, not a defect.
+  upstream's from 1.0.35). Do NOT "fix" it via ForkConfig; see the audit.
+* **qtile with its OWN bar gets no theme sweep.** It is the one combination
+  with no Quickshell process at all, so `theme-animate` falls through to
+  `theme-apply`. Fixable only by giving that session a shell to draw it.
+* **`CHORD_CHIP_LABELS`' lang and passthrough entries have lost their
+  glyphs** — in qtile's config.py, not here. Checked at the byte level: they
+  begin with three plain spaces where the others begin with a Nerd Font
+  codepoint. The topbar reproduces what renders. Fixing it means editing
+  config.py and both chips together.
 
-## Now testable, and was not
+## Input synthesis: both halves exist now
 
-**Clicks can be synthesised.** `scripts/test/uinput-click.py` creates a uinput
-pointer and clicks wherever `hyprctl dispatch movecursor` put the cursor. It
-is what proved the window-ring fix. Two traps in its header: a uinput device
-takes ~3 s before the compositor binds it (at 1 s every click silently goes
-nowhere), and `movecursor` warps WITHOUT emitting motion, so a one-pixel
-wiggle is needed before the button or the surface may not have pointer focus.
+* `scripts/test/uinput-click.py` — clicks, and `scroll up|down [count]`.
+* `scripts/test/uinput-key.py` — key combinations, named as `hyprctl binds`
+  names them, with `--hold` for observing a submap.
 
-The onboarding SWIPE is therefore no longer blocked on tooling — it is a
-couple of `EV_REL`/`REL_WHEEL` events away.
+Three traps, all in their headers: a uinput device takes ~3 s before the
+compositor binds it; `movecursor` warps WITHOUT motion, so a one-pixel wiggle
+is needed before a click; and destroying the device can reset an active
+submap.
 
 # RULES — every one of these was paid for, several twice
 
@@ -238,114 +253,144 @@ couple of `EV_REL`/`REL_WHEEL` events away.
 - **A config that reloads cleanly is not a config that works.** Read
   `$XDG_RUNTIME_DIR/quickshell/by-id/<id>/log.log`.
 - **Grep that log for `Failed to load configuration`, not only for
-  `Configuration Loaded`.** A failed reload keeps the previous build alive
-  and writes neither line, so three consecutive "measurements" can all be of
-  a stale shell.
+  `Configuration Loaded`.**
+- **A failed load can also stop the FILE WATCHER.** Not just the old build
+  staying up: after `TreeTabSidebarWayland is not a type`, every later edit
+  produced no reload line at all and the shell served the stale build until
+  the process was restarted. If edits stop having any effect, restart before
+  believing anything you measure.
 - **Compare the log's last "Configuration Loaded" against the file's
-  mtime.** `touch shell.qml` if in doubt.
+  mtime.** Two "measurements" this session were of a stale build — the
+  triangle read 6x5 after being fixed, and the layout chip appeared not to
+  reserve its width. `touch shell.qml` and re-read.
 - **A verification step that cannot fail loudly is not one.**
-- **`qs ipc call` prints "Function not found" and still EXITS 0.**
+- **`qs ipc call` prints "Function not found" and still EXITS 0.** With NO
+  INSTANCE it exits 255, which is what makes a fallthrough chain work.
 - **Toggle IPCs go out of phase. Prefer explicit show/hide when scripting.**
 - **A control with no way in from a script is a control whose bugs can only
-  be found by the user.** If a feature cannot be driven over IPC, ADD THE
-  IPC — that is a fix, not scaffolding.
-- **`wtype` reaches CLIENTS but not the compositor's bind layer.** It
-  creates and destroys a virtual keyboard, which resets any active submap.
-  A synthesised capital arrives with `text` "G" and NO ShiftModifier.
+  be found by the user.** If a feature cannot be driven, ADD THE WAY IN —
+  the IPC, or an overridable `RMENU`. That is a fix, not scaffolding.
+- **`wtype` reaches CLIENTS but not the compositor's bind layer.** Use
+  `uinput-key.py`.
 - **If a metric is applied to two things, first run it on two things KNOWN
-  to be equal.** `magick X -colorspace Gray -format %[fx:mean]` reads ~30
-  points HIGH on a colour image.
+  to be equal.**
 - **A test that fails correct code is a bug in the test.**
 
 ### Reading the UI
 
-- **Before filing "X is missing": GREP for X and MEASURE the claim.** Four
-  deliberate design decisions were filed as defects in a single session.
-- **Look at the image, not only the number.** Every luminance check passed
-  while mono-light had lavender trees. Only a contact sheet showed it.
+- **Before filing "X is missing": GREP for X and MEASURE the claim.**
+- **A qtile WIDGET can carry behaviour its CONFIG never mentions.** `w_volume`
+  sets no mouse_callbacks and was written up here as inert; `Volume.__init__`
+  adds mute/run_app/increase/decrease itself, so an empty mouse_callbacks
+  means "keep the defaults". Read the installed libqtile, not only config.py.
+- **Look at the image, not only the number.**
 - **Private-use characters do not survive into what the model reads back.**
-  A grep for a Nerd Font glyph returns an empty-looking string. Dump bytes,
-  and write glyphs by codepoint (`String.fromCharCode`, `printf '\uXXXX'`).
+  Dump bytes, and write glyphs by codepoint.
 - **A screenshot cannot see a gamma change.** Night light needs eyes.
 - **Magnify before believing a glyph is absent.**
 
 ### Editing
 
 - **Read the WHOLE block before adding a property to it.** "Property value
-  set multiple times" fails the entire component, not the one line, and the
-  shell then keeps serving the last good build.
+  set multiple times" fails the entire component.
+- **A binding in a base component is REPLACED by an assignment at the call
+  site.** So a property the caller already sets cannot also be derived in the
+  base file — the derivation is silently dead. The widget box's two font
+  sizes had to move to the one call site that needed them.
 - **When you widen an enum or a type, grep every consumer that named its
   values as literals.**
 - **One layout, one arithmetic.**
 - **A layer that fills its parent is NOT filling the capsule.**
 - **`.pragma library` JS is cached. Restart the island.**
 - **A file that has never been instantiated is not being watched.**
-- **A background listener that connects to a socket ONCE will die silently
-  and stay dead.**
-- **A "restart" that starts unconditionally is not a restart.** `pkill -x`
-  exits 0 only if it signalled something.
-- **A fix written up in one file is not a fix applied to the tree.** The
-  theme-transition cover bug had its entire post-mortem sitting in
-  `ScreenCornersWindow.qml`, with the same numbers, unapplied.
+- **A background listener that connects to a socket ONCE will die silently.**
+- **A "restart" that starts unconditionally is not a restart.**
+- **A fix written up in one file is not a fix applied to the tree.**
 
 ### Safety
 
-- **Never synthesise keystrokes into a settings panel.** Every press writes
-  real config.
+- **Never synthesise keystrokes into a settings panel.**
 - **Close a panel that commits on click before leaving it on screen.**
 - **`pkill -f <pattern>` matches its own command line.** Use `pkill -x`, or
   `ps -eo args | awk '/pat/ && !/awk/'`.
+- **A process matcher must compare an ARGUMENT, not a substring.** `$0 ~
+  ("quickshell -p " dir)` was correct until two entry points appeared INSIDE
+  that directory; then `bar-switch island` saw popups.qml, decided the island
+  was up, stopped the topbar and left the desktop with NO BAR. Walk the
+  fields, find `-p`, compare the next one for equality — which also fixes the
+  second half, that a path is not a regex.
 - **hyprlock is tested in a NESTED Hyprland, never by locking the session.**
-  Note the nested one is HEADLESS here: you can `grim` it via its own
-  `WAYLAND_DISPLAY`, but nothing can click into it.
 - **Back up `~/.config/tide-island/userconfig.json` before any test that
   writes, and diff it after.**
-- **`~/Pictures/Wallpapers` is a git repo with a remote.** Anything written
-  there is a change to the user's published repository.
+- **`~/Pictures/Wallpapers` is a git repo with a remote.**
 - **The user changes the theme while you work.** Re-read
   `~/.cache/qtile/theme_mode` before a test that depends on it, and restore
-  what you found rather than what you assumed.
-- **Restore the session when you are done**: theme, workspace, volume, and
-  any window you spawned.
+  what you found. A theme sweep can be tested by applying the theme that is
+  ALREADY ON — the animation runs and the palette does not move.
+- **Restore the session when you are done**: theme, workspace, volume,
+  layout, cursor position, and any daemon you started.
 
 ### QML in this tree
 
 - **A `Row` derives its height FROM its children.** `height: parent.height` on
-  a child inside one is circular and Qt resolves it to ZERO — silently, with
-  every binding looking correct. Cost four debugging rounds: the workspaces,
-  the tray, the widget-box contents, and the bottom bar's launchers. Give the
-  Row an explicit height and take the child's from the component root.
+  a child inside one is circular and Qt resolves it to ZERO — silently.
 - **Never gate a clipper's `visible` on its own width** when that width comes
-  from a Row's `implicitWidth`. The Row counts only VISIBLE children, and a
-  child of an invisible parent is not visible — the cycle deadlocks at zero.
-- **`Palette` is a built-in QtQuick type.** Naming a singleton that makes every
-  colour resolve to `[undefined]` with no error naming the clash.
+  from a Row's `implicitWidth`.
+- **Guard on the OBJECT, not on the flag that says it exists.** Two bindings
+  over one model are re-evaluated in an order Qt does not promise, so
+  `exists` can be true while `row` is still null — a TypeError per row per
+  refresh, in the log only, with the list looking correct.
+- **A `PanelWindow` has no `opacity`.** Assigning one is a LOAD ERROR, not a
+  no-op. Animate the content instead.
+- **`signal closed()` collides with `QQuickWindow`'s own** and is dropped with
+  a warning, so the handler never runs. Same class as `Palette`: check the
+  base type's members before naming a signal or a singleton.
+- **`Palette` is a built-in QtQuick type.**
 - **Supplementary-plane Nerd Font glyphs DO render — the variable is the
-  FACE.** They work in `Symbols Nerd Font`. Use `String.fromCodePoint`;
-  `fromCharCode` takes a UTF-16 code unit and truncates above U+FFFF.
+  FACE.** Use `String.fromCodePoint`.
 - **A glyph that is not a Nerd Font icon should not be forced through one.**
-  U+2716 and U+25B3 are ordinary characters; Ubuntu lacks both, and Qt and
-  pango then fall back DIFFERENTLY. Ask `fc-match -s "<font>:charset=XXXX"`
-  and name fontconfig's own first choice.
-- **The island's input `mask` is not the island's surface.** Anything drawn
-  outside the capsule — the window rings — receives no input until a Region
-  is added for it. A MouseArea there is dead and looks correct.
+- **The island's input `mask` is not the island's surface.**
 
-### Shell and config
+### Fonts, which are their own category now
 
-- **`sed -i` replaces the inode**, so Quickshell's file watcher is left on an
-  unlinked file and the shell keeps serving the old build. Three "the change
-  did nothing" readings came from that. Restart the process, or write in place.
-- **This machine's login shell is fish.** `VAR="a b"; $VAR` does NOT
-  word-split, so a command built in a variable runs as one argument and fails
-  in a way that reads like the command being wrong.
-- **`socat` is NOT installed.** A listener written against it starts, takes its
-  lock, reads nothing and exits quiet. `workspace-layout.sh` and
-  `float-extra.sh` both use a small python socket reader instead.
-- **A Hyprland block opened in the middle of another closes it early** and
-  silently reparents everything after it. Hyprland DOES report this one —
-  `hyprctl configerrors` named `cursor:natural_scroll` — unlike the
-  variable-order trap, which stays empty.
-- **Test the code path you are shipping, not the one next to it.** The bar
-  picker's `--list` was verified and its `--run` was not; `--run` raised on
-  every row that mattered. Listing a menu and running it are different code.
+- **A pango font string is a DESCRIPTION; a Qt `font.family` is a FAMILY.**
+  `"Ubuntu Bold"` works in qtile and resolves to **Noto Sans CJK KR** in Qt.
+  `fc-match` every family before believing it, and split the style out.
+- **Do not ask for bold on a face that has no bold cut** — Qt synthesises one
+  and draws a heavier glyph than pango does.
+- **A qtile `fontsize` is PIXELS** (`set_absolute_size`, checked in the
+  installed libqtile) and maps onto `font.pixelSize` directly. **A pango
+  markup `size=` is POINTS.** The tray triangle's `size="15500"` is 20 px
+  here, not 15 and not 11 — measured with `pango-view` and a trim to the ink,
+  which is the only way to settle it.
+
+### Shell, config and the two display servers
+
+- **`sed -i` replaces the inode**, so a file watcher is left on an unlinked
+  file. Restart the process, or write in place.
+- **This machine's login shell is fish.** A command built in a variable runs
+  as one argument.
+- **`socat` is NOT installed.**
+- **A Hyprland block opened in the middle of another closes it early.**
+- **Test the code path you are shipping, not the one next to it.**
+- **AN X11 TOOL UNDER HYPRLAND SUCCEEDS AND RETURNS BLACK.** maim, xrandr,
+  xdotool and friends all answer through XWayland — they do not fail, they
+  report the XWayland root window, which no Wayland client draws into. Every
+  screenshot from the rofi menu was a valid PNG of nothing, with a
+  "Screenshot Saved" notification. Split on `WAYLAND_DISPLAY`, not on
+  `XDG_SESSION_TYPE`, which the display manager sets and which is absent for
+  a session started any other way.
+- **The three screenshot geometry formats do not agree.** maim `-g` takes
+  `WxH+X+Y`, grim `-g` takes `<x>,<y> <w>x<h>`, and slurp PRINTS grim's. A
+  mismatch reads as "the region option is broken" while fullscreen works.
+- **A GTK app that positions itself needs `GDK_BACKEND=x11` here.** Wayland
+  does not let a client place its own toplevel; XWayland does, and Hyprland
+  honours it. That is all qdrop needed.
+- **Hyprland gives a NAMED workspace a negative id** (S is -1337), so a
+  `id > 0` test drops it along with the scratchpads — filter on the
+  `special:` name prefix instead. And `workspace -1337` is not that
+  workspace: a SIGNED number is a RELATIVE move. Use `workspace name:S`.
+- **A layer surface is placed at y=0, over the bar's strip.** To line one up
+  with the tiled windows, inset it by `reserved[1]` from `hyprctl monitors`
+  plus `general:gaps_out` — read live, because the bar's zone changes with
+  the bar and gaps_out is a setting.
