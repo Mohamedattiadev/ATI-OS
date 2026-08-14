@@ -774,9 +774,24 @@ ShellRoot {
                             fontFamily: "Symbols Nerd Font"
                             clickable: true
                             height: parent.height
-                            onClicked: Quickshell.execDetached(
-                                [Quickshell.env("HOME")
-                                    + "/.config/hypr/scripts/wifi-qr.py"])
+                            // Was the SCRIPT, directly — and that is the whole
+                            // of why this chip was reported as dead. wifi-qr.py
+                            // is a data producer: it writes the PNG and prints
+                            // its path, and the island renders it in its
+                            // wifi_qr state. Run bare from here it did its job
+                            // perfectly and drew nothing, every press.
+                            //
+                            // The popups shell now holds the viewer, addressed
+                            // the same way the wallpaper chip above addresses
+                            // its own — by ENTRY FILE, because popups.qml is a
+                            // second entry point into the island's config
+                            // directory and `qs -p` keys an instance on the
+                            // path it was given.
+                            onClicked: Quickshell.execDetached([
+                                "qs", "-p",
+                                Quickshell.env("HOME")
+                                    + "/.config/quickshell/tide-island-fork/popups.qml",
+                                "ipc", "call", "popups", "wifiqr"])
                         }
                     }
 

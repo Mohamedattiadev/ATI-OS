@@ -180,7 +180,11 @@ case "$key" in
   toggleSysmon)               run_sh 'env GTK_THEME=Adwaita:dark missioncenter' ;;
   toggleCalendar)             run clock_popup ;;
   toggleDisplayPanel)         run_sh "python3 '$HYPR_SCRIPTS/display-ctl.py' --menu || nwg-displays" ;;
-  toggleWifiQr)               run "$HYPR_SCRIPTS/wifi-qr.py" ;;
+  # Was `run wifi-qr.py`, which generated the code correctly and showed
+  # nobody: that script PRINTS JSON and writes a PNG, and the island renders
+  # it in its wifi_qr state. Under the topbar there was no renderer, so the
+  # chip did its whole job invisibly. The popup is the missing half.
+  toggleWifiQr)               run_popup wifiqr ;;
   toggleCalculator)           run_sh 'rofi -show calc -modi calc -no-show-match -no-sort 2>/dev/null || kitty -e qalc' ;;
 
   # ---- notifications: dunst serves them while the island is down ----

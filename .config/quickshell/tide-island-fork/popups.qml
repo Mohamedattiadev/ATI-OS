@@ -19,12 +19,13 @@ import "qml/theme"
 //
 // WHAT THIS IS FOR
 // ----------------
-// Three of the topbar's chips are qtile chips whose action is a POPUP rather
-// than a command:
+// Several of the topbar's chips are qtile chips whose action is a POPUP
+// rather than a command:
 //
 //     ✖  wallpaper_toggle  ->  toggle_wallpaper_picker  (WallpaperPopup.py)
 //     network                  Wifi-Mode                (WifiPopup.py)
 //     volume                   Audio-Mode               (AudioPopup.py)
+//     w_wifi_qr                WifiQR.toggle            (WifiQR.py)
 //
 // Under the topbar they ran rofi menus or nothing at all, which is a
 // different thing wearing the same key. Asked for directly: "the ✖ chip
@@ -87,6 +88,7 @@ ShellRoot {
         function wallpaper(): void { root.toggle("wallpaper"); }
         function network(): void   { root.toggle("network"); }
         function volume(): void    { root.toggle("volume"); }
+        function wifiqr(): void    { root.toggle("wifiqr"); }
 
         // Explicit show/hide beside the toggles, because a toggle driven from
         // a script goes out of phase the first time a click and a key
@@ -95,6 +97,7 @@ ShellRoot {
         function showWallpaper(): void { root.show("wallpaper"); }
         function showNetwork(): void   { root.show("network"); }
         function showVolume(): void    { root.show("volume"); }
+        function showWifiQr(): void    { root.show("wifiqr"); }
         function close(): void         { root.hide(); }
         function status(): string      { return root.open === "" ? "none" : root.open; }
     }
@@ -213,6 +216,15 @@ ShellRoot {
         active: root.open === "volume"
         sourceComponent: Component {
             VolumePopup {
+                onRequestClose: root.hide()
+            }
+        }
+    }
+
+    Loader {
+        active: root.open === "wifiqr"
+        sourceComponent: Component {
+            WifiQrPopup {
                 onRequestClose: root.hide()
             }
         }
