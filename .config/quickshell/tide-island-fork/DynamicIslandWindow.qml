@@ -514,7 +514,34 @@ PanelWindow {
         const action = Number(userConfig.hoverExpandAction);
         return isNaN(action) ? 0 : Math.max(0, Math.min(2, Math.round(action)));
     }
-    readonly property real baseExclusiveZone: userConfig.islandExclusiveZone
+    // ---- THE ZONE HAS TO FOLLOW THE SHAPE, NOT A CONSTANT ----
+    //
+    // Reported: with notch mode OFF the island "becomes above the opening
+    // apps, no space between it and the app". It does, and the arithmetic is
+    // the whole story — `islandExclusiveZone` is a flat config number that
+    // knows nothing about which form the island is wearing:
+    //
+    //     notch ON   island occupies y 0 .. 35      zone 33
+    //     notch OFF  island occupies y 11 .. 46     zone 33
+    //
+    // In the notch form the island is flush to the top edge, so 33 is two
+    // pixels shy of its bottom and nothing notices — `gaps_out` (8) puts the
+    // first window at 43 anyway. Switch the notch off and the island floats
+    // `islandTopMargin` down, so its bottom edge moves to 46 while the
+    // reservation stays at 33: thirteen pixels of island sitting on top of
+    // the window, with the gap that should be there underneath it.
+    //
+    // So the floating form reserves what it actually occupies. No gap is
+    // added on top of that on purpose — `general:gaps_out` already supplies
+    // one, which is why the topbar reserves exactly its own 38 px and the
+    // first window still lands at 48.
+    //
+    // Math.max, so the configured value stays a FLOOR: someone who has tuned
+    // islandExclusiveZone upward for their own reasons keeps it.
+    readonly property real baseExclusiveZone: root.notchModeEnabled
+        ? userConfig.islandExclusiveZone
+        : Math.max(userConfig.islandExclusiveZone,
+                   userConfig.islandTopMargin + userConfig.islandHeight)
 
     // ------------------------------------------------------------------
     // FORK: the notch form. DESIGN-SPEC.md, "Geometry" and "The morph".
