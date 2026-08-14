@@ -255,12 +255,36 @@ not guessed — start from the measurement, not from the symptom.
   one-liner, so a click updates the GLYPH up to 3 s later even though the
   layout changed instantly), and process-spawn latency per click. Measure
   the gap between the dispatch and the repaint before changing either.
-* **The island's height twitches ~0.1 s after a rofi popup closes.** Opening
-  a rofi surface from the island and closing it leaves the capsule changing
-  height for about a tenth of a second and then returning. This is almost
-  certainly the same class as the picker bug already fixed — a height taken
-  from a panel that is not yet, or no longer, able to size itself — so the
-  three-line `onTargetHeightChanged` probe in THE ONE TASK applies directly.
+* **The island's height twitch — MEASURED, and it is not where the report
+  puts it.** The probe was added, the island driven, and closing rofi
+  produces **no `targetHeight` change at all**. What does twitch is the
+  mode-keys HUD on the way IN, and only the FIRST time a given chord is
+  opened in a session:
+
+      first open of the rofi chord ($mod P)
+          t+0     mode_keys  45     <- no rows yet
+          t+87    mode_keys  275    <- the truth, 87 ms later
+      second open of the same chord
+          t+0     mode_keys  275    <- one move, no re-aim
+
+  So it is the same class as the picker bug, and `ModeKeysLayer` already
+  carries the fix: `pendingHeight` remembers each mode's height and hands it
+  back while the `cheatsheet.py` fetch is in flight. Its own note accepts the
+  remainder — "one open per mode per session, rather than every open" — and
+  that remaining open is what gets reported. The teardown was checked too and
+  is clean: 275 -> 45 -> 35 inside 3 ms, far below anything visible.
+
+  **The obvious fix crashed the island, so it is NOT in the tree.** Persisting
+  `modeKeysHeights` to `~/.cache/tide-island/mode-key-heights.json` with a
+  `FileView` + `JsonAdapter` (the pattern `ApplicationLauncherLayer` uses for
+  favourites) loaded cleanly — "Configuration Loaded", no QML error — and then
+  the process DIED, last log line `QProcess: Destroyed while process ("pactl")
+  is still running`. With `bar-mode` on island that leaves the desktop with no
+  bar, which is the one rule bar-switch exists to protect. Reverted.
+  If it is retried: suspect the free-form `property var heights: ({})` on the
+  JsonAdapter — the launcher's precedent stores a LIST, not a map — and test
+  it with the topbar as the active bar so a crash cannot take the only bar
+  with it.
 * **The topbar's theme sweep freezes rofi for ~0.4 s.** Picking a theme from
   the rofi picker makes the rofi window itself freeze and glitch before the
   new palette arrives. Note what the overlay does: it screenshots, freezes,
