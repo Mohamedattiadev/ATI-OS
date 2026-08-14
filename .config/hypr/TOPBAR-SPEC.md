@@ -23,8 +23,34 @@ What is not, and why:
   copies of one string is worse than one.
 * **`CheckUpdates`** — the count comes from `qupdate.py`'s daemon, which this
   bar does not own. Left out rather than reimplemented badly.
-* **`w_nightlight`, `w_wifi_qr`** — inside qtile's systray box. Not ported
-  yet; both are one script call away.
+* **`hintium_mode_chip`** on the bottom bar too, for the same X11 reason.
+* qtile's **`float_extra_qutebrowsers`** — floats the 2nd+ qutebrowser at
+  900x600. A rule about how many instances exist, which Hyprland's rule
+  language cannot ask; noted in `rules.conf`.
+
+## Both of qtile's bars
+
+qtile builds **two** and shows one, swapped by `$mod SHIFT Z`. So does this:
+
+| | top | bottom |
+|---|---|---|
+| height | `_s(28)` | `_s(40)` |
+| background | `#11111b00` — transparent | `colors[2]` — opaque |
+| widgets | chips, each with its own plate | bare widgets, `\|` separators |
+| extra | TaskList | five launcher icons |
+
+They are different bars, not one re-anchored — `config.py` builds two widget
+lists for the same reason. `$mod SHIFT Z` drives the `topbar` IPC target;
+position persists in `~/.cache/topbar-position`, deliberately NOT in
+`~/.cache/bar-mode`, which answers the different question of island-vs-topbar.
+
+## The Row-height trap, three times now
+
+A `Row` derives its height FROM its children, so `height: parent.height` on a
+child inside one is circular and Qt resolves it to **zero** — silently, with
+the data correct. It has cost three debugging rounds here: the workspaces and
+tray, the widget-box contents, and the bottom bar's launchers and readouts.
+Give the Row an explicit height and take the child's from the component root.
 
 It is a **reimplementation**, and that is not a shortcut — qtile's bar is part
 of qtile and cannot run under another compositor. The target is

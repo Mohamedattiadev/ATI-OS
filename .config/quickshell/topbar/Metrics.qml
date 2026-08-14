@@ -28,6 +28,9 @@ Singleton {
     readonly property int barHeight: root.s(28)
 
     // bar.Bar(margin=[5, 10, 5, 10]) — top, right, bottom, left.
+    // config.py's bottom bar is size=_s(40) against the top bar's _s(28).
+    readonly property int bottomBarHeight: root.s(40)
+
     readonly property int marginV: root.s(5)
     readonly property int marginH: root.s(10)
 

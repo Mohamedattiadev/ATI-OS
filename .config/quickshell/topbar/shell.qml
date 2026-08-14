@@ -46,11 +46,58 @@ ShellRoot {
         Metrics.scale;
     }
 
+    // ---- WHICH OF THE TWO BARS ----
+    //
+    // qtile builds TWO and shows one: a top bar of chips and a bottom "normal
+    // user" bar of bare widgets, swapped by $mod SHIFT Z. apply_bar_mode()
+    // there hides one and shows the other, and BAR_MODE is the single owner.
+    //
+    // Same arrangement, same single owner, persisted so it survives a restart
+    // the way BAR_MODE does through config reloads. NOT in ~/.cache/bar-mode —
+    // that file answers a different question (island vs this bar) and
+    // overloading it would make two unrelated toggles fight.
+    property string position: "top"
+
+    FileView {
+        id: positionFile
+        path: Quickshell.env("HOME") + "/.cache/topbar-position"
+        watchChanges: true
+        preload: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            const v = text().trim();
+            if (v === "top" || v === "bottom")
+                shellRoot.position = v;
+        }
+    }
+
+    function setPosition(p) {
+        if (p !== "top" && p !== "bottom")
+            return;
+        shellRoot.position = p;
+        positionFile.setText(p + "\n");
+    }
+
+    // Driveable from a script, which is what the keybinding uses. A control
+    // with no way in from a script is a control whose bugs only the user finds.
+    IpcHandler {
+        target: "topbar"
+        function top(): void { shellRoot.setPosition("top"); }
+        function bottom(): void { shellRoot.setPosition("bottom"); }
+        function toggle(): void {
+            shellRoot.setPosition(shellRoot.position === "top" ? "bottom" : "top");
+        }
+        function status(): string { return shellRoot.position; }
+    }
+
     Variants {
         model: Quickshell.screens
 
         PanelWindow {
             id: bar
+            // One bar at a time, as qtile shows one at a time.
+            visible: shellRoot.position === "top"
             required property var modelData
             screen: modelData
 
@@ -621,14 +668,88 @@ ShellRoot {
             required property var modelData
             screen: modelData
 
-            anchors { top: true; left: true; right: true }
+            // Anchored to whichever edge the live bar is on, and holding that
+            // bar's height. Both bars are ExclusionMode.Ignore, so this one
+            // surface is the entire reservation either way.
+            anchors {
+                top: shellRoot.position === "top"
+                bottom: shellRoot.position === "bottom"
+                left: true
+                right: true
+            }
             implicitHeight: 1
-            exclusiveZone: Metrics.barHeight + Metrics.marginV * 2
+            exclusiveZone: (shellRoot.position === "top"
+                ? Metrics.barHeight : Metrics.bottomBarHeight) + Metrics.marginV * 2
             color: "transparent"
             // No input at all. Without this the strip eats clicks along the
             // very top edge of the screen — the same trap RingOsdWindow
             // documents, in one pixel instead of a full screen.
             mask: Region {}
+        }
+    }
+
+    // ---- THE BOTTOM BAR ----
+    //
+    // Its own window rather than the top bar re-anchored, because it is a
+    // DIFFERENT BAR: 40 px instead of 28, an opaque colors[2] background
+    // instead of a transparent one, and bare widgets with pipe separators
+    // instead of chips. config.py builds two lists for the same reason.
+    Variants {
+        model: Quickshell.screens
+
+        PanelWindow {
+            required property var modelData
+            screen: modelData
+            visible: shellRoot.position === "bottom"
+
+            anchors { bottom: true; left: true; right: true }
+            implicitHeight: Metrics.bottomBarHeight + Metrics.marginV * 2
+            // Same reasoning as the top bar: Ignore keeps the TreeTab
+            // sidebar's zone from narrowing and shoving it, and the shared
+            // reserver above holds the space.
+            exclusionMode: ExclusionMode.Ignore
+            color: "transparent"
+
+            Rectangle {
+                anchors.fill: parent
+                anchors.topMargin: Metrics.marginV
+                anchors.bottomMargin: Metrics.marginV
+                anchors.leftMargin: Metrics.marginH
+                anchors.rightMargin: Metrics.marginH
+                // background=colors[2] — OPAQUE, unlike the top bar's
+                // "#11111b00". This bar has a surface of its own.
+                color: BarTheme.bgAlt
+                radius: Metrics.s(6)
+
+                BottomBar {
+                    id: bottomContent
+                    anchors.fill: parent
+                    shell: shellRoot
+                    sink: bottomSink
+                }
+
+                // The bottom bar's own hover sink and tooltip. Its own rather
+                // than the top bar's, because a Tooltip anchors to the window
+                // its target lives in and these are two different windows —
+                // sharing one would place the popup against the wrong surface.
+                QtObject {
+                    id: bottomSink
+                    property var current: null
+                    property string currentText: ""
+                    function enter(item, text) {
+                        bottomSink.current = item;
+                        bottomSink.currentText = text;
+                        bottomTipDelay.restart();
+                    }
+                    function exit(item) {
+                        if (bottomSink.current !== item) return;
+                        bottomTipDelay.stop();
+                        bottomSink.current = null;
+                        bottomSink.currentText = "";
+                    }
+                }
+                Timer { id: bottomTipDelay; interval: 450; repeat: false }
+            }
         }
     }
 

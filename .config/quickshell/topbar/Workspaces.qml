@@ -49,6 +49,10 @@ Item {
     implicitWidth: row.implicitWidth
     implicitHeight: parent ? parent.height : Metrics.barHeight
 
+    // config.py gives the top bar's GroupBox fontsize=_s(10) and the bottom
+    // bar's _s(12), so the size is the caller's to set rather than a constant.
+    property int labelPixelSize: Metrics.s(10)
+
     property var workspaces: []
     property int focusedId: -1
 
@@ -202,7 +206,7 @@ Item {
                     // because qtile-extras scales group icons up against the
                     // bar height. Matched by eye against the real bar.
                     font.pixelSize: root.groupLabels[String(wsItem.modelData.name)] !== undefined
-                        ? Metrics.s(13) : Metrics.s(10)
+                        ? root.labelPixelSize + Metrics.s(3) : root.labelPixelSize
                     renderType: Text.NativeRendering
                     color: wsItem.focused ? BarTheme.purple
                         : wsItem.populated ? BarTheme.cyan
