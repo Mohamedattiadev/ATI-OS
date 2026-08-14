@@ -4647,6 +4647,15 @@ PanelWindow {
                         nightLightEnabled: root.shellRootController && root.shellRootController.nightLightEnabled !== undefined
                             ? root.shellRootController.nightLightEnabled
                             : false
+                        // The shell root owns the night-light mechanism now,
+                        // so that it is reachable from a keybinding and from
+                        // `qs ipc call nightlight ...` and not only from this
+                        // tile. See shell.qml's setNightLight().
+                        nightLightController: root.shellRootController
+                        nightLightTemperature: root.shellRootController
+                            && root.shellRootController.nightLightTemperature !== undefined
+                            ? root.shellRootController.nightLightTemperature
+                            : 4500
                         showCondition: islandContainer.controlCenterLayerVisible
                         onCloseRequested: islandContainer.smartRestoreState()
                         // FORK: "somebody is looking at this data even though

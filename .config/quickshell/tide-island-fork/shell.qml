@@ -23,6 +23,62 @@ Scope {
     property bool focusEnabled: false
     property bool nightLightEnabled: false
     property bool shuttingDown: false
+
+    // ---- NIGHT LIGHT, OWNED HERE AND NOT BY THE CONTROL CENTRE ----
+    //
+    // The two Processes used to live in ControlCenterLayer, which is loaded
+    // only while the control-centre panel is on screen. That made the only
+    // route to night light a click on a tile inside a panel you have to open
+    // first — so it could not be bound to a key, and it could not be driven
+    // by a script, which is the rule about a control whose bugs can only be
+    // found by the user. It also meant the action's owner was a thing that
+    // may never have been instantiated.
+    //
+    // The layer still draws the row and still owns the row's busy/notify
+    // behaviour; it just asks this for the actual work. See
+    // ControlCenterLayer.toggleNightLight and its nightLightController.
+    property int nightLightTemperature: 4500
+    property bool nightLightBusy: false
+
+    // ok: the command ran. enabled: what the state is now. message: why not,
+    // when ok is false. Emitted for BOTH routes, so the control centre shows
+    // the same notification whether you clicked the tile or called the IPC.
+    signal nightLightResult(bool ok, bool enabled, string message)
+
+    readonly property bool hyprlandNightLight: CompositorBackend.compositor === "hyprland"
+
+    function setNightLight(enabled) {
+        if (nightLightBusy)
+            return;
+        if (enabled === nightLightEnabled) {
+            // Not a no-op silently: a caller that asked for the state it is
+            // already in gets a truthful answer rather than nothing at all.
+            nightLightResult(true, nightLightEnabled, "");
+            return;
+        }
+
+        nightLightBusy = true;
+        if (enabled)
+            nightLightEnableProcess.running = true;
+        else
+            nightLightDisableProcess.running = true;
+    }
+
+    function toggleNightLight() {
+        setNightLight(!nightLightEnabled);
+    }
+
+    function setNightLightTemperature(kelvin) {
+        // Clamped to what hyprsunset will accept. Out-of-range values are
+        // rejected by the daemon with a non-zero exit, which would surface
+        // as "unavailable" and send you looking for a missing package.
+        const clamped = Math.max(1000, Math.min(20000, Math.round(kelvin)));
+        nightLightTemperature = clamped;
+        if (nightLightEnabled && !nightLightBusy) {
+            nightLightBusy = true;
+            nightLightEnableProcess.running = true;
+        }
+    }
     property bool islandAutoHideRuntimeEnabled: true
 
     readonly property var userConfig: UserConfig
@@ -252,6 +308,174 @@ Scope {
                 || modelData === Quickshell.screens[0]
 
             onThemeApplied: shellRoot.relayThemeApplied()
+        }
+    }
+
+    Process {
+        id: nightLightEnableProcess
+        command: [
+            "sh",
+            "-c",
+            shellRoot.hyprlandNightLight
+                ? "temp=\"$1\"\n"
+                    + "if ! command -v hyprsunset >/dev/null 2>&1; then exit 127; fi\n"
+                    + "if hyprctl hyprsunset temperature \"$temp\" >/dev/null 2>&1; then exit 0; fi\n"
+                    + "if ! command -v pgrep >/dev/null 2>&1 || ! pgrep -x hyprsunset >/dev/null 2>&1; then\n"
+                    + "  if command -v setsid >/dev/null 2>&1; then\n"
+                    + "    setsid hyprsunset >/dev/null 2>&1 < /dev/null &\n"
+                    + "  else\n"
+                    + "    nohup hyprsunset >/dev/null 2>&1 < /dev/null &\n"
+                    + "  fi\n"
+                    + "fi\n"
+                    + "i=0\n"
+                    + "while [ \"$i\" -lt 24 ]; do\n"
+                    + "  if hyprctl hyprsunset temperature \"$temp\" >/dev/null 2>&1; then exit 0; fi\n"
+                    + "  i=$((i + 1))\n"
+                    + "  sleep 0.04\n"
+                    + "done\n"
+                    // ---- NO gammastep FALLBACK ON HYPRLAND. IT CANNOT WORK ----
+                    //
+                    // There was one here. It was not merely dead — it was
+                    // actively worse than nothing, and it is why night light
+                    // looked finished while doing nothing at all.
+                    //
+                    // Hyprland 0.56.2 does not implement wlr-gamma-control,
+                    // so gammastep has no output it can touch. Measured:
+                    //
+                    //     $ gammastep -P -O 4500
+                    //     Warning: Zero outputs support gamma adjustment.
+                    //     Warning: 1/1 output(s) do not support gamma
+                    //              adjustment.
+                    //
+                    // and it then HANGS rather than exiting — the earlier
+                    // note here recorded "exits 0", which is wrong and is
+                    // worth correcting because it changes the consequence.
+                    // The old branch backgrounded that command and then
+                    // `exit 0`, so the row reported "Night Light enabled",
+                    // the screen never changed, and a stuck gammastep was
+                    // left behind every time the fallback was reached.
+                    //
+                    // gammastep stays INSTALLED and declared: qtile drives it
+                    // under X11 with `-m randr` (config.py `_nightlight_on`),
+                    // where randr gamma works. It is this Wayland path that
+                    // is impossible, not the tool. hyprsunset uses Hyprland's
+                    // own CTM protocol, which is why it works here.
+                    + "exit 127"
+                : "temp=\"$1\"\n"
+                    + "if ! command -v gammastep >/dev/null 2>&1; then exit 127; fi\n"
+                    + "pkill -x gammastep >/dev/null 2>&1\n"
+                    + "if command -v setsid >/dev/null 2>&1; then\n"
+                    + "  setsid gammastep -m wayland -O \"$temp\" >/dev/null 2>&1 < /dev/null &\n"
+                    + "else\n"
+                    + "  nohup gammastep -m wayland -O \"$temp\" >/dev/null 2>&1 < /dev/null &\n"
+                    + "fi\n"
+                    + "exit 0",
+            "tide-night-light",
+            shellRoot.nightLightTemperature.toString()
+        ]
+        running: false
+
+        onExited: function(exitCode) {
+            shellRoot.nightLightBusy = false;
+            if (exitCode === 0) {
+                shellRoot.nightLightEnabled = true;
+                shellRoot.nightLightResult(true, true, "");
+                return;
+            }
+
+            shellRoot.nightLightEnabled = false;
+            shellRoot.nightLightResult(false, false,
+                // Names ONE package, and the right one for the compositor you
+                // are actually running. It named both until hyprsunset was
+                // measured: on Hyprland gammastep is not a second thing that
+                // would have worked, it is a thing that cannot work, and
+                // offering it sends you to install a package and find the
+                // button still dead.
+                shellRoot.hyprlandNightLight
+                    ? "Install hyprsunset to use Night Light on Hyprland."
+                    : "Install gammastep to use Night Light.");
+        }
+    }
+
+    Process {
+        id: nightLightDisableProcess
+        command: [
+            "sh",
+            "-c",
+            // Both backends are cleared regardless of which one enabled it.
+            // The two lines are the two compositor cases — `identity` is the
+            // hyprsunset one, the pkill is a non-Hyprland session on
+            // gammastep — and running the inapplicable one costs nothing.
+            //
+            // `identity` rather than killing the hyprsunset daemon: it clears
+            // the filter and leaves the daemon up, so the next enable is one
+            // IPC call instead of a spawn plus a wait loop.
+            //
+            // `pkill -x`, never `pkill -f`: -f matches this script's own
+            // command line, which is how a pkill takes down the shell that
+            // ran it.
+            //
+            // NOTE, because it looks like a state query and is not:
+            // `hyprctl hyprsunset temperature` reports the last temperature
+            // REQUESTED, not the one in effect. After `identity` it still
+            // answers 3000 (measured). There is no "is the filter on" query
+            // in hyprsunset 0.4.0, so nightLightEnabled is the state of
+            // record and nothing should try to re-derive it from the daemon.
+            "hyprctl hyprsunset identity >/dev/null 2>&1 || true\n"
+                + "pkill -x gammastep >/dev/null 2>&1 || true\n"
+                + "exit 0"
+        ]
+        running: false
+
+        onExited: function(exitCode) {
+            // No failure branch. Turning night light OFF cannot fail for want
+            // of a tool: the script clears hyprsunset if it is there and
+            // kills gammastep if it is there, and either missing is the same
+            // as either already being off. It exits 0 unconditionally.
+            shellRoot.nightLightBusy = false;
+            shellRoot.nightLightEnabled = false;
+            shellRoot.nightLightResult(true, false, "");
+        }
+    }
+
+    // FORK: night light over IPC.
+    //
+    // Same two reasons as toggleFocus below it. It makes night light
+    // BINDABLE — until now the only route was a tile inside a panel you had
+    // to open first — and it makes it TESTABLE, which matters more here than
+    // anywhere else in this shell: the effect is a colour transform applied
+    // at SCANOUT, so `grim` cannot see it (measured: a 3000K filter moved the
+    // captured blue mean by 0.2%, against the ~40% a real warm shift is).
+    // Verifying the visible result needs the user's eyes either way, but
+    // driving the code path and reading the state back does not have to.
+    IpcHandler {
+        target: "nightlight"
+
+        function on() {
+            shellRoot.setNightLight(true);
+        }
+
+        function off() {
+            shellRoot.setNightLight(false);
+        }
+
+        function toggle() {
+            shellRoot.toggleNightLight();
+        }
+
+        // TYPED, and not optional. An IpcHandler function with an untyped
+        // parameter is dropped from the IPC surface entirely — it does not
+        // error and does not warn, `qs ipc show` simply does not list it.
+        // That trap has cost this shell four calls now.
+        function temperature(kelvin: int) {
+            shellRoot.setNightLightTemperature(kelvin);
+        }
+
+        // Readable state, so a script can assert rather than assume.
+        function status(): string {
+            return (shellRoot.nightLightEnabled ? "on" : "off")
+                + " " + shellRoot.nightLightTemperature + "K"
+                + (shellRoot.nightLightBusy ? " busy" : "");
         }
     }
 

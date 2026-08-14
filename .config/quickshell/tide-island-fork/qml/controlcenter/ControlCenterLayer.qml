@@ -201,6 +201,10 @@ Item {
     property bool nightLightEnabled: false
     property bool nightLightBusy: false
     property int nightLightTemperature: 4500
+    // The shell root, which owns the night-light mechanism. Null only in a
+    // throwaway instance with no shell root; toggleNightLight() says so out
+    // loud rather than presenting a tile that does nothing.
+    property var nightLightController: null
     readonly property bool hyprlandNightLight: CompositorBackend.compositor === "hyprland"
     property bool focusEnabled: false
     // Kept as a property and permanently false. It gated the row while a
@@ -532,16 +536,32 @@ Item {
         refreshBatteryModeState();
     }
 
+    // FORK: the row asks, the shell root does.
+    //
+    // The two Processes that used to live in this file moved to shell.qml.
+    // They are the only way to reach night light, and this layer is loaded
+    // only while the control-centre panel is on screen — so owning them here
+    // meant the feature could not be bound to a key or driven by a script,
+    // and its owner was a component that may never have been instantiated.
+    // See the block above shell.qml's setNightLight().
+    //
+    // This layer still owns the ROW: its busy state, its tile, and the
+    // notification, which it raises from nightLightResult so that clicking
+    // the tile and calling `qs ipc call nightlight toggle` look identical.
     function toggleNightLight() {
         if (nightLightBusy)
             return;
 
-        nightLightBusy = true;
-        if (nightLightEnabled) {
-            nightLightDisableProcess.running = true;
-        } else {
-            nightLightEnableProcess.running = true;
+        if (!nightLightController) {
+            // Loudly, rather than a dead tile. A throwaway instance with no
+            // shell root is the only way to get here.
+            requestNotification("Night Light", "Night Light unavailable",
+                                "No shell controller — night light cannot be driven.");
+            return;
         }
+
+        nightLightBusy = true;
+        nightLightController.toggleNightLight();
     }
 
     // One place that re-reads the daemon, because three callers want it —
@@ -1299,104 +1319,38 @@ Item {
     // will lie the next time the tool is missing. The current version has
     // no subprocess at all. See toggleFocus() and hostFocusEnabled.
 
-    Process {
-        id: nightLightEnableProcess
-        command: [
-            "sh",
-            "-c",
-            controlCenter.hyprlandNightLight
-                ? "temp=\"$1\"\n"
-                    + "if ! command -v hyprsunset >/dev/null 2>&1; then exit 127; fi\n"
-                    + "if hyprctl hyprsunset temperature \"$temp\" >/dev/null 2>&1; then exit 0; fi\n"
-                    + "if ! command -v pgrep >/dev/null 2>&1 || ! pgrep -x hyprsunset >/dev/null 2>&1; then\n"
-                    + "  if command -v setsid >/dev/null 2>&1; then\n"
-                    + "    setsid hyprsunset >/dev/null 2>&1 < /dev/null &\n"
-                    + "  else\n"
-                    + "    nohup hyprsunset >/dev/null 2>&1 < /dev/null &\n"
-                    + "  fi\n"
-                    + "fi\n"
-                    + "i=0\n"
-                    + "while [ \"$i\" -lt 24 ]; do\n"
-                    + "  if hyprctl hyprsunset temperature \"$temp\" >/dev/null 2>&1; then exit 0; fi\n"
-                    + "  i=$((i + 1))\n"
-                    + "  sleep 0.04\n"
-                    + "done\n"
-                    + "if command -v gammastep >/dev/null 2>&1; then\n"
-                    + "  pkill -x gammastep >/dev/null 2>&1\n"
-                    + "  if command -v setsid >/dev/null 2>&1; then\n"
-                    + "    setsid gammastep -m wayland -O \"$temp\" >/dev/null 2>&1 < /dev/null &\n"
-                    + "  else\n"
-                    + "    nohup gammastep -m wayland -O \"$temp\" >/dev/null 2>&1 < /dev/null &\n"
-                    + "  fi\n"
-                    + "  exit 0\n"
-                    + "fi\n"
-                    + "exit 127"
-                : "temp=\"$1\"\n"
-                    + "if ! command -v gammastep >/dev/null 2>&1; then exit 127; fi\n"
-                    + "pkill -x gammastep >/dev/null 2>&1\n"
-                    + "if command -v setsid >/dev/null 2>&1; then\n"
-                    + "  setsid gammastep -m wayland -O \"$temp\" >/dev/null 2>&1 < /dev/null &\n"
-                    + "else\n"
-                    + "  nohup gammastep -m wayland -O \"$temp\" >/dev/null 2>&1 < /dev/null &\n"
-                    + "fi\n"
-                    + "exit 0",
-            "tide-night-light",
-            controlCenter.nightLightTemperature.toString()
-        ]
-        running: false
+    // FORK: the night-light Processes that stood here moved to shell.qml.
+    //
+    // They are the whole mechanism, and this layer only exists while the
+    // control-centre panel is open — so as long as they lived here, night
+    // light could not be bound to a key, could not be driven by a script,
+    // and had an owner that may never have been instantiated. The full
+    // account, including why the gammastep fallback was deleted rather than
+    // demoted, is in shell.qml above setNightLight().
+    //
+    // What stays here is the ROW. The controller does the work and reports
+    // through nightLightResult; the notification is raised from this side so
+    // that clicking the tile and calling the IPC produce the same visible
+    // result.
+    Connections {
+        target: controlCenter.nightLightController
 
-        onExited: function(exitCode) {
-            if (exitCode === 0) {
-                controlCenter.nightLightBusy = false;
-                controlCenter.nightLightEnabled = true;
-                controlCenter.nightLightModeChanged(true);
-                controlCenter.requestNotification("Night Light", "Night Light enabled", controlCenter.nightLightTemperature + "K");
+        function onNightLightResult(ok, enabled, message) {
+            controlCenter.nightLightBusy = false;
+            controlCenter.nightLightEnabled = enabled;
+            controlCenter.nightLightModeChanged(enabled);
+
+            if (!ok) {
+                controlCenter.requestNotification("Night Light", "Night Light unavailable", message);
                 return;
             }
 
-            controlCenter.nightLightBusy = false;
-            controlCenter.nightLightEnabled = false;
-            controlCenter.nightLightModeChanged(false);
-            controlCenter.requestNotification("Night Light", "Night Light unavailable",
-                // Names BOTH, because the enable path now tries both:
-                // hyprsunset first on Hyprland, then gammastep. Reaching
-                // this line means neither is installed, so naming only the
-                // one the compositor prefers sends you to install a package
-                // that is not the only thing that would have worked.
-                "Install hyprsunset or gammastep to use Night Light.");
-        }
-    }
-
-    Process {
-        id: nightLightDisableProcess
-        command: [
-            "sh",
-            "-c",
-            // Both backends are stopped regardless of which one enabled it.
-            // Cheap, and it means a session that started on hyprsunset and
-            // fell back to gammastep after an uninstall does not end up
-            // tinted with no way to clear it from this button.
-            //
-            // `pkill -x`, never `pkill -f`: -f matches this script's own
-            // command line, which is how a pkill takes down the shell that
-            // ran it.
-            "hyprctl hyprsunset identity >/dev/null 2>&1 || true\n"
-                + "pkill -x gammastep >/dev/null 2>&1 || true\n"
-                + "exit 0"
-        ]
-        running: false
-
-        onExited: function(exitCode) {
-            controlCenter.nightLightBusy = false;
-            controlCenter.nightLightEnabled = false;
-            controlCenter.nightLightModeChanged(false);
-            // No 127 branch. Turning night light OFF cannot fail for want of
-            // a tool: the script clears hyprsunset if it is there and kills
-            // gammastep if it is there, and either missing is the same as
-            // either already being off. It exits 0 unconditionally, so a
-            // "Night Light unavailable" here would have been a message that
-            // could only ever appear when nothing was wrong.
-            controlCenter.requestNotification("Night Light", "Night Light disabled", "");
+            if (enabled) {
+                controlCenter.requestNotification("Night Light", "Night Light enabled",
+                                                  controlCenter.nightLightTemperature + "K");
+            } else {
+                controlCenter.requestNotification("Night Light", "Night Light disabled", "");
+            }
         }
     }
 

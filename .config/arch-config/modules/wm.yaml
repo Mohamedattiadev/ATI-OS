@@ -54,6 +54,26 @@ packages:
   - awww
   - hypridle
   - hyprlock
+  # Night light, and it has to be THIS one on Hyprland.
+  #
+  # gammastep is declared in system-tools.yaml and stays there -- qtile
+  # drives it under X11 with `-m randr`, where it works. It cannot serve
+  # the Hyprland session at all, because Hyprland 0.56.2 does not
+  # implement wlr-gamma-control. Measured on this machine:
+  #
+  #     $ gammastep -P -O 4500
+  #     Warning: Zero outputs support gamma adjustment.
+  #     Warning: 1/1 output(s) do not support gamma adjustment.
+  #
+  # and it then hangs rather than exiting, so the control-centre branch
+  # that backgrounded it reported success, left the screen unchanged and
+  # leaked a process. That is why night light looked finished and did
+  # nothing. hyprsunset drives Hyprland's own CTM protocol instead.
+  #
+  # extra/, not the AUR. It is a daemon plus a `hyprctl hyprsunset` IPC;
+  # the control centre starts it on demand rather than at login, so no
+  # tint is applied to a session that never asked for one.
+  - hyprsunset
   - qt5-wayland                   # without these, Qt apps fall back to
   - qt6-wayland                   # XWayland and ignore fractional scaling
   - polkit-kde-agent               # the auth prompt; X11 used lxqt-policykit
