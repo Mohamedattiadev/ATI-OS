@@ -162,15 +162,25 @@ CSS_TEMPLATE = """
 window#qdrop {{ background: transparent; }}
 #qdrop-root {{
     background: {bg_alpha};
-    border: 1px solid {border};
-    border-radius: 12px;
+    /* 2px and 14px — PopupChrome's border_width and radius. This was 1px/12px,
+       which reads as a different family of surface beside the popups. */
+    border: 2px solid {border};
+    border-radius: 14px;
     min-width: 440px;
+}}
+/* The popups' face. JetBrainsMono is not decoration there either: the rows
+   are padded columns and "they only line up in a fixed-width face". */
+#qdrop-root, #qdrop-root label, #qdrop-root button {{
+    font-family: "JetBrainsMono Nerd Font", monospace;
 }}
 #qdrop-header {{
     padding: 8px 12px;
     background: {header_bg};
     border-bottom: 1px solid {border};
     border-radius: 12px 12px 0 0;
+    /* 12 not 14: the header sits INSIDE the 2px border, so its outer radius
+       is the root's minus the border width. Matching them leaves a hairline
+       of background in each top corner. */
 }}
 #qdrop-title {{
     color: {fg}; font-weight: 600; font-size: 12px;
@@ -186,7 +196,8 @@ button {{
     color: {fg};
     border: 1px solid transparent;
     padding: 4px 10px;
-    border-radius: 6px;
+    /* The keycap radius from the popups' hint bar. */
+    border-radius: 5px;
     font-size: 11px;
     margin-left: 6px;
 }}
@@ -206,7 +217,8 @@ flowbox {{ padding: 8px; }}
 flowboxchild {{
     padding: 6px;
     margin: 4px;
-    border-radius: 8px;
+    /* The card radius the popups use for every list row and card. */
+    border-radius: 10px;
     border: 1px solid transparent;
     min-width: 76px;
 }}
@@ -265,11 +277,24 @@ def load_palette() -> dict:
         accent = d.get("blue", d.get("green", default["accent"]))
         muted = _mix_hex(bg, fg, 0.35)
         return {
-            "bg": bg, "header_bg": bg_alt, "fg": fg,
-            "muted": muted, "border": muted,
-            "btn_bg": _mix_hex(bg, fg, 0.15),
+            "bg": bg, "header_bg": _mix_hex(bg, fg, 0.07), "fg": fg,
+            "muted": muted,
+            # THE ISLAND'S THREE TONES, BY ITS OWN NUMBERS. PopupChrome
+            # derives surface / surfaceAlt / line as bg mixed toward fg by
+            # 0.07, 0.14 and 0.22, and every qtile-style popup in this
+            # desktop is built out of them. The border was `muted` (0.35),
+            # which is a text colour doing a frame's job — visibly heavier
+            # than the popups sitting next to it.
+            "border": _mix_hex(bg, fg, 0.14),
+            "btn_bg": _mix_hex(bg, fg, 0.14),
             "btn_hover": accent,
-            "accent": accent, "sel_fg": fg,
+            "accent": accent,
+            # The island fills the selected row with the accent and writes on
+            # it in the BACKGROUND colour — "so selected text pops against
+            # accent" is the note in the file this grammar comes from. qdrop
+            # used a 20% accent wash with normal text, which is a different
+            # idea of what "selected" looks like.
+            "sel_fg": bg,
         }
     except Exception:
         pass
@@ -281,11 +306,11 @@ def load_palette() -> dict:
         accent = cols.get("color4", cols.get("color6", default["accent"]))
         muted = _mix_hex(bg, fg, 0.35)
         return {
-            "bg": bg, "header_bg": _mix_hex(bg, fg, 0.08), "fg": fg,
-            "muted": muted, "border": muted,
-            "btn_bg": _mix_hex(bg, fg, 0.15),
+            "bg": bg, "header_bg": _mix_hex(bg, fg, 0.07), "fg": fg,
+            "muted": muted, "border": _mix_hex(bg, fg, 0.14),
+            "btn_bg": _mix_hex(bg, fg, 0.14),
             "btn_hover": accent,
-            "accent": accent, "sel_fg": fg,
+            "accent": accent, "sel_fg": bg,
         }
     except Exception:
         return default
@@ -294,10 +319,14 @@ def load_palette() -> dict:
 def build_css() -> bytes:
     p = load_palette()
     subs = dict(p)
-    subs["bg_alpha"] = _hex_rgba(p["bg"], 0.97)
-    subs["header_bg"] = _hex_rgba(p["header_bg"], 0.9)
-    subs["sel_bg"] = _hex_rgba(p["accent"], 0.20)
-    subs["sel_bg_hover"] = _hex_rgba(p["accent"], 0.30)
+    # 0.949 is 0xF2/255 — the alpha every popup in this desktop is drawn at,
+    # from popups/WallpaperPopup.py's `COLORS["bg"] + "F2"`. It was 0.97 here,
+    # which is close enough to look like a mistake rather than a choice.
+    subs["bg_alpha"] = _hex_rgba(p["bg"], 0.949)
+    subs["header_bg"] = _hex_rgba(p["header_bg"], 0.949)
+    # A FILL, not a wash. See sel_fg in load_palette().
+    subs["sel_bg"] = _hex_rgba(p["accent"], 1.0)
+    subs["sel_bg_hover"] = _hex_rgba(p["accent"], 0.88)
     subs["hover_bg"] = _hex_rgba(p["accent"], 0.30)
     return CSS_TEMPLATE.format(**subs).encode()
 
