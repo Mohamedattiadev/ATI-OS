@@ -227,8 +227,35 @@ topbar_start() {
   return 1
 }
 
+# ---- THE TreeTab SIDEBAR GOES WITH THE TOPBAR ----
+#
+# hypr/scripts/topbar.sh starts a second Quickshell instance for the sidebar,
+# because the island's shell.qml is what normally draws it and the island is
+# STOPPED while the topbar runs — so treetab and max were the same thing under
+# this bar. See tide-island-fork/treetab.qml for why it is a second entry point
+# into that config rather than a copy.
+#
+# It has to be stopped here and not left to die on its own: the island draws
+# its own sidebar, so an orphan would put a second 180 px exclusive zone on the
+# screen and the tiling area would lose 360 px with nothing visibly wrong.
+#
+# Matched on argv, like every other process lookup in this file.
+TREETAB_ENTRY="$HOME/.config/quickshell/tide-island-fork/treetab.qml"
+
+treetab_pid() {
+  ps -eo pid=,args= | awk -v e="$TREETAB_ENTRY" '$0 ~ ("quickshell -p " e) && !/awk/ {print $1; exit}'
+}
+
+treetab_stop() {
+  local pid
+  pid="$(treetab_pid)" || true
+  [[ -n "$pid" ]] || return 0
+  kill "$pid" 2>/dev/null || true
+}
+
 topbar_stop() {
   local pid
+  treetab_stop
   pid="$(topbar_pid)" || true
   [[ -n "$pid" ]] || return 0
   kill "$pid" 2>/dev/null || true

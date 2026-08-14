@@ -40,6 +40,35 @@ fi
 # for the life of the session.
 export MALLOC_CONF="${MALLOC_CONF:-narenas:2,background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000}"
 
+# ---------------------------------------------------------------------------
+#  The TreeTab sidebar, which belongs to the LAYOUT and not to either bar
+# ---------------------------------------------------------------------------
+# qtile's TreeTab is a real layout and works under both of its bars. Here the
+# 180 px sidebar that IS the difference between treetab and max is drawn by
+# the island's shell.qml, and bar-switch stops the island to start this bar —
+# so under this bar treetab and max were the same thing with two names.
+# Reported as "the tree layout is not working in the qtile-like bar".
+#
+# It is started as a SECOND ENTRY POINT into the island's own config directory
+# rather than reimplemented here. That file's header records why the obvious
+# alternative — importing the component into the topbar's config — is not
+# possible: Quickshell's scanner refuses a module path outside the config
+# folder, symlink or not.
+#
+# Idempotent, and matched on the argv list rather than with `pgrep -f`, which
+# would match this script's own command line — the trap in NEXT-SESSION.md's
+# RULES. bar-switch stops it when the island comes back, since the island
+# draws its own and two would stack two exclusive zones.
+TREETAB_ENTRY="${TREETAB_ENTRY:-$HOME/.config/quickshell/tide-island-fork/treetab.qml}"
+
+treetab_running() {
+  ps -eo args= | awk -v e="$TREETAB_ENTRY" '$0 ~ ("quickshell -p " e) && !/awk/ {found=1} END {exit !found}'
+}
+
+if [[ -f "$TREETAB_ENTRY" ]] && ! treetab_running; then
+  setsid -f quickshell -p "$TREETAB_ENTRY" >/dev/null 2>&1 || true
+fi
+
 # NOT `pkill dunst` — deliberately, and the difference from island.sh matters.
 # The island SERVES notifications, so it has to clear dunst off the bus name
 # before starting. This bar serves nothing: with the island down and the
