@@ -102,4 +102,44 @@ export MALLOC_CONF="${MALLOC_CONF:-narenas:2,background_thread:true,dirty_decay_
 # this script produces owner=quickshell, dunst gone, in one step.
 pkill -x dunst 2>/dev/null || true
 
+# ---- THE SESSION SURFACES BELONG TO WHICHEVER SHELL IS UP ----
+#
+# treetab.qml and popups.qml are SESSION surfaces, not bar widgets: the island
+# hosts them when it is up, and topbar.sh starts them as standalone processes
+# when it is not. bar-switch's `topbar_stop` therefore stops both before
+# starting the island, and NEXT-SESSION.md says why in as many words — "or the
+# island would come back to a second sidebar and a second set of popups
+# holding an exclusive keyboard grab".
+#
+# That rule lived only in bar-switch, so it held only for the ONE route that
+# goes through bar-switch. Starting the island any other way — by hand, from a
+# test harness, from this script — left the standalone pair running and drew
+# TWO TreeTab sidebars side by side, each with its own stack list. Reported
+# with a screenshot, and produced by this session's own sweep tooling, which
+# tells you to start the island beside the topbar.
+#
+# So the invariant moves to the thing that can always enforce it: whoever
+# starts the island stops them. Idempotent — nothing to stop is the common
+# case — and it does NOT stop the topbar itself, because running the island
+# beside the topbar deliberately IS supported (that is how a sweep avoids
+# leaving the session with no bar). It is only the duplicated surfaces that
+# cannot coexist.
+#
+# Matched on the `-p` ARGUMENT, never with `pkill -f`: two entry points live
+# inside this directory, and a substring match on the directory name would
+# take the island down with them. bar-switch's own matcher records the bug
+# that taught this — `bar-switch island` once saw popups.qml, decided the
+# island was up, stopped the topbar and left the desktop with no bar.
+stop_standalone_surface() {
+    local entry="$1" pid
+    pid="$(ps -eo pid=,args= | awk -v want="$entry" '
+        !/awk/ { for (i = 1; i < NF; i++)
+                     if ($i == "-p" && $(i + 1) == want) { print $1; exit } }')"
+    [[ -n "$pid" ]] || return 0
+    kill "$pid" 2>/dev/null || true
+}
+
+stop_standalone_surface "$FORK_DIR/treetab.qml"
+stop_standalone_surface "$FORK_DIR/popups.qml"
+
 exec quickshell -p "$FORK_DIR" "$@"
