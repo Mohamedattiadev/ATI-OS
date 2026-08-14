@@ -142,12 +142,115 @@ if [ "$count" -eq 0 ]; then
         batch="dispatch movetoworkspacesilent special:$name,address:$addr"
         batch="$batch ; dispatch setfloating address:$addr"
         batch="$batch ; dispatch resizewindowpixel exact $w $h,address:$addr"
-        # movewindowpixel is monitor-relative, same as the rule form —
-        # see the note above where x and y are computed.
-        batch="$batch ; dispatch movewindowpixel exact $x $y,address:$addr"
         [ -n "$opacity" ] && batch="$batch ; dispatch setprop address:$addr alpha $opacity"
         hyprctl --batch "$batch" >/dev/null
+
+        #  ---- THE MOVE COMES AFTER THE RESIZE, NOT INSIDE THE BATCH ----
+        #
+        #  A window with a minimum size does not get the height we asked
+        #  for, which is its right — but the CLAMP RECENTRES it, and inside
+        #  a batch that happens after the move, so the move is undone by the
+        #  resize that precedes it.
+        #
+        #  Measured with qalculate-gtk, whose minimum height is 550 against
+        #  the 461 this pad asks for:
+        #
+        #      requested   820x461 @273,77
+        #      batch gave  820x550 @273,33     <- y is 77 - (550-461)/2
+        #      move again  820x550 @273,77     correct
+        #
+        #  The 44 px is exactly half the overshoot, which is what named it:
+        #  the window was not "placed wrong", it was placed right and then
+        #  grown symmetrically about its own centre.
+        #
+        #  kitty and the browser pads never showed this because they accept
+        #  the requested height, so the recentring is zero. It is only
+        #  visible on a pad whose app refuses the size.
+        #
+        #  movewindowpixel is monitor-relative, same as the rule form — see
+        #  the note above where x and y are computed.
+        hyprctl dispatch movewindowpixel exact $x $y,address:$addr >/dev/null
+
+        #  ---- AND AGAIN LATER, BECAUSE THE APP MOVES IT AFTER WE DO ----
+        #
+        #  The placement above is correct and then stops being correct. The
+        #  timeline, sampled every 150 ms from spawn:
+        #
+        #      t=0.90s   820x461 @273,77     our rules, exactly right
+        #      t=1.35s   820x550 @273,33     qalculate-gtk resizes ITSELF
+        #      t=3.90s   820x550 @273,33     and stays there
+        #
+        #  So this is not the exec rules failing and not the batch racing.
+        #  The app asks for a taller window half a second after mapping,
+        #  Hyprland honours it, and a floating window grown about its own
+        #  centre drifts up by half the overshoot — exactly the 44 px
+        #  between y=77 and y=33.
+        #
+        #  Two fixes were measured and rejected before this one. Moving
+        #  after the batch instead of inside it: no effect. Move-verify-
+        #  remove up to four times: no effect either, and the reason is
+        #  worth keeping — it SUCCEEDS, reads back @273,77, and breaks,
+        #  and the app resizes after its last read. A verify loop cannot
+        #  catch a change that happens after it stops looking.
+        #
+        #  Waiting for the size to settle before the first move would work,
+        #  but every pad would pay ~1 s of first-launch latency for one
+        #  app's habit. So the correction is BACKGROUNDED: the pad appears
+        #  immediately, and a watcher re-asserts the position once the size
+        #  has held steady for three reads. For kitty and the browsers,
+        #  which never resize themselves, it confirms and exits.
+        (
+            prev=""; stable=0
+            for _ in $(seq 1 30); do
+                sleep 0.2
+                cur=$(hyprctl clients -j | jq -r --arg a "$addr" \
+                    '.[] | select(.address == $a) | "\(.size[0])x\(.size[1])"')
+                [ -z "$cur" ] && exit 0        # window went away; nothing to fix
+                if [ "$cur" = "$prev" ]; then
+                    stable=$((stable + 1))
+                else
+                    stable=0
+                fi
+                prev="$cur"
+                [ "$stable" -ge 3 ] && break
+            done
+            read -r ax ay < <(hyprctl clients -j | jq -r --arg a "$addr" \
+                '.[] | select(.address == $a) | "\(.at[0]) \(.at[1])"')
+            if [ "${ax:-}" != "$x" ] || [ "${ay:-}" != "$y" ]; then
+                hyprctl dispatch movewindowpixel exact $x $y,address:$addr >/dev/null
+            fi
+        ) >/dev/null 2>&1 &
     fi
 fi
 
-hyprctl dispatch togglespecialworkspace "$name"
+#  ---- SHOW, DO NOT TOGGLE, WHEN WE JUST SPAWNED ----
+#
+#  `togglespecialworkspace` was called unconditionally, including on the
+#  path that has only just created the window. That path KNOWS the end
+#  state it wants — the pad you pressed the key for, on screen — and asking
+#  for a toggle instead of a state is how it goes out of phase.
+#
+#  Seen live, and intermittently, which is what makes it worth a guard
+#  rather than a retry: first launch of `calc` while `term2` was already
+#  open left term2 on screen and calc hidden, so the key looked dead and a
+#  second press was needed. It did not reproduce on the next attempt, and
+#  it never reproduces with kitty — the pads whose app maps in under
+#  250 ms always win the race. Hyprland's own semantics are not at fault:
+#  toggling B while A is open switches to B, verified directly.
+#
+#  So the spawn path asserts the state instead of flipping it. The
+#  no-spawn path is a real toggle and stays one — that is the whole
+#  behaviour of a scratchpad key.
+visible=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .specialWorkspace.name // ""')
+
+#  An `&&` chain rather than an `if` would be shorter and wrong: under
+#  `set -e` a false test as the script's last statement leaves a non-zero
+#  exit code, and this script is run from a keybind where that is invisible
+#  until something downstream starts checking it.
+if [ "$count" -eq 0 ]; then
+    if [ "$visible" != "special:$name" ]; then
+        hyprctl dispatch togglespecialworkspace "$name"
+    fi
+else
+    hyprctl dispatch togglespecialworkspace "$name"
+fi
