@@ -1488,6 +1488,29 @@ fi
 # silent no-op that looks exactly like the bug it fixes.
 printf '%s\n' 'THEME_APPLY_VISIBLE_DONE'
 
+# ------------------------------------------------------------
+#  The theme's wallpaper (ask #5)
+# ------------------------------------------------------------
+#  AFTER the marker, deliberately. The island freezes the screen until it
+#  sees THEME_APPLY_VISIBLE_DONE, and awww's wave transition takes about a
+#  second — putting the wallpaper change ahead of the marker would add all
+#  of it to a freeze that is already the subject of its own open bug. Here
+#  the island unfreezes first and the wallpaper waves in behind it, which
+#  is also what it looks like when you pick a wallpaper by hand.
+#
+#  NOT for wal. In wal mode the wallpaper is the INPUT to the palette, so
+#  a per-theme wallpaper is meaningless there — and this is also one of
+#  the two guards against a loop, since wallpaper-set.sh re-runs
+#  `theme-apply wal` after a pick. The other guard is that theme-wallpaper
+#  pokes the daemon itself and never calls wallpaper-set.sh.
+#
+#  `|| true` because a theme with no wallpaper must not fail a theme
+#  change, and because this is the shared script — a qtile session with no
+#  xwallpaper should still get its colours.
+if [ "$MODE" != "wal" ] && command -v theme-wallpaper >/dev/null 2>&1; then
+  theme-wallpaper apply "$MODE" || true
+fi
+
 # Resolve the four palette roles (background / foreground / alt-surface /
 # accent) for the active $MODE, as four space-separated #rrggbb values.
 #

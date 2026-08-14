@@ -106,8 +106,37 @@ ln -sfn -- "$img" "$WALL_LINK"
 #  every boot. This script is the "the user picked a new wallpaper" entry
 #  point, which is exactly the event that should re-derive.
 #
-#  No recursion: theme-apply never calls back into either wallpaper script.
+#  No recursion, and this now needs saying rather than observing:
+#  theme-apply DOES set a wallpaper as of ask #5, but it does it through
+#  `theme-wallpaper apply`, which pokes awww/xwallpaper directly and never
+#  calls back into either of these scripts. The second guard is that
+#  theme-apply skips the wallpaper entirely in wal mode, which is the only
+#  mode in which the branch below re-enters theme-apply.
 MODE_FILE="$HOME/.cache/qtile/theme_mode"
+
+#  ---- A MANUAL PICK REBINDS THE CURRENT THEME (ask #5) ----
+#
+#  "Each theme has a default wallpaper, applied on theme change, and a
+#  manual wallpaper choice still sticks." Those two only coexist under one
+#  reading, which is the one the user chose: picking a wallpaper while a
+#  named theme is active makes it THAT THEME'S wallpaper from then on.
+#
+#  Otherwise the next `theme-apply synthwave` would overwrite a choice made
+#  thirty seconds earlier and the pick would not have stuck at all.
+#
+#  Not in wal mode: there the wallpaper drives the palette rather than
+#  belonging to it, so there is no theme to bind it to. `theme-wallpaper
+#  forget <theme>` puts the generated default back.
+#
+#  Non-fatal, like the re-derive below and for the same reason — the
+#  wallpaper genuinely was applied by this point, and the island reads
+#  this script's exit code to decide whether to report "applied".
+mode="$(cat "$MODE_FILE" 2>/dev/null || true)"
+if [ -n "$mode" ] && [ "$mode" != "wal" ] && command -v theme-wallpaper >/dev/null 2>&1; then
+    theme-wallpaper bind "$mode" "$img" \
+        || echo "wallpaper-set: applied, but could not bind it to theme $mode" >&2
+fi
+
 if [ -r "$MODE_FILE" ] && [ "$(cat "$MODE_FILE" 2>/dev/null)" = "wal" ]; then
     # The wallpaper is already set and recorded by this point, so a
     # theme-apply failure must not fail this script: the island's picker
