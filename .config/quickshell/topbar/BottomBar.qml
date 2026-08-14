@@ -48,6 +48,18 @@ Item {
         height: root.height
         spacing: 0
 
+        // ---- THE LOGO HAS A DIFFERENT MAP ON THIS BAR ----
+        //
+        // It was the top bar's, copied: L docs, M terminal, R launcher. That
+        // is main_icon_chip. THIS one is main_icon_chip_nu and config.py gives
+        // it two callbacks and the opposite sense —
+        //
+        //     "Button1": open_launcher     "Button3": open_terminal
+        //
+        // which its own tooltip states: "Arch menu · L-click → launcher ·
+        // R-click → terminal", against the top bar's "L-click → terminal ·
+        // R-click → launcher". Two bars, two habits, and the pair of tooltips
+        // is what makes the difference deliberate rather than a slip.
         BarText {
             text: String.fromCodePoint(0xF0570)      // ARCH_ICON_MAIN
             pixelSize: Metrics.s(19)
@@ -55,9 +67,10 @@ Item {
             colour: BarTheme.purple                  // colors[7]
             iconFont: true
             clickable: true
+            tip: "Arch menu \u00b7 L-click \u2192 launcher \u00b7 R-click \u2192 terminal"
+            hoverSink: root.sink
             onPressed: (b) => {
-                if (b === Qt.LeftButton) Quickshell.execDetached(["rofi_docs"]);
-                else if (b === Qt.MiddleButton) Quickshell.execDetached(["kitty"]);
+                if (b === Qt.RightButton) Quickshell.execDetached(["kitty"]);
                 else Quickshell.execDetached(["rofi", "-show", "drun", "-show-icons"]);
             }
         }
@@ -141,6 +154,15 @@ Item {
             pixelSize: Metrics.s(11)
             padding: 4
             colour: root.shell && root.shell.batteryLow ? BarTheme.red : BarTheme.blue
+        }
+        // The separator that goes WITH the battery, and only with it.
+        // config.py splices the pair in together and says why: "the separator
+        // goes with it, or a desktop draws two pipes with nothing between".
+        // This bar had the battery and not its pipe, so on a laptop the
+        // readouts ran together where qtile divides them.
+        BarText {
+            visible: UPower.displayDevice && UPower.displayDevice.isLaptopBattery
+            text: "|"; pixelSize: Metrics.s(14); padding: 4; colour: BarTheme.fg
         }
 
         BarText {

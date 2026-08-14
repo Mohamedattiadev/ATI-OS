@@ -175,6 +175,60 @@ Item {
         }
     }
 
+    // ---- urgent_text=colors[3], WHICH NOTHING WAS DRAWING ----
+    //
+    // The header lists urgent among the GroupBox's four colours and the
+    // delegate had three. qtile gets this for free — X11 windows set the
+    // urgency hint and the group knows — and Hyprland does not put it in
+    // `hyprctl workspaces` at all. The ONLY signal is the event socket's
+    //
+    //     urgent>><windowaddress>
+    //
+    // which names a WINDOW, so the workspace has to be looked up. Done on the
+    // event rather than polled: an urgency hint is rare and a poll for it
+    // would be a `hyprctl clients` every tick for something that happens twice
+    // a day.
+    //
+    // Cleared when the workspace is FOCUSED, which is what qtile does — the
+    // point of the mark is "something happened over there", and going there is
+    // the answer to it.
+    property var urgentIds: []
+
+    function markUrgent(id) {
+        if (root.urgentIds.indexOf(id) >= 0 || id === root.focusedId)
+            return;
+        const next = root.urgentIds.slice();
+        next.push(id);
+        root.urgentIds = next;
+    }
+
+    onFocusedIdChanged: {
+        const at = root.urgentIds.indexOf(root.focusedId);
+        if (at < 0)
+            return;
+        const next = root.urgentIds.slice();
+        next.splice(at, 1);
+        root.urgentIds = next;
+    }
+
+    Process {
+        id: urgentProc
+        property string address: ""
+        command: ["hyprctl", "-j", "clients"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    for (const c of JSON.parse(text)) {
+                        if (String(c.address) === urgentProc.address && c.workspace) {
+                            root.markUrgent(c.workspace.id);
+                            return;
+                        }
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+
     Process {
         id: activeProc
         command: ["hyprctl", "-j", "activeworkspace"]
@@ -208,8 +262,18 @@ Item {
             // `closewindow` matter as much as the workspace ones, because the
             // window COUNT is what decides whether a workspace is drawn at all.
             const n = String(event.name);
+            if (n === "urgent") {
+                // The payload is the window address, with no 0x prefix in the
+                // event and WITH one in `hyprctl clients` — normalised here
+                // rather than at the comparison, so the lookup below reads as
+                // an equality and not as a string puzzle.
+                const addr = String(event.data || "").trim();
+                urgentProc.address = addr.indexOf("0x") === 0 ? addr : "0x" + addr;
+                urgentProc.running = true;
+                return;
+            }
             if (n.indexOf("workspace") >= 0 || n.indexOf("window") >= 0
-                    || n === "urgent" || n === "monitoradded" || n === "monitorremoved")
+                    || n === "monitoradded" || n === "monitorremoved")
                 debounce.restart();
         }
     }
@@ -237,7 +301,10 @@ Item {
                 // not by `id > 0` here, which also swallowed "S": a named
                 // workspace in Hyprland is negative too (S is -1337), so the
                 // sign test could not tell a group from a scratchpad.
+                // hide_unused, plus the one exception qtile makes: an
+                // urgent group is drawn whether or not you have been there.
                 visible: populated || focused
+                    || root.urgentIds.indexOf(modelData.id) >= 0
                 width: visible ? label.implicitWidth + Metrics.s(8) * 2 : 0
                 // root.height, NOT parent.height. The parent is a Row, and a
                 // Row derives its height FROM its children — so a child
@@ -264,7 +331,13 @@ Item {
                     // the same size as the digits.
                     font.pixelSize: root.labelPixelSize
                     renderType: Text.NativeRendering
-                    color: wsItem.focused ? BarTheme.purple
+                    // urgent OUTRANKS the rest, which is the order qtile
+                    // resolves them in: an urgent group is red even while it
+                    // is populated, because the whole point is that it is the
+                    // one to look at.
+                    color: root.urgentIds.indexOf(wsItem.modelData.id) >= 0
+                        ? BarTheme.red
+                        : wsItem.focused ? BarTheme.purple
                         : wsItem.populated ? BarTheme.cyan
                         : BarTheme.fg
                 }

@@ -511,7 +511,7 @@ ShellRoot {
                             }
                             Chip {
                                 text: shellRoot.diskText
-                                tooltip: "Disk free \u00b7 click \u2192 notify"
+                                tooltip: "Disk free (/ + /home) \u00b7 click \u2192 notify"
                                 hoverSink: hoverSink
                                 foreground: BarTheme.fg
                                 padding: 11
@@ -520,6 +520,30 @@ ShellRoot {
                                 height: parent.height
                                 onClicked: Quickshell.execDetached(["disk_notify"])
                             }
+                            // ---- w_volume IS NOT INERT ----
+                            //
+                            // It was drawn as a readout, on the grounds that
+                            // config.py sets no mouse_callbacks on it. That is
+                            // true and it does not mean what the comment here
+                            // said. Asked of the installed libqtile rather than
+                            // of the config:
+                            //
+                            //     Volume.__init__ -> add_callbacks({
+                            //       "Button1": mute, "Button3": run_app,
+                            //       "Button4": increase_vol,
+                            //       "Button5": decrease_vol })
+                            //
+                            // The widget ships its own, so an empty
+                            // mouse_callbacks keeps the defaults. Its own
+                            // tooltip in TOOLTIP_BY_NAME said so all along —
+                            // "Volume · scroll to change" — and this chip did
+                            // not do it.
+                            //
+                            // wpctl, not pactl: the topbar's readout above and
+                            // the media keys both use it, and two tools for one
+                            // number is how they come to disagree. -l 1.5 is
+                            // the same 150% ceiling submaps.conf's media mode
+                            // uses, itself qtile's min(150, ...).
                             Chip {
                                 text: shellRoot.volumeText
                                 tooltip: "Volume \u00b7 scroll to change"
@@ -527,9 +551,20 @@ ShellRoot {
                                 foreground: BarTheme.purple
                                 padding: 11
                                 fontPixelSize: Metrics.s(10)
-                                // Inert, as config.py's w_volume is: it has no
-                                // mouse_callbacks either.
+                                clickable: true
+                                scrollable: true
                                 height: parent.height
+                                onClicked: (b) => {
+                                    if (b === Qt.RightButton)
+                                        Quickshell.execDetached(["pavucontrol"]);
+                                    else if (b === Qt.LeftButton)
+                                        Quickshell.execDetached(["wpctl", "set-mute",
+                                            "@DEFAULT_AUDIO_SINK@", "toggle"]);
+                                }
+                                onScrolled: (d) => Quickshell.execDetached(
+                                    ["wpctl", "set-volume", "-l", "1.5",
+                                     "@DEFAULT_AUDIO_SINK@",
+                                     d > 0 ? "5%+" : "5%-"])
                             }
                         }
                     }
@@ -537,7 +572,7 @@ ShellRoot {
                     // tooltip_widgetbox — the lamp.
                     Chip {
                         text: String.fromCodePoint(0xF0336)
-                        tooltip: "Tips \u00b7 click \u2192 toggle onboarding"
+                        tooltip: "Tips (\ud83d\udca1) \u00b7 click \u2192 toggle onboarding"
                         hoverSink: hoverSink
                         foreground: BarTheme.fg          // colors[1]
                         padding: 11
@@ -551,17 +586,41 @@ ShellRoot {
                              + "|| eww open onboarding-welcome"])
                     }
 
+                    // w_mpris. FIVE buttons in config.py, not two, and one of
+                    // them was backwards here: Button3 is `playerctl previous`
+                    // and this chip ran `next` on it. TOOLTIP_BY_NAME spells
+                    // the whole map out and is copied verbatim, which is how
+                    // the mismatch showed.
+                    //
+                    // Button2 is `toggle_player` — Mpris2's own method for
+                    // cycling between players, which has no playerctl
+                    // equivalent; the tooltip calls it "album art" because
+                    // that is what the widget does with a second press there.
+                    // `playerctl -a` shifting to the next player is the
+                    // nearest honest thing, and it is what the island's own
+                    // media controls use.
                     Chip {
                         text: shellRoot.mprisText
-                        tooltip: "L: play/pause \u00b7 R: next"
+                        tooltip: "L: play/pause \u00b7 M: album art \u00b7 R: prev \u00b7 scroll: next/prev"
                         hoverSink: hoverSink
                         foreground: BarTheme.green       // colors[4]
                         padding: 10
                         fontPixelSize: Metrics.s(15)
                         clickable: true
+                        scrollable: true
                         height: parent.height
-                        onClicked: (b) => Quickshell.execDetached(
-                            ["playerctl", b === Qt.RightButton ? "next" : "play-pause"])
+                        onClicked: (b) => {
+                            if (b === Qt.RightButton)
+                                Quickshell.execDetached(["playerctl", "previous"]);
+                            else if (b === Qt.MiddleButton)
+                                Quickshell.execDetached(["playerctl", "shift"]);
+                            else
+                                Quickshell.execDetached(["playerctl", "play-pause"]);
+                        }
+                        // Button4 next, Button5 previous — config.py's, and
+                        // note they are NOT symmetrical with the click map.
+                        onScrolled: (d) => Quickshell.execDetached(
+                            ["playerctl", d > 0 ? "next" : "previous"])
                     }
 
                     WidgetBox {

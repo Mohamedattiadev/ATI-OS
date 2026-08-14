@@ -44,6 +44,27 @@ Item {
 
     signal clicked(int button)
 
+    // ---- SCROLL, WHICH TWO OF qtile's WIDGETS HAVE WITHOUT SAYING SO ----
+    //
+    // config.py sets no mouse_callbacks on w_volume, and this bar read that as
+    // "the widget is inert" and wrote the comment down. Wrong, and wrong in
+    // the way the RULES warn about — the claim was never measured. Asked of
+    // the installed libqtile instead of the config:
+    //
+    //     Volume.__init__ -> add_callbacks({
+    //         "Button1": self.mute,        "Button3": self.run_app,
+    //         "Button4": self.increase_vol, "Button5": self.decrease_vol })
+    //
+    // The widget ships its own, so an empty mouse_callbacks means "keep the
+    // defaults" rather than "do nothing" — and the tooltip TOOLTIP_BY_NAME
+    // gives it, "Volume · scroll to change", was describing behaviour this
+    // bar did not have. Mpris2 is the same shape: config.py maps Button4 and
+    // Button5 on it explicitly.
+    //
+    // +1 for a scroll UP, -1 for down.
+    signal scrolled(int direction)
+    property bool scrollable: false
+
     // qtile's TOOLTIP_BY_NAME string for this chip. Empty means no tooltip,
     // which is what most of the bar's own widgets have.
     property string tooltip: ""
@@ -193,7 +214,7 @@ Item {
         hoverEnabled: root.tooltip !== ""
         onEntered: if (root.hoverSink) root.hoverSink.enter(root, root.tooltip)
         onExited: if (root.hoverSink) root.hoverSink.exit(root)
-        enabled: root.clickable || hoverEnabled
+        enabled: root.clickable || hoverEnabled || root.scrollable
         // A chip with only a tooltip must not swallow clicks meant for the
         // desktop behind it.
         acceptedButtons: root.clickable
@@ -201,5 +222,23 @@ Item {
             : Qt.NoButton
         cursorShape: root.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: (event) => root.clicked(event.button)
+
+        // Only where a chip asked for it. A wheel handler that is always
+        // present eats scroll events over the bar — the widgets that do NOT
+        // respond to the wheel in qtile pass it through, and a bar that
+        // swallows every scroll is a bar you cannot scroll a workspace on.
+        onWheel: (wheel) => {
+            if (!root.scrollable) {
+                wheel.accepted = false;
+                return;
+            }
+            // angleDelta rather than pixelDelta: a mouse wheel reports in
+            // 120ths of a degree and reports nothing at all in pixels, so
+            // pixelDelta is zero on exactly the device this is for.
+            const dy = wheel.angleDelta.y;
+            if (dy === 0)
+                return;
+            root.scrolled(dy > 0 ? 1 : -1);
+        }
     }
 }
