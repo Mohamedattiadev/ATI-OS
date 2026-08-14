@@ -260,7 +260,36 @@ PanelWindow {
         borderFocusProcess.run(false);
     }
 
-    exclusiveZone: Math.ceil(root.baseExclusiveZone * root.exclusiveZoneProgress)
+    // ---- THE ZONE MOVED OUT TO A SEPARATE SURFACE ----
+    //
+    // Reported: the island "should not move to left or right for the stack of
+    // the tree layout". It did, and the measurement is unambiguous — with the
+    // TreeTab sidebar open the island came out
+    //
+    //     1186x58+180+0     instead of     1366x58+0+0
+    //
+    // narrowed AND pushed, so the capsule, which is centred inside the window,
+    // moved 90 px right with it.
+    //
+    // The sidebar is a Bottom-layer surface with a 180 px exclusiveZone, and
+    // layer-shell computes the usable area across ALL layers in order — so a
+    // Bottom surface's zone shrinks the area a Top surface is then placed in.
+    // Nothing about the island was wrong; it was being laid out inside
+    // somebody else's reservation, exactly as asked.
+    //
+    // ExclusionMode.Ignore fixes the position and costs the reservation:
+    // "ignore other windows' zones" and "set none of your own" are one switch
+    // in layer-shell, not two. So the zone this window WANTS is published here
+    // and a separate invisible surface in shell.qml holds it. That surface is
+    // free to be pushed around by the sidebar, because a zone is a scalar and
+    // nothing is drawn in it.
+    //
+    // It stays a live expression rather than a constant: the auto-hide
+    // animates exclusiveZoneProgress, and the reserver has to follow it or the
+    // windows below would not move as the island hides.
+    readonly property real desiredExclusiveZone:
+        Math.ceil(root.baseExclusiveZone * root.exclusiveZoneProgress)
+    exclusionMode: ExclusionMode.Ignore
     // ---- Top WHILE RESTING, Overlay WHILE SHOWING ANYTHING ----
     //
     // Hyprland draws a fullscreen window ABOVE the Top layer and BELOW the

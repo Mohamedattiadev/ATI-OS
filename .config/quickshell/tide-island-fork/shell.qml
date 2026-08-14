@@ -1267,6 +1267,54 @@ Scope {
         }
     }
 
+    // ---- THE ISLAND'S EXCLUSIVE ZONE, ON ITS OWN SURFACE ----
+    //
+    // FORK. The island window is ExclusionMode.Ignore now, so that the TreeTab
+    // sidebar's 180 px zone cannot narrow it and shove it 90 px right — see
+    // the long note on `desiredExclusiveZone` in DynamicIslandWindow.qml for
+    // the measurement. Ignoring other zones and setting none of your own is
+    // ONE switch in layer-shell, so the reservation has to live somewhere
+    // else, and this is it.
+    //
+    // Invisible, one pixel tall, no input. It is allowed to be pushed around
+    // by the sidebar exactly as the island used to be, because a zone is a
+    // scalar: being placed at x=180 does not change how many pixels it holds
+    // off the top.
+    //
+    // Matched to its island BY SCREEN rather than by index. Two Variants over
+    // the same model give no index and no guarantee of construction order, and
+    // an off-by-one here would reserve the wrong output's height on a
+    // multi-monitor machine — which is the sort of bug that only appears when
+    // someone plugs in a projector.
+    Variants {
+        model: Quickshell.screens
+
+        PanelWindow {
+            id: islandReserver
+            required property var modelData
+            screen: modelData
+
+            readonly property var island: {
+                const windows = shellRoot.islandWindows;
+                for (let i = 0; i < windows.length; i++)
+                    if (windows[i].screen === modelData)
+                        return windows[i];
+                return null;
+            }
+
+            anchors { top: true; left: true; right: true }
+            implicitHeight: 1
+            // Follows the island's animated zone rather than a constant: the
+            // auto-hide sweeps exclusiveZoneProgress, and the windows below
+            // have to move with it or the island hides behind them.
+            exclusiveZone: island ? island.desiredExclusiveZone : 0
+            color: "transparent"
+            // No input. Without this the strip eats every click along the very
+            // top edge of the screen.
+            mask: Region {}
+        }
+    }
+
     // ---- THE ISLAND, ONCE PER OUTPUT, ONCE PER BACKEND ----
     //
     // FORK: this was a single `Variants { DynamicIslandWindow { … } }`. It is

@@ -67,8 +67,28 @@ ShellRoot {
             // that the chips are painting before checking that it is mapped.
             color: "transparent"
 
-            // The bar reserves its own strip, as qtile's does.
-            exclusiveZone: Metrics.barHeight + Metrics.marginV * 2
+            // ---- IGNORE, AND A SEPARATE WINDOW TO DO THE RESERVING ----
+            //
+            // Reported: "the topbar is fixed in mid center, should not move to
+            // left or right for the stack of the tree layout".
+            //
+            // The TreeTab sidebar is a Bottom-layer surface with a 180 px
+            // exclusiveZone, and layer-shell computes the usable area across
+            // ALL layers in order — so a Bottom surface's zone shrinks the area
+            // a Top surface is then placed in. Measured with the sidebar open:
+            // this bar came out 1186x38+180+0 instead of 1366x38+0+0, i.e.
+            // narrowed AND pushed, and everything centred in it moved with it.
+            //
+            // ExclusionMode.Ignore fixes the position — measured, 1366x38+0+0
+            // with the sidebar still open — but it is BOTH halves of one
+            // switch: a window that ignores other zones also sets none of its
+            // own. Measured again: `hyprctl monitors` reserved dropped to the
+            // island's 33 alone, so windows would tile under this bar.
+            //
+            // Hence the reserver below. Splitting the two jobs across two
+            // surfaces is the only way to have them separately, because
+            // layer-shell has no "ignore theirs, keep mine".
+            exclusionMode: ExclusionMode.Ignore
 
             // ---- THE TASKLIST CAP ----
             //
@@ -378,6 +398,34 @@ ShellRoot {
                     }
                 }
             }
+        }
+    }
+
+    // ---- THE RESERVER ----
+    //
+    // An invisible, input-transparent strip whose ONLY job is to hold the
+    // exclusive zone the bar above gave up. It is allowed to be pushed around
+    // by the TreeTab sidebar exactly as the bar used to be, because nothing
+    // is drawn in it and a zone is a scalar — being placed at x=180 does not
+    // change how many pixels it reserves off the top.
+    //
+    // 1 px tall rather than 0: a zero-size surface is not guaranteed to be
+    // mapped, and an unmapped surface reserves nothing.
+    Variants {
+        model: Quickshell.screens
+
+        PanelWindow {
+            required property var modelData
+            screen: modelData
+
+            anchors { top: true; left: true; right: true }
+            implicitHeight: 1
+            exclusiveZone: Metrics.barHeight + Metrics.marginV * 2
+            color: "transparent"
+            // No input at all. Without this the strip eats clicks along the
+            // very top edge of the screen — the same trap RingOsdWindow
+            // documents, in one pixel instead of a full screen.
+            mask: Region {}
         }
     }
 
