@@ -4,6 +4,12 @@
     ./uinput-key.py super+slash
     ./uinput-key.py alt+grave --hold 3
     ./uinput-key.py super+shift+z
+    ./uinput-key.py super+f12 escape n escape y      <- a SEQUENCE, one device
+
+Several combos are pressed in order on ONE device, with --gap seconds
+between them (0.35 by default). That is not a convenience: destroying the
+device resets an active submap, so two separate invocations test the second
+key against a submap the first one already threw away.
 
 The companion to uinput-click.py, and it exists for the same reason: a bind
 that cannot be pressed from a script is a bind whose bugs only the user can
@@ -80,20 +86,41 @@ def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
 
-    combo = [p.strip().lower() for p in sys.argv[1].split("+") if p.strip()]
     hold = 0.0
-    if "--hold" in sys.argv:
-        hold = float(sys.argv[sys.argv.index("--hold") + 1])
+    gap = 0.35
+    argv = sys.argv[1:]
+    words = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--hold":
+            hold = float(argv[i + 1]); i += 2; continue
+        if argv[i] == "--gap":
+            gap = float(argv[i + 1]); i += 2; continue
+        words.append(argv[i]); i += 1
+    if not words:
+        sys.exit(__doc__)
 
-    unknown = [k for k in combo if k not in KEYS]
-    if unknown:
-        sys.exit("unknown key(s): %s" % ", ".join(unknown))
-
-    mods = [KEYS[k] for k in combo if k in MODIFIERS]
-    plain = [KEYS[k] for k in combo if k not in MODIFIERS]
-    if len(plain) != 1:
-        sys.exit("name exactly one non-modifier key, got %d" % len(plain))
-    key = plain[0]
+    # ---- A SEQUENCE IS ONE DEVICE, AND THAT IS THE WHOLE POINT ----
+    #
+    # Naming several combos presses them in order WITHOUT destroying the
+    # device in between. A submap chord cannot be tested any other way: this
+    # file's own header records that destroying the device resets an active
+    # submap, so `uinput-key.py escape` followed by `uinput-key.py y` tests
+    # the second key against a submap the FIRST invocation already threw away.
+    # Every multi-step chord in this desktop — passthrough's y/n/ESC confirm,
+    # the rofi chord's two levels — was undrivable until this existed.
+    combos = []
+    for word in words:
+        combo = [p.strip().lower() for p in word.split("+") if p.strip()]
+        unknown = [k for k in combo if k not in KEYS]
+        if unknown:
+            sys.exit("unknown key(s): %s" % ", ".join(unknown))
+        plain = [KEYS[k] for k in combo if k not in MODIFIERS]
+        if len(plain) != 1:
+            sys.exit("name exactly one non-modifier key in %r, got %d"
+                     % (word, len(plain)))
+        combos.append(([KEYS[k] for k in combo if k in MODIFIERS],
+                       plain[0], "+".join(combo)))
 
     fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
     fcntl.ioctl(fd, UI_SET_EVBIT, EV_KEY)
@@ -113,19 +140,23 @@ def main():
     # the press is silently discarded.
     time.sleep(3.5)
 
-    for m in mods:
-        emit(fd, EV_KEY, m, 1)
-    emit(fd, EV_SYN, SYN_REPORT, 0)
-    time.sleep(0.05)
-    emit(fd, EV_KEY, key, 1); emit(fd, EV_SYN, SYN_REPORT, 0)
-    time.sleep(0.08)
-    emit(fd, EV_KEY, key, 0); emit(fd, EV_SYN, SYN_REPORT, 0)
-    time.sleep(0.05)
-    for m in reversed(mods):
-        emit(fd, EV_KEY, m, 0)
-    emit(fd, EV_SYN, SYN_REPORT, 0)
-
-    print("pressed", "+".join(combo), flush=True)
+    for index, (mods, key, label) in enumerate(combos):
+        if index:
+            # Between presses, not before the first: the 3.5 s settle above
+            # already covers that one.
+            time.sleep(gap)
+        for m in mods:
+            emit(fd, EV_KEY, m, 1)
+        emit(fd, EV_SYN, SYN_REPORT, 0)
+        time.sleep(0.05)
+        emit(fd, EV_KEY, key, 1); emit(fd, EV_SYN, SYN_REPORT, 0)
+        time.sleep(0.08)
+        emit(fd, EV_KEY, key, 0); emit(fd, EV_SYN, SYN_REPORT, 0)
+        time.sleep(0.05)
+        for m in reversed(mods):
+            emit(fd, EV_KEY, m, 0)
+        emit(fd, EV_SYN, SYN_REPORT, 0)
+        print("pressed", label, flush=True)
 
     # Held OPEN, not slept on and then destroyed: destroying the device is
     # itself an event the compositor reacts to, and for a submap that reaction

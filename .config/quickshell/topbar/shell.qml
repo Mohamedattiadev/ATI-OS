@@ -1037,7 +1037,20 @@ ShellRoot {
                          text: "   CHEATSHEET : k , v , f , j/k scroll , TAB , ESC ",
                          colour: BarTheme.red },
         "passthrough": { icon: 0, text: "   PASSTHROUGH : ESC",
-                         colour: BarTheme.cyan }
+                         colour: BarTheme.cyan },
+        // CHORD_CHIP_LABELS' PASSTHROUGH-CONFIRM, and CHORD_CHIP_COLORS gives
+        // it colors[1] — commented there as "urgent/warm — it is asking to
+        // quit". colors[1] is the FOREGROUND colour, so the plate goes bright
+        // and the text on it goes to the background: the one chord whose chip
+        // inverts the bar, which is what makes a question look like a
+        // question. Reproduced rather than promoted to red, which is what it
+        // looks like it should be and is not what qtile draws.
+        //
+        // No glyph, for the same byte-level reason lang and passthrough have
+        // none: the entry begins with three plain spaces in config.py.
+        "passthrough-confirm": { icon: 0,
+                         text: "   EXIT PASSTHROUGH ? y , n , ESC",
+                         colour: BarTheme.fg }
     })
     property string submap: ""
     readonly property var submapEntry: submapMap[shellRoot.submap] || null
