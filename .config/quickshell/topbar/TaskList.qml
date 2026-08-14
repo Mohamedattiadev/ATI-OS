@@ -2,6 +2,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 
+import "TaskName.js" as TaskName
+
 //
 // qtile's TaskList, on Hyprland toplevels.
 //
@@ -12,7 +14,31 @@ import Quickshell.Hyprland
 // characters cost width the name then lost to truncation. Focus already reads
 // from the accent colour and the bold.
 //
-// font="JetBrainsMono Nerd Font", fontsize=_s(10), icon_size=_s(16).
+// THAT ARGUMENT WAS RIGHT ABOUT THE LETTERS AND WRONG ABOUT THE REST, which
+// is why the widget was reported as "not behaving like the real qtile".
+// Extracted from config.py's AST rather than read off it, `TaskList(...)`
+// carries FIVE markup strings and a text parser:
+//
+//     markup_normal            bg colors[2] 44   fg colors[1]
+//     markup_focused           bg colors[0] EE   fg colors[6]  bold
+//     markup_floating          bg colors[0] CC   fg colors[5]  + U+F0294
+//     markup_focused_floating  bg colors[0] EE   fg colors[5]  bold + U+F0294
+//     markup_minimized         bg colors[0] 66   fg colors[3]  + U+F05B0
+//     parse_text               parse_task_name
+//
+// So state is carried by colour AND a background AND, for two of the five, a
+// glyph — and none of the backgrounds were being drawn. Dropping the F/V
+// letters did not license dropping the plates: they are what makes the
+// focused window findable at a glance in a row of same-coloured names.
+//
+// THE GLYPH COMES FROM THE MARKUP, NOT FROM txt_floating. Checked in the
+// installed libqtile, because config.py sets both and only one is used:
+// `get_taskname()` builds `state` out of txt_* and then DISCARDS it whenever
+// a markup string exists, which here is always. So the floating icon is the
+// one inside markup_floating, and a focused non-floating window gets none.
+//
+// font="JetBrainsMono Nerd Font", fontsize=_s(10), icon_size=_s(16),
+// max_title_width=_s(115), spacing=2, margin_x=_s(3), padding_x=3.
 //
 // Uses `Hyprland.toplevels` and NOT `ToplevelManager.toplevels`, which is the
 // opposite choice from Workspaces.qml beside it, and both were measured:
@@ -68,10 +94,13 @@ Item {
         onTriggered: Hyprland.refreshToplevels()
     }
 
+    // `spacing=2`, between task boxes. margin_x=_s(3) is the margin INSIDE
+    // each box and is the delegate's left inset below, so the two are not
+    // added together here.
     Row {
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 0
+        spacing: 2
 
         Repeater {
             model: root.entries
@@ -85,19 +114,67 @@ Item {
                     return a && a.lastIpcObject
                         && a.lastIpcObject.address === modelData.address;
                 }
+                readonly property bool floating: entry.modelData.floating === true
+                // Hyprland's `fullscreen` is 1 for MAXIMIZE and 2 for real
+                // fullscreen, which is the distinction qtile draws between
+                // maximized and not. config.py sets no markup_maximized, and
+                // libqtile's fallback for a null markup with markup=True is
+                // the bare "{}" — so a maximized window deliberately gets NO
+                // plate. Reproduced rather than improved.
+                readonly property bool maximized: entry.modelData.fullscreen === 1
+                // No Hyprland equivalent, so this state is unreachable today
+                // and the branch is here to be correct when it is not: the
+                // minimize this bar would need is a special workspace, which
+                // is how sum-toggle.sh already spells it, and wiring that up
+                // is the click behaviour's problem rather than the paint's.
+                readonly property bool minimized: false
 
-                // Each entry is capped so one window with a very long title
-                // cannot eat the whole list. qtile's TaskList divides its
-                // assigned width between entries; this is the same idea as a
-                // per-entry maximum.
-                width: Math.min(icon.width + Metrics.s(6) + title.implicitWidth
-                                + Metrics.s(14), Metrics.s(180))
+                // get_taskname()'s priority, top to bottom. Not a set of
+                // independent flags — a focused floating window takes ONE
+                // markup, not two.
+                readonly property string state:
+                    entry.minimized ? "minimized"
+                    : entry.maximized ? "maximized"
+                    : entry.focused ? (entry.floating ? "focusedFloating" : "focused")
+                    : entry.floating ? "floating" : "normal"
+
+                readonly property color plate:
+                      entry.state === "normal"   ? BarTheme.alpha(BarTheme.bgAlt, 0x44 / 255)
+                    : entry.state === "focused"  ? BarTheme.alpha(BarTheme.bg, 0xEE / 255)
+                    : entry.state === "floating" ? BarTheme.alpha(BarTheme.bg, 0xCC / 255)
+                    : entry.state === "focusedFloating"
+                                                 ? BarTheme.alpha(BarTheme.bg, 0xEE / 255)
+                    : entry.state === "minimized" ? BarTheme.alpha(BarTheme.bg, 0x66 / 255)
+                    : "transparent"              // maximized: no markup, no plate
+
+                readonly property color ink:
+                      entry.state === "focused"   ? BarTheme.blue      // colors[6]
+                    : entry.state === "floating"  ? BarTheme.yellow    // colors[5]
+                    : entry.state === "focusedFloating" ? BarTheme.yellow
+                    : entry.state === "minimized" ? BarTheme.red       // colors[3]
+                    : BarTheme.fg                                      // colors[1]
+
+                readonly property bool heavy:
+                    entry.state === "focused" || entry.state === "focusedFloating"
+
+                // U+F0294 for the two floating states, U+F05B0 for minimized,
+                // and nothing for the rest — the markup strings, exactly.
+                readonly property string mark:
+                      (entry.state === "floating" || entry.state === "focusedFloating")
+                        ? String.fromCodePoint(0xF0294) + " "
+                    : entry.state === "minimized"
+                        ? String.fromCodePoint(0xF05B0) + " "
+                    : ""
+
+                width: leftInset + icon.width + Metrics.s(6) + plateRect.width
                 height: root.height
+
+                readonly property int leftInset: Metrics.s(3)   // margin_x
 
                 Image {
                     id: icon
                     anchors.verticalCenter: parent.verticalCenter
-                    x: Metrics.s(6)
+                    x: entry.leftInset
                     width: Metrics.s(16)
                     height: Metrics.s(16)
                     sourceSize.width: Metrics.s(32)
@@ -109,22 +186,50 @@ Item {
                     source: Quickshell.iconPath(entry.modelData.class, true)
                 }
 
-                Text {
-                    id: title
+                // ---- THE PLATE IS BEHIND THE TEXT, NOT BEHIND THE ENTRY ----
+                //
+                // highlight_method='text' with borderwidth=0, so qtile draws
+                // no box of its own: the colour comes from a pango
+                // `<span background=…>`, which paints behind the GLYPHS. The
+                // icon is outside the span and keeps the bar's background.
+                //
+                // Square corners for the same reason — `rounded` applies to
+                // the border/block highlight methods, and this is neither.
+                //
+                // Each markup is " {} ", one space inside the span on each
+                // side, and those two spaces are the whole of the plate's
+                // horizontal padding. JetBrains Mono sets a space at 0.6 em,
+                // the figure PopupChrome's hint bar is spaced on.
+                Rectangle {
+                    id: plateRect
                     anchors.left: icon.right
                     anchors.leftMargin: Metrics.s(6)
-                    anchors.right: parent.right
-                    anchors.rightMargin: Metrics.s(8)
                     anchors.verticalCenter: parent.verticalCenter
-                    text: entry.modelData.title || entry.modelData.class || ""
-                    color: entry.focused ? BarTheme.accent : BarTheme.fg
-                    font.family: "JetBrainsMono Nerd Font"
-                    font.pixelSize: Metrics.s(10)
-                    font.bold: entry.focused
-                    elide: Text.ElideRight
-                    maximumLineCount: 1
-                    renderType: Text.NativeRendering
+                    width: title.width + entry.spaceAdvance * 2
+                    height: title.implicitHeight + Metrics.s(4)   // padding_y=2
+                    color: entry.plate
+                    radius: 0
+
+                    Text {
+                        id: title
+                        anchors.centerIn: parent
+                        // max_title_width=_s(115), and it caps the TITLE
+                        // rather than the entry: the icon and the plate's own
+                        // padding are paid for outside it.
+                        width: Math.min(implicitWidth, Metrics.s(115))
+                        text: entry.mark + TaskName.parse(
+                            entry.modelData.title || entry.modelData.class || "")
+                        color: entry.ink
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: Metrics.s(10)
+                        font.bold: entry.heavy
+                        elide: Text.ElideRight
+                        maximumLineCount: 1
+                        renderType: Text.NativeRendering
+                    }
                 }
+
+                readonly property real spaceAdvance: Metrics.s(10) * 0.6
 
                 MouseArea {
                     anchors.fill: parent
