@@ -6,27 +6,72 @@ Continue the Hyprland / Tide-Island work in `~/.dotfiles`, branch `test`.
 checkout, so editing here edits the running desktop. Quickshell hot-reloads
 on save.
 
-**Read before touching anything:** the RULES at the bottom of this file,
-then the newest audit at the end of `.config/hypr/upgread_UI_UX.md`. Where
-that audit and an older plan disagree, the audit measured it.
+**Read before touching anything:** the RULES at the bottom of this file, then
+`TOPBAR-SPEC.md`, then the newest audit at the end of `upgread_UI_UX.md`.
+Where an audit and an older plan disagree, the audit measured it.
 
-Commit as you go, one concern per commit, reasoning in the message the way
-the existing history does. **No Co-Authored-By trailer.**
+Commit as you go, one concern per commit, reasoning in the message the way the
+existing history does. **No Co-Authored-By trailer.**
 
 ---
 
-# THE ONE TASK: THE ISLAND'S MOTION
+# WHERE THIS DESKTOP IS NOW
 
-The user's words:
+**Both sessions have two bars, and they swap.** This is the big change since
+this file was first written and it reframes half of it.
 
-> "the islend still glitcing and not smooth enough and the popups opening
-> closing and swtiching to another popup etc need fix and when text to text
-> and text to popup all possiblities"
+| | qtile (X11) | Hyprland (Wayland) |
+|---|---|---|
+| `island` | the Tide Island, ported to X11 | the Tide Island |
+| `native` | qtile's own `bar.Bar` | the Quickshell topbar |
 
-This is the last big open item and it is the oldest one in the file. It has
-survived three sessions because every previous attempt measured the WRONG
-THING — see "what has already been disproven" below, and do not redo any of
-it.
+* `AtiScriptsV1/bar-switch` — `$mod SHIFT P`, both sessions. Owns the one rule
+  that must not break: **no path may leave the session without a bar.**
+* `AtiScriptsV1/bar-action` — keys follow the bar. Under the island a bind
+  calls island IPC; under the topbar it runs the equivalent rofi menu. This is
+  not cosmetic: bar-switch STOPS one bar to start the other, and `qs ipc call`
+  against a dead config exits 0 having done nothing, so an unrouted island
+  bind is a silent dead key.
+* `$mod SHIFT Y` — the bar chooser, island page or rofi depending on mode.
+* `$mod SHIFT Z` — swaps the topbar's own two forms (28 px chips / 40 px
+  normal-user with launchers), qtile's own key for the same thing.
+* `~/.cache/bar-mode` (island|native) and `~/.cache/topbar-position`
+  (top|bottom). Both read by both sessions.
+
+The topbar lives in `../quickshell/topbar` and is a REIMPLEMENTATION of
+qtile's bar — inventory extracted from `qtile/config.py`'s AST, not read off
+its comments. `TOPBAR-SPEC.md` is the fidelity record and lists what is
+deliberately absent.
+
+---
+
+# THE ONE TASK, STILL: THE ISLAND'S MOTION
+
+Partly answered, and the answer confirms this file's own lead — **the settle
+is the CONTENT, not the shape.** Found in the user's recording, then
+instrumented rather than inferred:
+
+    t+1669  picker  h=130     <- one row, because the model was empty
+    t+1820  picker  h=242     <- the truth, 151 ms later
+
+`targetHeight` was being handed a height derived from a panel that could not
+yet size itself: `pickerLoader.item` EXISTED, but its pageStack was empty
+until a `--list` script answered. The loader existing and the panel knowing
+its height are not the same thing. Fixed for `picker` by holding
+`heightBeforeStateChange` until the page arrives — one aim, no re-aim.
+
+**The same shape of bug is latent in every other content-sized case in that
+switch** that falls back to a constant while its loader is empty. `wifi_panel`
+and `bluetooth_panel` are the next most likely, being unretained; `display`
+and `audio` are `retain: true` and so mostly dodge it. Not changed on
+speculation — each needs its own measurement, and the probe that found this
+one is three lines:
+
+    onTargetHeightChanged: console.log("PROBE", Date.now(),
+        islandContainer.islandState, Math.round(targetHeight))
+
+Then drive the transition over IPC and read the log. The matrix of ten
+transition classes further down is still the thing to work through.
 
 ## What the island actually is, mechanically
 
@@ -140,35 +185,6 @@ Sizes differ by up to **857 px** (`long_capsule` 156 -> wallpaper picker
 
 ---
 
-# WHAT CHANGED AFTER THIS FILE WAS WRITTEN
-
-Two commits landed a feature this file does not mention, and one of them
-changes what "the island" even means here. **The island is no longer
-Hyprland-only.**
-
-* **`the island runs on X11, so qtile can have it as a bar`.** Under X11 it
-  rendered nothing, with `Configuration Loaded` in the log and no error
-  naming it. Cause: five windows declared `WlrLayershell.*` attached
-  properties, and an attached object that cannot be created fails the WHOLE
-  component. Each is now a backend-neutral base plus a thin per-backend
-  wrapper. Read `../quickshell/tide-island-fork/qml/common/BackendSurface.md`
-  before touching any of those five files — the base keeps the original
-  filename specifically so the FORK-NOTES upstream-diff still works.
-
-* **`a bar you can swap`.** `$mod SHIFT P` in both sessions,
-  `~/.cache/bar-mode`, `AtiScriptsV1/bar-switch`. BOTH halves work both ways
-  now — the Hyprland topbar is built (`../quickshell/topbar`, `TOPBAR-SPEC.md`),
-  so `native` no longer refuses there.
-
-Three qtile bugs were found and fixed on the way, all recorded in that
-commit message with their measurements: `Bar.is_show()` lying after a
-reconfigure, strut reservations leaking 33 px per switch cycle, and widget
-drawers not surviving their bar's window being unmapped (only
-`reload_config()` brings them back — `reconfigure_screens()` does not).
-
-**The motion task below is still THE task, and is still untouched.** It was
-not attempted, deliberately: the session went to the bar work the user
-asked for, and the motion work needs a session that starts fresh on it.
 
 ---
 
@@ -176,89 +192,44 @@ asked for, and the motion work needs a session that starts fresh on it.
 
 Ordered by how much they are worth.
 
-* **THE HYPRLAND TOPBAR — BUILT.** See `TOPBAR-SPEC.md` for what is live and
-  what is deliberately absent. What it still lacks against qtile's: the
-  per-chip TOOLTIPS (config.py has a whole tooltip layer,
-  `install_bar_tooltips()`), the keyboard-layout FLAG emoji beside "EN", and
-  a `$mod SHIFT Z`-style swap between two Hyprland bars, which binds.conf
-  reserves and which now has something to swap.
-
-* **THE ISLAND SLIDES RIGHT WHEN TREETAB OPENS.** Reported by the user;
-  reproduced and localised, not yet fixed. With the sidebar open,
-  `hyprctl layers` says:
-
-      level=1  ns='quickshell-treetab'  180x768+0+0
-      level=2  ns='quickshell'          1186x58+180+0     <-- was 1366x58+0+0
-
-  So the sidebar's `exclusiveZone` is both NARROWING and OFFSETTING the
-  island's surface. The island should be laid out against the whole output
-  and stay put. The obvious lever is `exclusionMode` on the island window,
-  but read Quickshell's semantics first: `ExclusionMode.Ignore` means
-  "ignore others' zones AND set none of your own", so it would also stop
-  the island reserving its own space — check whether the island still needs
-  to reserve before reaching for it. `RingOsdWindow.qml`'s header documents
-  the same trade for a different surface and is the right precedent.
-
-* **The RectDecoration pills do not come back** after `bar-switch native`
-  rebuilds qtile's bar. The glyphs return, their rounded backgrounds do
-  not, on four of the right-hand chips. Cosmetic, measured: restored bar
-  means 0.0411 against a 0.0479 baseline, otherwise identical chip for
-  chip. A `qtile-extras` decoration-cache question, not a qtile one.
-
+* **The rest of the motion matrix.** See above — the picker case is fixed, the
+  other content-sized panels are not measured.
 * **The 12 unchecked picker menus** against their rofi originals: documents,
-  man, notes, clipboard, confedit, spellcheck, translate, pass, todo,
-  shared, youtube, hub. **Do the record menu first** — its six rows were
-  written against a `wf-recorder` that did not exist and now does.
+  man, notes, clipboard, confedit, spellcheck, translate, pass, todo, shared,
+  youtube, hub. The record menu is DONE — it grew GIF back and its rows were
+  re-checked against a wf-recorder that now exists.
 * **Live preview in the settings app** for the cheap numeric keys (sizes,
   opacity, position). The one Phase 8 item never built.
-* **Two verifications that need a human**, both blocked on input synthesis
-  rather than on code:
-  * the onboarding's swipe (`OnboardingGestureArea`) — `wtype` is keys only
-    and `ydotool` is not installed. **The injection got built**:
-    `scripts/test/uinput-click.py` creates a uinput pointer and clicks, and
-    it is what proved the window-ring fix. Extending it to a SCROLL is a
-    couple of `EV_REL`/`REL_WHEEL` events, so this item is no longer
-    blocked on tooling — only on someone doing it. Two traps are recorded
-    in that file's header: the compositor needs ~3 s to bind a new uinput
-    device (at 1 s every click silently goes nowhere), and
-    `hyprctl dispatch movecursor` warps without emitting motion, so a
-    one-pixel wiggle is needed before the press.
-  * hyprlock's `onclick` transport. The option is real (it is in the label
-    option table and the parser rejects unknown keys loudly), but the click
-    was never fired: a nested Hyprland is headless here, so nothing can
-    click into it, and locking the real session is not a trade to make.
-* **Supplementary-plane Nerd Font glyphs do not render** — U+F022C and
-  neighbours paint nothing, while BMP ones (U+F002) render in the same
-  widget and the same face. The PDF menu drops its icons for this reason.
-  **CAUSE FOUND, and this entry was too broad.** It is the FACE, not the
-  plane. Building the topbar, a probe drew twelve codepoints side by side in
-  a panel — U+F0570, U+F0336, U+F0335, U+F05AF, U+F0902, U+F0042 and
-  U+F035C, all supplementary — and every one rendered, in the same run as
-  the BMP ones, in **`Symbols Nerd Font`**. The topbar therefore uses
-  qtile's exact glyphs rather than lookalikes. **Worth retrying on the PDF
-  menu and anywhere else here that dropped an icon**: the fix is likely a
-  font family, not a codepoint. Use `String.fromCodePoint` — `fromCharCode`
-  takes a UTF-16 code unit and silently truncates above U+FFFF.
+* **`hintium_mode_chip`** on both topbar forms. NOT work that was skipped:
+  Hintium is X11-native and `binds.conf` records it as BLOCKED, so there is no
+  mode for the chip to show. It is here so nobody re-adds it as an omission.
+* **Tooltips on the bottom bar's readouts.** The launchers have them; the CPU
+  and memory readouts there do not.
+* **Scratchpads on a second monitor** — never tested. The monitor-relative
+  x/y logic is verified-by-history only.
+* **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
+  ~50 ms before any animation starts. Worth measuring inside the motion task.
 * **`islandShowWorkspaceOnAutoHide`** is an inert row — present in both
   clients, no reader anywhere (packaged backend is 1.0.34, the key is
   upstream's from 1.0.35). Goes live on a package upgrade. Do NOT "fix" it
   via ForkConfig; see the audit for the collision that causes.
-* **Scratchpads on a second monitor** — never tested. The monitor-relative
-  x/y logic is verified-by-history only.
-* **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
-  ~50 ms before any animation starts. This may well be part of the "not
-  smooth" complaint above and is worth measuring inside that task.
 * **What killed the two socket listeners** was never recovered. They
   reconnect on a dropped read now, but a `kill` still ends them silently.
-* **`onedark` and `palenight`** are the only palettes under AAA for body
-  text (6.57:1 and 6.11:1; AA is 4.5:1). Both are the upstream projects'
-  own values, so changing them makes them not-onedark. Recorded, not a
-  defect.
-* **`layout-cycle.sh`** was re-measured rather than rewritten: 4 hyprctl
-  invocations and 104-117 ms on the common path, not the 7 an older note
-  claimed. Left alone.
+* **`onedark` and `palenight`** are the only palettes under AAA for body text
+  (6.57:1 and 6.11:1; AA is 4.5:1). Both are the upstream projects' own
+  values, so changing them makes them not-onedark. Recorded, not a defect.
 
----
+## Now testable, and was not
+
+**Clicks can be synthesised.** `scripts/test/uinput-click.py` creates a uinput
+pointer and clicks wherever `hyprctl dispatch movecursor` put the cursor. It
+is what proved the window-ring fix. Two traps in its header: a uinput device
+takes ~3 s before the compositor binds it (at 1 s every click silently goes
+nowhere), and `movecursor` warps WITHOUT emitting motion, so a one-pixel
+wiggle is needed before the button or the surface may not have pointer focus.
+
+The onboarding SWIPE is therefore no longer blocked on tooling — it is a
+couple of `EV_REL`/`REL_WHEEL` events away.
 
 # RULES — every one of these was paid for, several twice
 
@@ -336,3 +307,45 @@ Ordered by how much they are worth.
   what you found rather than what you assumed.
 - **Restore the session when you are done**: theme, workspace, volume, and
   any window you spawned.
+
+### QML in this tree
+
+- **A `Row` derives its height FROM its children.** `height: parent.height` on
+  a child inside one is circular and Qt resolves it to ZERO — silently, with
+  every binding looking correct. Cost four debugging rounds: the workspaces,
+  the tray, the widget-box contents, and the bottom bar's launchers. Give the
+  Row an explicit height and take the child's from the component root.
+- **Never gate a clipper's `visible` on its own width** when that width comes
+  from a Row's `implicitWidth`. The Row counts only VISIBLE children, and a
+  child of an invisible parent is not visible — the cycle deadlocks at zero.
+- **`Palette` is a built-in QtQuick type.** Naming a singleton that makes every
+  colour resolve to `[undefined]` with no error naming the clash.
+- **Supplementary-plane Nerd Font glyphs DO render — the variable is the
+  FACE.** They work in `Symbols Nerd Font`. Use `String.fromCodePoint`;
+  `fromCharCode` takes a UTF-16 code unit and truncates above U+FFFF.
+- **A glyph that is not a Nerd Font icon should not be forced through one.**
+  U+2716 and U+25B3 are ordinary characters; Ubuntu lacks both, and Qt and
+  pango then fall back DIFFERENTLY. Ask `fc-match -s "<font>:charset=XXXX"`
+  and name fontconfig's own first choice.
+- **The island's input `mask` is not the island's surface.** Anything drawn
+  outside the capsule — the window rings — receives no input until a Region
+  is added for it. A MouseArea there is dead and looks correct.
+
+### Shell and config
+
+- **`sed -i` replaces the inode**, so Quickshell's file watcher is left on an
+  unlinked file and the shell keeps serving the old build. Three "the change
+  did nothing" readings came from that. Restart the process, or write in place.
+- **This machine's login shell is fish.** `VAR="a b"; $VAR` does NOT
+  word-split, so a command built in a variable runs as one argument and fails
+  in a way that reads like the command being wrong.
+- **`socat` is NOT installed.** A listener written against it starts, takes its
+  lock, reads nothing and exits quiet. `workspace-layout.sh` and
+  `float-extra.sh` both use a small python socket reader instead.
+- **A Hyprland block opened in the middle of another closes it early** and
+  silently reparents everything after it. Hyprland DOES report this one —
+  `hyprctl configerrors` named `cursor:natural_scroll` — unlike the
+  variable-order trap, which stays empty.
+- **Test the code path you are shipping, not the one next to it.** The bar
+  picker's `--list` was verified and its `--run` was not; `--run` raised on
+  every row that mattered. Listing a menu and running it are different code.
