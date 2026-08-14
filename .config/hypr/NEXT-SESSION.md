@@ -213,10 +213,16 @@ Ordered by how much they are worth.
   opacity, position). The one Phase 8 item never built.
 * **Two verifications that need a human**, both blocked on input synthesis
   rather than on code:
-  * the onboarding's swipe (`OnboardingGestureArea`) — nothing here can
-    synthesise a scroll; `wtype` is keys only and `ydotool` is not
-    installed. `/dev/uinput` IS writable, so an evdev pointer injection is
-    possible if it is worth building.
+  * the onboarding's swipe (`OnboardingGestureArea`) — `wtype` is keys only
+    and `ydotool` is not installed. **The injection got built**:
+    `scripts/test/uinput-click.py` creates a uinput pointer and clicks, and
+    it is what proved the window-ring fix. Extending it to a SCROLL is a
+    couple of `EV_REL`/`REL_WHEEL` events, so this item is no longer
+    blocked on tooling — only on someone doing it. Two traps are recorded
+    in that file's header: the compositor needs ~3 s to bind a new uinput
+    device (at 1 s every click silently goes nowhere), and
+    `hyprctl dispatch movecursor` warps without emitting motion, so a
+    one-pixel wiggle is needed before the press.
   * hyprlock's `onclick` transport. The option is real (it is in the label
     option table and the parser rejects unknown keys loudly), but the click
     was never fired: a nested Hyprland is headless here, so nothing can

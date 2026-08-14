@@ -675,7 +675,53 @@ Item {
                     }
                 }
 
+                // ---- THE RING WAS DECORATION ONLY ----
+                //
+                // Reported as "the win chip, when I open something, not
+                // works". It was not a broken click — there was NO CLICK.
+                // This file was 681 lines with no MouseArea in it at all: the
+                // strip drew which windows exist and which one has focus, and
+                // did nothing when you pressed one.
+                //
+                // That is the worst shape a control can have. It looks like a
+                // button, it lights the focused one, it sits where a window
+                // switcher sits, and pressing it is indistinguishable from
+                // pressing a dead key.
+                //
+                // LAST CHILD of winCell on purpose, so it is above the ring
+                // and the icon; a MouseArea declared earlier would be under
+                // them and would still take the press, but the z-order is
+                // what makes that true by construction rather than by luck.
+                MouseArea {
+                    anchors.fill: parent
+                    // The whole cell, not just the icon: the icon is 32 px
+                    // inside a cell with padding, and a target you have to hit
+                    // precisely is a target you miss.
+                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: (event) => {
+                        const t = winCell.modelData ? winCell.modelData.toplevel : null;
+                        if (!t)
+                            return;
+                        if (event.button === Qt.MiddleButton) {
+                            // Middle closes, which is what a taskbar entry
+                            // does everywhere else. Left alone otherwise —
+                            // there is no confirmation here and there should
+                            // not be one on a left click.
+                            if (t.close)
+                                t.close();
+                            return;
+                        }
+                        // activate() rather than a `focuswindow` dispatch:
+                        // the toplevel object is what the strip already holds,
+                        // so this cannot address the wrong window the way an
+                        // appId or a title match can when two windows share
+                        // one — which is the case this strip is FOR.
+                        t.activate();
+                    }
+                }
             }
+
         }
     }
 }

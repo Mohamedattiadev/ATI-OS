@@ -188,6 +188,46 @@ PanelWindow {
             height: Math.ceil(mainCapsule.height)
         }
 
+        // ---- THE WINDOW RINGS, WHICH USED TO BE UNCLICKABLE ----
+        //
+        // FORK. Reported as "the win chip, when I open something, not works".
+        // Two things were wrong and only the second one is visible in the
+        // strip's own file: WindowRingStrip.qml had no MouseArea at all, AND
+        // the rings sit OUTSIDE this mask, so even after adding one they
+        // would still have received nothing.
+        //
+        // The old comment beside islandFlanks said they are "drawn but not
+        // clickable ... That is deliberate". It was deliberate, and it is
+        // being reversed on request: an icon that shows which windows exist,
+        // rings the focused one, and sits exactly where a window switcher
+        // sits is a control whether or not it was meant to be one. Pressing
+        // it and pressing a dead key were the same experience.
+        //
+        // islandFlanks is a 0x0 Item at the origin with no transform, so its
+        // children's x/y are already in the same window coordinates
+        // mainCapsule.x above uses. Verified rather than assumed — it has no
+        // anchors, no width and no height, and its children position
+        // themselves off `pillLeft`/`pillRight`, which are mainCapsule's.
+        //
+        // Gated on width so a strip with no windows in it claims nothing: an
+        // empty Region is cheap, but a stale one steals clicks from the
+        // desktop underneath for as long as it is wrong.
+        Region {
+            intersection: Intersection.Combine
+            x: Math.floor(leftRings.x)
+            y: Math.floor(leftRings.y)
+            width: leftRings.width > 1 ? Math.ceil(leftRings.width) : 0
+            height: leftRings.width > 1 ? Math.ceil(leftRings.height) : 0
+        }
+
+        Region {
+            intersection: Intersection.Combine
+            x: Math.floor(rightRings.x)
+            y: Math.floor(rightRings.y)
+            width: rightRings.width > 1 ? Math.ceil(rightRings.width) : 0
+            height: rightRings.width > 1 ? Math.ceil(rightRings.height) : 0
+        }
+
         // FORK: the two Regions that used to be here covered the Wi-Fi and
         // Bluetooth detail shells — rectangles that hung off the side of the
         // capsule and therefore needed input regions of their own. Those
@@ -3415,9 +3455,12 @@ PanelWindow {
         //  overshoots would make the flanks bounce in sympathy with every
         //  panel that opens, and they are not part of that motion.
         //
-        //  They are drawn but not clickable: the window's input Region is
-        //  built from mainCapsule's rectangle alone. That is deliberate —
-        //  see the mask near the top of this file.
+        //  They ARE clickable now. This used to read "drawn but not
+        //  clickable ... That is deliberate", and it was — the mask was built
+        //  from mainCapsule's rectangle alone. Reversed on request: see the
+        //  two Regions for leftRings/rightRings in the mask at the top of
+        //  this file, and the MouseArea in WindowRingStrip.qml. Left click
+        //  activates the window, middle closes it.
         Item {
             id: islandFlanks
             // 4 -> 6, ABOVE mainCapsule's z 5.
