@@ -46,7 +46,7 @@ verified), **the mode keymap popups** (see below).
 
 ---
 
-# WHAT THIS SESSION DID — 6 commits, `ef8069e`..`82894ad`
+# WHAT THIS SESSION DID — 10 commits, `ef8069e`..`1049070`
 
 **Ask #6 is answered and the answer is "there is nothing there".**
 `enhaoswen/Dynamic-island-on-hyprland` is the former name of
@@ -75,40 +75,56 @@ Both are socket2 listeners started by autostart.conf, both had exited, and
 neither comes back. Submaps kept working because Hyprland handles the keys
 itself, so the only symptom was a missing popup. Both now reconnect.
 
+**Ask #2 is done for the stated complaints.** The settings app's defect was
+one property — `set_subtitle_lines(0)` made all 31 rows print their whole
+`detail` paragraph, so the page ran about nine screens. Sections became a
+sidebar, subtitles are capped at two lines, and an ⓘ popover per row carries
+the full prose plus key, type, range, default and current value. A "Changed"
+section lists what differs from the packaged defaults.
+
+**`wf-recorder` is installed and declared**, so screen recording works here
+for the first time — verified capturing a valid 3.99 s mp4.
+
 ---
 
 # THE FIRST THING TO DO
 
 **Scratchpads and the Obsidian "S" session (ask #8).** It is now the only
-one of the eight with nothing done to it at all. Walk every case:
-   first launch, re-toggle, focus steal, workspace move, monitor change, app
-   already open, app dead. `hypr/scripts/scratchpad.sh`, `toggle-app.sh`.
+one of the eight with nothing done to it at all.
 
-2. **The rest of the theme-change freeze** (ask #4, remainder). ~1.0 s left
+Walk every case: first launch, re-toggle, focus steal, workspace move,
+monitor change, app already open, app dead. `hypr/scripts/scratchpad.sh`,
+`toggle-app.sh`.
+
+---
+
+# THEN, IN ROUGH ORDER
+
+1. **The rest of the theme-change freeze** (ask #4, remainder). ~1.0 s left
    to the marker. The dunst win is taken; nothing else has been profiled.
    Instrument the blocks between the start and `THEME_APPLY_VISIBLE_DONE`
    before changing anything — the same way the dunst cost was confirmed.
 
-3. **Search on the popups that are not the picker** — control centre,
+2. **Search on the popups that are not the picker** — control centre,
    notification centre, cheatsheet, launcher, wifi/bluetooth. PickerLayer's
    is the model. NOT the wallpaper picker: it has type-to-jump already, and
    upstream's filter was declined with reasons (`fddcb85`).
 
-4. **The ~800 ms panel settle** (ask #3, remainder). Two hypotheses already
+3. **The ~800 ms panel settle** (ask #3, remainder). Two hypotheses already
    disproven and NOT to be re-tried: `morphDurationFor` (760 vs 520 measured
    identical) and the slider intro gate. Re-measure before theorising.
 
-5. **The remaining picker menus vs their rofi originals** (ask #1,
+4. **The remaining picker menus vs their rofi originals** (ask #1,
    remainder). 12 unchecked: documents, man, notes, clipboard, confedit,
    spellcheck, translate, pass, todo, shared, youtube, hub. **Recheck the
    record menu first** — its six rows were written against a wf-recorder
    that did not exist, and now it does, so they can finally be run.
 
-6. **Live preview in the settings app** for the cheap numeric keys (sizes,
+5. **Live preview in the settings app** for the cheap numeric keys (sizes,
    opacity, position). Phase 8 asked for it and it is the one item from that
    plan still unbuilt.
 
-7. **`islandShowWorkspaceOnAutoHide` is an INERT ROW** — it has a row in
+6. **`islandShowWorkspaceOnAutoHide` is an INERT ROW** — it has a row in
    both clients and no reader anywhere (the packaged backend is 1.0.34, the
    key is upstream's from 1.0.35). It goes live on a package upgrade. Do not
    "fix" it by serving it from ForkConfig; see the audit for why that
