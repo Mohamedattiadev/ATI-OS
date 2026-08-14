@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+# bar-switch [native|island|toggle|status]
+#
+# One key, one state file, both sessions: choose whether the desktop's bar is
+# the session's OWN bar or the Tide Island.
+#
+#   native   qtile  -> qtile's bar.Bar (the top bar, or the bottom
+#                      "normal user" bar, whichever BAR_MODE selects)
+#            hypr   -> the Quickshell topbar  [NOT BUILT YET — see below]
+#   island   either -> the Tide Island, ~/.config/quickshell/tide-island-fork
+#
+# WHY THIS EXISTS
+# ---------------
+# The two sessions had one bar each and no way to trade: qtile had a very
+# elaborate qtile-extras bar and no island, Hyprland had the island and no
+# topbar. Both bars are good at different things — the qtile bar is a dense
+# always-on readout, the island is a quiet capsule that becomes a panel when
+# you ask it to — and which one you want is a mood, not a session.
+#
+# The island half became possible only once the island was made to run on X11;
+# see quickshell/tide-island-fork/qml/common/BackendSurface.md for what that
+# took and what X11 does not have.
+#
+# WHY A STATE FILE AND NOT A FLAG
+# -------------------------------
+# The choice has to survive a session restart and be readable by the OTHER
+# session, so that logging out of Hyprland into qtile lands you on the bar you
+# picked rather than on whatever that session's autostart hardcodes. A file is
+# also the only form a qtile config-reload can read at import time.
+#
+# ~/.cache/bar-mode, NOT ~/.cache/qtile/bar-mode. The theme's equivalent lives
+# under ~/.cache/qtile/theme_mode for historical reasons — it predates
+# Hyprland here — and that path now reads as "qtile's", which this is not.
+#
+# THE ONE RULE
+# ------------
+# NEVER LEAVE THE SESSION WITHOUT A BAR. Every path that takes a bar away
+# brings the other one up first and checks it, and puts the old one back if
+# the new one did not arrive. A wrong bar is a preference; no bar is a broken
+# desktop with no visible way to fix itself.
+
+set -euo pipefail
+
+STATE_FILE="$HOME/.cache/bar-mode"
+ISLAND_LAUNCH="$HOME/.config/hypr/scripts/island.sh"
+FORK_DIR="$HOME/.config/quickshell/tide-island-fork"
+DEFAULT_MODE="island"
+
+die() { printf 'bar-switch: %s\n' "$*" >&2; exit 1; }
+note() { printf 'bar-switch: %s\n' "$*" >&2; }
+
+# ---------------------------------------------------------------------------
+#  Which session is this
+# ---------------------------------------------------------------------------
+# Asked of the RUNNING processes rather than of $XDG_CURRENT_DESKTOP, because
+# this script is also called from rofi menus and from keybinds that may have
+# inherited an environment from the wrong place — and because the answer has
+# to be right when it is wrong, not merely usually.
+detect_session() {
+  # Overridable, and not only as a courtesy. In a real session exactly one of
+  # the two WMs is running and the probes below are unambiguous — but the only
+  # way to TEST the qtile half is a nested X server started from inside the
+  # Hyprland session, where both are running at once and the probe would
+  # always answer "hyprland". A control with no way in from a script is a
+  # control whose bugs can only be found by the user.
+  if [[ -n "${BAR_SWITCH_SESSION:-}" ]]; then
+    echo "$BAR_SWITCH_SESSION"; return
+  fi
+  if pgrep -x Hyprland >/dev/null 2>&1; then
+    echo hyprland
+  elif pgrep -x qtile >/dev/null 2>&1 || pgrep -f 'qtile start' >/dev/null 2>&1; then
+    echo qtile
+  else
+    echo unknown
+  fi
+}
+
+read_mode() {
+  local m=""
+  [[ -r "$STATE_FILE" ]] && m="$(<"$STATE_FILE")"
+  m="${m//[[:space:]]/}"
+  case "$m" in
+    native|island) echo "$m" ;;
+    *) echo "$DEFAULT_MODE" ;;
+  esac
+}
+
+write_mode() {
+  mkdir -p "$(dirname "$STATE_FILE")"
+  printf '%s\n' "$1" > "$STATE_FILE"
+}
+
+# ---------------------------------------------------------------------------
+#  The island
+# ---------------------------------------------------------------------------
+# `pgrep -f` is deliberately NOT used to find it. That pattern matches the
+# whole command line of every process INCLUDING this script's own, which is
+# the trap recorded in hypr/NEXT-SESSION.md's RULES and which cost a session
+# once already. Match on the argv list explicitly instead, excluding awk.
+island_pid() {
+  ps -eo pid=,args= | awk -v d="$FORK_DIR" '$0 ~ ("quickshell -p " d) && !/awk/ {print $1; exit}'
+}
+
+island_running() { [[ -n "$(island_pid)" ]]; }
+
+island_start() {
+  island_running && return 0
+  [[ -x "$ISLAND_LAUNCH" ]] || die "no island launcher at $ISLAND_LAUNCH"
+  setsid -f "$ISLAND_LAUNCH" >/dev/null 2>&1 || true
+  # Wait for it rather than sleeping a guessed constant: the island takes
+  # noticeably longer to come up on a cold page cache than on a warm one, and
+  # a fixed sleep is either a stall or a false negative.
+  for _ in $(seq 1 60); do
+    island_running && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+island_stop() {
+  local pid
+  pid="$(island_pid)" || true
+  [[ -n "$pid" ]] || return 0
+  kill "$pid" 2>/dev/null || true
+  for _ in $(seq 1 40); do
+    island_running || return 0
+    sleep 0.1
+  done
+  # It ignored SIGTERM. Say so before escalating, so a hang here is visible
+  # rather than being silently papered over.
+  note "island did not exit on SIGTERM; sending SIGKILL"
+  kill -9 "$pid" 2>/dev/null || true
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+#  qtile's own bars
+# ---------------------------------------------------------------------------
+# Driven through `qtile cmd-obj -f eval` into a function that lives in
+# config.py, rather than by toggling bars from out here.
+#
+# The reason is that config.py already owns this decision and owns it in a
+# non-obvious way: apply_bar_mode() picks between the TOP bar and the BOTTOM
+# "normal user" bar according to BAR_MODE, and there are startup hooks that
+# re-apply it. Hiding a bar from outside would be immediately undone by the
+# next reload, and would also have to duplicate the top/bottom choice — two
+# owners of one arithmetic. So the file that knows keeps knowing, and this
+# only asks it to look at the state file again.
+#
+# RETURNS non-zero, never `die`s. The callers roll the state file back when
+# this fails, and `die` exits the script before they can — which is how the
+# desktop was first left disagreeing with its own state file.
+qtile_apply() {
+  command -v qtile >/dev/null 2>&1 || { note "qtile CLI not on PATH"; return 1; }
+  # The module lookup is defensive on purpose: qtile imports the config under
+  # the module name "config", but that is a detail of how it loads the file
+  # rather than a promise, and a silent AttributeError here would leave the
+  # bars in whatever state they were already in — i.e. it would look exactly
+  # like the switch having no effect.
+  local code
+  code=$(cat <<'PY'
+import sys
+m = sys.modules.get("config")
+if m is None or not hasattr(m, "bar_switch_apply"):
+    m = next(
+        (v for v in list(sys.modules.values())
+         if getattr(v, "__file__", None)
+         and str(v.__file__).endswith("qtile/config.py")
+         and hasattr(v, "bar_switch_apply")),
+        None,
+    )
+if m is None:
+    raise RuntimeError("bar_switch_apply not found in the loaded qtile config")
+m.bar_switch_apply()
+PY
+  )
+  local out
+  if ! out="$(qtile cmd-obj -o cmd -f eval -a "$code" 2>&1)"; then
+    note "qtile eval failed: $out"
+    return 1
+  fi
+  # qtile's eval returns [success, payload]; a raised exception comes back as
+  # success=false with the traceback in the payload, and the CLI still exits 0.
+  # A verification step that cannot fail loudly is not one.
+  case "$out" in
+    *Traceback*|*RuntimeError*|*AttributeError*|*"not found"*)
+      note "qtile eval raised: $out"
+      return 1 ;;
+  esac
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+#  Hyprland's own bar
+# ---------------------------------------------------------------------------
+# The Quickshell topbar that mirrors qtile's is not written yet. Until it is,
+# `native` is refused on Hyprland rather than half-done: taking the island
+# away with nothing to replace it is precisely the "no bar" outcome the rule
+# at the top forbids.
+hypr_native_available() { return 1; }
+
+# ---------------------------------------------------------------------------
+#  Applying a mode
+# ---------------------------------------------------------------------------
+apply() {
+  local mode="$1" session="$2"
+
+  case "$session:$mode" in
+
+    # ---- WHY THE STATE FILE IS ROLLED BACK ON FAILURE ----
+    #
+    # apply_bar_mode() in qtile's config.py READS the state file to decide
+    # what to do, so the file has to be written before qtile is asked to look
+    # at it — the mode cannot be passed as an argument without giving that
+    # decision a second owner.
+    #
+    # Which means a failed `qtile_apply` leaves a file saying "island" over a
+    # session that is still showing qtile's bar, and the next qtile restart
+    # would then hide the bar for a reason that happened minutes ago. Caught
+    # exactly that way: the island came up, the eval failed, and the desktop
+    # was left disagreeing with its own state file.
+    #
+    # So every qtile path saves the old value and puts it back if the apply
+    # does not take. `die` is not enough on its own here; it exits, and the
+    # file is what outlives the exit.
+
+    qtile:island)
+      island_start || die "the island did not come up; qtile's bar is untouched"
+      local prev="$current"
+      write_mode island
+      if ! qtile_apply; then
+        write_mode "$prev"
+        island_stop
+        die "qtile would not hide its bar, so the island was stopped and the
+             mode put back to '$prev'. The desktop is as you left it."
+      fi
+      ;;
+
+    qtile:native)
+      # Bars back FIRST, island down second. The reverse order flickers a
+      # bar-less desktop, and if qtile_apply fails it strands one.
+      local prev="$current"
+      write_mode native
+      if ! qtile_apply; then
+        write_mode "$prev"
+        die "qtile would not show its bar; the island is still running and the
+             mode was put back to '$prev'."
+      fi
+      island_stop
+      # ---- A SECOND PASS, AFTER THE ISLAND IS ACTUALLY GONE ----
+      #
+      # The apply above ran while the island was still up, so its X11 strut
+      # was still legitimately reserved and qtile's geometry was correct FOR
+      # THAT MOMENT. Stopping it leaves the reservation behind — qtile's
+      # reserve_space() is not idempotent and its free path does not always
+      # run (see _resync_reserved_space in config.py) — and the symptom is a
+      # bar pushed ~33 px further down the screen on every switch until it is
+      # off its own margin and the desktop looks bar-less.
+      #
+      # apply_bar_mode() is idempotent and re-derives the reservation from the
+      # struts that still exist, so asking it again once the island is really
+      # gone is the whole fix. Failure here is NOT fatal: the bar is already
+      # back, this only straightens its geometry.
+      qtile_apply || note "bar is back, but its strut bookkeeping did not resettle"
+      ;;
+
+    hyprland:island)
+      island_start || die "the island did not come up"
+      write_mode island
+      ;;
+
+    hyprland:native)
+      if ! hypr_native_available; then
+        die "the Hyprland topbar is not built yet, so 'native' would leave this
+             session with no bar at all. The island stays. See
+             .config/hypr/README.md for where that work stands."
+      fi
+      ;;
+
+    unknown:*)
+      die "no qtile and no Hyprland is running; nothing to switch"
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+main() {
+  local action="${1:-toggle}"
+  local session current
+  session="$(detect_session)"
+  current="$(read_mode)"
+
+  case "$action" in
+    status)
+      printf 'mode=%s session=%s island=%s\n' \
+        "$current" "$session" "$(island_running && echo up || echo down)"
+      ;;
+    native|island)
+      apply "$action" "$session"
+      ;;
+    toggle)
+      if [[ "$current" == island ]]; then apply native "$session"
+      else apply island "$session"; fi
+      ;;
+    *)
+      die "usage: bar-switch [native|island|toggle|status]" ;;
+  esac
+}
+
+main "$@"

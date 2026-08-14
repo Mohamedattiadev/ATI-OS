@@ -58,6 +58,34 @@ PICOM_GPU_FLAGS=""
 ) &
 
 # ---------------------------------------------------------
+# 2b. The bar — qtile's own, or the Tide Island
+# ---------------------------------------------------------
+# Which bar this session wears is a SAVED CHOICE, not a property of the
+# session: ~/.cache/bar-mode is written by AtiScriptsV1/bar-switch and read by
+# both this session and the Hyprland one, so picking the island in Hyprland
+# and then logging into qtile lands you on the island here too.
+#
+# Only the PROCESS is started here. Hiding qtile's own bars is config.py's
+# job and it already does it — apply_bar_mode() reads the same file and the
+# startup hooks call it, so there is nothing to coordinate from out here and
+# nothing that a `mod+shift+r` could undo.
+#
+# Ordering against dunst above is load-bearing, and island.sh has the long
+# version: the island SERVES org.freedesktop.Notifications, a well-known bus
+# name has exactly one owner, and dunst has a D-Bus activation file — so
+# whichever takes the name first keeps it. island.sh clears dunst off the bus
+# itself immediately before launching, which is why this can safely come after
+# the block that starts dunst rather than having to race it.
+#
+# The island is deliberately NOT guarded on Wayland-ness. Quickshell picks its
+# own backend, and the fork's windows were split per backend precisely so this
+# works under X11 — see
+# quickshell/tide-island-fork/qml/common/BackendSurface.md.
+if [ "$(cat "$HOME/.cache/bar-mode" 2>/dev/null | tr -d '[:space:]')" = "island" ]; then
+  "$HOME/.config/hypr/scripts/island.sh" >/dev/null 2>&1 &
+fi
+
+# ---------------------------------------------------------
 # 3. Light background apps
 # ---------------------------------------------------------
 # These are harmless and quick to start.

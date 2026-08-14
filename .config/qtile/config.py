@@ -822,18 +822,323 @@ def passthrough_off(qtile):
 
 
 #
+BAR_SWITCH_STATE_FILE = os.path.expanduser("~/.cache/bar-mode")
+
+
+def bar_switch_mode():
+    """"native" or "island" — which BAR this desktop is currently wearing.
+
+    Written by AtiScriptsV1/bar-switch, read here and by the Hyprland session,
+    so the choice survives a logout and follows you between the two WMs. See
+    that script's header for why it is a file and not a flag.
+
+    Defaults to "native" on anything unreadable or unrecognised, which is the
+    safe end: qtile's own bar is the one that is definitely there, whereas
+    defaulting to "island" on a corrupt file would hide the bar and rely on a
+    separate process having come up to replace it.
+    """
+    try:
+        with open(BAR_SWITCH_STATE_FILE) as fh:
+            mode = fh.read().strip()
+    except OSError:
+        return "native"
+    return mode if mode in ("native", "island") else "native"
+
+
+_NESW_TO_LRTB = {0: 2, 1: 1, 2: 3, 3: 0}
+
+
+def _resync_reserved_space():
+    """Re-derive each bar's strut reservation from the struts that still exist.
+
+    ---- THE LEAK, AND WHY IT IS OURS TO CLEAN UP ----
+
+    The island under X11 is a DOCK: it publishes _NET_WM_STRUT_PARTIAL so
+    windows do not tile underneath it. qtile answers that in
+    Qtile.reserve_space(), whose own docstring says:
+
+        "The requested space is added to space reserved previously: repeated
+         calls to this method are not idempotent."
+
+    and Bar.adjust_reserved_space() accumulates it into the bar's margin.
+    Nothing reconciles the total against reality: _Window.update_strut() calls
+    reserve_space() again on every _NET_WM_STRUT_PARTIAL PropertyNotify
+    WITHOUT first freeing what it reserved last time, and Qtile.unmanage()
+    frees only once, only for a base.Static, and only if c.screen is still set.
+
+    So every island start/stop cycle leaves a little behind. Measured over
+    three switch cycles in a nested X server, with the island NOT running at
+    the end:
+
+        cycle 1   fullsize 38 -> 71    reserved [33, 0, 0, 0]
+        cycle 2            -> 104      reserved [66, 0, 0, 0]
+        cycle 3            -> 137      reserved [99, 0, 0, 0]   screen dy 137
+
+    The bar was correctly un-hidden every time and was simply 99 px down the
+    screen, off the top of its own margin, which is why the desktop looked
+    bar-less rather than broken.
+
+    This does NOT zero the reservation blindly — a legitimate second dock
+    would lose its space. It sums the struts of the windows that are actually
+    alive on each screen and makes the bookkeeping agree with them, so the
+    correct answer is reached whether the leak is ours, someone else's, or
+    absent entirely.
+    """
+    # Imported here rather than at module scope to match the rest of this
+    # file, which does the same (see the reload helper further down).
+    from libqtile.log_utils import logger
+
+    changed = False
+    for s in getattr(qtile, "screens", []):
+        for i, side in enumerate(("top", "right", "bottom", "left")):
+            gap = getattr(s, side, None)
+            reserved = getattr(gap, "_reserved_space", None)
+            if gap is None or not reserved:
+                continue
+            edge = _NESW_TO_LRTB[i]  # Gap margins are NESW; struts are LRTB.
+            live = 0
+            for w in getattr(qtile, "windows_map", {}).values():
+                rs = getattr(w, "reserved_space", None)
+                if rs and getattr(w, "screen", None) is s:
+                    live += rs[edge]
+            if reserved[i] != live:
+                logger.warning(
+                    "bar-switch: %s bar reserved %s px of strut but only %s px "
+                    "is claimed by a live window; correcting",
+                    side, reserved[i], live,
+                )
+                reserved[i] = live
+                gap._reserved_space_updated = True
+                gap._configured = False
+                changed = True
+
+    # Only when something actually drifted. reconfigure_screens() is the call
+    # that makes _configure() run again and recompute the bar's y and fullsize
+    # from the corrected reservation; without it the numbers are fixed and the
+    # bar is still drawn in the wrong place.
+    if changed:
+        try:
+            qtile.reconfigure_screens()
+        except Exception:
+            # Never let bookkeeping repair take the bar down with it: a bar in
+            # the wrong place is recoverable, an exception out of
+            # apply_bar_mode() leaves it hidden.
+            logger.exception("bar-switch: reconfigure_screens() failed")
+
+
+def _bar_set_visible(b, want):
+    """Show or hide one bar, without trusting Bar.is_show().
+
+    ---- WHY is_show() CANNOT BE THE GUARD ----
+
+    libqtile's Bar.is_show() is `return self.fullsize != 0`, and Bar.show()
+    is a no-op unless `is_show != self.is_show()`. That pairing is only sound
+    while nothing else writes fullsize -- and Bar._configure() does:
+
+        self.fullsize += margin[0] + margin[2]
+
+    So a bar that is hidden (fullsize == 0) and then survives ANY reconfigure
+    -- a screen change, reserved-space update, or a plain reload -- comes back
+    with fullsize == the margins. is_show() then answers True for a bar whose
+    window is still hidden, show(True) sees no change to make, and the bar can
+    never be brought back for the rest of the session.
+
+    Measured exactly that way while testing bar-switch in a nested X server:
+    after hiding both bars and asking for them back, the desktop was BLACK --
+    no bar and no island -- while qtile reported
+
+        top.is_show() -> True      top.window.hidden -> True
+        fullsize 38 -> 71          screen dy 0 -> 71
+
+    i.e. the bar had been reconfigured twice while hidden, each pass adding its
+    margins, and every one of those passes made is_show() a little more wrong.
+
+    The window's own `hidden` flag is the thing that is actually true, so it is
+    what this asks. When the two disagree and we want the bar BACK, fullsize is
+    forced to 0 first so that show(True) sees a real transition and restores
+    _saved_size -- the value Bar.show() itself stashed at hide time.
+
+    This also fixes the same latent bug in the top/bottom toggle, which has
+    always been one monitor hotplug away from losing a bar the same way.
+    """
+    if b is None:
+        return
+    win = getattr(b, "window", None)
+    if win is None:
+        return
+    hidden = bool(getattr(win, "hidden", False))
+    if want and hidden:
+        if b.is_show():
+            # is_show() is lying. Make the transition real.
+            b.fullsize = 0
+        b.show(True)
+    elif not want and not hidden:
+        b.show(False)
+
+
 def apply_bar_mode():
+    # ---- ISLAND MODE HIDES BOTH BARS ----
+    #
+    # This is deliberately folded into apply_bar_mode() rather than given its
+    # own function, because this is already the ONE owner of "which qtile bar
+    # is on screen": BAR_MODE picks top vs bottom, three startup/reload hooks
+    # re-apply it, and passthrough mode swaps it and swaps it back. A second
+    # owner hiding bars from outside would be undone by the next reload.
+    #
+    # Folding it in also buys the startup case for nothing: apply_bar_on_startup
+    # and apply_bar_on_reload_startup already call this, so a qtile session
+    # that begins in island mode comes up bar-less without a new hook, and
+    # `mod+shift+r` does not resurrect the bar underneath the island.
+    #
+    # BAR_MODE is still honoured while hidden — it decides which bar comes
+    # BACK when you switch to native, so toggling top/bottom inside island
+    # mode is a no-op you will see the effect of later, not a lost keypress.
+    # Reconcile strut bookkeeping BEFORE deciding geometry: the island is a
+    # dock, qtile's reserve_space() is not idempotent, and the leak shows up
+    # as a bar pushed progressively down the screen. See the docstring.
+    _resync_reserved_space()
+
+    # Every show/hide goes through _bar_set_visible(); see its docstring for
+    # why `if ... is_show()` was not a safe guard and how it lost a bar.
+    if bar_switch_mode() == "island":
+        for s in qtile.screens:
+            _bar_set_visible(s.top, False)
+            _bar_set_visible(s.bottom, False)
+        return
+
     for s in qtile.screens:
-        if BAR_MODE == "top":
-            if s.bottom and s.bottom.is_show():
-                s.bottom.show(False)
-            if s.top and not s.top.is_show():
-                s.top.show(True)
-        else:
-            if s.top and s.top.is_show():
-                s.top.show(False)
-            if s.bottom and not s.bottom.is_show():
-                s.bottom.show(True)
+        want_top = BAR_MODE == "top"
+        _bar_set_visible(s.bottom, not want_top)
+        _bar_set_visible(s.top, want_top)
+
+    # ---- AND THEN MAKE IT PAINT ----
+    #
+    # Un-hiding the window is not the same as filling it. Both bars here are
+    # drawn on a TRANSPARENT background (#11111b00 for the top one), so all
+    # the visible pixels belong to widgets — and a bar that is mapped at the
+    # right geometry with unpainted widgets is indistinguishable from no bar
+    # at all. Measured across three switch cycles with the geometry already
+    # correct (y=5, fullsize=38, reserved zeroed, hidden=False): the first
+    # cycle repainted from the expose event and the second and third came back
+    # completely black.
+    #
+    # Deferred rather than immediate, and that is the half that matters. At
+    # this point reconfigure_screens() may still be in flight; drawing now
+    # paints widgets that are about to be re-laid-out, which is what made the
+    # repaint look intermittent rather than absent. The delay matches
+    # _requeue_bar_draw()'s, which exists for the same reason further down.
+    qtile.call_later(0.3, _draw_visible_bars)
+
+
+def _draw_visible_bars():
+    """Repaint every bar that is currently mapped.
+
+    Guarded exactly like _center_top_groupbox(): a bar caught mid-teardown has
+    had its window destroyed and its widgets finalized while screen.top still
+    points at it, and draw() on finalized widgets raises.
+    """
+    for s in getattr(qtile, "screens", []):
+        for side in ("top", "bottom"):
+            b = getattr(s, side, None)
+            if b is None or getattr(b, "window", None) is None:
+                continue
+            if not getattr(b, "_configured", False):
+                continue
+            if getattr(b.window, "hidden", False):
+                continue
+            widgets = getattr(b, "widgets", None)
+            if not widgets or any(not getattr(w, "configured", False) for w in widgets):
+                continue
+            # EACH WIDGET, then the bar. Bar.draw() only composites what the
+            # widgets have already recorded, so on its own it repainted
+            # nothing: after a hide/show the only chip that came back was the
+            # Clock, and only because its own one-second timer fired and
+            # redrew it. Everything else stayed blank until its poll interval
+            # came round, which for CheckUpdates is minutes.
+            #
+            # So the widgets are asked directly. b.draw() still follows, to
+            # composite the result and to fix up the bar's own background.
+            try:
+                for w in widgets:
+                    try:
+                        w.draw()
+                    except Exception:
+                        # One broken widget must not cost the whole bar its
+                        # repaint — that would turn a chip-sized bug into the
+                        # bar-less desktop this whole path exists to avoid.
+                        from libqtile.log_utils import logger
+                        logger.exception(
+                            "bar-switch: widget %s failed to repaint",
+                            type(w).__name__,
+                        )
+                b.draw()
+            except Exception:
+                from libqtile.log_utils import logger
+                logger.exception("bar-switch: repaint of the %s bar failed", side)
+
+
+def bar_switch_apply():
+    """Re-read ~/.cache/bar-mode and show/hide qtile's bars accordingly.
+
+    The entry point AtiScriptsV1/bar-switch calls over `qtile cmd-obj -f eval`.
+    It is a separate name from apply_bar_mode() only so that the script has a
+    stable thing to look for — the eval checks `hasattr(m, "bar_switch_apply")`
+    to find the right module, and pointing that at a name this specific means
+    it cannot latch onto some other loaded module that happens to have an
+    apply_bar_mode.
+
+    ---- COMING BACK TO THE BAR NEEDS A REBUILD, NOT AN UN-HIDE ----
+
+    Hiding is cheap and works: show(False) on both bars, done, and the island
+    takes over. Coming BACK does not, and this cost a long measurement to pin
+    down, so the result is recorded rather than the theory.
+
+    After a switch to island and back, with every guard satisfied —
+
+        window mapped (X map_state=2), hidden=False, _configured=True,
+        y=5, fullsize=38, reserved space corrected back to [0,0,0,0],
+        all 17 widgets .configured, no exception from draw()
+
+    — the bar was still BLANK. Calling widget.draw() on all seventeen and
+    then Bar.draw() painted nothing. The only chip that ever came back was
+    the Clock, and only because its own one-second timer redrew it; the
+    others reappeared one at a time as their poll intervals came round.
+
+    What DID work, immediately and exactly:
+
+        reconfigure_screens()   -> still blank
+        reload_config()         -> mean pixel value 0.04786, against a
+                                   pre-switch baseline of 0.04788
+
+    So the widgets' drawers do not survive their bar's window being
+    unmapped, and nothing short of rebuilding them brings the bar back. A
+    reload is a heavier operation than a show(), but it is one this desktop
+    already performs routinely — theme-apply does it on every palette
+    change, and mod+shift+r is a reload — and layout state is preserved
+    across it by the save/restore either side of this file.
+
+    Only on the way back, and only when a bar is actually hidden: the island
+    direction and the ordinary top/bottom toggle keep the cheap path.
+    """
+    if bar_switch_mode() != "native":
+        apply_bar_mode()
+        return
+
+    hidden = any(
+        getattr(getattr(b, "window", None), "hidden", False)
+        for s in getattr(qtile, "screens", [])
+        for b in (s.top, s.bottom)
+        if b is not None
+    )
+    if not hidden:
+        apply_bar_mode()
+        return
+
+    # reload_config() re-runs this file, and the startup hook calls
+    # apply_bar_mode() on the way out — which reads the same state file and
+    # settles the top/bottom choice. So this is not "reload and hope"; the
+    # mode is still applied, just by freshly built bars.
+    qtile.reload_config()
 
 
 @hook.subscribe.startup_complete
@@ -6050,6 +6355,29 @@ keys = [
         "z",
         toggle_top_bottom_exclusive,
         desc="Toggle Top ↔ Bottom bar",
+    ),
+    # ---swap this session's whole bar: qtile's own ↔ the Tide Island---
+    #
+    # lazy.spawn, not a lazy.function that flips the bars here, and the
+    # asymmetry is the point: the island is a separate PROCESS that has to be
+    # started, waited for and checked before qtile's bar is allowed to go
+    # away. AtiScriptsV1/bar-switch owns that ordering for both sessions and
+    # calls back into bar_switch_apply() over `qtile cmd-obj -f eval` once the
+    # island is actually up. Doing it from in here would mean qtile hiding its
+    # own bar and only then finding out the island had failed to start.
+    #
+    # Same key in binds.conf for the Hyprland session. "P" for panel, and
+    # NOT "b" for bar, which was the first choice: b is free here but is
+    # already the island's wallpaper picker on modmask 65 in Hyprland, and
+    # that only showed up in `hyprctl binds -j` after a reload — grepping
+    # binds.conf could not see it, because those lines are written with
+    # $mod rather than SUPER. Parity across the two sessions is worth more
+    # than the better mnemonic.
+    Key(
+        [mod, "shift"],
+        "p",
+        lazy.spawn("bar-switch toggle"),
+        desc="Bar: qtile's own ↔ the Tide Island",
     ),
     # ---today & week: plans-todos popup---
     Key(
