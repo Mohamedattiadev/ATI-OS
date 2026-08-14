@@ -20,6 +20,25 @@ import Quickshell.Hyprland
 // config.py's note on the active group is "no boxes anywhere on this widget".
 // A pill would be a different widget that happened to contain the same digits.
 //
+// ---- BUT borderwidth AND spacing STILL COST WIDTH ----
+//
+// Reported as the group looking "a bit weird" beside the task list, and the
+// cause is not in config.py at all — it is in the installed libqtile, which
+// is where this tree's rule says to look:
+//
+//     box_width  = text + padding_x*2 + borderwidth*2      <- +8, ALWAYS
+//     spacing    = None -> margin_x                        <- 8 between boxes
+//     length     = margin_x*2 + (n-1)*spacing + Σ box_width
+//
+// `borderwidth` is reserved in the WIDTH whether or not a border is drawn;
+// 'text' mode passes bordercolor=None, which only zeroes the border at DRAW
+// time. And `spacing` defaults to None, which _configure() resolves to
+// margin_x rather than to zero.
+//
+// So every group here was 8 px narrower than qtile's and butted against its
+// neighbour with no gap: at the four groups on screen, 56 px of a 136 px
+// widget. That is the whole of "the glyphs are packed together".
+//
 // ---- WHY THIS SHELLS OUT INSTEAD OF USING Hyprland.workspaces ----
 //
 // It tried the model first. `Hyprland.workspaces` populates only after an
@@ -58,7 +77,9 @@ Item {
     // are reproduced: the margins here, the padding on the delegate.
     property bool plated: true
 
-    implicitWidth: row.implicitWidth + (root.plated ? Metrics.s(8) * 2 : 0)
+    // calculate_length(): margin_x*2 + (n-1)*spacing + Σ box_width. The Row
+    // contributes the middle and last terms; the margins are this item's.
+    implicitWidth: row.implicitWidth + Metrics.s(8) * 2
     implicitHeight: parent ? parent.height : Metrics.barHeight
 
     Rectangle {
@@ -278,10 +299,65 @@ Item {
         }
     }
 
+    // ---- qtile's OWN NUMBERS, BY THEIR OWN NAMES ----
+    //
+    // margin_x and margin_y go through _s(); padding_x, padding_y and
+    // borderwidth are plain literals in config.py and are NOT scaled. Kept
+    // apart here rather than folded into one figure, because on a machine
+    // with ui_scale != 1 folding them would silently scale the three that
+    // qtile leaves alone. This machine reads 1.00, so the difference is
+    // latent — which is exactly why it would otherwise never be found.
+    readonly property int qMarginX: Metrics.s(8)
+    readonly property int qPaddingX: 8
+    readonly property int qBorderWidth: 4
+    // spacing=None in config.py, and _configure() resolves that to margin_x.
+    readonly property int qSpacing: root.qMarginX
+
+    // ---- THE WHEEL, WHICH IS A DEFAULT AND NOT A SETTING ----
+    //
+    // `use_mouse_wheel` defaults to True, so GroupBox.__init__ adds Button4
+    // and Button5 to prev_group/next_group — over the VISIBLE groups only,
+    // which is what the `while group not in self.groups` loop in each of them
+    // is doing. config.py sets nothing, and an empty mouse map means "keep
+    // the defaults", exactly as w_volume's did.
+    //
+    // Placed on the whole widget rather than on a delegate because that is
+    // where qtile has it: the wheel is the WIDGET's callback, so it works
+    // anywhere over the group including the margins between the labels.
+    function cycle(step) {
+        const shown = [];
+        for (let i = 0; i < root.workspaces.length; i++) {
+            const w = root.workspaces[i];
+            if ((w.windows || 0) > 0 || w.id === root.focusedId
+                    || root.urgentIds.indexOf(w.id) >= 0)
+                shown.push(w);
+        }
+        if (shown.length === 0)
+            return;
+        let at = -1;
+        for (let i = 0; i < shown.length; i++) {
+            if (shown[i].id === root.focusedId) {
+                at = i;
+                break;
+            }
+        }
+        // itertools.cycle: it wraps, in both directions.
+        const next = shown[((at < 0 ? 0 : at + step) % shown.length
+                            + shown.length) % shown.length];
+        Hyprland.dispatch(next.id < 0 ? "workspace name:" + next.name
+                                      : "workspace " + next.id);
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.NoButton
+        onWheel: (wheel) => root.cycle(wheel.angleDelta.y > 0 ? -1 : 1)
+    }
+
     Row {
         id: row
         anchors.centerIn: parent
-        spacing: 0
+        spacing: root.qSpacing
 
         Repeater {
             model: root.workspaces
@@ -305,7 +381,14 @@ Item {
                 // urgent group is drawn whether or not you have been there.
                 visible: populated || focused
                     || root.urgentIds.indexOf(modelData.id) >= 0
-                width: visible ? label.implicitWidth + Metrics.s(8) * 2 : 0
+                // box_width(): text + padding_x*2 + borderwidth*2. The border
+                // is never PAINTED here — highlight_method is 'text' — but
+                // libqtile reserves it in the width regardless, so leaving it
+                // out makes every group 8 px narrower than qtile's.
+                width: visible
+                    ? label.implicitWidth + root.qPaddingX * 2
+                      + root.qBorderWidth * 2
+                    : 0
                 // root.height, NOT parent.height. The parent is a Row, and a
                 // Row derives its height FROM its children — so a child
                 // sizing itself from the Row is a loop, which Qt resolves by
@@ -344,16 +427,42 @@ Item {
 
                 MouseArea {
                     anchors.fill: parent
-                    // disable_drag=True in config.py, so clicks only.
+                    // disable_drag=True in config.py, so no drag — but the
+                    // wheel is a separate default and it IS on; see the note
+                    // on root.cycle().
+                    acceptedButtons: Qt.LeftButton
+
+                    // ---- CLICKING THE GROUP YOU ARE ON GOES BACK ----
                     //
-                    // By NAME for a named workspace, by id for a numbered one.
-                    // Not interchangeable: the workspace dispatcher reads a
-                    // SIGNED number as a relative move, so "workspace -1337"
-                    // is not S, it is 1337 workspaces backwards.
-                    onClicked: Hyprland.dispatch(
-                        wsItem.modelData.id < 0
-                            ? "workspace name:" + wsItem.modelData.name
-                            : "workspace " + wsItem.modelData.id)
+                    // Another behaviour config.py never mentions and the
+                    // widget has anyway. go_to_group():
+                    //
+                    //     screen.group != group  -> set_group(group)
+                    //     else                   -> toggle_group(group)
+                    //
+                    // and `toggle` defaults to True with disable_drag set, so
+                    // the else branch is live: clicking the ACTIVE group in
+                    // qtile returns you to the one you came from. Here it did
+                    // nothing at all — a dispatch to the workspace you are
+                    // already on.
+                    //
+                    // `workspace previous` is Hyprland's own name for it, so
+                    // no history has to be kept on this side.
+                    onClicked: {
+                        if (wsItem.focused) {
+                            Hyprland.dispatch("workspace previous");
+                            return;
+                        }
+                        // By NAME for a named workspace, by id for a numbered
+                        // one. Not interchangeable: the workspace dispatcher
+                        // reads a SIGNED number as a relative move, so
+                        // "workspace -1337" is not S, it is 1337 workspaces
+                        // backwards.
+                        Hyprland.dispatch(
+                            wsItem.modelData.id < 0
+                                ? "workspace name:" + wsItem.modelData.name
+                                : "workspace " + wsItem.modelData.id);
+                    }
                 }
             }
         }
