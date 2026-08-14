@@ -371,8 +371,37 @@ Ordered by how much they are worth.
   in 2,241 lines and pavucontrol has them too.
 * **Tooltips on the bottom bar's readouts.** The launchers have them; CPU and
   memory do not.
-* **Scratchpads on a second monitor** — never tested. The monitor-relative
-  x/y logic is verified-by-history only.
+* **Scratchpads on a second monitor** — still never tested. The
+  monitor-relative x/y logic in `scratchpad.sh` is verified-by-history only.
+  The BARS and POPUPS are no longer in that category, though — see below.
+
+### Two monitors and fractional scale — TESTED, not inferred
+
+`hyprctl output create headless` makes a second output on demand, which is
+what this tree has been missing to test any of this. Measured with
+HEADLESS-1 1920x1080 beside eDP-1, then again at `scale 1.5`:
+
+    topbar          one bar per screen, 1366x38 and 1920x38
+                    at scale 1.5: 1280x38 — 1920/1.5 logical px, correct,
+                    because a layer surface is sized in LOGICAL pixels and
+                    the compositor scales it
+    reserved zone   [0,38,0,0] on both screens
+    popups          follow the FOCUSED monitor and centre exactly on it:
+                    HEADLESS-1 -> 1366 + (1920-420)/2 = 2116
+                    eDP-1      -> 2646 + (1366-940)/2 = 2859
+
+The island, treetab and the theme overlay are all `Variants` over
+`Quickshell.screens` already, so they get the same per-screen treatment the
+topbar was proved to have.
+
+**Hyprland re-lays-out the other monitors when you set one's geometry.**
+eDP-1 moved from x=0 to x=2646 when HEADLESS-1 was given a scale, and a
+popup at x=2859 looked misplaced until the monitor list was re-read. Read
+the positions back before judging any placement on a multi-monitor session.
+
+`ui_scale` is a separate knob from the compositor's per-monitor `scale` and
+stays that way: it is qtile's `_s()` factor, per MACHINE, applied equally on
+every screen. Per-monitor DPI is the compositor's job and it does it.
 * **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
   ~50 ms before any animation starts.
 * **`islandShowWorkspaceOnAutoHide`** is an inert row — present in both

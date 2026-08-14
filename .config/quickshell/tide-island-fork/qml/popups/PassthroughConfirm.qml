@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Hyprland
 
 import "../common"
 
@@ -37,6 +38,32 @@ PanelWindow {
     signal yes()
     signal no()
 
+
+    // ---- WHICH MONITOR, WHICH IS ONLY A QUESTION WITH TWO ----
+    //
+    // These popups had no `screen` at all, so Quickshell placed them on
+    // whichever it picked first — the primary. With one monitor that is
+    // always right and the bug is invisible; with two it means every popup
+    // opens on the OTHER screen from the one you are working on.
+    //
+    // Bound to the FOCUSED monitor, not to a configured one: a popup is
+    // opened by a keypress, and the screen your keyboard is on is the screen
+    // you are looking at. Matched by NAME because Hyprland's monitor object
+    // and Quickshell's ShellScreen are different types over the same output.
+    //
+    // Null when there is no match, which is Quickshell's own default and the
+    // right answer while a monitor is being added or removed — a popup on
+    // the wrong screen beats a popup on no screen.
+    screen: {
+        const focused = Hyprland.focusedMonitor;
+        if (!focused)
+            return null;
+        const screens = Quickshell.screens;
+        for (let i = 0; i < screens.length; i++)
+            if (String(screens[i].name) === String(focused.name))
+                return screens[i];
+        return null;
+    }
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     WlrLayershell.namespace: "quickshell-passthrough-confirm"
