@@ -58,7 +58,10 @@ PopupWindow {
             anchors.centerIn: parent
             text: root.text
             color: BarTheme.fg
-            font.family: "Ubuntu Bold"
+            // tooltip_font="Ubuntu" in config.py — the tooltip is the one
+            // thing on this bar that is NOT bold, and _apply_tooltip_style
+            // says so by naming the family without a style.
+            font.family: Metrics.textFamily
             font.pixelSize: Metrics.s(10)
             renderType: Text.NativeRendering
         }

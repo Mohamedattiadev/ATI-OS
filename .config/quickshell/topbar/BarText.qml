@@ -12,7 +12,7 @@ Item {
     id: root
 
     property string text: ""
-    property int pixelSize: Metrics.s(11)
+    property int pixelSize: Metrics.textSize
     property int padding: 4
     property color colour: BarTheme.fg
     // Nerd Font rather than the text face. The launcher glyphs and the Arch
@@ -55,7 +55,9 @@ Item {
             id: label
             text: root.text
             color: root.colour
-            font.family: root.iconFont ? "Symbols Nerd Font" : "Ubuntu Bold"
+            font.family: root.iconFont ? "Symbols Nerd Font" : Metrics.textFamily
+            // Bold on the text face only — see Metrics.textFamily.
+            font.bold: !root.iconFont
             font.pixelSize: root.pixelSize
             maximumLineCount: 1
             elide: Text.ElideRight

@@ -129,7 +129,7 @@ Item {
         if (l.length > 0 && l.codePointAt(0) > 0xFFFF && l !== "7")
             return "Noto Color Emoji";
         return root.groupLabels[String(name)] !== undefined
-            ? "Symbols Nerd Font" : "Ubuntu Bold";
+            ? "Symbols Nerd Font" : Metrics.textFamily;
     }
 
     // ---- WHERE "S" GOES, AND WHY SORTING BY ID PUT IT NOWHERE ----
@@ -252,6 +252,10 @@ Item {
                     anchors.centerIn: parent
                     text: root.labelFor(wsItem.modelData.name)
                     font.family: root.fontFor(wsItem.modelData.name)
+                    // The GroupBox inherits widget_defaults, so the labels
+                    // that are plain characters — "7" and "S" — are BOLD.
+                    // Only on the text face; see Metrics.textFamily.
+                    font.bold: root.fontFor(wsItem.modelData.name) === Metrics.textFamily
                     // ONE size for every group, which is what config.py has:
                     // fontsize=_s(10) and nothing per-label. An earlier
                     // revision bumped the icons by 3 px "matched by eye" —

@@ -325,6 +325,14 @@ ShellRoot {
                     // cycles, which is config.py's Button3 on this chip.
                     Chip {
                         text: shellRoot.layoutName
+                        // SteadyCurrentLayout's reserved width, ported as its
+                        // rule rather than its code: the widest of the three
+                        // layout names layout-cycle.sh can write. Without it
+                        // this chip shrinks by six characters on the way from
+                        // monadtall to max and shoves the centred workspace
+                        // group sideways for a frame \u2014 which is the entire
+                        // reason that subclass exists in config.py.
+                        widestText: "monadtall"
                         tooltip: "Layout \u00b7 R-click to cycle"
                         hoverSink: hoverSink
                         foreground: BarTheme.red         // colors[3]
@@ -719,7 +727,19 @@ ShellRoot {
                         tooltip: "System tray"
                         hoverSink: hoverSink
                         foreground: BarTheme.green       // colors[4]
-                        fontPixelSize: Metrics.s(11)
+                        // TWO SIZES, and they are qtile's two. See
+                        // WidgetBox.qml for the measurement; the short of it
+                        // is that the widget's fontsize=_s(11) governs the
+                        // CHEVRON, while the triangle carries its own
+                        // size="15500" in text_closed's markup — which lands
+                        // on 20 px here, not 11, because a pango markup size
+                        // is in points and a qtile fontsize reaches pango as
+                        // absolute pixels.
+                        fontPixelSize: systrayBox.open
+                            ? Metrics.s(11) : Metrics.s(20)
+                        // weight="bold" in that same span, and Adwaita Mono
+                        // has a real bold cut, so this is not synthesised.
+                        fontBold: !systrayBox.open
                         padding: 11
                         height: parent.height
                     }
@@ -1188,26 +1208,48 @@ ShellRoot {
 
     // ---- LAYOUT NAME ----
     //
-    // The same state file layout-cycle.sh writes and the island's
-    // LayoutState reads, so the two bars cannot disagree about which layout
-    // the workspace is in.
+    // The chip was stuck on "monadtall" through every $mod Tab and every
+    // workspace switch, and the reason is that it was watching a file that
+    // has never existed: ~/.cache/hypr/workspace-layouts, a JSON map of
+    // workspace id to layout name. Nothing writes it. `ls ~/.cache/hypr`
+    // holds a display-layouts directory and two wifi QR pngs.
+    //
+    // What layout-cycle.sh actually writes is
+    // $XDG_RUNTIME_DIR/hypr-layouts/ — one file per workspace plus
+    // `current`, holding the bare word monadtall | max | treetab. That is
+    // where the island's LayoutState reads, so this now reads the same file
+    // and the two bars cannot disagree.
+    //
+    // `current` and not the per-workspace file: workspace-layout.sh rewrites
+    // it on every switch, so it already answers "what layout is the focused
+    // workspace in" without this widget having to know which workspace that
+    // is. It also means one watch instead of a watch that has to be moved.
+    //
+    // The /tmp fallback is layout-cycle.sh's own, so an unset XDG_RUNTIME_DIR
+    // cannot point the writer and the reader at two different files.
+    readonly property string runtimeDir: {
+        const x = Quickshell.env("XDG_RUNTIME_DIR");
+        return (x && String(x) !== "") ? String(x) : "/tmp";
+    }
+
+    // SteadyCurrentLayout renders qtile's layout NAME, and qtile's names are
+    // lower case in `layouts` — the widget prints them as they are.
     property string layoutName: "monadtall"
     FileView {
-        path: Quickshell.env("HOME") + "/.cache/hypr/workspace-layouts"
+        path: shellRoot.runtimeDir + "/hypr-layouts/current"
         watchChanges: true
         preload: true
+        // Absent until layout-cycle.sh has run once, which on a fresh boot
+        // may well be after this bar starts. An expected state, not an error.
         printErrors: false
         onFileChanged: reload()
         onLoaded: {
-            try {
-                const ws = Hyprland.focusedWorkspace;
-                const map = JSON.parse(text());
-                if (ws && map[String(ws.id)])
-                    shellRoot.layoutName = String(map[String(ws.id)]);
-            } catch (e) {
-                // Keep the last known name. A layout label that briefly lags
-                // is better than one that blanks on a torn read.
-            }
+            // Trimmed because the writer uses `printf '%s'` and a future
+            // `echo` would add a newline — a stray "\n" would widen the chip
+            // and show as a layout name that does not match any of the three.
+            const t = text().trim();
+            if (t !== "")
+                shellRoot.layoutName = t;
         }
     }
 

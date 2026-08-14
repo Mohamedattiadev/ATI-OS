@@ -77,6 +77,39 @@ Chip {
     // orders to agree by luck.
     fontFamily: (root.open ? root.codepointOpen : root.codepointClosed) < 0xE000
         ? "Adwaita Mono" : "Symbols Nerd Font"
+
+    // ---- THE TWO STATES DO NOT SHARE A SIZE ----
+    //
+    // config.py's systray_widgetbox carries `raw_markup=True` and puts the
+    // size INSIDE text_closed's span rather than on the widget, and says why:
+    // the number on the widget sizes the close CHEVRON, and sharing one
+    // "made the chevron balloon when the triangle was scaled up".
+    //
+    // This box had only the widget's number, so the triangle was drawn at the
+    // chevron's 11 px — reported as "the triangle shape is small, make it a
+    // bit bigger". It is not a matter of taste: qtile draws it at
+    // `size="15500"`, and a pango size attribute is in POINTS while the
+    // widget's fontsize reaches pango as absolute PIXELS, so the two numbers
+    // are not comparable and the smaller one is not the smaller glyph.
+    //
+    // Measured rather than converted, since that ambiguity is exactly what
+    // makes it worth measuring. Rendering config.py's span verbatim through
+    // pango-view and trimming to the ink:
+    //
+    //     pango, qtile's own markup       12x9
+    //     Qt / Adwaita Mono Bold, 20 px   12x9   <- match
+    //     Qt / Adwaita Mono Bold, 11 px    6x5   <- what was on screen
+    //
+    // config.py's own sweep of that attribute agrees from the other side:
+    // "14000 -> 11x10, 16000 -> 12x10". Its `rise="7000"` is left out; the
+    // same note sweeps it and records 6000 and 8000 as ±0.5 px, so it is
+    // a nudge below this bar's resolution rather than a placement.
+    //
+    // Not expressed as a property here: `fontPixelSize` is what the CALLER
+    // sets on three of these four boxes, and a binding in this file would be
+    // silently replaced by each of those assignments. The one box that needs
+    // two sizes writes the conditional at its own call site, where the
+    // override cannot be overridden in turn. See shell.qml's systrayBox.
     clickable: true
 
     onClicked: root.toggle()

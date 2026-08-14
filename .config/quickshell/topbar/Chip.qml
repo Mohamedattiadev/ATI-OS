@@ -16,8 +16,24 @@ Item {
     property string text: ""
     property color foreground: BarTheme.fg
     property color plate: BarTheme.plate
-    property int fontPixelSize: Metrics.s(11)
-    property string fontFamily: "Ubuntu Bold"
+    // widget_defaults' fontsize and font, split into the two things pango was
+    // reading out of "Ubuntu Bold" all along — see Metrics.textFamily, which
+    // is where the measurement that found this lives.
+    property int fontPixelSize: Metrics.textSize
+    property string fontFamily: Metrics.textFamily
+
+    // Bold only on the TEXT face by default. Symbols Nerd Font and Adwaita
+    // Mono are named explicitly by the chips that want them, and asking Qt
+    // for a bold cut a family does not have makes it SYNTHESISE one — a
+    // heavier glyph than qtile draws, which is the same mistake the widget
+    // box's font note records from the fallback-order side.
+    //
+    // Settable, because one glyph on this bar genuinely is bold in a face
+    // that has a bold cut: config.py asks for the tray triangle in
+    // `<span font_family="Adwaita Mono" weight="bold">` and gives its reason
+    // at length — Adwaita Mono Bold carries 31% more stroke than JetBrains
+    // Mono at the same ink height, and the ask was a bolder triangle.
+    property bool fontBold: root.fontFamily === Metrics.textFamily
     // qtile's `padding` is per-side horizontal padding inside the plate.
     property int padding: 11
     property bool clickable: false
@@ -51,8 +67,29 @@ Item {
     property string icon: ""
     property string iconFamily: "Symbols Nerd Font"
 
+    // ---- A WIDTH THAT DOES NOT MOVE WHEN THE TEXT DOES ----
+    //
+    // config.py grows a whole SteadyCurrentLayout subclass for this and its
+    // docstring is the specification: the layout chip "is exactly as wide as
+    // the name it is showing, so moving from a group on monadtall to one on
+    // max shrank it by six characters. It sits to the LEFT of the centred
+    // GroupBox, so that whole difference shoved the GroupBox sideways" — one
+    // frame of jitter on every workspace switch between two layouts.
+    //
+    // Same fix: reserve the widest string this chip can ever hold, and centre
+    // whatever is actually in it. Empty by default; a chip whose text does not
+    // change size has nothing to reserve.
+    property string widestText: ""
+
+    TextMetrics {
+        id: widest
+        text: root.widestText
+        font: label.font
+    }
+
     visible: active && (text !== "" || root.emoji !== "" || root.icon !== "")
-    implicitWidth: visible ? labelRow.implicitWidth + root.padding * 2 : 0
+    implicitWidth: visible
+        ? Math.max(labelRow.implicitWidth, widest.width) + root.padding * 2 : 0
     implicitHeight: parent ? parent.height : Metrics.barHeight
     width: implicitWidth
 
@@ -134,6 +171,7 @@ Item {
         text: root.text
         color: root.foreground
         font.family: root.fontFamily
+        font.bold: root.fontBold
         font.pixelSize: root.fontPixelSize
         // The bar is 28 px tall and a chip is one line, always. Without this a
         // long MPRIS title would wrap inside the plate and be clipped to its
