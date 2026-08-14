@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 
 import "qml/common"
 import "qml/popups"
@@ -189,6 +190,51 @@ ShellRoot {
         target: "tide"
         function applyThemeAnimated(theme: string) {
             root.startThemeTransition(theme);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  THE PASSTHROUGH CONFIRM, WHICH IS NOT ONE OF THE POPUPS EITHER
+    // ---------------------------------------------------------------
+    //
+    // config.py's _show_pass_confirm: a small centred window asking "Exit
+    // passthrough mode?" with Yes and No. The chord and the chip were ported
+    // when passthrough was; this is the surface that went with them.
+    //
+    // DRIVEN BY THE SUBMAP ITSELF, NOT BY AN IPC. Its visibility is exactly
+    // "the compositor is in `passthrough-confirm`", so reading that directly
+    // means the popup cannot go out of phase with the mode — which is the
+    // failure the RULES describe for toggles, arriving here in a new shape.
+    // It also means passthrough.sh does not have to know this exists.
+    //
+    // `submap>>name` with an EMPTY name on reset, so the empty case closes it.
+    property string submapName: ""
+
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            if (String(event.name) === "submap")
+                root.submapName = String(event.data || "").trim();
+        }
+    }
+
+    Loader {
+        active: root.submapName === "passthrough-confirm"
+        sourceComponent: Component {
+            PassthroughConfirm {
+                // The buttons do what the submap's y and n do, because they
+                // are the same two answers. Spelt out rather than routed
+                // through the script alone: `submap` is a dispatcher and
+                // the bar/notification half is the script's.
+                onYes: {
+                    Quickshell.execDetached([
+                        Quickshell.env("HOME")
+                            + "/.config/hypr/scripts/passthrough.sh", "exit"]);
+                    Quickshell.execDetached(["hyprctl", "dispatch", "submap", "reset"]);
+                }
+                onNo: Quickshell.execDetached(
+                    ["hyprctl", "dispatch", "submap", "passthrough"])
+            }
         }
     }
 
