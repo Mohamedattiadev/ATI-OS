@@ -2522,19 +2522,28 @@ def ilovepdf_list():
                         "are installed (it says which).")
     items = []
     for tool in tools:
-        # The label carries the toolkit's own Nerd Font glyph as its first
-        # character. Split off so the panel can put it in the icon slot
-        # rather than rendering it in the text face, where a private-use
-        # codepoint draws as nothing at all.
+        # The toolkit's labels open with a Nerd Font glyph, and it is
+        # STRIPPED rather than moved to the panel's icon slot.
+        #
+        # The slot exists and works — PickerLayer draws a short non-path
+        # `icon` in the icon font — but these particular glyphs do not
+        # render. They are Material Design icons in the SUPPLEMENTARY
+        # private use area (U+F022C and friends), and while the font has
+        # them (`fc-list :charset=f022c` names JetBrainsMono Nerd Font) and
+        # the same widget renders a BMP one (U+F002, the search magnifier)
+        # in the same face, nothing paints. Shipping them would be a 28 px
+        # blank column down the whole list.
+        #
+        # Dropping the glyph costs nothing here: every row is already a
+        # sentence that says what it does.
         label = tool["label"]
-        icon, _, rest = label.partition("  ")
+        _icon, _, rest = label.partition("  ")
         detail = ", ".join(tool["exts"][:4])
         if tool["multi"]:
             detail += "  · several files"
         items.append({"id": "tool:" + label,
                       "label": rest or label,
-                      "detail": detail,
-                      "icon": icon})
+                      "detail": detail})
     return _page("iLovePDF", items)
 
 
@@ -2572,13 +2581,13 @@ def _pdf_browser(state, note=""):
     if not directory:
         for root in _pdf_roots():
             items.append({"id": "dir:" + root, "label": os.path.basename(root) or root,
-                          "detail": _pdf_short(root), "icon": ""})
+                          "detail": _pdf_short(root)})
         return _page("Where are the files?", items, note=note, stack="push")
 
     parent = os.path.dirname(directory.rstrip("/"))
     if parent and parent != directory:
         items.append({"id": "dir:" + parent, "label": "..",
-                      "detail": _pdf_short(parent), "icon": ""})
+                      "detail": _pdf_short(parent)})
 
     try:
         entries = sorted(os.listdir(directory), key=str.lower)
@@ -2591,8 +2600,7 @@ def _pdf_browser(state, note=""):
             continue
         full = os.path.join(directory, name)
         if os.path.isdir(full):
-            items.append({"id": "dir:" + full, "label": name,
-                          "detail": "", "icon": ""})
+            items.append({"id": "dir:" + full, "label": name, "detail": ""})
             continue
         ext = os.path.splitext(name)[1].lstrip(".").lower()
         if ext not in exts:
@@ -2607,18 +2615,15 @@ def _pdf_browser(state, note=""):
             at = picked.index(full) + 1 if full in picked else 0
             items.append({"id": "tog:" + full,
                           "label": ("%d. " % at if at else "") + name,
-                          "detail": "picked" if at else "",
-                          "icon": "" if at else ""})
+                          "detail": "picked" if at else ""})
         else:
-            items.append({"id": "file:" + full, "label": name,
-                          "detail": "", "icon": ""})
+            items.append({"id": "file:" + full, "label": name, "detail": ""})
 
     if multi and picked:
         items.insert(0, {"id": "go",
                          "label": "Run on %d file%s" % (len(picked),
                                                         "" if len(picked) == 1 else "s"),
-                         "detail": ", ".join(os.path.basename(p) for p in picked)[:60],
-                         "icon": ""})
+                         "detail": ", ".join(os.path.basename(p) for p in picked)[:60]})
 
     title = (tool.get("label", "iLovePDF").split("  ", 1)[-1]
              + "  ·  " + _pdf_short(directory))

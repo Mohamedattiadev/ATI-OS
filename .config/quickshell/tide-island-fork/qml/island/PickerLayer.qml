@@ -142,6 +142,34 @@ FocusScope {
     // 2 = the query is a literal substring, 1 = subsequence only, 0 = no
     // match. Not a score: three buckets, and the order inside a bucket is
     // whatever the script sent.
+    // ---- WHAT AN `icon` IS ----
+    //
+    // The protocol lets a menu attach one to a row, and two kinds are in
+    // use: a PATH to a thumbnail (the clipboard menu writes one per entry)
+    // and a Nerd Font GLYPH (the ilovepdf tool list, whose labels carry the
+    // toolkit's own icons). They are told apart by the leading slash, which
+    // is the one thing a filesystem path always has here and a glyph never
+    // does.
+    //
+    // Both predicates are total — undefined, "", a number, anything — so a
+    // menu cannot make either of these throw. That matters more than it
+    // looks: island-picker.py builds these rows, and a menu added later
+    // that forgets `icon` entirely used to render `file://` and log a
+    // "Path is a directory" warning per row.
+    function iconIsPath(value) {
+        return value !== undefined && value !== null
+            && String(value).charAt(0) === "/";
+    }
+    function iconIsGlyph(value) {
+        if (value === undefined || value === null)
+            return false;
+        const text = String(value);
+        // Short and not a path. A glyph is one character; the bound is
+        // generous rather than exact so a two-codepoint emoji still counts,
+        // and anything longer is a label that got into the wrong field.
+        return text !== "" && text.length <= 4 && text.charAt(0) !== "/";
+    }
+
     function matchRank(item, needle) {
         if (needle === "")
             return 4;
@@ -935,8 +963,27 @@ FocusScope {
             onCursorRequested: root.selectedIndex = rowItem.index
             onActivated: root.runSelected()
 
+            // ---- AN `icon` IS EITHER A PATH OR A GLYPH ----
+            //
+            // It used to be assumed to be a path, always, and pasted
+            // straight after "file://". A menu that sends a Nerd Font
+            // character instead — which the ilovepdf tool list does,
+            // because the toolkit's own labels start with one — produced
+            // `file://` + a glyph, and an EMPTY icon produced bare
+            // `file://`, which resolves to `/`:
+            //
+            //     QQuickImage: Cannot open file:///: Path is a directory
+            //
+            // once per row, per open, into the shell log. Nothing was drawn
+            // wrong — Image just failed silently — so the only symptom was
+            // the log, and the row lost the icon it had asked for.
+            //
+            // A path is anything starting with `/`. Everything else is
+            // treated as text and set in the icon font, which is what a
+            // one-character icon wanted in the first place.
+            //
             // FORK: the row thumbnail, for menus whose items carry an
-            // `icon` path. Only the clipboard menu does today.
+            // `icon` path.
             //
             // "image" repeated down a column is not a list of images, it
             // is the same word eight times — the entry you are looking
@@ -951,7 +998,7 @@ FocusScope {
             Image {
                 id: rowThumb
                 visible: source !== ""
-                source: rowItem.modelData.icon !== undefined
+                source: root.iconIsPath(rowItem.modelData.icon)
                     ? "file://" + rowItem.modelData.icon : ""
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
@@ -969,9 +1016,26 @@ FocusScope {
                 smooth: true
                 }
 
+                // The other kind of icon. Same slot, same width, so the
+                // labels line up whether a menu sends pictures or glyphs.
                 Text {
-                anchors.left: rowThumb.visible ? rowThumb.right : parent.left
-                anchors.leftMargin: rowThumb.visible ? Metrics.pad(10) : 0
+                    id: rowGlyph
+                    visible: text !== "" && !rowThumb.visible
+                    text: root.iconIsGlyph(rowItem.modelData.icon)
+                        ? String(rowItem.modelData.icon) : ""
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Metrics.px(28)
+                    color: rowItem.isSelected ? IslandTheme.textPrimary
+                                              : IslandTheme.textMuted
+                    font.family: root.iconFontFamily
+                    font.pixelSize: Metrics.font(12)
+                }
+
+                Text {
+                anchors.left: rowThumb.visible ? rowThumb.right
+                              : (rowGlyph.visible ? rowGlyph.right : parent.left)
+                anchors.leftMargin: (rowThumb.visible || rowGlyph.visible) ? Metrics.pad(10) : 0
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 // Elided, not wrapped. A window title can be a whole
@@ -1040,7 +1104,7 @@ FocusScope {
             Image {
                 id: preview
                 anchors.centerIn: parent
-                source: root.selected && root.selected.icon !== undefined
+                source: root.selected && root.iconIsPath(root.selected.icon)
                     ? "file://" + root.selected.icon : ""
                 width: details.width - Metrics.px(2)
                 height: Metrics.px(120)
