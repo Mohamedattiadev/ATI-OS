@@ -226,9 +226,28 @@ Item {
     readonly property real timeBaselineY: timeBaselineGuide.y + timeBaselineGuide.baselineOffset
     readonly property real visibleLyricWidth: Math.min(lyricTextWidth, Math.max(0, lyricMetrics.advanceWidth))
     readonly property real visibleTimeWidth: Math.min(textWidth, Math.max(0, timeMetrics.advanceWidth))
+    // ---- THE DOT LEADS THE LAYOUT GLYPH, NOT THE CLOCK ----
+    //
+    // FORK. This used to be "one gap left of the clock's ink", which is the
+    // SAME SLOT layoutGlyphText claims — see its own x, which is
+    // restingInkLeft - restingLayoutGap - restingLayoutWidth. The two were
+    // drawn on top of each other, and the only reason it was never noticed is
+    // that the dot could not light up at all on this machine until the
+    // `recording` IPC existed: wf-recorder is invisible to the packaged
+    // detector. The first frame it ever appeared in, it was painted through
+    // the middle of the layout glyph.
+    //
+    // So it steps over the glyph's whole slot when the glyph is there, and
+    // keeps the old position when it is not. Hung off restingInkLeft for the
+    // reason that property exists — everything leading the clock hangs off
+    // the INK, not off the 220 px centred box — with the layout allowance
+    // spelled out from the same two constants the glyph itself uses, so the
+    // two cannot drift apart.
     readonly property real timeRecordingDotX: Math.max(
         4,
-        timeX + (textWidth - visibleTimeWidth) / 2 - recordingDotSpacing - timeRecordingIndicator.width
+        timeX + (textWidth - visibleTimeWidth) / 2
+            - (root.layoutVisible ? root.restingLayoutGap + root.restingLayoutWidth : 0)
+            - recordingDotSpacing - timeRecordingIndicator.width
     )
     readonly property real preferredWidth: Math.max(
         minimumWidth,

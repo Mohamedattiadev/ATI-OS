@@ -1227,6 +1227,45 @@ PanelWindow {
         islandContainer.clearPicker();
     }
 
+    // ---- RECORDING: THE DOT, AND SAYING SO ----
+    //
+    // FORK. Driven over the `recording` IPC target by island-picker.py, which
+    // is the only thing that knows — see `forkRecordingActive` below for why
+    // the packaged detector cannot see wf-recorder.
+    //
+    // This owns the PERSISTENT half only — the dot. The "it started" message
+    // is the notification island-picker.py already sends; see the note in the
+    // body for why announcing it a second time from here was a mistake.
+    function setRecordingWindow(active, pid) {
+        islandContainer.forkRecordingActive = !!active;
+        islandContainer.forkRecordingPid = active ? (pid || 0) : 0;
+
+        // ---- AND IT DELIBERATELY DOES NOT ANNOUNCE ITSELF HERE ----
+        //
+        // The first version called showModeIndicatorWindow() with a camera
+        // glyph, which looked right in a screenshot and was wrong: the mode
+        // INDICATOR is the submap capsule, and it is persistent BY DESIGN —
+        // submap-indicator.sh raises it on entering a submap and clears it on
+        // reset. Nothing expires it. Measured: "Recording" was still filling
+        // the capsule eleven seconds later, hiding the resting face and, with
+        // it, the very dot this change exists to show.
+        //
+        // The announcement already existed anyway. island-picker.py calls
+        // _notify("Recording started", output) on the same transition, and the
+        // island serves org.freedesktop.Notifications itself, so it is drawn
+        // in this capsule and expires on its own. Two announcements for one
+        // event, one of which never leaves, is worse than one.
+        //
+        // So this function owns the PERSISTENT half — the dot — and the
+        // notification owns the transient half.
+    }
+
+    function recordingStatusText() {
+        return (islandContainer.forkRecordingActive ? "recording" : "idle")
+            + " pid=" + islandContainer.forkRecordingPid
+            + " portal=" + (islandContainer.screenRecordingActive ? "yes" : "no");
+    }
+
     function toggleSettingsWindow() {
         if (islandContainer.islandState === "settings")
             islandContainer.smartRestoreState();
@@ -1854,6 +1893,69 @@ PanelWindow {
         readonly property string timePlayed: mediaController.timePlayed
         readonly property string timeTotal: mediaController.timeTotal
         readonly property bool screenRecordingActive: root.screenRecordingActive
+
+        // ---- WHY THE PACKAGED RECORDING FLAG IS NOT ENOUGH ----
+        //
+        // FORK. Reported as "why is there no red circle in the island showing
+        // it is recording". The indicator was not missing — RecordingIndicator
+        // exists, it is mounted in the resting face, and its `active` gate is
+        // correct. It simply never went true.
+        //
+        // SystemServices.screenRecordingActive is the packaged backend's, and
+        // the backend detects a recording two ways, both visible in its
+        // symbols: startRecordingPortalMonitor (dbus-monitor, watching the
+        // xdg-desktop-portal ScreenCast session) and a pw-mon PipeWire watch.
+        //
+        // This desktop records with wf-recorder, which uses wlr-screencopy
+        // DIRECTLY — no portal, no PipeWire node. So neither detector can ever
+        // fire for the recorder we actually use. Measured: with wf-recorder
+        // running against eDP-1 for four seconds, the count of red pixels in
+        // the resting capsule did not change.
+        //
+        // island-picker.py already knows the truth exactly — it starts the
+        // recorder and owns $XDG_RUNTIME_DIR/island-record.pid — so it tells
+        // us, over the `recording` IPC target, and this OR's into the packaged
+        // flag rather than replacing it. A portal recorder (OBS) still lights
+        // the dot through the backend; wf-recorder now lights it through here.
+        property bool forkRecordingActive: false
+        property int forkRecordingPid: 0
+
+        readonly property bool anyRecordingActive:
+            islandContainer.screenRecordingActive || islandContainer.forkRecordingActive
+
+        // ---- AND WHY IT WATCHES THE PID RATHER THAN TRUSTING THE FLAG ----
+        //
+        // A recorder that is killed from outside — `pkill wf-recorder`, a
+        // crash, a logout race — never sends the stop call, and a dot that
+        // stays lit forever is worse than no dot: it makes the indicator
+        // untrustworthy, so you stop reading it.
+        //
+        // The watchdog only runs WHILE we believe a recording is live, so an
+        // idle session spawns nothing. That is the whole reason it is a
+        // gated Timer and not a poll: this shell already carries a note about
+        // four hyprctl processes per window event being too much for a feature
+        // nobody is using.
+        Timer {
+            id: recordingWatchdog
+            running: islandContainer.forkRecordingActive
+                && islandContainer.forkRecordingPid > 0
+            interval: 3000
+            repeat: true
+            onTriggered: recordingLiveCheck.running = true
+        }
+
+        Process {
+            id: recordingLiveCheck
+            // `kill -0` tests for existence without signalling. Cheap, and it
+            // answers the only question that matters.
+            command: ["kill", "-0", String(islandContainer.forkRecordingPid)]
+            onExited: (code) => {
+                if (code !== 0) {
+                    islandContainer.forkRecordingActive = false;
+                    islandContainer.forkRecordingPid = 0;
+                }
+            }
+        }
         readonly property var bluetoothDevices: bluetoothConnectionTracker.devices
         readonly property var overviewView: overviewLoader.item && overviewLoader.item.overviewView
             ? overviewLoader.item.overviewView
@@ -4631,7 +4733,7 @@ PanelWindow {
                         minimumWidth: 220
                         maximumWidth: Math.max(220, root.width - 48)
                         transitionProgress: islandContainer.swipeTransitionProgress
-                        recordingActive: islandContainer.screenRecordingActive
+                        recordingActive: islandContainer.anyRecordingActive
                         showSecondaryText: islandContainer.workspaceOriginSide !== "left"
                             && islandContainer.splitOriginSide !== "left"
                         showCondition: true
@@ -4661,7 +4763,7 @@ PanelWindow {
                         minimumWidth: 220
                         maximumWidth: Math.max(220, root.width - 48)
                         transitionProgress: islandContainer.rightSwipeProgress
-                        recordingActive: islandContainer.screenRecordingActive
+                        recordingActive: islandContainer.anyRecordingActive
                         musicPlaying: islandContainer.musicPlaying
                         showSecondaryText: islandContainer.workspaceOriginSide !== "right"
                             && islandContainer.splitOriginSide !== "right"

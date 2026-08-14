@@ -388,6 +388,41 @@ def _notify(title, body, *extra):
                        capture_output=True, timeout=4)
 
 
+ISLAND_FORK = os.path.join(HOME, ".config", "quickshell", "tide-island-fork")
+
+
+def _island_recording(active, pid=0):
+    """Tell the island a recording started or stopped.
+
+    ---- WHY THE ISLAND HAS TO BE TOLD ----
+
+    It cannot find out by itself. The packaged backend detects a recording two
+    ways -- a dbus-monitor watch on the xdg-desktop-portal ScreenCast session,
+    and a pw-mon PipeWire watch -- and wf-recorder uses wlr-screencopy
+    DIRECTLY, so it announces itself on neither. Measured: wf-recorder capturing
+    eDP-1 for four seconds changed nothing in the resting capsule.
+
+    This function is the whole reason the red dot can exist for the recorder
+    this desktop actually uses. The pid matters as much as the flag: the island
+    watchdogs it with `kill -0`, so a recorder killed from outside clears the
+    dot instead of leaving it lit forever.
+
+    Deliberately best-effort. A failure here must never take the recording down
+    with it -- `qs ipc call` also EXITS 0 when it finds nothing, which is why
+    this cannot be verified from the return code anyway.
+    """
+    if not shutil.which("qs"):
+        return
+    args = ["qs", "-p", ISLAND_FORK, "ipc", "call", "recording",
+            "start" if active else "stop"]
+    if active:
+        args.append(str(pid))
+    try:
+        subprocess.run(args, capture_output=True, timeout=4)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 # -------------------------------------------------------------- documents --
 #
 #  dm-documents: `find $HOME -maxdepth 4 -iname "*.pdf"`, then open the pick
@@ -1330,6 +1365,10 @@ def record_run(item_id):
         except OSError:
             pass
         target = _state_read("record") or {}
+        # The island first: the dot is the thing the eye is on, and a
+        # notification that lands before the indicator clears reads as the
+        # recording still running.
+        _island_recording(False)
         _notify("Recording stopped", target.get("output", ""))
         return None
 
@@ -1377,6 +1416,19 @@ def record_run(item_id):
     _spawn_sh("exec %s < /dev/null & echo $! > %s; wait" % (
         command, shlex.quote(RECORD_PID)))
     _state_write("record", {"output": output, "mode": item_id})
+
+    # The pidfile is written by the detached shell, so it is NOT there yet
+    # when _spawn_sh returns. Poll briefly rather than sleeping a guessed
+    # constant: without a pid the island can light the dot but cannot
+    # watchdog it, which is the difference between an indicator that
+    # self-corrects and one that can get stuck on.
+    pid = 0
+    for _ in range(40):
+        pid = _record_active()
+        if pid:
+            break
+        time.sleep(0.05)
+    _island_recording(True, pid)
     _notify("Recording started", output)
     return None
 

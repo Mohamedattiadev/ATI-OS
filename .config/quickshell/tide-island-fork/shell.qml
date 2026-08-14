@@ -551,6 +551,43 @@ Scope {
         }
     }
 
+    // ---- THE RECORDING STATE, TOLD TO US RATHER THAN DETECTED ----
+    //
+    // FORK. The packaged backend can only see recorders that go through the
+    // xdg-desktop-portal ScreenCast session or announce a PipeWire node; this
+    // desktop records with wf-recorder, which uses wlr-screencopy directly and
+    // is invisible to both. The full measurement is on `forkRecordingActive`
+    // in DynamicIslandWindow.qml.
+    //
+    // island-picker.py owns the recorder and its pidfile, so it is the thing
+    // that knows. `pid` is required, not optional: it is what the watchdog
+    // uses to notice a recorder that was killed from outside and would
+    // otherwise leave the dot lit forever.
+    IpcHandler {
+        target: "recording"
+
+        // TYPED parameters, for the reason the nightlight handler above spells
+        // out at length: an IpcHandler function with an untyped parameter is
+        // silently dropped from the IPC surface — no error, no warning, and
+        // `qs ipc show` just does not list it.
+        function start(pid: int): void {
+            shellRoot.forEachWindow((window) => window.setRecordingWindow(true, pid));
+        }
+
+        function stop(): void {
+            shellRoot.forEachWindow((window) => window.setRecordingWindow(false, 0));
+        }
+
+        // Readable, so a script can assert rather than assume — and so this
+        // is testable at all from outside.
+        function status(): string {
+            const windows = shellRoot.islandWindows;
+            if (!windows.length)
+                return "no-window";
+            return windows[0].recordingStatusText();
+        }
+    }
+
     IpcHandler {
         target: "overview"
 
