@@ -1572,9 +1572,17 @@ fi
 #  `|| true` because a theme with no wallpaper must not fail a theme
 #  change, and because this is the shared script — a qtile session with no
 #  xwallpaper should still get its colours.
+# WALL_APPLIED is read only by the notification at the end of this script,
+# which says "and the wallpaper too" and must not say it when the wallpaper
+# did not move. Compared by resolved target rather than by theme-wallpaper's
+# exit code: the `|| true` above swallows that code by design, and a theme
+# with an empty set exits 0 having changed nothing.
+WALL_BEFORE="$(readlink -f "$HOME/.cache/wall" 2>/dev/null || true)"
 if [ "$MODE" != "wal" ] && command -v theme-wallpaper >/dev/null 2>&1; then
   theme-wallpaper apply "$MODE" instant || true
 fi
+WALL_APPLIED="$(readlink -f "$HOME/.cache/wall" 2>/dev/null || true)"
+[ "$WALL_APPLIED" = "$WALL_BEFORE" ] && WALL_APPLIED=""
 
 printf '%s\n' 'THEME_APPLY_VISIBLE_DONE'
 
@@ -2019,4 +2027,39 @@ if [[ -d /usr/share/plymouth/themes/dotfiles ]] \
   ) >/dev/null 2>&1 &
 fi
 
-notify-send "theme-apply" "Theme -> $MODE" 2>/dev/null || true
+# ---- The "theme changed" notification ----
+#
+# It used to read
+#
+#     theme-apply
+#     Theme -> monokai
+#
+# which is the script talking to its author. The summary was the FILENAME
+# of the program that ran, and the body was a shell arrow joined to an
+# internal mode string — neither is a thing the person who just picked a
+# theme has any use for, and "theme-apply" as the app name is what the
+# island prints above it, so the notification announced itself twice and
+# the choice once.
+#
+# What it says now is the choice, in the words the choice was offered in:
+# the picker lists "Rose Pine", so this says "Rose Pine". `$MODE` stays out
+# of sight where it belongs.
+#
+# The body names the WALLPAPER, and that is the point of the rewrite rather
+# than a decoration. A theme now draws one image at random out of its set,
+# so "which one did I get" is a real question with a real follow-up — the
+# answer is what you pass to `theme-wallpaper bind` if you want to keep it.
+# It is omitted, not faked, when nothing moved: wal mode derives the palette
+# FROM the wallpaper and never sets one, and a theme with an empty set exits
+# 0 having changed nothing.
+THEME_LABEL="$(printf '%s' "$MODE" | sed -e 's/-/ /g' -e 's/\b\(.\)/\u\1/g')"
+if [ -n "${WALL_APPLIED:-}" ]; then
+  WALL_NAME="$(basename "$WALL_APPLIED")"
+  NOTIFY_BODY="Palette and wallpaper · ${WALL_NAME%.*}"
+elif [ "$MODE" = "wal" ]; then
+  NOTIFY_BODY="Palette generated from the wallpaper"
+else
+  NOTIFY_BODY="Palette applied"
+fi
+notify-send -a "Theme" -u low -t 4000 -i preferences-desktop-theme \
+  "$THEME_LABEL" "$NOTIFY_BODY" 2>/dev/null || true
