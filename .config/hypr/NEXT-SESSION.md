@@ -36,8 +36,11 @@ most are closed or stale — where they disagree, the audit measured it).
    notification centre is REBUILT. Night light FIXED. Focus FIXED. No other
    broken control found.
 8. **Migration leftovers: ilovepdf, scratchpads, the Obsidian "S" session** —
-   NOT STARTED. Note `V ilovepdf` is ALREADY bound in the rofi HUD, so that
-   row of the migration table is staler than it reads. Verify before porting.
+   **DONE.** All three already existed; the ask was to walk the cases, and
+   two scratchpad defects came out of it (a toggle out of phase on the spawn
+   path, and a pad drifting 44 px when its app resizes itself). ilovepdf is
+   bound at `$mod P` → `V` and stays rofi deliberately. Not tested: a second
+   monitor.
 
 Added by the user across sessions, all DONE: case-insensitive picker search,
 battery in the win+` panel, the black screen corners, Focus bound to a key,
@@ -89,12 +92,13 @@ for the first time — verified capturing a valid 3.99 s mp4.
 
 # THE FIRST THING TO DO
 
-**Scratchpads and the Obsidian "S" session (ask #8).** It is now the only
-one of the eight with nothing done to it at all.
+**All eight original asks are now closed or resolved.** Pick from the list
+below on merit rather than from a backlog; the top two are the ones with a
+measured next step already written down.
 
-Walk every case: first launch, re-toggle, focus steal, workspace move,
-monitor change, app already open, app dead. `hypr/scripts/scratchpad.sh`,
-`toggle-app.sh`.
+The honest state: #1 and #4 are partial with the remainder scoped, #3's
+~800 ms settle is the oldest unsolved thing here, and #7 found no further
+broken controls when last swept.
 
 ---
 

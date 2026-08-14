@@ -1722,3 +1722,90 @@ reader creates exactly that collision — two readers for one key the day
     Phase 8 asked for it.
   * `exercise_writes` restores the VALUE, not the ABSENCE — see its
     docstring. Byte-exact restore needs an unset in `island-settings.py`.
+
+---
+
+# Audit — 2026-08-14, scratchpads and the S session (ask #8)
+
+## The ask was verification, and the doc's "NOT STARTED" was wrong
+
+`scratchpad.sh`, `toggle-app.sh` and `sum-toggle.sh` all existed, bound and
+commented. `rofi_ilovepdf` is on PATH and bound at `$mod P` → `V`, kept as
+rofi deliberately — it is a file manager with multi-select and the picker's
+protocol carries one id per page. So the migration table's row for it was as
+stale as the handoff warned.
+
+What was outstanding was walking the cases. Two defects came out.
+
+## Defect 1 — the spawn path asked for a toggle
+
+Pressing a pad's key while a DIFFERENT pad was open sometimes left the other
+pad on screen and the new one hidden: the key looks dead, a second press
+fixes it. Seen on `calc` with `term2` open, not reproducible on the next
+attempt, and never reproducible with kitty.
+
+Hyprland was cleared first — `togglespecialworkspace B` while A is open
+switches to B, dispatched directly. The script ended in an unconditional
+toggle even on the path that had just created the window, and that path
+knows the state it wants.
+
+This is the existing rule — *toggle IPCs go out of phase; prefer explicit
+show/hide when scripting* — surfacing in a subsystem nobody had checked for
+it. The rule was written about `qs ipc call`. It is about toggles.
+
+## Defect 2 — 44 px, and three fixes that did not work
+
+`calc` sat at @273,33 where every other pad gets @273,77. Sampled every
+150 ms from spawn:
+
+    t=0.90s   820x461 @273,77     our rules, exactly right
+    t=1.35s   820x550 @273,33     qalculate-gtk resizes ITSELF
+    t=3.90s   820x550 @273,33     and stays
+
+The exec rules were never wrong. The app requests a taller window half a
+second after mapping, and a floating window grown about its own centre
+drifts up by half the overshoot — precisely 44 px. Invisible on kitty and
+the browser pads because they accept the height, so the recentring is zero.
+
+Rejected, each measured:
+
+  * move after the batch rather than inside it — no effect
+  * move, verify, re-move up to four times — no effect, and the reason is
+    the lesson: **it succeeds.** It reads back @273,77 and breaks, and the
+    app resizes after its last read. A verify loop cannot catch a change
+    that happens after it stops looking.
+  * wait for the size to settle before moving at all — works, and charges
+    every pad ~1 s of first-launch latency for one app's habit.
+
+Shipped: the correction is backgrounded. The pad appears immediately and a
+watcher re-asserts position once the size has held for three reads. kitty
+first launch stays 0.39 s; calc reaches @273,77 within ~2 s.
+
+## The matrix that passed — do not re-walk it
+
+    re-toggle show/hide/show      1 client throughout, no duplicate spawn
+    app dead, pad was open        Hyprland auto-hides the emptied special,
+                                  so the spawn path lands visible
+    app dead, pad was closed      respawns and shows
+    first launch, never run       term2, correct geometry, 0.39 s
+    geometry vs the qtile source  820x461 @273,77 = 60/60 @ 20/10 of 1366x768
+    browser pad hand-off          chatgpt with brave ALREADY RUNNING (12
+                                  procs): 956x614 @205,77, floating, shown
+
+The last one matters most: `brave --app` hands the URL to the running brave
+and exits, so the window belongs to a process Hyprland never spawned. That
+is the case the script's address-polling exists for, and it is the one the
+header says used to fail outright. It now works with brave already up.
+
+`toggle-app.sh` with Obsidian, all three branches: not running → switches to
+S and spawns, window lands on S; open elsewhere → switches and focuses;
+standing on it → bounces back to 4. anki and obsidian share home S but keep
+separate go-back memory (`anki` vs `obsidian_md__Obsidian`), so neither can
+clobber the other. `sum-toggle.sh` shows and hides as documented.
+
+## Not tested
+
+A second monitor. The x/y monitor-relative logic in `scratchpad.sh` was
+measured against a headless output in an earlier session and its reasoning
+is in the header; this pass did not re-create that output, so multi-monitor
+remains verified-by-history rather than verified-today.
