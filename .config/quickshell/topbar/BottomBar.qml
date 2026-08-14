@@ -57,9 +57,14 @@ Item {
         //     "Button1": open_launcher     "Button3": open_terminal
         //
         // which its own tooltip states: "Arch menu · L-click → launcher ·
-        // R-click → terminal", against the top bar's "L-click → terminal ·
-        // R-click → launcher". Two bars, two habits, and the pair of tooltips
-        // is what makes the difference deliberate rather than a slip.
+        // R-click → terminal".
+        //
+        // The two bars USED to disagree about right-click — the top one had
+        // qtile's launcher there — and that disagreement is what got
+        // reported. The top chip's right button is the terminal now, so this
+        // bar's habit is the one both follow; see the note in shell.qml. Left
+        // still differs, because these really are two different chips in
+        // config.py with two different first buttons.
         BarText {
             text: String.fromCodePoint(0xF0570)      // ARCH_ICON_MAIN
             pixelSize: Metrics.s(19)

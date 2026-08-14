@@ -285,7 +285,20 @@ ShellRoot {
                     // UTF-16 code unit and silently truncates above U+FFFF.
                     Chip {
                         text: String.fromCodePoint(0xF0570)
-                        tooltip: "Arch menu \u00b7 L-click \u2192 terminal \u00b7 R-click \u2192 launcher"
+                        // TRUTHFUL, AND THEREFORE NOT qtile's STRING.
+                        //
+                        // TOOLTIP_BY_NAME["main_icon_chip"] is "Arch menu \u00b7
+                        // L-click \u2192 terminal \u00b7 R-click \u2192 launcher" and this
+                        // bar reproduced it verbatim \u2014 but that tooltip
+                        // disagrees with its own widget: config.py binds
+                        // Button1 to open_docs, not to a terminal. qtile has
+                        // shipped a chip that mis-describes itself, and
+                        // copying the text faithfully copied the lie.
+                        //
+                        // Fidelity to a tooltip is worth less than a tooltip
+                        // that is true, and this one is the only place a user
+                        // finds out what the three buttons do.
+                        tooltip: "Arch menu \u00b7 L \u2192 docs \u00b7 M \u2192 launcher \u00b7 R \u2192 terminal"
                         hoverSink: hoverSink
                         foreground: BarTheme.purple      // colors[7]
                         padding: 11
@@ -293,9 +306,25 @@ ShellRoot {
                         fontFamily: "Symbols Nerd Font"
                         clickable: true
                         height: parent.height
-                        // config.py's map, kept: L docs, M terminal, R launcher.
-                        // Terminal is on MIDDLE rather than dropped because
-                        // muscle memory is real, and $mod Return still does it.
+                        // ---- ONE ASKED-FOR DIVERGENCE: R IS THE TERMINAL ----
+                        //
+                        // config.py's top-bar map is L docs, M terminal, R
+                        // launcher, and that is what this was. Asked for
+                        // directly: "the right click on the window chip should
+                        // open terminal".
+                        //
+                        // It is not an arbitrary swap. main_icon_chip_nu — the
+                        // BOTTOM bar's copy of this chip, in the same config —
+                        // is L launcher, R TERMINAL, so right-click-for-a-
+                        // terminal is already this desktop's habit on the
+                        // other bar, and the two bars disagreeing on the most
+                        // used button is the thing being reported. The
+                        // launcher moves to MIDDLE rather than being dropped,
+                        // so all three actions stay reachable from the chip.
+                        //
+                        // Recorded as a divergence rather than folded in
+                        // quietly, because everything else on this bar is
+                        // measured against config.py.
                         // ---- ROFI, NOT THE ISLAND'S PANELS ----
                         //
                         // This bar is qtile's, and qtile drives ROFI. The
@@ -314,10 +343,10 @@ ShellRoot {
                             if (b === Qt.LeftButton)
                                 Quickshell.execDetached(["rofi_docs"]);
                             else if (b === Qt.MiddleButton)
-                                Quickshell.execDetached(["kitty"]);
-                            else
                                 Quickshell.execDetached(
                                     ["rofi", "-show", "drun", "-show-icons"]);
+                            else
+                                Quickshell.execDetached(["kitty"]);
                         }
                     }
 
