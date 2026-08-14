@@ -1461,10 +1461,11 @@ three sessions of deliberate divergence. Exactly two files differ:
 **1. `DynamicIslandWindow.qml`, two hunks.**
 
   * `islandShowWorkspaceOnAutoHide` — a new config flag that reveals an
-    auto-hidden island on workspace change. Not taken yet; the fork has
-    `showAutoHiddenIsland(source)` already and this is a one-line call site,
-    but it is a behaviour change gated on a config key the fork's schema does
-    not carry.
+    auto-hidden island on workspace change. **The sentence that was here was
+    wrong** and is corrected below under "the inert row"; the fork's schema
+    DOES carry this key, with a row in both clients. What it lacks is a
+    reader, because the property is compiled into upstream's backend and the
+    installed package is a release behind.
   * the notification-centre corner radius, `targetHeight * 40 / 165` →
     `targetHeight * 36 / 165`. **Do not take this.** `faa424f` removed the
     proportionality entirely, because a radius derived from panel height grows
@@ -1627,3 +1628,97 @@ reader, and the RESIZE panel still drew.
 **What killed them was not recovered.** Nothing in the repo kills either
 script. They survive a dropped read now; they still do not survive a `kill`,
 and nothing notices if they stop.
+
+---
+
+# Audit — 2026-08-14, the settings app (ask #2)
+
+## What was actually wrong with it
+
+The app was not unbuilt. It was libadwaita, grouped, searching, and already
+a correct client of `island-settings.py --set`. Phase 8's schema work was
+done too: 31 rows, the `panel` flag, the `font`/`path`/`list` types.
+
+The defect was one property. `set_subtitle_lines(0)` — unlimited — so all 31
+rows printed their entire `detail` paragraph. Measured on screen: the page
+ran about nine screens, the controls sat stranded at the right margin, and
+the group headings were never visible at the same time as a group boundary.
+Grouping was true in the markup and false on screen.
+
+That is the whole of "terrible looking, not easy". The prose the app exists
+to show was the thing making it unusable.
+
+## The three changes, and what each answers
+
+| the user's words | the change |
+|---|---|
+| "not easy" | subtitles capped at 2 lines; full prose one click away on ⓘ |
+| "not customisable" | sections became a sidebar with counts — a table of contents for what is changeable at all |
+| "more detailed" | the ⓘ popover carries key, type, range/choices, default AND current |
+
+Shape and Typography now fit an 980x720 window with no scrolling.
+
+The ⓘ popover is where "more detailed" actually landed. It shows the KEY,
+which nothing in either client had ever displayed — `subtitle_for`'s
+docstring claimed the key was in the subtitle and it never was. The key is
+what you need to script `--set`, to read userconfig.json, or to grep this
+repo for why a row exists.
+
+A "Changed" pseudo-section lists only rows differing from the packaged
+defaults. Phase 8 asked for "a visible diff"; the per-row reset arrow was
+only ever the local half of that.
+
+## Verified without clicking, and that is a rule not a convenience
+
+Every control in this window writes on change, so a synthesised click two
+pixels off a list row lands on a switch and edits real config. The
+`--selftest` navigation block drives `apply_filter()` directly instead: all
+9 sections show exactly their own rows, and a query issued from "System"
+returns 7 rows entirely outside it.
+
+**The first version of that test was wrong and failed correct code.** It
+asserted "a search spans more than one section", and all seven matches for
+"font" are legitimately in Typography. The property that matters is that
+results ESCAPE the selected section, not that they span several. Fixed, and
+given a second query that does span five.
+
+> A test that fails correct code is a bug in the test. Check what the
+> assertion actually implies before believing the FAIL.
+
+`--section Changed` was added beside the existing `--filter`, for the reason
+`--filter`'s own comment gives: it is the only way to get a section into a
+screenshot without synthesising input.
+
+## The inert row
+
+`islandShowWorkspaceOnAutoHide` has a row in both clients and no reader
+anywhere on this machine:
+
+    IslandBackend.qmltypes / libIslandBackendplugin.so
+        islandShowWorkspaceOnAutoHide   0 hits, both files
+        islandAutoHideEnabled           present, both files
+    grep -r  ~/.config/quickshell/tide-island-fork
+        nothing
+
+`scope` says "packaged"; the packaged backend is 1.0.34 and the key is
+upstream's, added in 1.0.35. UserConfigBackend is compiled and blind to any
+key it has no property for, so the toggle writes something nothing reads.
+
+Its `detail` had made this worse than a silent bug — it said the row "is
+inert until [auto-hide] is switched, and that is a property of the feature
+rather than a fault in the row". Confident, specific, and wrong, which tells
+anyone who notices the row does nothing to stop looking.
+
+Left in place: it goes live on the next package upgrade. NOT served through
+ForkConfig, because every fork key is `fork`-prefixed precisely so a future
+upstream key cannot collide, and adopting an upstream NAME into the fork's
+reader creates exactly that collision — two readers for one key the day
+1.0.35 lands.
+
+## Still open here
+
+  * The row list is one flat page per section; live preview for the cheap
+    numeric keys (sizes, opacity, position) is still unimplemented, and
+    Phase 8 asked for it.
+  * `exercise_writes` restores the VALUE, not the ABSENCE — see its
+    docstring. Byte-exact restore needs an unset in `island-settings.py`.

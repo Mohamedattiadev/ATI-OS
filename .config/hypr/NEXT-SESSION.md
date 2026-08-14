@@ -17,8 +17,10 @@ most are closed or stale — where they disagree, the audit measured it).
 
 1. **rofi wording/behaviour in the quickshell popups** — DONE for screenshot,
    record, anki, brightness. Not re-checked for the other 12 menus.
-2. **The island settings app (`alt+shift+7`) is ugly and unusable** — NOT
-   STARTED. This is now the largest untouched ask.
+2. **The island settings app (`alt+shift+7`) is ugly and unusable** — **DONE
+   for the stated complaints.** Sections are a sidebar, the prose no longer
+   IS the page, and the ⓘ popover carries key/type/default/current. Live
+   preview for the numeric keys is still unimplemented.
 3. **Animation glitches everywhere** — the notification→resting "clunk" is
    FIXED. The ~800 ms panel settle is untouched.
 4. **Theme change freezes the screen** — PARTLY. The dunst restart is gone
@@ -77,20 +79,8 @@ itself, so the only symptom was a missing popup. Both now reconnect.
 
 # THE FIRST THING TO DO
 
-**The settings app (ask #2).** It is the biggest ask with nothing done to
-it, the user's words were "terrible looking, not customisable, not easy",
-and every other big item is now either finished or has a measured next step.
-
-`hypr/scripts/island-settings-app.py`, GTK4 over the schema in
-`island-settings.py`. The schema is fine; the presentation is the job.
-Phase 8 in `upgread_UI_UX.md` already specifies it — read that before
-designing anything new.
-
----
-
-# THEN, IN ROUGH ORDER
-
-1. **Scratchpads and the Obsidian "S" session** (ask #8). Walk every case:
+**Scratchpads and the Obsidian "S" session (ask #8).** It is now the only
+one of the eight with nothing done to it at all. Walk every case:
    first launch, re-toggle, focus steal, workspace move, monitor change, app
    already open, app dead. `hypr/scripts/scratchpad.sh`, `toggle-app.sh`.
 
@@ -114,8 +104,15 @@ designing anything new.
    record menu first** — its six rows were written against a wf-recorder
    that did not exist, and now it does, so they can finally be run.
 
-6. **`islandShowWorkspaceOnAutoHide`** — the one thing in upstream 1.0.35
-   worth taking, and only if auto-hide is a mode the user actually runs.
+6. **Live preview in the settings app** for the cheap numeric keys (sizes,
+   opacity, position). Phase 8 asked for it and it is the one item from that
+   plan still unbuilt.
+
+7. **`islandShowWorkspaceOnAutoHide` is an INERT ROW** — it has a row in
+   both clients and no reader anywhere (the packaged backend is 1.0.34, the
+   key is upstream's from 1.0.35). It goes live on a package upgrade. Do not
+   "fix" it by serving it from ForkConfig; see the audit for why that
+   collides.
 
 ---
 
