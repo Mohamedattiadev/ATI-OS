@@ -89,6 +89,7 @@ ShellRoot {
         function network(): void   { root.toggle("network"); }
         function volume(): void    { root.toggle("volume"); }
         function wifiqr(): void    { root.toggle("wifiqr"); }
+        function display(): void   { root.toggle("display"); }
 
         // Explicit show/hide beside the toggles, because a toggle driven from
         // a script goes out of phase the first time a click and a key
@@ -98,6 +99,7 @@ ShellRoot {
         function showNetwork(): void   { root.show("network"); }
         function showVolume(): void    { root.show("volume"); }
         function showWifiQr(): void    { root.show("wifiqr"); }
+        function showDisplay(): void   { root.show("display"); }
         function close(): void         { root.hide(); }
         function status(): string      { return root.open === "" ? "none" : root.open; }
     }
@@ -225,6 +227,15 @@ ShellRoot {
         active: root.open === "wifiqr"
         sourceComponent: Component {
             WifiQrPopup {
+                onRequestClose: root.hide()
+            }
+        }
+    }
+
+    Loader {
+        active: root.open === "display"
+        sourceComponent: Component {
+            DisplayPopup {
                 onRequestClose: root.hide()
             }
         }

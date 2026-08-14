@@ -179,7 +179,13 @@ case "$key" in
   toggleBluetoothPanel)       run blueman-manager ;;
   toggleSysmon)               run_sh 'env GTK_THEME=Adwaita:dark missioncenter' ;;
   toggleCalendar)             run clock_popup ;;
-  toggleDisplayPanel)         run_sh "python3 '$HYPR_SCRIPTS/display-ctl.py' --menu || nwg-displays" ;;
+  # Was `display-ctl.py --menu || nwg-displays`, and BOTH halves were dead.
+  # The script has no --menu; it answers `{"ok": false, "status": "unknown
+  # subcommand --menu"}` and EXITS 0, so a command that fails by printing
+  # never reaches the `||`. nwg-displays is not installed either. The island's
+  # own DisplayPanel — itself the port of qtile's DisplayPopup.py — is hosted
+  # in a popup window now, so both bars open the same panel.
+  toggleDisplayPanel)         run_popup display ;;
   # Was `run wifi-qr.py`, which generated the code correctly and showed
   # nobody: that script PRINTS JSON and writes a PNG, and the island renders
   # it in its wifi_qr state. Under the topbar there was no renderer, so the
