@@ -3,22 +3,28 @@ import QtQuick
 //
 // One widget box's contents, in the shared expansion area.
 //
-// ---- WHY THE CONTENTS ARE NOT INSIDE THEIR OWN BOX ----
+// ---- WHERE THE CONTENTS SIT, WHICH IS NOT THE SAME FOR EVERY BOX ----
 //
-// They were, and they opened between the lamp chip and their own toggle,
-// which is where qtile's `close_button_location='right'` puts them. Asked for
-// the other arrangement: "the position of opening chips or list with chips
-// should be in the left of the lamp chip".
+// This is one box's contents; WHERE it is placed is the caller's choice, and
+// shell.qml makes that choice per box because config.py does:
 //
-// So every box's contents now live in ONE area at the far left of the
-// right-hand cluster, immediately left of the lamp, and the boxes themselves
-// are toggle chips with nothing inside them. Opening any box grows that one
-// area rather than pushing a hole into the middle of the row — which also
-// means two boxes open at once read as one list rather than as two gaps.
+//     system_widgetbox      insert_before_name="tooltip_widgetbox"
+//     2nd_system_widgetbox  insert_before_name="tooltip_widgetbox"
+//     systray_widgetbox     — nothing, so it opens in its OWN slot
+//
+// So the two system boxes collect in one shared area immediately left of the
+// lamp, which is also what was asked for directly ("the position of opening
+// chips should be in the left of the lamp chip"), and the tray opens beside
+// its own triangle — "the triangle chip should show the icons near to it".
+// Both are the same rule read from the two ends.
 //
 // The boxes stay INDEPENDENT, as qtile's are: each of these is visible on its
-// own box's `open`, so more than one can be shown, and they simply sit next
-// to each other.
+// own box's `open`, so more than one can be shown at once.
+//
+// The Row is anchored RIGHT so a box grows LEFTWARDS as it opens, which is
+// what `close_button_location='right'` means — the toggle keeps its place and
+// the contents appear in front of it, rather than the toggle being shoved
+// along the bar every time it is pressed.
 Item {
     id: root
 

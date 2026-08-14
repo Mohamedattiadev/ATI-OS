@@ -30,7 +30,20 @@ Chip {
 
     property int codepointClosed: 0
     property int codepointOpen: 0
+
+    // ---- THE OPEN FLAG IS THE SHELL'S, NOT THIS CHIP'S ----
+    //
+    // It used to be state here, flipped by the chip's own click. Two things
+    // broke that. A `Variants` builds one bar PER SCREEN, so a box opened on
+    // one monitor stayed shut on the other — the same widget disagreeing with
+    // itself. And qtile binds these boxes to KEYS as well as to clicks
+    // ($alt ` system, $mod ` 2nd system, $alt Tab tray), which a script has to
+    // be able to reach; a flag private to a delegate cannot be driven at all.
+    //
+    // So the flag lives on the shell root, the chip only ASKS for it to
+    // change, and the IPC and the pointer end up in the same place.
     property bool open: false
+    signal toggle()
 
     text: root.open
         ? String.fromCodePoint(root.codepointOpen)
@@ -66,5 +79,5 @@ Chip {
         ? "Adwaita Mono" : "Symbols Nerd Font"
     clickable: true
 
-    onClicked: root.open = !root.open
+    onClicked: root.toggle()
 }

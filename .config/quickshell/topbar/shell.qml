@@ -79,6 +79,25 @@ ShellRoot {
         positionFile.setText(p + "\n");
     }
 
+    // ---- THE WIDGET BOXES, WHICH ARE KEYS AS WELL AS CHIPS ----
+    //
+    // qtile's SmartWidgetBoxes are bound to keys as well as to their own
+    // glyphs — binds.conf's dead-bind section records all three:
+    //
+    //     $alt `     system_widgetbox        CPU + memory
+    //     $mod `     2nd_system_widgetbox    updates · disk · volume
+    //     $alt Tab   systray_widgetbox       the tray
+    //
+    // and they were left dead there on the grounds that there was no bar to
+    // toggle. There is now, so the state lives HERE rather than inside a chip:
+    // `Variants` builds one bar per screen, so per-chip state would have each
+    // monitor disagreeing about which boxes are open, and a flag inside a
+    // delegate cannot be reached from a keybinding at all.
+    property bool systemBoxOpen: false
+    property bool secondBoxOpen: false
+    property bool trayBoxOpen: false
+    property bool wallpaperBoxOpen: false
+
     // Driveable from a script, which is what the keybinding uses. A control
     // with no way in from a script is a control whose bugs only the user finds.
     IpcHandler {
@@ -89,6 +108,35 @@ ShellRoot {
             shellRoot.setPosition(shellRoot.position === "top" ? "bottom" : "top");
         }
         function status(): string { return shellRoot.position; }
+
+        // One function per box rather than one taking a name, because
+        // Quickshell's IPC splits arguments on whitespace and a typo'd name
+        // would be indistinguishable from a box that refused to open — where
+        // a missing FUNCTION at least prints "Function not found".
+        function toggleSystemBox(): void {
+            shellRoot.systemBoxOpen = !shellRoot.systemBoxOpen;
+        }
+        function toggleSecondBox(): void {
+            shellRoot.secondBoxOpen = !shellRoot.secondBoxOpen;
+        }
+        function toggleTrayBox(): void {
+            shellRoot.trayBoxOpen = !shellRoot.trayBoxOpen;
+        }
+        // Explicit setters beside the toggles, because a toggle driven by a
+        // script goes out of phase with the screen the first time a click and
+        // a keypress disagree — the RULES in NEXT-SESSION.md say to prefer
+        // show/hide when scripting, and a test cannot do that without them.
+        function showTrayBox(): void { shellRoot.trayBoxOpen = true; }
+        function hideTrayBox(): void { shellRoot.trayBoxOpen = false; }
+        function showSystemBox(): void { shellRoot.systemBoxOpen = true; }
+        function hideSystemBox(): void { shellRoot.systemBoxOpen = false; }
+        function showSecondBox(): void { shellRoot.secondBoxOpen = true; }
+        function hideSecondBox(): void { shellRoot.secondBoxOpen = false; }
+        function boxes(): string {
+            return "system=" + shellRoot.systemBoxOpen
+                + " second=" + shellRoot.secondBoxOpen
+                + " tray=" + shellRoot.trayBoxOpen;
+        }
     }
 
     Variants {
@@ -354,9 +402,27 @@ ShellRoot {
                 // area, lamp, mpris, system box, wallpaper toggle, 2nd system
                 // box, battery, language, clock, systray box.
                 //
-                // The EXPANSION AREA sits left of the lamp on request — every
-                // box's contents open there instead of in place. See
-                // BoxContent.qml for why that changes how two open boxes read.
+                // ---- WHERE EACH BOX OPENS, AND WHY THEY DIFFER ----
+                //
+                // Two of the three boxes open in a SHARED area left of the
+                // lamp, and the tray opens beside its own triangle. That is
+                // not an inconsistency — it is config.py's, read off the
+                // arguments rather than off the layout:
+                //
+                //     system_widgetbox        insert_before_name="tooltip_widgetbox"
+                //     2nd_system_widgetbox    insert_before_name="tooltip_widgetbox"
+                //     systray_widgetbox       (no insert_before_name)
+                //
+                // SmartWidgetBox's insert_before_name is what moves a box's
+                // contents somewhere other than its own slot, and the tray does
+                // not set it — so in qtile the icons appear at the triangle,
+                // between the clock and the chevron, and only the two system
+                // boxes collect in front of the lamp. Reported as "the triangle
+                // chip should show the icons near to it", which is the same
+                // observation from the other side.
+                //
+                // See BoxContent.qml for why the shared area is one Item per
+                // box rather than one shared list.
                 Row {
                     id: rightGroup
                     anchors.right: parent.right
@@ -388,7 +454,7 @@ ShellRoot {
 
                         // system_widgetbox: CPU and memory.
                         BoxContent {
-                            open: systemBox.open
+                            open: shellRoot.systemBoxOpen
                             Chip {
                                 text: shellRoot.cpuText
                                 tooltip: "CPU load \u00b7 click \u2192 mission-center"
@@ -417,7 +483,7 @@ ShellRoot {
 
                         // wallpaper_toggle.
                         BoxContent {
-                            open: wallpaperBox.open
+                            open: shellRoot.wallpaperBoxOpen
                             Chip {
                                 text: "wallpaper"
                                 tooltip: "Wallpaper picker"
@@ -434,7 +500,7 @@ ShellRoot {
                         // 2nd_system_widgetbox: updates, disk, volume — which
                         // is exactly what its tooltip in config.py promises.
                         BoxContent {
-                            open: secondBox.open
+                            open: shellRoot.secondBoxOpen
                             Chip {
                                 text: shellRoot.updatesText
                                 tooltip: "Pending updates \u00b7 click \u2192 update manager"
@@ -471,53 +537,6 @@ ShellRoot {
                                 height: parent.height
                             }
                         }
-
-                        // systray_widgetbox: the tray, then nightlight, then
-                        // the Wi-Fi QR — config.py's order inside the box.
-                        BoxContent {
-                            open: systrayBox.open
-                            Tray {
-                                height: parent.height
-                            }
-                            Chip {
-                                // U+F1A4C, config.py's _nightlight_text glyph.
-                                text: String.fromCodePoint(0xF1A4C)
-                                tooltip: "Nightlight \u00b7 L: on \u00b7 R: off"
-                                hoverSink: hoverSink
-                                foreground: BarTheme.blue      // colors[6]
-                                padding: 11
-                                fontPixelSize: Metrics.s(11)
-                                fontFamily: "Symbols Nerd Font"
-                                clickable: true
-                                height: parent.height
-                                // hyprsunset, not gammastep/redshift: those are
-                                // config.py's X11 answer and do nothing under a
-                                // Wayland compositor. `identity` clears the
-                                // temperature without killing the daemon, which
-                                // is what the island's own night light does.
-                                onClicked: (b) => Quickshell.execDetached(
-                                    ["sh", "-c", b === Qt.RightButton
-                                        ? "hyprctl hyprsunset identity"
-                                        : "pgrep -x hyprsunset >/dev/null 2>&1 || "
-                                          + "setsid hyprsunset >/dev/null 2>&1 & "
-                                          + "sleep 0.2; hyprctl hyprsunset temperature 4000"])
-                            }
-                            Chip {
-                                // U+F029, config.py's w_wifi_qr text.
-                                text: String.fromCodePoint(0xF029)
-                                tooltip: "Wi-Fi QR"
-                                hoverSink: hoverSink
-                                foreground: BarTheme.purple    // colors[5]
-                                padding: 11
-                                fontPixelSize: Metrics.s(11)
-                                fontFamily: "Symbols Nerd Font"
-                                clickable: true
-                                height: parent.height
-                                onClicked: Quickshell.execDetached(
-                                    [Quickshell.env("HOME")
-                                        + "/.config/hypr/scripts/wifi-qr.py"])
-                            }
-                        }
                     }
 
                     // tooltip_widgetbox — the lamp.
@@ -552,6 +571,8 @@ ShellRoot {
 
                     WidgetBox {
                         id: systemBox
+                        open: shellRoot.systemBoxOpen
+                        onToggle: shellRoot.systemBoxOpen = !shellRoot.systemBoxOpen
                         codepointClosed: 0xF05AF
                         codepointOpen: 0xF05B0
                         tooltip: "CPU + Memory"
@@ -566,6 +587,8 @@ ShellRoot {
                     // Font icon — qtile's choice, kept.
                     WidgetBox {
                         id: wallpaperBox
+                        open: shellRoot.wallpaperBoxOpen
+                        onToggle: shellRoot.wallpaperBoxOpen = !shellRoot.wallpaperBoxOpen
                         codepointClosed: 0x2716
                         codepointOpen: 0xF035C
                         tooltip: "Wallpaper picker"
@@ -578,6 +601,8 @@ ShellRoot {
 
                     WidgetBox {
                         id: secondBox
+                        open: shellRoot.secondBoxOpen
+                        onToggle: shellRoot.secondBoxOpen = !shellRoot.secondBoxOpen
                         codepointClosed: 0xF0902
                         codepointOpen: 0xF0042
                         tooltip: "Updates \u00b7 Disk \u00b7 Volume"
@@ -629,6 +654,53 @@ ShellRoot {
                         onClicked: Quickshell.execDetached(["clock_popup"])
                     }
 
+                    // systray_widgetbox: the tray, then nightlight, then
+                    // the Wi-Fi QR — config.py's order inside the box.
+                    BoxContent {
+                        open: shellRoot.trayBoxOpen
+                        Tray {
+                            height: parent.height
+                        }
+                        Chip {
+                            // U+F1A4C, config.py's _nightlight_text glyph.
+                            text: String.fromCodePoint(0xF1A4C)
+                            tooltip: "Nightlight \u00b7 L: on \u00b7 R: off"
+                            hoverSink: hoverSink
+                            foreground: BarTheme.blue      // colors[6]
+                            padding: 11
+                            fontPixelSize: Metrics.s(11)
+                            fontFamily: "Symbols Nerd Font"
+                            clickable: true
+                            height: parent.height
+                            // hyprsunset, not gammastep/redshift: those are
+                            // config.py's X11 answer and do nothing under a
+                            // Wayland compositor. `identity` clears the
+                            // temperature without killing the daemon, which
+                            // is what the island's own night light does.
+                            onClicked: (b) => Quickshell.execDetached(
+                                ["sh", "-c", b === Qt.RightButton
+                                    ? "hyprctl hyprsunset identity"
+                                    : "pgrep -x hyprsunset >/dev/null 2>&1 || "
+                                      + "setsid hyprsunset >/dev/null 2>&1 & "
+                                      + "sleep 0.2; hyprctl hyprsunset temperature 4000"])
+                        }
+                        Chip {
+                            // U+F029, config.py's w_wifi_qr text.
+                            text: String.fromCodePoint(0xF029)
+                            tooltip: "Wi-Fi QR"
+                            hoverSink: hoverSink
+                            foreground: BarTheme.purple    // colors[5]
+                            padding: 11
+                            fontPixelSize: Metrics.s(11)
+                            fontFamily: "Symbols Nerd Font"
+                            clickable: true
+                            height: parent.height
+                            onClicked: Quickshell.execDetached(
+                                [Quickshell.env("HOME")
+                                    + "/.config/hypr/scripts/wifi-qr.py"])
+                        }
+                    }
+
                     // systray_widgetbox. U+25B3 is a plain geometric triangle
                     // rather than a Nerd Font icon, and config.py is emphatic:
                     // "chosen for its silhouette rather than for consistency
@@ -637,6 +709,8 @@ ShellRoot {
                     // deliberately different kinds of mark.
                     WidgetBox {
                         id: systrayBox
+                        open: shellRoot.trayBoxOpen
+                        onToggle: shellRoot.trayBoxOpen = !shellRoot.trayBoxOpen
                         codepointClosed: 0x25B3
                         codepointOpen: 0xF053
                         tooltip: "System tray"
