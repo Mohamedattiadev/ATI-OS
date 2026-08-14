@@ -1505,3 +1505,125 @@ vendored, one release stale, carrying a radius bug the fork has fixed.
 
 The one thing worth taking from 1.0.35 is `islandShowWorkspaceOnAutoHide`,
 and only if auto-hide is a mode the user actually runs.
+
+---
+
+# Audit — 2026-08-14, per-theme wallpapers and the freeze
+
+## Ask #5 — the library could not have supplied these, and that is measured
+
+`wal-precompile` had already written bg / bg_alt / fg / six accents for each
+of the 362 wallpapers into `~/.cache/qtile/palettes/NNNN.json`. Scoring
+every image against every theme in CIELAB — weighted `1.00*d_bg +
+0.60*d_accent + 0.25*d_fg`, background dominant because it is most of the
+screen — gives the best the library can do per theme:
+
+    good (<=20)   oxocarbon 6.6, github-dark 6.8, ayu-mirage 11.4,
+                  doomone 13.0, monokai 13.9, gruvbox 15.3,
+                  tokyonight 16.3, onedark 17.0, kanagawa 17.6,
+                  synthwave 17.8, nightowl 18.1, dracula 19.6
+    weak (20-30)  cyberpunk-neon 20.5, nord 24.4, catppuccin 25.6,
+                  mono-dark 25.6, rose-pine 26.1, palenight 26.1,
+                  everforest 29.3
+    impossible    matrix 38.8, mono-light 137.9
+
+mono-light's 137.9 is 90.7 of BACKGROUND distance alone. The library is 362
+dark wallpapers; mono-light's background is `#ffffff`. There is no ranking
+of a set with no light images that produces a light image. matrix fails the
+same way on foreground (108.3): nothing in the library is `#00ff41`.
+
+So nine of twenty-one cannot be served by selection at any quality. Downloads
+were checked and rejected too — the best collection found
+(`yukazakiri/themed-wallpapers`, 1100+ images, ~1 GB, itself generated with
+`gowall`) covers 22 palettes but only 12 of these 21 by name.
+
+The generator is `AtiScriptsV1/theme-wallpaper-gen`; the runtime half is
+`AtiScriptsV1/theme-wallpaper`, called by theme-apply after the visible-done
+marker and by wallpaper-set.sh on a manual pick. Full reasoning lives in
+those two headers and is not repeated here.
+
+## Three things only the contact sheet could show
+
+Every intermediate version passed its numeric checks. All three defects were
+found by tiling the 21 outputs with labels and looking at them.
+
+  * **the ramp must be uniform in LIGHTNESS**, not along the neutral chain.
+    gruvbox's bg and bg_alt are five points apart with fg 76 above, so
+    by-segment spacing starves the range the theme actually uses.
+  * **accent knots must be damped** toward the grey of their own lightness.
+    At full strength dracula's mountains grew a purple halo and
+    cyberpunk-neon's clouds went solid cyan.
+  * **damping must be toward the SAME-LIGHTNESS grey**, not the ramp's ends.
+    Mixing navy to white in Lab passes through purple, which gave mono-light
+    lavender trees — an off-palette colour in a themed wallpaper, which is
+    the single defect the whole feature exists to prevent.
+
+## A measurement artifact that replaced a working implementation
+
+Recorded because it is the most expensive mistake of the session and it
+would have been invisible in the result.
+
+`-remap` appeared to darken every image: 0316.jpg read 70% mean luminance in
+and 40% out. A cause was found and it was a good one — nearest-colour
+matching against a neutral palette minimises RGB distance, and the grey
+nearest a pixel is its channel AVERAGE, not its luma, so green foliage lands
+too dark. Sound reasoning. Not what was happening.
+
+    magick colour.jpg -colorspace Gray -format %[fx:mean] info:  -> 0.70
+    magick colour.jpg -colorspace Gray  grey.png
+    magick grey.png                -format %[fx:mean] info:      -> 0.40
+
+The same conversion read two ways: Gray is linear in memory and gamma-encoded
+on disk, so a colour input measured through that pipeline reads ~30 points
+above a grey one. Re-measured with Rec709 luma over encoded sRGB channel
+means, applied identically to both: base 40.2, old remap 40.3, gradient map
+34.5. **The remap had never darkened anything.**
+
+The gradient map was kept, because the reasons that survive measurement are
+enough on their own — continuous tone instead of 14 flat colours, no dither
+noise, and the accent landing at its own lightness by construction.
+
+> If a metric is applied to two things, first run it on two things KNOWN to
+> be equal.
+
+## The theme-change freeze — 0.24 s of it was a daemon that does not run
+
+`theme-apply` killed dunst, slept 0.2 s and started it, unconditionally, on
+every theme change. That is a restart on qtile. On Hyprland it is not: dunst
+has not run there since the island took over notifications, and `busctl
+--user list` shows quickshell's pid against `org.freedesktop.Notifications`.
+So the block was spending 0.24 s of the FROZEN window launching a daemon
+that either failed silently or would have taken notifications away from the
+island.
+
+`pkill -x` exits 0 only if it signalled something, so it is both the kill and
+the test for whether there is anything to restart — session-agnostic rather
+than session-detecting. Measured to `THEME_APPLY_VISIBLE_DONE`:
+
+    before   1.17, 1.22             (n=2)
+    after    median 1.04, min 0.91  (n=6, range 0.91-1.07)
+
+The 1.77 s in the older audit above was not re-measured, so these numbers
+stand on their own rather than against it. **~1.0 s remains and has never
+been profiled block by block** — that is the next move on ask #4, and it
+should be instrumented before anything is changed.
+
+## Two socket listeners had been dead for hours
+
+Reported as "the mode popups do not appear at all, but the mode itself
+works". Both halves true, one cause: Hyprland handles submap keys itself, so
+the chord kept working while the only thing that ANNOUNCES it was gone.
+
+`submap-indicator.sh` was not running, its lock was free, and
+`workspace-layout.sh` — the other socket2 listener from the same
+autostart.conf — was also dead. The survivors in that file are exactly the
+two entries with a `sleep 40; pgrep -x ... ||` re-check behind them.
+
+Both now distinguish "the read ended" (reconnect, with backoff) from "the
+socket FILE is gone" (Hyprland left, exit). Verified by killing the python
+reader out from under a running indicator: it survived, spawned a new
+reader, and the RESIZE panel still drew.
+
+**What killed them was not recovered.** Nothing in the repo kills either
+script. They survive a dropped read now; they still do not survive a `kill`,
+and nothing notices if they stop.

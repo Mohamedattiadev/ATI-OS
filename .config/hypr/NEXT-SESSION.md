@@ -18,112 +18,104 @@ most are closed or stale — where they disagree, the audit measured it).
 1. **rofi wording/behaviour in the quickshell popups** — DONE for screenshot,
    record, anki, brightness. Not re-checked for the other 12 menus.
 2. **The island settings app (`alt+shift+7`) is ugly and unusable** — NOT
-   STARTED.
+   STARTED. This is now the largest untouched ask.
 3. **Animation glitches everywhere** — the notification→resting "clunk" is
    FIXED. The ~800 ms panel settle is untouched.
-4. **Theme change freezes the screen** — NOT STARTED. 1.77 s, measured in an
-   earlier session.
-5. **A fitting wallpaper per theme, applied on theme change** — NOT STARTED.
-6. **UI/UX up to the reference island repo's polish** — NOT STARTED. The user
-   chose `enhaoswen/Dynamic-island-on-hyprland` (same author as the
-   Tide-island upstream this forks). **Nobody has read it yet.**
+4. **Theme change freezes the screen** — PARTLY. The dunst restart is gone
+   (it was 0.24 s spent starting a daemon this session does not run, inside
+   the freeze). Measured to-marker now: median 1.04 s, min 0.91 s, n=6.
+   The remaining ~1.0 s is unexplored.
+5. **A fitting wallpaper per theme, applied on theme change** — **DONE.**
+   See below.
+6. **UI/UX up to the reference island repo's polish** — **RESOLVED, and not
+   the way the ask assumed.** The reference repo IS this fork's upstream.
+   Nothing to import. See below.
 7. **Notification centre UI + control centre broken/icon-less rows** — the
-   notification centre is REBUILT (see below). Night light FIXED. Focus
-   FIXED. No other broken control found.
+   notification centre is REBUILT. Night light FIXED. Focus FIXED. No other
+   broken control found.
 8. **Migration leftovers: ilovepdf, scratchpads, the Obsidian "S" session** —
    NOT STARTED. Note `V ilovepdf` is ALREADY bound in the rofi HUD, so that
    row of the migration table is staler than it reads. Verify before porting.
 
-Added mid-session by the user, all DONE: case-insensitive picker search,
-battery in the win+` panel, the black screen corners, Focus bound to a key.
+Added by the user across sessions, all DONE: case-insensitive picker search,
+battery in the win+` panel, the black screen corners, Focus bound to a key,
+**screen recording** (wf-recorder was never installed — now declared and
+verified), **the mode keymap popups** (see below).
 
 ---
 
-# WHAT THE LAST SESSION DID — 18 commits, `77bf6b7`..`faa424f`
+# WHAT THIS SESSION DID — 6 commits, `ef8069e`..`82894ad`
 
-Every one verified on screen or by measurement; where something could not be
-verified the commit says so.
+**Ask #6 is answered and the answer is "there is nothing there".**
+`enhaoswen/Dynamic-island-on-hyprland` is the former name of
+`enhaoswen/Tide-island` — the repo this fork was vendored from. Vendored
+1.0.34 against the clone's 1.0.35: one patch release apart, and the fork is
+the LARGER tree (67 qml files to 57, 29 fork-only). Upstream's two changed
+files were both declined with reasons in `fddcb85`. **Do not clone it again
+expecting different contents.**
 
-**Pickers.** The screenshot menu is dm-satty's again — three steps, its
-wording, its order, the delay step restored (the port had reworded every
-string and dropped it). `record` got dm-recordV2's six rows back including
-"Screen + Audio", its first row, dropped silently. `anki` got its eight
-prompt titles back. The filter now ranks label above detail, so typing `c`
-gives Clipboard instead of File.
+**Ask #5 is done, in two halves.**
+`AtiScriptsV1/theme-wallpaper-gen` generates one wallpaper per theme by
+gradient-mapping one of the user's own images onto a ramp built from the
+theme's four colours. 21 files in `~/Pictures/Wallpapers/themed/`, 12 MB,
+~40 s to regenerate. `AtiScriptsV1/theme-wallpaper` resolves and applies
+them; theme-apply calls it after the visible-done marker, and
+wallpaper-set.sh rebinds the current theme when you pick by hand.
 
-**The picker shipped completely empty for one commit.** Widening `matchRank`
-from two ranks to four while the bucketing loop still tested `rank === 2` /
-`rank === 1`. The user found it. See RULES.
+Selection alone could not have worked and this is measured, not asserted:
+scoring all 362 library images against all 21 themes in CIELAB, nine themes
+have no acceptable match and **mono-light is off by 137.9** — 90.7 of that
+on background alone, because the library is 362 dark wallpapers and
+mono-light's background is `#ffffff`.
 
-**Island.** The notification→resting collapse is a real cross-dissolve now;
-it was two layers printed solid over each other because `showCondition: true`
-was a literal and the out-fade was unreachable code. Screen corners are off
-by default. The sysmon panel gained a battery dial and its row now divides
-into equal columns.
-
-**Control centre.** Night light works — `hyprsunset` is not installed and the
-branch was a compositor test, not an availability test; gammastep is now the
-fallback and is backgrounded, because under wlr-gamma-control a client that
-exits takes its ramp with it. Focus now silences everything the shell draws
-and is on `$alt SHIFT, N`.
-
-**Notification centre.** Cards show sender, urgency and relative age. Full
-vim motions (j/k, g/G, d/x, D, q) with a key-hint footer. The corner radius
-was PROPORTIONAL TO PANEL HEIGHT — the only one of eighteen states that was —
-so it grew with the notification count until the footer sat beside bare
-desktop.
+**The mode keymap popups were dead, and so was workspace-layout.sh.**
+Both are socket2 listeners started by autostart.conf, both had exited, and
+neither comes back. Submaps kept working because Hyprland handles the keys
+itself, so the only symptom was a missing popup. Both now reconnect.
 
 ---
 
 # THE FIRST THING TO DO
 
-**Read `enhaoswen/Dynamic-island-on-hyprland`** (ask #6). It is the only ask
-with a concrete reference the user chose, it is unread, and it plausibly
-informs asks #2 and #7 as well. Clone it somewhere scratch and diff its
-approach against this fork's — do not copy wholesale; this fork has three
-sessions of measured decisions in its comments.
+**The settings app (ask #2).** It is the biggest ask with nothing done to
+it, the user's words were "terrible looking, not customisable, not easy",
+and every other big item is now either finished or has a measured next step.
+
+`hypr/scripts/island-settings-app.py`, GTK4 over the schema in
+`island-settings.py`. The schema is fine; the presentation is the job.
+Phase 8 in `upgread_UI_UX.md` already specifies it — read that before
+designing anything new.
 
 ---
 
 # THEN, IN ROUGH ORDER
 
-1. **Per-theme wallpapers** (ask #5). Most tractable of the big ones and the
-   biggest visible win. `hypr/scripts/wallpaper-set.sh` already routes both
-   sessions through `~/.cache/wall`; `AtiScriptsV1/theme-apply` is the theme
-   entry point and is SHARED WITH THE QTILE SESSION, so any change needs
-   proving on both. Themes are listed by `hypr/scripts/theme-list.sh`.
-   Requirement: each theme has a default wallpaper, applied on theme change,
-   and a manual wallpaper choice still sticks.
-
-2. **The settings app** (ask #2). `hypr/scripts/island-settings-app.py`, GTK4
-   over the schema in `island-settings.py`. Rejected as "terrible looking,
-   not customisable, not easy". The schema is fine; the presentation is the
-   job.
-
-3. **The theme change's 1.77 s freeze** (ask #4). The island's gating is
-   already correct (it waits on `THEME_APPLY_VISIBLE_DONE`, not process
-   exit). The remaining time is behind that marker inside `theme-apply`,
-   ~0.24 s of which is restarting dunst — which is NOT RUNNING under
-   Hyprland. A per-session guard there needs proving on both sessions.
-
-4. **Scratchpads and the Obsidian "S" session** (ask #8). Walk every case:
+1. **Scratchpads and the Obsidian "S" session** (ask #8). Walk every case:
    first launch, re-toggle, focus steal, workspace move, monitor change, app
    already open, app dead. `hypr/scripts/scratchpad.sh`, `toggle-app.sh`.
 
-5. **Search on the popups that are not the picker** — control centre,
+2. **The rest of the theme-change freeze** (ask #4, remainder). ~1.0 s left
+   to the marker. The dunst win is taken; nothing else has been profiled.
+   Instrument the blocks between the start and `THEME_APPLY_VISIBLE_DONE`
+   before changing anything — the same way the dunst cost was confirmed.
+
+3. **Search on the popups that are not the picker** — control centre,
    notification centre, cheatsheet, launcher, wifi/bluetooth. PickerLayer's
-   is the model to copy.
+   is the model. NOT the wallpaper picker: it has type-to-jump already, and
+   upstream's filter was declined with reasons (`fddcb85`).
 
-6. **The ~800 ms panel settle** (ask #3, remainder). Best remaining lead on
-   "the popups feel laggy". Two hypotheses already disproven and NOT to be
-   re-tried: `morphDurationFor` (760 vs 520 measured identical) and the
-   slider intro gate. Re-measure before theorising — the control centre's
-   layout has changed twice since the original measurement.
+4. **The ~800 ms panel settle** (ask #3, remainder). Two hypotheses already
+   disproven and NOT to be re-tried: `morphDurationFor` (760 vs 520 measured
+   identical) and the slider intro gate. Re-measure before theorising.
 
-7. **The remaining picker menus vs their rofi originals** (ask #1,
+5. **The remaining picker menus vs their rofi originals** (ask #1,
    remainder). 12 unchecked: documents, man, notes, clipboard, confedit,
-   spellcheck, translate, pass, todo, shared, youtube, hub. Diff each against
-   its `AtiScriptsV1/` original for wording and step order.
+   spellcheck, translate, pass, todo, shared, youtube, hub. **Recheck the
+   record menu first** — its six rows were written against a wf-recorder
+   that did not exist, and now it does, so they can finally be run.
+
+6. **`islandShowWorkspaceOnAutoHide`** — the one thing in upstream 1.0.35
+   worth taking, and only if auto-hide is a mode the user actually runs.
 
 ---
 
@@ -144,50 +136,61 @@ sessions of measured decisions in its comments.
   resting island. The picker shipped opening empty.
 - **`qs ipc call` prints "Function not found" and still EXITS 0.** The exit
   code is never the check; read the output.
-- **Toggle IPCs go out of phase.** Two screenshots this session were of a
-  CLOSED panel because a `q` in an earlier test had inverted the toggle.
-  Prefer explicit show/hide over toggle when scripting, and verify the panel
-  is actually up before believing the shot.
+- **Toggle IPCs go out of phase.** Prefer explicit show/hide over toggle when
+  scripting, and verify the panel is actually up before believing the shot.
 - **A control with no way in from a script is a control whose bugs can only
   be found by the user.** If a feature cannot be driven over IPC, ADD THE
-  IPC — that is a fix, not scaffolding. `tide setFocus(bool)` exists because
-  of this and immediately proved Focus worked.
-- **`wtype` is installed** and can drive panels for real. It also revealed
-  that a synthesised capital arrives with `text` "G" and NO ShiftModifier —
-  check the character, not just the modifier.
+  IPC — that is a fix, not scaffolding.
+- **`wtype` is installed** and can drive panels for real. A synthesised
+  capital arrives with `text` "G" and NO ShiftModifier — check the character,
+  not just the modifier.
+- **If a metric is applied to two things, first run it on two things KNOWN
+  to be equal.** `magick X -colorspace Gray -format %[fx:mean]` reads ~30
+  points HIGH on a colour image, because Gray is linear in memory and
+  gamma-encoded on disk. Converting an image and measuring it must equal
+  measuring the converted file; here it did not, and the gap looked exactly
+  like a 70%→40% darkening. A plausible cause was found for the artifact and
+  a working implementation was replaced on the strength of it. The
+  replacement was better anyway, which is the only reason this cost nothing.
 
 ### Reading the UI
 
-- **FOUR TIMES this session a deliberate design decision was filed as a
+- **FOUR TIMES in one session a deliberate design decision was filed as a
   defect** — the Focus glyph (twice), the slider readout, the unlit tile
-  contrast. All four were "I looked at a screenshot of the resting state and
-  something I expected was not shouting at me". Before filing "X is missing":
-  GREP for X in the component and MEASURE the claim. An absent feature has no
-  code; a hidden one has a binding with a condition in it; a low-contrast one
-  has a number you can compute.
+  contrast. Before filing "X is missing": GREP for X in the component and
+  MEASURE the claim.
 - **Private-use characters do not survive into what the model reads back.** A
   grep for a Nerd Font glyph returns an empty-looking string; that is NOT
-  evidence the source is empty. Dump bytes (`.encode('utf-8')`). Prefer
-  `\uXXXX` escapes when writing them.
+  evidence the source is empty. Dump bytes. Prefer `\uXXXX` when writing.
 - **A screenshot cannot see a gamma change.** `grim` samples the composited
   buffer; the gamma LUT is applied at scanout. Night light needs eyes.
 - **Magnify before believing a glyph is absent.**
+- **Look at the image, not only at the number.** The wallpaper generator
+  passed every luminance check while putting LAVENDER TREES in mono-light, a
+  theme whose palette is greys plus one navy. Only the contact sheet showed
+  it. Nothing numeric was going to.
 
 ### Editing
 
 - **When you widen an enum, grep for every consumer that named its values as
   literals.** This is the empty-picker bug.
-- **One layout, one arithmetic.** The notification centre computed its height
-  in the layer while the child laid itself out top-down from its own header —
-  two descriptions of one layout, and the footer landed on the desktop. Three
-  attempts at "which height is the real one" failed before the actual fix,
-  which was to have only one.
+- **One layout, one arithmetic.** Two descriptions of one layout put the
+  notification centre's footer on the desktop.
 - **A layer that fills its parent is NOT filling the capsule.** The island
-  window is `islandTopMargin + contentHeight + 6`. `parent.bottom` is not the
-  panel's bottom edge.
+  window is `islandTopMargin + contentHeight + 6`.
 - **`.pragma library` JS is cached.** Editing `Metrics.js` or `Motion.js` and
   reloading does nothing. **Restart the island.**
 - **A file that has never been instantiated is not being watched.**
+- **A background listener that connects to a socket ONCE will die silently
+  and stay dead.** `submap-indicator.sh` and `workspace-layout.sh` were both
+  found dead mid-session; the only autostart entries still up were the two
+  with a `pgrep -x ... ||` re-check behind them. Distinguish "the read ended"
+  (reconnect) from "the socket FILE is gone" (Hyprland left). Collapsing
+  those two into one condition is what killed both.
+- **A "restart" that starts unconditionally is not a restart.** theme-apply
+  killed dunst, slept 0.2 s and started it on a session where dunst does not
+  run and the island owns `org.freedesktop.Notifications`. `pkill -x` exits 0
+  only if it signalled something, which makes it both the kill and the test.
 
 ### Safety
 
@@ -195,26 +198,34 @@ sessions of measured decisions in its comments.
   real config.
 - **Close a panel that commits on click before leaving it on screen.** A
   stray click changed the desktop theme twice in an earlier session.
-- **`pkill -f <pattern>` matches its own command line.** Use `pkill -x`.
+- **`pkill -f <pattern>` matches its own command line.** Use `pkill -x`. This
+  also defeats `pgrep -f` CHECKS — `pgrep -af '[s]ubmap-indicator'` still
+  self-matched, because the surrounding command line contained the literal
+  string. Use `ps -eo args | awk '/pat/ && !/awk/'`, or test the lock file.
 - **hyprlock is tested in a NESTED Hyprland, never by locking the session.**
 - **Back up `~/.config/tide-island/userconfig.json` before any test that
-  writes, and diff it after.** It has been byte-identical at the end of every
-  session so far, this one included. Keep that true.
+  writes, and diff it after.** Byte-identical at the end of every session so
+  far, this one included (`dff1139b…`). Keep that true.
 - **The capture region must contain nothing but the thing under test.** For
-  island motion, switch to an empty workspace first.
+  island motion, switch to an empty workspace first — `hyprctl workspaces -j`
+  will tell you which ones are free.
 - **Difference two frames; do not just count changed pixels.**
+- **The user changes the theme while you work.** `theme_mode` read
+  `synthwave` early in this session and `mono-dark` an hour later, with no
+  theme picker opened. Re-read it before a test that depends on it, and
+  restore what you found rather than what you assumed.
 
 ---
 
 # OPEN, UNSOLVED — do not re-derive
 
 - **The ~800 ms panel settle.** Cause unknown, two hypotheses disproven.
-- **The theme change's 1.77 s frozen screen.**
-- **`wf-recorder` is not installed**, so every screen-recording row in the
-  picker raises. The menu is honest about it in its detail column. Screen
-  recording has never worked under Hyprland here — ask the user whether to
-  add it to the install scripts.
+- **The theme change's remaining ~1.0 s.** The dunst 0.24 s is taken; the
+  rest has never been profiled block by block.
 - **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
   ~50 ms before any animation starts.
 - **`layout-cycle.sh` makes 7 `hyprctl` invocations per switch**, three of
   them separate `hyprctl clients -j` queries.
+- **What killed the two socket listeners.** Not recovered. Nothing in the
+  repo kills either one. They now survive a dropped read, but a `kill` from
+  outside still ends them for the session, and nothing notices.
