@@ -492,22 +492,6 @@ ShellRoot {
                             }
                         }
 
-                        // wallpaper_toggle.
-                        BoxContent {
-                            open: shellRoot.wallpaperBoxOpen
-                            Chip {
-                                text: "wallpaper"
-                                tooltip: "Wallpaper picker"
-                                hoverSink: hoverSink
-                                foreground: BarTheme.cyan
-                                padding: 11
-                                fontPixelSize: Metrics.s(10)
-                                clickable: true
-                                height: parent.height
-                                onClicked: Quickshell.execDetached(["dm-setbg"])
-                            }
-                        }
-
                         // 2nd_system_widgetbox: updates, disk, volume — which
                         // is exactly what its tooltip in config.py promises.
                         BoxContent {
@@ -594,12 +578,37 @@ ShellRoot {
                         height: parent.height
                     }
 
+                    // ---- wallpaper_toggle: A BUTTON, NOT A BOX ----
+                    //
+                    // It is a SmartWidgetBox in config.py and it holds
+                    // `widgets=[]` — nothing. What it actually does is its
+                    // Button1: `toggle_wallpaper_picker`, i.e. the popup in
+                    // popups/WallpaperPopup.py. This bar had it opening a box
+                    // with one chip in it that ran `dm-setbg`, a rofi menu,
+                    // which is a different thing wearing the same key.
+                    //
+                    // Reported directly: "the ✖ chip should show the wal
+                    // picker that was written as a qtile popup". It does now —
+                    // ../tide-island-fork/qml/popups/WallpaperPopup.qml, in
+                    // this shell's own toolkit rather than in rofi.
+                    //
+                    // Still a WidgetBox and not a plain Chip, because the
+                    // OPEN/CLOSED glyph pair is qtile's: ✖ closed, U+F035C
+                    // open, and the picker being open is what "open" means.
+                    //
                     // U+2716 is a plain heavy multiplication X, not a Nerd
                     // Font icon — qtile's choice, kept.
                     WidgetBox {
                         id: wallpaperBox
                         open: shellRoot.wallpaperBoxOpen
-                        onToggle: shellRoot.wallpaperBoxOpen = !shellRoot.wallpaperBoxOpen
+                        onToggle: {
+                            shellRoot.wallpaperBoxOpen = !shellRoot.wallpaperBoxOpen;
+                            Quickshell.execDetached([
+                                "qs", "-p",
+                                Quickshell.env("HOME")
+                                    + "/.config/quickshell/tide-island-fork/popups.qml",
+                                "ipc", "call", "popups", "wallpaper"]);
+                        }
                         codepointClosed: 0x2716
                         codepointOpen: 0xF035C
                         tooltip: "Wallpaper picker"

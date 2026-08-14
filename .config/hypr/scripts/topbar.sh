@@ -69,6 +69,24 @@ if [[ -f "$TREETAB_ENTRY" ]] && ! treetab_running; then
   setsid -f quickshell -p "$TREETAB_ENTRY" >/dev/null 2>&1 || true
 fi
 
+# ---------------------------------------------------------------------------
+#  qtile's popups — the wallpaper picker, the network list, the mixer
+# ---------------------------------------------------------------------------
+# Another entry point into the island's config, for the same reason, and
+# started here rather than on demand: a Quickshell start is a QML compile, so a
+# popup that has to be launched before it can be shown answers its first
+# keystroke several hundred milliseconds late EVERY time. Resident, it answers
+# at once, and an unopened popup is an inactive Loader — no window, no polling.
+POPUPS_ENTRY="${POPUPS_ENTRY:-$HOME/.config/quickshell/tide-island-fork/popups.qml}"
+
+popups_running() {
+  ps -eo args= | awk -v e="$POPUPS_ENTRY" '$0 ~ ("quickshell -p " e) && !/awk/ {found=1} END {exit !found}'
+}
+
+if [[ -f "$POPUPS_ENTRY" ]] && ! popups_running; then
+  setsid -f quickshell -p "$POPUPS_ENTRY" >/dev/null 2>&1 || true
+fi
+
 # NOT `pkill dunst` — deliberately, and the difference from island.sh matters.
 # The island SERVES notifications, so it has to clear dunst off the bus name
 # before starting. This bar serves nothing: with the island down and the

@@ -253,9 +253,30 @@ treetab_stop() {
   kill "$pid" 2>/dev/null || true
 }
 
+# ---- AND THE POPUPS SHELL ----
+#
+# topbar.sh also starts the wallpaper / network / volume popups, which are
+# qtile's and which the island answers differently — under the island those
+# same keys open the island's own panels. Leaving it resident would mean two
+# shells offering the same three surfaces, and the topbar's would still be
+# taking an exclusive keyboard grab in a session that no longer has that bar.
+POPUPS_ENTRY="$HOME/.config/quickshell/tide-island-fork/popups.qml"
+
+popups_pid() {
+  ps -eo pid=,args= | awk -v e="$POPUPS_ENTRY" '$0 ~ ("quickshell -p " e) && !/awk/ {print $1; exit}'
+}
+
+popups_stop() {
+  local pid
+  pid="$(popups_pid)" || true
+  [[ -n "$pid" ]] || return 0
+  kill "$pid" 2>/dev/null || true
+}
+
 topbar_stop() {
   local pid
   treetab_stop
+  popups_stop
   pid="$(topbar_pid)" || true
   [[ -n "$pid" ]] || return 0
   kill "$pid" 2>/dev/null || true

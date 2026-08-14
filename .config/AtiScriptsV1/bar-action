@@ -57,6 +57,13 @@ read_mode() {
 }
 
 run() { setsid -f "$@" >/dev/null 2>&1 || true; }
+# The popups shell. Its own instance, addressed by ENTRY FILE rather than by
+# directory: it is a second entry point into the island's config so that it can
+# reach IslandTheme, and `qs -p` keys an instance by the path it was given.
+run_popup() {
+  setsid -f qs -p "$HOME/.config/quickshell/tide-island-fork/popups.qml" \
+    ipc call popups "$1" >/dev/null 2>&1 || true
+}
 run_sh() { setsid -f sh -c "$1" >/dev/null 2>&1 || true; }
 
 island() {
@@ -124,7 +131,6 @@ case "$key" in
   # ---- launchers and menus ----
   toggleApplicationLauncher)  run rofi -show drun -show-icons ;;
   togglePowerMenu)            run dm-logout ;;
-  toggleWallpaperPicker)      run dm-setbg ;;
   toggleThemePicker)          run python3 "$SCRIPTS_DIR/rofi_palette.py" ;;
 
   # ---- the picker's menus, one rofi script each ----
@@ -155,13 +161,25 @@ case "$key" in
   "showCheatsheet docs")      run rofi_docs ;;
   showCheatsheet*)            run rofi_keymaps ;;
 
+  # ---- the three qtile POPUPS ----
+  #
+  # These were a rofi menu, pavucontrol and nm-connection-editor: three
+  # different programs standing in for three surfaces qtile actually has, in
+  # popups/WallpaperPopup.py, AudioPopup.py and WifiPopup.py. They are
+  # reimplemented now, in the shell this desktop already runs — one Quickshell
+  # process holding all three, started beside the topbar by topbar.sh.
+  #
+  # `popups <name>` is a TOGGLE, so the same key closes what it opened, which
+  # is what the chords did: entering a chord you are already in leaves it.
+  toggleWallpaperPicker)      run_popup wallpaper ;;
+  toggleWifiPanel)            run_popup network ;;
+  toggleAudioPanel)           run_popup volume ;;
+
   # ---- panels that have a real GUI rather than a rofi menu ----
-  toggleAudioPanel)           run pavucontrol ;;
   toggleBluetoothPanel)       run blueman-manager ;;
   toggleSysmon)               run_sh 'env GTK_THEME=Adwaita:dark missioncenter' ;;
   toggleCalendar)             run clock_popup ;;
   toggleDisplayPanel)         run_sh "python3 '$HYPR_SCRIPTS/display-ctl.py' --menu || nwg-displays" ;;
-  toggleWifiPanel)            run_sh 'nm-connection-editor || iwgtk' ;;
   toggleWifiQr)               run "$HYPR_SCRIPTS/wifi-qr.py" ;;
   toggleCalculator)           run_sh 'rofi -show calc -modi calc -no-show-match -no-sort 2>/dev/null || kitty -e qalc' ;;
 
