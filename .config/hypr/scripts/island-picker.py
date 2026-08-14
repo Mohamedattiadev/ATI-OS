@@ -2416,6 +2416,323 @@ def hub_run(item_id):
     return page
 
 
+# -------------------------------------------------------------- ilovepdf --
+#
+#  THE PDF TOOLKIT, off rofi at last.
+#
+#  Asked for directly: "rofi ilove pdf neeed popup not using rofi ok". This
+#  was also the LAST key in the rofi chord still opening rofi, and
+#  submaps.conf said why it was the last:
+#
+#      "V's real reason is that rofi_ilovepdf is a FILE MANAGER ... The
+#       picker protocol carries exactly one id back per page, so
+#       multi-select cannot be expressed in it at all — porting V means
+#       either building selection state into PickerLayer.qml or shipping a
+#       PDF toolkit that has lost merge."
+#
+#  THAT CONCLUSION WAS WRONG, and in the same way this file's own header
+#  records being wrong about prompting menus. One id per page is not a limit
+#  when the page COMES BACK: `tog:` toggles a path in a set and returns the
+#  same page re-rendered with checkmarks, exactly as the spell-checker keeps
+#  its working text. The selection lives under $XDG_RUNTIME_DIR, held by
+#  this script — the panel still knows nothing, still holds no state, and
+#  PickerLayer.qml is not touched at all.
+#
+#  WHAT IS PORTED, AND WHAT IS NOT
+#  -------------------------------
+#  The 1,267-line toolkit is NOT reimplemented. rofi_ilovepdf grew two verbs,
+#  `--list-tools` and `--exec`, and everything below drives them: the
+#  conversion logic, the encryption checks, the page-range validation and the
+#  output naming stay in the one place that has always owned them, and the
+#  qtile session keeps the interactive script unchanged.
+#
+#  The one behaviour that is deliberately NOT reproduced is `order_files` —
+#  rofi's multi-select returns lines in list order, so the original had to
+#  offer a reordering step before a merge. Here the order is the order you
+#  TICK them in, which is the thing that step existed to recover.
+
+_PDF = "rofi_ilovepdf"
+_PDF_STATE = os.path.join(RUNTIME, "island-pdf.json")
+
+
+def _pdf_state(update=None):
+    """Read, or merge-and-write, the wizard's state.
+
+    A file and not a module global: every --run is a fresh process, so a
+    global would be empty on the next keystroke. Same discipline the
+    spell-checker uses and for the same reason.
+    """
+    state = {}
+    try:
+        with open(_PDF_STATE, "r", encoding="utf-8") as handle:
+            state = json.load(handle)
+    except (OSError, ValueError):
+        state = {}
+    if update is None:
+        return state
+    state.update(update)
+    try:
+        os.makedirs(os.path.dirname(_PDF_STATE), exist_ok=True)
+        with open(_PDF_STATE, "w", encoding="utf-8") as handle:
+            json.dump(state, handle)
+    except OSError:
+        pass
+    return state
+
+
+def _pdf_tools():
+    """[{label, exts, multi, asks}] from the toolkit itself.
+
+    Read at runtime rather than copied here. A second list of tools would
+    drift the first time one was added — and it would drift SILENTLY, since
+    a menu row that names a tool the script does not have simply fails when
+    chosen.
+    """
+    try:
+        out = subprocess.run([_PDF, "--list-tools"],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    tools = []
+    for line in out.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 4:
+            continue
+        label, exts, multi, asks = parts
+        tools.append({"label": label,
+                      "exts": exts.split(),
+                      "multi": multi == "1",
+                      "asks": int(asks or 0)})
+    return tools
+
+
+def _pdf_tool_by_label(label):
+    for tool in _pdf_tools():
+        if tool["label"] == label:
+            return tool
+    return None
+
+
+def ilovepdf_list():
+    tools = _pdf_tools()
+    if not tools:
+        return _message("iLovePDF",
+                        "rofi_ilovepdf --list-tools returned nothing. "
+                        "Check that it is on PATH and that its dependencies "
+                        "are installed (it says which).")
+    items = []
+    for tool in tools:
+        # The label carries the toolkit's own Nerd Font glyph as its first
+        # character. Split off so the panel can put it in the icon slot
+        # rather than rendering it in the text face, where a private-use
+        # codepoint draws as nothing at all.
+        label = tool["label"]
+        icon, _, rest = label.partition("  ")
+        detail = ", ".join(tool["exts"][:4])
+        if tool["multi"]:
+            detail += "  · several files"
+        items.append({"id": "tool:" + label,
+                      "label": rest or label,
+                      "detail": detail,
+                      "icon": icon})
+    return _page("iLovePDF", items)
+
+
+def _pdf_roots():
+    """Where to start browsing. The toolkit's own output folder first."""
+    home = os.path.expanduser("~")
+    roots = [os.path.join(home, "ILovePdf_Style_Docs"),
+             os.path.join(home, "Downloads"),
+             os.path.join(home, "Documents"),
+             os.path.join(home, "Desktop"),
+             home]
+    seen, out = set(), []
+    for path in roots:
+        if path in seen or not os.path.isdir(path):
+            continue
+        seen.add(path)
+        out.append(path)
+    return out
+
+
+def _pdf_short(path):
+    home = os.path.expanduser("~")
+    return "~" + path[len(home):] if path.startswith(home) else path
+
+
+def _pdf_browser(state, note=""):
+    """One directory: sub-folders, then the files this tool can open."""
+    tool = _pdf_tool_by_label(state.get("tool", "")) or {}
+    exts = set(tool.get("exts") or [])
+    multi = bool(tool.get("multi"))
+    picked = list(state.get("picked") or [])
+    directory = state.get("dir") or ""
+
+    items = []
+    if not directory:
+        for root in _pdf_roots():
+            items.append({"id": "dir:" + root, "label": os.path.basename(root) or root,
+                          "detail": _pdf_short(root), "icon": ""})
+        return _page("Where are the files?", items, note=note, stack="push")
+
+    parent = os.path.dirname(directory.rstrip("/"))
+    if parent and parent != directory:
+        items.append({"id": "dir:" + parent, "label": "..",
+                      "detail": _pdf_short(parent), "icon": ""})
+
+    try:
+        entries = sorted(os.listdir(directory), key=str.lower)
+    except OSError:
+        entries = []
+
+    files = []
+    for name in entries:
+        if name.startswith("."):
+            continue
+        full = os.path.join(directory, name)
+        if os.path.isdir(full):
+            items.append({"id": "dir:" + full, "label": name,
+                          "detail": "", "icon": ""})
+            continue
+        ext = os.path.splitext(name)[1].lstrip(".").lower()
+        if ext not in exts:
+            continue
+        files.append((name, full))
+
+    for name, full in files:
+        if multi:
+            # The tick AND the position. With merge the order is the answer,
+            # not a detail — "3 of 4" is what tells you the file you are
+            # about to add lands last.
+            at = picked.index(full) + 1 if full in picked else 0
+            items.append({"id": "tog:" + full,
+                          "label": ("%d. " % at if at else "") + name,
+                          "detail": "picked" if at else "",
+                          "icon": "" if at else ""})
+        else:
+            items.append({"id": "file:" + full, "label": name,
+                          "detail": "", "icon": ""})
+
+    if multi and picked:
+        items.insert(0, {"id": "go",
+                         "label": "Run on %d file%s" % (len(picked),
+                                                        "" if len(picked) == 1 else "s"),
+                         "detail": ", ".join(os.path.basename(p) for p in picked)[:60],
+                         "icon": ""})
+
+    title = (tool.get("label", "iLovePDF").split("  ", 1)[-1]
+             + "  ·  " + _pdf_short(directory))
+    return _page(title, items, note=note, stack="push")
+
+
+def _pdf_ask_or_run(state):
+    """Collect the next answer the tool wants, or do the work."""
+    tool = _pdf_tool_by_label(state.get("tool", "")) or {}
+    answers = list(state.get("answers") or [])
+    wanted = int(tool.get("asks") or 0)
+
+    if len(answers) < wanted:
+        label = tool.get("label", "")
+        step = len(answers)
+        prompts = {
+            "Rotate": [("Rotate by", "90, 180 or 270", False)],
+            "Extract page range": [("Keep which pages?", "2-5 · 1,3,7 · 2-z", False)],
+            "Delete pages": [("Delete which pages?", "2-5 · 1,3,7 · 2-z", False)],
+            "Protect with password": [("New password", "", True),
+                                      ("Confirm password", "type it again", True)],
+            "Remove password": [("Password", "the one that opens it", True)],
+            "Watermark": [("Watermark text", "drawn across every page", False)],
+            "OCR": [("Language", "tesseract code, e.g. eng", False)],
+            "Resize image": [("New size", "50% · 800x600 · 1920x", False)],
+        }
+        chosen = None
+        for key, value in prompts.items():
+            if key in label:
+                chosen = value
+                break
+        title, placeholder, secret = (chosen[step] if chosen and step < len(chosen)
+                                      else ("Value", "", False))
+        return _prompt(title, "ans", prompt=placeholder, secret=secret, stack="push")
+
+    files = list(state.get("picked") or [])
+    if not files:
+        return _message("iLovePDF", "No file chosen.")
+
+    env = dict(os.environ)
+    # Set even when empty: the toolkit installs its non-interactive prompt
+    # overrides on the variable being PRESENT, so an unset one would drop it
+    # back into rofi — which is the whole thing being removed here.
+    env["ILOVEPDF_ANSWERS"] = "\n".join(answers)
+    try:
+        out = subprocess.run([_PDF, "--exec", state.get("tool", ""), *files],
+                             capture_output=True, text=True, timeout=900, env=env)
+    except subprocess.TimeoutExpired:
+        return _message("iLovePDF", "Timed out. OCR on a long scan can take "
+                                    "minutes — it is still running.")
+    except OSError as error:
+        return _message("iLovePDF", str(error))
+
+    _pdf_state({"tool": "", "picked": [], "answers": [], "dir": ""})
+
+    if out.returncode == 2:
+        return _message("iLovePDF", "Cancelled.")
+    if out.returncode != 0:
+        # The toolkit reports its own failures through notify-send, which is
+        # where its detail is. Repeating a bare exit code here would be less
+        # information, not more.
+        return _message("iLovePDF",
+                        "That did not work. The reason is in the "
+                        "notification — usually a missing dependency, an "
+                        "encrypted file, or a page range outside the file.")
+    produced = out.stdout.strip().splitlines()
+    where = produced[-1] if produced else ""
+    return _message("Done", _pdf_short(where) if where else "Finished.")
+
+
+def ilovepdf_run(item_id, text=""):
+    state = _pdf_state()
+
+    if item_id.startswith("tool:"):
+        label = item_id[5:]
+        state = _pdf_state({"tool": label, "picked": [], "answers": [], "dir": ""})
+        return _pdf_browser(state)
+
+    if item_id.startswith("dir:"):
+        state = _pdf_state({"dir": item_id[4:]})
+        return _pdf_browser(state, note="")
+
+    if item_id.startswith("tog:"):
+        path = item_id[4:]
+        picked = list(state.get("picked") or [])
+        # Toggling OFF removes it from the order too, so the numbers stay a
+        # contiguous 1..n rather than developing gaps you cannot see.
+        if path in picked:
+            picked.remove(path)
+        else:
+            picked.append(path)
+        state = _pdf_state({"picked": picked})
+        # `replace`, not `push`: ticking four files must not leave four
+        # copies of this page on the stack for Escape to walk back out of.
+        page = _pdf_browser(state)
+        page["stack"] = "replace"
+        return page
+
+    if item_id.startswith("file:"):
+        state = _pdf_state({"picked": [item_id[5:]]})
+        return _pdf_ask_or_run(state)
+
+    if item_id == "go":
+        return _pdf_ask_or_run(state)
+
+    if item_id == "ans":
+        answers = list(state.get("answers") or [])
+        answers.append(text)
+        state = _pdf_state({"answers": answers})
+        return _pdf_ask_or_run(state)
+
+    return _message("iLovePDF", "Unknown step.")
+
+
 MENUS = {
     "windows": (windows_list, windows_run),
     "processes": (processes_list, processes_run),
@@ -2442,6 +2759,10 @@ MENUS = {
     # --- the third pass: a wizard, ported by moving its PROMPTS rather than
     #     its logic. See the note above `anki`.
     "anki": (anki_list, anki_run),
+    # The last of the rofi chord's keys to come off rofi. See the note
+    # above ilovepdf_list for why "multi-select cannot be expressed in
+    # this protocol" turned out to be wrong.
+    "ilovepdf": (ilovepdf_list, ilovepdf_run),
     "hub": (hub_list, hub_run),
 }
 

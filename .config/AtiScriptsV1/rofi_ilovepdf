@@ -1248,12 +1248,118 @@ navigate() {
 	done
 }
 
+# --- A MACHINE INTERFACE, SO THE UI CAN BE SOMETHING OTHER THAN ROFI ---
+#
+# Added for the island's PDF panel: "rofi ilove pdf neeed popup not using
+# rofi ok". The 1,267 lines above this are a PDF toolkit, not a menu — the
+# conversion logic, the encryption checks, the page-range validation and the
+# output naming are the whole value here and none of it is about rofi. So
+# the front end is replaced and the toolkit is kept, rather than a second
+# copy of it being written in QML.
+#
+# TWO VERBS, and nothing else changes: the interactive run is untouched and
+# the qtile session still uses it.
+#
+#   rofi_ilovepdf --list-tools
+#       one tool per line, TAB-separated: label, extension, multi (0|1),
+#       and the number of answers the tool will ask for. The last field is
+#       what lets a caller know whether to collect anything before running.
+#
+#   ILOVEPDF_ANSWERS=$'…\n…' rofi_ilovepdf --exec <label> <file>…
+#       run one tool over one or more files with the prompts pre-answered.
+#
+# WHY THE ANSWERS ARE A QUEUE AND NOT NAMED OPTIONS
+# -------------------------------------------------
+# Every prompt in this file funnels through four functions — `menu`,
+# `ask_text`, `ask_secret` and `ask_pages` — and no action asks more than
+# two questions. Overriding those four covers all thirteen prompting paths
+# at once; naming the answers per tool would mean a switch that has to be
+# extended every time a tool grows a question, i.e. exactly the drift this
+# script's own comments keep warning about.
+#
+# The overrides are installed ONLY when ILOVEPDF_ANSWERS is set, so there is
+# no way for them to affect an interactive run.
+if [[ -n "${ILOVEPDF_ANSWERS+x}" ]]; then
+	mapfile -t _ILP_ANSWERS <<<"${ILOVEPDF_ANSWERS}"
+	_ILP_AT=0
+	_ilp_next() {
+		if (( _ILP_AT >= ${#_ILP_ANSWERS[@]} )); then
+			# Return 1, which every caller already reads as "the user
+			# pressed Escape". Running on with an empty answer would let a
+			# password prompt be satisfied by "".
+			return 1
+		fi
+		printf '%s' "${_ILP_ANSWERS[_ILP_AT]}"
+		_ILP_AT=$(( _ILP_AT + 1 ))
+	}
+	# `menu` normally returns the chosen LINE; the callers that use it take
+	# the first word (Rotate) or match it against a parallel array. A caller
+	# is free to send the bare value — "90" survives `${deg%% *}` unchanged.
+	menu()       { _ilp_next; }
+	ask_text()   { _ilp_next; }
+	ask_secret() { _ilp_next; }
+	# ask_pages is overridden rather than left to ask_text because it
+	# normally shows a preset LIST first, and because its contract is to
+	# return a range already expanded against the real page count.
+	# expand_range is kept, so a bad range from a script is rejected exactly
+	# as one typed by hand would be.
+	ask_pages() {
+		local total="$1" spec
+		spec="$(_ilp_next)" || return 1
+		spec="${spec// /}"
+		[[ -n "$spec" ]] || return 1
+		expand_range "$spec" "$total" || return 1
+	}
+fi
+
 # --- Entry point ------------------------------------------------------
 #
 # An `if` rather than `[[ ... ]] && run`, because the && form leaves the
 # file's exit status at 1 when the guard is false -- and this file turns on
 # `set -e`, so sourcing it for a test killed the shell doing the sourcing.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+	case "${1:-}" in
+	--list-tools)
+		for _t in "${ACTION_ORDER[@]}"; do
+			[[ "$_t" == *"OCR"* ]] && (( HAVE_OCR == 0 )) && continue
+			_multi=0
+			for _m in "${MULTI_ACTIONS[@]}"; do
+				[[ "$_t" == "$_m" ]] && _multi=1
+			done
+			# How many answers the tool consumes. Derived from the same
+			# branches convert_files runs, and listed here so a caller does
+			# not have to know the toolkit's internals to collect them.
+			case "$_t" in
+			*"Protect with password"*)          _asks=2 ;;
+			*"Remove password"*|*"Rotate"*|\
+			*"Extract page range"*|*"Delete pages"*|\
+			*"Watermark"*|*"OCR"*|*"Resize image"*) _asks=1 ;;
+			*)                                   _asks=0 ;;
+			esac
+			printf '%s\t%s\t%s\t%s\n' \
+				"$_t" "${ACTION_EXT[$_t]}" "$_multi" "$_asks"
+		done
+		exit 0
+		;;
+	--exec)
+		shift
+		[[ $# -ge 2 ]] || { echo "usage: rofi_ilovepdf --exec <tool> <file>..." >&2; exit 2; }
+		_action="$1"; shift
+		declare -a _files=()
+		for _a in "$@"; do
+			[[ -f "$_a" && -r "$_a" ]] || { echo "not readable: $_a" >&2; exit 1; }
+			_files+=("$(readlink -f -- "$_a")")
+		done
+		convert_files "$_action" "${_files[@]}"
+		_rc=$?
+		# Print where the output went, so a caller that is not a person can
+		# say so. LAST_OUT_DIR/LAST_PRODUCED are set by convert_files and
+		# were already being read by the interactive "done" overlay.
+		(( _rc == 0 )) && printf '%s\n' "${LAST_PRODUCED:-$LAST_OUT_DIR}"
+		exit $_rc
+		;;
+	esac
+
 	# Files given on the command line skip the browser, so a file manager's
 	# "Open with" or a shell `rofi_ilovepdf scan.pdf` lands straight on the
 	# tool list with the input already chosen. Anything unreadable is
