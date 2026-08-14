@@ -168,6 +168,23 @@ notify_clear() {
     [ "$NOTIFY" = dunstify ] && dunstify -C "$NOTIFY_ID" 2>/dev/null || true
 }
 
+# ------------------------------------------------------------
+#  Which bar the desktop is wearing
+# ------------------------------------------------------------
+#  Written by AtiScriptsV1/bar-switch and read by both sessions. Defaulting
+#  to `island` matches bar-switch's own DEFAULT_MODE — a machine that has
+#  never switched has always had the island.
+#
+#  Read PER EVENT rather than once at startup, for the same reason the
+#  island is tried per event: bar-switch changes this file mid-session and
+#  this script is not restarted when it does.
+bar_mode() {
+    local m=""
+    [ -r "$HOME/.cache/bar-mode" ] && m="$(cat "$HOME/.cache/bar-mode" 2>/dev/null)"
+    m="${m//[[:space:]]/}"
+    case "$m" in native) echo native ;; *) echo island ;; esac
+}
+
 show() {
     local map="$1"
     local title="${map^^}-MODE"
@@ -185,6 +202,29 @@ show() {
         # Belt and braces: if a previous event fell back to dunst (island
         # still starting, say), that toast is non-expiring and would sit
         # under the island forever. Clear it whenever the island takes over.
+        notify_clear
+        return
+    fi
+
+    # ------------------------------------------------------------
+    #  NO TOAST WHEN THE TOPBAR IS UP
+    # ------------------------------------------------------------
+    #  Reported: "when i try to open a mode rofi, in qtile it was not
+    #  showing notification — have the same behaviour".
+    #
+    #  It is the same bug as the one the reconnect note below describes,
+    #  inverted. Both island calls above fail in native mode — and they
+    #  fail LOUDLY enough to be missed: `qs ipc call` against a config with
+    #  no running instance exits 255, so the fallback fires exactly when
+    #  the topbar is the live bar. That is the one case where there is
+    #  already an indicator on screen: the topbar draws chord_chip, with
+    #  qtile's own CHORD_CHIP_LABELS in it, which is what qtile did instead
+    #  of notifying.
+    #
+    #  So dunst stays the fallback for having NO bar at all — an island
+    #  that is still starting, or one that has died — and stops being a
+    #  second copy of a chip that is already showing the same words.
+    if [ "$(bar_mode)" = native ]; then
         notify_clear
         return
     fi
