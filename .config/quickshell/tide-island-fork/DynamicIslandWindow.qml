@@ -57,6 +57,22 @@ import "qml/common/Metrics.js" as Metrics
 PanelWindow {
     id: root
     property var shellRootController: null
+
+    // ---- WHAT THIS WINDOW REPORTS ABOUT ITSELF ----
+    //
+    // `islandState` and the capsule's animated size live on ids INSIDE this
+    // window (islandContainer, mainCapsule), so shell.qml — which only ever
+    // holds the window root — could not read either. That is why the `tide
+    // state` IPC needed these: without them a sweep can see the capsule move
+    // and not see WHICH state it moved to, and "rest -> panel" and "rest ->
+    // the wrong panel" become the same measurement.
+    //
+    // Read-only and derived, so they cannot become a second source of truth
+    // for the state they report.
+    readonly property string reportedState: islandContainer.islandState
+    readonly property real reportedHeight: mainCapsule.targetHeight
+    readonly property real reportedWidth: mainCapsule.displayedWidth
+
     property string overviewPhase: "closed"
     property bool overviewPreloading: false
     readonly property bool overviewPreparing: overviewPhase === "preparing"

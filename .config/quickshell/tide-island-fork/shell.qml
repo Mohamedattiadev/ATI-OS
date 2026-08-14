@@ -699,6 +699,45 @@ Scope {
             shellRoot.forFocusedWindow((window) => window.togglePlayerWindow());
         }
 
+        // ---- THE WAY OUT, WHICH IS WHAT A SWEEP NEEDS ----
+        //
+        // Every other function on this target is a way IN — show this, toggle
+        // that — and there was no way to ask what HAPPENED. So a systematic
+        // pass over the island's states could observe the capsule's geometry
+        // and nothing else: it could see that something moved and not which
+        // state it moved to, which makes "rest -> panel" and "rest -> the
+        // wrong panel" the same measurement.
+        //
+        // The RULES say a feature that cannot be driven should be given the
+        // way in, and call it a fix rather than scaffolding. This is the same
+        // sentence pointed at the answer instead of the question.
+        //
+        // Height and width come along with the state because the transition
+        // matrix is about the capsule's SHAPE, and reading them here is one
+        // call instead of one call plus a `hyprctl layers` parse.
+        function state(): string {
+            // The FIRST window, not the focused one. Filtering by focus would
+            // need Quickshell.Hyprland, which this file does not import — and
+            // an undefined name in QML fails at RUNTIME with the binding
+            // silently resolving to nothing, which is the trap the docs
+            // record about Metrics in OnboardingLayer. The islands are
+            // per-screen copies of one state machine driven by the same IPC,
+            // so the first one answers the question a sweep is asking.
+            const windows = shellRoot.islandWindows;
+            for (let index = 0; index < windows.length; index++) {
+                const window = windows[index];
+                if (!window)
+                    continue;
+                return JSON.stringify({
+                    state: String(window.reportedState),
+                    height: Math.round(window.reportedHeight),
+                    width: Math.round(window.reportedWidth),
+                    overview: window.overviewPhase !== "closed"
+                });
+            }
+            return JSON.stringify({ state: "", height: 0, width: 0, overview: false });
+        }
+
         function toggleControlCenter() {
             shellRoot.forFocusedWindow((window) => window.toggleControlCenterWindow());
         }
