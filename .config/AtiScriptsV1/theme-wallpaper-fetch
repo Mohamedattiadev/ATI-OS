@@ -44,6 +44,7 @@
 #      theme-wallpaper-fetch build  [--per-theme N] [--threshold X] [--apply]
 # ============================================================
 import argparse
+import hashlib
 import importlib.machinery
 import importlib.util
 import json
@@ -93,10 +94,46 @@ def load_themes():
 
 
 def candidate_images(srcdirs):
+    """Every image under `srcdirs`, EXCEPT this script's own output.
+
+    OUT_DIR is skipped, and that is a bug fix rather than an optimisation.
+    The natural way to run this is
+
+        theme-wallpaper-fetch scan <repos>… ~/Pictures/Wallpapers
+
+    because the user's own library is a legitimate source — and
+    ~/Pictures/Wallpapers CONTAINS themed/, so the previous run's output is
+    re-ingested as candidate input on the next run. Two things go wrong,
+    and only one of them is visible:
+
+      * A theme's set becomes partly a re-selection of what it already
+        held. The scorer is deterministic, so last run's winners score
+        exactly as well again and crowd out anything new — the sets stop
+        converging on the repos and start converging on themselves.
+
+      * The `link` branch below writes a symlink whose target is its own
+        name. An image "already inside the repo" gets a relative symlink
+        instead of a copy, and when the source IS `themed/x/fetched-02.jpg`
+        and the destination is also `themed/x/fetched-02.jpg`, that comes
+        out as `fetched-02.jpg -> fetched-02.jpg`. Measured after one such
+        run: 170 of 496 written files were self-referential symlinks, i.e.
+        broken. `ls` still counts them, which is what made the sets look
+        complete while `theme-wallpaper list` reported 16 of 25.
+
+    Skipped here rather than at the call site so it holds for every caller,
+    including a future one that passes $HOME.
+    """
     exts = {".jpg", ".jpeg", ".png", ".webp"}
+    out_dir = str(OUT_DIR.resolve())
     out = []
     for d in srcdirs:
-        for root, _dirs, files in os.walk(d):
+        for root, dirs, files in os.walk(d):
+            # Pruned from `dirs` rather than filtered per file: os.walk
+            # reads the whole of themed/ otherwise, which on a full set is
+            # 500 stat calls to throw all of them away.
+            if os.path.realpath(root) == out_dir:
+                dirs[:] = []
+                continue
             for fn in sorted(files):
                 if Path(fn).suffix.lower() in exts:
                     out.append(Path(root) / fn)
@@ -104,9 +141,29 @@ def candidate_images(srcdirs):
 
 
 def cache_key(path):
+    """A key that is the same in every process, which `hash()` is not.
+
+    This read `abs(hash(str(path)))`, and Python's str hashing is SALTED
+    PER PROCESS (PEP 456) unless PYTHONHASHSEED is set. So the key for one
+    file was a different number on every run, and the palette cache was
+    effectively write-only:
+
+      * every run re-extracted every candidate — ~20 minutes for the 3,875
+        images here, on a job whose entire point is that the expensive part
+        is done once;
+      * and left a second full set of cache files behind. Measured across
+        two runs of the same corpus: 5,330 files, then 8,657 and climbing,
+        none of which would ever be read again.
+
+    Nothing failed, which is why it survived: a cache that always misses is
+    a cache that always works. sha1 of the path is stable across processes
+    and machines; it is not a security boundary, just a filename.
+
+    Size stays in the key so a re-downloaded or replaced file re-extracts.
+    """
     st = path.stat()
-    # size is in the key so a re-downloaded or replaced file re-extracts.
-    return f"{abs(hash(str(path))):016x}_{st.st_size}.json"
+    digest = hashlib.sha1(str(path).encode("utf-8")).hexdigest()[:16]
+    return f"{digest}_{st.st_size}.json"
 
 
 def palette_for(path):
