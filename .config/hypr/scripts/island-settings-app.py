@@ -167,7 +167,41 @@ class SettingsWindow(Adw.ApplicationWindow):
         toolbar.add_top_bar(header)
         toolbar.set_content(content)
 
-        self.toasts.set_child(toolbar)
+        # ---- the sidebar ------------------------------------------------
+        #
+        # WHY A SIDEBAR AND NOT A LONGER PAGE
+        #
+        # The groups already existed; they were headings on one scroll. With
+        # 30 rows each carrying a paragraph, that page was about nine screens
+        # tall, so "grouped" was true in the markup and false on screen —
+        # you could not see a group boundary and a heading, which is the
+        # only thing a heading is for.
+        #
+        # Categories become NAVIGATION instead. One category is on screen at
+        # a time, every page fits without scrolling or nearly so, and the
+        # sidebar is a table of contents that answers "what can I even
+        # change here" — the question "not customisable" actually asks.
+        self.sidebar_list = Gtk.ListBox(css_classes=["navigation-sidebar"])
+        self.sidebar_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self.sidebar_list.connect("row-selected", self.on_category)
+
+        sidebar_scroll = Gtk.ScrolledWindow(hexpand=False, vexpand=True)
+        sidebar_scroll.set_child(self.sidebar_list)
+
+        sidebar_toolbar = Adw.ToolbarView()
+        sidebar_header = Adw.HeaderBar()
+        sidebar_header.set_title_widget(Adw.WindowTitle(title="Sections"))
+        sidebar_toolbar.add_top_bar(sidebar_header)
+        sidebar_toolbar.set_content(sidebar_scroll)
+
+        self.split = Adw.NavigationSplitView(
+            sidebar=Adw.NavigationPage(child=sidebar_toolbar, title="Sections"),
+            content=Adw.NavigationPage(child=toolbar, title="Island Settings"),
+        )
+        self.split.set_min_sidebar_width(200)
+        self.split.set_max_sidebar_width(260)
+
+        self.toasts.set_child(self.split)
         self.set_content(self.toasts)
 
         self.reload()
@@ -262,10 +296,107 @@ class SettingsWindow(Adw.ApplicationWindow):
         for group in self._groups:
             self.page.add(group)
 
+        self.build_sidebar()
         self.apply_filter()
 
     def groups_built(self):
         return getattr(self, "_groups", [])
+
+    # ---- categories --------------------------------------------------
+
+    MODIFIED = "​Modified"   # zero-width prefix: cannot collide with a
+                                  # real group title, and never displayed.
+
+    def modified_keys(self):
+        """Keys whose value differs from the packaged default.
+
+        Phase 8 asked for "a visible diff of what differs from the packaged
+        defaults". The reset arrow already marks them one row at a time, but
+        that only answers the question if you scroll all thirty rows and
+        remember what you saw.
+        """
+        return [r["key"] for r in self.rows if r.get("value") != r.get("default")]
+
+    def build_sidebar(self):
+        """Rebuilt on every reload, because the Modified count moves.
+
+        Selection is restored by TITLE rather than by index or by widget:
+        build() runs after every write, and a row object from the previous
+        build is a dead widget by the time this runs.
+        """
+        previous = getattr(self, "selected_category", None)
+
+        while (child := self.sidebar_list.get_first_child()) is not None:
+            self.sidebar_list.remove(child)
+
+        self._sidebar_rows = {}
+        # Counted from the widget map rather than from GROUPS, so "Other"
+        # is included and a group whose keys are all absent is never listed.
+        entries = []
+        for group in self._groups:
+            title = group.get_title()
+            count = sum(1 for k, w in self.widgets.items()
+                        if w.get_ancestor(Adw.PreferencesGroup) is group)
+            entries.append((title, count))
+
+        modified = self.modified_keys()
+        if modified:
+            entries.insert(0, (self.MODIFIED, len(modified)))
+
+        for title, count in entries:
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
+                          margin_top=8, margin_bottom=8,
+                          margin_start=10, margin_end=10)
+            label = Gtk.Label(label="Changed" if title == self.MODIFIED else title,
+                              xalign=0, hexpand=True)
+            box.append(label)
+            badge = Gtk.Label(label=str(count))
+            badge.add_css_class("caption")
+            badge.add_css_class("dim-label")
+            box.append(badge)
+
+            row = Gtk.ListBoxRow()
+            row.set_child(box)
+            row.category_title = title
+            self.sidebar_list.append(row)
+            self._sidebar_rows[title] = row
+
+        target = previous if previous in self._sidebar_rows else None
+        if target is None:
+            # Open on the first real section, not on "Changed" — the diff is
+            # a lens on the settings, not the settings.
+            for title, _c in entries:
+                if title != self.MODIFIED:
+                    target = title
+                    break
+        if target is not None:
+            self.selected_category = target
+            self.sidebar_list.select_row(self._sidebar_rows[target])
+
+    def select_section(self, name):
+        """Select by visible name; "Changed" maps to the diff pseudo-section."""
+        wanted = self.MODIFIED if name.strip().casefold() == "changed" else name
+        target = self._sidebar_rows.get(wanted)
+        if target is None:
+            for title, row in self._sidebar_rows.items():
+                if title.strip().casefold() == name.strip().casefold():
+                    target = row
+                    break
+        if target is not None:
+            self.sidebar_list.select_row(target)
+
+    def on_category(self, _listbox, row):
+        if row is None:
+            return
+        self.selected_category = row.category_title
+        self.apply_filter()
+        # Switching section must land at the TOP of it. Hiding rows does not
+        # move the scroll position, so after leaving a long section the next
+        # one opens part-way down — the same symptom the comment above
+        # self.page describes for the nested-scroller bug, reached a
+        # different way. Caught on the "Changed" view, which opened with its
+        # first group already scrolled off.
+        self.page.scroll_to_top()
 
     def make_group(self, title, description, rows):
         group = Adw.PreferencesGroup(title=title, description=description)
@@ -277,18 +408,96 @@ class SettingsWindow(Adw.ApplicationWindow):
         return group
 
     def subtitle_for(self, descriptor):
-        """The `detail` prose, plus the key, plus why it may not be editable here.
+        """The `detail` prose, truncated to two lines by the caller.
 
         Showing `detail` at all is most of what "more detailed" means: the
         island panel has this text too but only for the selected row, and
         the packaged config app does not have it at all. Every one of these
         paragraphs is an argument someone had to reconstruct once.
+
+        The font warning is NOT appended here any more. The subtitle is
+        capped at two lines, so a warning glued to the end of a paragraph is
+        a warning that gets ellipsized away exactly when the paragraph is
+        long. It became an icon in the suffix — always visible, never
+        truncated — with the full text in the ⓘ popover.
         """
-        bits = [descriptor.get("detail", "").strip()]
+        return (descriptor.get("detail") or "").strip()
+
+    def make_info_button(self, descriptor):
+        """The full descriptor, on demand: prose, key, type, default.
+
+        This is where "more detailed" actually lives now that the subtitle
+        is capped at two lines. It carries three things the flat page never
+        showed at all:
+
+          * the KEY. The app is a client of `island-settings.py --set <key>`,
+            and the key is what you need to script it, to read
+            userconfig.json, or to search this repo for why a row exists.
+            `subtitle_for`'s docstring claimed the key was in the subtitle;
+            it never was.
+          * the DEFAULT, next to the current value, which is the per-row half
+            of the diff the sidebar's "Changed" section shows in aggregate.
+          * the type and range, so a refused write is predictable rather
+            than a toast you have to trigger to learn from.
+        """
+        detail = (descriptor.get("detail") or "").strip()
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10,
+                      margin_top=12, margin_bottom=12,
+                      margin_start=12, margin_end=12)
+        box.set_size_request(340, -1)
+
+        if detail:
+            prose = Gtk.Label(label=detail, xalign=0, wrap=True,
+                              max_width_chars=44)
+            prose.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+            box.append(prose)
+
+        facts = Gtk.Grid(column_spacing=10, row_spacing=4)
+        line = 0
+
+        def fact(name, value, mono=False):
+            nonlocal line
+            k = Gtk.Label(label=name, xalign=0)
+            k.add_css_class("caption")
+            k.add_css_class("dim-label")
+            v = Gtk.Label(label=str(value), xalign=0, wrap=True,
+                          max_width_chars=30, selectable=True)
+            v.add_css_class("caption")
+            if mono:
+                v.add_css_class("monospace")
+            facts.attach(k, 0, line, 1, 1)
+            facts.attach(v, 1, line, 1, 1)
+            line += 1
+
+        fact("Key", descriptor["key"], mono=True)
+        fact("Type", descriptor.get("type", "?"))
+        if descriptor.get("type") == "int" and "min" in descriptor:
+            fact("Range", "%s – %s" % (descriptor.get("min"), descriptor.get("max")))
+        if descriptor.get("type") == "enum" and descriptor.get("choices"):
+            fact("Choices", ", ".join(str(c) for c in descriptor["choices"]))
+        fact("Default", descriptor.get("default"), mono=True)
+        fact("Current", descriptor.get("value"), mono=True)
+        box.append(facts)
+
         if descriptor.get("type") == "font" and not descriptor.get("resolves", True):
-            bits.append("⚠ This family does not resolve — %s."
-                        % descriptor.get("resolveDetail", "it falls back"))
-        return "\n\n".join(b for b in bits if b)
+            warn = Gtk.Label(
+                label="⚠ This family does not resolve — %s."
+                      % descriptor.get("resolveDetail", "it falls back"),
+                xalign=0, wrap=True, max_width_chars=44)
+            warn.add_css_class("caption")
+            warn.add_css_class("warning")
+            box.append(warn)
+
+        popover = Gtk.Popover()
+        popover.set_child(box)
+
+        button = Gtk.MenuButton(icon_name="help-about-symbolic",
+                                valign=Gtk.Align.CENTER,
+                                tooltip_text="What this does, and its key")
+        button.add_css_class("flat")
+        button.set_popover(popover)
+        return button
 
     def decorate(self, row, descriptor):
         row.set_title(descriptor.get("label", descriptor["key"]))
@@ -300,11 +509,43 @@ class SettingsWindow(Adw.ApplicationWindow):
         # it edits.
         if hasattr(row, "set_subtitle"):
             row.set_subtitle(self.subtitle_for(descriptor))
+        # TWO lines, not unlimited, and this is the single biggest change to
+        # how the app reads.
+        #
+        # It was `set_subtitle_lines(0)` — unlimited — so every one of the
+        # thirty rows printed its whole `detail` paragraph, two to four lines
+        # each. The page became about nine screens of justified grey text
+        # with the controls stranded at the right margin, and the effect is
+        # that nothing is scannable: finding a setting meant reading an essay
+        # about each one you passed.
+        #
+        # The prose is still the point of this app, so it is not deleted and
+        # not hidden behind a hover. It is TRUNCATED here and available in
+        # full, immediately, from the ⓘ button added below. Two lines is
+        # enough for the first sentence of nearly every descriptor, which is
+        # reliably the one that says what the key does.
         if hasattr(row, "set_subtitle_lines"):
-            row.set_subtitle_lines(0)
+            row.set_subtitle_lines(2)
 
         suffix = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
                          valign=Gtk.Align.CENTER)
+
+        if descriptor.get("type") == "font" and not descriptor.get("resolves", True):
+            # An icon rather than prose, because a family that does not
+            # resolve fails SILENTLY — fontconfig substitutes Noto Sans CJK
+            # KR here and nothing reports it. This is the only cue that the
+            # value in the box is not the font on screen.
+            warn = Gtk.Image(icon_name="dialog-warning-symbolic",
+                             valign=Gtk.Align.CENTER)
+            warn.add_css_class("warning")
+            warn.set_tooltip_text(
+                "This family does not resolve — %s."
+                % descriptor.get("resolveDetail", "it falls back"))
+            suffix.append(warn)
+
+        info = self.make_info_button(descriptor)
+        if info is not None:
+            suffix.append(info)
 
         if descriptor.get("scope") == "fork":
             tag = Gtk.Label(label="fork only")
@@ -605,16 +846,37 @@ class SettingsWindow(Adw.ApplicationWindow):
     # ---- search ----------------------------------------------------
 
     def apply_filter(self):
+        """Two gates, and the search one overrides the category one.
+
+        A search that only looked inside the open section would be a worse
+        search than the flat page had — arriving with "that thing about the
+        exclusive zone" means not knowing which section it is in, which is
+        the same reason the key and the detail are searched and not just the
+        label. So a non-empty query ignores the sidebar entirely and shows
+        matches from every section, with the section headings acting as the
+        result grouping.
+        """
         needle = self.search.get_text().strip().casefold()
         by_key = {row["key"]: row for row in self.rows}
+        searching = bool(needle)
+        category = getattr(self, "selected_category", None)
+        modified = set(self.modified_keys()) if category == self.MODIFIED else None
 
         for group in self.groups_built():
             any_visible = False
+            in_category = searching or category is None \
+                or group.get_title() == category or modified is not None
             for key, widget in self.widgets.items():
                 descriptor = by_key.get(key)
                 if descriptor is None:
                     continue
                 if widget.get_parent() is not None and widget.get_ancestor(Adw.PreferencesGroup) is not group:
+                    continue
+                if not in_category:
+                    widget.set_visible(False)
+                    continue
+                if modified is not None and key not in modified:
+                    widget.set_visible(False)
                     continue
                 # Key and detail are searched, not only the label. The label
                 # is the one thing a user does NOT know when they arrive
@@ -630,11 +892,12 @@ class SettingsWindow(Adw.ApplicationWindow):
 
 
 class App(Adw.Application):
-    def __init__(self, selftest=False, initial_filter=""):
+    def __init__(self, selftest=False, initial_filter="", initial_section=""):
         super().__init__(application_id="dev.ati.IslandSettings",
                          flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
         self.selftest = selftest
         self.initial_filter = initial_filter
+        self.initial_section = initial_section
 
     def do_activate(self):
         window = self.props.active_window or SettingsWindow(self)
@@ -650,6 +913,12 @@ class App(Adw.Application):
         # row below the fold into a screenshot without synthesising input.
         if self.initial_filter:
             window.search.set_text(self.initial_filter)
+        # `--section Changed` opens on the diff. Same reasoning as --filter
+        # above: a settings app should be launchable AT a place, and it is
+        # also the only way to screenshot a section without synthesising a
+        # click — and a stray click in THIS window writes config.
+        if self.initial_section:
+            window.select_section(self.initial_section)
         window.present()
 
 
@@ -661,7 +930,15 @@ def exercise_writes(window):
     it showing a value that was never written, which is the GUI equivalent of
     the inert row — the control says one thing and the file says another.
 
-    CALLER MUST BACK UP userconfig.json. This writes to it.
+    CALLER MUST BACK UP userconfig.json. This writes to it, and the restore
+    at the end is NOT byte-exact — it restores the VALUE, not the ABSENCE.
+
+    Measured: `islandAutoHideDelayMs` was not in the file at all, taking the
+    schema default of 2500. This wrote 3300, then "restored" by setting 2500
+    explicitly. Semantically identical, one key longer, and the file no
+    longer matches what it was. `--set` has no unset, so restoring absence
+    is not something this function can do — which is exactly why the backup
+    is the caller's job and is stated first.
     """
     print("\n-- write path --")
 
@@ -719,6 +996,57 @@ def report(window):
 
     missing = [r["key"] for r in window.rows if r["key"] not in window.widgets]
 
+    # ---- navigation ----------------------------------------------------
+    #
+    # Driven here rather than by clicking the sidebar, and that is a safety
+    # rule rather than convenience: this window's controls WRITE on change,
+    # so a synthesised click that lands two pixels off a list row lands on a
+    # switch instead and silently edits the user's config. Selecting the
+    # category in code exercises the same apply_filter() path with nothing
+    # on screen to miss.
+    print("\n-- navigation --")
+
+    def visible_keys():
+        return {k for k, w in window.widgets.items() if w.get_visible()}
+
+    total = len(window.widgets)
+    for title in list(window._sidebar_rows):
+        window.selected_category = title
+        window.apply_filter()
+        shown = visible_keys()
+        name = "Changed" if title == window.MODIFIED else title
+        if title == window.MODIFIED:
+            expected = set(window.modified_keys())
+            verdict = "PASS" if shown == expected else "FAIL"
+        else:
+            keys = [k for k, w in window.widgets.items()
+                    if w.get_ancestor(Adw.PreferencesGroup) is not None
+                    and w.get_ancestor(Adw.PreferencesGroup).get_title() == title]
+            verdict = "PASS" if shown == set(keys) else "FAIL"
+        print("  %-22s shows %2d/%d  %s" % (name, len(shown), total, verdict))
+
+    # A query must ESCAPE the open section. Asserting "spans >1 section"
+    # instead was the first version and it was a bad test: all seven matches
+    # for "font" are legitimately in Typography, so a correct search failed
+    # it. The property that actually matters is that results are not
+    # confined to whatever happens to be selected.
+    for needle in ("font", "enabled"):
+        window.selected_category = "System"
+        window.search.set_text(needle)
+        window.apply_filter()
+        across = visible_keys()
+        sections = sorted(
+            window.widgets[k].get_ancestor(Adw.PreferencesGroup).get_title()
+            for k in across)
+        outside = [k for k in across
+                   if window.widgets[k].get_ancestor(Adw.PreferencesGroup)
+                   .get_title() != "System"]
+        print("  search %-9s from System: %2d rows, %d section(s), %d outside  %s"
+              % ("'%s'" % needle, len(across), len(set(sections)), len(outside),
+                 "PASS" if outside else "FAIL"))
+    window.search.set_text("")
+    window.apply_filter()
+
     print("built %d/%d rows into %d groups"
           % (len(window.widgets), len(window.rows), len(window.groups_built())))
     print("types:", ", ".join("%s=%d" % kv for kv in sorted(kinds.items())))
@@ -739,5 +1067,12 @@ if __name__ == "__main__":
         if index + 1 < len(sys.argv):
             initial = sys.argv[index + 1]
 
+    section = ""
+    if "--section" in sys.argv:
+        index = sys.argv.index("--section")
+        if index + 1 < len(sys.argv):
+            section = sys.argv[index + 1]
+
     args = [sys.argv[0]]
-    sys.exit(App(selftest=mode, initial_filter=initial).run(args))
+    sys.exit(App(selftest=mode, initial_filter=initial,
+                 initial_section=section).run(args))
