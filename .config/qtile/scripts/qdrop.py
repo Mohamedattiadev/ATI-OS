@@ -562,8 +562,53 @@ class Item(Gtk.EventBox):
             return [c.get_child().entry for c in selected]
         return [self.entry]
 
-    def _on_drag_begin(self, _w, _ctx):
+    def _drag_pixbuf(self):
+        """The thumbnail this tile shows, as a pixbuf, for the drag icon."""
+        e = self.entry
+        if e["type"] == "file":
+            path = e["value"]
+            ext = Path(path).suffix.lower()
+            if ext in IMG_EXT and os.path.isfile(path):
+                try:
+                    return GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                        path, THUMB, THUMB, True
+                    )
+                except Exception:
+                    pass
+            name = "folder-symbolic" if os.path.isdir(path) else "text-x-generic-symbolic"
+        elif e["type"] == "url":
+            name = "web-browser-symbolic"
+        else:
+            name = "text-x-generic-symbolic"
+        try:
+            return Gtk.IconTheme.get_default().load_icon(name, THUMB, 0)
+        except Exception:
+            return None
+
+    def _on_drag_begin(self, _w, ctx):
         self._drag_active = True
+        # ---- THE DRAG ICON, AND WHERE IT SITS ----
+        #
+        # Reported: "while dragging, the file is not under the cursor". It was
+        # not, and the cause is that nothing set a drag icon at all. With none
+        # set, GTK3 falls back to rendering the drag SOURCE WIDGET — the whole
+        # 76x96 tile, label and badge included — and anchors it by the widget
+        # origin, so the thing you are carrying hangs down and to the right of
+        # the pointer by however far into the tile you happened to press.
+        #
+        # Setting one fixes both halves: it is the 48px THUMBNAIL rather than
+        # the tile, and the hotspot is its CENTRE, so what you are dragging is
+        # centred on the cursor the way every other drag on this desktop is.
+        #
+        # Falls through silently when the icon theme has no such name — a drag
+        # with GTK's default icon is the behaviour that shipped until now, so
+        # the failure mode of this code is the old behaviour rather than a
+        # broken drag.
+        pb = self._drag_pixbuf()
+        if pb is not None:
+            Gtk.drag_set_icon_pixbuf(
+                ctx, pb, pb.get_width() // 2, pb.get_height() // 2
+            )
 
     def _on_drag_end(self, _w, _ctx):
         # small delay so release handler sees drag_active
