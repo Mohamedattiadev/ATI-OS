@@ -1275,6 +1275,48 @@ def _shot_fire(area, geometry, delay, dest):
 RECORD_DIR = os.path.join(HOME, "Videos", "Recordings")
 RECORD_PID = os.path.join(RUNTIME, "island-record.pid")
 
+# dm-recordV2's numbers, carried over with its measurement. A GIF is captured
+# to h264 first and converted on stop, never written straight out: encoding
+# GIF live means every frame carries the default palette with no cross-frame
+# optimisation. Measured there on a 6-second full-screen capture -- direct GIF
+# 29.6 MB, capture-then-convert with a real palette 1.3 MB, same footage, 23x
+# smaller for two seconds of conversion. palettegen also has to see the whole
+# stream before it can emit a palette, so it cannot be part of the live
+# pipeline at all: one pass buffers the entire recording and stalls.
+GIF_FPS = 12
+GIF_MAX_WIDTH = 900
+
+
+def _gif_convert_command(source, output):
+    """The second stage: h264 in, palette-optimised GIF out.
+
+    Verbatim from dm-recordV2's convert_pending_gif, including
+    stats_mode=diff and the bayer dither, because those are what buy the 23x
+    and were chosen there against real footage.
+
+    Returns a shell fragment: the conversion runs detached after the recorder
+    has exited, and on failure the h264 is KEPT rather than the recording
+    being lost to a bad convert.
+    """
+    # RAW string: the backslash before the comma is ffmpeg's own escape,
+    # protecting min()'s argument separator from the filtergraph parser.
+    # Written "\\," in a normal Python string it is an invalid escape that
+    # works today and warns, and is scheduled to become an error.
+    vf = (r"fps=%d,scale=min(iw\,%d):-2:flags=lanczos,split[s0][s1];"
+          "[s0]palettegen=stats_mode=diff[p];"
+          "[s1][p]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle"
+          % (GIF_FPS, GIF_MAX_WIDTH))
+    return (
+        "if ffmpeg -nostdin -y -hide_banner -loglevel error -i %s "
+        "-vf %s %s < /dev/null; then "
+        "  notify-send 'GIF saved' \"$(du -h %s | cut -f1) — %s\"; rm -f %s; "
+        "else "
+        "  notify-send 'GIF conversion failed' 'capture kept at %s'; "
+        "fi" % (
+            shlex.quote(source), shlex.quote(vf), shlex.quote(output),
+            shlex.quote(output), shlex.quote(os.path.basename(output)),
+            shlex.quote(source), shlex.quote(source)))
+
 
 def _record_active():
     """The live recording's pid, or 0. Clears a stale pidfile as it goes."""
@@ -1322,12 +1364,23 @@ def record_list():
                  "first.")
 
     have_wf = bool(shutil.which("wf-recorder"))
+    have_ff = bool(shutil.which("ffmpeg"))
     missing = "wf-recorder is not installed"
     camera = _webcam_device()
-    # dm-recordV2's rows, its wording, its order. Its mode 7 (GIF) is still
-    # gone for the reason in the note above; every other row is here,
-    # including "Screen + Audio", which the first port dropped without
-    # saying so — it is dm-recordV2's FIRST row and the one the hand goes to.
+    gif_detail = ("capture h264, convert on stop — %d fps, max %d px wide"
+                  % (GIF_FPS, GIF_MAX_WIDTH))
+    if not have_wf:
+        gif_detail = missing
+    elif not have_ff:
+        gif_detail = "ffmpeg is not installed (needed for the palette pass)"
+    # dm-recordV2's rows, its wording, its order — and its mode 7 (GIF) is
+    # BACK. The note above used to say GIF was dropped because "that second
+    # stage cannot be run at all without a first stage that works", the first
+    # stage being screen capture, which x11grab could not do under Hyprland.
+    # wf-recorder is installed now, so the premise is gone and so is the
+    # reason. Every other row is here too, including "Screen + Audio", which
+    # the first port dropped without saying so — it is dm-recordV2's FIRST row
+    # and the one the hand goes to.
     return _page("Select recording mode:", [
         {"id": "screen-audio", "label": "Screen + Audio (full display)",
          "detail": "wf-recorder --audio" if have_wf else missing},
@@ -1341,6 +1394,10 @@ def record_list():
          "detail": camera or "no capture device under /dev/video*"},
         {"id": "webcam-hd", "label": "Webcam (HD 1920x1080)",
          "detail": camera or "no capture device under /dev/video*"},
+        {"id": "gif", "label": "Screen → GIF (full display)",
+         "detail": gif_detail},
+        {"id": "gif-region", "label": "Screen Area → GIF (selection)",
+         "detail": gif_detail},
     ])
 
 
@@ -1369,12 +1426,45 @@ def record_run(item_id):
         # notification that lands before the indicator clears reads as the
         # recording still running.
         _island_recording(False)
+
+        # A GIF is only half finished when the recorder exits. The palette
+        # pass runs DETACHED and says so itself, because it takes seconds on
+        # a long capture and blocking here would hold the panel open —
+        # _spawn_sh exists for exactly this class of "must outlive the panel".
+        gif_source = target.get("gif_source")
+        if gif_source and os.path.exists(gif_source):
+            _notify("Converting to GIF…", os.path.basename(target.get("output", "")))
+            _spawn_sh(_gif_convert_command(gif_source, target["output"]))
+            return None
+
         _notify("Recording stopped", target.get("output", ""))
         return None
 
     os.makedirs(RECORD_DIR, exist_ok=True)
 
-    if item_id in ("screen", "region", "screen-audio"):
+    if item_id in ("gif", "gif-region"):
+        if not shutil.which("wf-recorder"):
+            raise ValueError("wf-recorder is not installed — see the note in "
+                             "island-picker.py: x11grab records a black frame "
+                             "under Hyprland, measured")
+        if not shutil.which("ffmpeg"):
+            raise ValueError("ffmpeg is not installed — it is the palette pass, "
+                             "and without it a GIF would be 23x larger")
+        output = os.path.join(RECORD_DIR, "gif-%s.gif" % _stamp())
+        # The h264 intermediate lives in RUNTIME, not /tmp and not
+        # RECORD_DIR: dm-recordV2's own note is that a screen capture has no
+        # business sitting world-readable in /tmp for the length of the
+        # recording, and RECORD_DIR is where the user's finished recordings
+        # are — a stray .mp4 there looks like one of them.
+        source = os.path.join(RUNTIME, "island-gif-%d.mp4" % os.getpid())
+        geometry = ('-g "$(slurp)" ' if item_id == "gif-region" else "")
+        # Captured at GIF_FPS rather than at full rate and decimated later:
+        # the frames that would be thrown away cost encode time and disk for
+        # the whole recording, and -r is the flag wf-recorder takes for it.
+        command = "wf-recorder -r %d %s-f %s" % (
+            GIF_FPS, geometry, shlex.quote(source))
+
+    elif item_id in ("screen", "region", "screen-audio"):
         if not shutil.which("wf-recorder"):
             raise ValueError("wf-recorder is not installed — see the note in "
                              "island-picker.py: x11grab records a black frame "
@@ -1415,7 +1505,11 @@ def record_run(item_id):
     # encoder keeps writing.
     _spawn_sh("exec %s < /dev/null & echo $! > %s; wait" % (
         command, shlex.quote(RECORD_PID)))
-    _state_write("record", {"output": output, "mode": item_id})
+    state = {"output": output, "mode": item_id}
+    if item_id in ("gif", "gif-region"):
+        # Read back by the stop path, which runs the second stage.
+        state["gif_source"] = source
+    _state_write("record", state)
 
     # The pidfile is written by the detached shell, so it is NOT there yet
     # when _spawn_sh returns. Poll briefly rather than sleeping a guessed
