@@ -4,6 +4,7 @@ import Quickshell.Io
 
 import "qml/common"
 import "qml/popups"
+import "qml/theme"
 
 //
 // ============================================================
@@ -96,6 +97,92 @@ ShellRoot {
         function showVolume(): void    { root.show("volume"); }
         function close(): void         { root.hide(); }
         function status(): string      { return root.open === "" ? "none" : root.open; }
+    }
+
+    // ---------------------------------------------------------------
+    //  THE THEME SWEEP, WHICH IS NOT A POPUP
+    // ---------------------------------------------------------------
+    //
+    // Reported: "when I change the theme and wallpaper I want the same
+    // animation of the island". There was none, and the reason is where the
+    // overlay lives rather than anything about theme-apply: shell.qml owns the
+    // ThemeTransitionWindows, and bar-switch stops the island to start the
+    // topbar. Under that bar a theme change was theme-apply repainting the
+    // desktop in stages, with nothing in front of it.
+    //
+    // Same arrangement as the TreeTab sidebar and for the same reason — it is
+    // a SESSION surface, not a bar widget, and it belongs to whichever shell
+    // is resident. This one is, so it hosts it.
+    //
+    // The overlay RUNS theme-apply itself, behind a frozen screenshot; that is
+    // the whole trick and it is why the trigger cannot be "watch for the theme
+    // changing". Freezing has to happen first. AtiScriptsV1/theme-animate is
+    // the one place that decides which shell to hand a theme change to.
+    //
+    // Wayland only. popups.qml is started by hypr/scripts/topbar.sh, which is
+    // the Hyprland session's; under qtile the island is the shell that is up
+    // and it has its own overlay, in both backends. There is no third case
+    // today — qtile with its OWN bar has no Quickshell running at all, which
+    // is the one combination that still gets an unanimated theme change, and
+    // theme-animate says so when it falls through.
+    Variants {
+        id: themeTransitionVariants
+
+        model: Quickshell.screens
+
+        ThemeTransitionWindowWayland {
+            required property var modelData
+
+            screen: modelData
+            outputName: modelData && modelData.name !== undefined
+                ? String(modelData.name) : ""
+            // Absolute, not a bare "theme-apply": Quickshell is started by the
+            // compositor, so its PATH is the session's and AtiScriptsV1 is not
+            // on it. shell.qml's copy of this line carries the same note.
+            themeApplyPath: Quickshell.env("HOME")
+                + "/.dotfiles/.config/AtiScriptsV1/theme-apply"
+            // Only the first screen's overlay runs theme-apply, and the others
+            // wait on its `themeApplied` — without the relay each would sit on
+            // a frozen screenshot until its own 12 s cap fired.
+            ownsThemeApply: Quickshell.screens.length === 0
+                || modelData === Quickshell.screens[0]
+
+            onThemeApplied: root.relayThemeApplied()
+        }
+    }
+
+    readonly property var themeWindows: themeTransitionVariants.instances
+
+    function startThemeTransition(themeName) {
+        if (!themeName)
+            return;
+        const windows = root.themeWindows;
+        if (windows.length === 0)
+            return;
+        for (let i = 0; i < windows.length; i++) {
+            if (windows[i])
+                windows[i].begin(String(themeName));
+        }
+    }
+
+    function relayThemeApplied() {
+        const windows = root.themeWindows;
+        for (let i = 0; i < windows.length; i++) {
+            if (windows[i])
+                windows[i].noteThemeApplied();
+        }
+    }
+
+    // The same target and the same function NAME the island exposes, so
+    // theme-animate can try one and then the other without a second spelling
+    // to keep in step. shell.qml's own comment predicted this consumer: the
+    // IPC is there "so theme-toggle (the rofi picker, which the qtile session
+    // shares) can get the same animation later".
+    IpcHandler {
+        target: "tide"
+        function applyThemeAnimated(theme: string) {
+            root.startThemeTransition(theme);
+        }
     }
 
     // ---- THE POPUPS ----

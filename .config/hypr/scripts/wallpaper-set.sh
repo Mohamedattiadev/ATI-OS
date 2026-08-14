@@ -142,7 +142,15 @@ if [ -r "$MODE_FILE" ] && [ "$(cat "$MODE_FILE" 2>/dev/null)" = "wal" ]; then
     # theme-apply failure must not fail this script: the island's picker
     # reads the exit code to decide whether to report "applied", and the
     # wallpaper genuinely was. Loud on stderr, non-fatal to the exit code.
-    if ! theme-apply wal; then
+    #
+    # theme-animate rather than theme-apply directly: in wal mode a wallpaper
+    # change IS a theme change, so it should look like one. Asked for in as
+    # many words — "when I change the theme and wallpaper I want the same
+    # animation of the island" — and this is the second half of it, since the
+    # picker only covers the first. It hands the change to whichever shell can
+    # draw the circular reveal and falls back to theme-apply when there is
+    # none, so the failure branch below still means what it meant.
+    if ! theme-animate wal; then
         echo "wallpaper-set: wallpaper applied, but theme-apply wal failed;" \
              "colours are still from the previous image" >&2
     fi

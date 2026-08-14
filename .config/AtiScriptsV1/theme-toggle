@@ -71,4 +71,9 @@ for e in "${ENTRIES[@]}"; do
 done
 
 [[ -z "$MODE" ]] && exit 1
-exec theme-apply "$MODE"
+# theme-animate, not theme-apply: it hands the change to whichever shell can
+# draw the circular reveal and falls back to theme-apply when there is none.
+# Picking a palette here used to repaint the desktop in stages while the
+# island's own picker swept — the same change with two different faces
+# depending on where you started it.
+exec theme-animate "$MODE"
