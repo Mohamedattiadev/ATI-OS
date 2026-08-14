@@ -1953,8 +1953,84 @@ PanelWindow {
             return remembered === undefined ? 0 : remembered;
         }
         function rememberModeKeysHeight(name, height) {
-            if (name !== "" && height > 0)
-                modeKeysHeights[name] = height;
+            if (name === "" || height <= 0)
+                return;
+            modeKeysHeights[name] = height;
+            modeKeysHeightFile.save();
+        }
+
+        // ---- AND ACROSS SESSIONS, NOT ONLY WITHIN ONE ----
+        //
+        // ModeKeysLayer's own note accepts the cost of an in-memory map:
+        // "one open per mode per session, rather than every open". That
+        // remaining open is the reported twitch, measured with the probe
+        // NEXT-SESSION.md specifies:
+        //
+        //     first open of the rofi chord
+        //         t+0     mode_keys  45     <- no rows yet
+        //         t+87    mode_keys  275    <- the truth, 87 ms later
+        //     second open of the same chord
+        //         t+0     mode_keys  275    <- one move, no re-aim
+        //
+        // The mechanism was already right; it had nothing to remember the
+        // first time. A chord's row count does not change between runs, so a
+        // remembered height is still true tomorrow.
+        //
+        // ---- STORED AS A LIST OF STRINGS, AND THAT IS THE WHOLE FIX ----
+        //
+        // The first attempt gave the JsonAdapter `property var heights: ({})`
+        // — a free-form MAP — and it killed the shell. Not a QML error: the
+        // log said "Configuration Loaded" and the process then died, last
+        // line `QProcess: Destroyed while process ("pactl") is still
+        // running`. With bar-mode on island that left the desktop with no bar
+        // at all, which is the one rule bar-switch exists to protect.
+        //
+        // ApplicationLauncherLayer's favourites — the precedent this copied —
+        // store a LIST. So this stores a list too, of "name=height" strings,
+        // and parses them back. A flat list of strings is the shape
+        // JsonAdapter is known to survive here; a map was not.
+        //
+        // A stale entry costs one re-aim on one open and is then corrected by
+        // `measured`, which is the same failure the mechanism already
+        // tolerates — so a wrong file is no worse than no file.
+        FileView {
+            id: modeKeysHeightFile
+            path: Quickshell.env("HOME") + "/.cache/tide-island/mode-key-heights.json"
+            preload: true
+            // Not watched: this shell is the only writer, and re-reading its
+            // own write would replace the live map with an identical one.
+            watchChanges: false
+            atomicWrites: true
+            // Absent until the first chord is opened on a new machine, which
+            // is the common case rather than an error.
+            printErrors: false
+
+            JsonAdapter {
+                id: modeKeysHeightStore
+                property var entries: []
+            }
+
+            function save() {
+                const out = [];
+                for (const key in islandContainer.modeKeysHeights)
+                    out.push(key + "=" + Math.round(islandContainer.modeKeysHeights[key]));
+                modeKeysHeightStore.entries = out;
+                modeKeysHeightFile.writeAdapter();
+            }
+
+            onLoaded: {
+                const stored = modeKeysHeightStore.entries;
+                if (!stored || stored.length === undefined)
+                    return;
+                for (let i = 0; i < stored.length; i++) {
+                    const parts = String(stored[i]).split("=");
+                    if (parts.length !== 2)
+                        continue;
+                    const value = parseFloat(parts[1]);
+                    if (isFinite(value) && value > 0)
+                        islandContainer.modeKeysHeights[parts[0]] = value;
+                }
+            }
         }
         // FORK: the cheatsheets, moved off rofi and into the notch.
         property string cheatsheetWhich: "hypr"
