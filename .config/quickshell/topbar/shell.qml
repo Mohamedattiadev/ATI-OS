@@ -1300,23 +1300,125 @@ ShellRoot {
             "for key in [x.strip() for x in (k.get('layout') or 'us').split(',')]:\n" +
             "    if names.get(key,key) in km: print(key); break\n" +
             "else: print((k.get('layout') or 'us').split(',')[0].strip())\n" +
+            // The CONFIGURED LIST on a second line, so the event path can
+            // resolve a display name against the layouts this machine
+            // actually declares instead of against a table baked in here.
+            "print(k.get('layout') or 'us')\n" +
             "\""]
         stdout: StdioCollector {
             onStreamFinished: {
+                const lines = text.split("\n");
                 // Kept as the raw key ("us", "ara"), because layoutMap is
                 // keyed on it. Upper-casing here was why the map never hit.
-                const t = text.trim();
+                const t = (lines[0] || "").trim();
                 if (t) shellRoot.keyboardLayout = t;
+                const list = (lines[1] || "").trim();
+                if (list !== "") {
+                    const keys = list.split(",").map((x) => x.trim())
+                        .filter((x) => x !== "");
+                    if (keys.length > 0)
+                        shellRoot.layoutKeys = keys;
+                }
             }
         }
     }
+    // ---- THE POLL IS A FALLBACK NOW, NOT THE MECHANISM ----
+    //
+    // Reported: clicking through us -> ara -> tr "visibly trails the
+    // keypress". Measured before changing anything, and the handoff's two
+    // candidates split cleanly:
+    //
+    //     the poll command itself   32-41 ms over five runs
+    //     the poll INTERVAL         3000 ms
+    //
+    // so process-spawn latency is not what anyone was seeing. The glyph was
+    // simply up to three seconds stale, and the layout had changed instantly
+    // the whole time.
+    //
+    // Hyprland announces it. Confirmed on the live event socket by switching
+    // layouts while listening:
+    //
+    //     activelayout>>at-translated-set-2-keyboard,Arabic
+    //     activelayout>>keyd-virtual-keyboard,Turkish
+    //     activelayout>>video-bus,English (US)
+    //
+    // one line PER KEYBOARD DEVICE — eight on this machine — carrying the
+    // same display name the poll was already matching on. So the chip is
+    // event-driven, and the timer drops from 3 s to a 30 s safety net that
+    // exists only to re-sync if an event is ever missed. In the steady state
+    // this is one python spawn every 30 s instead of twenty.
     Timer {
-        interval: 3000
+        interval: 30000
         running: true
         repeat: true
         triggeredOnStart: true
         onTriggered: kbProc.running = true
     }
+
+    // The configured list, "us,ara,tr,de" — qtile's `configured_keyboards`.
+    // Learned from the same devices query rather than hardcoded, so a machine
+    // with different layouts still resolves.
+    property var layoutKeys: ["us", "ara", "tr", "de"]
+
+    // The substring each layout key is recognised BY, inside Hyprland's
+    // display name. The poll's python one-liner carried this table; it is
+    // here now because the event path needs the same answer and two copies of
+    // a mapping is how they come to disagree.
+    readonly property var layoutNameHints: ({
+        "us": "english", "ara": "arabic", "tr": "turkish", "de": "german"
+    })
+
+    function layoutKeyForName(displayName) {
+        const km = String(displayName).toLowerCase();
+        for (const key of shellRoot.layoutKeys) {
+            const hint = shellRoot.layoutNameHints[key] || key;
+            if (km.indexOf(hint) >= 0)
+                return key;
+        }
+        return "";
+    }
+
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            if (String(event.name) !== "activelayout")
+                return;
+            // "<device>,<Display Name>". The device may not contain a comma
+            // but a display name can — "English (US, intl)" — so the split is
+            // on the FIRST one only.
+            const data = String(event.data || "");
+            const at = data.indexOf(",");
+            if (at < 0)
+                return;
+            const key = shellRoot.layoutKeyForName(data.substring(at + 1));
+            if (key !== "")
+                shellRoot.keyboardLayout = key;
+        }
+    }
+
+    // ---- qtile's NON-ENGLISH WARNING ----
+    //
+    // config.py raises a sticky critical notification whenever the layout is
+    // not `us` and takes it down when it returns, on a fixed replace id.
+    // Nothing under Hyprland did either — neither the chip nor the language
+    // submap — which is the second half of what was reported about this chip.
+    //
+    // Driven from the layout CHANGING rather than from the things that change
+    // it, so the chip, the submap and anything else all get it for free. The
+    // script is the shared copy; see its header for why the three notify-send
+    // details are not adjustable.
+    onKeyboardLayoutChanged: {
+        // Not on the first assignment: the shell starts, reads "us" (or
+        // whatever is current) and that is not a change the user made. Raising
+        // a critical sticky warning because a bar restarted would be noise.
+        if (!shellRoot.layoutWarningArmed) {
+            shellRoot.layoutWarningArmed = true;
+            return;
+        }
+        Quickshell.execDetached([Quickshell.env("HOME")
+            + "/.config/hypr/scripts/layout-notify.sh", shellRoot.keyboardLayout]);
+    }
+    property bool layoutWarningArmed: false
 
     // ---- LAYOUT NAME ----
     //
