@@ -116,6 +116,50 @@ ShellRoot {
                 return Math.max(0, Math.min(toCentre, fits));
             }
 
+            // ---- THE ONE TOOLTIP, AND WHAT FEEDS IT ----
+            //
+            // qtile injects TooltipMixin into every widget instance's class,
+            // gives each a delay timer, and needs _kill_all_tooltips() so two
+            // cannot be on screen at once. This needs none of that: every chip
+            // reports hover into this one object, so a new hover REPLACES the
+            // old by construction.
+            //
+            // The delay is qtile's idea and is kept — a tooltip that appears
+            // the instant the pointer crosses a chip fires constantly while
+            // you are just moving across the bar.
+            QtObject {
+                id: hoverSink
+                property var current: null
+                property string currentText: ""
+
+                function enter(chip, text) {
+                    hoverSink.current = chip;
+                    hoverSink.currentText = text;
+                    tooltipDelay.restart();
+                }
+                function exit(chip) {
+                    if (hoverSink.current !== chip)
+                        return;
+                    tooltipDelay.stop();
+                    hoverSink.current = null;
+                    hoverSink.currentText = "";
+                }
+            }
+
+            Timer {
+                id: tooltipDelay
+                interval: 450
+                repeat: false
+            }
+
+            Tooltip {
+                // Shown only once the delay has elapsed AND the pointer is
+                // still on the same chip — `current` is cleared on exit, so
+                // leaving during the delay cancels it without a second flag.
+                target: tooltipDelay.running ? null : hoverSink.current
+                text: hoverSink.currentText
+            }
+
             Item {
                 id: content
                 anchors.fill: parent
@@ -146,6 +190,8 @@ ShellRoot {
                     // UTF-16 code unit and silently truncates above U+FFFF.
                     Chip {
                         text: String.fromCodePoint(0xF0570)
+                        tooltip: "Arch menu \u00b7 L-click \u2192 terminal \u00b7 R-click \u2192 launcher"
+                        hoverSink: hoverSink
                         foreground: BarTheme.purple      // colors[7]
                         padding: 11
                         fontPixelSize: Metrics.s(15)
@@ -155,17 +201,28 @@ ShellRoot {
                         // config.py's map, kept: L docs, M terminal, R launcher.
                         // Terminal is on MIDDLE rather than dropped because
                         // muscle memory is real, and $mod Return still does it.
+                        // ---- ROFI, NOT THE ISLAND'S PANELS ----
+                        //
+                        // This bar is qtile's, and qtile drives ROFI. The
+                        // first version called the island's IPC, which is
+                        // wrong twice over: it makes the two bars show the
+                        // same surfaces, and — the practical half — the
+                        // island is NOT RUNNING when this bar is, because
+                        // bar-switch stops one to start the other. Every one
+                        // of those calls would have found no instance and
+                        // failed silently, since `qs ipc call` exits 0 when
+                        // it finds nothing.
+                        //
+                        // config.py's map, verbatim: L rofi_docs,
+                        // M kitty, R rofi -show drun -show-icons.
                         onClicked: (b) => {
                             if (b === Qt.LeftButton)
-                                Quickshell.execDetached(["qs", "-p", shellRoot.islandPath,
-                                                         "ipc", "call", "tide",
-                                                         "showCheatsheet", "docs"]);
+                                Quickshell.execDetached(["rofi_docs"]);
                             else if (b === Qt.MiddleButton)
                                 Quickshell.execDetached(["kitty"]);
                             else
-                                Quickshell.execDetached(["qs", "-p", shellRoot.islandPath,
-                                                         "ipc", "call", "tide",
-                                                         "toggleApplicationLauncher"]);
+                                Quickshell.execDetached(
+                                    ["rofi", "-show", "drun", "-show-icons"]);
                         }
                     }
 
@@ -173,6 +230,8 @@ ShellRoot {
                     // cycles, which is config.py's Button3 on this chip.
                     Chip {
                         text: shellRoot.layoutName
+                        tooltip: "Layout \u00b7 R-click to cycle"
+                        hoverSink: hoverSink
                         foreground: BarTheme.red         // colors[3]
                         padding: 18
                         clickable: true
@@ -243,30 +302,46 @@ ShellRoot {
                     // owns the onboarding and has an IPC for it.
                     Chip {
                         text: String.fromCodePoint(0xF0336)
+                        tooltip: "Tips \u00b7 click \u2192 toggle onboarding"
+                        hoverSink: hoverSink
                         foreground: BarTheme.fg          // colors[1]
                         padding: 11
                         fontPixelSize: Metrics.s(12)
                         fontFamily: "Symbols Nerd Font"
                         clickable: true
                         height: parent.height
+                        // qtile's toggle_onboarding: `eww open
+                        // onboarding-welcome`. NOT the island's
+                        // showOnboarding — the island is down while this bar
+                        // is up. The eww window is the one both sessions can
+                        // reach.
                         onClicked: Quickshell.execDetached(
-                            ["qs", "-p", shellRoot.islandPath, "ipc", "call",
-                             "tide", "showOnboarding", "0"])
+                            ["sh", "-c",
+                             "eww close onboarding-welcome 2>/dev/null "
+                             + "|| eww open onboarding-welcome"])
                     }
 
                     // MPRIS. Empty with no player, and Chip takes no width at
                     // all then rather than leaving a bare plate on the bar.
                     Chip {
                         text: shellRoot.mprisText
+                        tooltip: "L: play/pause \u00b7 R: next"
+                        hoverSink: hoverSink
                         foreground: BarTheme.green       // colors[4]
                         padding: 10
                         fontPixelSize: Metrics.s(15)
+                        clickable: true
                         height: parent.height
+                        // config.py: L play-pause, R next.
+                        onClicked: (b) => Quickshell.execDetached(
+                            ["playerctl", b === Qt.RightButton ? "next" : "play-pause"])
                     }
 
                     // system_widgetbox — CPU and memory.
                     WidgetBox {
                         codepointClosed: 0xF05AF
+                        tooltip: "CPU + Memory"
+                        hoverSink: hoverSink
                         codepointOpen: 0xF05B0
                         foreground: BarTheme.purple      // colors[7]
                         fontPixelSize: Metrics.s(15)
@@ -275,17 +350,29 @@ ShellRoot {
 
                         Chip {
                             text: shellRoot.cpuText
+                        tooltip: "CPU load \u00b7 click \u2192 mission-center"
+                        hoverSink: hoverSink
                             foreground: BarTheme.purple
                             padding: 11
                             fontPixelSize: Metrics.s(10)
+                            clickable: true
                             height: parent.height
+                            // config.py: env GTK_THEME=Adwaita:dark missioncenter
+                            onClicked: Quickshell.execDetached(
+                                ["env", "GTK_THEME=Adwaita:dark", "missioncenter"])
                         }
                         Chip {
                             text: shellRoot.memText
+                        tooltip: "RAM used \u00b7 click \u2192 btop"
+                        hoverSink: hoverSink
                             foreground: BarTheme.cyan
                             padding: 11
                             fontPixelSize: Metrics.s(10)
+                            clickable: true
                             height: parent.height
+                            // config.py: myFullScreenTerm + " -e btop"
+                            onClicked: Quickshell.execDetached(
+                                ["kitty", "--start-as=fullscreen", "-e", "btop"])
                         }
                     }
 
@@ -293,6 +380,8 @@ ShellRoot {
                     // X, not a Nerd Font icon — qtile's choice, kept.
                     WidgetBox {
                         codepointClosed: 0x2716
+                        tooltip: "Wallpaper picker"
+                        hoverSink: hoverSink
                         codepointOpen: 0xF035C
                         foreground: BarTheme.cyan        // colors[8]
                         fontPixelSize: Metrics.s(13)
@@ -301,14 +390,16 @@ ShellRoot {
 
                         Chip {
                             text: "wallpaper"
+                        tooltip: "Wallpaper picker"
+                        hoverSink: hoverSink
                             foreground: BarTheme.cyan
                             padding: 11
                             fontPixelSize: Metrics.s(10)
                             clickable: true
                             height: parent.height
-                            onClicked: Quickshell.execDetached(
-                                ["qs", "-p", shellRoot.islandPath, "ipc", "call",
-                                 "tide", "toggleWallpaperPicker"])
+                            // dm-setbg, the rofi wallpaper picker both
+                            // sessions already have on PATH.
+                            onClicked: Quickshell.execDetached(["dm-setbg"])
                         }
                     }
 
@@ -318,6 +409,8 @@ ShellRoot {
                     // count it shows comes from a daemon this bar does not own.
                     WidgetBox {
                         codepointClosed: 0xF0902
+                        tooltip: "Updates \u00b7 Disk \u00b7 Volume"
+                        hoverSink: hoverSink
                         codepointOpen: 0xF0042
                         foreground: BarTheme.yellow      // colors[5]
                         fontPixelSize: Metrics.s(14)
@@ -326,21 +419,26 @@ ShellRoot {
 
                         Chip {
                             text: shellRoot.diskText
+                        tooltip: "Disk free \u00b7 click \u2192 notify"
+                        hoverSink: hoverSink
                             foreground: BarTheme.fg
-                            padding: 11
-                            fontPixelSize: Metrics.s(10)
-                            height: parent.height
-                        }
-                        Chip {
-                            text: shellRoot.volumeText
-                            foreground: BarTheme.purple
                             padding: 11
                             fontPixelSize: Metrics.s(10)
                             clickable: true
                             height: parent.height
-                            onClicked: Quickshell.execDetached(
-                                ["qs", "-p", shellRoot.islandPath, "ipc", "call",
-                                 "tide", "toggleAudioPanel"])
+                            onClicked: Quickshell.execDetached(["disk_notify"])
+                        }
+                        Chip {
+                            text: shellRoot.volumeText
+                        tooltip: "Volume \u00b7 scroll to change"
+                        hoverSink: hoverSink
+                            foreground: BarTheme.purple
+                            padding: 11
+                            fontPixelSize: Metrics.s(10)
+                            // Inert, because config.py's w_volume has no
+                            // mouse_callbacks either. Volume is a control the
+                            // keys own on this desktop.
+                            height: parent.height
                         }
                     }
 
@@ -350,31 +448,51 @@ ShellRoot {
                         active: UPower.displayDevice
                             && UPower.displayDevice.isLaptopBattery
                         text: shellRoot.batteryText
+                        tooltip: "Battery \u00b7 click \u2192 status"
+                        hoverSink: hoverSink
                         // colors[6], falling to colors[3] under 20%, which is
                         // config.py's low_foreground / low_percentage pair.
                         foreground: shellRoot.batteryLow ? BarTheme.red : BarTheme.blue
                         padding: 12
                         fontPixelSize: Metrics.s(10)
+                        clickable: true
                         height: parent.height
+                        onClicked: Quickshell.execDetached(["battery_notify"])
                     }
 
+                    // Keyboard layout. config.py's display_map, verbatim:
+                    // a flag emoji then the two-letter code, over
+                    // configured_keyboards = ["us", "ara", "tr", "de"].
+                    // The flag is a separate Text inside Chip — see the note
+                    // there for why it cannot share the label's.
                     Chip {
-                        text: shellRoot.keyboardLayout
+                        emoji: shellRoot.layoutFlag
+                        text: shellRoot.layoutCode
+                        tooltip: "Keyboard layout"
+                        hoverSink: hoverSink
                         foreground: BarTheme.green       // colors[4]
                         padding: 11
+                        clickable: true
                         height: parent.height
+                        // L cycles forward, R back — config.py's
+                        // _cycle_keyboard(1) / (-1). Hyprland switches the
+                        // layout itself rather than through setxkbmap.
+                        onClicked: (b) => Quickshell.execDetached(
+                            ["hyprctl", "switchxkblayout", "all",
+                             b === Qt.RightButton ? "prev" : "next"])
                     }
 
                     // format=" %a, %b %d - %H:%M", verbatim.
                     Chip {
                         text: shellRoot.clockText
+                        tooltip: "Next prayer \u00b7 USD/EUR rates"
+                        hoverSink: hoverSink
                         foreground: BarTheme.cyan        // colors[8]
                         padding: 11
                         clickable: true
                         height: parent.height
-                        onClicked: Quickshell.execDetached(
-                            ["qs", "-p", shellRoot.islandPath, "ipc", "call",
-                             "tide", "toggleCalendar"])
+                        // config.py: qtile.spawn("clock_popup").
+                        onClicked: Quickshell.execDetached(["clock_popup"])
                     }
 
                     // systray_widgetbox. U+25B3 is a plain geometric triangle
@@ -386,6 +504,8 @@ ShellRoot {
                     // states are deliberately different kinds of mark.
                     WidgetBox {
                         codepointClosed: 0x25B3
+                        tooltip: "System tray"
+                        hoverSink: hoverSink
                         codepointOpen: 0xF053
                         foreground: BarTheme.green       // colors[4]
                         fontPixelSize: Metrics.s(11)
@@ -433,8 +553,6 @@ ShellRoot {
     //  State the chips read
     // ---------------------------------------------------------------
 
-    readonly property string islandPath:
-        Quickshell.env("HOME") + "/.config/quickshell/tide-island-fork"
 
     // ---- CLOCK ----
     //
@@ -602,15 +720,58 @@ ShellRoot {
     }
 
     // ---- KEYBOARD LAYOUT ----
+    //
+    // config.py's display_map, which is where both the flag and the two-letter
+    // code come from. Its configured_keyboards list is ["us","ara","tr","de"],
+    // and note "ara" displays as AR and "us" as EN — the code is NOT the
+    // layout name upper-cased, so it is a table and not a transform.
+    readonly property var layoutMap: ({
+        "us":  { flag: "\ud83c\uddfa\ud83c\uddf8", code: "EN" },
+        "ara": { flag: "\ud83c\uddf8\ud83c\udde6", code: "AR" },
+        "tr":  { flag: "\ud83c\uddf9\ud83c\uddf7", code: "TR" },
+        "de":  { flag: "\ud83c\udde9\ud83c\uddea", code: "DE" }
+    })
+    readonly property var layoutEntry:
+        layoutMap[shellRoot.keyboardLayout] || null
+    readonly property string layoutFlag: layoutEntry ? layoutEntry.flag : ""
+    readonly property string layoutCode:
+        layoutEntry ? layoutEntry.code : shellRoot.keyboardLayout.toUpperCase()
+
     property string keyboardLayout: "us"
+    // The MAIN keyboard's layout, as a layout KEY ("us", "ara"), because
+    // that is what layoutMap and qtile's configured_keyboards are keyed on.
+    //
+    // Hyprland does not report the key. It reports `active_keymap` as a
+    // DISPLAY NAME — "English (US)" — and `layout` as the configured list,
+    // "us,ara,tr,de", which is qtile's list exactly. Taking the first two
+    // characters of the display name was the first attempt and gave "en",
+    // which matches nothing: the chip rendered "EN" with no flag, which is
+    // how this was noticed.
+    //
+    // So the display name is matched against the layouts the device actually
+    // declares, rather than against a hardcoded table — a machine configured
+    // with different layouts then still resolves.
     Process {
         id: kbProc
         command: ["sh", "-c",
-            "hyprctl -j devices | python3 -c \"import json,sys;d=json.load(sys.stdin);ks=[k for k in d.get('keyboards',[]) if k.get('main')];print((ks[0]['active_keymap'] if ks else 'us')[:2].lower())\""]
+            "hyprctl -j devices | python3 -c \"" +
+            "import json,sys\n" +
+            "d=json.load(sys.stdin)\n" +
+            "ks=[k for k in d.get('keyboards',[]) if k.get('main')] or d.get('keyboards',[])\n" +
+            "if not ks: print('us'); sys.exit()\n" +
+            "k=ks[0]\n" +
+            "km=(k.get('active_keymap') or '').lower()\n" +
+            "names={'us':'english','ara':'arabic','tr':'turkish','de':'german'}\n" +
+            "for key in [x.strip() for x in (k.get('layout') or 'us').split(',')]:\n" +
+            "    if names.get(key,key) in km: print(key); break\n" +
+            "else: print((k.get('layout') or 'us').split(',')[0].strip())\n" +
+            "\""]
         stdout: StdioCollector {
             onStreamFinished: {
+                // Kept as the raw key ("us", "ara"), because layoutMap is
+                // keyed on it. Upper-casing here was why the map never hit.
                 const t = text.trim();
-                if (t) shellRoot.keyboardLayout = t.toUpperCase();
+                if (t) shellRoot.keyboardLayout = t;
             }
         }
     }

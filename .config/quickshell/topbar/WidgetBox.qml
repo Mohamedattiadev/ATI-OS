@@ -45,6 +45,10 @@ Item {
     property int fontPixelSize: Metrics.s(12)
     property int padding: 11
     property bool open: false
+    // Forwarded to the toggle chip, so hovering a collapsed box says what is
+    // inside it — which is the one place a tooltip earns its keep most.
+    property string tooltip: ""
+    property var hoverSink: null
 
     implicitWidth: layout.implicitWidth
 
@@ -105,6 +109,8 @@ Item {
             padding: root.padding
             clickable: true
             height: root.height
+            tooltip: root.tooltip
+            hoverSink: root.hoverSink
             onClicked: root.open = !root.open
         }
     }

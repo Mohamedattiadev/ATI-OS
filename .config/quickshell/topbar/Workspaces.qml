@@ -52,6 +52,57 @@ Item {
     property var workspaces: []
     property int focusedId: -1
 
+    // ---- qtile's GROUP LABELS, WHICH ARE ICONS AND NOT DIGITS ----
+    //
+    // Reported as "the workspaces part is not identical to the qtile real
+    // one", and it was not: this drew the Hyprland workspace NAME, so the
+    // group came out "2 3 4 5" where qtile shows glyphs.
+    //
+    // Read out of config.py's `groups` list by walking its AST. Every group
+    // carries a `label=` and the GroupBox renders THAT, not the name — which
+    // is why the middle of a real qtile bar shows a lightning bolt rather
+    // than a "1".
+    //
+    //     1  U+F0E7 bolt        6  U+1F441 eye
+    //     2  U+F03D camera      7  "7"  (no icon; qtile's own choice)
+    //     3  U+F07C folder      8  U+F02D book
+    //     4  U+F121 code        9  U+F2C6 ticket
+    //     5  U+F0AC globe       S  no label -> its name, "S"
+    //
+    // Keyed by NAME rather than by id, because a Hyprland workspace's name is
+    // what corresponds to a qtile group's name — "S" is a named workspace
+    // here and a named group there, and its id is an arbitrary negative.
+    readonly property var groupLabels: ({
+        "1": String.fromCodePoint(0xF0E7),
+        "2": String.fromCodePoint(0xF03D),
+        "3": String.fromCodePoint(0xF07C),
+        "4": String.fromCodePoint(0xF121),
+        "5": String.fromCodePoint(0xF0AC),
+        "6": String.fromCodePoint(0x1F441),
+        "7": "7",
+        "8": String.fromCodePoint(0xF02D),
+        "9": String.fromCodePoint(0xF2C6)
+    })
+
+    function labelFor(name) {
+        const l = root.groupLabels[String(name)];
+        // Anything qtile has no group for — a scratchpad, a workspace made by
+        // hand — falls back to its own name. Better a digit than a blank.
+        return l !== undefined ? l : String(name);
+    }
+
+    // U+1F441 is an EMOJI, not a Nerd Font glyph, and the two do not live in
+    // the same face. Rendered in Symbols Nerd Font it is a blank; fontconfig
+    // will not substitute inside an explicitly-named family. So the one
+    // emoji label gets the emoji font and everything else gets the icon font.
+    function fontFor(name) {
+        const l = root.labelFor(name);
+        if (l.length > 0 && l.codePointAt(0) > 0xFFFF && l !== "7")
+            return "Noto Color Emoji";
+        return root.groupLabels[String(name)] !== undefined
+            ? "Symbols Nerd Font" : "Ubuntu Bold";
+    }
+
     Process {
         id: wsProc
         command: ["hyprctl", "-j", "workspaces"]
@@ -142,9 +193,16 @@ Item {
                 Text {
                     id: label
                     anchors.centerIn: parent
-                    text: wsItem.modelData.name
-                    font.family: "Ubuntu Bold"
-                    font.pixelSize: Metrics.s(10)
+                    text: root.labelFor(wsItem.modelData.name)
+                    font.family: root.fontFor(wsItem.modelData.name)
+                    // The icons need more than the digits did. config.py gives
+                    // the GroupBox fontsize=_s(10), but that is the size of a
+                    // DIGIT in Ubuntu Bold; the same number in a Nerd Font
+                    // renders an icon noticeably smaller than qtile draws it,
+                    // because qtile-extras scales group icons up against the
+                    // bar height. Matched by eye against the real bar.
+                    font.pixelSize: root.groupLabels[String(wsItem.modelData.name)] !== undefined
+                        ? Metrics.s(13) : Metrics.s(10)
                     renderType: Text.NativeRendering
                     color: wsItem.focused ? BarTheme.purple
                         : wsItem.populated ? BarTheme.cyan

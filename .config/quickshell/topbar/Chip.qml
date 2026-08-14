@@ -28,8 +28,16 @@ Item {
 
     signal clicked(int button)
 
-    visible: active && text !== ""
-    implicitWidth: visible ? label.implicitWidth + root.padding * 2 : 0
+    // qtile's TOOLTIP_BY_NAME string for this chip. Empty means no tooltip,
+    // which is what most of the bar's own widgets have.
+    property string tooltip: ""
+    // Set by the bar; the chip reports hover into it so ONE popup serves the
+    // whole bar. See Tooltip.qml for why that removes the need for qtile's
+    // _kill_all_tooltips().
+    property var hoverSink: null
+
+    visible: active && (text !== "" || root.emoji !== "")
+    implicitWidth: visible ? labelRow.implicitWidth + root.padding * 2 : 0
     implicitHeight: parent ? parent.height : Metrics.barHeight
     width: implicitWidth
 
@@ -65,9 +73,39 @@ Item {
         }
     }
 
+    // ---- WHY THE EMOJI IS ITS OWN Text ----
+    //
+    // The keyboard chip is "flag + EN", and a flag is a regional-indicator
+    // PAIR in a colour BITMAP font. config.py's own comment records what that
+    // costs: colour emoji "ignore the widget's foreground, sit on their own
+    // baseline, and render at a size unrelated to the surrounding text". It
+    // renders them at pango size 11000 against 10pt text for exactly that
+    // reason — "unscaled the flag looked undersized, and 15000 was too big.
+    // 12000 splits it."
+    //
+    // A QML Text has ONE font family, and fontconfig will not substitute
+    // inside an explicitly-named one, so a flag inside the label's Text is a
+    // blank. Hence two Texts side by side, each with its own face and size.
+    // Empty by default, so every other chip is unaffected.
+    property string emoji: ""
+
+    Row {
+        id: labelRow
+        anchors.centerIn: plateRect
+        spacing: root.emoji === "" ? 0 : Metrics.s(3)
+
+        Text {
+            visible: root.emoji !== ""
+            text: root.emoji
+            font.family: "Noto Color Emoji"
+            // A shade larger than the label, which is config.py's 11000-
+            // against-10pt in the units available here.
+            font.pixelSize: Math.round(root.fontPixelSize * 1.1)
+            anchors.verticalCenter: parent.verticalCenter
+        }
+
     Text {
         id: label
-        anchors.centerIn: plateRect
         text: root.text
         color: root.foreground
         font.family: root.fontFamily
@@ -78,13 +116,26 @@ Item {
         maximumLineCount: 1
         elide: Text.ElideRight
         renderType: Text.NativeRendering
+        anchors.verticalCenter: parent.verticalCenter
+    }
     }
 
     MouseArea {
         id: mouse
         anchors.fill: parent
-        enabled: root.clickable
-        acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+        // hoverEnabled regardless of `clickable`: several chips are pure
+        // readouts with a tooltip and no click, which is true in config.py too
+        // — w_lang and the widget boxes carry hints for things the keyboard
+        // does.
+        hoverEnabled: root.tooltip !== ""
+        onEntered: if (root.hoverSink) root.hoverSink.enter(root, root.tooltip)
+        onExited: if (root.hoverSink) root.hoverSink.exit(root)
+        enabled: root.clickable || hoverEnabled
+        // A chip with only a tooltip must not swallow clicks meant for the
+        // desktop behind it.
+        acceptedButtons: root.clickable
+            ? (Qt.LeftButton | Qt.MiddleButton | Qt.RightButton)
+            : Qt.NoButton
         cursorShape: root.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: (event) => root.clicked(event.button)
     }
