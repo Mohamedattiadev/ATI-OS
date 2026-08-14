@@ -104,6 +104,15 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         height: parent.height
         labelPixelSize: Metrics.s(12)
+
+        // NO PLATE, and that is this bar's whole distinction rather than an
+        // oversight. The top bar's group is `chip(ewidget.GroupBox, ...)`; this
+        // one is a bare `widget.GroupBox` in normal_user_bar(), like every
+        // other widget down here. Reported as the workspaces having a
+        // background that did not match the bar — they did not, because a
+        // plate at 70% of the background sat on top of an OPAQUE colors[2]
+        // bar instead of on the transparent one it was drawn for.
+        plated: false
     }
 
     // ---- RIGHT ----
