@@ -511,6 +511,14 @@ submap.
   as one argument.
 - **`socat` is NOT installed.**
 - **A Hyprland block opened in the middle of another closes it early.**
+- **`hyprctl keyword` is not a config value, and `hyprctl reload` undoes it.**
+  Every option the config does not DECLARE goes back to Hyprland's default on
+  reload, so an option a script only ever sets at runtime silently reverts.
+  `getoption -j` says which is which: `"set": true` is ours, `"set": false` is
+  Hyprland's. This is what put a groupbar over every window in Max after a
+  reload — `group:groupbar:enabled` was set by layout-cycle.sh and declared
+  nowhere. Audited the rest: `general:layout`, `master:mfact` and
+  `general:col` are all declared.
 - **Test the code path you are shipping, not the one next to it.**
 - **AN X11 TOOL UNDER HYPRLAND SUCCEEDS AND RETURNS BLACK.** maim, xrandr,
   xdotool and friends all answer through XWayland — they do not fail, they
