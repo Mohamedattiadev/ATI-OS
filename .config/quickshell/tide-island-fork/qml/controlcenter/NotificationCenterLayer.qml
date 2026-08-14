@@ -58,11 +58,18 @@ Item {
     // 57, because "No notifications" is centred in that space and a panel
     // barely taller than its own title bar reads as a rendering failure.
     //
+    // The key-hint footer's height, from Metrics so it matches the nine
+    // panels that already have one rather than becoming a tenth number. It
+    // is counted here and subtracted from the list's viewport below — a
+    // footer that is drawn but not counted overlaps the last card, which is
+    // the shape of bug this panel already had once.
+    // ONE arithmetic, and it lives in NotificationHistory. This used to add
+    // up the header, the gap and the list itself here while that file laid
+    // itself out top-down from its own header — two descriptions of one
+    // layout, which is how the hints ended up on the desktop below the
+    // panel. `totalHeight` is the whole content block including its footer.
     readonly property real contentHeight: verticalPadding * 2
-        + notificationHistory.headerHeight
-        + notificationHistory.listTopGap
-        + Math.max(notificationHistory.cardHeight,
-                   notificationHistory.listContentHeight)
+        + notificationHistory.totalHeight
 
     focus: showCondition
     activeFocusOnTab: true
@@ -98,6 +105,16 @@ Item {
     }
 
     Keys.onPressed: function(event) {
+        // The list's verbs first, then this panel's own. Order matters: `q`
+        // and Escape must stay reachable even when the list swallows
+        // everything else, and the list must never be able to shadow the
+        // way out of a panel that holds a keyboard grab.
+        if (event.key !== Qt.Key_Escape && event.key !== Qt.Key_Q
+                && notificationHistory.handleKey(event)) {
+            event.accepted = true;
+            return;
+        }
+
         switch (event.key) {
         case Qt.Key_Escape:
         case Qt.Key_Q:
@@ -112,16 +129,40 @@ Item {
     NotificationHistory {
         id: notificationHistory
 
+        // Fills, and that is safe again: every child inside now sizes
+        // itself top-down from listContentHeight rather than anchoring to
+        // this item's bottom, so a parent that is taller than the capsule
+        // no longer pushes anything off the panel.
         anchors.fill: parent
         anchors.topMargin: notificationCenter.verticalPadding
-        anchors.bottomMargin: notificationCenter.verticalPadding
         anchors.leftMargin: notificationCenter.horizontalPadding
         anchors.rightMargin: notificationCenter.horizontalPadding
+
         notificationModel: notificationCenter.notificationModel
         iconFontFamily: notificationCenter.iconFontFamily
         textFontFamily: notificationCenter.textFontFamily
         heroFontFamily: notificationCenter.heroFontFamily
+
+        // D is the list's key for it; the trash icon is the same action for
+        // the pointer. One implementation, reached two ways.
+        // Only the verbs that do something. With an empty history every one
+        // of these is a lie except the last, and a footer advertising keys
+        // that no-op is how a panel teaches you to stop reading it.
+        hints: notificationCenter.hasNotifications
+            ? [
+                { key: "j/k", label: "move" },
+                { key: "g/G", label: "first-last" },
+                { key: "d", label: "dismiss" },
+                { key: "D", label: "clear all" },
+                { key: "q", label: "close" }
+              ]
+            : [ { key: "q", label: "close" } ]
+
+        // D is the list's key for it; the trash icon is the same action for
+        // the pointer. One implementation, reached two ways.
+        onClearAllRequested: notificationCenter.clearAllRequested()
     }
+
 
     // Keep the action inside the first notification card so it does not create
     // a separate black toolbar above the list.

@@ -108,6 +108,114 @@ Item {
         return Math.round(hours / 24) + "d";
     }
 
+    // ---- VIM MOTIONS ----
+    //
+    // This panel had NO keys at all beyond Escape and q, in a shell where
+    // every other list — the picker, wifi, bluetooth, the theme picker —
+    // moves on j/k and says so in a footer. You could open the notification
+    // centre and then only look at it.
+    //
+    // The verbs are taken from the panels that already exist rather than
+    // invented, because a second vocabulary for the same gestures is worse
+    // than none: j/k move, g/G first and last, d or x acts on the row under
+    // the cursor, D on all of them, q or Escape closes. `x` is BluetoothPanel's
+    // "forget" and `d` its "disconnect" — both mean "make this go away", so
+    // both land on dismiss here rather than picking one and leaving the other
+    // to do nothing.
+    //
+    // The cursor starts at -1 — NOTHING selected — and not at 0. This list's
+    // action is destructive and it opens under a keyboard grab, so a cursor
+    // resting on row 0 the instant it appears means one reflexive `d`
+    // deletes a notification you had not finished reading. j or k from
+    // nowhere lands on the first row, which is the same keystroke it would
+    // have cost anyway.
+    property int cursor: -1
+
+    function clampCursor() {
+        if (root.itemCount === 0) {
+            root.cursor = -1;
+            return;
+        }
+        if (root.cursor >= root.itemCount)
+            root.cursor = root.itemCount - 1;
+    }
+
+    onItemCountChanged: clampCursor()
+
+    function moveCursor(delta) {
+        if (root.itemCount === 0)
+            return;
+        // From nowhere, j goes to the top and k to the bottom, which is what
+        // the same keys do in a pager.
+        if (root.cursor < 0)
+            root.cursor = delta > 0 ? 0 : root.itemCount - 1;
+        else
+            root.cursor = Math.max(0, Math.min(root.itemCount - 1,
+                                               root.cursor + delta));
+        listView.positionViewAtIndex(root.cursor, ListView.Contain);
+    }
+
+    function dismissAt(index) {
+        if (!root.notificationModel || index < 0 || index >= root.notificationModel.count)
+            return;
+        root.notificationModel.remove(index);
+        // The cursor stays on the same ROW NUMBER, so a run of `d` clears
+        // downward from where you were instead of walking away from itself.
+        // clampCursor catches the case where the row removed was the last.
+        root.clampCursor();
+    }
+
+    // ---- WHY THIS IS NOT JUST `event.modifiers & Qt.ShiftModifier` ----
+    //
+    // Caught by driving the panel with `wtype G`: the capital arrives with
+    // `text` "G" and NO ShiftModifier set, so the shifted branch never ran
+    // and G silently did what g does. Real hardware sets the modifier and
+    // this would have shipped looking fine.
+    //
+    // Anything that synthesises input at the protocol level rather than the
+    // keyboard level can deliver a capital this way — which is every remote,
+    // accessibility and automation path into this shell. The character the
+    // user produced is the more reliable of the two signals, so check it
+    // first and keep the modifier as the fallback for the case where `text`
+    // is empty.
+    function isUpper(event) {
+        if (event.text && event.text.length === 1)
+            return event.text === event.text.toUpperCase()
+                && event.text !== event.text.toLowerCase();
+        return (event.modifiers & Qt.ShiftModifier) !== 0;
+    }
+
+    function handleKey(event) {
+        switch (event.key) {
+        case Qt.Key_J:      root.moveCursor(1);  return true;
+        case Qt.Key_K:      root.moveCursor(-1); return true;
+        case Qt.Key_Down:   root.moveCursor(1);  return true;
+        case Qt.Key_Up:     root.moveCursor(-1); return true;
+        case Qt.Key_G:
+            if (root.itemCount === 0)
+                return true;
+            // Shift+G is last, bare g is first — vim's gg without the
+            // double-tap, because there is no other g verb here to disambiguate.
+            root.cursor = root.isUpper(event) ? root.itemCount - 1 : 0;
+            listView.positionViewAtIndex(root.cursor, ListView.Contain);
+            return true;
+        case Qt.Key_D:
+            if (root.isUpper(event)) {
+                root.clearAllRequested();
+                return true;
+            }
+            root.dismissAt(root.cursor);
+            return true;
+        case Qt.Key_X:
+            root.dismissAt(root.cursor);
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    signal clearAllRequested()
+
     // The capsule's ramp, deliberately reused rather than re-picked.
     // NotificationLayer.qml solved this once — critical is danger, low is
     // muted, normal is the ordinary text colour — and two surfaces showing
@@ -118,6 +226,33 @@ Item {
         if (urgency === 0) return IslandTheme.textMuted;
         return IslandTheme.textSecondary;
     }
+
+    // The key hints, owned HERE rather than by the layer above.
+    //
+    // The first attempt put the KeyHint in NotificationCenterLayer and
+    // positioned it from that layer's own height, then from `parent.bottom`,
+    // then from `contentHeight`. All three drew the hints on the DESKTOP
+    // below the panel, because the layer fills the WINDOW — which is
+    // islandTopMargin + contentHeight + 6 — and none of those three is the
+    // capsule's bottom edge.
+    //
+    // The fix is not a fourth guess at which number is the real height. It
+    // is that the layer and this file were measuring from DIFFERENT
+    // references at all: the layer computed from a height, this file laid
+    // itself out top-down from its header. Now everything below derives
+    // from `listContentHeight` and the layer's contentHeight is
+    // `2 x padding + totalHeight`, so the two cannot disagree — there is one
+    // arithmetic and both read it.
+    property var hints: []
+    readonly property real footerHeight: Metrics.chromeFooter()
+    readonly property real footerGap: Metrics.pad(6)
+
+    // The floor is one card, for the empty case: "No notifications" is
+    // centred in it, and a panel barely taller than its own title bar reads
+    // as a rendering failure.
+    readonly property real bodyHeight: Math.max(cardHeight, listContentHeight)
+    readonly property real totalHeight: headerHeight + listTopGap + bodyHeight
+        + footerGap + footerHeight
 
     readonly property real headerHeight: 28
     readonly property real listTopGap: 9
@@ -210,7 +345,12 @@ Item {
         anchors.topMargin: root.listTopGap
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: parent.bottom
+        // Explicit, NOT anchored to parent.bottom. The parent is the window,
+        // so filling to its bottom made this viewport taller than the panel
+        // it is drawn in — invisible with three cards because they are
+        // top-anchored, and a fourth would have scrolled into space that is
+        // never painted. See the note on `hints` above.
+        height: root.bodyHeight
         clip: true
 
         Text {
@@ -309,8 +449,27 @@ Item {
                 MatteSurface {
                     anchors.fill: parent
                     radius: root.cardRadius
-                    hovered: cardMouse.containsMouse
+                    // The keyboard cursor reads as hover. Same affordance,
+                    // because it means the same thing — "this is the row the
+                    // next verb applies to" — and inventing a second
+                    // highlight would make the mouse and the keyboard
+                    // disagree about which row is live.
+                    hovered: cardMouse.containsMouse || root.cursor === index
                     pressed: cardMouse.pressed
+                }
+
+                // The accent edge, only on the keyboard cursor. Hover gets
+                // the plate lift and nothing more: a pointer already says
+                // where it is by being visible, and a mouse that drew a
+                // selection ring would look like it had SELECTED something
+                // it has not.
+                Rectangle {
+                    anchors.fill: parent
+                    radius: root.cardRadius
+                    color: "transparent"
+                    border.width: 1
+                    border.color: IslandTheme.alpha(IslandTheme.accent, 0.9)
+                    visible: root.cursor === index
                 }
 
                 // FORK: was two Texts pinned to the card's top and bottom
@@ -438,12 +597,27 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (root.notificationModel && index >= 0 && index < root.notificationModel.count)
-                            root.notificationModel.remove(index);
+                    // Hovering moves the keyboard cursor, so the two input
+                    // methods share one notion of "the current row" and a
+                    // `d` after a mouse move acts on the card under the
+                    // pointer rather than on wherever j/k was left.
+                    onContainsMouseChanged: {
+                        if (containsMouse)
+                            root.cursor = index;
                     }
+                    onClicked: root.dismissAt(index)
                 }
             }
         }
+    }
+
+    // Directly below the list, off the same terms the list is sized from.
+    KeyHint {
+        x: 0
+        y: listViewport.y + listViewport.height + root.footerGap
+        width: root.width
+        height: root.footerHeight
+        hints: root.hints
+        textFontFamily: root.textFontFamily
     }
 }
