@@ -91,6 +91,7 @@ ShellRoot {
         function wifiqr(): void    { root.toggle("wifiqr"); }
         function display(): void   { root.toggle("display"); }
         function calculator(): void { root.toggle("calculator"); }
+        function bluetooth(): void  { root.toggle("bluetooth"); }
 
         // Explicit show/hide beside the toggles, because a toggle driven from
         // a script goes out of phase the first time a click and a key
@@ -102,6 +103,7 @@ ShellRoot {
         function showWifiQr(): void    { root.show("wifiqr"); }
         function showDisplay(): void   { root.show("display"); }
         function showCalculator(): void { root.show("calculator"); }
+        function showBluetooth(): void  { root.show("bluetooth"); }
         function close(): void         { root.hide(); }
         function status(): string      { return root.open === "" ? "none" : root.open; }
     }
@@ -247,6 +249,15 @@ ShellRoot {
         active: root.open === "calculator"
         sourceComponent: Component {
             CalculatorPopup {
+                onRequestClose: root.hide()
+            }
+        }
+    }
+
+    Loader {
+        active: root.open === "bluetooth"
+        sourceComponent: Component {
+            BluetoothPopup {
                 onRequestClose: root.hide()
             }
         }

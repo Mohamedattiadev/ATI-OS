@@ -176,7 +176,11 @@ case "$key" in
   toggleAudioPanel)           run_popup volume ;;
 
   # ---- panels that have a real GUI rather than a rofi menu ----
-  toggleBluetoothPanel)       run blueman-manager ;;
+  # Was blueman-manager, a GTK window standing in for a surface qtile has:
+  # popups/BluetoothPopup.py, whose chord is Rofi-Mode `b` and whose own
+  # header is emphatic that "blueman's window is not involved" — scan, pair,
+  # trust, connect, disconnect and remove all happen in the popup.
+  toggleBluetoothPanel)       run_popup bluetooth ;;
   toggleSysmon)               run_sh 'env GTK_THEME=Adwaita:dark missioncenter' ;;
   toggleCalendar)             run clock_popup ;;
   # Was `display-ctl.py --menu || nwg-displays`, and BOTH halves were dead.
