@@ -229,7 +229,12 @@ PanelWindow {
     }
 
     onRequestedWindowHeightChanged: root.reconcileWindowHeight()
-    Component.onCompleted: root.retainedWindowHeight = root.requestedWindowHeight
+    Component.onCompleted: {
+        root.retainedWindowHeight = root.requestedWindowHeight;
+        // See the note beside borderFocusProcess: the window borders must not
+        // stay dimmed if the shell went away with a panel open.
+        borderFocusProcess.run(false);
+    }
 
     exclusiveZone: Math.ceil(root.baseExclusiveZone * root.exclusiveZoneProgress)
     // ---- Top WHILE RESTING, Overlay WHILE SHOWING ANYTHING ----
@@ -940,6 +945,46 @@ PanelWindow {
         running: false
     }
 
+    // FORK: takes the WINDOW borders down while a panel is open. See
+    // scripts/border-focus.sh and the note beside `onOpenPanelStateChanged`.
+    //
+    // ONE Process, REUSED, and that is safe here where it is not elsewhere in
+    // this file: the fresh-Process rule exists because a reused
+    // StdioCollector hands back the previous run's text, and this reads no
+    // output at all. What it does need is `running = false` first — assigning
+    // `true` to an already-running Process is a no-op, and open/close pairs
+    // arrive faster than hyprctl returns.
+    Process {
+        id: borderFocusProcess
+        property bool wantDim: false
+        command: [Quickshell.env("HOME") + "/.config/hypr/scripts/border-focus.sh",
+                  wantDim ? "dim" : "restore"]
+        running: false
+
+        function run(dim) {
+            wantDim = dim;
+            running = false;
+            running = true;
+        }
+    }
+
+    // The borders must not be left dimmed by a shell that goes away while a
+    // panel is open — a reload, a crash, a `qs kill`. Nothing else on the
+    // system knows to put them back, and the symptom is a desktop where the
+    // focused window is never highlighted again, which reads as a compositor
+    // bug rather than as a leftover.
+    //
+    // Restoring on STARTUP rather than trying to catch the exit: an exit
+    // handler cannot run for every way a process dies, and a restore at
+    // startup is idempotent, costs one hyprctl at login, and covers all of
+    // them. It is also correct after a theme change, because the script
+    // reads colors.conf rather than a captured value.
+    //
+    // Hung off the EXISTING root Component.onCompleted (see
+    // `retainedWindowHeight` near the top) rather than declared as a second
+    // one: two `Component.onCompleted` on the same object is "Property value
+    // set multiple times", which fails the whole component.
+
     function clearModeIndicatorWindow() {
         islandContainer.clearModeIndicator();
     }
@@ -1574,6 +1619,21 @@ PanelWindow {
             || islandState === "calculator"
             || islandState === "settings"
             || islandState === "picker"
+        // ---- AND THE WINDOWS' BORDERS GO DOWN WHILE IT IS UP ----
+        //
+        // See scripts/border-focus.sh for what "down" means and why it reads
+        // colors.conf rather than replaying a value captured at dim time.
+        //
+        // Driven off `openPanelState` rather than from each show*() function:
+        // there are eighteen of those and one of this, and a panel added
+        // later gets the behaviour without anybody remembering to wire it.
+        //
+        // The OSD states are deliberately not in `openPanelState` and so do
+        // not dim anything — a volume nudge is not a surface you are working
+        // in, and having every window's border blink on each volume key
+        // would be the worst version of this idea.
+        onOpenPanelStateChanged: borderFocusProcess.run(openPanelState)
+
         readonly property bool blocksTransientSplit: openPanelState
             || islandState === "notification"
         readonly property bool splitShowsProgress: islandState === "split" && osdProgress >= 0
@@ -3424,10 +3484,57 @@ PanelWindow {
             property int pendingMorphPx: 0
             readonly property int distanceMorphDuration: Motion.morphDurationFor(pendingMorphPx)
             readonly property bool notificationHistorySurface: islandContainer.islandState === "notification_center"
-            property real outlineWidth: root.overviewContentVisible || notificationHistorySurface ? 1 : 0
+            // The capsule's outline. THREE cases now, in priority order:
+            // the overview's own border, the notification centre's hairline,
+            // and — new — an accent ring while any panel is open.
+            //
+            // Folded into these two properties rather than assigned to
+            // `border.width`/`border.color` directly, which was the first
+            // attempt and does not compile: those are already bound to these
+            // at the Rectangle below, and QML answers a second binding on the
+            // same property with "Property value set multiple times", which
+            // takes the whole shell down rather than losing one border.
+            property real outlineWidth: root.overviewContentVisible
+                || notificationHistorySurface
+                || islandContainer.openPanelState ? 1 : 0
             property color outlineColor: root.overviewContentVisible
                 ? root.overviewCapsuleBorderColor
-                : (notificationHistorySurface ? IslandTheme.hairline : "transparent")
+                : (notificationHistorySurface ? IslandTheme.hairline
+                : (islandContainer.openPanelState ? mainCapsule.panelOutline
+                : "transparent"))
+
+            // ---- THE PANEL BORDER ----
+            //
+            // Asked for directly: "the color of the islend is too similar to
+            // the terminal ... when the popup is on the island will have a
+            // border color which will look like the layout icon and
+            // workspace's color same color".
+            //
+            // That is the accent, and the complaint behind it is real: the
+            // capsule's fill is the palette's background dragged toward black,
+            // and a terminal at 0.70 opacity over the same wallpaper lands in
+            // the same range. Two dark rounded surfaces with no edge between
+            // them is a panel that does not read as being in FRONT of
+            // anything.
+            //
+            // Only while a panel is open. A permanent accent ring would make
+            // the resting notch a coloured object, which is what
+            // DESIGN-SPEC.md's "tint it and it stops being a notch and becomes
+            // a colored blob" warns against — the notch has to read as bezel
+            // when it is not being used.
+            //
+            // 0.55 alpha: a full-strength accent hairline against the dark
+            // fill reads as a drawn line rather than as an edge, and this has
+            // to survive 22 palettes including the two mono ones.
+            //
+            // The other half lives in scripts/border-focus.sh, which takes the
+            // WINDOW borders down for as long as the panel is up. Without it
+            // there are two accents on screen — `col.active_border` comes from
+            // the same accent_of_mode slot — and the ring distinguishes
+            // nothing.
+            readonly property color panelOutline:
+                Qt.rgba(IslandTheme.accent.r, IslandTheme.accent.g,
+                        IslandTheme.accent.b, 0.55)
             property real displayedWidth: baseTargetWidth
             readonly property real baseTargetWidth: {
                 if (root.overviewVisible) return root.overviewCapsuleWidth;
