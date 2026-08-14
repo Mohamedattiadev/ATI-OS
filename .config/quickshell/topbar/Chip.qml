@@ -36,7 +36,22 @@ Item {
     // _kill_all_tooltips().
     property var hoverSink: null
 
-    visible: active && (text !== "" || root.emoji !== "")
+    // ---- AND WHY THE NERD FONT GLYPH IS ITS OWN Text TOO ----
+    //
+    // Same trap as the emoji below, from the other direction. Several of
+    // config.py's strings are ONE string mixing a Nerd Font icon with plain
+    // words — CHORD_CHIP_LABELS' "\U000f0349   ROFI : i , o , p …" is the
+    // clearest. pango renders that by falling back per RUN, so qtile draws the
+    // glyph from a Nerd Font and the words from Ubuntu Bold without being
+    // asked. Qt does not: a Text with an explicitly-named family draws
+    // everything in that family and puts a box where the family has no glyph.
+    //
+    // So the icon is split out and given its own face, and the words keep
+    // theirs. Empty by default, so every chip that is only words is unaffected.
+    property string icon: ""
+    property string iconFamily: "Symbols Nerd Font"
+
+    visible: active && (text !== "" || root.emoji !== "" || root.icon !== "")
     implicitWidth: visible ? labelRow.implicitWidth + root.padding * 2 : 0
     implicitHeight: parent ? parent.height : Metrics.barHeight
     width: implicitWidth
@@ -93,6 +108,16 @@ Item {
         id: labelRow
         anchors.centerIn: plateRect
         spacing: root.emoji === "" ? 0 : Metrics.s(3)
+
+        Text {
+            visible: root.icon !== ""
+            text: root.icon
+            color: root.foreground
+            font.family: root.iconFamily
+            font.pixelSize: root.fontPixelSize
+            renderType: Text.NativeRendering
+            anchors.verticalCenter: parent.verticalCenter
+        }
 
         Text {
             visible: root.emoji !== ""

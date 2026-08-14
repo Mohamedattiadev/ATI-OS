@@ -25,11 +25,11 @@ import Quickshell.Services.Mpris
 //   hintium_mode_chip   Hintium is X11-native; binds.conf records it as
 //                       BLOCKED rather than unported, so there is no mode
 //                       for this chip to display.
-//   chord_chip          Hyprland has submaps, not qtile KeyChords, and the
-//                       island already renders the submap name — that is
-//                       what submap-indicator.sh is for. Duplicating it here
-//                       would put the same string on screen twice whenever
-//                       both bars' features overlap.
+//
+// `chord_chip` USED to be listed here, on the grounds that the island already
+// renders the submap name. It is built, and the reasoning was wrong in the
+// one way that matters: the island is STOPPED while this bar runs, so there
+// was never a second copy to avoid — only the absence of the first.
 //
 // Everything else on the right-hand side is here, in config.py's order.
 ShellRoot {
@@ -437,8 +437,11 @@ ShellRoot {
                     // foreground=colors[0], with the plate colour carrying the
                     // identity, which is CHORD_CHIP_COLORS' whole idea.
                     Chip {
-                        text: shellRoot.submapLabel === ""
-                            ? "" : " " + shellRoot.submapLabel + " "
+                        // fmt=" {} " is already applied by submapLabel /
+                        // submapIcon — see the table for why the leading space
+                        // rides on whichever of the two comes first.
+                        icon: shellRoot.submapIcon
+                        text: shellRoot.submapLabel
                         foreground: BarTheme.bg          // colors[0]
                         plate: shellRoot.submapColour
                         padding: 11
@@ -839,24 +842,74 @@ ShellRoot {
     // colour, which is why the foreground is colors[0] against it.
     //
     // The seven Hyprland submaps map one-to-one onto the chord names, so the
-    // chip says the same word in either session. Read out of submaps.conf and
-    // CHORD_CHIP_COLORS respectively; a submap with no entry falls back to its
-    // own name and the accent, which is better than a blank chip for a mode
-    // that IS swallowing your keys.
+    // chip says the same words in either session.
+    //
+    // ---- IT SAYS THE KEYS, NOT THE MODE'S NAME ----
+    //
+    // It drew "Media-Mode", which is the chord's NAME and not what qtile puts
+    // on that chip. config.py passes `name_transform=chord_chip_label`, and
+    // chord_chip_label is a lookup into CHORD_CHIP_LABELS — so the real bar
+    // shows "󰕾   MEDIA : J , K , M , H , L , P". The name alone answers "am I
+    // in a mode"; the list answers the question you actually have while
+    // standing inside a fourteen-key chord, which is what the keys are.
+    // Reported as the chip not behaving like the real one, with the Rofi row
+    // quoted.
+    //
+    // Both halves are config.py's verbatim: the text from CHORD_CHIP_LABELS,
+    // the plate colour from CHORD_CHIP_COLORS (colors[5] orange for resize,
+    // [6] blue for rofi, [8] cyan for media, [1] fg for lang, [3] red for
+    // draw and cheatsheet, [8] cyan for passthrough). The text is colors[0],
+    // the background, so it stays legible on whichever accent the plate is —
+    // that is CHORD_CHIP_COLORS' whole idea.
+    //
+    // The GLYPH is separated from the words, and has to be: qtile's strings
+    // mix a supplementary-plane Nerd Font icon with plain text in ONE string,
+    // which pango renders by falling back per run and Qt does not. See
+    // Chip.qml's `icon`.
+    //
+    // Two entries carry NO glyph, and that is not an omission here: lang and
+    // passthrough begin with three plain spaces in config.py — checked at the
+    // byte level, not by eye — so the real bar has no icon on them either.
+    // Their glyphs were private-use characters and did not survive some edit
+    // of that file, which is precisely the trap the RULES record. Reproduced
+    // as it renders rather than as it was presumably meant to.
+    //
+    // A submap with no entry falls back to its own name and the accent, which
+    // is better than a blank chip for a mode that IS swallowing your keys.
     readonly property var submapMap: ({
-        "resize":      { label: "Resize-Mode",     colour: BarTheme.yellow },
-        "rofi":        { label: "Rofi-Mode",       colour: BarTheme.blue   },
-        "media":       { label: "Media-Mode",      colour: BarTheme.cyan   },
-        "lang":        { label: "Lang-Switch",     colour: BarTheme.fg     },
-        "draw":        { label: "Draw-Mode",       colour: BarTheme.red    },
-        "cheatsheet":  { label: "CheatSheet-Mode", colour: BarTheme.red    },
-        "passthrough": { label: "PASSTHROUGH",     colour: BarTheme.cyan   }
+        "resize":      { icon: 0xF0A68, text: "   RESIZE : H, J, N",
+                         colour: BarTheme.yellow },
+        "rofi":        { icon: 0xF0349,
+                         text: "   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
+                         colour: BarTheme.blue },
+        "media":       { icon: 0xF057E, text: "   MEDIA : J , K , M , H , L , P ",
+                         colour: BarTheme.cyan },
+        "lang":        { icon: 0, text: "   LANG : a , e , t , d ",
+                         colour: BarTheme.fg },
+        "draw":        { icon: 0xF03EB, text: "   DRAW : w , c , z , r , v ",
+                         colour: BarTheme.red },
+        "cheatsheet":  { icon: 0xF018D,
+                         text: "   CHEATSHEET : k , v , f , j/k scroll , TAB , ESC ",
+                         colour: BarTheme.red },
+        "passthrough": { icon: 0, text: "   PASSTHROUGH : ESC",
+                         colour: BarTheme.cyan }
     })
     property string submap: ""
     readonly property var submapEntry: submapMap[shellRoot.submap] || null
-    readonly property string submapLabel:
-        shellRoot.submap === "" ? ""
-            : (submapEntry ? submapEntry.label : shellRoot.submap)
+
+    // fmt=" {} " — one space each side of whatever the transform returned.
+    // The leading one rides on the icon when there is an icon, so the two
+    // Texts stay flush against each other.
+    readonly property string submapIcon:
+        (submapEntry && submapEntry.icon)
+            ? " " + String.fromCodePoint(submapEntry.icon) : ""
+    readonly property string submapLabel: {
+        if (shellRoot.submap === "")
+            return "";
+        if (!submapEntry)
+            return " " + shellRoot.submap.toUpperCase() + " ";
+        return (submapEntry.icon ? "" : " ") + submapEntry.text + " ";
+    }
     readonly property color submapColour:
         submapEntry ? submapEntry.colour : BarTheme.accent
 

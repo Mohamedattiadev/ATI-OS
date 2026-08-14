@@ -26,20 +26,42 @@ Item {
 
     signal pressed(int button)
 
-    visible: text !== ""
-    width: visible ? label.implicitWidth + root.padding * 2 : 0
+    // A Nerd Font glyph drawn beside the words in its OWN face. config.py's
+    // chord labels are one string mixing an icon with plain text; pango falls
+    // back per run and draws both, Qt draws a box for whatever the named
+    // family lacks. Same split, and the same reason, as Chip.qml's.
+    property string icon: ""
+
+    visible: text !== "" || root.icon !== ""
+    width: visible ? row.implicitWidth + root.padding * 2 : 0
     height: parent ? parent.height : Metrics.bottomBarHeight
 
-    Text {
-        id: label
+    Row {
+        id: row
         anchors.centerIn: parent
-        text: root.text
-        color: root.colour
-        font.family: root.iconFont ? "Symbols Nerd Font" : "Ubuntu Bold"
-        font.pixelSize: root.pixelSize
-        maximumLineCount: 1
-        elide: Text.ElideRight
-        renderType: Text.NativeRendering
+        spacing: 0
+
+        Text {
+            visible: root.icon !== ""
+            text: root.icon
+            color: root.colour
+            font.family: "Symbols Nerd Font"
+            font.pixelSize: root.pixelSize
+            renderType: Text.NativeRendering
+            anchors.verticalCenter: parent.verticalCenter
+        }
+
+        Text {
+            id: label
+            text: root.text
+            color: root.colour
+            font.family: root.iconFont ? "Symbols Nerd Font" : "Ubuntu Bold"
+            font.pixelSize: root.pixelSize
+            maximumLineCount: 1
+            elide: Text.ElideRight
+            renderType: Text.NativeRendering
+            anchors.verticalCenter: parent.verticalCenter
+        }
     }
 
     MouseArea {

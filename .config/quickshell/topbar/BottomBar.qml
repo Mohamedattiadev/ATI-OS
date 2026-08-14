@@ -122,9 +122,13 @@ Item {
         height: root.height
         spacing: 0
 
+        // chord_chip_nu — the same CHORD_CHIP_LABELS as the top bar's, since
+        // config.py gives both widgets the same name_transform. What differs
+        // is the colouring: this one is foreground=colors[7] on the bar, with
+        // no plate to carry the mode's identity.
         BarText {
-            text: root.shell && root.shell.submapLabel !== ""
-                ? " " + root.shell.submapLabel + " " : ""
+            icon: root.shell ? root.shell.submapIcon : ""
+            text: root.shell ? root.shell.submapLabel : ""
             pixelSize: Metrics.s(11)
             padding: 11
             colour: BarTheme.purple                  // colors[7]
