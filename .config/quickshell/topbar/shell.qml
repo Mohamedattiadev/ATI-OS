@@ -44,6 +44,12 @@ ShellRoot {
     Component.onCompleted: {
         BarTheme.themeName;
         Metrics.scale;
+        // One run so the FIRST hover of the clock has data rather than the
+        // fallback label. Everything after that is hover-driven; see
+        // refreshClockTooltip(). Folded in here rather than given its own
+        // Component.onCompleted, which is "Property value set multiple
+        // times" on one object and fails the whole shell.
+        shellRoot.refreshClockTooltip();
     }
 
     // ---- WHICH OF THE TWO BARS ----
@@ -225,11 +231,19 @@ ShellRoot {
             QtObject {
                 id: hoverSink
                 property var current: null
-                property string currentText: ""
 
+                // The CHIP is kept, not a snapshot of its text. It used to
+                // latch the string at enter(), which is right for the
+                // seventeen chips whose tooltip is a LABEL and wrong for the
+                // one whose tooltip is DATA: the clock fetches its next
+                // prayer and its FX rates when hovered, and a snapshot taken
+                // 450 ms before the answer arrives would show the stale line
+                // for as long as the pointer stayed. See Tooltip's `text`.
+                //
+                // `text` is still accepted and ignored so an out-of-date
+                // caller cannot fail — Chip passes it.
                 function enter(chip, text) {
                     hoverSink.current = chip;
-                    hoverSink.currentText = text;
                     tooltipDelay.restart();
                 }
                 function exit(chip) {
@@ -237,7 +251,6 @@ ShellRoot {
                         return;
                     tooltipDelay.stop();
                     hoverSink.current = null;
-                    hoverSink.currentText = "";
                 }
             }
 
@@ -252,7 +265,7 @@ ShellRoot {
                 // still on the same chip — `current` is cleared on exit, so
                 // leaving during the delay cancels it without a second flag.
                 target: tooltipDelay.running ? null : hoverSink.current
-                text: hoverSink.currentText
+                text: hoverSink.current ? hoverSink.current.tooltip : ""
             }
 
             Item {
@@ -766,8 +779,24 @@ ShellRoot {
 
                     Chip {
                         text: shellRoot.clockText
-                        tooltip: "Next prayer \u00b7 USD/EUR rates"
+                        // THE DATA, not the label that described it.
+                        //
+                        // Reported: "the clockchip when i hover i should see
+                        // the prayer time and eur dolar in the tooltip". It
+                        // said "Next prayer \u00b7 USD/EUR rates" \u2014 a promise of
+                        // two numbers with neither number in it.
+                        //
+                        // qtile does not have this bug and never did: its
+                        // TOOLTIP_BY_NAME string is a FALLBACK, and
+                        // install_bar_tooltips() replaces w_clock's with the
+                        // dynamic `_clock_tooltip_text` provider. This bar
+                        // reproduced the table and not the provider, which is
+                        // the same class of miss as the TaskList's markup \u2014
+                        // reading the config and not what the widget does
+                        // with it.
+                        tooltip: shellRoot.clockTooltip
                         hoverSink: hoverSink
+                        onTooltipRequested: shellRoot.refreshClockTooltip()
                         foreground: BarTheme.cyan        // colors[8]
                         padding: 11
                         clickable: true
@@ -1135,6 +1164,61 @@ ShellRoot {
         }
     }
 
+    // ---- THE CLOCK'S TOOLTIP IS TWO SCRIPTS, NOT A SENTENCE ----
+    //
+    // qtile's `_clock_tooltip_text`, ported: `scripts/prayer_next.sh` for the
+    // next prayer and its countdown, `scripts/fx_rates.sh` for USD and EUR in
+    // TL and EGP, joined by a blank line.
+    //
+    // Both halves are INDEPENDENT, which is that function's rule and is worth
+    // keeping: whichever one comes back empty — dead network, cold cache —
+    // drops its own block instead of blanking the tooltip. And the fallback
+    // is qtile's old static string rather than nothing, so a machine where
+    // neither script can run still says what the chip is for.
+    //
+    // FETCHED ON HOVER, not polled. The prayer block counts down in minutes,
+    // so a poll would have to run two subprocesses a minute forever to keep a
+    // string nobody is looking at correct. Chip.tooltipRequested fires on
+    // pointer-enter and the tooltip is drawn 450 ms later, which is ample:
+    // both scripts read a cache — prayer_next.sh refreshes once a day,
+    // fx_rates.sh every six hours — and answer in ~40 ms warm. Measured here
+    // at 44 ms and 38 ms.
+    //
+    // The two runs are SERIAL through one Process rather than two, because
+    // that is the whole of what `sh -c 'a; echo; b'` buys and it keeps the
+    // blank-line join in one place. A failed script contributes nothing and
+    // is not an error: both `exit 0` with no output when they have nothing.
+    readonly property string clockTooltipFallback: "Next prayer · USD/EUR rates"
+    property string clockTooltip: shellRoot.clockTooltipFallback
+    // Enough that moving along the bar and back does not re-run them, far
+    // less than the minute the countdown changes in.
+    property double clockTooltipFetchedAt: 0
+
+    function refreshClockTooltip() {
+        const now = Date.now();
+        if (clockTooltipProcess.running || now - shellRoot.clockTooltipFetchedAt < 5000)
+            return;
+        shellRoot.clockTooltipFetchedAt = now;
+        clockTooltipProcess.running = true;
+    }
+
+    Process {
+        id: clockTooltipProcess
+        command: ["sh", "-c",
+            "p=\"$($HOME/.config/qtile/scripts/prayer_next.sh 2>/dev/null)\"; " +
+            "f=\"$($HOME/.config/qtile/scripts/fx_rates.sh 2>/dev/null)\"; " +
+            // printf and not echo: the blank line between the blocks only
+            // belongs there when BOTH blocks exist.
+            "if [ -n \"$p\" ] && [ -n \"$f\" ]; then printf '%s\\n\\n%s' \"$p\" \"$f\"; " +
+            "else printf '%s%s' \"$p\" \"$f\"; fi"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const out = text.trim();
+                shellRoot.clockTooltip = out !== ""
+                    ? out : shellRoot.clockTooltipFallback;
+            }
+        }
+    }
     // ---- CPU / MEMORY, FROM /proc ----
     //
     // Read directly rather than shelled out to. config.py's widgets use

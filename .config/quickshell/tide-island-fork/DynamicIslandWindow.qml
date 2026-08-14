@@ -671,6 +671,32 @@ PanelWindow {
     // duplicated: the capsule must size itself without instantiating the
     // layer to ask it. The cross-reference is the guard against drift.
     readonly property real restingLayoutAllowance: Metrics.px(7) + Metrics.px(14)
+    // FORK: the LANGUAGE readout, which leads the layout glyph.
+    //
+    // Asked for directly: "the language TR, AR, EN, GE — when i switch in the
+    // islen, if not englsih show; all ar ge tr; if englsih do not show in the
+    // islend."
+    //
+    // So it is a readout with a silence rule, and the silence is the feature.
+    // A permanent language chip on a 35 px capsule spends a slot on saying
+    // "you are typing in the language you almost always type in"; showing it
+    // only when that is NOT true makes its presence the whole message, and
+    // makes switching to Arabic visible in the island by the readout
+    // APPEARING rather than by a chip changing two letters somebody has
+    // stopped reading.
+    //
+    // Duplicated from restingLangGap/Width in SwipeLyricsLayer for the reason
+    // the two above are duplicated: the capsule must size itself without
+    // instantiating the layer to ask it, and the cross-reference is the guard
+    // against drift.
+    //
+    // px(22) and not px(20): the four codes measure 17.6, 16.9, 17.2 and 17.6
+    // px at font(13) in Inter, measured off the face fontconfig actually
+    // resolves rather than guessed, and Qt draws them at DemiBold — a heavier
+    // cut than the Medium those numbers came from. px(20) is 18 px after
+    // SCALE, which is the ink itself with nothing to spare, and a fixed slot
+    // that is too small is a silent crop rather than a visible overflow.
+    readonly property real restingLangAllowance: Metrics.px(7) + Metrics.px(22)
     readonly property bool hoverExpandEnabled: configuredHoverExpandAction > 0
     readonly property bool topGestureInputActive: !root.overviewVisible && islandContainer.canShowSideSwipe
     readonly property bool autoHideRuntimeEnabled: !shellRootController
@@ -2226,6 +2252,15 @@ PanelWindow {
         // 5,000-line file owns.
         LayoutState {
             id: layoutState
+        }
+
+        // FORK: which keyboard layout is live, for the language readout in
+        // the resting capsule. Same shape as LayoutState above and for the
+        // same reason — non-visual, self-contained, and not an eleventh thing
+        // this file owns. See KeyboardLayoutTracker.qml, including why it
+        // says nothing at all under qtile.
+        KeyboardLayoutTracker {
+            id: keyboardLayout
         }
 
         BluetoothConnectionTracker {
@@ -4156,7 +4191,13 @@ PanelWindow {
                         // run once. Reserving its width unconditionally would
                         // leave the resting capsule permanently 19 px wider
                         // than its content on a machine that never groups.
-                        + (layoutState.known ? root.restingLayoutAllowance : 0);
+                        + (layoutState.known ? root.restingLayoutAllowance : 0)
+                        // Gated the same way, and for the same reason the
+                        // layout glyph is: the capsule must not reserve a slot
+                        // for something that draws nothing. This one is off
+                        // almost all the time by design — see
+                        // restingLangAllowance.
+                        + (keyboardLayout.shown ? root.restingLangAllowance : 0);
                 }
             }
             readonly property real targetHeight: {
@@ -5103,6 +5144,13 @@ PanelWindow {
                         // all, see LayoutState.qml.
                         layoutShown: layoutState.known
                         layoutGlyph: layoutState.glyph
+                        // FORK: the language readout. Same seam again — the
+                        // layer is handed two letters and a flag and does not
+                        // know that "English draws nothing" is the rule, which
+                        // keeps the rule in ONE place (KeyboardLayoutTracker's
+                        // `shown`) rather than in the layer that draws it.
+                        langShown: keyboardLayout.shown
+                        langCode: keyboardLayout.code
                         iconFontFamily: root.iconFontFamily
                         onPreferredWidthChanged: islandContainer.syncLyricsCapsuleWidth()
                     }

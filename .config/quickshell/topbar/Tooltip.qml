@@ -64,6 +64,13 @@ PopupWindow {
             font.family: Metrics.textFamily
             font.pixelSize: Metrics.s(10)
             renderType: Text.NativeRendering
+            // The clock's tooltip is three lines — the prayer countdown over
+            // the two FX lines — and config.py's tooltip block turns centring
+            // on for exactly that widget ("Opt-in centring (w_clock: prayer
+            // line over the FX lines)"). Unconditional here because the popup
+            // is sized to its own text, so for the one-line tooltips centred
+            // and left-aligned are the same pixels.
+            horizontalAlignment: Text.AlignHCenter
         }
     }
 }

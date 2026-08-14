@@ -68,6 +68,12 @@ Item {
     // qtile's TOOLTIP_BY_NAME string for this chip. Empty means no tooltip,
     // which is what most of the bar's own widgets have.
     property string tooltip: ""
+    // Raised when the pointer enters, before the sink is told. For a chip
+    // whose tooltip is DATA rather than a label — the clock's next prayer and
+    // FX rates — this is where the fetch is kicked off, and Tooltip reads the
+    // chip's `tooltip` live so an answer that arrives inside the delay is the
+    // one that gets drawn.
+    signal tooltipRequested()
     // Set by the bar; the chip reports hover into it so ONE popup serves the
     // whole bar. See Tooltip.qml for why that removes the need for qtile's
     // _kill_all_tooltips().
@@ -212,7 +218,15 @@ Item {
         // — w_lang and the widget boxes carry hints for things the keyboard
         // does.
         hoverEnabled: root.tooltip !== ""
-        onEntered: if (root.hoverSink) root.hoverSink.enter(root, root.tooltip)
+        onEntered: {
+            // BEFORE the sink, so a chip whose tooltip is fetched rather than
+            // written has the whole tooltipDelay to answer in. See the clock
+            // chip in shell.qml, and qtile's own _clock_tooltip_text, which is
+            // called at show time for the same reason.
+            root.tooltipRequested();
+            if (root.hoverSink)
+                root.hoverSink.enter(root, root.tooltip);
+        }
         onExited: if (root.hoverSink) root.hoverSink.exit(root)
         enabled: root.clickable || hoverEnabled || root.scrollable
         // A chip with only a tooltip must not swallow clicks meant for the

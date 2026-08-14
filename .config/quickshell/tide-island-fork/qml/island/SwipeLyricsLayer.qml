@@ -65,6 +65,12 @@ Item {
     // "nothing to say" and draws nothing at all — see LayoutState.known.
     property string layoutGlyph: ""
     property bool layoutShown: false
+    // FORK: the language readout — two letters, leading the layout glyph.
+    // Handed down like the two above, and for the same reason: the RULE that
+    // English says nothing lives in KeyboardLayoutTracker, so this layer only
+    // ever draws what it is told to. An empty code draws nothing.
+    property string langCode: ""
+    property bool langShown: false
     property string iconFontFamily: ""
 
     property real minimumWidth: Metrics.px(220)
@@ -140,6 +146,28 @@ Item {
     readonly property bool layoutVisible:
         layoutShown && layoutGlyph !== "" && showSecondaryText && timeText !== ""
 
+    // ---- AND THE LANGUAGE CODE, WHICH LEADS THE LAYOUT GLYPH ----
+    //
+    // Third occupant of the left side, and it goes OUTSIDE the layout glyph
+    // rather than between it and the clock. Both readouts describe the
+    // session rather than the time, so the ordering question is only which of
+    // the two is more volatile: the window layout changes on $mod Tab, the
+    // keyboard layout changes when you start typing another language. The
+    // rarer one takes the outer slot, so the glyph beside the clock stays put
+    // when the language appears.
+    //
+    // Fixed slot, same as both of its neighbours and for the same reason:
+    // the capsule sizes itself from this sum, so a width taken from the
+    // code's own ink would morph the capsule on the switch from AR to TR. See
+    // root.restingLangAllowance in DynamicIslandWindow.qml, which is the same
+    // two numbers and says where they came from.
+    readonly property real restingLangGap: Metrics.px(7)
+    readonly property real restingLangWidth: Metrics.px(22)
+    readonly property real restingLangAllowance:
+        restingLangWidth + restingLangGap
+    readonly property bool langVisible:
+        langShown && langCode !== "" && showSecondaryText && timeText !== ""
+
     // The clock and the EQ are one centred group, so the clock slides left
     // by half the allowance when the bars appear rather than staying put
     // and letting the pair sit off-centre. Animated on its own short curve
@@ -160,9 +188,18 @@ Item {
 
     // FORK: the layout glyph LEADS the clock, so it is the first thing this
     // group has ever had on that side. Order left to right is now
-    // glyph · clock · digit · EQ.
+    // code · glyph · clock · digit · EQ.
+    //
+    // The language code joined it as a SECOND leading occupant, and it enters
+    // the same sum for the same reason the digit and the EQ share the
+    // trailing one — they are one group, not two things that each want their
+    // own correction. It is also the single number everything on the left has
+    // to step over: the recording dot and the code's own x both read it, so
+    // the arithmetic is written once. Spelling it out per site is exactly how
+    // the dot came to be painted through the middle of the layout glyph.
     readonly property real restingLeadingAllowance:
-        layoutVisible ? restingLayoutAllowance : 0
+        (layoutVisible ? restingLayoutAllowance : 0)
+        + (langVisible ? restingLangAllowance : 0)
 
     // ---- WHY THIS IS A DIFFERENCE AND NOT A SUM ----
     //
@@ -246,7 +283,7 @@ Item {
     readonly property real timeRecordingDotX: Math.max(
         4,
         timeX + (textWidth - visibleTimeWidth) / 2
-            - (root.layoutVisible ? root.restingLayoutGap + root.restingLayoutWidth : 0)
+            - root.restingLeadingAllowance
             - recordingDotSpacing - timeRecordingIndicator.width
     )
     readonly property real preferredWidth: Math.max(
@@ -626,6 +663,41 @@ Item {
         // wrong now they are a matched accent pair. Same size, same ink, one
         // readout.
         font.pixelSize: Metrics.font(13)
+    }
+
+    // FORK: the language code. See restingLangGap above for why it takes the
+    // outer slot, and KeyboardLayoutTracker for why it is usually not there.
+    Text {
+        id: langCodeText
+
+        visible: root.langVisible
+        // One gap left of the layout glyph's slot when that is there, one gap
+        // left of the clock's ink when it is not — which restingLeadingAllowance
+        // already expresses, so this cannot drift from the recording dot's
+        // arithmetic the way a spelled-out copy did.
+        x: root.restingInkLeft - root.restingLeadingAllowance
+            + (root.restingLangWidth - width) / 2
+        // Centred on the DIGIT's box like the layout glyph, and not sat on
+        // the clock's baseline. Two capitals have no descender either, so
+        // sharing the digits' baseline would hang them low in exactly the
+        // same way.
+        y: workspaceDigit.y + (workspaceDigit.height - height) / 2
+        opacity: 1 - root.clampedProgress
+
+        text: root.langCode
+        color: root.accentColor
+        // The TEXT font, not the icon font — these are two Latin capitals and
+        // not Nerd Font codepoints, and forcing letters through a symbol face
+        // is the mistake the RULES already name ("a glyph that is not a Nerd
+        // Font icon should not be forced through one").
+        font.family: root.textFontFamily
+        font.pixelSize: Metrics.font(13)
+        // DemiBold and tabular figures to match the workspace digit exactly:
+        // the digit, the glyph and this are one accent readout wrapped around
+        // the clock, and three weights would say they are three kinds of
+        // thing.
+        font.weight: Font.DemiBold
+        font.features: ({ "tnum": 1 })
     }
 
     // FORK: the resting-state EQ. DESIGN-SPEC.md's resting island shows

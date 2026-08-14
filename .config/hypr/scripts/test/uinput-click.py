@@ -4,6 +4,7 @@
     hyprctl dispatch movecursor <x> <y>
     ./uinput-click.py [left|middle|right]
     ./uinput-click.py scroll up|down [count]
+    ./uinput-click.py hover [seconds]
 
 
 NEXT-SESSION.md records that clicking cannot be tested here: wtype is keys
@@ -30,6 +31,13 @@ that the onboarding swipe "is a couple of EV_REL/REL_WHEEL events away" was
 right, and the first thing it verified was the volume chip — a widget whose
 scroll behaviour qtile ships as a WIDGET default rather than in config.py, so
 nothing in this repo said it existed and nothing here could press it.
+
+HOVER is the wiggle on its own, held for a few seconds. It exists because a
+TOOLTIP could not be tested at all: it needs the pointer to arrive over a
+chip via a real motion event and then STAY there past the bar's 450 ms delay,
+and `movecursor` alone never delivers the enter. The clock chip's tooltip —
+the next prayer and the FX rates, fetched on hover — was the first thing that
+could only be checked by hovering it by hand.
 
 REL_WHEEL and not REL_WHEEL_HI_RES: one notch is one unit, which is what a
 toolkit turns into a 120-unit angleDelta. Sending only the hi-res axis makes
@@ -68,7 +76,11 @@ def main():
     argv = sys.argv[1:]
     scroll = 0
     count = 1
-    if argv and argv[0] == "scroll":
+    hold = 0.0
+    if argv and argv[0] == "hover":
+        hold = float(argv[1]) if len(argv) > 1 else 3.0
+        button = BUTTONS["left"]
+    elif argv and argv[0] == "scroll":
         scroll = 1 if (len(argv) > 1 and argv[1] == "up") else -1
         count = int(argv[2]) if len(argv) > 2 else 1
         button = BUTTONS["left"]
@@ -103,7 +115,12 @@ def main():
     emit(fd, EV_REL, REL_X, -1); emit(fd, EV_SYN, SYN_REPORT, 0)
     time.sleep(0.15)
 
-    if scroll:
+    if hold:
+        # Nothing but the wiggle above, held. The device stays alive for the
+        # whole hold: destroying it is what a `hover` would otherwise race
+        # against, and the pointer focus goes with it.
+        time.sleep(hold)
+    elif scroll:
         for _ in range(count):
             emit(fd, EV_REL, REL_WHEEL, scroll); emit(fd, EV_SYN, SYN_REPORT, 0)
             time.sleep(0.12)
@@ -115,7 +132,9 @@ def main():
 
     fcntl.ioctl(fd, UI_DEV_DESTROY)
     os.close(fd)
-    if scroll:
+    if hold:
+        print("hovered %.1fs" % hold)
+    elif scroll:
         print("scrolled", "up" if scroll > 0 else "down", "x%d" % count)
     else:
         print("clicked", argv[0] if argv else "left")
