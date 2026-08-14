@@ -104,7 +104,7 @@ Item {
     // how it went. Audio, Wi-Fi, Bluetooth and Display all had this in the
     // same corner already; it is promoted rather than invented.
     property string status: ""
-    property string statusLevel: "idle"        // idle | busy | ok | error
+    property string statusLevel: "idle"   // idle | busy | ok | error | active
 
     // Extra room to the right of the status text, for a panel that puts
     // something else in that corner. DisplayPanel's revert countdown is the
@@ -289,10 +289,19 @@ Item {
         text: root.status
         font.family: root.textFontFamily
         font.pixelSize: Metrics.TYPE.body
+        // "active" is the theme's own accent and is NOT a synonym for "ok".
+        // The three levels below are semantic and are deliberately the same
+        // hue in every palette — a green "ok" that turned purple under a
+        // purple theme would stop meaning ok. "active" is the opposite kind
+        // of statement: it marks the CURRENT thing, which is the accent's
+        // job everywhere else in this shell, and it has to move with the
+        // theme. The calendar is the case it was added for; drawing today in
+        // `ok` made the panel green under all 22 palettes.
         color: root.statusLevel === "error" ? IslandTheme.danger
              : (root.statusLevel === "ok" ? IslandTheme.success
              : (root.statusLevel === "busy" ? IslandTheme.warning
-             : IslandTheme.textMuted))
+             : (root.statusLevel === "active" ? IslandTheme.accentText
+             : IslandTheme.textMuted)))
     }
 
     // --- tabs ---------------------------------------------------------------

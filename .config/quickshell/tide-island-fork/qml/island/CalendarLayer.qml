@@ -377,12 +377,23 @@ FocusScope {
 
         title: Qt.formatDate(root.cursor, "dddd")
 
-        // Green when the cursor is on today, muted otherwise — so a month you
-        // have paged away from is visibly not now. `ok` and not `idle`,
-        // because this is the same "good state" green the Wi-Fi QR uses rather
-        // than a fourth accent invented here.
+        // Accented when the cursor is on today, muted otherwise — so a month
+        // you have paged away from is visibly not now.
+        //
+        // This was `ok`, on the reasoning that it is "the same good-state
+        // green the Wi-Fi QR uses rather than a fourth accent invented here".
+        // Reusing a role instead of inventing one was right; the role was
+        // wrong. `ok`, `busy` and `error` are SEMANTIC and are deliberately
+        // the same hue in all 22 palettes — a green "ok" that turned purple
+        // under a purple theme would stop meaning ok. Today is not a good
+        // state, it is the CURRENT one, and current is the accent's job
+        // everywhere else in this shell.
+        //
+        // Reported as "the calendar not following the theme", and this is
+        // most of why: the header date and the ring around today were the
+        // panel's only colour, and both were green under every theme.
         status: Qt.formatDate(root.cursor, "d MMMM yyyy")
-        statusLevel: root.cursorIsToday ? "ok" : "idle"
+        statusLevel: root.cursorIsToday ? "active" : "idle"
 
         hints: [
             { key: "hjkl", label: "move" },
@@ -469,14 +480,21 @@ FocusScope {
                     // gets the filled chip plus the outline. The first
                     // version used the same fill for both and paging away
                     // from today looked like today had moved.
-                    color: cell.isNow ? IslandTheme.successFill : "transparent"
+                    //
+                    // ACCENT, not success — see the note on `statusLevel` in
+                    // the chrome above. Today is the current day, not a good
+                    // one, and `success` is derived from the palette's GREEN
+                    // slot, which is green in all 22 themes by design. That
+                    // made these three lines the reason the calendar "not
+                    // following the theme": they were the panel's only colour.
+                    color: cell.isNow ? IslandTheme.accentFill : "transparent"
                     border.width: cell.isSelected ? 1 : 0
-                    border.color: IslandTheme.success
+                    border.color: IslandTheme.accent
 
                     Text {
                         anchors.centerIn: parent
                         text: cell.day
-                        color: cell.isNow ? IslandTheme.success
+                        color: cell.isNow ? IslandTheme.accentText
                              : (cell.isSelected ? IslandTheme.textPrimary : IslandTheme.textSecondary)
                         font.pixelSize: Metrics.font(12)
                         font.family: root.textFontFamily

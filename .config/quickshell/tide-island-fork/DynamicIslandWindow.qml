@@ -309,6 +309,12 @@ PanelWindow {
                 || islandContainer.onboardingLayerVisible
                 || islandContainer.calendarLayerVisible
                 || islandContainer.powerMenuLayerVisible
+                // The calculator, for the same reason the cheatsheet is on
+                // this list: it has a field, so every character typed has to
+                // land in it and not in the window behind. An expression
+                // leaking into a terminal is the same accident as a filter
+                // leaking into one.
+                || islandContainer.calculatorLayerVisible
                 || islandContainer.settingsLayerVisible
                 // The generic picker, for the reason the cheatsheet is here
                 // and ModeKeysLayer deliberately is not: it has a search
@@ -1112,6 +1118,13 @@ PanelWindow {
             islandContainer.showPowerMenu();
     }
 
+    function toggleCalculatorWindow() {
+        if (islandContainer.islandState === "calculator")
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showCalculator();
+    }
+
     // FORK: the generic list picker. Toggling on the MENU and not just on
     // the state, exactly like toggleCheatsheetWindow: pressing the chord's
     // key for `processes` while the `windows` picker is open should switch
@@ -1374,6 +1387,7 @@ PanelWindow {
             // missing it.
             || islandContainer.calendarLayerVisible
             || islandContainer.powerMenuLayerVisible
+            || islandContainer.calculatorLayerVisible
             || islandContainer.settingsLayerVisible
             // Qualified through the id, for the same reason its neighbours
             // are: a hot reload landing between a new property's use and its
@@ -1557,6 +1571,7 @@ PanelWindow {
             || islandState === "cheatsheet"
             || islandState === "calendar"
             || islandState === "power_menu"
+            || islandState === "calculator"
             || islandState === "settings"
             || islandState === "picker"
         readonly property bool blocksTransientSplit: openPanelState
@@ -1701,6 +1716,9 @@ PanelWindow {
         // job and does it correctly.
         readonly property bool calendarLayerVisible: !root.overviewVisible && islandState === "calendar"
         readonly property bool powerMenuLayerVisible: !root.overviewVisible && islandState === "power_menu"
+        // FORK: the calculator, replacing the qalculate-gtk scratchpad.
+        // See qml/island/CalculatorLayer.qml.
+        readonly property bool calculatorLayerVisible: !root.overviewVisible && islandState === "calculator"
         readonly property bool settingsLayerVisible: !root.overviewVisible && islandState === "settings"
         // FORK: the generic list picker — one panel behind three (so far) of
         // the rofi chord's menus. `pickerMenu` is the menu name the backing
@@ -2739,6 +2757,17 @@ PanelWindow {
             stopAutoHideTimer();
         }
 
+        // FORK: the calculator — the island's replacement for the
+        // qalculate-gtk scratchpad on $alt 5. See qml/island/CalculatorLayer.qml.
+        function showCalculator() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "calculator";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
         // FORK: the settings surface. The packaged tide-island-config-app is
         // a compiled binary that `yay -Syu` overwrites, so this is a state
         // rather than a patch. See qml/island/SettingsLayer.qml.
@@ -3516,6 +3545,12 @@ PanelWindow {
                     // are about to press is the one panel where a misread is
                     // expensive.
                     return Metrics.px(400);
+                case "calculator":
+                    // Narrower than the power menu. The widest thing here is
+                    // a result, and a result is right-aligned against the
+                    // panel edge — extra width past what the tape needs is
+                    // empty space between the expression and its answer.
+                    return Metrics.px(340);
                 case "settings":
                     // The list-plus-details shape the display and audio
                     // panels use, and sized between them: rows are
@@ -3686,6 +3721,14 @@ PanelWindow {
                         ? Math.min(powerMenuLoader.item.preferredHeight,
                                    root.screen.height - Metrics.px(60))
                         : Metrics.px(300);
+                case "calculator":
+                    // Content-sized: the tape grows from nothing to six rows
+                    // as you use it, and a fixed frame would be mostly empty
+                    // on the first expression and clipped by the sixth.
+                    return calculatorLoader.item
+                        ? Math.min(calculatorLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(190);
                 case "settings":
                     return settingsLoader.item
                         ? Math.min(settingsLoader.item.preferredHeight,
@@ -3846,6 +3889,7 @@ PanelWindow {
                 case "onboarding":
                 case "calendar":
                 case "power_menu":
+                case "calculator":
                 case "settings":
                 case "picker":
                     return Metrics.px(34);
@@ -5086,6 +5130,30 @@ PanelWindow {
                         // rectangle. Checked on screen, not assumed.
                         iconFontFamily: root.iconFontFamily
                         showCondition: islandContainer.powerMenuLayerVisible
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            // FORK: the calculator — replaces the qalculate-gtk scratchpad.
+            PanelLoader {
+                id: calculatorLoader
+                anchors.fill: parent
+                live: islandContainer.calculatorLayerVisible
+                // Retained for the same reason the power menu is: a rebuilt
+                // layer has an empty history and no result, so its
+                // preferredHeight collapses to the chrome for a frame and the
+                // capsule animates to a height nothing is ever drawn at.
+                // Retention also keeps the TAPE across a close, which is the
+                // one piece of state this panel has that is worth keeping.
+                retain: true
+
+                sourceComponent: Component {
+                    CalculatorLayer {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        iconFontFamily: root.iconFontFamily
+                        showCondition: islandContainer.calculatorLayerVisible
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }

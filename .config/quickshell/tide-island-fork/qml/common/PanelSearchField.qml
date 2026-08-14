@@ -76,6 +76,12 @@ Item {
     property string placeholder: "type to filter"
     property string textFontFamily: ""
     property string iconFontFamily: ""
+    // The glyph in the left gutter. Defaults to the magnifier, because every
+    // host but one is a search; the calculator sets its own. Assigned from
+    // the codepoint rather than pasted, since a private-use character does
+    // not survive being written into a file by anything that reads it back
+    // as text — that cost this component its icon once already.
+    property string icon: String.fromCharCode(0xf002)
     // Right-hand side of the field. A count, "3 of 21", "no match" — the
     // host knows what it is counting, so it says so rather than being asked.
     property string countText: ""
@@ -109,6 +115,11 @@ Item {
     signal movedHorizontally(int delta)  // Left/Right, Ctrl+H/L
     signal paged(int pages)     // PageUp/PageDown
     signal tabbed(int direction) // Tab / Shift+Tab, for panels with sheets
+    // Ctrl+C with NOTHING SELECTED. With a selection it is left alone, so
+    // the field keeps the copy behaviour every text box has; the host only
+    // hears about the case where the standard action would be a no-op and
+    // the user plainly meant "copy the thing this panel is showing me".
+    signal copyRequested()
 
     implicitHeight: Metrics.px(26)
     height: implicitHeight
@@ -119,6 +130,15 @@ Item {
 
     function clear() {
         input.text = "";
+    }
+
+    // Replace the contents and put the cursor at the end — the calculator's
+    // history recall, where the recalled expression is usually about to be
+    // edited. Assigning `query` from outside would not do it: `query` is
+    // driven BY the input, not the other way round.
+    function setText(value) {
+        input.text = String(value);
+        input.cursorPosition = input.text.length;
     }
 
     // The host's own Keys handler is usually on an ancestor, so anything
@@ -141,7 +161,7 @@ Item {
             anchors.left: parent.left
             anchors.leftMargin: Metrics.pad(10)
             anchors.verticalCenter: parent.verticalCenter
-            text: ""
+            text: root.icon
             color: input.activeFocus ? IslandTheme.textSecondary : IslandTheme.textMuted
             font.family: root.iconFontFamily
             font.pixelSize: Metrics.font(11)
@@ -198,6 +218,13 @@ Item {
                         root.movedHorizontally(-1); event.accepted = true; return;
                     case Qt.Key_L:
                         root.movedHorizontally(1); event.accepted = true; return;
+                    case Qt.Key_C:
+                        // Only when the standard action would do nothing.
+                        if (input.selectedText === "") {
+                            root.copyRequested();
+                            event.accepted = true;
+                        }
+                        return;
                     }
                     return;
                 }

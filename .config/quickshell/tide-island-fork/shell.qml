@@ -785,6 +785,14 @@ Scope {
             shellRoot.forFocusedWindow((window) => window.togglePowerMenuWindow());
         }
 
+        // FORK: the calculator. Replaces the qalculate-gtk scratchpad on
+        // $alt 5 — see qml/island/CalculatorLayer.qml for why an app that
+        // has to be launched with GTK_THEME=Adwaita:dark is not a panel this
+        // shell can theme.
+        function toggleCalculator() {
+            shellRoot.forFocusedWindow((window) => window.toggleCalculatorWindow());
+        }
+
         function toggleSettings() {
             shellRoot.forFocusedWindow((window) => window.toggleSettingsWindow());
         }

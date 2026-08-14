@@ -476,6 +476,12 @@ Singleton {
     readonly property color successFill: root.alpha(root.success, 0.18)
     readonly property color warningFill: root.alpha(root.warning, 0.18)
     readonly property color dangerFill: root.alpha(root.danger, 0.18)
+    // The accent's member of that family. `selectionFill` above is the same
+    // 0.18 of the accent and is spoken for by row selection; this one is for
+    // the other thing an accent tint marks — "this is the current one" —
+    // which the calendar needs for today and which was being drawn in
+    // `successFill` before, i.e. green in all 22 palettes.
+    readonly property color accentFill: root.alpha(root.accent, 0.18)
 
     // ---------------------------------------------------------------
     //  Tracks
