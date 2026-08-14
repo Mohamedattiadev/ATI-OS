@@ -66,7 +66,16 @@ PanelWindow {
         compositorRevision;
         return compositorIsNiri
             ? CompositorBackend.activeWorkspaceIndexForOutput(screenOutputName)
-            : (hyprlandIntegration ? hyprlandIntegration.workspaceId : 1);
+            : (hyprlandIntegration ? hyprlandIntegration.workspaceId : 0);
+    }
+    // FORK: the drawable label for the above. A named Hyprland workspace has
+    // no digit — `S` is id -1337 — so every readout that used to render the
+    // id as text renders this instead.
+    readonly property string currentMonitorWorkspaceName: {
+        compositorRevision;
+        if (compositorIsNiri)
+            return String(CompositorBackend.activeWorkspaceIndexForOutput(screenOutputName));
+        return hyprlandIntegration ? hyprlandIntegration.workspaceName : "";
     }
     readonly property bool screenRecordingActive: shellRootController
         && shellRootController.screenRecordingActive !== undefined
@@ -1354,7 +1363,15 @@ PanelWindow {
         property real osdProgress: -1.0
         property bool osdProgressAnimationEnabled: true
         property string osdCustomText: ""
-        property int currentWs: root.currentMonitorWorkspaceId > 0 ? root.currentMonitorWorkspaceId : 1
+        // FORK: `!== 0`, not `> 0`. A named workspace's id is negative and a
+        // `> 0` test threw it away — that was the "$mod SHIFT O still writes
+        // 4" bug. 0 is the only invalid id; see HyprlandWorkspaceTracker.
+        property int currentWs: root.currentMonitorWorkspaceId !== 0 ? root.currentMonitorWorkspaceId : 1
+        // The label drawn for currentWs. Falls back to the id's digits so a
+        // compositor that reports no name still shows something truthful.
+        property string currentWsLabel: root.currentMonitorWorkspaceName !== ""
+            ? root.currentMonitorWorkspaceName
+            : String(currentWs)
         readonly property int batteryCapacity: systemState.batteryCapacity
         readonly property bool isCharging: systemState.isCharging
         readonly property real currentVolume: systemState.currentVolume
@@ -1751,6 +1768,7 @@ PanelWindow {
             timeText: timeObj.currentTime
             dateText: timeObj.currentDateLabel
             currentWorkspace: islandContainer.currentWs
+            currentWorkspaceLabel: islandContainer.currentWsLabel
             customSwipeActive: customSwipeLoader.active
             // FORK: `|| musicPlaying` is the resting EQ's subscription, and
             // without it that EQ is decoration that can never move.
@@ -1782,12 +1800,15 @@ PanelWindow {
             outputName: root.compositorOutputName
             monitorFocused: root.monitorFocused
 
-            onWorkspaceSynced: function(workspaceId) {
+            onWorkspaceSynced: function(workspaceId, workspaceName) {
                 islandContainer.currentWs = workspaceId;
+                islandContainer.currentWsLabel = workspaceName !== ""
+                    ? workspaceName
+                    : String(workspaceId);
             }
 
-            onWorkspaceActivated: function(workspaceId) {
-                islandContainer.showWorkspaceCapsule(workspaceId);
+            onWorkspaceActivated: function(workspaceId, workspaceName) {
+                islandContainer.showWorkspaceCapsule(workspaceId, workspaceName);
             }
         }
 
@@ -2815,10 +2836,13 @@ PanelWindow {
             showRestingCapsule("normal");
         }
 
-        function showWorkspaceCapsule(wsId) {
+        function showWorkspaceCapsule(wsId, wsName) {
             // currentWs is updated even when the capsule is suppressed: it is
             // the resting capsule's own workspace readout, not the OSD.
             currentWs = wsId;
+            currentWsLabel = (wsName !== undefined && wsName !== null && wsName !== "")
+                ? String(wsName)
+                : String(wsId);
             if (root.autoHideSuppressesTransientReveal) return;
             // Was a hand-written two-item list; see blocksTransientSplit for
             // what that cost. A workspace switch is a transient exactly like
@@ -3136,15 +3160,28 @@ PanelWindow {
                 const hlValues = (typeof Hyprland !== "undefined" && Hyprland
                                   && Hyprland.toplevels)
                     ? Hyprland.toplevels.values : [];
+                // FORK: 0 is "unknown", and a NEGATIVE id is a real workspace.
+                //
+                // This was `? .id : -1` with a `currentWs > 0` test below, and
+                // that pair is the second half of the `$mod SHIFT O` bug — the
+                // half that showed "all the icons of all apps". A NAMED
+                // workspace has a negative id (`S` is -1337), so on S the
+                // `> 0` test made canFilter false, the strip took its
+                // fail-open path, and every window on every workspace was
+                // drawn. The fail-open itself is right and is kept; it just
+                // must not be reached by a workspace that is perfectly well
+                // known. -1 was also a poor "unknown" now that negatives are
+                // legal, so the sentinel moved to 0, which Hyprland never
+                // assigns to a real workspace.
                 const currentWs = Hyprland && Hyprland.focusedWorkspace
-                    ? Hyprland.focusedWorkspace.id : -1;
+                    ? Hyprland.focusedWorkspace.id : 0;
                 const wsFor = new Map();
                 for (let h = 0; h < hlValues.length; h++) {
                     const ht = hlValues[h];
                     if (ht && ht.wayland && ht.workspace)
                         wsFor.set(ht.wayland, ht.workspace.id);
                 }
-                const canFilter = wsFor.size > 0 && currentWs > 0;
+                const canFilter = wsFor.size > 0 && currentWs !== 0;
 
                 for (let index = 0; index < values.length; index++) {
                     const entry = values[index];
@@ -4243,6 +4280,7 @@ PanelWindow {
                         // bind to.
                         workspaceShown: true
                         workspaceId: islandContainer.currentWs
+                        workspaceLabel: islandContainer.currentWsLabel
                         accentColor: IslandTheme.accent
                         // FORK: qtile's CurrentLayout widget, finally. Same
                         // seam as workspaceShown above — the layer is handed
@@ -4372,7 +4410,7 @@ PanelWindow {
                 sourceComponent: Component {
                     WorkspaceLayer {
                         workspaceId: islandContainer.currentWs
-                        displayText: "Workspace " + islandContainer.currentWs
+                        displayText: "Workspace " + islandContainer.currentWsLabel
                         textFontFamily: root.textFontFamily
                         textPixelSize: root.bodyFontSize
                         animateVisibility: islandContainer.restingState === "normal"

@@ -27,6 +27,9 @@ Item {
     property string timeText: "00:00"
     property string dateText: "Mon, Jan 01"
     property int currentWorkspace: 1
+    // FORK: what to DRAW for currentWorkspace. A named Hyprland workspace has
+    // a negative id and no digit — "Workspace -1337" is not a readout.
+    property string currentWorkspaceLabel: ""
     property bool customSwipeActive: false
     property bool lyricsCavaActive: false
 
@@ -239,7 +242,13 @@ Item {
                 text: formatPercentText(currentBrightness)
             };
         case "workspace":
-            return { id: itemId, icon: "", text: "Workspace " + currentWorkspace };
+            return {
+                id: itemId,
+                icon: "",
+                text: "Workspace " + (currentWorkspaceLabel !== ""
+                    ? currentWorkspaceLabel
+                    : String(currentWorkspace))
+            };
         // FORK: `value` is the reading as a 0..100 PERCENT, carried beside the
         // already-formatted `text`. The card colours a glyph red once the
         // thing it names is in trouble, and it cannot get that out of `text`:

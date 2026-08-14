@@ -14,10 +14,14 @@ Item {
     property string outputName: ""
     property bool monitorFocused: false
     property int currentWorkspaceId: 1
+    property string currentWorkspaceName: "1"
     property bool niriStateReady: false
 
-    signal workspaceSynced(int workspaceId)
-    signal workspaceActivated(int workspaceId)
+    // FORK: id AND name. See HyprlandWorkspaceTracker for why — the id stays
+    // the identity the window strip filters on, the name is what gets drawn,
+    // and a NAMED Hyprland workspace has a negative id and no digit to draw.
+    signal workspaceSynced(int workspaceId, string workspaceName)
+    signal workspaceActivated(int workspaceId, string workspaceName)
 
     readonly property int compositorRevision: CompositorBackend.revision
 
@@ -42,10 +46,14 @@ Item {
 
         const changed = niriStateReady && workspaceId !== currentWorkspaceId;
         currentWorkspaceId = workspaceId;
+        // niri indexes workspaces by position and has no named-workspace
+        // case, so the label is just the index. The property exists so both
+        // compositors present one shape to the island.
+        currentWorkspaceName = String(workspaceId);
         niriStateReady = true;
-        workspaceSynced(workspaceId);
+        workspaceSynced(workspaceId, currentWorkspaceName);
         if (announceChange && changed && monitorFocused)
-            workspaceActivated(workspaceId);
+            workspaceActivated(workspaceId, currentWorkspaceName);
     }
 
     Loader {
@@ -81,14 +89,16 @@ Item {
     Connections {
         target: hyprlandTrackerLoader.item
 
-        function onWorkspaceSynced(workspaceId) {
+        function onWorkspaceSynced(workspaceId, workspaceName) {
             root.currentWorkspaceId = workspaceId;
-            root.workspaceSynced(workspaceId);
+            root.currentWorkspaceName = workspaceName;
+            root.workspaceSynced(workspaceId, workspaceName);
         }
 
-        function onWorkspaceActivated(workspaceId) {
+        function onWorkspaceActivated(workspaceId, workspaceName) {
             root.currentWorkspaceId = workspaceId;
-            root.workspaceActivated(workspaceId);
+            root.currentWorkspaceName = workspaceName;
+            root.workspaceActivated(workspaceId, workspaceName);
         }
     }
 }

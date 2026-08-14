@@ -49,6 +49,12 @@ Item {
     // goes false the moment swipeTransitionProgress does), and it disappears
     // for the workspace popup because showSecondaryText already does.
     property int workspaceId: 1
+    // FORK: the glyph to draw for workspaceId. Hyprland's NAMED workspaces
+    // have negative ids — `S` is -1337 — so the id is no longer something you
+    // can put on screen. The slot is 10px and centres its content, so a
+    // one-letter name lands exactly where a digit did and a longer one grows
+    // symmetrically, the same way a two-digit workspace already does.
+    property string workspaceLabel: ""
     property bool workspaceShown: false
     property color accentColor: IslandTheme.accent
 
@@ -531,7 +537,7 @@ Item {
         y: root.timeBaselineY - baselineOffset
         opacity: 1 - root.clampedProgress
 
-        text: String(root.workspaceId)
+        text: root.workspaceLabel !== "" ? root.workspaceLabel : String(root.workspaceId)
         color: root.accentColor
         font.pixelSize: Metrics.font(13)
         font.family: root.textFontFamily

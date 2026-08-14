@@ -16,7 +16,12 @@ Item {
     readonly property var userConfig: UserConfig
 
     property int workspaceId: 1
-    property string displayText: "Workspace " + workspaceId
+    // FORK: the default keeps rendering the id because a caller that passes
+    // no label has nothing better to offer. Every caller in this shell passes
+    // one — a named workspace's id is negative and unreadable. See
+    // HyprlandWorkspaceTracker.
+    property string workspaceLabel: ""
+    property string displayText: "Workspace " + (workspaceLabel !== "" ? workspaceLabel : String(workspaceId))
     property var configSource: null
     readonly property var activeConfig: configSource || userConfig
     property string textFontFamily: activeConfig.textFontFamily
