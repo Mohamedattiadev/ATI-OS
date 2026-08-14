@@ -91,6 +91,13 @@ ShellRoot {
         function volume(): void    { root.toggle("volume"); }
         function wifiqr(): void    { root.toggle("wifiqr"); }
         function display(): void   { root.toggle("display"); }
+        // The cheatsheet takes WHICH sheet, so it is a show-with-argument
+        // rather than a toggle: pressing `v` while the vim sheet is up should
+        // keep it up, not close it.
+        function cheatsheet(which: string): void {
+            root.cheatsheetWhich = (which === "" ? "hypr" : which);
+            root.show("cheatsheet");
+        }
         function bluetooth(): void  { root.toggle("bluetooth"); }
 
         // Explicit show/hide beside the toggles, because a toggle driven from
@@ -275,6 +282,18 @@ ShellRoot {
         active: root.open === "wifiqr"
         sourceComponent: Component {
             WifiQrPopup {
+                onRequestClose: root.hide()
+            }
+        }
+    }
+
+    property string cheatsheetWhich: "hypr"
+
+    Loader {
+        active: root.open === "cheatsheet"
+        sourceComponent: Component {
+            CheatsheetPopup {
+                which: root.cheatsheetWhich
                 onRequestClose: root.hide()
             }
         }

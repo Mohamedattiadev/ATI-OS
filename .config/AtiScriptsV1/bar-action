@@ -64,6 +64,13 @@ run_popup() {
   setsid -f qs -p "$HOME/.config/quickshell/tide-island-fork/popups.qml" \
     ipc call popups "$1" >/dev/null 2>&1 || true
 }
+# Same as run_popup, for the one IPC that takes an argument — the cheatsheet
+# needs to know WHICH sheet, and dropping the argument is how every sheet key
+# ends up opening the same one.
+run_popup_arg() {
+  setsid -f qs -p "$HOME/.config/quickshell/tide-island-fork/popups.qml" \
+    ipc call popups "$1" "$2" >/dev/null 2>&1 || true
+}
 run_sh() { setsid -f sh -c "$1" >/dev/null 2>&1 || true; }
 
 island() {
@@ -158,8 +165,20 @@ case "$key" in
   "showPicker workspaces")    run rofi -show window -show-icons ;;
 
   # ---- the cheatsheets ----
-  "showCheatsheet docs")      run rofi_docs ;;
-  showCheatsheet*)            run rofi_keymaps ;;
+  #
+  # Reported: "the cheatsheet of vim and fish — you did not make the same
+  # like in here". The SHEETS were never missing; cheatsheet.py parses them
+  # out of qtile's own VimCheatsheet.py and FishCheatsheet.py and
+  # `--sheet-json` answers for all four (vim 12 sections / 64 rows, fish
+  # 9 / 41, hypr 9 / 215, island 7 / 44). What was missing is this line:
+  # every sheet key fell through to ONE generic rofi keymap list, so under
+  # the island `v` gave you vim and under the topbar it gave you something
+  # else on the same key — the exact substitution this table exists to stop.
+  #
+  # The popups shell hosts the viewer now, and the argument survives, so
+  # `v` opens the vim sheet on both bars.
+  "showCheatsheet docs")      run_popup_arg cheatsheet docs ;;
+  showCheatsheet*)            run_popup_arg cheatsheet "${arg:-hypr}" ;;
 
   # ---- the three qtile POPUPS ----
   #

@@ -253,6 +253,33 @@ qtile_eval() {
 # used to sit on the Cheatsheets dispatch arm papered over that, at the
 # cost of making Esc out of this ONE submenu close the whole menu.
 open_cheatsheet() {
+  # ---- TWO SESSIONS, TWO ROUTES ----
+  #
+  # Reported: clicking the cheatsheet from the logo chip did not show it.
+  # Under Hyprland it could not: this function talks to qtile through
+  # `qtile cmd-obj`, and there is no qtile there — so the three entries in
+  # this menu answered with the error box below, on the desktop where the
+  # logo chip is the most prominent click on the bar.
+  #
+  # bar-action already routes `showCheatsheet` to whichever surface the
+  # current bar owns — the island's panel under the island, the popups
+  # shell's under the topbar — so the Hyprland side is one call. The names
+  # line up without translation: cheatsheet.py takes "qtile" as an alias for
+  # the WM sheet ("hypr", "hyprland", "qtile" all hit the same branch), and
+  # vim and fish are its own SOURCES keys.
+  #
+  # Split on WAYLAND_DISPLAY rather than XDG_SESSION_TYPE, which the display
+  # manager sets and which is absent for a session started any other way —
+  # the rule is in hypr/NEXT-SESSION.md and this file serves both sessions.
+  if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    if bar-action tide showCheatsheet "$1" >/dev/null 2>&1; then
+      LAUNCHED=1
+    else
+      rofi -e "could not open the $1 cheatsheet"
+    fi
+    return
+  fi
+
   local out
   out="$(qtile_eval "__import__('sys').modules['config'].open_cheatsheet('$1')")"
   if [[ "$out" == '"ok"' ]]; then
