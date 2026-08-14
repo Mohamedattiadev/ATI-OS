@@ -191,6 +191,94 @@ Sizes differ by up to **857 px** (`long_capsule` 156 -> wallpaper picker
 
 ---
 
+# REPORTED AND NOT YET FIXED
+
+Everything here came from the user in one pass at the end of the last
+session. Where a cause is written down it was MEASURED during that session,
+not guessed — start from the measurement, not from the symptom.
+
+### Dead or missing controls
+
+* **The Wi-Fi QR chip does nothing.** `scripts/wifi-qr.py` is a DATA
+  PRODUCER, not a viewer: run it and it prints
+  `{"ssid": ..., "security": ..., "ok": ...}` on stdout. The island renders
+  that in its `wifi_qr` state; the topbar's chip just runs the script, so
+  nothing appears. It needs a viewer on the topbar side — the natural home is
+  a fourth popup in `tide-island-fork/qml/popups/`, beside the three that
+  exist, since it is the same shape of surface.
+* **`$alt 5` (calculator) and `$alt 4` (display) do nothing under the
+  topbar.** Both are bound and both reach `bar-action`; the NATIVE branch is
+  what fails, and the display one has a precise cause worth fixing first:
+
+      $ python3 scripts/display-ctl.py --menu
+      {"ok": false, "status": "unknown subcommand --menu"}   # and EXITS 0
+
+  bar-action's `--menu || nwg-displays` fallback therefore never fires, and
+  `nwg-displays` is not installed either. The calculator's `rofi -show calc`
+  needs the rofi-calc plugin, which is not installed — `/usr/lib/rofi/` is
+  empty — so it falls through to `kitty -e qalc`, a terminal rather than the
+  panel that was asked for. Both should become island-style popups.
+* **A Bluetooth popup is missing.** The wallpaper, network and volume ones
+  are built; `popups/BluetoothPopup.py` is the fourth and its chord is in
+  config.py under Rofi-Mode `b` (j k g G move, ↵ connect, d disconnect,
+  x remove, t power, r scan, c cancel, / search).
+* **qdrop is bound but is not the island's.** `$alt SHIFT D` runs the GTK
+  shelf through XWayland, which works, and the user wants it to behave and
+  LOOK like the island when the island is up — same UI/UX, same surface
+  language. Two sub-problems, and the second is the reported bug: while
+  dragging, **the file is not under the cursor** — the drag icon is offset.
+
+### Behaviour that differs from qtile
+
+* **Passthrough is not qtile's.** Hyprland's is an empty submap with one
+  exit key (`submaps.conf`, `$mod F12`). qtile's `_enable_passthrough` does
+  three more things: it switches BAR_MODE to the bottom bar and re-applies
+  it, it notifies "PASSTHROUGH MODE", and Escape does not leave — it enters
+  **PASSTHROUGH-CONFIRM**, a second chord asking `y , n , ESC`, which is why
+  that label exists in CHORD_CHIP_LABELS and why it is coloured urgent.
+  Read `config.py:669` onwards and port the whole shape.
+* **Media mode changes volume and brightness with no feedback.** The submap
+  binds `wpctl set-volume` and `brightnessctl set` DIRECTLY — so do the
+  hardware keys — and nothing raises an OSD. Under the island the OSD comes
+  from the island watching Pipewire itself; under the topbar there is none at
+  all. qtile went through `scripts/volume_control.py` and
+  `brightness_control.py`, which notify. Decide where the OSD lives for the
+  topbar (the popups shell is the resident process that could own it) rather
+  than adding a `notify-send` to six binds.
+
+### Glitches, each with a shape to measure
+
+* **Every chip is SLOW.** Reported on the language chip — clicking through
+  us -> ara -> tr lags visibly — and the user says the others feel the same.
+  Two candidates and they are separable: the chip's own poll interval (the
+  keyboard chip re-reads `hyprctl devices` every 3 s through a python
+  one-liner, so a click updates the GLYPH up to 3 s later even though the
+  layout changed instantly), and process-spawn latency per click. Measure
+  the gap between the dispatch and the repaint before changing either.
+* **The island's height twitches ~0.1 s after a rofi popup closes.** Opening
+  a rofi surface from the island and closing it leaves the capsule changing
+  height for about a tenth of a second and then returning. This is almost
+  certainly the same class as the picker bug already fixed — a height taken
+  from a panel that is not yet, or no longer, able to size itself — so the
+  three-line `onTargetHeightChanged` probe in THE ONE TASK applies directly.
+* **The topbar's theme sweep freezes rofi for ~0.4 s.** Picking a theme from
+  the rofi picker makes the rofi window itself freeze and glitch before the
+  new palette arrives. Note what the overlay does: it screenshots, freezes,
+  runs theme-apply behind the frozen frame, then reveals — and rofi is still
+  on screen when the shot is taken, so the frozen frame contains a rofi that
+  has already exited. Look at whether `theme-toggle` should close rofi and
+  settle BEFORE calling `theme-animate`.
+
+### The standing requirement
+
+**Every function and every case, in both bars, driven rather than read.**
+Both halves of the input synthesis exist now (`scripts/test/uinput-key.py`,
+`uinput-click.py` with `scroll`), every chip has an IPC or a script entry
+point, and `RMENU` is overridable in the rofi scripts. There is no control
+left in this desktop that can only be tested by hand — so the next pass
+should be a systematic sweep of the topbar's chips, the island's 24 states
+and the ten transition classes, not a spot check.
+
 # ALSO OPEN
 
 Ordered by how much they are worth.
