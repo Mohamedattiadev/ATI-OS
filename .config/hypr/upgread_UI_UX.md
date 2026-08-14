@@ -1421,3 +1421,87 @@ clicks on a panel this session had opened. Restored to oxocarbon.
 And twice, `pkill -f <pattern>` matched its own command line and killed the
 shell running it — once taking the island down for ~90 s because the restart
 line never ran. `pkill -x` on the process name, or the pattern in brackets.
+
+---
+
+# Audit — 2026-08-14, the reference repo
+
+## Ask #6's reference repo is this fork's own upstream
+
+`enhaoswen/Dynamic-island-on-hyprland` is not a second, more polished island
+to catch up to. It is **the former name of `enhaoswen/Tide-island`** — the
+repo this fork is vendored from. Cloning the URL in the ask lands on a README
+titled "Tide Island" whose own badges and release links point at
+`enhaoswen/Tide-island`.
+
+So the ask as written — "get the UI/UX up to the reference repo's polish" —
+has no gap to close in the direction it assumes. Measured:
+
+    vendored / installed   tide-island 1.0.34-1   (/usr/share/tide-island)
+    reference clone HEAD   1.0.35                 (PKGBUILD pkgver)
+
+One patch release apart. And the fork is the larger tree:
+
+    qml files, reference   57
+    qml files, fork        67
+    fork-only              29 files
+    reference-only          3 files (qml/connectivity/{BluetoothDeviceRow,
+                             ConnectivityDetailPanel,ConnectivityDetailShell})
+
+The three reference-only files are not missing features — the fork deleted
+them when it wrote its own `connectivity/WifiPanel.qml` and
+`connectivity/BluetoothPanel.qml`.
+
+## What 1.0.34 → 1.0.35 actually contains
+
+Diffed the *vendored baseline* against the reference clone rather than the
+fork against the reference, because that isolates upstream's changes from
+three sessions of deliberate divergence. Exactly two files differ:
+
+**1. `DynamicIslandWindow.qml`, two hunks.**
+
+  * `islandShowWorkspaceOnAutoHide` — a new config flag that reveals an
+    auto-hidden island on workspace change. Not taken yet; the fork has
+    `showAutoHiddenIsland(source)` already and this is a one-line call site,
+    but it is a behaviour change gated on a config key the fork's schema does
+    not carry.
+  * the notification-centre corner radius, `targetHeight * 40 / 165` →
+    `targetHeight * 36 / 165`. **Do not take this.** `faa424f` removed the
+    proportionality entirely, because a radius derived from panel height grows
+    with the notification count until the footer sits beside bare desktop.
+    Upstream adjusted the constant and kept the bug. This is the clearest
+    evidence in the diff that the fork is ahead, not behind.
+
+**2. `WallpaperPickerLayer.qml` — a search filter.**
+
+Upstream added `/`-to-search with a collapsible search bar. Phase 7 in this
+document gave the wallpaper picker type-to-jump instead, and rejected a
+filter for a specific measured reason: `allWallpapers` carries per-item
+thumbnail state and `wallpaperIndexByPath` maps path → index into it, so
+rebuilding the model for a subset invalidates the thumbnail bookkeeping.
+
+**Upstream's implementation is the receipt for that prediction.** To make the
+filter work it had to add a second `ListModel` (`filteredWallpapers`), a
+second index map (`filteredIndexByPath`), a `syncFilteredEntry()` that
+re-mirrors an item on every scan callback, a manual index-shift loop on
+removal, and a duplicate four-property write into the filtered model inside
+the thumbnail-finished handler:
+
+    filteredWallpapers.setProperty(filteredIdx, "thumbnailReady", true);
+    filteredWallpapers.setProperty(filteredIdx, "thumbnailRequested", true);
+    filteredWallpapers.setProperty(filteredIdx, "thumbnailSource", ...);
+    filteredWallpapers.setProperty(filteredIdx, "cacheRevision", revision);
+
+That is two descriptions of one list, which is the same failure shape as the
+"one layout, one arithmetic" rule. Not ported. Phase 7's remaining item is
+the theme picker, and that one is a GridView where a filter is correct.
+
+## What this means for ask #6
+
+There is no upstream polish to import. If the island is to look better than
+it does, the standard is the user's eye and this document's own audits, not a
+reference tree — the reference tree is 57 files of what this fork already
+vendored, one release stale, carrying a radius bug the fork has fixed.
+
+The one thing worth taking from 1.0.35 is `islandShowWorkspaceOnAutoHide`,
+and only if auto-hide is a mode the user actually runs.
