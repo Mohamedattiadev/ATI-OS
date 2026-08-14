@@ -46,8 +46,33 @@ import Quickshell.Hyprland
 Item {
     id: root
 
-    implicitWidth: row.implicitWidth
+    // ---- IT SITS ON A PLATE, LIKE EVERY OTHER WIDGET ON THAT BAR ----
+    //
+    // config.py's groupbox_widget() is `chip(ewidget.GroupBox, ...)` — the
+    // GroupBox is wrapped in the SAME RectDecoration every other widget on
+    // the top bar carries. This drew bare glyphs on the wallpaper, which is
+    // the "workspace's bg part" that was missing.
+    //
+    // margin_x=_s(8) / margin_y=_s(2) are the widget's margins INSIDE that
+    // chip, distinct from padding_x=8 which is each group's own padding. Both
+    // are reproduced: the margins here, the padding on the delegate.
+    property bool plated: true
+
+    implicitWidth: row.implicitWidth + (root.plated ? Metrics.s(8) * 2 : 0)
     implicitHeight: parent ? parent.height : Metrics.barHeight
+
+    Rectangle {
+        visible: root.plated
+        anchors.fill: parent
+        // The chip plate's own inset and radius, identical to Chip.qml's —
+        // RectDecoration padding_x=3 / padding_y=2, radius = half the plate.
+        anchors.leftMargin: Metrics.s(3)
+        anchors.rightMargin: Metrics.s(3)
+        anchors.topMargin: Metrics.s(2)
+        anchors.bottomMargin: Metrics.s(2)
+        radius: height / 2
+        color: BarTheme.plate
+    }
 
     // config.py gives the top bar's GroupBox fontsize=_s(10) and the bottom
     // bar's _s(12), so the size is the caller's to set rather than a constant.
@@ -199,14 +224,13 @@ Item {
                     anchors.centerIn: parent
                     text: root.labelFor(wsItem.modelData.name)
                     font.family: root.fontFor(wsItem.modelData.name)
-                    // The icons need more than the digits did. config.py gives
-                    // the GroupBox fontsize=_s(10), but that is the size of a
-                    // DIGIT in Ubuntu Bold; the same number in a Nerd Font
-                    // renders an icon noticeably smaller than qtile draws it,
-                    // because qtile-extras scales group icons up against the
-                    // bar height. Matched by eye against the real bar.
-                    font.pixelSize: root.groupLabels[String(wsItem.modelData.name)] !== undefined
-                        ? root.labelPixelSize + Metrics.s(3) : root.labelPixelSize
+                    // ONE size for every group, which is what config.py has:
+                    // fontsize=_s(10) and nothing per-label. An earlier
+                    // revision bumped the icons by 3 px "matched by eye" —
+                    // that was a guess, and a guess is exactly what "make it
+                    // identical" rules out. qtile renders the icon glyphs at
+                    // the same size as the digits.
+                    font.pixelSize: root.labelPixelSize
                     renderType: Text.NativeRendering
                     color: wsItem.focused ? BarTheme.purple
                         : wsItem.populated ? BarTheme.cyan

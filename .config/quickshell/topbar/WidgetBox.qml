@@ -35,7 +35,35 @@ Chip {
     text: root.open
         ? String.fromCodePoint(root.codepointOpen)
         : String.fromCodePoint(root.codepointClosed)
-    fontFamily: "Symbols Nerd Font"
+    // The FACE follows the codepoint, which is what qtile does implicitly by
+    // letting widget_defaults' font handle anything the Nerd Font set does
+    // not own. Two of these toggles are NOT Nerd Font icons and config.py
+    // says so at both: U+2716 is "a plain heavy multiplication X" and U+25B3
+    // "a plain geometric shape rather than an icon from the nerd font set,
+    // chosen for its silhouette". Forcing them through Symbols Nerd Font drew
+    // a different, heavier mark than qtile's — visible side by side against
+    // the real bar.
+    //
+    // U+E000 is the start of the private-use area, so this is the actual
+    // boundary between "Nerd Font glyph" and "ordinary character" rather than
+    // a list of exceptions to keep up to date.
+    //
+    // "Adwaita Mono" and not the bar's own "Ubuntu Bold", because Ubuntu has
+    // neither of these characters and the two toolkits then fall back
+    // DIFFERENTLY — that is the whole of the difference. Asked directly:
+    //
+    //     fc-match -s "Ubuntu Bold:charset=2716"
+    //       1. Adwaita Mono Regular        <- what pango, and so qtile, draws
+    //       2. Noto Sans Symbols 2
+    //       3. Font Awesome 7 Free Solid   <- what Qt was drawing: a heavy
+    //                                         filled cross, visibly bolder
+    //                                         than qtile's beside it
+    //
+    // Naming fontconfig's first choice explicitly makes Qt pick the face
+    // pango already picks, rather than leaving it to two different fallback
+    // orders to agree by luck.
+    fontFamily: (root.open ? root.codepointOpen : root.codepointClosed) < 0xE000
+        ? "Adwaita Mono" : "Symbols Nerd Font"
     clickable: true
 
     onClicked: root.open = !root.open

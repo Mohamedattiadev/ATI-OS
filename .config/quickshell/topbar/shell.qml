@@ -988,7 +988,11 @@ ShellRoot {
         let ch = " ↓ ";
         if (battery.state === UPowerDeviceState.Charging) ch = " ↑ ";
         else if (battery.state === UPowerDeviceState.FullyCharged) ch = "✔ ";
-        return String.fromCharCode(0xF240) + " " + ch + pct + "%";
+        // TWO spaces after the glyph, which is config.py's format string
+        // exactly: "\uf240  {char}{percent:2.0%}". One space sat the readout
+        // a couple of pixels left of qtile's — the sort of thing that only
+        // shows up with the two bars stacked on top of each other.
+        return String.fromCharCode(0xF240) + "  " + ch + pct + "%";
     }
 
     // ---- KEYBOARD LAYOUT ----
