@@ -1,0 +1,607 @@
+#!/usr/bin/env python3
+# ============================================================
+#  theme-wallpaper-gen — give every named theme a wallpaper that is
+#  actually in its palette, by recolouring one of the user's own images.
+#
+#  ---- WHY NOT JUST PICK THE CLOSEST IMAGE FROM THE LIBRARY ----
+#
+#  That was tried first, and measured, because the data to do it was
+#  already sitting there: ~/.cache/qtile/palettes/NNNN.json holds what
+#  wal-precompile derived from each of the 362 wallpapers — bg, bg_alt,
+#  fg, six accents. Scoring every image against every theme in CIELAB
+#  (the `score()` below is the same function) gives, per theme, the best
+#  the library can do:
+#
+#      oxocarbon      6.6     good
+#      github-dark    6.8     good
+#      ayu-mirage    11.4     good
+#      ... twelve themes in the 6-20 band ...
+#      everforest    29.3     weak
+#      matrix        38.8     bad
+#      mono-light   137.9     no such image exists
+#
+#  mono-light's 137.9 is 90.7 of background distance on its own: the
+#  library is 362 DARK wallpapers and mono-light's background is #ffffff.
+#  No amount of ranking finds a light wallpaper in a set that has none.
+#  matrix fails the same way on foreground — 108.3 — because nothing in
+#  the library is #00ff41 green.
+#
+#  So nine of twenty-one themes cannot be served by selection at any
+#  quality, and the fix has to make an image rather than find one.
+#
+#  ---- WHY NOT DOWNLOAD THEMED WALLPAPERS ----
+#
+#  The best collection found (yukazakiri/themed-wallpapers, 1100+ images,
+#  ~1 GB, itself generated with `gowall`) covers 22 palettes, but only 12
+#  of the 21 here BY NAME. doomone, monokai, rose-pine, kanagawa,
+#  oxocarbon, matrix, mono-dark, mono-light, palenight, ayu-mirage and
+#  github-dark are all absent. A gigabyte that leaves half the themes
+#  unsolved is not the answer to "half the themes are unsolved".
+#
+#  Recolouring covers all 21 uniformly, needs no new dependency (`gowall`
+#  is AUR-only; ImageMagick is already here and already used by
+#  boot-splash), and starts from images the user chose to keep.
+#
+#  ---- WHY THE BASE IMAGE IS STILL CHOSEN BY SCORE ----
+#
+#  Recolouring moves colours, not composition. Starting from the image
+#  whose tonal structure is ALREADY closest to the theme keeps the result
+#  looking like a photograph rather than a tinted one. So the same CIELAB
+#  ranking that could not solve the problem alone still picks the base —
+#  it just no longer has to be perfect.
+#
+#  Bases are assigned distinctly (see `assign()`): without that, 0015
+#  wins both doomone and nord, 0076 wins three, and the desktop shows the
+#  same photo in four different tints.
+#
+#  ---- GRADIENT MAP, NOT NEAREST-COLOUR REMAP ----
+#
+#  The first working version used `-dither FloydSteinberg -remap`, the way
+#  gowall does. It was replaced with a gradient map — convert to Gray,
+#  then look each luminance up in a 256-entry CLUT built from the theme —
+#  for three reasons that survive measurement:
+#
+#    * continuous tone. The remap output held 12-14 flat colours and
+#      banded visibly across skies; the CLUT interpolates between knots.
+#    * no dither. Floyd-Steinberg noise is what PNG cannot compress, and
+#      it is visible at 100% on a 1366x768 panel.
+#    * the accent lands by construction. A knot placed at the accent's own
+#      lightness puts gruvbox's #fabd2f in the highlights and mono-light's
+#      navy in the shadows, with no per-theme special-casing.
+#
+#  ---- AND A MEASUREMENT TRAP, WHICH COST MORE THAN THE FEATURE ----
+#
+#  The remap was FIRST replaced for a reason that turned out to be false,
+#  and the false reason is worth more than the true ones.
+#
+#  It appeared to darken every image: 0316.jpg measured 70% mean luminance
+#  going in and 40% coming out. A cause was found for it, and the cause was
+#  plausible — nearest-colour matching against a neutral palette minimises
+#  RGB distance, and the grey nearest a pixel is its CHANNEL AVERAGE, not
+#  its luma, so green foliage lands too dark. That explanation is sound.
+#  It was also not what was happening.
+#
+#  The 30-point drop was the MEASURING INSTRUMENT:
+#
+#      magick colour.jpg -colorspace Gray -format %[fx:mean] info:  -> 0.70
+#      magick colour.jpg -colorspace Gray  grey.png
+#      magick grey.png                -format %[fx:mean] info:      -> 0.40
+#
+#  The same conversion, read two ways. `-colorspace Gray` yields LINEAR
+#  grey in memory, and writing it to a file gamma-ENCODES it. So a colour
+#  input measured through that pipeline reads ~30 points brighter than a
+#  grey input measured the same way, and every colour-vs-grey comparison
+#  in this script was therefore rigged.
+#
+#  Re-measured with one formula applied identically to both — Rec709 luma
+#  over encoded sRGB channel means:
+#
+#      magick X -colorspace sRGB \
+#        -format "%[fx:0.2126*mean.r+0.7152*mean.g+0.0722*mean.b]" info:
+#
+#  the base is 40.2, the OLD REMAP gave 40.3, and the gradient map gives
+#  34.5. The remap never darkened anything. Both preserve luminance.
+#
+#  > If a metric is applied to two things, run it on two things KNOWN to
+#  > be equal first. Converting an image and measuring it must equal
+#  > measuring the converted file.
+#
+#  The output is JPEG, and that is a consequence of the same change. The
+#  remap produced 14 flat colours, which is exactly what PNG is good at;
+#  a gradient map produces continuous tone, which is exactly what it is
+#  bad at. Written as PNG the 21 files came to 45 MB — 3.9 MB for
+#  rose-pine alone. At q92 JPEG they are a few hundred KB each, and the
+#  library they sit beside is .jpg already.
+#
+#  ---- THE IMAGEMAGICK TRAP THIS SCRIPT WALKS PAST ----
+#
+#  mono-dark's palette is #000000 -> #0a0a0a -> #e0e0e0 plus a #b0b0b0
+#  accent: every channel equal, in every swatch. Written naively,
+#  ImageMagick stores that CLUT in the GRAY COLORSPACE, and a Gray-space
+#  CLUT drags the output into Gray space with it.
+#
+#  Measured, because the obvious guard is the wrong one:
+#
+#      magick ... +append mono.png
+#          -> type=Grayscale  space=Gray     <- the trap
+#      magick ... -colorspace sRGB -type TrueColor PNG24:mono.png
+#          -> type=Grayscale  space=sRGB     <- fixed, and STILL Grayscale
+#
+#  `-type TrueColor` does not change `%[type]`, and it is not supposed to:
+#  `%[type]` describes the CONTENT, and content that happens to be all
+#  grey reads as Grayscale however it is stored. Asserting on type would
+#  have rejected the correct file — it did, on the first run here, for all
+#  three test themes including matrix, whose palette is `Palette/sRGB`
+#  (indexed, 15 colours, perfectly fine).
+#
+#  So the assertion is on COLORSPACE, which is the thing that actually
+#  propagates. See `assert_srgb()`.
+#
+#  Usage:
+#      theme-wallpaper-gen              generate any that are missing
+#      theme-wallpaper-gen --force      regenerate all
+#      theme-wallpaper-gen --only nord  one theme
+#      theme-wallpaper-gen --dry-run    print the assignment, write nothing
+# ============================================================
+import argparse
+import json
+import math
+import os
+import subprocess
+import sys
+
+HOME = os.path.expanduser("~")
+PALETTE_CACHE = os.path.join(HOME, ".cache/qtile/palettes")
+THEME_LIST = os.path.join(HOME, ".dotfiles/.config/hypr/scripts/theme-list.sh")
+OUT_DIR = os.path.join(HOME, "Pictures/Wallpapers/themed")
+WORK_DIR = os.path.join(HOME, ".cache/qtile/theme-wall-work")
+
+# Capped rather than left at source size. 1920 is above every panel this
+# runs on (eDP-1 is 1366x768) and keeps each file to a few hundred KB.
+MAX_WIDTH = 1920
+
+# Stops in the neutral ramp, before the accent colours are added. These are
+# the knots of the CLUT, not the output's colour count — the gradient map
+# interpolates between them, so the result is continuous-tone.
+NEUTRAL_STOPS = 10
+
+# How far an accent knot is pulled from the grey of its own lightness toward
+# the accent proper. 1.0 is the full accent and was the first version; it
+# blooms — see the note in build_palette(). Tuned by eye against dracula and
+# cyberpunk-neon, the two themes whose accents are brightest relative to
+# their backgrounds and so the two that show it worst.
+ACCENT_STRENGTH = 0.55
+
+
+# ---- colour ------------------------------------------------------------
+
+def hex_to_rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def rgb_to_hex(rgb):
+    return "#%02x%02x%02x" % tuple(max(0, min(255, int(round(c)))) for c in rgb)
+
+
+def rgb_to_lab(rgb):
+    r, g, b = (c / 255.0 for c in rgb)
+
+    def lin(c):
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = lin(r), lin(g), lin(b)
+    x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047
+    y = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 1.00000
+    z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883
+
+    def f(t):
+        return t ** (1 / 3) if t > 216 / 24389 else (841 / 108) * t + 4 / 29
+    fx, fy, fz = f(x), f(y), f(z)
+    return (116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz))
+
+
+def lab_to_rgb(lab):
+    L, a, b = lab
+    fy = (L + 16) / 116
+    fx, fz = fy + a / 500, fy - b / 200
+
+    def finv(t):
+        return t ** 3 if t ** 3 > 216 / 24389 else (t - 4 / 29) * (108 / 841)
+    x, y, z = finv(fx) * 0.95047, finv(fy) * 1.00000, finv(fz) * 1.08883
+    r = 3.2406 * x - 1.5372 * y - 0.4986 * z
+    g = -0.9689 * x + 1.8758 * y + 0.0415 * z
+    bb = 0.0557 * x - 0.2040 * y + 1.0570 * z
+
+    def gam(c):
+        c = max(0.0, min(1.0, c))
+        return 12.92 * c if c <= 0.0031308 else 1.055 * (c ** (1 / 2.4)) - 0.055
+    return tuple(gam(c) * 255 for c in (r, g, bb))
+
+
+def de(h1, h2):
+    return math.dist(rgb_to_lab(hex_to_rgb(h1)), rgb_to_lab(hex_to_rgb(h2)))
+
+
+def lab_mix(h1, h2, t):
+    """Blend two hex colours in Lab, where a midpoint looks like a midpoint.
+
+    sRGB interpolation between a theme background and its accent goes
+    through a muddy dark band; Lab does not, and the ramp is the whole
+    point of this script.
+    """
+    a, b = rgb_to_lab(hex_to_rgb(h1)), rgb_to_lab(hex_to_rgb(h2))
+    return rgb_to_hex(lab_to_rgb(tuple(x + (y - x) * t for x, y in zip(a, b))))
+
+
+# ---- the theme's colour ramp -------------------------------------------
+
+def ramp_at_L(chain, target):
+    """The colour of a neutral chain at a given lightness."""
+    labs = [rgb_to_lab(hex_to_rgb(h)) for h in chain]
+    if len(labs) == 1:
+        return chain[0]
+    target = max(labs[0][0], min(labs[-1][0], target))
+    seg = 0
+    while seg < len(labs) - 2 and labs[seg + 1][0] < target:
+        seg += 1
+    a, b = labs[seg], labs[seg + 1]
+    span = b[0] - a[0]
+    t = 0.0 if abs(span) < 1e-6 else (target - a[0]) / span
+    t = max(0.0, min(1.0, t))
+    return rgb_to_hex(lab_to_rgb(tuple(x + (y - x) * t for x, y in zip(a, b))))
+
+
+def ramp_uniform_in_L(chain, n):
+    """Sample a chain of neutrals at evenly spaced LIGHTNESS, not evenly
+    spaced along the chain.
+
+    The difference is not cosmetic, and it was measured. Interpolating the
+    chain by segment gives each segment the same number of stops however
+    much lightness it spans. mono-light's neutrals sort to
+
+        #000000 (L 0) -> #e0e0e0 (L 89) -> #ffffff (L 100)
+
+    so half the ramp landed in the top ELEVEN points of lightness and the
+    midrange 71..89 had no stop at all — every pixel falling in that gap
+    snapped to the nearest stop below it, flattening the highlights.
+
+    (This was found while chasing a darkening that turned out to be a
+    measurement artifact — see the header. Fixing the ramp moved the mean
+    by 0.4%, which is how it was cleared as the cause. It is kept because
+    an uneven ramp is still wrong: it wastes knots where the theme has no
+    tonal range and starves the range where it does.)
+
+    Sampling by lightness costs nothing on themes whose neutrals happen to
+    be evenly spread, and fixes every theme whose bg and bg_alt sit close
+    together — which is most of them: gruvbox is #282828 / #1d2021, five
+    points apart, with fg 76 points above.
+    """
+    if len(chain) == 1:
+        return [chain[0]]
+    labs = [rgb_to_lab(hex_to_rgb(h)) for h in chain]
+    lo, hi = labs[0][0], labs[-1][0]
+    if hi - lo < 1e-6:
+        return [chain[0]]
+
+    out = []
+    for k in range(n):
+        target = lo + (hi - lo) * k / (n - 1)
+        # locate the segment spanning this lightness
+        seg = 0
+        while seg < len(labs) - 2 and labs[seg + 1][0] < target:
+            seg += 1
+        a, b = labs[seg], labs[seg + 1]
+        span = b[0] - a[0]
+        t = 0.0 if abs(span) < 1e-6 else (target - a[0]) / span
+        t = max(0.0, min(1.0, t))
+        out.append(rgb_to_hex(lab_to_rgb(tuple(x + (y - x) * t
+                                               for x, y in zip(a, b)))))
+    return out
+
+
+def build_palette(theme):
+    """Grow a 4-colour theme into the ~14 knots of its gradient map.
+
+    A theme is (bg, fg, bg_alt, accent) and nothing else — that is all
+    theme-apply's `presets` table stores. Remapping a photograph onto four
+    colours gives a poster, not a wallpaper, so the four are expanded:
+
+      * the three neutrals, sorted BY LIGHTNESS and interpolated along that
+        chain. Sorted, not assumed dark-to-light, because mono-light
+        inverts it — its bg is #ffffff and its fg is #000000, and a ramp
+        built on the assumption would run backwards and invert the image.
+
+      * accent knots, each DAMPED toward the neutral of its own lightness
+        rather than used at full strength. See ACCENT_STRENGTH.
+    """
+    bg, fg, alt, accent = theme["bg"], theme["fg"], theme["alt"], theme["accent"]
+
+    neutrals = sorted({bg, alt, fg}, key=lambda h: rgb_to_lab(hex_to_rgb(h))[0])
+    stops = ramp_uniform_in_L(neutrals, NEUTRAL_STOPS)
+
+    # Accent knots are placed at fractions of the accent's OWN lightness and
+    # each is pulled back toward the grey of that same lightness. Both halves
+    # of that matter, and both were added after looking at the output:
+    #
+    #   * At full strength the accent knot is a saturated island in an
+    #     otherwise neutral CLUT, so every tone near it ramps up to full
+    #     chroma and back down. dracula's mountains grew a purple halo and
+    #     cyberpunk-neon's clouds went solid cyan.
+    #
+    #   * Damping toward the neutral OF THE SAME LIGHTNESS, rather than
+    #     toward the ends of the ramp, is what keeps the hue honest. The
+    #     previous version mixed the accent toward the ramp's light end,
+    #     and mixing navy to white in Lab passes through PURPLE — which is
+    #     why mono-light, a theme whose entire palette is greys plus
+    #     #000080, had lavender trees. An off-palette colour in a themed
+    #     wallpaper is the one defect the whole script exists to avoid.
+    accent_L = rgb_to_lab(hex_to_rgb(accent))[0]
+    for frac in (0.55, 1.0):
+        L = accent_L * frac
+        neutral_here = ramp_at_L(neutrals, L)
+        stops.append(lab_mix(neutral_here, accent, ACCENT_STRENGTH))
+
+    seen, out = set(), []
+    for s in stops:
+        if s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
+
+def write_clut(colors, path):
+    """Write a 256x1 gradient mapping luminance -> theme colour.
+
+    Every palette colour is placed at the position of its OWN lightness,
+    then the gaps are interpolated in Lab. So the theme's accent lands
+    wherever the accent actually is on the tonal scale — gruvbox's #fabd2f
+    sits at L 80, so gruvbox highlights come out gold; mono-light's navy
+    sits at L 13, so its shadows go blue. Nothing has to be positioned by
+    hand and no theme needs a special case.
+    """
+    stops = {}
+    for c in colors:
+        L = rgb_to_lab(hex_to_rgb(c))[0]
+        stops[round(max(0.0, min(100.0, L)) * 2.55)] = c
+    if 0 not in stops:
+        stops[0] = min(colors, key=lambda c: rgb_to_lab(hex_to_rgb(c))[0])
+    if 255 not in stops:
+        stops[255] = max(colors, key=lambda c: rgb_to_lab(hex_to_rgb(c))[0])
+    keys = sorted(stops)
+
+    rows = []
+    for i in range(256):
+        if i in stops:
+            rows.append(hex_to_rgb(stops[i]))
+            continue
+        hi = next(k for k in keys if k > i) if i < keys[-1] else keys[-1]
+        lo = max(k for k in keys if k < i) if i > keys[0] else keys[0]
+        t = 0.0 if hi == lo else (i - lo) / (hi - lo)
+        rows.append(hex_to_rgb(lab_mix(stops[lo], stops[hi], t)))
+
+    txt = ["# ImageMagick pixel enumeration: 256,1,255,srgb"]
+    for i, (r, g, b) in enumerate(rows):
+        txt.append("%d,0: (%d,%d,%d)" % (i, r, g, b))
+    txt_path = path + ".txt"
+    open(txt_path, "w").write("\n".join(txt) + "\n")
+    subprocess.run(["magick", "txt:" + txt_path, "-colorspace", "sRGB",
+                    "-type", "TrueColor", "PNG24:" + path], check=True)
+    os.unlink(txt_path)
+    assert_srgb(path, 256)
+
+
+def assert_srgb(path, width):
+    """Read back what landed on disk, and check the COLORSPACE.
+
+    Not the type: see the Gray-colorspace note in the header. mono-dark's
+    gradient is grey in every channel and correctly reports type Grayscale;
+    what must never happen is colorspace Gray, which propagates into the
+    output.
+    """
+    got = subprocess.run(["identify", "-format", "%[colorspace] %w", path],
+                         capture_output=True, text=True, check=True).stdout
+    space, w = got.split()
+    if space != "sRGB":
+        raise SystemExit(
+            "theme-wallpaper-gen: %s landed in the %s colorspace, not sRGB — "
+            "it will drag the output into %s with it. Refusing to continue."
+            % (path, space, space))
+    if int(w) != width:
+        raise SystemExit(
+            "theme-wallpaper-gen: %s is %s px wide, expected %d."
+            % (path, w, width))
+
+
+# ---- inputs ------------------------------------------------------------
+
+def load_themes():
+    out = subprocess.run(["bash", THEME_LIST], capture_output=True,
+                         text=True, check=True).stdout
+    return [t for t in json.loads(out)["themes"] if not t.get("dynamic")]
+
+
+def load_walls():
+    walls = []
+    if not os.path.isdir(PALETTE_CACHE):
+        return walls
+    for fn in sorted(os.listdir(PALETTE_CACHE)):
+        if not fn.endswith(".json"):
+            continue
+        try:
+            p = json.load(open(os.path.join(PALETTE_CACHE, fn)))
+        except Exception:
+            continue
+        if not p.get("bg") or not p.get("accents"):
+            continue
+        if not os.path.isfile(p.get("wallpaper", "")):
+            continue
+        walls.append(p)
+    return walls
+
+
+def score(theme, wall):
+    """Lower is better. Weighted in the order the eye notices.
+
+    d_bg dominates because the image's dark base is most of the screen: a
+    gruvbox desktop over a blue-black photo reads as wrong before any
+    accent does. d_fg is quarter-weighted — fg is near-white in most
+    palettes so it rarely separates candidates, but it breaks ties toward
+    images whose light range matches the theme's text.
+    """
+    d_bg = de(theme["bg"], wall["bg"])
+    d_acc = min(de(theme["accent"], a) for a in wall["accents"])
+    d_fg = de(theme["fg"], wall["fg"])
+    return 1.00 * d_bg + 0.60 * d_acc + 0.25 * d_fg
+
+
+def assign(themes, walls):
+    """One distinct base image per theme, best-first.
+
+    Greedy over (score, theme, wall) globally rather than per theme: the
+    theme with the single best available match claims it first, so a theme
+    that has exactly one good candidate is not robbed by one that has
+    twenty. 0015 is otherwise taken by both doomone and nord, and 0076 by
+    tokyonight, nightowl and palenight.
+    """
+    pairs = sorted((score(t, w), t["name"], w["wallpaper"])
+                   for t in themes for w in walls)
+    chosen, used = {}, set()
+    for s, tname, path in pairs:
+        if tname in chosen or path in used:
+            continue
+        chosen[tname] = (path, s)
+        used.add(path)
+        if len(chosen) == len(themes):
+            break
+    return chosen
+
+
+# ---- generate ----------------------------------------------------------
+
+def generate(theme, base_path, out_path):
+    os.makedirs(WORK_DIR, exist_ok=True)
+    colors = build_palette(theme)
+    clut = os.path.join(WORK_DIR, "clut-%s.png" % theme["name"])
+    write_clut(colors, clut)
+
+    pre = [
+        "magick", base_path,
+        "-colorspace", "sRGB",
+        "-resize", "%dx>" % MAX_WIDTH,
+        "-colorspace", "Gray",
+        # Widen the tonal range before mapping. A photo that only occupies
+        # the middle of the histogram maps onto only the middle of the theme
+        # ramp, and the theme's bg and fg — the two colours the desktop is
+        # actually made of — never appear in its own wallpaper.
+        "-auto-level",
+    ]
+    grey = os.path.join(WORK_DIR, "grey-%s.miff" % theme["name"])
+    subprocess.run(pre + [grey], check=True)
+
+    tone = tone_correction(theme, grey)
+
+    tmp = out_path + ".tmp.jpg"
+    subprocess.run([
+        "magick", grey] + tone + [
+        # The CLUT is an IMAGE OPERAND, not an argument to -clut. Passing it
+        # as `-clut <path>` makes magick read the path as the output filename
+        # and die with "image sequence is required `-clut'".
+        clut, "-clut",
+        "-type", "TrueColor",
+        "-sampling-factor", "1x1",
+        "-quality", "92",
+        tmp,
+    ], check=True)
+    os.unlink(grey)
+    os.replace(tmp, out_path)
+    return colors
+
+
+def luma(path):
+    """Rec709 luma over ENCODED sRGB channel means, 0-100.
+
+    One formula, applied identically to colour and grey inputs. Using
+    `-colorspace Gray -format %[fx:mean]` instead is the trap in the
+    header — it reads ~30 points high on a colour image.
+    """
+    out = subprocess.run(
+        ["magick", path, "-colorspace", "sRGB", "-format",
+         "%[fx:100*(0.2126*mean.r+0.7152*mean.g+0.0722*mean.b)]", "info:"],
+        capture_output=True, text=True, check=True).stdout
+    return float(out)
+
+
+def tone_correction(theme, grey_path):
+    """Lift a LIGHT theme's wallpaper toward its own background.
+
+    A gradient map preserves the base image's luminance, which is right
+    for the twenty dark themes and wrong for the one light one. mono-light
+    is #ffffff on #000000: its desktop is white, and a 34%-luma wallpaper
+    under white windows reads as a dark wallpaper someone forgot to change.
+    Nothing in the ranking can fix that either — the library's brightest
+    candidate is still a normally-exposed photograph.
+
+    So light themes, and only light themes, get a gamma that puts the mean
+    near LIGHT_TARGET. Dark themes are returned untouched, deliberately:
+    their outputs measured within a few points of their bases and they look
+    right, and a "symmetrical" darkening rule would have flattened gruvbox
+    and everforest for the sake of tidiness.
+
+    Detected by comparing bg and fg lightness rather than by naming
+    mono-light, so a light theme added to theme-apply later is handled
+    without touching this file.
+    """
+    bg_l = rgb_to_lab(hex_to_rgb(theme["bg"]))[0]
+    fg_l = rgb_to_lab(hex_to_rgb(theme["fg"]))[0]
+    if bg_l <= fg_l:
+        return []
+
+    LIGHT_TARGET = 68.0
+    current = luma(grey_path)
+    if current <= 1.0 or current >= 99.0:
+        return []
+    # mean^(1/g) = target, in 0..1
+    g = math.log(current / 100.0) / math.log(LIGHT_TARGET / 100.0)
+    g = max(0.4, min(3.0, g))
+    return ["-gamma", "%.4f" % g]
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--only", default=None)
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
+
+    themes = load_themes()
+    walls = load_walls()
+    if not walls:
+        raise SystemExit(
+            "theme-wallpaper-gen: no usable palettes in %s — run "
+            "`wal-precompile` first." % PALETTE_CACHE)
+
+    chosen = assign(themes, walls)
+    os.makedirs(OUT_DIR, exist_ok=True)
+
+    print("%-16s %-10s %7s   %s" % ("theme", "base", "score", "output"))
+    for t in themes:
+        name = t["name"]
+        if args.only and name != args.only:
+            continue
+        base, s = chosen[name]
+        out = os.path.join(OUT_DIR, "%s.jpg" % name)
+        if args.dry_run:
+            print("%-16s %-10s %7.1f   (dry run)"
+                  % (name, os.path.basename(base), s))
+            continue
+        if os.path.exists(out) and not args.force:
+            print("%-16s %-10s %7.1f   kept" % (name, os.path.basename(base), s))
+            continue
+        generate(t, base, out)
+        kb = os.path.getsize(out) // 1024
+        print("%-16s %-10s %7.1f   %s (%d KB)"
+              % (name, os.path.basename(base), s, out, kb))
+
+
+if __name__ == "__main__":
+    sys.exit(main())
