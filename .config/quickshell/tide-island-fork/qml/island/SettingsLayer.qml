@@ -694,7 +694,7 @@ FocusScope {
     // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
     //
     // The header was "Island settings" at font(15) in heroFontFamily with
-    // `color: "white"`; instrument register now.
+    // `color: IslandTheme.textPrimary`; instrument register now.
     PanelChrome {
         id: chrome
         textFontFamily: root.textFontFamily

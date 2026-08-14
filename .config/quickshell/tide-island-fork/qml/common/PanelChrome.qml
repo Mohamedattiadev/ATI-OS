@@ -33,7 +33,7 @@ import "Motion.js" as Motion
 // The tree had two, cleanly split:
 //
 //   A. hero      heroFontFamily, font(15), DemiBold, letterSpacing -0.2,
-//                `color: "white"`   — Audio, Settings, Calendar, Power,
+//                `color: IslandTheme.textPrimary`   — Audio, Settings, Calendar, Power,
 //                                     Display
 //   B. instrument textFontFamily, font(10), DemiBold, AllUppercase,
 //                letterSpacing 1.6, textMuted, then a "· status" clause that

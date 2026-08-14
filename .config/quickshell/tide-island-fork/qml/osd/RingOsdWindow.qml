@@ -138,7 +138,7 @@ PanelWindow {
             // separation from being flush to the bezel; a floating plate has
             // nothing behind it, so it needs an edge.
             border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.07)
+            border.color: IslandTheme.alpha(IslandTheme.ink, 0.07)
 
             // The plate scales very slightly on appear. 0.96 -> 1, which is
             // enough to read as arriving without being a pop.
@@ -177,7 +177,7 @@ PanelWindow {
                 height: width
                 progress: root.progress
                 lineWidth: Metrics.px(4)
-                trackColor: Qt.rgba(1, 1, 1, 0.14)
+                trackColor: IslandTheme.alpha(IslandTheme.ink, 0.14)
                 fillColor: root.accentColor
                 // No core disc: the plate behind it already is one, and two
                 // concentric fills is what made the island's first OSD read

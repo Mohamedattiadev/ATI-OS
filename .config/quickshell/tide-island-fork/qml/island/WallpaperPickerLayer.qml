@@ -800,7 +800,7 @@ FocusScope {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "WALLPAPER"
-                    color: Qt.rgba(1, 1, 1, 0.55)
+                    color: IslandTheme.alpha(IslandTheme.ink, 0.55)
                     font.family: root.textFontFamily
                     font.pixelSize: Metrics.font(9.5)
                     font.weight: Font.DemiBold
@@ -816,7 +816,7 @@ FocusScope {
                     // there are, so "12 / 87" is the only thing on screen that
                     // says how far in you are.
                     text: "· " + (pathView.currentIndex + 1) + " / " + allWallpapers.count
-                    color: Qt.rgba(1, 1, 1, 0.34)
+                    color: IslandTheme.alpha(IslandTheme.ink, 0.34)
                     font.family: root.textFontFamily
                     font.pixelSize: Metrics.font(9.5)
                     font.weight: Font.Medium
@@ -882,14 +882,14 @@ FocusScope {
                     text: !root.wallpapersLoaded ? "Scanning…" : "\uf03e"
                     font.pixelSize: !root.wallpapersLoaded ? 12 : 26
                     font.family: !root.wallpapersLoaded ? root.textFontFamily : root.iconFontFamily
-                    color: Qt.rgba(1, 1, 1, 0.22)
+                    color: IslandTheme.alpha(IslandTheme.ink, 0.22)
                 }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     visible: root.wallpapersLoaded && allWallpapers.count === 0
                     text: "No wallpapers found\nin " + root.displayPath(root.wallpaperDir)
                     horizontalAlignment: Text.AlignHCenter
-                    color: Qt.rgba(1, 1, 1, 0.22)
+                    color: IslandTheme.alpha(IslandTheme.ink, 0.22)
                     font.pixelSize: Metrics.font(11)
                     font.family: root.textFontFamily
                     lineHeight: 1.5
@@ -1058,7 +1058,7 @@ FocusScope {
                             anchors.horizontalCenter: parent.horizontalCenter
                             width: root.cardW - 4
                             text: model.fileName
-                            color: del.isCurrent ? "white" : Qt.rgba(1, 1, 1, 0.50)
+                            color: del.isCurrent ? "white" : IslandTheme.alpha(IslandTheme.ink, 0.50)
                             font.pixelSize: del.isCurrent ? 11 : 10
                             font.family: root.textFontFamily
                             font.weight: del.isCurrent ? Font.Medium : Font.Normal

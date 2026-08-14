@@ -5779,7 +5779,7 @@ PanelWindow {
                 anchors.centerIn: parent
                 anchors.horizontalCenterOffset: -1
                 text: "󰔛"
-                color: "white"
+                color: IslandTheme.textPrimary
                 font.pixelSize: root.iconFontSize - 1
                 font.family: root.iconFontFamily
                 font.weight: Font.DemiBold

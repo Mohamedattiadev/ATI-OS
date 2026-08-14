@@ -1917,7 +1917,7 @@ Item {
                         // Toward the INK, not toward white. A highlight is
                         // "the side the light comes from"; on a light surface
                         // that direction is darker, not brighter, and
-                        // `Qt.rgba(1,1,1,0.07)` gets it backwards there.
+                        // `IslandTheme.alpha(IslandTheme.ink, 0.07)` gets it backwards there.
                         color: IslandTheme.alpha(IslandTheme.ink, 0.07)
                     }
 

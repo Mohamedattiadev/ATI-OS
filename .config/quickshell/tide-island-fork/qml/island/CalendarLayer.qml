@@ -369,7 +369,7 @@ FocusScope {
     // The weekday is the TITLE and the full date is the status clause, which
     // is a better fit than the hero register this panel used to use: the
     // weekday is what you opened the panel to see, and the date beside it is
-    // the qualifier. It also loses `color: "white"`, which was wrong ink on
+    // the qualifier. It also loses `color: IslandTheme.textPrimary`, which was wrong ink on
     // mono-light.
     PanelChrome {
         id: chrome

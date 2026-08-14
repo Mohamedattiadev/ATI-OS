@@ -811,7 +811,7 @@ FocusScope {
     // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
     //
     // The header was "Display" at pixelSize 15 in heroFontFamily with
-    // `color: "white"`; it is the instrument register now. The literal white
+    // `color: IslandTheme.textPrimary`; it is the instrument register now. The literal white
     // was not merely a style — on mono-light, the one palette of 21 whose
     // surface lands on the light side, it is the wrong ink.
     PanelChrome {

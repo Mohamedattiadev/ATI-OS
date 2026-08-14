@@ -922,7 +922,7 @@ FocusScope {
         y: dialRow.y + dialRow.height + Metrics.pad(14)
         width: chrome.contentWidth
         height: 1
-        // This was an explicit Qt.rgba(1, 1, 1, 0.08), carrying a note that
+        // This was an explicit IslandTheme.alpha(IslandTheme.ink, 0.08), carrying a note that
         // StyleTokens.hairline does not exist and that an unknown property
         // on a QML singleton is not an error — it resolves to `undefined`,
         // which a `color` silently accepts as transparent, so the separator

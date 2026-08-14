@@ -5,18 +5,29 @@
 #   lock-player.sh status   a transport glyph, or nothing at all
 #   lock-player.sh art      refresh the album-art file; prints its path
 #
-# WHY A READOUT AND NOT A TRANSPORT
-# ---------------------------------
-# Asked for as "i wish if it had a player in it". hyprlock 0.9.6 has four
-# widget types — background, image, shape, label — and an `input-field`.
-# There is no button, no click target and no keybinding surface: the only
-# key it reads is the password. So a play/pause control cannot be built
-# here, and pretending otherwise would mean drawing buttons that do nothing.
+# IT IS A REAL TRANSPORT, AND THE FIRST PASS SAID IT COULD NOT BE
+# ---------------------------------------------------------------
+# That pass wrote, in this header: "hyprlock 0.9.6 has four widget types
+# and an input-field. There is no button, no click target and no keybinding
+# surface, so a play/pause control cannot be built here."
 #
-# What CAN be built is the part you actually want on a lock screen: what is
-# playing, who it is by, and whether it is paused. The hardware media keys
-# keep working while locked — they are compositor binds, not client ones —
-# so the transport is already there and this is the missing display for it.
+# The widget LIST was right and the conclusion was wrong, because it was
+# drawn from the list instead of from the program. hyprlock's `label` takes
+# an `onclick`:
+#
+#     strings /usr/bin/hyprlock | grep -x onclick
+#
+# and it sits in the label option table between `shadow_boost` and the
+# widget defaults. The parser also rejects unknown keys loudly — that is how
+# `general:grace`, `no_fade_in` and `disable_loading_bar` were caught — so a
+# config carrying `onclick` and drawing no complaint is a config whose
+# `onclick` is real.
+#
+# So the card has < play/pause > buttons that run `playerctl`, asked for as
+# "make it minimal and has the player < = >". The hardware media keys keep
+# working too — they are compositor binds, not client ones — but they were
+# never the point: you cannot press a key you cannot see, on a screen whose
+# whole job is to be looked at.
 #
 # EVERYTHING PRINTS EMPTY WHEN NOTHING IS PLAYING
 # -----------------------------------------------
@@ -25,6 +36,22 @@
 # is why every path here exits 0 with no output rather than printing a dash
 # or "Nothing playing" — a lock screen with a permanent empty music card is
 # worse than one with no card.
+#
+# ---- THE TWO IMAGEMAGICK TRAPS THIS SCRIPT IS WRITTEN AROUND ----
+#
+# Inherited from scripts/lock-assets.sh, which generated the avatar and the
+# gradient this lock screen no longer draws and which is deleted. Both traps
+# fail SILENTLY and both still apply to the album art below:
+#
+#   1. A canvas with no colour in it is written as GREYSCALE. ImageMagick
+#      picks the narrowest encoding that round-trips the pixels it has, so a
+#      fully transparent 1x1 comes out grey — which then cannot be
+#      composited against a colour image, and reports no error at any point.
+#      Every write here is forced through `PNG32:` and `-colorspace sRGB`.
+#
+#   2. `-alpha shape` on an image with NO alpha channel silently does
+#      nothing. Nothing here relies on it any more — the art is square and
+#      hyprlock rounds it — but the next person to add a mask should know.
 #
 # NO `playerctl --follow`. hyprlock re-runs the command on its own timer,
 # so a long-lived follower would be a second process per label with nothing
@@ -35,9 +62,8 @@ set -uo pipefail
 CACHE_DIR="$HOME/.cache/tide-island"
 ART="$CACHE_DIR/lock-art.png"
 # 1x1 fully transparent, so the image widget has something valid to draw
-# when there is no art. hyprlock EXITS if an `image` path does not resolve —
-# the same class of failure as the framebuffer bug in lock-assets.sh — so
-# "no art" has to be a real file, not a missing one.
+# when there is no art. hyprlock EXITS if an `image` path does not resolve,
+# so "no art" has to be a real file, not a missing one.
 BLANK="$CACHE_DIR/lock-art-blank.png"
 
 have_player() {
@@ -89,12 +115,43 @@ status)
         *)       : ;;
     esac
     ;;
+prev|next|toggle)
+    # ---- THE TRANSPORT GLYPHS ----
+    #
+    # Printed by a script rather than written into hyprlock.conf as literal
+    # text, for one reason: they have to VANISH when nothing is playing.
+    # hyprlock draws a label's text and nothing else, so an empty string is
+    # an invisible widget — but a literal glyph in the config is always
+    # there, and three dead buttons under an empty card is worse than no
+    # card at all.
+    #
+    # ALL BMP private-use codepoints, and that is deliberate rather than
+    # incidental: the SUPPLEMENTARY private-use glyphs this Nerd Font also
+    # carries (U+F022C and neighbours) do not render in this stack at all —
+    # measured in the island's picker, where the font HAS the glyph, the
+    # widget draws a BMP one in the same face, and the supplementary one
+    # paints nothing. Anything drawn on this surface stays in the BMP block.
+    #
+    #   U+F048 step-backward   U+F04B play   U+F04C pause   U+F051 step-forward
+    have_player || exit 0
+    case "$1" in
+        prev)   printf '\uf048' ;;
+        next)   printf '\uf051' ;;
+        toggle)
+            # The button shows what pressing it DOES, which is the opposite
+            # of the current state: playing means the button offers pause.
+            case "$(playerctl -s status 2>/dev/null)" in
+                Playing) printf '\uf04c' ;;
+                *)       printf '\uf04b' ;;
+            esac
+            ;;
+    esac
+    ;;
 art)
     mkdir -p "$CACHE_DIR"
-    # The blank is generated once and reused. PNG32 + sRGB for the reason
-    # lock-assets.sh names at its top: ImageMagick writes the narrowest
-    # encoding that round-trips, and a fully transparent canvas comes out
-    # greyscale, which then cannot be composited against a colour image.
+    # The blank is generated once and reused. PNG32 + sRGB for trap 1 in
+    # the header: a fully transparent canvas is written greyscale
+    # otherwise, and greyscale cannot composite against a colour image.
     [ -f "$BLANK" ] || magick -size 1x1 xc:none -colorspace sRGB "PNG32:$BLANK" 2>/dev/null
 
     if ! have_player; then
@@ -142,7 +199,7 @@ art)
     printf '%s' "$ART"
     ;;
 *)
-    echo "usage: lock-player.sh text|status|art" >&2
+    echo "usage: lock-player.sh text|status|art|prev|next|toggle" >&2
     exit 2
     ;;
 esac

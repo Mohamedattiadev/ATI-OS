@@ -50,7 +50,7 @@ Item {
     // assignment: color expected" — which fails the whole component, and
     // with it every parent up to shell.qml. Moving the value out of the
     // paint call and into a property is exactly what changed its type.
-    property color trackColor: Qt.rgba(1, 1, 1, 0.16)
+    property color trackColor: IslandTheme.alpha(IslandTheme.ink, 0.16)
     property color fillColor: IslandTheme.textPrimary
 
     // The dark disc behind the arc. OsdLayer's ring has one; a ring drawn

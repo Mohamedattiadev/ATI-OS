@@ -289,7 +289,7 @@ Item {
                                 return IslandTheme.danger;
                             return "white";
                         }
-                        readonly property color emptyColor: Qt.rgba(1, 1, 1, 0.56)
+                        readonly property color emptyColor: IslandTheme.alpha(IslandTheme.ink, 0.56)
 
                         Rectangle {
                             id: batteryBody

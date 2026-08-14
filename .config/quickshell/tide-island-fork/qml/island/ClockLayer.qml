@@ -4,7 +4,7 @@ import IslandBackend
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
 // FORK: IslandTheme, for the clock's colour — see the sweep that removed the
-// 29 hardcoded `color: "white"` from this tree.
+// 29 hardcoded `color: IslandTheme.textPrimary` from this tree.
 import "../common"
 
 Item {

@@ -687,7 +687,7 @@ accent_of_mode() {
     synthwave)      echo "#36f9f6" ;;
     matrix)         echo "#00ff9f" ;;
     mono-dark)      echo "#b0b0b0" ;;
-    mono-light)     echo "#000080" ;;
+    mono-light)     echo "#1a5fd0" ;;
     nightowl)       echo "#82aaff" ;;
     onedark)        echo "#61afef" ;;
     palenight)      echo "#82b1ff" ;;
@@ -977,7 +977,7 @@ PYEOF
   synthwave) gen_all_theme_css "#241b30" "#1a1428" "#f4e9d0" "#fe4450" "#72f1b8" "#fede5d" "#03edf9" "#c792ea" "#36f9f6" ;;
   matrix)    gen_all_theme_css "#000000" "#0a0a0a" "#00ff41" "#ff0000" "#00ff41" "#c0ff00" "#008f11" "#00b849" "#00ff9f" ;;
   mono-dark) gen_all_theme_css "#000000" "#0a0a0a" "#e0e0e0" "#808080" "#a0a0a0" "#c0c0c0" "#a0a0a0" "#909090" "#b0b0b0" ;;
-  mono-light) gen_all_theme_css "#ffffff" "#e0e0e0" "#000000" "#c00000" "#006000" "#805000" "#000080" "#600060" "#005080" ;;
+  mono-light) gen_all_theme_css "#f4f4f2" "#e4e4e0" "#1c1c1c" "#c00000" "#006000" "#805000" "#1a5fd0" "#600060" "#005080" ;;
   nightowl)  gen_all_theme_css "#011627" "#010e1a" "#d6deeb" "#ef5350" "#22da6e" "#ffeb95" "#82aaff" "#c792ea" "#7fdbca" ;;
   onedark)   gen_all_theme_css "#282c34" "#21252b" "#abb2bf" "#e06c75" "#98c379" "#e5c07b" "#61afef" "#c678dd" "#56b6c2" ;;
   palenight) gen_all_theme_css "#292d3e" "#1e2030" "#a6accd" "#f07178" "#c3e88d" "#ffcb6b" "#82b1ff" "#c792ea" "#89ddff" ;;
@@ -1081,7 +1081,7 @@ if [[ -f "$DUNST_TMPL" ]]; then
     synthwave) render_dunstrc "#241b30" "#f4e9d0" "#3d1f2a" "#ffdada" "#36f9f6" "#72f1b8" "#fe4450" ;;
     matrix)    render_dunstrc "#000000" "#00ff41" "#1a0000" "#ffdada" "#00ff9f" "#00ff41" "#ff0000" ;;
     mono-dark) render_dunstrc "#000000" "#e0e0e0" "#2a2a2a" "#ffdada" "#b0b0b0" "#a0a0a0" "#808080" ;;
-    mono-light) render_dunstrc "#ffffff" "#000000" "#ffd0d0" "#600000" "#000080" "#006000" "#c00000" ;;
+    mono-light) render_dunstrc "#f4f4f2" "#1c1c1c" "#ffd0d0" "#600000" "#1a5fd0" "#006000" "#c00000" ;;
     nightowl)  render_dunstrc "#011627" "#d6deeb" "#3d1f2a" "#ffdada" "#82aaff" "#22da6e" "#ef5350" ;;
     onedark)   render_dunstrc "#282c34" "#abb2bf" "#3d1f2a" "#ffdada" "#61afef" "#98c379" "#e06c75" ;;
     palenight) render_dunstrc "#292d3e" "#a6accd" "#3d1f2a" "#ffdada" "#82b1ff" "#c3e88d" "#f07178" ;;
@@ -1180,7 +1180,7 @@ case "$MODE" in
   synthwave) gen_gtk_css "#241b30" "#1a1428" "#f4e9d0" "#36f9f6" "#fe4450" "#72f1b8" ;;
   matrix)    gen_gtk_css "#000000" "#0a0a0a" "#00ff41" "#00ff9f" "#ff0000" "#00ff41" ;;
   mono-dark) gen_gtk_css "#000000" "#0a0a0a" "#e0e0e0" "#b0b0b0" "#808080" "#a0a0a0" ;;
-  mono-light) gen_gtk_css "#ffffff" "#e0e0e0" "#000000" "#000080" "#c00000" "#006000" ;;
+  mono-light) gen_gtk_css "#f4f4f2" "#e4e4e0" "#1c1c1c" "#1a5fd0" "#c00000" "#006000" ;;
   nightowl)  gen_gtk_css "#011627" "#010e1a" "#d6deeb" "#82aaff" "#ef5350" "#22da6e" ;;
   onedark)   gen_gtk_css "#282c34" "#21252b" "#abb2bf" "#61afef" "#e06c75" "#98c379" ;;
   palenight) gen_gtk_css "#292d3e" "#1e2030" "#a6accd" "#82b1ff" "#f07178" "#c3e88d" ;;
@@ -1622,7 +1622,32 @@ else:
       "synthwave": ("#241b30","#f4e9d0","#1a1428","#36f9f6"),
       "matrix":    ("#000000","#00ff41","#0a0a0a","#00ff9f"),
       "mono-dark": ("#000000","#e0e0e0","#0a0a0a","#b0b0b0"),
-      "mono-light":("#ffffff","#000000","#e0e0e0","#000080"),
+      # mono-light was (#ffffff, #000000, #e0e0e0, #000080) and was
+      # reported as "too bad, the text inside not readable and the light
+      # is too bad". Three separate faults, all from taking "mono" to
+      # mean the extremes of the axis rather than a range along it:
+      #
+      #   #ffffff  a full-white desktop is glare, not a light theme. No
+      #            shipped light theme uses it — Solarized Light is
+      #            #fdf6e3, GitHub Light #ffffff only for CARDS over a
+      #            grey page. It also leaves bg_alt nowhere to go but
+      #            darker, so every raised surface reads as a hole.
+      #   #000000  maximum contrast is not maximum readability. Pure
+      #            black on pure white is the pairing every typographic
+      #            guide names as fatiguing.
+      #   #000080  navy at 12% luminance on a 100% background. It is
+      #            the accent, so it lands on the smallest text and the
+      #            thinnest strokes, and at that size it reads as black.
+      #
+      # The new accent is #1a5fd0 rather than the brighter #2f6fed it
+      # was first set to: 4.13:1 against the page fails WCAG AA for
+      # normal text, and an ACCENT is exactly what lands on small
+      # text. 5.31:1 clears it with the hue still legible as blue.
+      #
+      # Now a warm off-white page, near-black ink, a bg_alt that is a
+      # real step rather than a shadow, and an accent with enough chroma
+      # to be seen as a colour at 10 px.
+      "mono-light":("#f4f4f2","#1c1c1c","#e4e4e0","#1a5fd0"),
       "nightowl":  ("#011627","#d6deeb","#010e1a","#82aaff"),
       "onedark":   ("#282c34","#abb2bf","#21252b","#61afef"),
       "palenight": ("#292d3e","#a6accd","#1e2030","#82b1ff"),

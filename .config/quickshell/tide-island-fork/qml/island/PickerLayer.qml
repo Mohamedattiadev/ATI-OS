@@ -1064,7 +1064,7 @@ FocusScope {
             color: IslandTheme.surfaceSunken
             radius: Metrics.px(4)
             border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.08)
+            border.color: IslandTheme.alpha(IslandTheme.ink, 0.08)
 
             Image {
                 id: preview

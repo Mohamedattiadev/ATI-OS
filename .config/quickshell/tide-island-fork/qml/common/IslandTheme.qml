@@ -290,7 +290,27 @@ Singleton {
     // same fills at 1.3–2.2%. Both orderings agree; only the scale differs,
     // and the note is here so the two sets of numbers in this file do not
     // read as a contradiction.)
-    readonly property real darkenTowardBlack: 0.45
+    // ---- THE DARKENING IS NOT THE SAME ON A LIGHT PALETTE ----
+    //
+    // 0.45 was a constant, and on the twenty dark palettes it is right: the
+    // background is already near-black, dragging it further makes bezel.
+    //
+    // On mono-light it drags a #f4f4f2 page to a mid-grey slab. Reported as
+    // "the light is too bad" alongside the unreadable text, and it is the
+    // same mistake in a different place — treating "darker than the page" as
+    // a fixed AMOUNT rather than as a relationship. A bezel on a light
+    // machine is light grey; it is not the same grey a dark machine uses.
+    //
+    // 0.10 there, which takes #f4f4f2 to about #dcdcda: still visibly a
+    // step down from the page, still reads as an inset frame, and it leaves
+    // the surface pale enough that `surfaceIsDark` stays false and the ink
+    // stays dark. At 0.45 the surface luminance lands near the 0.18 flip and
+    // the panel was one palette tweak away from choosing white ink on grey.
+    //
+    // Keyed off `background` and NOT off `surface`: surface IS shellFill,
+    // which is what this computes, so reading it here is a binding cycle.
+    readonly property bool backgroundIsLight: root.luminance(root.background) >= 0.18
+    readonly property real darkenTowardBlack: root.backgroundIsLight ? 0.10 : 0.45
     readonly property real accentMix: 0.08
 
     readonly property color shellFill: {

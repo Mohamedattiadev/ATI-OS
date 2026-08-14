@@ -907,7 +907,7 @@ FocusScope {
 
     // ---- CHROME, SHARED ---- see qml/common/PanelChrome.qml.
     //
-    // The header was `color: "white"` at font(15) in heroFontFamily; it is the
+    // The header was `color: IslandTheme.textPrimary` at font(15) in heroFontFamily; it is the
     // instrument register now, which is the one the shell settled on. See the
     // register argument in PanelChrome for why, and note that the literal
     // "white" was a real defect rather than a style: on mono-light it is the
