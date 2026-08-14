@@ -1961,3 +1961,142 @@ live preview for the cheap numeric settings keys,
 `islandShowWorkspaceOnAutoHide`, scratchpads on a second monitor, keybind
 latency, `layout-cycle.sh`'s 7 hyprctl invocations, and what killed the
 two socket listeners. None were touched in this pass.
+
+# Session: the eleven-item list, plus five added mid-session
+
+Every item below was measured on the live session unless it says otherwise.
+Where a previous round's conclusion turned out to be wrong, the wrong
+conclusion is kept beside the correction — the pattern in it is worth more
+than the fix.
+
+## The theme change's glitch was one line, and it was the wrong half of a pair
+
+`ThemeTransitionWindow` covered `1366x735 @ 0,33`. 33 px is the island's own
+exclusive zone, and the cover was declared with `exclusiveZone: 0` — which
+does not mean "claim nothing". Assigning it at all puts a layer surface into
+Normal mode, and Normal mode is laid out inside every earlier surface's
+reservation. So the one surface sitting above the whole desktop was the one
+surface the cover never covered.
+
+All three reported symptoms fall out of that geometry: the frozen frame is a
+full-screen grab drawn into a shorter box, so the island inside the image
+lands 33 px below the live island (the "glitch" — you see the notch twice);
+the uncovered top strip repaints live at 0.11 s while the rest stays frozen
+(the "small part of new theme"); and the sweep arrives a second and a half
+later.
+
+`ScreenCornersWindow.qml` had the whole post-mortem already written, same
+surface size, same y=33, including the warning that `exclusiveZone: 0`
+silently undoes the fix. It had not been applied here. **A fix written up in
+one file is not a fix applied to the tree** — that is the third time this
+repo has paid for the same class of thing.
+
+## A bare `wait` collects jobs the line above it did not start
+
+theme-apply's kitty fan-out ends in `wait`, and a bare `wait` waits for every
+background job the shell still owns. The qtile restart-veil call at the top of
+the script was backgrounded and never disowned, so it was one of them — and
+under Hyprland qtile is not running, so it only fails after its own timeout:
+
+    qtile veil call, qtile not running .... 503 ms
+    kitty set-colors, per socket ..........  30 ms  (3 sockets, parallel)
+
+Its own comment said "this must never delay or fail the theme change".
+
+    wait cost   0.363 s -> 0.070 s
+    marker      1.183 s -> 0.930 / 1.075 / 1.131 s   (three spaced runs)
+
+The marker moves ~110 ms rather than the full 280: the job is disowned, not
+cancelled, and still competes for one of four cores.
+
+## A failed reload keeps the previous build running
+
+The rule on the page was "compare the last Configuration Loaded against the
+file's mtime". It is now also: **grep for `Failed to load configuration`.**
+
+A reload that errors writes no new "Configuration Loaded" at all, so the
+absence is indistinguishable from a watcher that never fired — and the shell
+keeps serving the last good build. Three consecutive diagnostics were run
+against a stale shell and read as evidence about new code that had never
+loaded. The cause was a duplicate `iconFontFamily` added after reading eight
+lines of context instead of the whole block; "Property value set multiple
+times" fails the component, not the line.
+
+## The glass was four rounds of tuning the wrong target
+
+DESIGN-SPEC.md records the video author's own preset — chromatic_aberration
+0.8, lens_distortion 0.9, contrast 1.7, vibrancy 0.8 — and this config chose
+`apple` instead, quoting his warning about cranking every slider. Three
+rounds then tuned `apple` and each was a real improvement on the one before.
+None could land, because the thing being pointed at was the preset he
+actually runs. **Following his advice instead of his settings.**
+
+Named `videoglass`, not `glass`: the plugin ships a built-in by that name and
+re-issuing an existing name is silently dropped.
+
+                  RMSE vs off     mean luminance
+    off              0            0.264
+    apple            0.046        0.239
+    videoglass       0.068        0.205
+
+One measurement was thrown away first: `tagwindow -hyprglass_disabled`
+answers `ok` and leaves the tag on, so an A/B that disables glass to get a
+baseline poisons the window for every later reading. Spawn a fresh window
+per measurement; do not untag one.
+
+## "Multi-select cannot be expressed in the picker protocol" was wrong
+
+submaps.conf said porting `rofi_ilovepdf` meant either building selection
+state into PickerLayer or shipping a toolkit that had lost merge. One id per
+page is not a limit when the page comes back: `tog:<path>` toggles a file in
+a set held under `$XDG_RUNTIME_DIR` and returns the same page re-rendered
+with ticks and a running order. PickerLayer was not touched.
+
+Same shape of mistake island-picker.py's own header records making about the
+prompting menus, and it went the same way — the primitive already existed and
+the conclusion had been drawn before it did.
+
+The toolkit is not reimplemented: `rofi_ilovepdf` grew `--list-tools` and
+`--exec`, and every prompt funnels through four functions, so overriding
+those four covers all thirteen prompting paths.
+
+## Two bugs that made every wallpaper re-run wrong and slow
+
+* **The output was its own input.** The scan is given `~/Pictures/Wallpapers`,
+  which contains `themed/`, so the previous run's picks were re-ingested. The
+  sets converged on themselves, and the "already in the repo, link it" branch
+  wrote symlinks pointing at their own filenames — 170 of 496 files were
+  broken, and `ls` counted them, so the sets looked complete while
+  `theme-wallpaper list` reported 16 of 25.
+* **The palette cache never hit**, because its key used Python's
+  per-process-salted `hash()`. Every run re-extracted all 3,875 palettes
+  (~20 min) and left another full set of files behind. A cache that always
+  misses is a cache that always works, which is why nothing reported it.
+
+And `theme-wallpaper-gen --only` filtered at PRINT time, after a global
+greedy allocation had already given the images away — so the one theme that
+mode exists for, mono-light, got zero.
+
+## Ranking, not filtering
+
+"i write 'log' for logout but still the first suggestion is 'lock'". Lock
+screen's detail is `loginctl lock-session`, it matches, and it is first in
+list order. PickerLayer had solved this years ago with four buckets; the
+solution was stuck in one file. It is `qml/common/Match.js` now, used by the
+power menu, theme picker, cheatsheet and picker.
+
+## Still open
+
+The ~800 ms panel settle. The 12 unchecked picker menus (record first). Live
+preview for the cheap numeric settings keys.
+`islandShowWorkspaceOnAutoHide`. Scratchpads on a second monitor. Keybind
+latency (~50 ms per `qs ipc call`). What killed the two socket listeners.
+
+`layout-cycle.sh` was re-measured rather than rewritten: 4 hyprctl
+invocations and 104-117 ms on the common path, not the 7 the old note
+claimed. Left alone.
+
+The supplementary-plane Nerd Font glyphs (U+F022C and neighbours) do not
+render in this shell, while BMP ones (U+F002) do in the same widget and the
+same face. The ilovepdf menu drops its icons for that reason. Not chased
+further.

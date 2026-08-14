@@ -57,6 +57,12 @@ packages:
   - mpv
   - ark
   - imv
+  # KEPT FOR `qalc`, NOT FOR THE GUI. The Hyprland session's calculator is
+  # an island panel (quickshell tide-island-fork, CalculatorLayer.qml)
+  # driving libqalculate's CLI, which this package pulls in; the GTK app
+  # it is named after is no longer bound to anything there, because it
+  # cannot follow theme-apply and had to be launched with a hardcoded
+  # GTK_THEME. The qtile session still uses the GUI.
   - qalculate-gtk
   - piper
   - eww

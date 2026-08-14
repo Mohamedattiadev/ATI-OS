@@ -27,7 +27,18 @@ additive rather than a replacement.
 | `colors.conf` | written by `theme-apply`; do not hand-edit |
 | `autostart.conf` | `exec-once` |
 | `hypridle.conf`, `hyprlock.conf` | idle and lock |
+| `hyprglass.conf` | the liquid-glass plugin; `videoglass` is the active preset |
 | `scripts/` | everything the binds call |
+
+Scripts worth knowing by name:
+
+| Script | What it does |
+|---|---|
+| `border-focus.sh` | drops window borders while an island panel is open |
+| `lock-player.sh` | what is playing, for hyprlock's now-playing card |
+| `cheatsheet.py` | every sheet, generated from `hyprctl binds` where it can be |
+| `island-picker.py` | the generic picker's menus, including the PDF toolkit |
+| `theme-list.sh` | the palette list, parsed out of `theme-apply` |
 
 Companion documents:
 
@@ -73,7 +84,15 @@ measurements.
 1. **override** — `~/.cache/qtile/theme-walls.json`. Picking a wallpaper
    while a theme is active *rebinds* that theme to it.
 2. **set** — `~/Pictures/Wallpapers/themed/<theme>/*`, drawn at random on
-   every theme change, never repeating the previous pick.
+   every theme change, never repeating the previous pick. **25 images per
+   theme, all 21 themes.** Built by `theme-wallpaper-fetch`, which scores
+   every candidate in CIELAB rather than trusting the folder it came in:
+   a directory called "Nord" is not a nord wallpaper.
+
+   Two themes cannot be served by selection and are generated instead —
+   `mono-light` entirely (its background is `#ffffff` and zero of 3,875
+   candidates score near it) and 7 of `matrix`'s 25. Lowering a threshold
+   to fill a set would defeat the scoring.
 3. **single** — `~/Pictures/Wallpapers/themed/<theme>.jpg`.
 4. **nothing** — leave the wallpaper alone. A theme change must never
    blank the desktop.
@@ -81,6 +100,37 @@ measurements.
 The override deliberately beats the set: otherwise a deliberate pick would
 survive only until the next theme change. `theme-wallpaper forget <theme>`
 hands a theme back to its set.
+
+## The panels, and the keys that open them
+
+Every one of these is a state of the island, not a separate window, and
+every one is drivable over IPC — `qs -p ~/.config/quickshell/tide-island-fork
+ipc call tide <fn>`. A control with no way in from a script is a control
+whose bugs only you can find.
+
+| Key | Panel | IPC |
+|---|---|---|
+| `$mod SHIFT /` | docs, keymaps, troubleshooting — opens on DOCS, Tab cycles six sheets | `showCheatsheet docs` |
+| `$mod SHIFT K` | the cheatsheet chord — hypr / vim / fish / island | `showCheatsheet <which>` |
+| `$mod SHIFT I` | the tour. Swipe sideways for pages, up to dismiss | `showOnboarding 0` |
+| `$mod SHIFT Q` | power menu, with a search field and a y/n confirmation | `togglePowerMenu` |
+| `$alt 5` | calculator — drives `qalc`, live results, six-row tape | `toggleCalculator` |
+| `$alt 6` / `$alt 7` | calendar / settings | `toggleCalendar`, `toggleSettings` |
+| `$mod P` then `c` / `w` | theme picker / wallpaper picker | `toggleThemePicker`, `toggleWallpaperPicker` |
+| `$mod P` then `v` | the PDF toolkit | `showPicker ilovepdf` |
+
+**Search fields.** The power menu, theme picker, wallpaper picker,
+cheatsheet, launcher and generic picker all use
+`qml/common/PanelSearchField.qml`: always visible, always focused, letters
+type. That last part is the trade — hjkl and `q` used to navigate and now
+cannot, because they are letters you type into a query. Arrows and
+Ctrl+HJKL/NP move instead, which is rofi's own resolution of the same
+problem.
+
+**While any panel is open** the island takes a 1 px accent ring and
+`scripts/border-focus.sh` drops every window border to its inactive
+colour, so there is exactly one accent on screen. It restores at shell
+startup, so a crash with a panel open cannot leave the borders dimmed.
 
 ## Troubleshooting
 
@@ -105,6 +155,23 @@ Compare the log's last `Configuration Loaded` against the file's mtime. A
 `shell.qml` edit has landed *after* the reload its own earlier edit
 triggered, and a measurement "proving the change did nothing" was reading
 the old shell. `touch shell.qml` if in doubt.
+
+**And grep for `Failed to load configuration`, not just for the success
+line.** A reload that ERRORS leaves the previous build running and writes
+no new `Configuration Loaded` at all — so the symptom is identical to a
+file watcher that never fired, and every measurement after it is of the
+old shell. This has cost a session: three consecutive diagnostics were
+read as evidence about new code that had never loaded.
+
+```sh
+grep -E "Failed to load configuration|Configuration Loaded" \
+     $XDG_RUNTIME_DIR/quickshell/by-id/<id>/log.log | tail -4
+```
+
+The most common cause is `Property value set multiple times` — QML refuses
+the whole component, not the one line — which is what you get from adding
+a property a block already sets. Read the entire block before adding to
+it, not the few lines around your anchor.
 
 If you edited `Metrics.js` or `Motion.js`, a reload does nothing at all:
 `.pragma library` JS is cached. Restart the island.
