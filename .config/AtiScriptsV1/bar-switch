@@ -99,8 +99,28 @@ write_mode() {
 # whole command line of every process INCLUDING this script's own, which is
 # the trap recorded in hypr/NEXT-SESSION.md's RULES and which cost a session
 # once already. Match on the argv list explicitly instead, excluding awk.
+# ---- WHY THIS COMPARES A FIELD AND NOT A SUBSTRING ----
+#
+# It was `$0 ~ ("quickshell -p " d)` — a substring match on the whole command
+# line — and that was correct for exactly as long as the island's config
+# directory was the only path under it that anything was launched with. It is
+# not any more: treetab.qml and popups.qml live INSIDE that directory, so
+#
+#     quickshell -p /home/ati/.config/quickshell/tide-island-fork/popups.qml
+#
+# contains the island's own pattern. Hit live, and it broke the one rule this
+# script exists to keep: `bar-switch island` saw the popups shell, concluded
+# the island was already up, skipped island_start, stopped the topbar — and
+# left the desktop with NO BAR AT ALL. Both halves reported it: `status` said
+# island=up with the island demonstrably down.
+#
+# So the argument is compared as an ARGUMENT: walk the fields, find `-p`, and
+# test the one after it for equality. That is also immune to the other half of
+# the trap, which is that a path is not a regex — every `.` in `.config` and
+# `.dotfiles` is a wildcard in the form above.
 island_pid() {
-  ps -eo pid=,args= | awk -v d="$FORK_DIR" '$0 ~ ("quickshell -p " d) && !/awk/ {print $1; exit}'
+  ps -eo pid=,args= | awk -v want="$FORK_DIR" \
+    '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { print $1; exit } }'
 }
 
 island_running() { [[ -n "$(island_pid)" ]]; }
@@ -210,7 +230,8 @@ hypr_native_available() { [[ -f "$TOPBAR_DIR/shell.qml" && -x "$TOPBAR_LAUNCH" ]
 # island_pid() gives: `pgrep -f`/`pkill -f` match this script's OWN command
 # line, which is the trap recorded in hypr/NEXT-SESSION.md's RULES.
 topbar_pid() {
-  ps -eo pid=,args= | awk -v d="$TOPBAR_DIR" '$0 ~ ("quickshell -p " d) && !/awk/ {print $1; exit}'
+  ps -eo pid=,args= | awk -v want="$TOPBAR_DIR" \
+    '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { print $1; exit } }'
 }
 
 topbar_running() { [[ -n "$(topbar_pid)" ]]; }
@@ -243,7 +264,8 @@ topbar_start() {
 TREETAB_ENTRY="$HOME/.config/quickshell/tide-island-fork/treetab.qml"
 
 treetab_pid() {
-  ps -eo pid=,args= | awk -v e="$TREETAB_ENTRY" '$0 ~ ("quickshell -p " e) && !/awk/ {print $1; exit}'
+  ps -eo pid=,args= | awk -v want="$TREETAB_ENTRY" \
+    '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { print $1; exit } }'
 }
 
 treetab_stop() {
@@ -263,7 +285,8 @@ treetab_stop() {
 POPUPS_ENTRY="$HOME/.config/quickshell/tide-island-fork/popups.qml"
 
 popups_pid() {
-  ps -eo pid=,args= | awk -v e="$POPUPS_ENTRY" '$0 ~ ("quickshell -p " e) && !/awk/ {print $1; exit}'
+  ps -eo pid=,args= | awk -v want="$POPUPS_ENTRY" \
+    '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { print $1; exit } }'
 }
 
 popups_stop() {

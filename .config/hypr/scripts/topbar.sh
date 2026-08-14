@@ -62,7 +62,11 @@ export MALLOC_CONF="${MALLOC_CONF:-narenas:2,background_thread:true,dirty_decay_
 TREETAB_ENTRY="${TREETAB_ENTRY:-$HOME/.config/quickshell/tide-island-fork/treetab.qml}"
 
 treetab_running() {
-  ps -eo args= | awk -v e="$TREETAB_ENTRY" '$0 ~ ("quickshell -p " e) && !/awk/ {found=1} END {exit !found}'
+  # Compared as an ARGUMENT, not as a substring of the command line — see
+  # bar-switch's island_pid() for the outage that distinction cost.
+  ps -eo args= | awk -v want="$TREETAB_ENTRY" \
+    '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { found = 1 } }
+     END { exit !found }'
 }
 
 if [[ -f "$TREETAB_ENTRY" ]] && ! treetab_running; then
@@ -80,7 +84,11 @@ fi
 POPUPS_ENTRY="${POPUPS_ENTRY:-$HOME/.config/quickshell/tide-island-fork/popups.qml}"
 
 popups_running() {
-  ps -eo args= | awk -v e="$POPUPS_ENTRY" '$0 ~ ("quickshell -p " e) && !/awk/ {found=1} END {exit !found}'
+  # Compared as an ARGUMENT, not as a substring of the command line — see
+  # bar-switch's island_pid() for the outage that distinction cost.
+  ps -eo args= | awk -v want="$POPUPS_ENTRY" \
+    '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { found = 1 } }
+     END { exit !found }'
 }
 
 if [[ -f "$POPUPS_ENTRY" ]] && ! popups_running; then
