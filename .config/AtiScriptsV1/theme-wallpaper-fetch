@@ -1,0 +1,511 @@
+#!/usr/bin/env python3
+# ============================================================
+#  theme-wallpaper-fetch — build a SET of real photographs per theme, by
+#  scoring candidates from the wallpaper repos rather than trusting the
+#  folder they came in.
+#
+#  ---- WHY THIS EXISTS ----
+#
+#  theme-wallpaper-gen recolours the existing library. Its own header
+#  explains why it had to: the 362-image library is all dark, so nine of
+#  the twenty-one themes cannot be served by SELECTION at any quality —
+#  mono-light scored 137.9 because no light image exists to find.
+#
+#  The user's verdict on the recoloured results was "not even good", and
+#  they are right that a gradient-mapped photo reads as a tinted photo.
+#  So this goes and gets real ones, and the generated set stays only as
+#  the floor for themes that photographs cannot reach.
+#
+#  ---- A FOLDER NAMED "Nord" IS NOT A NORD WALLPAPER ----
+#
+#  That is the whole reason this scores instead of copying. The source
+#  repos are organised by intent, not by measurement: FrenzyExists' "Gruv"
+#  folder contains images whose background is nowhere near #282828, and
+#  yukazakiri's palette folders are gowall conversions of arbitrary
+#  photographs whose fidelity varies a lot.
+#
+#  Every candidate is scored with the SAME metric theme-wallpaper-gen
+#  already uses — CIELAB, 1.00*d_bg + 0.60*d_accent + 0.25*d_fg — imported
+#  from that file rather than copied, so the two can never drift. A
+#  candidate above THRESHOLD is rejected no matter what folder it was in,
+#  and the per-theme count is reported so a theme that came up short is
+#  visible rather than quietly padded.
+#
+#  ---- WHY THE SOURCE FOLDER IS STILL RECORDED ----
+#
+#  Not as a filter, as an attribution: the user's wallpaper repo carries
+#  an attribution chain in its README and anything added has to extend it.
+#  manifest.json records, per kept image, where it came from and what it
+#  scored, which is also what makes a later re-run reproducible.
+#
+#  Usage:
+#      theme-wallpaper-fetch scan   <srcdir>...   palette-cache the candidates
+#      theme-wallpaper-fetch report                score distribution per theme
+#      theme-wallpaper-fetch build  [--per-theme N] [--threshold X] [--apply]
+# ============================================================
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+from PIL import Image
+
+HOME = Path.home()
+SCRIPTS = HOME / ".dotfiles/.config/AtiScriptsV1"
+CACHE = HOME / ".cache/qtile/fetch-palettes"
+OUT_DIR = HOME / "Pictures/Wallpapers/themed"
+MANIFEST = OUT_DIR / "manifest.json"
+
+# Calibrated in `report`, not guessed. See the header of the build step.
+DEFAULT_THRESHOLD = 45.0
+DEFAULT_PER_THEME = 10
+
+
+def _load(name, path):
+    """Import a sibling script that has no .py extension.
+
+    These are executables on PATH, not a package, so they cannot be
+    imported normally. Loading them by spec is what lets the scorer be
+    REUSED rather than copied — a second copy of the CIELAB weights is a
+    second thing to keep in step, and it would silently disagree the first
+    time either was tuned.
+    """
+    spec = importlib.util.spec_from_loader(
+        name, importlib.machinery.SourceFileLoader(name, str(path)))
+    mod = importlib.util.module_from_spec(spec)
+    # These scripts guard their entry points with __name__ == "__main__",
+    # so loading them runs only their definitions.
+    spec.loader.exec_module(mod)
+    return mod
+
+
+gen = _load("twgen", SCRIPTS / "theme-wallpaper-gen")
+wal = _load("walprecompile", SCRIPTS / "wal-precompile")
+
+
+def load_themes():
+    return gen.load_themes()
+
+
+def candidate_images(srcdirs):
+    exts = {".jpg", ".jpeg", ".png", ".webp"}
+    out = []
+    for d in srcdirs:
+        for root, _dirs, files in os.walk(d):
+            for fn in sorted(files):
+                if Path(fn).suffix.lower() in exts:
+                    out.append(Path(root) / fn)
+    return sorted(out)
+
+
+def cache_key(path):
+    st = path.stat()
+    # size is in the key so a re-downloaded or replaced file re-extracts.
+    return f"{abs(hash(str(path))):016x}_{st.st_size}.json"
+
+
+def palette_for(path):
+    """bg / fg / accents for one candidate, cached.
+
+    Only the three fields the scorer reads are kept. wal-precompile's own
+    cache stores the full consumer configs beside them — kitty, rofi, gtk,
+    a whole Brave manifest — which is right for a wallpaper you are about
+    to theme the desktop from and very wrong for three thousand
+    candidates you are about to reject most of.
+    """
+    CACHE.mkdir(parents=True, exist_ok=True)
+    cf = CACHE / cache_key(path)
+    if cf.exists():
+        try:
+            return json.loads(cf.read_text())
+        except Exception:
+            pass
+    try:
+        bg, bg_alt, fg, accents, _dh = wal.build_palette(path)
+    except Exception as exc:
+        rec = {"path": str(path), "error": str(exc)}
+        cf.write_text(json.dumps(rec))
+        return rec
+    rec = {"path": str(path), "bg": bg, "fg": fg, "accents": accents,
+           "meanL": mean_lightness(path), "ahash": average_hash(path)}
+    cf.write_text(json.dumps(rec))
+    return rec
+
+
+def average_hash(path):
+    """64-bit average hash, for spotting the SAME PICTURE twice.
+
+    The greedy assignment already refuses to use one path twice, which is
+    not the same thing: these repos overlap heavily, and a contact sheet
+    of the first build showed tokyonight holding two copies of the same
+    colour-bar image, catppuccin two of the same logo and monokai two of
+    the same photograph, each pair arriving from a different repo under a
+    different filename.
+
+    That matters more than it looks, because the point of the set is a
+    random draw. Two copies of one picture in a set of ten is a 1-in-5
+    chance that "random" shows you what you just had, which is exactly the
+    complaint the no-repeat rule in theme-wallpaper exists to prevent.
+
+    aHash rather than a file checksum, because re-encoded and rescaled
+    copies are byte-different and visually identical — which is precisely
+    the case here.
+    """
+    try:
+        with Image.open(path) as im:
+            im = im.convert("L").resize((8, 8), Image.BILINEAR)
+            px = list(im.getdata())
+    except Exception:
+        return None
+    avg = sum(px) / len(px)
+    bits = 0
+    for i, v in enumerate(px):
+        if v >= avg:
+            bits |= (1 << i)
+    return bits
+
+
+def hamming(a, b):
+    return bin(a ^ b).count("1")
+
+
+# Two images within this many bits of each other are the same picture for
+# our purposes. 0 would miss a re-encode; much above 8 starts rejecting
+# genuinely different photographs of the same scene, which are fine to
+# keep — they do not read as a repeat.
+AHASH_NEAR = 6
+
+
+def mean_lightness(path):
+    """The image's OVERALL lightness, as CIELAB L*.
+
+    This is the thing the inherited scorer does not measure, and its
+    absence is why a contact sheet of gruvbox's picks came back full of
+    cream backgrounds while every score sat comfortably under 45.
+
+    wal-precompile's `darkest_bg()` takes the darkest colour in the image
+    and pushes it to L 0.06-0.10 — deliberately, because it is deriving a
+    TERMINAL background from a photograph. But it means the `bg` the
+    scorer compares against is near-black for every candidate, whatever
+    the picture actually looks like, so `d_bg` barely varies and the
+    ranking is left to accent and fg alone. That is also why 3759 of 3759
+    candidates scored under 45 for most themes: the metric was not
+    discriminating, it was agreeing with everything.
+
+    Measured, after checking the conversion on values known in advance
+    (black -> 0.0, white -> 100.0):
+
+        gruvbox      bg L* 16.1   picks at 77.0  78.1  83.5  88.2
+        github-dark  bg L*  5.0   picks at 75.7  81.9
+
+    Those are near-white photographs chosen for near-black themes.
+    """
+    try:
+        with Image.open(path) as im:
+            im = im.convert("RGB")
+            im.thumbnail((160, 160))
+            px = list(im.getdata())
+    except Exception:
+        return None
+    n = len(px)
+    r = sum(q[0] for q in px) / n
+    g = sum(q[1] for q in px) / n
+    b = sum(q[2] for q in px) / n
+    return gen.rgb_to_lab((r, g, b))[0]
+
+
+def cmd_scan(args):
+    imgs = candidate_images(args.srcdirs)
+    print(f"candidates: {len(imgs)}")
+    ok = bad = 0
+    for i, p in enumerate(imgs, 1):
+        rec = palette_for(p)
+        if "error" in rec:
+            bad += 1
+        else:
+            ok += 1
+        if i % 100 == 0 or i == len(imgs):
+            print(f"  {i}/{len(imgs)}  ok={ok} unreadable={bad}", flush=True)
+    print(f"done: {ok} palettes, {bad} unreadable")
+
+
+LIBRARY_CACHE = HOME / ".cache/qtile/palettes"
+WALL_ROOT = HOME / "Pictures/Wallpapers"
+
+
+def all_palettes():
+    """Every candidate: the downloaded ones AND the user's own library.
+
+    The 362-image library is in the candidate pool for two reasons. It is
+    already in the user's repository, so anything picked from it costs the
+    repo nothing (see link_or_copy — it is linked, not duplicated); and
+    wal-precompile has already extracted its palettes, so it is free to
+    score. theme-wallpaper-gen's finding that the library cannot serve
+    NINE themes is not a finding that it cannot serve the other twelve.
+    """
+    out = []
+    for cache_dir, path_key in ((CACHE, "path"), (LIBRARY_CACHE, "wallpaper")):
+        if not cache_dir.is_dir():
+            continue
+        for fn in sorted(os.listdir(cache_dir)):
+            if not fn.endswith(".json"):
+                continue
+            try:
+                rec = json.loads((cache_dir / fn).read_text())
+            except Exception:
+                continue
+            if "error" in rec or not rec.get("bg") or not rec.get("accents"):
+                continue
+            path = rec.get(path_key, "")
+            if not path or not os.path.isfile(path):
+                continue
+            # Backfill meanL in place rather than re-running the whole
+            # scan: the k-means extraction is the expensive part and it
+            # has not changed, while this is a thumbnail and an average.
+            # The library cache is NOT rewritten — it belongs to
+            # wal-precompile and this tool is only a reader of it — so
+            # its lightness is memoised here for the life of the process.
+            if "meanL" not in rec or "ahash" not in rec:
+                rec.setdefault("meanL", mean_lightness(path))
+                rec.setdefault("ahash", average_hash(path))
+                if cache_dir is CACHE:
+                    (cache_dir / fn).write_text(json.dumps(rec))
+            out.append({"path": path, "bg": rec["bg"],
+                        "fg": rec.get("fg", rec["bg"]), "accents": rec["accents"],
+                        "meanL": rec.get("meanL"), "ahash": rec.get("ahash")})
+    return out
+
+
+# The generator already normalises to this width for the same reason: the
+# screen is 1366x768, so anything past 1920 is bytes nobody can see.
+MAX_WIDTH = 1920
+JPEG_QUALITY = 90
+
+
+def link_or_copy(src, dest_stem):
+    """Link if the source already lives in the wallpaper repo, else import.
+
+    Takes a STEM and picks the extension itself, because the extension is
+    part of the decision: a linked file keeps whatever it already was, and
+    an imported one is always .jpg. Re-encoding a .png "at quality 90"
+    means something entirely different from a JPEG quality and would have
+    written a PNG that is neither smaller nor lossless.
+
+    An image the repo already contains does not need a second copy of its
+    bytes to appear in a theme's set — that is up to 8 MB of duplicate per
+    pick, pushed to the user's published repository for nothing. A
+    RELATIVE symlink survives a fresh clone, because both ends are inside
+    the same repo, and git stores it as a path rather than as a blob.
+
+    Anything imported from OUTSIDE is downscaled to MAX_WIDTH and
+    re-encoded, because these repos are not sized for a 1366x768 laptop:
+    Apeiros-46B/everforest-walls averages 7.5 MB an image and 210 raw
+    copies would roughly DOUBLE the user's published repository. Nothing
+    visible is lost at 1920 wide on this screen, and the wallpaper daemon
+    decodes a smaller file faster — which matters directly, because the
+    wallpaper swap is about to move under the theme-change cover where its
+    decode time is part of a freeze.
+    """
+    src = Path(src).resolve()
+    try:
+        inside = src.is_relative_to(WALL_ROOT.resolve())
+    except AttributeError:                       # python < 3.9
+        inside = str(src).startswith(str(WALL_ROOT.resolve()) + os.sep)
+    if inside:
+        dest = dest_stem.with_suffix(src.suffix.lower())
+        if dest.is_symlink() or dest.exists():
+            dest.unlink()
+        dest.symlink_to(os.path.relpath(src, dest.parent))
+        return "link"
+    dest = dest_stem.with_suffix(".jpg")
+    if dest.is_symlink() or dest.exists():
+        dest.unlink()
+    subprocess.run(
+        ["magick", str(src),
+         "-auto-orient",
+         # `>` only shrinks. An image narrower than MAX_WIDTH is left
+         # alone rather than upscaled into blur.
+         "-resize", f"{MAX_WIDTH}x>",
+         "-strip",
+         "-colorspace", "sRGB",
+         "-quality", str(JPEG_QUALITY),
+         str(dest)],
+        check=True, capture_output=True)
+    return "copy"
+
+
+# How far the image's overall lightness may sit from the theme's own
+# background before it starts costing. A wallpaper that matched the
+# background exactly would be a near-black rectangle, so the target is a
+# little above it and there is a free band either side.
+LIGHTNESS_LIFT = 12.0
+LIGHTNESS_BAND = 10.0
+LIGHTNESS_WEIGHT = 0.8
+
+
+def lightness_penalty(theme, wall):
+    meanL = wall.get("meanL")
+    if meanL is None:
+        return 0.0
+    bgL = gen.rgb_to_lab(gen.hex_to_rgb(theme["bg"]))[0]
+    target = min(92.0, bgL + LIGHTNESS_LIFT)
+    return LIGHTNESS_WEIGHT * max(0.0, abs(meanL - target) - LIGHTNESS_BAND)
+
+
+def combined_score(theme, wall):
+    """The inherited CIELAB score, plus a lightness term.
+
+    gen.score() is REUSED rather than replaced: it is the calibrated part,
+    it is what theme-wallpaper-gen ranks bases with, and the numbers in
+    its header are stated in it. What is added is the one thing it cannot
+    see — see mean_lightness().
+
+    The term is not added to gen.score() itself, because that function is
+    choosing a base image to RECOLOUR, and for recolouring a light base is
+    perfectly legitimate: the gradient map is about to replace its tones
+    anyway. It is only wrong when the photograph is going to be used as
+    it is, which is what this tool does.
+    """
+    return gen.score(theme, wall) + lightness_penalty(theme, wall)
+
+
+def scored_table(themes, walls):
+    """theme -> [(score, path)] ascending."""
+    table = {}
+    for t in themes:
+        rows = sorted((combined_score(t, w), w["path"]) for w in walls)
+        table[t["name"]] = rows
+    return table
+
+
+def cmd_report(args):
+    themes = load_themes()
+    walls = all_palettes()
+    print(f"themes={len(themes)} candidates={len(walls)}\n")
+    table = scored_table(themes, walls)
+    print(f"{'theme':<16}{'best':>8}{'5th':>8}{'10th':>8}{'<=45':>7}{'<=60':>7}")
+    for t in themes:
+        rows = table[t["name"]]
+        if not rows:
+            continue
+        best = rows[0][0]
+        fifth = rows[4][0] if len(rows) > 4 else float("nan")
+        tenth = rows[9][0] if len(rows) > 9 else float("nan")
+        n45 = sum(1 for s, _ in rows if s <= 45)
+        n60 = sum(1 for s, _ in rows if s <= 60)
+        print(f"{t['name']:<16}{best:>8.1f}{fifth:>8.1f}{tenth:>8.1f}{n45:>7}{n60:>7}")
+
+
+def cmd_build(args):
+    themes = load_themes()
+    walls = all_palettes()
+    if not walls:
+        sys.exit("no palettes cached — run `theme-wallpaper-fetch scan <dir>` first")
+    table = scored_table(themes, walls)
+
+    # ---- ONE IMAGE, ONE THEME ----
+    #
+    # Greedy globally over (score, theme, path), exactly as
+    # theme-wallpaper-gen's assign() does and for the same reason: the
+    # theme with the single best available match claims it first, so a
+    # theme with one good candidate is not robbed by one with twenty.
+    # Without it the same photograph turns up under four themes and the
+    # "random per theme" the user asked for stops feeling random.
+    want = args.per_theme
+    ahash_for = {w["path"]: w.get("ahash") for w in walls}
+    pairs = sorted((s, tname, path)
+                   for tname, rows in table.items()
+                   for s, path in rows if s <= args.threshold)
+    chosen = {t["name"]: [] for t in themes}
+    kept_hashes = {t["name"]: [] for t in themes}
+    used = set()
+    dropped_dupes = 0
+    for s, tname, path in pairs:
+        if len(chosen[tname]) >= want or path in used:
+            continue
+        # Not the same PICTURE twice in one theme's set. Compared only
+        # within the theme: two themes may legitimately share a look, and
+        # they never draw from each other's directory anyway.
+        h = ahash_for.get(path)
+        if h is not None and any(hamming(h, k) <= AHASH_NEAR
+                                 for k in kept_hashes[tname]):
+            dropped_dupes += 1
+            continue
+        chosen[tname].append((s, path))
+        if h is not None:
+            kept_hashes[tname].append(h)
+        used.add(path)
+    if dropped_dupes:
+        print(f"(rejected {dropped_dupes} near-duplicate images)")
+
+    print(f"{'theme':<16}{'kept':>6}{'best':>8}{'worst':>8}   sources")
+    manifest = {}
+    for t in themes:
+        name = t["name"]
+        rows = chosen[name]
+        srcs = sorted({Path(p).parent.name for _s, p in rows})
+        best = rows[0][0] if rows else float("nan")
+        worst = rows[-1][0] if rows else float("nan")
+        flag = "" if len(rows) > 5 else "   <-- SHORT"
+        print(f"{name:<16}{len(rows):>6}{best:>8.1f}{worst:>8.1f}   "
+              f"{', '.join(srcs[:3])}{flag}")
+        manifest[name] = [{"score": round(s, 2), "source": str(p)} for s, p in rows]
+
+    if not args.apply:
+        print("\n(dry run — pass --apply to write into "
+              f"{OUT_DIR})")
+        return
+
+    links = copies = 0
+    for t in themes:
+        name = t["name"]
+        dest = OUT_DIR / name
+        dest.mkdir(parents=True, exist_ok=True)
+        # Clear only what this tool wrote before, so a hand-dropped image
+        # in the same folder survives a re-run. is_symlink() first: a
+        # dangling link is not exists() and would otherwise be left behind.
+        for old in dest.glob("fetched-*"):
+            if old.is_symlink() or old.exists():
+                old.unlink()
+        for i, (s, src) in enumerate(chosen[name], 1):
+            how = link_or_copy(src, dest / f"fetched-{i:02d}")
+            if how == "link":
+                links += 1
+            else:
+                copies += 1
+
+    MANIFEST.parent.mkdir(parents=True, exist_ok=True)
+    MANIFEST.write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n")
+    print(f"\nwrote {OUT_DIR}/<theme>/fetched-NN.*  "
+          f"({copies} copied, {links} linked to images the repo already has)")
+    print(f"manifest: {MANIFEST}")
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="theme-wallpaper-fetch")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("scan")
+    p.add_argument("srcdirs", nargs="+")
+    p.set_defaults(func=cmd_scan)
+
+    p = sub.add_parser("report")
+    p.set_defaults(func=cmd_report)
+
+    p = sub.add_parser("build")
+    p.add_argument("--per-theme", type=int, default=DEFAULT_PER_THEME)
+    p.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    p.add_argument("--apply", action="store_true")
+    p.set_defaults(func=cmd_build)
+
+    args = ap.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

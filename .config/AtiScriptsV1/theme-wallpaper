@@ -373,6 +373,15 @@ case "$cmd" in
             for f in "$THEMED_DIR"/*; do
                 [ -e "$f" ] || continue
                 b="$(basename "$f")"
+                # A theme is a directory (its set) or an image (the
+                # single-file form). NOT every file that happens to live
+                # here: manifest.json was being listed as a theme called
+                # "manifest" with 0 in its set, which is the sort of row
+                # that makes a reader distrust the whole table.
+                case "$b" in
+                    *.jpg|*.jpeg|*.png|*.webp) ;;
+                    *) [ -d "$f" ] || continue ;;
+                esac
                 printf '%s\n' "${b%.*}"
             done
             python3 -c 'import json,sys

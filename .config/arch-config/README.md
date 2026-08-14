@@ -80,7 +80,7 @@ Files in `modules/` that are *not* listed there are inert:
 | ------ | -------- |
 | `base.yaml` | always-on core: `base`, `base-devel`, dcli, timeshift, pacman-contrib |
 | `apps.yaml` | daily applications |
-| `wm.yaml` | qtile, qtile-extras, picom fork, qt5ct/qt6ct, tray applets |
+| `wm.yaml` | **both** sessions: qtile, qtile-extras, picom fork, qt5ct/qt6ct, tray applets — and Hyprland, xdg-desktop-portal-hyprland, awww, hypridle, hyprlock, hyprsunset, qt5/qt6-wayland, grim/slurp |
 | `dev.yaml` | editors, git, fish, toolchains |
 | `media.yaml` | pipewire stack, mpv, easyeffects |
 | `fonts.yaml` | Nerd Fonts, Amiri, Cairo, emoji, and every family a tracked config names by hand |
@@ -108,6 +108,14 @@ Two failure modes these files have actually produced, both silent:
   got no `vulkan-radeon` either and ran the desktop on llvmpipe — with
   nothing in any log naming a package. Before adding or keeping a name here,
   `pacman -Si <pkg>` it.
+- **A package that works in one session can be inert in the other.**
+  `gammastep` is declared in `system-tools.yaml` and qtile drives it under
+  X11 with `-m randr`, where it works. Under Hyprland it cannot work at
+  all — 0.56.2 exposes no `wlr-gamma-control`, so `gammastep -P -O 4500`
+  answers "Zero outputs support gamma adjustment" and then *hangs*. The
+  Wayland session needs `hyprsunset` instead, and both are declared
+  because both sessions are real. Before declaring a package for one
+  session, check what the other one does with it.
 - **A font that is merely installed is not declared.** fontconfig never
   errors on a missing family; it substitutes one. `adwaita-fonts` and
   `noto-fonts` were named by tracked configs, present on the author's

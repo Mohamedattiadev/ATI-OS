@@ -454,25 +454,35 @@ def score(theme, wall):
     return 1.00 * d_bg + 0.60 * d_acc + 0.25 * d_fg
 
 
-def assign(themes, walls):
-    """One distinct base image per theme, best-first.
+def assign(themes, walls, per_theme=1):
+    """`per_theme` distinct base images per theme, best-first.
 
     Greedy over (score, theme, wall) globally rather than per theme: the
     theme with the single best available match claims it first, so a theme
     that has exactly one good candidate is not robbed by one that has
     twenty. 0015 is otherwise taken by both doomone and nord, and 0076 by
     tokyonight, nightowl and palenight.
+
+    per_theme > 1 exists for the themes no photograph can serve. The set
+    feature (see theme-wallpaper's layer 2) wants more than five images
+    per theme, and mono-light has ZERO candidates below a score of 60 in a
+    pool of 1346 real photographs — its background is #ffffff and no light
+    wallpaper exists to find. Recolouring is the only thing that reaches
+    it, so it needs several DISTINCT bases rather than one.
+
+    Distinctness still holds across the whole grid: no base image is used
+    twice anywhere, so a theme's own set does not repeat a composition and
+    two themes do not show the same photo in different tints.
     """
     pairs = sorted((score(t, w), t["name"], w["wallpaper"])
                    for t in themes for w in walls)
-    chosen, used = {}, set()
+    chosen = {t["name"]: [] for t in themes}
+    used = set()
     for s, tname, path in pairs:
-        if tname in chosen or path in used:
+        if len(chosen[tname]) >= per_theme or path in used:
             continue
-        chosen[tname] = (path, s)
+        chosen[tname].append((path, s))
         used.add(path)
-        if len(chosen) == len(themes):
-            break
     return chosen
 
 
@@ -571,6 +581,12 @@ def main():
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--only", default=None)
     ap.add_argument("--dry-run", action="store_true")
+    # With 1 the output is the historical single file, <theme>.jpg, which
+    # theme-wallpaper still resolves as its layer 3. With more than 1 the
+    # output is the SET directory, <theme>/gen-NN.jpg, which is layer 2.
+    # Both forms coexist on purpose: the single file is the floor that
+    # guarantees no theme is ever left with no wallpaper at all.
+    ap.add_argument("--per-theme", type=int, default=1)
     args = ap.parse_args()
 
     themes = load_themes()
@@ -580,7 +596,8 @@ def main():
             "theme-wallpaper-gen: no usable palettes in %s — run "
             "`wal-precompile` first." % PALETTE_CACHE)
 
-    chosen = assign(themes, walls)
+    per = max(1, args.per_theme)
+    chosen = assign(themes, walls, per)
     os.makedirs(OUT_DIR, exist_ok=True)
 
     print("%-16s %-10s %7s   %s" % ("theme", "base", "score", "output"))
@@ -588,19 +605,23 @@ def main():
         name = t["name"]
         if args.only and name != args.only:
             continue
-        base, s = chosen[name]
-        out = os.path.join(OUT_DIR, "%s.jpg" % name)
-        if args.dry_run:
-            print("%-16s %-10s %7.1f   (dry run)"
-                  % (name, os.path.basename(base), s))
-            continue
-        if os.path.exists(out) and not args.force:
-            print("%-16s %-10s %7.1f   kept" % (name, os.path.basename(base), s))
-            continue
-        generate(t, base, out)
-        kb = os.path.getsize(out) // 1024
-        print("%-16s %-10s %7.1f   %s (%d KB)"
-              % (name, os.path.basename(base), s, out, kb))
+        for i, (base, s) in enumerate(chosen[name], 1):
+            if per == 1:
+                out = os.path.join(OUT_DIR, "%s.jpg" % name)
+            else:
+                os.makedirs(os.path.join(OUT_DIR, name), exist_ok=True)
+                out = os.path.join(OUT_DIR, name, "gen-%02d.jpg" % i)
+            if args.dry_run:
+                print("%-16s %-10s %7.1f   (dry run) %s"
+                      % (name, os.path.basename(base), s, os.path.basename(out)))
+                continue
+            if os.path.exists(out) and not args.force:
+                print("%-16s %-10s %7.1f   kept" % (name, os.path.basename(base), s))
+                continue
+            generate(t, base, out)
+            kb = os.path.getsize(out) // 1024
+            print("%-16s %-10s %7.1f   %s (%d KB)"
+                  % (name, os.path.basename(base), s, out, kb))
 
 
 if __name__ == "__main__":
