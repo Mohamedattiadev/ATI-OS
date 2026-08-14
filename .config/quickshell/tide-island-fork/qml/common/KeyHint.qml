@@ -147,7 +147,27 @@ Item {
 
     Row {
         id: strip
-        anchors.left: parent.left
+
+        // ---- CENTRED, AND WHY IT IS `x` AND NOT AN ANCHOR ----
+        //
+        // Asked for after the panels grew borders: "the part which has the
+        // keys in the most bottom need some padding left right or center the
+        // keymap in center since they are near to the edges". They were
+        // anchored hard to the content's left edge, so on a wide panel the
+        // strip sat in the bottom-left corner with the rest of the footer
+        // empty, and on a narrow one it ran right up to the new 2 px frame.
+        //
+        // Centred it reads as a footer belonging to the whole panel rather
+        // than as a list that happens to start at the left margin.
+        //
+        // `x` rather than `anchors.horizontalCenter` because centring must
+        // NOT be unconditional. A long strip — the cheatsheet's six hints, or
+        // the onboarding's five with a "swipe · pages · up closes" among them
+        // — can be wider than the footer, and a centred item wider than its
+        // parent overflows by half on BOTH sides, losing the first hint as
+        // well as the last. Clamped at 0, it pins to the left and elides off
+        // the right only, which is the direction you can afford to lose.
+        x: Math.max(0, (parent.width - implicitWidth) / 2)
         anchors.verticalCenter: parent.verticalCenter
         spacing: root.pairSpacing
 

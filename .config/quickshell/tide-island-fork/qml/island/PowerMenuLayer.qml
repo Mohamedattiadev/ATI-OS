@@ -9,6 +9,8 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+// FORK: one ranking for every search field in the shell.
+import "../common/Match.js" as Match
 import "../common"
 
 //
@@ -102,19 +104,27 @@ FocusScope {
     // string that no longer tracks the box.
     readonly property string query: searchField.query
 
-    readonly property var visibleActions: {
-        const needle = root.query.trim().toLowerCase();
-        if (needle === "")
-            return root.actions;
-        const out = [];
-        for (const action of root.actions) {
-            if (String(action.label || "").toLowerCase().includes(needle)
-                    || String(action.detail || "").toLowerCase().includes(needle)
-                    || String(action.id || "").toLowerCase().includes(needle))
-                out.push(action);
-        }
-        return out;
-    }
+    // RANKED, not merely filtered — see qml/common/Match.js.
+    //
+    // This is the panel the ranking bug was reported against, and the data
+    // is why it matters here more than anywhere else:
+    //
+    //     Lock screen    loginctl lock-session -> hyprlock   <- "log" is here
+    //     Log out        loginctl terminate-session
+    //
+    // A flat "label or detail contains it" in list order leaves "Lock
+    // screen" selected for the query "log", because it matches on
+    // `loginctl` and comes first. Enter then locks the screen when you were
+    // one keystroke into logging out. Matching on the detail is still
+    // right — it is how "poweroff" finds Shut down — it just must not
+    // outrank the row whose NAME you typed.
+    //
+    // The id goes into the detail half of the rank so `refresh` still finds
+    // Reload config, without an id ever beating a label.
+    readonly property var visibleActions: Match.filter(
+        root.actions, root.query,
+        function (a) { return a.label; },
+        function (a) { return String(a.detail || "") + " " + String(a.id || ""); })
 
     // "" when no confirmation is pending, otherwise the id awaiting y/n.
     property string pendingConfirm: ""

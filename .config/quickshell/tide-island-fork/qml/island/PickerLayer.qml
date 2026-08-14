@@ -10,6 +10,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common/Match.js" as Match
 import "../common"
 
 //
@@ -170,50 +171,14 @@ FocusScope {
         return text !== "" && text.length <= 4 && text.charAt(0) !== "/";
     }
 
+    // Delegates to qml/common/Match.js, which IS this function — extracted
+    // and promoted after four other panels turned out to have the flat
+    // "contains, in list order" version this one replaced years ago. The
+    // buckets, the label-beats-detail rule and the subsequence fallback are
+    // all unchanged; the reasoning they were written with now lives beside
+    // the code in Match.js rather than in one panel.
     function matchRank(item, needle) {
-        if (needle === "")
-            return 4;
-        const label = (item.label || "").toLowerCase();
-        const hay = (label + " " + (item.detail || "")).toLowerCase();
-        // ---- WHY THE LABEL OUTRANKS THE DETAIL ----
-        //
-        // Reported as a case-sensitivity bug -- "I type c and Clipboard does
-        // not come up" -- and it is not one: both sides have been lowercased
-        // since this was written. The real cause is that `hay` is label AND
-        // detail, so on the screenshot menu's Destination page all three
-        // rows tied at 2 for the query "c":
-        //
-        //     File       detail "/home/ati/Screenshots"   <- the c is here
-        //     Clipboard  label starts with it
-        //     Both       detail "file and clipboard"      <- and here
-        //
-        // A tie keeps the script's order, so File stayed first and Enter ran
-        // it. The row whose NAME you typed lost to two rows that happened to
-        // spell the letter somewhere in a path.
-        //
-        // Four buckets instead of two. Still not a score -- order inside a
-        // bucket is whatever the script sent, so the list does not reshuffle
-        // under the cursor beyond the one regrouping the keystroke caused.
-        if (label.startsWith(needle))
-            return 4;
-        if (label.includes(needle))
-            return 3;
-        if (hay.includes(needle))
-            return 2;
-        // Otherwise: every character of the needle, in order, somewhere in
-        // the haystack. Spaces are skipped so "qute 2" and "qute2" are the
-        // same query — a space in a query is a word separator to a person,
-        // never a character to be found.
-        let at = 0;
-        for (const ch of needle) {
-            if (ch === " ")
-                continue;
-            at = hay.indexOf(ch, at);
-            if (at < 0)
-                return 0;
-            at += 1;
-        }
-        return 1;
+        return Match.rank(item.label, item.detail, needle);
     }
 
     // ---- WHY THERE ARE TWO PASSES AND NOT ONE ----
@@ -264,7 +229,7 @@ FocusScope {
     // So: no literals. `matchRank` decides how many ranks exist, this walks
     // down from the highest, and anything above 0 lands in the bucket for
     // its own rank. Adding a fifth rank needs no edit here.
-    readonly property int matchRankBest: 4
+    readonly property int matchRankBest: Match.BEST
     readonly property var filtered: {
         const needle = root.query.trim().toLowerCase();
         const buckets = [];

@@ -8,6 +8,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common/Match.js" as Match
 import "../common"
 
 //
@@ -108,10 +109,18 @@ Item {
 
         for (const section of root.sections) {
             const rows = [];
+            // Ranked through the shared matcher, but WITHIN the section and
+            // in the section's own order — see qml/common/Match.js.
+            //
+            // Reordering rows across the whole sheet would destroy the thing
+            // a cheatsheet is: "ROOT" and "RESIZE" are groups you read down,
+            // not a relevance list. So `Match.rank` decides membership and
+            // whether a row is a strong match, and the ORDER stays the
+            // config's. That is the one place this differs from the picker,
+            // where the list has no meaningful order to protect.
             for (const row of (section.rows || [])) {
                 if (needle === ""
-                        || (row.label || "").toLowerCase().includes(needle)
-                        || (row.combo || "").toLowerCase().includes(needle))
+                        || Match.rank(row.combo, row.label, needle) > 0)
                     rows.push(row);
             }
             if (rows.length === 0)

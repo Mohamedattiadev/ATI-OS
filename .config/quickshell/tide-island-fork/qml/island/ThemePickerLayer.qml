@@ -10,6 +10,7 @@ import "../common/Metrics.js" as Metrics
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
+import "../common/Match.js" as Match
 import "../common"
 
 //
@@ -115,17 +116,13 @@ FocusScope {
     // The grid's model. `themes` stays the unfiltered truth — applyTheme and
     // the active-tile check both read names, not indices, so nothing outside
     // this property has to know the list narrowed.
-    readonly property var visibleThemes: {
-        const needle = root.searchQuery.trim().toLowerCase();
-        if (needle === "")
-            return root.themes;
-        const out = [];
-        for (let i = 0; i < root.themes.length; i++) {
-            if (String(root.themes[i].name).toLowerCase().indexOf(needle) >= 0)
-                out.push(root.themes[i]);
-        }
-        return out;
-    }
+    // Ranked through the shared matcher, so "mono" puts mono-dark and
+    // mono-light above a theme that merely contains those letters, and so
+    // this panel cannot drift from the others. A theme has no detail field —
+    // the swatch IS its detail — so only the name is matched.
+    readonly property var visibleThemes: Match.filter(
+        root.themes, root.searchQuery,
+        function (t) { return t.name; }, null)
 
     function endSearch() {
         searchField.clear();

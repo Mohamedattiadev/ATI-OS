@@ -3495,13 +3495,11 @@ PanelWindow {
             // same property with "Property value set multiple times", which
             // takes the whole shell down rather than losing one border.
             property real outlineWidth: root.overviewContentVisible
-                || notificationHistorySurface
-                || islandContainer.openPanelState ? 1 : 0
+                || notificationHistorySurface ? 1 : 0
             property color outlineColor: root.overviewContentVisible
                 ? root.overviewCapsuleBorderColor
                 : (notificationHistorySurface ? IslandTheme.hairline
-                : (islandContainer.openPanelState ? mainCapsule.panelOutline
-                : "transparent"))
+                : "transparent")
 
             // ---- THE PANEL BORDER ----
             //
@@ -3523,9 +3521,11 @@ PanelWindow {
             // a colored blob" warns against — the notch has to read as bezel
             // when it is not being used.
             //
-            // 0.55 alpha: a full-strength accent hairline against the dark
-            // fill reads as a drawn line rather than as an edge, and this has
-            // to survive 22 palettes including the two mono ones.
+            // 0.55 alpha: a full-strength accent line against the dark fill
+            // reads as a drawn line rather than as an edge, and this has to
+            // survive 22 palettes including the two mono ones.
+            //
+            // 2 px, and only on THREE SIDES — see panelOutlineFrame below.
             //
             // The other half lives in scripts/border-focus.sh, which takes the
             // WINDOW borders down for as long as the panel is up. Without it
@@ -4091,6 +4091,58 @@ PanelWindow {
             // are Qt 6.7+; this runs on 6.11.
             topLeftRadius: targetRadius * (1 - root.notchUnround)
             topRightRadius: targetRadius * (1 - root.notchUnround)
+
+            // ---- THE PANEL FRAME: THREE SIDES, AT THE WINDOWS' THICKNESS ----
+            //
+            // Asked for after the 1 px all-round ring landed: "the popup
+            // island border is good but its thickness should be thicker like
+            // the opening apps border thickness and without top border, just
+            // left right down".
+            //
+            // Both halves are right for the same reason. The thickness is 2
+            // because that is `general:border_size` in looks.conf — the panel
+            // and a focused window are then outlined identically, which is
+            // what makes the ring read as "this surface is the active one"
+            // rather than as decoration the island happens to have.
+            //
+            // And there is no TOP border because the island has no top edge:
+            // it hangs off the screen's top, and `notchUnround` squares its
+            // upper corners flush against it as the panel opens. A line
+            // across the top would be drawing an edge where the shape's whole
+            // premise is that there is not one.
+            //
+            // HOW THREE SIDES ARE DRAWN WITH A Rectangle, which has only a
+            // four-sided `border`: this frame is TALLER than the capsule and
+            // sits at a negative y, and mainCapsule has `clip: true`. The top
+            // border — and the top corner radii with it — are clipped away
+            // before they are ever composited. No Shape, no Canvas, no four
+            // hand-placed rectangles whose corners have to be mitred by hand.
+            //
+            // It is a CHILD rather than mainCapsule's own `border` because
+            // that property is already bound to outlineWidth/outlineColor for
+            // the overview and the notification centre, and a second binding
+            // on one property is "Property value set multiple times", which
+            // fails the whole component rather than losing a border.
+            Rectangle {
+                id: panelOutlineFrame
+                visible: islandContainer.openPanelState
+                x: 0
+                // Pushed up by more than the radius so the clip removes the
+                // top edge AND both top corners, leaving two straight
+                // verticals that run off the top of the shape.
+                y: -mainCapsule.targetRadius - border.width
+                width: parent.width
+                height: parent.height - y
+                color: "transparent"
+                radius: mainCapsule.targetRadius
+                border.width: 2
+                border.color: mainCapsule.panelOutline
+
+                Behavior on border.color {
+                    ColorAnimation { duration: Motion.fadeInDuration() }
+                }
+            }
+
             opacity: root.autoHideProgress
             scale: 0.96 + root.autoHideProgress * 0.04
             transformOrigin: Item.Top
