@@ -622,10 +622,17 @@ SETTINGS = [
         "type": "bool",
         "default": False,
         "scope": "packaged",
-        "detail": "Only has an effect with Auto-hide on, which it is not by "
-                  "default — so this row is inert until that one is switched, "
-                  "and that is a property of the feature rather than a fault "
-                  "in the row.",
+        "detail": "INERT ON THIS MACHINE, and not for the reason this row "
+                  "used to give. It is an upstream 1.0.35 key; the installed "
+                  "package is tide-island 1.0.34, whose compiled "
+                  "UserConfigBackend has no such property — grep "
+                  "IslandBackend.qmltypes and the .so and both return zero "
+                  "hits, against a hit for islandAutoHideEnabled. The fork's "
+                  "QML does not read it either. So toggling this writes a key "
+                  "that nothing on this system reads. Left in place rather "
+                  "than deleted because it becomes live the moment the "
+                  "package is upgraded, but do not expect it to do anything "
+                  "before then.",
     },
     {
         "key": "wallpaperPywalEnabled",
