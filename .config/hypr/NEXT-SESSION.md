@@ -897,11 +897,19 @@ miss, and miss further the longer the move.
   success and a fallthrough chain never falls through. Measured on the qdrop
   handler: `hide` arrived, `show` never did. Name them `open`/`close`, which
   is why popups.qml spells its openers `showWallpaper` and not `show`.
-- **A DECLARED `Drag.active: false` IS A BINDING, AND IT PINS THE PROPERTY
-  `startDrag()` HAS TO SET.** The drag starts, reports nothing and delivers
-  nothing, and the only sign is one line in the shell log:
-  `WARN scene: startDrag() drag must be active`. Set `active = true`
-  imperatively, then call `startDrag()`.
+- **FOR `Drag.Automatic`, `Drag.active = true` IS THE START — `startDrag()`
+  IS NOT.** Three states, all indistinguishable from outside the log:
+
+      `Drag.active: false` DECLARED    nothing delivered. A declaration is a
+                                       BINDING and it pins the property.
+      `active = true; startDrag()`     delivered, and warned
+                                       `startDrag() drag must be active`
+                                       on every single drag.
+      `active = true` alone            delivered, silent, and repeatable.
+
+  So the warning was `startDrag()` finding the work already done, and the
+  fix was deleting the call rather than reordering it. Qt clears `active`
+  itself when the drag finishes — driven twice in a row to prove it.
 - **A QUICKSHELL LAYER SURFACE CAN RECEIVE AND START REAL WAYLAND DRAGS.**
   Probed with a bare `PanelWindow` + `DropArea` before anything was built on
   it — `PROBE dropped urls=["file:///…"]` — and there was no `DropArea`

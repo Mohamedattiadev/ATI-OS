@@ -474,9 +474,22 @@ Item {
                     if (Math.abs(m.x - tileMouse.px) + Math.abs(m.y - tileMouse.py) < 10)
                         return;
                     tileMouse.dragging = true;
+                    // `active = true` IS the start, for Drag.Automatic. This
+                    // took three measurements to pin down and all three are
+                    // worth keeping, because every one of them looks like the
+                    // others from the outside:
+                    //
+                    //   `Drag.active: false` DECLARED   nothing is delivered.
+                    //       A declaration is a binding and it holds the
+                    //       property at false against the drag.
+                    //   `active = true; startDrag()`    delivered, and warned
+                    //       `startDrag() drag must be active` on every drag.
+                    //   `active = true` alone           delivered, silent.
+                    //
+                    // So startDrag() was never the thing starting it, and the
+                    // warning was startDrag() finding the work already done.
+                    // Qt clears `active` itself when the drag finishes.
                     tile.Drag.active = true;
-                    tile.Drag.startDrag();
-                    tile.Drag.active = false;
                 }
 
                 onDoubleClicked: body.openTargets()
