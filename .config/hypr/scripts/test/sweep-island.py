@@ -30,10 +30,18 @@ folded into the pass rate.
 THE ISLAND HAS TO BE RUNNING. It does not have to be the ACTIVE bar: start
 it beside the topbar with
 
-    qs -p ~/.config/quickshell/tide-island-fork/shell.qml
+    ~/.config/hypr/scripts/island.sh
 
 and this sweep drives it without touching bar-mode. That matters because a
 crash in a sweep of the active bar leaves the session with no bar at all.
+
+This line USED to read `qs -p ~/.config/quickshell/tide-island-fork/shell.qml`
+and contradicted the note directly below it. `qs -p` keys an instance by the
+path it was GIVEN, so an island started by its entry FILE sits on a different
+key than the DIRECTORY every call in this sweep addresses, and all of them
+would quietly reach nothing — two lines of one file disagreeing about the one
+distinction that file exists to warn about. island.sh is also the only start
+that stops the standalone treetab/popups first.
 """
 
 import argparse
