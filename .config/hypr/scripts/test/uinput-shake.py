@@ -4,6 +4,7 @@
     ./uinput-shake.py [swings] [amplitude_px] [axis] [--mod super|shift|ctrl]
     ./uinput-shake.py drag [distance_px]      one-way drag, no shake
     ./uinput-shake.py wiggle                  shake with NO button held
+    ./uinput-shake.py to <x1> <y1> <x2> <y2>  press at 1, travel to 2, release
 
 The third thing uinput-click.py could not do. It presses BTN_LEFT, moves the
 pointer back and forth across `amplitude` pixels `swings` times, and lets go
@@ -36,10 +37,26 @@ The device is RELATIVE, so what reaches the compositor has been through
 libinput's pointer acceleration and the amplitude on screen is not the
 amplitude asked for here. That is the point -- it is the same path a hand
 takes.
+
+`to` IS THE DRAG-AND-DROP MODE, and it is closed-loop for that same reason.
+An open-loop "emit dx, dy" cannot land on a target: acceleration means the
+pixels asked for and the pixels travelled are different numbers, and the
+error compounds over a long move. So it reads `cursorpos` back from Hyprland
+after every step and steers -- in small steps, because small steps are the
+flat part of the acceleration curve. It also HOVERS before releasing: a drop
+target has to be told the pointer is over it before the button goes up, and
+a release in the same frame as the arrival is a drop nobody accepted.
+
+Pair it with `dnd-peer.py`, which is a window offering exactly one URI and
+printing whatever is dropped on it -- the controlled other end, so that "can
+you drag a file into qdrop" can be answered without synthesising a file move
+across somebody's home directory.
 """
 import fcntl
 import os
+import socket
 import struct
+import subprocess
 import sys
 import time
 
@@ -69,6 +86,43 @@ def syn(fd):
     emit(fd, EV_SYN, SYN_REPORT, 0)
 
 
+def cursorpos():
+    """Read the cursor back from Hyprland. One request per connection."""
+    p = (f"{os.environ['XDG_RUNTIME_DIR']}/hypr/"
+         f"{os.environ['HYPRLAND_INSTANCE_SIGNATURE']}/.socket.sock")
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(0.25)
+    s.connect(p)
+    s.sendall(b"cursorpos")
+    buf = b""
+    while True:
+        c = s.recv(64)
+        if not c:
+            break
+        buf += c
+    s.close()
+    x, _, y = buf.partition(b",")
+    return int(x), int(y)
+
+
+def steer(fd, tx, ty, step=8, tol=3, limit=600):
+    """Walk the pointer to (tx, ty), correcting against cursorpos each step."""
+    for _ in range(limit):
+        x, y = cursorpos()
+        dx, dy = tx - x, ty - y
+        if abs(dx) <= tol and abs(dy) <= tol:
+            return True
+        sx = max(-step, min(step, dx))
+        sy = max(-step, min(step, dy))
+        if sx:
+            emit(fd, EV_REL, REL_X, sx)
+        if sy:
+            emit(fd, EV_REL, REL_Y, sy)
+        syn(fd)
+        time.sleep(0.006)
+    return False
+
+
 def travel(fd, axis, total, sign):
     """Move `total` px along `axis` in STEP_PX reports."""
     moved = 0
@@ -87,12 +141,19 @@ def main():
         mod = MODS[sys.argv[sys.argv.index("--mod") + 1]]
 
     mode = "shake"
-    if argv and argv[0] in ("drag", "wiggle"):
+    if argv and argv[0] in ("drag", "wiggle", "to"):
         mode = argv.pop(0)
 
-    swings = int(argv[0]) if len(argv) > 0 else 4
-    amp = int(argv[1]) if len(argv) > 1 else 140
-    axis = REL_Y if (len(argv) > 2 and argv[2] in ("y", "vertical")) else REL_X
+    if mode == "to":
+        x1, y1, x2, y2 = (int(a) for a in argv[:4])
+        subprocess.run(["hyprctl", "dispatch", "movecursor", str(x1), str(y1)],
+                       capture_output=True)
+        time.sleep(0.25)
+
+    swings = int(argv[0]) if len(argv) > 0 and mode != "to" else 4
+    amp = int(argv[1]) if len(argv) > 1 and mode != "to" else 140
+    axis = REL_Y if (mode != "to" and len(argv) > 2
+                     and argv[2] in ("y", "vertical")) else REL_X
 
     fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
     for e in (EV_KEY, EV_REL, EV_SYN):
@@ -120,7 +181,19 @@ def main():
             emit(fd, EV_KEY, BTN_LEFT, 1); syn(fd)
             time.sleep(0.12)
 
-        if mode == "drag":
+        if mode == "to":
+            # Past the toolkit's drag threshold first, in one clear move, so
+            # the source knows a drag has begun and not a click.
+            for _ in range(4):
+                emit(fd, EV_REL, REL_X, 6); syn(fd)
+                time.sleep(0.02)
+            ok = steer(fd, x2, y2)
+            got = cursorpos()
+            print(f"  steered to {got}, wanted ({x2}, {y2}), "
+                  f"{'on target' if ok else 'GAVE UP'}")
+            # The target has to see the pointer over it before the release.
+            time.sleep(0.6)
+        elif mode == "drag":
             # One way, with a 1 px retrace every other report -- the tremor
             # that must be absorbed rather than counted.
             for i in range(swings * 8):
@@ -144,9 +217,12 @@ def main():
         fcntl.ioctl(fd, UI_DEV_DESTROY)
         os.close(fd)
 
-    print(f"{mode}: {swings} swings of {amp}px on "
-          f"{'y' if axis == REL_Y else 'x'}"
-          + (f", mod={sys.argv[sys.argv.index('--mod') + 1]}" if mod else ""))
+    if mode == "to":
+        print(f"to: ({x1}, {y1}) -> ({x2}, {y2}), button 1 held throughout")
+    else:
+        print(f"{mode}: {swings} swings of {amp}px on "
+              f"{'y' if axis == REL_Y else 'x'}"
+              + (f", mod={sys.argv[sys.argv.index('--mod') + 1]}" if mod else ""))
 
 
 if __name__ == "__main__":
