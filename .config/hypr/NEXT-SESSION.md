@@ -139,8 +139,14 @@ and every capture with it up is of the wrong shape.
 
    The SHAKE gesture is done and is not part of this — `scripts/qdrop-shake.py`,
    with the binds in binds.conf's qdrop block. So is "it only opens on
-   workspace 4", which was `pin` (rules.conf) and applied to the key as much
-   as to the gesture.
+   workspace 4", which affected the key as much as the gesture and is now
+   `scripts/qdrop.sh` moving the window before the reveal. **NOT `pin`** —
+   that was tried, shipped, and reported broken inside minutes: Hyprland
+   clamps a pinned window into the monitor, so the hidden `[371, -331]`
+   became `[371, 35]` and the shelf sat on screen on every workspace with no
+   way to hide it. Every measurement that "proved" pin worked had the shelf
+   VISIBLE. **Test a rule for this window in the state the window is
+   actually in, which is hidden.**
 
    What is left has one hard fact under it, driven with
    `scripts/test/dnd-peer.py` and `uinput-shake.py to`:
@@ -155,13 +161,39 @@ and every capture with it up is of the wrong shape.
    the shelf — and pcmanfm-qt is `QT_QPA_PLATFORM=wayland;xcb`, i.e. the file
    manager you would actually drag from sits on the wrong side of it.
 
-   **That makes the rewrite the fix, not a nice-to-have.** The shelf is on
-   XWayland only because it POSITIONS ITSELF (`move()` to top-centre, and the
-   slide-down reveal is more `move()`), which Wayland forbids a client. A
-   native Wayland surface placed by the compositor solves the drag bridge and
-   the island look in the same change — and `pin` plus a `move` windowrule is
-   already most of the placement. The reveal animation is the part with no
-   obvious home; the island draws its own.
+   **So REBUILD IT IN QUICKSHELL. That is the user's call and the
+   measurements agree with it** — "the qdrop should be same style with the
+   island … i think u can rebuild it with quickshell will be better".
+
+   Four separate defects collapse into that one change, which is why it is
+   worth more than patching any of them:
+
+   * **The drag bridge.** A Wayland-native shelf is on the same side of the
+     protocol as pcmanfm-qt, so the broken XWayland hop disappears rather
+     than being worked around.
+   * **The style.** It becomes a Quickshell surface next to the other popups
+     and gets `IslandTheme` for free, which is the whole ask.
+   * **The placement.** A layer surface is placed by the compositor, so the
+     `move()`-to-top-centre that forces XWayland today is not needed, and
+     `qdrop.sh`'s workspace dance goes away with it — a layer surface has no
+     workspace.
+   * **The hide.** Hiding stops being "move off-screen", which is what made
+     `pin` fatal and what costs a whole window in `hyprctl clients`.
+
+   Do NOT port the 2,187 lines. The parts worth keeping are the MODEL and the
+   contract, not the GTK: `~/.cache/qdrop.json` (a list of `{type, value,
+   added_ts, pinned}`), the type badges IMG/TXT/DIR/DOC, newest-first, the
+   selection/keyboard map already documented in qdrop.py's header, and the
+   8 s auto-hide. Keep `qdrop.py --add-text` working as the CLI so nothing
+   that feeds the shelf has to change.
+
+   The one thing with no obvious home is the slide-down reveal, which is
+   `move()` today; the island animates its own capsule and that is the
+   pattern to copy rather than re-invent.
+
+   Until it exists, the GTK shelf stays exactly as it is — it works fully
+   for XWayland sources and for `--add-text`, and it is the only shelf there
+   is.
 
    Two smaller observations from the same runs, neither acted on:
    * A drag OUT leaves a 20x20 `Qdrop.py` window mapped at (-99,-99) — GTK's
@@ -864,6 +896,14 @@ miss, and miss further the longer the move.
   nowhere. Audited the rest: `general:layout`, `master:mfact` and
   `general:col` are all declared.
 - **Test the code path you are shipping, not the one next to it.**
+- **TEST A WINDOW RULE IN THE STATE THE WINDOW IS ACTUALLY IN.** `pin` on
+  qdrop was measured three ways — opens on the active workspace, follows
+  7 -> 6 -> 7, position unchanged — and all three were true and all three
+  had the shelf VISIBLE. The defect is in the hidden state, which is where
+  that window spends almost its whole life: Hyprland CLAMPS A PINNED WINDOW
+  INTO THE MONITOR, so a hidden `[371, -331]` becomes `[371, 35]` and a
+  window that hides by leaving the screen can never hide again. It shipped
+  and was reported within minutes.
 - **A BIND CAN SEE THINGS THE IPC CANNOT, AND `event` IS HOW IT TELLS YOU.**
   Nothing in `hyprctl` reports pointer BUTTON state — forty commands, none of
   them about the pointer. A `bindn` (non-consuming) on `mouse:272` sees it,

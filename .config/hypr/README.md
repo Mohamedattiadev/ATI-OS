@@ -42,6 +42,7 @@ Scripts worth knowing by name:
 | `layout-notify.sh` | qtile's non-English layout warning, on the shared id 9001 |
 | `reap-island-helpers.sh` | kills the packaged backend's orphaned watcher processes |
 | `qdrop-shake.py` | shake a dragged file to open the drop shelf — see below |
+| `qdrop.sh` | the shelf's one entry point: puts it on the workspace you are on, then shows it |
 
 And the test tools, which are how anything here gets *driven* rather than
 read — `scripts/test/`:
@@ -352,8 +353,16 @@ same exclusion.
 
 `$alt SHIFT D` opens it; shaking the pointer while dragging opens it too
 (`scripts/qdrop-shake.py`, with the binds and the whole argument in
-binds.conf's qdrop block). It is `pin`ned in rules.conf, so it opens on
-whatever workspace you are on rather than the one its daemon was born on.
+binds.conf's qdrop block). Both go through `scripts/qdrop.sh`, which moves
+the window to the workspace you are on before revealing it — the shelf hides
+by moving OFF-SCREEN rather than by unmapping, so its window is never
+re-placed and would otherwise open on the workspace its daemon was born on.
+
+**Do not "fix" that with `windowrule = pin`.** It was tried and it makes the
+shelf impossible to hide: Hyprland clamps a pinned window into the monitor,
+so the hidden position of `[371, -331]` becomes `[371, 35]` — on screen, on
+every workspace, permanently. Any rule aimed at this window has to be tested
+while the window is HIDDEN, which is the state it is in almost always.
 
 The gesture's button state comes from Hyprland binds dispatching `event`,
 which is worth knowing because it is the general trick: **a bind can see
