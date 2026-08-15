@@ -39,6 +39,7 @@ import "qml/controlcenter"
 import "qml/connectivity"
 import "qml/display"
 import "qml/island"
+import "qml/qdrop"
 import "qml/sysmon"
 import "qml/wifi"
 import "qml/workspace"
@@ -1313,6 +1314,34 @@ PanelWindow {
             islandContainer.showSysmonPanel();
     }
 
+    // FORK: the drop shelf. $alt SHIFT D in hypr/binds.conf, and the shake
+    // gesture in hypr/scripts/qdrop-shake.py. See qml/qdrop/QdropLayer.qml.
+    function toggleQdropWindow() {
+        if (islandContainer.islandState === "qdrop")
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showQdrop();
+    }
+
+    // SHOW, never toggle, for the gesture: you are holding a file, and a
+    // shake that CLOSED the shelf because it happened to be open would drop
+    // what you were carrying onto nothing.
+    function showQdropWindow() {
+        islandContainer.showQdrop();
+    }
+
+    // Closing it explicitly, and reading which state is up — both exist for
+    // the IPC, which needs an unambiguous show/hide/status rather than a
+    // toggle. NEXT-SESSION.md's RULES: "Toggle IPCs go out of phase. Prefer
+    // explicit show/hide when scripting", and both of this shelf's callers
+    // are scripts.
+    function closeQdropWindow() {
+        if (islandContainer.islandState === "qdrop")
+            islandContainer.smartRestoreState();
+    }
+
+    readonly property string islandStateName: islandContainer.islandState
+
     function toggleWifiQrWindow() {
         if (islandContainer.islandState === "wifi_qr")
             islandContainer.smartRestoreState();
@@ -1845,6 +1874,7 @@ PanelWindow {
             || islandState === "display_panel"
             || islandState === "audio_panel"
             || islandState === "sysmon_panel"
+            || islandState === "qdrop"
             || islandState === "wifi_qr"
             || islandState === "mode_keys"
             || islandState === "cheatsheet"
@@ -2075,6 +2105,9 @@ PanelWindow {
         // FORK: the system monitor — CPU, memory and disk. The content the
         // control centre never had, on the key qtile's system widget box had.
         readonly property bool sysmonPanelLayerVisible: !root.overviewVisible && islandState === "sysmon_panel"
+        // FORK: the drop shelf, rebuilt off GTK. See qml/qdrop/QdropLayer.qml
+        // for the drag-bridge measurement that forced the rewrite.
+        readonly property bool qdropLayerVisible: !root.overviewVisible && islandState === "qdrop"
         // FORK: the Wi-Fi QR — qtile's WifiQR, `s` inside its WiFi chord.
         readonly property bool wifiQrLayerVisible: !root.overviewVisible && islandState === "wifi_qr"
         // FORK: the remaining states from DESIGN-SPEC.md's list. None of
@@ -3166,6 +3199,18 @@ PanelWindow {
             stopAutoHideTimer();
         }
 
+        // FORK: the drop shelf. Same shape as every other show: cancel the
+        // side-swipe, drop any transient, assign the state, let the capsule
+        // morph.
+        function showQdrop() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "qdrop";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
         // FORK: the Wi-Fi QR, so a phone joins by camera instead of by
         // reading the PSK off the screen. See qml/wifi/WifiQrLayer.qml.
         function showWifiQr() {
@@ -4208,6 +4253,15 @@ PanelWindow {
                     // air without the three dials drifting so far apart that
                     // they stop reading as one row.
                     return Math.min(Metrics.px(560), root.width - Metrics.px(48));
+                case "qdrop":
+                    // WIDE, and for the opposite reason to the system
+                    // monitor's narrowness: the content is a GRID, so width
+                    // buys a column rather than whitespace. At a 104 px cell
+                    // 720 is six across, which is a shelf you can see at a
+                    // glance without the capsule spanning the screen. Clamped
+                    // like the rest so a small display gets fewer columns
+                    // instead of a panel hanging off both edges.
+                    return Math.min(Metrics.px(720), root.width - Metrics.px(48));
                 case "wifi_qr":
                     // Square-ish and narrow, because the content is one
                     // square symbol. Anything wider is white card the phone
@@ -4381,6 +4435,19 @@ PanelWindow {
                         ? Math.min(audioPanelLoader.item.preferredHeight,
                                    root.screen.height - Metrics.px(60))
                         : Metrics.px(360);
+                case "qdrop":
+                    // Content-sized, and the content is rows of tiles: the
+                    // panel reports chrome + ceil(count / perRow) rows, capped
+                    // at four so a shelf you have been filling all day cannot
+                    // push the capsule off the screen. The fallback is one
+                    // row's worth, which is what an EMPTY shelf draws too —
+                    // so the frame before the loader answers is the right
+                    // shape rather than a guess, which is the re-aim this
+                    // file's own notes keep warning about.
+                    return qdropLoader.item
+                        ? Math.min(qdropLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(260);
                 case "sysmon_panel":
                     // Content-sized like the rest. It genuinely varies: the
                     // panel is three dials plus one row per mounted
@@ -4599,6 +4666,7 @@ PanelWindow {
                 case "display_panel":
                 case "audio_panel":
                 case "sysmon_panel":
+                case "qdrop":
                 case "wifi_qr":
                 case "theme_picker":
                 case "wifi_panel":
@@ -5894,6 +5962,31 @@ PanelWindow {
                         panelFill: IslandTheme.shellFill
                         accentColor: IslandTheme.accent
                         showCondition: islandContainer.sysmonPanelLayerVisible
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            // FORK: the drop shelf, as an island state rather than a window
+            // of its own — "the shelf drop should be like the other islend
+            // popup coming form the islned it self".
+            //
+            // NOT retained. The store behind it is a FileView on
+            // ~/.cache/qdrop.json, and an island that has never opened the
+            // shelf should not be watching that file; a PanelLoader that is
+            // not live has no store at all. The panel is cheap to build —
+            // a GridView over an array — so there is nothing to amortise.
+            PanelLoader {
+                id: qdropLoader
+                anchors.fill: parent
+                live: islandContainer.qdropLayerVisible
+
+                sourceComponent: Component {
+                    QdropLayer {
+                        textFontFamily: root.textFontFamily
+                        panelFill: IslandTheme.shellFill
+                        accentColor: IslandTheme.accent
+                        showCondition: islandContainer.qdropLayerVisible
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }

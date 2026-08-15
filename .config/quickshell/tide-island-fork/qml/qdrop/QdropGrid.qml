@@ -58,6 +58,17 @@ Item {
 
     property QdropStore store
 
+    // Published so a HOST can size itself against the real cell rather than
+    // re-deriving it. The island panel needs this: PopupMetrics and the
+    // island's Metrics both read ~/.cache/qtile/ui_scale but the island
+    // applies its own 0.92 correction on top, so a host that computed
+    // `Metrics.px(104)` and a grid that laid out `PopupMetrics.s(104)` would
+    // disagree by 8% — and the host's height would be wrong by a fraction of
+    // a row. The tiles keep POPUP scaling on the argument PopupMetrics.qml
+    // already makes for its own numbers: they were drawn against the popup,
+    // not against the capsule.
+    readonly property real cellSize: PopupMetrics.s(104)
+
     // ---- selection, keyed by the entry's index in store.entries ----
     //
     // NOT by its position in the grid: `view` re-sorts, and a selection that
@@ -298,8 +309,8 @@ Item {
 
         anchors.fill: parent
         clip: true
-        cellWidth: PopupMetrics.s(104)
-        cellHeight: PopupMetrics.s(104)
+        cellWidth: body.cellSize
+        cellHeight: body.cellSize
         model: body.view
         boundsBehavior: Flickable.StopAtBounds
         currentIndex: body.focusIdx
