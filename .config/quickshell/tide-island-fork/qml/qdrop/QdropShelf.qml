@@ -75,37 +75,53 @@ import "../popups"
 // works at all. A popup that closed when it lost focus would close the
 // instant the drag it exists to receive began.
 //
+// THE BODY IS NOT IN THIS FILE, and that is the point of the split. There
+// are two frames now — this standalone popup, and the island's own panel in
+// QdropLayer.qml — around ONE body, QdropGrid.qml. The interaction model the
+// user asked for ("same style of file [f] [f] [f]…, how can i select more
+// than one, how to copy or drag them out — do all possibility to match the
+// qdrop") lives there, once, so the two hosts cannot drift apart.
+//
 PopupChrome {
     id: shelf
 
-    // WIDTH/HEIGHT are the GTK shelf's 624x331 plus the chrome it does not
-    // have — the header and the keycap bar — on the same argument
-    // WifiQrPopup.qml makes for its own numbers.
-    popupWidth: PopupMetrics.s(640)
-    popupHeight: PopupMetrics.s(430)
+    // Wider than the GTK shelf's 624x331 because the tiles need the room: at
+    // 104 px a cell that is six across and three deep, plus the header and
+    // the keycap bar this has and that one does not.
+    popupWidth: PopupMetrics.s(680)
+    popupHeight: PopupMetrics.s(460)
 
     // By CODEPOINT, like every other popup here, because a private-use
     // character does not survive being read back out of a file. 0xF0BA8 is
-    // the tray; 0xF01DA below is the arrow-into-a-line. Both were rendered
-    // and LOOKED AT before being chosen — the first literal glyph tried here
-    // came out as a pair of scissors.
+    // the tray. It was rendered and LOOKED AT before being chosen — the first
+    // literal glyph tried here came out as a pair of scissors.
     titleIcon: String.fromCodePoint(0xF0BA8)
     title: "Drop shelf"
     subtitle: store.count === 0
         ? "drag files here — or shake one while you carry it"
-        : "drag items back out, newest first"
+        : "click, ctrl+click or drag a box to select · drag out to move"
 
-    badgeLabel: "items"
-    badgeValue: String(store.count)
+    badgeLabel: grid.selectedCount > 0 ? "selected" : "items"
+    badgeValue: grid.selectedCount > 0
+        ? String(grid.selectedCount) : String(store.count)
 
+    // The bar is the MOUSE answers as well as the keys, because half of what
+    // was asked is "how do I do this with the mouse".
     hints: [
-        { key: "j/k", desc: "move" },
-        { key: "↵", desc: "open" },
+        { key: "click", desc: "select" },
+        { key: "ctrl", desc: "add" },
+        { key: "drag", desc: "out" },
+        { key: "^c", desc: "copy" },
         { key: "d", desc: "remove" },
-        { key: "a", desc: "all" },
-        { key: "c", desc: "clear" },
         { key: "Esc", desc: "close" }
     ]
+
+    // The default gap is hintSize*0.6*FIVE, sized for the two- and three-chip
+    // bars. The Row is centred, so a bar that overflows is clipped at BOTH
+    // ends — the first capture of this lost the `c` of `click`. Same fix and
+    // same value the network, volume, display, bluetooth and cheatsheet
+    // popups all reached for.
+    hintGap: PopupMetrics.hintSize * 0.6
 
     // ---- the two overrides, and why, above ----
     anchors { top: true }
@@ -114,340 +130,63 @@ PopupChrome {
 
     signal requestClose()
 
-    property int current: 0
-    property var selected: ({})
+    property string status: ""
 
     QdropStore { id: store }
 
-    function selectedIndexes() {
-        const out = [];
-        for (const k in shelf.selected)
-            if (shelf.selected[k])
-                out.push(parseInt(k));
-        if (out.length === 0 && store.count > 0)
-            out.push(shelf.current);
-        out.sort(function (a, b) { return a - b; });
-        return out;
-    }
+    onKeyPressed: (key, mods, text) => grid.handleKey(key, mods)
 
-    function clearSelection() {
-        shelf.selected = ({});
-    }
-
-    function toggleAt(i) {
-        const s = {};
-        for (const k in shelf.selected)
-            s[k] = shelf.selected[k];
-        s[i] = !s[i];
-        shelf.selected = s;
-    }
-
-    function selectAll() {
-        const s = {};
-        for (let i = 0; i < store.count; i++)
-            s[i] = true;
-        shelf.selected = s;
-    }
-
-    function openAt(i) {
-        const e = store.entries[i];
-        if (!e)
-            return;
-        // xdg-open for everything, which is what the GTK shelf's Enter does.
-        // A text entry has no target to open, so it is copied instead —
-        // wl-copy rather than the clipboard API because copyq is the
-        // clipboard manager on this desktop and it watches the selection.
-        if (String(e.type) === "text")
-            Quickshell.execDetached(["sh", "-c",
-                "printf '%s' \"$1\" | wl-copy", "sh", String(e.value)]);
-        else
-            Quickshell.execDetached(["xdg-open", String(e.value)]);
-    }
-
-    function removeSelected() {
-        const idx = shelf.selectedIndexes();
-        if (idx.length === 0)
-            return;
-        store.removeAt(idx);
-        shelf.clearSelection();
-        if (shelf.current >= store.count)
-            shelf.current = Math.max(0, store.count - 1);
-    }
-
-    onKeyPressed: (key, mods, text) => {
-        const ctrl = (mods & Qt.ControlModifier) !== 0;
-        if (key === Qt.Key_J || key === Qt.Key_Down) {
-            shelf.current = Math.min(store.count - 1, shelf.current + 1);
-            list.positionViewAtIndex(shelf.current, ListView.Contain);
-        } else if (key === Qt.Key_K || key === Qt.Key_Up) {
-            shelf.current = Math.max(0, shelf.current - 1);
-            list.positionViewAtIndex(shelf.current, ListView.Contain);
-        } else if (key === Qt.Key_Return || key === Qt.Key_Enter) {
-            shelf.openAt(shelf.current);
-        } else if (key === Qt.Key_D || key === Qt.Key_Delete) {
-            shelf.removeSelected();
-        } else if (key === Qt.Key_A) {
-            if (ctrl && (mods & Qt.ShiftModifier))
-                shelf.clearSelection();
-            else
-                shelf.selectAll();
-        } else if (key === Qt.Key_C) {
-            store.clear();
-            shelf.clearSelection();
-        } else if (key === Qt.Key_Space) {
-            shelf.toggleAt(shelf.current);
-        }
-    }
-
-    // ---- THE BODY ----
     Item {
         anchors.fill: parent
 
-        ListView {
-            id: list
+        QdropGrid {
+            id: grid
 
             anchors.fill: parent
-            clip: true
-            spacing: PopupMetrics.s(6)
-            model: store.entries
-            currentIndex: shelf.current
-            boundsBehavior: Flickable.StopAtBounds
+            store: store
 
-            delegate: Rectangle {
-                id: row
+            cFg: shelf.cFg
+            cMuted: shelf.cMuted
+            cSurface: shelf.cSurface
+            cSurfaceAlt: shelf.cSurfaceAlt
+            cHighlight: shelf.cHighlight
+            cHighlightInk: shelf.cHighlightInk
 
-                required property var modelData
-                required property int index
-
-                width: list.width
-                height: PopupMetrics.s(52)
-                radius: PopupMetrics.s(8)
-                color: shelf.selected[index]
-                    ? shelf.cHighlight
-                    : (index === shelf.current ? shelf.cSurfaceAlt : shelf.cSurface)
-
-                readonly property color ink: shelf.selected[index]
-                    ? shelf.cHighlightInk : shelf.cFg
-                readonly property color inkMuted: shelf.selected[index]
-                    ? shelf.cHighlightInk : shelf.cMuted
-
-                Row {
-                    anchors.fill: parent
-                    anchors.leftMargin: PopupMetrics.s(10)
-                    anchors.rightMargin: PopupMetrics.s(10)
-                    spacing: PopupMetrics.s(10)
-
-                    // The type badge, IMG/TXT/DIR/DOC/URL/FILE — qdrop.py's
-                    // entry_badge(), same answers, in QdropStore.
-                    Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: PopupMetrics.s(46)
-                        height: PopupMetrics.s(22)
-                        radius: PopupMetrics.s(5)
-                        color: shelf.selected[row.index]
-                            ? shelf.cHighlightInk : shelf.cSurfaceAlt
-                        Text {
-                            anchors.centerIn: parent
-                            text: store.badge(row.modelData)
-                            color: shelf.selected[row.index]
-                                ? shelf.cHighlight : IslandTheme.info
-                            font.family: PopupMetrics.font
-                            font.pixelSize: PopupMetrics.hintSize
-                            font.bold: true
-                            renderType: Text.NativeRendering
-                        }
-                    }
-
-                    // A thumbnail for an image, because the GTK shelf has one
-                    // and "which screenshot was that" is the whole reason a
-                    // shelf beats a list of paths.
-                    Image {
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: store.isImage(row.modelData)
-                        width: visible ? PopupMetrics.s(40) : 0
-                        height: PopupMetrics.s(40)
-                        fillMode: Image.PreserveAspectCrop
-                        clip: true
-                        asynchronous: true
-                        cache: true
-                        sourceSize.height: PopupMetrics.s(40) * 2
-                        source: store.isImage(row.modelData)
-                            ? "file://" + String(row.modelData.value) : ""
-                    }
-
-                    Column {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - PopupMetrics.s(
-                            store.isImage(row.modelData) ? 130 : 90)
-                        spacing: PopupMetrics.s(1)
-
-                        Text {
-                            width: parent.width
-                            text: store.label(row.modelData)
-                            color: row.ink
-                            elide: Text.ElideMiddle
-                            font.family: PopupMetrics.font
-                            font.pixelSize: PopupMetrics.rowSize
-                            font.bold: true
-                            renderType: Text.NativeRendering
-                        }
-                        Text {
-                            width: parent.width
-                            text: store.subtitle(row.modelData)
-                            color: row.inkMuted
-                            elide: Text.ElideMiddle
-                            font.family: PopupMetrics.font
-                            font.pixelSize: PopupMetrics.hintSize
-                            renderType: Text.NativeRendering
-                        }
-                    }
-                }
-
-                // ---- DRAGGING BACK OUT ----
-                //
-                // Drag.Automatic, not Drag.Internal: Internal is QML's own
-                // in-scene drag between DropAreas, and what is wanted here is
-                // a REAL system drag that another application can receive.
-                // Automatic hands the mimeData to the platform, which on
-                // Wayland is wl_data_device — the same protocol pcmanfm-qt
-                // speaks, which is the entire point of this rewrite.
-                //
-                // startDrag() is called from the MouseArea below rather than
-                // bound to `Drag.active`, because a drag has to begin from a
-                // real press-and-move; binding it to a boolean starts a drag
-                // nobody asked for.
-                // NO `Drag.active: false` here, and that is not an omission.
-                // Writing it declares a BINDING that holds the property at
-                // false, and startDrag() is exactly the call that needs to
-                // set it — so the drag starts, reports nothing, and delivers
-                // nothing. Measured: `QDROPDBG startDrag row 0` logged on
-                // every attempt while the receiving window saw no drag at
-                // all.
-                Drag.dragType: Drag.Automatic
-                Drag.supportedActions: Qt.CopyAction
-                Drag.mimeData: {
-                    const e = row.modelData;
-                    if (!e)
-                        return ({});
-                    if (String(e.type) === "text")
-                        return { "text/plain": String(e.value) };
-                    if (String(e.type) === "url")
-                        return {
-                            "text/uri-list": String(e.value),
-                            "text/plain": String(e.value)
-                        };
-                    const uri = "file://" + encodeURI(String(e.value));
-                    return { "text/uri-list": uri, "text/plain": String(e.value) };
-                }
-
-                MouseArea {
-                    id: rowMouse
-
-                    anchors.fill: parent
-                    acceptedButtons: Qt.LeftButton
-                    property real pressX: 0
-                    property real pressY: 0
-                    property bool dragging: false
-
-                    onPressed: (m) => {
-                        shelf.current = row.index;
-                        rowMouse.pressX = m.x;
-                        rowMouse.pressY = m.y;
-                        rowMouse.dragging = false;
-                        if (m.modifiers & Qt.ControlModifier)
-                            shelf.toggleAt(row.index);
-                    }
-                    onPositionChanged: (m) => {
-                        if (rowMouse.dragging || !rowMouse.pressed)
-                            return;
-                        // Qt's own drag threshold, so a click that wobbles is
-                        // still a click.
-                        const dx = m.x - rowMouse.pressX;
-                        const dy = m.y - rowMouse.pressY;
-                        if (Math.abs(dx) + Math.abs(dy) < 10)
-                            return;
-                        rowMouse.dragging = true;
-                        // `active` FIRST, then startDrag(). Not the other way
-                        // round and not instead of: the engine says so out
-                        // loud, and it is the whole reason the first version
-                        // of this delivered nothing --
-                        //
-                        //     WARN scene: startDrag() drag must be active
-                        //
-                        // logged on every attempt while the receiving window
-                        // saw no drag at all. Assigned imperatively rather
-                        // than declared as `Drag.active: false`, because a
-                        // declaration is a BINDING and a binding holds the
-                        // property at false against the drag that needs it.
-                        row.Drag.active = true;
-                        row.Drag.startDrag();
-                        row.Drag.active = false;
-                    }
-                    onDoubleClicked: shelf.openAt(row.index)
-                }
-            }
-
-            // ---- EMPTY STATE ----
-            //
-            // The shelf is empty most of the time it is looked at, so the
-            // empty state is not a footnote: it is where it says what it is
-            // for. The GTK one draws a dashed target here too.
-            Item {
-                anchors.centerIn: parent
-                width: parent.width * 0.8
-                height: PopupMetrics.s(90)
-                visible: store.count === 0
-
-                Column {
-                    anchors.centerIn: parent
-                    spacing: PopupMetrics.s(6)
-
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: String.fromCodePoint(0xF01DA)
-                        color: shelf.cMuted
-                        font.family: PopupMetrics.font
-                        font.pixelSize: Math.round(PopupMetrics.headSize * 2.2)
-                        renderType: Text.NativeRendering
-                    }
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: "nothing on the shelf"
-                        color: shelf.cMuted
-                        font.family: PopupMetrics.font
-                        font.pixelSize: PopupMetrics.rowSize
-                        renderType: Text.NativeRendering
-                    }
-                }
+            onOpenRequested: (i) => shelf.openEntry(i)
+            onStatusChanged: (t) => {
+                shelf.status = t;
+                statusClear.restart();
             }
         }
 
         // ---- DROPPING IN ----
         //
-        // Last child so it is on top of the list, and it does NOT eat the
-        // mouse: a DropArea only ever sees drags, so the rows underneath keep
-        // their clicks and their drag-out.
+        // Last child so it is over the tiles, and it costs them nothing: a
+        // DropArea only ever sees DRAGS, so every click, rubber-band and
+        // drag-out underneath still works.
         DropArea {
             id: drop
 
             anchors.fill: parent
 
             onDropped: (d) => {
-                let took = false;
+                let n = 0;
                 if (d.hasUrls) {
                     for (let i = 0; i < d.urls.length; i++)
-                        took = store.addUrl(d.urls[i]) || took;
+                        if (store.addUrl(d.urls[i]))
+                            n++;
                 } else if (d.hasText) {
-                    took = store.addText(d.text);
+                    if (store.addText(d.text))
+                        n++;
                 }
-                if (took)
+                if (n > 0) {
                     d.accept(Qt.CopyAction);
+                    shelf.status = n + (n === 1 ? " item added" : " items added");
+                    statusClear.restart();
+                }
             }
         }
 
-        // The whole body glows while a drag is over it. On top of the list so
-        // it reads over the rows, and transparent to the mouse so it cannot
-        // interfere with the drop it is describing.
         Rectangle {
             anchors.fill: parent
             radius: PopupMetrics.s(10)
@@ -462,14 +201,34 @@ PopupChrome {
         }
     }
 
+    Timer {
+        id: statusClear
+        interval: 2500
+        onTriggered: shelf.status = ""
+    }
+
+    function openEntry(i) {
+        const e = store.entries[i];
+        if (!e)
+            return;
+        // A text entry has nothing to open, so it is copied instead — which
+        // is what the GTK shelf's Enter does with one.
+        if (String(e.type) === "text")
+            Quickshell.execDetached(["sh", "-c",
+                "printf '%s' \"$1\" | wl-copy", "sh", String(e.value)]);
+        else
+            Quickshell.execDetached(["xdg-open", String(e.value)]);
+    }
+
     // ---- THE FOOTER ----
     //
-    // PopupChrome DRAWS the footer card whether or not anything is put in it,
-    // so leaving it empty is not "no footer", it is an empty grey box — which
-    // is what the first capture of this showed. What belongs in it is the one
-    // thing the rows cannot say: their labels are elided to a filename, and a
-    // shelf full of `screenshot.png` is a shelf you cannot use. So the footer
-    // carries the CURRENT row in full.
+    // PopupChrome DRAWS the footer card whether or not you fill it, so an
+    // empty footer is an empty grey box — which is what the first capture of
+    // this showed. It carries the thing the tiles cannot: their labels are
+    // elided to a filename, and a shelf full of `screenshot.png` is a shelf
+    // you cannot use. A status line takes it over for a moment when something
+    // happens, because a copy that gives no feedback looks like a copy that
+    // did not happen.
     footer: Item {
         anchors.fill: parent
 
@@ -483,10 +242,11 @@ PopupChrome {
 
             Text {
                 width: parent.width
-                text: store.count === 0
-                    ? "drop files, folders, images or text"
-                    : store.label(store.entries[shelf.current])
-                color: shelf.cFg
+                text: shelf.status !== "" ? shelf.status
+                    : (store.count === 0 ? "drop files, folders, images or text"
+                       : store.label(store.entries[grid.view[
+                           Math.min(grid.focusIdx, Math.max(0, grid.count - 1))]]))
+                color: shelf.status !== "" ? shelf.cHighlight : shelf.cFg
                 elide: Text.ElideMiddle
                 font.family: PopupMetrics.font
                 font.pixelSize: PopupMetrics.rowSize
@@ -497,13 +257,26 @@ PopupChrome {
                 width: parent.width
                 text: store.count === 0
                     ? "shake a file while you drag it and this opens by itself"
-                    : String((store.entries[shelf.current] || {}).value || "")
+                    : String((store.entries[grid.view[
+                        Math.min(grid.focusIdx, Math.max(0, grid.count - 1))]]
+                        || {}).value || "")
                 color: shelf.cMuted
                 elide: Text.ElideMiddle
                 font.family: PopupMetrics.font
                 font.pixelSize: PopupMetrics.hintSize
                 renderType: Text.NativeRendering
             }
+        }
+
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.right: parent.right
+            anchors.rightMargin: PopupMetrics.s(12)
+            text: grid.sortMode
+            color: shelf.cMuted
+            font.family: PopupMetrics.font
+            font.pixelSize: PopupMetrics.hintSize
+            renderType: Text.NativeRendering
         }
     }
 

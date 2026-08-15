@@ -166,6 +166,20 @@ Item {
         root.persist();
     }
 
+    // `pinned` has been in the file's schema since the GTK shelf wrote it and
+    // nothing has ever toggled it from here. Pinned entries sort first, which
+    // is the only behaviour attached to it.
+    function togglePin(indexes) {
+        const list = root.entries.slice();
+        for (let i = 0; i < indexes.length; i++) {
+            const e = list[indexes[i]];
+            if (e)
+                e.pinned = !e.pinned;
+        }
+        root.entries = list;
+        root.persist();
+    }
+
     // ---- presentation, kept here so both hosts agree ----
     //
     // entry_badge() and entry_label() from qdrop.py, same answers.
@@ -229,6 +243,21 @@ Item {
             return "link";
         const slash = v.replace(/\/+$/, "").lastIndexOf("/");
         return slash > 0 ? v.substring(0, slash) : v;
+    }
+
+    // The BIG glyph on a tile, for everything a thumbnail cannot show. The
+    // badge says what it is in three letters; this says it at a glance, which
+    // is what a shelf of tiles is read by. Codepoints, not literals — a
+    // private-use character does not survive being read back out of a file,
+    // and every one of these was rendered and looked at before being chosen.
+    function glyph(entry) {
+        const b = root.badge(entry);
+        if (b === "IMG")  return String.fromCodePoint(0xF021F);  // image
+        if (b === "DIR")  return String.fromCodePoint(0xF024B);  // folder
+        if (b === "DOC")  return String.fromCodePoint(0xF0219);  // file-document
+        if (b === "URL")  return String.fromCodePoint(0xF0337);  // link
+        if (b === "TXT")  return String.fromCodePoint(0xF0219);  // file-document
+        return String.fromCodePoint(0xF0214);                    // generic file
     }
 
     function isImage(entry) {
