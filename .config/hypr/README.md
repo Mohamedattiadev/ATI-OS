@@ -40,6 +40,7 @@ Scripts worth knowing by name:
 | `island-picker.py` | the generic picker's menus, including the PDF toolkit |
 | `theme-list.sh` | the palette list, parsed out of `theme-apply` |
 | `layout-notify.sh` | qtile's non-English layout warning, on the shared id 9001 |
+| `reap-island-helpers.sh` | kills the packaged backend's orphaned watcher processes |
 
 And the test tools, which are how anything here gets *driven* rather than
 read — `scripts/test/`:
@@ -356,6 +357,27 @@ ps -eo pid,args | awk '/socket2|listener/ && !/awk/'
 
 "The read ended" should reconnect; "the socket **file** is gone" means the
 compositor left and the listener should exit.
+
+### Audio stops working, or the bus feels slow
+
+The packaged backend spawns up to four long-lived watchers per shell — a
+`pactl subscribe`, two `dbus-monitor`s and a `pw-mon` — and does **not** reap
+them when the shell is killed rather than asked to quit. They reparent to
+init and accumulate for the life of the session.
+
+```sh
+ps -eo ppid=,args= | awk '$1 == 1 && (/dbus-monitor/ || /pactl/ || /pw-mon/)' | wc -l
+```
+
+104 `dbus-monitor` and 35 `pactl subscribe` is a real reading off this
+machine. The audio one is the one that bites: enough of them exhausts
+pipewire-pulse's client limit and *every* pulse client on the desktop starts
+failing with "too many client application connections".
+
+`scripts/reap-island-helpers.sh` clears them, and both `island.sh` and
+`topbar.sh` run it before starting anything. PPID 1 is the whole matcher — a
+live shell's helpers have that shell as their parent — so it cannot take one
+away from a running island.
 
 ### A font silently became Noto Sans CJK
 

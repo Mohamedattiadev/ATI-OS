@@ -69,20 +69,26 @@ entry_running() {
      END { exit !found }'
 }
 
-# REFUSES rather than starting a second one, and exits 0 while doing it.
-# "The bar you asked for is already up" is the requested state, not a failure,
-# and bar-switch runs under `set -e` with a rollback on any non-zero — so
-# exiting non-zero here would make an idempotent call look like a failed
-# switch and roll ~/.cache/bar-mode back to the bar that is not running.
-if entry_running "$CONFIG_DIR"; then
-  echo "topbar.sh: a topbar is already running for $CONFIG_DIR — not starting a second" >&2
-  exit 0
-fi
+# The refusal itself is at the BOTTOM, immediately before the exec, and that
+# placement is the whole of it. Written here first, and it made the script
+# LESS useful than the bug it fixed: an early `exit 0` skipped the treetab and
+# popups blocks below, so the one case that matters — the topbar up and its
+# two session surfaces gone, which is exactly the state island.sh leaves when
+# it stops them — could no longer be repaired by running this script. Caught
+# by doing it: `topbar.sh` refused, and the sidebar did not come back.
+#
+# So the surfaces are reconciled first and the bar is refused last.
 
 # Carried over from island.sh for the same reason it is there: Quickshell uses
 # jemalloc, which otherwise keeps every Loader/image high-water mark resident
 # for the life of the session.
 export MALLOC_CONF="${MALLOC_CONF:-narenas:2,background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000}"
+
+# The packaged backend leaks its watcher processes when a shell is killed
+# rather than asked to quit — see reap-island-helpers.sh. This script starts
+# two entry points into the island's config below, so it is the other place
+# that has to sweep.
+"$(dirname "$0")/reap-island-helpers.sh" || true
 
 # ---------------------------------------------------------------------------
 #  The TreeTab sidebar, which belongs to the LAYOUT and not to either bar
@@ -128,5 +134,17 @@ fi
 # topbar up, dunst is activated on demand by the bus and draws notifications
 # exactly as it did before either shell existed. Killing it here would leave
 # the session with no notification daemon at all.
+
+# ---- AND ONLY NOW, THE BAR ITSELF ----
+#
+# REFUSES rather than starting a second one, and exits 0 while doing it.
+# "The bar you asked for is already up" is the requested state, not a failure,
+# and bar-switch runs under `set -e` with a rollback on any non-zero — so
+# exiting non-zero here would make an idempotent call look like a failed
+# switch and roll ~/.cache/bar-mode back to the bar that is NOT running.
+if entry_running "$CONFIG_DIR"; then
+  echo "topbar.sh: a topbar is already running for $CONFIG_DIR — not starting a second" >&2
+  exit 0
+fi
 
 exec quickshell -p "$CONFIG_DIR" "$@"

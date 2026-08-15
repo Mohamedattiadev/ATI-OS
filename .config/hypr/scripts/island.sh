@@ -142,4 +142,20 @@ stop_standalone_surface() {
 stop_standalone_surface "$FORK_DIR/treetab.qml"
 stop_standalone_surface "$FORK_DIR/popups.qml"
 
+# ---- AND REAP WHAT THE LAST SHELL LEFT BEHIND ----
+#
+# The packaged backend's SystemServices spawns up to four long-lived watchers
+# per shell — a `pactl subscribe`, two `dbus-monitor`s and a `pw-mon` — as
+# QProcess children that are NOT reaped when the shell is killed rather than
+# asked to quit. They reparent to init and run forever. Measured on this
+# machine after a few hours and a couple of dozen island restarts: 104
+# orphaned dbus-monitors and 35 orphaned `pactl subscribe`s, the latter being
+# the leak that once exhausted pipewire-pulse's client limit and made every
+# audio client on the desktop fail.
+#
+# Here for the same reason the standalone-surface stop is here: whoever starts
+# the island is the one thing that can always enforce it. See
+# reap-island-helpers.sh, including why PPID 1 alone is a safe matcher.
+"$(dirname "$0")/reap-island-helpers.sh" || true
+
 exec quickshell -p "$FORK_DIR" "$@"

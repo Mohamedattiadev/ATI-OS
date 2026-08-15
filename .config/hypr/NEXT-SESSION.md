@@ -540,15 +540,31 @@ they are worth.
 
 * **The rest of the motion matrix.** See above — the picker case is fixed, the
   other content-sized panels are not measured.
-* **Something leaks `pactl subscribe`, and it broke the audio stack.** Found
-  live: 62 orphaned `pactl subscribe` processes, PPID 1, dating back two days,
-  had exhausted pipewire-pulse's client limit — its journal says "too many
-  client application connections: Connection refused" and EVERY pulse client
-  was failing, including qtile's own AudioPopup. Killing the orphans fixed it
-  immediately. **The source was not found**: nothing in this repo spawns that
-  command, and it is not in `~/.local/bin`, `AtiScriptsV1` or `/usr/local/bin`
-  either. Next time it recurs, catch it with the parent alive
-  (`ps -eo pid,ppid,lstart,args`) rather than after it reparents.
+* ~~**Something leaks `pactl subscribe`, and it broke the audio stack.**~~
+  **FOUND, and it is the PACKAGED BACKEND** — the one part of tide-island the
+  fork deliberately does not vendor, which is exactly why "nothing in this
+  repo spawns that command" was true and led to the wrong conclusion.
+  `libIslandBackend.so` carries `pactl` / `subscribe` and three
+  `[SystemServices] … is not available` lines naming `dbus-monitor` twice and
+  `pw-mon` once, so every shell spawns up to FOUR long-lived watchers as
+  QProcess children, and a shell that is killed rather than asked to quit
+  does not reap them — they reparent to init and run forever. The backend
+  says so itself in the message this file already records from an unrelated
+  crash: `QProcess: Destroyed while process ("pactl") is still running`.
+
+  Measured on a session a few hours old with the island restarted a couple of
+  dozen times while a fix was being driven: **104 orphaned `dbus-monitor` and
+  35 orphaned `pactl subscribe`, all PPID 1.** The audio one is the leak that
+  once exhausted pipewire-pulse's client limit and made every pulse client on
+  the desktop fail.
+
+  `scripts/reap-island-helpers.sh` sweeps them, called from island.sh and
+  topbar.sh — the two scripts that start entry points into the island's
+  config. PPID 1 is the whole matcher and is exact: a LIVE shell's helpers
+  have that shell as their parent, so there is no window in which the sweep
+  can take a helper away from a running island. Driven: 139 reaped, three
+  live shells untouched, then kill-and-restart leaves 0 orphans and 4 owned
+  helpers rather than 8.
 * **The 12 unchecked picker menus** against their rofi originals: documents,
   man, notes, clipboard, confedit, spellcheck, translate, pass, todo, shared,
   youtube, hub. The record menu is DONE.
