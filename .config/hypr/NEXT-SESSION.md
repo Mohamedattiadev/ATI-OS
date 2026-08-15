@@ -15,92 +15,175 @@ existing history does. **No Co-Authored-By trailer.**
 
 ---
 
-# THE ONE TASK: THE ISLAND STILL GLITCHES UP AND DOWN
+# THE HEIGHT GLITCH IS FIXED, AND HOW IT WAS FOUND IS THE POINT
 
-Reported again, after a session that thought it had measured this away:
+Kept at the top, not because there is anything left to do on it, but because
+three sessions in a row got it wrong in three different ways and each wrong
+answer is a method that will be reached for again.
 
 > "fix the height of the island — the animation after closing the popup, the
 > island glitches up and down still. Take a gif or video to see it, and fix."
 
-**TAKE THE VIDEO FIRST.** Every previous attempt at this reasoned from a
-number and got the wrong answer twice. Everything needed is installed:
+**What it was.** The spring's overshoot is a fixed fraction of the DISTANCE
+TRAVELLED — 1.54% at zeta 0.8. That is the right amount of bounce when the
+thing you land on is about as big as the distance you covered, which is every
+OPEN, and is why opening was never reported. Closing is the asymmetric case:
+the travel is the whole panel and the destination is the 35 px notch.
 
-    wf-recorder -g "0,0 1366x120" -f /tmp/island.mp4     # then Ctrl-C
-    ffmpeg -i /tmp/island.mp4 -vf "fps=30,scale=683:-1" /tmp/island.gif
+Measured on `mainCapsule.height`, closing the control centre:
 
-or the grim burst the RULES describe (PPM, ~50 fps, elapsed-ms filenames).
-Watch it frame by frame before forming a theory.
+    +238 ms   40      still arriving
+    +285 ms   31      <- 4 px BELOW the resting 35, an 11% squash
+    +333 ms   31
+    +382 ms   33
+    +429 ms   35      recovered, ~200 ms after it first arrived
 
-## What the last session got WRONG about this, and why
+323 → 35 is 288 px of travel; 288 × 0.0154 = 4.43, so 30.6 → 31. Prediction
+and measurement agree to the pixel. A 46 fps `wf-recorder` capture of the
+same run shows the WIDTH doing it too: 182 → 179 at +218..+283, back to 182
+by +458, which is the same 1.54% of 213 px of width travel.
 
-It added the three-line `onTargetHeightChanged` probe, drove a rofi popup
-open and closed, and observed **no `targetHeight` change at all on close** —
-then concluded the report was really about the chord HUD's first open, fixed
-that (it was real, and is fixed), and moved on.
+**The three wrong answers, in order.**
 
-That conclusion does not survive the user seeing the glitch again. The probe
-was on the wrong property:
+1. **The wrong PROPERTY.** A previous session probed `onTargetHeightChanged`,
+   saw no change at all on close, and concluded the report was really about
+   the chord HUD. `targetHeight` is the spring's TARGET: it moves once, at
+   the start, and then sits perfectly still while the ANIMATED height
+   overshoots and settles. The probe could not see the defect by
+   construction. **Probe the property that is drawn, not the one that is
+   aimed.**
 
-* `targetHeight` is the SPRING'S TARGET. It can be perfectly still while the
-  animated `mainCapsule.height` overshoots and settles — which is a visible
-  bounce that the probe cannot see by construction.
-* the LAYER SURFACE's own height is a third number:
-  `requestedWindowHeight` / `retainedWindowHeight` (DynamicIslandWindow.qml
-  ~line 289), built from `capsuleWindowHeight`, which is
-  `islandTopMargin + targetHeight + max(12, capsuleOvershootAllowance)`.
-  `retainedWindowHeight` shrinks LAZILY — read the note there. A layer
-  surface resizing is a hard jump, not an animation, and it would look
-  exactly like "up and down".
+2. **The wrong LATCH.** The fix needs a curve chosen from the travel and the
+   destination, and the obvious place is a `ScriptAction` at the head of the
+   `Behavior`, exactly as `pendingMorphPx` is latched for the duration. It
+   does not work, and the probe that shows why is worth repeating:
 
-So probe all three, at once, with timestamps:
+       LATCH  w 212 -> 174   h   0 -> 323   zeta 0.8    <- width Behavior
+       TGT                        35 normal
+       LATCH  w 212 -> 174   h 288 ->  35   zeta 0.9    <- height Behavior
 
-    onTargetHeightChanged   console.log("TGT",  Date.now(), Math.round(targetHeight))
-    // on mainCapsule:
-    onHeightChanged         console.log("ANIM", Date.now(), Math.round(height))
-    // on the window root:
-    onHeightChanged         console.log("WIN",  Date.now(), Math.round(height))
+   The width Behavior fires first and `targetHeight` still reads the OLD
+   value inside it — not because the state has not changed (`baseTargetWidth`
+   is already the new 174 in the same breath) but because both are bindings
+   on one `islandState`, and **reading a dependent the notifier has not
+   reached yet returns the stale value and does not force it.** The second
+   latch is correct and one line too late: the capsule still dipped to 31,
+   i.e. **the easing is read when the animation JOB is created, before the
+   ScriptAction at the head of its own SequentialAnimation runs.**
 
-`.pragma library` JS is cached and a probe in Motion.js will not take —
-restart the island, do not rely on the reload.
+3. **The wrong BINDING.** Dropping the latch and letting the Behavior read a
+   live expression is worse. `easing.bezierCurve` re-evaluates every time the
+   property moves — every frame — so the value standing when the NEXT job is
+   created is the one from the END of the last animation, where the travel is
+   zero and `springFor()` hands back the undamped default. Identical 31 px
+   dip.
 
-## How to drive it without wrecking the session
+**What works:** a plain property set from the handler that runs BEFORE the
+Behavior can fire. One exists per dimension already —
+`onBaseTargetWidthChanged`, which is what assigns `displayedWidth`, and
+`onTargetHeightChanged`, measured to fire between the two latches.
 
-The island does NOT have to be the active bar. `scripts/island.sh` now stops
-the standalone treetab/popups itself, so this is safe beside the topbar:
+**The cap is `Motion.overshoot()` itself**, not a tuned number: *the bounce
+may never be a larger fraction of the shape than it would be on a morph that
+travelled its own length*. It falls out of the algebra that this leaves every
+travel ≤ destination untouched — i.e. every open. Closes land at zeta
+0.82–0.90 and never at 1.0, so a close still has a spring in it, just one
+sized for the notch.
 
-    ~/.config/hypr/scripts/island.sh          # island beside the topbar
-    qs -p ~/.config/quickshell/tide-island-fork ipc call tide state
+**After:** control-centre close reads `309 278 240 204 169 138 114 94 77 65
+56 49 44 41 38 37 36 35 35 …` — strictly monotone, floor exactly 35, never
+below. Wallpaper picker the same. Both opens still peak 4 px and 3 px past
+their targets, unchanged. `sweep-island.py`: 22 states, 10 transitions, all
+pass.
 
-`tide state` reports `{state, height, width, overview}` — added last session
-precisely so a sweep can ask what happened. **Address the island by the
-DIRECTORY**, never by `shell.qml`: `qs -p` keys an instance by the path it
-was given, and the file form addresses a different instance or nothing.
-
-Kill it by ARGV when done (`quickshell -p .../tide-island-fork$`), and check
-`~/.cache/bar-mode` is still what you found — a run last session left it on
-`island` when it started on `native`, cause unestablished.
-
-## The suspects, in the order worth testing
-
-1. **The window height, not the capsule.** `retainedWindowHeight`'s lazy
-   shrink plus `capsuleOvershootAllowance` means the surface is deliberately
-   taller than the capsule and comes back down on its own schedule. Time that
-   against the visible bounce.
-2. **The spring overshoot on the way back to rest.** `Motion.overshoot()` is
-   real and deliberate; the question is whether the popup's close path
-   re-targets mid-flight, which is the picker bug's shape and is explicitly
-   flagged in this file as latent in every other content-sized case.
-3. **The exclusive zone.** `desiredExclusiveZone` animates through
-   `exclusiveZoneProgress`, and windows move with it. A bounce in the ZONE
-   moves every window on screen, which reads as the island moving.
+**And the video was right to insist on.** `wf-recorder -o eDP-1 -g "0,0
+1366x120" -r 60 -f /tmp/island.mp4`, ffmpeg to frames, then measure the
+capsule's edge per row — with the TOPBAR STOPPED, because both are Top-layer
+surfaces at y=0 and the topbar is created second, so it draws over the island
+and every capture with it up is of the wrong shape.
 
 ---
 
-# WHAT THE LAST SESSION FINISHED, AND WHAT IS LEFT
+# STILL OPEN, in the order worth doing
 
-Finished and driven (each has its own commit with the measurement in it):
-the four dead controls (Wi-Fi QR, `$alt 4` display, `$alt 5` calculator,
-Bluetooth); the TaskList's five markup states and `parse_task_name`; the
+1. **The rest of the login notification burst.** "when i start the hyperland a
+   lot of notifications appear, like 2-3 ones." ONE cause found and fixed:
+   `adhkar` notified before its first sleep, so a remembrance card went out
+   the instant autostart launched it. The others could not be found by
+   reading, and every guess was wrong under a live bus monitor — nm-applet,
+   blueman-applet and kdeconnectd are all silent on restart, nm-applet's
+   `disable-connected-notifications` is already true, `battery-events`
+   initialises `LAST_AC` before its loop, `qupdate --daemon` notifies on no
+   startup path.
+
+   The weakness in that test is the thing to fix, not the test: restarting a
+   tray applet when the state it reports has ALREADY settled is not the same
+   as starting it while the state is still arriving. **Add one line to
+   `autostart.conf`, log out, log in, read the log, take the line out:**
+
+       exec-once = ~/.config/hypr/scripts/test/startup-notifications.sh 180
+       # then: ~/.cache/hypr/startup-notifications.log
+
+2. **The rest of the motion matrix's SETTLE.** The sweep proves every
+   transition lands in the right STATE; it says nothing about how it looks
+   getting there. The ~800 ms panel settle is still unmeasured, and the
+   content-sized cases other than `picker` still have the latent re-aim this
+   file has described for five sessions. The height glitch is NOT this — it
+   was the shape, and it is fixed.
+
+3. **qdrop's BEHAVIOUR as an island surface.** Its look now matches the
+   popups; "behave like the island" — the drag-in/drag-out UX — does not.
+
+4. **The 12 unchecked picker menus** against their rofi originals: documents,
+   man, notes, clipboard, confedit, spellcheck, translate, pass, todo,
+   shared, youtube, hub. The record menu is DONE.
+
+5. **`bar-mode` moved on its own.** A sweep run started on `native` and ended
+   on `island`. Only bar-switch and bar-chooser write that file and neither
+   was called. `sweep-island.py` now reports the change; nobody has caught it
+   in the act. `ps -eo pid,ppid,lstart,args` while it happens.
+
+6. **Scratchpads on a second monitor.** The bars and popups are now tested
+   across two outputs and fractional scale; `scratchpad.sh`'s monitor-relative
+   x/y is still verified-by-history only, and `hyprctl output create headless`
+   is how to test it.
+
+7. **The SHADOW is the last thing that assumed the flush form.** The border
+   follow-up is otherwise done: the panel outline now traces `notchSkirt`'s
+   flares (`notchSkirtOutline`, z 6) and the frame's verticals start where
+   each fillet lands. The overshoot band was the same object and came with
+   it. The drop shadow was not checked and is drawn from the capsule's
+   rectangle, so it presumably squares off where the shape flares.
+
+8. **Live preview for the cheap numeric settings keys**, now that the
+   settings app has a preview to put it in.
+
+9. **`islandShowWorkspaceOnAutoHide`** is still an inert row. Do NOT "fix" it
+   via ForkConfig; see the audit.
+
+10. **qtile with its OWN bar gets no theme sweep** — the one combination with
+    no Quickshell process at all.
+
+11. **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
+    ~50 ms before any animation starts.
+
+12. **`parse_task_name` strips a short trailing subtitle.** Found while
+    fixing the spinner, pre-existing, and the comment above it claims the
+    opposite: "A real subtitle ("Chapter 3 - The Long Way Home") is left
+    alone." It is not — the tail is 17 characters with no separator inside
+    it, so the ` - ` rule takes it. Either the rule or the comment is wrong
+    and it is a taste call which, so it is written down rather than changed.
+
+---
+
+# WHAT THE LAST SESSION FINISHED
+
+Each has its own commit with the measurement in it: the island height glitch
+(above); `topbar.sh` refusing a second bar; the `◐` spinner family; the
+island's language readout; the topbar clock's tooltip carrying its own data;
+the panel border going round the flares; the idle timers; adhkar's first
+fire. Before that: the four dead controls (Wi-Fi QR, `$alt 4` display,
+`$alt 5` calculator, Bluetooth); the TaskList's five markup states; the
 GroupBox's `box_width`/`spacing` and its wheel; passthrough's full shape
 including the confirm popup; the media-key OSD; the rofi fade over the theme
 sweep; qdrop's drag offset and its surface; dialogs floating and centred; the
@@ -109,59 +192,6 @@ both bars; the settings app's live preview and drag-in readouts; two-monitor
 and fractional-scale correctness; the chord HUD's height cache; and the
 systematic sweep (`scripts/test/sweep-island.py`, `sweep-topbar.py` —
 22 states, 10 transitions, 41 actions, all passing).
-
-**STILL OPEN**, in the order worth doing:
-
-1. **The island height glitch.** Above. It is the whole reason this file
-   leads with it.
-2. **The rest of the motion matrix's SETTLE.** The sweep proves every
-   transition lands in the right STATE; it says nothing about how it looks
-   getting there. The ~800 ms panel settle is still unmeasured, and the
-   content-sized cases other than `picker` still have the latent re-aim this
-   file has described for four sessions.
-3. **qdrop's BEHAVIOUR as an island surface.** Its look now matches the
-   popups; "behave like the island" — the drag-in/drag-out UX — does not.
-4. **The 12 unchecked picker menus** against their rofi originals: documents,
-   man, notes, clipboard, confedit, spellcheck, translate, pass, todo,
-   shared, youtube, hub. The record menu is DONE.
-5. **`bar-mode` moved on its own.** A sweep run started on `native` and ended
-   on `island`. Only bar-switch and bar-chooser write that file and neither
-   was called. `sweep-island.py` now reports the change; nobody has caught it
-   in the act. `ps -eo pid,ppid,lstart,args` while it happens.
-6. **Scratchpads on a second monitor.** The bars and popups are now tested
-   across two outputs and fractional scale; `scratchpad.sh`'s monitor-relative
-   x/y is still verified-by-history only, and `hyprctl output create headless`
-   is how to test it.
-7. **The panel border follows the notch now — check the rest of the shape
-   does too.** Reported: "when the notch is disabled and the island opens a
-   popup the border should be on all the popup; when it is the notch, leave
-   it as it is." Fixed — `panelOutlineFrame`'s y is
-   `(-targetRadius - border.width) * notchUnround`, so the clip removes the
-   top edge only as far as the notch is engaged. The capsule's own y and its
-   top corner radii were already driven by `notchUnround`; the OUTLINE was
-   the one thing hardcoded to the notch form, under a comment that argued
-   "the island has no top edge" — true only for the notch. Worth a pass over
-   anything else that assumed the flush form: `notchSkirt`, the overshoot
-   band, and the shadow.
-
-8. **`topbar.sh` is not idempotent** — running it while a topbar is up starts
-   a SECOND one, and the reserved zone doubles to 76. Caught by hand this
-   session and cleaned up by killing the extra; it should refuse instead, the
-   way island.sh now stops the standalone surfaces.
-9. **The `◐` in window titles.** `parse_task_name` strips braille spinners
-   and `✳ ✓ ✗ ▶ ⏸`, not the half-circle frames this terminal now uses. qtile
-   shows it too, so fixing it means editing `qtile/config.py` and
-   `topbar/TaskList.js` together — the same shape as the CHORD_CHIP_LABELS
-   glyph note below.
-10. **Live preview for the cheap numeric settings keys**, now that the
-   settings app has a preview to put it in.
-11. **`islandShowWorkspaceOnAutoHide`** is still an inert row. Do NOT "fix" it
-    via ForkConfig; see the audit.
-12. **qtile with its OWN bar gets no theme sweep** — the one combination with
-    no Quickshell process at all.
-13. **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
-    ~50 ms before any animation starts.
-
 ---
 
 # WHERE THIS DESKTOP IS NOW
@@ -409,11 +439,16 @@ not guessed — start from the measurement, not from the symptom.
   one-liner, so a click updates the GLYPH up to 3 s later even though the
   layout changed instantly), and process-spawn latency per click. Measure
   the gap between the dispatch and the repaint before changing either.
-* **The island's height twitch — MEASURED, and it is not where the report
-  puts it.** The probe was added, the island driven, and closing rofi
-  produces **no `targetHeight` change at all**. What does twitch is the
-  mode-keys HUD on the way IN, and only the FIRST time a given chord is
-  opened in a session:
+* **The island's height twitch — this entry was WRONG about the main case
+  and right about a second one. Both are fixed now; see the top of this
+  file.** What it says below — that closing a popup produces no `targetHeight`
+  change at all — is TRUE and is exactly why the conclusion drawn from it was
+  wrong: `targetHeight` is the spring's target and cannot show an overshoot
+  by construction. The reported glitch was the animated height undershooting
+  the resting notch by 4 px, and it is fixed by `Motion.springFor()`.
+
+  The mode-keys case below is real, was a genuinely separate defect, and is
+  also fixed. Kept verbatim because the measurement is good:
 
       first open of the rofi chord ($mod P)
           t+0     mode_keys  45     <- no rows yet
@@ -499,7 +534,9 @@ and the ten transition classes, not a spot check.
 
 # ALSO OPEN
 
-Ordered by how much they are worth.
+The numbered list at the top is the one to work from; this is the long tail,
+and several entries here are the same item said twice. Ordered by how much
+they are worth.
 
 * **The rest of the motion matrix.** See above — the picker case is fixed, the
   other content-sized panels are not measured.
@@ -587,6 +624,20 @@ submap.
 
 - **A config that reloads cleanly is not a config that works.** Read
   `$XDG_RUNTIME_DIR/quickshell/by-id/<id>/log.log`.
+- **PROBE THE PROPERTY THAT IS DRAWN, NOT THE ONE THAT IS AIMED.** Three
+  sessions of the height glitch went into `targetHeight`, which is the
+  spring's TARGET and sits still through the entire overshoot it was being
+  asked about. `mainCapsule.height` is what is on screen.
+- **Restarting a daemon whose state has already settled does not reproduce
+  its startup behaviour.** nm-applet, blueman-applet and kdeconnectd are all
+  silent when restarted into a connected session and may well not be at
+  login, when the association is still arriving. If the question is "what
+  happens at startup", the answer needs a startup — see
+  `scripts/test/startup-notifications.sh`.
+- **A CAPTURE OF THE ISLAND WITH THE TOPBAR UP IS A CAPTURE OF THE TOPBAR.**
+  Both are Top-layer surfaces at y=0 and the topbar is created second, so it
+  draws over the island. Stop it for the recording and start it again after;
+  the island alone is still a bar, so the session is never bare.
 - **Grep that log for `Failed to load configuration`, not only for
   `Configuration Loaded`.**
 - **A failed load can also stop the FILE WATCHER.** Not just the old build
@@ -638,7 +689,28 @@ submap.
 ### Editing
 
 - **Read the WHOLE block before adding a property to it.** "Property value
-  set multiple times" fails the entire component.
+  set multiple times" fails the entire component. It applies to SIGNAL
+  HANDLERS too: a second `Component.onCompleted` on one object is the same
+  error, so a new startup step folds into the existing handler.
+- **A Behavior's `easing` is read when the animation JOB is created, BEFORE
+  the ScriptAction at the head of its own SequentialAnimation.** `duration`
+  is not — it tracks a property the ScriptAction latched. So the latch trick
+  that works for the duration cannot choose the curve, and a live expression
+  is worse: `easing.bezierCurve` re-evaluates every frame, so what stands
+  when the next job starts is the value from the END of the last animation.
+  A curve has to be set from a handler that runs before the Behavior fires.
+- **Reading a binding the notifier has not reached yet returns the STALE
+  value and does not force it.** The list-model version of this is already a
+  rule below; the geometry version cost a session. Two properties bound to
+  one `islandState` are re-evaluated in the order they connected, so inside
+  `onBaseTargetWidthChanged` the new width is there and the new
+  `targetHeight` is not.
+- **A tooltip that is a LABEL and one that is DATA are different things.**
+  qtile's `TOOLTIP_BY_NAME` is a fallback table, and `install_bar_tooltips()`
+  swaps the clock's for a live provider. Reproducing the table and not the
+  provider gives a chip that promises two numbers and shows neither. Read
+  what the widget DOES with the config, which is the same rule the installed
+  libqtile entry below already states.
 - **A binding in a base component is REPLACED by an assignment at the call
   site.** So a property the caller already sets cannot also be derived in the
   base file — the derivation is silently dead. The widget box's two font

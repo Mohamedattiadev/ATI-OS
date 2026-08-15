@@ -82,6 +82,40 @@ cluster on the rise and the overshoot peak rather than on the flat tail —
 max deviation from the true response 4.0e-4 versus 2.9e-3 for even
 spacing.
 
+**`springFor()` — the overshoot is a fraction of the TRAVEL, and the eye
+reads it against the shape it lands on.** Reported as "the island glitches up
+and down after closing the popup", and it is a property of the spring rather
+than a bug anywhere in the window. Measured on `mainCapsule.height` closing
+the control centre: 323 → 35 is 288 px of travel, 288 × 0.0154 is 4.4 px, and
+the capsule dips to **31** — an 11% squash of the 35 px notch — then takes
+~200 ms to come back. Invisible on every OPEN, where a panel is bigger than
+the trip to it; 11% of the notch on every CLOSE.
+
+The cap is `overshoot()` itself and not a tuned number: *the bounce may never
+be a larger fraction of the shape than it would be on a morph that travelled
+its own length*. `springFor(travel, dest)` inverts the step response for the
+zeta that delivers it — closed form, `zeta = k/sqrt(1+k²)` with
+`k = -ln(f)/π` — quantised to 0.02 so `curve()`'s memo holds at most 11
+splines. Every open comes out at the untouched 0.8; closes land at 0.82-0.90
+and never at 1.0.
+
+**The curve cannot be latched by the `Behavior`, and finding that out took
+three tries.** A `ScriptAction` at the head of the Behavior is too late — the
+easing is read when the animation JOB is created, before the ScriptAction
+runs — and the width Behavior fires first, where `targetHeight` still reads
+its OLD value because both are bindings on one `islandState` and reading a
+dependent the notifier has not reached yet does not force it. A live
+expression is worse: `easing.bezierCurve` re-evaluates every frame, so the
+value standing when the next job is created is the one from the END of the
+last animation, where the travel is zero. It has to be a plain property set
+from the handler that runs *before* the Behavior can fire —
+`onBaseTargetWidthChanged` for the width, `onTargetHeightChanged` for the
+height.
+
+One cap per DIMENSION, shared duration. The duration is what makes a morph
+read as one shape moving; the overshoot is judged against each dimension's
+own extent, which is the only thing the eye can compare it to.
+
 ### `DynamicIslandWindow.qml` — the notch form
 
 Upstream has one resting shape: a pill floating `islandTopMargin` below the
@@ -112,6 +146,24 @@ way round.
 
 The top corners use Qt 6.7+ `topLeftRadius` / `topRightRadius`; `radius`
 still drives the bottom pair, which the notch keeps.
+
+**`notchSkirtOutline`** is a second, fill-less `Shape` at z 6 tracing the
+flares' outer silhouette, so the panel border goes round the arch instead of
+stopping short of it. Reported as "at the very top, left and right, there is
+an arch, a radius — that ends up not having the border". Measured on an open
+control centre: the shape's left edge sweeps 481 → 492 over the top nine
+rows while the accent line stayed at 490 for every one of them. The straight
+border was correct for the CAPSULE and blind to the SKIRT, which is a
+sibling. `panelOutlineFrame` now sits inside a clip whose top margin is
+`notchSkirt.f`, so its verticals begin exactly where each fillet lands
+tangentially — and that margin is zero when the notch is off, leaving the
+four-sided floating form untouched.
+
+It is its own Shape at z 6 rather than a second `ShapePath` inside
+`notchSkirt` because the skirt is z 4 and `mainCapsule` is z 5: sharing the
+skirt's z puts the last stretch of each fillet under the capsule's fill,
+measured as a four-pixel hole in the line (accent present to y=8, absent
+y=9..12, resuming at y=13). An outline belongs above the fill.
 
 Scaling, per REQUIREMENTS.md's proportion rule: the flare is 14 px in the
 spec's 2560-wide measurements and is scaled by the island's own factor
@@ -157,6 +209,37 @@ player disappears.
 the lyrics row, which lives at `clampedProgress` 1. A second, smaller
 4-bar instance now sits on the clock's side of the crossfade, gated on a
 new `musicPlaying` flag, and the collapsed capsule widens to fit it.
+
+### `qml/island/KeyboardLayoutTracker.qml` (new file) — the language readout
+
+Requested: "the language TR, AR, EN, GE — when i switch in the islen, if not
+englsih show; if englsih do not show in the islend."
+
+A readout whose SILENCE is the feature. It takes the outer slot on the left
+of the resting capsule, so the order is `code · glyph · clock · digit · EQ`,
+and it is there only while the layout is not one of `silentKeys`. Switching
+to Arabic therefore shows up in the island as the readout *appearing* rather
+than as two letters changing somewhere nobody is looking, and the capsule
+widens by `restingLangAllowance` (26 px here) to make room.
+
+Ordering on the left is by volatility: the window-layout glyph changes on
+every `$mod Tab`, the keyboard layout changes when you start typing another
+language, so the rarer one takes the outer slot and the glyph beside the
+clock does not move when the code appears.
+
+The slot is FIXED at `px(22)`, like both of its neighbours, because the
+capsule sizes itself from the sum and a width taken from the code's own ink
+would morph the capsule on the switch from `AR` to `TR`. Measured rather than
+guessed: the four codes are 17.6, 16.9, 17.2 and 17.6 px at `font(13)` in the
+face fontconfig resolves for `Inter Medium`, and Qt draws them heavier than
+that at DemiBold.
+
+The tracker is a **second copy** of the topbar's layout logic and has to be —
+Quickshell's QML scanner refuses a module path outside the config folder, so
+the two trees cannot share a component. Event-driven off Hyprland's
+`activelayout` with the poll demoted to a 30 s re-sync, and gated on
+`HYPRLAND_INSTANCE_SIGNATURE` so it never loads under qtile, where there is
+no event socket and `hyprctl` answers nothing.
 
 ### `DynamicIslandWindow.qml` + `shell.qml` — arbitrary, persistent text
 

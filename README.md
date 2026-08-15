@@ -118,6 +118,8 @@ generated from the live system, so it cannot go stale.
 ```
 .config/          the dotfiles — stow links these into ~
   qtile/            window manager, bar, popups, scripts
+  hypr/             the Wayland session — binds, submaps, rules, scripts
+  quickshell/       its two shells: the Tide Island fork, and the topbar
   arch-config/      the installer's package modules (*.yaml)
   AtiScriptsV1/     rofi tools, theme switching, boot splash
 docs/             the manual, published to GitHub Pages

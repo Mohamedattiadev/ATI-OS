@@ -9,7 +9,7 @@ additive rather than a replacement.
 | Compositor | Hyprland 0.56.2 |
 | Shell | Quickshell — `~/.config/quickshell/tide-island-fork` |
 | Wallpaper | `awww` (the daemon; `swww` is its old name) |
-| Idle / lock | `hypridle` / `hyprlock` |
+| Idle / lock | `hypridle` / `hyprlock` — **nothing on a timer**, see below |
 | Night light | `hyprsunset` |
 | Notifications | served by the shell itself, **not** dunst |
 
@@ -39,6 +39,23 @@ Scripts worth knowing by name:
 | `cheatsheet.py` | every sheet, generated from `hyprctl binds` where it can be |
 | `island-picker.py` | the generic picker's menus, including the PDF toolkit |
 | `theme-list.sh` | the palette list, parsed out of `theme-apply` |
+| `layout-notify.sh` | qtile's non-English layout warning, on the shared id 9001 |
+
+And the test tools, which are how anything here gets *driven* rather than
+read — `scripts/test/`:
+
+| Tool | What it drives |
+|---|---|
+| `sweep-island.py` | all 24 island states and the ten transition classes |
+| `sweep-topbar.py` | every chip on the topbar |
+| `uinput-key.py` | key combinations, named as `hyprctl binds` names them |
+| `uinput-click.py` | clicks, `scroll up\|down`, and `hover <seconds>` |
+| `startup-notifications.sh` | every `Notify` on the bus for the first N s of a session |
+
+`uinput-click.py hover` exists because a tooltip could not be tested at all:
+it needs a real motion event over the chip and then the pointer to *stay*
+there past the bar's 450 ms delay, and `hyprctl dispatch movecursor` warps
+without emitting motion.
 
 Companion documents:
 
@@ -131,6 +148,44 @@ problem.
 `scripts/border-focus.sh` drops every window border to its inactive
 colour, so there is exactly one accent on screen. It restores at shell
 startup, so a crash with a panel open cannot leave the borders dimmed.
+
+## The resting capsule, and what each mark on it means
+
+The island at rest is a clock with four optional marks around it, left to
+right:
+
+| | Mark | There when |
+|---|---|---|
+| 1 | the keyboard language, `AR` / `TR` / `GE` | the layout is **not** English — and never otherwise, which is the whole point of it |
+| 2 | the window-layout glyph | `layout-cycle.sh` has run once this session |
+| 3 | the clock | always |
+| 4 | the workspace digit | always |
+| 5 | the 4-bar EQ | something is actually playing |
+
+The capsule grows by a fixed allowance for each, so the shape changes when a
+mark appears and never when its *content* changes — a two-digit workspace and
+a switch from `AR` to `TR` both land inside a slot that was already reserved.
+Ordering on the left is by volatility: the window layout changes on every
+`$mod Tab`, the keyboard layout only when you start typing another language,
+so the rarer one takes the outer slot and nothing shuffles when it appears.
+
+## Idle: nothing happens on a timer
+
+`hypridle` runs and has **no listeners**. The screen does not dim, does not
+lock and does not switch off however long the machine sits — asked for
+directly, and stated here because it is a security posture, not a default.
+
+What still works, all of it in `hypridle.conf`'s `general` block:
+
+| | |
+|---|---|
+| `$mod SHIFT X` | lock now |
+| `loginctl lock-session` | the same, from anywhere |
+| suspend | still locks first (`before_sleep_cmd`), and turns the display back on after |
+
+The three listeners that were there — dim at 300 s, lock at 600, DPMS off at
+900 — are kept in the file as a comment block, so putting any of them back is
+a paste rather than a rediscovery.
 
 ## Two bars, and swapping between them
 

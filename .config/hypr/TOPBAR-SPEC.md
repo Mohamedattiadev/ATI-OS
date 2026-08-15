@@ -127,6 +127,31 @@ onboarding), `w_mpris`, `system_widgetbox`, `wallpaper_toggle`,
 Several are `SmartWidgetBox`es that expand in place, so the right-hand side has
 two widths and the centring arithmetic has to survive both.
 
+### A tooltip can be DATA, and `w_clock`'s is
+
+`TOOLTIP_BY_NAME` was reproduced as a table of strings, and that is right for
+seventeen of the eighteen chips. It is wrong for the clock, whose entry —
+"Next prayer · USD/EUR rates" — is a FALLBACK in qtile, not the tooltip:
+`install_bar_tooltips()` replaces it with the dynamic `_clock_tooltip_text`
+provider, which runs `qtile/scripts/prayer_next.sh` and `fx_rates.sh` and
+joins their output. Reproducing the table and not the provider left a promise
+of two numbers with neither number in it, and was reported as such.
+
+Same class of miss as the TaskList's markup: reading the config rather than
+what the widget does with it.
+
+Ported with the provider's own rule intact — the two halves are independent,
+so whichever script comes back empty drops its own block instead of blanking
+the tooltip, and the static string is the floor. **Fetched on hover, not
+polled**: the prayer block counts down in minutes, so a poll would run two
+subprocesses a minute to keep a string nobody is looking at correct.
+`Chip.tooltipRequested` fires on pointer-enter and the tooltip is drawn
+450 ms later; both scripts read caches and answer in ~40 ms.
+
+That is also why the hover sink keeps the CHIP rather than a snapshot of its
+text — it latched the string at `enter()`, which is fine for a label and
+wrong for data that arrives inside the delay.
+
 ## The font, which is two things and not one
 
 `widget_defaults` is `font="Ubuntu Bold", fontsize=_s(10)`, and that string is
