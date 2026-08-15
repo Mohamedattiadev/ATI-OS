@@ -131,11 +131,29 @@ and every capture with it up is of the wrong shape.
    file has described for five sessions. The height glitch is NOT this — it
    was the shape, and it is fixed.
 
-3. **qdrop's BEHAVIOUR as an island surface — and the ONE measurement that
-   now decides how.** Its look matches the popups; "behave like the island"
-   does not. Asked for again, and sharpened: *under the island the shelf
-   should be an island popup, in island UI/UX; under the qtile-like topbar
-   it should behave exactly as real qtile's does.*
+3. ~~**qdrop's BEHAVIOUR as an island surface.**~~ **DONE — rebuilt in
+   Quickshell.** `quickshell/tide-island-fork/qml/qdrop/QdropShelf.qml`, a
+   PopupChrome like every other popup, hosted by shell.qml and popups.qml,
+   reading and writing the same `~/.cache/qdrop.json`. A Wayland-native drag
+   reaches it in both directions — measured, and it is the case the GTK shelf
+   could never do. `hypr/scripts/qdrop.sh` prefers it and falls back to GTK
+   when no Quickshell process is up (qtile's own bar).
+
+   What is left on it, none of it blocking:
+
+   * The GTK shelf's richer menu — right-click actions, the zip-a-selection,
+     pinning, the sort modes — is not ported. The keyboard map that IS there
+     is j/k, ↵, d, a, c, space, Esc.
+   * `--add-text` still goes to qdrop.py, which spawns the GTK daemon. Both
+     write the same file and the shelf watches it, so they agree; nobody has
+     driven them writing at the same instant.
+   * The GTK shelf remains for the qtile-own-bar case, so its workspace dance
+     in qdrop.sh has to stay with it.
+
+   Original ask, kept because the second half is still the standing
+   requirement: *under the island the shelf should be an island popup, in
+   island UI/UX; under the qtile-like topbar it should behave exactly as real
+   qtile's does.*
 
    The SHAKE gesture is done and is not part of this — `scripts/qdrop-shake.py`,
    with the binds in binds.conf's qdrop block. So is "it only opens on
@@ -148,11 +166,11 @@ and every capture with it up is of the wrong shape.
    VISIBLE. **Test a rule for this window in the state the window is
    actually in, which is hidden.**
 
-   What is left has one hard fact under it, driven with
-   `scripts/test/dnd-peer.py` and `uinput-shake.py to`:
+   THE MEASUREMENT THAT FORCED THE REWRITE, driven with
+   `scripts/test/dnd-peer.py` and `uinput-shake.py to` against the GTK shelf:
 
-       XWayland source -> shelf     drop in AND drag out both work
-       Wayland source  -> shelf     drag begins, NOTHING arrives
+       XWayland source -> GTK shelf  drop in AND drag out both work
+       Wayland source  -> GTK shelf  drag begins, NOTHING arrives
        Wayland source  -> any plain XWayland window, no qdrop involved
                                     the drop arrives carrying the X11 PRIMARY
                                     selection instead of the offered URI
@@ -161,39 +179,16 @@ and every capture with it up is of the wrong shape.
    the shelf — and pcmanfm-qt is `QT_QPA_PLATFORM=wayland;xcb`, i.e. the file
    manager you would actually drag from sits on the wrong side of it.
 
-   **So REBUILD IT IN QUICKSHELL. That is the user's call and the
-   measurements agree with it** — "the qdrop should be same style with the
-   island … i think u can rebuild it with quickshell will be better".
+   **REBUILT IN QUICKSHELL**, which was the user's call and what the
+   measurements independently pointed at. Four defects closed in the one
+   change: the Wayland -> XWayland drag bridge left the path entirely, the
+   surface got `IslandTheme` like every other popup, a layer surface is
+   placed by the compositor so nothing needs XWayland, and hiding stopped
+   being "move off-screen" — the thing that made `pin` fatal.
 
-   Four separate defects collapse into that one change, which is why it is
-   worth more than patching any of them:
-
-   * **The drag bridge.** A Wayland-native shelf is on the same side of the
-     protocol as pcmanfm-qt, so the broken XWayland hop disappears rather
-     than being worked around.
-   * **The style.** It becomes a Quickshell surface next to the other popups
-     and gets `IslandTheme` for free, which is the whole ask.
-   * **The placement.** A layer surface is placed by the compositor, so the
-     `move()`-to-top-centre that forces XWayland today is not needed, and
-     `qdrop.sh`'s workspace dance goes away with it — a layer surface has no
-     workspace.
-   * **The hide.** Hiding stops being "move off-screen", which is what made
-     `pin` fatal and what costs a whole window in `hyprctl clients`.
-
-   Do NOT port the 2,187 lines. The parts worth keeping are the MODEL and the
-   contract, not the GTK: `~/.cache/qdrop.json` (a list of `{type, value,
-   added_ts, pinned}`), the type badges IMG/TXT/DIR/DOC, newest-first, the
-   selection/keyboard map already documented in qdrop.py's header, and the
-   8 s auto-hide. Keep `qdrop.py --add-text` working as the CLI so nothing
-   that feeds the shelf has to change.
-
-   The one thing with no obvious home is the slide-down reveal, which is
-   `move()` today; the island animates its own capsule and that is the
-   pattern to copy rather than re-invent.
-
-   Until it exists, the GTK shelf stays exactly as it is — it works fully
-   for XWayland sources and for `--add-text`, and it is the only shelf there
-   is.
+   The model was kept and the GTK was not: same `~/.cache/qdrop.json`, same
+   `{type, value, added_ts, pinned}`, newest first, `entry_badge()` and
+   `entry_label()`'s answers reproduced in `QdropStore.qml`.
 
    Two smaller observations from the same runs, neither acted on:
    * A drag OUT leaves a 20x20 `Qdrop.py` window mapped at (-99,-99) — GTK's
@@ -896,6 +891,21 @@ miss, and miss further the longer the move.
   nowhere. Audited the rest: `general:layout`, `master:mfact` and
   `general:col` are all declared.
 - **Test the code path you are shipping, not the one next to it.**
+- **`qs ipc show` IS A SUBCOMMAND, so an IPC function called `show` CANNOT BE
+  CALLED.** `qs ipc call <target> show` is eaten by the CLI, prints the
+  handler's function list, and EXITS 0 — a caller reading the exit code sees
+  success and a fallthrough chain never falls through. Measured on the qdrop
+  handler: `hide` arrived, `show` never did. Name them `open`/`close`, which
+  is why popups.qml spells its openers `showWallpaper` and not `show`.
+- **A DECLARED `Drag.active: false` IS A BINDING, AND IT PINS THE PROPERTY
+  `startDrag()` HAS TO SET.** The drag starts, reports nothing and delivers
+  nothing, and the only sign is one line in the shell log:
+  `WARN scene: startDrag() drag must be active`. Set `active = true`
+  imperatively, then call `startDrag()`.
+- **A QUICKSHELL LAYER SURFACE CAN RECEIVE AND START REAL WAYLAND DRAGS.**
+  Probed with a bare `PanelWindow` + `DropArea` before anything was built on
+  it — `PROBE dropped urls=["file:///…"]` — and there was no `DropArea`
+  anywhere in this tree to copy. This is what the drop shelf is built on.
 - **TEST A WINDOW RULE IN THE STATE THE WINDOW IS ACTUALLY IN.** `pin` on
   qdrop was measured three ways — opens on the active workspace, follows
   7 -> 6 -> 7, position unchanged — and all three were true and all three

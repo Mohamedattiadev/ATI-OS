@@ -378,15 +378,30 @@ python3 ~/.config/hypr/scripts/qdrop-shake.py --debug --dry-run
 `--dry-run` logs a shake without opening the shelf, which is how to check a
 false positive without a window appearing over your work.
 
-**Dragging a file in from a Wayland-native app does not work, and that is
-the compositor, not the shelf.** Driven with `scripts/test/dnd-peer.py`:
-an XWayland source drops in and drags out correctly, a Wayland source's drag
-starts and never arrives, and the same Wayland drag into a plain XWayland
-window arrives carrying the X11 PRIMARY selection instead of the URI that was
-offered. pcmanfm-qt runs `QT_QPA_PLATFORM=wayland;xcb`, so it is on the wrong
-side of that. The fix is to make the shelf a native Wayland surface placed by
-the compositor, which is the same change as making it look like the island —
-see NEXT-SESSION.md item 3.
+**There are TWO shelves, and `qdrop.sh` picks.** The Quickshell one
+(`quickshell/tide-island-fork/qml/qdrop/`) is preferred whenever a shell is
+up; the GTK one (`qtile/scripts/qdrop.py`) is the fallback for the one
+combination with no Quickshell process at all, qtile's own bar. Both read and
+write the same `~/.cache/qdrop.json`, so nothing is lost switching between
+them and `qdrop.py --add-text` still works.
+
+The split is not cosmetic. **A drag from a Wayland-native app cannot reach
+the GTK shelf**, and that is the compositor, not qdrop — driven with
+`scripts/test/dnd-peer.py`, an XWayland source drops in and drags out
+correctly, a Wayland source's drag starts and never arrives, and the same
+Wayland drag into a plain XWayland window arrives carrying the X11 PRIMARY
+selection instead of the URI that was offered. pcmanfm-qt runs
+`QT_QPA_PLATFORM=wayland;xcb`, so it is on the wrong side of it. The
+Quickshell shelf is a layer surface on the Wayland side and takes the same
+drag in both directions.
+
+```sh
+qs -p ~/.config/quickshell/tide-island-fork ipc call qdrop status
+```
+
+`open`/`close`, **not** `show`/`hide`: `qs ipc show` is a subcommand, so
+`ipc call qdrop show` is eaten by the CLI, prints the handler's function list
+and still exits 0.
 
 ### A background listener stopped reacting
 
