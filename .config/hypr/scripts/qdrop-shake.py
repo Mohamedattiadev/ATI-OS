@@ -216,21 +216,25 @@ def cursorpos(req_sock: str):
         return None
 
 
+SHOW = os.path.expanduser("~/.config/hypr/scripts/qdrop.sh")
+
+
 def fire():
-    """Show the shelf. Same guard the X11 watcher has, plus GDK_BACKEND."""
+    """Show the shelf. Same guard the X11 watcher has.
+
+    Through qdrop.sh, not straight at qdrop.py, so the shake and the
+    $alt SHIFT D key agree about which workspace the shelf belongs on —
+    that wrapper moves it to the active one while it is still parked
+    off-screen. It also owns GDK_BACKEND=x11 for both callers.
+    """
     if W._screenshot_active():
         log("screenshot tool active — shake ignored")
         return
     if DRY_RUN:
         log("shake -> show (DRY RUN, nothing shown)")
         return
-    # GDK_BACKEND=x11 for the same reason binds.conf sets it on $alt SHIFT D:
-    # qdrop.py is GTK3 and POSITIONS ITSELF, which Wayland does not permit a
-    # client to do. Without this the shelf opens wherever the compositor
-    # feels like, which is not a shelf.
-    env = dict(os.environ, GDK_BACKEND="x11")
     subprocess.Popen(
-        [sys.executable, W.QDROP, "--show"], env=env,
+        [SHOW, "--show"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     log("shake -> show")
