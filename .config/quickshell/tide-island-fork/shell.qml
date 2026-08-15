@@ -15,6 +15,11 @@ import "qml/treetab"
 // FORK: HyprlandData, the shared `hyprctl clients` feed. Owned here rather
 // than by the sidebar so it exists once per machine and not once per output.
 import "qml/workspace"
+// FORK: the drop shelf, rebuilt off GTK — see QdropShelf.qml's header for the
+// drag-bridge measurement that forced it. A SESSION surface, like the TreeTab
+// sidebar and the popups: hosted here while the island is the bar, and by
+// popups.qml when bar-switch has put the topbar up instead.
+import "qml/qdrop"
 
 Scope {
     id: shellRoot
@@ -641,6 +646,48 @@ Scope {
             shellRoot.showIslandAll();
         }
 
+    }
+
+    // ---------------------------------------------------------------
+    //  THE DROP SHELF
+    // ---------------------------------------------------------------
+    //
+    // A Loader, not a `visible: false` window, for the reason popups.qml
+    // spells out: a layer-shell surface that exists is a surface the
+    // compositor is compositing.
+    //
+    // The explicit show/hide sit beside the toggle because the RULES say to
+    // prefer them when scripting and because BOTH of this shelf's entry
+    // points are scripts — hypr/scripts/qdrop.sh for the key, and
+    // qdrop-shake.py for the gesture. A shake must SHOW, never toggle: you
+    // are holding a file, and a shake that closed the shelf because it was
+    // already open would drop the thing you were carrying onto nothing.
+    property bool qdropOpen: false
+
+    IpcHandler {
+        target: "qdrop"
+
+        // `open`/`close` and NOT `show`/`hide`, which is not a taste call:
+        // `qs ipc show` IS A SUBCOMMAND, so `qs ipc call qdrop show` is eaten
+        // by the CLI, prints the handler's function list, and EXITS 0. That
+        // is the RULES' "prints Function not found and still exits 0" trap
+        // wearing a different hat, and it is why a caller could not tell the
+        // difference. Measured: `hide` worked, `show` never arrived.
+        // popups.qml already dodges this by spelling its explicit openers
+        // showWallpaper/showNetwork rather than show.
+        function open(): void   { shellRoot.qdropOpen = true; }
+        function close(): void  { shellRoot.qdropOpen = false; }
+        function toggle(): void { shellRoot.qdropOpen = !shellRoot.qdropOpen; }
+        function status(): string { return shellRoot.qdropOpen ? "open" : "closed"; }
+    }
+
+    Loader {
+        active: shellRoot.qdropOpen
+        sourceComponent: Component {
+            QdropShelf {
+                onRequestClose: shellRoot.qdropOpen = false
+            }
+        }
     }
 
     IpcHandler {

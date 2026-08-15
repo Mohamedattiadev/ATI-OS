@@ -5,6 +5,7 @@ import Quickshell.Hyprland
 
 import "qml/common"
 import "qml/popups"
+import "qml/qdrop"
 import "qml/theme"
 
 //
@@ -313,6 +314,52 @@ ShellRoot {
         sourceComponent: Component {
             BluetoothPopup {
                 onRequestClose: root.hide()
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  THE DROP SHELF, WHICH IS NOT ONE OF THE POPUPS
+    // ---------------------------------------------------------------
+    //
+    // Deliberately NOT in root.open's one-at-a-time set, and the reason is
+    // the same reason it takes OnDemand keyboard focus rather than Exclusive:
+    // the shelf is a thing you drag ONTO. The exclusivity above exists
+    // because two exclusive keyboard grabs is a race the compositor resolves
+    // by picking one — the shelf takes no such grab, so it has nothing to
+    // race with, and closing the wallpaper picker because you opened the
+    // shelf would be a rule applied for a reason that does not hold here.
+    //
+    // A SESSION surface, hosted here for exactly the reason the TreeTab
+    // sidebar and the theme overlay are: shell.qml owns it while the island
+    // is the bar, and bar-switch stops the island to start the topbar. Same
+    // IPC target and the same function names on both sides, so
+    // hypr/scripts/qdrop.sh can try one and then the other without a second
+    // spelling to keep in step.
+    property bool qdropOpen: false
+
+    IpcHandler {
+        target: "qdrop"
+
+        // `open`/`close` and NOT `show`/`hide`, which is not a taste call:
+        // `qs ipc show` IS A SUBCOMMAND, so `qs ipc call qdrop show` is eaten
+        // by the CLI, prints the handler's function list, and EXITS 0. That
+        // is the RULES' "prints Function not found and still exits 0" trap
+        // wearing a different hat, and it is why a caller could not tell the
+        // difference. Measured: `hide` worked, `show` never arrived.
+        // popups.qml already dodges this by spelling its explicit openers
+        // showWallpaper/showNetwork rather than show.
+        function open(): void   { root.qdropOpen = true; }
+        function close(): void  { root.qdropOpen = false; }
+        function toggle(): void { root.qdropOpen = !root.qdropOpen; }
+        function status(): string { return root.qdropOpen ? "open" : "closed"; }
+    }
+
+    Loader {
+        active: root.qdropOpen
+        sourceComponent: Component {
+            QdropShelf {
+                onRequestClose: root.qdropOpen = false
             }
         }
     }
