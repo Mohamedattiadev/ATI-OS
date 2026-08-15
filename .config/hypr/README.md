@@ -41,6 +41,7 @@ Scripts worth knowing by name:
 | `theme-list.sh` | the palette list, parsed out of `theme-apply` |
 | `layout-notify.sh` | qtile's non-English layout warning, on the shared id 9001 |
 | `reap-island-helpers.sh` | kills the packaged backend's orphaned watcher processes |
+| `qdrop-shake.py` | shake a dragged file to open the drop shelf — see below |
 
 And the test tools, which are how anything here gets *driven* rather than
 read — `scripts/test/`:
@@ -51,6 +52,8 @@ read — `scripts/test/`:
 | `sweep-topbar.py` | every chip on the topbar |
 | `uinput-key.py` | key combinations, named as `hyprctl binds` names them |
 | `uinput-click.py` | clicks, `scroll up\|down`, and `hover <seconds>` |
+| `uinput-shake.py` | a button-1 drag with a shake in it, the three shapes a gesture must refuse, and `to <x1> <y1> <x2> <y2>` |
+| `dnd-peer.py` | a window offering one URI that prints what is dropped on it — the far end of a drag test |
 | `startup-notifications.sh` | every `Notify` on the bus for the first N s of a session |
 
 `uinput-click.py hover` exists because a tooltip could not be tested at all:
@@ -344,6 +347,37 @@ If a scratchpad terminal is sitting on a numbered workspace it was dragged
 there. `toggle-app.sh` excludes `special:` windows from its matcher for
 exactly this reason; anything new that matches windows by class needs the
 same exclusion.
+
+### The drop shelf: what works, and the one thing that does not
+
+`$alt SHIFT D` opens it; shaking the pointer while dragging opens it too
+(`scripts/qdrop-shake.py`, with the binds and the whole argument in
+binds.conf's qdrop block). It is `pin`ned in rules.conf, so it opens on
+whatever workspace you are on rather than the one its daemon was born on.
+
+The gesture's button state comes from Hyprland binds dispatching `event`,
+which is worth knowing because it is the general trick: **a bind can see
+things `hyprctl` cannot, and `event` reports it to socket2 without spawning
+anything.** Nothing in the IPC reports pointer buttons.
+
+```sh
+ps -eo pid,args | awk '/qdrop-shake/ && !/awk/'      # the detector
+hyprctl binds | grep -A6 qdropshake                  # the five binds
+python3 ~/.config/hypr/scripts/qdrop-shake.py --debug --dry-run
+```
+
+`--dry-run` logs a shake without opening the shelf, which is how to check a
+false positive without a window appearing over your work.
+
+**Dragging a file in from a Wayland-native app does not work, and that is
+the compositor, not the shelf.** Driven with `scripts/test/dnd-peer.py`:
+an XWayland source drops in and drags out correctly, a Wayland source's drag
+starts and never arrives, and the same Wayland drag into a plain XWayland
+window arrives carrying the X11 PRIMARY selection instead of the URI that was
+offered. pcmanfm-qt runs `QT_QPA_PLATFORM=wayland;xcb`, so it is on the wrong
+side of that. The fix is to make the shelf a native Wayland surface placed by
+the compositor, which is the same change as making it look like the island —
+see NEXT-SESSION.md item 3.
 
 ### A background listener stopped reacting
 

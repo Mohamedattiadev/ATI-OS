@@ -131,8 +131,44 @@ and every capture with it up is of the wrong shape.
    file has described for five sessions. The height glitch is NOT this — it
    was the shape, and it is fixed.
 
-3. **qdrop's BEHAVIOUR as an island surface.** Its look now matches the
-   popups; "behave like the island" — the drag-in/drag-out UX — does not.
+3. **qdrop's BEHAVIOUR as an island surface — and the ONE measurement that
+   now decides how.** Its look matches the popups; "behave like the island"
+   does not. Asked for again, and sharpened: *under the island the shelf
+   should be an island popup, in island UI/UX; under the qtile-like topbar
+   it should behave exactly as real qtile's does.*
+
+   The SHAKE gesture is done and is not part of this — `scripts/qdrop-shake.py`,
+   with the binds in binds.conf's qdrop block. So is "it only opens on
+   workspace 4", which was `pin` (rules.conf) and applied to the key as much
+   as to the gesture.
+
+   What is left has one hard fact under it, driven with
+   `scripts/test/dnd-peer.py` and `uinput-shake.py to`:
+
+       XWayland source -> shelf     drop in AND drag out both work
+       Wayland source  -> shelf     drag begins, NOTHING arrives
+       Wayland source  -> any plain XWayland window, no qdrop involved
+                                    the drop arrives carrying the X11 PRIMARY
+                                    selection instead of the offered URI
+
+   So the compositor's Wayland -> XWayland drag bridge is what is broken, not
+   the shelf — and pcmanfm-qt is `QT_QPA_PLATFORM=wayland;xcb`, i.e. the file
+   manager you would actually drag from sits on the wrong side of it.
+
+   **That makes the rewrite the fix, not a nice-to-have.** The shelf is on
+   XWayland only because it POSITIONS ITSELF (`move()` to top-centre, and the
+   slide-down reveal is more `move()`), which Wayland forbids a client. A
+   native Wayland surface placed by the compositor solves the drag bridge and
+   the island look in the same change — and `pin` plus a `move` windowrule is
+   already most of the placement. The reveal animation is the part with no
+   obvious home; the island draws its own.
+
+   Two smaller observations from the same runs, neither acted on:
+   * A drag OUT leaves a 20x20 `Qdrop.py` window mapped at (-99,-99) — GTK's
+     drag icon, same PID as the shelf, off-screen but in the window list.
+   * The shelf auto-hides 8 s after the pointer leaves, which is shorter than
+     the 3.5 s a uinput device takes to bind plus a drag; any test that drives
+     two drags has to re-show between them.
 
 4. **The 12 unchecked picker menus** against their rofi originals: documents,
    man, notes, clipboard, confedit, spellcheck, translate, pass, todo,
@@ -411,6 +447,10 @@ not guessed — start from the measurement, not from the symptom.
   LOOK like the island when the island is up — same UI/UX, same surface
   language. Two sub-problems, and the second is the reported bug: while
   dragging, **the file is not under the cursor** — the drag icon is offset.
+  The LOOK and the drag offset are both done. What is left is the behaviour,
+  and item 3 at the top of this file now carries the measurement that decides
+  how to do it. ~~The shake gesture~~ and ~~"it only opens on workspace 4"~~
+  are both FIXED — `scripts/qdrop-shake.py` and a `pin` rule respectively.
 
 ### Behaviour that differs from qtile
 
@@ -623,16 +663,25 @@ every screen. Per-monitor DPI is the compositor's job and it does it.
   codepoint. The topbar reproduces what renders. Fixing it means editing
   config.py and both chips together.
 
-## Input synthesis: both halves exist now
+## Input synthesis: all of it exists now
 
 * `scripts/test/uinput-click.py` — clicks, and `scroll up|down [count]`.
 * `scripts/test/uinput-key.py` — key combinations, named as `hyprctl binds`
   names them, with `--hold` for observing a submap.
+* `scripts/test/uinput-shake.py` — a button-1 drag with a shake in it, plus
+  the three shapes a gesture gate has to REFUSE (`drag` one-way with tremor,
+  `wiggle` with no button, `--mod super`), plus `to <x1> <y1> <x2> <y2>`,
+  which is a drag from one point to another.
+* `scripts/test/dnd-peer.py` — a window that offers one URI and prints what
+  is dropped on it. The controlled far end for a drag test, so drag-and-drop
+  never has to be driven against somebody's real files.
 
-Three traps, all in their headers: a uinput device takes ~3 s before the
+Four traps now, all in their headers: a uinput device takes ~3 s before the
 compositor binds it; `movecursor` warps WITHOUT motion, so a one-pixel wiggle
-is needed before a click; and destroying the device can reset an active
-submap.
+is needed before a click; destroying the device can reset an active submap;
+and a relative device goes through pointer ACCELERATION, so travelling to a
+known point has to be closed-loop against `cursorpos` — open-loop deltas
+miss, and miss further the longer the move.
 
 # RULES — every one of these was paid for, several twice
 
@@ -815,6 +864,31 @@ submap.
   nowhere. Audited the rest: `general:layout`, `master:mfact` and
   `general:col` are all declared.
 - **Test the code path you are shipping, not the one next to it.**
+- **A BIND CAN SEE THINGS THE IPC CANNOT, AND `event` IS HOW IT TELLS YOU.**
+  Nothing in `hyprctl` reports pointer BUTTON state — forty commands, none of
+  them about the pointer. A `bindn` (non-consuming) on `mouse:272` sees it,
+  and the dispatcher to carry it is `event`, not `exec`: `event` writes one
+  line to socket2 and spawns nothing, measured at 2 ms from press to line,
+  where `exec` is two `sh` spawns (1.80 ms each) on every click in the
+  session forever. Fan-out for one extra socket2 line, measured over 2000:
+  quickshell 135 us, each shell listener ~85 us, and all of them dispatch on
+  a prefix with no default branch so an event they do not name costs a
+  `read`. This is how qdrop's shake gesture gets its button.
+- **A BIND WITH AN EMPTY MODMASK IS MODIFIER-EXACT.** Measured: with SUPER
+  held, a modmask-0 `bindn` on mouse:272 did not fire at all. So enumerating
+  the modifier states you accept IS a gate, for free — which is what keeps
+  `bindm = $mod, mouse:272, movewindow` from ever looking like a file drag.
+  The `i` flag opts out of it, and belongs on the RELEASE bind so that
+  letting go while holding a modifier still clears your state.
+- **`hyprctl`'s request socket is ONE REQUEST PER CONNECTION.** A second
+  `sendall` on the same connection is EPIPE. Reconnecting per request is
+  still 0.036 ms against 6.02 ms for spawning `hyprctl`, so poll through the
+  socket and never through the binary.
+- **A WAYLAND DRAG DOES NOT REACH AN XWAYLAND WINDOW INTACT.** Driven
+  between two windows of the same test program: the drop arrives and carries
+  the X11 PRIMARY selection instead of the URI that was offered. Anything on
+  XWayland — qdrop is, because it positions itself — cannot receive a drag
+  from a Wayland-native app, and pcmanfm-qt is Wayland-native here.
 - **AN X11 TOOL UNDER HYPRLAND SUCCEEDS AND RETURNS BLACK.** maim, xrandr,
   xdotool and friends all answer through XWayland — they do not fail, they
   report the XWayland root window, which no Wayland client draws into. Every
