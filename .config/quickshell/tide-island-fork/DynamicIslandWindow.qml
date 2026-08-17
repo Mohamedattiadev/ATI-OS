@@ -4396,6 +4396,10 @@ PanelWindow {
             text: root.hoverTooltipText
             showCondition: root.hoverTooltipVisible
             textFontFamily: root.textFontFamily
+            // The prayer line leads with a Nerd Font glyph that the TEXT face
+            // does not carry, so the card needs both. See the note in
+            // IslandHoverTooltip.qml — it is a fallback list, not a swap.
+            iconFontFamily: root.iconFontFamily
 
             // Centred on the capsule rather than on the window: the capsule's
             // x is `islandPositionX` percent of the width and is not

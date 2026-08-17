@@ -56,8 +56,31 @@ fi
 diff=$(( next_min - now_min ))
 h=$(( diff / 60 ))
 m=$(( diff % 60 ))
+
+# ---- THE GLYPH WAS A HEARTBEAT ----------------------------------------------
+#
+# This read U+F0430 for years, which is `nf-md-pulse` -- an ECG waveform. It
+# was reported once the island started drawing this string in a tooltip big
+# enough to see it, and the first guess was a font fallback, because the
+# tooltip renders in Inter and Inter has no Nerd Font glyphs. It is not:
+# rendered at 48 px in BOTH faces, side by side, U+F0430 is the same little
+# heartbeat in each --
+#
+#     pango-view --font="JetBrainsMono Nerd Font 48" -t $'\U000F0430'
+#     pango-view --font="Inter Medium 48"            -t $'\U000F0430'
+#
+# -- so every bar was drawing the codepoint it was given, correctly, and the
+# codepoint was simply wrong. U+F1827 is `nf-md-mosque`, confirmed the same
+# way (U+F0979 is the star-and-crescent, if that is ever preferred).
+#
+# BY CODEPOINT, not as a literal, per the RULES: "private-use characters do
+# not survive into what the model reads back -- dump bytes, and write glyphs
+# by codepoint". The old literal is exactly how a wrong glyph survived this
+# long unread. bash's printf takes \U with eight hex digits.
+GLYPH="$(printf '\U000F1827')"
+
 if (( h > 0 )); then
-  printf '󰐰 %s %dh %dm' "$next_name" "$h" "$m"
+  printf '%s %s %dh %dm' "$GLYPH" "$next_name" "$h" "$m"
 else
-  printf '󰐰 %s %dm' "$next_name" "$m"
+  printf '%s %s %dm' "$GLYPH" "$next_name" "$m"
 fi
