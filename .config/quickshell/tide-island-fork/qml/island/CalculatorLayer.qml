@@ -83,6 +83,98 @@ FocusScope {
     // -1 = not recalling. Walks `history` backwards on Up.
     property int recallIndex: -1
 
+    // ========================================================================
+    //  MODAL, AND IT IS vi's MODEL RUN THE OTHER WAY UP
+    // ========================================================================
+    //
+    // Reported: "the popup of calcoter is too dumm and poor and no vim motion
+    // enough for moving". It answered exactly one key — Escape — because the
+    // input field holds the keyboard and every other keystroke is text.
+    //
+    // THIS IS QdropGrid's PROBLEM, INVERTED, and that is the whole design.
+    // The shelf can be hjkl by default and put its search behind `/`, because
+    // browsing is the primary act there and typing is the exception. A
+    // calculator is the other way round: typing the expression IS the act,
+    // and `d`, `y`, `j` and `g` are all legal inside one — `2d`, `0y`, and
+    // `log` all contain letters this would otherwise steal. So:
+    //
+    //     INSERT (default)   the field is live, type the expression
+    //     Esc                leave the field -> NORMAL
+    //     NORMAL             j/k walk the tape, g/G its ends, y yanks the
+    //                        result, Y the expression, Enter recalls into the
+    //                        box and returns to insert, i/a go back to
+    //                        typing, Esc closes the panel
+    //
+    // Escape therefore takes TWO presses to close from a half-typed sum,
+    // which is vi's own precedence and the point of it: the first press is
+    // "stop typing", not "throw this away".
+    //
+    // `PanelSearchField.readOnly` is the mechanism, as it is in the shelf —
+    // its header calls it the thing that "keeps focus and inserts nothing" —
+    // so normal mode needs no focus juggling at all, and the host's
+    // Keys.onPressed simply starts receiving what the field stops claiming.
+    property bool normalMode: false
+    // Which tape row the cursor is on in normal mode. Indexes `history`,
+    // which is newest-LAST, so it starts at the newest row: that is the one
+    // you almost always want, and it is the one nearest the input box.
+    property int tapeIndex: 0
+
+    function enterNormal() {
+        if (root.history.length === 0) {
+            // Nothing to navigate. A mode with no content to move through is
+            // a mode you cannot tell you are in, so Escape keeps its old
+            // meaning until there is a tape.
+            root.closeRequested();
+            return;
+        }
+        root.normalMode = true;
+        input.readOnly = true;
+        root.tapeIndex = root.history.length - 1;
+        root.forceActiveFocus();
+    }
+
+    function enterInsert() {
+        root.normalMode = false;
+        input.readOnly = false;
+        input.focusField();
+    }
+
+    function tapeMove(delta) {
+        if (root.history.length === 0)
+            return;
+        // CLAMPED, not wrapped, and deliberately unlike the shelf's motion:
+        // this list is a tape with a top and a bottom, and running off the
+        // newest end into the oldest is not a thing a tape does.
+        root.tapeIndex = Math.max(0, Math.min(root.history.length - 1,
+                                              root.tapeIndex + delta));
+    }
+
+    readonly property var tapeRowAt: root.history[
+        Math.max(0, Math.min(root.tapeIndex, root.history.length - 1))] || null
+
+    // Yank the ANSWER by default and the expression on Y. Which one you want
+    // is the whole question a tape gets asked, and the answer is the common
+    // one — the expression is already recallable with Enter.
+    function yankTape(wantExpr) {
+        const row = root.tapeRowAt;
+        if (!row)
+            return;
+        Quickshell.execDetached(
+            Clipboard.argv(String(wantExpr ? row.expr : row.result)));
+        root.errorText = wantExpr ? "expression copied" : "result copied";
+        errorClear.restart();
+    }
+
+    // The status line is the only feedback a copy has, and a copy that says
+    // nothing looks like a copy that did not happen. It shares `errorText`
+    // with the real errors because they occupy the same slot; this puts it
+    // back to the resting text afterwards.
+    Timer {
+        id: errorClear
+        interval: 1600
+        onTriggered: root.errorText = ""
+    }
+
     readonly property string expression: input.query
 
     readonly property real rowHeight: Metrics.px(22)
@@ -126,7 +218,11 @@ FocusScope {
             input.clear();
             root.result = "";
             root.resultFor = "";
-            input.focusField();
+            // Always INSERT on open. A modal panel that reopens in whatever
+            // mode you left it in is a panel that swallows your first
+            // expression roughly half the time, and the reason you pressed
+            // the key was to type one.
+            root.enterInsert();
         }
     }
 
@@ -292,12 +388,72 @@ FocusScope {
         }
     }
 
+    // ---- NORMAL MODE'S KEY MAP ----
+    //
+    // Only reached once the field is readOnly, which is what stops every one
+    // of these letters from being part of an expression. In insert mode the
+    // field claims them all and this handler sees nothing but Escape.
     Keys.onPressed: function(event) {
-        // FALLBACK ONLY — the field holds the keyboard and answers Enter,
-        // Escape and the arrows through the signals wired below.
-        if (event.key === Qt.Key_Escape) {
+        if (!root.normalMode) {
+            // FALLBACK ONLY — the field holds the keyboard and answers
+            // Enter, Escape and the arrows through the signals wired below.
+            if (event.key === Qt.Key_Escape) {
+                root.enterNormal();
+                event.accepted = true;
+            }
+            return;
+        }
+
+        const shift = (event.modifiers & Qt.ShiftModifier) !== 0;
+        event.accepted = true;
+
+        switch (event.key) {
+        case Qt.Key_Escape:
+        case Qt.Key_Q:
             root.closeRequested();
-            event.accepted = true;
+            return;
+        case Qt.Key_I:
+        case Qt.Key_A:
+            root.enterInsert();
+            return;
+        case Qt.Key_J:
+        case Qt.Key_Down:
+            root.tapeMove(1);
+            return;
+        case Qt.Key_K:
+        case Qt.Key_Up:
+            root.tapeMove(-1);
+            return;
+        case Qt.Key_G:
+            // g to the oldest, G to the newest — the ends of the tape, in
+            // the direction the tape is drawn.
+            root.tapeIndex = shift ? root.history.length - 1 : 0;
+            return;
+        case Qt.Key_Home:
+            root.tapeIndex = 0;
+            return;
+        case Qt.Key_End:
+            root.tapeIndex = root.history.length - 1;
+            return;
+        case Qt.Key_Y:
+            root.yankTape(shift);
+            return;
+        case Qt.Key_C:
+            if (event.modifiers & Qt.ControlModifier)
+                root.yankTape(false);
+            return;
+        case Qt.Key_Return:
+        case Qt.Key_Enter:
+            // Recall the EXPRESSION and go straight back to typing, because
+            // the only reason to pull a line off the tape is to edit it.
+            if (root.tapeRowAt) {
+                input.setText(String(root.tapeRowAt.expr));
+                root.recallIndex = -1;
+                root.enterInsert();
+            }
+            return;
+        default:
+            event.accepted = false;
         }
     }
 
@@ -313,12 +469,24 @@ FocusScope {
         statusLevel: root.errorText !== "" ? "error"
                    : (root.evaluating ? "busy" : "idle")
 
-        hints: [
-            { key: "Enter", label: "keep" },
-            { key: "↑↓", label: "recall" },
-            { key: "^C", label: "copy" },
-            { key: "Esc", label: "close" }
-        ]
+        // The bar follows the MODE, because a key chip naming a key that
+        // does nothing in the mode you are standing in is worse than a
+        // shorter bar — the same argument the volume popup's own hints make.
+        hints: root.normalMode
+            ? [
+                { key: "jk", label: "tape" },
+                { key: "↵", label: "recall" },
+                { key: "y", label: "copy" },
+                { key: "Y", label: "expr" },
+                { key: "i", label: "type" },
+                { key: "Esc", label: "close" }
+            ]
+            : [
+                { key: "Enter", label: "keep" },
+                { key: "↑↓", label: "recall" },
+                { key: "^C", label: "copy" },
+                { key: "Esc", label: "tape" }
+            ]
     }
 
     PanelSearchField {
@@ -339,7 +507,9 @@ FocusScope {
         escapeClearsQuery: false
 
         onSubmitted: root.commit()
-        onCancelled: root.closeRequested()
+        // Escape leaves the FIELD, it does not leave the panel. See the modal
+        // note above: the first press is "stop typing", the second closes.
+        onCancelled: root.enterNormal()
         onMoved: function(delta) { root.recall(delta); }
         onCopyRequested: root.copyResult()
     }
@@ -383,8 +553,23 @@ FocusScope {
             Item {
                 id: tapeRow
                 required property var modelData
+                required property int index
                 width: parent.width
                 height: root.rowHeight
+
+                // The normal-mode cursor. Only while the mode is on: a
+                // highlighted row in insert mode would claim the tape is
+                // being navigated when every keystroke is going into the box.
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.leftMargin: -Metrics.pad(6)
+                    anchors.rightMargin: -Metrics.pad(6)
+                    radius: Metrics.px(4)
+                    visible: root.normalMode && tapeRow.index === root.tapeIndex
+                    color: IslandTheme.alpha(IslandTheme.accent, 0.18)
+                    border.width: 1
+                    border.color: IslandTheme.alpha(IslandTheme.accent, 0.45)
+                }
 
                 Text {
                     id: tapeExpr
@@ -419,7 +604,12 @@ FocusScope {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         input.setText(String(tapeRow.modelData.expr));
-                        input.focusField();
+                        root.tapeIndex = tapeRow.index;
+                        // A click is a decision to edit that line, so it
+                        // lands you in insert mode whichever mode you were
+                        // in — otherwise clicking a row while in normal mode
+                        // fills a box you cannot type into.
+                        root.enterInsert();
                     }
                 }
             }

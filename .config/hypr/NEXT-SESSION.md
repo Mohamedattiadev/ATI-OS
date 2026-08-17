@@ -341,7 +341,41 @@ derived from the background in both bars and is unaffected, and the ten other
    pcmanfm-qt window with one file, a `to` drag, and a grim capture during
    the hold.
 
-0b. **THE CALCULATOR PANEL IS THIN, AND ITS KEYBOARD IS THINNER.**
+0b. ~~**THE CALCULATOR PANEL IS THIN, AND ITS KEYBOARD IS THINNER.**~~
+   **THE KEYBOARD HALF IS DONE.** `CalculatorLayer.qml` is modal now:
+
+       INSERT (default)  the field is live, type the expression
+       Esc               leave the field -> NORMAL
+       NORMAL            j/k walk the tape, g/G its ends, y yanks the
+                         result, Y the expression, Enter recalls into the
+                         box and returns to insert, i/a resume typing,
+                         Esc (or q) closes
+
+   Escape takes TWO presses to close from a half-typed sum, which is the
+   point of it: the first press is "stop typing", not "throw this away". The
+   hint bar follows the mode, the tape draws an accent cursor on the focused
+   row while normal mode is on, and a click on a row lands you in insert
+   mode whichever mode you were in. Opens in INSERT always — a modal panel
+   that reopens in the mode you left it in swallows your first expression
+   about half the time. `enterNormal()` with an empty tape closes instead,
+   because a mode with nothing to move through is one you cannot tell you
+   are in.
+
+   Verified: loads clean, opens in insert, the hint bar reads
+   `Enter keep · ↑↓ recall · ^C copy · Esc tape`. The normal-mode motions
+   were NOT driven — that needs synthetic keystrokes into a live panel,
+   which the RULES forbid.
+
+   **What is still open on it** is the other half of the report, "too dumm
+   and poor": history does not survive a close (the tape is a plain property
+   on a non-retained PanelLoader), there is no memory register, and results
+   are only copyable one row at a time. Unit and base conversion already
+   work — qalc does them and the placeholder advertises them
+   (`5 km to mi`, `1 GiB to MB`).
+
+   The original note is kept below because the design argument is the part
+   worth re-reading before extending it.
+
    Reported: "the popup of calcoter is too dumm and poor and no vim motion
    enough for moving".
 
