@@ -261,6 +261,96 @@ Work to do:
   that file up before any test that writes, and diff it after** — it is a
   RULE and it has bitten.
 
+### 8. The topbar's ~2 px height twitch — re-open it with the better instrument
+
+Reported: *"the topbar still glitching when i open then close popup, its
+height reduce with 2px lets say and come back to its place again. in qtile it
+was because picom and fixed i think, but in hyperland i dont know why still
+do."*
+
+**Driven once and NOT reproduced, on either bar.** What was already ruled out,
+so it is not re-done:
+
+* *Not a spring.* `grep 'Behavior on \(height\|implicitHeight\|y\)'` across
+  `topbar/*.qml` and `popups.qml` returns NOTHING — no geometry on either
+  surface is animated. `barHeight` is `s(28)`, `marginV` `s(5)`, a static 38.
+* *Not the UI scale flickering to a fallback.* `Metrics.qml` reads
+  `~/.cache/qtile/ui_scale` through a FileView and falls back to 1.0; the
+  file holds `1.00`, so fallback and real value are the same number.
+* *Not picom.* There is no compositing layer between Quickshell and
+  Hyprland, so the matching symptom in the two sessions has two different
+  causes and the qtile fix does not port.
+* Measured: the bar surface read `h=38 y=0 reservedTop=38` unchanged for a
+  whole volume-popup open/close sampled every 8 ms, and a 157-frame grim
+  burst found its painted bottom edge identical in every frame.
+
+**RECOMMENDED, and the reason it is worth re-opening rather than closing:**
+that 39 fps grim burst is exactly the instrument that would MISS this. The
+island's hover blink turned out to be **one frame**, and it was invisible to
+every probe until a 60 fps `wf-recorder` capture caught it. The topbar was
+never recorded that way. So:
+
+1. `bar-switch native`, then record at 60 fps with `wf-recorder` over a strip
+   containing the bar's bottom edge, and drive open/close with the rig in
+   item 2. Count frames where the painted edge moves, do not average.
+2. **Drive EVERY popup, not just volume** — that is the one that was tried.
+   `popups.qml` has wallpaper, network, bluetooth, display, wifiqr and the
+   cheatsheet, and they have different heights and different loaders.
+3. Sample the bar surface AND `hyprctl monitors -j`'s `reserved`
+   **simultaneously**, because the strongest surviving lead is that the bar's
+   height is not what moves: `topbar/shell.qml:931` is a SEPARATE 1 px window
+   that owns the `exclusiveZone` — both real bars are `ExclusionMode.Ignore`
+   — so anything that perturbs the reserved area shifts the gap under the bar
+   without the bar resizing at all. A popup is another layer surface, and
+   layer-shell recomputes the usable area when one maps.
+4. Test BOTH bar positions (`~/.cache/topbar-position`, top and bottom).
+5. If it still cannot be reproduced in Hyprland, **verify it under qtile**
+   and then close it as qtile-only with the picom exclusion as the fix —
+   `picom.conf` already excludes the island for a measured reason. Do not
+   leave it open forever on a symptom nobody can reproduce.
+
+### 9. pcmanfm-qt: the dragged file is not under the cursor — PROVE it first
+
+Reported: *"when i open pcmanfm-qt and try to drag file why the file not
+directly under the cursor."*
+
+The grid's spacing is fixed and measured (`623bf9b`): the cell WIDTH is a
+font-derived character budget in libfm-qt, independent of the icon size —
+`BigIconSize` 32 and 64 both gave a 218 px pitch, `QT_FONT_DPI 72` gave
+~166 px. It is now `QT_FONT_DPI=84` in a local desktop override, six columns.
+
+**The offset is NOT proven and must not be "fixed" on the theory.** The
+theory is that libfm-qt's drag pixmap is the rendered ITEM — that 218 px cell
+with a 48 px icon centred in it — so the visual extends ~85 px either side of
+what you grabbed, and narrowing the cell narrows the offset by construction.
+
+**RECOMMENDED — one test settles where the fix belongs, and it is the first
+thing to do:**
+
+* Empty workspace, ONE throwaway pcmanfm-qt window with one file in it.
+  (The previous attempt drove a synthetic drag on the wrong workspace and the
+  press landed in nvim. **Do not synthesise drags over the user's real
+  windows.**)
+* `uinput-shake.py to <x1> <y1> <x2> <y2>` and a `grim` capture DURING the
+  0.6 s hold at the destination — the drag icon is a surface the compositor
+  draws, so it is in the capture.
+* Measure the offset between `hyprctl cursorpos` and the drag pixmap's
+  bounding box, and compare it against `(cellWidth - iconWidth) / 2`.
+* **Then repeat the identical drag from a second Qt app and from a GTK app**
+  (`scripts/test/dnd-peer.py` is GTK and already offers a URI). This is the
+  test that decides everything:
+
+      offset in pcmanfm-qt ONLY   -> libfm-qt's pixmap, i.e. the cell width,
+                                     and item 9 is already mostly fixed by
+                                     the font change; finish it by measuring
+                                     how much the offset shrank
+      offset in EVERY app         -> Hyprland's drag-icon hotspot placement,
+                                     which is a compositor issue and a very
+                                     different bug to report and work around
+
+Do not spend the session patching a file manager before knowing which of
+those two it is.
+
 ---
 
 ## STANDING CONSTRAINTS
@@ -291,6 +381,21 @@ unification, pcmanfm-qt's grid width, the prayer glyph (it was
 `nf-md-pulse`, a heartbeat), the tooltip's animation removal, and the island
 hover blink. See `git log` — ten commits, each with its measurement.
 
-Still open and NOT in this list: the topbar's 2 px height report (driven and
-not reproduced on either bar), the pcmanfm drag offset (cause identified, not
-proven), and the long tail in `NEXT-SESSION.md`.
+Still open and NOT in this list: the long tail in `NEXT-SESSION.md` — the
+login notification burst (needs a real logout), the rest of the motion
+matrix's settle, the 12 unchecked picker menus, `bar-mode` moving on its own,
+scratchpads on a second monitor, the drop shadow still assuming the flush
+form, live preview for the cheap numeric settings keys, keybind latency
+(~50 ms of `qs ipc call` before any animation starts), and
+`parse_task_name`'s short-subtitle strip.
+
+---
+
+## IF THE SESSION RUNS SHORT
+
+Items 1, 3 and 7 are the ones the user has reported more than once, and 3 is
+a small fix with a confirmed cause. Item 8 may well close as "qtile-only".
+Item 9 is one measurement before it is any code at all. Do those four before
+the open-ended ones (4, 5, 6's upgrade half), and say plainly in the summary
+what was measured, what was fixed, and what was left — including anything
+that could not be driven and why.
