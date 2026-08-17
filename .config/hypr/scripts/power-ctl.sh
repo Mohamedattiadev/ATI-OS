@@ -52,12 +52,47 @@
 #
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+#  WHICH SESSION, because two of these six are compositor-specific
+# ---------------------------------------------------------------------------
+# This file was written for Hyprland and moved with the island to the qtile
+# session, where two actions were silently wrong:
+#
+#   lock     `loginctl lock-session` only locks anything if something is
+#            LISTENING for logind's Lock signal. Hyprland has hypridle doing
+#            that (autostart.conf), and the qtile session has nothing at all —
+#            verified: no hypridle, no xss-lock, no xautolock, no
+#            light-locker running, and `LockedHint=no` after the call. So the
+#            island's "Lock screen" ran, returned 0, and left the screen
+#            unlocked. Reported as "the lock screen, when I open its popup and
+#            click, is not making the lock screen".
+#
+#            betterlockscreen is installed and is X11-native (an i3lock
+#            wrapper), so under X11 it is called DIRECTLY. The header above
+#            says betterlockscreen "could not port verbatim" — that is true of
+#            the WAYLAND session and is why loginctl is right there; it was
+#            never true of this one.
+#
+#   refresh  `hyprctl reload` is not a thing under qtile. qtile's own
+#            equivalent, and the one its config already binds to mod+shift+r,
+#            is reload_config over its IPC.
+#
+# Keyed on WAYLAND_DISPLAY, the same test shell.qml and the island's QML use,
+# so this cannot disagree with the shell about which session it is in.
+on_x11() { [[ -z "${WAYLAND_DISPLAY:-}" ]]; }
+
 # The command for each action, in one table. Kept as a function rather than
 # an associative array so `logout` can carry its two-branch fallback without
 # being a string that has to be eval'd.
 command_for() {
     case "$1" in
-    lock)     printf 'loginctl lock-session' ;;
+    lock)
+        if on_x11; then
+            printf 'betterlockscreen -l'
+        else
+            printf 'loginctl lock-session'
+        fi
+        ;;
     logout)
         # dm-logout's own branch, transcribed: the session id when the
         # environment has one, the seat when it does not.
@@ -67,7 +102,13 @@ command_for() {
             printf 'loginctl terminate-seat seat0'
         fi
         ;;
-    refresh)  printf 'hyprctl reload' ;;
+    refresh)
+        if on_x11; then
+            printf 'qtile cmd-obj -o cmd -f reload_config'
+        else
+            printf 'hyprctl reload'
+        fi
+        ;;
     reboot)   printf 'systemctl reboot' ;;
     shutdown) printf 'systemctl poweroff' ;;
     suspend)  printf 'systemctl suspend' ;;
@@ -82,15 +123,28 @@ command_for() {
 # asks nothing before locking. That asymmetry is correct and is preserved —
 # locking is the one action here that costs nothing to undo.
 list_actions() {
-    cat <<'JSON'
+    # Detail strings are what the panel draws under each row, so they have to
+    # name the command this session will actually run -- see command_for().
+    local lock_detail refresh_detail
+    if on_x11; then
+        lock_detail='betterlockscreen -l'
+        refresh_detail='qtile reload_config'
+    else
+        lock_detail='loginctl lock-session → hyprlock'
+        refresh_detail='hyprctl reload'
+    fi
+    # Quoted heredoc (no brace escaping), so the two session-dependent
+    # fields are filled in afterwards rather than expanded inline.
+    cat <<'JSON' | sed -e "s|__LOCK_DETAIL__|$lock_detail|" \
+                       -e "s|__REFRESH_DETAIL__|$refresh_detail|"
 {
   "actions": [
     { "id": "lock",     "label": "Lock screen",  "confirm": false,
-      "detail": "loginctl lock-session → hyprlock" },
+      "detail": "__LOCK_DETAIL__" },
     { "id": "logout",   "label": "Log out",      "confirm": true,
       "detail": "loginctl terminate-session" },
     { "id": "refresh",  "label": "Reload config","confirm": true,
-      "detail": "hyprctl reload" },
+      "detail": "__REFRESH_DETAIL__" },
     { "id": "reboot",   "label": "Reboot",       "confirm": true,
       "detail": "systemctl reboot" },
     { "id": "shutdown", "label": "Shut down",    "confirm": true,

@@ -51,38 +51,153 @@ PopupChrome {
     // reason the island sets cheatsheetWhich before flipping islandState.
     property string which: "hypr"
 
-    // The cheatsheet is the widest surface in this shell and clamped only by
-    // the screen — the island's own note: a row is a key chip plus a command,
-    // some of which are full paths, and the alternative to width is eliding
-    // the half of the row that says what the key does.
-    popupWidth: Math.min(PopupMetrics.s(1180),
+    // ---- THE SIZE IS qtile's, NOT "as wide as the screen allows" ----
+    //
+    // Reported: "make it identical to the one in qtile, no extras and same
+    // size". It was 1180x720 under a note calling this "the widest surface in
+    // this shell"; the sheets it is a viewer for are 880x580:
+    //
+    //     QtileCheatsheet.py  POPUP_W = _grid.s(880)   POPUP_H = _grid.s(580)
+    //     FishCheatsheet.py   POPUP_W = _grid.s(880)   POPUP_H = _grid.s(580)
+    //
+    // and 880 is not a round number there either — that file's comment derives
+    // it from BODY_SIZE and the card metrics, and warns that going wider makes
+    // "the grid stop reaching the edges and leave a band of dead background
+    // down one side, which is the thing that made these sheets look broken".
+    // Widening the window without widening the cards reproduced exactly that.
+    //
+    // `PopupMetrics.s` and `_grid.s` are the same function over the same
+    // ~/.cache/qtile/ui_scale, so these are the same pixels on this machine.
+    // The screen clamp stays: it never bites at 880x580 on this panel, and it
+    // is what keeps the popup on a smaller one.
+    popupWidth: Math.min(PopupMetrics.s(880),
                          (root.screen ? root.screen.width : 1366) - PopupMetrics.s(40))
-    popupHeight: Math.min(PopupMetrics.s(720),
+    popupHeight: Math.min(PopupMetrics.s(580),
                           (root.screen ? root.screen.height : 768) - PopupMetrics.s(48))
 
     titleIcon: String.fromCodePoint(0xF018D)
     title: root.sheetTitle === "" ? "Cheatsheet" : root.sheetTitle
     subtitle: root.note
 
-    badgeLabel: "sheet"
-    badgeValue: root.which
+    // ---- THE BADGE IS THE SCROLL POSITION, WHICH IS WHAT qtile PUTS THERE --
+    //
+    // `_header(pct=…)` sets a `NN%` chip beside the title, and its comment is
+    // the reason it cannot be dropped: "scrolling has no page number, but it
+    // still has to answer 'is there more below this?' — without that the sheet
+    // looks like it simply ends wherever the viewport happens to cut it".
+    //
+    // It replaced a `sheet: <which>` chip, which was an extra twice over: the
+    // sheet's name is already the title two lines to the left ("HYPRLAND
+    // KEYS"), and qtile has no such chip.
+    //
+    // Blank when nothing scrolls, exactly as `pct=None` is there.
+    badgeLabel: ""
+    badgeValue: body.scrollable ? Math.round(body.scrollPercent) + "%" : ""
 
-    hintGap: PopupMetrics.hintSize * 0.6
+    hintGap: PopupMetrics.hintSize * 0.6 * 2
 
+    // ---- THE KEYS, WHICH ARE NOW EXACTLY CheatSheet-Mode's ----
+    //
+    // config.py's chord is k, j, v, f, Tab, Shift-Tab, q — seven bindings and
+    // no more. This strip carried `k keys`, `i island`, and drove `d` and `t`
+    // besides, none of which qtile has. See onKeyPressed for where each one
+    // went and why nothing became unreachable.
+    //
+    // Split across the two bars the way qtile splits it: the keys that CHANGE
+    // WHICH SHEET are the header legend, and `j / k scroll` + `Esc close` is
+    // `_footer()` verbatim, in the footer.
     hints: [
-        { key: "k",   desc: "keys" },
         { key: "v",   desc: "vim" },
         { key: "f",   desc: "fish" },
-        { key: "i",   desc: "island" },
-        { key: "jk",  desc: "scroll" },
-        { key: "Tab", desc: "page" },
-        { key: "Esc", desc: "close" }
+        { key: "Tab", desc: "page" }
     ]
 
     // ---- STATE ----
     property string sheetTitle: ""
     property string note: ""
     property var sections: []
+
+    // ---- THE SHEETS' OWN METRICS, WHICH EVERYTHING ELSE IS BUILT FROM ----
+    //
+    // QtileCheatsheet.py / FishCheatsheet.py, verbatim. They are not
+    // decoration: qtile's grid is monospace and EXACT — "a card is
+    // (2 + rows) * line_px tall and (2 + cols) * char_px wide, full stop" —
+    // and reproducing the look without reproducing the rhythm is what made
+    // this popup read as a different program showing the same words.
+    //
+    // BODY_SIZE and LINE_PX are PIXELS, not points. That file carries a long
+    // note about the one time they were measured in points instead, which
+    // built every card a third too large; the RULE here says the same thing
+    // ("a qtile fontsize is PIXELS"). PopupMetrics.s() is _grid.s().
+    readonly property int bodySize: PopupMetrics.s(15)
+    // pango's `size="smaller"` is 1/1.2 of the base — LABEL_SIZE. The label
+    // column is set one step down "so the key — the thing you actually came to
+    // read — is what carries the row".
+    readonly property int labelSize: Math.round(root.bodySize / 1.2)
+    readonly property int linePx: PopupMetrics.s(21)
+    readonly property int charPx: PopupMetrics.s(9)
+    // PAD_CHARS = 1, PAD_ROWS = 1: one character of inset each side, one blank
+    // row top and bottom.
+    readonly property int cardPadX: root.charPx
+    readonly property int cardPadY: root.linePx
+    readonly property int cardRadius: PopupMetrics.s(10)   // CARD_RADIUS
+    readonly property int cardGap: PopupMetrics.s(16)      // CARD_GAP_PX
+    readonly property int gridSidePad: PopupMetrics.s(20)  // GRID_SIDE_PAD_PX
+    // ROW_GAP_CHARS — the floor between a label and its key, "about a
+    // word-space at this size". Below it the label elides rather than crowding
+    // the key.
+    readonly property int rowGapPx: 3 * root.charPx
+    // SCROLL_ROWS. "One row is too slow to cross a sheet this tall and a full
+    // screenful loses your place; three tracks the eye."
+    readonly property int scrollRows: 3
+
+    // ---- compact(), PORTED ----
+    //
+    // KEY_SUBS plus the " + " collapse. This belongs on the VIEWER and not in
+    // cheatsheet.py, for the reason _cheatsheet_grid.py gives: it exists so
+    // "the row fits the card", which is a property of how wide the card is,
+    // and the script has no idea. `--sheet-json` hands over the raw combo
+    // ("SUPER + SHIFT + C") and every reader shortens it to taste.
+    //
+    // Order matters — longest first, so "Shift" is gone before "Sh".
+    readonly property var keySubs: [
+        ["<leader>", "␣"], ["<tab>", "⇥"], ["Shift", "⇧"], ["Ctrl", "⌃"],
+        ["Enter", "⏎"], ["Return", "⏎"], ["Escape", "Esc"], ["Space", "␣"],
+        ["Super", "Sup"], ["[1–9]", "1-9"], ["[1-9]", "1-9"], ["H1–H6", "H1-6"]
+    ]
+
+    function compact(key) {
+        let out = String(key);
+        for (const pair of root.keySubs)
+            out = out.split(pair[0]).join(pair[1]);
+        // " + " is pure padding once the names are symbols.
+        out = out.split(" + ").join(" ");
+        return out.trim().split(/\s+/).join(" ");
+    }
+
+    // ---- THE `danger` PREDICATE, PER SHEET ----
+    //
+    // Each sheet passes its own tuple to card_markup(), and a row whose label
+    // matches gets the warm accent instead of the green one. The hypr sheet is
+    // this session's QtileCheatsheet, so it inherits that file's tuple; the
+    // three sheets qtile has no counterpart for use it too, because "exit,
+    // kill, logout" is the set that is about the SESSION rather than about any
+    // one program.
+    readonly property var dangerWords: {
+        switch (root.which) {
+        case "vim":  return ["quit", "close", "delete", "clear"];
+        case "fish": return ["kill", "exit", "cleanup", "delete"];
+        default:     return ["exit", "kill", "logout"];
+        }
+    }
+
+    function isDanger(label) {
+        const lower = String(label).toLowerCase();
+        for (const word of root.dangerWords)
+            if (lower.indexOf(word) !== -1)
+                return true;
+        return false;
+    }
 
     Process {
         id: sheetProc

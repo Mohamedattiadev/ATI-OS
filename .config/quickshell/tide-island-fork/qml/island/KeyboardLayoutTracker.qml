@@ -159,4 +159,57 @@ Item {
         triggeredOnStart: true
         onTriggered: probe.running = true
     }
+
+    // ---- THE X11 HALF -------------------------------------------------------
+    //
+    // The header above says this tracker "never loads" under qtile and that
+    // the right degradation is silence, because "qtile's own bar already has a
+    // KeyboardLayout widget". That reasoning stopped holding the moment the
+    // island BECAME qtile's bar: the widget it deferred to is hidden, so the
+    // readout was simply gone rather than deferred.
+    //
+    // There is no device list to query here, but there is an authority: qtile
+    // sets the layout itself, with `setxkbmap -layout <x>`, so it knows the
+    // answer exactly. It writes it to this file on every switch and once at
+    // startup -- see publish_keyboard_to_island() in qtile's config.py.
+    //
+    // A FILE, and pushed rather than polled, for the two reasons LayoutState
+    // gives: a push tells you about a change while a widget needs the VALUE,
+    // so an island restarted mid-session would otherwise draw nothing until
+    // you next switched; and a language indicator that notices on a 30 s
+    // re-sync is not worth drawing.
+    //
+    // This sets `layoutKey` directly rather than going through keyForName():
+    // that function resolves Hyprland's DISPLAY name ("English (US)") against
+    // nameHints, whereas what arrives here is already the key ("us", "ara").
+    FileView {
+        path: root.runtimeDir + "/hypr-layouts/keyboard"
+        watchChanges: true
+        preload: true
+        // Absent until qtile has published once, which on a fresh boot may be
+        // after the island starts. Not an error: layoutKey keeps its default
+        // and the readout draws nothing, which is the same silence this
+        // tracker has always used for "nothing to say".
+        printErrors: false
+
+        onLoaded: root.applyKeyboardFile(text())
+        onFileChanged: {
+            reload();
+            root.applyKeyboardFile(text());
+        }
+    }
+
+    function applyKeyboardFile(t) {
+        // Trimmed for the reason LayoutState trims: the writer uses no
+        // trailing newline today and a stray "\n" would match no key, so the
+        // readout would silently vanish.
+        const key = String(t).trim().toLowerCase();
+        if (key !== "")
+            root.layoutKey = key;
+    }
+
+    readonly property string runtimeDir: {
+        const x = Quickshell.env("XDG_RUNTIME_DIR");
+        return (x && String(x) !== "") ? String(x) : "/tmp";
+    }
 }

@@ -1,4 +1,5 @@
 import Quickshell
+import Quickshell.Io
 
 // FORK — new file. The X11 half of DynamicIslandWindow: the island as qtile's
 // bar. Why the split exists: qml/common/BackendSurface.md.
@@ -23,17 +24,74 @@ import Quickshell
 DynamicIslandWindow {
     id: island
 
-    // The two-layer mapping of the base's Top/Overlay rule. Resting sits in
-    // normal dock stacking, so a fullscreen client covers it exactly as the
-    // Wayland Top layer intends; anything open goes above, which is the
-    // Overlay half. The behaviour is therefore the SAME as Hyprland's at both
-    // ends, and only the middle — Bottom and Background, which the island
-    // never asks for — is missing.
-    aboveWindows: !island.islandRestingSurface
+    // ---- STACKING: ALWAYS ABOVE, and the previous rule was wrong ----------
+    //
+    // This was `aboveWindows: !island.islandRestingSurface`, on the reasoning
+    // that a resting island should sit in "normal dock stacking" so that a
+    // fullscreen client covers it, matching what the Wayland Top layer does.
+    //
+    // The reasoning was right and the mapping was not. `aboveWindows: false`
+    // is not "normal stacking" — measured with xprop, it puts
+    // _NET_WM_STATE_BELOW on the window, which stacks the capsule UNDER every
+    // ordinary window, not merely under fullscreen ones. So any window that
+    // reached the top strip — a floating terminal, a dialog, a browser moved
+    // up — drew straight over the resting island, and the island only
+    // reappeared once a panel opened and flipped this to true. That reads
+    // exactly like "the island randomly disappears".
+    //
+    // Wayland's Top layer has no BELOW equivalent here: X11 offers above,
+    // below, and nothing, and of those three "above" is the one that matches
+    // Top. Fullscreen is not lost with it — qtile unmaps or raises over docks
+    // for a genuine fullscreen client, which is the case the old rule was
+    // reaching for, and it is handled by the WM rather than by us.
+    aboveWindows: true
 
     // "exclusive" and "ondemand" both collapse to "can take focus", because
     // that is the only distinction X11 offers. The important half is the
     // false case: the resting capsule must NOT be focusable, or every notch
     // hover would pull focus off the window being typed into.
-    focusable: island.islandKeyboardFocus !== "none"
+    readonly property bool wantsKeyboard: island.islandKeyboardFocus !== "none"
+
+    focusable: island.wantsKeyboard
+
+    // ---- AND `focusable` ALONE DOES NOTHING UNDER qtile -------------------
+    //
+    // Setting it is necessary and is not sufficient, and the gap between
+    // those two is where every keyboard-driven panel was quietly broken.
+    // Quickshell honours the property — the panel window really does
+    // advertise `input focus: True` — but the window is a DOCK, and qtile
+    // never hands a dock the keyboard no matter what it advertises. Measured
+    // on the live session: with the launcher open, `xdotool type` landed in
+    // the terminal behind the island, the picker's filter field ignored every
+    // keystroke, and Escape closed nothing.
+    //
+    // So the focus is taken explicitly, with XSetInputFocus, which does not
+    // consult the window manager. bin/x11-panel-focus.sh explains how it
+    // finds the right window and why it retries.
+    //
+    // NO WAYLAND COUNTERPART, deliberately: WlrKeyboardFocus.Exclusive is a
+    // real protocol-level grab that the compositor honours, so the Wayland
+    // wrapper needs none of this.
+    onWantsKeyboardChanged: panelFocus.run(island.wantsKeyboard)
+
+    Process {
+        id: panelFocus
+
+        property bool grabbing: false
+        command: [Quickshell.env("HOME")
+                  + "/.config/quickshell/tide-island-fork/bin/x11-panel-focus.sh",
+                  panelFocus.grabbing ? "grab" : "release"]
+        running: false
+
+        // `running = false` first: assigning true to an already-running
+        // Process is a no-op, and open/close pairs arrive faster than the
+        // grab's retry loop can finish — a panel toggled quickly would
+        // otherwise never issue its release and leave the keyboard stuck on
+        // a panel that is no longer on screen.
+        function run(grab) {
+            running = false;
+            grabbing = grab;
+            running = true;
+        }
+    }
 }

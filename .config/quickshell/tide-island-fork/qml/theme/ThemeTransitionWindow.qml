@@ -265,13 +265,7 @@ PanelWindow {
         root.revealStarted = false;
         root.sweepStarted = false;
 
-        // JPEG, quality 85. Trap 1.
-        // -o <output>: capture THIS screen only. Without it grim writes
-        // every output into one image and each overlay would show its
-        // neighbour's desktop stretched across it.
-        captureProcess.command = root.outputName === ""
-            ? ["grim", "-t", "jpeg", "-q", "85", root.capturePath]
-            : ["grim", "-o", root.outputName, "-t", "jpeg", "-q", "85", root.capturePath];
+        captureProcess.command = root.captureCommand();
         captureProcess.running = true;
         safetyTimer.restart();
     }
@@ -366,6 +360,57 @@ PanelWindow {
             root.capturePath = "";
         }
         root.finished(theme);
+    }
+
+    // ---- THE CAPTURE, ON BOTH DISPLAY SERVERS ---------------------------
+    //
+    // FORK. `grim` was the whole of this, and grim is Wayland-only — so under
+    // qtile the capture exited non-zero, `beginReveal(false)` took the
+    // fail-closed path, and every theme change in the island's X11 session
+    // switched palette with no animation at all. That is the RIGHT failure
+    // and it is still the wrong outcome: the sweep is the thing the user sees
+    // a theme change AS, and "the island in qtile should do what it does in
+    // Hyprland" is the standing requirement.
+    //
+    // maim is the X11 counterpart and it is already a dependency of this
+    // desktop (the rofi screenshot menu uses it). The two do NOT take the
+    // same arguments, and the RULES record the trap in full: **the three
+    // screenshot geometry formats do not agree** — maim `-g` takes
+    // `WxH+X+Y`, grim `-g` takes `<x>,<y> <w>x<h>`, and slurp prints grim's.
+    // grim also selects an output BY NAME, which maim cannot do at all; the
+    // X11 equivalent is the screen's absolute rectangle, which the window
+    // already knows because it is on that screen.
+    //
+    // Split on WAYLAND_DISPLAY and not on XDG_SESSION_TYPE, per the RULES:
+    // the display manager sets the latter and it is absent for a session
+    // started any other way. Asked of Quickshell.env rather than of a shell,
+    // because unlike a copy this is not already a `sh` — wrapping the capture
+    // in one would put a second process in front of the thing trap 1 is
+    // about the cost of.
+    //
+    // JPEG q85 on both, for trap 1. maim spells the quality `-m` (0-10 for
+    // PNG) and takes JPEG from the FILE EXTENSION, so the path carrying
+    // `.jpg` is what selects the format — which it already does.
+    function captureCommand() {
+        if (Quickshell.env("WAYLAND_DISPLAY")) {
+            // -o <output>: capture THIS screen only. Without it grim writes
+            // every output into one image and each overlay would show its
+            // neighbour's desktop stretched across it.
+            return root.outputName === ""
+                ? ["grim", "-t", "jpeg", "-q", "85", root.capturePath]
+                : ["grim", "-o", root.outputName, "-t", "jpeg",
+                   "-q", "85", root.capturePath];
+        }
+        // The same "this screen only" rule, expressed the only way X11
+        // offers: the absolute rectangle. `screen` is the ShellScreen this
+        // window was created for, so on a two-output session each overlay
+        // still freezes its own desktop.
+        const s = root.screen;
+        if (s && s.width > 0 && s.height > 0)
+            return ["maim", "--hidecursor", "-g",
+                    s.width + "x" + s.height + "+" + s.x + "+" + s.y,
+                    root.capturePath];
+        return ["maim", "--hidecursor", root.capturePath];
     }
 
     Process {

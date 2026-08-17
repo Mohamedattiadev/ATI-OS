@@ -619,6 +619,103 @@ def sheet_json(which):
     })
 
 
+def submap_keys_from_qtile(name):
+    """The live bindings of one qtile CHORD, in the same shape as a submap's.
+
+    ---- WHY THIS EXISTS ----
+
+    The island's mode HUD (qml/island/ModeKeysLayer.qml) is the same panel in
+    both sessions, and it asks this file for its rows. Under Hyprland the rows
+    come from `hyprctl binds`. Under qtile there is no hyprctl, so the HUD
+    came up with an empty list and the chord looked like it had no keys --
+    reported as "the rofi mode popup and the media and other modes not working
+    like the one in Hyprland".
+
+    qtile can answer the identical question about its own chords, so it is
+    asked, and the answer is shaped to match submap_keys_json() exactly: the
+    QML never learns there are two sources.
+
+    Names are qtile's own chord names ("Rofi-Mode", "Media-Mode"), which is
+    what config.py passes to `showModeKeys` -- there is no translation table
+    to drift, because both ends use the name qtile already has.
+
+    _find_chord() is used rather than a flat scan over `keys` because chords
+    nest: WallpaperPicker lives inside Rofi-Mode.
+    """
+    # Built as ONE expression because `qtile cmd-obj -f eval` returns the
+    # value of what it evaluates; a statement would return None.
+    #
+    # The raw fields come back and the LABEL is composed here, in Python,
+    # rather than inside the eval string: half these keys carry no `desc`
+    # (Media-Mode's six are bare lazy.spawn calls), so a label has to be
+    # derived from the command, and doing that inside a one-line expression
+    # would be unreadable and unfixable.
+    code = (
+        '__import__("json").dumps('
+        '[{"key": ("+".join(k.modifiers) + "+" if k.modifiers else "") + k.key,'
+        '  "desc": (getattr(k, "desc", "") or getattr(k, "name", "") or ""),'
+        '  "cmd": (getattr(getattr(k, "commands", [None])[0], "name", "") '
+        '          if getattr(k, "commands", None) else ""),'
+        '  "arg": (str(getattr(getattr(k, "commands", [None])[0], "args", ("",))[:1] or ("",))'
+        '          if getattr(k, "commands", None) else "")}'
+        ' for k in (lambda c: c.submappings if c else [])'
+        '(__import__("sys").modules["config"]._find_chord(%r))])' % name
+    )
+    try:
+        raw = subprocess.run(["qtile", "cmd-obj", "-o", "cmd", "-f", "eval",
+                              "-a", code],
+                             capture_output=True, text=True, timeout=6)
+        # eval answers with its value JSON-encoded, so the payload is a JSON
+        # string that itself contains JSON.
+        rows = json.loads(json.loads(raw.stdout))
+    except (OSError, ValueError, subprocess.SubprocessError, TypeError):
+        return []
+
+    out = []
+    for row in rows:
+        key = str(row.get("key") or "").strip()
+        if not key:
+            continue
+        # qtile spells its modifiers as X11 mod names; the sheet reads better
+        # with the same words the rest of this file uses.
+        key = (key.replace("mod4", "SUPER").replace("mod1", "ALT")
+                  .replace("control", "CTRL").replace("shift", "SHIFT"))
+        action = str(row.get("desc") or "").strip()
+        if not action:
+            # No desc: say what the key RUNS. A bare lazy.spawn is the common
+            # case (Media-Mode is six of them), and "playerctl next" is a far
+            # better row than a blank one.
+            arg = str(row.get("arg") or "").strip("()',[] ").strip()
+            cmd = str(row.get("cmd") or "").strip()
+            if cmd == "spawn" and arg:
+                action = arg
+            elif cmd == "function":
+                # lazy.function(...) carries a callable, and its repr is not a
+                # label. A bound method still names itself usefully; a lambda
+                # does not, and a row reading "<function <lambda> at 0x7f...>"
+                # is worse than a row with no description -- which is also
+                # exactly what qtile's own chord chip shows for these keys.
+                bound = re.search(r"bound method [\w.]*?(\w+) of", arg)
+                action = bound.group(1).replace("_", " ") if bound else ""
+            elif cmd:
+                action = ("%s %s" % (cmd, arg)).strip()
+            action = action[:60]
+        # A chord's own Escape/q exits are noise in a list of what the mode
+        # DOES, exactly as the submap version drops its `submap reset` binds.
+        if key.lower() in ("escape", "q") or action == "ungrab chord":
+            continue
+        out.append({"key": key, "action": action})
+
+    # The nine group binds every chord repeats are true and are also nine of
+    # the rows. Collapsed exactly as the Hyprland path collapses its
+    # workspace binds, so both sessions read the same.
+    digits = [r for r in out if r["key"].isdigit()]
+    if len(digits) > 3:
+        out = [r for r in out if not r["key"].isdigit()]
+        out.append({"key": "1-9", "action": "group"})
+    return out
+
+
 def submap_keys_json(name):
     """The live bindings of ONE submap, as JSON, for the island's mode panel.
 
@@ -634,6 +731,11 @@ def submap_keys_json(name):
     entry combination and an Escape, and listing those turns a 20-key chord
     into a 45-row wall that is harder to read than no help at all.
     """
+    if not os.environ.get("WAYLAND_DISPLAY"):
+        # X11: qtile owns the chords, and hyprctl does not exist. See
+        # submap_keys_from_qtile() for why the shape is identical.
+        return json.dumps({"name": name, "keys": submap_keys_from_qtile(name)})
+
     try:
         raw = subprocess.run(["hyprctl", "binds", "-j"],
                              capture_output=True, text=True, timeout=6)

@@ -6,6 +6,8 @@ import Quickshell.Io
 
 // FORK: the shared scale factor — see qml/common/Metrics.js.
 import "../common/Metrics.js" as Metrics
+// FORK: copying, on both display servers — see qml/common/Clipboard.js.
+import "../common/Clipboard.js" as Clipboard
 // FORK: the shared motion system — one spring for geometry, one
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
@@ -279,12 +281,12 @@ FocusScope {
         active: false
         sourceComponent: Component {
             Process {
-                // wl-copy rather than a QML clipboard: Quickshell has no
-                // clipboard API, and wl-copy is already a hard dependency of
-                // this session (autostart.conf runs two wl-paste watchers
-                // into copyq).
-                command: ["sh", "-c",
-                    "printf '%s' \"$1\" | wl-copy", "sh", root.result]
+                // A PROCESS rather than a QML clipboard, because Quickshell
+                // has no clipboard API — and through Clipboard.js rather
+                // than straight at wl-copy, because this panel is on $alt 5
+                // under qtile as well, where wl-copy is inert and says
+                // nothing about it. See qml/common/Clipboard.js.
+                command: Clipboard.argv(root.result)
                 running: true
             }
         }

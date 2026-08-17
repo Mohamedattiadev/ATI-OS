@@ -423,7 +423,22 @@ def apply_palette_live():
     Slot map built from EVERY known preset (not just current), so a
     decoration built with e.g. doomone hex still resolves after
     dracula was swapped in-between: any hex → its slot index in
-    ANY preset → new palette's hex at same slot."""
+    ANY preset → new palette's hex at same slot.
+
+    DORMANT, and now less able than it looks. theme-apply says so at its
+    own call site — "live-swap path was toggled off, visual coverage
+    across all themes proved unreliable; full restart is slower but
+    guaranteed correct" — and nothing calls this any more; it is left
+    exposed on the qtile object for a hand-driven `cmd-obj -f eval`.
+    Since colors.active_palette() started answering out of
+    ~/.cache/qtile/current_palette.json, the hex→slot map below is
+    strictly incomplete: it is built from _PRESETS, and the hexes
+    actually standing in the widgets came from the FILE, whose previous
+    contents have been overwritten by the theme change that provoked
+    this call. Anything it cannot map it leaves alone, so the failure is
+    a partly-remapped bar rather than a wrong one — but if this is ever
+    revived, it needs the outgoing palette recorded before the swap,
+    not reconstructed from the presets afterwards."""
     global colors
     import importlib
     importlib.reload(color_schemes)
@@ -845,7 +860,325 @@ def bar_switch_mode():
     return mode if mode in ("native", "island") else "native"
 
 
+# ---- THE CHORDS THE ISLAND OWNS WHILE IT IS THE BAR ------------------------
+#
+# bar-action already gives ONE KEY TWO ANSWERS for anything that is a single
+# action. These five are the other shape: qtile answers them with a stateful
+# CHORD -- a mode you enter, drive with j/k, and leave -- while the island
+# answers with a self-contained panel that does its own navigation. A chord
+# cannot be "routed" by bar-action, because entering it is a qtile-internal
+# transition that never runs a command.
+#
+# Reported as "win+p then b for bluetooth not working, and audio and display
+# and calculator should show the island ones". They were not broken: they were
+# faithfully opening qtile's OWN popups, which is exactly right when qtile's
+# bar is up and exactly wrong when the island is.
+#
+# Keyed by chord NAME rather than by key, so this keeps working if the keys
+# move -- and every one of these popups is already opened from an
+# `enter_chord` hook testing that same name, so the guard and the takeover
+# below hang off one fact.
+_ISLAND_CHORD_TWINS = {
+    "Bluetooth-Mode": "toggleBluetoothPanel",
+    "Wifi-Mode": "toggleWifiPanel",
+    "Audio-Mode": "toggleAudioPanel",
+    "Display-Mode": "toggleDisplayPanel",
+    "WallpaperPicker": "toggleWallpaperPicker",
+    # The island's cheatsheet is one panel with a sheet SWITCHER in it (Tab
+    # cycles hypr/vim/fish/island/docs), so the whole chord hands over and
+    # nothing is lost -- where qtile needs a key per sheet, the island needs
+    # none.
+    "CheatSheet-Mode": "showCheatsheet docs",
+}
+
+
+def island_owns_chord(chord_name):
+    """Should this chord hand over to the island instead of running itself?"""
+    return chord_name in _ISLAND_CHORD_TWINS and bar_switch_mode() == "island"
+
+
+def island_or(action, native):
+    """One key, two answers, where the NATIVE half is a qtile-internal call.
+
+    DO NOT DELETE AS UNUSED. It is referenced from inside `keys` as
+    `island_or(...)` in the Key() constructors below, which a static "is this
+    name called anywhere" pass can miss -- this definition was stripped once
+    while three call sites remained, leaving a config that compiles and then
+    fails on the next reload with NameError, i.e. a session with no
+    keybindings at all.
+
+    bar-action is the right tool whenever both halves are commands a shell can
+    run. It is the wrong tool for these, for two different reasons:
+
+      * qtile's widget boxes and its calculator scratchpad are not commands at
+        all -- they are `lazy.widget[...]` / ScratchPad calls inside this
+        process, and there is nothing for a script to exec.
+      * bar-action's `bar` target does have a native branch, but it talks to
+        the HYPRLAND session's Quickshell topbar (`topbar_call`). Routing
+        qtile's widget-box keys through it would address a shell that is not
+        running in this session and silently do nothing.
+
+    So the fork happens here instead, on the same `~/.cache/bar-mode` the rest
+    of the system reads. `native` is called with qtile.
+    """
+    def _dispatch(qtile):
+        if bar_switch_mode() == "island":
+            qtile.spawn("bar-action tide %s" % action)
+        else:
+            native(qtile)
+
+    return lazy.function(_dispatch)
+
+
+# ---- THE ISLAND'S LAYOUT INDICATOR, FED FROM THIS SESSION -------------------
+#
+# The island already HAS a CurrentLayout readout -- SwipeLyricsLayer's
+# `layoutGlyph`, fed by qml/common/LayoutState.qml, which watches
+# $XDG_RUNTIME_DIR/hypr-layouts/current and draws one of three glyphs for
+# monadtall / max / treetab. Nothing was missing from the island itself.
+#
+# What was missing is a WRITER in this session. That file is written by
+# hypr/scripts/layout-cycle.sh, which only runs under Hyprland, so under qtile
+# it never appeared -- the directory did not even exist -- and LayoutState
+# correctly drew nothing, forever. Reported as "the island should have an icon
+# of layout".
+#
+# The names need no translation: layout-cycle.sh took ITS vocabulary from
+# qtile ("monadtall", "max", "treetab"), so `layout.name` here is already
+# exactly what LayoutState.known tests for.
+_ISLAND_LAYOUT_FILE = os.path.join(
+    os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "hypr-layouts", "current"
+)
+
+
+_ISLAND_KEYBOARD_FILE = os.path.join(
+    os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "hypr-layouts", "keyboard"
+)
+
+
+def publish_keyboard_to_island(layout):
+    """Tell the island which keyboard layout is live.
+
+    The island's language readout (KeyboardLayoutTracker -> SwipeLyricsLayer's
+    `langCode`) learns the layout from Hyprland's device list, which does not
+    exist here. Under qtile the layout is whatever set_kb() last handed to
+    setxkbmap, so this session is the authority and simply says so.
+
+    Event-driven rather than polled: the Hyprland path has a socket to listen
+    to and falls back to a 30 s re-sync, and a language indicator that takes up
+    to 30 seconds to notice you switched alphabet is not worth drawing.
+
+    The tracker's own rule still applies on the other end -- "us"/"gb" are
+    written here like any other value, and it is the tracker that decides
+    English says nothing.
+    """
+    try:
+        os.makedirs(os.path.dirname(_ISLAND_KEYBOARD_FILE), exist_ok=True)
+        tmp = _ISLAND_KEYBOARD_FILE + ".tmp"
+        with open(tmp, "w") as fh:
+            fh.write(str(layout))
+        os.replace(tmp, _ISLAND_KEYBOARD_FILE)
+    except OSError:
+        pass
+
+
+def publish_layout_to_island(*_args):
+    """Write the current layout's name where the island's indicator reads it.
+
+    No trailing newline, matching layout-cycle.sh's `printf '%s'`: applyText()
+    trims anyway, but the file is a contract shared with the other session and
+    matching it byte for byte means the two cannot drift.
+
+    Written atomically. LayoutState watches the path with watchChanges, so a
+    reader can wake on a half-written file; a rename cannot be seen partially.
+    """
+    try:
+        name = qtile.current_group.layout.name
+    except Exception:
+        return
+    try:
+        os.makedirs(os.path.dirname(_ISLAND_LAYOUT_FILE), exist_ok=True)
+        tmp = _ISLAND_LAYOUT_FILE + ".tmp"
+        with open(tmp, "w") as fh:
+            fh.write(str(name))
+        os.replace(tmp, _ISLAND_LAYOUT_FILE)
+    except OSError:
+        # A readout that cannot be written is not worth taking the session
+        # down for, and the indicator's own failure mode is to draw nothing.
+        pass
+
+
+# The dock windows, cached. get_wm_type() is an X property fetch, and asking
+# it for all ~17 managed windows on every focus change cost 11.4 ms per call,
+# measured -- most of a frame, on qtile's main loop, every time you switched
+# window. The set only changes when a dock is mapped or unmapped, so it is
+# rebuilt from those events instead.
+_DOCK_WIDS = set()
+
+# Windows that stayed above a dock even after being asked to move. Some
+# genuinely belong there: qtile ranks SCRATCHPAD windows above docks (see
+# get_layering_information), and anything the user has kept-above is deliberate.
+# Without this memo those windows are "offenders" forever, so every focus
+# change re-ran change_layer() on them and cost 7-20 ms for no change.
+_STICKY_ABOVE = set()
+
+
+def refresh_dock_wids():
+    """Rebuild the cached set of dock window ids."""
+    global _DOCK_WIDS
+    # A new or closed client is a reason to give everything another chance:
+    # the window that would not move may be gone, or a new one may need it.
+    _STICKY_ABOVE.clear()
+    found = set()
+    for win in list(getattr(qtile, "windows_map", {}).values()):
+        try:
+            if win.window.get_wm_type() == "dock":
+                found.add(win.window.wid)
+        except Exception:
+            continue
+    _DOCK_WIDS = found
+
+
+def restack_docks():
+    """Push any window that has drifted above a dock back under it.
+
+    ---- WHY THE ISLAND'S POPUPS OPENED UNDERNEATH YOUR WINDOWS ----
+
+    qtile implements the EWMH stacking order properly -- see
+    _Window.get_layering_information(), which puts _NET_WM_TYPE_DOCK and
+    _NET_WM_STATE_ABOVE in a layer above ordinary windows. The island's
+    surfaces are managed Statics carrying both, so they belong on top.
+
+    What is missing is that nothing RE-RUNS that decision for a window that is
+    already on screen. Measured, bottom to top:
+
+        kitty | ISLAND | kitty | kitty | qdrop
+
+    This did not show before because the island's window used to be a 44 px
+    strip with a 203 px reserved gap under it, so it never overlapped anything
+    and could not be seen to be underneath. Closing that gap, and sizing the
+    window to the screen to stop the resize flicker, is what made a real and
+    pre-existing stacking bug visible.
+
+    ---- AND WHY IT RE-LAYERS THE *WINDOWS*, NOT THE DOCKS ----
+
+    Calling change_layer() on the dock does nothing useful. With two dock
+    windows the `same` list has two entries, so the method resolves its
+    sibling to the dock itself and takes its "just fix stragglers" path, which
+    only considers windows in `group.windows` -- and a Static's `.group` is
+    None, so that list is the CURRENT group's, not the whole stack. Measured:
+    calling it on the island left the order unchanged, while calling it on the
+    offending terminal put that terminal straight under the island. That is
+    also exactly what qtile itself does on focus, which is why focusing a
+    window has always fixed this by accident.
+
+    Only the windows actually mis-stacked are touched. Re-layering everything
+    would reshuffle the stack -- in the `moved == 0` branch each call moves a
+    window up one position within its own layer, so sweeping the whole group
+    would quietly reorder your windows on every focus change.
+
+    ---- AND IT HAS TO BE CHEAP ----
+
+    This runs on every focus change. The first version asked X for each
+    window's type every time and cost 11.4 ms a call; now the dock ids are
+    cached and the usual outcome -- nothing is mis-stacked -- costs one
+    query_tree and no X writes at all.
+    """
+    if not _DOCK_WIDS:
+        return
+    try:
+        stack = list(qtile.core._root.query_tree())
+    except Exception:
+        return
+    if len(stack) < 2:
+        return
+
+    index = {wid: i for i, wid in enumerate(stack)}
+    live_docks = [d for d in _DOCK_WIDS if d in index]
+    if not live_docks:
+        return
+
+    # The TOPMOST dock, not the lowest. The island owns two dock windows and
+    # one of them is the 1 px exclusive-zone reserver, which sits near the
+    # bottom of the stack quite legitimately. Anchoring on the lowest made
+    # almost every window an "offender" on every call, so the work repeated
+    # forever and never converged -- 13-20 ms per focus change. What actually
+    # has to be true is that no client sits above the dock that is drawing.
+    floor = max(index[d] for d in live_docks)
+    windows = getattr(qtile, "windows_map", {})
+    # REAL CLIENTS ONLY. windows_map also holds qtile's own Internal, Systray
+    # and Icon windows -- its bar infrastructure -- and those were the reason
+    # this never settled: change_layer() cannot move them, so every call found
+    # the same "offenders" and re-did the same work, 11-17 ms each time, on
+    # every focus change. They are also not something a dock should be above.
+    offenders = [
+        wid for wid, i in index.items()
+        if i > floor
+        and wid not in _DOCK_WIDS
+        and wid not in _STICKY_ABOVE
+        and wid in windows
+        and type(windows[wid]).__name__ == "Window"
+    ]
+    if not offenders:
+        return
+
+    for wid in offenders:
+        try:
+            windows[wid].change_layer()
+        except Exception:
+            # Windows die between the listing and the call; an ordinary race.
+            continue
+
+    # Whatever did not move belongs where it is. Remember it, so the next
+    # focus change costs one query_tree and nothing else.
+    try:
+        after = {wid: i for i, wid in enumerate(qtile.core._root.query_tree())}
+    except Exception:
+        return
+    live_after = [d for d in _DOCK_WIDS if d in after]
+    if not live_after:
+        return
+    ceiling = max(after[d] for d in live_after)
+    for wid in offenders:
+        if after.get(wid, -1) > ceiling:
+            _STICKY_ABOVE.add(wid)
+
+
 _NESW_TO_LRTB = {0: 2, 1: 1, 2: 3, 3: 0}
+
+
+def _on_screen(win, screen):
+    """Is this window claiming space on this screen?
+
+    ---- WHY NOT `win.screen is screen` ----
+
+    That was the test, and it is wrong across a config reload, silently and in
+    the direction that loses the island's strut entirely.
+
+    reload_config() builds NEW Screen objects, but a dock that was managed
+    before the reload keeps pointing at the OLD one. The identity test then
+    matches nothing, the live strut total comes out 0, and
+    _resync_reserved_space() concludes that the 33 px the island is visibly
+    claiming is stale bookkeeping to be cleared. Windows tile from y=0 and the
+    island sits on top of them.
+
+    Measured directly after a reload, with the island up and its strut intact:
+
+        w.screen is qtile.screens[0]  ->  False
+        w.screen.index                ->  0
+        qtile.screens[0].index        ->  0
+
+    The index is the identity that survives a reload, so it is the one to ask.
+    A dock whose screen was cleared entirely is attributed to the only screen
+    when there is only one — which is the single-monitor case, where it cannot
+    belong anywhere else.
+    """
+    win_screen = getattr(win, "screen", None)
+    if win_screen is screen:
+        return True
+    if win_screen is None:
+        return len(getattr(qtile, "screens", [])) == 1
+    return getattr(win_screen, "index", None) == getattr(screen, "index", object())
 
 
 def _resync_reserved_space():
@@ -899,7 +1232,7 @@ def _resync_reserved_space():
             live = 0
             for w in getattr(qtile, "windows_map", {}).values():
                 rs = getattr(w, "reserved_space", None)
-                if rs and getattr(w, "screen", None) is s:
+                if rs and _on_screen(w, s):
                     live += rs[edge]
             if reserved[i] != live:
                 logger.warning(
@@ -976,6 +1309,93 @@ def _bar_set_visible(b, want):
         b.show(False)
 
 
+def _clamp_hidden_bar_space():
+    """Make a HIDDEN bar reserve exactly the space other docks asked for.
+
+    ---- THE GAP AT THE TOP OF THE SCREEN, AND WHY IT HAS TWO WRONG VALUES ----
+
+    A hidden bar has no correct `fullsize` in libqtile, because two different
+    pieces of it disagree and each one wins at a different moment:
+
+      * `Bar.show(False)` sets `fullsize = 0`. That drops the bar's own 28 px
+        and its 10 px of margins, which is right -- and it also drops the
+        island's 33 px strut reservation, which is NOT. Windows then tile from
+        y=0, underneath the island.
+
+      * `Gap._configure()` recomputes `fullsize = size + margins + reserved`
+        and knows nothing about `hidden`, so ANY reconfigure -- a screen
+        change, a reserved-space update, a plain reload -- brings the hidden
+        bar's own 38 px back. Windows then start 38 px lower than they should.
+
+    Both were observed on this session within a minute of each other, at
+    `dy=0` and `dy=71`, with the bar invisible the whole time. Neither is
+    stable, because which one you get depends on whether a reconfigure has
+    happened since the last hide.
+
+    The value that is actually correct while hidden is the reservation ALONE:
+    the space genuinely claimed by docks (the island), and nothing belonging
+    to the bar that is not on screen. `Screen.dy` is a live property over
+    `top.fullsize`, so assigning it here moves the tiling area immediately;
+    only a re-layout is needed to make windows follow.
+
+    ---- AND IT RE-ASSERTS THE UNMAP, BECAUSE RECONFIGURE UNDOES IT ----
+
+    `reconfigure_screens()` — which _resync_reserved_space() has to call to
+    make a corrected reservation take effect — puts the bar's window back on
+    screen, and does NOT clear `window.hidden`. So qtile ends up believing a
+    bar is hidden while X has it mapped and painted:
+
+        top.window.hidden  ->  True
+        xprop WM_STATE     ->  Normal        (1346x28 at 10,38)
+
+    and the qtile bar is drawn straight through the island. `_bar_set_visible`
+    cannot fix this on its own — it trusts `hidden`, sees True, and concludes
+    there is nothing to do. Since X unmapping an already-unmapped window is
+    harmless, the cheap correct move is to just say it again every time.
+    """
+    changed = False
+    for s in getattr(qtile, "screens", []):
+        # NESW, matching Bar._reserved_space's own indexing.
+        for i, side in enumerate(("top", "right", "bottom", "left")):
+            b = getattr(s, side, None)
+            if b is None:
+                continue
+            win = getattr(b, "window", None)
+            # A Gap (no window) is already nothing but reservation, and a
+            # VISIBLE bar must keep its size -- this is only about the ones
+            # that are hidden and still charging rent.
+            if win is None or not getattr(win, "hidden", False):
+                continue
+
+            # Say "hidden" to X again, in case a reconfigure re-mapped it.
+            try:
+                win.hide()
+            except Exception:
+                from libqtile.log_utils import logger
+                logger.exception("bar-switch: re-hiding the %s bar failed", side)
+
+            reserved = getattr(b, "_reserved_space", None) or [0, 0, 0, 0]
+            if b.fullsize != reserved[i]:
+                b.fullsize = reserved[i]
+                changed = True
+
+    if changed:
+        for s in getattr(qtile, "screens", []):
+            if getattr(s, "group", None):
+                s.group.layout_all()
+
+
+def reconcile_bar_space():
+    """Repair both halves of the strut bookkeeping, then re-tile.
+
+    Called from apply_bar_mode() and from the client hooks below. Cheap
+    enough to run on every managed/killed client: it walks the screens and
+    windows_map and does nothing at all unless a number actually drifted.
+    """
+    _resync_reserved_space()
+    _clamp_hidden_bar_space()
+
+
 def apply_bar_mode():
     # ---- ISLAND MODE HIDES BOTH BARS ----
     #
@@ -1004,12 +1424,30 @@ def apply_bar_mode():
         for s in qtile.screens:
             _bar_set_visible(s.top, False)
             _bar_set_visible(s.bottom, False)
+        # AFTER hiding, not before: Bar.show(False) zeroes fullsize and takes
+        # the island's own strut reservation down with it, so the clamp has to
+        # run once the hiding is done to put that 33 px back. Without this the
+        # desktop tiles from y=0 and the island sits on top of your windows.
+        _clamp_hidden_bar_space()
+        # LAST. _clamp_hidden_bar_space() ends in group.layout_all(), which
+        # restacks every window in the group and drops the island back under
+        # them -- so restacking before this point is undone by it. Measured
+        # exactly that way: the island was on top after change_layer() and
+        # under a terminal again after the next reload.
+        refresh_dock_wids()
+        restack_docks()
         return
 
     for s in qtile.screens:
         want_top = BAR_MODE == "top"
         _bar_set_visible(s.bottom, not want_top)
         _bar_set_visible(s.top, want_top)
+
+    # The bar that did NOT win is hidden, and a hidden bar still charges for
+    # its size and margins after any reconfigure — see _clamp_hidden_bar_space.
+    # In native mode that is a 38 px band of dead screen at the opposite edge.
+    _clamp_hidden_bar_space()
+    restack_docks()
 
     # ---- AND THEN MAKE IT PAINT ----
     #
@@ -1150,6 +1588,120 @@ def apply_bar_on_startup():
 def apply_bar_on_reload_startup():
     # Fires on both initial start and after reload_config; ensures single-bar mode
     qtile.call_later(0.05, apply_bar_mode)
+
+
+# ---- THE ISLAND STARTING OR STOPPING MUST RECONCILE THE STRUT BOOKKEEPING ----
+#
+# Every island start leaks 33 px of reserved space, because
+# Qtile.reserve_space() ADDS ("repeated calls to this method are not
+# idempotent" — its own docstring) and nothing frees the previous claim
+# unless unmanage() happens to catch a Static with its screen still set.
+#
+# Measured on this session: after five island restarts the top bar's
+# reservation had grown to [165, 0, 0, 0] — five times 33 — and the desktop
+# had a 203 px band of dead space across the top with no bar in it. Reported
+# as "a lot of space of screen eaten, a big gap".
+#
+# apply_bar_mode() already repairs this, but it only runs on a BAR MODE
+# change, and an island restart is not one — the island is restarted by
+# bar-switch, by a crash, and by every edit to the fork during development,
+# none of which touch ~/.cache/bar-mode. So the repair is bound to the events
+# that actually change the dock population instead.
+#
+# Deferred by a beat: the strut is set by the client shortly AFTER the window
+# is managed, so reconciling in the same turn reads the state from before it
+# arrives and concludes, wrongly, that nothing is claimed.
+# apply_bar_mode() rather than reconcile_bar_space(), because repairing the
+# reservation is only half of it: _resync_reserved_space() has to call
+# reconfigure_screens() to make the corrected number take effect, and that
+# call RE-MAPS the hidden bars. Fixing the arithmetic without re-asserting the
+# mode leaves qtile's bar painted on top of the island. apply_bar_mode() is
+# the one owner of that decision, so it is the thing to re-run.
+_bar_space_pending = False
+
+
+def _reconcile_bar_space_soon(*_args):
+    # Coalesced: opening a workspace full of windows fires this once per
+    # client, and each call can end in a reconfigure_screens().
+    global _bar_space_pending
+    if _bar_space_pending:
+        return
+    _bar_space_pending = True
+    qtile.call_later(0.25, _reconcile_bar_space_now)
+
+
+def _reconcile_bar_space_now():
+    global _bar_space_pending
+    _bar_space_pending = False
+    apply_bar_mode()
+
+
+hook.subscribe.client_managed(_reconcile_bar_space_soon)
+hook.subscribe.client_killed(_reconcile_bar_space_soon)
+
+
+# Anything that can put a window above the island: a new window, a focus
+# change, a group switch. See restack_docks() for why qtile's own layering
+# does not re-run on its own.
+def _restack_docks_soon(*_args):
+    qtile.call_later(0.05, restack_docks)
+
+
+def _refresh_docks_then_restack(*_args):
+    refresh_dock_wids()
+    _restack_docks_soon()
+
+
+# Dock population changes only when a client is managed or dies, so the cache
+# is rebuilt from those and read by everything else.
+hook.subscribe.client_managed(_refresh_docks_then_restack)
+hook.subscribe.client_killed(_refresh_docks_then_restack)
+hook.subscribe.client_focus(_restack_docks_soon)
+hook.subscribe.setgroup(_restack_docks_soon)
+hook.subscribe.focus_change(_restack_docks_soon)
+# And once at startup/reload. Those rebuild windows without ever firing a
+# focus change, so without this the island comes back UNDER whatever was
+# already on screen and stays there until you next click something.
+hook.subscribe.startup_complete(_refresh_docks_then_restack)
+
+
+# The island's layout glyph. layout_change covers cycling it; setgroup covers
+# switching to a group that is on a different layout; startup publishes the
+# value the island needs on its very first frame, since a push-only scheme
+# would leave a freshly started island blank until you next changed something.
+hook.subscribe.layout_change(lambda *_: publish_layout_to_island())
+hook.subscribe.setgroup(publish_layout_to_island)
+hook.subscribe.startup_complete(publish_layout_to_island)
+
+
+# BOTH hooks, because they fire at different times: `startup` runs on a plain
+# reload_config (measured -- startup_complete does not), and startup_complete
+# runs on an actual session start. Seeding twice is harmless; seeding on only
+# one of them means the file is missing after whichever path you took.
+@hook.subscribe.startup
+@hook.subscribe.startup_complete
+def publish_keyboard_on_startup():
+    """Seed the keyboard file from the X server's actual state.
+
+    set_kb() only fires when you switch, so without this the island would
+    show nothing until the first switch of the session -- and would be wrong
+    about it if the session started on a non-US layout.
+    """
+    qtile.call_later(0.2, _seed_keyboard_from_x)
+
+
+def _seed_keyboard_from_x():
+    try:
+        out = subprocess.run(["setxkbmap", "-query"], capture_output=True,
+                             text=True, timeout=4).stdout
+    except (OSError, subprocess.SubprocessError):
+        return
+    for line in out.splitlines():
+        if line.startswith("layout:"):
+            # `layout: us` -- and if several are configured, the FIRST is the
+            # active one under this config, because set_kb() sets exactly one.
+            publish_keyboard_to_island(line.split(":", 1)[1].strip().split(",")[0])
+            return
 
 
 # ----------------------------------------------------------------
@@ -3115,7 +3667,7 @@ _SUPPRESS_CHEATSHEET_AUTOSHOW = False
 @hook.subscribe.enter_chord
 def auto_enable_cheatsheet(chord_name):
     global _SUPPRESS_CHEATSHEET_AUTOSHOW
-    if chord_name != "CheatSheet-Mode":
+    if chord_name != "CheatSheet-Mode" or island_owns_chord(chord_name):
         return
     if _SUPPRESS_CHEATSHEET_AUTOSHOW:
         _SUPPRESS_CHEATSHEET_AUTOSHOW = False
@@ -3260,7 +3812,7 @@ def exit_cheatsheet_mode(qtile):
 
 @hook.subscribe.enter_chord
 def auto_enable_wallpaper_picker(chord_name):
-    if chord_name == "WallpaperPicker":
+    if chord_name == "WallpaperPicker" and not island_owns_chord(chord_name):
         # Icon first, THEN build the popup. show_wallpaper_picker() loads
         # every wallpaper in the directory and lays out 3 columns of
         # PopupText controls before it returns -- measured well over a
@@ -3704,8 +4256,81 @@ def auto_enable_passthrough(chord_name):
 # 14- Function to lanuch the Bluetooth popup when it's mode activated
 # --------------------------------------------------------------------
 @hook.subscribe.enter_chord
+def island_shows_chord_legend(chord_name):
+    """Show the chord's legend in the island, because that IS the bar now.
+
+    Entering a chord has always been visible in qtile -- CHORD_CHIP_LABELS is
+    drawn by the `chord_chip` widget in qtile's own bar. In island mode that
+    bar is hidden, so entering a chord became silent: the keyboard starts
+    swallowing keys and nothing anywhere says which mode you are in. Reported
+    as "the rofi mode popup not opening".
+
+    The island's `showText` IPC is exactly the surface for it -- persistent
+    until clearText, replace-in-place -- and hypr/scripts/submap-indicator.sh
+    already uses it for Hyprland's submaps. This is the qtile half of the same
+    idea, and it reuses the labels the bar chip was already drawing rather
+    than inventing a second list to keep in step.
+
+    The rows come from `cheatsheet.py --submap-json <name>`, which reads
+    `hyprctl binds` under Hyprland and asks qtile about its own chords here --
+    see submap_keys_from_qtile() in that file. Same panel, same shape, both
+    sessions.
+    """
+    if bar_switch_mode() != "island":
+        return
+    # A chord that is handing over to an island panel is one we are about to
+    # LEAVE -- labelling it would flash a legend for a mode that lasts a frame.
+    if chord_name in _ISLAND_CHORD_TWINS:
+        return
+    # showModeKeys, not showText: this is the island's real mode HUD
+    # (qml/island/ModeKeysLayer.qml), the same panel Hyprland's submaps get.
+    # It fetches its rows from `cheatsheet.py --submap-json <name>`, which now
+    # answers for qtile's chords too -- so the name passed here is qtile's own
+    # chord name and there is no translation table to drift.
+    qtile.spawn(["bar-action", "tide", "showModeKeys", chord_name])
+
+
+@hook.subscribe.leave_chord
+def island_clears_chord_legend():
+    if bar_switch_mode() != "island":
+        return
+    qtile.spawn(["bar-action", "tide", "clearModeKeys"])
+
+
+@hook.subscribe.enter_chord
+def island_takes_over_chord(chord_name):
+    """Hand a chord straight to the island when the island is the bar.
+
+    The five hooks below each open one of qtile's OWN popups on chord entry,
+    and each is now guarded with island_owns_chord() so it stays quiet here.
+    This is the other half: leave the chord we just entered and open the
+    island's panel instead, so `win+p b` gives you the island's Bluetooth
+    panel rather than a mode whose j/k drive a popup that never appeared.
+
+    DEFERRED by one turn, and that is required rather than tidy: qtile fires
+    enter_chord from INSIDE grab_chord(), which is still pushing onto
+    chord_stack and re-grabbing keys. Calling ungrab_chord() from within that
+    would unwind a transition that has not finished.
+
+    The chord_stack guard matters too -- Qtile.ungrab_chord() with an empty
+    stack ungrabs every key and returns WITHOUT re-grabbing the root
+    bindings, which is a keyboard with no shortcuts left on it.
+    """
+    action = _ISLAND_CHORD_TWINS.get(chord_name)
+    if action is None or bar_switch_mode() != "island":
+        return
+
+    def _hand_over():
+        if getattr(qtile, "chord_stack", None):
+            qtile.ungrab_chord()
+        qtile.spawn("bar-action tide %s" % action)
+
+    qtile.call_later(0, _hand_over)
+
+
+@hook.subscribe.enter_chord
 def auto_enable_bluetooth_popup(chord_name):
-    if chord_name == "Bluetooth-Mode":
+    if chord_name == "Bluetooth-Mode" and not island_owns_chord(chord_name):
         BluetoothPopup.show(qtile)
 
 
@@ -3714,13 +4339,13 @@ def auto_enable_bluetooth_popup(chord_name):
 # ------------------------------------------------------------------------------
 @hook.subscribe.enter_chord
 def auto_enable_audio_popup(chord_name):
-    if chord_name == "Audio-Mode":
+    if chord_name == "Audio-Mode" and not island_owns_chord(chord_name):
         AudioPopup.show(qtile)
 
 
 @hook.subscribe.enter_chord
 def auto_enable_display_popup(chord_name):
-    if chord_name == "Display-Mode":
+    if chord_name == "Display-Mode" and not island_owns_chord(chord_name):
         DisplayPopup.show(qtile)
 
 # -----------------------------------------------------------
@@ -3734,6 +4359,8 @@ def auto_enable_wifi_popup(chord_name):
         # Cheap to build (no image loading, no per-file work) and it draws
         # its own "Scanning…" state, so unlike the wallpaper picker there is
         # nothing to order around a widget redraw here.
+        if island_owns_chord(chord_name):
+            return
         WifiPopup.show(qtile)
 
 
@@ -3803,6 +4430,8 @@ def set_kb(layout):
         qtile.spawn(
             f"sh -c 'setxkbmap -layout {layout} -option && xmodmap ~/.Xmodmap'"
         )
+
+        publish_keyboard_to_island(layout)
 
         w = qtile.widgets_map.get("w_lang")
         if w:
@@ -6277,14 +6906,16 @@ keys = [
     Key(
         [mod2],
         "grave",
-        lazy.widget["system_widgetbox"].toggle(),
-        desc="Toggle system widget box",
+        island_or("toggleNotificationCenter",
+                  lambda q: q.widgets_map["system_widgetbox"].toggle()),
+        desc="System box: qtile widgets / the island's notification centre",
     ),
     Key(
         [mod],
         "grave",
-        lazy.widget["2nd_system_widgetbox"].toggle(),
-        desc="Toggle 2nd system widget box",
+        island_or("toggleSysmon",
+                  lambda q: q.widgets_map["2nd_system_widgetbox"].toggle()),
+        desc="2nd box: qtile widgets / the island's system monitor",
     ),
     # --- voice dictation ---
     # Bare F8/F9, moved off Super+Shift+V/B. Dictation is a hold-a-thought
@@ -6408,22 +7039,94 @@ keys = [
         lazy.spawn("bar-switch toggle"),
         desc="Bar: qtile's own ↔ the Tide Island",
     ),
+    # ---pick a bar from a list, rather than blind-toggling between two---
+    #
+    # THE PARITY GAP THIS CLOSES. binds.conf has had
+    #
+    #     bind = $mod SHIFT, Y, exec, bar-action tide showPicker bars
+    #
+    # since the bar-switch work, and qtile had no counterpart -- confirmed
+    # against the RUNNING qtile, not just by grepping this file: the live key
+    # table held exactly one mod+shift binding on p/y, and it was "p". So
+    # mod+shift+Y in this session did nothing at all, silently, which is
+    # indistinguishable from the picker being broken. Reported as "I can not
+    # change between island and real bar".
+    #
+    # The toggle above is not a substitute. There are THREE bars (island,
+    # topbar-top, topbar-bottom) and a two-way toggle cannot reach the third;
+    # the picker lists all of them and marks which is current.
+    #
+    # Same command as Hyprland's, deliberately. bar-action routes `showPicker
+    # bars` to island-picker.py's `bars` page while the island is up and to
+    # bar-chooser while the topbar is, so one binding is correct under either
+    # bar -- verified working under qtile with the island running.
+    Key(
+        [mod, "shift"],
+        "y",
+        lazy.spawn("bar-action tide showPicker bars"),
+        desc="Bar: pick one (island / topbar top / topbar bottom)",
+    ),
+    # ---- THE ISLAND SURFACES QTILE HAD NO KEY FOR AT ALL ----
+    #
+    # Audited against the Hyprland session rather than guessed: every
+    # `bar-action` bind in hypr/binds.conf and hypr/submaps.conf was compared
+    # with this file, and 29 of 47 island actions had no qtile binding. These
+    # are the ones with no qtile counterpart to shadow -- the island's own
+    # surfaces -- so they are plain bar-action keys.
+    #
+    # SAME KEYS AS HYPRLAND, deliberately. Parity across the two sessions is
+    # the whole point of bar-switch, and a key that means one thing in one
+    # session and another in the other is worse than no key. Every one was
+    # checked free in this config first.
+    #
+    # In native mode bar-action answers each of these with its rofi twin where
+    # one exists, and otherwise says "island-only" out loud rather than doing
+    # nothing -- see its fallback.
+    Key([mod, "shift"], "a", lazy.spawn("bar-action tide toggleControlCenter"),
+        desc="Island: control centre"),
+    Key([mod, "shift"], "n", lazy.spawn("bar-action tide toggleNotificationCenter"),
+        desc="Island: notification centre"),
+    Key([mod2, "shift"], "n", lazy.spawn("bar-action tide toggleFocus"),
+        desc="Island: focus mode"),
+    Key([mod2], "6", lazy.spawn("bar-action tide toggleCalendar"),
+        desc="Island: calendar"),
+    Key([mod2], "7", lazy.spawn("bar-action tide toggleSettings"),
+        desc="Island: settings"),
+    # NOT `bar-action overview toggle`. The island's workspace overview is
+    # built on `Hyprland.monitorFor(screen)` and `ToplevelManager` -- both
+    # empty on X11 -- so under qtile it opens a panel with nothing in it.
+    # Verified by opening it: a blank dark sheet, no workspaces, no thumbnails.
+    # Porting it needs the EWMH feed plus per-workspace thumbnails, which is
+    # a real piece of work and not done yet.
+    #
+    # The workspaces PICKER answers the same question ("which workspace, and
+    # what is on it") and works today, so the key points there rather than at
+    # a panel that opens empty. A dead key is the one outcome this whole
+    # bar-action arrangement exists to avoid.
+    Key([mod, "shift"], "grave", lazy.spawn("bar-action tide showPicker workspaces"),
+        desc="Island: workspaces picker (overview is Wayland-only)"),
+    Key([mod, "shift"], "i", lazy.spawn("bar-action tide showOnboarding 0"),
+        desc="Island: onboarding"),
+    Key([mod, "shift"], "slash", lazy.spawn("bar-action tide showCheatsheet docs"),
+        desc="Island: docs cheatsheet"),
+    Key([mod, "shift"], "b", lazy.spawn("bar-action tide toggleWallpaperPicker"),
+        desc="Island: wallpaper picker"),
     # ---today & week: plans-todos popup---
     Key(
         [mod2],
         "p",
-        lazy.spawn("clock_popup"),
+        lazy.spawn("bar-action tide toggleCalendar"),
         desc="clock popup (today & week: plans-todos)",
     ),
     # ---close notifications---
     Key(
         [mod2],
         "n",
-        lazy.spawn("dunstctl close"),
-        desc="Dismiss the top notification",
+        lazy.spawn("bar-action tide dismissNotification"),
+        desc="Dismiss the top notification (island or dunst)",
     ),
     # ---copyq clipboard popup---
-    Key([mod2], "v", lazy.spawn(os.path.expanduser("~/.config/AtiScriptsV1/copyq_rofi")), desc="CopyQ clipboard rofi picker (ctrl+j/k nav, thumbnails)"),
+    Key([mod2], "v", lazy.spawn("bar-action tide showPicker clipboard"), desc="CopyQ clipboard rofi picker (ctrl+j/k nav, thumbnails)"),
     # ---gptscript-inline---
     # FIX:  was working but now not......
     # Key(
@@ -6466,7 +7169,7 @@ keys = [
     Key(
         [mod, "shift"],
         "Return",
-        lazy.spawn("rofi -show drun -show-icons"),
+        lazy.spawn("bar-action tide toggleApplicationLauncher"),
         desc="Run Launcher",
     ),
     # ---toggle between layouts---
@@ -6483,7 +7186,7 @@ keys = [
         desc="Restart qtile (preserves window state)",
     ),
     # --- logout menu ---
-    Key([mod, "shift"], "q", lazy.spawn("dm-logout -r"), desc="Logout menu"),
+    Key([mod, "shift"], "q", lazy.spawn("bar-action tide togglePowerMenu"), desc="Logout menu"),
     # --- theme toggle (doomone <-> pywal) ---
     # Theme picker moved to win+p → c (KeyChord below).
     # Switch between windows
@@ -6591,7 +7294,7 @@ keys = [
             # replaces it: a rofi picker over Vaultwarden (local, on
             # 127.0.0.1:8222) via rbw, so the same vault the Bitwarden
             # phone app syncs from is the one this reads.
-            Key([], "p", lazy.spawn("rofi_pass"), desc="Passwords (Vaultwarden)"),
+            Key([], "p", lazy.spawn("bar-action tide showPicker pass"), desc="Passwords (Vaultwarden)"),
             # Key([], "u", lazy.spawn("dm-music -r"), desc='Toggle music mpc/mpd')
             # Key([], "r", lazy.spawn("dm-record -r"), desc='record'),
             # Key([], "s", lazy.spawn("dm-websearch -r"), desc='Search various engines'),
@@ -6601,17 +7304,12 @@ keys = [
             Key(
                 [],
                 "e",
-                lazy.spawn(
-                    "python3 "
-                    + os.path.expanduser(
-                        "~/.config/rofi_translator/wordreference.py"
-                    )
-                ),
+                lazy.spawn("bar-action tide showPicker translate"),
                 desc="Translate text",
             ),
             # --- add anki note ---
             # FIX: this is %50 working
-            Key([], "a", lazy.spawn("rofi_anki"), desc="add anki note"),
+            Key([], "a", lazy.spawn("bar-action tide showPicker anki"), desc="add anki note"),
             # --- Close all notifications ---
             Key(
                 [],
@@ -6620,13 +7318,13 @@ keys = [
                 desc="Close all notifications",
             ),
             # --- List all dmscripts ---
-            Key([], "h", lazy.spawn("dm-hub -r"), desc="List all dmscripts"),
+            Key([], "h", lazy.spawn("bar-action tide showPicker hub"), desc="List all dmscripts"),
             # --- Choose a config file to edit ---
             Key(
-                [], "f", lazy.spawn("dm-confedit"), desc="Choose a config file to edit"
+                [], "f", lazy.spawn("bar-action tide showPicker confedit"), desc="Choose a config file to edit"
             ),
             # --- choose shared link-preview ---
-            Key([], "z", lazy.spawn("rofi_shared"), desc="shared link-preview"),
+            Key([], "z", lazy.spawn("bar-action tide showPicker shared"), desc="shared link-preview"),
             # --- a Special mode for "Wallpaper Picker" ---
             # --- Wallpaper MODE ---
             # w for wallpaper. (Was b, which now opens Bluetooth.)
@@ -6778,26 +7476,48 @@ keys = [
                 desc="WiFi network picker",
             ),
             # --- show documents ---
-            Key([], "d", lazy.spawn("dm-documents -r"), desc="Show documents"),
+            Key([], "d", lazy.spawn("bar-action tide showPicker documents"), desc="Show documents"),
             # Theme picker (rofi).
+            # PARITY WITH HYPRLAND, WHICH SPLITS THESE TWO DELIBERATELY.
+            # submaps.conf binds `c` to the island's theme picker and SHIFT+C
+            # to `theme-toggle`, and the split is not cosmetic: theme-toggle
+            # is rofi and must keep working with the shell DOWN, which is
+            # exactly when it gets reached for. qtile had only the rofi half,
+            # on the key Hyprland uses for the island one.
+            Key(
+                ["shift"],
+                "c",
+                lazy.spawn("theme-toggle"),
+                desc="Theme picker (rofi, works with the shell down)",
+            ),
+            # The island's list pickers that qtile had no key for. Same keys
+            # as hypr/submaps.conf: j workspaces, SHIFT+K windows.
+            Key([], "j", lazy.spawn("bar-action tide showPicker workspaces"),
+                desc="Workspaces picker"),
+            # SHIFT+S, the key hypr/submaps.conf uses. Bare `s` in this chord
+            # is already "Search wifi" in both sessions.
+            Key(["shift"], "s", lazy.spawn("bar-action tide toggleWifiQr"),
+                desc="WiFi QR code"),
+            Key(["shift"], "k", lazy.spawn("bar-action tide showPicker windows"),
+                desc="Windows picker"),
             Key(
                 [],
                 "c",
-                lazy.spawn("theme-toggle"),
-                desc="Theme picker (rofi)",
+                lazy.spawn("bar-action tide toggleThemePicker"),
+                desc="Theme picker (island / rofi palette)",
             ),
             # --- Take a screenshot v2 of dm-maim ---
             Key(
-                [], "i", lazy.spawn("dm-satty"), desc="Take a screenshot v2 of dm-maim"
+                [], "i", lazy.spawn("bar-action tide showPicker screenshot"), desc="Take a screenshot v2 of dm-maim"
             ),
             # --- Kill processes ---
-            Key([], "k", lazy.spawn("rofi-kill"), desc="Kill processes "),
+            Key([], "k", lazy.spawn("bar-action tide showPicker processes"), desc="Kill processes "),
             # --- View manpages ---
-            Key([], "m", lazy.spawn("dm-man -r"), desc="View manpages"),
+            Key([], "m", lazy.spawn("bar-action tide showPicker man"), desc="View manpages"),
             # --- Store and copy notes ---
             # Moved off n (now the WiFi picker) to o -- "nOte". g/j/u/v/y are
             # the other free letters in this chord.
-            Key([], "o", lazy.spawn("dm-note -r"), desc="Store and copy notes"),
+            Key([], "o", lazy.spawn("bar-action tide showPicker notes"), desc="Store and copy notes"),
             # --- rofi password menu ---
             # Removed: a second Key([], "p") in this same chord, so it
             # duplicated the binding above and only one could ever win.
@@ -6809,28 +7529,28 @@ keys = [
             Key(
                 [],
                 "y",
-                lazy.spawn("dm-youtube -r"),
+                lazy.spawn("bar-action tide showPicker youtube"),
                 desc="youtube menu",
             ),
             # --- logout menu ---
-            Key([], "q", lazy.spawn("dm-logout -r"), desc="Logout menu"),
+            Key([], "q", lazy.spawn("bar-action tide togglePowerMenu"), desc="Logout menu"),
             # --- record  Version2 ---
-            Key([], "r", lazy.spawn("dm-recordV2"), desc="record"),
+            Key([], "r", lazy.spawn("bar-action tide showPicker record"), desc="record"),
             # ---  Spell check menu ---
-            Key([], "s", lazy.spawn("dm-spellcheck -r"), desc="Spell check menu"),
+            Key([], "s", lazy.spawn("bar-action tide showPicker spellcheck"), desc="Spell check menu"),
             # --- Search weather ---
             # Disabled: `w` now opens the WiFi picker (chord above).
             # --- Open todo manager ---
-            Key([], "t", lazy.spawn("rofi_todo"), desc="Open todo manager"),
+            Key([], "t", lazy.spawn("bar-action tide showPicker todo"), desc="Open todo manager"),
             # --- screen light ---
-            Key([], "l", lazy.spawn("rofi_light"), desc="screen light"),
+            Key([], "l", lazy.spawn("bar-action tide showPicker brightness"), desc="screen light"),
             # --- PDF conversions ---
             # "v" for conVert: p/f/d/c are all taken in this chord, and
             # rofi_ilovepdf had no trigger at all -- it was reachable only by
             # typing its name in a shell, despite all six of its dependencies
             # (rofi, libreoffice, imagemagick, ghostscript, poppler, qpdf)
             # being installed.
-            Key([], "v", lazy.spawn("rofi_ilovepdf"), desc="PDF conversions"),
+            Key([], "v", lazy.spawn("bar-action tide showPicker ilovepdf"), desc="PDF conversions"),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
             *group_keys(),
         ],
@@ -7629,14 +8349,33 @@ keys.extend(
             name="Display-Mode",
             desc="Display / xrandr layout picker",
         ),
-        Key([mod2], "5", lazy.group["scratchpad"].dropdown_toggle("calc")),
+        Key([mod2], "5",
+            island_or("toggleCalculator",
+                      lambda q: q.groups_map["scratchpad"].dropdown_toggle("calc")),
+            desc="Calculator: qalculate scratchpad / the island's calculator"),
         Key([mod2], "8", lazy.group["scratchpad"].dropdown_toggle("whats")),
         Key([mod2], "9", lazy.group["scratchpad"].dropdown_toggle("deepseek")),
         Key([mod2], "0", lazy.group["scratchpad"].dropdown_toggle("chatgpt")),
+        # ---- THE DROP SHELF, THROUGH THE WRAPPER AND NOT STRAIGHT AT THE GTK APP ----
+        #
+        # This called qdrop.py directly, which is the OLD GTK shelf. The island
+        # has its own, rebuilt in Quickshell (qml/qdrop/QdropShelf.qml), and it
+        # is the one that can actually receive a drag -- the thing the GTK one
+        # could never do.
+        #
+        # scripts/qdrop.sh is the chooser both sessions are supposed to go
+        # through: it tries the island's `qdrop` IPC first and falls back to
+        # qdrop.py when no island is running, so the key follows the bar. It
+        # lives under hypr/scripts for historical reasons only -- there is no
+        # hyprctl in it, and it was verified working from this X11 session
+        # before this binding was changed.
+        #
+        # Same key as Hyprland's ($alt SHIFT D in binds.conf).
         Key(
             [mod2, "shift"],
             "d",
-            lazy.spawn("python3 " + os.path.expanduser("~/.config/qtile/scripts/qdrop.py") + " --toggle"),
+            lazy.spawn(os.path.expanduser("~/.config/hypr/scripts/qdrop.sh") + " --toggle"),
+            desc="Drop shelf: the island's, or the GTK one when it is down",
         ),
     ]
 )
