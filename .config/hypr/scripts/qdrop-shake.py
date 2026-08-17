@@ -98,6 +98,93 @@ It is still strictly worse than the X11 gate, and it is written down here
 rather than papered over. `--dry-run` logs a would-be shake without showing
 the shelf, which is how the above table was checked.
 
+...AND THE TABLE WAS RIGHT, WHICH IS WHY THE GATES BELOW EXIST
+--------------------------------------------------------------
+Reported: "the drop shelf one when i select text or scroll up down it
+appears". Both of the rows this file predicted WOULD FIRE, fired. With no
+gate 2 available the only thing left to tighten is the SHAPE, so the shape
+is now tightened in four independent ways — every one of them a property a
+deliberate shake has and an accidental wiggle does not:
+
+  1. THE CONSTANTS ARE THIS FILE'S OWN, not qdrop_watch's. They were tuned
+     for RAW DEVICE DELTAS; what is fed here is the difference of two
+     ACCELERATED SCREEN POSITIONS, which for the same hand movement is
+     several times larger. Importing the shape and the numbers together
+     therefore made this detector far MORE sensitive than the X11 one it
+     was copying, on identical-looking constants. Axis reads them as module
+     globals at call time, so they are overridden on the module after the
+     import and the X11 watcher's own tuning is untouched.
+
+  2. HORIZONTAL ONLY. A shake is a side-to-side gesture — it is what the
+     macOS shelf this imitates means by the word, and it is what a hand
+     does when it wants to say "take this". Dragging a scrollbar or a
+     slider is pure VERTICAL reversal, which is the whole of the "scroll up
+     down" report, and it can now never fire. qdrop_watch dropped this
+     requirement deliberately, and could afford to, because its gate 2 was
+     doing the filtering; there is no gate 2 here.
+
+  3. AND THE VERTICAL TRAVEL MUST BE SMALL BESIDE IT. Horizontal-only is
+     not enough on its own: a diagonal scrub reverses on x as well. Over
+     the shake window the x travel has to be MIN_AXIS_RATIO times the y
+     travel, which is what separates a flat sweep from a scribble.
+
+  4. A SHAKE IS PRECEDED BY A DRAG. You cannot shake something you have not
+     picked up and carried: MIN_PRESS_S and MIN_TRAVEL_PX require the
+     button to have been down a moment and the pointer to have covered real
+     ground before any reversal counts at all. A text selection that begins
+     with a wiggle is over before either is satisfied.
+
+AND THE FIFTH GATE, WHICH IS NOT A SHAPE AT ALL
+-----------------------------------------------
+Reported next, and the four above cannot catch it and should not try: "i
+resize the terrmianl with cursor and opens the dropshef wtf".
+
+`general:resize_on_border` is 1 in this config with a 15 px
+`extend_border_grab_area`, so dragging a window edge is a BARE button-1 drag
+-- no modifier -- and the modifier-exact trick that keeps window MOVES out
+(`bindm = $mod, mouse:272`) does nothing for it. Worse, the gesture is not
+merely similar to a shake, it IS one: you grab the edge and push it back and
+forth to get the width right, which is horizontal, flat, well past
+MIN_SEG_PX, and preceded by plenty of carrying.
+
+So it is not separable by shape, and it does not need to be. **A resize is
+not a shape, it is an OUTCOME: the window changes size.** A window move is
+the same statement about position. Neither ever happens during a file drag,
+and both are directly observable -- `j/activewindow` over the request socket
+is 839 bytes and 0.074 ms, which is what makes it affordable on every sample
+rather than on a timer a fast resize could outrun. See `Drag.note_box`.
+
+MEASURED ON THE LIVE SESSION, both directions, driven with
+scripts/test/uinput-shake.py on an empty workspace holding two windows:
+
+    deliberate horizontal shake, mid-window     FIRES
+    border drag that really resized 1005->986   refused, "compositor grab"
+    the SAME border drag under --loose          FIRES        <- the control
+    vertical shake (scrollbar, scroll)          quiet
+    small wiggles (a text selection)            quiet
+    one-way drag with tremor in it              quiet
+
+The control row is the one that makes the others mean anything: without it
+"the resize did not fire" is equally consistent with the driver having
+missed, and this file has already recorded one session lost to a test that
+could not fail.
+
+WHAT THIS STILL IS NOT
+----------------------
+It is not "only fires while a file is in flight", which is what was asked
+for and what gate 2 gave the X11 watcher. That gate cannot be rebuilt here:
+Wayland gives a third party no view of `wl_data_device`, there is no
+protocol for it, and `hyprctl`'s forty commands contain nothing about data
+devices or drags -- checked again, not assumed. What these five gates do is
+make every reported false positive impossible while leaving the deliberate
+gesture working. The one shape still able to reach the shelf is a hard,
+flat, sustained horizontal shake held for a third of a second over a window
+that does not change size, while carrying nothing.
+
+`--loose` restores the old behaviour, and is the CONTROL above. `--tune k=v`
+overrides any one of the five numbers, so the next report can be answered
+with a measurement instead of another guess.
+
 The one route that would restore gate 2 is a Hyprland plugin (route C): the
 compositor does know the drag state, and a plugin could expose it. That is a
 C++ build against a moving ABI for one boolean, and it is not worth it until
@@ -126,8 +213,13 @@ segment is 50-200 px at either end of the acceleration curve.
 Flags:
   --debug     log every sample decision
   --dry-run   log the shake, do not show the shelf (false-positive counting)
+  --loose     drop gates 2-5 and use qdrop_watch's constants (the old shape)
+  --tune k=v  override one of MIN_SEG_PX, REVERSALS_NEEDED, TIME_WINDOW_S,
+              MIN_PRESS_S, MIN_TRAVEL_PX, MIN_AXIS_RATIO
 """
+import collections
 import importlib.util
+import json
 import os
 import select
 import socket
@@ -148,8 +240,50 @@ MAX_PRESS_S = 30.0
 
 DEBUG = "--debug" in sys.argv
 DRY_RUN = "--dry-run" in sys.argv
+LOOSE = "--loose" in sys.argv
 
 SHARED = os.path.expanduser("~/.config/qtile/scripts/qdrop_watch.py")
+
+# ---- THIS FILE'S OWN SHAPE CONSTANTS -------------------------------------
+#
+# See gate 1 in the header. qdrop_watch's numbers describe RAW device
+# deltas; these describe differences of ACCELERATED SCREEN POSITIONS, and
+# the two are not the same units. A 6 px raw segment is a flick of the
+# wrist; a 6 px screen segment is nothing at all, which is why the imported
+# tuning made this fire on text selection.
+#
+# MIN_SEG_PX      travel back from the extremum that counts as a turn
+# REVERSALS_NEEDED turns inside TIME_WINDOW_S before it is a shake
+# TIME_WINDOW_S   how long those turns have to land in
+MIN_SEG_PX = 45.0
+REVERSALS_NEEDED = 3
+TIME_WINDOW_S = 1.0
+
+# ---- GATE 4: a shake is preceded by a drag -------------------------------
+# The button has to have been down this long, and the pointer to have
+# covered this much ground, before any reversal is counted. Neither is true
+# of the first moments of a text selection.
+MIN_PRESS_S = 0.30
+MIN_TRAVEL_PX = 140.0
+
+# ---- GATE 3: flat, not scribbled -----------------------------------------
+# Summed |dx| must be this many times summed |dy| across the shake window.
+MIN_AXIS_RATIO = 2.5
+
+
+def _apply_tuning(argv):
+    """`--tune k=v` for every number above. See the header's last line."""
+    g = globals()
+    for i, a in enumerate(argv):
+        if a != "--tune" or i + 1 >= len(argv):
+            continue
+        key, _, val = argv[i + 1].partition("=")
+        if key not in ("MIN_SEG_PX", "REVERSALS_NEEDED", "TIME_WINDOW_S",
+                       "MIN_PRESS_S", "MIN_TRAVEL_PX", "MIN_AXIS_RATIO"):
+            log(f"--tune: unknown key {key!r}, ignored")
+            continue
+        g[key] = int(val) if key == "REVERSALS_NEEDED" else float(val)
+        log(f"--tune {key}={g[key]}")
 
 
 def log(msg: str):
@@ -180,6 +314,27 @@ def _load_shared():
 W = _load_shared()
 
 
+def _retune_shared() -> None:
+    """Give `Axis` this file's constants instead of the X11 watcher's.
+
+    Axis.feed() reads MIN_SEG_PX and TIME_WINDOW_S as MODULE GLOBALS on
+    every call, and shaking() reads REVERSALS_NEEDED the same way, so
+    assigning them on the imported module is enough — no subclass, no
+    parameter threading, and qdrop_watch's own values are untouched for the
+    qtile session that imports it normally. See gate 1 in the header for why
+    they must differ at all.
+    """
+    if LOOSE:
+        log("--loose: keeping qdrop_watch's constants and dropping gates 2-5")
+        return
+    W.MIN_SEG_PX = MIN_SEG_PX
+    W.REVERSALS_NEEDED = REVERSALS_NEEDED
+    W.TIME_WINDOW_S = TIME_WINDOW_S
+    dlog(f"shape: seg>={MIN_SEG_PX}px x{REVERSALS_NEEDED} in {TIME_WINDOW_S}s, "
+         f"press>={MIN_PRESS_S}s, travel>={MIN_TRAVEL_PX}px, "
+         f"x:y>={MIN_AXIS_RATIO}")
+
+
 def hypr_dir() -> str:
     rt = os.environ.get("XDG_RUNTIME_DIR")
     sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
@@ -188,6 +343,53 @@ def hypr_dir() -> str:
             "Hyprland session, nothing to watch")
         sys.exit(1)
     return f"{rt}/hypr/{sig}"
+
+
+def hypr_request(req_sock: str, cmd: bytes):
+    """One request over Hyprland's request socket, or None.
+
+    Hyprland closes the socket after answering — a second send on the same
+    connection is EPIPE — so this is not a leak of connections, it is the
+    protocol. Measured at 0.074 ms per round trip, which is what makes
+    sampling it at 60 Hz reasonable at all: `hyprctl` is 6.02 ms.
+    """
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(0.25)
+        s.connect(req_sock)
+        s.sendall(cmd)
+        buf = b""
+        while True:
+            c = s.recv(65536)
+            if not c:
+                break
+            buf += c
+        s.close()
+        return buf
+    except Exception as e:
+        dlog(f"request {cmd!r} failed: {e}")
+        return None
+
+
+def window_box(req_sock: str):
+    """The focused window's (x, y, w, h), or None. See GATE 5.
+
+    `j/activewindow` is 839 bytes here and answers in 0.074 ms, so this is
+    sampled on the same tick as the cursor rather than on a slower timer —
+    a resize has to be caught before three reversals accumulate, and a
+    timer that is slower than the gesture is a gate that sometimes works.
+    """
+    raw = hypr_request(req_sock, b"j/activewindow")
+    if not raw:
+        return None
+    try:
+        w = json.loads(raw)
+        at, size = w.get("at"), w.get("size")
+        if not at or not size:
+            return None
+        return (int(at[0]), int(at[1]), int(size[0]), int(size[1]))
+    except Exception:
+        return None
 
 
 def cursorpos(req_sock: str):
@@ -233,8 +435,13 @@ def fire():
     if DRY_RUN:
         log("shake -> show (DRY RUN, nothing shown)")
         return
+    # --for-drag, not --show. You are HOLDING something: a shelf that takes
+    # an exclusive keyboard grab on the way up cancels the drag it exists to
+    # receive. Measured, A/B, on the same synthesised drop — with the grab
+    # `entries 9 -> 9`, without it `9 -> 10`. The shelf takes the keyboard
+    # the moment the drop lands.
     subprocess.Popen(
-        [SHOW, "--show"],
+        [SHOW, "--for-drag"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     log("shake -> show")
@@ -249,17 +456,145 @@ class Drag:
         self.fired = False
         self.pos = None
         self.next_sample = 0.0
+        self.travel = 0.0
+        # (t, |dx|, |dy|) for the last TIME_WINDOW_S, which is what gate 3
+        # measures its ratio over. Anything older cannot be part of the
+        # shake that is being judged.
+        self.recent: collections.deque = collections.deque()
+        # GATE 5. The focused window's box when the button went down, and
+        # whether it has moved since. See the note on `note_box`.
+        self.box = None
+        self.grabbed = False
         self.axes = {"x": W.Axis("x"), "y": W.Axis("y")}
 
-    def start(self, now: float, pos):
+    def start(self, now: float, pos, box=None):
         self.down = True
         self.press_time = now
         self.fired = False
         self.pos = pos
         self.next_sample = now + SAMPLE_S
+        self.travel = 0.0
+        self.recent.clear()
+        # Taken AT THE PRESS and not on the first motion sample, so the
+        # baseline is the geometry from before any grab could have moved it.
+        # The bind fires on the press and the resize has not happened yet, so
+        # this is the pre-grab rectangle by construction.
+        self.box = box
+        self.grabbed = False
         for ax in self.axes.values():
             ax.reset()
         dlog(f"press at {pos}")
+
+    # ---- GATE 5: A FILE DRAG DOES NOT RESIZE ANYTHING --------------------
+    #
+    # Reported, and it is the one the four shape gates could not have
+    # caught: "i resize the terrmianl with cursor and opens the dropshef".
+    #
+    # `general:resize_on_border` is 1 in this config with a 15 px
+    # `extend_border_grab_area`, so dragging a window edge is a BARE
+    # button-1 drag — no modifier — which means the modifier-exact trick
+    # that keeps `$mod`-drags out (a window MOVE is `bindm = $mod,
+    # mouse:272`) does nothing here. And the gesture is a dead ringer for a
+    # shake: you grab an edge and push it back and forth to get the width
+    # right, which is horizontal, flat, well past MIN_SEG_PX, and preceded
+    # by plenty of carrying. It passed all four gates because it genuinely
+    # has all four properties.
+    #
+    # So it is not separable by SHAPE and it does not need to be. A resize
+    # is not a shape, it is an OUTCOME: the window changes size. A window
+    # move is the same statement about position. Neither ever happens during
+    # a file drag, and both are directly observable — `j/activewindow` over
+    # the request socket, 839 bytes and 0.074 ms, which is why this can be
+    # asked on every sample rather than on a timer that a fast resize could
+    # outrun.
+    #
+    # STICKY for the whole press, deliberately. The alternative — refuse
+    # only while the geometry is actively moving — reopens the hole the
+    # moment you pause mid-resize, which is exactly when you would wiggle.
+    #
+    # The failure direction is the safe one. If a window retiles during a
+    # real file drag (something opened, a workspace changed) this refuses a
+    # shake that was legitimate, and the key and the shelf's other entry
+    # points all still work. A false NEGATIVE costs a keystroke; a false
+    # positive is a panel over your work, which is the report.
+    def note_box(self, box) -> None:
+        if box is None or self.grabbed:
+            return
+        if self.box is None:
+            self.box = box
+            return
+        if box != self.box:
+            self.grabbed = True
+            dlog(f"compositor grab: window {self.box} -> {box}")
+
+    def feed(self, now: float, dx: float, dy: float) -> None:
+        """Accumulate the gate-3 and gate-4 evidence for one sample."""
+        self.travel += abs(dx) + abs(dy)
+        self.recent.append((now, abs(dx), abs(dy)))
+        cutoff = now - TIME_WINDOW_S
+        while self.recent and self.recent[0][0] < cutoff:
+            self.recent.popleft()
+
+    def carried(self, now: float) -> bool:
+        """GATE 4 — has this press been a drag yet, at all?"""
+        return (now - self.press_time >= MIN_PRESS_S
+                and self.travel >= MIN_TRAVEL_PX)
+
+    def flat(self) -> bool:
+        """GATE 3 — is the recent motion side-to-side rather than scribbled?"""
+        sx = sum(r[1] for r in self.recent)
+        sy = sum(r[2] for r in self.recent)
+        # A perfectly horizontal sweep has sy == 0, and a ratio against zero
+        # is not a comparison — it is the best possible case, so say so.
+        return sy <= 0.0 or sx >= MIN_AXIS_RATIO * sy
+
+    # ---- THE WHOLE DECISION, IN ONE PLACE SO IT CAN BE DRIVEN -------------
+    #
+    # This used to be inline in run()'s loop, where the only way to exercise
+    # it was to shake a real mouse inside a real Hyprland session — i.e. the
+    # gates could only be tuned by the person reporting the bug. It is a
+    # method now, and `scripts/test/shake-shapes.py` feeds it recorded
+    # gesture shapes; the loop below calls exactly this and nothing else, so
+    # a passing test is a statement about the shipped path.
+    #
+    # Returns "" for "not a shake", or a reason string when it IS one.
+    # `box` is the focused window's rectangle for this tick, or None when it
+    # could not be read — see note_box().
+    def sample(self, now: float, dx: float, dy: float, box=None) -> str:
+        self.note_box(box)
+        self.feed(now, dx, dy)
+
+        # GATE 5, checked before any shape work: this press is a compositor
+        # resize or move, and no amount of the right shape makes it a drag.
+        if self.grabbed and not LOOSE:
+            return ""
+
+        # GATE 2 — horizontal only, unless --loose. A scrollbar or a slider
+        # is pure vertical reversal, and that was half the bug report.
+        axes = (("x", dx), ("y", dy)) if LOOSE else (("x", dx),)
+
+        for name, d in axes:
+            ax = self.axes[name]
+            if not ax.feed(float(d), now):
+                continue
+            if not ax.shaking():
+                continue
+            # Checked HERE and not earlier, so --debug says which gate
+            # refused a gesture that otherwise had the right number of
+            # turns in it. A gate that rejects silently cannot be tuned.
+            if not LOOSE and not self.carried(now):
+                dlog(f"{name}-shake refused: not carried yet "
+                     f"({now - self.press_time:.2f}s, {self.travel:.0f}px)")
+                continue
+            if not LOOSE and not self.flat():
+                sx = sum(r[1] for r in self.recent)
+                sy = sum(r[2] for r in self.recent)
+                dlog(f"{name}-shake refused: not flat "
+                     f"(x {sx:.0f} vs y {sy:.0f}px)")
+                continue
+            return (f"{name}-shake ({len(ax.reversals)} reversals in "
+                    f"{TIME_WINDOW_S}s)")
+        return ""
 
     def stop(self, why: str):
         if self.down:
@@ -292,7 +627,8 @@ def run(sock2_path: str, req_sock: str) -> None:
                 line, buf = buf.split(b"\n", 1)
                 s = line.decode("utf-8", "replace")
                 if s == "custom>>qdropshake:down":
-                    drag.start(now, cursorpos(req_sock))
+                    drag.start(now, cursorpos(req_sock),
+                               window_box(req_sock))
                 elif s == "custom>>qdropshake:up":
                     drag.stop("bind")
 
@@ -321,23 +657,23 @@ def run(sock2_path: str, req_sock: str) -> None:
         if drag.fired or (dx == 0 and dy == 0):
             continue
 
-        for name, d in (("x", dx), ("y", dy)):
-            ax = drag.axes[name]
-            if not ax.feed(float(d), now):
-                continue
-            if not ax.shaking():
-                continue
-            if now - last_fire < W.DEBOUNCE_S:
-                continue
-            dlog(f"{name}-shake ({len(ax.reversals)} reversals in "
-                 f"{W.TIME_WINDOW_S}s)")
-            fire()
-            last_fire = now
-            drag.fired = True
-            break
+        why = drag.sample(now, dx, dy, window_box(req_sock))
+        if not why:
+            continue
+        # The debounce stays out here, in the loop, because it is about this
+        # PROCESS's firing history and not about the shape of one gesture —
+        # which is the same reason the test can drive sample() without it.
+        if now - last_fire < W.DEBOUNCE_S:
+            continue
+        dlog(why)
+        fire()
+        last_fire = now
+        drag.fired = True
 
 
 def main() -> None:
+    _apply_tuning(sys.argv)
+    _retune_shared()
     d = hypr_dir()
     sock2_path, req_sock = f"{d}/.socket2.sock", f"{d}/.socket.sock"
 

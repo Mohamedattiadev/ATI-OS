@@ -90,6 +90,23 @@ PanelWindow {
         && overviewVisualReady
     readonly property bool compositorIsNiri: CompositorBackend.compositor === "niri"
     readonly property int compositorRevision: CompositorBackend.revision
+
+    // FORK: which display server, decided the same way shell.qml decides it.
+    //
+    // Note what this is NOT derived from. `CompositorBackend.compositor`, one
+    // line above, reports "hyprland" in a qtile session — probed, not
+    // assumed — so it can tell niri apart from the rest and nothing more. Any
+    // X11 question asked of it gets a Hyprland answer, which is how the
+    // workspace digit came to be frozen at 1 and the window strip empty, both
+    // without a single log line.
+    //
+    // WAYLAND_DISPLAY is what Quickshell's own backend selection keys on, so
+    // this and the wrapper actually built (IslandWindowX11 vs …Wayland) can
+    // never disagree.
+    readonly property bool onX11: {
+        const wl = Quickshell.env("WAYLAND_DISPLAY");
+        return wl === undefined || wl === null || String(wl) === "";
+    }
     readonly property string screenOutputName: screen && screen.name !== undefined ? String(screen.name) : ""
     readonly property var hyprlandIntegration: hyprlandIntegrationLoader.item
     readonly property var hyprMonitor: hyprlandIntegration ? hyprlandIntegration.monitor : null
@@ -97,6 +114,23 @@ PanelWindow {
     readonly property string compositorOutputName: compositorIsNiri ? screenOutputName : hyprMonitorName
     readonly property bool monitorFocused: {
         compositorRevision;
+        // FORK: true on X11, because the alternative is false FOREVER.
+        //
+        // This is Hyprland-derived, so under qtile `hyprlandIntegration` is
+        // null and the whole expression is false — which is not merely
+        // inaccurate, it silently disables things gated on it. The workspace
+        // capsule is the one that shows: `workspaceActivated` is only emitted
+        // for a change on a FOCUSED monitor, so on X11 the digit would update
+        // in the resting capsule while the switch animation never played
+        // once.
+        //
+        // EWMH has a single display-wide `_NET_CURRENT_DESKTOP` and no notion
+        // of which output owns it, so there is nothing more precise to be had
+        // here. On the single-monitor session this is exactly right; on a
+        // multi-head qtile it announces on each island rather than only the
+        // active one, which is an over-announcement and not a wrong value.
+        if (onX11)
+            return true;
         return compositorIsNiri
             ? CompositorBackend.isOutputFocused(screenOutputName)
             : (hyprlandIntegration ? hyprlandIntegration.monitorFocused : false);
@@ -274,8 +308,19 @@ PanelWindow {
     // tall is invisible while one a few pixels too short is a clipped edge.
     readonly property real capsuleOvershootAllowance:
         Math.ceil(mainCapsule.targetHeight * Motion.overshoot() * 2)
+    // FORK: `mainCapsule.capsuleTopOffset`, not `islandTopMargin`.
+    //
+    // The two were the same number for as long as the capsule only ever hung
+    // from the top edge. The detached form (see `detachProgress`) moves it to
+    // the middle of the screen, and a surface sized for the top-hung offset
+    // would then clip the panel at exactly the point it finished travelling —
+    // which looks like the panel failing to open rather than like the window
+    // being too short.
+    //
+    // The offset is taken LIVE and not at the two endpoints, so the surface
+    // grows with the move instead of after it.
     readonly property real capsuleWindowHeight: Math.ceil(
-        userConfig.islandTopMargin + mainCapsule.targetHeight
+        mainCapsule.capsuleTopOffset + mainCapsule.targetHeight
             + Math.max(12, root.capsuleOvershootAllowance)
     )
     // FORK: connectivityDetailWindowHeight is gone with the detail shells.
@@ -287,17 +332,66 @@ PanelWindow {
     readonly property real overviewWindowHeight: root.overviewVisible
         ? Math.ceil(userConfig.islandTopMargin + root.overviewCapsuleHeight + 8)
         : 0
+    // FORK: the hover tooltip hangs BELOW the capsule, outside every extent
+    // above — capsuleWindowHeight stops at the capsule's own bottom edge — so
+    // without this the card was drawn into a surface that ends above it and
+    // simply did not appear. The island's window is not the island's shape,
+    // which is the input-mask rule applied to the other axis.
+    //
+    // Gated on `visible` and not on the hover flag, because the card fades and
+    // the surface has to stay tall for the whole fade. IslandHoverTooltip's
+    // `visible` is `opacity > 0.01` for exactly this reason.
+    readonly property real hoverTooltipWindowHeight: hoverTooltip.visible
+        ? Math.ceil(hoverTooltip.y + hoverTooltip.height + 8)
+        : 0
     readonly property real requestedWindowHeight: Math.max(
         root.notificationCenterWindowHeight,
         root.capsuleWindowHeight,
         root.overviewWindowHeight,
+        root.hoverTooltipWindowHeight,
         Math.ceil(root.controlCenterWindowHeight)
     )
     // Grow the layer surface immediately, but keep the old extent while the
     // capsule finishes its collapse animation. A later expansion interrupts
     // the pending shrink instead of letting a stale timer clip new content.
     property real retainedWindowHeight: 0
-    implicitHeight: Math.max(root.requestedWindowHeight, root.retainedWindowHeight)
+    // ---- ON X11 THE WINDOW NEVER RESIZES, AND THAT IS THE WHOLE FIX -------
+    //
+    // Reported as "the island disappears for 0.2s and appears again" whenever
+    // a popup opens or closes.
+    //
+    // It is not a destroy/recreate — measured at 30 Hz across a toggle, the
+    // window ID is stable (23068692 throughout) and the size steps straight
+    // from 1366x44 to 1366x484 and back. That single step IS the bug: an X11
+    // resize reallocates the surface, and the first frame after it is drawn
+    // before the content has been re-laid-out, so the island blinks out and
+    // back exactly once per panel.
+    //
+    // Wayland does not have this problem and so the base file was right to
+    // size the surface tightly: a layer-shell commit carries the new size and
+    // the new buffer ATOMICALLY, so there is no frame in between to be blank.
+    // X11 has no such guarantee, which is why this is a per-backend answer
+    // rather than a change to `requestedWindowHeight` for everyone.
+    //
+    // So on X11 the window is simply always the height of the screen and
+    // nothing ever resizes it. The costs were checked before taking them:
+    //
+    //   * INPUT is not affected. `mask` above is the input region and it is
+    //     already the capsule's rectangle alone, not the window — that is a
+    //     pre-existing invariant this leans on rather than a new one. A
+    //     taller window with the same mask eats no extra clicks.
+    //   * STRUTS are not affected. The exclusive zone lives on its own 1x1
+    //     reserver window (measured: 1366x1 carrying the only
+    //     _NET_WM_STRUT_PARTIAL), so the island's own height was never what
+    //     reserved space.
+    //   * FULLSCREEN is not affected. picom's `unredir-if-possible` is unset
+    //     and defaults off, so an always-present dock cannot be what stops a
+    //     fullscreen client from being unredirected.
+    readonly property real x11FixedWindowHeight:
+        root.screen && root.screen.height ? root.screen.height : 768
+    implicitHeight: root.onX11
+        ? root.x11FixedWindowHeight
+        : Math.max(root.requestedWindowHeight, root.retainedWindowHeight)
 
     function reconcileWindowHeight() {
         if (root.requestedWindowHeight >= root.retainedWindowHeight) {
@@ -473,7 +567,48 @@ PanelWindow {
                 // an exclusive keyboard grab for those extra ~200 ms means the
                 // first keystroke after closing a panel lands nowhere.
                 || islandContainer.wifiPanelLayerVisible
-                || islandContainer.bluetoothPanelLayerVisible)
+                || islandContainer.bluetoothPanelLayerVisible
+                // FORK: the drop shelf, and it belongs on this list twice
+                // over. It is hjkl-driven like the connectivity panels, AND
+                // it has a search field like the cheatsheet, the calculator
+                // and the picker — so every letter typed has to land in it
+                // rather than in the window behind, where `d` is a delete
+                // and `z` is a suspend.
+                //
+                // Its absence here was the whole of a four-part bug report:
+                // "the esc not working or q", hjkl doing nothing, shift-
+                // select doing nothing. None of them were their own defect.
+                // Focus never rose above None while the shelf was open, so
+                // there was no keystroke for its Keys handler to receive —
+                // which is word for word the diagnosis written against the
+                // Wi-Fi and Bluetooth panels a few lines above.
+                // FORK: the drop shelf. It is hjkl-driven AND it has a
+                // search field, so it belongs on this list for the same two
+                // reasons the connectivity panels and the picker do — every
+                // letter typed has to land in it rather than in the window
+                // behind, where `d` is a delete and `z` is a suspend. Its
+                // absence was the whole of a four-part bug report: "the esc
+                // not working or q", hjkl doing nothing, shift-select doing
+                // nothing. None was its own defect; focus never rose above
+                // None, so there was no keystroke for its Keys handler.
+                //
+                // `&& !qdropForDrag` is NOT caution, it is a measurement. An
+                // exclusive keyboard grab CANCELS AN IN-FLIGHT WAYLAND DRAG
+                // — A/B'd twice on the same synthesised drop, everything else
+                // held constant:
+                //
+                //     qdrop on the exclusive list     entries 9 -> 9
+                //     qdrop off it                    entries 9 -> 10
+                //
+                // And the shake opens this shelf while you are HOLDING a
+                // file, which is exactly the case that must not be cancelled.
+                // So a shake-opened shelf waits: it takes the keyboard the
+                // moment the drop lands (or after showQdrop's fallback timer,
+                // if you shook and then thought better of it). A key-opened
+                // shelf takes it immediately, because there is no drag to
+                // lose and you pressed a key expecting keys to work.
+                || (islandContainer.qdropLayerVisible
+                    && !islandContainer.qdropForDrag))
             return "exclusive";
         // FORK: the control centre, the notification centre and the expanded
         // player. All three had NO keyboard handling for the reason written
@@ -612,8 +747,51 @@ PanelWindow {
         ? shellRootController.forkSettings.notchMode
         : true
 
-    readonly property real notchUnround: Math.max(0, Math.min(1, root.notchProgress * 2))
-    readonly property real notchFlareProgress: Math.max(0, Math.min(1, root.notchProgress * 2 - 1))
+    // ------------------------------------------------------------------
+    // FORK: THE DETACHED FORM — a third position for the same one shape.
+    // ------------------------------------------------------------------
+    //
+    // Asked for: "the size of the islend setting should be centered and float
+    // and a bit smaller when it opens".
+    //
+    // The settings panel is the one surface in this shell that is READ rather
+    // than glanced at — twenty-five rows, a details paragraph beside them, and
+    // a keyboard driving both. Hung off the top edge on this 1366x768 panel it
+    // was capped at `screen.height - 60` and therefore ran essentially the
+    // whole screen: a notch that had eaten the desktop. Centred and inset it
+    // reads as a dialog, which is what it behaves like.
+    //
+    // WHY THIS IS ONE VALUE AND NOT A SECOND SHAPE. The spec's rule for the
+    // notch morph — "one shape morphing and not two shapes swapping, a single
+    // path interpolated by one value" — is not about the notch. It is about
+    // this shape. So detaching does not build a floating window and hide the
+    // capsule; it moves the capsule, and everything anchored to it comes
+    // along for free (the mask Region at the top of this file reads
+    // mainCapsule.x/y directly, and so does notchSkirt).
+    //
+    // AND WHY IT FOLDS INTO notchProgress RATHER THAN SITTING BESIDE IT.
+    // A detached panel is a FLOATING panel by definition: it has a top edge,
+    // so it wants its top corners round, its fourth border side drawn, no
+    // flare and no overshoot. That is precisely the notch-OFF form, and this
+    // file already derives all four of those from `notchProgress`. Scaling
+    // that one number by (1 - detachProgress) makes every one of them follow
+    // without a single new consumer — which is also the only way to be sure
+    // none was missed.
+    property bool detachedPanelActive: islandContainer.islandState === "settings"
+    property real detachProgress: root.detachedPanelActive ? 1 : 0
+
+    Behavior on detachProgress {
+        NumberAnimation {
+            duration: Motion.morphDuration()
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Motion.spring()
+        }
+    }
+
+    readonly property real effectiveNotchProgress: root.notchProgress * (1 - root.detachProgress)
+
+    readonly property real notchUnround: Math.max(0, Math.min(1, root.effectiveNotchProgress * 2))
+    readonly property real notchFlareProgress: Math.max(0, Math.min(1, root.effectiveNotchProgress * 2 - 1))
 
     // The morph rides the same generated spring as every other geometry
     // change in the shell — see Motion.js. It has to: a shape that
@@ -1148,6 +1326,118 @@ PanelWindow {
         }
     }
 
+    // ---- THE RESTING CAPSULE'S TOOLTIP IS TWO SCRIPTS, NOT A SENTENCE ----
+    //
+    // FORK. Asked for: hovering the island should show "the prayer time and
+    // eur dolar like the clock chip form qtile".
+    //
+    // qtile's `_clock_tooltip_text`, ported: `scripts/prayer_next.sh` for the
+    // next prayer and its countdown, `scripts/fx_rates.sh` for USD and EUR in
+    // TL and EGP, joined by a blank line. The same two scripts the qtile bar
+    // and the Quickshell topbar already run — NOT copies of them. Three
+    // readers of one number is how the window borders ended up green on
+    // twenty-two themes, and a countdown has a cache file behind it that would
+    // then be written on two schedules.
+    //
+    // They live under ~/.config/qtile/scripts because that is where they were
+    // written and where the qtile session still calls them from. Moving them
+    // would break a live bar to tidy a path.
+    //
+    // Both halves are INDEPENDENT, which is that function's rule and is the
+    // half worth keeping: whichever one comes back empty — dead network, cold
+    // cache — drops its own block instead of blanking the tooltip. And the
+    // fallback is qtile's old static TOOLTIP_BY_NAME string rather than
+    // nothing, so a machine where neither script can run still says what the
+    // capsule is for.
+    //
+    // ---- FETCHED ON HOVER, NOT POLLED ----
+    //
+    // The prayer block counts down in minutes, so a poll would have to run two
+    // subprocesses a minute forever to keep a string nobody is looking at
+    // correct — which is the cost this file already criticises HyprlandData
+    // for. The hover timer fires at 450 ms and the fetch starts with it; both
+    // scripts read a cache (prayer_next.sh refreshes once a day, fx_rates.sh
+    // every six hours) and answer in ~40 ms warm, so the card is populated
+    // well before the fade finishes.
+    //
+    // The two runs are SERIAL through one `sh -c` rather than two Processes,
+    // because that is the whole of what `a; b` buys and it keeps the
+    // blank-line join in one place. A failed script contributes nothing and is
+    // not an error: both `exit 0` with no output when they have nothing.
+    readonly property string hoverTooltipFallback: "Next prayer · USD/EUR rates"
+    property string hoverTooltipText: root.hoverTooltipFallback
+    // Enough that leaving the capsule and coming back does not re-run them,
+    // far less than the minute the countdown changes in.
+    property double hoverTooltipFetchedAt: 0
+
+    function refreshHoverTooltip() {
+        const now = Date.now();
+        if (hoverTooltipProcess.running || now - root.hoverTooltipFetchedAt < 5000)
+            return;
+        root.hoverTooltipFetchedAt = now;
+        hoverTooltipProcess.running = true;
+    }
+
+    // ONE Process, REUSED, for the reason the note above borderFocusProcess
+    // gives in reverse: this one DOES read its output, so the reuse is only
+    // safe because `refreshHoverTooltip` refuses to start a second run while
+    // the first is in flight. StdioCollector's text is replaced per run, not
+    // appended to, once that is guaranteed.
+    Process {
+        id: hoverTooltipProcess
+        command: ["sh", "-c",
+            "p=\"$($HOME/.config/qtile/scripts/prayer_next.sh 2>/dev/null)\"; " +
+            "f=\"$($HOME/.config/qtile/scripts/fx_rates.sh 2>/dev/null)\"; " +
+            // printf and not echo: the blank line between the blocks only
+            // belongs there when BOTH blocks exist.
+            "if [ -n \"$p\" ] && [ -n \"$f\" ]; then printf '%s\\n\\n%s' \"$p\" \"$f\"; " +
+            "else printf '%s%s' \"$p\" \"$f\"; fi"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const out = text.trim();
+                root.hoverTooltipText = out !== "" ? out : root.hoverTooltipFallback;
+            }
+        }
+    }
+
+    // ---- WHEN THE CARD IS ALLOWED TO EXIST ----
+    //
+    // Tested on the capsule's HEIGHT and not on a list of state names, for the
+    // same reason islandFlanks.restingNow is: targetHeight moves the instant a
+    // state changes, so the tooltip starts fading the moment a panel starts
+    // growing, and the test cannot rot when a new islandState is added and
+    // nobody updates a list here. It covers `normal`, `custom` and `lyrics` —
+    // the three resting forms — and nothing else, by construction.
+    //
+    // autoHideProgress guards the other direction: a hidden island is off the
+    // top of the screen, and a tooltip hanging in mid-air under nothing is
+    // worse than none. `> 0.99` and not `> 0` — the reveal animates, and a
+    // card that appears while the capsule is still sliding down reads as two
+    // surfaces rather than one.
+    property bool hoverTooltipHovered: false
+    readonly property bool hoverTooltipEligible:
+        !root.overviewVisible
+        && root.autoHideProgress > 0.99
+        && mainCapsule.targetHeight <= userConfig.islandHeight + 1
+    readonly property bool hoverTooltipVisible:
+        root.hoverTooltipHovered && root.hoverTooltipEligible
+
+    Timer {
+        id: hoverTooltipDelayTimer
+        // 450 ms, the topbar's. Long enough that crossing the capsule on the
+        // way somewhere else does not summon it, short enough that stopping on
+        // it deliberately does not feel like waiting.
+        interval: 450
+        repeat: false
+        onTriggered: {
+            if (!capsuleMouseArea.containsMouse || !root.hoverTooltipEligible)
+                return;
+            root.hoverTooltipHovered = true;
+            root.refreshHoverTooltip();
+        }
+    }
+
     // The borders must not be left dimmed by a shell that goes away while a
     // panel is open — a reload, a crash, a `qs kill`. Nothing else on the
     // system knows to put them back, and the symptom is a desktop where the
@@ -1320,14 +1610,21 @@ PanelWindow {
         if (islandContainer.islandState === "qdrop")
             islandContainer.smartRestoreState();
         else
-            islandContainer.showQdrop();
+            islandContainer.showQdrop(false);
     }
 
     // SHOW, never toggle, for the gesture: you are holding a file, and a
     // shake that CLOSED the shelf because it happened to be open would drop
     // what you were carrying onto nothing.
     function showQdropWindow() {
-        islandContainer.showQdrop();
+        islandContainer.showQdrop(false);
+    }
+
+    // The SHAKE's entry point. Same panel, but it does not take the keyboard
+    // until the drop lands — an exclusive grab cancels an in-flight Wayland
+    // drag, measured. See islandKeyboardFocus.
+    function showQdropForDragWindow() {
+        islandContainer.showQdrop(true);
     }
 
     // Closing it explicitly, and reading which state is up — both exist for
@@ -3202,13 +3499,45 @@ PanelWindow {
         // FORK: the drop shelf. Same shape as every other show: cancel the
         // side-swipe, drop any transient, assign the state, let the capsule
         // morph.
-        function showQdrop() {
+        // True while the shelf is waiting for a drop it was opened to
+        // receive. See the keyboard-focus note above: taking the grab while
+        // a drag is in flight cancels the drag.
+        property bool qdropForDrag: false
+
+        // A drop that landed ON THE NOTCH, before the shelf that owns a
+        // store existed. Held here for exactly as long as it takes
+        // PanelLoader to build QdropLayer, which drains and clears it in
+        // Component.onCompleted. See `notchDropArea` at the bottom of this
+        // file, and `drainPending` in QdropLayer.qml.
+        property var qdropPendingUrls: []
+        property string qdropPendingText: ""
+
+        function showQdrop(forDrag) {
             cancelSideSwipeSettle();
             abortSideTransientMode();
             clearTransientCapsule();
+            qdropForDrag = forDrag === true;
+            if (qdropForDrag)
+                qdropDragGrace.restart();
             islandState = "qdrop";
             mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
             stopAutoHideTimer();
+        }
+
+        // You shook, the shelf opened, and then you let go somewhere else —
+        // or never had a drag at all. Without this the shelf would sit
+        // keyboardless until it was closed.
+        //
+        // 20 s, not 6, and the number was measured rather than picked: a
+        // drive of this path takes ~10 s from the shake to the drop landing,
+        // and at 6 s the timer fired first, flipped the grab back on and
+        // CANCELLED the drag — `entries 9 -> 9` again, looking exactly like
+        // the bug it was meant to fix. `onDragHovering` restarts it, so the
+        // only thing this bounds is a shake with no drag behind it.
+        Timer {
+            id: qdropDragGrace
+            interval: 20000
+            onTriggered: islandContainer.qdropForDrag = false
         }
 
         // FORK: the Wi-Fi QR, so a phone joins by camera instead of by
@@ -3569,7 +3898,13 @@ PanelWindow {
         Shape {
             id: notchSkirt
             z: 4
-            visible: root.notchProgress > 0.001 && root.autoHideProgress > 0.001
+            // FORK: `effectiveNotchProgress`, not `notchProgress` — the skirt
+            // belongs to the flush form, and a DETACHED panel is a floating
+            // one. Both of its two numbers (f, o) already fall to zero through
+            // notchFlareProgress/notchUnround, so this gate is not what makes
+            // the flare go away; it is what stops a zero-size Shape being
+            // rasterised under a panel that has left the top edge.
+            visible: root.effectiveNotchProgress > 0.001 && root.autoHideProgress > 0.001
             opacity: root.autoHideProgress
             preferredRendererType: Shape.CurveRenderer
 
@@ -3835,6 +4170,32 @@ PanelWindow {
             // protocol is live, so this updates on open/close with no poll.
             readonly property var openWindows: {
                 const out = [];
+
+                // ---- THE X11 SESSION TAKES A DIFFERENT LIST ENTIRELY ----
+                //
+                // FORK. Everything below this block reads ToplevelManager,
+                // which is Wayland's foreign-toplevel protocol and reports
+                // NOTHING under qtile — not an error, not an empty-with-a-
+                // warning, just a permanently empty list. So on X11 the strip
+                // was blank in every state, and looked like a strip that had
+                // been switched off rather than one that had no data.
+                //
+                // EwmhState supplies the same shape from the root window's
+                // EWMH properties, already filtered to the current desktop and
+                // already carrying activate()/close(), so the delegate below
+                // cannot tell which backend it is drawing. See
+                // qml/common/EwmhState.qml.
+                if (root.onX11) {
+                    const ewmhWindows = EwmhState.currentDesktopWindows;
+                    for (let e = 0; e < ewmhWindows.length; e++) {
+                        out.push({
+                            appId: ewmhWindows[e].appId,
+                            toplevel: ewmhWindows[e]
+                        });
+                    }
+                    return out;
+                }
+
                 const manager = ToplevelManager;
                 if (!manager || !manager.toplevels)
                     return out;
@@ -3949,7 +4310,13 @@ PanelWindow {
                 x: islandFlanks.pillLeft - islandFlanks.gap - width
                 y: islandFlanks.restingCenterY - height / 2
                 windows: islandFlanks.openWindows
-                activeToplevel: ToplevelManager.activeToplevel
+                // FORK: ToplevelManager has no active toplevel on X11 — it has no
+                // toplevels at all. EwmhState.activeWindow comes out of the SAME
+                // array the strip is built from, which is what lets the delegate's
+                // `modelData.toplevel === activeToplevel` identity test succeed.
+                activeToplevel: root.onX11
+                    ? EwmhState.activeWindow
+                    : ToplevelManager.activeToplevel
                 textFontFamily: root.textFontFamily
                 accentColor: IslandTheme.accent
                 plateColor: IslandTheme.shellFill
@@ -3993,13 +4360,52 @@ PanelWindow {
                 // cannot tell a 32 px timer nudge from a 400 px morph.
                 y: islandFlanks.restingCenterY - height / 2
                 windows: islandFlanks.openWindows
-                activeToplevel: ToplevelManager.activeToplevel
+                // FORK: ToplevelManager has no active toplevel on X11 — it has no
+                // toplevels at all. EwmhState.activeWindow comes out of the SAME
+                // array the strip is built from, which is what lets the delegate's
+                // `modelData.toplevel === activeToplevel` identity test succeed.
+                activeToplevel: root.onX11
+                    ? EwmhState.activeWindow
+                    : ToplevelManager.activeToplevel
                 textFontFamily: root.textFontFamily
                 accentColor: IslandTheme.accent
                 plateColor: IslandTheme.shellFill
                 showCondition: islandFlanks.restingNow
                 revealProgress: root.autoHideProgress
             }
+        }
+
+        // FORK: the resting capsule's prayer/FX tooltip. The provider — the
+        // two scripts and the hover timer that runs them — is on root, beside
+        // `hoverTooltipFallback`; this is where it is drawn.
+        //
+        // A SIBLING OF mainCapsule, NOT A CHILD OF IT. mainCapsule has
+        // `clip: true` (it has to: the panel frame is drawn oversized and the
+        // clip is what takes its top edge away), so anything parented to it
+        // that hangs below its bottom edge is clipped out of existence. That
+        // is the "a layer that fills its parent is NOT filling the capsule"
+        // rule from the other side.
+        //
+        // z above mainCapsule's 5 and islandFlanks' 6: the card is the newest
+        // surface on screen and nothing may composite over it. It only exists
+        // while the capsule is at resting height, so there is nothing tall for
+        // it to collide with.
+        IslandHoverTooltip {
+            id: hoverTooltip
+            z: 7
+            text: root.hoverTooltipText
+            showCondition: root.hoverTooltipVisible
+            textFontFamily: root.textFontFamily
+
+            // Centred on the capsule rather than on the window: the capsule's
+            // x is `islandPositionX` percent of the width and is not
+            // necessarily the middle.
+            x: Math.round(mainCapsule.x + mainCapsule.width / 2 - width / 2)
+            // Below the capsule, at the same gap the window rings keep from
+            // its sides. Off mainCapsule.y and not off a constant, so it
+            // follows the capsule down through the auto-hide reveal instead of
+            // sitting at the top of the screen while the island slides in.
+            y: Math.round(mainCapsule.y + mainCapsule.height + islandFlanks.gap)
         }
 
         // --- UI 渲染：灵动岛主干 ---
@@ -4254,14 +4660,15 @@ PanelWindow {
                     // they stop reading as one row.
                     return Math.min(Metrics.px(560), root.width - Metrics.px(48));
                 case "qdrop":
-                    // WIDE, and for the opposite reason to the system
-                    // monitor's narrowness: the content is a GRID, so width
-                    // buys a column rather than whitespace. At a 104 px cell
-                    // 720 is six across, which is a shelf you can see at a
-                    // glance without the capsule spanning the screen. Clamped
-                    // like the rest so a small display gets fewer columns
-                    // instead of a panel hanging off both edges.
-                    return Math.min(Metrics.px(720), root.width - Metrics.px(48));
+                    // 624 EXACTLY, because that is qdrop.py's own window
+                    // width and the ask was "as same as the qdrop idnetcal
+                    // and not exceed it". The grid divides whatever it gets
+                    // into six equal columns, so this is a shelf of the same
+                    // density as the GTK one rather than the same tiles in a
+                    // different frame. Still clamped, so a narrow display
+                    // gets a narrower shelf instead of a panel hanging off
+                    // both edges.
+                    return Math.min(Metrics.px(624), root.width - Metrics.px(48));
                 case "wifi_qr":
                     // Square-ish and narrow, because the content is one
                     // square symbol. Anything wider is white card the phone
@@ -4298,7 +4705,20 @@ PanelWindow {
                     // "Notch mode          on", and the details column
                     // carries a paragraph saying what the key does and
                     // whether the packaged config app knows about it.
-                    return Math.min(Metrics.px(860), root.width - Metrics.px(48));
+                    //
+                    // FORK: 860 -> 730, the width half of "a bit smaller when
+                    // it opens". The panel is DETACHED now (see
+                    // `detachProgress`), and a floating dialog is read against
+                    // the desktop around it rather than against the screen
+                    // edges it used to touch — 860 of 1366 with 44 px of
+                    // clearance was a panel that had merely stopped short of
+                    // full width. 730 leaves a margin on each side that reads
+                    // as deliberate.
+                    //
+                    // The 52/48 list-to-details split inside it is a
+                    // proportion (SettingsLayer.listWidth), so nothing in the
+                    // panel needs to know this moved.
+                    return Math.min(Metrics.px(730), root.width - Metrics.px(48));
                 case "picker":
                     // The same list-plus-details shape as settings, and the
                     // same width, because the content is the same size:
@@ -4436,18 +4856,18 @@ PanelWindow {
                                    root.screen.height - Metrics.px(60))
                         : Metrics.px(360);
                 case "qdrop":
-                    // Content-sized, and the content is rows of tiles: the
-                    // panel reports chrome + ceil(count / perRow) rows, capped
-                    // at four so a shelf you have been filling all day cannot
-                    // push the capsule off the screen. The fallback is one
-                    // row's worth, which is what an EMPTY shelf draws too —
-                    // so the frame before the loader answers is the right
-                    // shape rather than a guess, which is the re-aim this
-                    // file's own notes keep warning about.
-                    return qdropLoader.item
-                        ? Math.min(qdropLoader.item.preferredHeight,
-                                   root.screen.height - Metrics.px(60))
-                        : Metrics.px(260);
+                    // FIXED at qdrop.py's own 331, and NOT content-sized —
+                    // which is what it was, and was wrong. A shelf grows
+                    // every time you drop something, so content-sizing means
+                    // the capsule changes shape whenever you use it; and a
+                    // height that depends on how much is in it is the exact
+                    // re-aim this file's own notes keep warning about. The
+                    // grid scrolls inside a fixed shape instead.
+                    //
+                    // A constant, so there is no loader to wait on and no
+                    // frame drawn at a guessed size before it answers.
+                    return Math.min(Metrics.px(331),
+                                    root.screen.height - Metrics.px(60));
                 case "sysmon_panel":
                     // Content-sized like the rest. It genuinely varies: the
                     // panel is three dials plus one row per mounted
@@ -4490,10 +4910,26 @@ PanelWindow {
                                    root.screen.height - Metrics.px(60))
                         : Metrics.px(190);
                 case "settings":
+                    // FORK: the height half of "a bit smaller when it opens",
+                    // and the half that actually bites.
+                    //
+                    // The list is 25 rows at Metrics.px(30), so
+                    // `preferredHeight` is ~745 before chrome — past this
+                    // 768 px panel either way. Which means the cap is not a
+                    // safety net here, it IS the height, and the old
+                    // `screen.height - 60` made the panel 713 of 768: a
+                    // centred surface with 27 px of desktop above and below
+                    // it, i.e. not visibly floating at all.
+                    //
+                    // 0.85 of that same cap rather than a new literal, so the
+                    // "15% smaller" stays legible as a decision and still
+                    // tracks the screen it is measured against. On this panel:
+                    // 713 -> 606, centred at y 81. The list scrolls (it
+                    // already had to), and IslandScrollBar says so.
                     return settingsLoader.item
                         ? Math.min(settingsLoader.item.preferredHeight,
-                                   root.screen.height - Metrics.px(60))
-                        : Metrics.px(340);
+                                   Math.round((root.screen.height - Metrics.px(60)) * 0.85))
+                        : Metrics.px(290);
                 case "picker":
                     // Content-sized like the rest, and the layer is the only
                     // thing that can compute it: it knows the row count and
@@ -4758,7 +5194,27 @@ PanelWindow {
             readonly property real restingTopOffset:
                 userConfig.islandTopMargin * (1 - root.notchUnround)
 
-            y: restingTopOffset
+            // FORK: the DETACHED offset — see `detachProgress` on root.
+            //
+            // `root.screen.height` and NOT `root.height`: this window is
+            // anchored top/left/right with a computed implicitHeight, so
+            // root.height is the surface the capsule is about to ask to be
+            // resized, and centring inside it is a loop with a rounding error
+            // for a fixed point. The screen is the thing that is actually
+            // being centred in, and it is a constant here.
+            //
+            // Math.max against the resting offset so the panel can never be
+            // pushed ABOVE where it would sit attached: on a screen too short
+            // for the panel it degrades to the top-hung form rather than to a
+            // negative y with its header off the edge.
+            readonly property real detachedTopOffset: Math.max(
+                restingTopOffset,
+                Math.round((root.screen.height - targetHeight) / 2))
+
+            readonly property real capsuleTopOffset: restingTopOffset
+                + (detachedTopOffset - restingTopOffset) * root.detachProgress
+
+            y: capsuleTopOffset
                 - (1 - root.autoHideProgress) * (targetHeight + userConfig.islandTopMargin + 8)
             x: parent ? parent.width * userConfig.islandPositionX / 100 - width / 2 : 0
             clip: true
@@ -5026,7 +5482,22 @@ PanelWindow {
                 enabled: !root.overviewVisible && twoFingerTouchArea.touchPoints.length < 2
                 acceptedButtons: root.dynamicIslandAcceptedButtons
                 preventStealing: true
-                hoverEnabled: root.hoverExpandEnabled || root.autoHideEnabled
+                // FORK: unconditionally true, where it used to be gated on the
+                // two features that happened to want hover.
+                //
+                // The tooltip is the third, and it is the one that is on by
+                // default — `hoverExpandAction` is 0 in userconfig.json and
+                // auto-hide is off, so the gate evaluated FALSE in the shipped
+                // configuration and `containsMouse` was never true. That is
+                // also why this is not left as a three-term OR: a hover flag
+                // that has to be extended for every feature that wants a
+                // pointer is a flag that will be forgotten once.
+                //
+                // Costs nothing that matters. `hoverEnabled` makes Qt deliver
+                // move events to this one item while the pointer is inside the
+                // capsule's own mask Region — not window-wide, and not while
+                // the pointer is anywhere else on screen.
+                hoverEnabled: true
                 property real swipeStartX: 0
                 property real swipeStartY: 0
                 property real swipeStartProgress: 0
@@ -5054,6 +5525,13 @@ PanelWindow {
                         hoverCollapseDelayTimer.stop();
                         hoverExpandDelayTimer.restart();
                     }
+                    // FORK: the prayer/FX card. Armed on every enter, even
+                    // when the island is not currently eligible for it — the
+                    // timer re-checks `hoverTooltipEligible` when it fires, so
+                    // a pointer that rests on a panel while it collapses back
+                    // to the notch still gets the card rather than needing a
+                    // second entry.
+                    hoverTooltipDelayTimer.restart();
                 }
 
                 onExited: {
@@ -5063,6 +5541,12 @@ PanelWindow {
                     }
                     if (root.hoverExpandEnabled)
                         hoverCollapseDelayTimer.restart();
+                    // Down on the way out with no delay of its own. A tooltip
+                    // that lingers after the pointer has gone is a tooltip
+                    // that has to be dismissed, and the fade is already the
+                    // grace period.
+                    hoverTooltipDelayTimer.stop();
+                    root.hoverTooltipHovered = false;
                 }
 
                 onPressed: (mouse) => {
@@ -5984,10 +6468,27 @@ PanelWindow {
                 sourceComponent: Component {
                     QdropLayer {
                         textFontFamily: root.textFontFamily
+                        iconFontFamily: root.iconFontFamily
                         panelFill: IslandTheme.shellFill
                         accentColor: IslandTheme.accent
                         showCondition: islandContainer.qdropLayerVisible
                         onCloseRequested: islandContainer.smartRestoreState()
+                        // A drop made on the NOTCH, before this panel
+                        // existed to catch it. Cleared by the panel through
+                        // the signal rather than by the panel writing to the
+                        // binding's own source — see the note in QdropLayer.
+                        pendingUrls: islandContainer.qdropPendingUrls
+                        pendingText: islandContainer.qdropPendingText
+                        onPendingConsumed: {
+                            islandContainer.qdropPendingUrls = [];
+                            islandContainer.qdropPendingText = "";
+                        }
+                        // The drag is over, so the keyboard is safe to take.
+                        onDropLanded: islandContainer.qdropForDrag = false
+                        // …and while one is hovering, it is NOT. A fixed
+                        // grace cannot know how long you will take to carry
+                        // a file here; arriving restarts it.
+                        onDragHovering: qdropDragGrace.restart()
                     }
                 }
             }
@@ -6619,6 +7120,113 @@ PanelWindow {
         enabled: root.topGestureInputActive
         islandController: islandContainer
         capsule: mainCapsule
+    }
+
+    // ========================================================================
+    //  CARRY A FILE TO THE NOTCH AND THE SHELF COMES OUT
+    // ========================================================================
+    //
+    // FORK. The EXACT trigger the shake gesture cannot be, and the reason it
+    // exists is that the shake is a heuristic and this is not.
+    //
+    // qdrop-shake.py has five gates and its own header admits what none of
+    // them can do: Wayland gives a third party NO VIEW of `wl_data_device`,
+    // so nothing outside the compositor can ask "is a file in flight right
+    // now". Every gate there is therefore a statement about the SHAPE of a
+    // pointer movement, and shapes collide — a border resize is a shake, and
+    // that shipped as a bug ("i resize the terrmianl with cursor and opens
+    // the dropshef wtf").
+    //
+    // A `DropArea` is not a heuristic. It is only ever handed a drag that
+    // really exists, by the compositor, carrying real MIME types — so "a
+    // file drag touched the top edge" has NO false positives available to
+    // it. It cannot fire on a resize, a text selection, a scrollbar or a
+    // rubber band, because none of those is a drag and the compositor knows
+    // the difference even though we cannot.
+    //
+    // WHY THIS NEEDS NO NEW SURFACE, which was the first plan
+    // ------------------------------------------------------
+    // A thin always-present layer surface across the top of the screen was
+    // the obvious shape, and it is unnecessary: the island's own window
+    // ALREADY claims the whole top edge. The mask Region at the top of this
+    // file has a `topGestureInput` entry that is `x: 0, width: root.width,
+    // height: baseExclusiveZone` whenever the island is resting — full
+    // screen width, the depth of the reserved zone. A second surface would
+    // have been stacked against that one for pointer focus and lost.
+    //
+    // Input outside the mask does nothing, so this DropArea can be declared
+    // over the whole strip and is live exactly where the island already
+    // hears: the top edge, and the capsule itself.
+    //
+    // THE DWELL, AND WHY IT IS SHORT
+    // ------------------------------
+    // 180 ms. Long enough that crossing the strip on the way somewhere else
+    // is not a reveal, short enough that it never feels like waiting. It is
+    // not defending against much — there is nothing above the top edge to be
+    // travelling to — so it is the smallest pause that still reads as a
+    // decision rather than an accident.
+    //
+    // `showQdrop(TRUE)`, i.e. as a drag: you are holding a file, and an
+    // exclusive keyboard grab CANCELS an in-flight Wayland drag — measured,
+    // A/B, `entries 9 -> 9` against `9 -> 10`. The shelf takes the keyboard
+    // when the drop lands, via the machinery `onDropLanded` and
+    // `onDragHovering` already carry.
+    DropArea {
+        id: notchDropArea
+
+        x: root.topGestureInputX
+        y: 0
+        width: root.topGestureInputWidth
+        height: Math.max(root.topGestureInputHeight,
+                         mainCapsule.y + mainCapsule.height)
+        z: 25
+
+        // Only while the island is RESTING, and never over the shelf itself.
+        // The second clause is the one that matters: QdropLayer has its own
+        // DropArea filling the open panel, and two overlapping drop targets
+        // resolve by stacking — this one would take the drop the shelf
+        // exists to receive and hand it to a reveal that has already
+        // happened.
+        enabled: root.topGestureInputActive
+            && !islandContainer.qdropLayerVisible
+
+        onEntered: (d) => {
+            // Only a drag that is actually carrying something. A drag with
+            // neither URIs nor text is not a file and has no business
+            // opening a file shelf.
+            if (!d.hasUrls && !d.hasText)
+                return;
+            notchDwell.restart();
+        }
+
+        onExited: notchDwell.stop()
+
+        // ---- AND A DROP MADE BEFORE THE SHELF ARRIVED ----
+        //
+        // Letting go ON the notch is the fast path — you never wait for the
+        // dwell at all — and it must not lose the file. The shelf does not
+        // exist yet at this instant (PanelLoader builds it from the state
+        // change this drop is about to cause), so the URIs are held on
+        // islandContainer and handed over in QdropLayer's
+        // Component.onCompleted. See `drainPending` there.
+        onDropped: (d) => {
+            notchDwell.stop();
+            if (!d.hasUrls && !d.hasText)
+                return;
+            islandContainer.qdropPendingUrls = d.hasUrls ? d.urls.slice() : [];
+            islandContainer.qdropPendingText = (!d.hasUrls && d.hasText)
+                ? String(d.text) : "";
+            d.accept(Qt.CopyAction);
+            // FALSE, not true: the drag is over, so there is no grab left to
+            // cancel and the keyboard should arrive with the panel.
+            islandContainer.showQdrop(false);
+        }
+
+        Timer {
+            id: notchDwell
+            interval: 180
+            onTriggered: islandContainer.showQdrop(true)
+        }
     }
 }
 

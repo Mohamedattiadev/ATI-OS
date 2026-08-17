@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 
 import "../common"
+import "../common/Clipboard.js" as Clipboard
 import "../common/Metrics.js" as Metrics
 
 //
@@ -46,14 +47,62 @@ FocusScope {
     id: root
 
     signal closeRequested
+    // The drag this shelf may have been opened to receive has landed, so a
+    // keyboard grab is safe now. See DynamicIslandWindow's islandKeyboardFocus.
+    signal dropLanded
+    // A drag has ARRIVED over the panel. The host uses it to hold off the
+    // keyboard grab: the grab cancels an in-flight drag, and a timer alone
+    // cannot know how long you will take to get here.
+    signal dragHovering
 
     property bool showCondition: false
     property string textFontFamily: ""
+    property string iconFontFamily: ""
     property color panelFill: IslandTheme.surface
     property color accentColor: IslandTheme.accent
     property bool drawBackground: false
 
     property string status: ""
+
+    // ---- A DROP THAT LANDED BEFORE THIS PANEL EXISTED --------------------
+    //
+    // The notch is a drop target now (see `notchDropArea` in
+    // DynamicIslandWindow.qml): carrying a file to the top edge opens this
+    // shelf, and letting go ON the notch is the fast version of the same
+    // gesture — you never wait for the panel at all.
+    //
+    // But the panel is what owns a store, and at the moment of that drop it
+    // does not exist: `PanelLoader` builds it from `live`, which is the
+    // state change the drop itself causes. So the host takes the URIs off
+    // the drag, holds them, and hands them over here on the way up.
+    //
+    // Consumed and CLEARED through a signal rather than by writing back to
+    // the property, because the host owns it: a Loader's item assigning to
+    // its own binding's source is how you get a value that reappears on the
+    // next open. `Component.onCompleted` for the same reason the focus
+    // grab below uses it — `live` and `showCondition` come from one
+    // expression, so onShowConditionChanged never fires for the opening.
+    property var pendingUrls: []
+    property string pendingText: ""
+    signal pendingConsumed()
+
+    function drainPending() {
+        const list = root.pendingUrls || [];
+        const text = String(root.pendingText || "");
+        if (list.length === 0 && text === "")
+            return;
+        let n = 0;
+        for (let i = 0; i < list.length; i++)
+            if (store.addUrl(list[i]))
+                n++;
+        if (list.length === 0 && text !== "" && store.addText(text))
+            n++;
+        root.pendingConsumed();
+        if (n > 0) {
+            root.status = n + (n === 1 ? " item added" : " items added");
+            statusClear.restart();
+        }
+    }
 
     // Its own store, like QdropShelf's, rather than one handed down. The two
     // hosts are never up together — which one you get is which BAR you are on
@@ -61,26 +110,25 @@ FocusScope {
     // that has never opened the shelf never reads the file.
     QdropStore { id: store }
 
-    // ---- HEIGHT, CONTENT-SIZED LIKE THE REST ----
+    // ---- FIXED, AND IDENTICAL TO THE GTK SHELF ----
     //
-    // The tile grid is the only variable: one row of tiles is a shelf with a
-    // few things on it, four rows is a shelf you have been filling all day.
-    // Clamped at both ends — a floor so an EMPTY shelf is still a shelf and
-    // not a slot, and a ceiling so it cannot grow past the screen.
+    // "the islend popup should hacve a fixed hight as and width which will be
+    // as same as the qdrop idnetcal and not exceed it ok eveything will fit
+    // inisde perfectly and will has scroll bar".
     //
-    // The rule NEXT-SESSION.md keeps repeating applies here and is why the
-    // floor is not zero: a panel that reports a height before its content
-    // exists makes the capsule aim twice, and the second aim is the visible
-    // glitch. There is no async fetch behind this one — the store is a
-    // FileView that is preloaded — but the floor costs nothing and removes
-    // the question.
-    readonly property real cell: grid.cellSize
-    readonly property int perRow: Math.max(1, Math.floor(
-        (root.width - Metrics.chromePadX() * 2) / Math.max(1, root.cell)))
-    readonly property int rows: Math.max(1, Math.ceil(
-        store.count / root.perRow))
-    readonly property real preferredHeight:
-        Metrics.chromeTotal() + Math.min(root.rows, 4) * root.cell + Metrics.pad(4)
+    // qdrop.py's window is 624x331. That is the number, not an approximation
+    // of it — the muscle memory being served is a shelf of exactly that size
+    // in exactly that place, and a panel that is nearly the same size is just
+    // a different size.
+    //
+    // Content-sized was WRONG here and this replaces it. A shelf grows every
+    // time you drop something, so content-sizing means the capsule changes
+    // shape whenever you use it, and a panel whose height depends on how much
+    // is in it is the exact re-aim NEXT-SESSION.md keeps warning about. Fixed
+    // shape, scrolling content: the grid takes what is left after the chrome
+    // and the search strip, and IslandScrollBar covers the overflow.
+    readonly property real fixedWidth: Metrics.px(624)
+    readonly property real preferredHeight: Metrics.px(331)
 
     PanelChrome {
         id: chrome
@@ -95,9 +143,9 @@ FocusScope {
         // panels use for the same purpose. A copy or a removal says so for a
         // moment; the rest of the time it is the count, because "how much is
         // on the shelf" is the one fact worth carrying in the header.
-        statusClause: grid.selectedCount > 0
-            ? "· " + grid.selectedCount + " selected" : ""
-        statusClauseLive: grid.selectedCount > 0
+        statusClause: grid.visual ? "· VISUAL"
+            : (grid.selectedCount > 0 ? "· " + grid.selectedCount + " selected" : "")
+        statusClauseLive: grid.visual || grid.selectedCount > 0
 
         status: root.status !== "" ? root.status
             : (store.count > 0
@@ -106,11 +154,16 @@ FocusScope {
         statusLevel: root.status !== "" ? "ok" : "idle"
 
         hints: [
-            { key: "click", label: "select" },
-            { key: "ctrl", label: "add" },
-            { key: "drag", label: "out" },
-            { key: "^c", label: "copy" },
-            { key: "d", label: "remove" },
+            { key: "hjkl", label: "move" },
+            { key: "v", label: "visual" },
+            { key: "space", label: "pick" },
+            { key: "y", label: "copy" },
+            // CTRL on both, because they are the two commands here that
+            // cannot be taken back. See the note in QdropGrid's key map.
+            { key: "^z", label: "zip" },
+            { key: "^d", label: "del" },
+            { key: "s", label: "sort" },
+            { key: "/", label: "search" },
             { key: "q", label: "close" }
         ]
     }
@@ -124,6 +177,8 @@ FocusScope {
         height: chrome.contentHeight
 
         store: store
+        textFontFamily: root.textFontFamily
+        iconFontFamily: root.iconFontFamily
 
         // The ISLAND's palette, not the popup's. Derived the same way
         // PopupChrome derives its three tones so the cards read identically,
@@ -137,6 +192,8 @@ FocusScope {
         cHighlightInk: IslandTheme.background
 
         onOpenRequested: (i) => root.openEntry(i)
+        onCloseRequested: root.closeRequested()
+        onFocusWanted: root.forceActiveFocus()
         onStatusChanged: (t) => {
             root.status = t;
             statusClear.restart();
@@ -156,6 +213,8 @@ FocusScope {
 
         anchors.fill: parent
 
+        onEntered: (d) => root.dragHovering()
+
         onDropped: (d) => {
             let n = 0;
             if (d.hasUrls) {
@@ -171,6 +230,7 @@ FocusScope {
                 root.status = n + (n === 1 ? " item added" : " items added");
                 statusClear.restart();
             }
+            root.dropLanded();
         }
     }
 
@@ -201,18 +261,77 @@ FocusScope {
         if (!e)
             return;
         if (String(e.type) === "text")
-            Quickshell.execDetached(["sh", "-c",
-                "printf '%s' \"$1\" | wl-copy", "sh", String(e.value)]);
+            Quickshell.execDetached(Clipboard.argv(String(e.value)));
         else
             Quickshell.execDetached(["xdg-open", String(e.value)]);
     }
 
-    // `q` closes, which is the island's convention on every panel; everything
-    // else belongs to the grid. Escape is the capsule's own and never reaches
-    // here.
+    // ---- FOCUS, WHICH THIS PANEL DID NOT HAVE ----
+    //
+    // Reported as four separate bugs — "the esc not working or q", hjkl doing
+    // nothing, shift-select doing nothing — and they were all ONE bug: the
+    // panel never took the keyboard, so not a single key reached it.
+    //
+    // Three lines short of the pattern every other island panel uses, and
+    // SystemMonitorPanel.qml's header already explains each of them:
+    //
+    //   anchors.fill      a FocusScope with no geometry is not in the chain
+    //   activeFocusOnTab  what puts it IN the chain
+    //   forceActiveFocus  from Component.onCompleted, and THIS is the one
+    //                     that matters here: PanelLoader creates the
+    //                     component only once `live` is true, and `live` and
+    //                     `showCondition` are bound to the SAME expression —
+    //                     so showCondition is already true when the panel is
+    //                     built and onShowConditionChanged NEVER FIRES for
+    //                     the opening.
+    //
+    // The handler is kept too, for a re-show into an already-live loader.
+    anchors.fill: parent
     focus: root.showCondition
+    activeFocusOnTab: true
+
+    Component.onCompleted: {
+        root.drainPending();
+        if (root.showCondition)
+            root.forceActiveFocus();
+    }
+    onShowConditionChanged: {
+        if (root.showCondition) {
+            root.drainPending();
+            root.forceActiveFocus();
+        }
+    }
+
+    // ---- AND ON THE VALUE ITSELF, WHICH IS THE CASE THAT ACTUALLY HAPPENS -
+    //
+    // Draining only from the two handlers above looks sufficient and is not.
+    // Driven with a real Wayland drag from scripts/test/dnd-peer.py to the
+    // notch: the shelf OPENED (the 180 ms dwell fired) and the file was
+    // never stored — `entries 0`.
+    //
+    // The dwell is why. It reveals the shelf ~400 ms before you let go, so
+    // by the time the drop lands `showCondition` has ALREADY been true for
+    // a while and the panel has ALREADY completed. Qt still delivers that
+    // drop to `notchDropArea`, because an item holding a drag keeps it for
+    // the drop even once `enabled` goes false underneath it — so the host
+    // sets `qdropPendingUrls` into a panel where neither handler above can
+    // ever fire again, and the file is stranded in a property nobody reads.
+    //
+    // This is the same shape as the trap the focus grab above documents —
+    // a handler that cannot fire because the thing it watches was already
+    // true — and the answer is the same: watch the value that changed.
+    // Draining is idempotent (it clears through `pendingConsumed`, and an
+    // empty list returns immediately), so all three paths can be live at
+    // once without one undoing another.
+    onPendingUrlsChanged: root.drainPending()
+    onPendingTextChanged: root.drainPending()
+
+    // Escape AND q, which is the convention on every panel in this shell —
+    // AudioPanel, DisplayPanel and SystemMonitorPanel all take both, and this
+    // one took neither. Everything else belongs to the grid.
     Keys.onPressed: (event) => {
-        if (event.key === Qt.Key_Q && event.modifiers === Qt.NoModifier) {
+        if (event.key === Qt.Key_Escape
+                || (event.key === Qt.Key_Q && event.modifiers === Qt.NoModifier)) {
             root.closeRequested();
             event.accepted = true;
             return;

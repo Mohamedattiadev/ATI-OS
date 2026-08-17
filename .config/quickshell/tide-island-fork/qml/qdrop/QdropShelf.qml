@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Wayland
 
 import "../common"
+import "../common/Clipboard.js" as Clipboard
 import "../popups"
 
 //
@@ -88,8 +89,14 @@ PopupChrome {
     // Wider than the GTK shelf's 624x331 because the tiles need the room: at
     // 104 px a cell that is six across and three deep, plus the header and
     // the keycap bar this has and that one does not.
-    popupWidth: PopupMetrics.s(680)
-    popupHeight: PopupMetrics.s(460)
+    // FIXED, and the width is qdrop.py's own 624 — "as same as the qdrop
+    // idnetcal and not exceed it". Taller than the GTK shelf's 331 by exactly
+    // the chrome it does not have: PopupChrome's header, keycap bar and
+    // footer, which is the same argument WifiQrPopup.qml makes for its own
+    // numbers. The GRID inside is the same six columns and scrolls, so the
+    // shelf never changes shape as it fills.
+    popupWidth: PopupMetrics.s(624)
+    popupHeight: PopupMetrics.s(470)
 
     // By CODEPOINT, like every other popup here, because a private-use
     // character does not survive being read back out of a file. 0xF0BA8 is
@@ -99,7 +106,8 @@ PopupChrome {
     title: "Drop shelf"
     subtitle: store.count === 0
         ? "drag files here — or shake one while you carry it"
-        : "click, ctrl+click or drag a box to select · drag out to move"
+        : (grid.visual ? "VISUAL — motion extends, y yanks, ctrl+d deletes, Esc cancels"
+           : "click, ctrl+click or drag a box to select · drag out to move")
 
     badgeLabel: grid.selectedCount > 0 ? "selected" : "items"
     badgeValue: grid.selectedCount > 0
@@ -108,11 +116,15 @@ PopupChrome {
     // The bar is the MOUSE answers as well as the keys, because half of what
     // was asked is "how do I do this with the mouse".
     hints: [
-        { key: "click", desc: "select" },
-        { key: "ctrl", desc: "add" },
-        { key: "drag", desc: "out" },
-        { key: "^c", desc: "copy" },
-        { key: "d", desc: "remove" },
+        { key: "hjkl", desc: "move" },
+        { key: "v", desc: "visual" },
+        { key: "y", desc: "copy" },
+        // CTRL on both, because they are the two commands here that cannot
+        // be taken back. See the note in QdropGrid's key map.
+        { key: "^z", desc: "zip" },
+        { key: "^d", desc: "del" },
+        { key: "s", desc: "sort" },
+        { key: "/", desc: "search" },
         { key: "Esc", desc: "close" }
     ]
 
@@ -126,9 +138,38 @@ PopupChrome {
     // ---- the two overrides, and why, above ----
     anchors { top: true }
     margins { top: PopupMetrics.s(8) }
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+
+    // ---- EXCLUSIVE, WHICH IS A REVERSAL, AND WHY ----
+    //
+    // This was OnDemand, reasoned as "you arrive here mid-drag and a surface
+    // that seizes the keyboard takes it from the app you are dragging out
+    // of". That reasoning had one thing right and one thing wrong.
+    //
+    // WRONG: a Wayland drag is POINTER-driven. The source holds a pointer
+    // grab for the duration and does not need the keyboard to finish a drop
+    // — driven with an Exclusive shelf and the drop still lands, which is
+    // the measurement that settles it.
+    //
+    // RIGHT, and the cost was the whole of a bug report — "the esc not
+    // working or q", hjkl doing nothing: with OnDemand the shelf has no
+    // keyboard until you CLICK it, so every key was dead on arrival for a
+    // panel you open with a key. And it now has a SEARCH FIELD, which puts
+    // it in the same class as the cheatsheet, the calculator and the picker:
+    // every letter typed has to land in the field rather than in the window
+    // behind, where `d` is a delete and `z` is a suspend.
+    // …and OnDemand for exactly as long as a drag may be in flight, because
+    // an exclusive grab CANCELS an in-flight Wayland drag — A/B'd on the same
+    // synthesised drop, everything else held constant: on the exclusive path
+    // `entries 9 -> 9`, off it `9 -> 10`. The shake opens this while you are
+    // holding a file; the key does not.
+    WlrLayershell.keyboardFocus: shelf.forDrag
+        ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive
 
     signal requestClose()
+    signal dropLanded()
+
+    // Opened by the shake, i.e. with a drag in flight. See the focus note.
+    property bool forDrag: false
 
     property string status: ""
 
@@ -144,6 +185,8 @@ PopupChrome {
 
             anchors.fill: parent
             store: store
+            textFontFamily: PopupMetrics.font
+            iconFontFamily: PopupMetrics.font
 
             cFg: shelf.cFg
             cMuted: shelf.cMuted
@@ -153,6 +196,8 @@ PopupChrome {
             cHighlightInk: shelf.cHighlightInk
 
             onOpenRequested: (i) => shelf.openEntry(i)
+            onCloseRequested: shelf.requestClose()
+            onFocusWanted: shelf.forceActiveFocus()
             onStatusChanged: (t) => {
                 shelf.status = t;
                 statusClear.restart();
@@ -184,6 +229,7 @@ PopupChrome {
                     shelf.status = n + (n === 1 ? " item added" : " items added");
                     statusClear.restart();
                 }
+                shelf.dropLanded();
             }
         }
 
@@ -214,8 +260,7 @@ PopupChrome {
         // A text entry has nothing to open, so it is copied instead — which
         // is what the GTK shelf's Enter does with one.
         if (String(e.type) === "text")
-            Quickshell.execDetached(["sh", "-c",
-                "printf '%s' \"$1\" | wl-copy", "sh", String(e.value)]);
+            Quickshell.execDetached(Clipboard.argv(String(e.value)));
         else
             Quickshell.execDetached(["xdg-open", String(e.value)]);
     }
@@ -243,9 +288,9 @@ PopupChrome {
             Text {
                 width: parent.width
                 text: shelf.status !== "" ? shelf.status
-                    : (store.count === 0 ? "drop files, folders, images or text"
+                    : (grid.count === 0 ? "drop files, folders, images or text"
                        : store.label(store.entries[grid.view[
-                           Math.min(grid.focusIdx, Math.max(0, grid.count - 1))]]))
+                           Math.min(grid.focusIdx, grid.count - 1)]]))
                 color: shelf.status !== "" ? shelf.cHighlight : shelf.cFg
                 elide: Text.ElideMiddle
                 font.family: PopupMetrics.font
@@ -255,11 +300,10 @@ PopupChrome {
             }
             Text {
                 width: parent.width
-                text: store.count === 0
+                text: grid.count === 0
                     ? "shake a file while you drag it and this opens by itself"
                     : String((store.entries[grid.view[
-                        Math.min(grid.focusIdx, Math.max(0, grid.count - 1))]]
-                        || {}).value || "")
+                        Math.min(grid.focusIdx, grid.count - 1)]] || {}).value || "")
                 color: shelf.cMuted
                 elide: Text.ElideMiddle
                 font.family: PopupMetrics.font

@@ -673,6 +673,15 @@ Scope {
         function open(): void {
             shellRoot.forFocusedWindow((window) => window.showQdropWindow());
         }
+        // The SHAKE's entry point, and it is a SEPARATE verb rather than an
+        // argument because the difference is not cosmetic: a shelf opened
+        // mid-drag must NOT take an exclusive keyboard grab, because that
+        // cancels the drag it was opened to receive. Measured, A/B, same
+        // synthesised drop: on the exclusive list `entries 9 -> 9`, off it
+        // `9 -> 10`. It takes the keyboard the moment the drop lands.
+        function openForDrag(): void {
+            shellRoot.forFocusedWindow((window) => window.showQdropForDragWindow());
+        }
         function close(): void {
             shellRoot.forFocusedWindow((window) => window.closeQdropWindow());
         }

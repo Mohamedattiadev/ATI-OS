@@ -337,6 +337,7 @@ ShellRoot {
     // hypr/scripts/qdrop.sh can try one and then the other without a second
     // spelling to keep in step.
     property bool qdropOpen: false
+    property bool qdropForDrag: false
 
     IpcHandler {
         target: "qdrop"
@@ -349,7 +350,10 @@ ShellRoot {
         // difference. Measured: `hide` worked, `show` never arrived.
         // popups.qml already dodges this by spelling its explicit openers
         // showWallpaper/showNetwork rather than show.
-        function open(): void   { root.qdropOpen = true; }
+        function open(): void   { root.qdropForDrag = false; root.qdropOpen = true; }
+        // See shell.qml's copy: a shelf opened mid-drag must not grab the
+        // keyboard, because the grab cancels the drag.
+        function openForDrag(): void { root.qdropForDrag = true; root.qdropOpen = true; }
         function close(): void  { root.qdropOpen = false; }
         function toggle(): void { root.qdropOpen = !root.qdropOpen; }
         function status(): string { return root.qdropOpen ? "open" : "closed"; }
@@ -359,7 +363,9 @@ ShellRoot {
         active: root.qdropOpen
         sourceComponent: Component {
             QdropShelf {
+                forDrag: root.qdropForDrag
                 onRequestClose: root.qdropOpen = false
+                onDropLanded: root.qdropForDrag = false
             }
         }
     }
