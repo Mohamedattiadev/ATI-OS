@@ -217,6 +217,43 @@ derived from the background in both bars and is unaffected, and the ten other
 
 ---
 
+# THE METHOD THAT FOUND THE HOVER BLINK, BECAUSE IT WILL BE NEEDED AGAIN
+
+Reported as "when u hover on the islend it glitching", with the instruction
+that makes it reproducible: **hover, leave, and do it more than once.** A
+single hover looks fine. The defect is one frame per hover, so it is the
+REPETITION that makes it visible to the eye, and it is invisible to any
+probe that samples slower than the compositor draws.
+
+The rig, which is now three scripts and worth reusing verbatim:
+
+    wf-recorder -o eDP-1 -g "0,0 1366x150" -r 60 -f hover.mp4
+    scratchpad hovercycle.py 683 16 683 400 4 1.4     # 4 ON/OFF cycles
+    ffmpeg -i hover.mp4 -fps_mode passthrough f%04d.png
+
+`hovercycle.py` warps with `movecursor` and then emits a 1 px there-and-back
+through uinput, because **a warp produces no motion event and therefore no
+hover**, and it holds ONE uinput device open for the whole run so nothing is
+unbound mid-sequence. `-fps_mode passthrough` because `-vsync` is gone from
+this ffmpeg.
+
+Then measure a PROPERTY, not an impression: "is the capsule drawn in this
+frame" is `(frame[11:42, 600:765] dark).mean() > 0.5`. BEFORE 4 blank-outs
+in 1139 frames, AFTER 0 in 1050 — same detector, same gesture, which is the
+only reason the zero means anything.
+
+**Two traps this cost.** The recording drifted to another workspace on one
+run, putting real windows under the island and making a darkness test read
+"capsule present" when it was not — check the workspace before AND after.
+And a crude threshold counted the popup's own hint chips as a blank; the
+frames had to be LOOKED AT before believing the number, which is what turned
+"one blank frame" into the real finding that the shelf's content was being
+drawn inside the notch.
+
+Recordings kept: `~/Pictures/island-debug/`.
+
+---
+
 # STILL OPEN, in the order worth doing
 
 0. **THE TOPBAR LOSES ~2 px OF HEIGHT WHEN A POPUP OPENS AND CLOSES.**
