@@ -358,6 +358,89 @@ _PRESETS = {
 }
 
 
+# ---------------------------------------------------------------------------
+#  THE PALETTE THEME-APPLY ACTUALLY CHOSE
+# ---------------------------------------------------------------------------
+# Reported as "color issues when i switch from island to qtile or vice versa",
+# and it is not a switching bug at all — the two bars were drawing DIFFERENT
+# COLOURS FOR THE SAME THEME, permanently, so every switch showed the palette
+# jump. Measured on gruvbox, which was the theme standing at the time:
+#
+#     slot          qtile's preset      the island / topbar
+#     bg_alt        #000000             #1d2021
+#     green         #98971a             #b8bb26
+#     yellow        #d79921             #fabd2f
+#     cyan          #b8bb26             #8ec07c
+#
+# Green and yellow are not shades apart, they are gruvbox's DIM set against
+# its BRIGHT set — an olive GroupBox beside a yellow one. Nothing was stale
+# and no reload would have fixed it: `_PRESETS` below and
+# `AtiScriptsV1/theme-apply`'s `resolve_palette` are two hand-written copies
+# of the same twenty-two palettes, and they had drifted.
+#
+# This is the exact failure the rest of this desktop is already built around
+# avoiding, in the one place that had never been brought in. `topbar/
+# BarTheme.qml` says so in its own header — "it deliberately does not carry a
+# palette of its own and does not re-read pywal, because a second copy of 22
+# palettes drifts" — and FORK-NOTES.md records the day one duplicated palette
+# "made every window border green on twenty-two themes, silently".
+#
+# So the presets stop being the answer and become the FALLBACK. theme-apply
+# already writes its answer to ~/.cache/qtile/current_palette.json on every
+# theme change — the same numbers, from the same resolve_palette, that
+# gen_island_colors writes for the island — and this reads it.
+#
+# THE SLOT ORDER IS NOT A GUESS. It is DoomOne's own, checked against the
+# preset immediately above and against BarTheme.qml's mapping table, which
+# agree:
+#
+#     [0] bg   [1] fg   [2] bg_alt   [3] red   [4] green
+#     [5] yellow   [6] blue   [7] purple   [8] cyan
+#
+# GUARDED ON THE MODE, because a palette file and a mode file are two writes
+# and there is a window between them: theme-apply writes the mode first, so a
+# read landing inside a theme change would otherwise paint the OLD theme's
+# nine colours and call them the new theme's. Disagreement means "not this
+# theme", and the preset is a correct answer for the theme that is named.
+#
+# It also fixes the smaller half of the report. `colors` is assigned from
+# this function at config.py's module scope, so it is re-read by every
+# `reload_config()` — which is what `bar_switch_apply()` does coming back
+# from the island. A palette that only lived in a hardcoded table could not
+# follow a theme changed while qtile's bars were hidden; one that lives in a
+# file does.
+_PALETTE_CACHE = "~/.cache/qtile/current_palette.json"
+
+_PALETTE_KEYS = ("bg", "fg", "bg_alt", "red", "green",
+                 "yellow", "blue", "purple", "cyan")
+
+
+def _applied_palette(mode):
+    """theme-apply's own nine slots for `mode`, or None.
+
+    None on every unhappy path — missing file, half-written JSON, a mode that
+    does not match, a key that is not a hex string — because the caller has a
+    correct fallback and a bar drawn in half a palette is worse than a bar
+    drawn in an old one.
+    """
+    import json
+    import os
+    try:
+        with open(os.path.expanduser(_PALETTE_CACHE)) as f:
+            p = json.load(f)
+    except Exception:
+        return None
+    if not isinstance(p, dict) or str(p.get("mode", "")) != mode:
+        return None
+    out = []
+    for k in _PALETTE_KEYS:
+        h = p.get(k)
+        if not isinstance(h, str) or not h.startswith("#") or len(h) not in (4, 7, 9):
+            return None
+        out.append([h, h])
+    return out
+
+
 def active_palette():
     import os
     try:
@@ -365,6 +448,9 @@ def active_palette():
             mode = f.read().strip()
     except Exception:
         mode = "doomone"
+    applied = _applied_palette(mode)
+    if applied is not None:
+        return applied
     if mode == "wal":
         return _wal_palette() or DoomOne
     return _PRESETS.get(mode, DoomOne)
