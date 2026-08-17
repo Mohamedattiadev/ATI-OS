@@ -1,4 +1,4 @@
--- Keymaps are automatically loaded on the VeryLazy event
+-- Keymaps are automatically loaded on the VeryLazy eventkey
 -- Add any additional keymaps here
 
 -------------------------------------------------------------------------------

@@ -156,6 +156,13 @@ case "$key" in
   "showPicker record")        run dm-recordV2 ;;
   "showPicker screenshot")    run dm-satty ;;
   "showPicker keymaps")       run rofi_keymaps ;;
+  # Added when the qtile session's chord was moved onto bar-action. Both
+  # menus exist on both sides — island-picker.py's MENUS has `man` and
+  # `youtube`, and the dm-* scripts are what qtile's chord already spawned —
+  # so leaving them out of this table would have made the native half of two
+  # working keys fall through to the "island-only" notification below.
+  "showPicker man")           run dm-man -r ;;
+  "showPicker youtube")       run dm-youtube -r ;;
   # The bar chooser. Its island twin is island-picker.py's `bars` menu, so
   # this one key asks the question in whichever shell is up.
   "showPicker bars")          run bar-chooser ;;
