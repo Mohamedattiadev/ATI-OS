@@ -137,28 +137,29 @@ Item {
     // reports width and height, and the window's own height is derived from
     // this card's extent while it is up. A card that is faded out but still
     // counted would hold the layer surface tall forever.
-    visible: opacity > 0.01
-    opacity: root.shown ? 1 : 0
-
-    // FORK: one choreography for every layer in the shell. See Motion.js.
-    // No PauseAnimation on the way in — unlike a panel, this surface is
-    // ALREADY delayed, by the hover timer that decides to show it at all, and
-    // stacking a second delay on top of that is how a tooltip ends up feeling
-    // like it arrived late rather than deliberately.
-    Behavior on opacity {
-        NumberAnimation {
-            duration: root.shown ? Motion.fadeInDuration() : Motion.fadeOutDuration()
-            easing.type: Easing.BezierSpline
-            easing.bezierCurve: Motion.fade()
-        }
-    }
-
-    // A few px of travel under the fade, so it reads as coming OUT of the
-    // capsule rather than being switched on beside it. Small on purpose: the
-    // card is only ~60 px tall and anything more turns into a slide.
-    transform: Translate {
-        y: (1 - root.opacity) * -Metrics.px(6)
-    }
+    // ---- NO ANIMATION. IT JUST APPEARS. ----
+    //
+    // Asked for directly: "not need for antimition for the tooltip of the
+    // prayer and dolar thing in the islend make it just appers".
+    //
+    // It had a fade and a 6 px slide, and both were wrong here for a reason
+    // worth keeping: **this surface is ALREADY delayed**, by the 450 ms hover
+    // timer that decides to show it at all. A fade on top of that is a second
+    // delay stacked on a first, so the card finished arriving ~600 ms after
+    // the pointer stopped — and a tooltip that is still arriving is one you
+    // have started reading through.
+    //
+    // The recording is what settled it. Driven with four hover on/off cycles
+    // at 60 fps, the fade's first frames were an EMPTY GREY BOX: the card was
+    // at ~20% opacity with its text below the threshold of legibility, which
+    // reads as a blank panel flashing under the island rather than as a
+    // tooltip appearing.
+    //
+    // A panel earns an entrance because it is a place you are going. A
+    // tooltip is an answer to a question you already asked by stopping the
+    // pointer, and the fastest correct answer is the best one.
+    visible: root.shown
+    opacity: 1
 
     Rectangle {
         anchors.fill: parent

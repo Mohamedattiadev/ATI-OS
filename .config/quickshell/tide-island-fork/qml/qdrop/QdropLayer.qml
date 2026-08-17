@@ -4,6 +4,8 @@ import Quickshell
 import "../common"
 import "../common/Clipboard.js" as Clipboard
 import "../common/Metrics.js" as Metrics
+// FORK: the shared motion system — see qml/common/Motion.js.
+import "../common/Motion.js" as Motion
 
 //
 // ============================================================
@@ -289,6 +291,41 @@ FocusScope {
     anchors.fill: parent
     focus: root.showCondition
     activeFocusOnTab: true
+
+    // ---- THE CONTENT WAITS FOR THE SHAPE ----
+    //
+    // This panel had NO opacity choreography at all — the one layer in the
+    // shell without it, while CalculatorLayer, SystemMonitorPanel and
+    // AudioPanel all carry `Motion.contentDelay()`. So the shelf's content
+    // was mapped at full opacity in the same turn the state changed, while
+    // the capsule was still 32 px tall and morphing.
+    //
+    // Recorded at 60 fps across three open/close cycles, and the frames say
+    // it plainly: at the open, the tiles, the search field and the whole
+    // keycap bar are drawn INSIDE THE NOTCH — a wide, ~30 px strip of
+    // illegible squashed text — for several frames before the capsule
+    // catches up. That is what "not smooth" looks like here, and it is the
+    // "three animations, three owners, no coordinator" problem this tree's
+    // notes describe, in the one place where the coordinator was simply
+    // missing.
+    //
+    // The pause is the whole fix: the capsule gets a head start, and the
+    // content fades in once there is a shape to put it in.
+    opacity: root.showCondition ? 1 : 0
+
+    Behavior on opacity {
+        SequentialAnimation {
+            PauseAnimation {
+                duration: root.showCondition ? Motion.contentDelay() : 0
+            }
+            NumberAnimation {
+                duration: root.showCondition
+                    ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()
+            }
+        }
+    }
 
     Component.onCompleted: {
         root.drainPending();

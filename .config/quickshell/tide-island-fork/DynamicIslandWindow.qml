@@ -338,12 +338,35 @@ PanelWindow {
     // simply did not appear. The island's window is not the island's shape,
     // which is the input-mask rule applied to the other axis.
     //
-    // Gated on `visible` and not on the hover flag, because the card fades and
-    // the surface has to stay tall for the whole fade. IslandHoverTooltip's
-    // `visible` is `opacity > 0.01` for exactly this reason.
-    readonly property real hoverTooltipWindowHeight: hoverTooltip.visible
-        ? Math.ceil(hoverTooltip.y + hoverTooltip.height + 8)
-        : 0
+    // ---- AND IT IS RESERVED ALWAYS, NOT WHILE THE CARD IS UP -------------
+    //
+    // This was gated on `hoverTooltip.visible`, so the surface GREW at the
+    // moment the card appeared. Reported as the island "glitching" on hover,
+    // and a 60 fps wf-recorder capture of four hover on/off cycles shows
+    // exactly what it is: for ONE FRAME at the growth, the capsule is not
+    // drawn at all. Frame 353 has the pill, frame 355 has no pill and a bare
+    // grey box below it, frame 357 has both. The island blinks out and back
+    // once per hover.
+    //
+    // That is the SAME defect the X11 branch below already names — "an X11
+    // resize reallocates the surface, and the first frame after it is drawn
+    // before the content has been re-laid-out" — and the comment there says
+    // Wayland cannot have it, because a layer-shell commit carries the new
+    // size and the new buffer atomically. The recording says otherwise for
+    // this transition, so the claim was too strong and the fix is the same
+    // one X11 already gets: DO NOT RESIZE.
+    //
+    // Costing nothing is what makes it available. The window is transparent
+    // below the capsule, input is governed by the mask Region and not by the
+    // surface, and the reserved area is `exclusiveZone`, which is set
+    // separately from the height — so a permanently taller window is invisible
+    // in all three of the ways a window can be felt.
+    //
+    // `implicitHeight` and not `height`: the card is sized from its own text,
+    // which has a non-empty fallback, so this is a stable number from the
+    // first frame rather than one that starts at zero.
+    readonly property real hoverTooltipWindowHeight:
+        Math.ceil(hoverTooltip.y + hoverTooltip.implicitHeight + 8)
     readonly property real requestedWindowHeight: Math.max(
         root.notificationCenterWindowHeight,
         root.capsuleWindowHeight,
