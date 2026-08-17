@@ -500,6 +500,259 @@ Two traps found the hard way and worth carrying forward:
   `TypeError: ... is not a function` and keeps throwing until some `.qml`
   file is touched.
 
+### `qml/common/EwmhState.qml` + `bin/ewmh-state.py` (new files) — the island can see qtile
+
+Reported as "the island is not working correctly in qtile". Four separate
+faults, none of which logged anything, and one shared root: **under X11 the
+island had no compositor at all.**
+
+`CompositorBackend.compositor` returns **`"hyprland"` in a qtile session** —
+probed, not assumed. So every backend decision downstream was answered by a
+Hyprland that was not there:
+
+| symptom | mechanism |
+|---|---|
+| workspace digit frozen at `1` | `Hyprland.focusedMonitor` is null → `HyprlandWorkspaceTracker` never syncs → `CompositorWorkspaceTracker`'s **initial** `currentWorkspaceId: 1` is what stays on screen |
+| window strip permanently empty | built from `ToplevelManager`, the Wayland foreign-toplevel protocol, which reports nothing on X11 |
+| resting capsule hidden by windows | `aboveWindows: false` → `_NET_WM_STATE_BELOW`, i.e. under *every* window, not just fullscreen ones |
+| every keyboard panel ignored the keyboard | Quickshell sets `focusable` correctly, but the surface is a DOCK and qtile never focuses a dock |
+
+Measured, not inferred: a five-group sweep (qtile on 1, 2, 3, 5, 4) with the
+island drawing `1` in every frame.
+
+**The feed** is `bin/ewmh-state.py`: one long-lived, event-driven process
+reading the EWMH properties qtile already publishes on the root window.
+Chosen over the two alternatives — `qtile cmd-obj` is a whole Python
+interpreter per call (~150 ms, so polling it live burns a core), and qtile
+hooks pushing over IPC would need surgery on a 3000-line `config.py` and
+would only ever serve qtile. EWMH serves every X11 WM.
+
+**Three traps, each paid for:**
+
+- **Clients must be subscribed individually.** A window's title and desktop
+  change with no root property changing at all, so watching only the root
+  gives a strip whose titles are frozen at the moment each window opened.
+- **Coalesce, or a title animation becomes a render storm.** A terminal
+  running an agent animates a spinner glyph in its title; without the
+  120 ms settle window three group switches produced **17** frames, each
+  rebuilding every strip delegate. With it, 7 — and the rest are real.
+- **Do not read a sibling binding from a signal handler.** `workspaceId`
+  and `workspaceName` are both bindings on `desktopIndex`. Assigning
+  `desktopIndex` fires `workspaceIdChanged` *synchronously*, before QML has
+  re-evaluated the other binding, so a handler sees a fresh id beside a
+  stale name:
+
+  ```
+  X11WS| sync id=5 name=4 index=4      # switching to group 5
+  ```
+
+  The island therefore drew every workspace **one change late**, which looks
+  exactly like a laggy feed and is not — the feed frames were already
+  correct. Fixed with a single `frame()` signal emitted after all writes;
+  consumers must listen to that and never to the individual change signals.
+
+`workspaceId` is the EWMH index **plus one**, and that is load-bearing: the
+island uses `0` as its "no workspace known" sentinel, EWMH numbers desktops
+from `0`, so without the offset group "1" reads as "unknown" everywhere and
+`WindowRingStrip` takes its fail-open path and draws every window on the
+machine.
+
+### `IslandWindowX11.qml` — stacking, and taking the keyboard by force
+
+`aboveWindows` is now unconditionally `true`. The old
+`!islandRestingSurface` was reaching for Wayland's Top layer (covered by
+fullscreen, above everything else) but `false` does not mean "normal dock
+stacking" — xprop confirms it writes `_NET_WM_STATE_BELOW`, which put the
+resting capsule under every ordinary window. X11 offers above, below, or
+nothing, and "above" is the one that matches Top.
+
+`focusable` is necessary and **not sufficient**. The panel really does
+advertise `input focus: True`, and qtile still never focuses it, because it
+is a DOCK. Measured: with the launcher open, `xdotool type` landed in the
+terminal behind the island and Escape closed nothing. So
+`bin/x11-panel-focus.sh` takes focus with `XSetInputFocus`, which does not
+ask the window manager, and hands it back on close. It finds the window by
+the only thing that distinguishes it — the input hint *is* `focusable`, so
+the test and the intent are the same fact and cannot drift.
+
+No Wayland counterpart, deliberately: `WlrKeyboardFocus.Exclusive` is a real
+protocol grab that the compositor honours.
+
+### The two X11 readouts that were already built and had no source
+
+Both of these were reported as missing features. Neither was missing from the
+island — each was a **writer** that only ran under Hyprland.
+
+**The chord HUD.** `ModeKeysLayer.qml` takes its rows from
+`cheatsheet.py --submap-json <name>`, which read `hyprctl binds`. Under qtile
+that returns nothing, so entering a chord drew an empty panel. `cheatsheet.py`
+now asks qtile about its own chords on X11 (`submap_keys_from_qtile`) and
+shapes the answer identically, so the QML never learns there are two sources.
+qtile's chord names are passed through unchanged — there is no translation
+table to drift. Two things it needed: labels are composed in Python rather
+than inside the `qtile cmd-obj -f eval` expression, because half these keys
+carry no `desc` (Media-Mode's six are bare `lazy.function` calls, whose repr
+is not a label); and the 1-9 group binds collapse to one row, as the Hyprland
+path already collapses its workspace binds.
+
+**The layout glyph.** `LayoutState.qml` watches
+`$XDG_RUNTIME_DIR/hypr-layouts/current` and draws one of three glyphs. That
+file is written by `hypr/scripts/layout-cycle.sh`, which only runs under
+Hyprland, so under qtile the directory did not exist and the indicator
+correctly drew nothing forever. qtile now publishes `layout.name` there on
+`layout_change` / `setgroup` / startup. No name translation was needed:
+layout-cycle.sh took its vocabulary from qtile in the first place.
+
+Note the ordering trap this exposed: `FileView` cannot watch a path whose
+directory does not exist yet, so the island must be restarted once after the
+writer first appears. It is live from then on.
+
+### `KeyboardLayoutTracker.qml` — the same story a third time
+
+Also already built, also missing only a writer. The tracker learns the layout
+from Hyprland's device list; under qtile the authority is qtile itself, which
+sets the layout with `setxkbmap -layout <x>` and therefore knows it exactly.
+It now publishes to `$XDG_RUNTIME_DIR/hypr-layouts/keyboard` on every switch
+and once at startup, and the tracker reads that with a FileView on X11.
+
+Pushed, not polled, for the reason LayoutState gives: a push describes a
+change while a widget needs the VALUE, and the Hyprland fallback is a 30 s
+re-sync — a language indicator that takes half a minute to notice you changed
+alphabet is not worth drawing.
+
+Two traps worth carrying: the startup seed reads `setxkbmap -query` rather
+than assuming "us", or a session that starts on another layout is drawn wrong
+until the first switch; and it hooks BOTH `startup` and `startup_complete`,
+because measured, `startup_complete` does NOT fire on a plain
+`reload_config` — only `startup` does.
+
+Verified by writing the file directly (leaving the real keyboard alone):
+`ara` draws **AR**, `tr` draws **TR**, `us` draws nothing, which is the
+tracker's own English-says-nothing rule doing its job.
+
+### `DynamicIslandWindow.qml` — carry a file to the notch and the shelf comes out
+
+The EXACT trigger the shake gesture cannot be, added because the shake is a
+heuristic and kept running out of gates. `qdrop-shake.py` has five now, and
+its own header admits what none of them can do: Wayland gives a third party
+no view of `wl_data_device`, so nothing outside the compositor can ask "is a
+file in flight". Every gate there is a statement about the SHAPE of a pointer
+movement, and shapes collide — a border resize IS a shake, and that shipped
+as a bug.
+
+A `DropArea` is not a heuristic. The compositor only ever hands it a drag
+that really exists, carrying real MIME types, so "a file drag touched the top
+edge" has no false positives available to it.
+
+**It needs no new surface, which was the first plan.** The island's own window
+already claims the whole top edge: the mask `Region` has a `topGestureInput`
+entry that is `x: 0, width: root.width, height: baseExclusiveZone` whenever
+the island is resting. A second layer surface would have been stacked against
+that one for pointer focus and lost.
+
+180 ms dwell — long enough that crossing the strip is not a reveal, short
+enough that it never reads as waiting. It opens with `showQdrop(true)`, i.e.
+as a drag, because an exclusive keyboard grab CANCELS an in-flight Wayland
+drag.
+
+**The trap, and it cost a whole test run: the dwell means the panel is
+already open when the drop lands.** `Component.onCompleted` and
+`onShowConditionChanged` both fire ~400 ms too early, and Qt delivers the
+drop to `notchDropArea` anyway — an item holding a drag keeps it even once
+`enabled` goes false underneath it. So the URIs were written into a panel
+where neither handler could fire again and the file was stranded in a
+property nobody read: the shelf OPENED and `entries` stayed 0. Fixed by also
+draining on `onPendingUrlsChanged`, which is the same "watch the value, not
+the state that was already true" rule the focus grab beside it documents.
+
+Driven end to end on the live session with `scripts/test/dnd-peer.py` as the
+source and `uinput-shake.py to` as the drag:
+
+    real file drag -> the notch          shelf opens, entry lands
+    bare pointer   -> the top edge       nothing
+    button-1 drag with NO data           nothing
+
+### `qml/common/Clipboard.js` (new file) — copying, on both display servers
+
+Six call sites spelled a copy as `wl-copy`, which is right under Hyprland and
+INERT under qtile — it needs a Wayland display, exits non-zero without one,
+and `execDetached` has no exit code to report, so every copy in the X11
+session failed in perfect silence. The shelf's `y`, its copy-path action,
+both hosts' "opening a text entry copies it", and the calculator's result.
+
+One `.pragma library` with one function, and the branch is made by `sh` at
+the moment of copying rather than by `Quickshell.env` a turn earlier: a copy
+is a process either way, so the test is free where it is, and it is made in
+the environment the tool will actually run in. Split on `WAYLAND_DISPLAY`,
+per the RULES — `DISPLAY` is set under Hyprland too, so "is DISPLAY set"
+answers yes in both sessions.
+
+`xclip` on the X11 side, which is what qtile's own `qdrop.py` reaches for
+first, and both tools take a MIME type so the `text/uri-list` form survives —
+that is what makes a paste into a file manager arrive as FILES.
+
+### `qml/theme/ThemeTransitionWindow.qml` — the sweep captures under X11 too
+
+`grim` was the whole of the capture, and grim is Wayland-only, so under qtile
+every theme change took `beginReveal(false)` — the fail-closed path — and
+switched palette with no animation at all. The right failure, and still the
+wrong outcome.
+
+`maim` is the X11 counterpart. The two do not take the same arguments and the
+RULES already record why: **the three screenshot geometry formats do not
+agree**. grim selects an output BY NAME, which maim cannot do; the X11
+equivalent is the screen's absolute rectangle, which the window knows because
+`screen` is the ShellScreen it was created for — so a two-output session still
+freezes each desktop separately.
+
+### `bin/x11-panel-focus.sh` — and the focus has to STAY taken
+
+Reported as "in qtile ... not closing with q or esc". `XSetInputFocus` wins
+the argument with qtile once and does not win it twice: `BackendSurface.md`
+predicted the mechanism — "qtile's `follow_mouse_focus = True` can hand focus
+away mid-panel" — and the installed libqtile confirms it and settles the fix.
+
+```
+backend/x11/window.py:2050   handle_EnterNotify:
+    if self.qtile.config.follow_mouse_focus is True:
+        if self.group.current_window != self:
+            self.group.focus(self, False)
+```
+
+Two things fall out of reading it rather than guessing at it. The steal is on
+ENTER, not on motion — so it is the first move you make toward the file you
+were going to drag, not every twitch. And **the flag is read at event time
+from `qtile.config`**, so setting it live works. `grab` suspends it, `release`
+puts back what it found; not a config.py edit, because follow-mouse is wanted
+everywhere except inside the two seconds a modal island panel is up.
+
+**It has to be a single EXPRESSION, and that is not a style choice.**
+libqtile's `eval` is `try: return str(eval(code)) except SyntaxError: exec(code);
+return None` — so the obvious read-into-a-name, assign, name-the-name form
+takes the exec branch, where the write lands and the value is thrown away.
+The failure would have been ASYMMETRIC and would have shipped: suspending
+works and only the RESTORE breaks, so the first island panel of the session
+would have turned focus-follows-mouse off for good.
+
+### What is still Wayland-only, and why
+
+`WorkspaceOverviewLayer.qml` is built on `Hyprland.monitorFor(screen)` and
+`ToplevelManager`, both empty on X11 — it opens as a blank sheet. Porting it
+needs the EWMH feed plus per-workspace thumbnails. qtile's binding points at
+the workspaces PICKER instead, which answers the same question and works; a
+key that opens an empty panel is the failure this whole arrangement exists to
+prevent.
+
+`WorkspaceOverviewLayer` also keys every window on a Hyprland ADDRESS
+(`tlv.HyprlandToplevel.address`) and correlates that against
+`ToplevelManager`, so an X11 port is not "feed it different data" — it needs a
+shim object shape threaded through the hit-testing, the drag source and the
+drop target, plus `_NET_WM_DESKTOP` writes for drag-to-move and icon tiles
+standing in for previews. The blocker on doing it anyway is verification: this
+panel's core interaction is drag-and-drop, and drag cannot be checked from a
+screenshot. Shipping an unverifiable port of it into a working shell is how
+the shell stops being stable.
+
 ## Pre-existing upstream warning, not ours
 
 ```

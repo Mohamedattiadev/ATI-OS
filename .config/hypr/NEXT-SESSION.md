@@ -1,3 +1,70 @@
+# READ THIS FIRST IF YOU ARE IN A qtile SESSION
+
+Everything below this block was written from Hyprland. A pile of work landed
+for the X11 side that **has never been run under qtile** — it compiles, it is
+unit-tested, and its reasoning is checked against the installed libqtile, but
+nobody has watched it work. This is the list, in the order it will bite.
+
+## Verify these four, in this order
+
+1. **The island takes the keyboard and KEEPS it.** Open any island panel
+   (`$alt SHIFT D` for the shelf) and press `q`. It should close. Then open
+   it again, move the mouse across another window, and press `q` again — that
+   second one is the actual fix. `bin/x11-panel-focus.sh` suspends
+   `follow_mouse_focus` on grab and restores it on release.
+
+   **If it breaks, the dangerous failure is the RESTORE**, not the grab:
+   check `qtile cmd-obj -o cmd -f eval -a 'repr(self.config.follow_mouse_focus)'`
+   after closing a panel. It must say `True`. If it says `False`, the panel
+   left focus-follows-mouse switched off for the session — remove
+   `$XDG_RUNTIME_DIR/tide-island/x11-prev-follow-mouse` and set it back by
+   hand while you debug.
+
+2. **Copying works at all.** `y` in the shelf, and the calculator's copy.
+   Both went through `wl-copy`, which is inert under X11 and says nothing
+   about it. They go through `qml/common/Clipboard.js` now, which picks
+   `xclip` when `WAYLAND_DISPLAY` is unset. If a copy does nothing, run the
+   argv by hand — the file's header has it.
+
+3. **The theme sweep animates.** Change the theme. Under qtile it used to
+   switch palette with no animation at all, because the capture was `grim`.
+   It is `maim -g <w>x<h>+<x>+<y>` now. If it still does not animate, check
+   that maim is installed and that the capture is not black —
+   `ThemeTransitionWindow.captureCommand()` is the one function to read.
+
+4. **The two bars now agree on colour.** This is the one you reported. Switch
+   island ↔ qtile bar on any theme and the palette must not jump.
+   `colors.active_palette()` reads `~/.cache/qtile/current_palette.json`
+   now. If a theme looks wrong, compare that file against
+   `~/.cache/tide-island/colors.json` — every slot should match, and a
+   mismatch on `mode` makes it fall back to the old hardcoded preset, which
+   is the drifted one.
+
+## What was measured in Hyprland and does NOT need re-testing there
+
+The shake gates, the notch drop target, the shelf's keys. Those are Wayland
+paths and qtile has its own watcher (`qtile/scripts/qdrop_watch.py`) with a
+real XDND gate — it was never the broken one.
+
+## The bar switch, driven end to end in Hyprland
+
+Both directions, and it is clean. Recorded because the qtile half is the
+same script and should behave the same way:
+
+    bar-switch native   island down, topbar + treetab + popups up
+                        reserved 33 -> 38, two layer surfaces (1366x38
+                        bar, 1366x1 exclusive-zone window)
+    bar-switch island   island up, the other three stopped, reserved
+                        back to 33
+
+And the shelf routing is exactly what was asked for. Under `native`, the
+island's qdrop IPC has no instance, `qdrop.sh` falls through to popups.qml,
+and the STANDALONE `QdropShelf` opens — the GTK `qdrop.py` was never spawned,
+which is the correct order. Under `island`, the shelf is the 25th island
+state and comes out of the capsule.
+
+---
+
 # Prompt — next session
 
 Continue the Hyprland / Tide-Island work in `~/.dotfiles`, branch `test`.
@@ -104,7 +171,205 @@ and every capture with it up is of the wrong shape.
 
 ---
 
+# THE TWO BARS WERE PAINTING THE SAME THEME IN DIFFERENT COLOURS
+
+Kept at the top because it was reported as a SWITCHING bug — "color issues
+when i switch from island to qtile or visversa" — and switching had nothing
+to do with it. The palettes simply disagreed, permanently, so every switch
+showed the jump. Measured on gruvbox, the theme standing at the time:
+
+    slot      qtile's colors.py     the island / the topbar
+    bg_alt    #000000               #1d2021
+    green     #98971a               #b8bb26
+    yellow    #d79921               #fabd2f
+    cyan      #b8bb26               #8ec07c
+
+Green and yellow are not shades apart — they are gruvbox's DIM set against
+its BRIGHT set, an olive GroupBox beside a yellow one. Nothing was stale and
+no reload would have fixed it: `qtile/colors.py`'s `_PRESETS` and
+`AtiScriptsV1/theme-apply`'s `resolve_palette` are two hand-written copies of
+the same twenty-two palettes, and they had drifted.
+
+**This is the failure the rest of the desktop is already built around
+avoiding**, in the one place never brought in. `topbar/BarTheme.qml` refuses
+to carry a palette for exactly this reason, and this file already records the
+day one duplicated palette "made every window border green on twenty-two
+themes, silently".
+
+`colors.active_palette()` now prefers `~/.cache/qtile/current_palette.json` —
+theme-apply's own answer, the same numbers `gen_island_colors` writes for the
+island — and falls back to the preset when the file is missing, half-written,
+or names a different mode. Verified: all nine slots now identical to
+`~/.cache/tide-island/colors.json`.
+
+It fixes a second, smaller thing for free. `colors` is assigned at config.py's
+module scope, so it is re-read by every `reload_config()` — which is what
+`bar_switch_apply()` does coming back from the island. A palette in a
+hardcoded table could not follow a theme changed while qtile's bars were
+hidden; one in a file does.
+
+**The slot order is not a guess**: `[bg, fg, bg_alt, red, green, yellow, blue,
+purple, cyan]`, checked against DoomOne in colors.py and against
+BarTheme.qml's mapping table, which agree. The one deliberate consequence is
+that slot 2 stops being `#000000` on the dark themes; the chip plate is
+derived from the background in both bars and is unaffected, and the ten other
+`colors[2]` uses move by a few points of luminance.
+
+---
+
 # STILL OPEN, in the order worth doing
+
+0. **THE TOPBAR LOSES ~2 px OF HEIGHT WHEN A POPUP OPENS AND CLOSES.**
+   **DRIVEN IN HYPRLAND AND NOT REPRODUCED — on either bar.** The report
+   stands; what follows is what it is NOT, so the next attempt starts
+   somewhere new.
+
+   *The topbar.* `bar-switch native`, then a volume popup opened and closed
+   while a sampler read the compositor's own geometry every 8 ms —
+   `j/layers` for the bar surface and `j/monitors` for the reserved zone.
+   **One line of output**: `h=38 y=0 reservedTop=38`, unchanged for the whole
+   run. Then the pixels, because a stable surface can still be painted
+   wrongly: a 157-frame grim burst of `0,0 1366x60` at ~39 fps, measuring the
+   bar's painted bottom edge in three columns. **Identical in every frame.**
+   The popup was verified to have actually opened (`popups status` →
+   `volume`) before either measurement was believed, so neither is vacuous.
+
+   *The island.* Same method, `qdrop open` then `close`, 289 frames over 5 s,
+   measuring the capsule's dark run down from y=0. Rest before: 13 px,
+   steady. Rest after: 13 px, steady. The close settles
+   `27 23 17 15 14 13` — strictly monotone, no undershoot, which is
+   `Motion.springFor` still holding.
+
+   So on this machine, in this session, neither bar moves. What that leaves:
+
+   * **It may be qtile-only after all.** The report says picom fixed it
+     there, and `picom.conf` now excludes the island for a measured reason
+     (it ran a slide-down over a window that resizes under its own spring).
+     If the Hyprland half cannot be reproduced, the honest reading is that
+     the qtile fix worked and the memory of the symptom carried over.
+   * **It may be a popup this did not try.** Volume was the one driven.
+     Wallpaper, network, bluetooth, display and the cheatsheet all have
+     different heights and different loaders.
+   * **It may need the eye rather than the sampler.** 39 fps against a
+     ~200 ms event can miss a single frame. `wf-recorder -r 60` over the bar
+     strip is the next instrument, and the RULES already describe the
+     frame-differencing method.
+
+   Everything below was ruled out by reading, before any of the above:
+   Reported fresh: "the topbar still gliching when i open then close popup
+   its hight reduce with 2px lets say and come back to its place again , in
+   qitle it was because picom and fixed i think , but in hyperland i dont
+   know why still do".
+
+   NOT REPRODUCED — `bar-mode` was `island` throughout the session that took
+   this report, so the topbar was not running and reproducing it means a bar
+   switch. What was ruled out by reading, so the next session does not spend
+   the time again:
+
+   * **It is not a spring.** The island's height glitch at the top of this
+     file was `Motion.springFor` overshoot, and the shape of the complaint
+     is identical — shrink, return — so it is the first thing to suspect and
+     it is wrong here. `grep 'Behavior on \(height\|implicitHeight\|y\)'`
+     across `topbar/*.qml` and `popups.qml` returns NOTHING. No geometry on
+     either surface is animated at all.
+   * **It is not the UI scale flickering to a fallback.** `Metrics.qml`
+     reads `~/.cache/qtile/ui_scale` through a FileView and falls back to
+     1.0; the file currently holds `1.00`, so the fallback and the real
+     value are the same number and a reload cannot move anything.
+     `barHeight` is `s(28)` and `marginV` is `s(5)`, i.e. a static 38.
+   * **picom cannot be the cause here** even though it was under qtile.
+     There is no compositing layer between Quickshell and Hyprland, so a
+     matching symptom in the two sessions has two different causes and the
+     qtile fix does not port.
+
+   The strongest remaining lead is that **the bar's height is not what
+   moves**. `topbar/shell.qml:931` is a SEPARATE 1 px window that owns the
+   `exclusiveZone` — both real bars are `ExclusionMode.Ignore` — so anything
+   that perturbs the reserved area moves the tiled windows and the gap under
+   the bar without the bar itself changing size at all. A popup is another
+   layer surface, and layer-shell recomputes the usable area when one maps.
+
+   **How to settle it, and the rules that apply:** PROBE THE PROPERTY THAT
+   IS DRAWN, NOT THE ONE THAT IS AIMED — read the bar window's actual height
+   and the monitor's `reserved` from `hyprctl monitors -j` across the open
+   and the close, not `implicitHeight`. Then a 50 fps `grim` burst in PPM
+   over a strip containing the bar's bottom edge, differencing consecutive
+   frames. Both halves of that method are already written down further down
+   this file.
+
+0a. **pcmanfm-qt: THE GRID'S WIDTH IS A FONT BUDGET, NOT AN ICON SIZE.**
+   Reported with a screenshot: "why the file or folder or has a very bg
+   space". Five columns of folders with ~218 px between them and a 32 px
+   icon in the middle of each.
+
+   Measured rather than guessed, three runs against the same folder:
+
+       BigIconSize 32   horizontal pitch 218 px, 5 columns
+       BigIconSize 64   horizontal pitch 218 px, 5 columns   <- unchanged
+       QT_FONT_DPI 72   horizontal pitch ~166 px, 7 columns
+
+   So the cell WIDTH does not depend on the icon at all — only the height
+   does — and it scales almost exactly with the font (166/218 = 0.761
+   against 72/96 = 0.75). libfm-qt reserves a fixed CHARACTER BUDGET for the
+   label and sizes the uniform grid to it. `ShowFullNames` was the obvious
+   suspect and was tested first: flipping it true → false changed nothing,
+   names still render unelided.
+
+   That leaves the font as the only lever, and it is applied where it costs
+   least: `.local/share/applications/pcmanfm-qt.desktop`, a local override
+   of the packaged entry with `Exec=env QT_FONT_DPI=84 pcmanfm-qt %U`.
+   Scoped to this one app rather than qt6ct's global font, which every Qt
+   program on the desktop reads. With `BigIconSize=48` it now draws six
+   columns with bigger, clearer icons than the five it had.
+
+   **NOTE FOR A FRESH INSTALL:** that file is the repo's first entry under
+   `.local/`, not `.config/`. stow descends into an existing
+   `~/.local/share/applications` and links it, so it works — but nothing
+   else in this repo lives there, so it is easy to miss.
+
+   **THE DRAG OFFSET IS PROBABLY THE SAME FACT, AND IS NOT PROVEN.** Also
+   reported: "why the file not directlye under the cursor". The drag pixmap
+   libfm-qt builds is the rendered ITEM, and the item is that 218 px cell
+   with a 48 px icon centred in it — so the visual extends ~85 px either
+   side of what you actually grabbed. Narrowing the cell narrows the offset
+   by construction. It was NOT measured: the attempt drove a synthetic drag
+   with `uinput-shake.py` and the workspace was not the one assumed, so the
+   press landed in nvim instead of the file manager. **Do not synthesise
+   drags over the user's real windows** — the earlier qdrop tests were safe
+   because they ran on an empty workspace with throwaway windows, and that
+   is the difference. To measure it properly: an empty workspace, a
+   pcmanfm-qt window with one file, a `to` drag, and a grim capture during
+   the hold.
+
+0b. **THE CALCULATOR PANEL IS THIN, AND ITS KEYBOARD IS THINNER.**
+   Reported: "the popup of calcoter is too dumm and poor and no vim motion
+   enough for moving".
+
+   `qml/island/CalculatorLayer.qml` today is a `PanelSearchField`, a result
+   line, and a history `Repeater`. `Keys.onPressed` answers exactly ONE key
+   — Escape — because the field holds the keyboard and every other keystroke
+   is text. `recall(delta)` walks history and is reachable only from the
+   arrows.
+
+   **The modal problem is the same one QdropGrid solved, INVERTED, and that
+   is the whole design note.** The shelf is hjkl by default and `/` enters
+   the search field; a calculator cannot be, because typing an expression IS
+   the primary act and `d`, `y` and `j` are all legal in one. So the default
+   mode is INSERT and the second mode is normal: Escape leaves the field
+   (rather than closing the panel, which is what it does now), hjkl/gg/G
+   walk the history, `y` yanks the focused entry, Enter recalls it into the
+   field, `i`/`a` go back to typing, and Escape from normal mode closes.
+   That is vi's own precedence and it is what makes both halves reachable.
+   `PanelSearchField`'s `readOnly` is the mechanism — its header describes
+   it as the thing that "keeps focus and inserts nothing" — so no focus
+   juggling is needed, exactly as in the shelf.
+
+   What "poor" is probably also asking for, in the order it is worth doing:
+   a history that persists across opens; unit and base conversion (`10 in
+   cm`, `0xff`, `2^32`) which is what qalc is actually reached for; a memory
+   register; and the result line being copyable per entry rather than only
+   the latest. `copyResult()` already goes through Clipboard.js, so the
+   qtile session gets all of it for free.
 
 1. **The rest of the login notification burst.** "when i start the hyperland a
    lot of notifications appear, like 2-3 ones." ONE cause found and fixed:
@@ -141,9 +406,104 @@ and every capture with it up is of the wrong shape.
 
    What is left on it, none of it blocking:
 
-   * The GTK shelf's richer menu — right-click actions, the zip-a-selection,
-     pinning, the sort modes — is not ported. The keyboard map that IS there
-     is j/k, ↵, d, a, c, space, Esc.
+   * ~~The GTK shelf's richer menu is not ported.~~ **DONE** — right-click
+     actions, the zip, pinning and the sort modes are all in
+     `QdropGrid.qml`, plus a visual mode and a search field.
+
+     **The two destructive keys now take CTRL** — `ctrl+z` zips, `ctrl+d`
+     deletes, `Delete` still deletes bare. Asked for by name, and they are
+     the only two commands on the panel that cannot be undone by pressing
+     the key again, sitting on bare letters in a map you drive with your
+     fingers on hjkl.
+
+     **"the zip not working" was the zip being INVISIBLE.** The archives
+     were on disk the whole time — three under `~/.cache/qdrop-zips`, one
+     pair written two seconds apart, which is what pressing a key that
+     appears to do nothing looks like from the outside. Every link was
+     driven in an isolated Quickshell instance and every one answered: the
+     Process exits 0, `onExited` fires with the pending path intact,
+     `QdropStore.addValue` writes the entry. What was missing was that a new
+     tile at the top of a full shelf, behind wherever the cursor already
+     was, says nothing. The archive is now checked to EXIST before an entry
+     claiming it is added, stderr is captured and reported instead of a bare
+     "zip failed", and the cursor MOVES TO the archive and selects it — so
+     it is under your hand, ready to drag back out.
+
+   * **The shake's false positives were real, and this file predicted both
+     of them.** Reported as "when i select text or scroll up down it
+     appears"; `qdrop-shake.py`'s own docstring already listed
+     text-selection and rubber-band shakes under WOULD FIRE. With no gate 2
+     available on Wayland the only thing left is the SHAPE, and it is now
+     tightened four ways, each a property a deliberate shake has and an
+     accidental wiggle does not:
+
+     1. **Its own constants.** qdrop_watch's were tuned for RAW DEVICE
+        DELTAS; this feeds differences of ACCELERATED SCREEN POSITIONS,
+        several times larger for the same hand movement. Importing the shape
+        and the numbers together made the Wayland detector far MORE
+        sensitive than the X11 one it was copying, on identical-looking
+        constants. `Axis` reads them as module globals at call time, so they
+        are overridden on the module after import and qtile's tuning is
+        untouched.
+     2. **Horizontal only.** A scrollbar or a slider is pure vertical
+        reversal, which is the whole of the "scroll up down" half.
+     3. **And the vertical travel must be small beside it**, or a diagonal
+        scrub reverses on x as well.
+     4. **A shake is preceded by a drag** — the button down a moment and the
+        pointer over real ground before any reversal counts.
+
+     **And a fifth gate, which is not a shape and could not have been.**
+     Reported next: "i resize the terrmianl with cursor and opens the
+     dropshef". `general:resize_on_border` is 1 here with a 15 px grab area,
+     so dragging a window edge is a BARE button-1 drag — the modifier-exact
+     trick that excludes window moves does nothing — and the gesture does
+     not merely resemble a shake, it IS one: horizontal, flat, big
+     segments, plenty of carrying. Gates 1-4 passed it correctly.
+
+     **A resize is not a shape, it is an OUTCOME: the window changes size.**
+     A move is the same statement about position. Neither happens during a
+     file drag and both are observable — `j/activewindow` over the request
+     socket, 839 bytes in 0.074 ms, cheap enough to sample every tick rather
+     than on a timer a fast resize could outrun. Sticky for the press, so
+     pausing mid-resize does not reopen the hole.
+
+     `scripts/test/shake-shapes.py` drives `Drag.sample()`, which is the
+     whole of the shipped decision — the loop calls that and nothing else —
+     with eleven gesture shapes, **11/11**. The resize row uses the
+     IDENTICAL pointer samples to the row that must fire, so the only thing
+     separating them is the window box.
+
+     **Then driven for real**, with `uinput-shake.py` on an empty workspace
+     holding two tiled windows:
+
+         deliberate horizontal shake, mid-window     FIRES
+         border drag that really resized 1005->986   refused, "compositor grab"
+         the SAME border drag under --loose          FIRES      <- the control
+         vertical shake (scrollbar, scroll)          quiet
+         small wiggles (a text selection)            quiet
+         one-way drag with tremor in it              quiet
+
+     The control row is what makes the rest mean anything — without it "the
+     resize did not fire" is equally consistent with the driver having
+     missed, and this file already records a session lost to a test that
+     could not fail.
+
+     **What it is still NOT** is "only while a file is in flight", which is
+     what was asked for and what gate 2 gave the X11 watcher. Wayland gives
+     a third party no view of `wl_data_device`, there is no protocol for it,
+     and `hyprctl` has nothing about data devices — re-checked, not assumed.
+     The one shape that can still reach the shelf is a hard, flat, sustained
+     horizontal shake over a window that does not change size, carrying
+     nothing.
+
+     **The route that WOULD be exact, if this is reported again:** a thin
+     always-present layer surface across the top of the screen with a
+     `DropArea` on it. A DropArea sees real mime types, so "a file drag
+     touched the top edge" has no false positives at all — the RULES already
+     record that a Quickshell layer surface receives real Wayland drags, and
+     `QdropLayer` proves it in this tree. That is a second, exact TRIGGER
+     rather than a better gate on this one, and it does not need the shake
+     to go away.
    * `--add-text` still goes to qdrop.py, which spawns the GTK daemon. Both
      write the same file and the shelf watches it, so they agree; nobody has
      driven them writing at the same instant.
