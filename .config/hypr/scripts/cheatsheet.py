@@ -101,6 +101,37 @@ def key_text(entry):
     return "code %s" % code if code else "?"
 
 
+def island_call(arg):
+    """The `<target> <function> [arg]` half of a command addressing the island.
+
+    TWO SPELLINGS REACH THE SAME IPC, and only one of them was recognised.
+
+        qs -p <fork> ipc call tide showPicker anki
+        bar-action           tide showPicker anki
+
+    `bar-action` is the WRAPPER that picks between the island's IPC and the
+    rofi twin depending on which bar is up, and every bind in the rofi submap
+    goes through it. A labeller that reduces an exec to its PROGRAM therefore
+    collapsed twenty-six different keys to the wrapper's own name -- the whole
+    mode HUD read "bar action", twenty-six times. `SHIFT C` was the only row
+    with a real label, and only because it runs something else.
+
+    So the wrapper is looked PAST rather than at, and both spellings are
+    reduced to the same tail, which is what makes one prettifier enough for
+    both. Returns "" for anything that is not an island call.
+    """
+    if " ipc call " in arg:
+        return arg.split(" ipc call ", 1)[1].strip()
+    words = arg.split()
+    for index, word in enumerate(words):
+        # By BASENAME and by whole argument, not by substring: a path to the
+        # script and a bare `bar-action` are the same command, and a window
+        # title that happens to contain the word is not.
+        if os.path.basename(word) == "bar-action":
+            return " ".join(words[index + 1:]).strip()
+    return ""
+
+
 def describe(entry):
     dispatcher = str(entry.get("dispatcher") or "")
     arg = str(entry.get("arg") or "").strip()
@@ -110,6 +141,11 @@ def describe(entry):
         # program, and for the island's IPC it is the function name at the
         # end -- "qs -p ... ipc call tide toggleControlCenter" should read as
         # "toggleControlCenter", not as forty characters of socket path.
+        #
+        # Deliberately NOT island_call(): a `bar-action` line is already short
+        # and it is already exact, and the printed sheet wants the command
+        # that runs. Calling it "island:" would also be a lie under the topbar,
+        # where the same key opens a rofi menu.
         if " ipc call " in arg:
             return "island: " + arg.split(" ipc call ", 1)[1]
         return arg
@@ -252,11 +288,30 @@ def short_label(entry):
     arg = str(entry.get("arg") or "").strip()
 
     if dispatcher == "exec":
-        if " ipc call " in arg:
-            # "qs -p ... ipc call tide toggleWallpaperPicker" -> "wallpaper picker"
-            tail = arg.split(" ipc call ", 1)[1].split()[-1]
-            tail = re.sub(r"^(toggle|show|open)", "", tail)
-            return re.sub(r"(?<!^)(?=[A-Z])", " ", tail).strip().lower() or tail
+        call = island_call(arg)
+        if call:
+            # "... ipc call tide toggleWallpaperPicker" -> "wallpaper picker"
+            # "bar-action  tide showPicker anki"        -> "anki"
+            # "bar-action  bar  systemBox"              -> "system box"
+            # "bar-action  overview toggle"             -> "overview"
+            # "bar-action  tide showOnboarding 0"       -> "onboarding"
+            #
+            # No table: a function that takes a NAME is named by it (showPicker
+            # is one function covering fourteen menus, and they differ nowhere
+            # else), a function that takes none is named by itself, and the
+            # TARGET is the last resort for the two whose function is a bare
+            # verb. `bar-action`'s own case statement stays the authority for
+            # what each of these DOES; this only has to tell them apart.
+            parts = call.split()
+            target = parts[0] if parts else ""
+            func = parts[1] if len(parts) > 1 else ""
+            param = parts[2] if len(parts) > 2 else ""
+            # A numeric argument is a PARAMETER, not a name -- showOnboarding's
+            # `0` is a page index and labelled the row "0".
+            name = param if param and not param.isdigit() else func
+            name = re.sub(r"^(toggle|show|open)", "", name)
+            words = re.sub(r"(?<!^)(?=[A-Z])", " ", name).strip().lower()
+            return words or target or call
 
         if "wpctl set-volume" in arg:
             return "volume up" if "%+" in arg else "volume down"
@@ -282,7 +337,11 @@ def short_label(entry):
         words = [w for w in arg.split() if not w.startswith("-")]
         first = words[0] if words else arg
         if os.path.basename(first) in ("python3", "python", "sh", "bash", "env"):
-            first = words[1] if len(words) > 1 else first
+            # `env` is followed by its ASSIGNMENTS, not by the program, so
+            # taking the next word gave "GTK THEME=x qalculate-gtk". Skip past
+            # every VAR=VALUE to reach the command being run.
+            rest = [w for w in words[1:] if not re.match(r"^\w+=", w)]
+            first = rest[0] if rest else (words[1] if len(words) > 1 else first)
         base = os.path.basename(first)
         base = re.sub(r"\.(sh|py)$", "", base)
         # dm-documents / rofi_anki -> documents / anki
@@ -688,7 +747,12 @@ def submap_keys_from_qtile(name):
             arg = str(row.get("arg") or "").strip("()',[] ").strip()
             cmd = str(row.get("cmd") or "").strip()
             if cmd == "spawn" and arg:
-                action = arg
+                # Through the SAME prettifier the Hyprland HUD uses, so one
+                # chord key reads identically in both sessions. It matters
+                # here for the same reason it mattered there: qtile spawns
+                # `bar-action tide <function>` too, and the raw string is the
+                # wrapper's name plus a function nobody typed.
+                action = short_label({"dispatcher": "exec", "arg": arg})
             elif cmd == "function":
                 # lazy.function(...) carries a callable, and its repr is not a
                 # label. A bound method still names itself usefully; a lambda
