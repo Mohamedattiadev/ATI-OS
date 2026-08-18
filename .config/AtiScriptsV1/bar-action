@@ -184,7 +184,18 @@ case "$key" in
   #
   # The popups shell hosts the viewer now, and the argument survives, so
   # `v` opens the vim sheet on both bars.
-  "showCheatsheet docs")      run_popup_arg cheatsheet docs ;;
+  #
+  # `docs` is the one exception, and it is not an oversight in the rule
+  # above — it is a second surface pointing at the same content. topbar's
+  # logo chip already opens `rofi_docs` on left-click (see topbar's own
+  # shell.qml, "ROFI, NOT THE ISLAND'S PANELS"), and that menu's
+  # Documentation/Troubleshooting/Keybindings sections are the native-mode
+  # answer to what the island's "docs" cheatsheet shows. Routing this key
+  # through the popup viewer instead would give the topbar TWO different
+  # docs surfaces on two different triggers — the chip's click and this
+  # chord — asked to stop being two: "make it open the rofi which is in
+  # the windowchip", so the chord now opens exactly what the chip does.
+  "showCheatsheet docs")      run rofi_docs ;;
   showCheatsheet*)            run_popup_arg cheatsheet "${arg:-hypr}" ;;
 
   # ---- the three qtile POPUPS ----
