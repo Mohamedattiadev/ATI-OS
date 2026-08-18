@@ -782,6 +782,92 @@ time the qtile session is up.)
 
 ---
 
+### 16. Both draw tools — an "S" screenshot key, and wayscriber's status bar shrunk further — CLOSED
+
+Requested: "s should take screenshot for the things I wrote... the whole
+screen... not just the fullscreen without the text" — i.e. capture has to
+include the drawn ink, not a bare desktop grab. Also: the wayscriber
+status bar was still "a bit big" after item 15's toolbar trim.
+
+**CLOSED, both tools.**
+
+wayscriber: `S` added to `capture_file_full` (real action name, from
+`config.example.toml` — its own built-in "save the whole screen as PNG"
+capture, `[capture].save_directory`, defaults to `~/Pictures/Wayscriber`).
+Confirmed by reading the app's own capture design, not assumed: the
+whole point of an annotate-then-export tool's capture feature is
+capturing what is actually on screen, overlay included — kept `Ctrl+S`
+too rather than replacing it. Status bar: `[ui.status_bar_style]`
+`font_size` 21.0 -> 14.0, `padding` 15.0 -> 8.0 (real packaged defaults,
+matched to the screenshot). Screenshotted before/after — visibly
+thinner.
+
+gromit-mpx (qtile/X11): a new `s` key in the `Draw-Mode` chord runs
+`maim` on the whole screen, saved to `~/Screenshots/gromit-<timestamp>.png`
+with a notify-send confirmation — `maim`, not `grim`, since that session
+is X11 and `grim` is Wayland-only. `maim` reads the actual composited
+screen (`XGetImage` on the root window), same mechanism this repo's own
+`scripts/screenshot-area.sh` already uses, which includes gromit's own
+window contents exactly as they appear on screen. Python-syntax-checked
+only; not verified live (same standing caveat as the rest of the qtile
+chord — would mean switching sessions).
+
+**Found and fixed along the way, not asked for but real:** wayscriber's
+entire config (`~/.config/wayscriber/config.toml` — all of item 15's and
+this item's customization, plus the earlier gromit-keymap-parity and
+capture work) was living in a REAL directory, not a stow symlink — so
+none of it was tracked by this repo and would not survive a fresh-machine
+setup. Moved the file into `.config/wayscriber/` in the repo, symlinked
+`~/.config/wayscriber` the same way every other app here is (`ln -s
+../.dotfiles/.config/wayscriber ~/.config/wayscriber`), added a
+`.gitignore` for wayscriber's own `.bak`/`.lock` runtime files (same
+convention as `.config/copyq/.gitignore`). Verified the daemon still
+loads cleanly through the new symlinked path before moving on.
+
+---
+
+### 17. Clipboard picker — show when each item was copied — CLOSED
+
+Requested: "a small upgrade for the clipboard popup to add the date...
+and the time... small info."
+
+**CLOSED.** CopyQ stores no per-item timestamp at all by default —
+checked directly against this machine's live clipboard (`copyq eval`,
+real items): every entry exposes only `image/png` or `text/plain` (plus
+a pin flag for pinned ones), nothing date-like. Not fixable by reading
+existing data differently; it has to be written going forward.
+
+Added CopyQ's own documented "Store Copy Time" automatic command
+(`~/.config/copyq/copyq-commands.ini`, appended via `commands()`/
+`setCommands()` — never replaced the list, backed it up first to
+`~/tmp/copyq-commands-backup.json`) — stamps every NEW item, text or
+image, with `application/x-copyq-user-copy-time` the moment it is
+copied. **One real bug hit and fixed before this worked**: the first
+attempt set `transform: true` and explicit empty `re`/`wndre` objects,
+matching a guess at the schema from reading `commands()`'s own dump of
+OTHER (non-automatic) commands — it silently never fired. Root cause,
+found by comparing against CopyQ's own minimal documented example (which
+sets none of those fields): `transform: true` with no `output` mime
+appears to discard the automatic command's effect entirely. Fixed by
+matching the documented shape exactly (`name`, `automatic: true`, `cmd`,
+`internalId` — nothing else) and reverified live with a real `wl-copy`
+of both text and a real PNG before touching anything downstream.
+
+`island-picker.py`'s clipboard reader (`_CLIPBOARD_JS` + `clipboard_list()`)
+now reads that field and appends a compact display to each row's detail:
+just the time for anything copied today ("14:32"), date + time for
+older ("18 Aug 14:32"). Pre-existing clipboard history — everything
+copied before this command existed — correctly shows nothing rather
+than a fabricated time; confirmed live, old items in the same list came
+back with no stamp while the two fresh test copies did.
+
+**The gap this leaves, worth knowing**: this only covers items copied
+from now on. There is no way to retroactively know when something
+already in CopyQ's history was copied — that information was simply
+never recorded before this session.
+
+---
+
 ## STANDING CONSTRAINTS
 
 * **Never leave the session without a bar.** `bar-switch` exists to protect
