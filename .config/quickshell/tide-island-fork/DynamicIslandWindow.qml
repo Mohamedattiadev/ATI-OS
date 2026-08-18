@@ -1274,6 +1274,12 @@ PanelWindow {
     }
 
     function showNotification(notification) {
+        // Set unconditionally, BEFORE the capsule call — showNotificationCapsule
+        // can silently drop the toast while a panel is already open
+        // (openPanelState guard, see its own comment), but the notification
+        // still happened and the border still has to say so once the panel
+        // closes. See `hasUnseenNotification`'s own note.
+        islandContainer.hasUnseenNotification = true;
         islandContainer.showNotificationCapsule(notification);
     }
 
@@ -2078,7 +2084,22 @@ PanelWindow {
         // See the "picker" case in targetHeight for the measurement that
         // made this necessary.
         property real heightBeforeStateChange: Metrics.px(35)
-        onIslandStateChanged: heightBeforeStateChange = mainCapsule.height
+        // PROMPT-NEXT.md item 11: "when notification appears the island
+        // should be with border active" — for as long as an unseen
+        // notification exists, a different lifecycle than a panel being
+        // open (a notification can arrive while the capsule is RESTING).
+        // Set true from NotificationService's own `posted` signal
+        // (unconditionally — a toast can be silently dropped while a panel
+        // is already open, but the notification still happened and still
+        // counts as unseen); cleared here, folded into the existing
+        // `onIslandStateChanged` rather than a second handler on the same
+        // signal, the moment the notification centre is actually looked at.
+        property bool hasUnseenNotification: false
+        onIslandStateChanged: {
+            heightBeforeStateChange = mainCapsule.height;
+            if (islandState === "notification_center")
+                hasUnseenNotification = false;
+        }
 
         property string splitIcon: root.defaultSplitIcon
         property real osdProgress: -1.0
@@ -2236,6 +2257,14 @@ PanelWindow {
             || islandState === "calculator"
             || islandState === "settings"
             || islandState === "picker"
+
+        // The capsule's accent BORDER wants a second reason to show beyond
+        // `openPanelState` — item 11 — without touching `openPanelState`
+        // itself, which also dims every OTHER window's border
+        // (border-focus.sh, right below) and must NOT fire just because a
+        // notification arrived while the capsule is resting; that would
+        // dim the desktop for an event nobody asked to focus on.
+        readonly property bool showsPanelBorder: openPanelState || hasUnseenNotification
         // ---- AND THE WINDOWS' BORDERS GO DOWN WHILE IT IS UP ----
         //
         // See scripts/border-focus.sh for what "down" means and why it reads
@@ -4130,7 +4159,7 @@ PanelWindow {
                 fillColor: "transparent"
                 strokeWidth: 2
                 capStyle: ShapePath.FlatCap
-                strokeColor: islandContainer.openPanelState
+                strokeColor: islandContainer.showsPanelBorder
                     ? mainCapsule.panelOutline : "transparent"
                 Behavior on strokeColor {
                     ColorAnimation { duration: Motion.fadeInDuration() }
@@ -4153,7 +4182,7 @@ PanelWindow {
                 fillColor: "transparent"
                 strokeWidth: 2
                 capStyle: ShapePath.FlatCap
-                strokeColor: islandContainer.openPanelState
+                strokeColor: islandContainer.showsPanelBorder
                     ? mainCapsule.panelOutline : "transparent"
                 Behavior on strokeColor {
                     ColorAnimation { duration: Motion.fadeInDuration() }
@@ -5403,7 +5432,7 @@ PanelWindow {
 
                 Rectangle {
                     id: panelOutlineFrame
-                    visible: islandContainer.openPanelState
+                    visible: islandContainer.showsPanelBorder
                     x: 0
                     // Pushed up by more than the radius so the clip removes
                     // the top edge AND both top corners, leaving two straight
