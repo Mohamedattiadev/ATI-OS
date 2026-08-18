@@ -120,9 +120,70 @@ LAUNCHED=0
 # config is the whole point of it.
 have() { command -v "$1" >/dev/null 2>&1; }
 
-term_view() {  # term_view <shell-command>
-  setsid kitty --class "$VIEW_CLASS" --title "docs" -e sh -c "$1" >/dev/null 2>&1 &
+# ---- SIZING THE VIEWER WINDOW, ON BOTH SESSIONS ----
+#
+# Reported: "when i open ... System then about it opens float window but
+# small". Under qtile this class already has a sizing hook — config.py's
+# `_float_and_center_docs`, a client_managed listener matching
+# wm_class="docs-view" that resizes to DOCS_W_RATIO/DOCS_H_RATIO (78%/80%
+# of the screen, floored at 720x420) and centres it. Every `setsid kitty
+# --class docs-view ...` in this file was written against THAT hook doing
+# the sizing, and it does — on qtile.
+#
+# Hyprland has no such hook. rules.conf's `windowrule = float true,
+# match:class ^(docs-view)$` only floats it, at whatever size kitty maps
+# with bare (no -o initial_window_width/height in kitty.conf), which is
+# small. And a static `windowrule = size 78% 80%` cannot fix it — rules.conf
+# has this MEASURED already, on this exact Hyprland version: a percentage
+# `size` applies as an INLINE exec-time rule and is silently INERT as a
+# static one. sum-toggle.sh and scratchpad.sh both hit this and both answer
+# it the same way — resolve the percentage against the focused monitor in
+# the script and hand Hyprland pixels through `hyprctl dispatch exec
+# "[...] cmd"` — so this does too, rather than reintroducing the bug with a
+# third hardcoded rules.conf entry.
+#
+# Same ratios and floors as qtile's DOCS_W_RATIO/DOCS_H_RATIO/DOCS_W_MIN/
+# DOCS_H_MIN, so the two sessions agree on what "the docs viewer" looks
+# like rather than each inventing its own.
+docs_geometry() {
+  local mw mh
+  read -r mw mh < <(hyprctl monitors -j 2>/dev/null \
+    | jq -r '.[] | select(.focused) | "\(.width) \(.height)"' 2>/dev/null)
+  # Same fallback scratchpad.sh's own geometry helper uses if the query
+  # comes back empty — this laptop's panel, not a guess.
+  [[ -n "$mw" && -n "$mh" ]] || { mw=1366; mh=768; }
+  local w=$(( mw * 78 / 100 )) h=$(( mh * 80 / 100 ))
+  (( w < 720 )) && w=720
+  (( h < 420 )) && h=420
+  (( w > mw )) && w=$mw
+  (( h > mh )) && h=$mh
+  printf '%s %s' "$w" "$h"
+}
+
+# spawn_docs_kitty <kitty-args...> — the one place that decides HOW the
+# docs-view terminal launches, so term_view/view_at_line/view_edit do not
+# each grow their own Hyprland-vs-qtile branch. `%q` and not raw
+# interpolation: several callers hand this NVIM_VIEW_OPTS, which contains
+# spaces and `<>` (`+nnoremap <buffer> q <cmd>q!<cr>`), and the exec string
+# below is re-split by a shell on the far side of hyprctl — verified this
+# round-trips back to one argv element, same as `sh -c` does with it
+# natively.
+spawn_docs_kitty() {
+  if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    local w h cmd a
+    read -r w h < <(docs_geometry)
+    cmd="kitty"
+    for a in "$@"; do cmd+=" $(printf '%q' "$a")"; done
+    hyprctl dispatch exec "[float; size $w $h; center 1] $cmd" >/dev/null 2>&1 &
+  else
+    # qtile: unchanged. _float_and_center_docs does the sizing.
+    setsid kitty "$@" >/dev/null 2>&1 &
+  fi
   LAUNCHED=1
+}
+
+term_view() {  # term_view <shell-command>
+  spawn_docs_kitty --class "$VIEW_CLASS" --title "docs" -e sh -c "$1"
 }
 
 # EVERY document opens in nvim, read-only, rendered by render-markdown.nvim.
@@ -160,10 +221,8 @@ view_at_line() {  # view_at_line <file> [line]
   local f="$1" line="${2:-1}"
   [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
   (( line > 0 )) || line=1
-  setsid kitty --class "$VIEW_CLASS" --title "docs" \
-    -e "$VIEWER" "${NVIM_VIEW_OPTS[@]}" "+${line}" "+normal zz" "$f" \
-    >/dev/null 2>&1 &
-  LAUNCHED=1
+  spawn_docs_kitty --class "$VIEW_CLASS" --title "docs" \
+    -e "$VIEWER" "${NVIM_VIEW_OPTS[@]}" "+${line}" "+normal zz" "$f"
 }
 
 # The markdown entry point. Now just view_at_line -- kept as its own name
@@ -186,8 +245,7 @@ view_tmp() {  # view_tmp <tmpfile>
 view_edit() {
   local f="$1"
   [[ -f "$f" ]] || { rofi -e "not found: $f"; return; }
-  setsid kitty --class "$VIEW_CLASS" --title "docs" -e nvim "$f" >/dev/null 2>&1 &
-  LAUNCHED=1
+  spawn_docs_kitty --class "$VIEW_CLASS" --title "docs" -e nvim "$f"
 }
 
 # A generated PAGE, not a dump. About/services/gpu/audit used to arrive as
