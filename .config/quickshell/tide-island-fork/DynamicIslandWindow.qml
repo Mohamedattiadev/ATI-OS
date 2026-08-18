@@ -693,6 +693,19 @@ PanelWindow {
             return "ondemand";
         return "none";
     }
+    // Reported: "when it is open the shelf i can not switch to another
+    // workspace also some other popups the same." MEASURED: even a direct
+    // `hyprctl dispatch workspace N` — no keyboard involved — is refused by
+    // Hyprland while this surface holds WlrKeyboardFocus.Exclusive;
+    // switching to OnDemand fixes it (A/B'd on the shelf with
+    // `qs ipc call qdrop open` + `hyprctl dispatch workspace 8`).
+    // `IslandWindowWayland.qml` reads this to drop the grab for exactly as
+    // long as Super is held — see the Keys handler on `islandContainer`
+    // below for where it is set, and why a plain property here rather than
+    // folding the check into `islandKeyboardFocus` itself (that property
+    // answers "should this panel have a grab AT ALL", not "is Hyprland
+    // refusing to honour one right now").
+    property bool superHeld: false
     readonly property string iconFontFamily: userConfig.iconFontFamily
     readonly property string textFontFamily: userConfig.textFontFamily
     readonly property string heroFontFamily: userConfig.heroFontFamily
@@ -1284,12 +1297,6 @@ PanelWindow {
     }
 
     function showNotification(notification) {
-        // Set unconditionally, BEFORE the capsule call — showNotificationCapsule
-        // can silently drop the toast while a panel is already open
-        // (openPanelState guard, see its own comment), but the notification
-        // still happened and the border still has to say so once the panel
-        // closes. See `hasUnseenNotification`'s own note.
-        islandContainer.hasUnseenNotification = true;
         islandContainer.showNotificationCapsule(notification);
     }
 
@@ -2079,6 +2086,36 @@ PanelWindow {
             || islandContainer.expandedLayerVisible
             || (root.monitorFocused && (root.overviewVisible || root.connectivityPromptActive))
 
+        // Sets `root.superHeld` — see its declaration above for the bug
+        // this is fixing. Key_Meta is what a bare Super press/release
+        // arrives as; the Timer is the safety net, not the mechanism:
+        // Key_Meta's RELEASE is what normally clears this, but dropping the
+        // grab can itself change which surface Hyprland considers focused,
+        // and a release that never makes it back here would leave every
+        // future keystroke on OnDemand's "needs a click" footing for the
+        // rest of the session. 600ms comfortably covers a deliberate chord
+        // and expires long before it would be mistaken for held-down text
+        // entry — nothing in this island holds Super for typing.
+        Keys.onPressed: (event) => {
+            if (event.key === Qt.Key_Meta || event.key === Qt.Key_Super_L
+                    || event.key === Qt.Key_Super_R) {
+                root.superHeld = true;
+                superHeldSafety.restart();
+            }
+        }
+        Keys.onReleased: (event) => {
+            if (event.key === Qt.Key_Meta || event.key === Qt.Key_Super_L
+                    || event.key === Qt.Key_Super_R) {
+                root.superHeld = false;
+                superHeldSafety.stop();
+            }
+        }
+        Timer {
+            id: superHeldSafety
+            interval: 600
+            onTriggered: root.superHeld = false
+        }
+
         property string islandState: "normal"
 
         // ---- THE HEIGHT TO HOLD WHILE AN INCOMING PANEL IS STILL LOADING ----
@@ -2094,21 +2131,8 @@ PanelWindow {
         // See the "picker" case in targetHeight for the measurement that
         // made this necessary.
         property real heightBeforeStateChange: Metrics.px(35)
-        // PROMPT-NEXT.md item 11: "when notification appears the island
-        // should be with border active" — for as long as an unseen
-        // notification exists, a different lifecycle than a panel being
-        // open (a notification can arrive while the capsule is RESTING).
-        // Set true from NotificationService's own `posted` signal
-        // (unconditionally — a toast can be silently dropped while a panel
-        // is already open, but the notification still happened and still
-        // counts as unseen); cleared here, folded into the existing
-        // `onIslandStateChanged` rather than a second handler on the same
-        // signal, the moment the notification centre is actually looked at.
-        property bool hasUnseenNotification: false
         onIslandStateChanged: {
             heightBeforeStateChange = mainCapsule.height;
-            if (islandState === "notification_center")
-                hasUnseenNotification = false;
         }
 
         property string splitIcon: root.defaultSplitIcon
@@ -2269,12 +2293,23 @@ PanelWindow {
             || islandState === "picker"
 
         // The capsule's accent BORDER wants a second reason to show beyond
-        // `openPanelState` — item 11 — without touching `openPanelState`
-        // itself, which also dims every OTHER window's border
-        // (border-focus.sh, right below) and must NOT fire just because a
-        // notification arrived while the capsule is resting; that would
-        // dim the desktop for an event nobody asked to focus on.
-        readonly property bool showsPanelBorder: openPanelState || hasUnseenNotification
+        // `openPanelState` — the notification toast itself — without
+        // touching `openPanelState`, which also dims every OTHER window's
+        // border (border-focus.sh, right below) and must NOT fire just
+        // because a notification is on screen; that would dim the desktop
+        // for an event nobody asked to focus on.
+        //
+        // `islandState === "notification"` rather than a latched
+        // "has an unseen one" flag (the previous design, item 11): that
+        // flag stayed true from the moment a toast fired until the
+        // notification centre was actually opened, so the border kept
+        // showing on an otherwise resting capsule — sometimes long after
+        // the toast itself was gone. Reported back as exactly that: a
+        // border on a resting island with nothing open and nothing
+        // currently arriving. Tying it to the transient state instead means
+        // the border tracks something ON SCREEN — a toast showing or a
+        // panel open — and never outlives either.
+        readonly property bool showsPanelBorder: openPanelState || islandState === "notification"
         // ---- AND THE WINDOWS' BORDERS GO DOWN WHILE IT IS UP ----
         //
         // See scripts/border-focus.sh for what "down" means and why it reads
@@ -6791,6 +6826,18 @@ PanelWindow {
                 id: pickerLoader
                 anchors.fill: parent
                 live: islandContainer.pickerLayerVisible
+                // Same empty-model collapse as display/audio/power-menu/
+                // settings/calculator/theme-picker: `openReset()` runs on
+                // EVERY open (not just the first — see the note on that
+                // function below) and calls `refresh()`, which sets
+                // `pageStack = []` before the fresh Process it spawns has
+                // answered. `preferredHeight` is built from `items.length`
+                // through `visibleRows`, floored at one row, so a populated
+                // list collapses to that floor and back on every single
+                // open — the capsule's "up down glitch". Retaining keeps the
+                // PREVIOUS page's rows on screen, sized correctly, until the
+                // new fetch replaces them, same as the six sibling panels.
+                retain: true
                 // Same as the application launcher and the cheatsheet: the
                 // search field is useless without the focus, and the focus
                 // has to be taken AFTER the item exists — which is what this
@@ -6819,6 +6866,17 @@ PanelWindow {
                 id: cheatsheetLoader
                 anchors.fill: parent
                 live: islandContainer.cheatsheetLayerVisible
+                // Same empty-model collapse as pickerLoader above, one file
+                // over: `onShowConditionChanged` calls `reload()` on every
+                // open, which tears down and rebuilds the fetch Process, and
+                // `onSheetChanged` (Tab between sheets) sets `sections = []`
+                // outright. `preferredHeight` is built from `sections`,
+                // floored at Metrics.px(200) — well under a populated sheet
+                // — so both a reopen and a sheet switch collapse the capsule
+                // to that floor before the python3 fetch answers. Retaining
+                // keeps the previous sheet's cards on screen, correctly
+                // sized, until the new ones replace them.
+                retain: true
                 // Same as the application launcher: the search field is
                 // useless without the focus, and the focus has to be taken
                 // after the item exists.

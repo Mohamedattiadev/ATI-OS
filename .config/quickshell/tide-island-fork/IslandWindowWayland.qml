@@ -21,9 +21,16 @@ DynamicIslandWindow {
     // string the base can return is handled, and an unrecognised one falls to
     // None, which is the safe end (a missed grab loses a keystroke to the
     // window behind; a stray grab steals every keystroke until it clears).
+    // `island.superHeld` — see its declaration in DynamicIslandWindow.qml —
+    // drops Exclusive to OnDemand for exactly as long as Super is
+    // physically held, which is the only way a workspace-switch chord can
+    // reach Hyprland while a panel is open: measured, Hyprland refuses
+    // `hyprctl dispatch workspace N` outright while this surface holds
+    // Exclusive, and does not once it is OnDemand.
     WlrLayershell.keyboardFocus: {
         switch (island.islandKeyboardFocus) {
-        case "exclusive": return WlrKeyboardFocus.Exclusive;
+        case "exclusive": return island.superHeld
+            ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive;
         case "ondemand":  return WlrKeyboardFocus.OnDemand;
         default:          return WlrKeyboardFocus.None;
         }

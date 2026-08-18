@@ -134,13 +134,43 @@ PanelWindow {
         return null;
     }
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    // Reported: "when it is open the shelf i can not switch to another
+    // workspace also some other popups the same." MEASURED: even a direct
+    // `hyprctl dispatch workspace N` — no keyboard involved — is refused by
+    // Hyprland while this surface holds WlrKeyboardFocus.Exclusive;
+    // switching to OnDemand fixes it (A/B'd on the shelf with
+    // `qs -p …/popups.qml ipc call qdrop open` + `hyprctl dispatch
+    // workspace 8`). OnDemand full-time is not a free substitute — it is
+    // the exact regression the file header above warns against, a picker
+    // that only answers once you remember to click it first — so this
+    // drops to OnDemand only for exactly as long as Super is physically
+    // held, which is the only window a workspace-switch chord can arrive
+    // in. See the Keys handler below for where `superHeld` is set.
+    WlrLayershell.keyboardFocus: root.superHeld
+        ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive
     WlrLayershell.namespace: "quickshell-qtile-popup"
     exclusionMode: ExclusionMode.Ignore
 
     implicitWidth: root.popupWidth
     implicitHeight: root.popupHeight
     color: "transparent"
+
+    // Set by the Keys handler below on a bare Super press/release — see the
+    // `WlrLayershell.keyboardFocus` binding above for why. The Timer is the
+    // safety net, not the mechanism: Key_Meta's RELEASE is what normally
+    // clears this, but dropping the grab can itself change which surface
+    // Hyprland considers focused, and a release that never makes it back
+    // here would leave every future keystroke on OnDemand's "needs a
+    // click" footing for the rest of the popup's life. 600ms comfortably
+    // covers a deliberate chord and expires long before it would be
+    // mistaken for held-down text entry — nothing in these popups holds
+    // Super for typing.
+    property bool superHeld: false
+    Timer {
+        id: superHeldSafety
+        interval: 600
+        onTriggered: root.superHeld = false
+    }
 
     // ---- THE DERIVED TONES ----
     //
@@ -405,6 +435,12 @@ PanelWindow {
         focus: true
 
         Keys.onPressed: (event) => {
+            if (event.key === Qt.Key_Meta || event.key === Qt.Key_Super_L
+                    || event.key === Qt.Key_Super_R) {
+                root.superHeld = true;
+                superHeldSafety.restart();
+                return;
+            }
             if (event.key === Qt.Key_Escape
                     || (event.key === Qt.Key_Q && event.modifiers === Qt.NoModifier)) {
                 root.dismissed();
@@ -413,6 +449,13 @@ PanelWindow {
             }
             root.keyPressed(event.key, event.modifiers, event.text);
             event.accepted = true;
+        }
+        Keys.onReleased: (event) => {
+            if (event.key === Qt.Key_Meta || event.key === Qt.Key_Super_L
+                    || event.key === Qt.Key_Super_R) {
+                root.superHeld = false;
+                superHeldSafety.stop();
+            }
         }
     }
 }

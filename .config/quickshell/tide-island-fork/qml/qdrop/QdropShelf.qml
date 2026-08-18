@@ -162,8 +162,16 @@ PopupChrome {
     // synthesised drop, everything else held constant: on the exclusive path
     // `entries 9 -> 9`, off it `9 -> 10`. The shake opens this while you are
     // holding a file; the key does not.
-    WlrLayershell.keyboardFocus: shelf.forDrag
-        ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive
+    //
+    // …and OnDemand for exactly as long as Super is held (`shelf.superHeld`,
+    // PopupChrome's own property) for the same reason PopupChrome's base
+    // binding is — see it there. This shelf overrides the base binding
+    // rather than inheriting it because `forDrag` needs to win outright:
+    // mid-drag, Super being held is not a workspace-switch chord in flight,
+    // it is incidental, and re-checking it here would risk the exclusive
+    // grab this file's whole header is about not taking in the first place.
+    WlrLayershell.keyboardFocus: shelf.forDrag ? WlrKeyboardFocus.OnDemand
+        : (shelf.superHeld ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive)
 
     signal requestClose()
     signal dropLanded()
