@@ -646,10 +646,30 @@ Two changes, and they may turn out to be the same root cause:
   fixes this one too, and the fix here is confirming that rather than
   writing new toggle logic that already exists.
 
-### 14. Workspace switching is blocked while any island popup is open
+### 14. Workspace switching is blocked while any island popup is open — CLOSED
 
 Reported: *"when it is open the shelf i can not switch to another workspace
 also some other popups the same fix."*
+
+**CLOSED, commit `6c05996`.** The real cause was one level deeper than the
+write-up below assumed while it was still open: not keyboard routing, but
+Hyprland itself refusing `workspace N` outright — even via a bare `hyprctl
+dispatch workspace 8` with no keyboard involved — for as long as anything
+holds `WlrKeyboardFocus.Exclusive`. Fix: both hosts (island's
+DynamicIslandWindow/IslandWindowWayland, and native popups' shared
+PopupChrome, which QdropShelf overrides for its drag case) now drop
+Exclusive to OnDemand only for exactly as long as Super is physically held
+(Key_Meta press/release, 600ms Timer as a safety net), rather than for the
+popup's whole time open. Verified live on the island host: real `super+8`
+switched workspace with the shelf open, and hjkl still moved the shelf's
+selection with no click needed afterward, so the earlier "instant keys"
+fix is not regressed. The native-popup host mirrors the same mechanism but
+was not exercised live — bar mode was island at the time and switching it
+just to test would have meant flipping the user's whole panel setup out
+from under them mid-session. Worth a quick live A/B under native mode next
+time it's up anyway, same rig as below.
+
+The original write-up, kept for the reasoning trail:
 
 **MEASURED, not guessed — and it is one shared bug, not one per popup.**
 Opened the shelf (`qs -p ~/.config/quickshell/tide-island-fork ipc call
