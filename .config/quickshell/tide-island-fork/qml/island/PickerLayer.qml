@@ -114,6 +114,42 @@ FocusScope {
     property string statusText: ""
     property bool statusIsError: false
 
+    // ---- TODO'S TAB-SWITCHED VIEW ----
+    //
+    // Asked for directly: a Tab key to flip the Todo menu between done and
+    // not-done. Tab arrives here already dead — see the key handler below,
+    // "swallowed rather than left to Qt's focus navigation" — so repurposing
+    // it for the one menu that wants it costs every other menu nothing.
+    //
+    // Client-side, not an island-picker.py change: todo_list() already tags
+    // every row's `detail` with "done" or "open" (plus "  ·  subtask"), so
+    // the three views are a filter over data the script already sends, not
+    // a new page shape.
+    property string todoFilter: "open"
+    readonly property var todoFilterOrder: ["open", "done", "all"]
+    function cycleTodoFilter() {
+        const i = root.todoFilterOrder.indexOf(root.todoFilter);
+        root.todoFilter = root.todoFilterOrder[(i + 1) % root.todoFilterOrder.length];
+        root.selectedIndex = 0;
+    }
+    // "New task…" has no done/open detail at all and must survive every
+    // view — the one action that adds a row cannot itself be filtered out
+    // by the view over existing rows.
+    // pageStack.length === 1, not just root.menu === "todo": the delete
+    // confirm page ("del:N" -> "Delete this task?") is reached WHILE
+    // root.menu is still "todo", and its one row's `detail` is the raw
+    // task text, not "open"/"done" — the open/done/all filter was eating
+    // that row on every sub-page, leaving the confirm screen with a title
+    // and a note but no "Delete" row to select. Reported as "it do not
+    // deletes": Enter had nothing to run. Scoping to the root page fixes
+    // it for this sub-page and any future one.
+    readonly property var scopedItems: (root.menu !== "todo" || root.pageStack.length > 1)
+        ? root.items
+        : root.items.filter(function (it) {
+            return it.id === "new" || root.todoFilter === "all"
+                || String(it.detail || "").indexOf(root.todoFilter) === 0;
+        })
+
     // Set for the duration of a `menu` re-target (the `hub` menu's rows do
     // this). Without it, assigning root.menu fires onMenuChanged, which
     // re-fetches --list for the new menu and throws away the page the script
@@ -235,7 +271,7 @@ FocusScope {
         const buckets = [];
         for (let i = 0; i <= root.matchRankBest; i++)
             buckets.push([]);
-        for (const item of root.items) {
+        for (const item of root.scopedItems) {
             const rank = root.matchRank(item, needle);
             if (rank > 0)
                 buckets[Math.min(rank, root.matchRankBest)].push(item);
@@ -289,11 +325,14 @@ FocusScope {
         ? Math.max(1, Math.min(root.maxVisibleRows, root.items.length)) : 0
     readonly property real noteHeight:
         root.note === "" ? 0 : noteLabel.implicitHeight + Metrics.pad(8)
-    // Metrics and not chrome.chromeHeight: this sizes the capsule the panel is
-    // drawn inside, so reading it off a child of that panel is a loop waiting
-    // for one more term.
+    // Metrics and chrome.tabsHeight, not chrome.chromeHeight — same reason
+    // CheatsheetLayer's own preferredHeight reads it this way: this number
+    // sizes the capsule the panel is drawn inside, so reading it off a child
+    // of that panel is a loop waiting for one more term. tabsHeight alone is
+    // safe because it comes from the tab strip's own text metrics, not from
+    // this panel's height.
     readonly property real preferredHeight:
-        Metrics.chromeTotal() + root.searchHeight + Metrics.pad(8)
+        Metrics.chromeTotal() + chrome.tabsHeight + root.searchHeight + Metrics.pad(8)
         + root.noteHeight
         + root.visibleRows * root.rowHeight
 
@@ -425,6 +464,7 @@ FocusScope {
         root.query = "";
         searchInput.text = "";
         root.selectedIndex = 0;
+        root.todoFilter = "open";
         root.refresh();
         root.grabKeyboardFocus();
     }
@@ -442,6 +482,7 @@ FocusScope {
     // Changing menus while the panel is open (there is no key for it today,
     // but the IPC can) re-fetches rather than filtering the old rows.
     onMenuChanged: {
+        root.todoFilter = "open";
         if (root.showCondition && !root.retargeting)
             root.refresh();
     }
@@ -504,16 +545,25 @@ FocusScope {
     // problem, and island-picker.py reads it positionally.
     property string pendingText: ""
 
-    function runSelected() {
-        const item = root.selected;
-        if (!item || root.pendingId !== "")
+    // Shared by Enter (runs the selected row's own id) and Shift+D on Todo
+    // (runs a DIFFERENT id — "del:N" rather than "t:N" — for the same
+    // selected row), so both go through the one in-flight guard.
+    function runId(id) {
+        if (root.pendingId !== "")
             return;
-        root.pendingId = String(item.id);
+        root.pendingId = String(id);
         root.pendingText = "";
         root.statusText = "";
         root.statusIsError = false;
         runLoader.active = false;
         runLoader.active = true;
+    }
+
+    function runSelected() {
+        const item = root.selected;
+        if (!item)
+            return;
+        root.runId(item.id);
     }
 
     // Enter on a prompt page. The submit id comes from the page, not from a
@@ -628,14 +678,38 @@ FocusScope {
         // belongs beside the code that decides what Enter does.
         title: root.title !== "" ? root.title : root.menu
 
+        // ---- THE TODO VIEW TABS ----
+        //
+        // Asked for directly, after Tab-cycling shipped with no visible
+        // affordance: "make the tabs appearing so the user knows he can
+        // switch to them with tab, like the cheatsheet one". CheatsheetLayer
+        // is exactly this — PanelChrome already has a generic tabs/currentTab/
+        // tabRequested triple built for it, drawing PanelTabs' sliding
+        // accent-underline row. Empty array on every other menu, so nothing
+        // else on this panel grows a tab strip it never asked for.
+        tabs: root.menu === "todo"
+            ? root.todoFilterOrder.map(f => ({ value: f, label: f.toUpperCase() }))
+            : []
+        currentTab: root.todoFilter
+        onTabRequested: name => {
+            if (name !== root.todoFilter) {
+                root.todoFilter = name;
+                root.selectedIndex = 0;
+            }
+        }
+
         // The row count is meaningless on a page with no rows, and "0 of 0"
         // beside a question reads as a failure. Depth is what a prompt page
         // can usefully report instead — it is the only thing on screen that
         // says Backspace has somewhere to go.
+        //
+        // The denominator is scopedItems, not items: on Todo, "of 13" while
+        // the view is filtered to "open" would count done rows the view is
+        // deliberately hiding, which reads as rows having gone missing.
         status: root.statusText !== "" ? root.statusText
             : (root.loading ? "reading…"
                 : (root.mode === "list"
-                    ? root.filtered.length + " of " + root.items.length
+                    ? root.filtered.length + " of " + root.scopedItems.length
                     : (root.pageStack.length > 1 ? "step " + root.pageStack.length : "")))
         statusLevel: root.statusIsError ? "error" : (root.loading ? "busy" : "idle")
 
@@ -659,17 +733,26 @@ FocusScope {
                     { key: "Enter", label: "run" },
                     { key: "type", label: "filter" }
                 ];
+                if (root.menu === "todo") {
+                    h.push({ key: "Tab", label: "view" });
+                    h.push({ key: "Ctrl+d", label: "delete" });
+                }
                 if (root.pageStack.length > 1)
                     h.push({ key: "BkSp", label: "back" });
                 h.push({ key: "q", label: "close" });
                 return h;
             }
-            return [
+            const h2 = [
                 { key: "↑/↓", label: "move" },
                 { key: "Ctrl+n/p", label: "move" },
-                { key: "Enter", label: "run" },
-                { key: "Esc", label: "close" }
+                { key: "Enter", label: "run" }
             ];
+            if (root.menu === "todo") {
+                h2.push({ key: "Tab", label: "view" });
+                h2.push({ key: "Ctrl+d", label: "delete" });
+            }
+            h2.push({ key: "Esc", label: "close" });
+            return h2;
         }
     }
 
@@ -821,13 +904,36 @@ FocusScope {
                 } else if (list && empty && event.key === Qt.Key_Q) {
                     root.closeRequested();
                     event.accepted = true;
+                } else if (list && root.menu === "todo" && ctrl
+                        && event.key === Qt.Key_D) {
+                    // Ctrl+D deletes the selected task — rofi_todo's own
+                    // delete key, kept rather than Shift+D so the two menus
+                    // agree. No `empty` gate needed: every other Ctrl-
+                    // modified key here (Ctrl+N/P/R/H) skips it too, because
+                    // holding Ctrl never types into the field regardless.
+                    //
+                    // rofi_todo's own delete asks for confirmation before
+                    // touching the file — a fuzzy-matched row destroying data
+                    // with no undo and no "are you sure" is the failure the
+                    // `processes` menu already refuses SIGKILL for.
+                    // island-picker.py's "del:" step pushes that same confirm
+                    // page rather than deleting on this keystroke; "t:N" ->
+                    // "del:N" is the whole translation.
+                    const item = root.selected;
+                    if (item && String(item.id).indexOf("t:") === 0)
+                        root.runId("del" + String(item.id).slice(1));
+                    event.accepted = true;
                 } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
-                    // Swallowed rather than left to Qt's focus navigation.
-                    // There is exactly one focusable item on this panel, so
-                    // Tab's only possible effect is to take the focus OFF
-                    // the field and leave the keyboard grab pointing at
-                    // nothing — a panel that has stopped responding with no
-                    // visible reason why.
+                    // Swallowed rather than left to Qt's focus navigation on
+                    // every menu except one: there is exactly one focusable
+                    // item on this panel, so Tab's only other possible effect
+                    // is to take the focus OFF the field and leave the
+                    // keyboard grab pointing at nothing — a panel that has
+                    // stopped responding with no visible reason why. Todo is
+                    // the one menu that gives the now-dead key a job: cycle
+                    // open / done / all.
+                    if (list && root.menu === "todo")
+                        root.cycleTodoFilter();
                     event.accepted = true;
                 } else if (ctrl && event.key === Qt.Key_R) {
                     // Re-read. The lists are volatile — windows close,
@@ -1072,7 +1178,15 @@ FocusScope {
         Text {
             width: details.width
             wrapMode: Text.WordWrap
-            maximumLineCount: 2
+            // 2 lines when a preview image is taking its ~120 px below —
+            // leave that room. Otherwise (most menus: windows, todo,
+            // processes, anything with no icon) there is nothing else in
+            // this column but a one-line detail and a one-line id, so 2
+            // lines was eliding long text ("…") into a details pane that
+            // still had the preview's whole freed height sitting empty
+            // beneath it. Reported directly: a long todo line was cut off
+            // "when it's already empty, use the empty space".
+            maximumLineCount: previewBox.hasPreview ? 2 : 8
             elide: Text.ElideRight
             text: root.selected ? String(root.selected.label || "") : ""
             color: IslandTheme.textPrimary
@@ -1085,7 +1199,23 @@ FocusScope {
         // "which one"; this says what it actually is, which for a
         // screenshot is the entire content of the clipboard entry.
         Rectangle {
-            visible: preview.source !== ""
+            id: previewBox
+            // Bound to the SAME condition that decides the Image's source,
+            // not to a read-back of `preview.source` — that indirection was
+            // the bug. Measured with instrumented onSourceChanged/onVisible-
+            // Changed logging on a menu with no icons at all (Todo): the
+            // Image's source never changed value (zero fires, confirmed in
+            // the shell log across three separate opens), yet this
+            // Rectangle's `visible` still flipped true for the better part
+            // of a second, painting a blank surfaceSunken plate — reported
+            // as "a black small screen on the right hand side" and, since
+            // Todo carries no icons at all, reproducible on any menu that
+            // doesn't use icons, not just the image-bearing ones. Deriving
+            // both `visible` and `source` from one shared boolean removes
+            // the cross-object read-back that was glitching.
+            readonly property bool hasPreview: root.selected !== null
+                && root.iconIsPath(root.selected.icon)
+            visible: hasPreview
             width: Math.min(details.width, preview.paintedWidth + 2)
             height: preview.paintedHeight + 2
             color: IslandTheme.surfaceSunken
@@ -1096,8 +1226,7 @@ FocusScope {
             Image {
                 id: preview
                 anchors.centerIn: parent
-                source: root.selected && root.iconIsPath(root.selected.icon)
-                    ? "file://" + root.selected.icon : ""
+                source: previewBox.hasPreview ? "file://" + root.selected.icon : ""
                 width: details.width - Metrics.px(2)
                 height: Metrics.px(120)
                 fillMode: Image.PreserveAspectFit

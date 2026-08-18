@@ -2079,23 +2079,30 @@ def pass_run(item_id):
 #  rofi_todo is 652 lines: four sessions (today / future / general / done),
 #  subtasks with parent-status roll-up, priorities, due dates, tag colouring,
 #  a working-on marker, an edit box and a lock file. What is ported is the
-#  list and the two verbs that change it — toggle done, add a task — and
-#  nothing else.
+#  list and three verbs that change it — toggle done, add a task, delete a
+#  task (Shift+D in the panel, "del:N"/"delyes:N" here, confirm-gated the
+#  same way notes_run's delete is) — and nothing else.
 #
 #  This is the largest deliberate reduction in the whole port, so here is
 #  the measurement behind it: ~/ATITODOS/TODOS.md, the file rofi_todo reads,
 #  currently contains ZERO lines matching `^\s*- \[[ x]\]`. It is a freeform
-#  numbered list. Every one of those 652 lines of session/subtask/priority
-#  machinery is running over a format the file is not written in, which is
-#  why this port claims only the checkbox lines: they are the part of the
-#  format that is real, and a task list that shows the checkboxes and can add
-#  one is a task list.
+#  numbered list ("1- hobby & indus."). rofi_todo (lines 168-173) renders
+#  those as open todos too rather than skipping them — a plain numbered
+#  Simplenote list must not go invisible just because it predates the
+#  checkbox convention. This port originally skipped that conversion, which
+#  meant it showed an empty list against this exact file: measured, zero
+#  items past "New task…". Fixed to match rofi_todo's read side. Nothing
+#  is rewritten on disk until a numbered line is actually toggled, same as
+#  rofi_todo — opening the menu must not itself rewrite the file.
 #
-#  rofi_todo is untouched and the qtile session still has all of it.
+#  rofi_todo is untouched and the qtile session still has all of it, along
+#  with everything else this port still drops (sessions, subtasks,
+#  priorities, due dates, tags, delete, edit).
 
 TODO_FILE = os.path.join(HOME, "%sTODOS" % os.environ.get("USER", "").upper(),
                          "TODOS.md")
 TODO_LINE = re.compile(r"^(\s*)- \[([ xX])\]\s*(.*)$")
+TODO_NUMBERED = re.compile(r"^\d+\s*-\s*(\S.*)$")
 
 
 def _todo_lines():
@@ -2106,15 +2113,28 @@ def _todo_lines():
         return []
 
 
+def _todo_match(line):
+    """Return (indent, done, body) for a line rofi_todo would show as a
+    task — either a real checkbox or a plain numbered Simplenote line —
+    or None if the line isn't one."""
+    match = TODO_LINE.match(line)
+    if match:
+        indent, mark, body = match.groups()
+        return indent, mark.lower() == "x", body
+    numbered = TODO_NUMBERED.match(line)
+    if numbered:
+        return "", False, numbered.group(1)
+    return None
+
+
 def todo_list():
     items = [{"id": "new", "label": "New task…",
               "detail": os.path.basename(TODO_FILE)}]
     for number, line in enumerate(_todo_lines()):
-        match = TODO_LINE.match(line)
-        if not match:
+        parsed = _todo_match(line)
+        if parsed is None:
             continue
-        indent, mark, body = match.groups()
-        done = mark.lower() == "x"
+        indent, done, body = parsed
         items.append({
             # The LINE NUMBER is the id, and the label is what it says
             # today. rofi_todo keys on line numbers too; the difference is
@@ -2127,9 +2147,8 @@ def todo_list():
         })
     if len(items) == 1:
         return _page("Todo", items,
-                     note="No `- [ ]` lines in %s. rofi_todo reads the same "
-                          "file and finds the same nothing — see the note in "
-                          "island-picker.py." % TODO_FILE)
+                     note="No task-shaped lines (`- [ ]` or a numbered "
+                          "list) in %s." % TODO_FILE)
     return _page("Todo", items)
 
 
@@ -2152,17 +2171,47 @@ def todo_run(item_id, text=""):
         _notify("Task added", body)
         return _page("Todo", todo_list()["items"], stack="root")
 
+    # Shift+D on a row sends "del:N", not a menu row of its own — same
+    # confirm-then-delete shape as the notes menu's "delmenu"/"del"/"delyes"
+    # steps, minus the middle one: notes needs it because Delete is reached
+    # by picking a note off a LIST of notes; here the row is already
+    # selected, so "del:N" IS the "which one" step and only the confirm is
+    # left. A fuzzy-matched row destroying a line with no undo on one
+    # keystroke is the exact failure notes_run's own note about this warns
+    # against.
+    if kind == "del":
+        number = int(rest)
+        lines = _todo_lines()
+        parsed = _todo_match(lines[number]) if number < len(lines) else None
+        if parsed is None:
+            raise ValueError("that line is not a task any more — reopen the menu")
+        _, _, body = parsed
+        return _page("Delete this task?", [
+            {"id": "delyes:" + rest, "label": "Delete", "detail": body},
+        ], note=body)
+
+    if kind == "delyes":
+        number = int(rest)
+        lines = _todo_lines()
+        if number >= len(lines) or _todo_match(lines[number]) is None:
+            raise ValueError("that task is gone already")
+        body = _todo_match(lines[number])[2]
+        del lines[number]
+        with open(TODO_FILE, "w") as handle:
+            handle.write("\n".join(lines) + "\n")
+        _notify("Task deleted", body)
+        return _page("Todo", todo_list()["items"], stack="root")
+
     if kind != "t":
         raise ValueError("unknown todo step %s" % item_id)
 
     lines = _todo_lines()
     number = int(rest)
-    match = TODO_LINE.match(lines[number]) if number < len(lines) else None
-    if not match:
+    parsed = _todo_match(lines[number]) if number < len(lines) else None
+    if parsed is None:
         raise ValueError("that line is not a task any more — reopen the menu")
-    indent, mark, body = match.groups()
-    lines[number] = "%s- [%s] %s" % (indent, " " if mark.lower() == "x" else "x",
-                                     body)
+    indent, done, body = parsed
+    lines[number] = "%s- [%s] %s" % (indent, " " if done else "x", body)
     with open(TODO_FILE, "w") as handle:
         handle.write("\n".join(lines) + "\n")
     return _page("Todo", todo_list()["items"], stack="root")
