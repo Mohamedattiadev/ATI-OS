@@ -30,7 +30,7 @@ fi
 
 [[ -f "$CACHE" ]] || exit 0
 
-now_min=$(( $(date +%H) * 60 + $(date +%M) ))
+now_min=$(( 10#$(date +%H) * 60 + 10#$(date +%M) ))
 next_name=""
 next_min=99999
 
