@@ -318,7 +318,7 @@ CHORD_CHIP_LABELS = {
     "Rofi-Mode": "󰍉   ROFI : i , o , p , w , z , b , e , r , t , y , f , s , n , h ",
     "Media-Mode": "󰕾   MEDIA : J , K , M , H , L , P ",
     "Scratch-Mode": "󰈆   SCRATCH",
-    "Draw-Mode": "󰏫   DRAW : w , c , z , r , v ",
+    "Draw-Mode": "󰏫   DRAW : w , c , z , r , v , s ",
     "Hint-Mode": "󰍽   HINT : h hint , s scroll , f search , v caret ",
     "Lang-Switch": "   LANG : a , e , t , d ",
     "CheatSheet-Mode": "󰆍   CHEATSHEET : k , v , f , j/k scroll , TAB , ESC ",
@@ -7658,6 +7658,28 @@ keys = [
             Key([], "z", lazy.spawn("gromit-mpx -z"), desc="Gromit: undo "),
             Key([], "r", lazy.spawn("gromit-mpx -y"), desc="Gromit: redo "),
             Key([], "v", lazy.spawn("gromit-mpx -v"), desc="Gromit: toggle visibility"),
+            # Requested: "s should take screenshot for the things I wrote...
+            # the whole screen... not just the fullscreen without the text" —
+            # the annotation ink has to be IN the image, not a bare desktop
+            # capture. maim reads the actual composited screen (XGetImage on
+            # the root window), the same way this repo's own
+            # scripts/screenshot-area.sh already does — that includes
+            # gromit's own window contents exactly as they appear on
+            # screen, no different from any other on-screen window. Saved
+            # to ~/Screenshots (SHOT_DIR in hypr/scripts/island-picker.py,
+            # same directory the Hyprland-side screenshot picker uses) so
+            # both sessions' screenshots land in one place.
+            Key(
+                [],
+                "s",
+                lazy.spawn(
+                    "sh -c 'mkdir -p ~/Screenshots && "
+                    "f=~/Screenshots/gromit-$(date +%Y%m%d-%H%M%S).png && "
+                    "maim \"$f\" && "
+                    "notify-send \"Screenshot\" \"Saved $f\"'"
+                ),
+                desc="Gromit: screenshot (annotated)",
+            ),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
             *group_keys(),
             Key([], "q", lazy.ungrab_chord()),
