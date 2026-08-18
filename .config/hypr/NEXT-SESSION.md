@@ -5,6 +5,75 @@ for the X11 side that **has never been run under qtile** — it compiles, it is
 unit-tested, and its reasoning is checked against the installed libqtile, but
 nobody has watched it work. This is the list, in the order it will bite.
 
+## TOP PRIORITY — the theme/wallpaper change animation does not run under qtile
+
+Reported, and called out as important on its own, separate from the four-item
+checklist below: *"i want the hyperland theme and wallpaper chaning thing
+animaiton and logic works the same in qtile — this is too important."*
+
+**Diagnosed from the Hyprland side, NOT fixed, and NOT yet run under qtile —
+this is the actual next-session task, not just item 3 below.** The palette
+logic and the wallpaper-backend logic are already shared and already qtile-
+aware (`theme-apply`/`theme-wallpaper` branch on `$XDG_SESSION_TYPE` /
+`WAYLAND_DISPLAY` and already call `xwallpaper --stretch` on X11 — see
+`theme-wallpaper` ~line 302). `ThemeTransitionWindow.qml`, the circular-reveal
+overlay itself, already has an X11 wrapper
+(`qml/theme/ThemeTransitionWindowX11.qml`) and its `captureCommand()` already
+branches to `maim` when `WAYLAND_DISPLAY` is unset. **None of that is the
+gap.** Two concrete things are:
+
+1. **Nothing hosts the overlay under qtile's own bar.** `theme-animate`
+   (`~/.local/bin/theme-animate`) is the shared entry point every wallpaper/
+   theme change is supposed to go through — it tries `tide
+   applyThemeAnimated <mode>` over IPC against the island, then against
+   `popups.qml`, and only falls back to plain `theme-apply` (no animation) if
+   neither answers. Under Hyprland, `hypr/scripts/topbar.sh` starts
+   `popups.qml` (and `treetab.qml`) alongside the topbar itself — see its
+   lines ~111-128 — specifically so the overlay has somewhere to live even
+   when the island isn't the active bar. **`qtile/autostart.sh` has no
+   equivalent call.** It starts the island's full `island.sh` only when
+   `~/.cache/bar-mode` says `island` (line 84); when qtile wears its own bar
+   — the ordinary case — no Quickshell process runs at all, so
+   `theme-animate`'s IPC probe fails both ways and every theme/wallpaper
+   change under qtile's own bar is a hard, non-animated cut. Likely fix:
+   have `qtile/autostart.sh` also start `popups.qml`, unconditionally or at
+   least whenever bar-mode is not already `island` — mirroring
+   `topbar.sh`'s own reasoning. Open question to verify live, not assumed:
+   whether an idle `popups.qml` instance sitting alongside qtile's own bar
+   causes any visible or resource conflict — it should not, since qtile
+   still owns its own popups (see next point) and nothing else calls
+   `popups.qml`'s other IPC targets under qtile, but "should not" is not
+   "measured".
+
+2. **`qtile/popups/WallpaperPopup.py` calls `theme-apply` directly**, not
+   `theme-animate` — see its `_bg()` closure, ~line 394-419: it runs
+   `xwallpaper --stretch` itself, then `subprocess.Popen(["theme-apply",
+   "wal"], …)` when the active mode is `wal`. This is the exact class of bug
+   `theme-animate`'s own header warns about — "every caller that ran
+   theme-apply directly therefore bypassed the animation entirely" — and it
+   means even fixing (1) above is not sufficient by itself: this call site
+   needs to become `theme-animate wal` (or the wallpaper path needs to go
+   through something equivalent to `hypr/scripts/wallpaper-set.sh`, which
+   already does this correctly on the Hyprland side — compare the two files
+   directly, `wallpaper-set.sh` is the one that already does what
+   `WallpaperPopup.py` needs to do). Note the existing comment just above it
+   at line 380-384: the popup is closed and qtile itself gets RESTARTED as
+   part of `theme-apply` (X11/qtile-specific — Hyprland does not restart on
+   a theme change), which is a real interaction to check against the overlay
+   rather than assume is harmless: does a qtile restart mid-freeze affect a
+   `popups.qml` process that is a separate Quickshell instance, or does
+   anything tie the two together that is not obvious from reading either
+   file alone?
+
+**Confirm both are real before touching code** — read `theme-animate`'s own
+header first (it explains the three-shell fallback chain and why it is
+ordered island-first), then reproduce the "no animation under qtile's own
+bar" symptom with `bar-mode` set away from `island`, THEN fix (1), reproduce
+again, THEN fix (2). Item 3 in the checklist below is the narrower, already-
+known "does the sweep animate at all" check (grim vs maim) — this is the
+broader "is anything even listening" gap underneath it, and it is why item 3
+was never actually confirmed working under a plain qtile-bar session.
+
 ## Verify these four, in this order
 
 1. **The island takes the keyboard and KEEPS it.** Open any island panel
