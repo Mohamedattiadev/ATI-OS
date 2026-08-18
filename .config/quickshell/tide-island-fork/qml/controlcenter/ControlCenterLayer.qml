@@ -177,27 +177,6 @@ Item {
     // anything looking at this data".
     property bool connectivityHostActive: false
     readonly property bool connectivityDataActive: showCondition || connectivityHostActive
-    property bool batteryDrawerOpen: false
-    property bool batteryDrawerDragging: false
-    property real batteryDrawerProgress: 0
-    property bool batteryDrawerSettling: false
-    readonly property bool batteryDrawerMoving: batteryDrawerDragging
-        || batteryDrawerSettling
-        || batteryDrawerProgressAnimation.running
-    property bool batteryModeBusy: false
-    property bool batteryModeStateRunning: false
-    property bool batteryModeSetterRunning: false
-    property bool batteryModeSliderDragging: false
-    property bool batteryTlpAvailable: false
-    property bool batteryTlpChecked: false
-    property int batteryModeIndex: 1
-    property int batteryModeAppliedIndex: 1
-    property int batteryModePendingIndex: 1
-    property real batteryModeDragOffset: 0
-    property string batteryModeInfoMessage: ""
-    property string batteryModeError: ""
-    property string batteryModeLastCommandOutput: ""
-    property int batteryModeRefreshPollsRemaining: 0
     property bool nightLightEnabled: false
     property bool nightLightBusy: false
     property int nightLightTemperature: 4500
@@ -257,10 +236,6 @@ Item {
     readonly property string brightnessIconGlyph: "\u{F00DF}"
     readonly property string volumeIconGlyph: "\u{F057E}"
     readonly property string nightLightGlyph: "\uf186"
-    readonly property var batteryModeGlyphs: ["", "", ""]
-    readonly property real batteryDrawerHandleHeight: 20
-    readonly property real batteryDrawerContentGap: 8
-    readonly property real batteryModeCardHeight: 80
     readonly property real roundToggleButtonSize: 58
     readonly property real roundToggleButtonGap: 18
     // ---- WHAT THE FOOTER COSTS, WRITTEN AS THE DIFFERENCE IT IS ----
@@ -273,12 +248,16 @@ Item {
     readonly property real chromeFooterCost:
         Metrics.chromeGap() + Metrics.chromeFooter() - Metrics.pad(12)
 
-    readonly property real controlCenterExtraHeight: 12 + batteryDrawerHandleHeight
-        + chromeFooterCost
-        + batteryDrawerProgress * (batteryDrawerContentGap + batteryModeCardHeight)
-    readonly property real controlCenterMaximumExtraHeight: 12 + batteryDrawerHandleHeight
-        + chromeFooterCost
-        + batteryDrawerContentGap + batteryModeCardHeight
+    // Was `12 + batteryDrawerHandleHeight + chromeFooterCost + <the drawer's
+    // own open progress>` — the battery mode drawer's height budget, read
+    // by DynamicIslandWindow.qml when sizing the capsule. The drawer is
+    // gone (PROMPT-NEXT.md item 10); kept as a name rather than deleted
+    // outright because the music player embed the same item asks for is
+    // about to need this exact plumbing for its own height, at which point
+    // these two stop being "12 + chromeFooterCost" and start being
+    // "12 + chromeFooterCost + the player's own height".
+    readonly property real controlCenterExtraHeight: 12 + chromeFooterCost
+    readonly property real controlCenterMaximumExtraHeight: 12 + chromeFooterCost
     readonly property bool bluetoothAvailable: !!bluetoothAdapter
     readonly property var bluetoothAdapter: Bluetooth.defaultAdapter
     readonly property var bluetoothDeviceValues: bluetoothAdapter ? bluetoothAdapter.devices.values : []
@@ -318,8 +297,6 @@ Item {
     readonly property string wifiStatusText: wifiController ? wifiController.statusText : "Unavailable"
     readonly property string bluetoothStatusText: buildBluetoothStatusText()
     readonly property string bluetoothAvailabilityMessage: bluetoothAvailable ? "" : "No Bluetooth adapter is available."
-    readonly property string batteryModeStatusText: buildBatteryModeStatusText()
-    readonly property bool tlpControlsEnabled: trimString(userConfig.tlpPermissionMode) !== "skip"
 
     function clamp01(value) {
         return Math.max(0, Math.min(1, value));
@@ -328,212 +305,6 @@ Item {
     function trimString(value) {
         if (value === undefined || value === null) return "";
         return String(value).trim();
-    }
-
-    function batteryModeLabel(index) {
-        if (index <= 0) return "Power Saver";
-        if (index >= 2) return "Performance";
-        return "Balanced";
-    }
-
-    function batteryModeCommand(index) {
-        if (index <= 0) return "power-saver";
-        if (index >= 2) return "performance";
-        return "balanced";
-    }
-
-    function batteryModeIndexForCommand(command) {
-        const normalized = trimString(command).toLowerCase();
-        if (normalized === "power-saver" || normalized === "bat") return 0;
-        if (normalized === "performance" || normalized === "ac") return 2;
-        return 1;
-    }
-
-    function setBatteryModeVisualIndex(index, animate) {
-        const nextIndex = Math.max(0, Math.min(2, index));
-        batteryModeIndex = nextIndex;
-    }
-
-    function setBatteryDrawerOpen(open) {
-        const nextOpen = !!open;
-        batteryDrawerOpen = nextOpen;
-        batteryDrawerSettling = true;
-        batteryDrawerProgress = nextOpen ? 1 : 0;
-        batteryDrawerSettleTimer.restart();
-        if (nextOpen && tlpControlsEnabled && !batteryTlpChecked)
-            refreshBatteryModeState();
-    }
-
-    function toggleBatteryDrawer() {
-        setBatteryDrawerOpen(!batteryDrawerOpen);
-    }
-
-    function refreshBatteryModeState() {
-        if (batteryModeStateRunning)
-            return;
-
-        batteryModeStateRunning = true;
-        SystemServices.requestTlpState();
-    }
-
-    function applyBatteryModeState(available, profile, output, errorString) {
-        batteryModeStateRunning = false;
-        batteryTlpChecked = true;
-        batteryTlpAvailable = !!available;
-
-        if (!batteryTlpAvailable) {
-            batteryModeBusy = false;
-            batteryModeError = trimString(errorString).length > 0 ? errorString : "TLP is not installed.";
-            setBatteryModeVisualIndex(batteryModeAppliedIndex, true);
-            return;
-        }
-
-        if (batteryModeError === "TLP is not installed.")
-            batteryModeError = "";
-
-        let resolvedProfile = trimString(profile);
-        if (resolvedProfile.length === 0) {
-            const profileMatch = String(output || "").match(/TLP profile\s*=\s*([a-z-]+)/i);
-            if (profileMatch)
-                resolvedProfile = profileMatch[1];
-        }
-
-        if (resolvedProfile.length > 0) {
-            const nextIndex = batteryModeIndexForCommand(resolvedProfile);
-            batteryModeAppliedIndex = nextIndex;
-            setBatteryModeVisualIndex(nextIndex, true);
-
-            if (batteryModeRefreshPollsRemaining > 0 && nextIndex === batteryModePendingIndex) {
-                batteryModeRefreshPollsRemaining = 0;
-                batteryModeRefreshTimer.stop();
-                batteryModeError = "";
-                batteryModeInfoMessage = batteryModeLabel(nextIndex) + " active.";
-            }
-        }
-    }
-
-    function buildBatteryModeStatusText() {
-        if (batteryModeBusy) return "Applying " + batteryModeLabel(batteryModePendingIndex);
-        if (trimString(userConfig.tlpPermissionMode) === "skip") return "TLP disabled";
-        if (!batteryTlpChecked) return "Checking TLP";
-        if (!batteryTlpAvailable) return "TLP is not installed";
-        return batteryModeLabel(batteryModeIndex);
-    }
-
-    function rollbackBatteryMode(message) {
-        batteryModeBusy = false;
-        batteryModeError = message;
-        batteryModeInfoMessage = "";
-        batteryModeDragOffset = 0;
-        setBatteryModeVisualIndex(batteryModeAppliedIndex, true);
-    }
-
-    function classifyBatteryModeFailure(exitCode) {
-        const details = trimString(batteryModeLastCommandOutput).toLowerCase();
-
-        if (details.indexOf("sorry, try again") >= 0 || details.indexOf("incorrect password attempt") >= 0)
-            return "The configured sudo password did not work.";
-        if (details.indexOf("pkexec") >= 0 && details.indexOf("not installed") >= 0)
-            return "Install pkexec or set tlpSudoPassword in userconfig.json.";
-        if (details.indexOf("sudo is not installed") >= 0)
-            return "sudo is not installed.";
-        if (details.indexOf("sudo:") >= 0 && details.indexOf("password") >= 0) {
-            if (trimString(userConfig.tlpPermissionMode) === "ask")
-                return "Install pkexec or set tlpSudoPassword in userconfig.json.";
-            return "sudo needs a password; set tlpSudoPassword in userconfig.json.";
-        }
-        if (details.indexOf("sudo:") >= 0 && details.indexOf("no new privileges") >= 0)
-            return "sudo is blocked by the current process security flags.";
-        if (details.indexOf("sudo:") >= 0 && details.indexOf("a terminal is required") >= 0)
-            return "sudo needs a real terminal, but the panel could not open one.";
-        if (details.indexOf("missing root privilege") >= 0)
-            return "TLP needs admin permission.";
-        if (details.indexOf("command not found") >= 0 || details.indexOf("not found") >= 0) {
-            if (details.indexOf("tlp") >= 0)
-                return "TLP is not installed.";
-        }
-
-        if (exitCode === 127)
-            return "TLP is not installed.";
-        if (exitCode === 126)
-            return "Install pkexec or set tlpSudoPassword in userconfig.json.";
-        return "TLP could not apply that mode.";
-    }
-
-    function queueBatteryModeStateRefresh(polls) {
-        batteryModeRefreshPollsRemaining = Math.max(0, polls);
-        if (batteryModeRefreshPollsRemaining > 0)
-            batteryModeRefreshTimer.restart();
-        else
-            batteryModeRefreshTimer.stop();
-    }
-
-    function selectBatteryMode(index) {
-        if (batteryModeBusy) {
-            if (batteryModeSetterRunning)
-                SystemServices.cancelTlpApply();
-            batteryModeBusy = false;
-            batteryModeSetterRunning = false;
-        }
-
-        queueBatteryModeStateRefresh(0);
-
-        const nextIndex = Math.max(0, Math.min(2, index));
-
-        if (trimString(userConfig.tlpPermissionMode) === "skip") {
-            rollbackBatteryMode("TLP mode switching is disabled in userconfig.json.");
-            return;
-        }
-
-        if (!batteryTlpChecked) {
-            refreshBatteryModeState();
-            rollbackBatteryMode("Checking TLP. Try again in a moment.");
-            return;
-        }
-
-        if (!batteryTlpAvailable) {
-            rollbackBatteryMode("TLP is not installed.");
-            return;
-        }
-
-        if (nextIndex === batteryModeAppliedIndex) {
-            batteryModeError = "";
-            batteryModeInfoMessage = batteryModeLabel(nextIndex) + " active.";
-            setBatteryModeVisualIndex(nextIndex, true);
-            return;
-        }
-
-        batteryModePendingIndex = nextIndex;
-        batteryModeBusy = true;
-        batteryModeSetterRunning = true;
-        batteryModeError = "";
-        batteryModeInfoMessage = "Applying " + batteryModeLabel(nextIndex) + "...";
-        setBatteryModeVisualIndex(nextIndex, true);
-        batteryModeLastCommandOutput = "";
-        const permissionMode = trimString(userConfig.tlpPermissionMode);
-        const sudoPassword = permissionMode === "password"
-            ? trimString(userConfig.tlpSudoPassword)
-            : "";
-        SystemServices.setTlpMode(batteryModeCommand(nextIndex), sudoPassword, permissionMode === "ask");
-    }
-
-    function finishBatteryModeApply(success, exitCode, output, errorString) {
-        batteryModeSetterRunning = false;
-        batteryModeBusy = false;
-        batteryModeLastCommandOutput = trimString(output);
-        if (batteryModeLastCommandOutput.length === 0)
-            batteryModeLastCommandOutput = trimString(errorString);
-
-        if (!success) {
-            rollbackBatteryMode(classifyBatteryModeFailure(exitCode));
-            return;
-        }
-
-        batteryModeAppliedIndex = batteryModePendingIndex;
-        batteryModeError = "";
-        batteryModeInfoMessage = batteryModeLabel(batteryModeAppliedIndex) + " active.";
-        setBatteryModeVisualIndex(batteryModeAppliedIndex, true);
-        refreshBatteryModeState();
     }
 
     // FORK: the row asks, the shell root does.
@@ -1080,15 +851,11 @@ Item {
         case Qt.Key_Escape:
         case Qt.Key_Q:
             // Innermost thing first, the same rule the power menu applies to
-            // its confirm step. Three levels now, unwound outside-in:
-            // the grid cursor is the shallowest — it is a highlight, not a
-            // mode, so it should cost the cheapest Escape — then the drawer,
-            // then the panel. Closing the control centre out from under a
-            // pulled-open drawer would lose the pull as well as the panel.
+            // its confirm step. The grid cursor is a highlight, not a mode,
+            // so it costs the cheapest Escape; the battery drawer that used
+            // to sit between it and the panel is gone (item 10).
             if (quickGrid.cursor >= 0)
                 quickGrid.cursor = -1;
-            else if (controlCenter.batteryDrawerOpen)
-                controlCenter.setBatteryDrawerOpen(false);
             else
                 controlCenter.closeRequested();
             event.accepted = true;
@@ -1197,7 +964,6 @@ Item {
             displayedVolume = localVolume;
             sliderIntroTimer.interval = sliderIntroDelay;
             sliderIntroTimer.restart();
-            refreshBatteryModeState();
             requestWifiStateRefresh();
             if (wifiPanelOpen && wifiSupported && wifiEnabled)
                 requestWifiListRefresh(true);
@@ -1232,7 +998,6 @@ Item {
         displayedVolume = localVolume;
         SystemServices.requestBrightness();
         SystemServices.requestVolume();
-        refreshBatteryModeState();
         refreshFocusState();
     }
 
@@ -1271,17 +1036,6 @@ Item {
 
         NumberAnimation {
             duration: 130
-            easing.type: Easing.BezierSpline
-            easing.bezierCurve: Motion.fade()   // FORK: was Easing.OutCubic
-        }
-    }
-
-    Behavior on batteryDrawerProgress {
-        enabled: !controlCenter.batteryDrawerDragging
-
-        NumberAnimation {
-            id: batteryDrawerProgressAnimation
-            duration: 240
             easing.type: Easing.BezierSpline
             easing.bezierCurve: Motion.fade()   // FORK: was Easing.OutCubic
         }
@@ -1358,14 +1112,6 @@ Item {
     Connections {
         target: SystemServices
 
-        function onTlpStateReady(available, profile, output, errorString) {
-            controlCenter.applyBatteryModeState(available, profile, output, errorString);
-        }
-
-        function onTlpSetFinished(success, exitCode, output, errorString) {
-            controlCenter.finishBatteryModeApply(success, exitCode, output, errorString);
-        }
-
         function onBrightnessSnapshotReady(value, errorString) {
             if (errorString === "")
                 controlCenter.applyBrightnessSnapshot(value);
@@ -1420,24 +1166,6 @@ Item {
     }
 
     Timer {
-        id: batteryModeRefreshTimer
-        interval: 1500
-        repeat: true
-        onTriggered: {
-            if (controlCenter.batteryModeRefreshPollsRemaining <= 0) {
-                stop();
-                return;
-            }
-
-            controlCenter.batteryModeRefreshPollsRemaining -= 1;
-            controlCenter.refreshBatteryModeState();
-
-            if (controlCenter.batteryModeRefreshPollsRemaining <= 0)
-                stop();
-        }
-    }
-
-    Timer {
         id: bluetoothScanStopTimer
         interval: 8000
         repeat: false
@@ -1446,13 +1174,6 @@ Item {
                 controlCenter.bluetoothAdapter.discovering = false;
             controlCenter.bluetoothInfoMessage = "";
         }
-    }
-
-    Timer {
-        id: batteryDrawerSettleTimer
-        interval: 300
-        repeat: false
-        onTriggered: controlCenter.batteryDrawerSettling = false
     }
 
     Connections {
@@ -1551,20 +1272,12 @@ Item {
         // rather than added to the Column's y so the chrome can centre its
         // header rule in the gap; see PanelChrome.bodyOffset.
         bodyOffset: Metrics.px(8)
-        hints: controlCenter.batteryDrawerOpen
-            ? [
-                { key: "h/l", label: "move" },
-                { key: "Space", label: "toggle" },
-                { key: "→", label: "list" },
-                { key: "Esc", label: "close drawer" }
-              ]
-            : [
-                { key: "h/l", label: "move" },
-                { key: "Space", label: "toggle" },
-                { key: "→", label: "list" },
-                { key: "↓", label: "battery" },
-                { key: "q", label: "close" }
-              ]
+        hints: [
+            { key: "h/l", label: "move" },
+            { key: "Space", label: "toggle" },
+            { key: "→", label: "list" },
+            { key: "q", label: "close" }
+        ]
 
         // ---- THE HEADER IS A HERO NUMBER, NOT A TITLE BAR ----
         //
@@ -2106,618 +1819,16 @@ Item {
             }
         }
 
-        // The 14 px spacer that used to sit here is GONE. Reported as "in the
-        // control center there is a lot of empty spaces no needded", and this
-        // was the largest single one:
-        //
-        //     12  the Column's own spacing after the buttons
-        //     14  this spacer
-        //     12  the Column's spacing after the spacer
-        //     20  the battery drawer's handle — the only thing that draws
-        //     12  the Column's spacing after the drawer
-        //     -- 70 px, of which 20 is ink
-        //
-        // "Air between the buttons and the sliders" was the right instinct
-        // and the Column's own 12 px spacing was already providing it twice
-        // over. A spacer item inside a Column that has spacing costs its own
-        // height AND an extra gap, which is why removing it takes 26 px off
-        // the band rather than 14.
-        Item {
-            id: batteryDrawer
-            // Was `(width - connectivityCardsRow.spacing) / 2`, which is how
-            // this drawer inherited its half-width from the two connectivity
-            // cards that used to sit above it. Those are rows now and there
-            // is no card grid to line up with, so the 12 px gutter is stated
-            // here instead of being read off a sibling that no longer exists.
-            readonly property real cardWidth: (width - Metrics.px(12)) / 2
-            readonly property real modeSlotWidth: 44
-            readonly property real openDistance: controlCenter.batteryModeCardHeight
-                + controlCenter.batteryDrawerContentGap
-
-            width: parent.width
-            height: controlCenter.batteryDrawerHandleHeight
-                + controlCenter.batteryDrawerProgress * openDistance
-            clip: true
-
-            Rectangle {
-                id: batteryModeCard
-                anchors.left: parent.left
-                y: -height + controlCenter.batteryDrawerProgress * height
-                width: batteryDrawer.cardWidth
-                height: controlCenter.batteryModeCardHeight
-                radius: Metrics.px(20)
-                color: "transparent"
-                visible: controlCenter.tlpControlsEnabled
-                opacity: controlCenter.tlpControlsEnabled ? Math.min(1, controlCenter.batteryDrawerProgress * 1.35) : 0
-                clip: true
-
-                MatteSurface {
-                    anchors.fill: parent
-                    radius: parent.radius
-                    hovered: controlCenter.batteryModeSliderDragging
-                }
-
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: Metrics.pad(14)
-                    anchors.top: parent.top
-                    anchors.topMargin: Metrics.pad(11)
-                    text: "Battery"
-                    color: textPrimary
-                    font.pixelSize: Metrics.font(13)
-                    font.family: textFontFamily
-                    font.weight: Font.DemiBold
-                }
-
-                Text {
-                    anchors.right: parent.right
-                    anchors.rightMargin: Metrics.pad(12)
-                    anchors.top: parent.top
-                    anchors.topMargin: Metrics.pad(12)
-                    width: Math.max(0, parent.width - 88)
-                    text: controlCenter.batteryModeError.length > 0
-                        ? controlCenter.batteryModeError
-                        : (controlCenter.batteryModeInfoMessage.length > 0
-                            ? controlCenter.batteryModeInfoMessage
-                            : controlCenter.batteryModeStatusText)
-                    color: controlCenter.batteryModeError.length > 0 ? IslandTheme.danger : IslandTheme.textMuted
-                    horizontalAlignment: Text.AlignRight
-                    font.pixelSize: Metrics.font(9)
-                    font.family: textFontFamily
-                    font.weight: Font.Medium
-                    elide: Text.ElideRight
-                }
-
-                Item {
-                    id: batteryModeCarousel
-                    anchors.left: parent.left
-                    anchors.leftMargin: Metrics.pad(12)
-                    anchors.right: parent.right
-                    anchors.rightMargin: Metrics.pad(12)
-                    anchors.bottom: parent.bottom
-                    anchors.bottomMargin: Metrics.pad(8)
-                    height: Metrics.px(34)
-                    clip: true
-
-                    Item {
-                        id: batteryModeItems
-                        width: batteryDrawer.modeSlotWidth * 3
-                        height: parent.height
-                        x: batteryModeCarousel.width / 2
-                            - batteryDrawer.modeSlotWidth / 2
-                            - controlCenter.batteryModeIndex * batteryDrawer.modeSlotWidth
-                            + controlCenter.batteryModeDragOffset
-
-                        Behavior on x {
-                            enabled: !controlCenter.batteryModeSliderDragging
-
-                            NumberAnimation {
-                                duration: 180
-                                easing.type: Easing.BezierSpline
-                                easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
-                            }
-                        }
-
-                        Repeater {
-                            model: 3
-
-                            delegate: Item {
-                                x: index * batteryDrawer.modeSlotWidth
-                                width: batteryDrawer.modeSlotWidth
-                                height: batteryModeCarousel.height
-                                opacity: index === controlCenter.batteryModeIndex ? 1 : 0.42
-
-                                Behavior on opacity {
-                                    NumberAnimation {
-                                        duration: 140
-                                        easing.type: Easing.BezierSpline
-                                        easing.bezierCurve: Motion.fade()   // FORK: was Easing.OutCubic
-                                    }
-                                }
-
-                                Rectangle {
-                                    anchors.centerIn: parent
-                                    width: index === controlCenter.batteryModeIndex ? 32 : 28
-                                    height: index === controlCenter.batteryModeIndex ? 28 : 24
-                                    radius: Metrics.px(12)
-                                    color: index === controlCenter.batteryModeIndex ? IslandTheme.textPrimary : IslandTheme.surfaceRaised
-
-                                    Behavior on width {
-                                        NumberAnimation {
-                                            duration: 140
-                                            easing.type: Easing.BezierSpline
-                                            easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
-                                        }
-                                    }
-
-                                    Behavior on height {
-                                        NumberAnimation {
-                                            duration: 140
-                                            easing.type: Easing.BezierSpline
-                                            easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
-                                        }
-                                    }
-
-                                    Behavior on color {
-                                        ColorAnimation {
-                                            duration: 140
-                                        }
-                                    }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: controlCenter.batteryModeGlyphs[index]
-                                        color: index === controlCenter.batteryModeIndex ? IslandTheme.inverseSurfaceInk : IslandTheme.textSecondary
-                                        font.pixelSize: index === controlCenter.batteryModeIndex ? Metrics.font(15) : Metrics.font(13)
-                                        font.family: iconFontFamily
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.bottom
-                        width: Metrics.px(22)
-                        height: Metrics.px(2)
-                        radius: 1
-                        color: IslandTheme.textDisabled
-                        opacity: 0.75
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        property real startX: 0
-                        property int startIndex: 1
-                        property bool moved: false
-
-                        function clampDrag(delta) {
-                            return Math.max(-batteryDrawer.modeSlotWidth, Math.min(batteryDrawer.modeSlotWidth, delta));
-                        }
-
-                        onPressed: function(mouse) {
-                            startX = mouse.x;
-                            startIndex = controlCenter.batteryModeIndex;
-                            moved = false;
-                            controlCenter.batteryModeInfoMessage = "";
-                            controlCenter.batteryModeError = "";
-                            controlCenter.batteryModeSliderDragging = true;
-                            controlCenter.batteryModeDragOffset = 0;
-                        }
-
-                        onPositionChanged: function(mouse) {
-                            if (!pressed)
-                                return;
-
-                            const delta = mouse.x - startX;
-                            if (!moved && Math.abs(delta) < 4)
-                                return;
-
-                            moved = true;
-                            controlCenter.batteryModeDragOffset = clampDrag(delta);
-                        }
-
-                        onReleased: function(mouse) {
-                            const delta = mouse.x - startX;
-                            let nextIndex = startIndex;
-
-                            if (delta <= -18)
-                                nextIndex = Math.min(2, startIndex + 1);
-                            else if (delta >= 18)
-                                nextIndex = Math.max(0, startIndex - 1);
-                            else if (mouse.x < width / 2 - batteryDrawer.modeSlotWidth / 2)
-                                nextIndex = Math.max(0, startIndex - 1);
-                            else if (mouse.x > width / 2 + batteryDrawer.modeSlotWidth / 2)
-                                nextIndex = Math.min(2, startIndex + 1);
-
-                            controlCenter.batteryModeSliderDragging = false;
-                            controlCenter.batteryModeDragOffset = 0;
-                            controlCenter.selectBatteryMode(nextIndex);
-                        }
-
-                        onCanceled: {
-                            controlCenter.batteryModeSliderDragging = false;
-                            controlCenter.batteryModeDragOffset = 0;
-                            controlCenter.setBatteryModeVisualIndex(controlCenter.batteryModeAppliedIndex, true);
-                        }
-                    }
-                }
-            }
-
-            Rectangle {
-                id: quickTogglesCard
-                // Same 12 px gutter batteryDrawer.cardWidth is derived from.
-                // Was reading connectivityCardsRow.spacing, which vanished
-                // with the connectivity cards — and an undefined id inside a
-                // binding is only a runtime ReferenceError, so the config
-                // still loaded clean and this card simply sat at x 0.
-                x: controlCenter.tlpControlsEnabled ? batteryDrawer.cardWidth + Metrics.px(12) : 0
-                y: batteryModeCard.y
-                width: batteryDrawer.cardWidth
-                height: controlCenter.batteryModeCardHeight
-                radius: Metrics.px(20)
-                color: "transparent"
-                opacity: Math.min(1, controlCenter.batteryDrawerProgress * 1.35)
-                clip: true
-                readonly property real toggleIconTop: 12
-                readonly property real toggleIconBoxHeight: 32
-                readonly property real toggleLabelTop: 55
-
-                Behavior on x {
-                    NumberAnimation {
-                        duration: 180
-                        easing.type: Easing.BezierSpline
-                        easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
-                    }
-                }
-
-                MatteSurface {
-                    anchors.fill: parent
-                    radius: parent.radius
-                    hovered: focusButtonMouse.containsMouse || nightLightButtonMouse.containsMouse
-                    pressed: focusButtonMouse.pressed || nightLightButtonMouse.pressed
-                }
-
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 1
-                    height: parent.height - 34
-                    radius: 1
-                    color: IslandTheme.hairline
-                }
-
-                Item {
-                    id: focusButton
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: parent.width / 2
-                    property real slashProgress: controlCenter.focusEnabled ? 1 : 0
-                    property color iconColor: controlCenter.focusEnabled ? IslandTheme.textPrimary : IslandTheme.textSecondary
-
-                    // The click is already refused when the daemon cannot be
-                    // reached; this is what SAYS so. Without it the row
-                    // refuses presses while looking exactly like a working
-                    // one, which is the same "dead control that looks alive"
-                    // failure the swaync rewrite above exists to end — moved
-                    // from the state to the pointer rather than removed.
-                    //
-                    // Two levels, not one. Busy is a flicker between a press
-                    // and the daemon answering; unavailable is a standing
-                    // condition that will still be true next time. Dimming
-                    // both to 0.5 would say "wait" where it means "cannot",
-                    // so unavailable goes further down than anything else in
-                    // this card ever does, which is what reads as disabled
-                    // rather than as slow.
-                    // NOT readonly, and that is not an oversight. A Behavior
-                    // WRITES the property it animates, so `readonly` here
-                    // fails with "Invalid property assignment: contentOpacity
-                    // is a read-only property" — and that failure takes down
-                    // the whole shell load, not just this card, because the
-                    // error propagates up through ControlCenterLayer to
-                    // DynamicIslandWindow to shell.qml. The binding below
-                    // still owns the value; the Behavior only intercepts the
-                    // transitions between the values the binding produces.
-                    property real contentOpacity: !controlCenter.focusAvailable
-                        ? 0.32
-                        : (controlCenter.focusBusy ? 0.5 : 1.0)
-
-                    // Animated because focusAvailable is discovered rather
-                    // than known: the probe answers a frame or two after the
-                    // panel opens, and a row that snapped to 32% on the
-                    // second frame would read as a rendering glitch. fade(),
-                    // not spring() — opacity is clamped, per Motion.js.
-                    Behavior on contentOpacity {
-                        NumberAnimation {
-                            duration: Motion.fadeInDuration()
-                            easing.type: Easing.BezierSpline
-                            easing.bezierCurve: Motion.fade()
-                        }
-                    }
-
-                    Behavior on slashProgress {
-                        NumberAnimation {
-                            duration: 830
-                            easing.type: Easing.BezierSpline
-                            easing.bezierCurve: Motion.fade()   // FORK: was Easing.OutCubic
-                        }
-                    }
-
-                    Rectangle {
-                        anchors.fill: parent
-                        anchors.margins: Metrics.pad(4)
-                        radius: Metrics.px(16)
-                        color: focusButtonMouse.containsMouse ? IslandTheme.alpha(IslandTheme.ink, 0.03) : "transparent"
-
-                        Behavior on color {
-                            ColorAnimation {
-                                duration: Motion.controlDuration()
-                            }
-                        }
-                    }
-
-                    MouseArea {
-                        id: focusButtonMouse
-                        anchors.fill: parent
-                        // Unavailable is a THIRD reason to refuse the click,
-                        // beside busy. Previously there was no such reason,
-                        // because there was no way to know — the row happily
-                        // accepted presses that ran a binary that did not
-                        // exist and reported the failure as "now off".
-                        enabled: !controlCenter.focusBusy && controlCenter.focusAvailable
-                        hoverEnabled: true
-                        onClicked: controlCenter.toggleFocus()
-                    }
-
-                    Item {
-                        id: focusIconSlot
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        y: quickTogglesCard.toggleIconTop
-                        width: parent.width
-                        height: quickTogglesCard.toggleIconBoxHeight
-
-                        Shape {
-                            id: focusIcon
-                            anchors.centerIn: parent
-                            width: Metrics.px(24)
-                            height: Metrics.px(24)
-                            scale: focusButtonMouse.pressed ? 0.94 : 1.0
-                            opacity: focusButton.contentOpacity
-                            preferredRendererType: Shape.CurveRenderer
-
-                            Behavior on scale {
-                                NumberAnimation {
-                                    duration: 120
-                                    easing.type: Easing.BezierSpline
-                                    easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
-                                }
-                            }
-
-                            ShapePath {
-                                fillColor: "transparent"
-                                strokeColor: focusButton.iconColor
-                                strokeWidth: 2
-                                capStyle: ShapePath.RoundCap
-                                joinStyle: ShapePath.RoundJoin
-
-                                PathSvg {
-                                    path: "M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"
-                                }
-                            }
-
-                            ShapePath {
-                                fillColor: "transparent"
-                                strokeColor: focusButton.iconColor
-                                strokeWidth: 2.1
-                                capStyle: ShapePath.RoundCap
-                                joinStyle: ShapePath.RoundJoin
-
-                                PathMove {
-                                    x: 1
-                                    y: 1
-                                }
-
-                                PathLine {
-                                    x: 1 + 22 * focusButton.slashProgress
-                                    y: 1 + 22 * focusButton.slashProgress
-                                }
-                            }
-                        }
-                    }
-
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        y: quickTogglesCard.toggleLabelTop
-                        width: parent.width
-                        text: "Silent"
-                        color: controlCenter.focusEnabled ? IslandTheme.textPrimary : IslandTheme.textMuted
-                        horizontalAlignment: Text.AlignHCenter
-                        font.pixelSize: Metrics.font(10)
-                        font.family: textFontFamily
-                        font.weight: Font.Medium
-                        elide: Text.ElideRight
-                        opacity: focusButton.contentOpacity
-                    }
-                }
-
-                Item {
-                    id: nightLightButton
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: parent.width / 2
-
-                    MouseArea {
-                        id: nightLightButtonMouse
-                        anchors.fill: parent
-                        enabled: !controlCenter.nightLightBusy
-                        hoverEnabled: true
-                        onClicked: controlCenter.toggleNightLight()
-                    }
-
-                    Rectangle {
-                        anchors.fill: parent
-                        anchors.margins: Metrics.pad(4)
-                        radius: Metrics.px(16)
-                        color: nightLightButtonMouse.containsMouse ? IslandTheme.alpha(IslandTheme.ink, 0.03) : "transparent"
-
-                        Behavior on color {
-                            ColorAnimation {
-                                duration: Motion.controlDuration()
-                            }
-                        }
-                    }
-
-                    Item {
-                        id: nightLightIconSlot
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        y: quickTogglesCard.toggleIconTop
-                        width: parent.width
-                        height: quickTogglesCard.toggleIconBoxHeight
-
-                        Text {
-                            anchors.centerIn: parent
-                            anchors.verticalCenterOffset: 1
-                            text: controlCenter.nightLightGlyph
-                            color: IslandTheme.alpha(IslandTheme.inverseSurfaceInk, 0.27)
-                            font.pixelSize: Metrics.font(29)
-                            font.family: iconFontFamily
-                            scale: nightLightButtonMouse.pressed ? 0.94 : 1.0
-                            opacity: controlCenter.nightLightBusy ? 0.1 : 0.22
-                        }
-
-                        Text {
-                            id: nightLightIcon
-                            anchors.centerIn: parent
-                            text: controlCenter.nightLightGlyph
-                            color: controlCenter.nightLightEnabled ? IslandTheme.textPrimary : IslandTheme.textSecondary
-                            font.pixelSize: Metrics.font(29)
-                            font.family: iconFontFamily
-                            scale: nightLightButtonMouse.pressed ? 0.94 : 1.0
-                            opacity: controlCenter.nightLightBusy ? 0.5 : 1.0
-
-                            Behavior on scale {
-                                NumberAnimation {
-                                    duration: 120
-                                    easing.type: Easing.BezierSpline
-                                    easing.bezierCurve: Motion.spring()   // FORK: was Easing.OutCubic
-                                }
-                            }
-                        }
-                    }
-
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        y: quickTogglesCard.toggleLabelTop
-                        width: parent.width
-                        text: "Night mode"
-                        color: controlCenter.nightLightEnabled ? IslandTheme.textPrimary : IslandTheme.textMuted
-                        horizontalAlignment: Text.AlignHCenter
-                        font.pixelSize: Metrics.font(10)
-                        font.family: textFontFamily
-                        font.weight: Font.Medium
-                        elide: Text.ElideRight
-                        opacity: controlCenter.nightLightBusy ? 0.5 : 1.0
-                    }
-                }
-            }
-
-            Rectangle {
-                id: batteryDrawerTunnelShade
-                anchors.left: parent.left
-                anchors.top: parent.top
-                width: batteryDrawer.cardWidth
-                height: Math.max(1, controlCenter.batteryDrawerContentGap * 0.35)
-                z: 6
-                opacity: Math.min(0.34, controlCenter.batteryDrawerProgress * 0.45)
-                gradient: Gradient {
-                    GradientStop {
-                        position: 0
-                        color: IslandTheme.alpha(IslandTheme.inverseSurfaceInk, 0.60)
-                    }
-                    GradientStop {
-                        position: 1
-                        color: "transparent"
-                    }
-                }
-            }
-
-            Item {
-                id: batteryDrawerHandle
-                anchors.left: parent.left
-                anchors.right: parent.right
-                y: controlCenter.batteryDrawerProgress * batteryDrawer.openDistance
-                height: controlCenter.batteryDrawerHandleHeight
-                z: 10
-
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    y: Metrics.px(8)
-                    width: Metrics.px(48)
-                    height: Metrics.px(5)
-                    radius: Metrics.px(3)
-                    color: controlCenter.batteryDrawerOpen ? IslandTheme.textSecondary : IslandTheme.textMuted
-                    opacity: 0.88
-                }
-
-                MouseArea {
-                    id: batteryDrawerHandleArea
-                    anchors.fill: parent
-                    property real pointerGrabOffset: 0
-                    property bool moved: false
-                    property bool suppressClick: false
-
-                    function pointerY(mouse) {
-                        return batteryDrawerHandle.mapToItem(controlCenter, mouse.x, mouse.y).y;
-                    }
-
-                    function itemTop(item) {
-                        return item.mapToItem(controlCenter, 0, 0).y;
-                    }
-
-                    onPressed: function(mouse) {
-                        batteryDrawerSettleTimer.stop();
-                        controlCenter.batteryDrawerSettling = false;
-                        pointerGrabOffset = pointerY(mouse) - itemTop(batteryDrawerHandle);
-                        moved = false;
-                        suppressClick = false;
-                        controlCenter.batteryDrawerDragging = true;
-                    }
-
-                    onPositionChanged: function(mouse) {
-                        const nextHandleY = pointerY(mouse) - pointerGrabOffset - itemTop(batteryDrawer);
-                        if (!moved && Math.abs(nextHandleY - batteryDrawerHandle.y) < 4)
-                            return;
-
-                        moved = true;
-                        suppressClick = true;
-                        controlCenter.batteryDrawerProgress = controlCenter.clamp01(nextHandleY / batteryDrawer.openDistance);
-                    }
-
-                    onReleased: {
-                        controlCenter.batteryDrawerDragging = false;
-                        if (moved)
-                            controlCenter.setBatteryDrawerOpen(controlCenter.batteryDrawerProgress >= 0.55);
-                    }
-
-                    onCanceled: {
-                        controlCenter.batteryDrawerDragging = false;
-                        controlCenter.setBatteryDrawerOpen(controlCenter.batteryDrawerOpen);
-                    }
-
-                    onClicked: {
-                        if (suppressClick) {
-                            suppressClick = false;
-                            return;
-                        }
-
-                        controlCenter.toggleBatteryDrawer();
-                    }
-                }
-            }
-        }
+        // PROMPT-NEXT.md item 10: "no need for the battery thing... control
+        // center should be more minimal and simpler." The battery mode
+        // drawer (its handle, the pull gesture, the three-mode carousel,
+        // the TLP integration behind it) lived here — see
+        // `git show HEAD~1:.config/quickshell/tide-island-fork/qml/controlcenter/ControlCenterLayer.qml`
+        // for the full ~600 lines if TLP battery-mode switching is wanted
+        // back some other way. `controlCenterExtraHeight` and
+        // `controlCenterMaximumExtraHeight`, which this fed into the
+        // capsule's own sizing in DynamicIslandWindow.qml, are removed in
+        // the same commit — see there for what depended on them.
 
         ControlSliderCard {
             id: brightnessCard

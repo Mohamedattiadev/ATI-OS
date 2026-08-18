@@ -5448,7 +5448,11 @@ PanelWindow {
                 }
             }
             Behavior on height {
-                enabled: !(controlCenterLoader.item && controlCenterLoader.item.batteryDrawerMoving)
+                // Was also gated on `!controlCenterLoader.item.batteryDrawerMoving`
+                // — the battery mode drawer had its own drag-driven height
+                // that this Behavior had to stay out of the way of while a
+                // pull was in progress. The drawer is gone (PROMPT-NEXT.md
+                // item 10), and with it the reason for the guard.
 
                 // Height rides the width's latched DISTANCE for its DURATION
                 // rather than latching its own. The two change together —
