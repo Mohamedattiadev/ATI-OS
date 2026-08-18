@@ -364,11 +364,15 @@ it need different handling:
   produce a confusing answer or `qalc`'s own "resolves an unknown identifier
   as a UNIT" trap (documented at the top of `CalculatorLayer.qml` — e.g.
   `frobnicate(3)` returns a confident nonsense unit rather than erroring).
-  **This is ambiguous enough to ask the user directly** before writing code:
-  do they want typing restricted to a smaller character set (digits,
-  operators, a fixed list of known unit abbreviations), or do they want
-  clearer on-screen feedback when qalc's answer is a unit-trap nonsense
-  result rather than a real one? Those are different features.
+  **Ask the user which they mean** if the session is attended: restrict
+  typing to a smaller character set (digits, operators, a fixed list of
+  known unit abbreviations), or clearer on-screen feedback when qalc's
+  answer is a unit-trap nonsense result rather than a real one — those are
+  different features. **If unattended, build the feedback half** (it is
+  strictly additive, reversible, and helps regardless of which reading is
+  right — e.g. visibly flag a result when the expression contained a bare
+  unrecognised word qalc silently turned into a unit) and say in the commit
+  that the character-restriction reading was left for the user to confirm.
 * **"i want hjkl to move left right up down etc"** — an explicit re-ask
   after last session's normal-mode audit concluded h/l have no natural
   meaning on a 1-D tape and left them unbound. The user wants them bound
@@ -422,8 +426,11 @@ assuming it is the same bug as item 2**:
   so.
 * **"the man popup"** — unclear. Possibly "main popup" (which one — control
   centre? the resting capsule itself?), possibly a mis-transcription of
-  something else. **Ask the user to clarify which surface this names**
-  rather than guessing and fixing the wrong thing.
+  something else. **Ask the user to clarify which surface this names** if
+  the session is attended. If unattended, skip this one specific sub-item
+  rather than guessing which surface it is and fixing the wrong thing — it
+  is one line item out of eight and not worth spending unattended time
+  guessing at; leave a note in the summary that it needs a name.
 * **The lock screen (hyprlock)** — `hypr/hyprlock.conf`. Not previously in
   scope for this project's visual-glitch work at all. **Test in a NESTED
   Hyprland — see HOW TO VERIFY — never by locking the actual running
@@ -440,6 +447,96 @@ assuming it is the same bug as item 2**:
   invocation) or a timing issue in the script itself — start by reading
   `bar-chooser` end to end, since this is a much smaller, simpler surface
   than everything else on this list.
+
+### 9. Calendar — clicking a day should let you add a reminder
+
+Reported: *"calender when i click on the day i can add reminder or
+somthing."*
+
+A real feature, not a bug: `qml/island/CalendarLayer.qml`'s day cells
+currently have only `onEntered` (hover moves `root.cursor` to that day,
+around line 519) — there is no `onClicked` at all, and `markedDays` (a
+plain `{day: bool}` map, around line 107) only marks days, it does not hold
+any text. Needs, in order:
+
+* A click handler on the day cell (`MouseArea` already there for hover —
+  add `onClicked`).
+* Somewhere to show/edit a reminder's text for the clicked day — a small
+  inline field or a second small panel state, the caller's call; look at how
+  the calculator's `PanelSearchField` or the shelf's inline editing is done
+  for the pattern this shell already uses rather than inventing a dialog
+  primitive.
+* Storage: a `{ "YYYY-MM-DD": "reminder text" }` map persisted the same way
+  item 6 already established for the calculator's tape — `FileView` +
+  `setText(JSON.stringify(...))`, NOT a `JsonAdapter` (see the calculator
+  commit for why). A new cache file,
+  `~/.cache/tide-island/calendar-reminders.json`, following the same
+  `~/.cache/tide-island/` convention `colors.json` and the calculator's tape
+  already use.
+* `markedDays` should probably become "has a reminder" once this exists,
+  rather than being a separate concept — check what currently FEEDS
+  `markedDays` before deciding whether to merge or keep them separate.
+
+### 10. Control centre — drop battery, add the music player, go minimal
+
+Reported: *"make the control center contain the music player, no need for
+battery thing, and making its ui ux like the mac one — the display and
+sound one and wifi and other buttons — and i think making it with toggle
+on/off (0===)(===0) will be better and when i click on it opens the network
+or bluetooth thing, control center should be more minimal and simpler."*
+
+A substantial redesign of `qml/controlcenter/ControlCenterLayer.qml`, not a
+small fix. Three changes, and they should probably be three commits:
+
+* **Remove the battery mode drawer.** It is deeply built in — a whole drag
+  gesture, TLP integration, a settling animation
+  (`batteryDrawerOpen`/`batteryDrawerDragging`/`batteryModeIndex` and
+  friends, roughly lines 73-360). Read what depends on it elsewhere
+  (`controlCenterExtraHeight`, `controlCenterMaximumExtraHeight` feed the
+  capsule's sizing in `DynamicIslandWindow.qml`) before deleting — removing
+  the drawer changes how tall this panel is allowed to get.
+* **Add the music player.** Do not build a new one — `ExpandedPlayerLayer.qml`
+  and `IslandMprisController.qml` already do this for the hover-expanded
+  player; reuse or embed that, the same way this fork's own convention is
+  "one body, N frames" (see `QdropGrid.qml`'s header for why that pattern
+  exists, and copy it rather than writing a second MPRIS reader).
+  `PlayerControlButton.qml` is the existing transport-button component.
+* **Toggle-switch style for Wi-Fi/Bluetooth/etc, macOS-style.** The
+  "(0===)(===0)" in the report is the user drawing a slider toggle in text —
+  a switch that shows on/off AND, on click, opens the fuller panel
+  (network/Bluetooth) rather than the toggle being the only affordance.
+  `ControlSliderCard.qml` is the closest existing component (used for
+  brightness/volume sliders currently) — check whether it can grow a
+  boolean/toggle mode or whether a sibling component is cleaner. This is a
+  visual-language decision as much as a code one; screenshot the current
+  cards, mock the toggle shape, and confirm the shape reads as a toggle
+  before wiring the click-opens-panel behaviour on top of it.
+
+"More minimal and simpler" is the design goal driving all three — resist
+adding new individual toggles beyond what is asked for, this is a
+subtraction task first (battery out) and a consolidation task second
+(sliders in one visual language).
+
+### 11. The island should show an active border while a notification is up
+
+Reported: *"when notification appears the island should be with border
+active."*
+
+There is already a border-state mechanism to extend rather than invent a
+second one: `mainCapsule`'s `border.color: outlineColor` (around line 5499,
+`Behavior on border.color` at 5368) and the separate
+`borderFocusProcess`/`onOpenPanelStateChanged` machinery (line 1354, 2234)
+that dims OTHER windows' borders while a panel is open. Check whether
+`outlineColor` already has a state for "something needs attention" or only
+for "focused" — the notification case wants the capsule's own outline to
+change (probably to `IslandTheme.accent` or a dedicated notification colour)
+for as long as an unread/new notification exists, which is a different
+lifecycle than a panel being open (a notification can arrive while the
+capsule is RESTING, closed). `NotificationService.qml` / `NotificationLayer.qml`
+own the arrival event this needs to key off; wire a
+`hasUnseenNotification`-shaped property from there into `mainCapsule`'s
+border colour expression rather than duplicating the notification-tracking
+logic.
 
 ---
 
@@ -493,10 +590,14 @@ latency (~50 ms of `qs ipc call` before any animation starts), and
 Item 1 (the shelf) is the highest-priority carryover and the user has now
 reported it more than once across two sessions. Item 4's `PopupChrome` half
 and item 8's clarification-needed items are cheap to at least TRIAGE even if
-not fully fixed — reading `bar-chooser` and asking the user what "the man
-popup" means cost nothing and unblocks real work next time. Item 6 needs a
-clarifying question before any code is worth writing, so ask it early rather
-than guessing and building the wrong thing. Do items 2, 3 and 5's glitch
-half only as far as measurement supports, and say plainly in the summary
-what was measured, what was fixed, and what is still open — including
+not fully fixed. Items 6 and 8 name a clarifying question each ("the man
+popup", and which of two readings of the insert-mode complaint is meant) —
+**ask them if the session is attended; if it is running unattended and
+nobody answers, do not stall on it.** Pick the more conservative/reversible
+reading, say so explicitly in the commit message and in the final summary
+("assumed X because Y; revisit if wrong"), and keep going through the rest
+of the list rather than blocking the whole session on one open question.
+Do items 2, 3 and 5's glitch half only as far as measurement supports, and
+say plainly in the summary what was measured, what was fixed, and what is
+still open — including
 anything that could not be driven and why.
