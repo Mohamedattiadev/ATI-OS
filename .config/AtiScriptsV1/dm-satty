@@ -83,8 +83,19 @@ capture() {
 	local geom="$1" delay="$2"
 
 	if [ "$BACKEND" = wayland ]; then
-		# grim has no delay of its own, so it is a sleep. maim's --delay
-		# below is the same thing inside the tool.
+		# Reported: "i can see the rofi toke in the foto ... visible in
+		# both fullscreen and the selected part". The X11 arm below has
+		# always had an UNCONDITIONAL 0.5s settle baked into maim's own
+		# `-qd 0.5` — its own comment says why: rofi has just exited, but
+		# the compositor still needs a frame to stop drawing that surface
+		# and repaint what was behind it, and capturing before that frame
+		# lands puts rofi in the shot. This branch had no equivalent at
+		# all: the only sleep here was `[ "$delay" -gt 0 ] && sleep
+		# "$delay"`, so at the delay menu's own default answer, 0, grim
+		# fired with NOTHING between rofi exiting and the shutter — the
+		# race the X11 side was never exposed to. Same fixed floor as
+		# maim's, the user's chosen delay still stacked on top of it.
+		sleep 0.5
 		[ "$delay" -gt 0 ] && sleep "$delay"
 		if [ -n "$geom" ]; then
 			local w h x y
@@ -170,7 +181,7 @@ show_error() {
 
 main() {
 	local geom=""
-	local x11_select=false
+	local interactive_select=false
 	local file_type=""
 	local use_satty=false
 
@@ -228,13 +239,26 @@ main() {
 		file_type="window"
 		;;
 	"Selected region")
-		if [ "$BACKEND" = wayland ]; then
-			# slurp is cancelled with Escape, which is a "no thanks" and
-			# not a failure — exit quietly rather than showing an error.
-			geom="$(slurp_region)" || exit 0
-		else
-			x11_select=true
-		fi
+		# Deferred to shoot(), below — on BOTH backends now.
+		#
+		# Reported: "the rofi of taking screenshot why not working the
+		# same like real qtile's". Real qtile only has the X11 backend,
+		# whose interactive maim -s select has always happened HERE, i.e.
+		# LAST — the delay and destination prompts come first, and the
+		# drag-select is the final step before the shutter, same order
+		# `screenshot-area.sh` uses for the bare Print key.
+		#
+		# The Wayland branch resolved slurp's drag-select IMMEDIATELY on
+		# this menu choice instead — before the delay and destination
+		# prompts even appeared — because slurp_region() was called right
+		# here rather than from shoot() like the X11 arm already does. Same
+		# menu, same wording, but the interactive part of it happened at a
+		# different STEP depending on which session you were in, which is
+		# exactly the asymmetry a user switching between them would notice
+		# and the X11 side would not have (it is what qtile's own key does).
+		# One flag drives both backends now, and shoot() decides how to
+		# resolve it, same shape as the delay it already applies after.
+		interactive_select=true
 		file_type="region"
 		;;
 	*)
@@ -253,11 +277,23 @@ main() {
 		delay=0
 	fi
 
-	# X11's interactive region is maim's own selector rather than a geometry,
-	# which is the one asymmetry between the backends; wrapped here so every
-	# call site below stays a plain `shoot`.
+	# The interactive region is each backend's own selector rather than a
+	# geometry resolved up front, so the drag-select happens at the SAME
+	# step — last, right before the shutter — on both. wrapped here so
+	# every call site below stays a plain `shoot`.
 	shoot() {
-		if $x11_select; then
+		if $interactive_select; then
+			if [ "$BACKEND" = wayland ]; then
+				# slurp is cancelled with Escape, which is a "no thanks"
+				# and not a failure — exit quietly rather than an error.
+				# The delay still applies AFTER the drag resolves, same
+				# order maim's own -s --delay gives the X11 arm below:
+				# capture()'s sleep runs right before the grim call.
+				local wgeom
+				wgeom="$(slurp_region)" || exit 0
+				capture "$wgeom" "$delay"
+				return
+			fi
 			local args="-qd 0.5 -s"
 			[ "${delay}" -gt 0 ] && args="$args --delay=${delay}"
 			# shellcheck disable=SC2086
