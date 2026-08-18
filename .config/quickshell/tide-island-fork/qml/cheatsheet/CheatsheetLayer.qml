@@ -91,87 +91,96 @@ Item {
         "docs": "DOCS", "trouble": "FIXING"
     })
 
-    // ---- THE FLAT MODEL, AND WHY FILTERING DROPS HEADERS ----
+    // ---- CARDS, LIKE QTILE'S OWN, NOT A FLAT SCROLLING LIST ----
     //
-    // The list is one array of two kinds of entry — section headers and
-    // key rows — rather than a ListView of ListViews, because a search has
-    // to cut across sections and a nested view cannot shrink a section to
-    // nothing.
+    // Reported directly against the first attempt at item 7 (which only
+    // made the flat list's type bigger): "i want it as card fixed has all
+    // the things inside and i can scroll updownn like the one of qtile but
+    // as popup and also searchable". qtile's own cheatsheets
+    // (popups/_cheatsheet_grid.py, read before touching this) are a
+    // 3-column grid of one CARD per section, balanced by row count and
+    // packed onto one tall page that scrolls — CheatsheetPopup.qml already
+    // reproduces exactly that shape for `bar-mode=native`. This ports the
+    // same card grid here, kept searchable (which qtile's own sheet is
+    // not, and neither is CheatsheetPopup — the field is this file's own
+    // addition, same as it always was).
     //
-    // A section whose rows all fail the filter is REMOVED rather than left
-    // standing empty. An empty header is a promise of content that is not
-    // there, and with 8 sections in the WM sheet a search for one word
-    // otherwise returns a screen of headings with three rows hidden among
-    // them.
-    readonly property var entries: {
+    // A section whose rows all fail the filter is DROPPED from its column
+    // rather than left standing empty as a bare heading — same rule the
+    // old flat model used, moved to the section level instead of the row
+    // level.
+    readonly property var visibleSections: {
         const needle = root.query.trim().toLowerCase();
         const out = [];
-
         for (const section of root.sections) {
             const rows = [];
-            // Ranked through the shared matcher, but WITHIN the section and
-            // in the section's own order — see qml/common/Match.js.
-            //
-            // Reordering rows across the whole sheet would destroy the thing
-            // a cheatsheet is: "ROOT" and "RESIZE" are groups you read down,
-            // not a relevance list. So `Match.rank` decides membership and
-            // whether a row is a strong match, and the ORDER stays the
-            // config's. That is the one place this differs from the picker,
-            // where the list has no meaningful order to protect.
             for (const row of (section.rows || [])) {
-                if (needle === ""
-                        || Match.rank(row.combo, row.label, needle) > 0)
+                if (needle === "" || Match.rank(row.combo, row.label, needle) > 0)
                     rows.push(row);
             }
-            if (rows.length === 0)
-                continue;
-            out.push({ header: true, text: section.title || "" });
-            for (const row of rows)
-                out.push({ header: false, label: row.label || "", combo: row.combo || "" });
+            if (rows.length > 0)
+                out.push({ title: section.title || "", rows: rows });
         }
         return out;
     }
 
     readonly property int matchCount: {
         let n = 0;
-        for (const entry of root.entries)
-            if (!entry.header)
-                n += 1;
+        for (const section of root.visibleSections)
+            n += section.rows.length;
         return n;
+    }
+
+    // ---- THE COLUMN SPLIT, PORTED FROM CheatsheetPopup.qml VERBATIM ----
+    //
+    // Balances by HEIGHT (rows + 2 for the card's own heading and gap), not
+    // by dealing sections round-robin — a round-robin puts a sheet's first
+    // and third section side by side and leaves one column twice the
+    // height of its neighbours. Same three columns qtile's own grid uses.
+    readonly property int columnCount: 3
+    readonly property var cardColumns: {
+        const cols = [];
+        const heights = [];
+        for (let c = 0; c < root.columnCount; c++) {
+            cols.push([]);
+            heights.push(0);
+        }
+        for (const section of root.visibleSections) {
+            let at = 0;
+            for (let c = 1; c < root.columnCount; c++)
+                if (heights[c] < heights[at])
+                    at = c;
+            cols[at].push(section);
+            heights[at] += section.rows.length + 2;
+        }
+        return cols;
     }
 
     // ---- THE HEIGHT THIS SHEET WANTS ----
     //
     // Read by DynamicIslandWindow's `case "cheatsheet"`, which clamps it to
-    // the screen. It exists because one fixed height cannot serve six sheets
-    // whose lengths differ by an order of magnitude: the WM sheet is 192
-    // rows and wants every pixel, DOCS is 19 and was drawing a card with 150
-    // px of nothing under the last row.
+    // the screen — a sheet whose tallest COLUMN still overflows scrolls
+    // rather than running the capsule off the bottom, same as
+    // CheatsheetPopup's own Flickable. Computed from `sections` (the
+    // unfiltered fetch), not `visibleSections`, so the panel does not
+    // resize on every keystroke while the search field you are typing into
+    // is what would walk up the screen.
     //
-    // IT IS COMPUTED FROM `sections`, NOT FROM `entries`, and that is the
-    // whole design rather than a detail. `sections` is the sheet as fetched;
-    // `entries` is the sheet after the filter. Sizing to `entries` would be
-    // the thing the old fixed height was written to avoid — a panel that
-    // resizes on every keystroke, with the search field you are typing into
-    // sliding up the screen as it narrows. Sizing to `sections` means the
-    // height changes only when the SHEET changes, which happens on Tab: a
-    // deliberate act, already a transition, and nothing is being typed.
-    //
-    // The row heights are the delegate's own two constants and the ListView
-    // has no spacing; if either changes this drifts, which is why they are
-    // named here rather than folded into one magic number.
-    //
-    // `list.y` is safe to read and is not a binding cycle: it is decided by
-    // the fixed-height items above it in the Column — the title row and the
-    // search field — and not by the height this property is producing.
+    // Distributes the UNFILTERED sections through the same balancer so the
+    // estimate matches what will actually render once the query clears.
     readonly property int preferredHeight: {
-        let rows = 0;
-        for (const section of root.sections)
-            rows += Metrics.px(30) + (section.rows || []).length * Metrics.px(26);
-        // A floor, so a sheet that failed to load is still a panel and not a
-        // sliver: "could not read this sheet" has to have somewhere to print.
+        const heights = [0, 0, 0];
+        for (const section of root.sections) {
+            let at = 0;
+            for (let c = 1; c < 3; c++)
+                if (heights[c] < heights[at])
+                    at = c;
+            heights[at] += (section.rows || []).length * Metrics.px(20)
+                + Metrics.px(34);
+        }
+        const tallest = Math.max(heights[0], heights[1], heights[2]);
         return Math.max(Metrics.px(200),
-                        Math.round(Metrics.pad(12) * 2 + list.y + rows));
+                        Math.round(Metrics.pad(12) * 2 + body.y + tallest));
     }
 
     // ---- FETCHING: A FRESH Process EVERY TIME, ON PURPOSE ----
@@ -258,12 +267,12 @@ Item {
         }
     }
 
-    // Scrolling is by the list's own page metric rather than a fixed pixel
-    // count, so it stays a page on any panel height.
+    // Scrolling is by the Flickable's own page metric rather than a fixed
+    // pixel count, so it stays a page on any panel height.
     function scrollBy(pages) {
-        const target = list.contentY + pages * list.height;
-        const max = Math.max(0, list.contentHeight - list.height);
-        list.contentY = Math.max(0, Math.min(max, target));
+        const target = body.contentY + pages * body.height;
+        const max = Math.max(0, body.contentHeight - body.height);
+        body.contentY = Math.max(0, Math.min(max, target));
     }
 
     anchors.fill: parent
@@ -445,8 +454,8 @@ Item {
                         root.query = text;
                         // Any filter change makes the old scroll position
                         // meaningless — the row it was showing may not be
-                        // in the list any more.
-                        list.contentY = 0;
+                        // in the grid any more.
+                        body.contentY = 0;
                     }
                 }
 
@@ -503,20 +512,27 @@ Item {
             }
         }
 
-        // ---- the rows ----
-        ListView {
-            id: list
-            // FORK: P1-3. One shared indicator; see qml/common/IslandScrollBar.qml
-            // for why `active` does not gate on pointer interaction alone.
-            ScrollBar.vertical: IslandScrollBar { view: list }
+        // ---- the cards, in a scrolling 3-column grid ----
+        //
+        // Structurally identical to CheatsheetPopup.qml's own body — a
+        // Flickable over a Row of Columns of card Rectangles — because that
+        // is the shape "like the one of qtile" actually names. Kept as its
+        // own copy rather than a shared component: the two read different
+        // font/spacing scales (Metrics.js here, PopupMetrics there — see
+        // Metrics.js's own header on why the two do not mix), and a
+        // component parameterised over both would be one more layer to
+        // read to see what either popup actually draws.
+        Flickable {
+            id: body
             width: parent.width
             height: parent.height - y
             clip: true
+            contentWidth: width
+            contentHeight: cardGrid.implicitHeight + Metrics.px(12)
             boundsBehavior: Flickable.StopAtBounds
-            model: root.entries
-            cacheBuffer: Metrics.px(400)
+            ScrollBar.vertical: IslandScrollBar { view: body }
 
-            // A search that matches nothing has to say so. A blank list
+            // A search that matches nothing has to say so. A blank grid
             // reads as a panel that failed to load.
             Text {
                 anchors.centerIn: parent
@@ -527,69 +543,97 @@ Item {
                 font.pixelSize: Metrics.font(17)
             }
 
-            delegate: Item {
-                id: entryItem
-                required property var modelData
+            Row {
+                id: cardGrid
+                width: parent.width
+                spacing: Metrics.px(10)
 
-                width: list.width
-                // MUST agree with `preferredHeight`'s own Metrics.px(30) /
-                // Metrics.px(26) above — see that property's comment.
-                height: modelData.header ? Metrics.px(30) : Metrics.px(26)
+                Repeater {
+                    model: root.cardColumns
 
-                // Section header
-                Text {
-                    visible: entryItem.modelData.header
-                    anchors.left: parent.left
-                    anchors.bottom: parent.bottom
-                    anchors.bottomMargin: Metrics.px(4)
-                    text: entryItem.modelData.header ? entryItem.modelData.text : ""
-                    color: IslandTheme.textDisabled
-                    font.family: root.textFontFamily
-                    font.pixelSize: Metrics.font(14)
-                    font.weight: Font.DemiBold
-                    font.letterSpacing: 0.8
-                }
+                    delegate: Column {
+                        required property var modelData
+                        width: (cardGrid.width - Metrics.px(10) * (root.columnCount - 1))
+                               / root.columnCount
+                        spacing: Metrics.px(8)
 
-                // Key row. The combo is the thing being looked up, so it
-                // gets the chip and the left edge — the eye scans one
-                // column of keys, not a ragged right margin. This is the
-                // opposite order from the printed sheet, where the label
-                // leads because a printed line has no columns to scan.
-                Item {
-                    visible: !entryItem.modelData.header
-                    anchors.fill: parent
+                        Repeater {
+                            model: parent.modelData
 
-                    Rectangle {
-                        id: comboChip
-                        anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: Math.max(Metrics.px(30), comboText.implicitWidth + Metrics.pad(12))
-                        height: Metrics.px(20)
-                        radius: Metrics.px(5)
-                        color: IslandTheme.surfaceRaised
-                        visible: comboText.text !== ""
+                            // ---- ONE CARD, ONE SECTION ----
+                            delegate: Rectangle {
+                                id: card
+                                required property var modelData
+                                width: parent.width
+                                height: cardCol.implicitHeight + Metrics.px(12)
+                                radius: Metrics.px(8)
+                                color: IslandTheme.surfaceRaised
 
-                        Text {
-                            id: comboText
-                            anchors.centerIn: parent
-                            text: entryItem.modelData.header ? "" : entryItem.modelData.combo
-                            color: IslandTheme.textPrimary
-                            font.family: root.textFontFamily
-                            font.pixelSize: Metrics.font(15)
-                            font.weight: Font.Medium
+                                Column {
+                                    id: cardCol
+                                    x: Metrics.pad(9)
+                                    y: Metrics.pad(6)
+                                    width: parent.width - Metrics.pad(18)
+                                    spacing: Metrics.px(2)
+
+                                    Text {
+                                        text: String(card.modelData.title || "")
+                                        color: IslandTheme.info
+                                        font.family: root.textFontFamily
+                                        font.pixelSize: Metrics.font(18)
+                                        font.weight: Font.DemiBold
+                                        bottomPadding: Metrics.px(3)
+                                    }
+
+                                    Repeater {
+                                        model: card.modelData.rows
+
+                                        delegate: Item {
+                                            required property var modelData
+                                            width: cardCol.width
+                                            height: rowComboChip.height
+
+                                            // The combo first and
+                                            // fixed-width, the label
+                                            // filling what is left — the
+                                            // eye scans one column of
+                                            // keys, same as qtile's own
+                                            // grid.
+                                            Rectangle {
+                                                id: rowComboChip
+                                                width: Math.min(rowComboText.implicitWidth + Metrics.pad(8),
+                                                                parent.width * 0.45)
+                                                height: rowComboText.implicitHeight + Metrics.px(3)
+                                                radius: Metrics.px(4)
+                                                color: IslandTheme.surfaceRaisedHover
+                                                Text {
+                                                    id: rowComboText
+                                                    anchors.centerIn: parent
+                                                    width: parent.width - Metrics.pad(6)
+                                                    elide: Text.ElideRight
+                                                    text: String(modelData.combo || "")
+                                                    color: IslandTheme.textPrimary
+                                                    font.family: root.textFontFamily
+                                                    font.pixelSize: Metrics.font(15)
+                                                    font.weight: Font.Medium
+                                                }
+                                            }
+                                            Text {
+                                                anchors.left: rowComboChip.right
+                                                anchors.leftMargin: Metrics.pad(6)
+                                                anchors.right: parent.right
+                                                anchors.verticalCenter: rowComboChip.verticalCenter
+                                                elide: Text.ElideRight
+                                                text: String(modelData.label || "")
+                                                color: IslandTheme.textSecondary
+                                                font.family: root.textFontFamily
+                                                font.pixelSize: Metrics.font(15)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
-                    }
-
-                    Text {
-                        anchors.left: comboChip.visible ? comboChip.right : parent.left
-                        anchors.leftMargin: comboChip.visible ? Metrics.pad(9) : 0
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: entryItem.modelData.header ? "" : entryItem.modelData.label
-                        color: IslandTheme.textSecondary
-                        font.family: root.textFontFamily
-                        font.pixelSize: Metrics.font(17)
-                        elide: Text.ElideRight
                     }
                 }
             }
