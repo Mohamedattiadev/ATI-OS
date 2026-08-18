@@ -351,6 +351,41 @@ thing to do:**
 Do not spend the session patching a file manager before knowing which of
 those two it is.
 
+**MEASURED — offset in pcmanfm-qt only. Do not touch Hyprland for this.**
+Empty workspace (8), one throwaway `pcmanfm-qt -n <dir>` with one file.
+`pcmanfm-qt` runs as a single-instance daemon: `-n` opens the new window on
+whatever workspace the daemon's FIRST window is on, not the caller's active
+one — it landed on workspace 3, next to the user's real pcmanfm-qt window,
+and had to be moved off with `movetoworkspacesilent` before anything else.
+Say so because the next session will hit the same surprise.
+
+A synthetic `uinput-shake.py to` drag onto a `grim` single-shot missed the
+pixmap twice running — not a timing-window problem but an output-buffering
+one: Python block-buffers stdout when it is not a tty, so the `"steered to"`
+marker a poll loop was grepping for never reached the log file until the
+whole script exited, i.e. after the button had already released. `python3
+-u` fixed it. Even then a single `grim` is a coin flip against a sub-second
+drag; a continuous `wf-recorder` capture scanned frame-by-frame for the first
+one differing from a quiet baseline is what actually caught it — same
+instrument this session's item 8 rig uses, for the same reason.
+
+    pcmanfm-qt (Qt/libfm-qt)   drag pixmap bbox ~219 x 72 px — matches the
+                               218 px cell pitch this file already measured,
+                               to the pixel. Confirms the theory exactly:
+                               the pixmap IS the whole rendered cell, not
+                               the 48 px icon.
+    dnd-peer.py (GTK)          same drag, same instrument, full flight
+                               scanned frame-by-frame: NO custom drag pixmap
+                               ever rendered, only the plain system cursor.
+                               Nothing bigger than the pointer to be offset
+                               FROM.
+
+So: **libfm-qt's pixmap, confirmed, not a Hyprland drag-icon-hotspot bug.**
+The font-DPI change already narrows it (was ~166 px story at DPI 72, cell is
+218 at the values tested); the remainder is libfm-qt drawing the cell rather
+than the icon into the drag surface, which is upstream's rendering choice,
+not this desktop's compositor. Closed — no Hyprland-side work warranted.
+
 ---
 
 ## STANDING CONSTRAINTS
