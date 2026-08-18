@@ -6621,6 +6621,18 @@ PanelWindow {
                 id: sysmonPanelLoader
                 anchors.fill: parent
                 live: islandContainer.sysmonPanelLayerVisible
+                // Same empty-model collapse as display/audio: a rebuilt
+                // SystemMonitorPanel starts at `filesystems: []` and its
+                // disk section floors at Math.max(2, filesystems.length)
+                // rows, well under what a normally-partitioned machine
+                // reports, until `df` answers. Unlike wifi/bluetooth this
+                // panel has no busy-status text holding ink on screen in
+                // the meantime, so nothing here was found to make retention
+                // a wash the way it was for bluetooth. Not yet measured
+                // frame-by-frame the way the others were — retained on the
+                // strength of the same shape, revisit if measurement says
+                // otherwise.
+                retain: true
 
                 sourceComponent: Component {
                     SystemMonitorPanel {

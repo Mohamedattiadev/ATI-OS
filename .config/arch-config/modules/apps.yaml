@@ -54,6 +54,16 @@ packages:
   - mission-center
   - maim
   - satty
+  # Wayland-native live screen annotation (Hyprland's $mod SHIFT W,
+  # binds.conf) — replaces gromit-mpx there. gromit is X11-native, proxied
+  # through XWayland-rootless under Hyprland, and its pointer grab does
+  # not reach native Wayland surfaces (measured, not theorised — see
+  # PROMPT-NEXT.md). Still declared in wm.yaml for the qtile/X11 session,
+  # where it is genuinely native and has no such problem. AUR
+  # (`wayscriber-bin`, prebuilt); no separate marker needed, same as
+  # picom-ftlabs-git elsewhere in this repo — the installer resolves
+  # AUR names the same as official ones from this flat list.
+  - wayscriber-bin
   - mpv
   - ark
   - imv

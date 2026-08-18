@@ -750,6 +750,11 @@ FocusScope {
         clip: true
         model: root.settings
         currentIndex: root.selectedIndex
+        // Unset default (-1/velocity-based) turns every currentIndex change
+        // into Qt's own slow follow-scroll, uncoordinated with anything
+        // this shell tunes. See ThemePickerLayer.qml's themeGrid for the
+        // frame-capture measurement that found it.
+        highlightMoveDuration: 0
         boundsBehavior: Flickable.StopAtBounds
 
         // FORK: P1-3. This list is 25 rows in a viewport that shows about
@@ -1067,6 +1072,11 @@ FocusScope {
             clip: true
             model: root.fontMatches
             currentIndex: root.fontCursor
+            // Unset default (-1/velocity-based) turns every currentIndex
+            // change into Qt's own slow follow-scroll, uncoordinated with
+            // anything this shell tunes. See ThemePickerLayer.qml's
+            // themeGrid for the frame-capture measurement that found it.
+            highlightMoveDuration: 0
             boundsBehavior: Flickable.StopAtBounds
             spacing: Metrics.px(1)
 

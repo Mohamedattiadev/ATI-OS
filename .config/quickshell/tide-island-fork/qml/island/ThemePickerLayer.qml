@@ -502,6 +502,21 @@ FocusScope {
         currentIndex: root.selectedIndex
         boundsBehavior: Flickable.StopAtBounds
 
+        // MEASURED with panel-glitch-frames.py + a frame-by-frame visual
+        // diff: the grid was still visibly scrolling ~500-600ms after the
+        // capsule's own shape had settled — not a Motion.js curve, since
+        // nothing here calls into it. `highlightFollowsCurrentItem`
+        // defaults to true and `highlightMoveDuration` defaults to -1
+        // (Qt's own velocity-based follow, tuned for neither this panel
+        // nor this shell), so every `currentIndex` write — which
+        // `setSelection()` below already pairs with an explicit, meant-
+        // to-be-instant `positionViewAtIndex(..., Contain)` — ALSO kicked
+        // off Qt's own slow follow-scroll on top of it. Two view-movement
+        // mechanisms doing the same job, uncoordinated, is what read as
+        // "not smooth". Zero makes `currentIndex` changes land in the same
+        // frame `positionViewAtIndex` already does.
+        highlightMoveDuration: 0
+
         // Whole rows only.
         //
         // positionViewAtIndex(Contain) scrolls by the minimum needed to make

@@ -685,6 +685,11 @@ Item {
         model: body.view
         boundsBehavior: Flickable.StopAtBounds
         currentIndex: body.focusIdx
+        // Unset default (-1/velocity-based) turns every currentIndex change
+        // into Qt's own slow follow-scroll, uncoordinated with anything
+        // this shell tunes. See ThemePickerLayer.qml's themeGrid for the
+        // frame-capture measurement that found it.
+        highlightMoveDuration: 0
 
         // "will has scroll bar". The shelf is the one panel with genuinely
         // unbounded content — it grows every time you drop something.

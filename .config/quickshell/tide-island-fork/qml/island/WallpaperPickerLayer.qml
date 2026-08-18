@@ -79,13 +79,30 @@ FocusScope {
         + "        print(json.dumps(rec,separators=(',',':')),flush=True)\n"
         + "def valid_path(path):\n"
         + "    return os.path.splitext(path)[1].lower() in exts and os.path.isfile(path)\n"
+        // The 'index' phase is the fast path meant to paint the grid before
+        // the walk below finishes — measured at 80-131ms to FIRST LINE, not
+        // because 908 files is a lot to list, but because this loop used to
+        // call `record(path)` on every cached entry: a fresh os.stat, a
+        // fresh sha1 of the cache key, and an extra os.path.isfile on the
+        // cache path — identical cost to a from-scratch scan, ~900 times,
+        // before anything could paint. Every field `record()` would have
+        // recomputed is already sitting in `item`, written by THIS SAME
+        // SCRIPT'S last run (see the json.dump at the bottom) — so this
+        // phase now trusts it outright. `valid_path`'s own os.path.isfile
+        // is kept: it is the one check this phase still needs, because a
+        // deleted file must not be offered as a wallpaper for however long
+        // the walk below takes to notice. Anything actually stale (a
+        // changed mtime, a regenerated thumbnail at different dimensions)
+        // is caught and corrected by the 'scan' phase moments later, same
+        // as it always was — this only removes duplicate work on the path
+        // that was supposed to be cheap.
         + "cached=[]\n"
         + "try:\n"
         + "    with open(index_path,'r',encoding='utf-8') as f:\n"
         + "        for item in json.load(f):\n"
         + "            path=item.get('filePath','')\n"
         + "            if valid_path(path):\n"
-        + "                cached.append(record(path))\n"
+        + "                cached.append(item)\n"
         + "except Exception:\n"
         + "    pass\n"
         + "emit('index',cached)\n"
