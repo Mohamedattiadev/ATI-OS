@@ -135,16 +135,31 @@ ShellRoot {
     // changing". Freezing has to happen first. AtiScriptsV1/theme-animate is
     // the one place that decides which shell to hand a theme change to.
     //
-    // Wayland only. popups.qml is started by hypr/scripts/topbar.sh, which is
-    // the Hyprland session's; under qtile the island is the shell that is up
-    // and it has its own overlay, in both backends. There is no third case
-    // today — qtile with its OWN bar has no Quickshell running at all, which
-    // is the one combination that still gets an unanimated theme change, and
-    // theme-animate says so when it falls through.
-    Variants {
-        id: themeTransitionVariants
+    // NOT Wayland only, any more. This process is now ALSO started under
+    // qtile wearing its own bar (see qtile/autostart.sh 2c) specifically so
+    // `tide applyThemeAnimated` has somewhere to land there too — the one
+    // remaining case theme-animate's own header used to describe as "no
+    // shell running, unanimated". That made this block's old comment (kept
+    // below in spirit, corrected in fact) wrong the moment it was true: a
+    // Variants of bare `ThemeTransitionWindowWayland` declares
+    // `WlrLayershell.*`, an attached property that does not exist off
+    // Wayland and that fails the WHOLE component when it cannot be created
+    // — exactly the trap `shell.qml`'s own `onWayland` comment documents.
+    // Under qtile/X11 every instance silently failed to construct, so
+    // `themeWindows` was always `[]` and `startThemeTransition` returned on
+    // its own `windows.length === 0` guard with no log line at all — which
+    // is why a wallpaper pick in wal mode changed the palette with no sweep
+    // and no error either. Same split shell.qml already uses, so both
+    // resident shells agree on which wrapper to build.
+    readonly property bool onWayland: {
+        const wl = Quickshell.env("WAYLAND_DISPLAY");
+        return wl !== undefined && wl !== null && String(wl) !== "";
+    }
 
-        model: Quickshell.screens
+    Variants {
+        id: themeTransitionVariantsWayland
+
+        model: root.onWayland ? Quickshell.screens : []
 
         ThemeTransitionWindowWayland {
             required property var modelData
@@ -167,7 +182,29 @@ ShellRoot {
         }
     }
 
-    readonly property var themeWindows: themeTransitionVariants.instances
+    Variants {
+        id: themeTransitionVariantsX11
+
+        model: root.onWayland ? [] : Quickshell.screens
+
+        ThemeTransitionWindowX11 {
+            required property var modelData
+
+            screen: modelData
+            outputName: modelData && modelData.name !== undefined
+                ? String(modelData.name) : ""
+            themeApplyPath: Quickshell.env("HOME")
+                + "/.dotfiles/.config/AtiScriptsV1/theme-apply"
+            ownsThemeApply: Quickshell.screens.length === 0
+                || modelData === Quickshell.screens[0]
+
+            onThemeApplied: root.relayThemeApplied()
+        }
+    }
+
+    readonly property var themeWindows: root.onWayland
+        ? (themeTransitionVariantsWayland.instances || [])
+        : (themeTransitionVariantsX11.instances || [])
 
     function startThemeTransition(themeName) {
         if (!themeName)

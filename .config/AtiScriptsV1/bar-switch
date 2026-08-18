@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bar-switch [native|island|toggle|status]
+# bar-switch [native|island|toggle|restart|status]
 #
 # One key, one state file, both sessions: choose whether the desktop's bar is
 # the session's OWN bar or the Tide Island.
@@ -289,11 +289,38 @@ popups_pid() {
     '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { print $1; exit } }'
 }
 
+popups_running() { [[ -n "$(popups_pid)" ]]; }
+
 popups_stop() {
   local pid
   pid="$(popups_pid)" || true
   [[ -n "$pid" ]] || return 0
   kill "$pid" 2>/dev/null || true
+}
+
+# ---- AND ALSO STARTED, FOR qtile:native ----
+#
+# qtile/autostart.sh's own 2c block starts this same process at LOGIN when
+# bar-mode is not island — that is what gives a fresh qtile-native login the
+# theme/wallpaper sweep animation. It is a `startup_once` hook, though, so it
+# only ever fires on a true first start; switching FROM island TO native
+# mid-session via this script never re-triggers it, and the gap is silent —
+# theme-animate's own IPC probe just fails against a process that was never
+# started and falls through to a plain, unanimated theme-apply. Measured
+# live: `bar-switch native` left zero quickshell processes running.
+#
+# Not guarded on session — hyprland:native has its own equivalent resident
+# process started by topbar.sh itself, so this function is only ever called
+# from the qtile:native case below.
+popups_start() {
+  popups_running && return 0
+  [[ -f "$POPUPS_ENTRY" ]] || return 0
+  setsid -f quickshell -p "$POPUPS_ENTRY" >/dev/null 2>&1 || true
+  for _ in $(seq 1 60); do
+    popups_running && return 0
+    sleep 0.1
+  done
+  return 1
 }
 
 topbar_stop() {
@@ -347,6 +374,14 @@ apply() {
         die "qtile would not hide its bar, so the island was stopped and the
              mode put back to '$prev'. The desktop is as you left it."
       fi
+      # Island up and confirmed first, same ordering rule hyprland:island
+      # uses for topbar_stop. A popups.qml left resident from a previous
+      # qtile:native session would just be dead weight (its three panel
+      # IpcHandlers are unused under the island — qtile's own popups keep
+      # answering those keys directly), but stopping it keeps exactly one
+      # shell answering `tide applyThemeAnimated` rather than two agreeing
+      # by coincidence.
+      popups_stop
       ;;
 
     qtile:native)
@@ -360,6 +395,11 @@ apply() {
              mode was put back to '$prev'."
       fi
       island_stop
+      # qtile's own bar has no theme-sweep overlay of its own — popups.qml is
+      # what theme-animate falls back to (see qtile/autostart.sh 2c). Started
+      # here too, not just at login, so a switch INTO native mid-session gets
+      # the animation immediately rather than only after the next full login.
+      popups_start || note "popups.qml did not come up; theme changes will be unanimated until next login"
       # ---- A SECOND PASS, AFTER THE ISLAND IS ACTUALLY GONE ----
       #
       # The apply above ran while the island was still up, so its X11 strut
@@ -419,12 +459,28 @@ main() {
     native|island)
       apply "$action" "$session"
       ;;
+    restart)
+      # Bring the CURRENT bar down first. apply()'s island_start/topbar_start
+      # are no-ops when the target is already running -- that is what makes
+      # `bar-switch island` on an island session safe to call idempotently --
+      # so calling apply(current, session) without stopping it first would
+      # not restart anything; it would see the bar already up and stop there.
+      # qtile:native has nothing to stop here: qtile's OWN bar is what
+      # "native" means in that session, and qtile_apply() inside apply() is
+      # itself the restart, not a follow-up to one.
+      case "$session:$current" in
+        hyprland:island) island_stop ;;
+        hyprland:native) topbar_stop ;;
+        qtile:island)    island_stop ;;
+      esac
+      apply "$current" "$session"
+      ;;
     toggle)
       if [[ "$current" == island ]]; then apply native "$session"
       else apply island "$session"; fi
       ;;
     *)
-      die "usage: bar-switch [native|island|toggle|status]" ;;
+      die "usage: bar-switch [native|island|toggle|restart|status]" ;;
   esac
 }
 
