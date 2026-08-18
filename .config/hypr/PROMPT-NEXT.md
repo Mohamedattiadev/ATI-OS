@@ -646,6 +646,71 @@ Two changes, and they may turn out to be the same root cause:
   fixes this one too, and the fix here is confirming that rather than
   writing new toggle logic that already exists.
 
+### 14. Workspace switching is blocked while any island popup is open
+
+Reported: *"when it is open the shelf i can not switch to another workspace
+also some other popups the same fix."*
+
+**MEASURED, not guessed — and it is one shared bug, not one per popup.**
+Opened the shelf (`qs -p ~/.config/quickshell/tide-island-fork ipc call
+qdrop open`), confirmed it visually open, then pressed a real synthetic
+`super+8` (`uinput-key.py super+8` — a genuine evdev device, not `wtype`).
+`hyprctl activeworkspace -j` stayed on the workspace it started on; the
+switch never happened. `hyprctl binds` confirms `SUPER,8` is an ordinary,
+unflagged global bind (`modmask: 64`, `submap: ""`, `dispatcher: workspace`)
+— nothing about it should require the shelf's cooperation. The bare `8`
+did not reach the shelf either: it leaked into an unrelated window that
+still happened to hold focus, meaning the key was consumed/rerouted
+somewhere in the compositor's focus handling rather than being matched
+against the bind table at all.
+
+**Where this lives, and why "some other popups the same" is expected
+rather than a coincidence:** every popup that sets `islandKeyboardFocus` to
+`"exclusive"` shares ONE mapping, in `IslandWindowWayland.qml`:
+
+    WlrLayershell.layer: island.islandRestingSurface ? WlrLayer.Top : WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: … "exclusive" -> WlrKeyboardFocus.Exclusive …
+
+The `"exclusive"` list itself is in `DynamicIslandWindow.qml` around lines
+545-616 — it is the shelf, calendar, cheatsheet, calculator, theme picker,
+wallpaper picker, wifi/bluetooth detail panels, the generic picker,
+settings, power menu, onboarding, application launcher, and the
+display/audio/sysmon panels and wifi QR. Any popup on that list is
+`WlrLayer.Overlay` + `WlrKeyboardFocus.Exclusive` while open, and that
+combination is the current best suspect for swallowing the global bind —
+test that theory directly (see below) rather than assuming which half is
+guilty.
+
+**The obvious fix (drop to `WlrLayer.Top` while open) is not free — this
+was already tried once.** `islandRestingSurface`'s own comment in
+`DynamicIslandWindow.qml` records that Top-while-open was reverted because
+it let fullscreen windows cover the popup. Re-testing that trade needs the
+same rigor: A/B with a fullscreen window present AND a workspace-switch
+keypress, not just one or the other.
+
+**Candidates to measure next session, in order:**
+
+1. Try `WlrKeyboardFocus.OnDemand` instead of `Exclusive` while keeping
+   `WlrLayer.Overlay`, and re-run the exact `super+8` test above. OnDemand
+   is already used successfully elsewhere in this file for the
+   shake-triggered shelf drag (`qdropDragSession`, same file, the branch
+   right below the exclusive list) — same precedent, different symptom.
+   Same caveat applies here too: OnDemand is not a guaranteed grab, so
+   confirm hjkl/search-field typing still reaches the popup before calling
+   this a fix, not just that the workspace switch now works.
+2. If OnDemand does not restore the bind either, this may be a genuine
+   Hyprland-level behavior of `WlrLayer.Overlay` + `WlrKeyboardFocus.Exclusive`
+   rather than anything this repo's QML controls — isolate it with a
+   minimal non-Quickshell layer-shell client (`layer-shell-qt` demo, or
+   `wlr-layer-shell` example) set to the same layer/focus combo, before
+   concluding it needs an upstream Hyprland report instead of a local fix.
+
+**Verify with the `guard()` pattern** (`NEXT-SESSION.md` RULES,
+`qdrop-drags.py`'s copy) before any synthetic keypress here — this item's
+own repro needs a popup open AND a real key event, which is exactly the
+combination that has gone wrong mid-test before in this project when the
+user changed workspace or theme underneath a running test.
+
 ---
 
 ## STANDING CONSTRAINTS
