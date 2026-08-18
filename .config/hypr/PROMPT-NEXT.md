@@ -4,7 +4,10 @@ Continue the Hyprland / Tide-Island work in `~/.dotfiles`, branch `test`.
 
 `~/.config/hypr`, `~/.config/qtile` and `~/.config/quickshell` are stow
 symlinks INTO this checkout, so editing here edits the running desktop.
-Quickshell hot-reloads on save.
+Quickshell hot-reloads on save — **except `.pragma library` JS files**
+(`Motion.js`, `Metrics.js`, `Clipboard.js`): those are cached and do nothing
+until the island is restarted. See RULES below; it cost a fully-down bar
+once already.
 
 **Read before touching anything:** the RULES at the bottom of
 `hypr/NEXT-SESSION.md`, then the handoff block at the top of it, then
@@ -12,20 +15,69 @@ Quickshell hot-reloads on save.
 disagree, the doc that carries a MEASUREMENT wins.
 
 **Do the whole list in one pass. Do not stop to ask which item to start
-with.** Commit as you go, one concern per commit, reasoning in the message
-the way the existing history does. **No Co-Authored-By trailer.**
+with**, except where an item below explicitly says the user's wording needs
+clarifying before code changes — ask then, not before. Commit as you go, one
+concern per commit, reasoning in the message the way the existing history
+does. **No Co-Authored-By trailer.**
 
 The desktop is currently: Hyprland, `bar-mode=island`, and **`forkNotchMode`
-is FALSE** — the notch is disabled and the island is the floating pill. That
-matters for item 8 and it is why item 8 exists.
+is FALSE** — the notch is disabled and the island is the floating pill.
 
 ---
 
-## HOW TO VERIFY, BECAUSE THIS IS WHERE THE LAST FIVE SESSIONS WENT WRONG
+## WHAT THE LAST SESSION ALREADY DID — do not redo it
 
-Every item below is a VISUAL defect. None of them can be settled by reading
-the QML, and three of them were previously "fixed" from reading and were not
-fixed. The rig exists and is committed:
+Six commits, each with its own measurement, newest first:
+
+    7baeeb5  calculator: normal mode (Escape, j/k, y/Y, i, per-row copy) was
+             ALREADY WORKING when actually driven with synthetic keys — see
+             item 6 below for what genuinely still needs doing. Tape now
+             survives a real restart, persisted to
+             ~/.cache/tide-island/calculator-tape.json.
+    69009d1  WorkspaceOverviewLayer's fade was the old bare NumberAnimation,
+             no PauseAnimation. Fixed.
+    506c1ff  NotificationCenterLayer and OnboardingLayer had NO opacity
+             Behavior at all — content popped/vanished on the raw boolean.
+             Fixed, same choreography as every other panel.
+    4c15615  PanelChrome's top text inset (`Metrics.chromeTop()`) now follows
+             the capsule's actual corner state (`notchUnround`, pushed from
+             DynamicIslandWindow via `Metrics.setNotchProgress()`) instead of
+             a flat constant. Verified A/B on the Wi-Fi panel: clean gap at
+             notch-off, byte-identical at notch-on.
+    0c42261  Item 9 (pcmanfm-qt drag offset) CLOSED. Measured: the drag
+             pixmap is libfm-qt's whole ~218px cell, GTK draws no custom
+             pixmap at all. Not a Hyprland bug — no compositor-side fix
+             exists to make here. See PROMPT-NEXT.md's own item 9 section
+             in git history (`git show 5f50cdc:.config/hypr/PROMPT-NEXT.md`)
+             for the full writeup if it's needed again.
+    966673b  The rofi/chord mode HUD said "bar action" 26 times — labeller
+             now looks past the `bar-action` wrapper at its arguments.
+
+New test tools, both already in `hypr/scripts/test/`:
+
+  * `bar-edge.py` — 60fps motion-detection rig for the topbar's edge twitch
+    (item 8, old numbering). One clean sweep done at the TOP bar position
+    across all 10 popups/boxes: zero edge movement. The BOTTOM position was
+    never successfully measured — see STANDING CONSTRAINTS below for why,
+    and pick a different capture strategy (a fixed region computed from
+    `bar_geometry()` BEFORE recording starts, not a fixed 1000x500 guess).
+  * `qdrop-drags.py` — drives N drags into the shelf in a row and counts the
+    store. Has a `guard()` called immediately before every synthetic input
+    that aborts if the workspace has moved or picked up a stray window —
+    added after exactly that happened mid-session. **Use this guard pattern
+    for any new synthetic-input test tool**, not just this file's copy of it.
+
+Item 9 (pcmanfm-qt) and item 3 (rofi HUD) from the previous prompt are DONE
+and not in the list below. Everything else from that prompt is either
+carried forward (renumbered) or superseded by fresher user reports — see
+each item.
+
+---
+
+## HOW TO VERIFY, BECAUSE THIS IS WHERE SESSIONS KEEP GOING WRONG
+
+Every item below is a VISUAL or TIMING defect. None of them can be settled
+by reading the QML.
 
 ```
 wf-recorder -o eDP-1 -g "0,0 1366x420" -r 60 -f /tmp/x.mp4
@@ -33,404 +85,418 @@ wf-recorder -o eDP-1 -g "0,0 1366x420" -r 60 -f /tmp/x.mp4
 ffmpeg -i /tmp/x.mp4 -fps_mode passthrough f%04d.png
 ```
 
-* `hover-cycle.py` warps then emits a 1 px nudge through uinput, because
-  **`movecursor` warps WITHOUT a motion event and therefore never hovers.**
-  It holds one uinput device open for the whole run. No buttons.
-* `-fps_mode passthrough`, not `-vsync`; this ffmpeg removed `-vsync`.
-* Drive panels over IPC: `qs -p ~/.config/quickshell/tide-island-fork ipc
-  call <target> <fn>`. `qs ipc show` lists them.
-* **Measure a property, then LOOK AT THE FRAMES.** A threshold that counts
-  "is the capsule drawn" mistook the shelf's own hint chips for a blank last
-  time, and looking is what turned a wrong number into the real finding.
-* **Check the workspace before AND after a recording.** One run drifted to
-  another workspace, put real windows under the island, and made a darkness
-  test read "capsule present" when it was not. Use an empty workspace.
+* **A single `grim` shot is a coin flip against anything sub-second.** Two
+  separate misses last session: a drag pixmap (the button had already
+  released by the time the shot fired) and a popup's mid-morph frame. Both
+  times the fix was the same — a continuous `wf-recorder` capture scanned
+  frame-by-frame against a quiet baseline, exactly like `bar-edge.py` and
+  the island's hover-blink rig already do. Reach for that FIRST for anything
+  that opens, closes, or moves in under a second; do not try a timed
+  single-shot capture again and hope the timing lands.
+* **A poll loop watching a spawned script's stdout must run it unbuffered.**
+  `python3 -u`, not `python3`. Python block-buffers stdout the moment it is
+  not a tty, so a marker line a poll loop is grepping for can sit unflushed
+  until the process exits — which was AFTER the exact moment the loop needed
+  to catch. Cost two capture attempts before the buffering was the found
+  cause rather than the timing.
+* **`.pragma library` JS is CACHED.** Editing `Motion.js`, `Metrics.js` or
+  `Clipboard.js` does nothing until the island is RESTARTED:
+  `pkill -x quickshell; setsid -f ~/.config/hypr/scripts/island.sh`. Verify
+  the restart itself loaded clean (`Configuration Loaded` in
+  `$XDG_RUNTIME_DIR/quickshell/by-id/<newest>/log.log`, no `ERROR`) AND that
+  a layer surface actually exists (`hyprctl layers -j`) before doing
+  anything else — a QML syntax error here takes the WHOLE bar down with no
+  fallback, measured directly last session (a duplicate
+  `Component.onCompleted` on one object; two edits to the same object in one
+  sitting, easy to do without noticing).
+* **An Edit tool write does not always trigger the file watcher.** Measured
+  once: an edit to `WorkspaceOverviewLayer.qml` produced no "Reloading
+  configuration" log line at all, and a plain `touch` on the same file
+  immediately after DID trigger one. If a change does not show up after
+  editing, `touch` the file before concluding anything else is wrong —
+  absence of the reload line is not proof the shell is still running the
+  old version, but it is also not proof it picked up the new one either.
+* **Check the workspace IMMEDIATELY before every synthetic mouse or
+  keyboard event, not once at the top of a test.** The user is at the
+  keyboard while a test tool runs; several seconds of setup (uinput device
+  bind alone is ~3.5s) is enough time for them to switch away. A drag fired
+  on the wrong workspace once and landed a press+drag inside the user's live
+  nvim (harmless — no keystrokes, just a visual-mode selection — but it
+  should never have been possible). `qdrop-drags.py`'s `guard()` is the
+  pattern: re-check, and abort rather than proceed, immediately before the
+  input fires. Keyboard-only tests into a panel that holds an EXCLUSIVE
+  keyboard grab are the one exception that does not need this — the grab
+  makes it physically impossible for the keys to reach anything else, which
+  is how the calculator's normal mode got driven safely.
+* **`hyprctl dispatch resizewindowpixel` / `movewindowpixel`, not the
+  `...pixelexact` spelling.** The `exact` form answers `"Invalid
+  dispatcher"` on stdout with exit 0, so a caller that does not read the
+  output sees a silent no-op. `exact` is the first WORD of the argument
+  string, not part of the dispatcher's name:
+  `resizewindowpixel "exact 420 200,address:0x...`.
+* **`PanelLoader`'s `retain: true` means an ordinary close/reopen is not a
+  test of anything persisted to disk.** The calculator keeps its item
+  mounted across a close specifically so the tape survives — which means
+  verifying a NEW disk-persistence path needs a REAL restart
+  (`pkill -x quickshell` + `island.sh`), not a close/reopen, or the test
+  passes by never having exercised the code path it claims to.
+* **A workspace-8-style isolated test window may not open where you
+  dispatched it.** `pcmanfm-qt -n <dir>` opens on whatever workspace the
+  package's DAEMON's first window already lives on, ignoring the caller's
+  active workspace — measured landing a throwaway test window next to the
+  user's real one on workspace 3. `hyprctl dispatch movetoworkspacesilent
+  "<ws>,address:<addr>"` right after spawn, then verify with `hyprctl
+  clients -j` that the workspace is single-occupant before any synthetic
+  input.
+* **hyprlock is tested in a NESTED Hyprland, never by locking the running
+  session.** Item 6 below puts hyprlock in scope for the first time — this
+  rule has not had to fire yet this project, but it exists precisely for
+  this.
 * **A/B or it did not happen.** Run the same gesture before and after with
   the same detector and quote both numbers.
-* Never synthesise keystrokes into a live panel, and never synthesise drags
-  over the user's real windows — an earlier attempt landed a press in nvim.
-  Use an empty workspace with throwaway windows.
+* **Back up `~/.config/tide-island/userconfig.json` before any test that
+  writes, and diff it after** — write through `os.replace()` the way
+  `island-settings.py` does, not a truncate.
+* **Restore the session when you are done**: theme, workspace, volume,
+  layout, bar-mode, cursor position, clipboard, and any daemon you started.
 
 ---
 
 ## THE TASK LIST
 
-### 1. The drop shelf is unusable once it is OPEN — highest priority
+Numbered fresh — this is not the previous session's numbering. The user's
+own words are quoted verbatim where the report itself is the spec; do not
+silently reinterpret them.
+
+### 1. The drop shelf's second drag — still broken, carried over as-is
 
 Reported: *"i can add to it before the dropshelf opened — i shake and then
-drag into it — but when it is open i can not use what behind the dropshelf, i
-can not drag anything again and also can not zip or copy or drag the things
-off. totally not working."*
+drag into it — but when it is open i can not use what behind the dropshelf,
+i can not drag anything again."* Highest priority last session and still
+unresolved.
 
-So: the FIRST drop works. After that the panel is inert — no second drag in,
-no drag out, no keys.
+**Diagnosed exactly, fix attempted, fix confirmed insufficient — do not
+re-derive the diagnosis, start from where this left off.**
 
-**The state machine that does this is already documented and is the place to
-start.** `DynamicIslandWindow.qml`'s `islandKeyboardFocus` and
-`islandContainer.qdropForDrag`:
+The mechanism: `DynamicIslandWindow.qml`'s `islandKeyboardFocus` computed
+property takes an EXCLUSIVE keyboard grab whenever the shelf is visible and
+`!qdropForDrag`. An exclusive grab cancels an in-flight Wayland drag —
+measured A/B, `entries 9 -> 9` with the grab against `9 -> 10` without it.
+`showQdrop(forDrag)` sets `qdropForDrag = true` only for the FIRST,
+shake-triggered drag; `onDropLanded` (in the `QdropLayer` instance around
+`DynamicIslandWindow.qml:6510`) sets it back to `false` once that drop
+lands, which re-arms the grab — and nothing dropped it again for a SECOND
+drag.
 
-* An exclusive keyboard grab **CANCELS an in-flight Wayland drag** — measured
-  A/B, `entries 9 -> 9` with the grab against `9 -> 10` without it.
-* So a shake-opened shelf sets `qdropForDrag = true` and takes NO grab.
-* `onDropLanded` sets `qdropForDrag = false`, which takes the grab.
+**The attempted fix**, already tried and REVERTED because it did not work:
+wire `QdropLayer`'s `onDragHovering` (fires from `QdropGrid`'s own
+`dragOutStarted`/`dragOutFinished` signals, which had to be added — see
+`QdropGrid.qml`'s `Drag.onActiveChanged` and the `tile.Drag.active = true`
+call site around line 848) to ALSO set `qdropForDrag = true`, so the grab
+drops again the moment a new drag is detected. Verified with `qdrop-drags.py
+--open drag --drags 2`: the FIRST drag still lands (unchanged), but the
+SECOND is still cancelled — `entries 1 -> 2 -> 2`, not `1 -> 2 -> 3`.
 
-That is the trap: **after the first drop the grab is on, so every later drag
-into or out of the shelf is cancelled by it — and if the grab were off
-instead, the keys (`ctrl+z`, `ctrl+d`, `y`) would be dead.** The current
-design can only ever have one of the two. Verify that is what is happening
-before changing anything (drive two drags in a row with
-`scripts/test/dnd-peer.py` + `uinput-shake.py to`, and watch
-`~/.cache/qdrop.json`), then fix it properly:
+**What that rules out and what is left to try:** the grab's RESTING value at
+the moment the second drag begins hovering is not the whole story, because
+setting it to non-exclusive still did not save the drag. Candidates,
+untested:
 
-* The grab must be dropped again the moment a NEW drag appears over the
-  shelf — `QdropLayer`'s `onDragHovering` already fires for this and
-  currently only restarts a timer.
-* Dragging OUT is `Drag.active = true` on the tile (`QdropGrid.qml`); check
-  whether the grab kills it too, and release the grab on drag start.
-* `qdropDragGrace` is 20 s; make sure it is not what is re-arming the grab
-  mid-drag.
+* The keyboard-focus MODE TRANSITION itself — not just landing on
+  `"none"`/`"ondemand"` — may be what disrupts an already-in-flight OS-level
+  drag, independent of direction. Test: drop the grab BEFORE the second drag
+  begins (e.g. the instant the shelf regains focus after the first drop)
+  rather than reactively on `dragHovering`, and see if a grab that is
+  already at rest (never toggled mid-drag) behaves differently from one that
+  flips during the drag.
+* `DropArea.onEntered` firing is downstream of the compositor's own
+  drag-delivery decision — if Hyprland decided to cancel the drag before
+  delivery, `onEntered` might simply never fire for the second drag at all,
+  which would look identical to "the signal fired but did not help." Check
+  with a log line inside `onDragHovering` itself (not inferred from the
+  store count) whether it fires at all on drag 2.
+* Also fix, once dragging works: with the shelf open, tiles must stay
+  clickable/rubber-band-selectable, and `ctrl+z`/`ctrl+d`/`y`/`s`/`/` must
+  keep working — this was never re-verified after the grab logic changed.
 
-Also fix: with the shelf open, the tiles must stay clickable and
-rubber-band-selectable, and `ctrl+z` / `ctrl+d` / `y` / `s` / `/` must work.
-Drive each one and say which you drove.
+Test rig: `hypr/scripts/test/qdrop-drags.py --open key|drag --drags N`,
+already hardened with a `guard()` — see HOW TO VERIFY.
 
-### 2. The same one-frame blink on the rofi-mode popup and others
+### 2. Popups still glitch on open/close, partially fixed
 
-The island's hover blink is FIXED (see `430ade4`): the layer surface grew at
-the moment the tooltip appeared, and the first frame after a resize is drawn
-before the content is laid out. `hoverTooltipWindowHeight` is now reserved
-unconditionally.
+Reported: *"still after some popup some glitching happening it fixed with
+some and some not."*
 
-**The same defect is still present on other surfaces** — reported on the rofi
-mode popup, opening and closing, "and some other popups also".
+The mechanical half of this (a panel with no fade Behavior at all) is done
+— see the three commits above. What is NOT done is the frame-level audit the
+old item 4 called for and never got: recording an open/close at 60fps and
+counting frames where content is drawn inside a shape that has not finished
+growing, panel by panel. `grep -L contentDelay` finding "this file never
+mentions the word" only proves the mechanical bug class is absent — it does
+not prove the TIMING (how long the delay is, whether it matches the actual
+morph duration in every case) is right, and it is exactly the kind of thing
+that "fixed some, not all" describes.
 
-Every contributor to `requestedWindowHeight` in `DynamicIslandWindow.qml` is
-a candidate: `notificationCenterWindowHeight`, `capsuleWindowHeight`,
-`overviewWindowHeight`, `controlCenterWindowHeight`. Record each open/close
-at 60 fps, count blank frames, and apply the same answer where it fits
-(reserve, do not resize) — but check each one, because a permanently
-overview-sized window is not obviously free the way a 60 px tooltip was.
+Adapt `bar-edge.py`'s technique (already proven this session): record a
+region around the capsule at 60fps through an open and a close, diff against
+a quiet baseline, and report the frame range where content-area pixels
+change while the capsule's own outline is still resizing. Do this for
+several panels the user has NOT already implicitly confirmed fixed — start
+with ones item 4-old never got individual attention: theme picker, wallpaper
+picker, the connectivity panels (Wi-Fi/Bluetooth), and the cheatsheet (see
+item 8 below, which is likely the same root cause with a display problem
+layered on top).
 
-Note `retainedWindowHeight` already delays the SHRINK; the defect is at the
-GROWTH.
+### 3. Animation timing — big popups feel slow/inconsistent
 
-### 3. The rofi mode popup says "bar action" on every row
+Reported: *"whne i open popup big like rofi or other a bit slowness
+happenes i want all the time timing of anmaiton stable and same and smooth
+fast no glitching anytime."*
 
-Reported: *"when i open the rofi mode popup the text inside is only 'bar
-action' — fix, write the right things."*
+This reads as a DIFFERENT complaint from item 2: not "a frame glitches" but
+"the whole open feels slow, and it should feel the same every time." Two
+places to look, in order:
 
-**Confirmed, and the cause is exact.** `~/.config/hypr/scripts/cheatsheet.py
---submap-json rofi` currently answers:
+1. `Motion.js`'s `springFor(travel, dest)` — the overshoot/duration curve is
+   explicitly a function of how far the shape travels (`travel`) — a bigger
+   panel (further from the resting capsule) may be getting measurably more
+   settle time than a small one, which would read as "some popups are
+   slower" even though nothing is broken. Measure `morphDuration()` and the
+   actual on-screen open time for a small panel (calculator) against a big
+   one (cheatsheet, wallpaper picker) with the same wf-recorder technique,
+   and quote both numbers before changing anything.
+2. `contentDelay()` — if this is a flat constant, a panel whose SHAPE
+   animation legitimately takes longer (a bigger travel) may have content
+   painting in before the shape finishes anyway, which is the shape/content
+   race item 2 is also about. The fix, if this is the cause, is coupling the
+   delay to the actual morph duration for that specific transition rather
+   than a single flat number — verify this against measurement before
+   assuming it.
 
-```json
-{"key": "N", "action": "bar action"}, {"key": "B", "action": "bar action"},
-{"key": "A", "action": "bar action"}, ... 26 of them
-```
+Do not tune numbers by feel. This project's whole discipline is measuring
+first — see the `springFor()` note in `FORK-NOTES.md` for how the LAST
+tuning pass in this exact function was done, and match that rigor.
 
-Every rofi-mode bind runs `exec, bar-action tide <function> [arg]`, and the
-label function reduces an exec to its PROGRAM — so they all collapse to the
-one wrapper's name. `SHIFT C` reads "theme toggle" only because it runs a
-different program.
+### 4. Padding — some popups still have the radius over the text
 
-Fix in `cheatsheet.py`: the labeller must look PAST `bar-action` at its
-arguments. `bar-action tide showPicker clipboard` is "clipboard",
-`bar-action tide toggleCalculator` is "calculator". `describe()` already has
-the equivalent special case for `qs ... ipc call` — extend that idea rather
-than adding a second table. `AtiScriptsV1/bar-action`'s own case statement is
-the authority for what each function means; do not write a third copy of it.
+Reported: *"the padding of top and bottom of all the popups since some
+popups the rounded radius are on or above the text."*
 
-This is shared with the printed cheatsheet and with qtile's chord HUD, so fix
-it once in `cheatsheet.py` and check both.
+**Read this carefully before starting: last session's fix in `PanelChrome`'s
+`chromeTop()` (see commit `4c15615`) is the ISLAND's chrome only —
+`bar-mode=island`.** It does NOT touch `qml/popups/PopupChrome.qml`, which
+is a COMPLETELY SEPARATE component with its own fixed `radius:
+PopupMetrics.s(14)` and a hardcoded `head_y=28` — used for every popup
+under `bar-mode=native` (the qtile-style topbar): wallpaper, network,
+volume, display, wifiqr, cheatsheet. If the user is testing under
+`bar-mode=native`, or switches between the two, "some popups still have it"
+may simply mean "the ones on the OTHER chrome that was never touched." Check
+which bar-mode the report was made under before assuming the fix regressed
+— it is more likely it was never in scope for these surfaces at all.
 
-### 4. Popups open and close slowly / glitchily
+Two halves, both open:
 
-Reported alongside item 2. Partly the same resize defect, partly the
-"content arrives before the shape" problem.
+* **Audit `PopupChrome.qml` for the identical defect** `PanelChrome` had:
+  does it have a fixed-radius, fixed-form popup (no notch morph — it never
+  changes shape), in which case the fix might be simpler — a single
+  constant top inset increase, verified the same A/B way, rather than a
+  `notchProgress`-driven interpolation, since this surface has no notch
+  concept at all.
+  * **The 12 unchecked picker menus** `NEXT-SESSION.md`'s "still open" list
+    already named are on this same chrome and have never been walked.
+* **The BOTTOM padding half, on the ISLAND side, still entirely open** —
+  this is old item 7's other half and was explicitly left undone last
+  session. `PanelChrome.contentHeight` is `root.height - contentY - gap -
+  footerHeight`; audit this against panels that draw their OWN footer
+  (search for `footerExtraHeight` usage) versus the ones that rely purely on
+  `KeyHint`'s built-in footer — the doc's own suspicion was that a
+  custom-footer panel might be double-counting or under-counting relative to
+  `PanelChrome`'s assumption.
 
-One instance is already fixed and is the pattern: `QdropLayer` was **the only
-layer in the shell with no `Motion.contentDelay()` choreography**, so its
-tiles and keycap bar were drawn inside the 32 px notch for several frames.
-Fixed in `430ade4`; wide-but-short frames went 3 -> 1.
+Use `scripts/test/sweep-island.py` to drive every state in both notch forms
+for the island half; for the `PopupChrome` half there is no equivalent sweep
+tool yet — `popups.qml`'s IPC targets (`qs -p
+~/.config/quickshell/tide-island-fork/popups.qml ipc show`) are the way in,
+one call per popup, same as `bar-edge.py` already drives them.
 
-**Audit every layer for the same omission:**
+### 5. Wallpaper picker — upgrade, fix the glitch, fix the size
 
-```
-grep -L contentDelay qml/island/*.qml qml/*/*.qml
-```
+Reported: *"the wallpaper popups need upgrade in ui+ux and its glitching
+while opening and popup too big fix."*
 
-and give each one that draws a panel the same opacity/PauseAnimation block.
-Then measure: record an open, count frames where the content is drawn inside
-a shape that has not finished growing.
+Three parts, and the first is carried over UNSTARTED from last session's
+list (never got to it):
 
-`NEXT-SESSION.md`'s "THE MOTION WORK SO FAR" section has the standing lead —
-the settle is the CONTENT, not the shape — and a matrix of ten transition
-classes that has never been worked through. Do as much of it as the
-measurements support.
+* **hjkl + `/`-gated search**, exactly as `ThemePickerLayer.qml` already
+  does over a grid — copy that shape rather than inventing a second one.
+  `h`/`l` one thumbnail, `j`/`k` one row, `/` enters search (the field is
+  `readOnly` until then, same `PanelSearchField` pattern the calculator and
+  the shelf both use), `r` keeps working for random, Esc/Enter leave search
+  back to command mode.
+* **The glitch on open** — likely two candidates, both testable with item
+  2's recording technique: the same content/shape race as everything else
+  in item 2, OR (the doc's own standing suspicion) 362 images decoding
+  synchronously on open. Check `WallpaperThumbnailCache.qml` for whether
+  thumbnail decode is async and cached, or blocking the first paint.
+* **"too big" — measure it.** Compare `WallpaperPickerLayer`'s
+  `preferredHeight`/width against the screen (1366x768) and against what
+  the OTHER grid panels (theme picker, application launcher) use for the
+  same 6-column-ish layout. If it is filling most of the screen where a
+  peer panel is not, that is the concrete thing to shrink — likely the tile
+  size or the row count shown before scrolling, not a global scale change.
 
-### 5. The wallpaper picker needs a real upgrade
+### 6. The calculator — needs clarification, then a real feature, not a bug fix
 
-Reported: *"the wallpaper popup need upgrades since its too glitch and too
-bad. i want that i can use `r` for random and can move with hjkl, but when i
-click `/` it do the enter to the searchbar."*
+Reported: *"the calcloter still not good i can write any letter `i` for
+exmaple which means nothing ,so make a spaceifc latters or simplers ref
+person can write and i wnat hjkl to move left right up down etc."*
 
-`qml/island/WallpaperPickerLayer.qml`. It already has `r` for random (see
-FORK-NOTES). What it needs:
+**Read item 6 in the previous PROMPT-NEXT.md's own transcript first** — last
+session drove EVERY normal-mode key with synthetic input (Escape, j/k, g/G,
+y, Y, i/a, Escape-Escape) and every one of them worked exactly as designed,
+confirmed with grim captures showing the tape cursor actually move. So this
+is not a re-diagnosis; it is new, different feedback, and the two halves of
+it need different handling:
 
-* **hjkl** as well as the arrows — `h`/`l` one thumbnail, `j`/`k` one row.
-  `ThemePickerLayer.qml` already does exactly this over a grid; copy the
-  shape, do not invent a second one.
-* **`/` enters the search field**, and typing filters. This is the MODAL
-  pattern `QdropGrid.qml` documents at length: the field is `readOnly` until
-  `/`, which is what lets plain letters be motions. `PanelSearchField`'s
-  header calls `readOnly` the thing that "keeps focus and inserts nothing".
-* `r` keeps working, and Esc/Enter leave search back to command mode.
-* Then fix the "too glitch": record it opening and closing and treat it as
-  items 2 and 4.
+* **"i can write any letter i which means nothing"** — likely about INSERT
+  mode, where the field is a free-text `TextInput` and anything typeable
+  reaches `qalc`, including letters that are not valid unit names and
+  produce a confusing answer or `qalc`'s own "resolves an unknown identifier
+  as a UNIT" trap (documented at the top of `CalculatorLayer.qml` — e.g.
+  `frobnicate(3)` returns a confident nonsense unit rather than erroring).
+  **This is ambiguous enough to ask the user directly** before writing code:
+  do they want typing restricted to a smaller character set (digits,
+  operators, a fixed list of known unit abbreviations), or do they want
+  clearer on-screen feedback when qalc's answer is a unit-trap nonsense
+  result rather than a real one? Those are different features.
+* **"i want hjkl to move left right up down etc"** — an explicit re-ask
+  after last session's normal-mode audit concluded h/l have no natural
+  meaning on a 1-D tape and left them unbound. The user wants them bound
+  anyway. The natural meaning for h/l that j/k does not already cover:
+  **character-wise cursor movement inside the CURRENT expression**, vim-style,
+  while in normal mode — h/l move the text cursor left/right in the (still
+  visible, not-yet-committed) expression rather than navigating the tape.
+  This is a real feature to design and add, not a bug: decide whether h/l
+  in normal mode edit the box's cursor position (requiring a switch back to
+  a focused-but-not-fully-insert state) or do something else, implement it,
+  and update the hint bar (`chrome.hints` in `CalculatorLayer.qml`) to
+  advertise whatever they end up doing — the hints currently correctly say
+  nothing about h/l, which stops being correct the moment they do something.
 
-362 images in the library, so also check the thumbnail loading path — a grid
-that decodes everything on open is its own kind of glitch.
+Remaining upgrade item from the original list, still open: **a memory
+register** (store/recall a value, e.g. `M+`/`MR`-style). Not investigated at
+all yet.
 
-### 6. The calculator — hjkl does not work, and it needs the rest of the upgrade
+### 7. Docs and cheatsheet — too small, model them on qtile's own
 
-Reported twice now: *"the calculator i can not move with hjkl fix and make it
-upgraded."*
+Reported: *"the documention and cheat ones are so small and can not seen and
+hard i think can we make them more like the one in qtile? but as popups?"*
 
-`qml/island/CalculatorLayer.qml` was made MODAL last session (`3aef5fd`):
-insert by default, `Esc` -> normal, then `j`/`k` walk the tape, `g`/`G` its
-ends, `y` yanks the result, `Y` the expression, Enter recalls, `i`/`a` resume
-typing, `Esc` closes. **The normal-mode motions were never DRIVEN** — that
-needs synthetic keys into a live panel — so the first job is to find out
-whether they work at all and fix them if not. Likely suspects:
+The REFERENCE design the user is pointing at is qtile's own cheatsheet
+popups — read `~/.config/qtile/popups/QtileCheatsheet.py`,
+`VimCheatsheet.py` and `FishCheatsheet.py` for their sizing, font size and
+layout before touching the island's version, since "more like the one in
+qtile" is a concrete, comparable spec sitting right there rather than a
+vague preference.
 
-* the field may still be claiming keys when `readOnly` is set;
-* `Keys.onPressed` on the FocusScope may never see them because focus is
-  inside the field's TextInput — this is the exact bug QdropGrid's
-  `focusWanted` signal exists to solve, and its comment describes the
-  symptom ("the first Escape left search and the second did nothing").
-* `h`/`l` do nothing at all today. Decide what they should mean on a tape —
-  probably nothing, in which case say so in the hints rather than leaving
-  them dead.
+The island's own cheatsheet is `qml/cheatsheet/CheatsheetLayer.qml` (583
+lines) for `bar-mode=island`, and `qml/popups/CheatsheetPopup.qml` (442
+lines) for `bar-mode=native` — **two separate files, likely both need the
+same treatment**, the same split as item 4. `cheatsheet.py --sheet-json`
+is what both read their ROWS from (unchanged, still correct per item 3's
+fix last session) — this item is about the CONTAINER's size and type scale,
+not the data.
 
-Then the upgrade half, which is untouched:
+### 8. Theme popup, and a cluster of other surfaces — glitch reports needing triage
 
-* **history survives a close** (today the tape is a plain property on a
-  non-retained `PanelLoader`, so it dies with the panel). NEXT-SESSION.md
-  records a CRASH from `FileView` + `JsonAdapter` with a free-form map — a
-  LIST is the shape known to survive, and `QdropStore.qml` is a working
-  precedent that sidesteps the adapter with `setText(JSON.stringify(...))`.
-  Test it with the topbar as the active bar so a crash cannot take the only
-  bar with it.
-* a memory register;
-* per-row copy from the tape (`y` on any row, not only the latest);
-* qalc already does unit and base conversion (`5 km to mi`, `1 GiB to MB`,
-  `0xff`) — make sure the placeholder and the hints advertise it.
+Reported: *"the theme popup when opens a glitch happens also the man popup
+u also lock one, reording, barr swithchig ppoup. and the documentions and
+cheets"* [sic — transcribed verbatim; "reording" almost certainly means
+"recording", "man popup" is unclear and worth confirming with the user].
 
-### 7. NOTCH ON *and* NOTCH OFF are two layouts, and only one was ever checked
+Five surfaces named, of very different kinds — **triage each before
+assuming it is the same bug as item 2**:
 
-Reported: *"fix all possible issues and all cases of notch and notch disabled
-like spacing or padding. for example the padding of the top part of all popup
-when notch disabled is bad, needs to be a bit bigger since the radius comes
-over the text. and some other popups also the top and bottom padding is
-missing."*
-
-**This is a whole-shell audit and it is the item most likely to be skimped.
-Do not skim it.**
-
-The cause of the named example is known: `Metrics.chromeTop()` is a CONSTANT,
-and `PanelChrome.qml` positions the title, the status, the tabs and
-`contentY` from it. With the notch ON the capsule's top corners are square
-and flush, so a small top inset is right. With the notch OFF the same capsule
-has ROUNDED top corners (`radius`), and the corner arc cuts into the first
-line of text. `notchProgress` (0..1, in `DynamicIslandWindow.qml`) is the
-value that already interpolates between the two forms — the chrome's top
-inset has to follow it instead of ignoring it.
-
-Work to do:
-
-* Make the top inset a function of `notchProgress`, in ONE place, and let
-  every panel inherit it. Do not patch individual panels.
-* Then walk EVERY panel in both states and fix what is wrong. The list is
-  the 25 island states in `NEXT-SESSION.md`. `scripts/test/sweep-island.py`
-  already drives all of them — use it, capture each, and compare notch-on
-  against notch-off side by side.
-* Several panels are reported to be missing BOTTOM padding too. `PanelChrome`
-  computes `contentHeight` from `root.height - contentY - gap - footerHeight`;
-  check that against panels that draw their own footer and those that do not.
-* Toggle the notch with the settings panel's "Notch mode" switch, which
-  writes `forkNotchMode` to `~/.config/tide-island/userconfig.json`. **Back
-  that file up before any test that writes, and diff it after** — it is a
-  RULE and it has bitten.
-
-### 8. The topbar's ~2 px height twitch — re-open it with the better instrument
-
-Reported: *"the topbar still glitching when i open then close popup, its
-height reduce with 2px lets say and come back to its place again. in qtile it
-was because picom and fixed i think, but in hyperland i dont know why still
-do."*
-
-**Driven once and NOT reproduced, on either bar.** What was already ruled out,
-so it is not re-done:
-
-* *Not a spring.* `grep 'Behavior on \(height\|implicitHeight\|y\)'` across
-  `topbar/*.qml` and `popups.qml` returns NOTHING — no geometry on either
-  surface is animated. `barHeight` is `s(28)`, `marginV` `s(5)`, a static 38.
-* *Not the UI scale flickering to a fallback.* `Metrics.qml` reads
-  `~/.cache/qtile/ui_scale` through a FileView and falls back to 1.0; the
-  file holds `1.00`, so fallback and real value are the same number.
-* *Not picom.* There is no compositing layer between Quickshell and
-  Hyprland, so the matching symptom in the two sessions has two different
-  causes and the qtile fix does not port.
-* Measured: the bar surface read `h=38 y=0 reservedTop=38` unchanged for a
-  whole volume-popup open/close sampled every 8 ms, and a 157-frame grim
-  burst found its painted bottom edge identical in every frame.
-
-**RECOMMENDED, and the reason it is worth re-opening rather than closing:**
-that 39 fps grim burst is exactly the instrument that would MISS this. The
-island's hover blink turned out to be **one frame**, and it was invisible to
-every probe until a 60 fps `wf-recorder` capture caught it. The topbar was
-never recorded that way. So:
-
-1. `bar-switch native`, then record at 60 fps with `wf-recorder` over a strip
-   containing the bar's bottom edge, and drive open/close with the rig in
-   item 2. Count frames where the painted edge moves, do not average.
-2. **Drive EVERY popup, not just volume** — that is the one that was tried.
-   `popups.qml` has wallpaper, network, bluetooth, display, wifiqr and the
-   cheatsheet, and they have different heights and different loaders.
-3. Sample the bar surface AND `hyprctl monitors -j`'s `reserved`
-   **simultaneously**, because the strongest surviving lead is that the bar's
-   height is not what moves: `topbar/shell.qml:931` is a SEPARATE 1 px window
-   that owns the `exclusiveZone` — both real bars are `ExclusionMode.Ignore`
-   — so anything that perturbs the reserved area shifts the gap under the bar
-   without the bar resizing at all. A popup is another layer surface, and
-   layer-shell recomputes the usable area when one maps.
-4. Test BOTH bar positions (`~/.cache/topbar-position`, top and bottom).
-5. If it still cannot be reproduced in Hyprland, **verify it under qtile**
-   and then close it as qtile-only with the picom exclusion as the fix —
-   `picom.conf` already excludes the island for a measured reason. Do not
-   leave it open forever on a symptom nobody can reproduce.
-
-### 9. pcmanfm-qt: the dragged file is not under the cursor — PROVE it first
-
-Reported: *"when i open pcmanfm-qt and try to drag file why the file not
-directly under the cursor."*
-
-The grid's spacing is fixed and measured (`623bf9b`): the cell WIDTH is a
-font-derived character budget in libfm-qt, independent of the icon size —
-`BigIconSize` 32 and 64 both gave a 218 px pitch, `QT_FONT_DPI 72` gave
-~166 px. It is now `QT_FONT_DPI=84` in a local desktop override, six columns.
-
-**The offset is NOT proven and must not be "fixed" on the theory.** The
-theory is that libfm-qt's drag pixmap is the rendered ITEM — that 218 px cell
-with a 48 px icon centred in it — so the visual extends ~85 px either side of
-what you grabbed, and narrowing the cell narrows the offset by construction.
-
-**RECOMMENDED — one test settles where the fix belongs, and it is the first
-thing to do:**
-
-* Empty workspace, ONE throwaway pcmanfm-qt window with one file in it.
-  (The previous attempt drove a synthetic drag on the wrong workspace and the
-  press landed in nvim. **Do not synthesise drags over the user's real
-  windows.**)
-* `uinput-shake.py to <x1> <y1> <x2> <y2>` and a `grim` capture DURING the
-  0.6 s hold at the destination — the drag icon is a surface the compositor
-  draws, so it is in the capture.
-* Measure the offset between `hyprctl cursorpos` and the drag pixmap's
-  bounding box, and compare it against `(cellWidth - iconWidth) / 2`.
-* **Then repeat the identical drag from a second Qt app and from a GTK app**
-  (`scripts/test/dnd-peer.py` is GTK and already offers a URI). This is the
-  test that decides everything:
-
-      offset in pcmanfm-qt ONLY   -> libfm-qt's pixmap, i.e. the cell width,
-                                     and item 9 is already mostly fixed by
-                                     the font change; finish it by measuring
-                                     how much the offset shrank
-      offset in EVERY app         -> Hyprland's drag-icon hotspot placement,
-                                     which is a compositor issue and a very
-                                     different bug to report and work around
-
-Do not spend the session patching a file manager before knowing which of
-those two it is.
-
-**MEASURED — offset in pcmanfm-qt only. Do not touch Hyprland for this.**
-Empty workspace (8), one throwaway `pcmanfm-qt -n <dir>` with one file.
-`pcmanfm-qt` runs as a single-instance daemon: `-n` opens the new window on
-whatever workspace the daemon's FIRST window is on, not the caller's active
-one — it landed on workspace 3, next to the user's real pcmanfm-qt window,
-and had to be moved off with `movetoworkspacesilent` before anything else.
-Say so because the next session will hit the same surprise.
-
-A synthetic `uinput-shake.py to` drag onto a `grim` single-shot missed the
-pixmap twice running — not a timing-window problem but an output-buffering
-one: Python block-buffers stdout when it is not a tty, so the `"steered to"`
-marker a poll loop was grepping for never reached the log file until the
-whole script exited, i.e. after the button had already released. `python3
--u` fixed it. Even then a single `grim` is a coin flip against a sub-second
-drag; a continuous `wf-recorder` capture scanned frame-by-frame for the first
-one differing from a quiet baseline is what actually caught it — same
-instrument this session's item 8 rig uses, for the same reason.
-
-    pcmanfm-qt (Qt/libfm-qt)   drag pixmap bbox ~219 x 72 px — matches the
-                               218 px cell pitch this file already measured,
-                               to the pixel. Confirms the theory exactly:
-                               the pixmap IS the whole rendered cell, not
-                               the 48 px icon.
-    dnd-peer.py (GTK)          same drag, same instrument, full flight
-                               scanned frame-by-frame: NO custom drag pixmap
-                               ever rendered, only the plain system cursor.
-                               Nothing bigger than the pointer to be offset
-                               FROM.
-
-So: **libfm-qt's pixmap, confirmed, not a Hyprland drag-icon-hotspot bug.**
-The font-DPI change already narrows it (was ~166 px story at DPI 72, cell is
-218 at the values tested); the remainder is libfm-qt drawing the cell rather
-than the icon into the drag surface, which is upstream's rendering choice,
-not this desktop's compositor. Closed — no Hyprland-side work warranted.
+* **Theme picker** — `ThemePickerLayer.qml`. Likely the same content/shape
+  race as item 2; measure with the same recording technique before assuming
+  so.
+* **"the man popup"** — unclear. Possibly "main popup" (which one — control
+  centre? the resting capsule itself?), possibly a mis-transcription of
+  something else. **Ask the user to clarify which surface this names**
+  rather than guessing and fixing the wrong thing.
+* **The lock screen (hyprlock)** — `hypr/hyprlock.conf`. Not previously in
+  scope for this project's visual-glitch work at all. **Test in a NESTED
+  Hyprland — see HOW TO VERIFY — never by locking the actual running
+  session.**
+* **Recording** — `qml/island/RecordingIndicator.qml`. Check what
+  "glitching" means here specifically; this is a small always-on-top
+  indicator, not a panel with a shape morph, so item 2's cause may not
+  apply and the defect could be something else entirely (position,
+  z-order, a stale binding).
+* **The bar-switching popup** — this is `AtiScriptsV1/bar-chooser`, a plain
+  **rofi** menu (`rofi -dmenu -i -p "Which bar?"`), not part of the
+  Quickshell tree at all. A "glitch" here is either a rofi theming/config
+  issue (`~/.config/rofi/` or whatever `bar-chooser` passes on its `rofi`
+  invocation) or a timing issue in the script itself — start by reading
+  `bar-chooser` end to end, since this is a much smaller, simpler surface
+  than everything else on this list.
 
 ---
 
 ## STANDING CONSTRAINTS
 
 * **Never leave the session without a bar.** `bar-switch` exists to protect
-  that one rule.
-* **The user changes the theme while you work.** Re-read
-  `~/.cache/qtile/theme_mode` before a test that depends on it and restore
-  what you found.
+  that one rule. After any `.pragma library` restart, verify with `hyprctl
+  layers -j` before doing anything else — do not trust the log alone.
+* **The user changes the theme and switches workspaces while you work.**
+  Re-read `~/.cache/qtile/theme_mode` before a test that depends on it, and
+  re-check the active workspace immediately before every synthetic input —
+  see HOW TO VERIFY.
 * **Restore the session when you are done**: theme, workspace, volume,
-  layout, cursor position, clipboard, and any daemon you started.
-* `.pragma library` JS is CACHED — editing `Motion.js`, `Metrics.js` or
-  `Clipboard.js` does nothing until the island is RESTARTED:
-  `pkill -x quickshell; setsid -f ~/.config/hypr/scripts/island.sh`.
+  layout, bar-mode, cursor position, clipboard, and any daemon you started.
+* `.pragma library` JS is CACHED — see HOW TO VERIFY.
 * A config that reloads cleanly is not a config that works — read
   `$XDG_RUNTIME_DIR/quickshell/by-id/<id>/log.log` and grep for `error`, not
   only for `Configuration Loaded`.
 * Adding a property that does not exist fails the WHOLE component, not the
-  line. `font.families` is not on the QML font value type; that one took the
-  island's tooltip out entirely and said so only in the log.
+  line. Two `Component.onCompleted` on one object does the same — check for
+  an EXISTING handler before adding a new one to any object, not just
+  properties.
+* **Back up `~/.config/tide-island/userconfig.json` before any test that
+  writes, and diff it after.**
 
 ## WHAT IS ALREADY DONE — do not redo it
 
-The shake gates (5 of them, 11/11 unit shapes + a live matrix with a `--loose`
-control), the notch drop target, the shelf's `ctrl+z`/`ctrl+d`, the clipboard
-under X11, the theme sweep under X11, qtile's focus steal, the palette
-unification, pcmanfm-qt's grid width, the prayer glyph (it was
-`nf-md-pulse`, a heartbeat), the tooltip's animation removal, and the island
-hover blink. See `git log` — ten commits, each with its measurement.
+Everything in "WHAT THE LAST SESSION ALREADY DID" above, plus everything the
+session before that already closed: the shake gates, the notch drop target,
+the shelf's `ctrl+z`/`ctrl+d`, the clipboard under X11, the theme sweep
+under X11, qtile's focus steal, the palette unification, pcmanfm-qt's grid
+width AND its drag-pixmap diagnosis (item 9, closed), the prayer glyph, the
+tooltip's animation removal, the island hover blink, the rofi/chord mode
+HUD's labels, the topbar edge twitch at the TOP bar position (measured
+clean), the calculator's persistence and normal-mode keys (measured
+working). See `git log` — every commit carries its own measurement.
 
-Still open and NOT in this list: the long tail in `NEXT-SESSION.md` — the
-login notification burst (needs a real logout), the rest of the motion
-matrix's settle, the 12 unchecked picker menus, `bar-mode` moving on its own,
-scratchpads on a second monitor, the drop shadow still assuming the flush
-form, live preview for the cheap numeric settings keys, keybind latency
-(~50 ms of `qs ipc call` before any animation starts), and
+Still open and NOT rewritten above because nothing changed about them: the
+login notification burst (needs a real logout), the topbar edge twitch at
+the BOTTOM position (attempted, capture geometry bug, never got a clean
+measurement — see the bar-edge.py note in "WHAT THE LAST SESSION ALREADY
+DID"), scratchpads on a second monitor, the drop shadow still assuming the
+flush form, live preview for the cheap numeric settings keys, keybind
+latency (~50 ms of `qs ipc call` before any animation starts), and
 `parse_task_name`'s short-subtitle strip.
 
 ---
 
 ## IF THE SESSION RUNS SHORT
 
-Items 1, 3 and 7 are the ones the user has reported more than once, and 3 is
-a small fix with a confirmed cause. Item 8 may well close as "qtile-only".
-Item 9 is one measurement before it is any code at all. Do those four before
-the open-ended ones (4, 5, 6's upgrade half), and say plainly in the summary
-what was measured, what was fixed, and what was left — including anything
-that could not be driven and why.
+Item 1 (the shelf) is the highest-priority carryover and the user has now
+reported it more than once across two sessions. Item 4's `PopupChrome` half
+and item 8's clarification-needed items are cheap to at least TRIAGE even if
+not fully fixed — reading `bar-chooser` and asking the user what "the man
+popup" means cost nothing and unblocks real work next time. Item 6 needs a
+clarifying question before any code is worth writing, so ask it early rather
+than guessing and building the wrong thing. Do items 2, 3 and 5's glitch
+half only as far as measurement supports, and say plainly in the summary
+what was measured, what was fixed, and what is still open — including
+anything that could not be driven and why.
