@@ -100,6 +100,9 @@ FocusScope {
     // disappeared with nothing on screen to say where it had gone.
     property var cursor: new Date()
     property var today: new Date()
+    // Swallows exactly the first hover-enter after an open — see the
+    // MouseArea's own note on the race this closes.
+    property bool suppressHoverOnce: false
 
     // Days of the current month carrying at least one OPEN dated task, as
     // an integer day-of-month set. Rebuilt from the file text; see the
@@ -381,6 +384,7 @@ FocusScope {
             // the wrong default for a surface you open to answer "what is
             // the date".
             root.goToday();
+            root.suppressHoverOnce = true;
             forceActiveFocus();
             root.syncReminderField();
         }
@@ -639,22 +643,38 @@ FocusScope {
                     MouseArea {
                         anchors.fill: parent
                         hoverEnabled: true
-                        // PRE-EXISTING, found while verifying item 9 and NOT
-                        // fixed here (out of scope for a reminder feature):
-                        // if the pointer is already resting over a cell the
-                        // instant this panel opens, Qt delivers the hover
-                        // BEFORE anything reacts to it, and `onShowConditionChanged`'s
-                        // `goToday()` runs first — so the hover fires right
-                        // after and silently overrides the reset. Reproduced
-                        // by warping the pointer onto a cell, closing, and
-                        // reopening: the panel opens on the parked day
-                        // instead of today. Ordinary use rarely lands the
-                        // pointer exactly on a cell at the open instant, but
-                        // it is not impossible — a fix would need the reset
-                        // to win regardless of ordering, e.g. a `justOpened`
-                        // guard that swallows the first hover after `goToday()`.
+                        // TWO BUGS FOUND HERE, both against reported "logic
+                        // issues" and both fixed now rather than left as
+                        // notes:
+                        //
+                        // (1) The pointer being already over a cell at the
+                        // instant this panel opens delivers `onEntered`
+                        // BEFORE the open handler's `goToday()` reset is
+                        // felt, silently overriding it — reproduced by
+                        // warping the pointer onto a cell, closing, and
+                        // reopening. `root.suppressHoverOnce` swallows
+                        // exactly the first hover after an open rather than
+                        // trying to win a race on ordering.
+                        //
+                        // (2) Hovering a DIFFERENT day while the reminder
+                        // field is focused moved `cursor` — and since the
+                        // field used to save to `root.cursor` at submit
+                        // time (not the day that was open when you started
+                        // typing), a stray hover mid-edit could commit the
+                        // note to the WRONG day. `reminders.json` had two
+                        // stray entries from exactly this before it was
+                        // caught: one made it a MONTH away, which only a
+                        // live cursor at submit time explains. Cursor is
+                        // frozen against hover entirely while editing —
+                        // see `reminderField.focused` below — which also
+                        // stops the SELECTED-DAY ring drifting under a note
+                        // you are still typing, not only the save target.
                         onEntered: {
-                            if (!cell.isBlank)
+                            if (root.suppressHoverOnce) {
+                                root.suppressHoverOnce = false;
+                                return;
+                            }
+                            if (!cell.isBlank && !reminderField.focused)
                                 root.cursor = new Date(root.cursor.getFullYear(),
                                                        root.cursor.getMonth(),
                                                        cell.day);
@@ -666,8 +686,26 @@ FocusScope {
                         // immediately, the same "a click is a decision to
                         // edit" pattern the calculator's tape rows use.
                         onClicked: {
-                            if (!cell.isBlank)
+                            if (!cell.isBlank) {
+                                const clicked = new Date(root.cursor.getFullYear(),
+                                                         root.cursor.getMonth(),
+                                                         cell.day);
+                                root.cursor = clicked;
+                                // Set the field's text EXPLICITLY rather than
+                                // relying on `syncReminderField()`'s
+                                // not-while-focused guard — clicking a
+                                // second day while already mid-edit on a
+                                // first one changes `cursor` while the field
+                                // is STILL focused (this click's
+                                // `focusField()` has not run yet), so that
+                                // guard would skip the refresh and leave the
+                                // previous day's text sitting under the new
+                                // day's cursor. A click is an unambiguous
+                                // "switch what I am editing", so it always
+                                // wins regardless of focus state.
+                                reminderField.setText(root.reminders[root.dateKey(clicked)] || "");
                                 reminderField.focusField();
+                            }
                         }
                     }
                 }
