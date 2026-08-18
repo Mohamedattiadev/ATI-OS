@@ -407,8 +407,20 @@ def apply_wallpaper():
             # must swap the desktop image and leave every themed consumer
             # alone, otherwise the preset is silently replaced by wal.
             if current_theme_mode() == "wal":
+                # theme-animate, not theme-apply directly. theme-apply
+                # bypasses the circular-reveal overlay entirely — it is the
+                # exact class of bug theme-animate's own header warns
+                # against ("every caller that ran theme-apply directly
+                # therefore bypassed the animation entirely"), and this
+                # call site is where "the theme and wallpaper change
+                # animation" was hard-cutting for a wallpaper pick in wal
+                # mode specifically. theme-animate finds a running
+                # Quickshell instance (island, then popups.qml — see
+                # qtile/autostart.sh 2c) over IPC and falls back to plain
+                # theme-apply itself if neither is up, so this is never
+                # worse than the line it replaces.
                 subprocess.Popen(
-                    ["theme-apply", "wal"],
+                    ["theme-animate", "wal"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,

@@ -83,6 +83,42 @@ PICOM_GPU_FLAGS=""
 # quickshell/tide-island-fork/qml/common/BackendSurface.md.
 if [ "$(cat "$HOME/.cache/bar-mode" 2>/dev/null | tr -d '[:space:]')" = "island" ]; then
   "$HOME/.config/hypr/scripts/island.sh" >/dev/null 2>&1 &
+else
+  # ---------------------------------------------------------
+  # 2c. popups.qml — resident even when qtile wears its OWN bar
+  # ---------------------------------------------------------
+  # Reported: "i want the hyperland theme and wallpaper chaning thing
+  # animaiton and logic works the same in qtile — this is too important."
+  #
+  # theme-animate (~/.local/bin/theme-animate) is the shared entry point
+  # every theme/wallpaper change is supposed to go through. It tries `tide
+  # applyThemeAnimated <mode>` over IPC against the island first, THEN
+  # against popups.qml, and only falls back to a plain, non-animated
+  # theme-apply if neither answers. hypr/scripts/topbar.sh already starts
+  # popups.qml for exactly this reason whenever the island is not the
+  # active bar (its own comment: "started here rather than on demand...
+  # resident, it answers at once") — this qtile session had no equivalent,
+  # so under qtile's own bar theme-animate's probe failed both ways, every
+  # time, and every theme/wallpaper change was a hard cut.
+  #
+  # qtile keeps its OWN popups (config.py imports WallpaperPopup,
+  # BluetoothPopup, DisplayPopup — see popups/*.py) and this is not meant
+  # to replace them: their keybindings still call the Python ones
+  # directly, unchanged. This process exists solely so `tide
+  # applyThemeAnimated` has somewhere to land; its OTHER IPC targets are
+  # simply unused here, which costs nothing (an unopened Loader has no
+  # window and does not poll).
+  #
+  # Guarded the same way topbar.sh guards it — `-p <dir>` matched by
+  # EQUALITY on the argv, not `pgrep -f`, which cannot tell `-p <dir>` from
+  # `-p <dir>/popups.qml` apart — so re-running this script (or logging in
+  # twice without a full logout) does not stack a second instance.
+  POPUPS_ENTRY="$HOME/.config/quickshell/tide-island-fork/popups.qml"
+  if [ -f "$POPUPS_ENTRY" ] && ! ps -eo args= | awk -v want="$POPUPS_ENTRY" \
+      '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { found = 1 } }
+       END { exit !found }'; then
+    setsid -f quickshell -p "$POPUPS_ENTRY" >/dev/null 2>&1 &
+  fi
 fi
 
 # ---------------------------------------------------------
