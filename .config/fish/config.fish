@@ -720,8 +720,11 @@ alias mocp="bash -c mocp"
 ### RANDOM COLOR SCRIPT ###
 # Get this script from my GitLab: gitlab.com/dwt1/shell-color-scripts
 # Or install it from the Arch User Repository: shell-color-scripts
+# colorscript_fit (functions/colorscript_fit.fish) picks only scripts that
+# fit $COLUMNS, so wide art (e.g. rupees, 167 cols) doesn't wrap and glitch
+# in a non-maximized terminal.
 if status is-interactive
-    colorscript random
+    colorscript_fit
 end
 
 ### SETTING THE STARSHIP PROMPT ###
