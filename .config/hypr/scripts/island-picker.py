@@ -88,6 +88,7 @@ file under $XDG_RUNTIME_DIR by THIS script, never carried in the panel. An id
 is still opaque to the panel either way.
 """
 
+import datetime
 import html
 import json
 import os
@@ -717,6 +718,12 @@ for (var i = 0; i < n; i++) {
   for (var j = 0; j < keys.length; j++) {
     if (keys[j] == "application/x-copyq-item-pinned") pinned = true;
   }
+  // "Store Copy Time", the automatic command added alongside this reader
+  // change (~/.config/copyq/copyq-commands.ini) — stamps every NEW item
+  // with this key at the moment it is copied. Items already in history
+  // from before that command existed simply have no such key, and the
+  // python side below shows nothing for those rather than a fake time.
+  var copiedAt = str(d["application/x-copyq-user-copy-time"] || "");
   var label = "", dedupeKey = "", kind = "text", icon = "";
 
   // Ask for the PNG rather than trusting the key list. Several items here
@@ -752,7 +759,7 @@ for (var i = 0; i < n; i++) {
   }
   if (seen[dedupeKey]) continue;
   seen[dedupeKey] = true;
-  print(i + "\t" + (pinned ? "P" : "-") + "\t" + kind + "\t" + icon + "\t" + label + "\n");
+  print(i + "\t" + (pinned ? "P" : "-") + "\t" + kind + "\t" + icon + "\t" + copiedAt + "\t" + label + "\n");
 }
 """ % (CLIPBOARD_MAX, CLIPBOARD_THUMBS)
 
@@ -813,6 +820,29 @@ def _clipboard_label(text):
     return stripped
 
 
+def _format_copied_at(raw):
+    """"2026-08-18 20:10:38" (copyq's dateString('yyyy-MM-dd hh:mm:ss'),
+    the format the "Store Copy Time" automatic command writes — see
+    copyq-commands.ini) -> a short display string, or "" for an item that
+    predates that command and so carries no timestamp at all.
+
+    Today's items show the time alone ("14:32") — the date is implicit and
+    repeating it on every row still on today's clipboard is noise, which is
+    exactly what "small info" asked to avoid. Anything older carries the
+    date too ("18 Aug 14:32"), since "14:32" alone stops meaning "today"
+    the moment it is not.
+    """
+    if not raw:
+        return ""
+    try:
+        stamp = datetime.datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return ""
+    if stamp.date() == datetime.datetime.now().date():
+        return stamp.strftime("%H:%M")
+    return stamp.strftime("%d %b %H:%M")
+
+
 def clipboard_list():
     if not shutil.which("copyq"):
         return {"title": "Clipboard", "items": []}
@@ -832,15 +862,18 @@ def clipboard_list():
 
     items = []
     for line in out.stdout.splitlines():
-        parts = line.split("\t", 4)
-        if len(parts) < 5:
+        parts = line.split("\t", 5)
+        if len(parts) < 6:
             continue
-        index, pin, kind, icon, label = parts
+        index, pin, kind, icon, copied_at, label = parts
         if not index.strip().isdigit():
             continue
         detail = _CLIPBOARD_KINDS.get(kind, "")
         if pin == "P":
             detail = ("pinned  ·  " + detail) if detail else "pinned"
+        stamp = _format_copied_at(copied_at)
+        if stamp:
+            detail = (detail + "  ·  " + stamp) if detail else stamp
         safe = _clipboard_label(label)
         # Overrides the classifier rather than filling a gap in it. The JS
         # calls PNG bytes "multi-line" because they contain newlines, which
