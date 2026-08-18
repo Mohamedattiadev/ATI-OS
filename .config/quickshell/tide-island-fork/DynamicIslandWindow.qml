@@ -596,20 +596,6 @@ PanelWindow {
                 // first keystroke after closing a panel lands nowhere.
                 || islandContainer.wifiPanelLayerVisible
                 || islandContainer.bluetoothPanelLayerVisible
-                // FORK: the drop shelf, and it belongs on this list twice
-                // over. It is hjkl-driven like the connectivity panels, AND
-                // it has a search field like the cheatsheet, the calculator
-                // and the picker — so every letter typed has to land in it
-                // rather than in the window behind, where `d` is a delete
-                // and `z` is a suspend.
-                //
-                // Its absence here was the whole of a four-part bug report:
-                // "the esc not working or q", hjkl doing nothing, shift-
-                // select doing nothing. None of them were their own defect.
-                // Focus never rose above None while the shelf was open, so
-                // there was no keystroke for its Keys handler to receive —
-                // which is word for word the diagnosis written against the
-                // Wi-Fi and Bluetooth panels a few lines above.
                 // FORK: the drop shelf. It is hjkl-driven AND it has a
                 // search field, so it belongs on this list for the same two
                 // reasons the connectivity panels and the picker do — every
@@ -620,24 +606,56 @@ PanelWindow {
                 // nothing. None was its own defect; focus never rose above
                 // None, so there was no keystroke for its Keys handler.
                 //
-                // `&& !qdropForDrag` is NOT caution, it is a measurement. An
-                // exclusive keyboard grab CANCELS AN IN-FLIGHT WAYLAND DRAG
-                // — A/B'd twice on the same synthesised drop, everything else
-                // held constant:
-                //
-                //     qdrop on the exclusive list     entries 9 -> 9
-                //     qdrop off it                    entries 9 -> 10
-                //
-                // And the shake opens this shelf while you are HOLDING a
-                // file, which is exactly the case that must not be cancelled.
-                // So a shake-opened shelf waits: it takes the keyboard the
-                // moment the drop lands (or after showQdrop's fallback timer,
-                // if you shook and then thought better of it). A key-opened
-                // shelf takes it immediately, because there is no drag to
-                // lose and you pressed a key expecting keys to work.
+                // ONLY the plain key-opened shelf is on this branch now — see
+                // `qdropDragSession` below for why a shelf that has ever seen
+                // a shake-triggered drag is handled separately, on "ondemand"
+                // rather than here.
                 || (islandContainer.qdropLayerVisible
-                    && !islandContainer.qdropForDrag))
+                    && !islandContainer.qdropForDrag
+                    && !islandContainer.qdropDragSession))
             return "exclusive";
+        // FORK: a drop-shelf session that started (or has ever received) a
+        // shake-triggered drag. Measured, not guessed, and it overturns what
+        // the exclusive branch above used to say about this state:
+        //
+        //   `&& !qdropForDrag` alone is NOT enough — an exclusive keyboard
+        //   grab CANCELS AN IN-FLIGHT WAYLAND DRAG, and re-arming it the
+        //   INSTANT the first drop lands (`onDropLanded`) blocks every drag
+        //   after it, not just a fleeting one. Proved with a console.log
+        //   probe inside `onDragHovering`: with the grab re-armed to
+        //   "exclusive", the probe never fires again for a second drag at
+        //   all — Hyprland refuses the drag before delivery, so a reactive
+        //   fix that waits for `dragHovering` to flip the grab back off
+        //   (tried, reverted) can never work, because the event it is
+        //   waiting for cannot happen while exclusive is what is blocking it.
+        //
+        //   "ondemand" does not have this problem — A/B'd on the same rig
+        //   (`qdrop-drags.py --open drag --drags 2`): with the state re-armed
+        //   to "ondemand" instead of "exclusive", `dragHovering` DOES fire
+        //   for the second drag and the store's top entry timestamp matches
+        //   the drop, proving it actually landed (the entry COUNT looked
+        //   unchanged only because the same test file deduplicates onto the
+        //   existing row and moves it to the top, which is correct behaviour
+        //   and not a second failure).
+        //
+        // The trade this makes: "ondemand" is not a guaranteed grab the way
+        // "exclusive" is (measured separately with a synthetic Escape: it did
+        // not reach the panel with no prior click), so hjkl/ctrl+z/ctrl+d/y/
+        // s// are not automatically live the instant a shake-triggered drop
+        // lands the way they are for a key-opened shelf. A click on the
+        // panel requests OnDemand focus (`onFocusWanted` below already calls
+        // `forceActiveFocus()`), which is the same "click lands you in the
+        // mode you need" pattern the calculator already uses. Left open: a
+        // synthetic-input rig to verify a click actually restores keyboard
+        // control after a shake-drag session, and rubber-band selection
+        // under this mode — see PROMPT-NEXT.md item 1's third bullet.
+        if (islandContainer.qdropLayerVisible && !islandContainer.qdropForDrag)
+            return "ondemand";
+        // EXPERIMENT: qdrop armed uses "ondemand" instead of folding into
+        // the exclusive list above, to test whether ondemand still cancels
+        // a fresh Wayland drag the way exclusive measurably does.
+        if (islandContainer.qdropLayerVisible && !islandContainer.qdropForDrag)
+            return "ondemand";
         // FORK: the control centre, the notification centre and the expanded
         // player. All three had NO keyboard handling for the reason written
         // against the connectivity lists above — focus never rose above None
@@ -3542,6 +3560,16 @@ PanelWindow {
         // a drag is in flight cancels the drag.
         property bool qdropForDrag: false
 
+        // Sticky for the life of THIS open: true from the moment a
+        // shake-triggered drag opens the shelf, and it stays true even after
+        // that first drop lands and `qdropForDrag` goes back to false. See
+        // the keyboard-focus note above — a shelf that has ever seen a drag
+        // this session goes to "ondemand" rather than back to "exclusive",
+        // because re-arming an exclusive grab (even once, even well before
+        // the next drag starts) blocks every drag after it. Reset on every
+        // `showQdrop` call, so a fresh key-open is never held to this.
+        property bool qdropDragSession: false
+
         // A drop that landed ON THE NOTCH, before the shelf that owns a
         // store existed. Held here for exactly as long as it takes
         // PanelLoader to build QdropLayer, which drains and clears it in
@@ -3555,6 +3583,7 @@ PanelWindow {
             abortSideTransientMode();
             clearTransientCapsule();
             qdropForDrag = forDrag === true;
+            qdropDragSession = qdropForDrag;
             if (qdropForDrag)
                 qdropDragGrace.restart();
             islandState = "qdrop";
@@ -6525,11 +6554,13 @@ PanelWindow {
                             islandContainer.qdropPendingUrls = [];
                             islandContainer.qdropPendingText = "";
                         }
-                        // The drag is over, so the keyboard is safe to take.
+                        // The drag is over. Keyboard focus goes to "ondemand"
+                        // now, not "exclusive" — see `qdropDragSession`.
                         onDropLanded: islandContainer.qdropForDrag = false
-                        // …and while one is hovering, it is NOT. A fixed
-                        // grace cannot know how long you will take to carry
-                        // a file here; arriving restarts it.
+                        // …and while one is hovering, it is NOT — this is the
+                        // fallback-timer case (you shook and let go with no
+                        // drag behind it) rather than the fix for a second
+                        // drag, which is `qdropDragSession` staying set.
                         onDragHovering: qdropDragGrace.restart()
                     }
                 }

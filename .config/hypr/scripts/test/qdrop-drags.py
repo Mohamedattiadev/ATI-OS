@@ -77,6 +77,26 @@ def entries():
     return len(data) if isinstance(data, list) else -1
 
 
+def top_ts():
+    """The top entry's added_ts, or -1. THIS is what a repeat drag of the
+    SAME file moves — `QdropStore.addValue` de-duplicates on (type, value)
+    by moving the existing row to the top and refreshing its timestamp
+    rather than appending a second one, which is correct product behaviour
+    and not a failure. `entries()` alone cannot tell "cancelled" apart from
+    "landed on a duplicate" for that reason — measured directly: a run
+    driving the SAME offer file twice read `entries 4 -> 5 -> 5` and looked
+    like the reported bug, but the top entry's `added_ts` matched the SECOND
+    drag's wall-clock time to the millisecond, proving it actually landed."""
+    try:
+        with open(STORE) as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return -1
+    if not isinstance(data, list) or not data:
+        return -1
+    return data[0].get("added_ts", -1)
+
+
 def island_state():
     try:
         return json.loads(ipc("tide", "state"))
@@ -198,6 +218,8 @@ def main():
     counts = [entries()]
     for index in range(args.drags):
         guard()
+        before_ts = top_ts()
+        before_wall = time.time()
         drag = subprocess.run(
             [sys.executable, os.path.join(HERE, "uinput-shake.py"),
              "to", str(px), str(py), str(tx), str(ty)],
@@ -209,8 +231,18 @@ def main():
             print(f"    {line.strip()}")
         time.sleep(args.hold)
         counts.append(entries())
+        after_ts = top_ts()
+        # The offer file is the SAME path every drag (the peer only ever
+        # holds one), so a repeat drag de-duplicates onto the existing row
+        # instead of appending — entries() alone reads that as CANCELLED.
+        # top_ts() catches it: a landed drag always refreshes added_ts to
+        # "now", a cancelled one never touches the store at all.
+        landed_by_count = counts[-1] > counts[-2]
+        landed_by_ts = after_ts > before_ts and after_ts >= before_wall
+        verdict = "LANDED" if (landed_by_count or landed_by_ts) else "CANCELLED"
+        note = " (deduped onto existing row)" if landed_by_ts and not landed_by_count else ""
         print(f"  drag {index + 1}: entries {counts[-2]} -> {counts[-1]}"
-              f"   {'LANDED' if counts[-1] > counts[-2] else 'CANCELLED'}")
+              f"   {verdict}{note}")
 
     print(f"\nentries {' -> '.join(str(c) for c in counts)}")
     peer.terminate()
