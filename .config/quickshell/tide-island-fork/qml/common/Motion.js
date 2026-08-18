@@ -204,6 +204,46 @@ function fadeInDuration()  { return Math.round(FADE_IN_MS  * SCALE); }
 function fadeOutDuration() { return Math.round(FADE_OUT_MS * SCALE); }
 function contentDelay()    { return Math.round(CONTENT_DELAY_MS * SCALE); }
 
+// PROMPT-NEXT.md item 3, point 2 — NOT WIRED UP ANYWHERE YET, kept here as
+// infrastructure for whoever picks this back up, not as a shipped fix.
+//
+// contentDelay() is a FLAT 90 ms (scaled) on all 26 panel layers, while the
+// SHAPE's own duration is distance-aware (`morphDurationFor` /
+// `mainCapsule.distanceMorphDuration` above) — 400ms-equivalent for a small
+// morph, up to 760ms-equivalent for a >=900px one. A flat delay is therefore
+// a shrinking FRACTION of the shape's travel as the panel gets bigger: 90ms
+// into a ~295ms small morph is content arriving at ~30% shape-progress
+// (which is what CONTENT_DELAY_MS was tuned against — see the choreography
+// note above); the same 90ms into a ~560ms large morph is only ~16%.
+//
+// This function preserves that tuned FRACTION instead of the absolute ms,
+// for a caller that knows its own transition's morph duration:
+//
+//     Motion.contentDelayFor(mainCapsule.distanceMorphDuration)
+//
+// It was not wired into any of the 26 layers tonight. Measured instead of
+// assumed: two panels with near-identical travel (cheatsheet and the
+// wallpaper picker, both ~853px, both in the >=LARGE_PX bracket) were
+// frame-captured with panel-glitch-frames.py and came back with very
+// different content-settle tails — cheatsheet's content stopped moving 30
+// frames after the shape did, the wallpaper picker's took 90. Same flat
+// delay, same shape duration, very different outcome, which points at a
+// PER-PANEL cost (362 thumbnails decoding, item 5's own suspicion) as the
+// dominant cause for the one panel that is actually slow, not this
+// choreography gap — so wiring this into all 26 layers was left undone
+// rather than done on a still-unconfirmed theory. If a future measurement
+// on a large-but-cheap panel (Wi-Fi/Bluetooth are mid-sized, not a clean
+// test) shows content visibly outrunning or lagging the shape at the SAME
+// travel distance as a small panel, this is the fix; wire it panel by
+// panel, verifying with the same frame-capture tool each time, rather than
+// flipping all 26 at once.
+function contentDelayFor(morphMs) {
+    var m = Number(morphMs);
+    if (!isFinite(m) || m <= 0)
+        return contentDelay();
+    return Math.round(contentDelay() * (m / morphDuration()));
+}
+
 // ---------------------------------------------------------------------
 //  CONTROL_MS — geometry INSIDE a panel that has already arrived
 // ---------------------------------------------------------------------
