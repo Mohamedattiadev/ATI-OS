@@ -141,6 +141,19 @@ Item {
         input.cursorPosition = input.text.length;
     }
 
+    // Move the text cursor without typing — for a host that wants hjkl-style
+    // character movement while `readOnly` is on (PROMPT-NEXT.md item 6, the
+    // calculator's normal mode). A `readOnly` TextInput still has a cursor
+    // position and still draws it while focused; the field only refuses to
+    // let KEYSTROKES change the text, and this does not go through a
+    // keystroke. `Math.max/min` clamp rather than wrap — vi's `h`/`l` stop
+    // at the ends of the line, they do not carry into the next one, and
+    // there is no next line here.
+    function moveCursor(delta) {
+        input.cursorPosition = Math.max(0, Math.min(input.text.length,
+                                                     input.cursorPosition + delta));
+    }
+
     // The host's own Keys handler is usually on an ancestor, so anything
     // this field does not claim arrives there anyway. What it claims is
     // exactly the set above — everything else falls through to the field

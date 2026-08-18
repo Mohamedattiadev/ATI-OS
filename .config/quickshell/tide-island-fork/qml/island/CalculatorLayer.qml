@@ -229,6 +229,42 @@ FocusScope {
         onTriggered: root.errorText = ""
     }
 
+    // ---- A MEMORY REGISTER ----
+    //
+    // The remaining "upgrade" item from the original ask, "not investigated
+    // at all yet" per the last session's own notes. One register, not a
+    // bank of them — this is a pocket calculator's M+/MR, not a spreadsheet,
+    // and a panel this small has nowhere to show more than one value anyway.
+    //
+    // A STRING, not a number: qalc's results are not always numeric ("5 km
+    // to mi" is three terms with units, `now` is a quoted timestamp), and
+    // storing the exact text qalc printed is what makes recall put back
+    // exactly what was there to store, with no re-formatting to get wrong.
+    //
+    // NOT PERSISTED across a close, unlike the tape. The tape is a record of
+    // what you did; a memory register is scratch space for what you are
+    // about to do, and qalculate-gtk's own didn't survive a restart either.
+    property string memoryValue: ""
+
+    function storeMemory() {
+        if (root.result === "")
+            return;
+        root.memoryValue = root.result;
+        root.errorText = "stored " + root.result;
+        errorClear.restart();
+    }
+
+    function recallMemory() {
+        if (root.memoryValue === "")
+            return;
+        // Same shape as a tape row's Enter: land in the box, ready to type
+        // around the recalled value, rather than replacing it outright —
+        // storing a number and then wanting `M * 1.08` is the common case.
+        input.setText(String(root.memoryValue));
+        root.recallIndex = -1;
+        root.enterInsert();
+    }
+
     readonly property string expression: input.query
 
     readonly property real rowHeight: Metrics.px(22)
@@ -299,6 +335,7 @@ FocusScope {
             root.result = "";
             root.resultFor = "";
             root.errorText = "";
+            root.resultTrapped = false;
             debounce.stop();
             return;
         }
@@ -315,14 +352,83 @@ FocusScope {
     // would be the previous expression's.
     property string pendingExpression: ""
 
+    // ---- THE UNIT TRAP, FLAGGED RATHER THAN PREVENTED ----
+    //
+    // Reported: "i can write any letter i which means nothing, so make a
+    // specific letters or simpler ref person can write" — which reads as
+    // TWO different fixes (restrict what INSERT mode accepts, or flag when
+    // an answer is qalc's unit-trap nonsense rather than a real one), and
+    // they are different features with different costs. Left running
+    // unattended: the character-restriction reading needs the user to say
+    // which they meant, so it is not built. This half is strictly additive
+    // and reversible and helps regardless of which reading is right, so it
+    // is.
+    //
+    // The header's own trap example is `frobnicate(3)` -> `0 B·t·m⁴`, and
+    // `-t` (terse) is exactly what hides the evidence: it prints the value
+    // and nothing else, by design, so the panel shows the double display of
+    // the expression as one line. The evidence lives in the NON-terse
+    // output, which prints an `error: "f" is not a valid variable/function/
+    // unit.` line ahead of the (still-computed) result — qalc recovers from
+    // the error and answers anyway, silently, which is the whole trap.
+    //
+    // A second, parallel Process rather than dropping `-t` from the first
+    // one: the existing evaluate()/parsing above is the panel's actual
+    // answer and is left untouched, byte for byte. This one only ever sets
+    // one boolean and is safe to get wrong.
+    property bool resultTrapped: false
+
     function evaluate() {
         const expr = root.expression.trim();
         if (expr === "")
             return;
         root.pendingExpression = expr;
         root.evaluating = true;
+        root.resultTrapped = false;
         evalLoader.active = false;
         evalLoader.active = true;
+        trapCheckLoader.active = false;
+        trapCheckLoader.active = true;
+    }
+
+    Loader {
+        id: trapCheckLoader
+        active: false
+
+        sourceComponent: Component {
+            Process {
+                // Same expression, no `-t` — see the note above `resultTrapped`.
+                command: ["qalc", root.pendingExpression]
+                running: true
+
+                stdout: StdioCollector {
+                    onStreamFinished: {
+                        // Stale by the time it lands: a later keystroke
+                        // already started a newer check. Its own answer,
+                        // when it arrives, is the one that matters.
+                        if (root.pendingExpression === "")
+                            return;
+                        const lines = String(text).split("\n");
+                        // The LAST line is always the "expr = result" (or
+                        // "expr ≈ result") line — everything before an
+                        // `error:` line ahead of it is qalc recovering from
+                        // one and answering anyway regardless.
+                        let trapped = false;
+                        for (let i = 0; i < lines.length - 1; i++) {
+                            if (lines[i].indexOf("error:") === 0) {
+                                trapped = true;
+                                break;
+                            }
+                        }
+                        // Only apply it if this run's expression is still
+                        // the one on screen — the fresh-Process-every-time
+                        // rule protects the TEXT, this protects the FLAG.
+                        if (root.pendingExpression === root.expression.trim())
+                            root.resultTrapped = trapped;
+                    }
+                }
+            }
+        }
     }
 
     Loader {
@@ -497,6 +603,33 @@ FocusScope {
             if (event.modifiers & Qt.ControlModifier)
                 root.yankTape(false);
             return;
+        // ---- h/l: character-wise cursor movement in the still-visible
+        // expression, vim-style. Re-asked for after this file's own audit
+        // left them unbound ("no natural meaning on a 1-D tape") — the
+        // natural meaning j/k does not already cover is the box's TEXT
+        // cursor, not the tape. Goes through PanelSearchField.moveCursor(),
+        // which does not need insert mode: a `readOnly` field still has a
+        // cursor and still draws it, the field just refuses to let a
+        // keystroke change the text, and this is not one.
+        case Qt.Key_H:
+            input.moveCursor(-1);
+            return;
+        case Qt.Key_L:
+            input.moveCursor(1);
+            return;
+        // ---- a memory register, M+/MR-style. `m` stores the CURRENT
+        // RESULT (the answer, not the expression — the same choice
+        // `yankTape` already makes and for the same reason: the expression
+        // is already recallable off the tape with Enter, the number is the
+        // thing with nowhere else to go). `M` recalls it into the box and
+        // switches to insert, same as Enter on a tape row, so the stored
+        // value is immediately usable inside a new expression.
+        case Qt.Key_M:
+            if (shift)
+                root.recallMemory();
+            else
+                root.storeMemory();
+            return;
         case Qt.Key_Return:
         case Qt.Key_Enter:
             // Recall the EXPRESSION and go straight back to typing, because
@@ -524,15 +657,23 @@ FocusScope {
         statusLevel: root.errorText !== "" ? "error"
                    : (root.evaluating ? "busy" : "idle")
 
+        // The memory register, shown the same way ThemePickerLayer shows its
+        // search count: a clause in the header, present only while there is
+        // something to say. Muted rather than accent — it is a fact about
+        // the panel's state, not a live one the way "3 of 21" is.
+        statusClause: root.memoryValue !== "" ? ("M " + root.memoryValue) : ""
+
         // The bar follows the MODE, because a key chip naming a key that
         // does nothing in the mode you are standing in is worse than a
         // shorter bar — the same argument the volume popup's own hints make.
         hints: root.normalMode
             ? [
                 { key: "jk", label: "tape" },
+                { key: "hl", label: "cursor" },
                 { key: "↵", label: "recall" },
                 { key: "y", label: "copy" },
                 { key: "Y", label: "expr" },
+                { key: "m/M", label: "mem" },
                 { key: "i", label: "type" },
                 { key: "Esc", label: "close" }
             ]
@@ -577,6 +718,33 @@ FocusScope {
         width: chrome.contentWidth
         height: root.resultStripHeight
 
+        // ---- THE UNIT-TRAP FLAG ----
+        //
+        // Left-aligned, opposite the result, so it never sits on top of the
+        // digits it is warning about. `resultText`'s own width gives up room
+        // for it below, rather than the two overlapping when the answer is
+        // long — a warning a long result draws over is a warning nobody
+        // reads.
+        Text {
+            id: trapFlag
+            visible: root.resultTrapped && root.result !== ""
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            // A FIXED fraction, not `Math.min(…, implicitWidth)` — the
+            // obvious spelling for "only as wide as the text needs" loops:
+            // `elide` makes Qt's implicitWidth for this Text depend on the
+            // width it is given, and a width bound to implicitWidth is
+            // bound to itself. Measured: "Binding loop detected for
+            // property width" the first time this ran.
+            width: visible ? parent.width * 0.42 : 0
+            text: "  unrecognised word read as a unit?"
+            color: IslandTheme.warning
+            font.family: root.textFontFamily
+            font.pixelSize: Metrics.font(10)
+            elide: Text.ElideRight
+            wrapMode: Text.NoWrap
+        }
+
         Text {
             id: resultText
             anchors.right: parent.right
@@ -591,7 +759,7 @@ FocusScope {
             font.pixelSize: Metrics.font(24)
             font.weight: Font.DemiBold
             elide: Text.ElideLeft
-            width: parent.width
+            width: parent.width - trapFlag.width - (trapFlag.visible ? Metrics.pad(8) : 0)
             horizontalAlignment: Text.AlignRight
         }
     }
