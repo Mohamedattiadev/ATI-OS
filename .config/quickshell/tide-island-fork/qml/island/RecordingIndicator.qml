@@ -19,9 +19,25 @@ Item {
     opacity: active ? contentOpacity : 0
     visible: active || opacity > 0.01
 
+    // PROMPT-NEXT.md item 8's "the recording... glitching" triage. Measured
+    // by reading the two animations against each other rather than assumed:
+    // this used to reset `core.opacity` to 1.0 the INSTANT `active` went
+    // false — a plain property set, no Behavior, so if the pulse was
+    // mid-dim (say 0.35) that instant is a hard snap to full brightness. The
+    // OUTER item's own opacity fades out smoothly over 220ms starting at the
+    // same moment, so the visible result was a bright flash the frame the
+    // dot starts disappearing. Delayed to fire after the outer fade-out has
+    // actually finished, so the reset happens while the dot is already
+    // invisible rather than while it is still on screen mid-fade.
     onActiveChanged: {
         if (!active)
-            core.opacity = 1.0;
+            resetCoreOpacity.restart();
+    }
+
+    Timer {
+        id: resetCoreOpacity
+        interval: 220  // matches the fade-OUT duration below
+        onTriggered: core.opacity = 1.0
     }
 
     Behavior on opacity {
