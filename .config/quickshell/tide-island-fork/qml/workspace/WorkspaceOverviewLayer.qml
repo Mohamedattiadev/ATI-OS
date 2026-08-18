@@ -401,11 +401,21 @@ Item {
     // ── visual ───────────────────────────────────────────────
 
     // FORK: the shared choreography. See Motion.js.
+    //
+    // Missing the PauseAnimation every other panel's version of this block
+    // has — found by the `grep -L contentDelay` audit item 4 asks for. The
+    // overview grows out of the same morphing capsule every other state
+    // does (`targetRadius` reads `overviewCapsuleRadius` when
+    // `overviewVisible`, in DynamicIslandWindow), so it is exposed to the
+    // identical defect: content painting inside a shape still mid-resize.
     Behavior on opacity {
-        NumberAnimation {
-            duration: showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
-            easing.type: Easing.BezierSpline
-            easing.bezierCurve: Motion.fade()   // FORK: was Easing.InOutQuad
+        SequentialAnimation {
+            PauseAnimation { duration: showCondition ? Motion.contentDelay() : 0 }
+            NumberAnimation {
+                duration: showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()   // FORK: was Easing.InOutQuad
+            }
         }
     }
 
