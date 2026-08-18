@@ -106,11 +106,107 @@ FocusScope {
     // header for why it is a FileView and not a Process.
     property var markedDays: ({})
 
+    // ---- REMINDERS: A SEPARATE SOURCE, ONE SHARED DOT ----
+    //
+    // PROMPT-NEXT.md item 9 asked whether this should MERGE into
+    // `markedDays` or stay its own concept, and to check what feeds
+    // `markedDays` before deciding. It feeds from ATITODOS/TODOS.md — an
+    // external, read-only, already-shipped feature with its own extensive
+    // design reasoning above (open tasks only, matches clock_popup's
+    // parser). A reminder typed here is a DIFFERENT kind of fact: it is
+    // this panel's own data, user-editable, about nothing but "something is
+    // noted on this day". Folding one into the other would mean either
+    // losing the TODO dot entirely or a click here silently editing what
+    // TODOS.md says, which it must not — that file has its own editor.
+    //
+    // So they stay two SOURCES that share ONE dot: a day is marked if it
+    // has an open dated task OR a reminder. One more dot colour for a
+    // second reason a day might be marked is not a distinction a 34px cell
+    // has room to draw — `isMarked` below is already the union for exactly
+    // that reason, per the doc's own "probably... check before deciding".
+    // `{ "YYYY-MM-DD": "text" }`, keyed by ISO day so a reminder survives a
+    // year-page without an index to keep in step.
+    property var reminders: ({})
+
+    function dateKey(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
+        const d = String(date.getDate()).padStart(2, "0");
+        return y + "-" + m + "-" + d;
+    }
+
+    readonly property string cursorReminder: root.reminders[root.dateKey(root.cursor)] || ""
+
+    // Same shape as the calculator's tape: setText(JSON.stringify(...))
+    // through a plain FileView, NOT a JsonAdapter on a free-form map —
+    // NEXT-SESSION.md records a crash from exactly that combination
+    // (FileView + JsonAdapter on a `property var` map loaded clean, then
+    // the process died with the backend's own pactl QProcess destroyed
+    // mid-run). A LIST survived there; this is a map, so it takes the same
+    // sidestep the calculator's tape does rather than retrying the crash.
+    function persistReminders() {
+        remindersFile.writing = true;
+        remindersFile.setText(JSON.stringify(root.reminders));
+        Qt.callLater(function () {
+            remindersFile.path = "";
+            remindersFile.path = Quickshell.env("HOME") + "/.cache/tide-island/calendar-reminders.json";
+            remindersFile.writing = false;
+        });
+    }
+
+    // Empty text DELETES the key rather than storing "" — an empty
+    // reminder and no reminder must read as the same thing (no dot, no
+    // text on reopen), or clearing a note by backspacing it to nothing
+    // would leave a phantom mark behind.
+    function saveReminder(date, text) {
+        const key = root.dateKey(date);
+        const trimmed = String(text).trim();
+        const next = Object.assign({}, root.reminders);
+        if (trimmed === "")
+            delete next[key];
+        else
+            next[key] = trimmed;
+        root.reminders = next;
+        root.persistReminders();
+    }
+
+    FileView {
+        id: remindersFile
+        path: Quickshell.env("HOME") + "/.cache/tide-island/calendar-reminders.json"
+        watchChanges: true
+        preload: true
+        atomicWrites: true
+        // A machine that has never used this is a calendar with no
+        // reminders, not an error — same reasoning as the TODOS.md watcher
+        // below.
+        printErrors: false
+        property bool writing: false
+
+        onLoaded: {
+            const s = text().trim();
+            if (s === "")
+                return;
+            try {
+                const parsed = JSON.parse(s);
+                if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+                    root.reminders = parsed;
+            } catch (e) {
+                console.warn("[calendar] could not parse " + remindersFile.path + ": " + e);
+            }
+        }
+    }
+
     readonly property int columns: 7
     // FORK: header height, content inset and the key-hint strip are
     // PanelChrome's now. See qml/common/PanelChrome.qml.
     readonly property real weekdayRowHeight: Metrics.px(18)
     readonly property real cellSize: Metrics.px(34)
+    // The reminder row under the grid — a fixed strip, always visible while
+    // the panel is open, editing whichever day the CURSOR is currently on.
+    // Not a popup or a second panel state: the calculator's field and the
+    // shelf's inline editing are both a fixed slot the host owns, not a
+    // dialog primitive, and this follows the same shape.
+    readonly property real reminderRowHeight: Metrics.px(26) + Metrics.px(6)
 
     // The first weekday column, 0=Sunday..6=Saturday, taken from the
     // locale. Qt reports Sunday as 0 in `Locale.Sunday`, which matches
@@ -155,7 +251,7 @@ FocusScope {
     // contract ModeKeysLayer, ThemePickerLayer, DisplayPanel and AudioPanel
     // all use.
     readonly property real preferredHeight:
-        Metrics.chromeTotal() + root.weekdayRowHeight + root.gridHeight
+        Metrics.chromeTotal() + root.weekdayRowHeight + root.gridHeight + root.reminderRowHeight
 
     readonly property bool cursorIsToday:
         root.cursor.getFullYear() === root.today.getFullYear()
@@ -226,7 +322,13 @@ FocusScope {
     // for no gain — the text has not changed, only the window onto it.
     property string todoText: ""
     onTodoTextChanged: root.rebuildMarks(root.todoText)
-    onCursorChanged: root.rebuildMarks(root.todoText)
+    // `syncReminderField()` folded in here rather than a second
+    // `onCursorChanged` — see the RULES on why a second handler for the
+    // same signal on one object is the same error as a duplicate property.
+    onCursorChanged: {
+        root.rebuildMarks(root.todoText);
+        root.syncReminderField();
+    }
 
     FileView {
         // `clock_popup` derives this path from `whoami | tr` — ATITODOS for
@@ -280,6 +382,7 @@ FocusScope {
             // the date".
             root.goToday();
             forceActiveFocus();
+            root.syncReminderField();
         }
     }
 
@@ -341,6 +444,14 @@ FocusScope {
             root.goToday();
             event.accepted = true;
             break;
+        // Enter, for the keyboard's own version of the click that focuses
+        // the reminder row — a click-only affordance is not one for anybody
+        // driving this panel by hand.
+        case Qt.Key_Return:
+        case Qt.Key_Enter:
+            reminderField.focusField();
+            event.accepted = true;
+            break;
         // g / G to the ends of the month, same as the audio and display
         // panels use them for the ends of a list.
         case Qt.Key_G:
@@ -399,6 +510,7 @@ FocusScope {
             { key: "hjkl", label: "move" },
             { key: "n/p", label: "month" },
             { key: "t", label: "today" },
+            { key: "↵/click", label: "reminder" },
             { key: "q", label: "close" }
         ]
     }
@@ -460,7 +572,15 @@ FocusScope {
                 readonly property bool isBlank: cell.day < 1
                 readonly property bool isSelected: !cell.isBlank && cell.day === root.cursor.getDate()
                 readonly property bool isNow: !cell.isBlank && root.isToday(cell.day)
-                readonly property bool isMarked: !cell.isBlank && root.markedDays[cell.day] === true
+                readonly property string dateKey: cell.isBlank ? "" : root.dateKey(
+                    new Date(root.cursor.getFullYear(), root.cursor.getMonth(), cell.day))
+                readonly property bool hasReminder: !cell.isBlank
+                    && root.reminders[cell.dateKey] !== undefined
+                // The union — see the property note on `reminders` above
+                // for why a TODO due-date and a typed-in reminder share one
+                // dot rather than each getting their own colour.
+                readonly property bool isMarked: !cell.isBlank
+                    && (root.markedDays[cell.day] === true || cell.hasReminder)
 
                 width: monthGrid.width / root.columns
                 height: root.cellSize
@@ -519,17 +639,90 @@ FocusScope {
                     MouseArea {
                         anchors.fill: parent
                         hoverEnabled: true
+                        // PRE-EXISTING, found while verifying item 9 and NOT
+                        // fixed here (out of scope for a reminder feature):
+                        // if the pointer is already resting over a cell the
+                        // instant this panel opens, Qt delivers the hover
+                        // BEFORE anything reacts to it, and `onShowConditionChanged`'s
+                        // `goToday()` runs first — so the hover fires right
+                        // after and silently overrides the reset. Reproduced
+                        // by warping the pointer onto a cell, closing, and
+                        // reopening: the panel opens on the parked day
+                        // instead of today. Ordinary use rarely lands the
+                        // pointer exactly on a cell at the open instant, but
+                        // it is not impossible — a fix would need the reset
+                        // to win regardless of ordering, e.g. a `justOpened`
+                        // guard that swallows the first hover after `goToday()`.
                         onEntered: {
                             if (!cell.isBlank)
                                 root.cursor = new Date(root.cursor.getFullYear(),
                                                        root.cursor.getMonth(),
                                                        cell.day);
                         }
+                        // PROMPT-NEXT.md item 9: "when i click on the day i
+                        // can add reminder". Hover already moved the cursor
+                        // here; a click on top of that focuses the reminder
+                        // row below the grid so typing lands in it
+                        // immediately, the same "a click is a decision to
+                        // edit" pattern the calculator's tape rows use.
+                        onClicked: {
+                            if (!cell.isBlank)
+                                reminderField.focusField();
+                        }
                     }
                 }
             }
         }
     }
+
+    // ---- THE REMINDER ROW ----
+    //
+    // Fixed slot, always present, editing whichever day `cursor` is
+    // currently on — see the property note above `reminders` for why this
+    // is a row rather than a dialog. Reuses PanelSearchField for the same
+    // reason CalculatorLayer does: free styling, a real TextInput (cursor,
+    // selection, clipboard) instead of a hand-rolled one, and this shell
+    // already has 20-odd panels that look alike because of it.
+    Item {
+        id: reminderRow
+        x: chrome.contentX
+        y: chrome.contentY + root.weekdayRowHeight + root.gridHeight + Metrics.px(6)
+        width: chrome.contentWidth
+        height: Metrics.px(26)
+
+        PanelSearchField {
+            id: reminderField
+            anchors.fill: parent
+            textFontFamily: root.textFontFamily
+            // nf-fa-sticky-note-o, by codepoint — see the icon property's
+            // own note on why a pasted glyph does not survive.
+            icon: String.fromCharCode(0xf249)
+            placeholder: "click a day, or type a reminder for " + Qt.formatDate(root.cursor, "MMM d")
+            escapeClearsQuery: false
+
+            onSubmitted: {
+                root.saveReminder(root.cursor, reminderField.query);
+                root.forceActiveFocus();
+            }
+            onCancelled: root.forceActiveFocus()
+        }
+    }
+
+    // Refresh the field from whichever day is under the cursor — but only
+    // when the field does NOT have focus. A hover crossing another cell
+    // while the field is focused and mid-edit must not overwrite what is
+    // being typed; the field's OWN `focused` (PanelSearchField.qml) is what
+    // makes that distinction instead of guessing from mouse state.
+    //
+    // Called from the existing `onCursorChanged` / `onShowConditionChanged`
+    // above rather than adding second handlers for either signal — see the
+    // RULES on why a duplicate handler on one object is the same error as a
+    // duplicate property.
+    function syncReminderField() {
+        if (!reminderField.focused)
+            reminderField.setText(root.cursorReminder);
+    }
+    onRemindersChanged: root.syncReminderField()
 
     // ---- FOOTER ----
     //

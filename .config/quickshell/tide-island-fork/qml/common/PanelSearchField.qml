@@ -71,6 +71,11 @@ Item {
 
     // ---- what the host reads ----
     property string query: ""
+    // Whether the field itself currently holds keyboard focus — for a host
+    // that wants to refresh `query` from an external source (the calendar's
+    // cursor moving under a live hover) without clobbering text the user is
+    // mid-typing. Read-only: the host asks, it does not set this.
+    readonly property alias focused: input.activeFocus
 
     // ---- what the host sets ----
     property string placeholder: "type to filter"
