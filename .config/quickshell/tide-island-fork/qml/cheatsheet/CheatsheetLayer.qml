@@ -167,7 +167,7 @@ Item {
     readonly property int preferredHeight: {
         let rows = 0;
         for (const section of root.sections)
-            rows += Metrics.px(22) + (section.rows || []).length * Metrics.px(18);
+            rows += Metrics.px(30) + (section.rows || []).length * Metrics.px(26);
         // A floor, so a sheet that failed to load is still a panel and not a
         // sliver: "could not read this sheet" has to have somewhere to print.
         return Math.max(Metrics.px(200),
@@ -298,18 +298,31 @@ Item {
         }
     }
 
+    // PROMPT-NEXT.md item 7: "the documention and cheat ones are so small
+    // and can not seen ... like the one in qtile". Measured, not assumed —
+    // every font.pixelSize below was landing on Metrics.font()'s 9px FLOOR
+    // regardless of the number passed in (the whole point of `font()`
+    // flooring at 9 is that nothing in this shell goes below it, but with
+    // SCALE at 0.7368 that meant every argument here under ~13 collapsed to
+    // the same minimum). qtile's own reference popups render body text
+    // around 15px unscaled — this file's `font.pixelSize` calls are
+    // rescaled below to land in that same neighbourhood, and the geometry
+    // (row heights, chip sizes, margins) grows with them so nothing clips.
+    // `preferredHeight` above already carries the matching Metrics.px(30) /
+    // Metrics.px(26) — see its own comment on why those two have to agree
+    // with the delegate's row heights further down.
     Column {
         anchors.fill: parent
-        anchors.topMargin: Metrics.pad(12)
-        anchors.bottomMargin: Metrics.pad(12)
-        anchors.leftMargin: Metrics.pad(18)
-        anchors.rightMargin: Metrics.pad(18)
-        spacing: Metrics.px(8)
+        anchors.topMargin: Metrics.pad(16)
+        anchors.bottomMargin: Metrics.pad(16)
+        anchors.leftMargin: Metrics.pad(22)
+        anchors.rightMargin: Metrics.pad(22)
+        spacing: Metrics.px(10)
 
         // ---- header: title, the three tabs, and the exit hint ----
         Item {
             width: parent.width
-            height: Metrics.px(20)
+            height: Metrics.px(28)
 
             Text {
                 id: sheetTitle
@@ -318,7 +331,7 @@ Item {
                 text: root.title
                 color: IslandTheme.textPrimary
                 font.family: root.heroFontFamily
-                font.pixelSize: Metrics.font(13)
+                font.pixelSize: Metrics.font(20)
                 font.weight: Font.DemiBold
                 font.letterSpacing: 0.6
             }
@@ -334,7 +347,7 @@ Item {
                 text: root.note
                 color: IslandTheme.textMuted
                 font.family: root.textFontFamily
-                font.pixelSize: Metrics.font(10)
+                font.pixelSize: Metrics.font(14)
                 font.italic: true
                 elide: Text.ElideRight
             }
@@ -354,7 +367,7 @@ Item {
                         readonly property bool active: modelData === root.sheet
 
                         width: tabLabel.implicitWidth + Metrics.pad(14)
-                        height: Metrics.px(17)
+                        height: Metrics.px(24)
                         radius: Metrics.px(5)
                         color: active ? IslandTheme.surfaceRaisedActive : IslandTheme.surfaceRaised
 
@@ -366,7 +379,7 @@ Item {
                             text: root.sheetLabels[parent.modelData] || parent.modelData
                             color: parent.active ? IslandTheme.textPrimary : IslandTheme.textSecondary
                             font.family: root.textFontFamily
-                            font.pixelSize: Metrics.font(9)
+                            font.pixelSize: Metrics.font(14)
                             font.weight: parent.active ? Font.DemiBold : Font.Normal
                             font.letterSpacing: 0.4
                         }
@@ -392,7 +405,7 @@ Item {
         Rectangle {
             id: searchField
             width: parent.width
-            height: Metrics.px(26)
+            height: Metrics.px(34)
             radius: Metrics.px(8)
             color: searchInput.activeFocus ? IslandTheme.inputFillFocused : IslandTheme.inputFill
             border.width: 1
@@ -409,7 +422,7 @@ Item {
                 text: ""
                 color: searchInput.activeFocus ? IslandTheme.textSecondary : IslandTheme.textMuted
                 font.family: root.iconFontFamily
-                font.pixelSize: Metrics.font(11)
+                font.pixelSize: Metrics.font(16)
             }
 
             TextInput {
@@ -423,7 +436,7 @@ Item {
                 selectionColor: IslandTheme.accent
                 selectedTextColor: IslandTheme.accentInk
                 font.family: root.textFontFamily
-                font.pixelSize: Metrics.font(11)
+                font.pixelSize: Metrics.font(17)
                 clip: true
                 selectByMouse: true
 
@@ -474,7 +487,7 @@ Item {
                     text: "type to filter — Tab switches sheet, Esc closes"
                     color: IslandTheme.textDisabled
                     font.family: root.textFontFamily
-                    font.pixelSize: Metrics.font(11)
+                    font.pixelSize: Metrics.font(17)
                 }
             }
 
@@ -486,7 +499,7 @@ Item {
                 text: root.loading ? "…" : (root.matchCount + (root.query === "" ? "" : " match"))
                 color: IslandTheme.textDisabled
                 font.family: root.textFontFamily
-                font.pixelSize: Metrics.font(10)
+                font.pixelSize: Metrics.font(13)
             }
         }
 
@@ -511,7 +524,7 @@ Item {
                 text: root.query === "" ? "nothing in this sheet" : "no key matches “" + root.query + "”"
                 color: IslandTheme.textDisabled
                 font.family: root.textFontFamily
-                font.pixelSize: Metrics.font(11)
+                font.pixelSize: Metrics.font(17)
             }
 
             delegate: Item {
@@ -519,18 +532,20 @@ Item {
                 required property var modelData
 
                 width: list.width
-                height: modelData.header ? Metrics.px(22) : Metrics.px(18)
+                // MUST agree with `preferredHeight`'s own Metrics.px(30) /
+                // Metrics.px(26) above — see that property's comment.
+                height: modelData.header ? Metrics.px(30) : Metrics.px(26)
 
                 // Section header
                 Text {
                     visible: entryItem.modelData.header
                     anchors.left: parent.left
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: Metrics.px(3)
+                    anchors.bottomMargin: Metrics.px(4)
                     text: entryItem.modelData.header ? entryItem.modelData.text : ""
                     color: IslandTheme.textDisabled
                     font.family: root.textFontFamily
-                    font.pixelSize: Metrics.font(9)
+                    font.pixelSize: Metrics.font(14)
                     font.weight: Font.DemiBold
                     font.letterSpacing: 0.8
                 }
@@ -548,9 +563,9 @@ Item {
                         id: comboChip
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
-                        width: Math.max(Metrics.px(22), comboText.implicitWidth + Metrics.pad(10))
-                        height: Metrics.px(14)
-                        radius: Metrics.px(4)
+                        width: Math.max(Metrics.px(30), comboText.implicitWidth + Metrics.pad(12))
+                        height: Metrics.px(20)
+                        radius: Metrics.px(5)
                         color: IslandTheme.surfaceRaised
                         visible: comboText.text !== ""
 
@@ -560,7 +575,7 @@ Item {
                             text: entryItem.modelData.header ? "" : entryItem.modelData.combo
                             color: IslandTheme.textPrimary
                             font.family: root.textFontFamily
-                            font.pixelSize: Metrics.font(9)
+                            font.pixelSize: Metrics.font(15)
                             font.weight: Font.Medium
                         }
                     }
@@ -573,7 +588,7 @@ Item {
                         text: entryItem.modelData.header ? "" : entryItem.modelData.label
                         color: IslandTheme.textSecondary
                         font.family: root.textFontFamily
-                        font.pixelSize: Metrics.font(10)
+                        font.pixelSize: Metrics.font(17)
                         elide: Text.ElideRight
                     }
                 }
