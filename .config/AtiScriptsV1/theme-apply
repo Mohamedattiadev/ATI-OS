@@ -468,10 +468,15 @@ r,g,b=(int(h[i:i+2],16)/255 for i in (0,2,4))
 f=lambda c: c/12.92 if c<=0.03928 else ((c+0.055)/1.055)**2.4
 print('%.4f' % (0.2126*f(r)+0.7152*f(g)+0.0722*f(b)))
 " 2>/dev/null || echo 0)"
-  local glass_theme=dark term_opacity=0.55
+  # 0.55 -> 0.65: reported the text wasn't visible enough over glass,
+  # fullscreen and windowed both (fullscreen was ALSO missing its blur
+  # entirely at the time — see hyprglass.conf — but the dark-theme opacity
+  # itself was asked to come up too, independent of that). Still short of
+  # the light branch's 0.92 so the glass has something left to refract.
+  local glass_theme=dark term_opacity=0.65
   if awk "BEGIN{exit !($bg_lum >= 0.5)}" 2>/dev/null; then
     glass_theme=light
-    # 0.92, not 0.55. A light terminal needs to be nearly opaque or the
+    # 0.92, not 0.65. A light terminal needs to be nearly opaque or the
     # wallpaper competes with the text for the same pixels — and unlike a
     # dark theme there is no luminance gap left to win that competition
     # with. Still short of 1.0 so the glass has something to work on.
@@ -1101,7 +1106,11 @@ echo "$MODE" >"$STATE_FILE"
 # `wal` branch and under `set -u` would abort the whole theme change on the
 # other twenty-one palettes.
 _bg_for_opacity="$(jq -r '.special.background // empty' ~/.cache/wal/colors.json 2>/dev/null | tr -d '#')"
-_term_opacity=0.55
+# Kept equal to gen_hypr_colors' own default above — this path re-derives
+# the same number for windows that already exist, and the two drifting
+# would mean a theme change leaves already-open terminals at one opacity
+# and freshly spawned ones at another.
+_term_opacity=0.65
 if [[ ${#_bg_for_opacity} -eq 6 ]] && python3 -c "
 import sys
 h='$_bg_for_opacity'
