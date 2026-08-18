@@ -564,7 +564,18 @@ Item {
                             delegate: Rectangle {
                                 id: card
                                 required property var modelData
-                                width: parent.width
+                                // Guarded: a fast-typed search rebuilds this
+                                // Repeater's whole model on every keystroke
+                                // (`cardColumns` is a plain array, not an
+                                // incremental model), and a delegate can be
+                                // asked to bind before Qt has finished
+                                // parenting it into the Column above —
+                                // measured as a real, repeating "Cannot read
+                                // property 'width' of null" in the log
+                                // during exactly that (typing "yank" letter
+                                // by letter). Self-corrects the next frame
+                                // either way; this just stops it logging.
+                                width: parent ? parent.width : 0
                                 height: cardCol.implicitHeight + Metrics.px(12)
                                 radius: Metrics.px(8)
                                 color: IslandTheme.surfaceRaised
