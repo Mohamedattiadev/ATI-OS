@@ -511,6 +511,24 @@ small fix. Three changes, and they should probably be three commits:
   visual-language decision as much as a code one; screenshot the current
   cards, mock the toggle shape, and confirm the shape reads as a toggle
   before wiring the click-opens-panel behaviour on top of it.
+* **Follow-on, once the player is in the control centre:** *"since u will
+  add the player to control center no need for the click right one which
+  opens the player make it open the calendar the right click ok."* Right-
+  click on the island's capsule currently opens the expanded player — this
+  is `userConfig.dynamicIslandSecondaryAction`, a PACKAGED-backend config
+  value (`~/.config/tide-island/userconfig.json`), currently
+  `"toggleExpandedPlayer"`. Two changes, not one: (1) the value needs to
+  become something like `"toggleCalendar"`, and (2)
+  `handleConfiguredClickAction()` in `DynamicIslandWindow.qml` (the switch
+  starting around line 2739) does not have a `case` for it yet — it has
+  `toggleExpandedPlayer`/`openExpandedPlayer`/`closeExpandedPlayer` and
+  `toggleNotificationCenter`/`open.../close...` pairs for other panels, but
+  no calendar equivalent; `showCalendar()` already exists
+  (`islandContainer.showCalendar()`, called from `toggleCalendarWindow()`
+  around line 1695) as the function to call. Add the `case`, following the
+  exact shape the existing ones use, then change the config value and back
+  up/diff `userconfig.json` the way every other write to it in this project
+  does.
 
 "More minimal and simpler" is the design goal driving all three — resist
 adding new individual toggles beyond what is asked for, this is a
@@ -537,6 +555,96 @@ own the arrival event this needs to key off; wire a
 `hasUnseenNotification`-shaped property from there into `mainCapsule`'s
 border colour expression rather than duplicating the notification-tracking
 logic.
+
+### 12. Wallpapers — rename by theme fit so search finds all matches, then commit BOTH repos
+
+Reported: *"i want the images which fit the theme i want to rename them with
+the themename and then_number so when i search for them and write gruvbox
+for example it shows me all fitting ones, and update commit the wallpaper
+repo after that and commit here also."*
+
+**Read before renaming anything — the mapping this needs already exists,
+twice, in two different shapes:**
+
+* `~/.cache/qtile/theme-walls.json` — `{ "gruvbox": "<one path>", ... }`,
+  one wallpaper per theme, and several of those paths are already files in
+  the FLAT pool (`~/Pictures/Wallpapers/0004.jpg` for `gruvbox`, for
+  example) — no theme name in the filename at all today.
+* `~/.cache/qtile/theme-wall-last.json` — same shape, and several of ITS
+  paths point at `~/Pictures/Wallpapers/themed/<theme>/fetched-NN.jpg`, a
+  PER-THEME SUBDIRECTORY that already groups images by theme, just not by
+  filename.
+
+**`WallpaperPickerLayer.qml`'s search is over `userConfig.wallpaperLibraryPath`
+— check what that resolves to first.** If it is the flat
+`~/Pictures/Wallpapers/` directory only (not the `themed/` subdirectories),
+then a search for "gruvbox" cannot find `themed/gruvbox/fetched-11.jpg` no
+matter how it is named, because the picker never lists that directory at
+all — in which case the fix is not a rename, it is either widening the
+picker to also list `themed/*/`, or copying/renaming the themed images INTO
+the flat pool. Confirm which before doing either.
+
+**This repo (`~/Pictures/Wallpapers`) has a REMOTE — this is not a local
+scratch rename.** Use `git mv` for every rename so history follows the file
+rather than showing a delete+add, and there is a RULE already on record
+(`NEXT-SESSION.md`'s RULES) warning this repo needs care. Once files move:
+
+* `theme-walls.json` and `theme-wall-last.json` (and anything else in
+  `~/.cache/qtile/` or `~/.cache/tide-island/` holding an absolute path into
+  this repo) now point at names that no longer exist — these are CACHE
+  files, probably fine to regenerate, but check whether anything treats
+  their absence as an error before assuming that.
+* Commit the wallpaper repo first (the rename), THEN commit here in
+  `~/.dotfiles` if anything in this tree references specific wallpaper
+  filenames (grep for `.jpg`/`.png` literals under `.config/` before
+  assuming nothing does) — "commit here also" in the report means this
+  second commit, not a duplicate of the first.
+
+### 13. Island Settings (alt+7) — smaller, a real toggle, and not centre-screen
+
+Reported: *"make this setting when open a bit smaller height and width and
+make it toggleble and the one with alt+7 make it appears as popup like the
+other popups not appearing in middle of the screen fix this."* (Screenshot
+attached showing the current centred `Island Settings` panel with its
+Preview pane and chip grid.)
+
+**This is a direct reversal of a PAST explicit request, and the code says so
+— read `DynamicIslandWindow.qml`'s `detachedPanelActive`/`detachProgress`
+section (around line 780-815) before changing it.** The comment block there
+records the original ask verbatim: *"the size of the island setting should
+be centered and float and a bit smaller when it opens"* — this is exactly
+why settings is the one state that gets the DETACHED, screen-centred form
+instead of the normal notch-anchored morph every other panel uses. The user
+is now asking for the opposite. That is a legitimate change of mind, not a
+contradiction to resolve by picking one — implement the NEW request, but
+say explicitly in the commit message that this reverses the earlier
+decision on record, with both quotes, so a future session does not "fix"
+it back.
+
+Two changes, and they may turn out to be the same root cause:
+
+* **"appears in the middle of the screen" -> make it a normal popup.**
+  Remove settings from whatever makes `detachedPanelActive` true (currently
+  `islandContainer.islandState === "settings"`), so `detachProgress` stays 0
+  for this state and it inherits the ordinary notch-anchored morph
+  every other panel gets — same family as control centre, wallpaper picker,
+  etc. Verify with `sweep-island.py` and a screenshot that it now opens from
+  the capsule like its neighbours.
+* **"a bit smaller height and width"** — measure the CURRENT size
+  (`sweep-island.py --states` already reports `h=`/`w=` for `settings`) and
+  compare against a neighbouring panel like the theme picker before picking
+  a target; do not guess a number.
+* **"make it toggleble"** — `toggleSettingsWindow()`
+  (`DynamicIslandWindow.qml` ~line 1771) and the `tide toggleSettings` IPC
+  it is wired to (`shell.qml` ~line 998) ALREADY implement close-if-open
+  toggle logic at the state-machine level. Drive it twice in a row over IPC
+  (`qs ipc call tide toggleSettings` / `toggleSettings` again) and watch
+  what actually happens before assuming this needs new logic — it is quite
+  possible the DETACHED form above is what makes toggling feel broken (a
+  modal-feeling centred dialog reads as "not a toggle" even when the state
+  machine underneath is one), in which case fixing the popup-form half
+  fixes this one too, and the fix here is confirming that rather than
+  writing new toggle logic that already exists.
 
 ---
 
@@ -597,7 +705,13 @@ nobody answers, do not stall on it.** Pick the more conservative/reversible
 reading, say so explicitly in the commit message and in the final summary
 ("assumed X because Y; revisit if wrong"), and keep going through the rest
 of the list rather than blocking the whole session on one open question.
-Do items 2, 3 and 5's glitch half only as far as measurement supports, and
-say plainly in the summary what was measured, what was fixed, and what is
-still open — including
+Item 12 (wallpaper renaming) touches a git repo with a remote and should be
+done carefully rather than rushed if time is short — a half-renamed
+wallpaper repo is worse than an unstarted one. Item 13's three sub-parts may
+collapse to one fix (see its note on why "toggleble" might just be a
+side-effect of the centred form) — try the popup-form change first and
+re-test toggling before writing separate logic for it. Do items 2, 3 and 5's
+glitch half only as far as measurement supports, and say plainly in the
+summary what was measured, what was fixed, and what is still open —
+including
 anything that could not be driven and why.
