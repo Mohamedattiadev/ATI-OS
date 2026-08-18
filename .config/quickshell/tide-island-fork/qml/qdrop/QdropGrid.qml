@@ -228,6 +228,18 @@ Item {
     // One entry per line, CRLF, which is what the spec says and what every
     // toolkit splits on. A text entry has no URI, so a selection that mixes
     // the two offers text/plain as well and lets the receiver choose.
+    //
+    // TRAILING CRLF, not just one BETWEEN entries. RFC 2483 says a line is
+    // CRLF-TERMINATED, which the last URI was not — `join("\r\n")` puts the
+    // separator only between entries, so a single-file drag (the common
+    // case) offered a bare URI with no terminator at all. Found chasing a
+    // real crash: dragging out of this shelf into pcmanfm-qt's "Copy Here"
+    // segfaults inside libfm-qt6 (`Fm::FileTransferJob::setDestDirPath`,
+    // confirmed with `coredumpctl debug` — three crashes logged, one live).
+    // Not proven to be the cause — the crash is inside a system library
+    // this repo does not own the source of — but an unterminated last line
+    // is a genuine spec violation on our side regardless of whether it is
+    // THE cause, so it is fixed either way.
     function uriList(indexes) {
         const e = store.entries;
         const out = [];
@@ -241,7 +253,7 @@ Item {
             else if (t === "url")
                 out.push(String(it.value));
         }
-        return out.join("\r\n");
+        return out.length === 0 ? "" : out.join("\r\n") + "\r\n";
     }
 
     function plainText(indexes) {
