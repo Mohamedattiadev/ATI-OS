@@ -21,6 +21,29 @@ Item {
     signal closeRequested()
 
     property bool showCondition: false
+
+    // FORK: this panel never had this. Every other layer in the shell fades
+    // itself on `showCondition` — see PanelLoader.qml, "THE BUG IT EXISTS TO
+    // FIX" — and PanelLoader only outlives dismissal long enough for a fade
+    // that ACTUALLY RUNS to finish. This one had no `opacity` binding and no
+    // `Behavior` at all, so it popped and vanished on the raw boolean: the
+    // "popups open and close slowly / glitchily" report, on the one panel
+    // that was never wired into the fix the other twelve got.
+    opacity: showCondition ? 1 : 0
+    Behavior on opacity {
+        SequentialAnimation {
+            // The delay is what keeps content from painting inside a
+            // capsule that is still the wrong size for it — see Motion.js,
+            // "CONTENT CHOREOGRAPHY".
+            PauseAnimation { duration: showCondition ? Motion.contentDelay() : 0 }
+            NumberAnimation {
+                duration: showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()
+            }
+        }
+    }
+
     property var notificationModel: null
     property string iconFontFamily: userConfig.iconFontFamily
     property string textFontFamily: userConfig.textFontFamily

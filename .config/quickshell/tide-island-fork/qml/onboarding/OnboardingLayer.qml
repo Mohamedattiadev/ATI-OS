@@ -10,6 +10,8 @@ import Quickshell
 // on top of each other. The only sign was `ReferenceError: Metrics is not
 // defined` in the shell log.
 import "../common/Metrics.js" as Metrics
+// FORK: the shared motion system — see the note beside `opacity` below.
+import "../common/Motion.js" as Motion
 import "../common"
 
 // FORK: the tour, ported from eww.
@@ -50,6 +52,23 @@ Item {
     id: root
 
     property bool showCondition: false
+
+    // FORK: this panel never had this either — see the identical note in
+    // NotificationCenterLayer.qml. No `opacity` binding, no `Behavior`, so it
+    // popped and vanished on the raw boolean instead of running the fade
+    // PanelLoader holds it alive for.
+    opacity: showCondition ? 1 : 0
+    Behavior on opacity {
+        SequentialAnimation {
+            PauseAnimation { duration: showCondition ? Motion.contentDelay() : 0 }
+            NumberAnimation {
+                duration: showCondition ? Motion.fadeInDuration() : Motion.fadeOutDuration()
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Motion.fade()
+            }
+        }
+    }
+
     property string textFontFamily: ""
     property string heroFontFamily: ""
     property string iconFontFamily: ""
