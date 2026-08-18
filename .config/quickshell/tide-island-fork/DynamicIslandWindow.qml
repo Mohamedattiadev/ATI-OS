@@ -6287,6 +6287,12 @@ PanelWindow {
                         currentWorkspace: islandContainer.currentWs
                         currentTrack: islandContainer.currentTrack
                         currentArtist: islandContainer.currentArtist
+                        // FORK: item 10's music player card. Same
+                        // controller, same shape ExpandedPlayerLayer's own
+                        // site below uses.
+                        activePlayer: islandContainer.activePlayer
+                        onPreviousRequested: mediaController.previous()
+                        onNextRequested: if (islandContainer.activePlayer) islandContainer.activePlayer.next()
                         nightLightEnabled: root.shellRootController && root.shellRootController.nightLightEnabled !== undefined
                             ? root.shellRootController.nightLightEnabled
                             : false

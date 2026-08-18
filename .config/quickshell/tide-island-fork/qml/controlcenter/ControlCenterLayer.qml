@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Shapes
 import Quickshell.Bluetooth
 import Quickshell.Io
+import Quickshell.Services.Mpris
 import IslandBackend
 
 // FORK: one shared scale factor for every island surface.
@@ -10,6 +11,11 @@ import "../common/Metrics.js" as Metrics
 // critically damped curve for opacity. See qml/common/Motion.js.
 import "../common/Motion.js" as Motion
 import "../common"
+// FORK: PlayerControlButton — item 10's "add the music player" reuses the
+// SAME transport-button component ExpandedPlayerLayer's own convention
+// points at, rather than a second implementation. It was declared and
+// never instantiated anywhere in this tree before this file.
+import "../island"
 
 Item {
     id: controlCenter
@@ -177,6 +183,49 @@ Item {
     // anything looking at this data".
     property bool connectivityHostActive: false
     readonly property bool connectivityDataActive: showCondition || connectivityHostActive
+
+    // ---- THE MUSIC PLAYER ----
+    //
+    // PROMPT-NEXT.md item 10: "make the control center contain the music
+    // player". Data comes from the SAME `IslandMprisController` instance
+    // (`mediaController` in DynamicIslandWindow.qml) the hover-expanded
+    // player already reads — fed down as plain properties exactly the way
+    // ExpandedPlayerLayer's own site does, so this is a second READER of
+    // one shared controller rather than a second MPRIS connection. See the
+    // Loader's sourceComponent for the actual bindings.
+    //
+    // `currentTrack` / `currentArtist` already existed above (declared,
+    // never read by anything in this file) — reused rather than
+    // duplicated, and now finally wired to something.
+    property var activePlayer: null
+    readonly property bool musicPlaying: activePlayer !== null
+    readonly property bool isPlaying: activePlayer
+        && activePlayer.playbackState === MprisPlaybackState.Playing
+
+    // Mirrors ExpandedPlayerLayer.togglePlayback() exactly — same fallback
+    // order (toggle, then pause-or-play by state), because a player that
+    // answers one control differently in two surfaces is a bug waiting to
+    // be reported as one.
+    function togglePlayback() {
+        if (!activePlayer || !activePlayer.canControl) return;
+        if (activePlayer.canTogglePlaying) {
+            activePlayer.togglePlaying();
+            return;
+        }
+        if (activePlayer.playbackState === MprisPlaybackState.Playing) {
+            if (activePlayer.canPause) activePlayer.pause();
+            return;
+        }
+        if (activePlayer.canPlay) activePlayer.play();
+    }
+
+    // `mediaController.previous()` also re-syncs the progress display to
+    // the new track's start — plain `activePlayer.previous()` does not —
+    // so this is a signal the host answers with the real controller,
+    // exactly like ExpandedPlayerLayer's own `previousRequested`.
+    signal previousRequested()
+    signal nextRequested()
+
     property bool nightLightEnabled: false
     property bool nightLightBusy: false
     property int nightLightTemperature: 4500
@@ -256,8 +305,15 @@ Item {
     // about to need this exact plumbing for its own height, at which point
     // these two stop being "12 + chromeFooterCost" and start being
     // "12 + chromeFooterCost + the player's own height".
-    readonly property real controlCenterExtraHeight: 12 + chromeFooterCost
-    readonly property real controlCenterMaximumExtraHeight: 12 + chromeFooterCost
+    // The player card's own contribution — Metrics.px(56) plus the Column's
+    // own px(12) spacing above it, present only while `musicPlaying` (the
+    // card collapses to nothing otherwise, and Column already excludes
+    // invisible children from its own height, but the ISLAND's capsule
+    // height is a fixed budget rather than reading the panel's real content
+    // height, so this has to be told about it explicitly).
+    readonly property real playerCardExtraHeight: musicPlaying ? Metrics.px(56) + Metrics.px(12) : 0
+    readonly property real controlCenterExtraHeight: 12 + chromeFooterCost + playerCardExtraHeight
+    readonly property real controlCenterMaximumExtraHeight: 12 + chromeFooterCost + Metrics.px(56) + Metrics.px(12)
     readonly property bool bluetoothAvailable: !!bluetoothAdapter
     readonly property var bluetoothAdapter: Bluetooth.defaultAdapter
     readonly property var bluetoothDeviceValues: bluetoothAdapter ? bluetoothAdapter.devices.values : []
@@ -1829,6 +1885,81 @@ Item {
         // `controlCenterMaximumExtraHeight`, which this fed into the
         // capsule's own sizing in DynamicIslandWindow.qml, are removed in
         // the same commit — see there for what depended on them.
+
+        // ---- THE MUSIC PLAYER CARD ----
+        //
+        // Deliberately NOT the full ExpandedPlayerLayer (art, scrolling
+        // lyrics, the sleep timer) — that surface is built to fill an
+        // entire dedicated panel of its own, and item 10's own framing is
+        // "more minimal", not "the expanded player, again, here too". A
+        // compact now-playing card is what a MINIMAL control centre's music
+        // section actually looks like on the reference (macOS) this item
+        // points at. Collapses to nothing (`visible: musicPlaying`) when no
+        // player is active, the same "earning its screen space" rule the
+        // resting capsule's own EQ already follows.
+        Rectangle {
+            id: playerCard
+            width: parent.width
+            height: Metrics.px(56)
+            visible: controlCenter.musicPlaying
+            color: IslandTheme.surfaceRaised
+            radius: Metrics.px(10)
+
+            Column {
+                anchors.left: parent.left
+                anchors.right: transportRow.left
+                anchors.leftMargin: Metrics.px(12)
+                anchors.rightMargin: Metrics.px(10)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Metrics.px(2)
+
+                Text {
+                    width: parent.width
+                    text: controlCenter.currentTrack !== "" ? controlCenter.currentTrack : "Unknown track"
+                    color: IslandTheme.textPrimary
+                    font.family: controlCenter.textFontFamily
+                    font.pixelSize: Metrics.font(12)
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
+                    text: controlCenter.currentArtist
+                    visible: text !== ""
+                    color: IslandTheme.textMuted
+                    font.family: controlCenter.textFontFamily
+                    font.pixelSize: Metrics.font(10)
+                    elide: Text.ElideRight
+                }
+            }
+
+            Row {
+                id: transportRow
+                anchors.right: parent.right
+                anchors.rightMargin: Metrics.px(10)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Metrics.px(2)
+
+                PlayerControlButton {
+                    kind: "previous"
+                    textFontFamily: controlCenter.textFontFamily
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: controlCenter.previousRequested()
+                }
+                PlayerControlButton {
+                    kind: controlCenter.isPlaying ? "pause" : "play"
+                    textFontFamily: controlCenter.textFontFamily
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: controlCenter.togglePlayback()
+                }
+                PlayerControlButton {
+                    kind: "next"
+                    textFontFamily: controlCenter.textFontFamily
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: controlCenter.nextRequested()
+                }
+            }
+        }
 
         ControlSliderCard {
             id: brightnessCard
