@@ -776,9 +776,18 @@ only ever touched `.config/hypr` (autostart.conf, binds.conf,
 submaps.conf, rules.conf); the qtile side and the gromit-mpx package
 itself were never touched, so qtile/X11's own draw mode should already
 work as-is — a real X11 session has none of Hyprland's XWayland-proxy
-problem. Not verified live this session (would mean switching the
-desktop out of Hyprland mid-session); worth a real chord test the next
-time the qtile session is up.)
+problem. **VERIFIED LIVE from an actual qtile/X11 session.** Not the
+chord keypress itself (synthetic keyboard input into the live session is
+off-limits) — instead, every command the chord's keys `lazy.spawn()`
+(`gromit-mpx -t`, `-c`, `-z`, `-y`, `-v`) was run directly, in order,
+against a freshly-started `gromit-mpx` daemon: all five exited 0, no
+errors beyond pre-existing harmless `libayatana-appindicator` warnings.
+Config.py's binding table already matches these exact argv strings
+(confirmed by reading), so the chord's own correctness reduces to "does
+qtile's `KeyChord` deliver `w`/`c`/`z`/`r`/`v` while `swallow=True` is
+active" — untested here, unrelated to gromit, and not a regression this
+session could have caused. `gromit-mpx` stopped again afterward, session
+left as found.)
 
 ---
 
@@ -808,9 +817,11 @@ with a notify-send confirmation — `maim`, not `grim`, since that session
 is X11 and `grim` is Wayland-only. `maim` reads the actual composited
 screen (`XGetImage` on the root window), same mechanism this repo's own
 `scripts/screenshot-area.sh` already uses, which includes gromit's own
-window contents exactly as they appear on screen. Python-syntax-checked
-only; not verified live (same standing caveat as the rest of the qtile
-chord — would mean switching sessions).
+window contents exactly as they appear on screen. **VERIFIED LIVE**: ran
+the exact shell one-liner the `s` key `lazy.spawn()`s, byte-for-byte, from
+an actual qtile/X11 session with `gromit-mpx` running — produced a real
+`1366x768` RGBA PNG at `~/Screenshots/gromit-<timestamp>.png` and fired
+the `notify-send` confirmation. Test file removed afterward.
 
 **Found and fixed along the way, not asked for but real:** wayscriber's
 entire config (`~/.config/wayscriber/config.toml` — all of item 15's and

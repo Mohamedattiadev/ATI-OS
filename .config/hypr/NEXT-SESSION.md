@@ -5,105 +5,96 @@ for the X11 side that **has never been run under qtile** — it compiles, it is
 unit-tested, and its reasoning is checked against the installed libqtile, but
 nobody has watched it work. This is the list, in the order it will bite.
 
-## TOP PRIORITY — the theme/wallpaper change animation does not run under qtile
+## TOP PRIORITY — the theme/wallpaper change animation under qtile — VERIFIED LIVE, one real bug found and fixed
 
-Reported, and called out as important on its own, separate from the four-item
-checklist below: *"i want the hyperland theme and wallpaper chaning thing
-animaiton and logic works the same in qtile — this is too important."*
+Reported: *"i want the hyperland theme and wallpaper chaning thing animaiton
+and logic works the same in qtile — this is too important."*
 
-**IMPLEMENTED in commit `3a0f509`, but NOT YET VERIFIED — this session
-wrote the fix from the Hyprland side and could not start or observe an
-actual qtile session to confirm it. Verifying this, live, is the actual
-next-session task, not just item 3 below.** The palette
-logic and the wallpaper-backend logic are already shared and already qtile-
-aware (`theme-apply`/`theme-wallpaper` branch on `$XDG_SESSION_TYPE` /
-`WAYLAND_DISPLAY` and already call `xwallpaper --stretch` on X11 — see
-`theme-wallpaper` ~line 302). `ThemeTransitionWindow.qml`, the circular-reveal
-overlay itself, already has an X11 wrapper
-(`qml/theme/ThemeTransitionWindowX11.qml`) and its `captureCommand()` already
-branches to `maim` when `WAYLAND_DISPLAY` is unset. **None of that is the
-gap.** Two concrete things are:
+**Verified from an actual qtile/X11 session (commit `7ce0659`).** The
+`3a0f509` fix (starting `popups.qml` under qtile's own bar) was correct as
+far as it went: `pgrep -af 'quickshell.*popups.qml'` showed exactly one
+process, `wmctrl -l` showed no window, qtile's own popups were untouched.
+But an IPC call to `tide applyThemeAnimated wal` did **nothing** — no log
+line, `~/.cache/qtile/theme_mode` unchanged. The real gap was one level
+deeper and `3a0f509` never reached it:
 
-1. **Nothing hosted the overlay under qtile's own bar.** `theme-animate`
-   (`~/.local/bin/theme-animate`) is the shared entry point every wallpaper/
-   theme change is supposed to go through — it tries `tide
-   applyThemeAnimated <mode>` over IPC against the island, then against
-   `popups.qml`, and only falls back to plain `theme-apply` (no animation) if
-   neither answers. Under Hyprland, `hypr/scripts/topbar.sh` starts
-   `popups.qml` (and `treetab.qml`) alongside the topbar itself — see its
-   lines ~111-128 — specifically so the overlay has somewhere to live even
-   when the island isn't the active bar. `qtile/autostart.sh` had no
-   equivalent call. **FIXED in `3a0f509`:** it now starts `popups.qml`
-   (idempotently, same argv-equality guard `topbar.sh` uses) in the `else`
-   branch of the bar-mode check, whenever `bar-mode` is not `island`. Verify
-   live: log in with `bar-mode` away from `island`, confirm exactly one
-   `quickshell -p …/popups.qml` process exists (`pgrep -af
-   'quickshell.*popups.qml'`), and confirm it costs nothing visible — no
-   window, no bar, qtile's own popups still look and behave exactly as
-   before (their keybindings still call the Python ones directly; this
-   process only answers `tide applyThemeAnimated` over IPC).
+`popups.qml`'s theme-transition `Variants` block declared a bare
+`ThemeTransitionWindowWayland` for every screen, unconditionally — it was
+never split per-backend the way `shell.qml` already does (`onWayland`
+ternary, two `Variants` blocks, `ThemeTransitionWindowX11` on X11). Under
+X11 that component's `WlrLayershell.*` attached property fails to
+construct ("Could not create attached properties object" in the log), so
+`themeWindows` was always `[]`, and `startThemeTransition`'s own
+`windows.length === 0` guard made every call a silent no-op — no error,
+just nothing. **Fixed**: `popups.qml` now carries the exact same
+Wayland/X11 split `shell.qml` does.
 
-2. **`qtile/popups/WallpaperPopup.py` called `theme-apply` directly**, not
-   `theme-animate` — its `_bg()` closure, ~line 394-419: it runs
-   `xwallpaper --stretch` itself, then applied the palette directly when the
-   active mode is `wal`. This was the exact class of bug `theme-animate`'s
-   own header warns about — "every caller that ran theme-apply directly
-   therefore bypassed the animation entirely" — so even (1) above was not
-   sufficient by itself. **FIXED in `3a0f509`:** that call is now
-   `["theme-animate", "wal"]`. Verify live: pick a new wallpaper while a
-   `wal`-mode theme is active and confirm the circular reveal actually
-   plays, not just that the wallpaper changes. Also check the interaction
-   the surrounding comment (line ~380-384) calls out: qtile itself gets
-   RESTARTED as part of `theme-apply`/`theme-animate`'s work in this mode
-   (X11/qtile-specific — Hyprland does not restart on a theme change) — does
-   that restart, happening mid-freeze, affect the separate `popups.qml`
-   process hosting the overlay, or does anything tie the two together that
-   was not obvious from reading either file alone?
+Reverified after the fix: the same IPC call ran `theme-apply` for real
+(`theme_mode` gruvbox → wal, `current_palette.json` regenerated with new
+values), `maim`'s capture confirmed not black (real screen content,
+`(0, 255)` luminance range), and qtile's own `os.execv` restart fired
+mid-flight — confirmed in `~/.local/share/qtile/qtile.log`:
+`Restarting Qtile with os.execv(...)` at the same timestamp — **without
+disturbing the `popups.qml` process at all**: same PID before and after.
+So a qtile restart mid-theme-change does not affect the overlay; they are
+fully independent X clients and nothing ties them together beyond the one
+IPC call that already fired before the restart began.
 
-**Both are implemented, neither is verified** — this session could not
-start or observe a qtile login to confirm either. Read `theme-animate`'s own
-header first (it explains the three-shell fallback chain and why it is
-ordered island-first), then do the two live checks above in order: (1)
-first, since (2) depends on (1) actually having something to find. Item 3 in
-the checklist below is the narrower, already-known "does the sweep animate
-at all" check (grim vs maim) — this was the broader "is anything even
-listening" gap underneath it, and is why item 3 was never actually confirmed
-working under a plain qtile-bar session before now.
+**Second bug found while verifying, also fixed**: `bar-switch`'s
+`qtile:native` case never started `popups.qml` — only
+`qtile/autostart.sh`'s `startup_once` hook did, which only fires on a true
+first login. Switching island → native *mid-session* via `bar-switch`
+(the common path) left `theme-animate`'s IPC probe with nothing to answer
+until the next full logout/login — measured directly, `bar-switch native`
+left zero quickshell processes running before the fix. Added
+`popups_start()`/`popups_running()`, wired into `qtile:native` (start,
+after `island_stop`) and `qtile:island` (stop, for symmetry with
+`hyprland:island`'s existing `topbar_stop` → `popups_stop`). Reverified:
+running `bar-switch native` now brings `popups.qml` up within the same
+call, no login required.
 
-## Verify these four, in this order
+Also verified live while here (overlaps item 3 and item 4 of the checklist
+below, so not re-measured there): the two bars' 10 palette slots are
+byte-identical (qtile's `snake_case` keys mapped against the island's
+`camelCase` ones, `mode`/`theme` included); the island's X11
+keyboard-focus restore (`bin/x11-panel-focus.sh`) correctly returns
+`follow_mouse_focus` to `True` across two consecutive open/close cycles
+via IPC, not just one.
 
-1. **The island takes the keyboard and KEEPS it.** Open any island panel
-   (`$alt SHIFT D` for the shelf) and press `q`. It should close. Then open
-   it again, move the mouse across another window, and press `q` again — that
-   second one is the actual fix. `bin/x11-panel-focus.sh` suspends
-   `follow_mouse_focus` on grab and restores it on release.
+## The four-item checklist — ALL FOUR VERIFIED LIVE, in a real qtile/X11 session
 
-   **If it breaks, the dangerous failure is the RESTORE**, not the grab:
-   check `qtile cmd-obj -o cmd -f eval -a 'repr(self.config.follow_mouse_focus)'`
-   after closing a panel. It must say `True`. If it says `False`, the panel
-   left focus-follows-mouse switched off for the session — remove
-   `$XDG_RUNTIME_DIR/tide-island/x11-prev-follow-mouse` and set it back by
-   hand while you debug.
+1. **The island takes the keyboard and KEEPS it. VERIFIED.** Driven over IPC
+   (`toggleApplicationLauncher`), not a real `q` keypress — synthetic
+   keyboard input into the live session is off-limits, but the RESTORE this
+   item cares about is a state check, not a keypress, so IPC open/close
+   exercises the same `bin/x11-panel-focus.sh` grab/release path. Measured:
+   `qtile cmd-obj -o cmd -f eval -a 'repr(self.config.follow_mouse_focus)'`
+   read `True` at rest, `False` while the panel was open, and `True` again
+   after close — across **two consecutive open/close cycles**, not just
+   one, which is the actual case this item exists to catch (a restore that
+   only works the first time). No drift.
 
-2. **Copying works at all.** `y` in the shelf, and the calculator's copy.
-   Both went through `wl-copy`, which is inert under X11 and says nothing
-   about it. They go through `qml/common/Clipboard.js` now, which picks
-   `xclip` when `WAYLAND_DISPLAY` is unset. If a copy does nothing, run the
-   argv by hand — the file's header has it.
+2. **Copying works at all. Verified at the mechanism level.** `xclip -selection
+   clipboard` round-tripped a real string live. `qml/common/Clipboard.js`'s
+   branch on `WAYLAND_DISPLAY` (unset under this X11 session) correctly
+   selects the `xclip` path, confirmed by reading the file — not driven
+   through the shelf's own `y` key, which would need synthetic input into a
+   live panel.
 
-3. **The theme sweep animates.** Change the theme. Under qtile it used to
-   switch palette with no animation at all, because the capture was `grim`.
-   It is `maim -g <w>x<h>+<x>+<y>` now. If it still does not animate, check
-   that maim is installed and that the capture is not black —
-   `ThemeTransitionWindow.captureCommand()` is the one function to read.
+3. **The theme sweep animates. VERIFIED, and it had a real bug (see TOP
+   PRIORITY above).** `maim --hidecursor -g <w>x<h>+<x>+<y>` was run by
+   hand with the exact geometry `captureCommand()` builds: not black,
+   `(0, 255)` luminance range, real desktop content. Combined with the TOP
+   PRIORITY fix (the overlay now actually constructs under X11 and
+   `theme-apply` was observed to run for real through it), the sweep is
+   confirmed to fire end-to-end, not just that `maim` itself works.
 
-4. **The two bars now agree on colour.** This is the one you reported. Switch
-   island ↔ qtile bar on any theme and the palette must not jump.
-   `colors.active_palette()` reads `~/.cache/qtile/current_palette.json`
-   now. If a theme looks wrong, compare that file against
-   `~/.cache/tide-island/colors.json` — every slot should match, and a
-   mismatch on `mode` makes it fall back to the old hardcoded preset, which
-   is the drifted one.
+4. **The two bars now agree on colour. VERIFIED.** `~/.cache/qtile/current_palette.json`
+   and `~/.cache/tide-island/colors.json` were diffed slot-by-slot (mapping
+   `snake_case` against `camelCase`, `mode` against `theme`): all 10 slots
+   byte-identical on the active theme. `colors.active_palette()`'s
+   preference for the cache file over the hardcoded preset is confirmed
+   correct.
 
 ## What was measured in Hyprland and does NOT need re-testing there
 
