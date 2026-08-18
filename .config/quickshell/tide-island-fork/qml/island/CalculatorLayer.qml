@@ -83,6 +83,60 @@ FocusScope {
     // -1 = not recalling. Walks `history` backwards on Up.
     property int recallIndex: -1
 
+    // ---- THE TAPE SURVIVES A CLOSE ----
+    //
+    // Was a plain property on a panel this shell does not retain, so the
+    // tape died with the panel — and, since a hot reload re-parses this
+    // whole tree, with every edit made to this file too.
+    //
+    // NO JsonAdapter: NEXT-SESSION.md records a crash from FileView +
+    // JsonAdapter on a free-form MAP — loaded clean, logged "Configuration
+    // Loaded", then died. Its own advice is that a LIST is the shape known
+    // to survive, and `history` already is one; `setText(JSON.stringify(...))`
+    // sidesteps the adapter entirely, the same way QdropStore.qml does for
+    // the shelf. Copied rather than shared, because the shelf's version
+    // carries add/remove/pin machinery this tape has no use for — one
+    // function, called from the one place `history` is ever appended to.
+    function persistHistory() {
+        historyFile.writing = true;
+        historyFile.setText(JSON.stringify(root.history));
+        // Re-arm: FileView is a QFileSystemWatcher and atomicWrites replaces
+        // the inode, so a watcher on the old one is a watcher on nothing —
+        // see IslandTheme.qml's note on the same trap.
+        Qt.callLater(function () {
+            historyFile.path = "";
+            historyFile.path = Quickshell.env("HOME") + "/.cache/tide-island/calculator-tape.json";
+            historyFile.writing = false;
+        });
+    }
+
+    FileView {
+        id: historyFile
+        path: Quickshell.env("HOME") + "/.cache/tide-island/calculator-tape.json"
+        watchChanges: true
+        preload: true
+        atomicWrites: true
+        // Does not exist on a machine that has never used the calculator —
+        // a normal first run, not an error.
+        printErrors: false
+        property bool writing: false
+
+        onLoaded: {
+            const s = text().trim();
+            if (s === "")
+                return;
+            try {
+                const parsed = JSON.parse(s);
+                if (Array.isArray(parsed))
+                    root.history = parsed;
+            } catch (e) {
+                // A half-written file is a state, not a reason to lose
+                // whatever is already in memory.
+                console.warn("[calculator] could not parse " + historyFile.path + ": " + e);
+            }
+        }
+    }
+
     // ========================================================================
     //  MODAL, AND IT IS vi's MODEL RUN THE OTHER WAY UP
     // ========================================================================
@@ -339,6 +393,7 @@ FocusScope {
         while (next.length > root.maxHistory)
             next.shift();
         root.history = next;
+        root.persistHistory();
         input.clear();
         root.recallIndex = -1;
     }
