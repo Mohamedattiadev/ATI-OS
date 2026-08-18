@@ -186,6 +186,21 @@ PanelWindow {
         }
 
         // ---- HEADER ----
+        //
+        // PROMPT-NEXT.md item 4 asked whether this surface has the same
+        // fixed-radius-vs-text defect PanelChrome (the island's own chrome)
+        // had. AUDITED, not fixed — no defect found. Against the smallest
+        // popup this shell has (WifiQrPopup, 420x560), the header's x-inset
+        // (popupWidth*0.035 = 14.7px) still clears the 14px corner radius,
+        // and its y-inset (28px) clears it with 2x margin; the footer's
+        // reserved gap (30px, see footerArea below) is more generous still.
+        // Confirmed by screenshot on three sizes — WifiQrPopup (smallest),
+        // VolumePopup (the 940-wide default), CheatsheetPopup — none show
+        // text under the curve. This chrome has no notch morph (PanelChrome's
+        // actual defect was the corner state CHANGING under fixed text
+        // insets), so there was never a state transition here to get wrong.
+        // The report was very likely made under `bar-mode=island`, whose
+        // separate PanelChrome already got this fix (commit 4c15615).
         Item {
             id: head
             x: root.popupWidth * 0.035

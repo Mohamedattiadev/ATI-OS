@@ -200,6 +200,26 @@ Item {
     readonly property real contentY:
         root.headerHeight + root.tabsHeight + root.bodyGap + root.bodyOffset
     readonly property real contentWidth: Math.max(0, root.width - root.padX * 2)
+    // ---- PROMPT-NEXT.md item 4's bottom-padding half, AUDITED ----
+    //
+    // `contentHeight` is `chromeHeight`'s own inverse by construction: a
+    // caller whose `height` is `chrome.chromeHeight + bodyHeight` (the
+    // documented contract above) always gets `contentHeight === bodyHeight`
+    // back out, algebraically, regardless of what `footerExtraHeight` is —
+    // there is no way for this pair to double- or under-count on its own.
+    //
+    // Walked every consumer of `footerExtraHeight` (grep, one hit) and every
+    // panel that draws footer content beyond the plain KeyHint strip, looking
+    // for a caller computing its OWN footer cost out of step with this
+    // formula — which is the shape of bug this file's own comment worried
+    // about. Found none live: SettingsLayer is the sole `footerExtraHeight`
+    // consumer and uses it as designed; NotificationCenterLayer's footer/card
+    // overlap (10 -> 16 px) was already fixed, its own comment says so;
+    // ControlCenterLayer's `chromeFooterCost` looks like a second formula but
+    // is a documented DELTA against a pre-existing px(320) baseline, not a
+    // competing derivation. Confirmed on screen too — control centre and
+    // Island Settings both screenshotted with their footer hints clear of the
+    // bottom corner. Nothing to fix here tonight.
     readonly property real contentHeight:
         Math.max(0, root.height - root.contentY - root.gap - root.footerHeight)
 
