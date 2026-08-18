@@ -1281,6 +1281,12 @@ Scope {
         }
     }
 
+    // The draw-submap hint (DrawModeHudWindow.qml) used to live here.
+    // Removed with the submap itself — $mod SHIFT W now toggles wayscriber
+    // (binds.conf), a standalone Wayland-native annotation daemon with its
+    // own status bar and its own window; this shell has nothing left to
+    // draw a hint for.
+
     // The ring used to need its own IslandTheme instance here, because
     // DynamicIslandWindow's was an object with an id and ids are
     // file-scoped. IslandTheme is a singleton now, so there is one palette,

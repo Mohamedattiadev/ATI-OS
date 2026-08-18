@@ -76,7 +76,6 @@ hint_for() {
         rofi) printf 'a anki · b bluetooth · c island theme · C theme · d docs · e translate\nf config · h hub · i screenshot · j workspaces · k kill · K close window\nl light · m man · n wifi · o note · p pass · q logout · r record\ns spell · S wifi qr · t todo · v pdf · w wallpaper · x notif\ny youtube · z shared · 1-9 workspace' ;;
         resize)      printf 'h j k l  resize · escape/q exit' ;;
         lang)        printf 'e english · a arabic · t turkish · d german' ;;
-        draw)        printf 'gromit-mpx drawing · escape/q exit' ;;
         passthrough) printf 'ALL keys go to the app · $alt F12 to exit' ;;
         *)           printf 'escape or q to exit' ;;
     esac
