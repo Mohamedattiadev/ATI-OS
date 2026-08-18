@@ -733,6 +733,55 @@ user changed workspace or theme underneath a running test.
 
 ---
 
+### 15. wayscriber's radial tool menu — open on right-click instead of middle-click — CLOSED
+
+Requested: "I want to open this circle of tools with click right" — the
+radial menu is a real wayscriber feature (README: "Radial menu at cursor
+(Middle-click): quick tool/color selection... hold + flick toward a wedge
+to commit instantly").
+
+**CLOSED.** Real config key, not guessed — `config.example.toml`
+(devmobasa/wayscriber) has `[ui] radial_menu_mouse_binding = "middle" |
+"right" | "disabled"`. Set to `"right"` in
+`~/.config/wayscriber/config.toml`.
+
+**One thing worth knowing, not fixed because it wasn't asked for:** the
+README's own controls table lists right-click as radial-menu DISMISS
+while it's open ("Left-click select; Right-click/Escape dismiss"), and
+right-click is also the idle context-menu button and the drawing
+cancel-action button elsewhere in the app. Moving OPEN onto right-click
+does not touch those other right-click roles — wayscriber's own docs
+don't say what closes the radial menu once open-on-right-click is set (a
+second right-click while it's up, most likely, same as the default
+middle-click's own open/close toggle) — worth a real click-test next
+session rather than assumed.
+
+(Same session: `wayscriber` — the sibling gromit-mpx replacement, see
+this file's git history around 2026-08-18 for the fuller trail —
+confirmed **X11: not supported** per its own README platform table
+(Wayland/layer-shell only, GNOME via xdg-shell/portal fallback) AND its
+own systemd unit's ExecStartPre, which refuses to start at all without a
+live `$WAYLAND_DISPLAY` socket. It is MIT-licensed and open source, but
+"add X11" is not a config flag — it draws through `wlr-layer-shell` and
+GTK4-layer-shell throughout, so an X11 backend would mean writing a whole
+second implementation (own override-redirect window, own
+XGrabPointer/XGrabKeyboard, own XShape click-through), comparable in
+scope to the existing Wayland backend. Not attempted.
+**CLOSED without touching wayscriber at all**: `.config/qtile/config.py`
+already had a complete, never-removed `Draw-Mode` chord wired straight to
+gromit-mpx — `w` toggle, `c` clear, `z` undo, `r` redo, `v` visibility,
+self-starting the daemon via `enter_chord` if it is not already running
+(`ensure_gromit_and_toggle`, ~line 3634). This session's gromit removal
+only ever touched `.config/hypr` (autostart.conf, binds.conf,
+submaps.conf, rules.conf); the qtile side and the gromit-mpx package
+itself were never touched, so qtile/X11's own draw mode should already
+work as-is — a real X11 session has none of Hyprland's XWayland-proxy
+problem. Not verified live this session (would mean switching the
+desktop out of Hyprland mid-session); worth a real chord test the next
+time the qtile session is up.)
+
+---
+
 ## STANDING CONSTRAINTS
 
 * **Never leave the session without a bar.** `bar-switch` exists to protect
