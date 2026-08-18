@@ -1,0 +1,7 @@
+# wayscriber's own timestamped backups of config.toml — it writes one of
+# these on its own before any of its three narrow self-editors (shortcut
+# edit/unbind/reset, preset save/clear, quick-color recolor) touch the
+# real file. Per-edit noise, not config.
+config.toml.*.bak
+# A live lock file while the daemon runs, not config.
+config.toml.lock

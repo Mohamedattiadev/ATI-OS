@@ -1,0 +1,328 @@
+# wayscriber — trimmed down from the packaged defaults.
+#
+# Reported: "the ui too of the opening app is too big and not looking
+# good, reduce the size and hide the non-important extra things". Every
+# key below is real, read from this project's own config.example.toml
+# (github.com/devmobasa/wayscriber) rather than guessed — nothing here is
+# a made-up option name.
+
+# ---- GROMIT KEYMAP PARITY ----
+#
+# Reported: "the visibility toggle clear and etc not working, I want the
+# same keymaps of the gromit". gromit's draw-submap had five keys — C
+# clear, R redo, V visibility, W toggle grab, Z undo. W is handled outside
+# the overlay entirely (Hyprland's own $mod SHIFT W runs
+# `wayscriber --daemon-toggle`, binds.conf) and needs nothing here. The
+# other four, checked against wayscriber's OWN default keybindings
+# (config.example.toml) rather than assumed:
+#
+#   C, Z  were genuinely unbound as bare letters — clear_canvas defaulted
+#         to E only, undo to Ctrl+Z only — which is why pressing them did
+#         nothing rather than erroring: nothing owned those keys yet.
+#   R     collides with a REAL existing default: bare R is set_color_red.
+#         Moved that shortcut to Ctrl+R so plain R is free for redo,
+#         rather than binding both to R and leaving it ambiguous which
+#         fires.
+#   V     has NO equivalent action in wayscriber. gromit's -v hides/shows
+#         the drawn strokes while KEEPING the pointer grab — a pure
+#         visibility toggle independent of drawing capability. wayscriber
+#         has nothing that does that; the nearest REAL action is
+#         toggle_light_mode (light passthrough — lets clicks/keys reach
+#         the app underneath while the overlay stays visible), which is a
+#         different behavior, not a hide toggle. Bound here anyway as the
+#         closest available thing, not a claim that it behaves the same —
+#         flagged so a second report of "V still isn't right" is expected
+#         and not a fresh bug. select_selection_tool's own default V is
+#         moved off to make room; Alt+drag still selects, per the README.
+[keybindings]
+clear_canvas = ["E", "C"]
+undo = ["Ctrl+Z", "Z"]
+redo = ["Ctrl+Shift+Z", "Ctrl+Y", "R"]
+set_color_red = ["Ctrl+R"]
+select_selection_tool = []
+toggle_light_mode = ["F6", "V"]
+# Requested: "s should take screenshot for the things I wrote... not just
+# the fullscreen without the text" — the whole screen INCLUDING the drawn
+# ink, not a bare desktop capture. `capture_file_full` is wayscriber's own
+# real action for exactly that (config.example.toml — the app's built-in
+# "save the whole screen as PNG" capture, saved to [capture].save_directory,
+# ~/Pictures/Wayscriber by default): it captures what is actually on
+# screen, overlay included, which is the entire point of an annotate tool's
+# own capture feature. `S` was unbound as a bare letter by default (every
+# quick-color letter — R G B Y O P W K — is already taken; S was not one
+# of them). Kept Ctrl+S too rather than replacing it.
+capture_file_full = ["Ctrl+S", "S"]
+
+[ui]
+# Requested: "I want to open this circle of tools with click right" — the
+# radial tool menu, default trigger middle-click. Real config key, not
+# guessed: config.example.toml documents "middle" | "right" | "disabled".
+# NOTE the asymmetry this does not fix: the README's own controls table
+# lists right-click as the radial menu's DISMISS button while it is open,
+# and right-click is also the idle context-menu / drawing cancel-action
+# button elsewhere in the app. This line only moves OPEN onto right-click;
+# it does not touch those other roles, and what closes the menu once open
+# this way is not stated in the docs — worth an actual click-test.
+radial_menu_mouse_binding = "right"
+
+# The "Step 1/6 · Enable background mode?" card that appeared on first
+# toggle — the guided tour. Off entirely rather than skipped once; it
+# still stays reachable manually (the README says so) if ever wanted back.
+show_onboarding_hints = false
+
+# The compositor-capabilities toast that also showed at startup.
+show_capabilities_warning = false
+
+# ---- STATUS BAR: keep only what answers "what tool, what color, how do
+# I get help" — drop the rest (board/page badges are for the boards
+# feature, which is not in use; the about/version segment is not needed
+# every session).
+show_status_board_badge = false
+show_status_page_badge = false
+show_status_about = false
+active_output_badge = false
+show_status_context_indicators = false
+
+[ui.status_bar_style]
+# Reported: the bottom status bar is still "a bit big". Real keys, not
+# guessed — config.example.toml's packaged defaults are font_size 21.0,
+# padding 15.0 (matches the noticeably tall bar in the screenshot).
+font_size = 14.0
+padding = 8.0
+
+[presets]
+
+[presets.slot_1]
+tool = "pen"
+color = [
+    46,
+    194,
+    126,
+]
+size = 3.786266245625236
+eraser_kind = "Circle"
+eraser_mode = "brush"
+marker_opacity = 0.32
+fill_enabled = false
+font_size = 53.465911865234375
+text_background_enabled = false
+arrow_length = 20.0
+arrow_angle = 26.0
+arrow_head_at_end = true
+polygon_sides = 5
+show_status_bar = true
+
+[ui.toolbar]
+# "simple" keeps Select/Pen/Marker/Step marker/Eraser inline and puts
+# everything else one click behind the Shape picker — the "regular"
+# default (which was showing, per the screenshot) has line+arrow inline
+# too and reads as a longer, busier strip for no gain on this desktop.
+layout_mode = "simple"
+
+# Icons over text labels — same information, roughly half the width per
+# button, which is most of "too big" right there.
+use_icons = true
+
+# The toolbar's own icons+layout scale, not the OS/monitor scale. 0.8
+# rather than the packaged 1.0 default.
+scale = 0.8
+
+# Comes up small (a single 44px round chip) rather than the full strip;
+# F2 still cycles full <-> micro <-> hidden on demand.
+top_display_mode = "micro"
+
+[presets.slot_1.tool_settings]
+eraser_size = 12.0
+
+[presets.slot_2]
+tool = "pen"
+color = [
+    46,
+    194,
+    126,
+]
+size = 3.786266245625236
+eraser_kind = "Circle"
+eraser_mode = "brush"
+marker_opacity = 0.32
+fill_enabled = false
+font_size = 53.465911865234375
+text_background_enabled = false
+arrow_length = 20.0
+arrow_angle = 26.0
+arrow_head_at_end = true
+polygon_sides = 5
+show_status_bar = true
+
+[presets.slot_1.tool_settings.pen]
+color = [
+    46,
+    194,
+    126,
+]
+size = 3.786266245625236
+
+[presets.slot_2.tool_settings]
+eraser_size = 12.0
+
+[presets.slot_1.tool_settings.line]
+color = [
+    245,
+    51,
+    63,
+]
+size = 3.0
+
+[presets.slot_2.tool_settings.pen]
+color = [
+    46,
+    194,
+    126,
+]
+size = 3.786266245625236
+
+[presets.slot_1.tool_settings.rect]
+color = [
+    245,
+    51,
+    63,
+]
+size = 3.0
+
+[presets.slot_2.tool_settings.line]
+color = [
+    245,
+    51,
+    63,
+]
+size = 3.0
+
+[presets.slot_1.tool_settings.ellipse]
+color = [
+    245,
+    51,
+    63,
+]
+size = 3.0
+
+[presets.slot_2.tool_settings.rect]
+color = [
+    245,
+    51,
+    63,
+]
+size = 3.0
+
+[presets.slot_1.tool_settings.arrow]
+color = [
+    245,
+    51,
+    63,
+]
+size = 3.0
+
+[presets.slot_2.tool_settings.ellipse]
+color = [
+    245,
+    51,
+    63,
+]
+size = 3.0
+
+[presets.slot_1.tool_settings.blur]
+color = [
+    245,
+    51,
+    63,
+]
+size = 3.0
+
+[presets.slot_2.tool_settings.arrow]
+color = [
+    245,
+    51,
+    63,
+]
+size = 3.0
+
+[presets.slot_1.tool_settings.marker]
+color = [
+    235,
+    0,
+    0,
+]
+size = 3.0
+
+[presets.slot_2.tool_settings.blur]
+color = [
+    245,
+    51,
+    63,
+]
+size = 3.0
+
+[presets.slot_1.tool_settings.step_marker]
+color = [
+    245,
+    51,
+    63,
+]
+size = 19.2
+
+[presets.slot_2.tool_settings.marker]
+color = [
+    235,
+    0,
+    0,
+]
+size = 3.0
+
+[presets.slot_1.drag_tools.left]
+drag_tool = "pen"
+shift_drag_tool = "line"
+ctrl_drag_tool = "rect"
+ctrl_shift_drag_tool = "arrow"
+tab_drag_tool = "ellipse"
+
+[presets.slot_2.tool_settings.step_marker]
+color = [
+    245,
+    51,
+    63,
+]
+size = 19.2
+
+[presets.slot_1.drag_tools.right]
+drag_tool = "default"
+shift_drag_tool = "default"
+ctrl_drag_tool = "default"
+ctrl_shift_drag_tool = "default"
+tab_drag_tool = "default"
+
+[presets.slot_2.drag_tools.left]
+drag_tool = "pen"
+shift_drag_tool = "line"
+ctrl_drag_tool = "rect"
+ctrl_shift_drag_tool = "arrow"
+tab_drag_tool = "ellipse"
+
+[presets.slot_1.drag_tools.middle]
+drag_tool = "default"
+shift_drag_tool = "default"
+ctrl_drag_tool = "default"
+ctrl_shift_drag_tool = "default"
+tab_drag_tool = "default"
+
+[presets.slot_2.drag_tools.right]
+drag_tool = "default"
+shift_drag_tool = "default"
+ctrl_drag_tool = "default"
+ctrl_shift_drag_tool = "default"
+tab_drag_tool = "default"
+
+[presets.slot_2.drag_tools.middle]
+drag_tool = "default"
+shift_drag_tool = "default"
+ctrl_drag_tool = "default"
+ctrl_shift_drag_tool = "default"
+tab_drag_tool = "default"
