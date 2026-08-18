@@ -3,6 +3,25 @@ import QtQuick
 import Quickshell.Io
 import IslandBackend
 
+// PROMPT-NEXT.md item 5's "362 images decoding synchronously" suspicion for
+// the wallpaper picker's open-glitch: AUDITED, and it is not that.
+// `refreshCache()` below hands off to `SystemServices.generateWallpaperThumbnail`
+// — a call into the compiled IslandBackend — and returns immediately; the
+// result arrives later through `onWallpaperThumbnailFinished`, a signal, not
+// a blocking call. Nothing here runs on the QML/JS thread per frame. Each
+// PathView delegate owns one of these, and PathView itself only instantiates
+// delegates for the visible window (`pathItemCount: 5` in
+// WallpaperPickerLayer.qml), not all 362 at once.
+//
+// What panel-glitch-frames.py (item 2) actually measured — content still
+// moving ~90 frames (1.5s) after the shape settled, the longest tail of any
+// panel sampled — is consistent with five thumbnails each taking a real,
+// separate decode job and painting in as they finish, one after another,
+// rather than a single blocking stall. That is a visible "images popping in"
+// roughness, not the mechanical shape/content race item 2 fixed elsewhere,
+// and it was left alone tonight: a skeleton/placeholder treatment while a
+// thumbnail is in flight is a real design addition, not a bug fix, and this
+// session ran out of room to design it.
 Item {
     id: root
 

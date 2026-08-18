@@ -402,6 +402,18 @@ FocusScope {
     // box does not require a filter behind it, and turning this into one
     // because the other two panels filter would be copying an appearance and
     // paying for it in the one place the cost is real.
+    // PROMPT-NEXT.md item 5's first bullet asked for "hjkl + /-gated search,
+    // exactly as ThemePickerLayer.qml already does" — read as written, it
+    // does not match either panel's CURRENT code any more. Both moved to the
+    // rofi-style ALWAYS-ON field (this comment block, above) before that
+    // prompt was written down; there is no `/`-gated mode left in either
+    // file to copy, and bare hjkl cannot coexist with a field that is always
+    // capturing keystrokes — h/l/r are all letters you'd otherwise type into
+    // a filename. What both panels give you instead: Ctrl+H/J/K/L (via the
+    // shared PanelSearchField, same component both use), arrows, Tab/
+    // Backtab, and Ctrl+R for the random jump this carousel needs at 362
+    // entries. Audited rather than rebuilt — this already IS "the same shape
+    // ThemePickerLayer has," just not the shape the prompt's text described.
     readonly property string searchQuery: searchField.query
     readonly property bool searching: root.searchQuery !== ""
     property int searchMatches: 0

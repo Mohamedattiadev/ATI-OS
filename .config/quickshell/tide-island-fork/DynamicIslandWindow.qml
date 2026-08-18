@@ -4699,6 +4699,14 @@ PanelWindow {
                 case "notification_center":
                     return Metrics.px(410);
                 case "wallpaper_picker":
+                    // PROMPT-NEXT.md item 5 flagged this as possibly "too
+                    // big", same box as application_launcher, by analogy to
+                    // theme_picker's OWN measured 1100 -> 760 fix (empty
+                    // background behind under-filled tiles). Screenshotted
+                    // to check rather than assumed: at 1100 the five visible
+                    // carousel thumbnails plus their captions fill the row
+                    // with an ordinary chrome-padding margin either side, not
+                    // theme_picker's kind of dead space. Left at 1100.
                 case "application_launcher":
                     return Metrics.px(1100);
                 case "display_panel":
