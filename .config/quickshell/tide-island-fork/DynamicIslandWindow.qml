@@ -2800,6 +2800,25 @@ PanelWindow {
                 if (islandState === "control_center")
                     smartRestoreState();
                 return;
+            // FORK: PROMPT-NEXT.md item 10's follow-on — "since u will add
+            // the player to control center no need for the click right one
+            // which opens the player make it open the calendar the right
+            // click ok." Same shape as every other pair above; `showCalendar()`
+            // already existed (`toggleCalendarWindow()` uses it), this is
+            // only the missing `case` this switch never had for it.
+            case "toggleCalendar":
+                if (islandState === "calendar")
+                    smartRestoreState();
+                else
+                    islandContainer.showCalendar();
+                return;
+            case "openCalendar":
+                islandContainer.showCalendar();
+                return;
+            case "closeCalendar":
+                if (islandState === "calendar")
+                    smartRestoreState();
+                return;
             case "toggleOverview":
                 root.toggleOverviewEverywhere();
                 return;
