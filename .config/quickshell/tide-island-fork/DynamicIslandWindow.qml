@@ -432,6 +432,11 @@ PanelWindow {
         // See the note beside borderFocusProcess: the window borders must not
         // stay dimmed if the shell went away with a panel open.
         borderFocusProcess.run(false);
+        // FORK: PanelChrome's top inset needs the corner state at first
+        // paint too, not only on the next change — see the note beside
+        // `notchUnround` for why this pushes into Metrics.js rather than
+        // binding.
+        Metrics.setNotchProgress(root.notchUnround);
     }
 
     // ---- THE ZONE MOVED OUT TO A SEPARATE SURFACE ----
@@ -815,6 +820,16 @@ PanelWindow {
 
     readonly property real notchUnround: Math.max(0, Math.min(1, root.effectiveNotchProgress * 2))
     readonly property real notchFlareProgress: Math.max(0, Math.min(1, root.effectiveNotchProgress * 2 - 1))
+
+    // FORK: PanelChrome's top inset follows the capsule's ACTUAL corner
+    // state, not raw notch progress. `notchUnround` is what drives
+    // `topLeftRadius`/`topRightRadius` on mainCapsule below — it reaches 1
+    // (fully square) at HALF of effectiveNotchProgress, phase 1 of the
+    // two-phase morph — so it is also the value that tells the chrome when
+    // the corner has actually stopped being round. Pushed through
+    // Metrics.js because `.pragma library` JS cannot bind to a QML
+    // property; see chromeTop() there for why one push serves every panel.
+    onNotchUnroundChanged: Metrics.setNotchProgress(notchUnround)
 
     // The morph rides the same generated spring as every other geometry
     // change in the shell — see Motion.js. It has to: a shape that

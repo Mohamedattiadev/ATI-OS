@@ -269,8 +269,41 @@ function chromePadX()    { return pad(18); }   // 18 — the content inset
 function chromeHeader()  { return pad(34); }   // 33 — title baseline to body
 function chromeFooter()  { return pad(26); }   // 25 — the key-hint strip
 function chromeGap()     { return pad(8);  }   //  8 — body to footer
-function chromeTop()     { return pad(12); }   // 12 — title's own baseline
 function chromeBodyGap() { return pad(4);  }   //  4 — header rule to body
+
+// ---- THE TOP INSET FOLLOWS THE SHAPE, NOT A CONSTANT ----
+//
+// Reported: "the padding of the top part of all popup when notch disabled is
+// bad, needs to be a bit bigger since the radius comes over the text."
+//
+// `chromeTop()` used to be a flat pad(12) regardless of which form the
+// capsule was wearing. With the notch ON the top corners are square and
+// flush against the screen edge, so pad(12) is right — that is the number
+// every panel was measured against. With the notch OFF the same capsule has
+// ROUNDED top corners at the panel's own `targetRadius` (DynamicIslandWindow,
+// ~px(34) for the sixteen panels that share it), and a title starting
+// `chromePadX()` in from the edge sits inside the corner's own arc.
+//
+// `notchProgress` (DynamicIslandWindow's `effectiveNotchProgress`, 1 = flush
+// notch, 0 = floating pill) is a `.pragma library` module, so it cannot bind
+// to a QML property — it is PUSHED in through `setNotchProgress()` instead,
+// once, from the one file that owns the value, and read back through a
+// plain module variable. A `.pragma library` file is shared across every
+// import in the engine, which is exactly what makes one push serve every
+// PanelChrome instance without a second property to wire per panel.
+//
+// Defaults to 1 — today's chromeTop() — so a caller that never pushes a
+// value (the standalone popups host, which has no notch concept at all)
+// is byte-for-byte what this file already did.
+var _notchProgress = 1;
+function setNotchProgress(v) { _notchProgress = v; }
+function chromeTop() {
+    // px(10) at fully floating, 0 at fully flush, interpolated the same way
+    // every other notch-driven number in DynamicIslandWindow is: one value,
+    // no second animation. Verified against a screenshot A/B on the control
+    // centre at notch on and off — see PROMPT-NEXT.md item 7.
+    return pad(12) + px(10) * (1 - _notchProgress);
+}
 
 // Everything the chrome costs vertically on a panel with a standard header
 // and no tabs, which is eight of the nine. A panel's own height is then
