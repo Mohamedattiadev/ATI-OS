@@ -823,7 +823,17 @@ PanelWindow {
     // that one number by (1 - detachProgress) makes every one of them follow
     // without a single new consumer — which is also the only way to be sure
     // none was missed.
-    property bool detachedPanelActive: islandContainer.islandState === "settings"
+    // PROMPT-NEXT.md item 13 REVERSES the request on record just above,
+    // verbatim: "make this setting when open a bit smaller height and width
+    // and make it toggleble and the one with alt+7 make it appears as
+    // popup like the other popups not appearing in middle of the screen fix
+    // this" — against the comment block's own recorded ask, "the size of
+    // the island setting should be centered and float and a bit smaller
+    // when it opens". Both are genuine, on record, in that order; this is
+    // a change of mind, not a contradiction to resolve by picking one. Do
+    // NOT "fix" this back to `islandState === "settings"` — read this note
+    // and the one above it first.
+    property bool detachedPanelActive: false
     property real detachProgress: root.detachedPanelActive ? 1 : 0
 
     Behavior on detachProgress {
@@ -5037,22 +5047,23 @@ PanelWindow {
                                    root.screen.height - Metrics.px(60))
                         : Metrics.px(190);
                 case "settings":
-                    // FORK: the height half of "a bit smaller when it opens",
-                    // and the half that actually bites.
+                    // FORK: the height half of "a bit smaller", still true
+                    // after item 13 reversed the DETACHED half of this
+                    // panel's story (see `detachedPanelActive`) — this cap
+                    // predates that reversal and is kept because it already
+                    // does what was asked, not because the panel still
+                    // floats centred. The list is 25 rows at Metrics.px(30),
+                    // so `preferredHeight` is ~745 before chrome — past this
+                    // 768 px panel either way, so this cap IS the height,
+                    // not a rarely-hit safety net.
                     //
-                    // The list is 25 rows at Metrics.px(30), so
-                    // `preferredHeight` is ~745 before chrome — past this
-                    // 768 px panel either way. Which means the cap is not a
-                    // safety net here, it IS the height, and the old
-                    // `screen.height - 60` made the panel 713 of 768: a
-                    // centred surface with 27 px of desktop above and below
-                    // it, i.e. not visibly floating at all.
-                    //
-                    // 0.85 of that same cap rather than a new literal, so the
-                    // "15% smaller" stays legible as a decision and still
-                    // tracks the screen it is measured against. On this panel:
-                    // 713 -> 606, centred at y 81. The list scrolls (it
-                    // already had to), and IslandScrollBar says so.
+                    // 0.85 of `screen.height - 60` (the plain headroom
+                    // clamp every other notch-anchored panel uses) rather
+                    // than a new literal, so "15% smaller" stays legible as
+                    // a decision. Measured against the now-anchored form:
+                    // 672x606, in the same range as the cheatsheet's
+                    // 1012x639 and clearly smaller than the old detached
+                    // 730x713. The list scrolls, and IslandScrollBar says so.
                     return settingsLoader.item
                         ? Math.min(settingsLoader.item.preferredHeight,
                                    Math.round((root.screen.height - Metrics.px(60)) * 0.85))
