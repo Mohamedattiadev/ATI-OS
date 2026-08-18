@@ -11,8 +11,10 @@ Reported, and called out as important on its own, separate from the four-item
 checklist below: *"i want the hyperland theme and wallpaper chaning thing
 animaiton and logic works the same in qtile — this is too important."*
 
-**Diagnosed from the Hyprland side, NOT fixed, and NOT yet run under qtile —
-this is the actual next-session task, not just item 3 below.** The palette
+**IMPLEMENTED in commit `3a0f509`, but NOT YET VERIFIED — this session
+wrote the fix from the Hyprland side and could not start or observe an
+actual qtile session to confirm it. Verifying this, live, is the actual
+next-session task, not just item 3 below.** The palette
 logic and the wallpaper-backend logic are already shared and already qtile-
 aware (`theme-apply`/`theme-wallpaper` branch on `$XDG_SESSION_TYPE` /
 `WAYLAND_DISPLAY` and already call `xwallpaper --stretch` on X11 — see
@@ -22,7 +24,7 @@ overlay itself, already has an X11 wrapper
 branches to `maim` when `WAYLAND_DISPLAY` is unset. **None of that is the
 gap.** Two concrete things are:
 
-1. **Nothing hosts the overlay under qtile's own bar.** `theme-animate`
+1. **Nothing hosted the overlay under qtile's own bar.** `theme-animate`
    (`~/.local/bin/theme-animate`) is the shared entry point every wallpaper/
    theme change is supposed to go through — it tries `tide
    applyThemeAnimated <mode>` over IPC against the island, then against
@@ -30,49 +32,43 @@ gap.** Two concrete things are:
    neither answers. Under Hyprland, `hypr/scripts/topbar.sh` starts
    `popups.qml` (and `treetab.qml`) alongside the topbar itself — see its
    lines ~111-128 — specifically so the overlay has somewhere to live even
-   when the island isn't the active bar. **`qtile/autostart.sh` has no
-   equivalent call.** It starts the island's full `island.sh` only when
-   `~/.cache/bar-mode` says `island` (line 84); when qtile wears its own bar
-   — the ordinary case — no Quickshell process runs at all, so
-   `theme-animate`'s IPC probe fails both ways and every theme/wallpaper
-   change under qtile's own bar is a hard, non-animated cut. Likely fix:
-   have `qtile/autostart.sh` also start `popups.qml`, unconditionally or at
-   least whenever bar-mode is not already `island` — mirroring
-   `topbar.sh`'s own reasoning. Open question to verify live, not assumed:
-   whether an idle `popups.qml` instance sitting alongside qtile's own bar
-   causes any visible or resource conflict — it should not, since qtile
-   still owns its own popups (see next point) and nothing else calls
-   `popups.qml`'s other IPC targets under qtile, but "should not" is not
-   "measured".
+   when the island isn't the active bar. `qtile/autostart.sh` had no
+   equivalent call. **FIXED in `3a0f509`:** it now starts `popups.qml`
+   (idempotently, same argv-equality guard `topbar.sh` uses) in the `else`
+   branch of the bar-mode check, whenever `bar-mode` is not `island`. Verify
+   live: log in with `bar-mode` away from `island`, confirm exactly one
+   `quickshell -p …/popups.qml` process exists (`pgrep -af
+   'quickshell.*popups.qml'`), and confirm it costs nothing visible — no
+   window, no bar, qtile's own popups still look and behave exactly as
+   before (their keybindings still call the Python ones directly; this
+   process only answers `tide applyThemeAnimated` over IPC).
 
-2. **`qtile/popups/WallpaperPopup.py` calls `theme-apply` directly**, not
-   `theme-animate` — see its `_bg()` closure, ~line 394-419: it runs
-   `xwallpaper --stretch` itself, then `subprocess.Popen(["theme-apply",
-   "wal"], …)` when the active mode is `wal`. This is the exact class of bug
-   `theme-animate`'s own header warns about — "every caller that ran
-   theme-apply directly therefore bypassed the animation entirely" — and it
-   means even fixing (1) above is not sufficient by itself: this call site
-   needs to become `theme-animate wal` (or the wallpaper path needs to go
-   through something equivalent to `hypr/scripts/wallpaper-set.sh`, which
-   already does this correctly on the Hyprland side — compare the two files
-   directly, `wallpaper-set.sh` is the one that already does what
-   `WallpaperPopup.py` needs to do). Note the existing comment just above it
-   at line 380-384: the popup is closed and qtile itself gets RESTARTED as
-   part of `theme-apply` (X11/qtile-specific — Hyprland does not restart on
-   a theme change), which is a real interaction to check against the overlay
-   rather than assume is harmless: does a qtile restart mid-freeze affect a
-   `popups.qml` process that is a separate Quickshell instance, or does
-   anything tie the two together that is not obvious from reading either
-   file alone?
+2. **`qtile/popups/WallpaperPopup.py` called `theme-apply` directly**, not
+   `theme-animate` — its `_bg()` closure, ~line 394-419: it runs
+   `xwallpaper --stretch` itself, then applied the palette directly when the
+   active mode is `wal`. This was the exact class of bug `theme-animate`'s
+   own header warns about — "every caller that ran theme-apply directly
+   therefore bypassed the animation entirely" — so even (1) above was not
+   sufficient by itself. **FIXED in `3a0f509`:** that call is now
+   `["theme-animate", "wal"]`. Verify live: pick a new wallpaper while a
+   `wal`-mode theme is active and confirm the circular reveal actually
+   plays, not just that the wallpaper changes. Also check the interaction
+   the surrounding comment (line ~380-384) calls out: qtile itself gets
+   RESTARTED as part of `theme-apply`/`theme-animate`'s work in this mode
+   (X11/qtile-specific — Hyprland does not restart on a theme change) — does
+   that restart, happening mid-freeze, affect the separate `popups.qml`
+   process hosting the overlay, or does anything tie the two together that
+   was not obvious from reading either file alone?
 
-**Confirm both are real before touching code** — read `theme-animate`'s own
+**Both are implemented, neither is verified** — this session could not
+start or observe a qtile login to confirm either. Read `theme-animate`'s own
 header first (it explains the three-shell fallback chain and why it is
-ordered island-first), then reproduce the "no animation under qtile's own
-bar" symptom with `bar-mode` set away from `island`, THEN fix (1), reproduce
-again, THEN fix (2). Item 3 in the checklist below is the narrower, already-
-known "does the sweep animate at all" check (grim vs maim) — this is the
-broader "is anything even listening" gap underneath it, and it is why item 3
-was never actually confirmed working under a plain qtile-bar session.
+ordered island-first), then do the two live checks above in order: (1)
+first, since (2) depends on (1) actually having something to find. Item 3 in
+the checklist below is the narrower, already-known "does the sweep animate
+at all" check (grim vs maim) — this was the broader "is anything even
+listening" gap underneath it, and is why item 3 was never actually confirmed
+working under a plain qtile-bar session before now.
 
 ## Verify these four, in this order
 
