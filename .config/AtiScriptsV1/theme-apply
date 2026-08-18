@@ -1121,6 +1121,19 @@ sys.exit(0 if 0.2126*f(r)+0.7152*f(g)+0.0722*f(b) >= 0.5 else 1)
   _term_opacity=0.92
 fi
 
+# Session-agnostic (this block runs on every mode, not just under
+# Hyprland — unlike gen_hypr_colors' colors.conf, which is Hyprland-only
+# syntax). Written so qtile's OWN terminal spawn (myTerm in config.py) can
+# read the same number a NEWLY opened kitty should start at, rather than
+# only already-open sockets getting it via the loop below. Without this,
+# a kitty spawned under qtile after this script last ran starts at
+# kitty.conf's static background_opacity (0.95, effectively opaque) and
+# only catches up on the NEXT theme change — measured live: qtile's
+# myTerm carried no -o override at all before this, so its terminals were
+# never glassy regardless of picom's blur.
+mkdir -p ~/.cache/qtile
+echo "$_term_opacity" >~/.cache/qtile/term_opacity
+
 for sock in "${XDG_RUNTIME_DIR:-/nonexistent}"/kitty-* /tmp/kitty-*; do
   [[ -S "$sock" ]] || continue
   timeout 1 kitty @ --to "unix:$sock" set-colors --all --configured \

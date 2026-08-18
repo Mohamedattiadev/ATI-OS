@@ -340,9 +340,32 @@ def chord_chip_label(name):
     return CHORD_CHIP_LABELS.get(name, (name or "").upper())
 
 
-myTerm = "kitty"  # My terminal of choice
+def _term_opacity():
+    """The same glass opacity Hyprland's $term carries, read from the
+    cache file theme-apply now writes on every theme change (session-
+    agnostic — see theme-apply's _term_opacity block). Previously myTerm
+    had no -o override at all, so a freshly spawned kitty under qtile
+    started at kitty.conf's static 0.95 (effectively opaque) no matter
+    what picom's blur was doing behind it — "the terminal glassy... same
+    like the one in hyperland" was reported against exactly that gap.
+    qtile restarts on every theme-apply run (see theme-apply's
+    smooth_restart call), so this is re-read fresh each time rather than
+    cached stale across a theme change.
+    """
+    try:
+        with open(os.path.expanduser("~/.cache/qtile/term_opacity")) as f:
+            return f.read().strip()
+    except Exception:
+        return "0.65"
+
+
+# kitty.conf's dynamic_background_opacity is what lets set-background-opacity
+# retune an already-open window later; the -o flag here only sets the
+# STARTING value, matching binds.conf's `$term = kitty -o
+# background_opacity=$term_opacity` on the Hyprland side.
+myTerm = f"kitty -o background_opacity={_term_opacity()}"  # My terminal of choice
 my2ndTerm = "alacritty"  # My terminal of choice
-myFullScreenTerm = "kitty --start-as=fullscreen"
+myFullScreenTerm = f"kitty -o background_opacity={_term_opacity()} --start-as=fullscreen"
 home = os.path.expanduser("~")
 user = (os.environ.get("USER") or os.environ.get("LOGNAME") or "").upper()
 todos_dir = os.path.expanduser(f"~/{user}TODOS")
