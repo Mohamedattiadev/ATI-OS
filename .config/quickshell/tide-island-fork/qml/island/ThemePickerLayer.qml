@@ -98,18 +98,18 @@ FocusScope {
     // screen is indistinguishable from a stuck keyboard, and the count is
     // what separates "no such theme" from "you typo'd".
     //
-    // ---- THE FIELD IS ALWAYS THERE NOW ----
+    // ---- BACK TO A MODE, ON REQUEST ----
     //
-    // `searching` used to be a MODE: `/` opened it, and until you pressed
-    // that key there was no field on screen and letters were motions. That
-    // is vi's search, and what was asked for is rofi's — "the power popop
-    // theme popup and some other popups need searchh bar like its rofi
-    // one" — which has no mode at all. The box is there, it has the
-    // keyboard, and you filter by typing into it like any other box.
-    //
-    // The property survives as a derived one because the chrome's status
-    // clause and the empty-grid message both want "is there a query", and
-    // that question still has a useful answer.
+    // This was the rofi-style always-on field for a while — "the power
+    // popop theme popup and some other popups need searchh bar like its
+    // rofi one" — and then explicitly asked back the other way: "in theme
+    // and wallpaer popup i wnat to use the normal keys hjkl to move untill
+    // i use '/' so i enter to the searchbar and i can write to search".
+    // That is vi's own model, and `searchFocused` is the mode: hjkl/g/G
+    // navigate the grid by default, `/` focuses the field, Escape from the
+    // field returns to navigation (the filter it left typed stays applied
+    // — the same thing vim's own `/pattern<CR>` leaves you with).
+    property bool searchFocused: false
     readonly property string searchQuery: searchField.query
     readonly property bool searching: root.searchQuery !== ""
 
@@ -201,11 +201,14 @@ FocusScope {
             // ~/.cache/qtile/theme_mode — a stale highlight here would be
             // the picker disagreeing with the desktop it is sitting on.
             themeListProcess.running = true;
-            // The FIELD, not the FocusScope: a rofi-style search you have to
-            // click into first is not one.
-            searchField.focusField();
+            // Opens in NAVIGATION mode, not search — hjkl has to work the
+            // instant the panel is on screen. The FocusScope itself holds
+            // focus until `/` hands it to the field.
+            root.searchFocused = false;
+            root.forceActiveFocus();
         } else {
             root.errorText = "";
+            root.searchFocused = false;
             // A query left over from the last open is a picker that comes up
             // showing three of twenty-two themes with no memory of why.
             searchField.clear();
@@ -317,52 +320,51 @@ FocusScope {
         return -1;
     }
 
+    // ---- NAVIGATION MODE'S KEY MAP ----
+    //
+    // Only reached while `searchFocused` is false, which is what keeps
+    // these letters from typing into a query — the field holds the
+    // keyboard once `/` hands it over, and this handler sees nothing but
+    // what the field does not claim (Escape/Enter/arrows/Ctrl+HJKL, wired
+    // below). See `searchFocused`'s own note for why this is a mode again.
     Keys.onPressed: function(event) {
-        // SEARCH MODE FIRST, as a separate branch rather than extra cases in
-        // the switch, and for the same reason WallpaperPickerLayer does it:
-        // every navigation key in this panel is a LETTER. h, j, k, l, g and q
-        // are all things you type into a theme name — "gruvbox" alone would
-        // hit g, k and l — so while a query is being typed the single-key
-        // bindings must be off entirely.
-        //
-        // Escape unwinds one level at a time, query then panel, which is the
-        // control centre's cursor -> drawer -> panel rule again.
-        // ---- THE LETTERS ARE GONE, AND THAT IS THE WHOLE CHANGE ----
-        //
-        // hjkl, g/G and q used to move and close. They cannot any more: the
-        // search field is always focused, and the paragraph above this one
-        // already explained why — every one of those keys is a letter you
-        // type into a theme name, and "gruvbox" alone hits g, k and l.
-        //
-        // That was true before too. The difference is that the old panel
-        // resolved it with a MODE, so the motions were live until you pressed
-        // `/`; now the field is always there, so the motions are never live.
-        // rofi makes the same trade for the same reason and nothing about it
-        // is a compromise — it is what "search bar like rofi" means.
-        //
-        // What is left here is the FALLBACK path. The field claims Escape,
-        // Enter, the arrows and Ctrl+HJKL/NP and handles them through the
-        // signals wired below; this runs only when focus has not landed in
-        // the field yet, or after a click somewhere else in the panel.
+        if (root.searchFocused)
+            return;
+
         switch (event.key) {
         case Qt.Key_Escape:
+        case Qt.Key_Q:
             root.closeRequested();
             event.accepted = true;
             break;
+        case Qt.Key_Slash:
+            root.searchFocused = true;
+            searchField.focusField();
+            event.accepted = true;
+            break;
+        case Qt.Key_H:
         case Qt.Key_Left:
             root.moveSelection(-1);
             event.accepted = true;
             break;
+        case Qt.Key_L:
         case Qt.Key_Right:
             root.moveSelection(1);
             event.accepted = true;
             break;
+        case Qt.Key_K:
         case Qt.Key_Up:
             root.moveSelection(-root.columns);
             event.accepted = true;
             break;
+        case Qt.Key_J:
         case Qt.Key_Down:
             root.moveSelection(root.columns);
+            event.accepted = true;
+            break;
+        case Qt.Key_G:
+            root.setSelection((event.modifiers & Qt.ShiftModifier)
+                ? root.visibleThemes.length - 1 : 0);
             event.accepted = true;
             break;
         case Qt.Key_Return:
@@ -415,12 +417,18 @@ FocusScope {
         // One strip in both states. The old panel had two, because it had two
         // modes to describe; there is one now, and a hint strip that changes
         // under you is itself a thing to read twice.
-        hints: [
-            { key: "type", label: "filter" },
-            { key: "←↑↓→", label: "move" },
-            { key: "Enter", label: "apply" },
-            { key: "Esc", label: root.searching ? "clear" : "close" }
-        ]
+        hints: root.searchFocused
+            ? [
+                { key: "type", label: "filter" },
+                { key: "Enter", label: "apply" },
+                { key: "Esc", label: "back" }
+              ]
+            : [
+                { key: "hjkl", label: "move" },
+                { key: "/", label: "search" },
+                { key: "Enter", label: "apply" },
+                { key: "q", label: "close" }
+              ]
     }
 
     PanelSearchField {
@@ -434,9 +442,28 @@ FocusScope {
         placeholder: "type to filter themes"
         countText: root.searching
             ? (root.visibleThemes.length + " of " + root.themes.length) : ""
+        // Claims nothing, keeps focus, while navigation mode owns the
+        // keyboard — see `searchFocused`.
+        readOnly: !root.searchFocused
+        // One-stage: Escape always leaves the field. The two-stage
+        // clear-then-cancel is for a host with nowhere else for Escape to
+        // go; this one has navigation mode to go back to, and the filter
+        // staying applied there is the point — vim's own `/pattern<CR>`
+        // leaves the pattern active too.
+        escapeClearsQuery: false
 
-        onSubmitted: root.activateSelection()
-        onCancelled: root.closeRequested()
+        // Both Enter and Escape leave search back to navigation mode — the
+        // doc's own wording for this ask: "Esc/Enter leave search back to
+        // command mode".
+        onSubmitted: {
+            root.activateSelection();
+            root.searchFocused = false;
+            root.forceActiveFocus();
+        }
+        onCancelled: {
+            root.searchFocused = false;
+            root.forceActiveFocus();
+        }
         // A grid, so vertical movement is a whole ROW and horizontal is one
         // tile — the same mapping the arrow keys always had here.
         onMoved: function(delta) { root.moveSelection(delta * root.columns); }

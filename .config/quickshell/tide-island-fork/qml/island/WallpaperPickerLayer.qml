@@ -364,11 +364,10 @@ FocusScope {
     }
 
     function grabKeyboardFocus() {
-        root.focus = true;
-        // The FIELD, not the FocusScope. A rofi-style search you have to
-        // click into first is not one, and this panel opens on an exclusive
-        // keyboard grab with nothing else that wants the keys.
-        searchField.focusField();
+        // The FocusScope now, not the field — opens in NAVIGATION mode so
+        // hjkl/Tab/Ctrl+R work immediately; `/` hands focus to the field.
+        root.searchFocused = false;
+        root.forceActiveFocus();
     }
 
     function moveNext() {
@@ -416,18 +415,13 @@ FocusScope {
     // box does not require a filter behind it, and turning this into one
     // because the other two panels filter would be copying an appearance and
     // paying for it in the one place the cost is real.
-    // PROMPT-NEXT.md item 5's first bullet asked for "hjkl + /-gated search,
-    // exactly as ThemePickerLayer.qml already does" — read as written, it
-    // does not match either panel's CURRENT code any more. Both moved to the
-    // rofi-style ALWAYS-ON field (this comment block, above) before that
-    // prompt was written down; there is no `/`-gated mode left in either
-    // file to copy, and bare hjkl cannot coexist with a field that is always
-    // capturing keystrokes — h/l/r are all letters you'd otherwise type into
-    // a filename. What both panels give you instead: Ctrl+H/J/K/L (via the
-    // shared PanelSearchField, same component both use), arrows, Tab/
-    // Backtab, and Ctrl+R for the random jump this carousel needs at 362
-    // entries. Audited rather than rebuilt — this already IS "the same shape
-    // ThemePickerLayer has," just not the shape the prompt's text described.
+    // REOPENED, explicitly, after the above was written: "in theme and
+    // wallpaer popup i wnat to use the normal keys hjkl to move untill i
+    // use '/' so i enter to the searchbar and i can write to search". The
+    // always-on field's reasoning above was real but answered a different
+    // question than the one actually being asked; `searchFocused` is the
+    // mode this panel now has back, same shape as ThemePickerLayer's own.
+    property bool searchFocused: false
     readonly property string searchQuery: searchField.query
     readonly property bool searching: root.searchQuery !== ""
     property int searchMatches: 0
@@ -490,40 +484,43 @@ FocusScope {
             root.applyWallpaper(allWallpapers.get(pathView.currentIndex).filePath);
     }
 
+    // ---- NAVIGATION MODE'S KEY MAP ----
+    //
+    // Back to a real mode — see `searchFocused`'s own note. Letters are
+    // live again because the field does not hold the keyboard until `/`
+    // hands it over.
     Keys.onPressed: event => {
-        // THE FALLBACK PATH. The field holds the keyboard and answers
-        // Escape, Enter, the arrows and Ctrl+HJKL/NP through the signals
-        // wired at the field below; this runs only before focus has landed
-        // there, or after a click elsewhere in the panel.
-        //
-        // The letters are gone — h, l, r and q were all navigation and are
-        // all things you type into a filename, which the old code handled by
-        // switching them off inside a search MODE. With the field always
-        // present there is no mode to switch, so they are always off. `r`,
-        // the random jump, keeps working on Ctrl+R; it is the one letter
-        // binding here worth a replacement rather than a removal, because it
-        // is the only practical way to see most of a 362-image library.
-        if (event.modifiers & Qt.ControlModifier) {
-            if (event.key === Qt.Key_R) {
-                root.randomJump();
-                event.accepted = true;
-            }
+        if (root.searchFocused)
             return;
-        }
 
         switch (event.key) {
         case Qt.Key_Escape:
+        case Qt.Key_Q:
             root.closeRequested();
             event.accepted = true;
             break;
+        case Qt.Key_Slash:
+            root.searchFocused = true;
+            searchField.focusField();
+            event.accepted = true;
+            break;
+        case Qt.Key_H:
+        case Qt.Key_Left:
+        case Qt.Key_Backtab:
+            root.movePrevious();
+            event.accepted = true;
+            break;
+        case Qt.Key_L:
         case Qt.Key_Right:
         case Qt.Key_Tab:
             root.moveNext();
             event.accepted = true;
             break;
-        case Qt.Key_Left:
-        case Qt.Key_Backtab:
-            root.movePrevious();
+        // `r`, bare again — the mode makes it safe, same as it was before
+        // the always-on field. With 362 images this is the only practical
+        // way to see most of the library.
+        case Qt.Key_R:
+            root.randomJump();
             event.accepted = true;
             break;
         case Qt.Key_Return:
@@ -538,11 +535,8 @@ FocusScope {
     // only way to actually use most of them: the arrows walk the list one
     // thumbnail at a time and nobody walks 362.
     //
-    // ON Ctrl+R, not `r`. It was a bare `r` until the search field became
-    // permanent, and `r` is a letter you type into a filename — the old code
-    // handled that by disabling the letter bindings inside a search MODE, and
-    // there is no mode left to disable them in. This is the one letter
-    // binding in the panel worth replacing rather than dropping.
+    // Bare `r` again, now that `/` gates the field instead of it always
+    // holding the keyboard — see `searchFocused`.
     //
     // It MOVES the cursor only. It used to apply as well, and that was wrong
     // for the reason the user gave when they asked for it changed: "it should
@@ -869,13 +863,27 @@ FocusScope {
             id: searchField
             textFontFamily: root.textFontFamily
             iconFontFamily: root.iconFontFamily
-            placeholder: "type to jump — Ctrl+R random, Enter applies"
+            placeholder: "type to jump — r random, Enter applies"
             countText: !root.searching ? ""
                      : (root.searchMatches
                         + (root.searchMatches === 1 ? " match" : " matches"))
+            // Claims nothing, keeps focus, while navigation mode owns the
+            // keyboard — see `searchFocused`.
+            readOnly: !root.searchFocused
+            // One-stage: Escape always leaves the field back to navigation
+            // mode, which is where the two-stage clear-then-close used to
+            // go instead.
+            escapeClearsQuery: false
 
-            onSubmitted: root.commitCurrent()
-            onCancelled: root.closeRequested()
+            onSubmitted: {
+                root.commitCurrent();
+                root.searchFocused = false;
+                root.forceActiveFocus();
+            }
+            onCancelled: {
+                root.searchFocused = false;
+                root.forceActiveFocus();
+            }
             // Up/Down walk BETWEEN MATCHES without changing the query, which
             // is what makes a query with 30 hits usable at all. Left/Right
             // walk the carousel itself, query or no query.
