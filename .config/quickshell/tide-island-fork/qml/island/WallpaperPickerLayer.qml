@@ -89,14 +89,28 @@ FocusScope {
         + "except Exception:\n"
         + "    pass\n"
         + "emit('index',cached)\n"
+        // PROMPT-NEXT.md item 12: `os.scandir` was ONE directory deep on
+        // purpose-shaped code that never intended to be a limit — it just
+        // never had a reason to recurse before. `~/Pictures/Wallpapers/themed/
+        // <theme>/*.jpg` (525 theme-fit-scored images, curated by an earlier
+        // session's own scoring pass — see themed/manifest.json) and the 21
+        // `themed/<theme>.jpg` covers were invisible to this scan and
+        // therefore unreachable by search no matter how they were named.
+        // `os.walk` picks up every file at every depth; sorted by BASENAME
+        // (not full path) so the ordering a flat pool always had is
+        // unchanged for the 362 files that were already flat.
         + "fresh=[]\n"
         + "if os.path.isdir(wallpaper_dir):\n"
-        + "    for entry in sorted(os.scandir(wallpaper_dir),key=lambda e:e.name.lower()):\n"
-        + "        if entry.is_file() and os.path.splitext(entry.name)[1].lower() in exts:\n"
-        + "            try:\n"
-        + "                fresh.append(record(entry.path))\n"
-        + "            except OSError:\n"
-        + "                pass\n"
+        + "    found=[]\n"
+        + "    for dirpath,_,filenames in os.walk(wallpaper_dir):\n"
+        + "        for fname in filenames:\n"
+        + "            if os.path.splitext(fname)[1].lower() in exts:\n"
+        + "                found.append(os.path.join(dirpath,fname))\n"
+        + "    for path in sorted(found,key=lambda p:os.path.basename(p).lower()):\n"
+        + "        try:\n"
+        + "            fresh.append(record(path))\n"
+        + "        except OSError:\n"
+        + "            pass\n"
         + "emit('scan',fresh)\n"
         + "try:\n"
         + "    tmp=index_path+'.tmp'\n"

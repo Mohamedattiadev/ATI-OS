@@ -526,11 +526,20 @@ def cmd_build(args):
         # Clear only what this tool wrote before, so a hand-dropped image
         # in the same folder survives a re-run. is_symlink() first: a
         # dangling link is not exists() and would otherwise be left behind.
-        for old in dest.glob("fetched-*"):
-            if old.is_symlink() or old.exists():
-                old.unlink()
+        #
+        # PROMPT-NEXT.md item 12 renamed every file this tool had already
+        # written from `fetched-NN` to `<theme>_NN` — the flat pool's
+        # search matches on FILENAME only, and "fetched-02" cannot be found
+        # by searching a theme name no matter what folder it sits in. Both
+        # globs are cleared so a re-run after the rename does not leave the
+        # old form sitting alongside the new one; only the new form is ever
+        # written from here on.
+        for pattern in ("fetched-*", f"{name}_*"):
+            for old in dest.glob(pattern):
+                if old.is_symlink() or old.exists():
+                    old.unlink()
         for i, (s, src) in enumerate(chosen[name], 1):
-            how = link_or_copy(src, dest / f"fetched-{i:02d}")
+            how = link_or_copy(src, dest / f"{name}_{i:02d}")
             if how == "link":
                 links += 1
             else:
@@ -538,7 +547,7 @@ def cmd_build(args):
 
     MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     MANIFEST.write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n")
-    print(f"\nwrote {OUT_DIR}/<theme>/fetched-NN.*  "
+    print(f"\nwrote {OUT_DIR}/<theme>/<theme>_NN.*  "
           f"({copies} copied, {links} linked to images the repo already has)")
     print(f"manifest: {MANIFEST}")
 
