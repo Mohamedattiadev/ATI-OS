@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
+import Quickshell.Wayland
 import Quickshell.Services.UPower
 import Quickshell.Services.SystemTray
 import Quickshell.Services.Mpris
@@ -154,6 +155,19 @@ ShellRoot {
             visible: shellRoot.position === "top"
             required property var modelData
             screen: modelData
+
+            // Top while no submap is open, Overlay while one is — same rule
+            // and same reasoning as the island's islandRestingSurface (see
+            // IslandWindowWayland.qml / DynamicIslandWindow.qml's long note
+            // on it): Hyprland draws a fullscreen window ABOVE the Top layer
+            // and BELOW Overlay, so this bar's chord_chip (the submap
+            // indicator, below) was invisible for exactly the case that
+            // matters most — a mode swallowing your keys while a fullscreen
+            // window is up. Not pinned to Overlay always: that would leave
+            // the whole bar sitting over fullscreen video permanently, which
+            // the island tried once and reverted (see its note on the same
+            // mistake). Only a live submap earns the promotion.
+            WlrLayershell.layer: shellRoot.submap !== "" ? WlrLayer.Overlay : WlrLayer.Top
 
             anchors { top: true; left: true; right: true }
             implicitHeight: Metrics.barHeight + Metrics.marginV * 2
@@ -952,6 +966,12 @@ ShellRoot {
             required property var modelData
             screen: modelData
             visible: shellRoot.position === "bottom"
+
+            // Same rule as the top bar above: this bar carries the same
+            // submap chip (BottomBar.qml's icon/text, fed by
+            // shellRoot.submapIcon/submapLabel), so it needs the same
+            // fullscreen exemption while a mode is open.
+            WlrLayershell.layer: shellRoot.submap !== "" ? WlrLayer.Overlay : WlrLayer.Top
 
             anchors { bottom: true; left: true; right: true }
             implicitHeight: Metrics.bottomBarHeight + Metrics.marginV * 2
