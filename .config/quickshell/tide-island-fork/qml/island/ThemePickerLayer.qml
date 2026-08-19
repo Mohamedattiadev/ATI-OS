@@ -228,6 +228,35 @@ FocusScope {
         root.pendingTheme = name;
         root.errorText = "";
 
+        // ---- CLOSE NOW, NOT NEVER ----
+        //
+        // Reported: picking a theme leaves this panel on screen — the header,
+        // the search field, the grid, all of it — for as long as theme-apply
+        // takes to run, and under the transition path the frozen-screen
+        // reveal plays out UNDERNEATH a picker that is still fully painted on
+        // top of it, which is what read as "another bar appears" / "stuck on
+        // screen": not a second surface, this one, never leaving.
+        //
+        // REQUIREMENTS.md item 5 already documents the invariant this broke
+        // — "the very first thing a theme change does is close the picker,
+        // so an animation owned by its own trigger is destroyed on frame
+        // one" — and states it as settled fact. It never was: nothing here
+        // or in onThemeRequested (DynamicIslandWindow.qml) ever called
+        // closeRequested(), in either branch, since the day this function
+        // was written (50f89245). The wallpaper picker had the same bug and
+        // was fixed the same way — see its applyWallpaper()'s "CLOSE NOW,
+        // NOT WHEN THE PROCESS EXITS" — close synchronously with the
+        // request, not from a process's onExited.
+        //
+        // Safe to do here even though applyProcess/the transition keep
+        // running after: PanelLoader's `retain: true` keeps this component
+        // alive while hidden, so themeListProcess/reconcileTimer still land
+        // and the highlight is correct the next time this opens.  A failed
+        // theme-apply is still seen — it notify-sends on failure itself
+        // (line ~270 of theme-apply) — so closing early does not swallow the
+        // error, only moves where it is read.
+        root.closeRequested();
+
         if (root.useTransition) {
             root.themeRequested(name);
             // The picker cannot watch the apply's exit code any more — the
