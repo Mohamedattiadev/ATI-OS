@@ -450,58 +450,88 @@ def _remap_palette_value(val, slot):
     return val
 
 
+_LIVE_PALETTE_KEYS = ("bg", "fg", "bg_alt", "red", "green",
+                      "yellow", "blue", "purple", "cyan", "accent")
+_PALETTE_CACHE_FILE = os.path.expanduser("~/.cache/qtile/current_palette.json")
+_PALETTE_PREV_FILE = os.path.expanduser("~/.cache/qtile/current_palette.prev.json")
+
+
 def apply_palette_live():
-    """Mutate every bar widget's palette-derived color to the new
-    palette on disk. No qtile restart, no widget re-instantiation.
+    """Mutate every bar widget's + window border's palette-derived color
+    to the new palette on disk. No qtile restart, no widget
+    re-instantiation.
 
-    Slot map built from EVERY known preset (not just current), so a
-    decoration built with e.g. doomone hex still resolves after
-    dracula was swapped in-between: any hex → its slot index in
-    ANY preset → new palette's hex at same slot.
+    Reported: "the animation works but then the bar reappears and reload
+    the whole qtile can we avoid this? and just have the animiton?" —
+    measured with `vmstat 1` during a theme change: 50-70%+ CPU, run
+    queue up to 9, for the ENTIRE covered window, because a full qtile
+    restart (Python reimport, ~79 keybindings, every widget
+    reinitializing) was now happening concurrently with the reveal
+    animation, competing for the same CPU the animation needs to stay
+    smooth. Hyprland has no equivalent cost — it never restarts anything
+    for a theme change — which is exactly why its sweep never stutters.
 
-    DORMANT, and now less able than it looks. theme-apply says so at its
-    own call site — "live-swap path was toggled off, visual coverage
-    across all themes proved unreliable; full restart is slower but
-    guaranteed correct" — and nothing calls this any more; it is left
-    exposed on the qtile object for a hand-driven `cmd-obj -f eval`.
-    Since colors.active_palette() started answering out of
-    ~/.cache/qtile/current_palette.json, the hex→slot map below is
-    strictly incomplete: it is built from _PRESETS, and the hexes
-    actually standing in the widgets came from the FILE, whose previous
-    contents have been overwritten by the theme change that provoked
-    this call. Anything it cannot map it leaves alone, so the failure is
-    a partly-remapped bar rather than a wrong one — but if this is ever
-    revived, it needs the outgoing palette recorded before the swap,
-    not reconstructed from the presets afterwards."""
-    global colors
+    THE BUG THIS FUNCTION HAD, per its own former docstring, kept here
+    because it explains why the fix below is shaped the way it is: hex
+    values were matched against the 20+ hardcoded `_PRESETS` tables to
+    find "which slot is this", which only works for a widget whose CURRENT
+    colour happens to appear verbatim in one of those static tables — true
+    for a preset-to-preset change, false for anything touching `wal` mode,
+    where the actual on-screen hex is wallpaper-derived and appears in NO
+    static table at all. That is likely the real shape of "visual coverage
+    across all themes proved unreliable".
+
+    Fixed by doing what the old docstring said to do: read the OUTGOING
+    palette from a snapshot theme-apply writes BEFORE overwriting
+    current_palette.json (current_palette.prev.json), and the INCOMING
+    palette from current_palette.json itself (theme-apply calls this
+    AFTER writing it). Both are the actual 9-slot-plus-accent hex values
+    that were and now are on screen, keyed by NAME, not reconstructed by
+    guessing which of 20 tables a colour might belong to — so this works
+    identically for wal-to-wal, wal-to-preset, preset-to-wal and
+    preset-to-preset alike, all four of which are the SAME operation.
+    """
+    global colors, ACCENT
+    import json
+    if not os.path.exists(_PALETTE_PREV_FILE):
+        # First live-swap ever (or the prev snapshot was cleared): there
+        # is nothing to map FROM, so a hex-rewrite cannot be trusted.
+        # theme-apply's own restart fallback covers this one time; every
+        # run after it writes a snapshot for the next call to use.
+        return False
+    try:
+        with open(_PALETTE_PREV_FILE) as f:
+            old = json.load(f)
+        with open(_PALETTE_CACHE_FILE) as f:
+            new = json.load(f)
+    except Exception:
+        return False
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return False
+    # Direct hex -> hex, built from the two real snapshots. No slot
+    # indices, no guessing: key i in `old` maps to key i in `new` by
+    # NAME, and both are the exact strings that were/are rendered.
+    hex_to_new = {}
+    for key in _LIVE_PALETTE_KEYS:
+        oh, nh = old.get(key), new.get(key)
+        if not (isinstance(oh, str) and isinstance(nh, str)):
+            continue
+        hex_to_new[oh] = nh
+        hex_to_new[oh.lower()] = nh
+        hex_to_new[oh.upper()] = nh
+    if len(hex_to_new) < 9:      # at least the 9 core slots must have mapped
+        return False
     import importlib
     importlib.reload(color_schemes)
     new_palette_rows = color_schemes.active_palette()
-    new_flat = [row[0] if isinstance(row, (list, tuple)) else row for row in new_palette_rows]
-    # Build hex → slot index map from every registered preset + wal.
-    hex_to_slot = {}
-    presets = list(color_schemes._PRESETS.values())
-    wal = getattr(color_schemes, "Wal", None)
-    if wal:
-        presets.append(wal)
-    for pal in presets:
-        for i, row in enumerate(pal):
-            h = row[0] if isinstance(row, (list, tuple)) else row
-            if isinstance(h, str) and h not in hex_to_slot:
-                hex_to_slot[h] = i
-                hex_to_slot[h.lower()] = i
-                hex_to_slot[h.upper()] = i
-    if len(new_flat) < 9:
+    if len(new_palette_rows) < 9:
         return False
+    ACCENT = color_schemes.accent_color()
+
     def remap_hex(h):
         if not isinstance(h, str):
             return h
-        idx = hex_to_slot.get(h)
-        if idx is None:
-            idx = hex_to_slot.get(h.lower())
-        if idx is None:
-            return h
-        return new_flat[idx] if idx < len(new_flat) else h
+        return hex_to_new.get(h, hex_to_new.get(h.lower(), h))
     # Local remap function that closes over hex_to_slot/new_flat.
     def remap_value(val):
         if isinstance(val, str):
@@ -601,6 +631,22 @@ def apply_palette_live():
                 lay.group.layout_all()
             except Exception:
                 pass
+    # floating_layout is a SINGLE global Config attribute, not one of
+    # qtile.groups[].layouts — the loop above never reaches it. Missing
+    # this meant a floated window's border stayed the OLD accent after a
+    # live swap even once everything else had caught up.
+    float_lay = getattr(qtile.config, "floating_layout", None)
+    if float_lay is not None:
+        for attr in ("border_focus", "border_normal"):
+            if not hasattr(float_lay, attr):
+                continue
+            v = getattr(float_lay, attr)
+            new_v = remap_value(v)
+            if new_v != v:
+                try:
+                    setattr(float_lay, attr, new_v)
+                except Exception:
+                    pass
     # Also repaint focused window borders on every screen.
     for scr in qtile.screens:
         try:
@@ -610,7 +656,11 @@ def apply_palette_live():
         except Exception:
             pass
 
-    # Update global so subsequent live-swaps have correct old_flat
+    # Update the globals every widget/layout constructor reads at
+    # IMPORT time — a plain reassignment does not retroactively touch
+    # anything already built, but every consumer that matters was just
+    # updated directly above, and this is what the NEXT live-swap's
+    # snapshot-free code paths (if any get added later) would see.
     colors = new_palette_rows
     # Write marker so bash caller can detect success (qtile eval
     # can't return values from multi-statement code).

@@ -87,6 +87,23 @@ if [[ "$MODE" != "wal" ]] && ! is_preset "$MODE"; then
   exit 1
 fi
 
+# ---- SNAPSHOT THE OUTGOING PALETTE, BEFORE ANYTHING OVERWRITES IT ----
+#
+# qtile's apply_palette_live() (config.py) needs the palette THIS script
+# is about to replace, by exact hex value per named slot — not a guess
+# reconstructed from the 20-odd hardcoded _PRESETS tables afterwards, which
+# is the bug its own docstring used to record ("visual coverage across all
+# themes proved unreliable" — real for anything touching `wal` mode, whose
+# hex values are wallpaper-derived and appear in no static table at all).
+# One `cp`, before gen_island_colors (~line 936, further down) has a
+# chance to overwrite current_palette.json with the INCOMING palette.
+# Missing on the very first run after install — apply_palette_live()
+# reads that as "nothing to map from" and returns False, which is the
+# correct answer: a one-time restart-path fallback, not a wrong swap.
+if [[ -f "$HOME/.cache/qtile/current_palette.json" ]]; then
+  cp -f "$HOME/.cache/qtile/current_palette.json" "$HOME/.cache/qtile/current_palette.prev.json" 2>/dev/null || true
+fi
+
 # ---- IS SOMETHING ALREADY COVERING THE SCREEN FOR US? ----
 #
 # Set by ThemeTransitionWindow.qml's applyProcess ONLY — the overlay
@@ -144,12 +161,31 @@ _covered=0
 # Manual Super+Shift+R restarts are a completely separate call site
 # (config.py's own keybind, _smooth_restart with no argument) and always
 # show the full veil regardless of any of this.
-(
-  qtile cmd-obj -o cmd -f eval -a \
-    "str(__import__(\"sys\").modules[\"config\"]._veil_hold($([[ $_covered = 1 ]] && echo True || echo False)))" \
-    >/dev/null 2>&1 || true
-) &
-disown
+#
+# ONLY RAISED WHEN THE LIVE PALETTE SWAP CANNOT POSSIBLY WORK — i.e. only
+# when current_palette.prev.json does not exist yet (the snapshot copy a
+# few lines up would have written it if there was anything to snapshot;
+# see apply_palette_live()'s own docstring in config.py). That is a
+# one-time condition, true only on the very first theme change after
+# install or after the cache is cleared — every run after it has a
+# snapshot and goes through the no-restart live-swap path further down,
+# where nothing needs covering at all.
+#
+# Reported: "can we avoid this [restart] and just have the animiton?",
+# measured (vmstat during a themed restart: 50-70%+ CPU, run queue up to
+# 9, for the whole covered window) as the actual cause of the reveal
+# animation stuttering — a whole extra Python+GTK process is real
+# overhead, and there is no reason to pay it speculatively on every theme
+# change just to cover a restart that essentially never happens once a
+# snapshot exists.
+if [[ ! -f "$HOME/.cache/qtile/current_palette.prev.json" ]]; then
+  (
+    qtile cmd-obj -o cmd -f eval -a \
+      "str(__import__(\"sys\").modules[\"config\"]._veil_hold($([[ $_covered = 1 ]] && echo True || echo False)))" \
+      >/dev/null 2>&1 || true
+  ) &
+  disown
+fi
 
 KITTY_THEMES="$HOME/.config/kitty/themes"
 ROFI_THEMES="$HOME/.config/rofi/themes"
@@ -1523,15 +1559,48 @@ _restart_fm() {  # $1=binary  $2=WM_CLASS / app_id  $3=daemon flag
 _restart_fm pcmanfm-qt "pcmanfm-qt" -d
 _restart_fm pcmanfm    "Pcmanfm"    --daemon-mode
 
-# Try LIVE palette swap first (no restart). Walks bar widgets +
-# decorations, remaps slot-matched hexes, redraws. Config.py exposes
-# apply_palette_live() which returns True on success. Fall back to
-# `restart` only if the live call fails or times out.
+# ---- TRY THE LIVE PALETTE SWAP FIRST — NO RESTART AT ALL ----
+#
+# Reported: "the animation works but then the bar reappears and reload the
+# whole qtile can we avoid this? and just have the animiton?" Measured
+# with `vmstat 1` during a themed restart: 50-70%+ CPU, run queue up to 9,
+# for the ENTIRE covered window — a full qtile restart (Python reimport,
+# ~79 keybindings, every widget reinitializing) competing with the reveal
+# animation for CPU is exactly what a stutter looks like. Hyprland has no
+# equivalent cost; it never restarts anything for a theme change.
+#
+# apply_palette_live() (config.py) does the swap now — see its own
+# docstring for the hex-matching bug that made the old attempt at this
+# "visual coverage across all themes proved unreliable" and the
+# current_palette.prev.json snapshot near the top of this script that
+# fixes it. SYNCHRONOUS on purpose, not `setsid -f`'d like the restart
+# below: this call cannot execv anything out from under itself, so there
+# is no connection-dies-on-success trap here, and the whole point is to
+# know the answer before deciding whether a restart is needed at all.
+_live_ok=0
 if command -v qtile >/dev/null; then
-  # Full restart, detached. Live-swap path was toggled off — visual
-  # coverage across all themes proved unreliable; full restart is
-  # slower but guaranteed correct. execvp + config re-import ~1-2s.
-  #
+  probe=$(qtile cmd-obj -o cmd -f eval -a \
+    "str(int(hasattr(__import__(\"sys\").modules.get(\"config\"), \"apply_palette_live\")))" 2>&1 || true)
+  probe=$(printf %s "$probe" | tr -d "\042\047" | tr -d "[:space:]")
+  if [ "$probe" = "1" ]; then
+    result=$(qtile cmd-obj -o cmd -f eval -a \
+      "str(__import__(\"sys\").modules[\"config\"].apply_palette_live())" 2>&1 || true)
+    result=$(printf %s "$result" | tr -d "\042\047" | tr -d "[:space:]")
+    [ "$result" = "True" ] && _live_ok=1
+  fi
+fi
+
+# ---- FALL BACK: full restart, behind the veil — only when the swap
+#      above did not happen ----
+#
+# In practice this is a ONE-TIME path: apply_palette_live() only refuses
+# when current_palette.prev.json does not exist yet (no snapshot to map
+# FROM), which is true on the very first theme change after install or a
+# cache clear and false on every one after it. Unchanged otherwise from
+# before this session's live-swap work — same veil, same
+# THEME_APPLY_COVERED-gated invisibility, same wait for the restart to
+# actually settle.
+if [[ "$_live_ok" != 1 ]] && command -v qtile >/dev/null; then
   # Go through smooth_restart (exposed on the qtile object by config.py's
   # startup_complete hook) rather than the raw `restart` command, so a
   # theme change gets the same veil Super+Shift+R does. Without this the
