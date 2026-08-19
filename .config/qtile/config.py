@@ -392,6 +392,17 @@ FLOAT_STATES = {}
 
 colors: list[list[str]] = color_schemes.active_palette()
 
+# Reported: "the border of the app follows the color of icon of layout and
+# number of workspace in the island... like the hyperland one". theme-apply's
+# accent_of_mode — the one hand-picked "signature colour" per theme, not a
+# fixed palette slot — see colors.accent_color()'s own header for the full
+# reasoning and the gruvbox measurement that proved colors[7]/colors[8]/
+# colors[3] were three different colours standing in for one concept.
+# Assigned at module scope, same as `colors` above, so it is re-read on
+# every reload_config() (bar_switch_apply, theme changes) rather than going
+# stale.
+ACCENT: str = color_schemes.accent_color()
+
 # Must follow `colors`: _chip_plate() reads the active background, and this
 # module previously set DEFAULT_CHIP_COLOR eighty lines earlier from a
 # literal, where no palette existed yet.
@@ -4659,13 +4670,20 @@ def normal_user_bar():
             padding_y=2,
             padding_x=8,
             borderwidth=4,
-            active=colors[8],
+            # ACCENT — the workspace NUMBER itself. Was colors[8]; see
+            # ACCENT's own comment for why that was a different colour
+            # from the window border on most themes despite reading as
+            # "the same accent" to the eye until compared side by side.
+            active=ACCENT,
             inactive=colors[1],
             highlight_color=colors[2],
             highlight_method="text",
-            this_current_screen_border=colors[7],
+            # And the border drawn around the box itself, for the same
+            # reason — "border" in the literal sense this time, not just
+            # the concept.
+            this_current_screen_border=ACCENT,
             this_screen_border=colors[4],
-            other_current_screen_border=colors[7],
+            other_current_screen_border=ACCENT,
             other_screen_border=colors[4],
             # default urgent_alert_method is "border" -- draws a thick
             # (borderwidth=4) solid-colored box around the group's icon
@@ -4824,13 +4842,19 @@ def groupbox_widget():
         padding_y=2,
         padding_x=8,
         borderwidth=4,
-        active=colors[8],
+        # ACCENT, not colors[8] — same fix as the other GroupBox
+        # instance above (see ACCENT's own comment at its definition).
+        # This is the one actually live on the default BAR_MODE — caught
+        # only by checking the RUNNING widget's `.active` over IPC, which
+        # still read the old colors[8] value after the other GroupBox had
+        # already been fixed and qtile restarted.
+        active=ACCENT,
         inactive=colors[1],
         highlight_color=colors[2],
         highlight_method="text",
-        this_current_screen_border=colors[7],
+        this_current_screen_border=ACCENT,
         this_screen_border=colors[4],
-        other_current_screen_border=colors[7],
+        other_current_screen_border=ACCENT,
         other_screen_border=colors[4],
         # See matching comment on the normal_user_bar() GroupBox above --
         # default urgent_alert_method="border" draws an ugly filled-
@@ -4937,7 +4961,12 @@ def left_side_widgets():
             # depending on class-name derivation.
             name="w_layout",
             padding=18,
-            foreground=colors[3],
+            # ACCENT, not colors[3] (the URGENT-red slot — never a
+            # deliberate accent choice, just whatever was on hand). See
+            # ACCENT's own comment: this is the layout GLYPH half of "the
+            # border should follow the color of icon of layout and number
+            # of workspace".
+            foreground=ACCENT,
             mouse_callbacks={
                 "Button3": lazy.next_layout(),
             },
@@ -8445,7 +8474,12 @@ keys.extend(
 layout_theme = {
     "border_width": 3,
     "margin": 5,
-    "border_focus": colors[8],
+    # ACCENT, not colors[8] — see ACCENT's own comment at its definition.
+    # Was a bare palette slot that happened to equal the GroupBox's active
+    # colour by coincidence on some themes and not others (colors[8] vs
+    # accent_of_mode agree only when a theme's hand-picked accent happens
+    # to land on the cyan slot); now the same value by construction.
+    "border_focus": ACCENT,
     "border_normal": colors[1],
 }
 
@@ -8838,7 +8872,9 @@ follow_mouse_focus = True
 bring_front_click = False
 cursor_warp = False
 floating_layout = layout.Floating(
-    border_focus=colors[7],
+    # ACCENT — see its definition's comment and layout_theme's border_focus
+    # just above, which gets the same value for the same reason.
+    border_focus=ACCENT,
     border_width=_s(2),
     float_rules=[
         # Run the utility of `xprop` to see the wm class and name of an X client.

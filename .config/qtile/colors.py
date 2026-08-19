@@ -456,4 +456,60 @@ def active_palette():
     return _PRESETS.get(mode, DoomOne)
 
 
+# Reported: "the border of the app follows the color of icon of layout and
+# number of workspace in the island... like the hyperland one" — i.e. window
+# border, the CurrentLayout glyph and the GroupBox's active workspace number
+# should all be the SAME colour, the way Hyprland already ties its window
+# border and the island's layout glyph + workspace digit to one value
+# (theme-apply's accent_of_mode, written as "accent" in
+# ~/.cache/qtile/current_palette.json — see theme-apply's own note on why
+# that unification exists: "there was no palette in which the two agreed"
+# before it).
+#
+# Before this, config.py had THREE different slots doing THREE different
+# jobs that all read as "the accent": layout_theme's border_focus was
+# colors[8], floating_layout's was colors[7], and the CurrentLayout icon's
+# foreground was colors[3] (the URGENT-red slot — clearly never intended as
+# an accent, just whatever was on hand). None of those is accent_of_mode:
+# for gruvbox, accent_of_mode is #fabd2f (the yellow slot) while colors[7]
+# is #d3869b (purple) and colors[3] is #fb4934 (red) — three visibly
+# different colours for what the user experiences as one concept.
+#
+# _applied_palette() above deliberately does NOT carry "accent" into the
+# 9-slot `colors` array — every consumer of that array expects exactly the
+# 9 DoomOne-shaped slots, and widening it would be a second, silent contract
+# change. This reads the same cache file a second time instead.
+def accent_color():
+    """theme-apply's accent_of_mode for the current theme, matching the
+    exact value the island's layout glyph, workspace digit and (on
+    Hyprland) window border all already use. accent_of_mode hand-picks a
+    value for every named theme (blue for most, cyan for nord, yellow for
+    gruvbox, ...) plus wal (derived from the wallpaper's bright dominant
+    hue) — current_palette.json carries its answer for whichever theme is
+    active, so this should hit that field in the ordinary case. Falls back
+    to colors[7] — the "main-accent"/DOMINANT slot by this file's own
+    widget contract (see the comment above the wal `pick` list) — only for
+    the unlikely case the cache is missing, half-written, or still names
+    the PREVIOUS mode (the same race `_applied_palette` above guards
+    against).
+    """
+    import json
+    import os
+    try:
+        with open(os.path.expanduser("~/.cache/qtile/theme_mode")) as f:
+            mode = f.read().strip()
+    except Exception:
+        mode = "doomone"
+    try:
+        with open(os.path.expanduser("~/.cache/qtile/current_palette.json")) as f:
+            p = json.load(f)
+        if isinstance(p, dict) and str(p.get("mode", "")) == mode:
+            h = p.get("accent")
+            if isinstance(h, str) and h.startswith("#") and len(h) in (4, 7, 9):
+                return h
+    except Exception:
+        pass
+    return active_palette()[7][0]
+
+
 Wal = _wal_palette()
