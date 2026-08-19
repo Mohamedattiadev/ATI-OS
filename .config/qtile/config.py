@@ -540,34 +540,13 @@ def apply_palette_live():
             typ = type(val)
             return typ(remap_value(v) for v in val)
         return val
-    # Shadow global helper with the closure version.
-    slot_map = None  # kept for API compat; unused below
-    def collect_widgets(w_list, out, seen):
-        """Recurse into WidgetBox / nested containers so children get
-        remapped too (SmartWidgetBox holds the icon widgets whose
-        foreground otherwise never updates)."""
-        for w in w_list:
-            wid = id(w)
-            if wid in seen:
-                continue
-            seen.add(wid)
-            out.append(w)
-            # WidgetBox exposes .widgets — its children may be shown
-            # when the box is open. Recurse.
-            for attr in ("widgets", "_widgets"):
-                nested = getattr(w, attr, None)
-                if isinstance(nested, (list, tuple)):
-                    collect_widgets(nested, out, seen)
-
+    # Bar BACKGROUNDS, from qtile.screens directly — there is no
+    # per-widget equivalent of this, it belongs to the Bar object itself.
     for screen in qtile.screens:
         for bar_obj in (getattr(screen, "top", None), getattr(screen, "bottom", None),
                         getattr(screen, "left", None), getattr(screen, "right", None)):
             if bar_obj is None:
                 continue
-            top_widgets = getattr(bar_obj, "widgets", None) or []
-            widgets = []
-            collect_widgets(top_widgets, widgets, set())
-            # bar background itself
             bg = getattr(bar_obj, "background", None)
             if bg:
                 new_bg = remap_value(bg)
@@ -576,35 +555,106 @@ def apply_palette_live():
                         bar_obj.background = new_bg
                     except Exception:
                         pass
-            for w in widgets:
+
+    # Widgets themselves — from qtile.widgets_map, NOT qtile.screens[].
+    # ....widgets. Reported: "some of the chips not chaning thir colors"
+    # (system_widgetbox, wallpaper_toggle, 2nd_system_widgetbox, even
+    # w_layout — a mix with no shared nesting, which was the first clue
+    # this was not a WidgetBox-recursion gap). Measured directly:
+    # `qtile.screens[0].top.widgets` had been silently replaced with 17
+    # "qtemirror"/"mirror" WRAPPER instances — a pre-existing, separately
+    # tracked bug (NEXT-SESSION.md: "bar-mode moved on its own") that
+    # reload_config()/bar_switch_apply() can trigger — so this loop was
+    # correctly finding widgets, remapping their colours, and redrawing
+    # them... and every one of them was a mirror copy, not the widget
+    # actually reachable from the name qtile itself uses everywhere else
+    # in this file (`qtile.widgets_map["w_mpris"]`, etc.). The colours
+    # never reached anything the bar actually draws from.
+    #
+    # widgets_map is qtile's own canonical name -> live widget registry,
+    # unaffected by whatever the mirror bug does to a Bar's own .widgets
+    # list, and it already includes nested WidgetBox children by their own
+    # names (confirmed live: "w_cpu"/"w_mem"/"w_updates" all present
+    # alongside "system_widgetbox") — so collect_widgets()'s manual
+    # recursion is no longer needed either; this is both the fix and a
+    # simplification.
+    # RETRIED, not just tried once: caught live, calling this exact code
+    # ONE time right after a bar-mode switch (bar-switch island, then
+    # native — reload_config() runs on each) left widgets_map-reached
+    # widgets un-updated even though this function returned True; calling
+    # it again seconds later, no other change, fixed it immediately. That
+    # points at qtile.widgets_map itself being transiently stale for a
+    # moment around a reload — reload_config() rebuilds bar widgets, and
+    # whatever repopulates the registry evidently has not always finished
+    # by the time this runs — rather than anything wrong with the remap
+    # logic itself, which is why re-running the SAME pass fixes it with
+    # no changes. Two passes, short gap, re-fetching widgets_map fresh
+    # each time so the second pass sees whatever finished settling.
+    new_accent = new.get("accent")
+    for _attempt in range(2):
+        seen_ids = set()
+        widgets = []
+        for w in qtile.widgets_map.values():
+            wid = id(w)
+            if wid in seen_ids:
+                continue
+            seen_ids.add(wid)
+            widgets.append(w)
+
+        dirty_bars = set()
+        for w in widgets:
+            for attr in _PALETTE_ATTRS:
+                if not hasattr(w, attr):
+                    continue
+                v = getattr(w, attr)
+                new_v = remap_value(v)
+                if new_v != v:
+                    try:
+                        setattr(w, attr, new_v)
+                    except Exception:
+                        pass
+            # Decorations (RectDecoration etc)
+            decs = getattr(w, "decorations", None) or []
+            for d in decs:
                 for attr in _PALETTE_ATTRS:
-                    if not hasattr(w, attr):
+                    if not hasattr(d, attr):
                         continue
-                    v = getattr(w, attr)
+                    v = getattr(d, attr)
                     new_v = remap_value(v)
                     if new_v != v:
                         try:
-                            setattr(w, attr, new_v)
+                            setattr(d, attr, new_v)
                         except Exception:
                             pass
-                # Decorations (RectDecoration etc)
-                decs = getattr(w, "decorations", None) or []
-                for d in decs:
-                    for attr in _PALETTE_ATTRS:
-                        if not hasattr(d, attr):
-                            continue
-                        v = getattr(d, attr)
-                        new_v = remap_value(v)
-                        if new_v != v:
-                            try:
-                                setattr(d, attr, new_v)
-                            except Exception:
-                                pass
-                # force redraw
-                try:
-                    w.draw()
-                except Exception:
-                    pass
+            # force redraw
+            try:
+                w.draw()
+            except Exception:
+                pass
+            bar_obj = getattr(w, "bar", None)
+            if bar_obj is not None:
+                dirty_bars.add(id(bar_obj))
+
+        # Spot-check one canonical, always-present widget rather than
+        # trusting "the loop ran" — that is exactly what returned True
+        # last time while system_widgetbox/wallpaper_toggle/
+        # 2nd_system_widgetbox/w_layout all stayed on the OUTGOING
+        # palette's hexes.
+        check = qtile.widgets_map.get("w_layout")
+        check_fg = getattr(check, "foreground", None) if check is not None else None
+        if isinstance(new_accent, str) and check_fg == new_accent:
+            break
+        if _attempt == 0:
+            time.sleep(0.15)
+    # Redraw every bar that actually owns one of the widgets just
+    # touched — walking qtile.screens for this part is fine, this is
+    # only asking "does this Bar object need a repaint", not "what
+    # widgets does it think it has".
+    for screen in qtile.screens:
+        for bar_obj in (getattr(screen, "top", None), getattr(screen, "bottom", None),
+                        getattr(screen, "left", None), getattr(screen, "right", None)):
+            if bar_obj is None or id(bar_obj) not in dirty_bars:
+                continue
             try:
                 bar_obj.draw()
             except Exception:
