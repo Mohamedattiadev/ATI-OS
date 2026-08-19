@@ -448,7 +448,24 @@ FocusScope {
             return false;
         const entry = allWallpapers.get(index);
         const name = String(entry.fileName !== undefined ? entry.fileName : entry.filePath);
-        return name.toLowerCase().indexOf(needle) >= 0;
+        if (name.toLowerCase().indexOf(needle) >= 0)
+            return true;
+        // Reported: "the wallpaper of the theme fitting not appering...
+        // if i wrote 'gruvbox' shows me all fiting ones". The scan above
+        // (see its own os.walk note) already finds every file under
+        // themed/<theme>/ — 513 curated, theme-scored images (manifest.json)
+        // from PROMPT-NEXT.md item 12 — but fileName is just
+        // os.path.basename(path) (e.g. "wallhaven-dg9k2j.png"), which
+        // never contains the theme it was curated for. That lives in the
+        // DIRECTORY, so a query is also checked against it. The flat
+        // themed/<theme>.jpg cover files don't need this — their own
+        // filename already IS the theme name — this only matters for the
+        // per-theme subdirectories.
+        const path = String(entry.filePath || "");
+        const themeDir = path.match(/\/themed\/([^/]+)\//);
+        if (themeDir && themeDir[1].toLowerCase().indexOf(needle) >= 0)
+            return true;
+        return false;
     }
 
     // Counts matches AND jumps to the first one at or after `from`, wrapping.

@@ -2,6 +2,7 @@ import colorsys
 import json
 import os
 import random
+import re
 import threading
 import subprocess
 from qtile_extras.popup import PopupRelativeLayout, PopupText, PopupImage
@@ -111,11 +112,23 @@ def load_images():
     if not os.path.isdir(WALLPAPER_DIR):
         return []
     os.makedirs(CACHE_THUMBS, exist_ok=True)
-    return sorted(
-        os.path.join(WALLPAPER_DIR, f)
-        for f in os.listdir(WALLPAPER_DIR)
-        if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
-    )
+    # os.walk, not os.listdir — one directory deep used to be a limit that
+    # was never meant as one; it just never had a reason to recurse
+    # before. ~/Pictures/Wallpapers/themed/<theme>/*.jpg (500+ theme-fit-
+    # curated images, see manifest.json there) and the per-theme
+    # themed/<theme>.jpg covers were invisible to this scan and therefore
+    # unreachable by search no matter how they were named — the same gap
+    # the island's own WallpaperPickerLayer.qml had and was already fixed
+    # for (its own comment names PROMPT-NEXT.md item 12). Sorted by
+    # BASENAME, not full path, so the ordering the flat pool always had is
+    # unchanged for every file that was already flat.
+    exts = (".png", ".jpg", ".jpeg", ".webp")
+    found = []
+    for dirpath, _dirnames, filenames in os.walk(WALLPAPER_DIR):
+        for fname in filenames:
+            if fname.lower().endswith(exts):
+                found.append(os.path.join(dirpath, fname))
+    return sorted(found, key=lambda p: os.path.basename(p).lower())
 
 
 def load_current_wallpaper():
@@ -594,10 +607,27 @@ def _hue_distance_deg(a, b):
 _HUE_MATCH_THRESHOLD_DEG = 28.0
 
 
+_THEMED_DIR_RE = re.compile(r"[/\\]themed[/\\]([^/\\]+)[/\\]")
+
+
 def theme_names_for_wallpaper(path):
-    """Every theme name whose accent hue is close to this wallpaper's
-    precomputed dominant hue, closest first. [] if there is no
-    precompiled palette for it, or nothing is close enough."""
+    """Every theme this wallpaper fits, closest/most-authoritative first.
+
+    A wallpaper living under themed/<theme>/ was CURATED for that theme —
+    see the note beside load_images()'s own os.walk fix, PROMPT-NEXT.md
+    item 12: 500+ images individually scored against every theme's
+    palette (manifest.json), not just hue-adjacent. That answer is
+    returned alone and is authoritative when it exists; hue matching
+    (theme_names_for_wallpaper's original approach, still the only
+    signal for the flat, uncurated pool of ~362 originals) is the
+    fallback, not a second vote — mixing "this was curated for X" with
+    "this happens to be roughly X-hued" as equals would bury the
+    curated, actually-correct answer under whatever coincidentally
+    scores closest.
+    """
+    m = _THEMED_DIR_RE.search(path)
+    if m:
+        return [m.group(1)]
     hue = _wallpaper_dominant_hue(path)
     if hue is None:
         return []
