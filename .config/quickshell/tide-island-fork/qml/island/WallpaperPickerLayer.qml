@@ -46,7 +46,6 @@ FocusScope {
     property string activeWallpaper: ""
     property string latestAppliedWallpaper: ""
     property bool acceptingScanResults: false
-    property bool closeAfterApply: false
     property bool releasingResources: false
     property var wallpaperIndexByPath: ({})
     property var pendingThumbnails: []
@@ -241,7 +240,6 @@ FocusScope {
             return;
         releasingResources = true;
         acceptingScanResults = false;
-        closeAfterApply = false;
         if (scanProcess.running)
             scanProcess.running = false;
         if (applyProcess.running)
@@ -611,7 +609,33 @@ FocusScope {
             return;
         latestAppliedWallpaper = filePath;
         wallpaperApplied(filePath);
-        closeAfterApply = true;
+        // ---- CLOSE NOW, NOT WHEN THE PROCESS EXITS ----
+        //
+        // Reported: applying a wallpaper leaves the OLD header and search
+        // bar ghosted, fully legible, behind the shrinking capsule for thirty
+        // frames or more. Measured with a synchronised state-poll + capture:
+        // this panel's own out-fade is 130 ms and was long done by the time
+        // the ghost was still on screen at t=1.0s -- so the ghost was never
+        // this panel's fade running slowly, it was a SECOND, independent
+        // animation holding a frame of this one.
+        //
+        // wallpaper-set.sh's X11 branch backgrounds theme-animate (`setsid
+        // -f ... & disown`) and returns almost immediately, so applyProcess
+        // exits within tens of ms of being started -- but the backgrounded
+        // theme-animate still has to make its OWN `qs ipc call`, which this
+        // session's own measurements put at 150-200 ms. Closing on
+        // applyProcess.onExited therefore started this panel's close
+        // AFTER the script returned but the sweep's screenshot lands
+        // 200+ ms after THAT -- so the sweep's "before" frame was captured
+        // with this panel still mid-close, and then held it there for the
+        // sweep's own several-hundred-ms reveal. Two uncoordinated
+        // animations, not a slow fade.
+        //
+        // Closing here instead gives this panel's fast 130 ms out-fade a
+        // head start on the sweep's slower capture, so by the time the
+        // sweep's screenshot lands the header and field are already mostly
+        // or fully gone, not to be seen at all in whatever it freezes.
+        root.closeRequested();
         if (applyProcess.running)
             applyProcess.running = false;
         if (customApplyProcess.running)
@@ -698,14 +722,14 @@ FocusScope {
             root.transitionInvertY ? "true" : "false",
             root.pywalEnabled ? "true" : "false"
         ]
+        // closeRequested() no longer fires from here -- applyWallpaper()
+        // already fires it synchronously, before this process even starts,
+        // for the race this exit handler used to be part of. This is left
+        // to report success/failure only.
         onExited: function(exitCode) {
             running = false;
             if (exitCode === 0)
                 root.wallpaperApplySucceeded(wallpaperPath);
-            if (root.closeAfterApply) {
-                root.closeAfterApply = false;
-                root.closeRequested();
-            }
         }
     }
 
@@ -724,10 +748,6 @@ FocusScope {
             running = false;
             if (exitCode === 0)
                 root.wallpaperApplySucceeded(wallpaperPath);
-            if (root.closeAfterApply) {
-                root.closeAfterApply = false;
-                root.closeRequested();
-            }
         }
     }
 
