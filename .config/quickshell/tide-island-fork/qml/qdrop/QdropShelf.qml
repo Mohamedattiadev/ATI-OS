@@ -170,8 +170,28 @@ PopupChrome {
     // mid-drag, Super being held is not a workspace-switch chord in flight,
     // it is incidental, and re-checking it here would risk the exclusive
     // grab this file's whole header is about not taking in the first place.
-    WlrLayershell.keyboardFocus: shelf.forDrag ? WlrKeyboardFocus.OnDemand
-        : (shelf.superHeld ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive)
+    // FORK: PARITY FIX. This was a direct `WlrLayershell.keyboardFocus:`
+    // override sitting right on this instance's own declaration — which
+    // fails to construct off Wayland exactly like PopupChrome's own three
+    // did (see the Loader/onWayland note in PopupChrome.qml), independently
+    // of whatever PopupChrome itself does about its base binding: an
+    // instance-level attached-property declaration asks the engine to create
+    // the SAME attached object PopupChrome's base does, and X11 refuses that
+    // creation no matter which file is asking. Same fix, gated the same way,
+    // local to this file because the override itself is local to this file.
+    Loader {
+        active: shelf.onWayland
+        sourceComponent: Component {
+            Item {
+                Component.onCompleted: {
+                    shelf.WlrLayershell.keyboardFocus = Qt.binding(function () {
+                        return shelf.forDrag ? WlrKeyboardFocus.OnDemand
+                            : (shelf.superHeld ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive);
+                    });
+                }
+            }
+        }
+    }
 
     signal requestClose()
     signal dropLanded()

@@ -123,7 +123,68 @@ PanelWindow {
     // Null when there is no match, which is Quickshell's own default and the
     // right answer while a monitor is being added or removed — a popup on
     // the wrong screen beats a popup on no screen.
+    // FORK: PARITY FIX — this whole surface used to fail to construct AT ALL
+    // under qtile/X11, and it took the other 7 popups (and the qdrop shelf)
+    // sharing this file down with it, exactly the class of failure
+    // qml/common/BackendSurface.md documents for the island's own windows:
+    //
+    //     WARN: Could not create attached properties object
+    //           'qs::wayland::layershell::WlrLayershell'
+    //
+    // That doc's fix is a base-file-plus-two-thin-wrappers split, chosen by
+    // whichever code instantiates the window. That does not fit here without
+    // fanning the same split out across every one of PopupChrome's callers —
+    // all 8 of them say `PopupChrome { … }` directly, none of them import a
+    // backend-specific name today, and this file (unlike DynamicIslandWindow)
+    // has no upstream original forcing it to keep one shared filename either
+    // way. So the split happens INSIDE this file instead, the same way
+    // shell.qml/popups.qml already keep `ThemeTransitionWindowWayland`
+    // uninstantiated under X11 via an empty `Variants` model: a `Loader`
+    // gated on `root.onWayland` never constructs its Wayland-only content
+    // under X11, and an attached property that is never asked for is an
+    // attached property that never fails to be created. Confirmed empirically
+    // against a throwaway `qs -p` probe on this exact X11 session before
+    // touching the real file — window constructs clean, no WARN, and the
+    // gated branch's own log line never fires.
+    //
+    // `import Quickshell.Wayland` stays: BackendSurface.md's own finding is
+    // that the import is harmless off Wayland and only a DECLARED attached
+    // property fails — this file still needs `WlrLayer`/`WlrKeyboardFocus`
+    // for the block below.
+    readonly property bool onWayland: {
+        const wl = Quickshell.env("WAYLAND_DISPLAY");
+        return wl !== undefined && wl !== null && String(wl) !== "";
+    }
+
+    // ---- WHICH MONITOR, WHICH IS ONLY A QUESTION WITH TWO ----
+    //
+    // These popups had no `screen` at all, so Quickshell placed them on
+    // whichever it picked first — the primary. With one monitor that is
+    // always right and the bug is invisible; with two it means every popup
+    // opens on the OTHER screen from the one you are working on.
+    //
+    // Bound to the FOCUSED monitor, not to a configured one: a popup is
+    // opened by a keypress, and the screen your keyboard is on is the screen
+    // you are looking at. Matched by NAME because Hyprland's monitor object
+    // and Quickshell's ShellScreen are different types over the same output.
+    //
+    // Null when there is no match, which is Quickshell's own default and the
+    // right answer while a monitor is being added or removed — a popup on
+    // the wrong screen beats a popup on no screen.
+    //
+    // `Hyprland.focusedMonitor` is Hyprland-only — BackendSurface.md records
+    // that USING (not importing) a Hyprland object under X11 does not crash
+    // the component the way an attached property does, it just fails
+    // quietly, but "every such use is behind a Loader gated on the
+    // compositor" is the convention that file sets, so this follows it rather
+    // than lean on the milder failure mode. Falls back to whichever screen
+    // Quickshell already considers primary/first under X11, which qtile's
+    // single-`eDP-1` session makes correct outright and a multi-monitor X11
+    // session leaves no worse off than before this popup had a `screen` at
+    // all.
     screen: {
+        if (!root.onWayland)
+            return Quickshell.screens.length ? Quickshell.screens[0] : null;
         const focused = Hyprland.focusedMonitor;
         if (!focused)
             return null;
@@ -133,22 +194,46 @@ PanelWindow {
                 return screens[i];
         return null;
     }
-    WlrLayershell.layer: WlrLayer.Overlay
-    // Reported: "when it is open the shelf i can not switch to another
-    // workspace also some other popups the same." MEASURED: even a direct
-    // `hyprctl dispatch workspace N` — no keyboard involved — is refused by
-    // Hyprland while this surface holds WlrKeyboardFocus.Exclusive;
-    // switching to OnDemand fixes it (A/B'd on the shelf with
-    // `qs -p …/popups.qml ipc call qdrop open` + `hyprctl dispatch
-    // workspace 8`). OnDemand full-time is not a free substitute — it is
-    // the exact regression the file header above warns against, a picker
-    // that only answers once you remember to click it first — so this
-    // drops to OnDemand only for exactly as long as Super is physically
-    // held, which is the only window a workspace-switch chord can arrive
-    // in. See the Keys handler below for where `superHeld` is set.
-    WlrLayershell.keyboardFocus: root.superHeld
-        ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive
-    WlrLayershell.namespace: "quickshell-qtile-popup"
+
+    // THE ACTUAL DECLARATIONS, IMPERATIVE AND GATED. Same three as before,
+    // same values, just assigned from inside the Wayland-only Loader branch
+    // instead of declared directly on `root` — `Qt.binding()` on
+    // `keyboardFocus` is required, not decoration: a plain `=` would freeze
+    // it at whatever `root.superHeld` was the instant this Loader's Component
+    // completed, and the whole point of that property is that it changes
+    // while the popup is open.
+    Loader {
+        active: root.onWayland
+        sourceComponent: Component {
+            Item {
+                Component.onCompleted: {
+                    root.WlrLayershell.layer = WlrLayer.Overlay;
+                    root.WlrLayershell.namespace = "quickshell-qtile-popup";
+                    // Reported: "when it is open the shelf i can not switch
+                    // to another workspace also some other popups the
+                    // same." MEASURED: even a direct `hyprctl dispatch
+                    // workspace N` — no keyboard involved — is refused by
+                    // Hyprland while this surface holds
+                    // WlrKeyboardFocus.Exclusive; switching to OnDemand
+                    // fixes it (A/B'd on the shelf with `qs -p
+                    // …/popups.qml ipc call qdrop open` + `hyprctl dispatch
+                    // workspace 8`). OnDemand full-time is not a free
+                    // substitute — it is the exact regression the file
+                    // header above warns against, a picker that only
+                    // answers once you remember to click it first — so
+                    // this drops to OnDemand only for exactly as long as
+                    // Super is physically held, which is the only window a
+                    // workspace-switch chord can arrive in. See the Keys
+                    // handler below for where `superHeld` is set.
+                    root.WlrLayershell.keyboardFocus = Qt.binding(function () {
+                        return root.superHeld
+                            ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive;
+                    });
+                }
+            }
+        }
+    }
+
     exclusionMode: ExclusionMode.Ignore
 
     implicitWidth: root.popupWidth

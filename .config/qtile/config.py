@@ -48,6 +48,9 @@ from scripts.brightness_control import brightness_change
 from scripts.mpv_manager import mpv_manager
 from scripts.mode_overlay import mode_overlay
 from scripts.above_fullscreen import is_promoted as _promoted_above_fullscreen
+# Imported for its hook subscriptions alone, same as above_fullscreen above --
+# see the module docstring for why a fullscreen glassy kitty needs this.
+import scripts.fullscreen_glass  # noqa: F401
 from scripts.toggle_apps import (
     toggle_qutebrowser,
     toggle_obsidian,
@@ -1825,9 +1828,51 @@ def apply_bar_on_reload_startup():
 _bar_space_pending = False
 
 
-def _reconcile_bar_space_soon(*_args):
+def _was_dock(client):
+    """Best-effort answer to "did this client ever reserve space".
+
+    Two paths, because a client_killed callback can arrive after the
+    window's X properties are already gone. The live get_wm_type() handles
+    client_managed (the window is freshly mapped and very much alive) and
+    an early client_killed; the _DOCK_WIDS fallback handles a client_killed
+    that arrives too late for its own properties to answer, using the
+    cache _refresh_docks_then_restack maintains — which is safe to read
+    here because that hook is SUBSCRIBED AFTER this one for both events, so
+    it has not yet rebuilt the cache to drop the dying client when this
+    runs. An unrecognisable shape reconciles anyway; false negatives are
+    the failure this whole guard exists to avoid repeating.
+    """
+    if client is None:
+        return True
+    try:
+        if client.window.get_wm_type() == "dock":
+            return True
+    except Exception:
+        pass
+    try:
+        return client.window.wid in _DOCK_WIDS
+    except Exception:
+        return True
+
+
+def _reconcile_bar_space_soon(*args):
     # Coalesced: opening a workspace full of windows fires this once per
     # client, and each call can end in a reconfigure_screens().
+    #
+    # GUARDED ON DOCK. Measured with a 200 Hz poll of screens[0].dy across a
+    # native -> island switch: `bar-switch`'s popups_stop() killing a plain
+    # utility client (popups.qml, which reserves nothing) was enough to
+    # trigger this handler, and 0.25s later its apply_bar_mode() re-run
+    # produced a THIRD wrong intermediate dy (104, after the two — 0 and 71
+    # — _clamp_hidden_bar_space's own docstring already documents) before
+    # settling back to the correct 33. This handler exists for the island's
+    # OWN start/stop, which are genuine dock events; a client that never
+    # claimed any space dying is not a reason to re-derive reservations,
+    # and every one of apply_bar_mode()'s intermediate states is a frame
+    # this session's tiled windows are actually resized to.
+    client = args[0] if args else None
+    if not _was_dock(client):
+        return
     global _bar_space_pending
     if _bar_space_pending:
         return
@@ -2861,6 +2906,20 @@ def _float_and_center_docs(client):
             h=h,
         )
         client.bring_to_front()
+        # bring_to_front() is a raw stackmode=Above X call -- see
+        # restack_docks()'s own docstring for why it exists and why it is
+        # the one thing that puts a window over the island with NO hook
+        # firing at all. This handler already runs inside client_managed,
+        # which restack_docks is also subscribed to, but registration
+        # order (this handler comes after it in the file) meant the
+        # deferred restack had already been scheduled BEFORE this raise
+        # happened -- catching it 50ms later rather than not at all, but
+        # "not at all" is exactly what the direct mod+middle-click bring-
+        # to-front bind does, since it fires no hook whatsoever. Calling it
+        # again here, synchronously, closes both gaps at the source rather
+        # than trusting a deferred call scheduled before the mis-stacking
+        # existed.
+        restack_docks()
     except Exception:
         pass
 
@@ -2906,6 +2965,7 @@ def _float_and_center_file_chooser(client):
             h=h,
         )
         client.bring_to_front()
+        restack_docks()  # see _float_and_center_docs's note on bring_to_front()
     except Exception:
         pass
 
@@ -2960,6 +3020,7 @@ def _float_and_center_pinentry(client):
             h=h,
         )
         client.bring_to_front()
+        restack_docks()  # see _float_and_center_docs's note on bring_to_front()
         # Focus it explicitly -- you are about to type a password into
         # it. warp=False keeps the pointer where it was, as everywhere
         # else in this config.
@@ -3077,6 +3138,7 @@ def _focus_document_app(client):
         group.toscreen()
         group.focus(client, warp=False)
         client.bring_to_front()
+        restack_docks()  # see _float_and_center_docs's note on bring_to_front()
     except Exception:
         pass
 
@@ -4270,6 +4332,35 @@ def _solid(colour):
 def _chord_overlay_chip():
     if not ACTIVE_CHORD:
         return None
+    # ---- ISLAND MODE ALREADY HAS ITS OWN CHORD HUD -- DON'T DOUBLE IT ----
+    #
+    # Reported: "when the island is active it shows both the popup and the
+    # label". Root cause: this overlay exists to cover for qtile's OWN bar
+    # when a FULLSCREEN window hides it (mode_overlay's whole docstring is
+    # about that one case) -- but remember_chord() sets ACTIVE_CHORD on
+    # EVERY chord entry unconditionally, with no bar_switch_mode() check,
+    # and mode_overlay._bar_is_covered() only tests `current_window.
+    # fullscreen`, not WHY the bar might be covered. In island mode qtile's
+    # bar is hidden ALL the time by apply_bar_mode() -- not just under
+    # fullscreen -- and island_shows_chord_legend() (this file, just above
+    # 12.2's header) already pushes the exact same information to the
+    # island's own ModeKeysLayer popup on every enter_chord, which already
+    # stays above a fullscreen window on its own (the X11 layering patch /
+    # WlrLayer promotion, not this overlay). So the two were firing
+    # together for as long as a chord stayed open under a fullscreen
+    # window: this qtile-bar chip (labelled with the same inline key list
+    # CHORD_CHIP_LABELS always carried, which is why it looked like a
+    # second, smaller copy of the island's own key grid) plus the island's
+    # real popup, neither aware the other existed.
+    #
+    # `island_owns_chord()` is deliberately NOT what gates this -- that
+    # table only lists the five chords with an island PANEL twin
+    # (Bluetooth-Mode, Wifi-Mode, ...); ordinary chords like Rofi-Mode were
+    # never in it and still get the island's ModeKeysLayer via
+    # island_shows_chord_legend(), so the qtile-side echo has to be
+    # silenced for every chord while island mode is on, not just those five.
+    if bar_switch_mode() == "island":
+        return None
     return (
         chord_chip_label(ACTIVE_CHORD),
         _solid(CHORD_CHIP_COLORS.get(ACTIVE_CHORD, DEFAULT_CHIP_COLOR)),
@@ -4860,17 +4951,26 @@ def normal_user_bar():
             padding_y=2,
             padding_x=8,
             borderwidth=4,
-            # ACCENT — the workspace NUMBER itself. Was colors[8]; see
-            # ACCENT's own comment for why that was a different colour
-            # from the window border on most themes despite reading as
-            # "the same accent" to the eye until compared side by side.
-            active=ACCENT,
+            # colors[8] — a group that merely HAS windows, kept distinct
+            # from the group you are actually ON. `active` was set to
+            # ACCENT alongside this_current_screen_border below, on the
+            # theory that "the workspace number" sharing the window
+            # border's accent meant every populated group. It didn't:
+            # groupbox.draw() unconditionally overrides the CURRENT
+            # group's text colour to this_current_screen_border (see
+            # libqtile/widget/groupbox.py), so `active` is only ever the
+            # colour of a populated group you are NOT on. With both set
+            # to ACCENT, that group and the one you're on render
+            # identically — reported as "can't tell which workspace I'm
+            # active on". this_current_screen_border keeps ACCENT, which
+            # is the actual "workspace number matches window border and
+            # layout glyph" ask; `active` goes back to colors[8].
+            active=colors[8],
             inactive=colors[1],
             highlight_color=colors[2],
             highlight_method="text",
-            # And the border drawn around the box itself, for the same
-            # reason — "border" in the literal sense this time, not just
-            # the concept.
+            # The currently-focused group's label — this IS the "workspace
+            # number follows the window border/layout glyph accent" ask.
             this_current_screen_border=ACCENT,
             this_screen_border=colors[4],
             other_current_screen_border=ACCENT,
@@ -5032,13 +5132,13 @@ def groupbox_widget():
         padding_y=2,
         padding_x=8,
         borderwidth=4,
-        # ACCENT, not colors[8] — same fix as the other GroupBox
-        # instance above (see ACCENT's own comment at its definition).
-        # This is the one actually live on the default BAR_MODE — caught
-        # only by checking the RUNNING widget's `.active` over IPC, which
-        # still read the old colors[8] value after the other GroupBox had
-        # already been fixed and qtile restarted.
-        active=ACCENT,
+        # colors[8], back from ACCENT — see the matching comment on the
+        # other GroupBox above: with `active` == this_current_screen_border
+        # (both ACCENT), a populated-but-not-current group and the group
+        # you're actually on render in the same colour, so the bar can't
+        # show which workspace is active. This is the instance actually
+        # live on the default BAR_MODE, so it's the one that mattered.
+        active=colors[8],
         inactive=colors[1],
         highlight_color=colors[2],
         highlight_method="text",
@@ -7525,6 +7625,17 @@ keys = [
         [mod],
         "p",
         [
+            # PARITY WITH HYPRLAND: submaps.conf's `rofi` submap binds
+            # `$mod, P, submap, reset` as its very first line inside the
+            # submap, so a second $mod+P closes it exactly like the first
+            # one opened it. Nothing in this chord's key list used `[mod]`
+            # as a modifier -- every entry below is bare or shift-only --
+            # so a second $mod+P here fell through unmatched (X11 does not
+            # forward it to the focused window either; ungrab_chord's
+            # keyboard grab just swallows it) instead of closing the mode,
+            # reported as "win+p opens it, second press does not toggle it
+            # off like in Hyprland".
+            Key([mod], "p", lazy.ungrab_chord(), desc="Close Rofi-Mode"),
             # NOTE : these commanted scripts are available u can use them , but i am not anymore
             # Key([], "a", lazy.spawn("dm-sounds -r"), desc='Choose ambient sound'),
             # Key([], "o", lazy.spawn("emacsclient --eval '(emacs-everywhere)'"), desc='Open emacs edit field'),
@@ -9037,6 +9148,25 @@ if __name__ in ["config", "__main__"]:
 # │░░▀░▀░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀▀▀│
 # ╚──────────────────────────╝
 
+# mod+middle-click's own bring_to_front(), wired through restack_docks too.
+#
+# Reported: "why the popups not always on top". bring_to_front() is a raw
+# X stackmode=Above call (see restack_docks()'s own docstring) -- the other
+# four call sites in this file all run inside a client_managed handler, so
+# even before this fix the ALSO-subscribed deferred restack caught them
+# within 50ms. This bind fires no hook of any kind: mod+middle-click on any
+# window raises it over the island with nothing ever scheduled to notice,
+# and it stays there until some UNRELATED focus change fixes it by
+# accident. Calling restack_docks() here closes the one gap that had no
+# safety net at all.
+def _bring_to_front_and_restack(qtile):
+    win = qtile.current_window
+    if win is None:
+        return
+    win.bring_to_front()
+    restack_docks()
+
+
 # Drag floating layouts.
 # Move windows with SUPER instead of ALT
 mouse = [
@@ -9052,7 +9182,7 @@ mouse = [
         lazy.window.set_size_floating(),
         start=lazy.window.get_size(),
     ),
-    Click([mod], "Button2", lazy.window.bring_to_front()),
+    Click([mod], "Button2", lazy.function(_bring_to_front_and_restack)),
 ]
 
 

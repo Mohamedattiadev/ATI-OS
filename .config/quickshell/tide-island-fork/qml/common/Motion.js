@@ -59,7 +59,18 @@ var FADE_MS = 220;
 // Global multiplier, for taste. 1.0 is the spec. Lower is faster.
 // This exists so "make it snappier" is a one-number change rather than a
 // hunt through 92 hardcoded durations.
-var SCALE = 1.0;
+//
+// 0.8: "the popups opening closing a bit slow, make it faster" — a flat
+// 20% off every morph, fade, fade-in/out, content delay and control
+// duration in the file, since all of them route through morphDuration()/
+// fadeDuration()/etc. above rather than reading MORPH_MS/FADE_MS directly.
+// Not lower than this without re-reading the LARGE_MORPH_MS measurement
+// above first: shortening the shape duration alone did nothing there
+// because content shift and the slider intro were the actual tail, not
+// the spring — a much smaller SCALE risks the same "did nothing, in the
+// wrong direction" result while spending the spring's overshoot-and-settle
+// feel this file argues hard for.
+var SCALE = 0.8;
 
 // ---------------------------------------------------------------------
 //  ONE DURATION FOR A 40 px MOVE AND A 1000 px ONE WAS THE BUG
