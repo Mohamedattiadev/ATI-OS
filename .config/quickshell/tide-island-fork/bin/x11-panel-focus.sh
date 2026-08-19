@@ -142,10 +142,19 @@ follow_restore() {
   # this config's setting and the safe end of the trade — a desktop that
   # follows the mouse when it should not is a preference, one that has
   # silently stopped is a bug report.
+  #
+  # BACKGROUNDED, like follow_suspend's own call — measured live: this was
+  # the single largest cost in a close, a synchronous ~150ms qtile
+  # interpreter start sitting in front of the focus handback below, so
+  # every panel close paid a fresh Python startup before the window you
+  # were closing back to could have the keyboard again. The FOLLOW_FILE
+  # read/remove above already happened synchronously, which is the part
+  # that has to serialise against a second close arriving fast — the qtile
+  # write itself has no reader waiting on it before this function returns.
   case "$prev" in
-    *"'click_or_drag_only'"*) qtile_set_follow "'click_or_drag_only'" >/dev/null ;;
-    *False*)                  qtile_set_follow False >/dev/null ;;
-    *)                        qtile_set_follow True >/dev/null ;;
+    *"'click_or_drag_only'"*) qtile_set_follow "'click_or_drag_only'" >/dev/null & ;;
+    *False*)                  qtile_set_follow False >/dev/null & ;;
+    *)                        qtile_set_follow True >/dev/null & ;;
   esac
 }
 
