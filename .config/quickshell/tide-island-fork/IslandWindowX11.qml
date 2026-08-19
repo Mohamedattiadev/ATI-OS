@@ -74,6 +74,29 @@ DynamicIslandWindow {
     // wrapper needs none of this.
     onWantsKeyboardChanged: panelFocus.run(island.wantsKeyboard)
 
+    // ---- THE OPEN CASE ISN'T THE ONLY CASE ----
+    //
+    // Reported: open a panel, let X focus drift to some other window (any
+    // deliberate click elsewhere does it — the follow-mouse suspension
+    // above only ever guarded against an ENTER-NOTIFY hover-steal, never a
+    // click), then click back into the still-open panel: q/Esc do nothing,
+    // because the keypress is going wherever X actually thinks focus is,
+    // which is not this window any more. `wantsKeyboard` never changed
+    // across any of that — the panel was open the whole time — so
+    // `onWantsKeyboardChanged` above never re-fires and the grab is never
+    // reclaimed.
+    //
+    // `islandContainerActiveFocus` is DynamicIslandWindow.qml's own answer
+    // to "something just asked this panel for the keyboard" — it is true
+    // exactly when QML's `forceActiveFocus()` succeeds, which already
+    // happens on a click into the panel's content from ~10 places. Watching
+    // it here means every one of those click handlers gets this fix for
+    // free, with no call site touched.
+    onIslandContainerActiveFocusChanged: {
+        if (island.islandContainerActiveFocus && island.wantsKeyboard)
+            panelFocus.run(true);
+    }
+
     Process {
         id: panelFocus
 

@@ -74,6 +74,32 @@ PanelWindow {
     readonly property real reportedHeight: mainCapsule.targetHeight
     readonly property real reportedWidth: mainCapsule.displayedWidth
 
+    // ---- FORK: EXPOSED SO X11 CAN NOTICE A CLICK ASKED FOR THE KEYBOARD ----
+    //
+    // Reported: open a panel, let X focus drift to some other window (click
+    // anything else — there is no exclusive grab under X11 to stop it, only
+    // the follow-mouse suspension in x11-panel-focus.sh, and that only ever
+    // guarded against an ENTER-NOTIFY hover-steal, never a deliberate click
+    // elsewhere), then click back into the still-open panel: q/Esc do
+    // nothing, because the keypress is going to whatever window X actually
+    // thinks has focus, which is not this one.
+    //
+    // `forceActiveFocus()` — already called from ~10 places whenever a click
+    // lands on this panel's content — only ever moves QML's OWN idea of
+    // which Item has focus. Under Wayland that is enough, because the
+    // compositor already routes keys to this SURFACE once WlrKeyboardFocus
+    // says to; under X11 nothing re-asks the X server for the window itself
+    // unless something calls x11-panel-focus.sh again, and none of those
+    // ~10 call sites know that script exists.
+    //
+    // So: expose the one signal that is common to every one of them —
+    // `islandContainer.activeFocus` turning true — as a root property, which
+    // IslandWindowX11.qml can watch without needing to touch any of the
+    // scattered call sites. onWantsKeyboardChanged still owns the OPEN case;
+    // this is the "focus drifted, then you clicked back in" case it cannot
+    // reach because `wantsKeyboard` itself never changes across it.
+    readonly property bool islandContainerActiveFocus: islandContainer.activeFocus
+
     property string overviewPhase: "closed"
     property bool overviewPreloading: false
     readonly property bool overviewPreparing: overviewPhase === "preparing"
@@ -3522,6 +3548,34 @@ PanelWindow {
                 clearModeIndicator();
                 return;
             }
+
+            // ---- THE KEY PANEL OUTRANKS THE NAME INDICATOR HERE TOO ----
+            //
+            // smartRestoreState() already says so in its own comment ("the
+            // key panel outranks the name indicator... while a submap is
+            // active it is what should be on screen") and enforces it when
+            // restoring from an interrupt — but nothing enforced it HERE, at
+            // the point the indicator is actually raised. showModeKeysWindow
+            // clears the indicator before showing the grid, but nothing in
+            // the other direction cleared modeKeysName, so a `tide showText`
+            // arriving while a submap's key grid was already up (island_show
+            // being retried by submap-indicator.sh for the same or a fresh
+            // event, or any other caller of showText/showTextWithIcon) took
+            // the capsule over with `islandState = "split"` while
+            // modeKeysName stayed non-empty underneath it. The two states
+            // then fought over islandState on every later interrupt —
+            // smartRestoreState prefers modeKeysName and flips back to
+            // "mode_keys", the next assertModeIndicator() flips it back to
+            // "split" — which is what read as "the popup and the label both
+            // showing": not truly simultaneous, but alternating fast enough,
+            // and disagreeing with each other, to look that way.
+            //
+            // So: while a submap's key grid is the active representation,
+            // a plain-name call is already superseded and does nothing.
+            // clearModeKeysWindow (the submap's own `submap>>` leave event)
+            // is what ends that precedence, same as it always was.
+            if (modeKeysName !== "")
+                return;
 
             modeIndicatorActive = true;
             assertModeIndicator();
