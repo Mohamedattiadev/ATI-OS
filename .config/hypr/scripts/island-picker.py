@@ -142,21 +142,77 @@ def _hypr(*args):
 
 # ---------------------------------------------------------------- windows --
 
+EWMH_STATE_SCRIPT = os.path.expanduser(
+    "~/.config/quickshell/tide-island-fork/bin/ewmh-state.py")
+
+
+def _ewmh_frame():
+    """One {desktop, names, active, windows} frame under X11, or None.
+
+    ewmh-state.py is a standing WATCHER — the island's own X11 workspace and
+    window feed — so it never exits on its own; it is meant to be read one
+    line at a time by something that keeps its stdout open. Spawned fresh
+    here rather than talked to, the same way bin/x11-selftest.sh reads it:
+    `timeout 6 ... | head -1`, so the pipe closing under `head` is what ends
+    it. Duplicating a small parse of EWMH properties in a second language
+    was the alternative and it is exactly the trap this file's own RULES
+    describe for a duplicated palette — one drifts and nothing notices.
+    """
+    if not os.path.exists(EWMH_STATE_SCRIPT):
+        return None
+    try:
+        out = subprocess.run(
+            ["sh", "-c", "timeout 6 python3 %s 2>/dev/null | head -1"
+             % shlex.quote(EWMH_STATE_SCRIPT)],
+            capture_output=True, text=True, timeout=8)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    line = out.stdout.strip()
+    if not line:
+        return None
+    try:
+        return json.loads(line)
+    except ValueError:
+        return None
+
+
 def windows_list():
+    if _is_wayland():
+        items = []
+        for client in _hypr("clients"):
+            address = client.get("address") or ""
+            title = (client.get("title") or "").strip()
+            cls = (client.get("class") or "").strip()
+            if not address or client.get("workspace", {}).get("id", 0) < 0 and not title:
+                continue
+            workspace = client.get("workspace", {}).get("name", "?")
+            items.append({
+                "id": address,
+                "label": title or cls or address,
+                # The class and workspace, not the pid: this menu closes a
+                # WINDOW, and "which of my six terminals is this" is
+                # answered by where it is, never by its pid.
+                "detail": "%s  ·  workspace %s" % (cls or "?", workspace),
+            })
+        items.sort(key=lambda row: row["label"].lower())
+        return {"title": "Close window", "items": items}
+
+    frame = _ewmh_frame()
     items = []
-    for client in _hypr("clients"):
-        address = client.get("address") or ""
-        title = (client.get("title") or "").strip()
-        cls = (client.get("class") or "").strip()
-        if not address or client.get("workspace", {}).get("id", 0) < 0 and not title:
+    names = (frame or {}).get("names") or []
+    for window in (frame or {}).get("windows") or []:
+        if not window.get("normal", True):
             continue
-        workspace = client.get("workspace", {}).get("name", "?")
+        wid = window.get("id")
+        if not isinstance(wid, int):
+            continue
+        title = (window.get("title") or "").strip()
+        cls = (window.get("appId") or "").strip()
+        desktop = window.get("desktop")
+        workspace = names[desktop] if isinstance(desktop, int) and 0 <= desktop < len(names) else "?"
         items.append({
-            "id": address,
-            "label": title or cls or address,
-            # The class and workspace, not the pid: this menu closes a WINDOW,
-            # and "which of my six terminals is this" is answered by where it
-            # is, never by its pid.
+            "id": str(wid),
+            "label": title or cls or str(wid),
             "detail": "%s  ·  workspace %s" % (cls or "?", workspace),
         })
     items.sort(key=lambda row: row["label"].lower())
@@ -164,7 +220,18 @@ def windows_list():
 
 
 def windows_run(item_id):
-    subprocess.run(["hyprctl", "dispatch", "closewindow", "address:%s" % item_id],
+    if _is_wayland():
+        subprocess.run(["hyprctl", "dispatch", "closewindow", "address:%s" % item_id],
+                       capture_output=True, timeout=4)
+        return
+    # `_NET_CLOSE_WINDOW`, the same polite request every EWMH window manager
+    # honours — `-i` because ewmh-state.py's ids are the raw X window id,
+    # not a title to fuzzy-match, and wmctrl wants that in hex.
+    try:
+        wid = int(item_id)
+    except ValueError:
+        return
+    subprocess.run(["wmctrl", "-i", "-c", "0x%x" % wid],
                    capture_output=True, timeout=4)
 
 
@@ -334,23 +401,53 @@ def processes_run(item_id):
 # ------------------------------------------------------------- workspaces --
 
 def workspaces_list():
+    if _is_wayland():
+        items = []
+        for workspace in _hypr("workspaces"):
+            wid = workspace.get("id")
+            if wid is None or wid < 0:
+                continue
+            items.append({
+                "id": str(wid),
+                "label": str(workspace.get("name", wid)),
+                "detail": "%d window%s" % (workspace.get("windows", 0),
+                                           "" if workspace.get("windows", 0) == 1 else "s"),
+            })
+        items.sort(key=lambda row: int(row["id"]))
+        return {"title": "Go to workspace", "items": items}
+
+    # qtile calls these groups, not workspaces, and names them with
+    # arbitrary strings rather than a dense integer range — "id" here is
+    # the group NAME, not a number, so there is no int sort to redo.
+    frame = _ewmh_frame()
+    names = (frame or {}).get("names") or []
+    counts = {}
+    for window in (frame or {}).get("windows") or []:
+        d = window.get("desktop")
+        if isinstance(d, int):
+            counts[d] = counts.get(d, 0) + 1
     items = []
-    for workspace in _hypr("workspaces"):
-        wid = workspace.get("id")
-        if wid is None or wid < 0:
+    for i, name in enumerate(names):
+        # The scratchpad group holds hidden scratchpad windows, not a
+        # workspace a normal switch lands on — hyprctl's own list excludes
+        # the equivalent special workspaces the same way (`id < 0` above).
+        if name == "scratchpad":
             continue
+        n = counts.get(i, 0)
         items.append({
-            "id": str(wid),
-            "label": str(workspace.get("name", wid)),
-            "detail": "%d window%s" % (workspace.get("windows", 0),
-                                       "" if workspace.get("windows", 0) == 1 else "s"),
+            "id": name,
+            "label": name,
+            "detail": "%d window%s" % (n, "" if n == 1 else "s"),
         })
-    items.sort(key=lambda row: int(row["id"]))
     return {"title": "Go to workspace", "items": items}
 
 
 def workspaces_run(item_id):
-    subprocess.run(["hyprctl", "dispatch", "workspace", item_id],
+    if _is_wayland():
+        subprocess.run(["hyprctl", "dispatch", "workspace", item_id],
+                       capture_output=True, timeout=4)
+        return
+    subprocess.run(["qtile", "cmd-obj", "-o", "group", item_id, "-f", "toscreen"],
                    capture_output=True, timeout=4)
 
 
@@ -928,17 +1025,33 @@ def _spawn_sh(script):
 
 
 def _copy(text):
-    """Put text on the Wayland clipboard.
+    """Put text on the real clipboard, whichever display server owns it.
 
-    wl-copy and not xclip throughout this file: the qtile session's scripts
-    keep xclip because they run on X11, and an xclip that "works" under
-    Hyprland is writing to the XWayland selection, which nothing native
-    reads. Measured elsewhere in this port: an x11grab of the Hyprland
-    session is a black frame with a cursor on it, and the selection story
-    is the same story.
+    wl-copy over xclip under Hyprland: an xclip that "works" there is
+    writing to the XWayland selection, which nothing native reads.
+    Measured elsewhere in this port: an x11grab of the Hyprland session is
+    a black frame with a cursor on it, and the selection story is the
+    same story. Split on WAYLAND_DISPLAY per the RULES — qtile's session
+    has DISPLAY set too, so that is not the test — matching
+    qml/common/Clipboard.js's branch for the QML side of this same file.
     """
-    if shutil.which("wl-copy"):
-        subprocess.run(["wl-copy", "--", text], capture_output=True, timeout=4)
+    if os.environ.get("WAYLAND_DISPLAY"):
+        if shutil.which("wl-copy"):
+            subprocess.run(["wl-copy", "--", text], capture_output=True, timeout=4)
+            return True
+        return False
+    if shutil.which("xclip"):
+        # NOT capture_output: xclip forks a background process to keep
+        # owning the selection and returns immediately, and that child
+        # inherits the parent's stdout/stderr pipes. With capture_output=True
+        # those are real pipes, so communicate() blocks reading them until
+        # the CHILD exits too — which is "until something else takes the
+        # clipboard" — and every call hung for the full 4 s timeout.
+        # Measured live: the text still reached the clipboard either way,
+        # timeout or not, which is what made the hang easy to miss.
+        subprocess.run(["xclip", "-selection", "clipboard"], input=text,
+                       text=True, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=4)
         return True
     return False
 
@@ -956,13 +1069,19 @@ def _selection():
     of text scrolled to its end, with the cursor somewhere past the horizon.
     A prefill that has to be cleared before it can be used is worse than an
     empty field, so anything over SELECTION_MAX is treated as "that was not
-    a word you meant to check".
+    a word you meant to check". Split on WAYLAND_DISPLAY like `_copy` —
+    `xclip -o -selection primary` is the X11 counterpart of `wl-paste -p`.
     """
-    if not shutil.which("wl-paste"):
-        return ""
+    if os.environ.get("WAYLAND_DISPLAY"):
+        if not shutil.which("wl-paste"):
+            return ""
+        cmd = ["wl-paste", "-p", "-n"]
+    else:
+        if not shutil.which("xclip"):
+            return ""
+        cmd = ["xclip", "-o", "-selection", "primary"]
     try:
-        out = subprocess.run(["wl-paste", "-p", "-n"],
-                             capture_output=True, text=True, timeout=3)
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
     except (OSError, subprocess.SubprocessError):
         return ""
     if out.returncode != 0:
@@ -1082,39 +1201,121 @@ _SHOT_DELAYS = range(0, 6)
 def _shot_monitors():
     """Extra area rows, one per output, or [] on a single-head machine.
 
-    dm-satty's rows are `xrandr --listactivemonitors`; these are the
-    compositor's own, which is the only list that is true under Hyprland.
+    dm-satty's rows are `xrandr --listactivemonitors`; under Wayland these
+    are the compositor's own, the only list that is true there. Under X11
+    xrandr already IS the true list — see `_x11_monitors`.
     """
-    monitors = _hypr("monitors")
-    if not isinstance(monitors, list) or len(monitors) < 2:
+    if _is_wayland():
+        monitors = _hypr("monitors")
+        if not isinstance(monitors, list) or len(monitors) < 2:
+            return []
+        rows = []
+        for monitor in monitors:
+            name = monitor.get("name") if isinstance(monitor, dict) else None
+            if not name:
+                continue
+            rows.append({
+                "id": "area:mon-%s:" % name,
+                "label": name,
+                "detail": "%sx%s at %s,%s" % (
+                    monitor.get("width", "?"), monitor.get("height", "?"),
+                    monitor.get("x", "?"), monitor.get("y", "?")),
+            })
+        return rows
+    monitors = _x11_monitors()
+    if len(monitors) < 2:
+        return []
+    return [{
+        "id": "area:mon-%s:" % m["name"],
+        "label": m["name"],
+        "detail": "%sx%s at %s,%s" % (m["width"], m["height"], m["x"], m["y"]),
+    } for m in monitors]
+
+
+def _is_wayland():
+    return bool(os.environ.get("WAYLAND_DISPLAY"))
+
+
+def _x11_active_window():
+    """(title, "WxHX+Y") of the X11 active window, or ("", "") off either.
+
+    xdotool chains: `getactivewindow` sets the implicit window for the
+    commands after it, so this is one process for the title and the
+    geometry together rather than two racing against a focus change
+    between them.
+    """
+    if not shutil.which("xdotool"):
+        return "", ""
+    try:
+        out = subprocess.run(
+            ["xdotool", "getactivewindow", "getwindowname",
+             "getwindowgeometry", "--shell"],
+            capture_output=True, text=True, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        return "", ""
+    if out.returncode != 0:
+        return "", ""
+    lines = out.stdout.splitlines()
+    title = lines[0].strip() if lines else ""
+    vals = dict(line.split("=", 1) for line in lines[1:] if "=" in line)
+    x, y, w, h = (vals.get(k) for k in ("X", "Y", "WIDTH", "HEIGHT"))
+    geometry = "%sx%s+%s+%s" % (w, h, x, y) if all([x, y, w, h]) else ""
+    return title, geometry
+
+
+def _x11_monitors():
+    """[{name, width, height, x, y}] from `xrandr --query`.
+
+    This port's Wayland half asks the compositor because that is the only
+    true list there; under X11 xrandr IS the true list, and it is also what
+    ThemeTransitionWindow.qml's maim path reads to freeze one output at a
+    time on a two-head session.
+    """
+    if not shutil.which("xrandr"):
+        return []
+    try:
+        out = subprocess.run(["xrandr", "--query"], capture_output=True,
+                             text=True, timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
         return []
     rows = []
-    for monitor in monitors:
-        name = monitor.get("name") if isinstance(monitor, dict) else None
-        if not name:
+    for line in out.splitlines():
+        m = re.match(r"^(\S+) connected(?: primary)? (\d+)x(\d+)\+(\d+)\+(\d+)", line)
+        if not m:
             continue
-        rows.append({
-            "id": "area:mon-%s:" % name,
-            "label": name,
-            "detail": "%sx%s at %s,%s" % (
-                monitor.get("width", "?"), monitor.get("height", "?"),
-                monitor.get("x", "?"), monitor.get("y", "?")),
-        })
+        name, w, h, x, y = m.groups()
+        rows.append({"name": name, "width": w, "height": h, "x": x, "y": y})
     return rows
 
 
 def screenshot_list():
-    active = _hypr("activewindow")
-    title = (active or {}).get("title", "") if isinstance(active, dict) else ""
-    satty = "annotate, then save" if shutil.which("satty") \
-        else "satty is not installed"
+    if _is_wayland():
+        active = _hypr("activewindow")
+        title = (active or {}).get("title", "") if isinstance(active, dict) else ""
+    else:
+        title, _ = _x11_active_window()
+    have_satty = shutil.which("satty")
+    if not have_satty:
+        satty = "satty is not installed"
+    elif not _is_wayland():
+        # satty is a layer-shell client; there is no compositor for it to
+        # attach to in a plain X11 session, so it is a real binary that
+        # still cannot run here. Said outright rather than offered and
+        # left to fail silently in the detached shell.
+        satty = "satty needs a Wayland session"
+    else:
+        satty = "annotate, then save"
+    capture_tool = "grim" if _is_wayland() else "maim"
+    region_detail = ("slurp draws the rectangle once this panel is gone"
+                      if _is_wayland()
+                      else "drag a rectangle once this panel is gone")
     return _page("Take screenshot of:", [
         {"id": "area:full:", "label": "Fullscreen",
-         "detail": "grim, the whole output"},
+         "detail": "%s, the whole output" % capture_tool},
         {"id": "area:window:", "label": "Active window",
          "detail": _ellipsis(title, 80) if title else "nothing focused"},
         {"id": "area:region:", "label": "Selected region",
-         "detail": "slurp draws the rectangle once this panel is gone"},
+         "detail": region_detail},
         {"id": "area:full:satty", "label": "Fullscreen (edit with satty)",
          "detail": satty},
         {"id": "area:region:satty",
@@ -1123,49 +1324,86 @@ def screenshot_list():
 
 
 def _shot_geometry(area):
-    """The -g argument for grim, or "" for a full-output grab.
+    """The capture tool's area argument, or "" for a full-output grab.
 
     The active window's box is read HERE, at the moment the AREA IS CHOSEN,
     and not in the spawned shell. By the time the shell runs the panel has
-    closed and the focus has moved back — `hyprctl activewindow` would then
-    answer with whatever the compositor refocused, which is usually the same
-    window and occasionally is not. With the delay step restored the gap is
-    wider still: up to five seconds, during which the user may well have
-    clicked somewhere. Reading it early is what makes "Active window" mean
-    the window that was active when they said "Active window".
+    closed and the focus has moved back — the compositor/WM would then
+    answer with whatever refocused, which is usually the same window and
+    occasionally is not. With the delay step restored the gap is wider
+    still: up to five seconds, during which the user may well have clicked
+    somewhere. Reading it early is what makes "Active window" mean the
+    window that was active when they said "Active window".
+
+    grim's `-g` wants `<x>,<y> <w>x<h>`; maim's wants `WxH+X+Y` — the RULES
+    already record that the three screenshot geometry formats do not agree.
+    Built here rather than in `_shot_capture` so the string riding in the id
+    is already the right shape for whichever tool will read it back.
     """
     if area != "window":
         return ""
-    active = _hypr("activewindow")
-    if not isinstance(active, dict):
-        return ""
-    at, size = active.get("at"), active.get("size")
-    if not (isinstance(at, list) and isinstance(size, list)):
-        return ""
-    return "%d,%d %dx%d" % (at[0], at[1], size[0], size[1])
+    if _is_wayland():
+        active = _hypr("activewindow")
+        if not isinstance(active, dict):
+            return ""
+        at, size = active.get("at"), active.get("size")
+        if not (isinstance(at, list) and isinstance(size, list)):
+            return ""
+        return "%d,%d %dx%d" % (at[0], at[1], size[0], size[1])
+    _, geometry = _x11_active_window()
+    return geometry
 
 
-def _shot_capture(area, geometry):
+def _shot_capture(area, geometry, delay):
     """The shell fragment that puts one PNG on stdout or in a named file.
 
-    Returns (prefix, capture): `prefix` runs BEFORE the delay, `capture` is
-    the grim invocation. They are separate because of where the delay goes
-    for a region: dm-satty ran `maim -s --delay=N`, and maim takes the
-    selection FIRST and delays after it, so the rectangle is drawn
-    immediately and the shutter is what waits. A `sleep N; slurp` would
-    invert that and make the delay useless — you would be dragging a
-    rectangle over the state you were trying to give yourself time to set up.
+    Returns (prefix, capture, consumed_delay). `prefix` runs BEFORE the
+    fixed handoff wait, `capture` runs after it, and `consumed_delay` is
+    True when `capture` already accounts for the chosen delay itself, so
+    the caller must not sleep for it a second time.
+
+    WAYLAND: the delay goes in `prefix` for a region, because dm-satty ran
+    `maim -s --delay=N` and maim takes the selection FIRST and delays
+    after it, so the rectangle is drawn immediately and the shutter is
+    what waits. A `sleep N; slurp` would invert that and make the delay
+    useless — you would be dragging a rectangle over the state you were
+    trying to give yourself time to set up.
+
+    X11: maim's OWN `--select --delay=N` already has that exact order
+    built in — draw the rectangle, then wait, then shoot — in one call, so
+    there is nothing for a shell prefix to do; `consumed_delay` tells
+    `_shot_fire` to skip its own copy of the wait.
     """
+    if not _is_wayland():
+        if area == "region":
+            # A cancelled selection exits non-zero and must take the whole
+            # thing down quietly — a cancelled selection is a "no thanks",
+            # not a failure to report. Same contract as slurp's below.
+            cmd = "maim --hidecursor --select"
+            try:
+                wait = float(delay or 0)
+            except ValueError:
+                wait = 0.0
+            if wait:
+                cmd += " --delay=%s" % wait
+            return "", cmd, True
+        if area.startswith("mon-"):
+            mon = next((m for m in _x11_monitors() if m["name"] == area[4:]), None)
+            if mon:
+                geo = "%sx%s+%s+%s" % (mon["width"], mon["height"], mon["x"], mon["y"])
+                return "", "maim --hidecursor -g %s" % shlex.quote(geo), False
+            return "", "maim --hidecursor", False
+        if geometry:
+            return "", "maim --hidecursor -g %s" % shlex.quote(geometry), False
+        return "", "maim --hidecursor", False
+
     if area == "region":
-        # A cancelled slurp exits non-zero and must take the whole thing
-        # down quietly — a cancelled selection is a "no thanks", not a
-        # failure to report.
-        return 'g=$(slurp) || exit 0; ', 'grim -g "$g"'
+        return 'g=$(slurp) || exit 0; ', 'grim -g "$g"', False
     if area.startswith("mon-"):
-        return "", "grim -o %s" % shlex.quote(area[4:])
+        return "", "grim -o %s" % shlex.quote(area[4:]), False
     if geometry:
-        return "", "grim -g %s" % shlex.quote(geometry)
-    return "", "grim"
+        return "", "grim -g %s" % shlex.quote(geometry), False
+    return "", "grim", False
 
 
 def screenshot_run(item_id):
@@ -1205,7 +1443,8 @@ def screenshot_run(item_id):
             {"id": "shot:%s:file" % carry, "label": "File",
              "detail": SHOT_DIR},
             {"id": "shot:%s:clipboard" % carry, "label": "Clipboard",
-             "detail": "wl-copy -t image/png"},
+             "detail": "wl-copy -t image/png" if _is_wayland()
+                       else "xclip -selection clipboard -t image/png"},
             {"id": "shot:%s:both" % carry, "label": "Both",
              "detail": "file and clipboard"},
         ])
@@ -1218,30 +1457,42 @@ def screenshot_run(item_id):
 
 
 def _shot_fire(area, geometry, delay, dest):
-    if dest == "satty" and not shutil.which("satty"):
-        raise ValueError("satty is not installed")
-    if not shutil.which("grim"):
-        raise ValueError("grim is not installed")
+    if dest == "satty":
+        if not shutil.which("satty"):
+            raise ValueError("satty is not installed")
+        if not _is_wayland():
+            raise ValueError("satty needs a Wayland session")
+    capture_tool = "grim" if _is_wayland() else "maim"
+    if not shutil.which(capture_tool):
+        raise ValueError("%s is not installed" % capture_tool)
 
     os.makedirs(SHOT_DIR, exist_ok=True)
     out = os.path.join(SHOT_DIR, "%s-%s%s-%s.png" % (
         SHOT_PREFIX, area, "-satty" if dest == "satty" else "", _stamp()))
     quoted_out = shlex.quote(out)
 
-    # The region case is the reason this is a shell fragment and not an argv:
-    # slurp has to run INSIDE the detached session, after the panel is gone,
-    # and its output has to reach grim.
-    prefix, capture = _shot_capture(area, geometry)
+    # The region case is the reason this is a shell fragment and not an
+    # argv: under Wayland slurp has to run INSIDE the detached session,
+    # after the panel is gone, and its output has to reach grim.
+    prefix, capture, consumed_delay = _shot_capture(area, geometry, delay)
 
     if dest == "clipboard":
-        body = "%s - | wl-copy -t image/png && notify-send 'Screenshot copied' 'on the clipboard'" % capture
+        if _is_wayland():
+            body = "%s - | wl-copy -t image/png && notify-send 'Screenshot copied' 'on the clipboard'" % capture
+        else:
+            body = "%s | xclip -selection clipboard -t image/png && notify-send 'Screenshot copied' 'on the clipboard'" % capture
     elif dest == "file":
         body = "%s %s && notify-send 'Screenshot saved' %s" % (
             capture, quoted_out, quoted_out)
     elif dest == "both":
-        body = ("%s %s && wl-copy -t image/png < %s && "
-                "notify-send 'Screenshot saved' %s") % (
-            capture, quoted_out, quoted_out, quoted_out)
+        if _is_wayland():
+            body = ("%s %s && wl-copy -t image/png < %s && "
+                    "notify-send 'Screenshot saved' %s") % (
+                capture, quoted_out, quoted_out, quoted_out)
+        else:
+            body = ("%s %s && xclip -selection clipboard -t image/png -i %s && "
+                    "notify-send 'Screenshot saved' %s") % (
+                capture, quoted_out, quoted_out, quoted_out)
     elif dest == "satty":
         temp = shlex.quote(os.path.join(RUNTIME, "island-satty-%s.png" % _stamp()))
         # dm-satty's own comment records that every annotation it ever made
@@ -1255,13 +1506,14 @@ def _shot_fire(area, geometry, delay, dest):
     else:
         raise ValueError("unknown destination %s" % dest)
 
-    # 0.4 s, not 0: slurp and the grab both have to happen after the layer
-    # surface has released the keyboard and stopped being painted, or the
-    # picker itself is in the screenshot. The chosen delay is added to it,
-    # and lands AFTER `prefix` so that a region selection is drawn first —
-    # see _shot_capture.
+    # 0.4 s, not 0: the capture has to happen after the panel has released
+    # the keyboard/focus and stopped being painted, or the picker itself is
+    # in the screenshot. The chosen delay is added to it UNLESS `capture`
+    # already consumed it — the X11 region case, where maim's own
+    # `--select --delay=N` draws the rectangle first and waits after, same
+    # as `prefix` does for a Wayland region — see _shot_capture.
     try:
-        wait = 0.4 + int(delay or 0)
+        wait = 0.4 if consumed_delay else 0.4 + int(delay or 0)
     except ValueError:
         wait = 0.4
     _spawn_sh("%ssleep %s; %s" % (prefix, wait, body))
@@ -1383,6 +1635,40 @@ def _webcam_device():
     return ""
 
 
+def _x11grab_command(region, fps, output, audio=False):
+    """The ffmpeg shell fragment for the X11 half of screen/region/GIF
+    capture — real `-f x11grab` against this session's actual DISPLAY, not
+    the black frame it produces under Hyprland's XWayland (see the module
+    header). Returns a full shell command STRING, like the wf-recorder
+    branch beside it, because `region` needs slop to run INSIDE the
+    detached shell — the picker panel has to be gone before an interactive
+    rectangle can be drawn, same reason `region`'s slurp does under
+    Wayland.
+
+    `fps` is None for the plain video modes (x11grab's own default is
+    enough); the GIF path passes GIF_FPS, so the capture runs at the rate
+    it will be encoded at rather than throwing frames away in the palette
+    pass.
+    """
+    prefix = ""
+    if region:
+        # slop's format string builds the one token both halves of the
+        # x11grab -i argument come from: WxH split off the front, X,Y off
+        # the back. A cancelled slop exits non-zero with empty output, and
+        # `|| exit 0` takes the whole recording down quietly — the same
+        # "no thanks, not a failure" contract slurp's cancel gets above.
+        prefix = ('g=$(slop -f \'%wx%h+%x,%y\' 2>/dev/null) || exit 0; '
+                  'size="${g%%+*}"; off="${g#*+}"; ')
+        video_in = '-video_size "$size" -i "$DISPLAY+$off"'
+    else:
+        video_in = '-i "$DISPLAY"'
+    rate = fps or 30
+    audio_in = "-f pulse -i default " if audio else ""
+    audio_out = "-c:a aac " if audio else ""
+    return "%sffmpeg -nostdin -y -f x11grab -framerate %d %s %s-c:v libx264 -preset ultrafast -pix_fmt yuv420p %s%s" % (
+        prefix, rate, video_in, audio_in, audio_out, shlex.quote(output))
+
+
 def record_list():
     pid = _record_active()
     if pid:
@@ -1396,14 +1682,44 @@ def record_list():
                  "second ffmpeg would overwrite the pidfile that stops the "
                  "first.")
 
-    have_wf = bool(shutil.which("wf-recorder"))
     have_ff = bool(shutil.which("ffmpeg"))
-    missing = "wf-recorder is not installed"
     camera = _webcam_device()
+
+    if _is_wayland():
+        have_wf = bool(shutil.which("wf-recorder"))
+        missing = "wf-recorder is not installed"
+        screen_detail = "wf-recorder --audio" if have_wf else missing
+        screen_only_detail = "wf-recorder, whole output" if have_wf else missing
+        region_detail = "wf-recorder + slurp" if have_wf else missing
+        gif_ok = have_wf
+        gif_missing = missing
+    else:
+        # x11grab records the wrong thing under Hyprland — XWayland's root
+        # window, not the compositor's output, measured as a solid black
+        # frame — which is the whole reason this section says most of it
+        # "cannot work here". That measurement does not carry over: this
+        # session IS X11, x11grab reads the real thing directly, and it was
+        # re-verified live while chasing the "not smooth" report (a 60fps
+        # x11grab burst of a real animation, correct pixels throughout).
+        # slop is xdotool/maim's own screenshot's rectangle tool, already a
+        # dependency of this desktop, and the X11 counterpart of slurp.
+        have_slop = bool(shutil.which("slop"))
+        missing = "ffmpeg is not installed"
+        screen_detail = "ffmpeg -f x11grab + pulse audio" if have_ff else missing
+        screen_only_detail = "ffmpeg -f x11grab, whole display" if have_ff else missing
+        if not have_ff:
+            region_detail = missing
+        elif not have_slop:
+            region_detail = "slop is not installed"
+        else:
+            region_detail = "ffmpeg -f x11grab + slop"
+        gif_ok = have_ff
+        gif_missing = missing
+
     gif_detail = ("capture h264, convert on stop — %d fps, max %d px wide"
                   % (GIF_FPS, GIF_MAX_WIDTH))
-    if not have_wf:
-        gif_detail = missing
+    if not gif_ok:
+        gif_detail = gif_missing
     elif not have_ff:
         gif_detail = "ffmpeg is not installed (needed for the palette pass)"
     # dm-recordV2's rows, its wording, its order — and its mode 7 (GIF) is
@@ -1416,11 +1732,11 @@ def record_list():
     # and the one the hand goes to.
     return _page("Select recording mode:", [
         {"id": "screen-audio", "label": "Screen + Audio (full display)",
-         "detail": "wf-recorder --audio" if have_wf else missing},
+         "detail": screen_detail},
         {"id": "screen", "label": "Screen Only (full display)",
-         "detail": "wf-recorder, whole output" if have_wf else missing},
+         "detail": screen_only_detail},
         {"id": "region", "label": "Screen Area (selection)",
-         "detail": "wf-recorder + slurp" if have_wf else missing},
+         "detail": region_detail},
         {"id": "audio", "label": "Audio Only",
          "detail": "ffmpeg -f pulse, mp3"},
         {"id": "webcam-low", "label": "Webcam (low-res 640x480)",
@@ -1476,13 +1792,14 @@ def record_run(item_id):
     os.makedirs(RECORD_DIR, exist_ok=True)
 
     if item_id in ("gif", "gif-region"):
-        if not shutil.which("wf-recorder"):
-            raise ValueError("wf-recorder is not installed — see the note in "
-                             "island-picker.py: x11grab records a black frame "
-                             "under Hyprland, measured")
+        if _is_wayland() and not shutil.which("wf-recorder"):
+            raise ValueError("wf-recorder is not installed — see the note "
+                             "in island-picker.py: x11grab records a "
+                             "black frame under Hyprland, measured")
         if not shutil.which("ffmpeg"):
-            raise ValueError("ffmpeg is not installed — it is the palette pass, "
-                             "and without it a GIF would be 23x larger")
+            raise ValueError("ffmpeg is not installed — it is the palette pass "
+                             "(and under X11, the capture itself too), and "
+                             "without it a GIF would be 23x larger")
         output = os.path.join(RECORD_DIR, "gif-%s.gif" % _stamp())
         # The h264 intermediate lives in RUNTIME, not /tmp and not
         # RECORD_DIR: dm-recordV2's own note is that a screen capture has no
@@ -1490,28 +1807,40 @@ def record_run(item_id):
         # recording, and RECORD_DIR is where the user's finished recordings
         # are — a stray .mp4 there looks like one of them.
         source = os.path.join(RUNTIME, "island-gif-%d.mp4" % os.getpid())
-        geometry = ('-g "$(slurp)" ' if item_id == "gif-region" else "")
-        # Captured at GIF_FPS rather than at full rate and decimated later:
-        # the frames that would be thrown away cost encode time and disk for
-        # the whole recording, and -r is the flag wf-recorder takes for it.
-        command = "wf-recorder -r %d %s-f %s" % (
-            GIF_FPS, geometry, shlex.quote(source))
+        if _is_wayland():
+            geometry = ('-g "$(slurp)" ' if item_id == "gif-region" else "")
+            # Captured at GIF_FPS rather than at full rate and decimated
+            # later: the frames that would be thrown away cost encode time
+            # and disk for the whole recording, and -r is the flag
+            # wf-recorder takes for it.
+            command = "wf-recorder -r %d %s-f %s" % (
+                GIF_FPS, geometry, shlex.quote(source))
+        else:
+            command = _x11grab_command(item_id == "gif-region", GIF_FPS, source)
 
     elif item_id in ("screen", "region", "screen-audio"):
-        if not shutil.which("wf-recorder"):
-            raise ValueError("wf-recorder is not installed — see the note in "
-                             "island-picker.py: x11grab records a black frame "
-                             "under Hyprland, measured")
         output = os.path.join(RECORD_DIR, "screen-%s-%s.mp4" % (item_id, _stamp()))
-        geometry = ('-g "$(slurp)" ' if item_id == "region" else "")
-        # dm-recordV2 mixes a second ffmpeg input (`-f pulse -i default`);
-        # wf-recorder takes the same PulseAudio default with one flag, and
-        # its own muxer keeps the two streams in step. `--audio` with no
-        # device argument is the default sink's monitor, which is what
-        # dm-recordV2's `-i default` resolves to as well.
-        audio = "--audio " if item_id == "screen-audio" else ""
-        command = "wf-recorder %s%s-f %s" % (
-            audio, geometry, shlex.quote(output))
+        if _is_wayland():
+            if not shutil.which("wf-recorder"):
+                raise ValueError("wf-recorder is not installed — see the "
+                                 "note in island-picker.py: x11grab records "
+                                 "a black frame under Hyprland, measured")
+            geometry = ('-g "$(slurp)" ' if item_id == "region" else "")
+            # dm-recordV2 mixes a second ffmpeg input (`-f pulse -i
+            # default`); wf-recorder takes the same PulseAudio default with
+            # one flag, and its own muxer keeps the two streams in step.
+            # `--audio` with no device argument is the default sink's
+            # monitor, which is what dm-recordV2's `-i default` resolves to
+            # as well.
+            audio = "--audio " if item_id == "screen-audio" else ""
+            command = "wf-recorder %s%s-f %s" % (
+                audio, geometry, shlex.quote(output))
+        else:
+            if not shutil.which("ffmpeg"):
+                raise ValueError("ffmpeg is not installed")
+            command = _x11grab_command(
+                item_id == "region", None, output,
+                audio=(item_id == "screen-audio"))
     elif item_id == "audio":
         output = os.path.join(RECORD_DIR, "audio-%s.mp3" % _stamp())
         command = ("ffmpeg -nostdin -y -f pulse -i default "
