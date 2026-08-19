@@ -84,6 +84,27 @@ if [ ! -r "$img" ]; then
     exit 1
 fi
 
+# ---- X11 (qtile): awww needs a wlr-layer-shell compositor and there is
+# none here, so it cannot even start — `awww query`/`awww-daemon` just
+# fail, silently, forever, which is the qtile half of "wallpaper picker
+# does nothing". `xwallpaper --stretch` is the tool already used for this
+# exact case: AtiScriptsV1/theme-wallpaper's X11 branch and qtile's own
+# WallpaperPopup.py both reach for it. Split on WAYLAND_DISPLAY per the
+# RULES, not XDG_SESSION_TYPE — that is unset for a session started any
+# way other than a display manager, and this one is.
+#
+# No transition: xwallpaper is a single blit, not a daemon, and there is
+# no wave/fade to ask it for. Instant is the honest answer, the same one
+# theme-wallpaper already gives on this session.
+if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    command -v xwallpaper >/dev/null 2>&1 || {
+        echo "wallpaper-sync: xwallpaper is not installed" >&2
+        exit 1
+    }
+    xwallpaper --stretch "$img"
+    exit 0
+fi
+
 # ---- daemon ----
 #
 # `awww query` is the readiness probe as well as the liveness check: it

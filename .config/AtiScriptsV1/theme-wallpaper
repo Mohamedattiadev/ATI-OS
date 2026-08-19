@@ -109,6 +109,11 @@ MAP="$HOME/.cache/qtile/theme-walls.json"
 LAST="$HOME/.cache/qtile/theme-wall-last.json"
 THEMED_DIR="$HOME/Pictures/Wallpapers/themed"
 WALL_LINK="$HOME/.cache/wall"
+# What `poke_daemon` last actually PAINTED, as opposed to WALL_LINK, which is
+# the current CHOICE and can be (and, since wallpaper-set.sh's animated-X11
+# path, routinely is) updated by a caller before this script ever runs. See
+# the dedup check in `apply)` for why the difference matters.
+PAINTED_MARKER="$HOME/.cache/qtile/.wallpaper-painted"
 
 usage() { sed -n '/^#  Usage:/,/^# ===/p' "$0" | sed 's/^#  \{0,1\}//;$d'; }
 
@@ -284,10 +289,19 @@ record() {
 poke_daemon() {
     local img="$1" mode="${2:-normal}"
 
+    # Written on every successful path below, and read by `apply)`'s dedup
+    # check instead of WALL_LINK — see PAINTED_MARKER's own comment for why
+    # WALL_LINK stopped being a safe stand-in for "already on screen".
+    _mark_painted() {
+        mkdir -p "$(dirname "$PAINTED_MARKER")"
+        printf '%s' "$img" > "$PAINTED_MARKER"
+    }
+
     if command -v awww >/dev/null 2>&1 && awww query >/dev/null 2>&1; then
         # awww is up: this is the Hyprland session, and it owns transitions.
         if [ "$mode" = "instant" ]; then
-            awww img "$img" --transition-type none >/dev/null 2>&1 && return 0
+            awww img "$img" --transition-type none >/dev/null 2>&1 \
+                && { _mark_painted; return 0; }
         fi
         # Same parameters wallpaper-sync.sh uses, so a theme change and a
         # manual pick animate identically instead of one cutting hard.
@@ -296,16 +310,18 @@ poke_daemon() {
             --transition-angle 30 \
             --transition-wave "60,30" \
             --transition-fps 60 \
-            --transition-step 90 >/dev/null 2>&1 && return 0
+            --transition-step 90 >/dev/null 2>&1 \
+            && { _mark_painted; return 0; }
     fi
 
     if [ "${XDG_SESSION_TYPE:-x11}" = "x11" ] && command -v xwallpaper >/dev/null 2>&1; then
-        xwallpaper --stretch "$img" >/dev/null 2>&1 && return 0
+        xwallpaper --stretch "$img" >/dev/null 2>&1 && { _mark_painted; return 0; }
     fi
 
     if command -v swaybg >/dev/null 2>&1 && [ -n "${WAYLAND_DISPLAY:-}" ]; then
         pkill -x swaybg 2>/dev/null || true
         swaybg -m stretch -i "$img" >/dev/null 2>&1 &
+        _mark_painted
         return 0
     fi
 
@@ -353,7 +369,20 @@ case "$cmd" in
         # random set this is now mostly unreachable, but it still catches
         # the single-image set and the bound-override case, which are
         # exactly the ones that WOULD re-wave over an identical picture.
-        if [ "$(readlink -f "$WALL_LINK" 2>/dev/null || true)" = "$img" ]; then
+        #
+        # AGAINST PAINTED_MARKER, NOT WALL_LINK. This used to compare
+        # against WALL_LINK, which is the record of the CHOICE, and that
+        # was correct only as long as this script was the one thing that
+        # ever updated it. wallpaper-set.sh's animated-X11 path breaks that:
+        # it does `ln -sfn` onto WALL_LINK itself, immediately, BEFORE
+        # ever reaching here — so by the time this ran, WALL_LINK already
+        # equalled the new pick and this exited thinking the daemon had
+        # nothing to do. Measured live: the record updated, the picker
+        # closed, and the desktop kept showing the old wallpaper the whole
+        # time — `poke_daemon` was never called at all. PAINTED_MARKER is
+        # written by poke_daemon itself and by nothing else, so it can only
+        # ever say "yes" when this script's own daemon call already ran.
+        if [ "$(cat "$PAINTED_MARKER" 2>/dev/null || true)" = "$img" ]; then
             exit 0
         fi
         record "$img"
