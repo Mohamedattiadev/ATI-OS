@@ -1228,6 +1228,22 @@ sys.exit(0 if 0.2126*f(r)+0.7152*f(g)+0.0722*f(b) >= 0.5 else 1)
   _term_opacity=0.92
 fi
 
+# Reported: terminals opened under qtile/X11 were "not visible" — 0.65
+# is tuned for Hyprland's hyprglass PLUGIN frosting the glass behind it
+# (see hypr/hyprglass.conf); outside Hyprland there is no such thing, and
+# picom's blur is deliberately OFF on this GPU (dual_kawase logged a
+# continuous GL_INVALID_FRAMEBUFFER_OPERATION — see picom.conf's BLUR
+# section). With nothing behind it, 0.65 of a busy dark wallpaper reads
+# as no terminal at all rather than glass.
+#
+# HYPRLAND_INSTANCE_SIGNATURE is the same guard the live `hyprctl reload`
+# above uses to tell the two sessions apart. Outside it, floor the
+# opacity at 0.90 — just under the light branch's 0.92, since that value
+# is already proven legible with nothing behind it either.
+if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && awk "BEGIN{exit !($_term_opacity < 0.90)}" 2>/dev/null; then
+  _term_opacity=0.90
+fi
+
 # Session-agnostic (this block runs on every mode, not just under
 # Hyprland — unlike gen_hypr_colors' colors.conf, which is Hyprland-only
 # syntax). Written so qtile's OWN terminal spawn (myTerm in config.py) can

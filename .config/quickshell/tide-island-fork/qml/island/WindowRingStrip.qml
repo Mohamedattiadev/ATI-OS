@@ -368,8 +368,36 @@ Item {
                     onTriggered: winCell.drop = 1
                 }
 
+                // ---- IDENTITY, EXCEPT ON X11 WHERE IT CANNOT HOLD ----
+                //
+                // Measured: on X11, `id=81788942` shows up in BOTH modelData
+                // and root.activeToplevel at once and still comes out
+                // `active=false`. EwmhState.decorate() builds a brand new JS
+                // object per window on EVERY feed frame — even for a window
+                // nothing changed about — because it has no cache keyed on
+                // window id. `windows` (this delegate's model) and
+                // `activeToplevel` (a separate property on the strip) are two
+                // independently-dirtied bindings over that same churn, and a
+                // title updating mid-frame (any kitty prompt does this
+                // constantly) is enough for the Repeater to still be holding
+                // a modelData built from an older decorate() call than the
+                // one activeToplevel has already moved on to. Same window,
+                // two objects, never ===.
+                //
+                // Wayland's ToplevelHandle has no problem here — it is one
+                // real object per surface, handed out by ToplevelManager and
+                // never rebuilt — so identity is correct and kept for it.
+                // EWMH's decorated objects carry a stable `.id` (the X window
+                // id) precisely because the two-way EwmhState fields were
+                // already designed to survive being rebuilt; falling back to
+                // it only when both sides HAVE one keeps this a no-op on
+                // Wayland, where toplevel handles carry no such property.
                 readonly property bool isActive: modelData.toplevel !== null
-                    && modelData.toplevel === root.activeToplevel
+                    && root.activeToplevel !== null
+                    && (modelData.toplevel === root.activeToplevel
+                        || (modelData.toplevel.id !== undefined
+                            && root.activeToplevel.id !== undefined
+                            && modelData.toplevel.id === root.activeToplevel.id))
                 readonly property string iconSource: root.iconFor(modelData.appId)
 
                 // The outer box is the FOCUS RING's size and never changes,
