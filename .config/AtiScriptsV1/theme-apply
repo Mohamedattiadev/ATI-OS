@@ -187,6 +187,50 @@ if [[ ! -f "$HOME/.cache/qtile/current_palette.prev.json" ]]; then
   disown
 fi
 
+# ---- FAST PATH: WALLPAPER-ONLY, SAME THEME — SKIP EVERYTHING BELOW ----
+#
+# Reported: "the animation of wave of hyperland's changing the wallpaper
+# not the same here... it is slow make it faster like hyper." Measured
+# where the time actually goes for an ordinary run of this script: the
+# Chromium theme extension is repacked and brave/chrome are KILLED AND
+# RELAUNCHED (see "THE VISIBLE-REPAINT MARKER" note further down — its
+# own numbers put this at 1.27s -> 3.28s, the whole remaining two thirds
+# of a run), on top of kitty/GTK/qt5ct/rofi/dunst all regenerating from
+# scratch. Every one of those is redundant work when only the WALLPAPER
+# changed and the theme did not: every app palette below would come out
+# byte-identical to what is already on disk, so writing it again buys
+# nothing and killing/relaunching a browser for it is actively disruptive
+# — real windows flashing closed and reopening over a wallpaper pick.
+#
+# Signalled by a marker file rather than an argument, because the actual
+# call into this script (when an overlay is covering it) is a QML
+# `Process` spawned by ThemeTransitionWindow.qml — threading a second
+# argument through applyThemeAnimated()'s IPC signature the same way
+# THEME_APPLY_COVERED needed a real Process.environment property would be
+# a change on both shell.qml and popups.qml for what a cache file already
+# answers just as well, and this script already reads several of those
+# ($MODE aside) without anyone objecting.
+#
+# Consumed (removed) immediately, not left for the next run to find —
+# stale would mean the NEXT real theme change from a script or a crash
+# recovery silently skips the retheming pipeline it actually needs.
+# WallpaperPopup.py's apply_wallpaper() is the only writer today.
+WALLPAPER_ONLY_MARKER="$HOME/.cache/qtile/.wallpaper_only_pending"
+if [[ -f "$WALLPAPER_ONLY_MARKER" ]]; then
+  rm -f "$WALLPAPER_ONLY_MARKER"
+  # wal is excluded on purpose: there the wallpaper IS the palette, so a
+  # "wallpaper-only" pick in wal mode is a real palette change and needs
+  # the full pipeline same as always. Only a NAMED preset can have a
+  # wallpaper swap that touches nothing else.
+  if [[ "$MODE" != "wal" ]]; then
+    if command -v theme-wallpaper >/dev/null 2>&1; then
+      theme-wallpaper apply "$MODE" instant || true
+    fi
+    printf '%s\n' 'THEME_APPLY_VISIBLE_DONE'
+    exit 0
+  fi
+fi
+
 KITTY_THEMES="$HOME/.config/kitty/themes"
 ROFI_THEMES="$HOME/.config/rofi/themes"
 ALACRITTY_THEMES="$HOME/.config/alacritty/themes"

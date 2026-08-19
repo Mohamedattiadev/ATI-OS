@@ -1,3 +1,5 @@
+import colorsys
+import json
 import os
 import random
 import threading
@@ -447,6 +449,24 @@ def apply_wallpaper():
             # no qtile restart happens either — the freeze only has to
             # cover the wallpaper swap, which is fast, so this should feel
             # closer to Hyprland's own timing than a theme change does.
+            #
+            # This marker is what actually makes it fast, not just
+            # restart-free: reported again as "it is slow make it faster
+            # like hyper" even after the above. theme-apply's own biggest
+            # cost is unconditionally repacking + killing/relaunching
+            # brave/chrome (~2s of its own documented ~3.3s run) and
+            # regenerating kitty/GTK/rofi/dunst — all of it byte-identical
+            # output for a wallpaper-only pick, since the theme did not
+            # change. This one file tells theme-apply to skip that whole
+            # pipeline and go straight to the wallpaper + the marker; see
+            # its own header for why a file and not a second IPC argument.
+            try:
+                open(
+                    os.path.expanduser("~/.cache/qtile/.wallpaper_only_pending"),
+                    "w",
+                ).close()
+            except OSError:
+                pass
             subprocess.run(
                 ["theme-wallpaper", "bind", mode, path],
                 check=False,
@@ -481,12 +501,141 @@ def jump_to_random():
     update_ui()
 
 
+# =============================================================================
+# SEARCH BY THEME FIT
+# =============================================================================
+# Reported: "the wallpaper of the theme fitting not appering in the popup
+# qtile wallpaper picker fix i should if i wrote 'gruvbox' shows me all
+# fiting ones". Filenames are plain numbers (0176.jpg), so a bare fuzzy
+# match on basenames — the only search this popup had — can never surface
+# a theme name typed into it; PROMPT-NEXT.md's item 12 already named this
+# gap and proposed fixing it by renaming files into the wallpaper repo
+# itself, which is real work in a repo with a remote and was never done.
+#
+# This does not touch a single file in that repo. wal-precompile already
+# computes a `dominant_hue_deg` for every wallpaper it has been run
+# against (~/.cache/qtile/palettes/<stem>.json, 362 of them present at
+# the time this was written) — the exact signal needed to answer "which
+# wallpapers look like this theme", entirely from data that already
+# exists. accent_of_mode's own 21-colour table (theme-apply, kept in sync
+# with it deliberately — a copy, not an import, since sourcing a bash
+# script's function table from Python is not a thing) gives the other
+# half: each theme's signature hue.
+THEME_ACCENTS = {
+    "doomone": "#51afef", "dracula": "#bd93f9", "nord": "#88c0d0",
+    "gruvbox": "#fabd2f", "tokyonight": "#7aa2f7", "catppuccin": "#cba6f7",
+    "monokai": "#66d9ef", "everforest": "#7fbbb3", "rose-pine": "#c4a7e7",
+    "kanagawa": "#7e9cd8", "oxocarbon": "#33b1ff", "cyberpunk-neon": "#00fff9",
+    "synthwave": "#36f9f6", "matrix": "#00ff9f", "mono-dark": "#b0b0b0",
+    "mono-light": "#1a5fd0", "nightowl": "#82aaff", "onedark": "#61afef",
+    "palenight": "#82b1ff", "github-dark": "#58a6ff", "ayu-mirage": "#5ccfe6",
+}
+
+WALLPAPER_PALETTES_DIR = os.path.expanduser("~/.cache/qtile/palettes")
+
+# mono-dark's accent (#b0b0b0) and any near-grey wallpaper both have a
+# technically-defined but numerically UNSTABLE hue — a 1-unit RGB
+# difference can swing it 90 degrees, because saturation is near zero and
+# hue is barely meaningful there. Matching by hue alone would make
+# "mono-dark" match almost nothing, or almost anything, depending on
+# rounding. Not solved here — mono-dark/mono-light are genuinely a
+# different kind of question ("is this image LOW-SATURATION", not "what
+# hue is it") — documented rather than silently wrong: they are excluded
+# from hue matching and simply never show tags.
+_HUE_UNSTABLE_THEMES = {"mono-dark"}
+
+
+def _hex_to_hue_deg(hexcolor):
+    h = hexcolor.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    hue, _sat, _val = colorsys.rgb_to_hsv(r, g, b)
+    return hue * 360.0
+
+
+_THEME_HUES = {
+    name: _hex_to_hue_deg(hexval)
+    for name, hexval in THEME_ACCENTS.items()
+    if name not in _HUE_UNSTABLE_THEMES
+}
+
+# path -> dominant_hue_deg (float) or None (no precompiled palette yet).
+# Filled lazily; a picker session touches at most a few hundred files
+# once, not per-keystroke.
+_WALLPAPER_HUE_CACHE = {}
+
+
+def _wallpaper_dominant_hue(path):
+    if path in _WALLPAPER_HUE_CACHE:
+        return _WALLPAPER_HUE_CACHE[path]
+    stem = os.path.splitext(os.path.basename(path))[0]
+    hue = None
+    try:
+        with open(os.path.join(WALLPAPER_PALETTES_DIR, stem + ".json")) as f:
+            data = json.load(f)
+        raw = data.get("dominant_hue_deg")
+        if isinstance(raw, (int, float)):
+            hue = float(raw)
+    except Exception:
+        hue = None
+    _WALLPAPER_HUE_CACHE[path] = hue
+    return hue
+
+
+def _hue_distance_deg(a, b):
+    d = abs(a - b) % 360.0
+    return min(d, 360.0 - d)
+
+
+# Wide enough that a theme's own "family" (e.g. onedark/doomone, both
+# blue-accented) tends to share matches, which is a feature here: typing
+# either name is meant to turn up wallpapers that suit the general mood,
+# not just the one exact hex. Narrow enough that e.g. matrix (green,
+# ~140deg) and gruvbox (yellow/orange, ~42deg) do not bleed together.
+_HUE_MATCH_THRESHOLD_DEG = 28.0
+
+
+def theme_names_for_wallpaper(path):
+    """Every theme name whose accent hue is close to this wallpaper's
+    precomputed dominant hue, closest first. [] if there is no
+    precompiled palette for it, or nothing is close enough."""
+    hue = _wallpaper_dominant_hue(path)
+    if hue is None:
+        return []
+    scored = sorted(
+        ((_hue_distance_deg(hue, thue), name) for name, thue in _THEME_HUES.items()),
+        key=lambda t: t[0],
+    )
+    return [name for dist, name in scored if dist <= _HUE_MATCH_THRESHOLD_DEG]
+
+
+# Separator between a filename and its theme tags in the rofi list.
+# Filenames in this repo are plain numbers (0176.jpg), so any printable
+# separator is safe; " · " is used nowhere else the fuzzy filter would
+# confuse it with, and reads as a label rather than part of the name.
+_THEME_TAG_SEP = " · "
+
+
 def fuzzy_search_rofi():
     global _INDEX
     if not _IMAGES:
         return
 
-    names = "\n".join([os.path.basename(p) for p in _IMAGES])
+    # Each line is "<filename>" for a wallpaper with no confident theme
+    # match, or "<filename> · theme1, theme2" for one that has some — so
+    # typing a theme name (rofi's own -i fuzzy filter, unchanged) surfaces
+    # every wallpaper tagged with it, and typing a filename still works
+    # exactly as before since the filename is always the line's own
+    # prefix. See theme_names_for_wallpaper()'s own header for where the
+    # tags come from and why this needed no file renames.
+    lines = []
+    for p in _IMAGES:
+        base = os.path.basename(p)
+        tags = theme_names_for_wallpaper(p)
+        if tags:
+            lines.append(base + _THEME_TAG_SEP + ", ".join(tags))
+        else:
+            lines.append(base)
+    names = "\n".join(lines)
 
     def _run_rofi():
         try:
@@ -506,6 +655,10 @@ def fuzzy_search_rofi():
                 timeout=120,
             )
             selected_name = result.stdout.decode().strip()
+            # Strip the " · theme1, theme2" tag suffix a theme-fit match
+            # added to the line — the filename is always what precedes it,
+            # never part of it (filenames here are plain numbers).
+            selected_name = selected_name.split(_THEME_TAG_SEP, 1)[0].strip()
         except subprocess.TimeoutExpired:
             return
         except Exception as e:
