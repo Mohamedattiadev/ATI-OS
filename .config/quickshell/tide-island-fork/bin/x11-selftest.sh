@@ -225,6 +225,12 @@ case "$refcmd" in
   *) bad "power menu reload targets qtile" "got: ${refcmd:-nothing}" ;;
 esac
 
+hardresetcmd="$($HOME/.config/hypr/scripts/power-ctl.sh --dry-run hardreset 2>/dev/null)"
+case "$hardresetcmd" in
+  *reset_PC) ok "power menu hard reset targets the real reset_PC ($hardresetcmd)" ;;
+  *) bad "power menu hard reset targets the real reset_PC" "got: ${hardresetcmd:-nothing}" ;;
+esac
+
 grep -q 'hypr/scripts/qdrop.sh' "$HOME/.config/qtile/config.py" \
   && ok "drop shelf goes through the island-aware wrapper" \
   || bad "drop shelf goes through the island-aware wrapper"

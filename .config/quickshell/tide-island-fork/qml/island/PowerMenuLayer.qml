@@ -31,14 +31,20 @@ import "../common"
 // not an action — in a rofi menu it is how you dismiss the menu, and this
 // panel already dismisses on Escape, which is the same gesture with no row
 // spent on it. (`q` dismissed it too until the search field arrived and the
-// alphabet had to start typing; see the fallback key handler.)
+// alphabet had to start typing; see the fallback key handler.) One of the
+// six, "Refresh the PC", became TWO rows here rather than one — `refresh`
+// and `hardreset`, below — so the panel has seven rows in total.
 //
 // The commands live in hypr/scripts/power-ctl.sh, one to a line, and that
 // file records the two options that could not port verbatim: `betterlockscreen`
 // is X11-only so lock goes through `loginctl lock-session` like $mod SHIFT X,
-// and `reset_PC` kills twenty applications and restarts qtile so "Refresh"
-// becomes `hyprctl reload` like $mod SHIFT R. Both were read before being
-// replaced.
+// and `reset_PC` — which kills twenty applications and restarts qtile — is
+// not what "Refresh" runs any more. It was ported to `refresh`/`hyprctl
+// reload` first (like $mod SHIFT R) because reset_PC verbatim would have
+// done harm under Wayland; `hardreset` is reset_PC's actual behaviour,
+// ported properly afterwards as its own row, adapted app-kill-and-restart
+// script under Hyprland (hypr/scripts/reset-pc.sh) and the genuine script
+// unchanged under X11. Both were read before being replaced or added.
 //
 // THE CONFIRMATION IS THE PORT'S MOST IMPORTANT HALF
 // --------------------------------------------------
@@ -54,7 +60,7 @@ import "../common"
 // It matters MORE here than it did in rofi, not less — and now that this
 // panel HAS rofi's search field, it matters for rofi's own reason as well
 // as for its own. You type to filter and press Return on a highlighted
-// line, in a list of six where "Reboot" and "Shut down" are adjacent and
+// line, in a list of seven where "Reboot" and "Shut down" are adjacent and
 // share four letters; and this panel is on the same keyboard grab as every
 // other one, so Return is the key the hand has already been trained to
 // press. A one-keystroke path from "I opened the power menu" to "the
@@ -144,7 +150,7 @@ FocusScope {
     // wrong in the cheatsheet. Two reasons, both about this panel's shape:
     // the field is above the rows and the island grows downward from the
     // notch, so only the bottom edge moves and nothing you are typing into
-    // slides; and this is six rows, so the step is one row rather than the
+    // slides; and this is seven rows, so the step is one row rather than the
     // cheatsheet's 192-to-3. Shrinking as the list narrows is also what rofi
     // itself does, which is the thing being asked for.
     readonly property real preferredHeight:
@@ -296,7 +302,7 @@ FocusScope {
         root.pendingConfirm = "";
         let next = root.selectedIndex + delta;
         // Wraps, like the display and audio panels' move(): this is a
-        // six-row list and Down stopping dead at the bottom reads as a dead
+        // seven-row list and Down stopping dead at the bottom reads as a dead
         // key. See FORK-NOTES.md, "the cursors wrap".
         if (next < 0) next = root.visibleActions.length - 1;
         if (next > root.visibleActions.length - 1) next = 0;

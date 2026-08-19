@@ -27,21 +27,29 @@
 #      idle-locking and menu-locking go through one path and cannot
 #      disagree.
 #
-#   2. REFRESH. dm-logout runs ~/.config/AtiScriptsV1/reset_PC. Read before
-#      porting it, and it is not a config reload: it pkill -TERM then
-#      pkill -KILL's 20 named applications (browsers, terminals, editors,
-#      Obsidian, Anki, mpv...), restarts picom, runs
-#      `qtile cmd-obj -o cmd -f restart` with a `pkill -HUP qtile` fallback,
-#      and finally re-runs ~/.config/qtile/autostart.sh. In a Hyprland
-#      session that is: your work closed, a compositor that is not running
-#      HUPed, and qtile's X11 autostart executed on top of Wayland. It would
-#      do harm and could not do the thing it was for.
+#   2. REFRESH. dm-logout runs ~/.config/AtiScriptsV1/reset_PC as its single
+#      "Refresh the PC" row. Read before porting it, and it is not a config
+#      reload: it pkill -TERM then pkill -KILL's 20 named applications
+#      (browsers, terminals, editors, Obsidian, Anki, mpv...), restarts
+#      picom, runs `qtile cmd-obj -o cmd -f restart` with a
+#      `pkill -HUP qtile` fallback, and finally re-runs
+#      ~/.config/qtile/autostart.sh. Run as-is in a Hyprland session that
+#      is: your work closed, a compositor that is not running HUPed, and
+#      qtile's X11 autostart executed on top of Wayland. It would do harm
+#      and could not do the thing it was for — so it is not what the
+#      "refresh" row below runs.
 #
-#      The equivalent here is `hyprctl reload`, which binds.conf already
-#      documents at $mod SHIFT R: "Hyprland reloads config without touching
-#      windows at all, which is strictly better".
+#      Instead the one dm-logout row became TWO here. `refresh` runs
+#      `hyprctl reload`, which binds.conf already documents at $mod SHIFT R:
+#      "Hyprland reloads config without touching windows at all, which is
+#      strictly better" — the light half of what reset_PC gave you.
+#      `hardreset` is the actual app-killing, service-restarting reset_PC
+#      behaviour, ported rather than dropped: hypr/scripts/reset-pc.sh
+#      under Wayland, the genuine reset_PC still under X11. See that
+#      script's header for the adaptation, step by step.
 #
-# The other five are byte-for-byte what dm-logout runs.
+# The other four (logout, reboot, shutdown, suspend) are byte-for-byte what
+# dm-logout runs.
 #
 # Every action is spelled out in one place so the panel does not have to
 # carry shell strings, and so each can be checked from a terminal without
@@ -53,10 +61,11 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-#  WHICH SESSION, because two of these six are compositor-specific
+#  WHICH SESSION, because three of these seven are compositor-specific
 # ---------------------------------------------------------------------------
 # This file was written for Hyprland and moved with the island to the qtile
-# session, where two actions were silently wrong:
+# session, where two actions were silently wrong (a third, hardreset, was
+# added later and was session-keyed from the start):
 #
 #   lock     `loginctl lock-session` only locks anything if something is
 #            LISTENING for logind's Lock signal. Hyprland has hypridle doing
@@ -76,6 +85,10 @@ set -euo pipefail
 #   refresh  `hyprctl reload` is not a thing under qtile. qtile's own
 #            equivalent, and the one its config already binds to mod+shift+r,
 #            is reload_config over its IPC.
+#
+#   hardreset  the genuine reset_PC script under X11 — dm-logout's own
+#            "Refresh the PC" target, unchanged — versus its Wayland-safe
+#            rewrite, hypr/scripts/reset-pc.sh, under Hyprland.
 #
 # Keyed on WAYLAND_DISPLAY, the same test shell.qml and the island's QML use,
 # so this cannot disagree with the shell about which session it is in.
@@ -109,6 +122,18 @@ command_for() {
             printf 'hyprctl reload'
         fi
         ;;
+    hardreset)
+        # The real reset_PC port — see hypr/scripts/reset-pc.sh's header for
+        # why this is a separate row from `refresh` rather than what
+        # `refresh` runs: reset_PC kills apps and restarts services, which
+        # `hyprctl reload`/reload_config deliberately do not. X11 still has
+        # the genuine article; Wayland gets its adapted twin.
+        if on_x11; then
+            printf '%s/AtiScriptsV1/reset_PC' "$HOME/.config"
+        else
+            printf '%s/hypr/scripts/reset-pc.sh' "$HOME/.config"
+        fi
+        ;;
     reboot)   printf 'systemctl reboot' ;;
     shutdown) printf 'systemctl poweroff' ;;
     suspend)  printf 'systemctl suspend' ;;
@@ -125,31 +150,36 @@ command_for() {
 list_actions() {
     # Detail strings are what the panel draws under each row, so they have to
     # name the command this session will actually run -- see command_for().
-    local lock_detail refresh_detail
+    local lock_detail refresh_detail hardreset_detail
     if on_x11; then
         lock_detail='betterlockscreen -l'
         refresh_detail='qtile reload_config'
+        hardreset_detail='~/.config/AtiScriptsV1/reset_PC'
     else
         lock_detail='loginctl lock-session → hyprlock'
         refresh_detail='hyprctl reload'
+        hardreset_detail='~/.config/hypr/scripts/reset-pc.sh'
     fi
-    # Quoted heredoc (no brace escaping), so the two session-dependent
-    # fields are filled in afterwards rather than expanded inline.
+    # Quoted heredoc (no brace escaping), so the session-dependent fields
+    # are filled in afterwards rather than expanded inline.
     cat <<'JSON' | sed -e "s|__LOCK_DETAIL__|$lock_detail|" \
-                       -e "s|__REFRESH_DETAIL__|$refresh_detail|"
+                       -e "s|__REFRESH_DETAIL__|$refresh_detail|" \
+                       -e "s|__HARDRESET_DETAIL__|$hardreset_detail|"
 {
   "actions": [
-    { "id": "lock",     "label": "Lock screen",  "confirm": false,
+    { "id": "lock",      "label": "Lock screen",  "confirm": false,
       "detail": "__LOCK_DETAIL__" },
-    { "id": "logout",   "label": "Log out",      "confirm": true,
+    { "id": "logout",    "label": "Log out",      "confirm": true,
       "detail": "loginctl terminate-session" },
-    { "id": "refresh",  "label": "Reload config","confirm": true,
+    { "id": "refresh",   "label": "Reload config","confirm": true,
       "detail": "__REFRESH_DETAIL__" },
-    { "id": "reboot",   "label": "Reboot",       "confirm": true,
+    { "id": "hardreset", "label": "Hard reset",   "confirm": true,
+      "detail": "__HARDRESET_DETAIL__" },
+    { "id": "reboot",    "label": "Reboot",       "confirm": true,
       "detail": "systemctl reboot" },
-    { "id": "shutdown", "label": "Shut down",    "confirm": true,
+    { "id": "shutdown",  "label": "Shut down",    "confirm": true,
       "detail": "systemctl poweroff" },
-    { "id": "suspend",  "label": "Suspend",      "confirm": true,
+    { "id": "suspend",   "label": "Suspend",      "confirm": true,
       "detail": "systemctl suspend" }
   ]
 }
