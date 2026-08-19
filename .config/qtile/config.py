@@ -493,6 +493,57 @@ def apply_palette_live():
     """
     global colors, ACCENT
     import json
+
+    # ---- SAVE X11 INPUT FOCUS — RESTORED AT THE END ----
+    #
+    # Reported: "when i change the theme and the islend is opening i can
+    # not click on esc or q to close after the theme changed". Measured
+    # directly, isolated from theme-apply's own work entirely: open the
+    # island's theme picker (an exclusive-grab panel, focused via
+    # bin/x11-panel-focus.sh's xdotool windowfocus — qtile does not
+    # naturally give a DOCK-type window the keyboard at all), note
+    # `xdotool getwindowfocus` reads "quickshell", call THIS function
+    # alone over `qtile cmd-obj -f eval`, and focus has moved to an
+    # unrelated tiled window — no theme-apply, no dunst, no browser
+    # reload involved, so it is not any of the usual suspects for a
+    # focus-stealing redraw.
+    #
+    # The layout_all() calls below are the likely cause: they walk
+    # qtile.groups[].layouts and qtile.screens[].group to force every
+    # window border to repaint with the new accent, and a group re-layout
+    # is exactly the kind of operation qtile's own focus logic can piggy-
+    # back on (reasserting focus onto "the group's current window" as
+    # part of laying it out) — which was never a problem before, because
+    # this function only ever ran as part of a FULL RESTART, where qtile
+    # rebuilding its whole config already reset everything itself; now it
+    # runs standalone, with a manually-forced focus sitting on a window
+    # qtile's own model has no place for.
+    #
+    # Not worth chasing down to the exact qtile internal that does it:
+    # the panel's focus was already being force-applied from OUTSIDE
+    # qtile's normal model (x11-panel-focus.sh, xdotool windowfocus, not
+    # a qtile focus() call), so restoring it the same way afterward is
+    # the correct fix regardless of which call below is responsible —
+    # this function should never be in the business of deciding where
+    # the keyboard goes, only what colour things are.
+    #
+    # xdotool, not Xlib/xcffib directly: matches the exact mechanism
+    # x11-panel-focus.sh already uses for the same job, so the two stay
+    # consistent, and this file already shells out to plenty else.
+    # Cheap and safe to do unconditionally — when nothing had a grab,
+    # this reads and re-sets the same window ID, a harmless no-op.
+    _focus_before = None
+    try:
+        import subprocess as _subprocess
+        _out = _subprocess.run(
+            ["xdotool", "getwindowfocus"],
+            capture_output=True, text=True, timeout=1,
+        )
+        if _out.returncode == 0:
+            _focus_before = _out.stdout.strip()
+    except Exception:
+        _focus_before = None
+
     if not os.path.exists(_PALETTE_PREV_FILE):
         # First live-swap ever (or the prev snapshot was cleared): there
         # is nothing to map FROM, so a hex-rewrite cannot be trusted.
@@ -719,6 +770,26 @@ def apply_palette_live():
             f.write(str(int(time.time())))
     except Exception:
         pass
+
+    # ---- RESTORE X11 INPUT FOCUS, IF THE WORK ABOVE MOVED IT ----
+    # See the note beside _focus_before's capture at the top of this
+    # function for the full reasoning. Only re-asserts when the id
+    # actually changed, so this never fights a legitimate focus change
+    # that happens to land in the same qtile tick for an unrelated reason.
+    if _focus_before:
+        try:
+            _out = _subprocess.run(
+                ["xdotool", "getwindowfocus"],
+                capture_output=True, text=True, timeout=1,
+            )
+            _focus_after = _out.stdout.strip() if _out.returncode == 0 else None
+            if _focus_after and _focus_after != _focus_before:
+                _subprocess.run(
+                    ["xdotool", "windowfocus", _focus_before],
+                    timeout=1,
+                )
+        except Exception:
+            pass
     return True
 
 # NOTE:
