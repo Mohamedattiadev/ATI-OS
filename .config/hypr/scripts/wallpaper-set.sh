@@ -72,12 +72,60 @@ fi
 mkdir -p "$(dirname "$WALL_LINK")"
 ln -sfn -- "$img" "$WALL_LINK"
 
-# Delegate the actual set, so there is exactly ONE place that knows how to
-# talk to hyprpaper. Duplicating the hyprctl call here is how the preload
-# trap above would come back in a second copy that nobody re-probes.
+# ---- X11 (qtile island), NAMED PRESET: THE ANIMATED PATH, NOT
+#      wallpaper-sync.sh AT ALL ----
 #
-# NOT `exec` any more -- see the re-derive below, which has to run after it.
-"$(dirname "$(readlink -f "$0")")/wallpaper-sync.sh"
+# Reported: "the wallpaper animaiton not applied on the islend one fix why
+# make the same anitmtion of hyper for both theeme and wallpaepr". This
+# island picker (WallpaperPickerLayer.qml) has always called into this
+# script for BOTH sessions, and wallpaper-sync.sh's own X11 branch is
+# correct as far as it goes — xwallpaper --stretch, no daemon, so no
+# wave to ask it for — but that "no transition" is a bigger gap than it
+# looks: there is no wave TO have on X11, but there IS the circular-
+# reveal overlay, and this script was never wired to it. qtile's OWN
+# native-bar wallpaper popup (WallpaperPopup.py) got exactly this fix
+# already this session — same theme-wallpaper bind + theme-animate +
+# wallpaper-only fast-path marker — and this is the island's mirror of
+# it, so picking a wallpaper from the island under qtile now looks the
+# same as picking one from qtile's own popup, and both now use the same
+# overlay Hyprland's theme changes already use.
+#
+# Hyprland (WAYLAND_DISPLAY set) is UNTOUCHED — falls through to
+# wallpaper-sync.sh below exactly as before, awww's wave and all. That is
+# already "hyprland's animation"; nothing here claims to improve it.
+#
+# wal mode is also untouched, deliberately: there the wallpaper IS the
+# palette, so wallpaper-sync.sh's instant xwallpaper here plus the
+# existing theme-animate wal call further down (which was ALREADY
+# correct — see the "IN wal MODE" block) is the right shape already.
+# Only a NAMED preset can have a wallpaper swap that touches nothing
+# else, which is exactly the case the wallpaper-only fast-path marker
+# exists for (see theme-apply's own header on it).
+_early_mode="$(cat "$HOME/.cache/qtile/theme_mode" 2>/dev/null || true)"
+_animated_x11=false
+if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -n "$_early_mode" ] && [ "$_early_mode" != "wal" ] \
+   && command -v theme-wallpaper >/dev/null 2>&1 && command -v theme-animate >/dev/null 2>&1
+then
+    _animated_x11=true
+    theme-wallpaper bind "$_early_mode" "$img" \
+        || echo "wallpaper-set: applied, but could not bind it to theme $_early_mode" >&2
+    mkdir -p "$HOME/.cache/qtile"
+    : >"$HOME/.cache/qtile/.wallpaper_only_pending" 2>/dev/null || true
+    # Detached: this script's own exit code is what the island's picker
+    # reads to report "applied", and the wallpaper genuinely will be —
+    # theme-animate finding no overlay to answer would fall back to a
+    # plain, unanimated theme-apply, never to doing nothing.
+    setsid -f theme-animate "$_early_mode" >/dev/null 2>&1 &
+    disown
+else
+    # Delegate the actual set, so there is exactly ONE place that knows how
+    # to talk to hyprpaper. Duplicating the hyprctl call here is how the
+    # preload trap above would come back in a second copy that nobody
+    # re-probes.
+    #
+    # NOT `exec` any more -- see the re-derive below, which has to run after it.
+    "$(dirname "$(readlink -f "$0")")/wallpaper-sync.sh"
+fi
 
 #  ---- IN `wal` MODE THE WALLPAPER *IS* THE PALETTE ----
 #
@@ -132,7 +180,15 @@ MODE_FILE="$HOME/.cache/qtile/theme_mode"
 #  wallpaper genuinely was applied by this point, and the island reads
 #  this script's exit code to decide whether to report "applied".
 mode="$(cat "$MODE_FILE" 2>/dev/null || true)"
-if [ -n "$mode" ] && [ "$mode" != "wal" ] && command -v theme-wallpaper >/dev/null 2>&1; then
+# $_animated_x11's own branch above already did exactly this bind — same
+# mode, same image, since neither can have changed in between — so this
+# is skipped rather than repeated. Not merely a micro-optimisation:
+# calling theme-wallpaper bind a second time is harmless on its own, but
+# it is one more subprocess between the pick and the reveal on the path
+# this session's own measurements said was the slow one.
+if [ "$_animated_x11" != true ] && [ -n "$mode" ] && [ "$mode" != "wal" ] \
+   && command -v theme-wallpaper >/dev/null 2>&1
+then
     theme-wallpaper bind "$mode" "$img" \
         || echo "wallpaper-set: applied, but could not bind it to theme $mode" >&2
 fi
