@@ -366,15 +366,24 @@ def render_hints():
 def apply_wallpaper():
     global _CURRENT_WALL, _WALLPAPER_LAYOUT, _CLOSING
     path = _IMAGES[_INDEX]
+    mode = current_theme_mode()
 
-    os.makedirs(os.path.dirname(CACHE_WALL), exist_ok=True)
-    try:
-        if os.path.lexists(CACHE_WALL):
-            os.remove(CACHE_WALL)
-        os.symlink(path, CACHE_WALL)
-    except OSError:
-        with open(CACHE_WALL, "w") as f:
-            f.write(path)
+    # ~/.cache/wall (CACHE_WALL) is deliberately NOT written here for a
+    # preset theme any more — see the note in _bg() below for why doing so
+    # unconditionally used to make the wallpaper never actually change on
+    # screen. `_CURRENT_WALL` (the in-memory selection, read at line ~221
+    # for the picker's own "is this the current one" highlight) is still
+    # set unconditionally and immediately, so the UI still reacts the
+    # instant you pick — only the FILE write moved.
+    if mode == "wal":
+        os.makedirs(os.path.dirname(CACHE_WALL), exist_ok=True)
+        try:
+            if os.path.lexists(CACHE_WALL):
+                os.remove(CACHE_WALL)
+            os.symlink(path, CACHE_WALL)
+        except OSError:
+            with open(CACHE_WALL, "w") as f:
+                f.write(path)
     _CURRENT_WALL = path
 
     # Close popup first so subsequent qtile restart (from theme-apply) doesn't
@@ -395,36 +404,60 @@ def apply_wallpaper():
     # on 4K images blocks 1-3s; qtile freezes for that duration if run sync.
     def _bg():
         try:
-            subprocess.run(
-                ["xwallpaper", "--stretch", path],
-                check=False,
-                timeout=10,
-            )
-            # Retheme ONLY when the active mode is "wal" -- that mode is
-            # defined as "follow the wallpaper", so a new wallpaper has to
-            # re-derive the palette. On a preset (gruvbox, doomone, ...)
-            # the user deliberately pinned a palette: picking a wallpaper
-            # must swap the desktop image and leave every themed consumer
-            # alone, otherwise the preset is silently replaced by wal.
-            if current_theme_mode() == "wal":
-                # theme-animate, not theme-apply directly. theme-apply
-                # bypasses the circular-reveal overlay entirely — it is the
-                # exact class of bug theme-animate's own header warns
-                # against ("every caller that ran theme-apply directly
-                # therefore bypassed the animation entirely"), and this
-                # call site is where "the theme and wallpaper change
-                # animation" was hard-cutting for a wallpaper pick in wal
-                # mode specifically. theme-animate finds a running
-                # Quickshell instance (island, then popups.qml — see
-                # qtile/autostart.sh 2c) over IPC and falls back to plain
-                # theme-apply itself if neither is up, so this is never
-                # worse than the line it replaces.
+            mode = current_theme_mode()
+            if mode == "wal":
+                # wal is defined as "follow the wallpaper", so a new
+                # wallpaper has to re-derive the palette — theme-animate
+                # wal does both, already animated (see the wal-mode note
+                # this replaced, kept in git history).
+                subprocess.run(
+                    ["xwallpaper", "--stretch", path],
+                    check=False,
+                    timeout=10,
+                )
                 subprocess.Popen(
                     ["theme-animate", "wal"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
                 )
+                return
+            # ---- A PRESET THEME (gruvbox, doomone, ...): NOW ALSO
+            #      ANIMATED, without re-deriving the palette ----
+            #
+            # Reported: "the animation of the wallpaper changing also
+            # needed" — a preset-mode wallpaper pick used to run bare
+            # `xwallpaper --stretch` with nothing covering the cut, since
+            # the palette is fixed on a preset and there was never a
+            # reason to call theme-apply for it at all.
+            #
+            # Rather than invent a second overlay path, this reuses the
+            # one theme-animate already drives correctly (fixed earlier
+            # this session — see apply_palette_live() and the
+            # THEME_APPLY_COVERED wait loop in theme-apply): `bind` records
+            # this image as MODE's wallpaper, then `theme-animate MODE`
+            # re-applies the SAME theme behind the circular-reveal overlay.
+            # theme-apply already runs `theme-wallpaper apply "$MODE"
+            # instant` unconditionally for every non-wal mode (ask #5) — it
+            # picks up the just-bound image and displays it from there, so
+            # nothing new has to reach into the overlay's own QML at all.
+            #
+            # And because every palette slot maps to ITSELF (old hex == new
+            # hex, same theme), apply_palette_live() no-ops on colour and
+            # no qtile restart happens either — the freeze only has to
+            # cover the wallpaper swap, which is fast, so this should feel
+            # closer to Hyprland's own timing than a theme change does.
+            subprocess.run(
+                ["theme-wallpaper", "bind", mode, path],
+                check=False,
+                timeout=10,
+            )
+            subprocess.Popen(
+                ["theme-animate", mode],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
         except Exception as e:
             logger.warning("apply_wallpaper bg failed: %s", e)
 
