@@ -1016,6 +1016,59 @@ class Veil(Gtk.Window):
         cr.close_path()
 
 
+def run_invisible(args):
+    """The same contract as the visible Veil, with nothing drawn.
+
+    Reported: "now i have animation while changing theme ok i want disable
+    this but keep for reloading the qtile, i want the same changing theme
+    animiation of hyper[land]". The veil was firing on EVERY theme change
+    (theme-apply's own `_veil_hold`, unconditionally, since before this
+    session's popups.qml fix it was the ONLY thing covering a qtile-session
+    theme change) stacked on top of the circular-reveal overlay that fix
+    added — two different animations for one theme change, which is not
+    what Hyprland does (it has no veil concept at all; the overlay is the
+    whole transition there).
+
+    Rather than skip the veil outright for a theme change, this mode keeps
+    every non-visual thing callers depend on: `ready_file` (so
+    `_smooth_restart`'s wait loop still proceeds), `done_file` (so it still
+    knows when the NEW qtile instance has actually settled — the exact
+    signal theme-apply now polls for so its own overlay's freeze covers the
+    real restart duration instead of lifting early), and the dunst
+    pause/unpause on exit (see the `finally` in run_visible below — losing
+    that would mean a theme change queues notifications and never flushes
+    them, a much worse bug than a redundant animation). Only the GTK window
+    itself — the icons, the progress bar, the message text — is skipped.
+
+    `ready_file` is touched immediately rather than from a real draw
+    callback: there is nothing to paint, so "ready" and "started" are the
+    same moment here, unlike the visible path where `_announce()` has to
+    wait for an actual GTK expose event before the pile is truly hidden.
+    """
+    if args.ready_file:
+        try:
+            open(args.ready_file, "w").close()
+        except Exception:
+            pass
+    deadline = time.monotonic() + args.max_seconds
+    try:
+        while time.monotonic() < deadline:
+            if args.done_file and os.path.exists(args.done_file):
+                break
+            time.sleep(0.05)
+    finally:
+        # Same call, same reasoning as the visible veil's `finally`: this is
+        # the one process that knows the exact moment its (invisible) cover
+        # goes away, so unpausing dunst anywhere else is a race.
+        try:
+            subprocess.Popen(["dunstctl", "set-paused", "false"],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--x", type=int, default=0)
@@ -1032,6 +1085,9 @@ def main():
     ap.add_argument("--collapse", type=float, default=0.16)
     ap.add_argument("--expand", type=float, default=0.20)
     ap.add_argument("--max-seconds", type=float, default=8.0)
+    # See run_invisible()'s own docstring for why this exists rather than
+    # theme-apply simply not launching a veil at all for a theme change.
+    ap.add_argument("--invisible", action="store_true")
     args = ap.parse_args()
 
     args.rects = []
@@ -1056,6 +1112,9 @@ def main():
                 os.remove(stale)
             except OSError:
                 pass
+
+    if args.invisible:
+        return run_invisible(args)
 
     v = Veil(args, load_theme())
     v.show_all()

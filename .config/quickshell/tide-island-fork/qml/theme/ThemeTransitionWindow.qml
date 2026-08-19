@@ -568,6 +568,20 @@ PanelWindow {
 
     Process {
         id: applyProcess
+
+        // Tells theme-apply it does not need its OWN visible cover — this
+        // frozen frame already is one. Without it theme-apply has no way to
+        // tell "spawned by the overlay, which is already covering the
+        // screen" apart from "spawned directly (theme-animate's own
+        // fallback, or a bare terminal invocation), where nothing else is
+        // covering it and the veil still has to be seen." Reported:
+        // "now i have animation while changing theme ok i want disable
+        // this but keep for reloading the qtile" — the veil was firing
+        // unconditionally before this, stacking a second, visible
+        // animation on top of this exact overlay on every qtile-session
+        // theme change.
+        environment: ({ "THEME_APPLY_COVERED": "1" })
+
         // The thing that was missing. Without this the frozen frame had no
         // way of knowing the theme had changed and could only guess with a
         // timer; see the sixth trap.

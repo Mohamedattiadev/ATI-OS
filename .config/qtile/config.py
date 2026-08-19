@@ -2139,7 +2139,7 @@ def _veil_active():
         return False
 
 
-def _veil_hold():
+def _veil_hold(invisible=False):
     """Paint the veil now and leave it up; the caller restarts later.
 
     Exists for theme-apply. It writes ~10 app palettes (kitty, alacritty,
@@ -2151,17 +2151,27 @@ def _veil_hold():
     one second faster.
 
     Idempotent: a second call while a veil is already up is a no-op.
+
+    `invisible` — see run_invisible()'s docstring in qtile-restart-veil.py.
+    theme-apply now passes True: since popups.qml/the island fix, EVERY
+    qtile-session theme change already has a circular-reveal overlay
+    covering it, so a second, VISIBLE veil on top of that overlay is a
+    redundant animation, reported directly: "now i have animation while
+    changing theme ok i want disable this but keep for reloading the
+    qtile". The manual Super+Shift+R restart (_smooth_restart called with
+    no argument) is untouched and still shows the full veil — there is no
+    overlay covering THAT restart.
     """
     if _veil_active():
         return True
-    ok = _veil_launch()
+    ok = _veil_launch(invisible=invisible)
     if ok:
         _veil_stage(0.05, "Applying theme")
         _dunst(True)
     return ok
 
 
-def _veil_launch():
+def _veil_launch(invisible=False):
     """Start the veil. Returns True only if it was actually spawned."""
     if not os.path.exists(_VEIL_SCRIPT):
         return False
@@ -2227,18 +2237,21 @@ def _veil_launch():
         tips_file = ""
 
     _veil_stage(0.14, "Preparing")
+    argv = [sys.executable, _VEIL_SCRIPT,
+            "--x", str(scr.x), "--y", str(scr.y),
+            "--width", str(scr.width), "--height", str(scr.height),
+            "--rects-file", rects_file,
+            "--tips-file", tips_file,
+            "--message", _veil_message(),
+            "--stage-file", _veil_stage_path(),
+            "--group", str(getattr(qtile.current_group, "name", "")),
+            "--done-file", done_file,
+            "--ready-file", ready_file,
+            "--max-seconds", str(_VEIL_MAX_SECONDS)]
+    if invisible:
+        argv.append("--invisible")
     subprocess.Popen(
-        [sys.executable, _VEIL_SCRIPT,
-         "--x", str(scr.x), "--y", str(scr.y),
-         "--width", str(scr.width), "--height", str(scr.height),
-         "--rects-file", rects_file,
-         "--tips-file", tips_file,
-         "--message", _veil_message(),
-         "--stage-file", _veil_stage_path(),
-         "--group", str(getattr(qtile.current_group, "name", "")),
-         "--done-file", done_file,
-         "--ready-file", ready_file,
-         "--max-seconds", str(_VEIL_MAX_SECONDS)],
+        argv,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         start_new_session=True,          # must survive the execv
     )
@@ -2365,13 +2378,19 @@ def _veil_signal_done():
     qtile.call_later(1.5, lambda: _dunst(False))
 
 
-def _smooth_restart(qtile):
+def _smooth_restart(qtile, invisible=False):
+    """`invisible` only matters if nothing is up yet — see _veil_hold's
+    docstring. The ordinary Super+Shift+R path calls this with no argument,
+    same visible veil as always; theme-apply's own restart call is the one
+    that passes True, and normally finds _veil_active() already True from
+    its own earlier _veil_hold(invisible=True) call, so this branch rarely
+    even needs to launch one itself."""
     _veil_stage(0.08, "Saving session")
     try:
         # Reuse a veil that theme-apply already raised via _veil_hold();
         # only spawn one if nothing is up. Spawning unconditionally would
         # put a second veil over the first and restart the fade-in.
-        if _veil_active() or _veil_launch():
+        if _veil_active() or _veil_launch(invisible=invisible):
             # Save state AFTER spawning the veil, not before. qtile then
             # blocks on the veil reporting it has painted, and the veil
             # needs ~0.4s just to start python and import GTK -- measured.

@@ -87,6 +87,20 @@ if [[ "$MODE" != "wal" ]] && ! is_preset "$MODE"; then
   exit 1
 fi
 
+# ---- IS SOMETHING ALREADY COVERING THE SCREEN FOR US? ----
+#
+# Set by ThemeTransitionWindow.qml's applyProcess ONLY — the overlay
+# spawns this script as its own child specifically to run theme-apply
+# BEHIND its frozen frame, and sets this so theme-apply knows it does not
+# need its own cover. Every other caller (theme-animate's own fallback
+# `exec theme-apply "$mode"` when no shell answers the IPC probe; a bare
+# manual `theme-apply <mode>` from a terminal) runs with nothing covering
+# the screen at all, and MUST still get the full visible veil under qtile
+# — that is the ONLY thing hiding the palette-swap-then-restart flicker in
+# those cases, exactly as it always has.
+_covered=0
+[[ -n "${THEME_APPLY_COVERED:-}" ]] && _covered=1
+
 # ---- Raise the restart veil NOW, before any palette is written ----
 # The restart at the end of this script is what the veil normally covers,
 # but everything between here and there -- ~10 app palettes, GTK, qt5ct,
@@ -117,9 +131,22 @@ fi
 # missed, and nothing reported it because the veil call is fire-and-forget
 # by design — it fails silently, which is correct, and so the only symptom
 # was the freeze being half a second longer than it needed to be.
+# invisible = $_covered: when an overlay spawned this script (see
+# THEME_APPLY_COVERED above), it is ALREADY the circular-reveal cover for
+# this theme change, so a second, VISIBLE veil stacked on top of it is a
+# redundant animation — reported directly: "now i have animation while
+# changing theme ok i want disable this but keep for reloading the
+# qtile". The veil itself, and the state-save/xmodmap-safe wait it does
+# before restarting, are still exactly as needed either way; only its
+# drawing is conditionally skipped. When NOT covered — theme-animate's own
+# fallback, or a bare manual `theme-apply <mode>` — the veil stays fully
+# visible, because nothing else is hiding the transition in that case.
+# Manual Super+Shift+R restarts are a completely separate call site
+# (config.py's own keybind, _smooth_restart with no argument) and always
+# show the full veil regardless of any of this.
 (
   qtile cmd-obj -o cmd -f eval -a \
-    "str(__import__(\"sys\").modules[\"config\"]._veil_hold())" \
+    "str(__import__(\"sys\").modules[\"config\"]._veil_hold($([[ $_covered = 1 ]] && echo True || echo False)))" \
     >/dev/null 2>&1 || true
 ) &
 disown
@@ -1524,6 +1551,12 @@ if command -v qtile >/dev/null; then
     # the subshell abort before restarting anything at all. Same trap the
     # qutebrowser block below documents.
     set +e
+    # THEME_APPLY_COVERED is a real process environment variable (set by
+    # ThemeTransitionWindow.qml on applyProcess, see the top of this
+    # script), so it survives into this child bash exactly like any other
+    # inherited env var would — no passing-through-quotes trick needed.
+    _py_covered=False
+    [ -n "${THEME_APPLY_COVERED:-}" ] && _py_covered=True
     # Probe the CONFIG MODULE, not a qtile attribute. qtile.smooth_restart
     # is attached by a startup_complete hook, so it only exists on an
     # instance that has already restarted into a config new enough to
@@ -1548,11 +1581,58 @@ if command -v qtile >/dev/null; then
     probe=$(printf %s "$probe" | tr -d "\042\047" | tr -d "[:space:]")
     if [ "$probe" = "1" ]; then
       qtile cmd-obj -o cmd -f eval -a \
-        "str(__import__(\"sys\").modules[\"config\"]._smooth_restart(self))"
+        "str(__import__(\"sys\").modules[\"config\"]._smooth_restart(self, $_py_covered))"
     else
       qtile cmd-obj -o cmd -f restart
     fi
   ' >/dev/null 2>&1 </dev/null || true
+
+  # ---- IF SOMETHING IS COVERING THE SCREEN, WAIT FOR THE RESTART TO
+  #      ACTUALLY SETTLE, NOT JUST FOR THE TRIGGER TO FIRE ----
+  #
+  # Only when $_covered — i.e. only when this script is running behind the
+  # overlay's own frozen frame (see THEME_APPLY_COVERED at the top). In
+  # that case the veil above was just launched INVISIBLE, so nothing else
+  # is covering the restart, and this loop is now the only thing standing
+  # between the marker below and an exposed window pile.
+  #
+  # Not covered — theme-animate's own fallback exec, or a bare manual
+  # invocation — skips this entirely and keeps the original fast timing:
+  # the VISIBLE veil launched above already covers the whole restart on
+  # its own account, waiting again here would only add dead time to a
+  # transition nothing is freezing for.
+  #
+  # The `setsid -f bash -c '...'` above returns the instant it has forked —
+  # it does not and cannot wait for _smooth_restart to finish, because
+  # _smooth_restart ends in execv and kills the very IPC connection that
+  # call is answering on. So without this loop, THE VISIBLE-REPAINT MARKER
+  # below would print within milliseconds of the restart being TRIGGERED,
+  # not of qtile having actually finished restarting (~7s measured wall
+  # time on this config) — the circular-reveal overlay would lift onto a
+  # desktop still mid-restart.
+  #
+  # veil_done is the exact signal to wait for: config.py's
+  # _veil_signal_done() writes it from a startup_complete hook on the NEW
+  # qtile instance, 0.40s after startup_complete once the layout/focus
+  # restores have settled (_VEIL_SIGNAL_DELAY) — not merely "the IPC socket
+  # answers again", which happens earlier, before the bar has finished
+  # laying out (see the "widget could not compute length" warnings a
+  # restart logs while its widgets are still sizing). The invisible veil
+  # writes this file exactly the same way the visible one does — see
+  # run_invisible()'s own docstring in qtile-restart-veil.py.
+  #
+  # Bounded, not open-ended: a wedged restart must never hang a theme
+  # change forever. 15s, just under the veil's own 20s watchdog
+  # (_VEIL_MAX_SECONDS) — this loop existing is not a substitute for that
+  # watchdog, it is a best-effort wait that gives up and lets the marker
+  # print anyway, exactly like every other timing guard in this script.
+  if [[ "$_covered" = 1 ]]; then
+    _veil_done_file="$HOME/.cache/qtile/veil_done"
+    for _ in $(seq 150); do
+      [[ -f "$_veil_done_file" ]] && break
+      sleep 0.1
+    done
+  fi
 fi
 
 # Reload qutebrowser. It has real IPC, so it is the one browser here that
@@ -1631,7 +1711,19 @@ fi
 #   GTK overlay css + settings.ini (L1056) ... 1.14 s
 #   papirus-folders (L1150) .................. backgrounded
 #   file-manager restart (L1279) ............. backgrounded
-#   qtile restart (L1316) .................... detached, other session
+#   qtile restart (L1316) .................... triggered detached; WAITED
+#                                                ON via veil_done, up to
+#                                                7s+, but ONLY when this
+#                                                script is running covered
+#                                                by an overlay ($_covered)
+#                                                — 0s on Hyprland (qtile
+#                                                is not running there) and
+#                                                0s on an uncovered qtile
+#                                                invocation (the visible
+#                                                veil covers that restart
+#                                                on its own, this script
+#                                                does not need to wait for
+#                                                it too)
 #   qutebrowser :config-source (L1414) ....... 1.27 s  detached
 #
 # WHAT IS AHEAD OF IT, and why none of it can be waited for:
