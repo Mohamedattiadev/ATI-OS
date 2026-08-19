@@ -125,15 +125,80 @@ island_pid() {
 
 island_running() { [[ -n "$(island_pid)" ]]; }
 
+# ---------------------------------------------------------------------------
+#  THE PROCESS EXISTING IS NOT THE SAME AS THE STRUT EXISTING
+# ---------------------------------------------------------------------------
+# Reported: "when i first change from the qtile bar to the island it glitch
+# a bit and the size of apps changes updown for a bit and then become
+# normal". Measured with a 200 Hz poll of qtile's own `screens[0].dy` across
+# a real native -> island switch (libqtile.ipc.Client held open across the
+# whole poll, not `qtile cmd-obj` per sample — that alone is a ~150 ms
+# interpreter start and cannot resolve anything shorter):
+#
+#     t=0.000  dy=38   qtile's bar, at rest
+#     t=1.248  dy=0    qtile_apply hid the bar -- NO reservation from either
+#     t=2.726  dy=71   both struts briefly counted at once (38+33, roughly)
+#     t=2.807  dy=33   settled, the island's real reservation
+#
+# So every tiled window expands to fill the screen for over a SECOND, then
+# springs back down, overshooting past the island's own 33 px on the way.
+# That is the report, and it was never the island's spring animation --
+# it is qtile relaying whatever the strut situation actually is, honestly,
+# and the strut situation was actually wrong for 1.5 s.
+#
+# The bug is island_start()'s success condition: island_running() asks
+# whether the PROCESS exists, which `ps` can already answer while Quickshell
+# is still loading QML and has not yet set `_NET_WM_STRUT_PARTIAL` on its
+# 1-px reservation window. qtile:island's apply() calls island_start(), gets
+# a confident "yes", and hides its own bar into a gap the island has not
+# actually filled yet.
+#
+# X11-ONLY. Hyprland's layer-shell `exclusiveZone` is negotiated as part of
+# the surface COMMIT itself -- synchronous with the compositor, no separate
+# property for another process to poll for or race -- so hyprland:island's
+# plain process-check was never the bug and stays exactly as it was.
+island_strut_ready() {
+  local pid w val top
+  pid="$(island_pid)"
+  [[ -n "$pid" ]] || return 1
+  for w in $(xdotool search --pid "$pid" 2>/dev/null); do
+    val="$(xprop -id "$w" _NET_WM_STRUT_PARTIAL 2>/dev/null)"
+    [[ -n "$val" && "$val" != *"not found"* ]] || continue
+    # "_NET_WM_STRUT_PARTIAL(CARDINAL) = left, right, TOP, bottom, ..." --
+    # third field is the one this session's bar sits under.
+    top="$(printf '%s\n' "$val" | sed -n 's/.*= *[0-9]*, *[0-9]*, *\([0-9]*\),.*/\1/p')"
+    [[ -n "$top" && "$top" -gt 0 ]] && return 0
+  done
+  return 1
+}
+
+# Bounded, and a timeout here does NOT fail island_start -- worst case is
+# the original race, not a switch that refuses to complete because one
+# property read never lined up.
+island_wait_for_strut() {
+  [[ "$(detect_session)" == "qtile" ]] || return 0
+  for _ in $(seq 1 40); do
+    island_strut_ready && return 0
+    sleep 0.05
+  done
+  return 1
+}
+
 island_start() {
-  island_running && return 0
+  if island_running; then
+    island_wait_for_strut
+    return 0
+  fi
   [[ -x "$ISLAND_LAUNCH" ]] || die "no island launcher at $ISLAND_LAUNCH"
   setsid -f "$ISLAND_LAUNCH" >/dev/null 2>&1 || true
   # Wait for it rather than sleeping a guessed constant: the island takes
   # noticeably longer to come up on a cold page cache than on a warm one, and
   # a fixed sleep is either a stall or a false negative.
   for _ in $(seq 1 60); do
-    island_running && return 0
+    if island_running; then
+      island_wait_for_strut
+      return 0
+    fi
     sleep 0.1
   done
   return 1
