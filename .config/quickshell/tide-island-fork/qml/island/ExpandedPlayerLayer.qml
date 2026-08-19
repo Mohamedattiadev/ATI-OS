@@ -606,6 +606,26 @@ Item {
                                     NumberAnimation { duration: 100 }
                                 }
 
+                                // Reported: "the circle chip... miss and
+                                // don't have bg color" — these three transport
+                                // buttons were bare canvas glyphs with no plate
+                                // behind them at all, unlike every other icon
+                                // button in this shell (see WindowRingStrip's
+                                // iconPlate for the same shape, radius width/2,
+                                // IslandTheme.surfaceRaised — already this
+                                // file's own convention, used a few lines up
+                                // for the album-art placeholder). Sized a
+                                // little larger than the 28px glyph box so the
+                                // circle reads as a button, not a tight
+                                // outline around the ink.
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: Metrics.px(40)
+                                    height: width
+                                    radius: width / 2
+                                    color: IslandTheme.surfaceRaised
+                                }
+
                                 Canvas {
                                     anchors.fill: parent
                                     property color fillColor: prevArea.pressed ? IslandTheme.textMuted : IslandTheme.textPrimary
@@ -653,6 +673,16 @@ Item {
 
                                 Behavior on scale {
                                     NumberAnimation { duration: 100 }
+                                }
+
+                                // See the matching Rectangle on the prev
+                                // button above for why this exists.
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: Metrics.px(40)
+                                    height: width
+                                    radius: width / 2
+                                    color: IslandTheme.surfaceRaised
                                 }
 
                                 Row {
@@ -707,6 +737,16 @@ Item {
 
                                 Behavior on scale {
                                     NumberAnimation { duration: 100 }
+                                }
+
+                                // See the matching Rectangle on the prev
+                                // button above for why this exists.
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: Metrics.px(40)
+                                    height: width
+                                    radius: width / 2
+                                    color: IslandTheme.surfaceRaised
                                 }
 
                                 Canvas {
