@@ -10,9 +10,11 @@ import Quickshell.Hyprland
 //
 //     fontsize=_s(10)   padding_x=8   margin_x=_s(8)   borderwidth=4
 //     highlight_method="text"         hide_unused=True
-//     active                     colors[8] cyan   — a workspace with windows
-//     inactive                   colors[1] fg     — an empty one
-//     this_current_screen_border colors[7] purple — the focused workspace
+//     active                     colors[8] cyan — a workspace with windows
+//     inactive                   colors[1] fg   — an empty one
+//     this_current_screen_border ACCENT         — the focused workspace,
+//                                                  matching the window
+//                                                  border and layout glyph
 //     urgent_text                colors[3] red
 //
 // `highlight_method="text"` is why nothing here draws a box or an underline:
@@ -418,9 +420,16 @@ Item {
                     // resolves them in: an urgent group is red even while it
                     // is populated, because the whole point is that it is the
                     // one to look at.
+                    // BarTheme.accent for the focused group, not .purple:
+                    // qtile's own GroupBox now colours the CURRENT group
+                    // with this_current_screen_border=ACCENT (the same
+                    // value as the window border and layout glyph) and
+                    // keeps merely-populated groups on colors[8]/.cyan —
+                    // .purple here was the pre-ACCENT colors[7] value and
+                    // no longer matches what config.py actually draws.
                     color: root.urgentIds.indexOf(wsItem.modelData.id) >= 0
                         ? BarTheme.red
-                        : wsItem.focused ? BarTheme.purple
+                        : wsItem.focused ? BarTheme.accent
                         : wsItem.populated ? BarTheme.cyan
                         : BarTheme.fg
                 }
