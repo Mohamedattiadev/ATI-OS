@@ -1346,6 +1346,35 @@ remains selectable — nothing here modifies the X11 session.
 
 ## Blocked, not merely unported: Hintium
 
+> **This is now LIVE**, all six root bindings and the whole Hint-Mode
+> chord (as the `hint` submap on `$mod SHIFT F`). The "Wayland forbids
+> both by design" premise below was half right: it does forbid reading
+> the window tree cold, but `hyprctl -j` answers that directly instead
+> (`hintium/hypr.py`, preferred whenever `HYPRLAND_INSTANCE_SIGNATURE` is
+> set) — no protocol workaround, just asking the compositor. And it
+> turned out synthesising clicks needed no change at all: wlroots
+> forwards XTest sent over the rootless XWayland connection into the
+> real compositor seat, which affects the focused window whether it is
+> XWayland or native. `hintium/x11.py`'s click/key code is untouched.
+>
+> A second bug turned up once that one was fixed: the overlay itself is
+> a plain GTK toplevel, and xdg-shell has no equivalent of X11's DOCK
+> type hint, so this tiling compositor tiled it like any other window —
+> hints landed in a small tiled box instead of over the real screen.
+> Fixed with `gtk-layer-shell`: the overlay is a real layer-shell surface
+> now (`hintium/overlay.py`'s `init_fullscreen_layer`), which any wlroots
+> compositor exempts from tiling by construction — this half is not
+> Hyprland-specific at all, unlike the `hyprctl` half above.
+>
+> `~/.local/share/hintium` is a symlink into `~/Attia-Pro/Projects/Hintium`
+> now, not a second stale clone — it used to be one, silently running
+> old code every time something resolved `hintium` through PATH.
+> `$HINTIUM` in `binds.conf` points at the Projects path directly. See
+> that project's README (Limits) for what's still Hyprland-specific
+> rather than generic Wayland — window switching chief among them — and
+> for the multi-monitor caveat: a layer-shell surface belongs to one
+> monitor by protocol design, untested here for lack of a second one.
+
 `~/.local/share/hintium` is X11-native — `hintium/x11.py` plus Xlib/XTest
 across `click.py`, `windows.py`, `scroll.py`, `elements.py`, `service.py`.
 It reads the global window tree and synthesises pointer events. Wayland
