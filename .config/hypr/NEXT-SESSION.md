@@ -773,31 +773,66 @@ Recordings kept: `~/Pictures/island-debug/`.
     `shell.qml` already had — the X11 case was constructing nothing before,
     so every call was a silent no-op.
 
-11. **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
-    ~50 ms before any animation starts.
+11. ~~**Keybind latency** — every island binding spawns a fresh `qs ipc
+    call`, ~50 ms before any animation starts.~~ **CLOSED 2026-08-20.**
 
-    **Root-caused 2026-08-20, not fixed — the fix has real teeth.** Measured
-    5 runs of `qs -p ... ipc call tide state`: 42-63 ms wall clock. Isolated
-    with `qs --version` — no IPC at all, just process start and exit — and
-    it costs the *same* 45-81 ms. So this is not IPC round-trip cost; it is
-    pure process-startup cost for `quickshell` itself, which `ldd` shows
-    linked against 94 shared libraries (the Qt/QML stack). The socket round
-    trip once the process is running is not the bottleneck and is not what
-    would need fixing.
+    Root-caused first: `qs --version` (no IPC at all) costs the same
+    45-81 ms as a real call, so the cost is `quickshell`'s own process
+    startup (94 linked libs via `ldd`, the whole Qt/QML/Wayland stack) —
+    not the socket round trip.
 
-    A real fix means one of: (a) a lightweight client that speaks
-    Quickshell's IPC protocol directly over its Unix socket
-    (`$XDG_RUNTIME_DIR/quickshell/by-id/<id>/ipc.sock`) without loading Qt,
-    or (b) a persistent relay process every bind talks to instead of `qs`.
-    Did not attempt (a): `qs ipc call`'s own `--help` documents the CLI
-    surface, not the wire format, and this machine has no `strace` to
-    reverse it from a live capture (installing it is one `pacman -S` away
-    but wasn't done unprompted). A hand-rolled reimplementation of an
-    internal, unversioned protocol is exactly the kind of fix that looks
-    done and then breaks silently on the next Quickshell update — and this
-    is the one path all 244 live binds share, so a subtly wrong client
-    would not fail loud, it would fail on every key on the desktop. Worth
-    scoping properly with the protocol inspected first, not guessed at.
+    Fixed with `qsipc` (`hypr/scripts/qsipc.cpp`), a client linking only
+    Qt6Core + Qt6Network. Protocol read from quickshell's own source
+    (`outfoxxed/quickshell`, `src/ipc/ipc.cpp` + `src/io/ipccomm.cpp`):
+    `IpcCommand` is a `std::variant` tagged by a leading `quint8`,
+    `StringCallCommand` is index 3 with fields `(QString target, QString
+    function, QVector<QString> arguments)`; the response is tagged the
+    same way, `Completed` at index 5. Also reversed the instance registry
+    — `$XDG_RUNTIME_DIR/quickshell/by-id/<id>/instance.lock` opens with
+    two plain `QDataStream` `QString`s, (instance id, the exact `-p` path
+    the instance was launched with, not symlink-resolved) — so `qsipc`
+    can resolve `-p <path>` to a socket itself, trying every match
+    newest-first and falling through on a dead one (this machine had a
+    stale `by-id` entry for `popups.qml` while this was being tested — the
+    same class of bug `bar-action`'s self-heal fix exists for).
+
+    Measured: 37-45 ms (`qs`) vs 14-22 ms (`qsipc`), byte-exact-verified
+    against real `qs` on status/void/string-return/argument/error-path
+    calls before anything was rewired.
+
+    **Argv shape matches `qs` exactly on purpose** — `qsipc -p <path> ipc
+    call <target> <function> [args...]`, not a shorter invented shape.
+    `cheatsheet.py` labels every bind by pattern-matching the literal
+    substring `" ipc call "` in its exec string; keeping that text
+    identical means every call site is a pure binary-name swap, verified
+    by reading cheatsheet.py's matcher rather than assumed.
+
+    Rewired: `bar-action` (the dispatcher ~46 binds route through —
+    `run_popup`/`run_popup_arg`/`island`/`topbar_call`, one `IPC_BIN`
+    resolved once), `submap-indicator.sh` (fires on every submap
+    enter/exit — restarted live to pick up the change, verified with a
+    real `hyprctl dispatch submap` cycle after), `layout-cycle.sh`,
+    `passthrough.sh`, `bar-chooser`, `theme-animate`,
+    `onboarding-first-run`, `island-picker.py`, and the one direct bind in
+    `binds.conf` (`$mod SHIFT Z`). Every site falls back to `qs` via
+    `command -v qsipc` if the binary is missing.
+
+    **NOT rewired, deliberately: `qdrop.sh`'s call.** Real `qs` exits 0
+    for target-not-found AND function-not-found, not just success — only
+    "no instance" is reliably nonzero (255) — and `qsipc` exits 1 for
+    all three not-found cases, a real behavioral difference. `qdrop.sh`'s
+    fallback loop (`$FORK` then `$FORK/popups.qml`) depends on exactly
+    this exit-code shape and this is qdrop, the most fragility-prone
+    feature in this whole tree by its own history — left on `qs` rather
+    than risk it on an assumption I could not verify live (island was not
+    the active bar when this was tested).
+
+    Build step added to `AtiScriptsV1/install.sh`: compiles
+    `hypr/scripts/qsipc.cpp` and installs to `/usr/local/bin/qsipc` only
+    when the source is newer than the binary, never fatal if
+    g++/Qt6 dev files are missing (falls back to `qs` everywhere it is
+    called). `base-devel` and `qt6-base` are already required elsewhere
+    in this repo's package modules.
 
 12. **`parse_task_name` strips a short trailing subtitle.** Found while
     fixing the spinner, pre-existing, and the comment above it claims the

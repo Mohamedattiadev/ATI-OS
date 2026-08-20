@@ -36,6 +36,11 @@ SOCKET="${XDG_RUNTIME_DIR}/hypr/${HYPRLAND_INSTANCE_SIGNATURE}/.socket2.sock"
 NOTIFY_ID=99101
 
 ISLAND_DIR="${TIDE_ISLAND_FORK_DIR:-$HOME/.config/quickshell/tide-island-fork}"
+# qsipc if installed (same `-p <path> ipc call ...` argv shape as qs, see
+# its own header), qs otherwise. Fires on every submap entry/exit, which
+# is exactly the hot path qsipc exists for -- 40ms -> 15ms measured.
+IPC_BIN=qs
+command -v qsipc >/dev/null 2>&1 && IPC_BIN=qsipc
 # Scoped to the RUNNING instance, not fixed. Found live: a copy of this
 # script from a Hyprland session that had already ended — a full day dead,
 # HYPRLAND_INSTANCE_SIGNATURE pointed at a socket that no longer existed —
@@ -105,12 +110,12 @@ command -v dunstify >/dev/null 2>&1 && NOTIFY=dunstify || NOTIFY=notify-send
 #  backend then would pin us to dunst for the whole session over a race
 #  measured in milliseconds.
 island_show() {
-    qs -p "$ISLAND_DIR" ipc call tide showText "$1" >/dev/null 2>&1
+    "$IPC_BIN" -p "$ISLAND_DIR" ipc call tide showText "$1" >/dev/null 2>&1
 }
 
 island_clear() {
-    qs -p "$ISLAND_DIR" ipc call tide clearText >/dev/null 2>&1
-    qs -p "$ISLAND_DIR" ipc call tide clearModeKeys >/dev/null 2>&1
+    "$IPC_BIN" -p "$ISLAND_DIR" ipc call tide clearText >/dev/null 2>&1
+    "$IPC_BIN" -p "$ISLAND_DIR" ipc call tide clearModeKeys >/dev/null 2>&1
 }
 
 # ------------------------------------------------------------
@@ -161,7 +166,7 @@ except Exception:
     sys.exit(1)
 ' 2>/dev/null || return 1
 
-    qs -p "$ISLAND_DIR" ipc call tide showModeKeys "$map" >/dev/null 2>&1
+    "$IPC_BIN" -p "$ISLAND_DIR" ipc call tide showModeKeys "$map" >/dev/null 2>&1
 }
 
 notify_show() {

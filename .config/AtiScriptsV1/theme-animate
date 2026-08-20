@@ -59,8 +59,16 @@ mode="$1"
 FORK_DIR="${TIDE_ISLAND_FORK_DIR:-$HOME/.config/quickshell/tide-island-fork}"
 POPUPS_ENTRY="$FORK_DIR/popups.qml"
 
+# qsipc if installed (same argv shape as qs, its own header explains why),
+# qs otherwise. Either way this function's contract holds: nonzero exit
+# with no instance is what makes the FORK_DIR -> POPUPS_ENTRY fallthrough
+# below work, and both binaries exit nonzero for that case (qs: 255,
+# qsipc: 1 -- the exact value was never what this checked).
+ipc_bin=qs
+command -v qsipc >/dev/null 2>&1 && ipc_bin=qsipc
+
 try_ipc() {
-  qs -p "$1" ipc call tide applyThemeAnimated "$mode" >/dev/null 2>&1
+  "$ipc_bin" -p "$1" ipc call tide applyThemeAnimated "$mode" >/dev/null 2>&1
 }
 
 if try_ipc "$FORK_DIR"; then

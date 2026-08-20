@@ -104,9 +104,16 @@ if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && command -v qs >/dev/null 2>&1;
   mkdir -p "$STATE_DIR"
   mv -f "$PENDING" "$CLAIMED" 2>/dev/null || exit 0
   sleep "${1:-8}"
+  # qsipc if installed (same argv shape as qs, see its own header), qs
+  # otherwise. Only failure mode this hits in practice is "no instance"
+  # (showOnboarding is a real, always-present function on a running
+  # island), and both binaries exit nonzero for that case, so the
+  # fallback notice below still fires correctly either way.
+  ipc_bin=qs
+  command -v qsipc >/dev/null 2>&1 && ipc_bin=qsipc
   # Explicit page 0, because the parameter is typed and required -- an
   # omitted int arrives undefined on the other side.
-  if ! qs -p "$HOME/.config/quickshell/tide-island-fork" \
+  if ! "$ipc_bin" -p "$HOME/.config/quickshell/tide-island-fork" \
         ipc call tide showOnboarding 0 >/dev/null 2>&1; then
     notify-send -a onboarding "Tour unavailable" \
       "The shell is not running. Press \$mod SHIFT N to open the tour." 2>/dev/null

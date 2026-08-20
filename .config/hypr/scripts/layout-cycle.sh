@@ -320,6 +320,10 @@ printf '%s' "$want" > "$state_dir/current"
 # capsule flashing "Max" every time you press $mod 2 is noise, not
 # information. qtile's widget did not blink either — it just read the
 # current layout.
-qsi="qs -p $HOME/.config/quickshell/tide-island-fork ipc call"
+# qsipc if installed (same argv shape as qs, see its own header for why),
+# qs otherwise.
+ipc_bin=qs
+command -v qsipc >/dev/null 2>&1 && ipc_bin=qsipc
+qsi="$ipc_bin -p $HOME/.config/quickshell/tide-island-fork ipc call"
 $qsi tide showText "$label" >/dev/null 2>&1 || true
 (sleep 1.2; $qsi tide clearText >/dev/null 2>&1 || true) &

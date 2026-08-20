@@ -102,21 +102,35 @@ ensure_popups() {
   done
 }
 
+# qsipc, not qs, when it is there. Same `-p <path> ipc call <target>
+# <function> [args...]` argv shape as qs (qsipc's own header explains
+# why — cheatsheet.py's labeller pattern-matches " ipc call " in a bind's
+# exec string, so keeping the text identical means every call site below
+# is a pure binary-name swap, nothing downstream needs to change), 40ms ->
+# 15ms measured because it links Qt6Core + Qt6Network alone instead of
+# running the full quickshell binary /usr/bin/qs is symlinked to.
+# Resolved once, not per call site, so there is one place to ask rather
+# than four `command -v` checks. Falls back to `qs` if qsipc is not
+# installed — a fresh machine before AtiScriptsV1/install.sh's build step
+# has run, or one missing g++/Qt6 dev files, see that script's own note.
+IPC_BIN=qs
+command -v qsipc >/dev/null 2>&1 && IPC_BIN=qsipc
+
 run_popup() {
   ensure_popups
-  setsid -f qs -p "$POPUPS_ENTRY" ipc call popups "$1" >/dev/null 2>&1 || true
+  setsid -f "$IPC_BIN" -p "$POPUPS_ENTRY" ipc call popups "$1" >/dev/null 2>&1 || true
 }
 # Same as run_popup, for the one IPC that takes an argument — the cheatsheet
 # needs to know WHICH sheet, and dropping the argument is how every sheet key
 # ends up opening the same one.
 run_popup_arg() {
   ensure_popups
-  setsid -f qs -p "$POPUPS_ENTRY" ipc call popups "$1" "$2" >/dev/null 2>&1 || true
+  setsid -f "$IPC_BIN" -p "$POPUPS_ENTRY" ipc call popups "$1" "$2" >/dev/null 2>&1 || true
 }
 run_sh() { setsid -f sh -c "$1" >/dev/null 2>&1 || true; }
 
 island() {
-  exec qs -p "$FORK_DIR" ipc call "$target" "$func" ${arg:+"$arg"}
+  exec "$IPC_BIN" -p "$FORK_DIR" ipc call "$target" "$func" ${arg:+"$arg"}
 }
 
 # ---------------------------------------------------------------------------
@@ -144,7 +158,7 @@ island() {
 # those keys do too.
 if [[ "$target" == bar ]]; then
   topbar_call() {
-    exec qs -p "$HOME/.config/quickshell/topbar" ipc call topbar "$1"
+    exec "$IPC_BIN" -p "$HOME/.config/quickshell/topbar" ipc call topbar "$1"
   }
   case "$(read_mode)/$func" in
     island/systemBox)  target=tide; func=toggleNotificationCenter; arg=""; island ;;

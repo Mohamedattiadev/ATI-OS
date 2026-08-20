@@ -45,7 +45,12 @@ topbar_ipc() {
     # `|| true` on every call: the topbar is not running under the island, and
     # a passthrough that fails to toggle is far better than one that refuses
     # to start because a bar it does not need is absent.
-    qs -p "$TOPBAR_DIR" ipc call topbar "$@" 2>/dev/null || true
+    #
+    # qsipc if installed (same argv shape as qs, see its own header),
+    # qs otherwise.
+    local ipc_bin=qs
+    command -v qsipc >/dev/null 2>&1 && ipc_bin=qsipc
+    "$ipc_bin" -p "$TOPBAR_DIR" ipc call topbar "$@" 2>/dev/null || true
 }
 
 case "${1:-}" in

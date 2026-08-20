@@ -3363,7 +3363,8 @@ def bars_run(item_id):
             # "TypeError: not enough arguments for format string", raised only
             # on the two rows that reach this branch.
             "printf '%%s\\n' %s > %s; "
-            "qs -p ~/.config/quickshell/topbar ipc call topbar %s >/dev/null 2>&1; "
+            "ipc_bin=qs; command -v qsipc >/dev/null 2>&1 && ipc_bin=qsipc; "
+            "\"$ipc_bin\" -p ~/.config/quickshell/topbar ipc call topbar %s >/dev/null 2>&1; "
             "bar-switch native"
             % (shlex.quote(item_id), shlex.quote(TOPBAR_POS), shlex.quote(item_id)))
         return None

@@ -49,7 +49,11 @@ case "$pick" in
     # rather than appearing and then moving. The IPC is a no-op while the
     # topbar is down, which is exactly when the file write is what counts.
     printf '%s\n' "$want" > "$POS_FILE"
-    qs -p "$HOME/.config/quickshell/topbar" ipc call topbar "$want" >/dev/null 2>&1 || true
+    # qsipc if it is installed (same argv shape as qs -- see its own
+    # header), qs otherwise.
+    ipc_bin=qs
+    command -v qsipc >/dev/null 2>&1 && ipc_bin=qsipc
+    "$ipc_bin" -p "$HOME/.config/quickshell/topbar" ipc call topbar "$want" >/dev/null 2>&1 || true
     setsid -f bar-switch native >/dev/null 2>&1
     ;;
 esac
