@@ -691,6 +691,16 @@ ShellRoot {
                         foreground: BarTheme.green       // colors[4]
                         padding: 10
                         fontPixelSize: Metrics.s(15)
+                        // config.py: chip(ewidget.Mpris2, ..., width=220,
+                        // scroll=True, scroll_chars=28, ...) \u2014 qtile's own
+                        // fixed pixel width, required there before it will
+                        // even enable scrolling. Ported as a hard cap with
+                        // ellipsis rather than a scrolling marquee: the
+                        // truncated title is still readable at a glance,
+                        // which is the property that matters most, and
+                        // qtile's own scroll only exists because it had no
+                        // ellipsis option at all for a widget this shape.
+                        maxWidth: Metrics.s(220)
                         clickable: true
                         scrollable: true
                         height: parent.height

@@ -108,6 +108,33 @@ Item {
     // change size has nothing to reserve.
     property string widestText: ""
 
+    // ---- FIXED, NOT JUST CAPPED — THE SAME REASON widestText EXISTS ----
+    //
+    // widestText above solves "reserve space for the longest string this
+    // chip will ever hold" by GROWING to it. This is the same problem from
+    // the unbounded side: qtile's own w_mpris is `width=220` in config.py
+    // — not a maximum, a fixed pixel width the widget always occupies
+    // while it has anything to show — and the comment beside it in
+    // config.py explains why the number exists at all: qtile refuses
+    // `scroll=True` without an explicit pixel width, so 220 is not a style
+    // choice, it is the one number qtile required to even start.
+    //
+    // Ported as always-exactly-maxWidth rather than a shrink-to-fit
+    // ceiling, on purpose: a cap that still shrinks for a short title
+    // means the chip's width changes every time the track/tab changes,
+    // which is the exact jitter widestText exists to prevent for the
+    // layout chip, just arriving from the long side instead of the short
+    // one. `elide: Text.ElideRight` on `label` below was already set but
+    // had nothing to elide AGAINST — a Text with no width narrower than
+    // its own content never elides — which is why an MPRIS title
+    // ("{xesam:title} — {xesam:artist}", arbitrary length) grew the chip
+    // to its own natural width. Reported as the video-title chip
+    // stretching across most of the bar.
+    //
+    // 0 by default so every other chip — none of which have unbounded
+    // text or asked for a constant width — is completely unaffected.
+    property real maxWidth: 0
+
     TextMetrics {
         id: widest
         text: root.widestText
@@ -115,8 +142,9 @@ Item {
     }
 
     visible: active && (text !== "" || root.emoji !== "" || root.icon !== "")
-    implicitWidth: visible
-        ? Math.max(labelRow.implicitWidth, widest.width) + root.padding * 2 : 0
+    implicitWidth: !visible ? 0
+        : root.maxWidth > 0 ? root.maxWidth
+        : Math.max(labelRow.implicitWidth, widest.width) + root.padding * 2
     implicitHeight: parent ? parent.height : Metrics.barHeight
     width: implicitWidth
 
@@ -205,6 +233,18 @@ Item {
         // first line, which reads as a truncation bug rather than a layout.
         maximumLineCount: 1
         elide: Text.ElideRight
+        // Natural size (this Text's own implicitWidth) when root.maxWidth is
+        // the default 0 — every chip that never sets it keeps today's
+        // content-sized behaviour exactly. ALWAYS the full available width
+        // when maxWidth is set, not Math.min against implicitWidth: a short
+        // title padded out to the fixed box (left-aligned, Text's own
+        // default) is what makes the box constant regardless of content,
+        // matching root.implicitWidth's own always-maxWidth line above —
+        // and only a Text narrower than its own content ever elides, so
+        // this is also what makes `elide` above actually fire on a long one.
+        width: root.maxWidth > 0
+            ? Math.max(1, root.maxWidth - root.padding * 2)
+            : implicitWidth
         renderType: Text.NativeRendering
         anchors.verticalCenter: parent.verticalCenter
     }
