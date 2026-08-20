@@ -8,12 +8,22 @@ import Quickshell.Wayland
 DynamicIslandWindow {
     id: island
 
-    // Top while resting, Overlay the moment anything opens. This is the
-    // fullscreen rule, and it has been round-tripped once already — the base
-    // file's comment above `islandRestingSurface` records that, so do not
-    // "fix" it a third time. Resting hides under a fullscreen window; any
-    // panel, OSD or mode promotes the surface and draws over it.
-    WlrLayershell.layer: island.islandRestingSurface ? WlrLayer.Top : WlrLayer.Overlay
+    // Pinned to Overlay, not toggled, when `focusedFullscreen` is trackable
+    // (Hyprland) — see the base file's long note beside that property for
+    // why: the toggle reconfigured a real layer-shell layer on every panel/
+    // OSD/mode open, which is the island's busiest signal, and `visible`
+    // there now carries the one case that toggle actually existed for.
+    //
+    // Falls back to the OLD toggle under niri, where `focusedFullscreen` has
+    // no tracking and is always false: `island.visible` would then always
+    // be true regardless of fullscreen, so hiding while resting still has
+    // to be the layer's job there, exactly as it was before this file
+    // changed. Round-tripped once already on Hyprland — the base file's
+    // comment above `islandRestingSurface` records that — so this is not
+    // "fixed" a third time on the path that already works.
+    WlrLayershell.layer: island.fullscreenTrackingAvailable
+        ? WlrLayer.Overlay
+        : (island.islandRestingSurface ? WlrLayer.Top : WlrLayer.Overlay)
 
     // The base decides WHETHER to grab the keyboard — ninety lines of
     // reasoning about panel state that only it can see. This maps its answer

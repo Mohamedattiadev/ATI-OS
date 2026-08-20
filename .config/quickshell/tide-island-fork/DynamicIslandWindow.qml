@@ -245,6 +245,13 @@ PanelWindow {
         when: hyprlandIntegrationLoader.item !== null
     }
 
+    // Unmapped ONLY while resting AND actually covered by fullscreen — see
+    // `focusedFullscreen`'s note above for why this replaced a layer toggle
+    // rather than adding a second mechanism beside it. Under X11 and under
+    // niri, `focusedFullscreen` is always false (no tracking there — see
+    // `fullscreenTrackingAvailable`), so this is always true and behaves
+    // exactly as it always has on both.
+    visible: !(root.islandRestingSurface && root.focusedFullscreen)
     color: "transparent"
     anchors { top: true; left: true; right: true }
     mask: Region {
@@ -393,68 +400,63 @@ PanelWindow {
     // first frame rather than one that starts at zero.
     readonly property real hoverTooltipWindowHeight:
         Math.ceil(hoverTooltip.y + hoverTooltip.implicitHeight + 8)
-    readonly property real requestedWindowHeight: Math.max(
-        root.notificationCenterWindowHeight,
-        root.capsuleWindowHeight,
-        root.overviewWindowHeight,
-        root.hoverTooltipWindowHeight,
-        Math.ceil(root.controlCenterWindowHeight)
-    )
-    // Grow the layer surface immediately, but keep the old extent while the
-    // capsule finishes its collapse animation. A later expansion interrupts
-    // the pending shrink instead of letting a stale timer clip new content.
-    property real retainedWindowHeight: 0
-    // ---- ON X11 THE WINDOW NEVER RESIZES, AND THAT IS THE WHOLE FIX -------
+    // ---- THE WINDOW NEVER RESIZES, ON EITHER BACKEND, AND THAT IS THE WHOLE FIX ----
     //
-    // Reported as "the island disappears for 0.2s and appears again" whenever
-    // a popup opens or closes.
+    // Reported on X11 as "the island disappears for 0.2s and appears again"
+    // whenever a popup opens or closes, and fixed there first (measurement
+    // below). This file used to draw the opposite conclusion for Wayland —
+    // "a layer-shell commit carries the new size and the new buffer
+    // ATOMICALLY, so there is no frame in between to be blank" —  and
+    // `hoverTooltipWindowHeight` above already disproves that for one
+    // transition: a 60 fps capture of four hover cycles caught the capsule
+    // missing for exactly one frame at the resize, on WAYLAND, mid-morph.
+    // That fix reserved the tooltip's height permanently instead of growing
+    // for it. This does the same for the whole window instead of one more
+    // special case at a time — the two reference dynamic-island shells this
+    // desktop was compared against for smoothness (ukishima, shell-island)
+    // both map one full-height layer surface for the session's lifetime and
+    // animate the pill as an ordinary Item inside it; neither resizes the
+    // real surface for a panel, ever, on either.
     //
-    // It is not a destroy/recreate — measured at 30 Hz across a toggle, the
-    // window ID is stable (23068692 throughout) and the size steps straight
-    // from 1366x44 to 1366x484 and back. That single step IS the bug: an X11
-    // resize reallocates the surface, and the first frame after it is drawn
-    // before the content has been re-laid-out, so the island blinks out and
-    // back exactly once per panel.
+    // X11's original measurement, unchanged, and now the answer for both:
     //
-    // Wayland does not have this problem and so the base file was right to
-    // size the surface tightly: a layer-shell commit carries the new size and
-    // the new buffer ATOMICALLY, so there is no frame in between to be blank.
-    // X11 has no such guarantee, which is why this is a per-backend answer
-    // rather than a change to `requestedWindowHeight` for everyone.
+    //     Measured at 30 Hz across a toggle, the window ID is stable
+    //     (23068692 throughout) and the size steps straight from 1366x44 to
+    //     1366x484 and back. That single step IS the bug: a resize
+    //     reallocates the surface, and the first frame after it is drawn
+    //     before the content has been re-laid-out, so the island blinks out
+    //     and back exactly once per panel.
     //
-    // So on X11 the window is simply always the height of the screen and
-    // nothing ever resizes it. The costs were checked before taking them:
+    // The costs, checked before taking them — X11's list, RE-CONFIRMED for
+    // Wayland rather than assumed to carry over:
     //
-    //   * INPUT is not affected. `mask` above is the input region and it is
-    //     already the capsule's rectangle alone, not the window — that is a
-    //     pre-existing invariant this leans on rather than a new one. A
-    //     taller window with the same mask eats no extra clicks.
-    //   * STRUTS are not affected. The exclusive zone lives on its own 1x1
-    //     reserver window (measured: 1366x1 carrying the only
-    //     _NET_WM_STRUT_PARTIAL), so the island's own height was never what
-    //     reserved space.
-    //   * FULLSCREEN is not affected. picom's `unredir-if-possible` is unset
-    //     and defaults off, so an always-present dock cannot be what stops a
-    //     fullscreen client from being unredirected.
-    readonly property real x11FixedWindowHeight:
+    //   * INPUT is not affected. `mask` above is the input region, shared by
+    //     both backends, and it is already the capsule's rectangle alone,
+    //     not the window. A taller window with the same mask eats no extra
+    //     clicks.
+    //   * STRUTS are not affected, on Wayland for a different reason than
+    //     X11's WM_STRUT: `exclusionMode: ExclusionMode.Ignore` above means
+    //     this window reserves NOTHING itself — `desiredExclusiveZone` is
+    //     published through a separate reserver surface in shell.qml, so
+    //     this window's own height was never what struts against tiled
+    //     windows.
+    //   * FULLSCREEN is not affected. Hyprland occludes a Top-layer surface
+    //     behind a fullscreen window by Z-order, not by the surface's
+    //     height — `islandRestingSurface` still controls whether the window
+    //     is on Top or Overlay exactly as before; only its height stopped
+    //     changing.
+    //
+    // `requestedWindowHeight`/`retainedWindowHeight`/`windowShrinkTimer` —
+    // the grow-immediately-shrink-on-a-debounce machinery this replaced —
+    // are gone rather than left inert: nothing else in this file ever read
+    // them, and a dead resize path left in place is a bug some future edit
+    // re-wires back to `implicitHeight` without re-deriving why it was
+    // removed.
+    readonly property real fixedWindowHeight:
         root.screen && root.screen.height ? root.screen.height : 768
-    implicitHeight: root.onX11
-        ? root.x11FixedWindowHeight
-        : Math.max(root.requestedWindowHeight, root.retainedWindowHeight)
+    implicitHeight: root.fixedWindowHeight
 
-    function reconcileWindowHeight() {
-        if (root.requestedWindowHeight >= root.retainedWindowHeight) {
-            windowShrinkTimer.stop();
-            root.retainedWindowHeight = root.requestedWindowHeight;
-            return;
-        }
-
-        windowShrinkTimer.restart();
-    }
-
-    onRequestedWindowHeightChanged: root.reconcileWindowHeight()
     Component.onCompleted: {
-        root.retainedWindowHeight = root.requestedWindowHeight;
         // See the note beside borderFocusProcess: the window borders must not
         // stay dimmed if the shell went away with a panel open.
         borderFocusProcess.run(false);
@@ -550,6 +552,39 @@ PanelWindow {
         islandContainer.islandState === "normal"
         || islandContainer.islandState === "lyrics"
         || islandContainer.islandState === "custom"
+
+    // ---- FULLSCREEN, WITHOUT PROMOTING THE LAYER FOR IT ----
+    //
+    // `islandRestingSurface` above used to be the WHOLE deciding factor for
+    // the compositor layer (see IslandWindowWayland.qml): Top while resting,
+    // Overlay the instant anything opens. That means every notification,
+    // every volume tick, every hover tooltip, every panel toggle — the
+    // island's single busiest signal — reconfigures the actual wlr-layer-
+    // shell layer, a real protocol round trip, not a free QML property.
+    //
+    // The two reference dynamic-island shells compared for smoothness
+    // (ukishima, shell-island) never do this: both pin their surface to
+    // Overlay for the session's lifetime and fake resting-vs-shown with
+    // opacity/visibility instead, which costs nothing but a repaint.
+    //
+    // This desktop's version of that is `focusedFullscreen`: pin the layer
+    // to Overlay always (IslandWindowWayland.qml, unchanged for niri — see
+    // `fullscreenTrackingAvailable`), and reach for `visible` ONLY for the
+    // one case Overlay-always would otherwise get wrong — a resting island
+    // sitting permanently on top of fullscreen video, which is the exact
+    // mistake IslandWindowWayland.qml's own comment already records once.
+    // `visible` toggling is not new or unproven here: RingOsdWindow.qml
+    // does it far more often than this ever will and says why in its own
+    // header — unmapping is cheap, a LAYER change is not.
+    //
+    // Fed by HyprlandWindowIntegration.qml's `fullscreenActive`, which reads
+    // the same `fullscreen>>1`/`fullscreen>>0` event the topbar's
+    // `focusedFullscreen` does (quickshell/topbar/shell.qml) — see that
+    // file's note for the measurement this is based on.
+    readonly property bool fullscreenTrackingAvailable: root.hyprlandIntegration !== null
+    readonly property bool focusedFullscreen: root.hyprlandIntegration
+        ? !!root.hyprlandIntegration.fullscreenActive
+        : false
     // FORK: this was `WlrLayershell.keyboardFocus`, and the layer line above it
     // was `WlrLayershell.layer`. Both moved out to IslandWindowWayland.qml /
     // IslandWindowX11.qml — see qml/common/BackendSurface.md for why an
@@ -1556,7 +1591,7 @@ PanelWindow {
     // reads colors.conf rather than a captured value.
     //
     // Hung off the EXISTING root Component.onCompleted (see
-    // `retainedWindowHeight` near the top) rather than declared as a second
+    // `fixedWindowHeight` near the top) rather than declared as a second
     // one: two `Component.onCompleted` on the same object is "Property value
     // set multiple times", which fails the whole component.
 
@@ -1963,20 +1998,6 @@ PanelWindow {
         interval: 0
         repeat: false
         onTriggered: islandContainer.forceActiveFocus()
-    }
-
-    Timer {
-        id: windowShrinkTimer
-        // FORK: derived, not 1000. Its job is to hold the layer surface at
-        // the old extent until the capsule has finished collapsing INTO the
-        // new one — so the number it must cover is the morph, plus the
-        // content fade that now runs alongside it (see PanelLoader.qml,
-        // which keeps a dismissed panel mounted for exactly that long), plus
-        // a frame of slack at 60 Hz. 1000 was a guess that happened to be
-        // long enough; this cannot come adrift if either duration changes.
-        interval: Motion.morphDuration() + Motion.fadeOutDuration() + 32
-        repeat: false
-        onTriggered: root.retainedWindowHeight = root.requestedWindowHeight
     }
 
     Timer {
