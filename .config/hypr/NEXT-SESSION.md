@@ -776,6 +776,29 @@ Recordings kept: `~/Pictures/island-debug/`.
 11. **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
     ~50 ms before any animation starts.
 
+    **Root-caused 2026-08-20, not fixed — the fix has real teeth.** Measured
+    5 runs of `qs -p ... ipc call tide state`: 42-63 ms wall clock. Isolated
+    with `qs --version` — no IPC at all, just process start and exit — and
+    it costs the *same* 45-81 ms. So this is not IPC round-trip cost; it is
+    pure process-startup cost for `quickshell` itself, which `ldd` shows
+    linked against 94 shared libraries (the Qt/QML stack). The socket round
+    trip once the process is running is not the bottleneck and is not what
+    would need fixing.
+
+    A real fix means one of: (a) a lightweight client that speaks
+    Quickshell's IPC protocol directly over its Unix socket
+    (`$XDG_RUNTIME_DIR/quickshell/by-id/<id>/ipc.sock`) without loading Qt,
+    or (b) a persistent relay process every bind talks to instead of `qs`.
+    Did not attempt (a): `qs ipc call`'s own `--help` documents the CLI
+    surface, not the wire format, and this machine has no `strace` to
+    reverse it from a live capture (installing it is one `pacman -S` away
+    but wasn't done unprompted). A hand-rolled reimplementation of an
+    internal, unversioned protocol is exactly the kind of fix that looks
+    done and then breaks silently on the next Quickshell update — and this
+    is the one path all 244 live binds share, so a subtly wrong client
+    would not fail loud, it would fail on every key on the desktop. Worth
+    scoping properly with the protocol inspected first, not guessed at.
+
 12. **`parse_task_name` strips a short trailing subtitle.** Found while
     fixing the spinner, pre-existing, and the comment above it claims the
     opposite: "A real subtitle ("Chapter 3 - The Long Way Home") is left

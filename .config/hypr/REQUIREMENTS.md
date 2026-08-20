@@ -808,12 +808,9 @@ spec gives a number. Where the spec gives only a description, this is a
 judgement call that has been made and cannot be measured. Saying "still
 open" would imply there is a test that has not been run; there is not.
 
-**The chord/mode indicator's appearance is still genuinely open.**
-`ModeKeysLayer.qml` exists, is reached from `submap-indicator.sh` via
-`tide showModeKeys` / `tide clearModeKeys`, and renders — it was never the
-functionality that was in question. It has had none of the restyling pass
-that the connectivity panels and the control centre header got, and it is
-the one surface that appears on every chord entry.
+**The chord/mode indicator's appearance — CLOSED, see the numbered list's
+item 8 below for the commits and the live verification.** This note is
+what item 8 there now says was stale.
 
 #### Motion, and the panel-to-panel glitch
 
@@ -1570,10 +1567,14 @@ present to see. Next session with a phone or earbuds nearby: pair one,
 close the panel, reopen it, and watch whether the row appears immediately
 or a frame late.
 
-**8. The chord/mode indicator's appearance.** `ModeKeysLayer.qml` works
-and is reached on every submap entry; it has had none of the restyling the
-other panels got. The one surface you see most often and the one least
-designed.
+**8. ~~The chord/mode indicator's appearance.~~ CLOSED — stale, this was
+already built out.** `edbf6ec` (the chord HUD itself: header, mode name,
+Esc hint, a 1/2/3-column key-chip grid sized by row count) plus two later
+token/colour passes (`96738de`, `8ec2912`) already gave it the same
+`IslandTheme.*` treatment as every other panel. Verified live 2026-08-20:
+`tide showModeKeys lang` renders a clean styled HUD, key chips and action
+labels legible and consistent with the rest of the shell — not the
+underdesigned surface this item describes. This note predates that work.
 
 **9. awww's sine-edged wave front is not reproduced** in the theme
 transition — angle matches to half a degree, ripple does not. Blocked on
