@@ -1576,11 +1576,41 @@ token/colour passes (`96738de`, `8ec2912`) already gave it the same
 labels legible and consistent with the rest of the shell — not the
 underdesigned surface this item describes. This note predates that work.
 
-**9. awww's sine-edged wave front is not reproduced** in the theme
-transition — angle matches to half a degree, ripple does not. Blocked on
-QML: `ShaderEffect` needs a build step this config does not have, and
-`Canvas` does not paint while invisible. A ~260-slice `Repeater` is the
-noted fallback.
+**9. awww's sine-edged wave front — BUILT 2026-08-20, not visually
+verified.** The `~260-slice Repeater` this item itself proposed as the
+fallback, built against real numbers: awww's own `--transition-wave
+"60,30"` flag (60 px period, 30 px amplitude), already recorded verbatim
+in this file's own comment — this was not a guess, the spec was sitting
+in the tree the whole time.
+
+Purely additive: `wavefront` (`ThemeTransitionWindow.qml`) went from a
+plain `Rectangle` to an `Item` with the *identical* width/height/transform
+(the translate+rotate math that was already measured angle-accurate to
+half a degree — untouched, not re-derived), holding a `Repeater` of thin
+slices whose width is `sweepLength + 30·sin(2π·y/60)`. Nothing about the
+proven geometry changes; the wave only adds content inside the same
+already-correct bounding box. Loads clean — `Reloading configuration...
+Configuration Loaded`, no QML errors — and a live `hyprctl dispatch` /
+`tide state` smoke test after touching it read normally.
+
+**What was NOT achieved: seeing it.** Tried `grim` bursts (up to 20
+frames at 25ms) and `wf-recorder` at 60fps across five different real
+theme changes (gruvbox→dracula→catppuccin→everforest→kanagawa, both
+`island` and `native` bar modes) — every capture showed the wallpaper/
+colours already fully settled to the new theme with no sweep frame ever
+caught, front OR back. Ruled out qsipc as the cause: called
+`applyThemeAnimated` with bare `qs` directly (not qsipc) and got the
+identical no-visible-sweep result — both clients hit the exact same
+server-side handler, so this is not something introduced by the keybind-
+latency work either. Since the SAME tooling could not catch the
+pre-existing straight-edge sweep any better than the wavy one, the honest
+read is a capture-tooling limitation (the 620ms transition completing
+faster than these tools' effective startup+capture latency), not a
+regression from this change — but that is inference, not verification.
+**Next session with working capture: drive `theme-animate <mode>` and
+confirm the front is visible at all before judging whether the wave reads
+correctly.** Session state was restored after every test (theme back to
+`gruvbox`, bar-mode back to `native`).
 
 **10. ~~Updates has no home anywhere.~~ CLOSED — by abandonment, which is
 the honest disposition rather than a dodge.** qtile's

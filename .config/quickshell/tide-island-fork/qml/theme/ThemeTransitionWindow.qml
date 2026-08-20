@@ -703,25 +703,31 @@ PanelWindow {
         // diagonal purely so the front is long enough that its ends never
         // come into view at any angle.
         //
-        // ---- WHAT IS DELIBERATELY NOT REPRODUCED ----
+        // ---- THE SINE EDGE ----
         //
         // awww's front is not straight: --transition-wave "60,30" gives it a
-        // 60 px period, 30 px amplitude sine edge. That is not reproduced
-        // here, and the honest reason is the tooling rather than taste. A sine
-        // edge in QML means either a ShaderEffect — which needs a precompiled
-        // .qsb and therefore a build step this config does not have — or a
-        // Canvas, which per this tree's own notes does not paint while its
-        // item is invisible, and this mask is `visible: false` by
-        // construction. A Repeater of ~260 thin slices would resolve a 60 px
-        // period across 1567 px, and is the fallback if the straight edge ever
-        // reads as too clean. At 60 px period on a 1366 px screen the ripple
-        // is a fine detail; the angle is what carries the resemblance.
-        Rectangle {
+        // 60 px period, 30 px amplitude sine edge — real numbers taken from
+        // awww's own CLI flag, not guessed. A ShaderEffect is still not an
+        // option (needs a precompiled .qsb, a build step this config does
+        // not have) and neither is a Canvas (does not paint while its item
+        // is invisible, and this mask is `visible: false` by construction).
+        //
+        // The fallback noted here previously — a Repeater of ~260 thin
+        // slices — is what this is. `wavefront`'s own width/height/transform
+        // are UNCHANGED from the straight-edge version: this only adds
+        // content INSIDE that already-verified bounding box (angle matched
+        // to half a degree live, see the commit that measured it), so the
+        // one thing that could regress the base sweep — the translate/
+        // rotate math — was never touched to build this. Slices are plain
+        // QML Items with no clip on their parent, so a slice's width can
+        // legally extend past `wavefront.width` on the wave's outward
+        // excursions; nothing in this tree clips a child to its parent by
+        // default and this scene has no reason to start.
+        Item {
             id: wavefront
             anchors.centerIn: parent
             width: root.sweepLength
             height: root.diagonal * 2
-            color: "black"
             transform: [
                 Translate {
                     x: (root.sweep - 1) * root.sweepLength
@@ -732,6 +738,36 @@ PanelWindow {
                     angle: root.sweepAngle
                 }
             ]
+
+            // awww's own numbers, not tuned to taste.
+            readonly property real wavePeriod: 60
+            readonly property real waveAmplitude: 30
+            // ~6 px per slice, the same resolution the fallback note this
+            // replaces was already estimating a 60 px period needed.
+            readonly property int sliceCount: Math.max(1, Math.ceil(wavefront.height / 6))
+
+            Repeater {
+                model: wavefront.sliceCount
+
+                Rectangle {
+                    id: slice
+                    required property int index
+                    readonly property real sliceHeight: wavefront.height / wavefront.sliceCount
+                    // Slice CENTRE, not its top edge, is what feeds the sine —
+                    // matches where the eye reads a wave's phase from.
+                    readonly property real centreY: (index + 0.5) * sliceHeight
+
+                    y: index * sliceHeight
+                    // +1 covers the sub-pixel seam between adjacent slices at
+                    // non-integer heights; a period this coarse hides a 1 px
+                    // overlap completely.
+                    height: sliceHeight + 1
+                    x: 0
+                    width: wavefront.width + wavefront.waveAmplitude
+                        * Math.sin(2 * Math.PI * slice.centreY / wavefront.wavePeriod)
+                    color: "black"
+                }
+            }
         }
     }
 
