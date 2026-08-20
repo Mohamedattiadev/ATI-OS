@@ -156,18 +156,34 @@ ShellRoot {
             required property var modelData
             screen: modelData
 
-            // Top while no submap is open, Overlay while one is — same rule
-            // and same reasoning as the island's islandRestingSurface (see
-            // IslandWindowWayland.qml / DynamicIslandWindow.qml's long note
-            // on it): Hyprland draws a fullscreen window ABOVE the Top layer
-            // and BELOW Overlay, so this bar's chord_chip (the submap
-            // indicator, below) was invisible for exactly the case that
-            // matters most — a mode swallowing your keys while a fullscreen
-            // window is up. Not pinned to Overlay always: that would leave
-            // the whole bar sitting over fullscreen video permanently, which
-            // the island tried once and reverted (see its note on the same
-            // mistake). Only a live submap earns the promotion.
-            WlrLayershell.layer: shellRoot.submap !== "" ? WlrLayer.Overlay : WlrLayer.Top
+            // ---- ALWAYS Top, NOW — the promotion moved to its own window ----
+            //
+            // This used to be `shellRoot.submap !== "" ? Overlay : Top`, on the
+            // same reasoning as the island's islandRestingSurface: Hyprland
+            // draws a fullscreen window ABOVE Top and BELOW Overlay, so a
+            // fullscreen video hid this bar's chord_chip along with everything
+            // else on it — reported as "in fullscreen I open $mod P and cannot
+            // see the mode".
+            //
+            // The fix was right and its blast radius was wrong. Promoting THIS
+            // window to Overlay does not put only the chord chip over the
+            // video — every chip on the bar comes with it, arch icon through
+            // tray, because they are all one PanelWindow. Asked for directly
+            // afterwards: qtile's own mode_overlay.py shows a SEPARATE small
+            // floating label at top-centre while a mode covers the bar, never
+            // the bar itself — "it appears in mid of screen without the bar,
+            // just it". That is `ModeChip` below: its own tiny Overlay-layer
+            // window, visible only while `shellRoot.submap !== ""` AND
+            // `shellRoot.focusedFullscreen`, holding nothing but the label.
+            //
+            // So this bar goes back to being simply Top, always — hidden
+            // behind fullscreen exactly like any other dock, which is correct
+            // for every chip on it including the embedded chord chip further
+            // down (rightGroup's Chip): that one keeps showing the mode
+            // normally whenever the bar itself is visible, and ModeChip is the
+            // ONLY thing that shows it when the bar is not, so the two never
+            // draw the same label at once.
+            WlrLayershell.layer: WlrLayer.Top
 
             anchors { top: true; left: true; right: true }
             implicitHeight: Metrics.barHeight + Metrics.marginV * 2
@@ -967,11 +983,11 @@ ShellRoot {
             screen: modelData
             visible: shellRoot.position === "bottom"
 
-            // Same rule as the top bar above: this bar carries the same
-            // submap chip (BottomBar.qml's icon/text, fed by
-            // shellRoot.submapIcon/submapLabel), so it needs the same
-            // fullscreen exemption while a mode is open.
-            WlrLayershell.layer: shellRoot.submap !== "" ? WlrLayer.Overlay : WlrLayer.Top
+            // Same rule as the top bar above, and the same fix: always Top.
+            // The standalone `ModeChip` window covers the fullscreen+mode
+            // case for both bar positions at once, so this bar does not need
+            // its own promotion any more than the top one does.
+            WlrLayershell.layer: WlrLayer.Top
 
             anchors { bottom: true; left: true; right: true }
             implicitHeight: Metrics.bottomBarHeight + Metrics.marginV * 2
@@ -1020,6 +1036,78 @@ ShellRoot {
                     }
                 }
                 Timer { id: bottomTipDelay; interval: 450; repeat: false }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  THE STANDALONE MODE CHIP — qtile's mode_overlay.py, ported
+    // ---------------------------------------------------------------
+    //
+    // The two PanelWindows above are back to being plain Top-layer bars,
+    // which means a fullscreen window hides them completely, chord chip
+    // included — matching qtile, where the whole bar (and everything on it)
+    // disappears under a fullscreen client too. qtile's answer to "then how
+    // do I see what mode I am in" is `mode_overlay.py`: a SEPARATE tiny
+    // floating chip at top-centre, shown only while BOTH a mode is open AND
+    // the real bar is covered, holding nothing but the label. This is that
+    // chip, one per screen like the bars above.
+    //
+    // A third PanelWindow rather than reusing either bar's own surface,
+    // because the two conditions that gate it — `submap !== ""` and
+    // `focusedFullscreen` — have nothing to do with `shellRoot.position`,
+    // and folding it into one of the two bar windows would mean promoting
+    // that whole window's layer again, which is the exact bug this replaces.
+    Variants {
+        model: Quickshell.screens
+
+        PanelWindow {
+            required property var modelData
+            screen: modelData
+
+            visible: shellRoot.submap !== "" && shellRoot.focusedFullscreen
+
+            // Always Overlay: unlike the bars, this window has nothing to
+            // hide behind fullscreen for — it only exists to be seen over it.
+            WlrLayershell.layer: WlrLayer.Overlay
+            WlrLayershell.namespace: "quickshell-mode-chip"
+
+            // Reserves nothing — a transient chip must not shove tiled
+            // windows around for however long a mode stays open.
+            exclusionMode: ExclusionMode.Ignore
+            anchors { top: true; left: true; right: true }
+            // From Metrics directly, not from `chip.height`/`chip.anchors.
+            // topMargin`: those read back a child's own laid-out geometry to
+            // size the window it is laid out INSIDE, which is exactly the
+            // shape of a binding loop, and qmllint's engine called it one on
+            // first try. Same two numbers either way — `chip.height` below
+            // is `Metrics.barHeight` verbatim — but sourced from the
+            // constants directly breaks the cycle instead of tiptoeing
+            // around it.
+            implicitHeight: Metrics.barHeight + Metrics.marginV
+            color: "transparent"
+
+            // Input is the chip's own rectangle alone, same reasoning as the
+            // island's mask (DynamicIslandWindow.qml): a full-width surface
+            // must not eat clicks meant for the fullscreen window under it.
+            mask: Region {
+                x: Math.floor(chip.x)
+                y: Math.floor(chip.y)
+                width: Math.ceil(chip.width)
+                height: Math.ceil(chip.height)
+            }
+
+            Chip {
+                id: chip
+                anchors.top: parent.top
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.topMargin: Metrics.marginV
+                height: Metrics.barHeight
+                icon: shellRoot.submapIcon
+                text: shellRoot.submapLabel
+                foreground: BarTheme.bg
+                plate: shellRoot.submapColour
+                padding: 11
             }
         }
     }
@@ -1102,6 +1190,12 @@ ShellRoot {
                          colour: BarTheme.fg }
     })
     property string submap: ""
+    // Fed by the same `onRawEvent` below (Hyprland's `fullscreen>>1` /
+    // `fullscreen>>0`), and read by ModeChip's `visible` further down: the
+    // standalone chip must show only while the bar itself is actually
+    // covered, or it would draw the mode label a second time right next to
+    // the bar's own embedded chord chip whenever nothing is fullscreen.
+    property bool focusedFullscreen: false
     readonly property var submapEntry: submapMap[shellRoot.submap] || null
 
     // fmt=" {} " — one space each side of whatever the transform returned.
@@ -1126,9 +1220,18 @@ ShellRoot {
         // no polling here on purpose: a submap is entered and left by a
         // keypress, so the event is exact and a timer would only add latency
         // to the one widget whose whole job is to be immediate.
+        //
+        // `fullscreen>>1` / `fullscreen>>0` rides the same socket and the same
+        // Connections block on purpose — it is what ModeChip below needs to
+        // know whether the bar underneath it is actually hidden, and adding a
+        // second listener for one more event name is cheaper than a second
+        // Connections object watching the same target.
         function onRawEvent(event) {
-            if (String(event.name) === "submap")
+            const name = String(event.name);
+            if (name === "submap")
                 shellRoot.submap = String(event.data || "").trim();
+            else if (name === "fullscreen")
+                shellRoot.focusedFullscreen = String(event.data || "").trim() === "1";
         }
     }
 
