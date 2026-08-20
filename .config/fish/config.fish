@@ -314,7 +314,15 @@ function letshypr --description 'Start the Wayland session (Hyprland) from a TTY
     # Electron apps (Telegram, Obsidian) need to be told, and silently
     # fall back to blurry XWayland rendering if they are not.
     set -x ELECTRON_OZONE_PLATFORM_HINT auto
-    Hyprland
+    # start-hyprland, NOT the bare `Hyprland` binary. Since 0.53 the raw
+    # binary skips the session bootstrap start-hyprland does (portals,
+    # screen-share, the Electron/XDG env plumbing this function used to
+    # hand-roll above) and prints "Hyprland was started without
+    # start-hyprland. This is strongly discouraged" on every login — seen
+    # live, top-right, the first thing on screen after `letshypr`. The
+    # env exports above stay: this is a bare TTY login with no display
+    # manager to set them, and start-hyprland does not set them either.
+    start-hyprland
 end
 
 ### END OF FUNCTIONS ###
