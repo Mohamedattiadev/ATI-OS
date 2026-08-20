@@ -42,7 +42,22 @@ PopupWindow {
         gravity: Edges.Bottom
     }
 
-    implicitWidth: label.implicitWidth + Metrics.s(20)
+    // ---- CAPPED, AND WRAPPED RATHER THAN LEFT TO GROW ----
+    //
+    // Reported: a long window title (a browser tab's page title, easily
+    // 60+ characters) stretched this into one very wide single-line strip
+    // instead of a tooltip. The bar's own task chip caps at max_title_width
+    // and ellipses (TaskList.qml) precisely because a title is unbounded
+    // text — the tooltip showing the FULL title on hover is still the
+    // right idea (that is the whole reason it exists), it just cannot do
+    // that by growing implicitWidth without a ceiling. Capped and wrapped
+    // instead: short tooltips (the common case — one word, one phrase)
+    // still render as one line at their natural width, exactly as before;
+    // only a title past the cap wraps to a second/third line rather than
+    // pushing the popup off the edge of a 1366 px bar.
+    readonly property real maxLabelWidth: Metrics.s(260)
+
+    implicitWidth: Math.min(label.implicitWidth, maxLabelWidth) + Metrics.s(20)
     implicitHeight: label.implicitHeight + Metrics.s(12)
     color: "transparent"
 
@@ -56,6 +71,8 @@ PopupWindow {
         Text {
             id: label
             anchors.centerIn: parent
+            width: Math.min(implicitWidth, root.maxLabelWidth)
+            wrapMode: Text.WordWrap
             text: root.text
             color: BarTheme.fg
             // tooltip_font="Ubuntu" in config.py — the tooltip is the one
@@ -69,7 +86,9 @@ PopupWindow {
             // on for exactly that widget ("Opt-in centring (w_clock: prayer
             // line over the FX lines)"). Unconditional here because the popup
             // is sized to its own text, so for the one-line tooltips centred
-            // and left-aligned are the same pixels.
+            // and left-aligned are the same pixels — and now for a wrapped
+            // long title too, where each line should still sit centred
+            // rather than ragged-left.
             horizontalAlignment: Text.AlignHCenter
         }
     }
