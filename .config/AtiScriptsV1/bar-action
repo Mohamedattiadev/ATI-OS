@@ -57,19 +57,61 @@ read_mode() {
 }
 
 run() { setsid -f "$@" >/dev/null 2>&1 || true; }
+
 # The popups shell. Its own instance, addressed by ENTRY FILE rather than by
 # directory: it is a second entry point into the island's config so that it can
 # reach IslandTheme, and `qs -p` keys an instance by the path it was given.
+POPUPS_ENTRY="$HOME/.config/quickshell/tide-island-fork/popups.qml"
+
+# ---------------------------------------------------------------------------
+#  SELF-HEALING: this instance can die with no crash and no trace
+# ---------------------------------------------------------------------------
+# Found live: `qs -p "$POPUPS_ENTRY" ipc call ...` returning 255, "No running
+# instances", with 38 DEAD instance ids already piled up under
+# ~/.cache/quickshell (by-id/*/log.qslog) and the process from this session's
+# own `pgrep` output simply gone — no coredump (`coredumpctl list` had
+# nothing for qs/quickshell), nothing in the journal. It does not crash
+# loudly, it is just not there any more. Reported as "the rofi/media/island
+# popups do not open" — every panel this file opens in native mode
+# (wifi, bluetooth, audio, wallpaper, display, wifi-qr, cheatsheet) goes
+# through `qs -p ... ipc call`, and `|| true` on that call means a dead
+# instance fails EXACTLY as silently as a working one that decided to show
+# nothing — no error ever reached the user, on any of these keys, for as
+# long as the instance stayed dead.
+#
+# topbar.sh already starts this instance once, at bar-switch/session start,
+# with the same `-p <path>` argv match `entry_running()` uses there — but
+# only there. Nothing after that ever checks it is still alive. This is
+# that check, run before every popup call instead of only at startup, so a
+# death mid-session gets a respawn instead of a silent no-op for the rest
+# of the session.
+popup_running() {
+  ps -eo args= | awk -v want="$POPUPS_ENTRY" \
+    '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { found = 1 } }
+     END { exit !found }'
+}
+
+ensure_popups() {
+  popup_running && return 0
+  setsid -f quickshell -p "$POPUPS_ENTRY" >/dev/null 2>&1 || true
+  # Give the QML compile a moment before the IPC call that follows — a call
+  # made before the instance is registered fails exactly like a dead one.
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    popup_running && return 0
+    sleep 0.1
+  done
+}
+
 run_popup() {
-  setsid -f qs -p "$HOME/.config/quickshell/tide-island-fork/popups.qml" \
-    ipc call popups "$1" >/dev/null 2>&1 || true
+  ensure_popups
+  setsid -f qs -p "$POPUPS_ENTRY" ipc call popups "$1" >/dev/null 2>&1 || true
 }
 # Same as run_popup, for the one IPC that takes an argument — the cheatsheet
 # needs to know WHICH sheet, and dropping the argument is how every sheet key
 # ends up opening the same one.
 run_popup_arg() {
-  setsid -f qs -p "$HOME/.config/quickshell/tide-island-fork/popups.qml" \
-    ipc call popups "$1" "$2" >/dev/null 2>&1 || true
+  ensure_popups
+  setsid -f qs -p "$POPUPS_ENTRY" ipc call popups "$1" "$2" >/dev/null 2>&1 || true
 }
 run_sh() { setsid -f sh -c "$1" >/dev/null 2>&1 || true; }
 
