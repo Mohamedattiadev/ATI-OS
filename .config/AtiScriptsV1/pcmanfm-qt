@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# pcmanfm-qt — shim forcing XWayland, shadowing the real binary.
+#
+# THE BUG THIS WORKS AROUND
+# --------------------------
+# NEXT-SESSION.md, measured with scripts/test/dnd-peer.py and uinput-shake.py,
+# driven between two windows of the SAME test program — not an app bug:
+#
+#     A WAYLAND DRAG DOES NOT REACH AN XWAYLAND WINDOW INTACT. The drop
+#     arrives and carries the X11 PRIMARY selection instead of the URI that
+#     was offered.
+#
+# qdrop.py positions itself on open, which only XWayland permits a client to
+# do (GDK_BACKEND=x11, see qdrop.sh) — so it is always on the XWayland side of
+# that broken bridge. pcmanfm-qt runs QT_QPA_PLATFORM=wayland;xcb, i.e. it
+# prefers native Wayland and gets it — putting the file manager you would
+# actually drag from on the WRONG side. That mismatch, not anything wrong
+# with qdrop's own drag/drop code, is why dragging a file INTO qdrop.py from
+# pcmanfm-qt never worked, and it is documented at length as the reason a
+# previous session rebuilt the shelf in Quickshell instead of fixing this.
+#
+# THE OTHER FIX, NOT TRIED THERE
+# --------------------------------
+# The bridge is broken in ONE direction: Wayland source into XWayland
+# destination. It is NOT broken XWayland-to-XWayland — the same measurements
+# record "XWayland source -> GTK shelf: drop in and drag out both work".
+# Moving pcmanfm-qt onto XWayland too, instead of moving qdrop off it, takes
+# both ends of the drag off the broken bridge entirely rather than routing
+# around one side of it.
+#
+# The usual cost of forcing a Qt app onto XWayland is that it stops seeing
+# fractional scaling (see hyprland.conf's own note on this). Irrelevant here:
+# `hyprctl monitors` reports scale=1 on this machine's one output, so there
+# is no fractional scale to lose.
+#
+# WHY A SHIM AND NOT A .desktop OVERRIDE
+# -----------------------------------------
+# pcmanfm-qt starts from more than one place — the $mod M scratchpad bind,
+# theme-apply's daemon-mode restart, a launcher entry — and a .desktop
+# override only catches the launcher path. Shadowing the binary itself via
+# /usr/local/bin (AtiScriptsV1/install.sh puts every file in this directory
+# there, ahead of /usr/bin in $PATH — the same mechanism the `rofi` shim
+# uses) catches all of them uniformly, with nothing to keep in sync.
+set -euo pipefail
+
+export QT_QPA_PLATFORM=xcb
+exec /usr/bin/pcmanfm-qt "$@"
