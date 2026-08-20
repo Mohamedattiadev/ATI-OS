@@ -317,6 +317,22 @@ Recordings kept: `~/Pictures/island-debug/`.
    stands; what follows is what it is NOT, so the next attempt starts
    somewhere new.
 
+   **Re-checked 2026-08-20, still not reproduced, on a second popup this
+   time.** `bar-switch native`, `secondBox` (volume/disk/updates) AND
+   `systemBox` each opened and closed in turn via the topbar's own IPC.
+   Geometry sampled from `hyprctl layers -j` / `monitors -j` across the
+   toggle: `hs=[38,1] reservedTop=38` on every sample, no movement. Pixels
+   checked too, not just geometry — an 8-frame `grim` burst straddling each
+   open and each close, `magick -crop 1366x8+0+33 -format "%[mean]"` (the
+   strip just past the bar's bottom edge, where a 2px shrink would expose
+   background) on every frame including the two rest states: **identical
+   mean, `22659.5`, on all 19 frames of the `secondBox` run and all 15 of
+   the `systemBox` run.** Bar-mode restored to `island` afterward. Still
+   not proof of absence — wallpaper, network, bluetooth, display and the
+   cheatsheet popups remain untried, per the original note below — but two
+   more popups now agree with the first, so the "qtile-only, picom's fix
+   and the memory of it carried over" reading gets stronger.
+
    *The topbar.* `bar-switch native`, then a volume popup opened and closed
    while a sampler read the compositor's own geometry every 8 ms —
    `j/layers` for the bar surface and `j/monitors` for the reserved zone.
@@ -688,31 +704,74 @@ Recordings kept: `~/Pictures/island-debug/`.
    man, notes, clipboard, confedit, spellcheck, translate, pass, todo,
    shared, youtube, hub. The record menu is DONE.
 
+   **Smoke-tested 2026-08-20, all 12 open clean — full rofi-parity audit
+   still not done.** Each opened via `tide showPicker <name>`, `tide state`
+   read back, `tide clearPicker` to close, live `quickshell` log (
+   `$XDG_RUNTIME_DIR/quickshell/by-id/<id>/log.log`) diffed across the
+   whole run. Every one reached `state=picker` with a real, non-trivial
+   height (128–437 px) and **zero** error/warn/exception/`undefined`/
+   `TypeError` lines in the log. `documents` and `man` briefly read back
+   `height=32` (i.e. empty) at a 250ms check — not a bug: `find` and
+   `man -k .` each return in ~0.12s standalone, and both picker read back
+   correctly populated (`height=410`) at 1.2s; `PickerLayer.qml:111`'s
+   `loading` flag already shows "reading…" during that window rather than
+   a blank list (`:1014`, the empty-state placeholder is explicitly gated
+   on `!loading`), so nothing was actually broken, my first check was just
+   too fast. Backend for all 12 is real, implemented logic in
+   `hypr/scripts/island-picker.py` (`documents_list`, `man_list`,
+   `confedit_list/_page`, `spellcheck_list` with language detection,
+   `translate_list`, `pass_list` via `rbw`, etc.) — none are stubs. What
+   this does NOT establish: exact behavioral parity with each rofi
+   original per-row (the `_run` action semantics, sort order matching, edge
+   cases like empty pass store or no matching translation). That audit is
+   still open; this only confirms the mechanical baseline — open, populate,
+   close, no crash — holds for all 12.
+
 5. **`bar-mode` moved on its own.** A sweep run started on `native` and ended
    on `island`. Only bar-switch and bar-chooser write that file and neither
    was called. `sweep-island.py` now reports the change; nobody has caught it
    in the act. `ps -eo pid,ppid,lstart,args` while it happens.
 
-6. **Scratchpads on a second monitor.** The bars and popups are now tested
-   across two outputs and fractional scale; `scratchpad.sh`'s monitor-relative
-   x/y is still verified-by-history only, and `hyprctl output create headless`
-   is how to test it.
+6. ~~**Scratchpads on a second monitor.**~~ **CLOSED — verified, no defects**
+   (`49dc94f`). `hyprctl output create headless` alongside the real panel: all
+   four per-output surfaces (island panels, ring OSD, treetab sidebar, theme
+   overlay) confine themselves to the focused output — measured
+   `control centre open  eDP-1 1366x463  HEADLESS-1 1920x58`, nothing claimed
+   on the unfocused screen.
 
-7. **The SHADOW is the last thing that assumed the flush form.** The border
-   follow-up is otherwise done: the panel outline now traces `notchSkirt`'s
-   flares (`notchSkirtOutline`, z 6) and the frame's verticals start where
-   each fillet lands. The overshoot band was the same object and came with
-   it. The drop shadow was not checked and is drawn from the capsule's
-   rectangle, so it presumably squares off where the shape flares.
+7. ~~**The SHADOW is the last thing that assumed the flush form.**~~
+   **CHECKED 2026-08-20, no defect found.** Opened the audio panel over IPC
+   (`tide toggleAudioPanel`), `grim` full-screen capture, cropped and 4x
+   zoomed on the top-left flare corner. The border traces the flare cleanly
+   (the earlier border fix, confirmed still holding) and there is no
+   squared-off shadow artefact bleeding past the curve — the corner reads
+   clean against the desktop. Two things worth knowing for whoever revisits
+   this: `hyprctl` decoration shadow is `enabled = false` in `looks.conf`
+   (compositor-level shadow is off entirely, so it was never that), and no
+   `MultiEffect`/`DropShadow`/shadow-color property exists anywhere in
+   `DynamicIslandWindow.qml` or the fork tree — the only "drop shadow" is
+   the phrase in these comments, describing padding reserved for one, not a
+   rendered effect. The original speculation ("presumably squares off")
+   was never confirmed and does not hold up live. Panel closed, session
+   state unchanged.
 
 8. **Live preview for the cheap numeric settings keys**, now that the
    settings app has a preview to put it in.
 
-9. **`islandShowWorkspaceOnAutoHide`** is still an inert row. Do NOT "fix" it
-   via ForkConfig; see the audit.
+9. ~~**`islandShowWorkspaceOnAutoHide` is still an inert row.**~~ **CLOSED —
+   not a bug, and now says so** (`ced298b`). The key is upstream 1.0.35's; the
+   packaged backend on this system is 1.0.34 and has no reader for it —
+   confirmed absent from both `libIslandBackendplugin.so` and
+   `IslandBackend.qmltypes`. Genuinely inert until the next package upgrade,
+   not fixable from this tree without colliding with the `fork`-prefix
+   convention. The row's `detail` text used to claim a specific wrong reason;
+   it now states the real one.
 
-10. **qtile with its OWN bar gets no theme sweep** — the one combination with
-    no Quickshell process at all.
+10. ~~**qtile with its OWN bar gets no theme sweep.**~~ **CLOSED** (`3a0f509`,
+    `7ce0659`, `5a519df`). `popups.qml` now starts under qtile's own bar too,
+    and its theme-transition `Variants` block got the same Wayland/X11 split
+    `shell.qml` already had — the X11 case was constructing nothing before,
+    so every call was a silent no-op.
 
 11. **Keybind latency** — every island binding spawns a fresh `qs ipc call`,
     ~50 ms before any animation starts.

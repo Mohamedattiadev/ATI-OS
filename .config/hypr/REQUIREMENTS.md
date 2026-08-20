@@ -1480,16 +1480,16 @@ rather than built, because the prompt was never wired to polkit's D-Bus
 agent interface at all and polkit-kde-agent was already running and
 working. Full write-up under item 1.
 
-**2. The control centre's Focus / DND row does nothing.** `swaync-client`
-is not installed; `dunst` is the daemon. Read, write and state-poll all
-fail; the write failure silently flips the row to off. Full write-up under
-item 1. `dunstctl` is the fix.
+**2. ~~The control centre's Focus / DND row does nothing.~~ CLOSED, twice
+over.** `dunstctl` landed first, then went moot: the island now SERVES
+`org.freedesktop.Notifications` itself and `dunst` is out of
+`autostart.conf`, so the row reads `shellRoot.focusEnabled` directly —
+no subprocess, nothing to fail. See `ControlCenterLayer.qml`'s
+"SILENT IS THE ISLAND'S OWN STATE NOW" comment for the full three-version
+history.
 
-**3. `wf-recorder` is not installed**, so screen and region recording —
-`dm-recordV2`'s half that did not port — has no working equivalent in this
-session. It fails visibly and explains itself, which is the right shape,
-but it is the one qtile capability that is simply absent.
-`sudo pacman -S wf-recorder`.
+**3. ~~`wf-recorder` is not installed.~~ CLOSED — installed** (`0.6.0-2`)
+and wired into `island-picker.py`'s recording path (`_island_recording()`).
 
 **4. ~~`phone_screen` (`$mod SHIFT F6`) opens a rofi window~~ CLOSED —
 decided and the claim corrected.** It does open one, through
@@ -1552,6 +1552,23 @@ a reload resets it. Five panels affected.
 so it was correctly left alone. Its rows come from the control centre via
 `provider` and it has a 400 ms `settleTimer` of its own; one of those is
 the cause and neither has been ruled out.
+
+**Re-checked 2026-08-20: still genuinely undiagnosable on this machine, not
+re-diagnosed.** `bluetoothctl devices` / `devices Paired` / `devices
+Connected` all come back empty — this machine has zero known Bluetooth
+peers, paired or in range, same as when this item was first written. The
+"empty first frame" the item describes is a transition (blank, then rows
+appear as bluez answers) — with nothing that will ever populate here,
+there is no transition to capture, so the settleTimer-vs-provider-timing
+question cannot be settled without a real device to pair or bring in
+range. `root.currentItems` (BluetoothPanel.qml:168) is a plain binding
+over `root.devices`, not a latch — unlike the status-text bug this item
+sits beside, so the mechanism most likely to cause a STUCK empty list is
+already ruled out by reading; what would remain is a genuine one-frame
+render-before-provider-arrives flash, which needs the same device to be
+present to see. Next session with a phone or earbuds nearby: pair one,
+close the panel, reopen it, and watch whether the row appears immediately
+or a frame late.
 
 **8. The chord/mode indicator's appearance.** `ModeKeysLayer.qml` works
 and is reached on every submap entry; it has had none of the restyling the
