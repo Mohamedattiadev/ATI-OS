@@ -127,12 +127,23 @@ PopupChrome {
     // `find` rather than a directory model, because the original sorts the
     // names and filters on the same four extensions, and FolderListModel
     // would give a second ordering to keep in step.
+    //
+    // NOT `-maxdepth 1`. That excluded `~/Pictures/Wallpapers/themed/` —
+    // the 21 `themed/<theme>.jpg` covers AND the ~500 `themed/<theme>/*.jpg`
+    // images inside each theme folder — from `root.images` entirely, so
+    // `/` search for "gruvbox" (or any theme name) always came back empty:
+    // not a search bug, the file was never in the list to match. The
+    // island's own picker hit the exact same thing and was already fixed
+    // to walk the whole tree (see WallpaperPickerLayer.qml's `os.walk`
+    // note); this popup — the native/topbar bar's picker — was not. `-o
+    // -path '*/.git' -prune` keeps the walk out of the directory's own git
+    // metadata, which `-maxdepth 1` also happened to exclude for free.
     Process {
         id: listProc
         command: ["sh", "-c",
-            "find \"$HOME/Pictures/Wallpapers\" -maxdepth 1 -type f "
-            + "\\( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' "
-            + "-o -iname '*.webp' \\) | sort"]
+            "find \"$HOME/Pictures/Wallpapers\" -path '*/.git' -prune "
+            + "-o -type f \\( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' "
+            + "-o -iname '*.webp' \\) -print | sort"]
         stdout: StdioCollector {
             onStreamFinished: {
                 const list = text.split("\n").filter((l) => l.trim() !== "");
