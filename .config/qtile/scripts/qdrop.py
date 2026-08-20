@@ -1487,12 +1487,77 @@ class Dropzone(Gtk.Window):
         # restacks this one window and touches nothing else: the window
         # underneath keeps its fullscreen state, and the tiling layout is
         # not re-run -- so every other window behaves exactly as it did.
+        #
+        # ---- THIS WAS THE WHOLE BUG UNDER HYPRLAND ----
+        #
+        # `InteractiveCommandClient` talks to libqtile's OWN command socket.
+        # There is no such socket when Hyprland is the compositor -- the
+        # import still succeeds (libqtile is just a Python package on the
+        # path), but constructing the client fails to connect, and the bare
+        # `except Exception: pass` below swallows that silently. So this
+        # entire function has been a no-op every time qdrop is shown under
+        # Hyprland: the SET_KEEP_ABOVE hint on its own is not enough (X11
+        # window managers are not required to honour it, and this window
+        # manager not implementing an always-on-top layer is exactly why
+        # this function exists in the first place), and nothing was ever
+        # restacking qdrop back to the top.
+        #
+        # Reported as "qdrop not getting active to take it" — the shelf
+        # would be covered by literally any other window that got raised
+        # after it (a notification, a browser popup, anything), and once
+        # covered, a drag released over its screen position lands on
+        # whatever IS on top instead, so the drop never reaches qdrop at
+        # all. Confirmed live: a drag toward the shelf hovered and released
+        # with no `drag-data-get` ever firing on the source, at the exact
+        # moment a screenshot showed the shelf hidden behind a browser
+        # window that had popped up mid-drag.
+        #
+        # `hyprctl dispatch focuswindow address:0x<xid>` is Hyprland's own
+        # equivalent restack — same one-window, touch-nothing-else shape as
+        # `bring_to_front()`, just addressed through Hyprland's IPC instead
+        # of qtile's. `HYPRLAND_INSTANCE_SIGNATURE` is the same "is Hyprland
+        # actually running" check this desktop's other scripts already use
+        # (e.g. qdrop.sh, uinput-shake.py's cursorpos()).
+        gdk_win = self.get_window()
+        if gdk_win is None:
+            return
+        if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            try:
+                subprocess.run(
+                    ["hyprctl", "dispatch", "focuswindow",
+                     f"address:0x{gdk_win.get_xid():x}"],
+                    capture_output=True, timeout=1,
+                )
+            except Exception:
+                pass
+            return
         try:
             from libqtile.command.client import InteractiveCommandClient
-            gdk_win = self.get_window()
-            if gdk_win is None:
-                return
             InteractiveCommandClient().window[gdk_win.get_xid()].bring_to_front()
+        except Exception:
+            pass
+
+    def _bump_z_order(self):
+        # The hover-triggered half of the "put inside" fix — see the note
+        # in `_on_enter`. `alterzorder top` restacks WITHOUT the keyboard
+        # focus grab `focuswindow` carries: this fires on every plain
+        # mouse-in over the shelf, not only while dragging something
+        # toward it, and stealing keyboard focus away from whatever you
+        # were typing in just because the pointer crossed the shelf on its
+        # way somewhere else would be its own bug. Z-order alone is all a
+        # drag target being buried under another window actually needs
+        # fixed.
+        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            return
+        gdk_win = self.get_window()
+        if gdk_win is None:
+            return
+        try:
+            subprocess.run(
+                ["hyprctl", "dispatch", "alterzorder",
+                 f"top,address:0x{gdk_win.get_xid():x}"],
+                capture_output=True, timeout=1,
+            )
         except Exception:
             pass
 
@@ -1777,6 +1842,26 @@ class Dropzone(Gtk.Window):
         if ev.detail == Gdk.NotifyType.INFERIOR:
             return False
         self._cancel_hide_timer()
+        # ---- RE-RAISE ON HOVER, NOT JUST ON SHOW ----
+        #
+        # `_raise_above_all()` only ran at show-time, which covers dragging
+        # OUT (you are still interacting with the shelf when that drag
+        # starts) but not dragging IN: the usual sequence is open the
+        # shelf, then click over into the file manager to pick a file —
+        # and that click raises the file manager back above the
+        # already-shown shelf. By the time you actually drag toward it,
+        # the one-time restack from open is stale and the shelf is buried
+        # again. Reported as "can take from it but can't put inside".
+        #
+        # X11 sends EnterNotify on a pointer crossing regardless of
+        # whether a button is held — it is exactly what XDND itself uses
+        # to know which window the drag is currently over — so this fires
+        # for a drag entering the shelf's bounds the same as a plain
+        # mouse-in, and re-raising here catches the case the show-time
+        # call misses. `_bump_z_order()`, not `_raise_above_all()`: this
+        # fires on every ordinary hover, not just a drag, and a plain
+        # mouse-in has no business grabbing keyboard focus.
+        self._bump_z_order()
         return False
 
     def _on_leave(self, _w, ev):
@@ -1888,18 +1973,71 @@ class Dropzone(Gtk.Window):
         """Viewport widget coords → flow-relative coords (accounts for scroll offset)."""
         vp = self._rb_viewport
         # get flow allocation relative to viewport
-        ok, fx, fy = self.flow.translate_coordinates(vp, 0, 0)
-        if not ok:
+        #
+        # THE BUG THIS WORKS AROUND
+        # --------------------------
+        # `Gtk.Widget.translate_coordinates` is introspected as returning
+        # `(bool, int, int)` — every doc and type stub for it says so — but
+        # measured on THIS machine's PyGObject it returns a plain `(x, y)`
+        # 2-tuple, no success flag at all. The 3-value unpack this used to be
+        # therefore raised `ValueError: not enough values to unpack` on EVERY
+        # SINGLE call, which is EVERY button press and EVERY pointer motion
+        # over the shelf's background — including motion events that fire
+        # while a tile drag is still inside the shelf, before the pointer
+        # crosses out to whatever it is being dragged to. PyGObject catches
+        # an exception escaping a signal handler and logs it rather than
+        # crashing the process, which is exactly what made this invisible:
+        # nothing looked broken, the shelf kept responding, rubber-band
+        # selection silently never worked, and a repeated exception firing
+        # on every motion sample during the exact window GTK's own drag-
+        # threshold detection needs clean event delivery in is a very
+        # plausible reason drags never progressed to `drag-begin` at all.
+        #
+        # Handled for whichever shape a given PyGObject build hands back —
+        # the 3-tuple the docs promise, the bare 2-tuple this build actually
+        # returns, or `None`, which some versions use for "not translatable"
+        # instead of `(False, 0, 0)` — rather than assuming this build's
+        # measured shape is the only one ever seen in the wild.
+        result = self.flow.translate_coordinates(vp, 0, 0)
+        if result is None:
             return vx, vy
+        if len(result) == 3:
+            ok, fx, fy = result
+            if not ok:
+                return vx, vy
+        else:
+            fx, fy = result
         return vx - fx, vy - fy
 
     def _on_bg_press(self, _w, ev):
         if ev.button != 1:
             return False
+        # ---- A CLICK ON A TILE BUBBLES HERE TOO ----
+        #
+        # Reported: "when I choose a file and move the cursor, it selects
+        # everything with the square produced by clicking and moving". This
+        # handler is on the VIEWPORT, one level above `self.flow` — a press
+        # on a tile is hit-tested to the tile's own EventBox first, and when
+        # that handler's chain returns False for an ordinary single click
+        # (see `Item._on_press`), GTK keeps offering the same event to each
+        # ancestor in turn: the tile, then `self.flow` (`_on_flow_click`,
+        # which already guards on `get_child_at_pos` for exactly this
+        # reason), then THIS viewport handler — which had no such guard.
+        # So every plain click on a tile ALSO ran this: unselected
+        # everything, then armed a rubber-band starting at that point, and
+        # the drag you were about to make on the tile grew it into a
+        # select-everything sweep instead.
+        #
+        # Was masked until now by the `translate_coordinates` crash above —
+        # this function always threw before reaching `unselect_all()`, so
+        # the bug existed but could never fire. Fixing that bug is what
+        # exposed this one.
+        fx, fy = self._flow_coords_from_viewport(ev.x, ev.y)
+        if self.flow.get_child_at_pos(int(fx), int(fy)) is not None:
+            return False
         # Deselect any current selection unless Ctrl held
         if not (ev.state & Gdk.ModifierType.CONTROL_MASK):
             self.flow.unselect_all()
-        fx, fy = self._flow_coords_from_viewport(ev.x, ev.y)
         self._rb_active = True
         self._rb_start = (fx, fy)
         self._rb_add_mode = bool(ev.state & Gdk.ModifierType.CONTROL_MASK)
@@ -1931,9 +2069,17 @@ class Dropzone(Gtk.Window):
         # position rubber inside overlay (overlay ~ scroll area)
         # translate flow coords back to overlay coords via viewport
         vp = self._rb_viewport
-        ok, ox, oy = self.flow.translate_coordinates(self._rb_scroll, x, y)
-        if not ok:
+        # Same `translate_coordinates` return-shape bug as
+        # `_flow_coords_from_viewport` above — see its note. Same fix.
+        result = self.flow.translate_coordinates(self._rb_scroll, x, y)
+        if result is None:
             ox, oy = x, y
+        elif len(result) == 3:
+            ok, ox, oy = result
+            if not ok:
+                ox, oy = x, y
+        else:
+            ox, oy = result
         self.rubber.set_margin_start(max(0, ox))
         self.rubber.set_margin_top(max(0, oy))
         self.rubber.set_size_request(max(1, w), max(1, h))
@@ -1975,10 +2121,40 @@ class Dropzone(Gtk.Window):
         entries = self._selected_entries()
         if not entries:
             return
-        text = "\n".join(
-            e["value"] if e["type"] == "text" else e["value"]
-            for e in entries
-        )
+        # ---- FILES GO ON THE CLIPBOARD AS FILES, NOT AS THEIR PATH STRING ----
+        #
+        # This put the path on the clipboard as plain text — `Ctrl+V` in a
+        # file manager then pastes the STRING "/home/ati/foo.sh" wherever
+        # the cursor happens to be (a rename field, the address bar), not
+        # the file itself. Reported as "the real fix" for drag-and-drop out
+        # of the shelf, after drag-and-drop turned out to be a Hyprland
+        # compositor bug (XWayland-to-XWayland XDND is unreliable there —
+        # hyprwm/Hyprland#7644, #7800, #1083, #9637, #9472, all open) rather
+        # than anything in this file. Copy/paste does not cross that same
+        # bridge: it is one clipboard offer and one read, not a live drag
+        # negotiation, and XWayland<->Wayland clipboard sync has been solid
+        # for years where DND has not.
+        #
+        # `text/uri-list` is the format a Qt/KDE-lineage file manager's own
+        # Paste reads as "these are files, copy them here" — libfm-qt is
+        # exactly that lineage. No `application/x-kde-cutselection` is set,
+        # which defaults the paste to COPY rather than MOVE.
+        uris = [Path(e["value"]).as_uri() for e in entries if e["type"] == "file"]
+        if uris:
+            uri_list = "\r\n".join(uris) + "\r\n"
+            if shutil.which("xclip"):
+                subprocess.run(
+                    ["xclip", "-selection", "clipboard", "-t", "text/uri-list"],
+                    input=uri_list.encode(),
+                )
+            elif shutil.which("wl-copy"):
+                subprocess.run(
+                    ["wl-copy", "--type", "text/uri-list"], input=uri_list.encode()
+                )
+            return
+        # Text/url entries have no file to reference — the plain-text path
+        # this always was.
+        text = "\n".join(e["value"] for e in entries)
         if shutil.which("xclip"):
             subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode())
         elif shutil.which("wl-copy"):

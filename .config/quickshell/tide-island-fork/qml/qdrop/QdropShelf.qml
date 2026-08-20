@@ -185,7 +185,8 @@ PopupChrome {
             Item {
                 Component.onCompleted: {
                     shelf.WlrLayershell.keyboardFocus = Qt.binding(function () {
-                        return shelf.forDrag ? WlrKeyboardFocus.OnDemand
+                        return (shelf.forDrag || shelf.tileDragActive)
+                            ? WlrKeyboardFocus.OnDemand
                             : (shelf.superHeld ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive);
                     });
                 }
@@ -198,6 +199,14 @@ PopupChrome {
 
     // Opened by the shake, i.e. with a drag in flight. See the focus note.
     property bool forDrag: false
+    // A drag STARTED FROM one of our own tiles — see the fatal-crash note
+    // beside `Drag.onActiveChanged` in QdropGrid.qml. Separate from
+    // `forDrag`: that one is an external input bound from popups.qml's
+    // `qdropForDrag` (the shake gesture), and imperatively assigning it here
+    // instead would sever that binding permanently the first time a drag
+    // fired — a shelf reopened by the shake after its first internal drag
+    // would silently stop getting OnDemand focus from the shake path too.
+    property bool tileDragActive: false
 
     property string status: ""
 
@@ -226,6 +235,7 @@ PopupChrome {
             onOpenRequested: (i) => shelf.openEntry(i)
             onCloseRequested: shelf.requestClose()
             onFocusWanted: shelf.forceActiveFocus()
+            onDragActiveChanged: (active) => shelf.tileDragActive = active
             onStatusChanged: (t) => {
                 shelf.status = t;
                 statusClear.restart();

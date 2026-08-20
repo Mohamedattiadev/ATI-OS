@@ -6,23 +6,33 @@
 # and the order it tries them in is the point of the file.
 #
 # ---------------------------------------------------------------------------
-#  1. THE QUICKSHELL SHELF, IF A SHELL IS UP
+#  1. THE GTK SHELF (qdrop.py) — PRIMARY AGAIN, AND WHY THE FLIP IS SAFE NOW
 # ---------------------------------------------------------------------------
 #
-# quickshell/tide-island-fork/qml/qdrop/QdropShelf.qml. It is preferred and
-# not merely offered, because the GTK shelf has a defect no amount of work on
-# it can fix. Driven with scripts/test/dnd-peer.py:
+# This was the Quickshell shelf, and the reason recorded here at length was
+# real: `scripts/test/dnd-peer.py` measured Hyprland's Wayland -> XWayland
+# drag bridge as broken —
 #
 #     XWayland source -> GTK shelf         drop in and drag out both work
 #     WAYLAND source  -> GTK shelf         drag begins, NOTHING arrives
-#     WAYLAND source  -> QUICKSHELL shelf  both directions, measured:
-#                                          in  -> {"type":"file","value":…}
-#                                          out -> the peer got the file URI
+#     WAYLAND source  -> QUICKSHELL shelf  both directions, measured working
 #
-# pcmanfm-qt runs QT_QPA_PLATFORM=wayland;xcb, so the file manager you would
-# actually drag from is on the side the GTK shelf cannot hear. The Quickshell
-# one is a layer surface on the Wayland side, which is the whole reason it
-# exists.
+# — and pcmanfm-qt runs Wayland-native, putting the file manager you would
+# actually drag from on the wrong side of that bridge for the GTK shelf. That
+# measurement is still true. What changed is which side of it pcmanfm-qt is
+# on: AtiScriptsV1/pcmanfm-qt now forces `QT_QPA_PLATFORM=xcb`, so the file
+# manager is XWayland too. The broken row above never applied to
+# XWayland-to-XWayland — that pairing was the ONE row measured working from
+# the start — moving pcmanfm-qt onto it fixes the bridge instead of routing
+# around it.
+#
+# The Quickshell shelf was never buggy for the reason it got built; it traded
+# one real defect (the drag bridge) for others of its own (a fatal abort on
+# outgoing drags — see qml/qdrop/QdropGrid.qml's `Drag.onActiveChanged` note
+# — and an unconfirmed drop-landing rate even past that fix). qdrop.py is the
+# one with years of real use behind it under qtile/X11, where none of this
+# XWayland-bridge question exists at all. Asked for directly: use the real
+# one.
 #
 # `qs ipc call` EXITS 255 WITH NO INSTANCE and prints "Function not found"
 # while still exiting 0 — the RULES record both — so the fallthrough below
@@ -31,13 +41,12 @@
 # names, hosted there for the sessions bar-switch has put the topbar on.
 #
 # ---------------------------------------------------------------------------
-#  2. THE GTK SHELF, OTHERWISE
+#  2. THE QUICKSHELL SHELF, ONLY IF qdrop.py ITSELF IS UNREACHABLE
 # ---------------------------------------------------------------------------
 #
-# Kept, not deleted, and it is a real fallback rather than a courtesy: with
-# `bar-mode` on qtile's own bar there is no Quickshell process at all, and the
-# GTK shelf is the only shelf there is. It also still owns `--add-text`, which
-# is the CLI everything else feeds the shelf through.
+# Kept, not deleted — it still has the nicer IslandTheme-matched look and a
+# working popups.qml fallback is better than none if `python3`/GTK ever goes
+# missing from underneath this script. Tried second now, not first.
 #
 # WHY IT NEEDS THE WORKSPACE DANCE AND THE QUICKSHELL ONE DOES NOT
 #
@@ -89,6 +98,27 @@ case "${action#--}" in
     *)        verb="" ;;   # --add-text and friends are the GTK shelf's alone
 esac
 
+# qdrop.py needs only python3 and its own script — both always present on
+# this machine — so this is really "primary unless something is badly
+# wrong", not a real coin-flip. Checked explicitly anyway so a broken
+# checkout falls through to the Quickshell attempt instead of just failing.
+if command -v python3 >/dev/null 2>&1 && [ -f "$QDROP" ]; then
+    ws=$(hyprctl -j activeworkspace 2>/dev/null | sed -n 's/.*"id": *\([-0-9]*\).*/\1/p' | head -1)
+    if [ -n "${ws:-}" ]; then
+        hyprctl dispatch movetoworkspacesilent "$ws,class:^(qdrop)$" >/dev/null 2>&1
+    fi
+
+    # GDK_BACKEND=x11 for the reason binds.conf gives at length: qdrop.py is
+    # GTK3 and positions itself, which Wayland does not permit a client to do.
+    # The GTK shelf has no drag-aware open, so --for-drag is just a show.
+    [ "$action" = "--for-drag" ] && set -- --show
+    exec env GDK_BACKEND=x11 python3 "$QDROP" "$@"
+fi
+
+# ---------------------------------------------------------------------------
+#  FALLBACK: qdrop.py itself could not be reached above
+# ---------------------------------------------------------------------------
+#
 # TWO Quickshell targets, not one, and they are different INSTANCES rather
 # than two names for the same one: `qs -p <dir>` keys on the path it was
 # GIVEN, so the island (the directory) and the popups shell (a file inside
@@ -108,13 +138,5 @@ if [ -n "$verb" ]; then
     done
 fi
 
-ws=$(hyprctl -j activeworkspace 2>/dev/null | sed -n 's/.*"id": *\([-0-9]*\).*/\1/p' | head -1)
-if [ -n "${ws:-}" ]; then
-    hyprctl dispatch movetoworkspacesilent "$ws,class:^(qdrop)$" >/dev/null 2>&1
-fi
-
-# GDK_BACKEND=x11 for the reason binds.conf gives at length: qdrop.py is GTK3
-# and positions itself, which Wayland does not permit a client to do.
-# The GTK shelf has no drag-aware open, so --for-drag is just a show.
-[ "$action" = "--for-drag" ] && set -- --show
-exec env GDK_BACKEND=x11 python3 "$QDROP" "$@"
+echo "qdrop.sh: neither qdrop.py nor a Quickshell shelf could be reached" >&2
+exit 1

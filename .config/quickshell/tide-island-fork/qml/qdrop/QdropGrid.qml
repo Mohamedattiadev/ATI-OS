@@ -120,6 +120,9 @@ Item {
     // throughout, which is what made it look like an Escape bug rather than
     // a focus one.
     signal focusWanted()
+    // A tile's own `Drag.active` starting or ending — see the tile's
+    // `Drag.onActiveChanged` below for why the host needs to hear this.
+    signal dragActiveChanged(bool active)
 
     // ---- the visible order: filter, then sort ----
     readonly property var view: {
@@ -808,6 +811,31 @@ Item {
             Drag.dragType: Drag.Automatic
             Drag.supportedActions: Qt.CopyAction
             Drag.mimeData: body.mimeFor(body.targets())
+            // ---- THE CRASH THIS FIXES ----
+            //
+            // Reported live: dragging a tile OUT into pcmanfm-qt aborted the
+            // whole shell — `QMessageLogger::fatal` inside a QQmlDelegateModel/
+            // QQuickItemView teardown, on the call stack of `QDrag::exec()`'s
+            // own nested event loop, started from THIS `Drag.active` write.
+            // Confirmed with `coredumpctl info`: the abort fires from inside
+            // the drag's modal loop, meaning something destroyed a view while
+            // the loop that owns this very tile was still running underneath
+            // it — a reentrancy Qt has no recovery for but a fatal abort.
+            //
+            // The file's own header already documents the mechanism for the
+            // OTHER direction: "an exclusive [Wayland] grab CANCELS an
+            // in-flight drag" is why a shake-opened shelf (`forDrag`) drops to
+            // OnDemand keyboard focus before a drag can land in it. A shelf
+            // opened the ordinary way — the key, not the shake — has no
+            // reason to expect a drag and keeps its Exclusive grab, which is
+            // right for typing `hjkl` into it and wrong the instant a tile
+            // starts an OUTGOING drag: the same grab-vs-drag conflict, just
+            // starting from the grabbed surface instead of arriving at it.
+            //
+            // `dragActiveChanged` tells the host (QdropShelf) to relax the
+            // grab to OnDemand for exactly as long as `Drag.active` is true,
+            // whichever direction opened the shelf — see shelf.tileDragActive.
+            Drag.onActiveChanged: body.dragActiveChanged(tile.Drag.active)
 
             MouseArea {
                 id: tileMouse
