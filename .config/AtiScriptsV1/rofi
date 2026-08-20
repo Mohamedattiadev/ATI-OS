@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# rofi — retry shim around the real /usr/bin/rofi.
+#
+# THE BUG
+# -------
+# Reported live as "rofi and the picker popups do not work on Hyprland".
+# Reproduced by hand: `timeout 3 rofi -show drun -show-icons`, run four
+# times back to back —
+#
+#     try 1  exit=124   (timeout killed it — it mapped and sat waiting, fine)
+#     try 2  exit=124   (fine)
+#     try 3  exit=0     (no window, no output, nothing on the log)
+#     try 4  exit=0     (same)
+#
+# No coredump (`coredumpctl list rofi` — none), nothing in the user
+# journal, and `-show window` (no icon fetcher) and `-e "text"` (blocking
+# message mode) were never seen to fail in the same testing. rofi 2.0.0's
+# Wayland front end races its icon-fetcher thread pool against the first
+# frame / keyboard grab, and about half the time on this machine it loses
+# and returns 0 before a surface is ever mapped — a silent, not a loud,
+# failure, which is exactly why it read as "the keybind does nothing"
+# rather than as a crash.
+#
+# THE FIX, AND WHY IT LIVES HERE
+# -------------------------------
+# Every rofi_* picker (rofi_docs, rofi_anki, rofi_pass, ...), bar-action's
+# two direct `rofi -show ...` calls, and WallpaperPopup.qml's `/` search
+# all invoke the bare `rofi` command — a dozen-plus call sites for one
+# bug. Fixing it once here, as a shim installed to /usr/local/bin ahead of
+# /usr/bin in $PATH (AtiScriptsV1/install.sh does this for every file in
+# this directory, the same way bar-action and rofi_docs already get
+# there), covers all of them without touching any of the callers.
+#
+# Retries ONLY an exit-0 return that came back suspiciously fast. A real
+# interactive session — rendering a window, taking a keypress, tearing
+# down — was never observed under 300ms; the race exits in ~20-40ms. A
+# genuine user answer (Escape included) is exit 1 or takes far longer than
+# the threshold either way, so this cannot swallow a real cancel.
+set -uo pipefail
+
+REAL=/usr/bin/rofi
+FAIL_MS=300
+ATTEMPTS=3
+
+for ((i = 1; i <= ATTEMPTS; i++)); do
+    start_ns=$(date +%s%N)
+    if "$REAL" "$@"; then rc=0; else rc=$?; fi
+    elapsed_ms=$(( ($(date +%s%N) - start_ns) / 1000000 ))
+
+    if [[ $rc -ne 0 || $elapsed_ms -ge $FAIL_MS ]]; then
+        exit "$rc"
+    fi
+
+    echo "rofi: exited clean in ${elapsed_ms}ms (attempt $i/$ATTEMPTS) — retrying (startup race)" >&2
+done
+
+exit "$rc"
