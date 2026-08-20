@@ -36,7 +36,20 @@ SOCKET="${XDG_RUNTIME_DIR}/hypr/${HYPRLAND_INSTANCE_SIGNATURE}/.socket2.sock"
 NOTIFY_ID=99101
 
 ISLAND_DIR="${TIDE_ISLAND_FORK_DIR:-$HOME/.config/quickshell/tide-island-fork}"
-LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/submap-indicator.lock"
+# Scoped to the RUNNING instance, not fixed. Found live: a copy of this
+# script from a Hyprland session that had already ended — a full day dead,
+# HYPRLAND_INSTANCE_SIGNATURE pointed at a socket that no longer existed —
+# was still holding the fixed lock file. It never noticed its own socket
+# was gone (nothing makes it look until the next event tries to arrive, and
+# none ever will), so it never exited, and this SESSION's own indicator,
+# started fresh by autostart.conf, hit that lock, printed "another instance
+# holds it" to a log nobody was watching, and exited. Every submap entered
+# for the entire session went un-announced, on both bars, with no error
+# visible anywhere short of `ps` and a signature mismatch. One fixed path
+# for every Hyprland instance to ever run on this machine was the whole
+# bug; keying it to THIS instance means a leftover from a dead one holds a
+# lock file nothing new will ever contend for again.
+LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/submap-indicator-${HYPRLAND_INSTANCE_SIGNATURE}.lock"
 
 # Beside this script, and resolved through the symlink because ~/.config is
 # stowed: $0 is the link, its target is the checkout, and cheatsheet.py is
