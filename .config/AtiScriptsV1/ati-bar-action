@@ -28,7 +28,7 @@
 # ---------------------------------------
 # The two sides do not correspond one-to-one. The island's `showPicker
 # processes` is ati-kill; its `showPicker brightness` is rofi_light; its
-# power menu is dm-logout. Deriving a script name from an IPC function name
+# power menu is ati-logout. Deriving a script name from an IPC function name
 # would be wrong for most of them, and wrong SILENTLY, because a missing
 # script and a working one both exit without saying much.
 #
@@ -193,7 +193,7 @@ key="$func"
 case "$key" in
   # ---- launchers and menus ----
   toggleApplicationLauncher)  run rofi -show drun -show-icons ;;
-  togglePowerMenu)            run dm-logout ;;
+  togglePowerMenu)            run ati-logout ;;
   # NOT ati_palette.py — that is a colour-role LIBRARY (load(), imported
   # by the translator/dm-spellcheck for their own pango tables), not an
   # entry point: no __main__, no rofi invocation, nothing to show. Calling

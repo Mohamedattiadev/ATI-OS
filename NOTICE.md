@@ -22,7 +22,7 @@ upstream ships them.
 
 | file | what changed |
 |---|---|
-| `dm-logout` | rofi theming, and the confirm step |
+| `ati-logout` | rofi theming, and the confirm step |
 | `ati-dm-setbg` | wallpaper path and picker integration |
 
 These two are the reason the whole repository is GPL-3.0 rather than MIT.
