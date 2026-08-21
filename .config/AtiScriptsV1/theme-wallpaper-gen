@@ -7,7 +7,7 @@
 #
 #  That was tried first, and measured, because the data to do it was
 #  already sitting there: ~/.cache/qtile/palettes/NNNN.json holds what
-#  wal-precompile derived from each of the 362 wallpapers — bg, bg_alt,
+#  ati-wal-precompile derived from each of the 362 wallpapers — bg, bg_alt,
 #  fg, six accents. Scoring every image against every theme in CIELAB
 #  (the `score()` below is the same function) gives, per theme, the best
 #  the library can do:
@@ -594,7 +594,7 @@ def main():
     if not walls:
         raise SystemExit(
             "theme-wallpaper-gen: no usable palettes in %s — run "
-            "`wal-precompile` first." % PALETTE_CACHE)
+            "`ati-wal-precompile` first." % PALETTE_CACHE)
 
     per = max(1, args.per_theme)
 

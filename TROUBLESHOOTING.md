@@ -15,7 +15,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   with key-hashed id) and neither activates.
 - **Fix (permanent, one-time):** enterprise policy force-install from a
   local `updates.xml`. `install.sh` step 23b does this: generates
-  `.pem`, extracts public key into `browser-theme.key` (wal-precompile
+  `.pem`, extracts public key into `browser-theme.key` (ati-wal-precompile
   embeds it as `key` field in `manifest.json` so unpacked + packed ids
   match), packs `.crx`, writes updates.xml, sudo-installs
   `/etc/opt/chrome/policies/managed/wal-theme.json` +
@@ -147,7 +147,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 - **Root cause:** cache miss triggered legacy live-wal path which lacks
   eww/qb regen.
 - **Fix:** `theme-apply wal` now runs
-  `wal-precompile --only <basename> --force` on cache miss before
+  `ati-wal-precompile --only <basename> --force` on cache miss before
   writing consumer files.
 
 ### Picking a new wallpaper doesn't retheme anything (pcmanfm/qb/eww/popups all stay stale)
@@ -195,7 +195,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 ### `theme-apply` fails during install, before you've ever run `startx`
 - **Symptom:** wizard's `themes` step fails with
   `Failed to show notification: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable`,
-  even though `wal-precompile` above it clearly finished (all
+  even though `ati-wal-precompile` above it clearly finished (all
   wallpapers processed, report written).
 - **Root cause:** `theme-apply` runs under `set -euo pipefail` and
   ends with an unconditional `notify-send`. On a bare TTY — which is
@@ -698,7 +698,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 - **Symptom:** empty menu, while every other wallpaper tool works fine.
 - **Root cause:** `setbg_dir="$HOME/Pictures/Wallpaper"` — singular. The
   directory is `~/Pictures/Wallpapers`, which is what the `wallpapers`
-  module clones into and what `wal-precompile` and `ati-wal-audit` read.
+  module clones into and what `ati-wal-precompile` and `ati-wal-audit` read.
 - **Fix:** corrected to the plural. The menu lists 363 wallpapers now.
 
 ### dm-documents: "file not found" for some PDFs but not others

@@ -347,7 +347,7 @@ step_themes() {
       \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null | sort | head -1) || true
     [[ -n "$first" ]] && run "mkdir -p $HOME/.cache && ln -sfn $first $HOME/.cache/wall"
   fi
-  run "wal-precompile"
+  run "ati-wal-precompile"
   run "theme-apply doomone"
 }
 

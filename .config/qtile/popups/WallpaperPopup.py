@@ -525,7 +525,7 @@ def jump_to_random():
 # gap and proposed fixing it by renaming files into the wallpaper repo
 # itself, which is real work in a repo with a remote and was never done.
 #
-# This does not touch a single file in that repo. wal-precompile already
+# This does not touch a single file in that repo. ati-wal-precompile already
 # computes a `dominant_hue_deg` for every wallpaper it has been run
 # against (~/.cache/qtile/palettes/<stem>.json, 362 of them present at
 # the time this was written) — the exact signal needed to answer "which

@@ -377,9 +377,9 @@ if [[ "$MODE" == "wal" ]]; then
 
   # New wallpaper (not in precompile cache) — generate its palette on
   # demand so the fast path can be used. Falls through to legacy live
-  # wal only if wal-precompile itself fails or is missing.
-  if [[ ! -f "$PRECOMPILED" ]] && command -v wal-precompile >/dev/null; then
-    wal-precompile --only "$(basename "$WALL_PATH")" --force >/dev/null 2>&1 || true
+  # wal only if ati-wal-precompile itself fails or is missing.
+  if [[ ! -f "$PRECOMPILED" ]] && command -v ati-wal-precompile >/dev/null; then
+    ati-wal-precompile --only "$(basename "$WALL_PATH")" --force >/dev/null 2>&1 || true
   fi
 
   if [[ -f "$PRECOMPILED" ]]; then
@@ -1108,7 +1108,7 @@ else
 case "$MODE" in
   wal)
     W=~/.cache/wal/colors.json
-    # wal-precompile assigns accents by wallpaper DOMINANCE, not by
+    # ati-wal-precompile assigns accents by wallpaper DOMINANCE, not by
     # semantic hue name (color10 = wallpaper's main hue, not necessarily
     # green). Also emits color0 == special.background collapsing bg_alt
     # into bg. Post-process here: derive bg_alt via HLS +6% lightness,

@@ -1513,7 +1513,7 @@ and only if auto-hide is a mode the user actually runs.
 
 ## Ask #5 — the library could not have supplied these, and that is measured
 
-`wal-precompile` had already written bg / bg_alt / fg / six accents for each
+`ati-wal-precompile` had already written bg / bg_alt / fg / six accents for each
 of the 362 wallpapers into `~/.cache/qtile/palettes/NNNN.json`. Scoring
 every image against every theme in CIELAB — weighted `1.00*d_bg +
 0.60*d_accent + 0.25*d_fg`, background dominant because it is most of the

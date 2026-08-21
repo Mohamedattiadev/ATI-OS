@@ -86,7 +86,7 @@ def _load(name, path):
 
 
 gen = _load("twgen", SCRIPTS / "theme-wallpaper-gen")
-wal = _load("walprecompile", SCRIPTS / "wal-precompile")
+wal = _load("walprecompile", SCRIPTS / "ati-wal-precompile")
 
 
 def load_themes():
@@ -169,7 +169,7 @@ def cache_key(path):
 def palette_for(path):
     """bg / fg / accents for one candidate, cached.
 
-    Only the three fields the scorer reads are kept. wal-precompile's own
+    Only the three fields the scorer reads are kept. ati-wal-precompile's own
     cache stores the full consumer configs beside them — kitty, rofi, gtk,
     a whole Brave manifest — which is right for a wallpaper you are about
     to theme the desktop from and very wrong for three thousand
@@ -245,7 +245,7 @@ def mean_lightness(path):
     absence is why a contact sheet of gruvbox's picks came back full of
     cream backgrounds while every score sat comfortably under 45.
 
-    wal-precompile's `darkest_bg()` takes the darkest colour in the image
+    ati-wal-precompile's `darkest_bg()` takes the darkest colour in the image
     and pushes it to L 0.06-0.10 — deliberately, because it is deriving a
     TERMINAL background from a photograph. But it means the `bg` the
     scorer compares against is near-black for every candidate, whatever
@@ -301,7 +301,7 @@ def all_palettes():
     The 362-image library is in the candidate pool for two reasons. It is
     already in the user's repository, so anything picked from it costs the
     repo nothing (see link_or_copy — it is linked, not duplicated); and
-    wal-precompile has already extracted its palettes, so it is free to
+    ati-wal-precompile has already extracted its palettes, so it is free to
     score. theme-wallpaper-gen's finding that the library cannot serve
     NINE themes is not a finding that it cannot serve the other twelve.
     """
@@ -325,7 +325,7 @@ def all_palettes():
             # scan: the k-means extraction is the expensive part and it
             # has not changed, while this is a thumbnail and an average.
             # The library cache is NOT rewritten — it belongs to
-            # wal-precompile and this tool is only a reader of it — so
+            # ati-wal-precompile and this tool is only a reader of it — so
             # its lightness is memoised here for the life of the process.
             if "meanL" not in rec or "ahash" not in rec:
                 rec.setdefault("meanL", mean_lightness(path))

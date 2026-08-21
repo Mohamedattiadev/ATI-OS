@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""wal-precompile — walk wallpaper dir, extract & force palette per image.
+"""ati-wal-precompile — walk wallpaper dir, extract & force palette per image.
 
 Output: ~/.cache/qtile/palettes/<basename>.json with fields
 { wallpaper, score, bg, bg_alt, fg, accents[6], wal_colors, notes }.
@@ -453,7 +453,7 @@ def main():
         print("no scores"); return
     good = sum(1 for s in scores if s >= 80)
     lines = [
-        "# wal-precompile report",
+        "# ati-wal-precompile report",
         "",
         f"- wallpapers: {len(imgs)}",
         f"- avg score: {sum(scores)/len(scores):.1f}",

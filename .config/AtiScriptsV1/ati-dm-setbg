@@ -16,7 +16,7 @@
 set -euo pipefail
 
 # Wallpaper*s*, plural. This said "Wallpaper" while the directory the
-# wallpapers module clones into -- and that wal-precompile and ati-wal-audit
+# wallpapers module clones into -- and that ati-wal-precompile and ati-wal-audit
 # both read -- is ~/Pictures/Wallpapers, so this menu listed nothing at
 # all on a machine where every other wallpaper tool worked fine.
 setbg_dir="$HOME/Pictures/Wallpapers"

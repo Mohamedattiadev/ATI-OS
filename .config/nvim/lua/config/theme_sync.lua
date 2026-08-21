@@ -105,7 +105,7 @@ function M.read_wal_palette()
     fg = d.special.foreground,
     grey = c.color8,
     red = c.color1,
-    -- color2 is wal-precompile's dominant wallpaper hue -- the same slot
+    -- color2 is ati-wal-precompile's dominant wallpaper hue -- the same slot
     -- the qtile bar and the brave accent use, so branding matches.
     green = c.color2,
     yellow = c.color3,

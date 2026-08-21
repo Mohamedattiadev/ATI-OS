@@ -7,7 +7,7 @@ No live repro data was available at audit time; audit is static (grep + read).
 Every fix preserves behavior, only changes execution model.
 
 Out of scope (stable, do not touch): `AtiScriptsV1/`, `browser-theme*`,
-`colors.py` mapping, `render_*` in wal-precompile.
+`colors.py` mapping, `render_*` in ati-wal-precompile.
 
 ---
 

@@ -23,7 +23,7 @@ brave-profiles
 .config/eww/colors.scss
 
 # Per-machine generated theme artifacts (rewritten on every theme-apply
-# / wal-precompile). Regenerated on demand; not portable across hosts.
+# / ati-wal-precompile). Regenerated on demand; not portable across hosts.
 .config/qtile/browser-theme/manifest.json
 .config/qtile/WAL_PRECOMPILE_REPORT.md
 .config/rofi/themes/palette-wal.rasi
