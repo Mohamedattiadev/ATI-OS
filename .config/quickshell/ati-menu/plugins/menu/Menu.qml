@@ -127,7 +127,28 @@ Item {
   // geometry did, instead of looking cramped on a small display or tiny on
   // a large one.
   property int cardWidth: Math.min(root.dmenuActive ? Style.space(root.dmenuWidth) : Math.round(panel.width * 0.4), panel.width - Style.gapsOut * 2)
-  property int visibleRowsHeight: root.dmenuActive ? dmenuRowListHeight(layoutSerial, displayModel.count, filterText) : rowListHeight(layoutSerial, displayModel.count, filterText, searchDivider)
+  // ATI-OS: rofi's `listview { lines: 10; dynamic: false; }` always reserves
+  // exactly 10 row-slots regardless of how many rows the current level
+  // actually has -- a 3-item submenu (Style) and a 34-item one (Apps) render
+  // at the same card height, only the scrollbar/fold differs. Upstream's
+  // rowListHeight()/dmenuRowListHeight() do the opposite: they hug actual
+  // content, so the card visibly grew and shrank switching between shallow
+  // and deep submenus.
+  //
+  // Fixed at this ONE property rather than patching cardHeight, the row
+  // ListView's own height binding, and the cardTop/maxRowsHeight "freeze on
+  // first interaction" logic separately -- everything downstream already
+  // reads visibleRowsHeight, so redefining it here flows through all three
+  // correctly (the freeze logic in particular becomes a no-op, harmlessly:
+  // freezing a value that is now already constant changes nothing).
+  // fixedRowsHeight is N row-slots' worth of height, computed the same way
+  // rowListHeight's own per-row total is (baseRowHeight per row, rowSpacing
+  // between them) -- just independent of displayModel.count. dmenu mode
+  // (a different feature, not used by ati-menu.json's own tree) is left on
+  // its original content-hugging behavior.
+  property int fixedVisibleRows: 10
+  property int fixedRowsHeight: fixedVisibleRows * baseRowHeight + Math.max(0, fixedVisibleRows - 1) * rowSpacing
+  property int visibleRowsHeight: root.dmenuActive ? dmenuRowListHeight(layoutSerial, displayModel.count, filterText) : fixedRowsHeight
   property int cardHeight: root.dmenuActive
     ? Math.min(contentMargin * 2 + headerHeight + (mode === "input" ? 0 : contentSpacing + visibleRowsHeight), panel.height - Style.gapsOut * 2)
     : Math.min(contentMargin * 2 + headerHeight + contentSpacing + visibleRowsHeight, panel.height - Style.gapsOut * 2)
