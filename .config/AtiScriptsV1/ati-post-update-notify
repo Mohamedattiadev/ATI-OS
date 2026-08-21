@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# post-update-notify <title> <command-to-fix>
+# ati-post-update-notify <title> <command-to-fix>
 #
 # Puts a fix command where you can actually use it: a dunst popup that
 # stays until dismissed, AND the command already on your clipboard so it

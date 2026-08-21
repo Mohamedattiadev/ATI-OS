@@ -47,8 +47,8 @@ if (( ${#broken_pkgs[@]} )); then
   # Do not rely on the user still watching this terminal. Push the exact
   # command to a popup AND to the clipboard, so fixing it is one paste
   # rather than retyping package names out of a scrollback buffer.
-  command -v post-update-notify >/dev/null 2>&1 && \
-    post-update-notify "${#broken_pkgs[@]} AUR package(s) broken by this update" \
+  command -v ati-post-update-notify >/dev/null 2>&1 && \
+    ati-post-update-notify "${#broken_pkgs[@]} AUR package(s) broken by this update" \
       "yay -S --rebuild ${broken_pkgs[*]}" || true
 else
   ok "no broken library links in AUR packages"

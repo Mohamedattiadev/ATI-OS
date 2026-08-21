@@ -3597,7 +3597,7 @@ pacman cache, high-impact packages.
 **3. dcli post_update — `arch-config/scripts/post-update.sh`**
 Runs after. Scans AUR packages for unresolved libraries, and on a hit
 pushes the exact `yay -S --rebuild …` command to a dunst popup **and the
-clipboard** via `post-update-notify`, because a fix you must retype from
+clipboard** via `ati-post-update-notify`, because a fix you must retype from
 scrollback is a fix that does not get applied. Also flags kernel
 mismatch (reboot) and new `.pacnew` files.
 
