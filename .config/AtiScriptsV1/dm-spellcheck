@@ -65,7 +65,7 @@ SHORT_INPUT_WORDS = 4
 # variables, so they are resolved here. Same helper as the translator.
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 try:
-    from rofi_palette import load as load_palette
+    from ati_palette import load as load_palette
     PALETTE = load_palette()
 except Exception:  # noqa: BLE001 — a missing helper must not stop a check
     PALETTE = {

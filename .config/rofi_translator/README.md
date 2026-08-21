@@ -116,7 +116,7 @@ so switching theme recoloured the rofi frame and left the table
 stubbornly blue and green — pango markup cannot reference rofi theme
 variables, so every colour has to be resolved in Python instead.
 
-`AtiScriptsV1/rofi_palette.py` does that for both this and
+`AtiScriptsV1/ati_palette.py` does that for both this and
 `dm-spellcheck`, mapping the palette's seven keys onto roles (head,
 good, bad, accent, text) so neither script has to care whether a palette
 calls its red `urgent` or `selectedone`. `dim`, `muted`, `example` and

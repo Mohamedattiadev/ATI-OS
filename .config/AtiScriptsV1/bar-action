@@ -194,7 +194,7 @@ case "$key" in
   # ---- launchers and menus ----
   toggleApplicationLauncher)  run rofi -show drun -show-icons ;;
   togglePowerMenu)            run dm-logout ;;
-  # NOT rofi_palette.py — that is a colour-role LIBRARY (load(), imported
+  # NOT ati_palette.py — that is a colour-role LIBRARY (load(), imported
   # by the translator/dm-spellcheck for their own pango tables), not an
   # entry point: no __main__, no rofi invocation, nothing to show. Calling
   # it directly exits 0 having drawn nothing, which is exactly the silent

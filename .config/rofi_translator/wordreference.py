@@ -133,7 +133,7 @@ API_TIMEOUT = 8
 # so every colour has to be resolved here instead.
 sys.path.insert(0, os.path.expanduser("~/.config/AtiScriptsV1"))
 try:
-    from rofi_palette import load as load_palette
+    from ati_palette import load as load_palette
     PALETTE = load_palette()
 except Exception:  # noqa: BLE001 — a missing helper must not stop a lookup
     PALETTE = {
