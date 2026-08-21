@@ -311,3 +311,38 @@ kill_guaranteed() {
     fi
     return 0
 }
+
+# Extracted from ati-docs's spawn_docs_kitty (kept there as a thin wrapper) --
+# every rofi-driven script that needs to show a real terminal window (not
+# just a rofi popup) hits the same Hyprland-vs-qtile split, so this is the
+# one place that decides HOW it launches.
+#
+# Same 78%/80%-of-focused-monitor ratio and floors ati-docs and
+# scratchpad.sh already agreed on independently, so every floating terminal
+# on this desktop looks the same regardless of which script opened it.
+#
+# `%q` and not raw interpolation: callers may hand this args containing
+# spaces and `<>` (e.g. nvim `+nnoremap` mappings), and the exec string is
+# re-split by a shell on the far side of hyprctl -- this round-trips back to
+# one argv element, same as `sh -c` does with it natively.
+run_in_terminal() {  # run_in_terminal <kitty-args...>
+  if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    local mw mh w h cmd a
+    read -r mw mh < <(hyprctl monitors -j 2>/dev/null \
+      | jq -r '.[] | select(.focused) | "\(.width) \(.height)"' 2>/dev/null)
+    [[ -n "$mw" && -n "$mh" ]] || { mw=1366; mh=768; }
+    w=$(( mw * 78 / 100 )); h=$(( mh * 80 / 100 ))
+    (( w < 720 )) && w=720
+    (( h < 420 )) && h=420
+    (( w > mw )) && w=$mw
+    (( h > mh )) && h=$mh
+    cmd="kitty"
+    for a in "$@"; do cmd+=" $(printf '%q' "$a")"; done
+    hyprctl dispatch exec "[float; size $w $h; center 1] $cmd" >/dev/null 2>&1 &
+  else
+    # qtile: unchanged from spawn_docs_kitty's own comment -- a client hook
+    # keyed on window class (_float_and_center_docs for --class docs-view)
+    # does the sizing there, not this function.
+    setsid kitty "$@" >/dev/null 2>&1 &
+  fi
+}
