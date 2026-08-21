@@ -87,6 +87,57 @@ if [[ "$MODE" != "wal" ]] && ! is_preset "$MODE"; then
   exit 1
 fi
 
+# ---- THEME FOLDER (data), falling back to the hardcoded case blocks ----
+#
+# Incremental migration off the ~5 hardcoded per-mode case/dict tables
+# below (main 9-slot palette, dunst, GTK overlay, GTK theme/icon name,
+# Chromium resolve_palette) toward one themes/<mode>/colors.toml per
+# theme. Every one of those tables turned out to carry the SAME values
+# per theme -- dunst's accent/ok/urgent, GTK overlay's accent/urgent/ok,
+# and resolve_palette's bg/fg/alt/accent are all already present in the
+# main 9-slot+accent set for every preset checked -- so one flat file
+# replaces all five, no new data invented.
+#
+# wal is deliberately NEVER loaded from a folder: its palette is derived
+# at apply time from the current wallpaper (see the wal branches further
+# down), and that has to stay code.
+#
+# THEME_LOADED gates every downstream case block below: if a mode has no
+# themes/<mode>/colors.toml yet, THEME_LOADED stays 0 and every case
+# block runs exactly as it always has. This is the safety net for
+# migrating one theme at a time -- nothing is deleted from the hardcoded
+# tables until every mode has a folder.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+THEME_DIR="$SCRIPT_DIR/themes/$MODE"
+THEME_LOADED=0
+if [[ "$MODE" != "wal" && -f "$THEME_DIR/colors.toml" ]]; then
+  _toml_get() { sed -n "s/^$2 = \"\\(.*\\)\"\$/\\1/p" "$1"; }
+  T_BG="$(_toml_get "$THEME_DIR/colors.toml" bg)"
+  T_BG_ALT="$(_toml_get "$THEME_DIR/colors.toml" bg_alt)"
+  T_FG="$(_toml_get "$THEME_DIR/colors.toml" fg)"
+  T_RED="$(_toml_get "$THEME_DIR/colors.toml" red)"
+  T_GREEN="$(_toml_get "$THEME_DIR/colors.toml" green)"
+  T_YELLOW="$(_toml_get "$THEME_DIR/colors.toml" yellow)"
+  T_BLUE="$(_toml_get "$THEME_DIR/colors.toml" blue)"
+  T_PURPLE="$(_toml_get "$THEME_DIR/colors.toml" purple)"
+  T_CYAN="$(_toml_get "$THEME_DIR/colors.toml" cyan)"
+  T_ACCENT="$(_toml_get "$THEME_DIR/colors.toml" accent)"
+  T_BG_CRIT="$(_toml_get "$THEME_DIR/colors.toml" bg_crit)"
+  T_FG_CRIT="$(_toml_get "$THEME_DIR/colors.toml" fg_crit)"
+  T_GTK_THEME="$(_toml_get "$THEME_DIR/colors.toml" gtk_theme)"
+  T_GTK_ICON="$(_toml_get "$THEME_DIR/colors.toml" gtk_icon)"
+  T_ICON_COLOR="$(_toml_get "$THEME_DIR/colors.toml" icon_color)"
+  # All 15 fields must be present -- a partially-written colors.toml
+  # (e.g. an interrupted edit) must fall back to the hardcoded block
+  # rather than apply a palette with holes in it.
+  if [[ -n "$T_BG" && -n "$T_BG_ALT" && -n "$T_FG" && -n "$T_RED" && -n "$T_GREEN" \
+     && -n "$T_YELLOW" && -n "$T_BLUE" && -n "$T_PURPLE" && -n "$T_CYAN" \
+     && -n "$T_ACCENT" && -n "$T_BG_CRIT" && -n "$T_FG_CRIT" \
+     && -n "$T_GTK_THEME" && -n "$T_GTK_ICON" && -n "$T_ICON_COLOR" ]]; then
+    THEME_LOADED=1
+  fi
+fi
+
 # ---- SNAPSHOT THE OUTGOING PALETTE, BEFORE ANYTHING OVERWRITES IT ----
 #
 # qtile's apply_palette_live() (config.py) needs the palette THIS script
@@ -837,6 +888,7 @@ accent_of_mode() {
   #
   # These values are the 4th argument of the gen_gtk_css call for the same
   # mode further down. Keep the two in step.
+  if (( THEME_LOADED )) && [[ "$1" == "$MODE" ]]; then echo "$T_ACCENT"; return; fi
   case "$1" in
     doomone)        echo "#51afef" ;;
     dracula)        echo "#bd93f9" ;;
@@ -1020,6 +1072,9 @@ gen_all_theme_css() {
   dump_palette_json "$@"
 }
 
+if (( THEME_LOADED )); then
+  gen_all_theme_css "$T_BG" "$T_BG_ALT" "$T_FG" "$T_RED" "$T_GREEN" "$T_YELLOW" "$T_BLUE" "$T_PURPLE" "$T_CYAN"
+else
 case "$MODE" in
   wal)
     W=~/.cache/wal/colors.json
@@ -1150,6 +1205,7 @@ PYEOF
   github-dark) gen_all_theme_css "#0d1117" "#010409" "#c9d1d9" "#ff7b72" "#7ee787" "#f2cc60" "#58a6ff" "#d2a8ff" "#a5d6ff" ;;
   ayu-mirage) gen_all_theme_css "#1f2430" "#171b24" "#cbccc6" "#ff6666" "#bae67e" "#ffcc66" "#5ccfe6" "#c3a6ff" "#95e6cb" ;;
 esac
+fi
 
 # eww: reload only if daemon alive + there are no open windows. If
 # windows are open, kill+restart+reopen (scss recompile needed).
@@ -1292,6 +1348,9 @@ render_dunstrc() {
 }
 
 if [[ -f "$DUNST_TMPL" ]]; then
+  if (( THEME_LOADED )); then
+    render_dunstrc "$T_BG" "$T_FG" "$T_BG_CRIT" "$T_FG_CRIT" "$T_ACCENT" "$T_GREEN" "$T_RED"
+  else
   case "$MODE" in
     wal)
       W=~/.cache/wal/colors.json
@@ -1326,6 +1385,7 @@ if [[ -f "$DUNST_TMPL" ]]; then
     github-dark) render_dunstrc "#0d1117" "#c9d1d9" "#3d1f2a" "#ffdada" "#58a6ff" "#7ee787" "#ff7b72" ;;
     ayu-mirage) render_dunstrc "#1f2430" "#cbccc6" "#3d1f2a" "#ffdada" "#5ccfe6" "#bae67e" "#ff6666" ;;
   esac
+  fi
   # Restart dunst so it re-reads dunstrc — but only if it was RUNNING.
   #
   # This used to kill unconditionally, sleep 0.2 s, and start dunst
@@ -1392,6 +1452,9 @@ gen_gtk_css() {
 EOF
 }
 
+if (( THEME_LOADED )); then
+  gen_gtk_css "$T_BG" "$T_BG_ALT" "$T_FG" "$T_ACCENT" "$T_RED" "$T_GREEN"
+else
 case "$MODE" in
   wal)
     W=~/.cache/wal/colors.json
@@ -1425,6 +1488,7 @@ case "$MODE" in
   github-dark) gen_gtk_css "#0d1117" "#010409" "#c9d1d9" "#58a6ff" "#ff7b72" "#7ee787" ;;
   ayu-mirage) gen_gtk_css "#1f2430" "#171b24" "#cbccc6" "#5ccfe6" "#ff6666" "#bae67e" ;;
 esac
+fi
 
 # Wire @import into gtk-3.0/gtk.css (create if missing)
 ensure_gtk_import() {
@@ -1443,10 +1507,14 @@ ensure_gtk_import "$HOME/.config/gtk-4.0/gtk.css"
 # Sweet-Dark forces dark bg in all GTK apps (pcmanfm/nautilus etc); the
 # per-palette @import overlay can't override background colors. Swap the
 # BASE theme name + icon theme so light palettes actually render light.
+if (( THEME_LOADED )); then
+  GTK_THEME="$T_GTK_THEME"; GTK_ICON="$T_GTK_ICON"
+else
 case "$MODE" in
   mono-light) GTK_THEME="Breeze"; GTK_ICON="Papirus-Light" ;;
   *)          GTK_THEME="Sweet-Dark"; GTK_ICON="Papirus-Dark" ;;
 esac
+fi
 SETTINGS_INI="$HOME/.config/gtk-3.0/settings.ini"
 if [[ -f "$SETTINGS_INI" ]]; then
   sed -i "s|^gtk-theme-name=.*|gtk-theme-name=$GTK_THEME|" "$SETTINGS_INI"
@@ -1462,6 +1530,9 @@ touch "$HOME/.config/gtk-4.0/settings.ini"
 # fixed set of color keywords. Map the active accent hue to the closest
 # one so folder icons follow the palette.
 if command -v papirus-folders >/dev/null; then
+  if (( THEME_LOADED )); then
+    ICON_COLOR="$T_ICON_COLOR"
+  else
   case "$MODE" in
     doomone|nord|kanagawa|oxocarbon|nightowl|onedark|palenight|github-dark) ICON_COLOR="blue" ;;
     dracula|catppuccin|rose-pine)    ICON_COLOR="violet" ;;
@@ -1530,6 +1601,7 @@ print(int(colorsys.rgb_to_hsv(r,g,b)[0]*360))
       ;;
     *) ICON_COLOR="blue" ;;
   esac
+  fi
   # papirus-folders swaps the folder-color symlink (fast, ~200ms).
   # -u would ALSO rebuild the whole theme icon cache (20+ seconds) —
   # not worth it: open pcmanfm windows won't hot-reload icons anyway,
@@ -1932,6 +2004,10 @@ printf '%s\n' 'THEME_APPLY_VISIBLE_DONE'
 # entries -- which then silently drifts the first time a preset is
 # retuned in one copy and not the other.
 resolve_palette() {
+  if (( THEME_LOADED )) && [[ "$1" == "$MODE" ]]; then
+    echo "$T_BG $T_FG $T_BG_ALT $T_ACCENT"
+    return
+  fi
   python3 - "$1" <<'PYPALETTE'
 import json, os, sys
 mode = sys.argv[1]
@@ -2427,5 +2503,12 @@ notify-send -a "Theme" -u low -t 4000 -i preferences-desktop-theme \
 
 # Extension point: anything dropped in hooks/post-theme-apply.d/ runs
 # here, after every app has been retinted, with the mode name as $1. See
-# ati-hook.
-command -v ati-hook >/dev/null 2>&1 && ati-hook post-theme-apply "$MODE"
+# ati-hook. An `if`, not `command -v ... && ati-hook ...`: this is the
+# last statement in the script, and a bare `&&` chain's exit status
+# becomes the SCRIPT's own exit status when nothing follows it -- so on
+# any machine where ati-hook is not yet on PATH, `command -v` failing
+# made theme-apply itself report failure even though everything it
+# needed to do had already completed. Caught by testing this migration.
+if command -v ati-hook >/dev/null 2>&1; then
+  ati-hook post-theme-apply "$MODE"
+fi
