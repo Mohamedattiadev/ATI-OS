@@ -201,8 +201,14 @@ fi
 # notification centre), and routing on the function would have changed what
 # those keys do too.
 if [[ "$target" == bar ]]; then
+  # FIXED: was `-p "$HOME/.config/quickshell/topbar"` — the DIRECTORY,
+  # which resolved to shell.qml as long as topbar.sh launched the bar the
+  # same way. It no longer does: topbar.sh/bar-switch now launch
+  # redesign-e-final.qml directly ("the qtile like one will be disabled"),
+  # a different Quickshell instance identity, so every call here was
+  # silently reaching nothing — reported as "alt+`/win+` not working".
   topbar_call() {
-    exec "$IPC_BIN" -p "$HOME/.config/quickshell/topbar" ipc call topbar "$1"
+    exec "$IPC_BIN" -p "$HOME/.config/quickshell/topbar/redesign-e-final.qml" ipc call topbar "$1"
   }
   case "$(read_mode)/$func" in
     island/systemBox)  target=tide; func=toggleNotificationCenter; arg=""; island ;;
@@ -214,8 +220,15 @@ if [[ "$target" == bar ]]; then
       notify-send -u low "ati-bar-action" \
         "the tray box is the topbar's; switch bars with \$mod SHIFT P" 2>/dev/null || true
       exit 0 ;;
-    native/systemBox)  topbar_call toggleSystemBox ;;
-    native/secondBox)  topbar_call toggleSecondBox ;;
+    # Realigned onto the SAME abstract slot the island already uses these
+    # two keys for ("$alt \` systemBox... island: notifications", "$mod \`
+    # secondBox... island: system monitor" — see the table above) rather
+    # than kept on the old qtile-literal CPU-box/updates-box split, which
+    # redesign-e-final.qml doesn't have as two separate boxes any more —
+    # asked for directly: "alt+\` notification center", "win+\` ... cpu ram
+    # etc".
+    native/systemBox)  topbar_call toggleNotifCenter ;;
+    native/secondBox)  topbar_call toggleStats ;;
     native/trayBox)    topbar_call toggleTrayBox ;;
     native/toggleHidden)     topbar_call toggleHidden ;;
     native/togglePercentage) topbar_call togglePercentage ;;

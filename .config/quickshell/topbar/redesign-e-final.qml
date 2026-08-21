@@ -247,6 +247,37 @@ ShellRoot {
     Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true; onTriggered: brightnessProc.running = true }
     Timer { id: brightnessPollSoon; interval: 120; repeat: false; onTriggered: brightnessProc.running = true }
 
+    // ---- POSITION — top/bottom, ported from shell.qml's own
+    // shellRoot.position/setPosition. "i want to make the button bar same
+    // style like the new bar and i can switch with win+shift+z like
+    // before" — this is deliberately NOT shell.qml's separate bottom-bar
+    // window (its own 40px/opaque/pipe-separator design, a different bar
+    // entirely); it's the SAME bar this file already draws, just anchored
+    // to the other edge, so "same style" is automatic rather than a
+    // second design to maintain. Persisted the same way, and to the same
+    // file, so a `topbar-position` written by either bar is honoured by
+    // whichever one is actually running.
+    property string position: "top"
+    FileView {
+        id: positionFile
+        path: Quickshell.env("HOME") + "/.cache/topbar-position"
+        watchChanges: true
+        preload: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            const v = text().trim();
+            if (v === "top" || v === "bottom")
+                demo.position = v;
+        }
+    }
+    function setPosition(p) {
+        if (p !== "top" && p !== "bottom")
+            return;
+        demo.position = p;
+        positionFile.setText(p + "\n");
+    }
+
     // ---- CLOCK — real, ticking every second.
     property string clockText: Qt.formatDateTime(new Date(), "ddd, MMM d  HH:mm:ss")
     Timer {
@@ -804,7 +835,17 @@ ShellRoot {
     PanelWindow {
         id: bar
         screen: Quickshell.screens[0]
-        anchors { top: true; left: true; right: true }
+        // top/bottom via demo.position (Win+Shift+Z, ported from
+        // shell.qml — see demo.setPosition's own note). Both edges are
+        // always anchored; only WHICH one carries the actual margin
+        // switches, so the bar snaps to the opposite edge instead of
+        // stretching across the whole screen height.
+        anchors {
+            top: demo.position === "top"
+            bottom: demo.position === "bottom"
+            left: true
+            right: true
+        }
         implicitHeight: Metrics.barHeight + Metrics.marginV * 2
         // Was offset by a whole bar-height-plus-gap so this could sit as
         // a SECOND row underneath the real shell.qml bar during
@@ -813,7 +854,8 @@ ShellRoot {
         // there's nothing left to sit below — this takes the primary
         // slot at the true top of the screen instead of leaving that gap
         // empty above it.
-        margins.top: Metrics.marginV
+        margins.top: demo.position === "top" ? Metrics.marginV : 0
+        margins.bottom: demo.position === "bottom" ? Metrics.marginV : 0
         color: "transparent"
         WlrLayershell.layer: WlrLayer.Top
         exclusionMode: ExclusionMode.Ignore
@@ -1866,7 +1908,15 @@ ShellRoot {
         PanelWindow {
             required property var modelData
             screen: modelData
-            anchors { top: true; left: true; right: true }
+            // Same edge as `bar` itself (demo.position) — shell.qml's own
+            // reserver does the identical thing: "Anchored to whichever
+            // edge the live bar is on".
+            anchors {
+                top: demo.position === "top"
+                bottom: demo.position === "bottom"
+                left: true
+                right: true
+            }
             implicitHeight: 1
             exclusiveZone: Metrics.barHeight + Metrics.marginV * 2
             color: "transparent"
@@ -1895,14 +1945,12 @@ ShellRoot {
         function hide(): void { utilStrip.statsOpen = false; }
     }
 
-    // "i want the notification center works with alt+`" — this is the
-    // real, driveable-from-a-keybind surface (middle-click on the
-    // workspace pill calls the same functions directly). Wiring an actual
-    // Hyprland `bind = $alt, grave, ...` to this is NOT done here: Alt+` is
-    // already bound to `ati-bar-action bar systemBox` for shell.qml's own
-    // CPU+Memory box in binds.conf, a LIVE production file — repointing it
-    // would silently drop that bind rather than add this one alongside it.
-    // Left for a separate, confirmed edit.
+    // "i want the notification center works with alt+`" — the direct IPC
+    // surface (middle-click on the workspace pill calls the same
+    // functions). shell.qml is no longer the active bar ("the qtile like
+    // one will be disabled"), so Alt+`/Win+` are no longer live binds of
+    // its — see the `target: "topbar"` handler below, which is what
+    // ati-bar-action's `bar systemBox`/`bar secondBox` now actually call.
     IpcHandler {
         target: "notifcenter"
         function toggle(): void { demo.notifCenterOpen = !demo.notifCenterOpen; }
@@ -1914,6 +1962,23 @@ ShellRoot {
         // the CLI's argument parsing.
         function open(): void { demo.notifCenterOpen = true; }
         function hide(): void { demo.notifCenterOpen = false; }
+    }
+
+    // ati-bar-action's `bar` target ($alt ` / $mod ` / $alt Tab) calls
+    // THIS — "target: topbar", matching the name it always called even
+    // when that meant shell.qml. Realigned onto the same abstract slot the
+    // ISLAND already uses these two keys for (its own systemBox opens
+    // notifications, secondBox opens the system monitor) rather than kept
+    // on shell.qml's literal CPU-box/updates-box split, which this bar
+    // doesn't have as two separate boxes.
+    IpcHandler {
+        target: "topbar"
+        function toggleNotifCenter(): void { demo.notifCenterOpen = !demo.notifCenterOpen; }
+        function toggleStats(): void { utilStrip.statsOpen = !utilStrip.statsOpen; }
+        function toggleTrayBox(): void { utilStrip.trayOpen = !utilStrip.trayOpen; }
+        // Win+Shift+Z, ported from shell.qml's own `topbar toggle`/`status`.
+        function toggle(): void { demo.setPosition(demo.position === "top" ? "bottom" : "top"); }
+        function status(): string { return demo.position; }
     }
 
     // Debug-only, for screenshotting without a real mouse: forces both
