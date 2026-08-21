@@ -58,6 +58,22 @@ bundled version was already behind the packaged one.
 Anki itself is AGPL-3.0 — <https://github.com/ankitects/anki> — and is
 installed from the Arch repositories like any other package.
 
+## Omarchy — MIT
+
+<https://github.com/basecamp/omarchy>, by David Heinemeier Hansson (DHH)
+and contributors.
+
+**Vendored under `.config/quickshell/ati-menu/`**: `Commons/` and `Ui/`
+(Omarchy's shared Quickshell QML component/design-token libraries, copied
+verbatim) and `plugins/menu/{Menu.qml,MenuModel.js}` — the tree-walking
+command-menu UI itself, ported here to run against ATI-OS's own
+`.config/AtiScriptsV1/ati-menu.json`/`ati-menu-extensions.json` data files
+and dispatch commands instead of Omarchy's. `Menu.qml` is modified (the
+`defaultMenuPath`/`userMenuPath` properties, and any Omarchy-specific
+action-string conventions its own shipped JSONC used); `MenuModel.js` and
+everything under `Commons/`/`Ui/` are unmodified. MIT's terms are
+compatible with GPL-3.0 in that direction, same as the Hintium entry below.
+
 ## Hintium — MIT
 
 <https://github.com/Mohamedattiadev/Hintium>, by the same author as this
