@@ -20,7 +20,7 @@ MOD_ORDER=(
   whisper-fast mic-gain scrcpy
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes dark-mode browser-flags browser-memory chrome-policy
-  dcli-sync-extra
+  dcli-sync-extra grub-boost
 )
 
 # Opt-in modules: valid --only= targets, and listed (unchecked) in the
@@ -50,7 +50,11 @@ MOD_ORDER=(
 # actual loss is Caps Lock itself, silently and with no tap-to-Caps
 # fallback. A stranger installing this repo should get a normal keyboard.
 # On the laptop that needs it:  ./wizard.sh --only=xmodmap
-OPTIN_MODS=(dcli-sync-extra xmodmap keyd)
+# grub-boost is opt-in because it edits the kernel cmdline via
+# /etc/default/grub -- the script itself is careful (backs up first, only
+# adds missing flags, no-ops cleanly on a non-GRUB machine), but that is
+# not a change to make without asking even so.
+OPTIN_MODS=(dcli-sync-extra xmodmap keyd grub-boost)
 _is_optin() {
   local id m
   id="$1"
@@ -130,4 +134,5 @@ _reg chrome-policy     "Chrome theme policy" Browsers  "Sign .pem + install /etc
 # option LINES, and a comma inside one splits it into two entries that match
 # nothing -- silently unchecking whatever followed it.
 _reg dcli-sync-extra   "Optional packages"   Optional  "docker · jdk · qemu · printing (opt-in · run later)"    "step_dcli_sync_extra"
+_reg grub-boost        "GRUB cmdline flags"  Optional  "opt-in · no-ops on systemd-boot/rEFInd/UKI · backs up first" "step_grub_boost"
 _reg boot-splash       "Boot splash"         System    "Your name + progress ring instead of kernel text at boot" "step_boot_splash"

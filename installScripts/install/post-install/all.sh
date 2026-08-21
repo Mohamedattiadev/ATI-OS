@@ -400,3 +400,36 @@ uninstall_scrcpy() {
 uninstall_ownership()         { :; }
 
 uninstall_speed()             { :; }
+
+# grub_boost.sh (installScripts/) was on disk since before the phase split
+# but never registered as a module — no MOD_ORDER entry meant no --only
+# target and no picker line, so the only way to run it was `./grub_boost.sh`
+# by hand from installScripts/. It is genuinely safe to automate: it backs
+# up /etc/default/grub before editing, only adds flags not already present,
+# and exits 0 with a clear message on any machine that isn't GRUB (systemd-
+# boot, rEFInd, a UKI) rather than failing. Opt-in anyway (see OPTIN_MODS in
+# registry.sh) because it edits the kernel cmdline, and that is not a change
+# to make without asking even when the script itself is careful.
+step_grub_boost() {
+  run "$DOTFILES_DIR/installScripts/grub_boost.sh"
+}
+# Reversal is a real file restore (sudo cp the timestamped .bak grub_boost.sh
+# just wrote, then grub-mkconfig), not something safe to automate blindly --
+# picking the WRONG backup or running this after grub_boost.sh has been run
+# twice would silently restore the wrong cmdline. Point at the fix instead.
+uninstall_grub_boost() {
+  _WARN "grub_boost.sh edits /etc/default/grub directly — reverse it by hand:"
+  _WARN "  sudo cp /etc/default/grub.bak.<TIMESTAMP> /etc/default/grub"
+  _WARN "  sudo grub-mkconfig -o /boot/grub/grub.cfg"
+  _WARN "  (see the .bak.* files next to /etc/default/grub for the timestamp)"
+}
+
+# service_trim.sh (installScripts/) is deliberately NOT a module here: it
+# prompts y/n per service in an interactive loop, and _run_module captures
+# a step's stdout behind a spinner into /tmp/wizard-<id>.log -- the same
+# reason step_simplenote defers its credential prompt to a page_* function
+# instead of asking inline (see that module's comment). A per-service
+# interactive audit does not have a page_* analog worth building for one
+# script; it stays a manual `./service_trim.sh`, same as before this split
+# (see the "or with service_trim.sh" mention above, in uninstall_radios's
+# comment).
