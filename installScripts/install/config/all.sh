@@ -48,7 +48,7 @@ step_paths() {
   #   bookmarks      GTK's bookmark file is plain "URI  label" lines.
   #
   # Written as REAL files, replacing the stow symlink, exactly like
-  # theme-apply's render_dunstrc. That is what keeps a per-machine value
+  # ati-theme-apply's render_dunstrc. That is what keeps a per-machine value
   # from being written back into the repo through the link.
   local src dst
   for src in \
@@ -150,7 +150,7 @@ if command -v dbus-update-activation-environment >/dev/null 2>&1; then
 fi
 # Qt apps (telegram-desktop etc) ignore the GTK theme entirely. Without
 # a platform theme Qt uses its built-in LIGHT palette, so they render
-# white on the dark desktop. qt6ct/qt5ct read the palette theme-apply
+# white on the dark desktop. qt6ct/qt5ct read the palette ati-theme-apply
 # generates into ~/.config/qt6ct/colors/current.conf.
 export QT_QPA_PLATFORMTHEME=qt6ct
 # Cursor size + theme for X apps (Xcursor honors both env vars).
@@ -316,7 +316,7 @@ step_tmux_tpm() {
 }
 
 
-# Your own fork, not upstream. theme-apply's `wal` mode derives an entire
+# Your own fork, not upstream. ati-theme-apply's `wal` mode derives an entire
 # palette from the current wallpaper, so the wallpaper set is not
 # decoration -- it is an input to how the desktop looks. Pointing at
 # someone else's repo means they can add, remove or re-encode an image and
@@ -327,12 +327,12 @@ step_wallpapers()   { [[ -d $HOME/Pictures/Wallpapers/.git ]] && { _OK "wallpape
 
 step_themes() {
   run "sudo pacman -S --needed --noconfirm python-pywal python-pillow papirus-icon-theme jq"
-  # Seed eww colors.scss from .tmpl so first theme-apply resolves.
+  # Seed eww colors.scss from .tmpl so first ati-theme-apply resolves.
   local eww_tmpl="$HOME/.config/eww/colors.scss.tmpl"
   local eww_out="$HOME/.config/eww/colors.scss"
   [[ -f "$eww_tmpl" && ! -f "$eww_out" ]] && run "cp $eww_tmpl $eww_out"
   # Seed qutebrowser homepage.html from .tmpl (gitignored — regenerated
-  # per palette by theme-apply, needs a stable skeleton first). The greeting
+  # per palette by ati-theme-apply, needs a stable skeleton first). The greeting
   # says "Welcome, <you>": the page is served over file://, so JS can't read
   # the login name — the only place it can be filled in is here, at seed time.
   local qb_tmpl="$HOME/.config/qutebrowser/html/homepage.html.tmpl"
@@ -348,7 +348,7 @@ step_themes() {
     [[ -n "$first" ]] && run "mkdir -p $HOME/.cache && ln -sfn $first $HOME/.cache/wall"
   fi
   run "ati-wal-precompile"
-  run "theme-apply doomone"
+  run "ati-theme-apply doomone"
 }
 
 step_dark_mode() {
