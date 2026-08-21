@@ -19,7 +19,7 @@ audio with `ggml-base.en.bin` took **28 seconds** with the pacman-built
 `/usr/bin/whisper-cli` vs **2.1 seconds** with a `Release` build of the
 exact same source/model — a ~13x slowdown, present in every binary the
 package ships (`whisper-cli`, `whisper-server`, ...). This was silently
-throttling `voice_dictate`'s batch dictation (Super+Shift+B) the whole
+throttling `ati-voice-dictate`'s batch dictation (Super+Shift+B) the whole
 time, not just anything new.
 
 Fix: build Release binaries from the same cached source and shadow the
@@ -50,6 +50,6 @@ land in the low seconds for a few seconds of audio, not tens of seconds.
 ## 2. whisper-stream-poll-ms.patch
 
 Adds `--poll-ms`/`--vad-tail-ms` to `examples/stream/stream.cpp` (used by
-`voice_dictate_live`) -- see that patch file's own diff for detail.
+`ati-voice-dictate-live`) -- see that patch file's own diff for detail.
 Upstream hardcodes these at 2000ms/1000ms with no CLI flag, which meant
 up to ~2s of dead air before a paused phrase even started transcribing.

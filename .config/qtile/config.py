@@ -7284,13 +7284,13 @@ keys = [
     Key(
         [],
         "F8",
-        lazy.spawn("voice_dictate_live"),
+        lazy.spawn("ati-voice-dictate-live"),
         desc="Start/stop live voice dictation (types each phrase as you pause)",
     ),
     Key(
         [],
         "F9",
-        lazy.spawn("voice_dictate"),
+        lazy.spawn("ati-voice-dictate"),
         desc="Start/stop batch voice dictation (whisper.cpp -> xdotool type)",
     ),
     # --- refresh PC (reset_PC script) ---

@@ -97,12 +97,12 @@ def xdotool_type(text):
 
 
 def pill(text):
-    # Same tag voice_dictate_live's shell wrapper uses, so this replaces the
+    # Same tag ati-voice-dictate-live's shell wrapper uses, so this replaces the
     # "Listening..." pill in place rather than stacking a new notification.
     subprocess.run(
         [
             "notify-send", "-u", "normal", "-t", "0",
-            "-h", "string:x-canonical-private-synchronous:voice_dictate_live",
+            "-h", "string:x-canonical-private-synchronous:ati-voice-dictate-live",
             "\U0001f399  Listening…", text[-80:],
         ],
         check=False,

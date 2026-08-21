@@ -480,9 +480,9 @@ EOF
 step_whisper() {
   local dir="$HOME/.local/share/whisper"
   run "mkdir -p $dir"
-  # base.en: voice_dictate_live (Super+Shift+V) -- fast enough to feel
+  # base.en: ati-voice-dictate-live (Super+Shift+V) -- fast enough to feel
   # instant on modest hardware, traded for lower accuracy.
-  # small.en: voice_dictate (Super+Shift+B) -- much more accurate, not
+  # small.en: ati-voice-dictate (Super+Shift+B) -- much more accurate, not
   # instant. Benchmarked repeatedly on a weak 2-core CPU: small.en runs
   # ~4x slower than real-time even with the fast build below and GPU
   # offload, so it's kept for batch (manual stop) dictation only, not
@@ -505,7 +505,7 @@ step_whisper_fast() {
   # whisper-cli vs 2.1s with a Release build of the identical source/
   # model -- a ~13x slowdown, present in every binary the package ships.
   # It also doesn't build whisper-stream at all (needs -DWHISPER_SDL2=ON,
-  # which the PKGBUILD doesn't pass), and voice_dictate_live needs
+  # which the PKGBUILD doesn't pass), and ati-voice-dictate-live needs
   # whisper-stream patched with patches/whisper-stream-poll-ms.patch
   # (adds --poll-ms/--vad-tail-ms, hardcoded upstream with no CLI flag).
   #

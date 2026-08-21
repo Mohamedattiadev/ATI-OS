@@ -1133,7 +1133,7 @@ the shell being down.
 Method note, because the claim had gone unchecked for several sessions:
 seven `AtiScriptsV1` scripts are reachable from a Hyprland bind at all —
 `clock_popup`, `phone_screen`, `rofi_anki`, `rofi_ilovepdf`,
-`theme-toggle`, `voice_dictate`, `voice_dictate_live`. `clock_popup`
+`theme-toggle`, `ati-voice-dictate`, `ati-voice-dictate-live`. `clock_popup`
 mentions rofi only in comments. Everything else in that directory is
 qtile's, or is called by another script, and cannot be reached from this
 session.

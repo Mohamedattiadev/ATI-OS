@@ -446,7 +446,7 @@ doc_index() {  # doc_index <file> <prompt>
           # Backticks and asterisks only. Stripping underscores too -- the
           # obvious reading of "remove markdown punctuation" -- silently ate
           # them out of the MIDDLE of identifiers, so x86_64 indexed as
-          # x8664 and voice_dictate as voicedictate. In this repo that is
+          # x8664 and ati-voice-dictate as voicedictate. In this repo that is
           # pure loss: across all four documents there are 336 identifier
           # underscores and not one use of _emphasis_.
           gsub(/[`*]/, "", h)

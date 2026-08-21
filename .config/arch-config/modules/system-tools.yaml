@@ -99,7 +99,7 @@ packages:
   - tesseract
   - tesseract-data-eng
   - wl-clipboard    # wl-copy fallback in fish scripts
-  - whisper.cpp-git # voice_dictate backend (AUR)
+  - whisper.cpp-git # ati-voice-dictate backend (AUR)
   # cmake is what step_whisper_fast actually builds with -- wizard.sh runs
   # `cmake -S ... -B ...` and `cmake --build ...` with no `command -v` guard,
   # so a missing cmake hard-fails that step rather than warning and skipping

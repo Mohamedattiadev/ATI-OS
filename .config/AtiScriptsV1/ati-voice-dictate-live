@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# voice_dictate_live — press keybind to start listening; press again to stop.
+# ati-voice-dictate-live — press keybind to start listening; press again to stop.
 # Types each phrase the instant you pause, instead of waiting for you to
-# manually stop the whole recording like voice_dictate does.
+# manually stop the whole recording like ati-voice-dictate does.
 #
 # Backend: whisper.cpp's whisper-stream in VAD sliding-window mode
 # (--step 0). It does NOT cleanly emit one block per finished phrase --
 # examples/stream/stream.cpp never clears its audio ring buffer in this
 # mode, so every brief pause re-transcribes the WHOLE recording so far
-# from t=0 and prints that as a new, longer block. voice_dictate_live_typer.py
+# from t=0 and prints that as a new, longer block. ati-voice-dictate-live-typer.py
 # handles this: word-level append-only diffing against the previous block
 # (never backspaces), timestamp-bracket stripping (VAD mode forces
 # per-line timestamps on with no flag to disable them), and filtering
 # Whisper's well-known silence hallucinations ("thank you", "(laughs)",
-# etc). Uses base.en rather than voice_dictate's small.en: latency matters
+# etc). Uses base.en rather than ati-voice-dictate's small.en: latency matters
 # more than max accuracy for something meant to feel instant, and base.en
 # stays comfortably under real-time on a 4-core CPU -- override via
 # WHISPER_MODEL if you want to trade some speed for small.en's accuracy.
@@ -62,12 +62,12 @@ BEAM_SIZE="${WHISPER_BEAM_SIZE:-3}"
 POLL_MS="${WHISPER_POLL_MS:-800}"
 VAD_TAIL_MS="${WHISPER_VAD_TAIL_MS:-350}"
 # Deliberately NOT named TMPDIR, and per-user -- same two reasons
-# voice_dictate documents: assigning to an already-exported variable keeps
+# ati-voice-dictate documents: assigning to an already-exported variable keeps
 # the export, so whisper-stream inherited this as its scratch directory,
 # and a fixed path in shared /tmp cannot be created by a second account.
-WORK_DIR="${XDG_RUNTIME_DIR:-/tmp}/voice_dictate_live-$(id -u)"
+WORK_DIR="${XDG_RUNTIME_DIR:-/tmp}/ati-voice-dictate-live-$(id -u)"
 PIDFILE="$WORK_DIR/stream.pid"
-NOTIFY_TAG="voice_dictate_live"
+NOTIFY_TAG="ati-voice-dictate-live"
 
 mkdir -p "$WORK_DIR"
 
@@ -88,20 +88,20 @@ clear_pill() {
 }
 
 if [[ ! -f "$MODEL" ]]; then
-  pill critical "voice_dictate_live" "Model missing: $MODEL"
+  pill critical "ati-voice-dictate-live" "Model missing: $MODEL"
   exit 1
 fi
 
 for bin in whisper-stream xdotool python3; do
   command -v "$bin" >/dev/null || {
-    pill critical "voice_dictate_live" "Missing binary: $bin"
+    pill critical "ati-voice-dictate-live" "Missing binary: $bin"
     exit 1
   }
 done
 
-TYPER="$(dirname "$(readlink -f "$0")")/voice_dictate_live_typer.py"
+TYPER="$(dirname "$(readlink -f "$0")")/ati-voice-dictate-live-typer.py"
 if [[ ! -f "$TYPER" ]]; then
-  pill critical "voice_dictate_live" "Missing helper: $TYPER"
+  pill critical "ati-voice-dictate-live" "Missing helper: $TYPER"
   exit 1
 fi
 

@@ -67,16 +67,16 @@ background bash job — silent death, no restart.
 Two modes, both via whisper.cpp + xdotool, both toggled by pressing the
 same bind again to stop:
 
-- **Live** — `Win+Shift+V` → `voice_dictate_live`. Types each phrase within
+- **Live** — `Win+Shift+V` → `ati-voice-dictate-live`. Types each phrase within
   well under a second of you pausing, via `whisper-stream` in VAD
   sliding-window mode + `ggml-base.en.bin` (~148MB) for speed. Needs a
   Release build of `whisper-stream` (the `whisper.cpp-git` AUR package
   builds unoptimized and doesn't build this binary at all — see
   `.config/AtiScriptsV1/patches/README.md`) plus the
-  `voice_dictate_live_typer.py` companion, which handles whisper-stream's
+  `ati-voice-dictate-live-typer.py` companion, which handles whisper-stream's
   rough edges (growing/sliding transcription blocks, repetition loops,
   non-speech tags) that would otherwise show up as garbled/duplicated text.
-- **Batch** — `Win+Shift+B` → `voice_dictate`. First press = start
+- **Batch** — `Win+Shift+B` → `ati-voice-dictate`. First press = start
   recording (sox), second press = stop + transcribe the whole thing at
   once via `whisper-cli` + `ggml-small.en.bin` (~488MB, meaningfully more
   accurate, not instant) + type at cursor with xdotool.

@@ -891,7 +891,8 @@ subsystem. Each entry: **symptom → root cause → fix**.
   `$XDG_RUNTIME_DIR` (already per-user and mode 700), falling back to
   `/tmp/rofi-$(id -u)` for sessions that do not set it. `GEMINI_LOG` moved
   with it.
-- **Same class, same fix:** `voice_dictate` and `voice_dictate_live` used
+- **Same class, same fix:** `ati-voice-dictate` and `ati-voice-dictate-live`
+  (named `voice_dictate`/`voice_dictate_live` at the time) used
   fixed `/tmp/voice_dictate*` directories, whose `mkdir -p` failed against
   the first user's copy — and under `set -e` that ended the run before any
   of the "missing binary" feedback was ever reached. Both also called the
@@ -1888,7 +1889,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 ## Voice dictation
 
 ### Mic sounds/transcribes like distorted noise, or dictation randomly gets much worse than a previous session
-- **Symptom:** `voice_dictate`/`voice_dictate_live` transcribe garbage, or
+- **Symptom:** `ati-voice-dictate`/`ati-voice-dictate-live` transcribe garbage, or
   transcription quality visibly regresses between sessions with nothing
   else changed. A raw capture (`arecord -f S16_LE -r 48000 -c 2 test.wav`,
   played back or checked with `sox test.wav -n stat`) shows amplitude
@@ -1918,7 +1919,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   kill -INT "$PID"; wait "$PID"` instead — SIGINT gives it a chance to
   close the file properly.
 
-### `voice_dictate` (batch dictation) or any `whisper-cli` call feels much slower than it should
+### `ati-voice-dictate` (batch dictation) or any `whisper-cli` call feels much slower than it should
 - **Symptom:** transcribing even a few seconds of audio takes 10+
   seconds. `whisper-cli ... 2>&1 | grep 'encode time'` shows several
   seconds to tens of seconds for a short clip.
@@ -1929,7 +1930,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   the identical source/model — a ~13x slowdown, present in every binary
   the package ships (`whisper-cli`, `whisper-server`, ...). It also
   doesn't build `whisper-stream` at all (needs `-DWHISPER_SDL2=ON`,
-  which the `PKGBUILD` doesn't pass), which `voice_dictate_live` depends
+  which the `PKGBUILD` doesn't pass), which `ati-voice-dictate-live` depends
   on.
 - **Fix:** the wizard's `whisper-fast` module builds Release binaries
   from the same AUR-cached source and shadows the slow system ones via
@@ -1940,7 +1941,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 - **Verify it actually took:** `ldd $(which whisper-cli)` should resolve
   to `/usr/local/lib/whisper-cpp/*`, not `/usr/lib/*`.
 
-### `voice_dictate_live` (live dictation) prints/types things you never said
+### `ati-voice-dictate-live` (live dictation) prints/types things you never said
 - **Symptom:** repeated phrases ("I'm sorry about the other one." several
   times in a row), stray `[BLANK_AUDIO]`/`[inaudible]`/`*singing*` tags,
   or a whole sentence duplicated back-to-back.
@@ -1951,7 +1952,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   and prints that as a new block; greedy decoding on longer/messier audio
   is also prone to genuine repetition-loop hallucinations. Typing each
   block verbatim (the obvious approach) surfaces all of this directly.
-- **Fix:** already handled by `voice_dictate_live_typer.py` (word-level
+- **Fix:** already handled by `ati-voice-dictate-live-typer.py` (word-level
   append-only diffing against the previous block, bracket/asterisk tag
   stripping, a repetition-loop collapse pass, `-bs 3` beam search instead
   of greedy decoding) — nothing to do unless a *new* shape of this shows
