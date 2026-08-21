@@ -1,0 +1,5 @@
+{
+  "test": {"icon": "", "label": "Test"},
+  "test.checked-demo": {"icon": "", "label": "Checked demo", "checked": "true", "action": "notify-send 'ati-menu' 'checked-demo fired'"},
+  "test.disabled-demo": {"icon": "", "label": "Disabled demo", "disabled": "true", "action": "notify-send 'ati-menu' 'should never fire'"}
+}

@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# ati-menu — a single declarative command tree, in the spirit of Omarchy's
+# omarchy-menu: one JSON file of dotted-id nodes (icon/label/when/checked/
+# disabled/action), walked generically instead of each menu being its own
+# hand-coded case block the way ati-docs/ati-theme-toggle/etc are.
+#
+# Deliberately plain JSON, not JSONC — jq has no native comment support,
+# and this tree is nowhere near Omarchy's ~340-entry scale, so the
+# comment-stripping step their JS loader needs isn't worth carrying here.
+# Explanatory context lives in this header instead of inline JSON comments.
+#
+# Schema per entry, keyed by a dotted id ("style.theme"; the id's own dots
+# ARE the hierarchy — no explicit "parent" field, same inference Omarchy's
+# own loader uses):
+#   icon      leading glyph (Nerd Font, baked into the row text like every
+#             other picker in this repo — \0icon\x1f stays reserved for real
+#             image thumbnails, see ati-copyq-rofi/rofi_shared)
+#   label     row text
+#   when      optional shell expr; nonzero exit HIDES the row
+#   checked   optional shell expr; zero exit prefixes "● ", nonzero "○ "
+#             (only entries that declare this field get a marker at all)
+#   disabled  optional shell expr; zero exit suffixes " ✓" and makes the
+#             row nonselectable (rofi's `\0meta\x1fnonselectable\x1ftrue`,
+#             same control line rofi_todo's header rows already use)
+#   action    a leaf if present (bash -c'd on select) — otherwise the id is
+#             a submenu, and selecting it descends into its own children
+#   terminal  optional; "true" runs `action` inside a real floating
+#             terminal (run_in_terminal, ati-rofi-common.sh) instead of a
+#             silent background job — for anything with visible output or
+#             a sudo prompt (installs, ati-update)
+#
+# All three condition fields are re-evaluated every time a level is drawn,
+# not cached — same "always live" property Omarchy's fields have.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/ati-rofi-common.sh"
+
+MENU_DEFAULT="$SCRIPT_DIR/ati-menu.json"
+MENU_EXT="$SCRIPT_DIR/ati-menu-extensions.json"
+# Wider/taller than ati-docs's DOCS_GEO -- a command tree runs deeper and
+# denser than ati-docs's hand-picked 3-8 row sections.
+MENU_GEO='window { width: 40%; } listview { lines: 10; dynamic: false; }'
+
+MERGED="$(mktemp --suffix=.json)"
+trap 'rm -f "$MERGED"' EXIT
+
+# Extension keys win on conflict (jq's `*` deep-merges right-biased) -- the
+# override point Omarchy's own default+extension jsonc pair gives a user,
+# without touching the shipped file. Parsed once at startup, not re-read
+# per draw: the TREE shape rarely changes mid-session; what must stay live
+# is the when/checked/disabled *conditions*, evaluated fresh every draw
+# below.
+if ! jq -s '.[0] * .[1]' "$MENU_DEFAULT" "$MENU_EXT" > "$MERGED" 2>/dev/null; then
+  rofi -e "ati-menu: ati-menu.json or ati-menu-extensions.json is invalid JSON"
+  exit 1
+fi
+
+# menu_children <id> — immediate child ids of <id> ("root" = top level), in
+# file order (jq preserves object key order = authoring order).
+menu_children() {
+  local parent="$1"
+  jq -r --arg p "$parent" '
+    to_entries[] | .key as $k
+    | (if $p == "root"
+       then ($k | test("^[^.]+$"))
+       else (($k | startswith($p + ".")) and (($k[($p|length)+1:]) | test("^[^.]+$")))
+       end) as $isChild
+    | select($isChild) | $k
+  ' "$MERGED"
+}
+
+menu_field() {  # menu_field <id> <field>
+  jq -r --arg id "$1" --arg f "$2" '.[$id][$f] // empty' "$MERGED"
+}
+
+menu_cond() {  # menu_cond <shell-expr> — true (rc 0) if empty or succeeds
+  [[ -z "$1" ]] && return 0
+  bash -c "$1" >/dev/null 2>&1
+}
+
+# Runs a leaf's action. `terminal: true` routes through run_in_terminal
+# (ati-rofi-common.sh), reusing the --class docs-view float/center
+# convention so qtile's existing _float_and_center_docs hook sizes it the
+# same way without a new class-specific hook. Everything else is a plain
+# backgrounded job — the right default for silent toggles (theme switch,
+# etc), which is most of the tree.
+menu_run_action() {
+  local id="$1" action term
+  action="$(menu_field "$id" action)"
+  [[ -z "$action" ]] && return
+  term="$(menu_field "$id" terminal)"
+  if [[ "$term" == "true" ]]; then
+    run_in_terminal --class docs-view --title "ati-menu" -e bash -c \
+      "$action; ec=\$?; echo; read -rp 'press enter to close (exit \$ec)' _"
+  else
+    bash -c "$action" >/dev/null 2>&1 &
+  fi
+}
+
+navigation_stack=()
+current="root"
+
+while :; do
+  mapfile -t children < <(menu_children "$current")
+
+  # Rows go to a temp file, not a bash array/variable: a disabled row's
+  # nonselectable control line embeds a raw NUL byte
+  # (`\0meta\x1fnonselectable\x1ftrue`), and bash strings/command
+  # substitution silently truncate at the first NUL -- the same reason
+  # rofi_todo's own header rows go through a temp file rather than its
+  # normal ROW_LINES array. `ids` stays a plain bash array in lockstep
+  # (ids never contain a NUL), used to resolve rofi's `-format i` index
+  # back to the id that produced that row.
+  rows_file="$(mktemp)"
+  ids=()
+
+  if [[ "$current" != "root" ]]; then
+    printf '..\n' >> "$rows_file"
+    ids+=("__up__")
+  fi
+
+  for id in "${children[@]}"; do
+    when="$(menu_field "$id" when)"
+    menu_cond "$when" || continue
+
+    icon="$(menu_field "$id" icon)"
+    label="$(menu_field "$id" label)"
+    [[ -z "$label" ]] && label="$id"
+
+    checked="$(menu_field "$id" checked)"
+    marker=""
+    if [[ -n "$checked" ]]; then
+      if menu_cond "$checked"; then marker="● "; else marker="○ "; fi
+    fi
+
+    row_text="${icon:+$icon }${marker}${label}"
+
+    disabled="$(menu_field "$id" disabled)"
+    if [[ -n "$disabled" ]] && menu_cond "$disabled"; then
+      printf '%s ✓\0meta\x1fnonselectable\x1ftrue\n' "$row_text" >> "$rows_file"
+    else
+      printf '%s\n' "$row_text" >> "$rows_file"
+    fi
+    ids+=("$id")
+  done
+
+  breadcrumb="Menu"
+  if [[ "$current" != "root" ]]; then
+    breadcrumb="$(menu_field "$current" label)"
+    [[ -z "$breadcrumb" ]] && breadcrumb="$current"
+  fi
+
+  choice="$(rofi -dmenu -i -p "$breadcrumb" -format i -theme-str "$MENU_GEO" \
+    -mesg "$(rofi_hint "↵ open" "Esc back")" < "$rows_file")"
+  rc=$?
+  rm -f "$rows_file"
+
+  if (( rc != 0 )); then
+    if [[ ${#navigation_stack[@]} -eq 0 ]]; then
+      exit 0
+    fi
+    current="${navigation_stack[-1]}"
+    unset 'navigation_stack[-1]'
+    continue
+  fi
+
+  [[ "$choice" =~ ^[0-9]+$ ]] || continue
+  sel_id="${ids[$choice]:-}"
+  [[ -z "$sel_id" ]] && continue
+
+  if [[ "$sel_id" == "__up__" ]]; then
+    current="${navigation_stack[-1]}"
+    unset 'navigation_stack[-1]'
+    continue
+  fi
+
+  action="$(menu_field "$sel_id" action)"
+  if [[ -n "$action" ]]; then
+    menu_run_action "$sel_id"
+    exit 0
+  else
+    navigation_stack+=("$current")
+    current="$sel_id"
+  fi
+done
