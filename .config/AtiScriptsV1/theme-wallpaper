@@ -68,7 +68,7 @@
 #  a wallpaper in completely different ways:
 #
 #      Hyprland / Wayland   awww img  (hypr/scripts/wallpaper-sync.sh)
-#      qtile / X11          xwallpaper --stretch   (dm-setbg's setbg())
+#      qtile / X11          xwallpaper --stretch   (ati-dm-setbg's setbg())
 #
 #  wallpaper-sync.sh has no session guard at all — it calls `awww query`,
 #  and on failure starts `awww-daemon`, and awww is Wayland-only. Calling
@@ -254,7 +254,7 @@ resolve() {
 # ------------------------------------------------------------
 #  Remove-then-symlink, never `printf >`. ~/.cache/wall is a SYMLINK, and
 #  writing to it writes THROUGH to the image file it points at, corrupting
-#  a wallpaper instead of repointing the record. dm-setbg carries the same
+#  a wallpaper instead of repointing the record. ati-dm-setbg carries the same
 #  comment for the same reason; this is the third copy of that lesson and
 #  the second script to nearly repeat it.
 record() {
@@ -266,7 +266,7 @@ record() {
 #  Session detection is on what is actually RUNNING, not on
 #  XDG_SESSION_TYPE alone. theme-apply is invoked from rofi menus, from
 #  the island over IPC, and from a plain shell, and the environment it
-#  inherits is not reliably the session's — dm-setbg has a comment about
+#  inherits is not reliably the session's — ati-dm-setbg has a comment about
 #  exactly this, where an unset XDG_SESSION_TYPE under `set -u` aborted
 #  the script before it could reach its own error branch.
 #  ---- instant MODE, AND WHY A HARD CUT IS THE RIGHT ANIMATION ----

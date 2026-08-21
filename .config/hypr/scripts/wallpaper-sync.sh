@@ -19,11 +19,11 @@
 #
 #  The real record is ~/.cache/wall, which is what theme-apply itself
 #  uses (WALL_LINK, line ~145) for EVERY mode, wal included, and what
-#  dm-setbg and the qtile WallpaperPopup maintain. Reading the same file
+#  ati-dm-setbg and the qtile WallpaperPopup maintain. Reading the same file
 #  theme-apply reads is also the only way to keep the two sessions in
 #  step without inventing a second source of truth.
 #
-#  It is normally a symlink to the image; older dm-setbg versions wrote a
+#  It is normally a symlink to the image; older ati-dm-setbg versions wrote a
 #  plain text file containing the path, and theme-apply still handles
 #  both, so this does too.
 #

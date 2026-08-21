@@ -157,7 +157,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   whatever colors it had before, as if `theme-apply` never ran.
 - **Root cause:** both `WallpaperPopup.apply_wallpaper()` and
   `dm-setbg`'s `reapply_wal()` (both copies —
-  `AtiScriptsV1/dm-setbg` and `dmscripts/scripts/dm-setbg`) only
+  `AtiScriptsV1/ati-dm-setbg` and `dmscripts/scripts/dm-setbg`) only
   called `theme-apply wal` if `~/.cache/qtile/theme_mode` was
   *already* `wal`. If you were on any preset (doomone, dracula, ...)
   and picked a new wallpaper, nothing retheme'd — the check silently
@@ -291,7 +291,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 
 ### Changing the wallpaper silently replaces the active preset theme
 - **Symptom:** on `gruvbox` (or any preset), picking a new wallpaper —
-  via the qtile wallpaper popup, `dm-setbg`, or the dmscripts
+  via the qtile wallpaper popup, `ati-dm-setbg`, or the dmscripts
   `dm-setbg` — swapped the desktop image *and* repainted kitty, rofi,
   dunst, GTK, qutebrowser and the qtile bar into a wallpaper-derived
   palette. `~/.cache/qtile/theme_mode` flipped to `wal` and the preset
@@ -306,7 +306,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 - **Fix:** gate the `theme-apply wal` call on
   `~/.cache/qtile/theme_mode` already being `wal`, in all three
   setters:
-  - `.config/AtiScriptsV1/dm-setbg` (`setbg()`)
+  - `.config/AtiScriptsV1/ati-dm-setbg` (`setbg()`)
   - `.config/dmscripts/scripts/dm-setbg` (`reapply_wal()`)
   - `.config/qtile/popups/WallpaperPopup.py` (`apply_wallpaper()`, via
     the new `current_theme_mode()` helper in `popups/_wal_colors.py`)
@@ -694,7 +694,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 - **Fix:** bare URLs are first-class now and get a title derived from the
   URL itself. Retitling one promotes it to the markdown form.
 
-### Wallpaper picker (dm-setbg) lists nothing
+### Wallpaper picker (ati-dm-setbg) lists nothing
 - **Symptom:** empty menu, while every other wallpaper tool works fine.
 - **Root cause:** `setbg_dir="$HOME/Pictures/Wallpaper"` — singular. The
   directory is `~/Pictures/Wallpapers`, which is what the `wallpapers`

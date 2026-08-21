@@ -738,7 +738,7 @@ ShellRoot {
                     // `widgets=[]` — nothing. What it actually does is its
                     // Button1: `toggle_wallpaper_picker`, i.e. the popup in
                     // popups/WallpaperPopup.py. This bar had it opening a box
-                    // with one chip in it that ran `dm-setbg`, a rofi menu,
+                    // with one chip in it that ran `ati-dm-setbg`, a rofi menu,
                     // which is a different thing wearing the same key.
                     //
                     // Reported directly: "the ✖ chip should show the wal

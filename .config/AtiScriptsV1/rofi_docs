@@ -350,7 +350,7 @@ open_cheatsheet() {
 # The wallpaper picker lives inside qtile too (popups/WallpaperPopup.py), and
 # is reached the same way the cheatsheets are.
 #
-# This entry used to run `dm-setbg`, the OLD rofi-list picker, which is a
+# This entry used to run `ati-dm-setbg`, the OLD rofi-list picker, which is a
 # different program from the one the rest of the desktop uses -- the bar chip
 # and the mod+p,b chord both open the popup. So the one place that advertises
 # itself as the wallpaper entry point was the one place that did not open the

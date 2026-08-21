@@ -10,7 +10,7 @@ import "../common"
 // WHY IT EXISTS
 // -------------
 // The topbar's ✖ chip is qtile's `wallpaper_toggle`, whose Button1 is
-// `toggle_wallpaper_picker` — that popup. Under this bar it ran `dm-setbg`, a
+// `toggle_wallpaper_picker` — that popup. Under this bar it ran `ati-dm-setbg`, a
 // rofi menu, which is a different thing wearing the same key. Asked for
 // directly: "the ✖ chip should show the wal picker that was written as a
 // qtile popup — write one in Quickshell, same style, same working, and it

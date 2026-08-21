@@ -26,7 +26,7 @@
 #      AtiScriptsV1/theme-apply   reads it (WALL_LINK, ~line 145) in
 #                                 every theme mode, wal included
 #      hypr/scripts/wallpaper-sync.sh   reads it at login
-#      dm-setbg / the qtile WallpaperPopup   maintain it
+#      ati-dm-setbg / the qtile WallpaperPopup   maintain it
 #
 #  A picker that sets the wallpaper without updating it leaves the two
 #  sessions disagreeing about what is on screen, and the choice silently
