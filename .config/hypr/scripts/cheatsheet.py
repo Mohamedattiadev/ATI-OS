@@ -600,7 +600,7 @@ DOCS_SECTIONS = [
         ("every theme and its set size", "theme-wallpaper list"),
         ("bind the current image to a theme", "theme-wallpaper bind <theme> <img>"),
         ("hand a theme back to its set", "theme-wallpaper forget <theme>"),
-        ("rebuild the per-theme sets", "theme-wallpaper-fetch build --apply"),
+        ("rebuild the per-theme sets", "ati-theme-wallpaper-fetch build --apply"),
     ]),
 ]
 

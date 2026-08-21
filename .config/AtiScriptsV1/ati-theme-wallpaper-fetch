@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ============================================================
-#  theme-wallpaper-fetch — build a SET of real photographs per theme, by
+#  ati-theme-wallpaper-fetch — build a SET of real photographs per theme, by
 #  scoring candidates from the wallpaper repos rather than trusting the
 #  folder they came in.
 #
@@ -39,9 +39,9 @@
 #  scored, which is also what makes a later re-run reproducible.
 #
 #  Usage:
-#      theme-wallpaper-fetch scan   <srcdir>...   palette-cache the candidates
-#      theme-wallpaper-fetch report                score distribution per theme
-#      theme-wallpaper-fetch build  [--per-theme N] [--threshold X] [--apply]
+#      ati-theme-wallpaper-fetch scan   <srcdir>...   palette-cache the candidates
+#      ati-theme-wallpaper-fetch report                score distribution per theme
+#      ati-theme-wallpaper-fetch build  [--per-theme N] [--threshold X] [--apply]
 # ============================================================
 import argparse
 import hashlib
@@ -99,7 +99,7 @@ def candidate_images(srcdirs):
     OUT_DIR is skipped, and that is a bug fix rather than an optimisation.
     The natural way to run this is
 
-        theme-wallpaper-fetch scan <repos>… ~/Pictures/Wallpapers
+        ati-theme-wallpaper-fetch scan <repos>… ~/Pictures/Wallpapers
 
     because the user's own library is a legitimate source — and
     ~/Pictures/Wallpapers CONTAINS themed/, so the previous run's output is
@@ -462,7 +462,7 @@ def cmd_build(args):
     themes = load_themes()
     walls = all_palettes()
     if not walls:
-        sys.exit("no palettes cached — run `theme-wallpaper-fetch scan <dir>` first")
+        sys.exit("no palettes cached — run `ati-theme-wallpaper-fetch scan <dir>` first")
     table = scored_table(themes, walls)
 
     # ---- ONE IMAGE, ONE THEME ----
@@ -553,7 +553,7 @@ def cmd_build(args):
 
 
 def main():
-    ap = argparse.ArgumentParser(prog="theme-wallpaper-fetch")
+    ap = argparse.ArgumentParser(prog="ati-theme-wallpaper-fetch")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("scan")

@@ -107,7 +107,7 @@ measurements.
    while a theme is active *rebinds* that theme to it.
 2. **set** — `~/Pictures/Wallpapers/themed/<theme>/*`, drawn at random on
    every theme change, never repeating the previous pick. **25 images per
-   theme, all 21 themes.** Built by `theme-wallpaper-fetch`, which scores
+   theme, all 21 themes.** Built by `ati-theme-wallpaper-fetch`, which scores
    every candidate in CIELAB rather than trusting the folder it came in:
    a directory called "Nord" is not a nord wallpaper.
 
