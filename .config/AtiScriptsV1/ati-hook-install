@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# ati-hook-install <name> <file> — install a plugin script under a named
+# hook point. Copies <file> into ~/.config/AtiScriptsV1/hooks/<name>.d/
+# with the executable bit set, so it runs the next time `ati-hook <name>`
+# fires. Example: ati-hook-install post-update ~/my-post-update-check
+
+set -u
+
+if [[ $# -ne 2 ]]; then
+  echo "usage: ati-hook-install <name> <file>" >&2
+  exit 2
+fi
+name="$1" src="$2"
+
+if [[ ! -f "$src" ]]; then
+  echo "ati-hook-install: no such file: $src" >&2
+  exit 1
+fi
+
+dir="$HOME/.config/AtiScriptsV1/hooks/$name.d"
+mkdir -p "$dir"
+dst="$dir/$(basename "$src")"
+cp "$src" "$dst"
+chmod 755 "$dst"
+echo "installed $dst"

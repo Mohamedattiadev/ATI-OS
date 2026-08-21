@@ -148,3 +148,10 @@ brave-profiles
 
 # Private API keys. The .example template IS tracked; the real file never is.
 secrets.env
+
+# ati-hook plugins (see .config/AtiScriptsV1/hooks/README.md, which IS
+# tracked): per-machine extensions, not something this repo ships or owns.
+# A stranger's post-update script has no business landing in this repo's
+# history just because they ran ati-hook-install once.
+.config/AtiScriptsV1/hooks/*
+!.config/AtiScriptsV1/hooks/README.md

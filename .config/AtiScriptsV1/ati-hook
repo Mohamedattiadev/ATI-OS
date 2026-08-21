@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# ati-hook <name> [args...] — run a named extension point.
+#
+# Runs ~/.config/AtiScriptsV1/hooks/<name> if present, then every
+# executable file in ~/.config/AtiScriptsV1/hooks/<name>.d/ (skipping
+# *.sample), passing through any extra args to each. This is the whole
+# plugin mechanism: a script drops a file in hooks/<name>.d/ to extend a
+# named point (post-update, post-theme-apply, ...) without editing this
+# repo's own scripts. Mirrors Omarchy's omarchy-hook/omarchy-hook-install.
+#
+# A failing hook is logged and skipped, not fatal — one broken plugin
+# must not block the update/theme-apply/etc. it hooked into.
+
+set -u
+
+HOOKS_DIR="$HOME/.config/AtiScriptsV1/hooks"
+
+if [[ $# -lt 1 ]]; then
+  echo "usage: ati-hook <name> [args...]" >&2
+  exit 2
+fi
+name="$1"; shift
+
+run_hook() {
+  local f="$1"; shift
+  [[ -x "$f" ]] || return 0
+  if ! "$f" "$@"; then
+    echo "ati-hook: $name: $(basename "$f") failed (continuing)" >&2
+  fi
+}
+
+run_hook "$HOOKS_DIR/$name" "$@"
+
+if [[ -d "$HOOKS_DIR/$name.d" ]]; then
+  for f in "$HOOKS_DIR/$name.d"/*; do
+    [[ -e "$f" ]] || continue
+    [[ "$f" == *.sample ]] && continue
+    run_hook "$f" "$@"
+  done
+fi
+
+exit 0

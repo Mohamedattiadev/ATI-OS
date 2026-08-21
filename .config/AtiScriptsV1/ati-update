@@ -252,5 +252,9 @@ fi
 # outstanding stash to put back.
 trap - EXIT
 
+# Extension point: anything dropped in hooks/post-update.d/ runs here,
+# after everything else has settled. See ati-hook.
+command -v ati-hook >/dev/null 2>&1 && ati-hook post-update
+
 say ""
 ok "${B}Up to date.${Z}"

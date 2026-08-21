@@ -2424,3 +2424,8 @@ else
 fi
 notify-send -a "Theme" -u low -t 4000 -i preferences-desktop-theme \
   "$THEME_LABEL" "$NOTIFY_BODY" 2>/dev/null || true
+
+# Extension point: anything dropped in hooks/post-theme-apply.d/ runs
+# here, after every app has been retinted, with the mode name as $1. See
+# ati-hook.
+command -v ati-hook >/dev/null 2>&1 && ati-hook post-theme-apply "$MODE"
