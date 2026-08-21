@@ -15,7 +15,7 @@
 # by reading — it happens once, at login, before anything is watching, and by
 # the time you can ask a question the evidence is gone.
 #
-# One cause WAS found by reading and is fixed: adhkar notified before its
+# One cause WAS found by reading and is fixed: ati-adhkar notified before its
 # first sleep, so a remembrance card went out the moment autostart launched
 # it. The others could not be, and the guesses were all wrong when measured:
 #

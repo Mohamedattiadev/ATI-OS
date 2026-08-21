@@ -364,7 +364,7 @@ while True:
 #  Measured at the time of the report: this script was not running, its
 #  lock was free, and `workspace-layout.sh` — the other listener on this
 #  same socket, started by the same autostart.conf — was also dead. The
-#  two survivors in that file are `adhkar` and `battery-events`, and those
+#  two survivors in that file are `ati-adhkar` and `battery-events`, and those
 #  are precisely the two with a `sleep 40; pgrep -x ... || ...` re-check
 #  behind them. So the pattern that dies is "connect to socket2 once".
 #

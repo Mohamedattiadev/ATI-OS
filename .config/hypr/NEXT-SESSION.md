@@ -516,7 +516,7 @@ Recordings kept: `~/Pictures/island-debug/`.
 
 1. **The rest of the login notification burst.** "when i start the hyperland a
    lot of notifications appear, like 2-3 ones." ONE cause found and fixed:
-   `adhkar` notified before its first sleep, so a remembrance card went out
+   `ati-adhkar` notified before its first sleep, so a remembrance card went out
    the instant autostart launched it. The others could not be found by
    reading, and every guess was wrong under a live bus monitor — nm-applet,
    blueman-applet and kdeconnectd are all silent on restart, nm-applet's
@@ -848,7 +848,7 @@ Recordings kept: `~/Pictures/island-debug/`.
 Each has its own commit with the measurement in it: the island height glitch
 (above); `topbar.sh` refusing a second bar; the `◐` spinner family; the
 island's language readout; the topbar clock's tooltip carrying its own data;
-the panel border going round the flares; the idle timers; adhkar's first
+the panel border going round the flares; the idle timers; ati-adhkar's first
 fire. Before that: the four dead controls (Wi-Fi QR, `$alt 4` display,
 `$alt 5` calculator, Bluetooth); the TaskList's five markup states; the
 GroupBox's `box_width`/`spacing` and its wheel; passthrough's full shape

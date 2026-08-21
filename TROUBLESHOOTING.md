@@ -1432,8 +1432,8 @@ subsystem. Each entry: **symptom → root cause → fix**.
   `keycode 66 = Alt_L Caps_Lock Alt_L Caps_Lock` line above is the fix
   they will need again.
 
-### `adhkar` reminders behave oddly / bash-isms silently misfire
-- **Symptom:** the `adhkar` notifier autostarted by `autostart.sh` runs,
+### `ati-adhkar` reminders behave oddly / bash-isms silently misfire
+- **Symptom:** the `ati-adhkar` notifier autostarted by `autostart.sh` runs,
   but anything bash-specific in it is unreliable. No error is printed
   anywhere you would look.
 - **Root cause:** the file began with a **blank line before `#!/bin/bash`**.
@@ -3298,7 +3298,7 @@ something the dotfiles should decide.
   notifications. Also made an edited watcher script look like it had not
   changed at all, since old copies were still running.
 - **Root cause:** `autostart.sh` runs again on **every qtile restart**,
-  and `ati-keyboard-layout-watcher`, `adhkar` and `battery-events` were
+  and `ati-keyboard-layout-watcher`, `ati-adhkar` and `battery-events` were
   started with no guard — unlike the python daemons directly below them,
   which all use `pgrep … ||`. Every restart therefore left another copy
   running. Three keyboard watchers and six `battery-events` processes
