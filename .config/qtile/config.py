@@ -2863,7 +2863,7 @@ FILE_CHOOSER_H_RATIO = 0.74
 FILE_CHOOSER_W_MIN = _s(820)
 FILE_CHOOSER_H_MIN = _s(480)
 
-# Documentation viewer (rofi_docs opens README/TROUBLESHOOTING/nvim in
+# Documentation viewer (ati-docs opens README/TROUBLESHOOTING/nvim in
 # `kitty --class docs-view`). Larger than the file chooser because it holds
 # prose and code, but still inset so the desktop stays visible behind it --
 # reading a doc should not feel like leaving what you were doing.
@@ -3880,7 +3880,7 @@ def open_docs(qtile):
     # keybindings, 22 themes and a dozen custom tools has a discovery
     # problem, not a terminal-launching problem, so the most prominent
     # click in the bar now answers "what can this thing do".
-    set_icon_temporarily(qtile, "󰋗", "rofi_docs")
+    set_icon_temporarily(qtile, "󰋗", "ati-docs")
 
 
 # ╔────────────────────────────────────────────────────────────────╗
@@ -3943,7 +3943,7 @@ def auto_enable_draw(chord_name):
 
 
 # Entering CheatSheet-Mode always shows the qtile sheet. That is right when
-# the chord is entered from the keyboard, and wrong when rofi_docs asked
+# the chord is entered from the keyboard, and wrong when ati-docs asked
 # specifically for the vim or fish one -- the qtile sheet would flash up
 # first and then be replaced. This flag lets open_cheatsheet() suppress the
 # auto-show for exactly one chord entry.
@@ -3979,7 +3979,7 @@ def _find_chord(name, mappings=None):
 
 
 def open_cheatsheet(which="qtile"):
-    """Open a cheatsheet from outside qtile (rofi_docs calls this over IPC).
+    """Open a cheatsheet from outside qtile (ati-docs calls this over IPC).
 
     Replaying the key chord with xdotool -- the obvious approach -- cannot
     work here, and failed in three distinct ways:
@@ -4159,7 +4159,7 @@ def toggle_wallpaper_picker(qtile):
 
 
 def open_wallpaper_picker():
-    """Open the wallpaper picker from outside qtile (rofi_docs calls this
+    """Open the wallpaper picker from outside qtile (ati-docs calls this
     over IPC), the same way open_cheatsheet() opens a sheet.
 
     NOT toggle_wallpaper_picker(): that enters the chord with
@@ -9237,7 +9237,7 @@ floating_layout = layout.Floating(
         Match(wm_class="satty"),  # satty
         Match(wm_class="emacs"),  # emacs
         Match(title="link-preview"),  # preview of nvim (qutebrowser edit link)
-        # rofi_docs viewer: README / TROUBLESHOOTING / nvim, centred by
+        # ati-docs viewer: README / TROUBLESHOOTING / nvim, centred by
         # _float_and_center_docs. wm_class, not title, so the rule wins at
         # group.add() before the window can enter the tiling layout.
         Match(wm_class="docs-view"),

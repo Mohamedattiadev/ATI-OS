@@ -303,7 +303,7 @@ fi
 # fontconfig NEVER errors on a missing family. It substitutes, silently,
 # and on this system `fc-match` answers Noto Sans CJK KR for anything it
 # does not have -- a proportional face. Every padded column in this repo
-# (the cheatsheet key columns, the wifi/bluetooth rows, rofi_docs) is
+# (the cheatsheet key columns, the wifi/bluetooth rows, ati-docs) is
 # aligned with spaces, and spaces only align in a monospace font, so a
 # substituted family does not look like a missing font. It looks like the
 # layout code is broken.

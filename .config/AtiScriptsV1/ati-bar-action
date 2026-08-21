@@ -206,7 +206,7 @@ case "$key" in
   # ---- the picker's menus, one rofi script each ----
   "showPicker clipboard")     run ati-copyq-rofi ;;
   "showPicker anki")          run rofi_anki ;;
-  "showPicker documents")     run rofi_docs ;;
+  "showPicker documents")     run ati-docs ;;
   "showPicker translate")     run rofi_translator ;;
   "showPicker confedit")      run dm-confedit ;;
   "showPicker pass")          run ati-pass ;;
@@ -250,7 +250,7 @@ case "$key" in
   #
   # `docs` is the one exception, and it is not an oversight in the rule
   # above — it is a second surface pointing at the same content. topbar's
-  # logo chip already opens `rofi_docs` on left-click (see topbar's own
+  # logo chip already opens `ati-docs` on left-click (see topbar's own
   # shell.qml, "ROFI, NOT THE ISLAND'S PANELS"), and that menu's
   # Documentation/Troubleshooting/Keybindings sections are the native-mode
   # answer to what the island's "docs" cheatsheet shows. Routing this key
@@ -258,7 +258,7 @@ case "$key" in
   # docs surfaces on two different triggers — the chip's click and this
   # chord — asked to stop being two: "make it open the rofi which is in
   # the windowchip", so the chord now opens exactly what the chip does.
-  "showCheatsheet docs")      run rofi_docs ;;
+  "showCheatsheet docs")      run ati-docs ;;
   showCheatsheet*)            run_popup_arg cheatsheet "${arg:-hypr}" ;;
 
   # ---- the three qtile POPUPS ----

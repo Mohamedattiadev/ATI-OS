@@ -247,7 +247,7 @@ rofi_input_secret() {
 #
 # Every rofi menu here had grown its own idea of what the strip under the
 # prompt is for. ati-kill and rofi_todo listed keybindings in bold;
-# rofi_light showed a value; rofi_docs explained navigation; theme-toggle
+# rofi_light showed a value; ati-docs explained navigation; theme-toggle
 # and ui-scale-toggle had no footer at all, so the two menus that CHANGE
 # THE WHOLE DESKTOP were also the two that said nothing about what Enter
 # was about to do. Same markup, same separator, same order everywhere now:

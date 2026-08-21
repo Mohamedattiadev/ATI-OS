@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# rofi_docs — the system documentation menu, behind the bar's logo chip.
+# ati-docs — the system documentation menu, behind the bar's logo chip.
 #
 # Left-clicking the logo used to open a terminal, which four other bindings
 # already do. A desktop with eighty-odd keybindings, 22 themes and well over a
@@ -874,7 +874,7 @@ sec_espanso() {
 
   # Reading /etc/environment needs no privilege -- it is 0644, because
   # pam_env has to read it as every user at login. The `sudo grep` this
-  # used to run was pure downside: rofi_docs is spawned from the bar with
+  # used to run was pure downside: ati-docs is spawned from the bar with
   # no controlling terminal, so on a host where the sudo timestamp has
   # expired that grep cannot prompt and simply fails, and EVERY variable
   # was then reported missing. sudo is kept for the WRITE below, which
@@ -946,11 +946,14 @@ sec_espanso() {
         # it), so a sudo password prompt had nowhere to appear and the
         # append silently did nothing.
         local scaffold="" sf
-        if [[ -n "${missing// /}" ]] && ! grep -q 'added by rofi_docs' "$envfile" 2>/dev/null; then
+        # Matches both markers: files scaffolded before the rofi_docs ->
+        # ati-docs rename still carry the old one, and re-running the old
+        # grep here would stop matching them and re-append the whole block.
+        if [[ -n "${missing// /}" ]] && ! grep -qE 'added by (rofi_docs|ati-docs)' "$envfile" 2>/dev/null; then
           sf="$(mktemp --suffix=.env)"
           {
             echo ""
-            echo "# --- espanso snippet variables (added by rofi_docs) ---"
+            echo "# --- espanso snippet variables (added by ati-docs) ---"
             echo "# Fill in the value after '=' and remove the leading '#'."
             echo "# Snippets that use an unset variable expand to nothing."
             # /^$/d first. $missing is accumulated as "NAME"$'\n' per entry, so
@@ -1129,5 +1132,5 @@ case "${1:-}" in
   # editing three lines into the header silently truncated --help mid-sentence.
   --help|-h)   awk 'NR>1 && /^#/ && !/^# NOTE:/ { sub(/^# ?/, ""); print; next }
                     NR>1 { exit }' "$0" ;;
-  *) echo "rofi_docs: unknown section '$1'" >&2; exit 2 ;;
+  *) echo "ati-docs: unknown section '$1'" >&2; exit 2 ;;
 esac

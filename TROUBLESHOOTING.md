@@ -358,7 +358,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 - **Symptom:** on a fresh install, the qtile bar, every qtile popup and
   the notifications come up in a wrong-looking proportional face, and
   every column that was supposed to line up is ragged — the cheatsheet
-  key columns, the wifi/bluetooth rows, `rofi_docs`. Nothing errors and
+  key columns, the wifi/bluetooth rows, `ati-docs`. Nothing errors and
   no log line mentions fonts. It reads like the layout code is broken.
 - **Root cause:** **fontconfig never errors on a missing family.** It
   substitutes, silently, and on this system `fc-match` answers Noto Sans
@@ -2675,7 +2675,7 @@ should come up cleanly.
   **folds** it into the user's existing `~/.claude` instead of skipping
   it, mixing repo state into global config.
 - **Fix:** the root prose and `.claude` are in `.stow-local-ignore` now.
-  Nothing ever read those files from `$HOME` anyway — `rofi_docs` opens
+  Nothing ever read those files from `$HOME` anyway — `ati-docs` opens
   them out of `$DOTFILES`. `stow_script.sh` also folds
   `.stow-local-ignore`'s entries into its own backup ignore list, so it
   cannot "back up" (i.e. move) a file stow was never going to link in the
