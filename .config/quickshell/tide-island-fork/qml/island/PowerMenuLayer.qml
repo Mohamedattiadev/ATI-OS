@@ -38,10 +38,10 @@ import "../common"
 // The commands live in hypr/scripts/power-ctl.sh, one to a line, and that
 // file records the two options that could not port verbatim: `betterlockscreen`
 // is X11-only so lock goes through `loginctl lock-session` like $mod SHIFT X,
-// and `reset_PC` — which kills twenty applications and restarts qtile — is
+// and `ati-reset-pc` — which kills twenty applications and restarts qtile — is
 // not what "Refresh" runs any more. It was ported to `refresh`/`hyprctl
-// reload` first (like $mod SHIFT R) because reset_PC verbatim would have
-// done harm under Wayland; `hardreset` is reset_PC's actual behaviour,
+// reload` first (like $mod SHIFT R) because ati-reset-pc verbatim would have
+// done harm under Wayland; `hardreset` is ati-reset-pc's actual behaviour,
 // ported properly afterwards as its own row, adapted app-kill-and-restart
 // script under Hyprland (hypr/scripts/reset-pc.sh) and the genuine script
 // unchanged under X11. Both were read before being replaced or added.

@@ -27,7 +27,7 @@
 #      idle-locking and menu-locking go through one path and cannot
 #      disagree.
 #
-#   2. REFRESH. dm-logout runs ~/.config/AtiScriptsV1/reset_PC as its single
+#   2. REFRESH. dm-logout runs ~/.config/AtiScriptsV1/ati-reset-pc as its single
 #      "Refresh the PC" row. Read before porting it, and it is not a config
 #      reload: it pkill -TERM then pkill -KILL's 20 named applications
 #      (browsers, terminals, editors, Obsidian, Anki, mpv...), restarts
@@ -42,10 +42,10 @@
 #      Instead the one dm-logout row became TWO here. `refresh` runs
 #      `hyprctl reload`, which binds.conf already documents at $mod SHIFT R:
 #      "Hyprland reloads config without touching windows at all, which is
-#      strictly better" — the light half of what reset_PC gave you.
-#      `hardreset` is the actual app-killing, service-restarting reset_PC
+#      strictly better" — the light half of what ati-reset-pc gave you.
+#      `hardreset` is the actual app-killing, service-restarting ati-reset-pc
 #      behaviour, ported rather than dropped: hypr/scripts/reset-pc.sh
-#      under Wayland, the genuine reset_PC still under X11. See that
+#      under Wayland, the genuine ati-reset-pc still under X11. See that
 #      script's header for the adaptation, step by step.
 #
 # The other four (logout, reboot, shutdown, suspend) are byte-for-byte what
@@ -86,7 +86,7 @@ set -euo pipefail
 #            equivalent, and the one its config already binds to mod+shift+r,
 #            is reload_config over its IPC.
 #
-#   hardreset  the genuine reset_PC script under X11 — dm-logout's own
+#   hardreset  the genuine ati-reset-pc script under X11 — dm-logout's own
 #            "Refresh the PC" target, unchanged — versus its Wayland-safe
 #            rewrite, hypr/scripts/reset-pc.sh, under Hyprland.
 #
@@ -123,13 +123,13 @@ command_for() {
         fi
         ;;
     hardreset)
-        # The real reset_PC port — see hypr/scripts/reset-pc.sh's header for
+        # The real ati-reset-pc port — see hypr/scripts/reset-pc.sh's header for
         # why this is a separate row from `refresh` rather than what
-        # `refresh` runs: reset_PC kills apps and restarts services, which
+        # `refresh` runs: ati-reset-pc kills apps and restarts services, which
         # `hyprctl reload`/reload_config deliberately do not. X11 still has
         # the genuine article; Wayland gets its adapted twin.
         if on_x11; then
-            printf '%s/AtiScriptsV1/reset_PC' "$HOME/.config"
+            printf '%s/AtiScriptsV1/ati-reset-pc' "$HOME/.config"
         else
             printf '%s/hypr/scripts/reset-pc.sh' "$HOME/.config"
         fi
@@ -154,7 +154,7 @@ list_actions() {
     if on_x11; then
         lock_detail='betterlockscreen -l'
         refresh_detail='qtile reload_config'
-        hardreset_detail='~/.config/AtiScriptsV1/reset_PC'
+        hardreset_detail='~/.config/AtiScriptsV1/ati-reset-pc'
     else
         lock_detail='loginctl lock-session → hyprlock'
         refresh_detail='hyprctl reload'

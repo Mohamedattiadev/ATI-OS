@@ -7293,14 +7293,14 @@ keys = [
         lazy.spawn("ati-voice-dictate"),
         desc="Start/stop batch voice dictation (whisper.cpp -> xdotool type)",
     ),
-    # --- refresh PC (reset_PC script) ---
+    # --- refresh PC (ati-reset-pc script) ---
     Key(
         [mod, "shift"],
         "F5",
         lazy.spawn(
-            'sh -c \'notify-send "Qtile" "Refreshing PC…" && ~/.config/AtiScriptsV1/reset_PC\''
+            'sh -c \'notify-send "Qtile" "Refreshing PC…" && ~/.config/AtiScriptsV1/ati-reset-pc\''
         ),
-        desc="Refresh PC (reset_PC)",
+        desc="Refresh PC (ati-reset-pc)",
     ),
     # --- remap the alt key ---
     Key(

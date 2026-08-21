@@ -227,8 +227,8 @@ esac
 
 hardresetcmd="$($HOME/.config/hypr/scripts/power-ctl.sh --dry-run hardreset 2>/dev/null)"
 case "$hardresetcmd" in
-  *reset_PC) ok "power menu hard reset targets the real reset_PC ($hardresetcmd)" ;;
-  *) bad "power menu hard reset targets the real reset_PC" "got: ${hardresetcmd:-nothing}" ;;
+  *ati-reset-pc) ok "power menu hard reset targets the real ati-reset-pc ($hardresetcmd)" ;;
+  *) bad "power menu hard reset targets the real ati-reset-pc" "got: ${hardresetcmd:-nothing}" ;;
 esac
 
 grep -q 'hypr/scripts/qdrop.sh' "$HOME/.config/qtile/config.py" \

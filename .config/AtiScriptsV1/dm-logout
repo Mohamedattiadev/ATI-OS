@@ -78,7 +78,7 @@ main() {
   'Refresh the PC')
     if [[ "$(echo -e "No\nYes" | ${MENU} "${choice}?")" == "Yes" ]]; then
       notify-send "Qtile" "Refreshing session…"
-      ~/.config/AtiScriptsV1/reset_PC &
+      ~/.config/AtiScriptsV1/ati-reset-pc &
     else
       output "User cancelled refresh." && exit 0
     fi

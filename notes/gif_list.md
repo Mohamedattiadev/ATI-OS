@@ -193,7 +193,7 @@ are worth more than the list was.
 | `collector_app.py` | **Deleted.** It could not run: imported nowhere, the `it.mijorus.collector` flatpak is not installed, and the `_collector` group it parks its window in is not defined in `config.py`. In git history if it is ever wanted. |
 
 Two earlier claims in this file were wrong, and are corrected above and in
-the git log: `reset_PC` (`Mod+Shift+F5`) and `sum_app.py` (`Mod+Shift+S`)
+the git log: `ati-reset-pc` (`Mod+Shift+F5`) and `sum_app.py` (`Mod+Shift+S`)
 were never orphans — both are invoked through a path or a helper rather
 than by bare name, which is what a search for the bare name misses.
 

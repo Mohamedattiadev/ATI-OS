@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# reset-pc.sh — the Hyprland side of qtile's reset_PC hard reset.
+# reset-pc.sh — the Hyprland side of qtile's ati-reset-pc hard reset.
 #
-# qtile's mod+shift+F5 runs ~/.config/AtiScriptsV1/reset_PC: pkill -TERM
+# qtile's mod+shift+F5 runs ~/.config/AtiScriptsV1/ati-reset-pc: pkill -TERM
 # then pkill -KILL a list of apps, wmctrl -k every remaining window,
 # restart pipewire/pipewire-pulse/wireplumber/dunst/picom/warpd, restart
 # qtile itself (which is qtile's bar and widgets too), and re-run
@@ -9,13 +9,13 @@
 #
 # power-ctl.sh's "refresh" row already covers the LIGHT half of that — see
 # its header comment — by running `hyprctl reload`, which was chosen there
-# over reset_PC because reset_PC would do harm under Wayland: restart a
+# over ati-reset-pc because ati-reset-pc would do harm under Wayland: restart a
 # compositor (picom) that does not exist here, and re-run an X11
 # autostart.sh on top of a Wayland session. This script is the other half —
 # the actual app-killing hard reset, ported rather than dropped — adapted
-# wherever reset_PC's steps do not carry over one for one:
+# wherever ati-reset-pc's steps do not carry over one for one:
 #
-#   apps      byte-for-byte the same list reset_PC kills. None of it is
+#   apps      byte-for-byte the same list ati-reset-pc kills. None of it is
 #             X11-specific, so nothing here needed changing.
 #
 #   windows   wmctrl does not see Wayland surfaces at all. `hyprctl clients
@@ -91,7 +91,7 @@ if command -v hyprctl >/dev/null && command -v jq >/dev/null; then
 fi
 
 # --------------------------------------------------
-# 4. Restart the services that carry over from reset_PC (Lv2)
+# 4. Restart the services that carry over from ati-reset-pc (Lv2)
 # --------------------------------------------------
 SYSTEMD_SERVICES=(
   pipewire
