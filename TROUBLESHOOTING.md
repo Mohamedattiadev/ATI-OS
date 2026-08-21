@@ -1766,7 +1766,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   `~/.local/share/hintium` and symlinks its entry points.
 - **Fix:** `shutil.which("hintium-hint")` first, with the checkout path
   kept only as a fallback — the same which-then-fall-back shape
-  `_rescale_then_restart` already uses for ui-scale — *and* a wizard
+  `_rescale_then_restart` already uses for ati-ui-scale — *and* a wizard
   module that makes `which()` succeed.
 - **Check it:** `hintium --doctor`. It verifies every library, typelib
   and browser flag, and prints the command to fix whatever is missing.

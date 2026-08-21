@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ui-scale-toggle — rofi picker for the UI scale factor. Active one is ●.
 #
-# `ui-scale` detects a factor from the display's real DPI, and that is
+# `ati-ui-scale` detects a factor from the display's real DPI, and that is
 # right most of the time. This exists for when it is not: "the formula
 # disagrees with my eyes" is a legitimate outcome, and the fix has to be
 # two clicks rather than an edit to a 5000-line qtile config.
@@ -21,7 +21,7 @@ source "$(dirname "$(readlink -f "$0")")/rofi_common.sh"
 
 SCALE_FILE="$HOME/.cache/qtile/ui_scale"
 PIN_FILE="$HOME/.cache/qtile/ui_scale.pinned"
-UI_SCALE_BIN="$(command -v ui-scale || echo "$HOME/.dotfiles/.config/AtiScriptsV1/ui-scale")"
+UI_SCALE_BIN="$(command -v ati-ui-scale || echo "$HOME/.dotfiles/.config/AtiScriptsV1/ati-ui-scale")"
 
 CURRENT="1.00"
 [[ -f "$SCALE_FILE" ]] && CURRENT="$(cat "$SCALE_FILE")"
@@ -80,7 +80,7 @@ NEW="$(cat "$SCALE_FILE" 2>/dev/null || echo 1.00)"
 
 # Reload rather than restart: reload_config re-reads the config (picking up
 # the new _s() results) without tearing down windows. Xft.dpi is already
-# merged by ui-scale, but GTK/Qt apps only read it at startup, so say so
+# merged by ati-ui-scale, but GTK/Qt apps only read it at startup, so say so
 # instead of letting the user think it half-worked.
 if command -v qtile >/dev/null 2>&1; then
   qtile cmd-obj -o cmd -f reload_config >/dev/null 2>&1 || true

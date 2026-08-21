@@ -176,7 +176,7 @@ session, for that specific clip.
 | shared link preview / youtube menu | `Super+P , Z` / `Super+P , Y` | Reads the owner's clipboard and browsing history. |
 | tray contents | `Alt+Tab` | The systray shows the owner's running apps. The `widgetbox-systray.gif` row is conditional on the nested tray being empty or seeded with throwaway apps only. |
 | clock tooltip — prayer + FX values | hover `w_clock` | The *feature* is fine to record and is P1 above; the **values** are not. `prayer_next.sh` defaults to `PRAYER_CITY`/`PRAYER_COUNTRY` (Cairo / Egypt) and `fx_rates.sh` quotes USD/EUR in TRY and EGP — together those disclose where the owner lives and which currencies they care about. Shoot `clock-tooltip.gif` with **neutral values overridden in the nest's environment**, so the behaviour is honest and the setup is not. Do not crop the values out and call it done: a tooltip with its content removed shows nothing. |
-| ui-scale | `ui-scale-toggle` (no keybinding — command only) | Changes the live session's scale and restarts qtile. The effect is a before/after pair of stills, not a clip. |
+| ati-ui-scale | `ui-scale-toggle` (no keybinding — command only) | Changes the live session's scale and restarts qtile. The effect is a before/after pair of stills, not a clip. |
 
 ---
 

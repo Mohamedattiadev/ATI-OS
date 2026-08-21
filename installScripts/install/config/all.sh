@@ -69,19 +69,19 @@ step_paths() {
 
 
 step_ui_scale() {
-  # Runs AFTER ati-scripts, which is what puts ui-scale on PATH.
+  # Runs AFTER ati-scripts, which is what puts ati-ui-scale on PATH.
   #
   # Every pixel value in the qtile config was tuned on a 1366x768 14"
   # panel. Without this the bar is a sliver of unreadable text on a 4K
   # laptop -- the one axis these dotfiles cannot keep identical by copying
   # files, because the right answer depends on the glass.
   local bin
-  bin="$(command -v ui-scale || echo "$DOTFILES_DIR/.config/AtiScriptsV1/ui-scale")"
-  [[ -x "$bin" ]] || { _WARN "ui-scale not found — run the ati-scripts module first"; return 0; }
+  bin="$(command -v ati-ui-scale || echo "$DOTFILES_DIR/.config/AtiScriptsV1/ati-ui-scale")"
+  [[ -x "$bin" ]] || { _WARN "ati-ui-scale not found — run the ati-scripts module first"; return 0; }
   if [[ -z "${DISPLAY:-}" ]]; then
     # xrandr needs an X server. During a TTY install there is none yet, so
     # defer rather than write a wrong factor: .xinitrc runs it at login.
-    _OK "no X session yet — ui-scale will run from .xinitrc on first startx"
+    _OK "no X session yet — ati-ui-scale will run from .xinitrc on first startx"
     return 0
   fi
   run "$bin"
@@ -157,10 +157,10 @@ export QT_QPA_PLATFORMTHEME=qt6ct
 export XCURSOR_SIZE=24
 export XCURSOR_THEME=breeze_cursors
 # Size the UI to whatever display is actually attached, BEFORE xrdb merges
-# .Xresources (ui-scale writes Xft.dpi into it) and before qtile reads
+# .Xresources (ati-ui-scale writes Xft.dpi into it) and before qtile reads
 # ~/.cache/qtile/ui_scale. Docking to an external monitor between sessions
 # changes the answer, so this runs every login rather than once at install.
-command -v ui-scale >/dev/null 2>&1 && ui-scale >/dev/null 2>&1
+command -v ati-ui-scale >/dev/null 2>&1 && ati-ui-scale >/dev/null 2>&1
 [ -f "$HOME/.Xresources" ] && xrdb -merge "$HOME/.Xresources"
 command -v xsetroot >/dev/null 2>&1 && xsetroot -cursor_name left_ptr
 xset s off -dpms

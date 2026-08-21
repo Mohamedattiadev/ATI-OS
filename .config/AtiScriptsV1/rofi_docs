@@ -1041,7 +1041,7 @@ sec_system() {
           printf '## Outputs and modes\n\n'
           panel_block "" "$(xrandr --current 2>&1 | grep -E ' connected|\*')"
           printf '\n## UI scale\n\n'
-          panel_block "" "$(ui-scale --show 2>&1)"
+          panel_block "" "$(ati-ui-scale --show 2>&1)"
           printf '\n## Graphics driver\n\n'
           panel_block "" "$(lspci -k 2>/dev/null | grep -A3 -E 'VGA|3D')"
         )"

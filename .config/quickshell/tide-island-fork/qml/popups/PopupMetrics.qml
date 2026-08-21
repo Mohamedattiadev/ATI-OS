@@ -18,7 +18,7 @@ import Quickshell.Io
 // These popups are not island surfaces. They are reimplementations of
 // popups/*.py, whose every dimension goes through popups/_scale.py — which
 // reads ~/.cache/qtile/ui_scale, the per-machine DPI factor AtiScriptsV1's
-// ui-scale writes. Sizing them by 0.92 would be applying the island's
+// ati-ui-scale writes. Sizing them by 0.92 would be applying the island's
 // correction to numbers that were never drawn against the island.
 //
 // So this reads the same file config.py's `_s()` reads, applies the same

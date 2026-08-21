@@ -84,11 +84,11 @@ from libqtile.lazy import lazy
 # and nothing warns you: the desktop just looks wrong on the one axis
 # these dotfiles are supposed to keep identical across machines.
 #
-# `ui-scale` (AtiScriptsV1) computes a factor from the primary display's
+# `ati-ui-scale` (AtiScriptsV1) computes a factor from the primary display's
 # real DPI and writes it here. It is per-machine and untracked, so the
 # repo stays identical while the rendering adapts. A missing file means
 # 1.0, which is exactly the reference machine's behaviour -- so qtile
-# still starts correctly if ui-scale has never been run.
+# still starts correctly if ati-ui-scale has never been run.
 def _load_ui_scale():
     try:
         with open(os.path.expanduser("~/.cache/qtile/ui_scale")) as f:
@@ -259,7 +259,7 @@ mod2 = "mod1"  # Secondary mod = ALT
 # client into ~/.local/bin like every other tool here, all six alt+ bindings
 # and the whole Hint-Mode chord spawned a path that does not exist. lazy.spawn
 # does not surface that: the key just does nothing. Same
-# shutil.which()-then-fall-back shape _rescale_then_restart uses for ui-scale.
+# shutil.which()-then-fall-back shape _rescale_then_restart uses for ati-ui-scale.
 import shutil as _shutil  # noqa: E402  (kept next to its only use)
 
 HINTIUM = _shutil.which("hintium-hint") or os.path.expanduser(
@@ -3275,13 +3275,13 @@ def _rescale_then_restart(q):
     """Re-derive the UI scale for the new display set, then restart.
 
     UI_SCALE is read once, at config import, from ~/.cache/qtile/ui_scale --
-    and nothing wrote that file except a manual `ui-scale` run or the rofi
+    and nothing wrote that file except a manual `ati-ui-scale` run or the rofi
     picker. So docking a 1366x768 laptop to a 4K monitor restarted qtile
     (below) and rebuilt every bar at the LAPTOP's scale: a sliver of a bar
     with unreadable text on the display you just plugged in, until you
     remembered the command. Undocking had the mirror-image problem.
 
-    A pinned scale is safe: ui-scale reads ~/.cache/qtile/ui_scale.pinned
+    A pinned scale is safe: ati-ui-scale reads ~/.cache/qtile/ui_scale.pinned
     first and a pin always wins, so "the formula disagrees with my eyes"
     still survives a hotplug.
 
@@ -3295,8 +3295,8 @@ def _rescale_then_restart(q):
     try:
         import shutil
 
-        exe = shutil.which("ui-scale") or os.path.expanduser(
-            "~/.dotfiles/.config/AtiScriptsV1/ui-scale"
+        exe = shutil.which("ati-ui-scale") or os.path.expanduser(
+            "~/.dotfiles/.config/AtiScriptsV1/ati-ui-scale"
         )
         if os.path.exists(exe):
             subprocess.run(

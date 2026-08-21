@@ -34,10 +34,10 @@ import os
 
 
 def _load_ui_scale():
-    """The factor `ui-scale` (AtiScriptsV1) computed for this display.
+    """The factor `ati-ui-scale` (AtiScriptsV1) computed for this display.
 
     A missing file means 1.0, which is exactly the reference machine's
-    behaviour, so the popups still render correctly if ui-scale has never
+    behaviour, so the popups still render correctly if ati-ui-scale has never
     been run.
     """
     # QTILE_UI_SCALE_FORCE exists for the cheatsheet selftest, which

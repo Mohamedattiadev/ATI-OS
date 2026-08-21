@@ -185,7 +185,7 @@ _wait_device() {
 #
 # Sized from the LIVE phone and screen, not from constants: the aspect
 # differs per handset, and these dotfiles run on panels from 1366x768 up
-# (see ui-scale). qtile's own screen/bar objects are the authority on
+# (see ati-ui-scale). qtile's own screen/bar objects are the authority on
 # what "usable" means here -- reading the bar's real height is what keeps
 # the window clear of it whether the bar is on top or bottom today.
 
