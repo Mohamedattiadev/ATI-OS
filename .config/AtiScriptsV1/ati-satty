@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Script name: dm-satty
+# Script name: ati-satty
 # Description: Take screenshots, with optional editing in satty
 # Dependencies: rofi, satty, and ONE of the two backends below
 #   X11:      maim, xdotool, xrandr, xclip

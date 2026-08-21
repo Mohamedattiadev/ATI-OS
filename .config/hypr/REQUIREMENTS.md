@@ -1140,10 +1140,10 @@ session.
 
 ##### Screen capture: the X11 tools, and what actually replaced them
 
-The outstanding list has been carrying "`dm-satty` uses `maim`/`xdotool`/
+The outstanding list has been carrying "`ati-satty` uses `maim`/`xdotool`/
 `xclip` — X11 tools that produce BLACK output under Wayland". That is
 still true of the file, and it is now **irrelevant to this session**:
-`dm-satty` is not reachable from any Hyprland bind. It was not wrapped, it
+`ati-satty` is not reachable from any Hyprland bind. It was not wrapped, it
 was rewritten. `$mod P` → `i` opens the picker's screenshot menu, which is
 `grim` for the capture, `slurp` for the rectangle, `hyprctl` for the active
 window's geometry, `wl-copy` for the clipboard, and satty unchanged
@@ -1151,7 +1151,7 @@ because satty is Wayland-native already. `Print` on its own is a direct
 `grim -g "$(slurp …)" | wl-copy`. Both verified present in
 `hyprctl binds -j` with the command fully expanded.
 
-`dm-satty` stays on disk because the qtile session still uses it. The
+`ati-satty` stays on disk because the qtile session still uses it. The
 correct record is that it is X11-only *and unreachable from here*, not
 that it is a Hyprland bug waiting to bite.
 
@@ -1627,7 +1627,7 @@ two-thirds ported with no explanation, and so nobody re-opens it as a gap.
 
 | | why |
 |---|---|
-| `dm-satty`'s X11 tools | **superseded.** Rewritten, not wrapped: the picker's screenshot menu is grim + slurp + hyprctl + wl-copy + satty. `dm-satty` is unreachable from any Hyprland bind and stays on disk for the qtile session |
+| `ati-satty`'s X11 tools | **superseded.** Rewritten, not wrapped: the picker's screenshot menu is grim + slurp + hyprctl + wl-copy + satty. `ati-satty` is unreachable from any Hyprland bind and stays on disk for the qtile session |
 | `qdrop.py` / `qdrop_watch.py` | **superseded** by special workspaces |
 | "leave the launcher problems on rofi" | **superseded as policy.** The chord is the island's picker on every key but ONE (`v`, rofi_ilovepdf), plus `theme-toggle` and `phone_screen`. `rofi_anki` was the last wizard to move, and what decided it was not the launcher/popup split at all — see item 3 |
 | Per-state layout vs the reference video | **abandoned as a test, not as work.** I cannot see video frames and never could. DESIGN-SPEC.md — a transcript of the author narrating his own numbers — is matched everywhere it gives a number. Where it gives only a description this is a judgement call that has been made. Calling it "open" implies an unrun test; there is none |

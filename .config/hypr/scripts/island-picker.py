@@ -1139,9 +1139,9 @@ def _split(item_id, count=2):
 
 # ------------------------------------------------------------ screenshot --
 #
-#  dm-satty, rewritten for Wayland rather than wrapped.
+#  ati-satty, rewritten for Wayland rather than wrapped.
 #
-#  The wrap was never possible: dm-satty is maim + xdotool + xrandr + xclip,
+#  The wrap was never possible: ati-satty is maim + xdotool + xrandr + xclip,
 #  four X11 tools, and it asks xrandr for the monitor list. Under Hyprland
 #  every one of those talks to XWayland, which is not the compositor. The
 #  measurement that settles it is in the `record` note below — an X11 grab of
@@ -1150,11 +1150,11 @@ def _split(item_id, count=2):
 #
 #  So: grim for the capture, slurp for the rectangle, hyprctl for the active
 #  window's geometry, wl-copy for the clipboard. satty is unchanged; it is
-#  Wayland-native already and dm-satty's --output-filename fix is kept.
+#  Wayland-native already and ati-satty's --output-filename fix is kept.
 #
 #  WHAT WAS DROPPED, AND WHY IT CAME BACK
 #  --------------------------------------
-#  This port originally dropped two of dm-satty's steps, and the arguments
+#  This port originally dropped two of ati-satty's steps, and the arguments
 #  for dropping them were about the SHUTTER. Both were beside the point.
 #
 #  * The delay prompt (0-5 s) was dropped because the island's panel is gone
@@ -1168,16 +1168,16 @@ def _split(item_id, count=2):
 #    prompt text.
 #  * The per-monitor rows were dropped because this machine has one monitor.
 #    Restored CONDITIONALLY: they appear only when the compositor reports
-#    more than one output, which is dm-satty's behaviour on a single-head
+#    more than one output, which is ati-satty's behaviour on a single-head
 #    machine as well (xrandr lists one, the row is the same answer as
 #    "Fullscreen"). `grim -o <name>` is the capture.
 #
-#  THE LABELS ARE dm-satty'S, VERBATIM
+#  THE LABELS ARE ati-satty'S, VERBATIM
 #  -----------------------------------
 #  "Fullscreen" / "Active window" / "Selected region" / "Fullscreen (edit
 #  with satty)" / "Selected region (edit with satty)", in that order, then
 #  "Delay (in seconds):" 0-5, then "File" / "Clipboard" / "Both". The page
-#  titles are dm-satty's rofi PROMPTS, colon and all, for the same reason.
+#  titles are ati-satty's rofi PROMPTS, colon and all, for the same reason.
 #  Do not improve this wording. It is an interface to a person's hands, and
 #  the first port rewrote every string in it — "Save to file" for "File",
 #  "Copy to clipboard" for "Clipboard", "Edit in satty" as a fourth
@@ -1193,7 +1193,7 @@ _SHOT_AREAS = {
     "window": "Active window",
 }
 
-#  dm-satty prompts for the delay with `seq 0 5`, and treats anything
+#  ati-satty prompts for the delay with `seq 0 5`, and treats anything
 #  non-numeric as none. There is no non-numeric row here, so 0 is the none.
 _SHOT_DELAYS = range(0, 6)
 
@@ -1201,7 +1201,7 @@ _SHOT_DELAYS = range(0, 6)
 def _shot_monitors():
     """Extra area rows, one per output, or [] on a single-head machine.
 
-    dm-satty's rows are `xrandr --listactivemonitors`; under Wayland these
+    ati-satty's rows are `xrandr --listactivemonitors`; under Wayland these
     are the compositor's own, the only list that is true there. Under X11
     xrandr already IS the true list — see `_x11_monitors`.
     """
@@ -1362,7 +1362,7 @@ def _shot_capture(area, geometry, delay):
     True when `capture` already accounts for the chosen delay itself, so
     the caller must not sleep for it a second time.
 
-    WAYLAND: the delay goes in `prefix` for a region, because dm-satty ran
+    WAYLAND: the delay goes in `prefix` for a region, because ati-satty ran
     `maim -s --delay=N` and maim takes the selection FIRST and delays
     after it, so the rectangle is drawn immediately and the shutter is
     what waits. A `sleep N; slurp` would invert that and make the delay
@@ -1407,7 +1407,7 @@ def _shot_capture(area, geometry, delay):
 
 
 def screenshot_run(item_id):
-    """The three dm-satty steps, in dm-satty's order.
+    """The three ati-satty steps, in ati-satty's order.
 
     `area:<area>:<edit>` → the delay page
     `delay:<area>:<edit>:<n>` → the destination page, or straight to satty
@@ -1434,7 +1434,7 @@ def screenshot_run(item_id):
     if kind == "delay":
         area, edit, geometry, delay = _split(rest, 4)
         carry = "%s:%s:%s:%s" % (area, edit, geometry, delay)
-        # dm-satty prompts for the delay BEFORE branching on satty, and the
+        # ati-satty prompts for the delay BEFORE branching on satty, and the
         # satty branch never reaches the Destination prompt — its
         # destination is the editor. Same shape here.
         if edit == "satty":
@@ -1495,7 +1495,7 @@ def _shot_fire(area, geometry, delay, dest):
                 capture, quoted_out, quoted_out, quoted_out)
     elif dest == "satty":
         temp = shlex.quote(os.path.join(RUNTIME, "island-satty-%s.png" % _stamp()))
-        # dm-satty's own comment records that every annotation it ever made
+        # ati-satty's own comment records that every annotation it ever made
         # was discarded, because satty was started without --output-filename
         # and the script then moved the UNEDITED capture into place. The fix
         # is carried over rather than rediscovered.

@@ -47,7 +47,7 @@ fi
 
 # Set wallpaper using either xwallpaper or swaybf
 setbg() {
-  # Defaulted rather than read bare -- the same fix dm-satty carries. Under
+  # Defaulted rather than read bare -- the same fix ati-satty carries. Under
   # `set -u` an unset XDG_SESSION_TYPE aborts the script here instead of
   # reaching the error branch below, and a session started from .xinitrc
   # rather than a display manager does not always set it, which is exactly

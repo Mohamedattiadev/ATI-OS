@@ -849,7 +849,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   quote inside single-quoted `awk '...'` must be paired.
 - **Fix:** rephrase without apostrophes (`do not`, `does not`).
 
-### Screenshot picker (dm-satty / dm-maim) fails before the menu even shows
+### Screenshot picker (ati-satty / dm-maim) fails before the menu even shows
 - **Symptom:** invoking the screenshot rofi menu does nothing /
   errors immediately, before you even get to pick a mode.
 - **Root cause:** monitor detection used
@@ -861,7 +861,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   not preceded by valid subpattern`. Under `set -euo pipefail` that
   kills the script before it can prompt for anything.
 - **Fix:** escape it — `awk '/\+/ {...}'`. Fixed in both
-  `AtiScriptsV1/dm-satty` and the sibling `dmscripts/scripts/dm-maim`
+  `AtiScriptsV1/ati-satty` and the sibling `dmscripts/scripts/dm-maim`
   (same copy-pasted line, same bug, in both places).
 
 ### rofi_ilovepdf silently does nothing (missing zenity / libreoffice)

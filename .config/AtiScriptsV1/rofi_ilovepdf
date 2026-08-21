@@ -59,7 +59,7 @@ LO_PROFILE="${XDG_RUNTIME_DIR:-/tmp}/ilovepdf-lo-profile"
 #
 # rofi with no -theme picks up ~/.config/rofi/config.rasi, which points at
 # themes/current.rasi -- 45% width, 8 lines, and re-pointed by every theme
-# switch. That is what rofi_light, the drun launcher and dm-satty all get,
+# switch. That is what rofi_light, the drun launcher and ati-satty all get,
 # so leaving it alone is what makes this window the same size and colour as
 # every other rofi on the desktop. An earlier version passed
 # `-theme base.rasi`, which skips current.rasi's width/lines override and

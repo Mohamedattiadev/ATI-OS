@@ -223,7 +223,7 @@ keys (they are ordinary Wayland clients with keyboard focus), and it is why
 `$mod P` cannot be. One more detail from the same run, in case it misleads
 someone later: typing `insubmap` while the `rofi` submap was active landed
 `nsubmap` in the client — the leading `i` was lost to the submap-reset race,
-**not** consumed by the `i` bind, which was checked by confirming `dm-satty`
+**not** consumed by the `i` bind, which was checked by confirming `ati-satty`
 never ran.
 
 **What was ruled out**, all measured against the running compositor:

@@ -217,7 +217,7 @@ case "$key" in
   "showPicker ilovepdf")      run rofi_ilovepdf ;;
   "showPicker spellcheck")    run dm-spellcheck ;;
   "showPicker record")        run ati-record ;;
-  "showPicker screenshot")    run dm-satty ;;
+  "showPicker screenshot")    run ati-satty ;;
   "showPicker keymaps")       run ati-keymaps ;;
   # Added when the qtile session's chord was moved onto bar-action. Both
   # menus exist on both sides — island-picker.py's MENUS has `man` and

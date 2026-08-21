@@ -107,7 +107,7 @@ Item {
             clickable: true
             tip: "Screenshot area → clipboard"
             hoverSink: root.sink
-            onPressed: Quickshell.execDetached(["dm-satty"])
+            onPressed: Quickshell.execDetached(["ati-satty"])
         }
     }
 
