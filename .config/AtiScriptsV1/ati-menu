@@ -75,6 +75,37 @@ menu_field() {  # menu_field <id> <field>
   jq -r --arg id "$1" --arg f "$2" '.[$id][$f] // empty' "$MERGED"
 }
 
+# menu_all_leaves — every id in the tree with a non-empty action, at any
+# depth (a "leaf" per the same has-action inference used everywhere else).
+menu_all_leaves() {
+  jq -r 'to_entries[] | select(.value.action != null and .value.action != "") | .key' "$MERGED"
+}
+
+# menu_breadcrumb_for <id> — "Parent › Grandparent's-parent..." for id's
+# ancestor chain, root-to-parent order, NOT including id's own label (the
+# row already shows that). Empty for a root-level id.
+menu_breadcrumb_for() {
+  # NOT `local id="$1" cur="$id"` -- confirmed live (screenshot showed every
+  # flattened row prefixed "Style", regardless of its real parent) that a
+  # sibling local's initializer in the SAME `local` statement reads the
+  # OUTER scope's variable, not the one just declared beside it: the
+  # script's own `for id in "${children[@]}"` loop (used both above and in
+  # the is_direct_child check below) leaves a global `id` behind, and that
+  # is what "cur=\"\$id\"" was actually reading. `$1` has no such ambiguity.
+  local cur="$1" parts=()
+  while [[ "$cur" == *.* ]]; do
+    cur="${cur%.*}"
+    local lbl; lbl="$(menu_field "$cur" label)"
+    [[ -z "$lbl" ]] && lbl="$cur"
+    parts=("$lbl" "${parts[@]}")
+  done
+  local out="" p
+  for p in "${parts[@]}"; do
+    out+="${out:+ › }$p"
+  done
+  printf '%s' "$out"
+}
+
 menu_cond() {  # menu_cond <shell-expr> — true (rc 0) if empty or succeeds
   [[ -z "$1" ]] && return 0
   bash -c "$1" >/dev/null 2>&1
@@ -112,6 +143,39 @@ menu_run_action() {
   fi
 }
 
+# menu_emit_row <id> <rows_file> — appends one row for <id> to <rows_file>
+# and pushes its id onto the `ids` array (global, indices must match rofi's
+# -format i exactly). <prefix>, if set as $3, is prepended as "prefix › "
+# before the icon/marker/label -- used for the flattened recursive-search
+# rows below so a distant hit still reads as "Install › GIMP", not just
+# "GIMP" with no context. Shared between the direct-children loop and the
+# flatten loop so the when/checked/disabled logic exists in exactly one
+# place.
+menu_emit_row() {
+  local id="$1" rows_file="$2" prefix="${3:-}"
+
+  local when; when="$(menu_field "$id" when)"
+  menu_cond "$when" || return
+
+  local icon label; icon="$(menu_field "$id" icon)"; label="$(menu_field "$id" label)"
+  [[ -z "$label" ]] && label="$id"
+
+  local checked marker=""; checked="$(menu_field "$id" checked)"
+  if [[ -n "$checked" ]]; then
+    if menu_cond "$checked"; then marker="● "; else marker="○ "; fi
+  fi
+
+  local row_text="${prefix:+$prefix › }${icon:+$icon }${marker}${label}"
+
+  local disabled; disabled="$(menu_field "$id" disabled)"
+  if [[ -n "$disabled" ]] && menu_cond "$disabled"; then
+    printf '%s ✓\0meta\x1fnonselectable\x1ftrue\n' "$row_text" >> "$rows_file"
+  else
+    printf '%s\n' "$row_text" >> "$rows_file"
+  fi
+  ids+=("$id")
+}
+
 navigation_stack=()
 current="root"
 
@@ -135,29 +199,39 @@ while :; do
   fi
 
   for id in "${children[@]}"; do
-    when="$(menu_field "$id" when)"
-    menu_cond "$when" || continue
-
-    icon="$(menu_field "$id" icon)"
-    label="$(menu_field "$id" label)"
-    [[ -z "$label" ]] && label="$id"
-
-    checked="$(menu_field "$id" checked)"
-    marker=""
-    if [[ -n "$checked" ]]; then
-      if menu_cond "$checked"; then marker="● "; else marker="○ "; fi
-    fi
-
-    row_text="${icon:+$icon }${marker}${label}"
-
-    disabled="$(menu_field "$id" disabled)"
-    if [[ -n "$disabled" ]] && menu_cond "$disabled"; then
-      printf '%s ✓\0meta\x1fnonselectable\x1ftrue\n' "$row_text" >> "$rows_file"
-    else
-      printf '%s\n' "$row_text" >> "$rows_file"
-    fi
-    ids+=("$id")
+    menu_emit_row "$id" "$rows_file"
   done
+
+  # ---- recursive search ----
+  #
+  # rofi's own -i filter only matches against what is ALREADY in the row
+  # list -- it has no notion of "search the whole tree", it just does
+  # substring/fuzzy matching on whatever this script hands it. So typing
+  # "minecraft" only ever finds something rofi can already see. The fix
+  # is not clever rofi scripting (checked: rofi's script-mode API is
+  # still "generate a list once, rofi filters what's there" underneath,
+  # just called ROFI_RETV=2 "custom entry" on unmatched Enter -- not real
+  # per-keystroke live search either) -- it's simpler than that: put
+  # EVERY leaf in the whole tree into the list, always, breadcrumb-prefixed
+  # when it is not a direct child of here. Unfiltered, the current level's
+  # own entries sort first (added above) so normal browsing still reads
+  # clean; typed, rofi's fuzzy match narrows the WHOLE flattened set, so a
+  # leaf three levels down surfaces from any level, same as Omarchy's.
+  #
+  # Only leaves are flattened, not submenu nodes -- the concrete case this
+  # exists for ("type minecraft, land on the install action") is about
+  # reaching a leaf's action directly, and submenus are shallow enough
+  # (root is one browse away from everything) that flattening them too
+  # would just add noise without adding reachability.
+  while IFS= read -r leaf_id; do
+    [[ -z "$leaf_id" ]] && continue
+    is_direct_child=0
+    for id in "${children[@]}"; do
+      [[ "$id" == "$leaf_id" ]] && { is_direct_child=1; break; }
+    done
+    (( is_direct_child )) && continue
+    menu_emit_row "$leaf_id" "$rows_file" "$(menu_breadcrumb_for "$leaf_id")"
+  done < <(menu_all_leaves)
 
   breadcrumb="Menu"
   if [[ "$current" != "root" ]]; then
