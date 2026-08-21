@@ -16,12 +16,22 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "plugins/menu" as MenuPlugin
+import "services" as Services
 
 ShellRoot {
   id: shellRoot
 
+  // Vendored too (see NOTICE.md): the Apps section of Omarchy's own menu
+  // merges installed desktop entries in via `root.shell.appLibrary`
+  // (Menu.qml, null-safe when absent -- see the commit that first vendored
+  // Menu.qml without this). Real app-launch, in the same searchable tree
+  // as every other entry, was the single biggest visible gap against the
+  // real thing.
+  property Services.AppLibrary appLibrary: Services.AppLibrary { }
+
   MenuPlugin.Menu {
     id: menu
+    shell: shellRoot
   }
 
   IpcHandler {

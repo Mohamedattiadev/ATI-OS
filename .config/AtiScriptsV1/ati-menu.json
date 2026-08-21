@@ -1,10 +1,15 @@
 {
+  "apps": {"icon": "󰀻", "label": "Apps", "aliases": ["app", "applications"], "provider": "apps"},
+
   "style": {"icon": "󰏘", "label": "Style"},
   "style.theme": {"icon": "󰸌", "label": "Theme", "action": "ati-theme-toggle"},
   "style.wallpaper": {"icon": "󰸉", "label": "Wallpaper", "action": "ati-bar-action tide toggleWallpaperPicker"},
   "style.ui-scale": {"icon": "󰍹", "label": "UI scale", "action": "ui-scale-toggle"},
 
   "system": {"icon": "󰐥", "label": "System", "action": "ati-logout"},
+
+  "setup": {"icon": "", "label": "Setup"},
+  "setup.config": {"icon": "", "label": "Config files", "action": "dm-confedit"},
 
   "docs": {"icon": "󰈙", "label": "Docs & Maintenance"},
   "docs.keybindings": {"icon": "󰌌", "label": "Keybindings", "action": "ati-docs keys"},

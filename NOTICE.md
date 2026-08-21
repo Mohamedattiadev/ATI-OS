@@ -65,14 +65,24 @@ and contributors.
 
 **Vendored under `.config/quickshell/ati-menu/`**: `Commons/` and `Ui/`
 (Omarchy's shared Quickshell QML component/design-token libraries, copied
-verbatim) and `plugins/menu/{Menu.qml,MenuModel.js}` — the tree-walking
+verbatim), `plugins/menu/{Menu.qml,MenuModel.js}` — the tree-walking
 command-menu UI itself, ported here to run against ATI-OS's own
 `.config/AtiScriptsV1/ati-menu.json`/`ati-menu-extensions.json` data files
-and dispatch commands instead of Omarchy's. `Menu.qml` is modified (the
-`defaultMenuPath`/`userMenuPath` properties, and any Omarchy-specific
-action-string conventions its own shipped JSONC used); `MenuModel.js` and
-everything under `Commons/`/`Ui/` are unmodified. MIT's terms are
-compatible with GPL-3.0 in that direction, same as the Hintium entry below.
+and dispatch commands instead of Omarchy's — and
+`services/{AppLibrary.qml,AppSearch.js}`, the desktop-application list the
+menu's Apps section merges in via `DesktopEntries.applications` (a
+Quickshell built-in, not Omarchy's). `Menu.qml` and `AppLibrary.qml` are
+modified (the former's `defaultMenuPath`/`userMenuPath` properties; the
+latter's `launch()`, which dropped a `uwsm-app --` prefix — Universal
+Wayland Session Manager, confirmed via `command -v` to not be installed
+or used in this session). `MenuModel.js`, `AppSearch.js`, and everything
+under `Commons/`/`Ui/` are unmodified. `AppLibrary.qml`'s hidden-entry
+management (`omarchy-remove-launcher-entry`, `hidden-entries.sh`) and
+launch-feedback OSD (`omarchy-shell osd`) call Omarchy-specific scripts
+that don't exist here and were left as-is rather than reimplemented —
+they fail silently (no crash) rather than working, a known, minor gap
+against the real thing. MIT's terms are compatible with GPL-3.0 in that
+direction, same as the Hintium entry below.
 
 ## Hintium — MIT
 
