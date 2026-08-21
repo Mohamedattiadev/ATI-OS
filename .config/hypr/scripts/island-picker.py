@@ -71,7 +71,7 @@ whatever anything can write into that script's output.
 WHY --run CAN ANSWER WITH A PAGE, AND WHY THAT IS THE WHOLE UNLOCK
 ------------------------------------------------------------------
 The original version of this file said, in as many words, that the menus
-which PROMPT — rofi_pass, dm-recordV2, dm-spellcheck, the translator — could
+which PROMPT — rofi_pass, ati-record, dm-spellcheck, the translator — could
 not be ported because "a one-shot list is the wrong primitive for a
 conversation". The premise was right and the conclusion was wrong. A
 conversation is a sequence of one-shot pages, and the only thing missing was
@@ -1522,12 +1522,12 @@ def _shot_fire(area, geometry, delay, dest):
 
 # ---------------------------------------------------------------- record --
 #
-#  dm-recordV2, and the one place in this port where the honest answer is
+#  ati-record, and the one place in this port where the honest answer is
 #  "most of this cannot work here".
 #
 #  THE MEASUREMENT
 #  ---------------
-#  dm-recordV2 captures with `ffmpeg -f x11grab -i $DISPLAY`. Run under this
+#  ati-record captures with `ffmpeg -f x11grab -i $DISPLAY`. Run under this
 #  Hyprland session and read back with PIL:
 #
 #      ffmpeg -f x11grab -video_size 1366x768 -i :0 -frames:v 1 out.png
@@ -1535,7 +1535,7 @@ def _shot_fire(area, geometry, delay, dest):
 #
 #  The XWayland root window is not a mirror of the Wayland output; it is an
 #  empty root that XWayland's own clients are parented into. So screen,
-#  area and GIF capture in dm-recordV2 are not "probably wrong under
+#  area and GIF capture in ati-record are not "probably wrong under
 #  Wayland", they produce a black video, and they have been doing so for
 #  every recording made since the session moved.
 #
@@ -1551,7 +1551,7 @@ def _shot_fire(area, geometry, delay, dest):
 #
 #  Neither screen path has therefore been exercised. Say so.
 #
-#  DROPPED: the GIF mode. Its value in dm-recordV2 is entirely the two-stage
+#  DROPPED: the GIF mode. Its value in ati-record is entirely the two-stage
 #  capture-then-palettegen conversion (its own comment measures 29.6 MB
 #  against 1.3 MB for the same six seconds), and that second stage cannot be
 #  run at all without a first stage that works. Shipping an untestable
@@ -1560,7 +1560,7 @@ def _shot_fire(area, geometry, delay, dest):
 RECORD_DIR = os.path.join(HOME, "Videos", "Recordings")
 RECORD_PID = os.path.join(RUNTIME, "island-record.pid")
 
-# dm-recordV2's numbers, carried over with its measurement. A GIF is captured
+# ati-record's numbers, carried over with its measurement. A GIF is captured
 # to h264 first and converted on stop, never written straight out: encoding
 # GIF live means every frame carries the default palette with no cross-frame
 # optimisation. Measured there on a 6-second full-screen capture -- direct GIF
@@ -1575,7 +1575,7 @@ GIF_MAX_WIDTH = 900
 def _gif_convert_command(source, output):
     """The second stage: h264 in, palette-optimised GIF out.
 
-    Verbatim from dm-recordV2's convert_pending_gif, including
+    Verbatim from ati-record's convert_pending_gif, including
     stats_mode=diff and the bayer dither, because those are what buy the 23x
     and were chosen there against real footage.
 
@@ -1678,7 +1678,7 @@ def record_list():
             "label": "Stop recording",
             "detail": target.get("output", "pid %d" % pid),
         }], note="A recording is running. Everything else is hidden on "
-                 "purpose: dm-recordV2 has the same one-way door, and a "
+                 "purpose: ati-record has the same one-way door, and a "
                  "second ffmpeg would overwrite the pidfile that stops the "
                  "first.")
 
@@ -1722,13 +1722,13 @@ def record_list():
         gif_detail = gif_missing
     elif not have_ff:
         gif_detail = "ffmpeg is not installed (needed for the palette pass)"
-    # dm-recordV2's rows, its wording, its order — and its mode 7 (GIF) is
+    # ati-record's rows, its wording, its order — and its mode 7 (GIF) is
     # BACK. The note above used to say GIF was dropped because "that second
     # stage cannot be run at all without a first stage that works", the first
     # stage being screen capture, which x11grab could not do under Hyprland.
     # wf-recorder is installed now, so the premise is gone and so is the
     # reason. Every other row is here too, including "Screen + Audio", which
-    # the first port dropped without saying so — it is dm-recordV2's FIRST row
+    # the first port dropped without saying so — it is ati-record's FIRST row
     # and the one the hand goes to.
     return _page("Select recording mode:", [
         {"id": "screen-audio", "label": "Screen + Audio (full display)",
@@ -1756,7 +1756,7 @@ def record_run(item_id):
         if not pid:
             raise ValueError("no active recording")
         # SIGINT and not SIGTERM. wf-recorder finalises the container on
-        # INT; ffmpeg does so on either, and dm-recordV2's own note is that
+        # INT; ffmpeg does so on either, and ati-record's own note is that
         # a kill before the trailer is written truncates the file — three of
         # its eight recordings ended that way. Waiting is the fix, so wait.
         os.kill(pid, signal.SIGINT)
@@ -1802,7 +1802,7 @@ def record_run(item_id):
                              "without it a GIF would be 23x larger")
         output = os.path.join(RECORD_DIR, "gif-%s.gif" % _stamp())
         # The h264 intermediate lives in RUNTIME, not /tmp and not
-        # RECORD_DIR: dm-recordV2's own note is that a screen capture has no
+        # RECORD_DIR: ati-record's own note is that a screen capture has no
         # business sitting world-readable in /tmp for the length of the
         # recording, and RECORD_DIR is where the user's finished recordings
         # are — a stray .mp4 there looks like one of them.
@@ -1826,11 +1826,11 @@ def record_run(item_id):
                                  "note in island-picker.py: x11grab records "
                                  "a black frame under Hyprland, measured")
             geometry = ('-g "$(slurp)" ' if item_id == "region" else "")
-            # dm-recordV2 mixes a second ffmpeg input (`-f pulse -i
+            # ati-record mixes a second ffmpeg input (`-f pulse -i
             # default`); wf-recorder takes the same PulseAudio default with
             # one flag, and its own muxer keeps the two streams in step.
             # `--audio` with no device argument is the default sink's
-            # monitor, which is what dm-recordV2's `-i default` resolves to
+            # monitor, which is what ati-record's `-i default` resolves to
             # as well.
             audio = "--audio " if item_id == "screen-audio" else ""
             command = "wf-recorder %s%s-f %s" % (
@@ -1851,7 +1851,7 @@ def record_run(item_id):
             raise ValueError("no capture-capable webcam under /dev/video*")
         size = "640x480" if item_id == "webcam-low" else "1920x1080"
         output = os.path.join(RECORD_DIR, "%s-%s.mp4" % (item_id, _stamp()))
-        # -video_size before -i, which is dm-recordV2's own hard-won fix:
+        # -video_size before -i, which is ati-record's own hard-won fix:
         # after -i it is an output option, silently dropped, and both webcam
         # modes then recorded at the camera's default while the menu labels
         # claimed otherwise.

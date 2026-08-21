@@ -902,7 +902,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   `WORK_DIR` now.
 
 ### Webcam recording ignores the resolution you picked, or records the wrong device
-- **Symptom:** `dm-recordV2` offers "Webcam (low-res) 640x480" and
+- **Symptom:** `ati-record` offers "Webcam (low-res) 640x480" and
   "Webcam (HD) 1920x1080" and both produce a file at whatever the camera
   felt like — the two menu entries are indistinguishable. On other
   machines it is louder: the recording never starts and ffmpeg says

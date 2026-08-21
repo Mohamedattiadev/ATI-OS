@@ -216,7 +216,7 @@ case "$key" in
   "showPicker brightness")    run rofi_light ;;
   "showPicker ilovepdf")      run rofi_ilovepdf ;;
   "showPicker spellcheck")    run dm-spellcheck ;;
-  "showPicker record")        run dm-recordV2 ;;
+  "showPicker record")        run ati-record ;;
   "showPicker screenshot")    run dm-satty ;;
   "showPicker keymaps")       run ati-keymaps ;;
   # Added when the qtile session's chord was moved onto bar-action. Both

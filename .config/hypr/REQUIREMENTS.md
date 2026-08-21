@@ -1050,7 +1050,7 @@ because a picker that executes strings supplied by a script executes
 whatever can write to that script.
 
 **Three ports drop something real, and all three say so at the site:**
-`dm-recordV2`'s screen capture (below), `rofi_pass`'s write half, and
+`ati-record`'s screen capture (below), `rofi_pass`'s write half, and
 `rofi_todo`'s sessions. The rofi originals are untouched on disk and the
 qtile session still uses every one of them.
 
@@ -1160,7 +1160,7 @@ that it is a Hyprland bug waiting to bite.
 menu, which lists its rows with the detail "wf-recorder is not installed"
 rather than hiding them, and refuses on selection with the same message
 pointing at the note in `island-picker.py`. That is the right failure
-shape — visible, explained, not silent — but it means `dm-recordV2`'s
+shape — visible, explained, not silent — but it means `ati-record`'s
 screen and region recording is the one qtile capability with no working
 equivalent in this session. `sudo pacman -S wf-recorder` closes it. The
 same X11 root cause is what made `ffmpeg -f x11grab` record black video.
