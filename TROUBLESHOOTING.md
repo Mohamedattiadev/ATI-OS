@@ -1381,13 +1381,13 @@ subsystem. Each entry: **symptom → root cause → fix**.
   (both in `step_xinit`'s heredoc in `wizard.sh`, and the live
   `~/.xinitrc`), right after the `picom` autostart block.
 
-### `copyq_rofi` shows no clipboard history
+### `ati-copyq-rofi` shows no clipboard history
 - **Symptom:** the copyq rofi picker opens but there's nothing to
   pick — no history at all, even after copying things.
 - **Root cause:** `copyq` was never autostarted anywhere. Its
   background server is what actually monitors and records clipboard
   changes; without it running continuously, there's nothing for
-  `copyq_rofi`'s `copyq eval` calls to query.
+  `ati-copyq-rofi`'s `copyq eval` calls to query.
 - **Fix:** added `command -v copyq >/dev/null 2>&1 && copyq
   --start-server &` to the same `.xinitrc` autostart block.
   `--start-server` runs it headless (tracks clipboard, tray icon) —

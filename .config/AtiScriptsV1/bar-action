@@ -204,7 +204,7 @@ case "$key" in
   toggleThemePicker)          run theme-toggle ;;
 
   # ---- the picker's menus, one rofi script each ----
-  "showPicker clipboard")     run copyq_rofi ;;
+  "showPicker clipboard")     run ati-copyq-rofi ;;
   "showPicker anki")          run rofi_anki ;;
   "showPicker documents")     run rofi_docs ;;
   "showPicker translate")     run rofi_translator ;;

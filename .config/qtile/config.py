@@ -9241,8 +9241,8 @@ floating_layout = layout.Floating(
         # _float_and_center_docs. wm_class, not title, so the rule wins at
         # group.add() before the window can enter the tiling layout.
         Match(wm_class="docs-view"),
-        Match(wm_class="clip-view"),  # copyq_rofi alt+w full-text preview
-        Match(wm_class="imv"),  # copyq_rofi alt+w image preview
+        Match(wm_class="clip-view"),  # ati-copyq-rofi alt+w full-text preview
+        Match(wm_class="imv"),  # ati-copyq-rofi alt+w image preview
         # Master-password prompt (rbw / gpg). Sized and centred by
         # _float_and_center_pinentry; this rule is what stops it entering
         # the tiling layout in the first place, since it maps as

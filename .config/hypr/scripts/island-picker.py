@@ -763,7 +763,7 @@ def brightness_run(item_id):
 
 # ------------------------------------------------------------- clipboard --
 #
-#  copyq_rofi, ported. The list comes from the same `copyq eval` walk over
+#  ati-copyq-rofi, ported. The list comes from the same `copyq eval` walk over
 #  the &clipboard tab, with the same classifying glyphs (URL, path, shell
 #  command, multi-line) and the same de-duplication.
 #
@@ -793,7 +793,7 @@ def brightness_run(item_id):
 
 CLIPBOARD_MAX = 40
 
-# Thumbnails live under the runtime dir, like copyq_rofi's. Wiped on every
+# Thumbnails live under the runtime dir, like ati-copyq-rofi's. Wiped on every
 # --list: copyq indices are positional, so item 3 is a different picture
 # after anything new is copied, and a stale 3.png is a preview of whatever
 # used to be there.
@@ -833,7 +833,7 @@ for (var i = 0; i < n; i++) {
   if (isImg) {
     icon = THUMBS + "/" + i + ".png";
     var f = new File(icon); f.open(); f.write(buf); f.close();
-    // Dimensions are NOT parsed here. copyq_rofi does it with
+    // Dimensions are NOT parsed here. ati-copyq-rofi does it with
     // buf.mid(16,8).toString() and charCodeAt, and that is wrong for any
     // image whose width or height has a byte above 127: toString() decodes
     // the buffer as text, so 0xAD does not survive as 173. Measured — a

@@ -1064,7 +1064,7 @@ FocusScope {
             // "image" repeated down a column is not a list of images, it
             // is the same word eight times — the entry you are looking
             // for is a picture and the only thing that identifies it is
-            // what it looks like. copyq_rofi knew this and passed
+            // what it looks like. ati-copyq-rofi knew this and passed
             // -show-icons; this panel had no way to.
             //
             // sourceSize caps the DECODE, not just the draw. Without it

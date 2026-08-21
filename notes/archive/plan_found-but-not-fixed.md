@@ -91,7 +91,7 @@ comments, would be worse than the complaint.
   is only reachable from the `set_font` command, which this config never calls.
 - **`container-test.sh`'s idempotency diff warns but never fails** —
   regenerated files legitimately differ between runs.
-- **`copyq_rofi`'s one remaining `/tmp` path** is a `mktemp`, which is
+- **`ati-copyq-rofi`'s one remaining `/tmp` path** is a `mktemp`, which is
   unique and mode 600. Correct as written; not part of the §1.2 sweep.
 - **shellcheck**: SC2209 at `ui-scale:55-56` (`MODE=set` — `set` as a string
   value, false positive), SC2016 at `container-test.sh:100` (single-quoted

@@ -119,7 +119,7 @@ def show_rofi(keymaps):
             "-p",
             "Qute Keymaps",
             # 10 lines, matching the sibling ati-keymaps picker (12) and
-            # copyq_rofi (8) rather than the 16 this used to ask for --
+            # ati-copyq-rofi (8) rather than the 16 this used to ask for --
             # with 56 bindings that filled most of the screen height.
             # fixed-height: 0 lets it shrink further as you type instead
             # of holding ten empty rows open under a single match.

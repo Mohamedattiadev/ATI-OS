@@ -161,7 +161,7 @@ session, for that specific clip.
 | wifi QR chip | click `w_wifi_qr` in the tray box | Encodes the owner's current network **and its passphrase** into a scannable image. Never record. |
 | bluetooth picker | `Super+P , B` | Shows the owner's paired devices by name (phone, headphones, watch). |
 | password picker | `Super+P , P` | Vaultwarden / `rbw` vault entries. Never record, cropped or otherwise. |
-| clipboard picker | `Alt+V` (`copyq_rofi`) | Real clipboard history with thumbnails. CopyQ is a session-wide server, so a nested instance still reads the **owner's** history. |
+| clipboard picker | `Alt+V` (`ati-copyq-rofi`) | Real clipboard history with thumbnails. CopyQ is a session-wide server, so a nested instance still reads the **owner's** history. |
 | todo manager | `Super+P , T` (`rofi_todo`) | The owner's todos. |
 | notes | `Super+P , O` (`dm-note -r`) | The owner's notes. |
 | documents / manpage / config pickers | `Super+P , D` / `Super+P , M` / `Super+P , F` | `dm-documents` and `dm-confedit` list real paths under `$HOME`; the file names are personal data. Safe only from a scrubbed fake `$HOME`. |

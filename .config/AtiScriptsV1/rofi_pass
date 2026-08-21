@@ -2,7 +2,7 @@
 # Rofi password picker, backed by Vaultwarden through rbw.
 #
 # Replaces the commented-out `passmenu` binding on Mod+p p. Styling
-# follows copyq_rofi and rofi_shared so the three pickers read as one
+# follows ati-copyq-rofi and rofi_shared so the three pickers read as one
 # family: base.rasi import, dimmed index prefix, alt-key actions in the
 # footer.
 #
