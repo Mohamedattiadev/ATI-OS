@@ -41,6 +41,13 @@ packages:
                         # restarting the running session
   - mesa-utils          # glxinfo/glxgears -- what you reach for when picom
                         # animations misbehave on unfamiliar graphics
+  - ydotool             # xdotool's Wayland-native counterpart (uinput, not
+                        # X). Test/automation tooling, e.g. hypr/scripts/
+                        # test/uinput-click.py's click-injection path --
+                        # NOT for driving the live session, which stays on
+                        # IPC (hyprctl dispatch / qtile cmd-obj) per
+                        # no-synthetic-input-in-live-session. The wizard's
+                        # opt-in `ydotool` module also enables ydotoold.
 
 # Deliberately NOT declared anywhere, though present on the ati host:
 #

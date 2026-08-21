@@ -239,6 +239,24 @@ step_mic_gain() {
   run "systemctl --user enable --now fix-mic-gain.service"
 }
 
+
+step_ydotool() {
+  # ydotool -- xdotool's Wayland-native (uinput) counterpart. Opt-in: it's
+  # test/automation tooling (hypr/scripts/test/uinput-click.py's click
+  # path), not something the live session should ever be driven through --
+  # see no-synthetic-input-in-live-session. optional.yaml declares the
+  # package for `wizard.sh --audit`; this just makes `--only=ydotool`
+  # self-sufficient without also requiring dcli-sync-extra.
+  if (( DRY_RUN )); then _DIM "  [dry] pacman -S --needed ydotool, enable --now ydotool.service"; return; fi
+  command -v ydotool >/dev/null 2>&1 || run "sudo pacman -S --needed --noconfirm ydotool"
+  run "systemctl --user daemon-reload"
+  run "systemctl --user enable --now ydotool.service"
+}
+
+uninstall_ydotool() {
+  run "systemctl --user disable --now ydotool.service" || true
+}
+
 step_scrcpy() {
   # scrcpy mirrors the Android screen over adb. Declaring the package is
   # not enough: android-udev's rules assign the phone's USB node to the

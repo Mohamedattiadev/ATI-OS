@@ -20,7 +20,7 @@ MOD_ORDER=(
   whisper-fast mic-gain scrcpy
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes dark-mode browser-flags browser-memory chrome-policy
-  dcli-sync-extra grub-boost
+  dcli-sync-extra grub-boost ydotool
 )
 
 # Opt-in modules: valid --only= targets, and listed (unchecked) in the
@@ -54,7 +54,7 @@ MOD_ORDER=(
 # /etc/default/grub -- the script itself is careful (backs up first, only
 # adds missing flags, no-ops cleanly on a non-GRUB machine), but that is
 # not a change to make without asking even so.
-OPTIN_MODS=(dcli-sync-extra xmodmap keyd grub-boost)
+OPTIN_MODS=(dcli-sync-extra xmodmap keyd grub-boost ydotool)
 _is_optin() {
   local id m
   id="$1"
@@ -135,4 +135,5 @@ _reg chrome-policy     "Chrome theme policy" Browsers  "Sign .pem + install /etc
 # nothing -- silently unchecking whatever followed it.
 _reg dcli-sync-extra   "Optional packages"   Optional  "docker · jdk · qemu · printing (opt-in · run later)"    "step_dcli_sync_extra"
 _reg grub-boost        "GRUB cmdline flags"  Optional  "opt-in · no-ops on systemd-boot/rEFInd/UKI · backs up first" "step_grub_boost"
+_reg ydotool           "ydotool"             Optional  "Wayland input-injection daemon -- test/automation tooling only" "step_ydotool"
 _reg boot-splash       "Boot splash"         System    "Your name + progress ring instead of kernel text at boot" "step_boot_splash"

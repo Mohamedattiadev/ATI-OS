@@ -449,6 +449,7 @@ UMOD_CMD[githooks]="uninstall_githooks"
 UMOD_CMD[gpu]="uninstall_gpu"
 UMOD_CMD[dcli-sync-extra]="uninstall_dcli_sync_extra"
 UMOD_CMD[grub-boost]="uninstall_grub_boost"
+UMOD_CMD[ydotool]="uninstall_ydotool"
 UMOD_CMD[boot-splash]="uninstall_boot_splash"
 
 # Every module must have a reversal, even if that reversal is a documented
