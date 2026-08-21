@@ -45,7 +45,7 @@ that has not been given a per-clip go-ahead.
 ## Conventions
 
 - `Mod` = Super / Windows (`mod4`). `Alt` = `mod1` (`mod2` in `config.py`).
-- Chords are written the way `qtile-keys` prints them: `Super+P , C` means
+- Chords are written the way `ati-qtile-keys` prints them: `Super+P , C` means
   press `Super+P`, release, then press `c`.
 - Screen is **1366×768**. The top bar is `size=28` with a `5/10/5/10` margin,
   so the whole bar strip is **1366×38 at +0+0** and the chips sit inside

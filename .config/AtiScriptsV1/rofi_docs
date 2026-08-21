@@ -10,7 +10,7 @@
 # Everything is GENERATED from the live system, never hand-listed, so no
 # section can drift out of date:
 #
-#   Keybindings   parsed from config.py by qtile-keys (AST, not regex)
+#   Keybindings   parsed from config.py by ati-qtile-keys (AST, not regex)
 #   Troubleshoot  the headings of TROUBLESHOOTING.md, with their first line
 #                 of context, jumping to the right entry
 #   Docs          every document opens on a searchable index of its own
@@ -367,21 +367,21 @@ open_wallpaper() {
 
 # ── keybindings ──────────────────────────────────────────────────────
 sec_keys() {
-  if ! command -v qtile-keys >/dev/null 2>&1; then
-    rofi -e "qtile-keys not installed — run: ./wizard.sh --yes --only=ati-scripts"
+  if ! command -v ati-qtile-keys >/dev/null 2>&1; then
+    rofi -e "ati-qtile-keys not installed — run: ./wizard.sh --yes --only=ati-scripts"
     return
   fi
-  local n; n="$(qtile-keys | wc -l)"
-  # qtile-keys pads its key field to 26 columns and lets the description run
+  local n; n="$(ati-qtile-keys | wc -l)"
+  # ati-qtile-keys pads its key field to 26 columns and lets the description run
   # to 65, which is 91 total and half again wider than the 56 this window
-  # gives. Re-cut here rather than in qtile-keys: that tool also prints to
+  # gives. Re-cut here rather than in ati-qtile-keys: that tool also prints to
   # stdout for humans at a terminal, where the wide form is the better one.
   #
   # The key field keeps its full 23 columns (the longest is a chord,
   # "Super+Shift+F , Shift+V") and the description absorbs the loss. In a
   # list you search by pressing keys, the key is the part that must not be
   # truncated.
-  qtile-keys \
+  ati-qtile-keys \
     | awk -v w=23 '
         {
           k = substr($0, 1, 26); sub(/ +$/, "", k)

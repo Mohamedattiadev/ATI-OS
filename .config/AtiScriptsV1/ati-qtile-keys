@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""qtile-keys — print every documented qtile keybinding, parsed from the
+"""ati-qtile-keys — print every documented qtile keybinding, parsed from the
 live config.
 
 Why parse instead of maintaining a list: a hand-written cheatsheet drifts
@@ -13,8 +13,8 @@ mode key prints as a bare letter. A regex pass got 44 of them and lost
 every chord prefix; this gets all of them with the prefix attached.
 
 Usage:
-  qtile-keys                 aligned "combo   description" lines
-  qtile-keys --config PATH   parse a different config
+  ati-qtile-keys                 aligned "combo   description" lines
+  ati-qtile-keys --config PATH   parse a different config
 """
 import ast, os, sys
 
@@ -58,7 +58,7 @@ elif args and args[0].startswith("--config="):
 try:
     src = open(cfg, encoding="utf-8").read()
 except OSError as e:
-    sys.exit(f"qtile-keys: cannot read {cfg}: {e}")
+    sys.exit(f"ati-qtile-keys: cannot read {cfg}: {e}")
 tree = ast.parse(src)
 
 MODVAR = {}
