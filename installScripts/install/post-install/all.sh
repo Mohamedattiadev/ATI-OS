@@ -48,7 +48,7 @@ EOF"
 
 step_flatpak()      { _OK "Nothing to install — flatpak/collector replaced by qdrop"; }
 
-# Vaultwarden: the password server behind Mod+p p (rofi_pass -> rbw).
+# Vaultwarden: the password server behind Mod+p p (ati-pass -> rbw).
 #
 # The packages come from arch-config (apps.yaml); this module does the
 # part packages cannot: bind the server to loopback, point it at the web
@@ -129,7 +129,7 @@ EOF
   run "sudo systemctl daemon-reload"
   run "sudo systemctl enable --now vaultwarden.service"
 
-  # Aim rbw at the local server. Email stays unset: rofi_pass asks for it
+  # Aim rbw at the local server. Email stays unset: ati-pass asks for it
   # on first run, because it is per-person rather than per-machine.
   if command -v rbw >/dev/null 2>&1; then
     run "rbw config set base_url https://127.0.0.1:8222"
@@ -149,7 +149,7 @@ EOF
 #
 # `tailscale serve` rather than rebinding vaultwarden to the tailnet IP:
 # one process can only bind one address, so rebinding would take
-# 127.0.0.1 away and break rofi_pass and the browser extension. The
+# 127.0.0.1 away and break ati-pass and the browser extension. The
 # proxy terminates TLS with the tailnet's own publicly-trusted cert and
 # forwards to the local https listener, so both paths keep working and
 # nothing is exposed to the LAN.

@@ -7643,7 +7643,7 @@ keys = [
             # Key([], "e", lazy.spawn("dm-confedit"), desc='Choose a config file to edit'),
             # Key([], "o", lazy.spawn("dm-bookman -r"), desc='Browser bookmarks'),
             # --- passwords ---
-            # Was a commented-out `passmenu` line for years. rofi_pass
+            # Was a commented-out `passmenu` line for years. ati-pass
             # replaces it: a rofi picker over Vaultwarden (local, on
             # 127.0.0.1:8222) via rbw, so the same vault the Bitwarden
             # phone app syncs from is the one this reads.
@@ -7877,7 +7877,7 @@ keys = [
             # It spawned `rofi-pass`, the frontend for pass(1) -- both
             # are installed, but ~/.password-store does not exist, so it
             # had no vault to read either way. Passwords now go through
-            # rofi_pass (Vaultwarden via rbw), bound above.
+            # ati-pass (Vaultwarden via rbw), bound above.
             # --- youtube menu ---
             Key(
                 [],

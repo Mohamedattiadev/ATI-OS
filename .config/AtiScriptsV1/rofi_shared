@@ -10,7 +10,7 @@ source "$SCRIPT_DIR/rofi_common.sh"
 require_cmd rofi curl grep sed || exit 1
 load_palette
 
-# Picker styling deliberately mirrors ati-copyq-rofi (Mod2+v) and rofi_pass:
+# Picker styling deliberately mirrors ati-copyq-rofi (Mod2+v) and ati-pass:
 # all three inherit dtos-center.rasi, the same theme rofi_light and the
 # plain launcher use, so every menu here is one 45%-wide, 8-row box. This
 # one was on the big process-killer theme; then on base.rasi, which skips

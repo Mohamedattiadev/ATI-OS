@@ -136,7 +136,7 @@ load_palette() {
 # ${WAYLAND_DISPLAY:-}, not $WAYLAND_DISPLAY. Every caller of this runs
 # under `set -u`, and on an X11 session WAYLAND_DISPLAY is simply not
 # set -- so the bare reference aborted the whole script here. It failed
-# in the worst possible way: rofi_pass died the instant you pressed
+# in the worst possible way: ati-pass died the instant you pressed
 # Enter on an entry, with no message, no notification and no clipboard,
 # looking exactly like a keybinding that does nothing. wl-copy being
 # installed is what made the test reachable at all.

@@ -714,7 +714,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   recomputed from it. Abbreviations are cosmetic only.
 
 ### rbw entries created with an empty password
-- **Symptom:** an entry added from `rofi_pass` exists with the right name
+- **Symptom:** an entry added from `ati-pass` exists with the right name
   and username, but `rbw get` answers *"entry had no password"*.
 - **Root cause:** `rbw add --help` says the password comes from `$EDITOR`.
   That is only true when **stdin is a terminal**. Given a pipe or a
@@ -734,12 +734,12 @@ subsystem. Each entry: **symptom → root cause → fix**.
   name *and* username, and from then on any name-based lookup is
   ambiguous. Trivial to hit while retrying a failed add.
 - **Fix:** address entries by **UUID**, which every rbw `NEEDLE` accepts:
-  `rbw ls --fields id,name,user`. `rofi_pass` now stores the id as the
+  `rbw ls --fields id,name,user`. `ati-pass` now stores the id as the
   first field of every row and uses it for get, code, edit and remove —
   name+user is display text only. To clear existing duplicates, remove
   them by id.
 
-### Pressing Enter in rofi_pass does nothing at all
+### Pressing Enter in ati-pass does nothing at all
 - **Symptom:** the picker opens, entries are listed, Enter closes it and
   nothing is copied. No error, no notification, empty clipboard.
 - **Root cause:** `copy_to_clipboard()` in `rofi_common.sh` tested

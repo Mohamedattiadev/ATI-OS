@@ -209,7 +209,7 @@ case "$key" in
   "showPicker documents")     run rofi_docs ;;
   "showPicker translate")     run rofi_translator ;;
   "showPicker confedit")      run dm-confedit ;;
-  "showPicker pass")          run rofi_pass ;;
+  "showPicker pass")          run ati-pass ;;
   "showPicker notes")         run rofi_todo ;;
   "showPicker todo")          run rofi_todo ;;
   "showPicker processes")     run rofi-kill ;;

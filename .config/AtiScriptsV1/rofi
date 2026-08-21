@@ -23,7 +23,7 @@
 #
 # THE FIX, AND WHY IT LIVES HERE
 # -------------------------------
-# Every rofi_* picker (rofi_docs, rofi_anki, rofi_pass, ...), bar-action's
+# Every rofi_* picker (rofi_docs, rofi_anki, ati-pass, ...), bar-action's
 # two direct `rofi -show ...` calls, and WallpaperPopup.qml's `/` search
 # all invoke the bare `rofi` command — a dozen-plus call sites for one
 # bug. Fixing it once here, as a shim installed to /usr/local/bin ahead of

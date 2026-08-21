@@ -1050,7 +1050,7 @@ because a picker that executes strings supplied by a script executes
 whatever can write to that script.
 
 **Three ports drop something real, and all three say so at the site:**
-`ati-record`'s screen capture (below), `rofi_pass`'s write half, and
+`ati-record`'s screen capture (below), `ati-pass`'s write half, and
 `rofi_todo`'s sessions. The rofi originals are untouched on disk and the
 qtile session still uses every one of them.
 

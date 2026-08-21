@@ -71,7 +71,7 @@ whatever anything can write into that script's output.
 WHY --run CAN ANSWER WITH A PAGE, AND WHY THAT IS THE WHOLE UNLOCK
 ------------------------------------------------------------------
 The original version of this file said, in as many words, that the menus
-which PROMPT — rofi_pass, ati-record, dm-spellcheck, the translator — could
+which PROMPT — ati-pass, ati-record, dm-spellcheck, the translator — could
 not be ported because "a one-shot list is the wrong primitive for a
 conversation". The premise was right and the conclusion was wrong. A
 conversation is a sequence of one-shot pages, and the only thing missing was
@@ -2271,7 +2271,7 @@ def translate_run(item_id, text=""):
 
 # ------------------------------------------------------------------ pass --
 #
-#  rofi_pass, backed by Vaultwarden through rbw. The READ half is here and
+#  ati-pass, backed by Vaultwarden through rbw. The READ half is here and
 #  the WRITE half is not; the split is deliberate and is spelt out below.
 #
 #  THE LOCKED AGENT
@@ -2286,12 +2286,12 @@ def translate_run(item_id, text=""):
 #
 #  WHAT IS DROPPED, AND WHY EACH
 #    * add / edit / delete / change-username (alt+n, alt+e, alt+x). These are
-#      the parts of rofi_pass with the most careful code in them — the
+#      the parts of ati-pass with the most careful code in them — the
 #      recreate-then-remove ordering that survives a failure halfway, the
 #      UUID-not-name identity that stops a duplicate becoming unreachable —
 #      and reimplementing that carefully a second time, in another language,
 #      against the same vault, is how the two copies drift and one of them
-#      eats an entry. rofi_pass keeps them and it still runs.
+#      eats an entry. ati-pass keeps them and it still runs.
 #    * alt+a, type-into-the-focused-window. It is xdotool, i.e. X11. The
 #      Wayland equivalent is wtype, and wtype creates and destroys a virtual
 #      keyboard — which closes a layer-shell panel that holds the keyboard.
@@ -2332,7 +2332,7 @@ def pass_list():
         if not name:
             continue
         # Everything below addresses the entry by UUID and never by
-        # name+user, which is rofi_pass's own hard-won rule: rbw permits two
+        # name+user, which is ati-pass's own hard-won rule: rbw permits two
         # entries with the same name and username and then refuses to act on
         # either ("multiple entries found"), so a name-keyed menu turns a
         # duplicate into an entry you can neither read nor delete.
@@ -2396,7 +2396,7 @@ def pass_run(item_id):
     if not value:
         raise ValueError("entry has no %s" % field)
     _copy(value)
-    # The value is NEVER in the notification body. rofi_pass says "Password
+    # The value is NEVER in the notification body. ati-pass says "Password
     # copied" for the same reason: a dunst notification is on screen for
     # seconds and is in the notification centre afterwards.
     _notify("%s copied" % what, "from the vault")

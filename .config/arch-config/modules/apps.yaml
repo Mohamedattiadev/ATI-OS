@@ -29,12 +29,12 @@ packages:
   # rofi-pass drives pass(1) against ~/.password-store. The Mod+p p
   # binding it served was a duplicate that could never fire, and no
   # password store exists on this machine; passwords go through
-  # rofi_pass -> Vaultwarden instead. Kept declared only because pass
+  # ati-pass -> Vaultwarden instead. Kept declared only because pass
   # itself is still useful standalone -- drop both if you never use it.
   - rofi-pass
   # Password manager. Vaultwarden speaks the Bitwarden API, so the
   # official Bitwarden phone apps sync against it -- no bespoke mobile
-  # client. rbw is the Rust CLI that the rofi_pass picker (Mod+p p)
+  # client. rbw is the Rust CLI that the ati-pass picker (Mod+p p)
   # reads through; vaultwarden-web is only needed to create and manage
   # the account from a browser.
   - vaultwarden
