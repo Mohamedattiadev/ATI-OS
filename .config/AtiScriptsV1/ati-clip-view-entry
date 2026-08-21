@@ -1,0 +1,67 @@
+#!/bin/bash
+# Adapted from Omarchy's bin/omarchy-clipboard-open (MIT, see
+# ../../NOTICE.md): same URL-sniff-else-editor logic for text entries,
+# `tensaku-edit` (an Omarchy-specific image editor, not installed here)
+# swapped for `imv`, `omarchy-launch-browser`/`omarchy-launch-editor`
+# swapped for `xdg-open` (respects whatever ati-default-app browser has
+# set) and this repo's own `alacritty -e nvim` editor idiom.
+# ati-clip-view-entry -- open one clipboard-history entry full-size/full-text.
+# Usage: --history-index <index>
+set -uo pipefail
+
+history_index=""
+history_path="$HOME/.local/state/omarchy/clipboard-history.json"
+
+while (( $# > 0 )); do
+  case "$1" in
+    --history-index) history_index="${2:-}"; shift 2 ;;
+    *) echo "Usage: ati-clip-open --history-index <index>" >&2; exit 1 ;;
+  esac
+done
+
+[[ $history_index =~ ^[0-9]+$ ]] || exit 1
+[[ -r $history_path ]] || exit 1
+
+entry_type=$(jq -er --argjson index "$history_index" '.[$index].type' "$history_path") || exit 1
+
+open_image() {
+  local path="$1"
+  [[ -r $path ]] || exit 1
+  setsid imv -W 820 -H 500 -s shrink "$path" >/dev/null 2>&1 < /dev/null &
+  disown
+}
+
+open_text() {
+  local text="$1"
+  local url=""
+
+  url=$(grep -Eom1 'https?://[^[:space:]"'\''<>]+' <<<"$text" || true)
+  if [[ -z $url && $text =~ ^[[:space:]]*([[:alnum:]][[:alnum:].-]+\.[[:alpha:]]{2,})(/[^[:space:]]*)?[[:space:]]*$ ]]; then
+    url="https://${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+  fi
+
+  if [[ -n $url ]]; then
+    exec xdg-open "$url"
+  fi
+
+  local open_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/clipboard-open"
+  mkdir -p "$open_dir"
+  local open_file
+  open_file=$(mktemp --tmpdir="$open_dir" clipboard.XXXXXX.txt) || exit 1
+  printf '%s' "$text" >"$open_file"
+  exec alacritty -e nvim "$open_file"
+}
+
+case "$entry_type" in
+  image)
+    path=$(jq -er --argjson index "$history_index" '.[$index].path' "$history_path") || exit 1
+    open_image "$path"
+    ;;
+  text)
+    text=$(jq -er --argjson index "$history_index" '.[$index].text' "$history_path") || exit 1
+    open_text "$text"
+    ;;
+  *)
+    exit 1
+    ;;
+esac

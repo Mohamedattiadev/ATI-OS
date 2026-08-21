@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# ati-emoji-insert — searchable emoji picker that copies the pick and pastes
+# it into whichever window currently has focus. Data lifted verbatim from
+# Omarchy's own emojis.json (MIT, see NOTICE.md) -- 1870 entries of
+# {"e": emoji, "k": "keyword keyword ..."}, unmodified, in ati-emoji-data.json.
+#
+# Insertion mirrors Omarchy's own bin/omarchy-menu-emoji-insert: copy to the
+# clipboard (--sensitive, so it does not clutter a clipboard-history
+# manager -- the pick is a one-off, not something to scroll past later)
+# then synthesize a Shift+Insert paste into the focused window, rather than
+# typing the codepoint directly, so the emoji also survives on the
+# clipboard for a second use.
+#
+# This synthesizes input into whatever window the USER is actively focused
+# on -- a normal paste-into-app feature, the same class ati-voice-dictate
+# already does with `xdotool type` on the X11 side. Not the same thing as,
+# and not covered by, this project's own restriction on synthesizing input
+# into Claude's own live session.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/ati-rofi-common.sh"
+
+DATA_FILE="$SCRIPT_DIR/ati-emoji-data.json"
+
+require_cmd jq || exit 1
+
+if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+  require_cmd wl-copy wtype || exit 1
+
+  # The PICKER only, not the paste mechanism below it, branches on bar
+  # mode -- ati-menu-select pops ati-menu's own separate floating window,
+  # which reads as "the wrong picker opened" from inside an island-mode
+  # surface (same fix as ati-default-app/ati-webapp-remove/ati-keybindings,
+  # see ati-default-app's own comment on this exact condition). rofi
+  # already runs fine under this Hyprland session regardless of bar mode
+  # (bar-chooser itself is a plain rofi menu on a Hyprland keybind), so
+  # island mode gets that instead of a second special case. wl-copy/wtype
+  # stay unconditional either way -- this is Wayland's OWN paste path, not
+  # ati-menu's, and Hyprland is Wayland under both bar modes.
+  if use_ati_menu_select; then
+    # Row = "\t<emoji>\t<keywords>": empty icon field, emoji as the LABEL
+    # (Menu.qml's dmenu view returns only the label -- the field that must
+    # carry the actual pick), keywords as searchable subtext underneath.
+    emoji="$(jq -r '.[] | "\t" + .e + "\t" + .k' "$DATA_FILE" | \
+      ati-menu-select --mode select --prompt "Emoji")"
+  else
+    row="$(jq -r '.[] | .e + "  " + .k' "$DATA_FILE" | \
+      rofi -dmenu -i -theme "$HOME/.config/rofi/themes/base.rasi" \
+        -theme-str 'listview { lines: 8; dynamic: false; }' -p "Emoji")"
+    emoji="${row%% *}"
+  fi
+
+  [[ -z "$emoji" ]] && exit 0
+  printf '%s' "$emoji" | wl-copy --sensitive
+  wtype -M shift -k Insert -m shift
+else
+  if command -v xclip >/dev/null 2>&1; then
+    copy_cmd=(xclip -selection clipboard)
+  elif command -v xsel >/dev/null 2>&1; then
+    copy_cmd=(xsel --clipboard --input)
+  else
+    notify_safe "ati-emoji-insert" "install xclip or xsel"
+    exit 1
+  fi
+  require_cmd xdotool || exit 1
+
+  # rofi shows/returns the row text verbatim (no field-splitting the way
+  # the QML dmenu view does), so keep it to one field and peel the emoji
+  # (always the first whitespace token) back out of whatever comes back.
+  row="$(jq -r '.[] | .e + "  " + .k' "$DATA_FILE" | \
+    rofi -dmenu -i -theme "$HOME/.config/rofi/themes/base.rasi" \
+      -theme-str 'listview { lines: 8; dynamic: false; }' -p "Emoji")"
+  emoji="${row%% *}"
+
+  [[ -z "$emoji" ]] && exit 0
+  printf '%s' "$emoji" | "${copy_cmd[@]}"
+  xdotool key shift+Insert
+fi

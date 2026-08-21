@@ -24,13 +24,18 @@ preflight() {
   _check "dotfiles clone at $DOTFILES_DIR" "[[ -d $DOTFILES_DIR ]]"                "git clone the repo to $DOTFILES_DIR"
   _check "internet reachable"          "curl -fsS --max-time 5 https://archlinux.org >/dev/null" "network down or firewall blocks HTTPS"
   # Scale the requirement to what was actually asked for. The 10 GB figure
-  # is whisper models + the fast rebuild + wallpapers + a full dcli sync;
+  # is the fast rebuild trees + wallpapers + a full dcli sync;
   # `--only=stow,paths` downloads none of that, and demanding 10 GB for it
   # blocked the container smoke test and any config-only re-run on a full
   # disk. Refusing for a reason that does not apply to this run is just a
   # false negative, and false negatives are how safety checks get bypassed.
+  #
+  # voxtype is NOT in this list: its model download is ~150MB, well inside
+  # the default 1GB budget below -- whisper/whisper-fast used to be here
+  # for the old ~630MB of models plus whisper.cpp-git's multi-GB AUR build
+  # tree, neither of which voxtype-bin (a prebuilt package) has.
   local _need_gb=1 _heavy _heavy_sel=0
-  for _heavy in dcli-sync dcli-sync-extra whisper whisper-fast piper wallpapers candy-icons speed; do
+  for _heavy in dcli-sync dcli-sync-extra piper wallpapers candy-icons speed; do
     if [[ -n "$ONLY_LIST" ]]; then
       _id_in_csv "$ONLY_LIST" "$_heavy" && _heavy_sel=1
     elif [[ -n "$SKIP_LIST" ]]; then
@@ -40,7 +45,7 @@ preflight() {
     fi
   done
   (( _heavy_sel )) && _need_gb=10
-  _check "disk free > ${_need_gb} GB on \$HOME" "[[ $(df -Pk "$HOME" | awk 'NR==2{print $4}') -gt $((_need_gb * 1048576)) ]]" "this run needs ~${_need_gb}GB (10GB covers piper 60MB + whisper models+fast-build ~1GB + dcli pkgs + wallpapers; 1GB when none of those are selected)"
+  _check "disk free > ${_need_gb} GB on \$HOME" "[[ $(df -Pk "$HOME" | awk 'NR==2{print $4}') -gt $((_need_gb * 1048576)) ]]" "this run needs ~${_need_gb}GB (10GB covers piper 60MB + dcli pkgs + wallpapers; 1GB when none of those are selected — voxtype's ~150MB model always fits the 1GB floor)"
   _check "RAM ≥ 2 GB"                  "[[ $(awk '/MemTotal/{print $2}' /proc/meminfo) -gt 2000000 ]]" "wizard pulls 500MB+ concurrently — <2GB risks OOM/freeze"
   # Not run through _check: _check swallows stdout AND stdin. The swallowed
   # stdout hid the "pacman is running — waiting up to 60s" line, so a

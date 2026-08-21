@@ -77,7 +77,14 @@ PopupChrome {
 
     titleIcon: String.fromCodePoint(0xF018D)
     title: root.sheetTitle === "" ? "Cheatsheet" : root.sheetTitle
-    subtitle: root.note
+    // Reported: "the cheats should be searchable with /" — same trigger
+    // ThemePickerLayer.qml already uses over its own grid ("`/` enters
+    // search... field is readOnly until then"), ported to this popup's own
+    // onKeyPressed rather than a QML TextInput, since this surface has no
+    // focused-field concept at all today — see `searching`/`filterText`
+    // below.
+    subtitle: root.searching ? ("/" + root.filterText) : root.note
+    suppressEscapeDismiss: root.searching
 
     // ---- THE BADGE IS THE SCROLL POSITION, WHICH IS WHAT qtile PUTS THERE --
     //
@@ -106,16 +113,33 @@ PopupChrome {
     // Split across the two bars the way qtile splits it: the keys that CHANGE
     // WHICH SHEET are the header legend, and `j / k scroll` + `Esc close` is
     // `_footer()` verbatim, in the footer.
-    hints: [
-        { key: "v",   desc: "vim" },
-        { key: "f",   desc: "fish" },
-        { key: "Tab", desc: "page" }
-    ]
+    hints: root.searching
+        ? [{ key: "esc", desc: "cancel search" }]
+        : [
+            { key: "v",   desc: "vim" },
+            { key: "f",   desc: "fish" },
+            { key: "Tab", desc: "page" },
+            { key: "/",   desc: "find" }
+        ]
 
     // ---- STATE ----
     property string sheetTitle: ""
     property string note: ""
     property var sections: []
+
+    // ---- SEARCH ----
+    property bool searching: false
+    property string filterText: ""
+
+    function enterSearch() {
+        root.searching = true;
+        root.filterText = "";
+    }
+
+    function exitSearch() {
+        root.searching = false;
+        root.filterText = "";
+    }
 
     // ---- THE SHEETS' OWN METRICS, WHICH EVERYTHING ELSE IS BUILT FROM ----
     //
@@ -243,6 +267,7 @@ PopupChrome {
     Component.onCompleted: root.load(root.which)
 
     function load(name) {
+        root.exitSearch();
         sheetProc.command = ["python3",
             Quickshell.env("HOME") + "/.config/hypr/scripts/cheatsheet.py",
             "--sheet-json", name];
@@ -258,6 +283,28 @@ PopupChrome {
     // puts "Basics 1" and "Basics 3" side by side and leaves one column twice
     // the height of its neighbours.
     readonly property int columnCount: 3
+
+    // Filters ROWS (combo or label containing the query, case-insensitive —
+    // same substring test ati-menu's own `nameSearchText` filter uses, not
+    // a fuzzy scorer, since a cheatsheet's rows are shown as-is rather than
+    // ranked). A section survives only if at least one of its rows matches;
+    // its heading stays so a match still reads as "found under Basics"
+    // rather than a bare orphaned row.
+    readonly property var filteredSections: {
+        const query = root.filterText.trim().toLowerCase();
+        if (query === "")
+            return root.sections;
+        const out = [];
+        for (const section of root.sections) {
+            const rows = (section.rows || []).filter(row =>
+                String(row.combo || "").toLowerCase().indexOf(query) !== -1
+                || String(row.label || "").toLowerCase().indexOf(query) !== -1);
+            if (rows.length > 0)
+                out.push({ title: section.title, rows: rows });
+        }
+        return out;
+    }
+
     readonly property var columns: {
         const cols = [];
         const heights = [];
@@ -265,7 +312,7 @@ PopupChrome {
             cols.push([]);
             heights.push(0);
         }
-        for (const section of root.sections) {
+        for (const section of root.filteredSections) {
             let at = 0;
             for (let c = 1; c < root.columnCount; c++)
                 if (heights[c] < heights[at])
@@ -278,7 +325,34 @@ PopupChrome {
     }
 
     onKeyPressed: (key, mods, text) => {
+        if (root.searching) {
+            // Same shape as ati-menu's own filter-editing branch
+            // (Menu.qml's `Util.editsFilter`/`editedFilter`): Escape and
+            // Backspace-on-empty both leave search, Backspace otherwise
+            // trims one character, any other single printable character
+            // (no modifier or Shift-only, so capitals still work) appends.
+            // Nothing here reaches the sheet-switch keys below — that is
+            // the whole point of gating on `searching` first.
+            if (key === Qt.Key_Escape) {
+                root.exitSearch();
+            } else if (key === Qt.Key_Backspace) {
+                if (root.filterText.length > 0)
+                    root.filterText = root.filterText.slice(0, -1);
+                else
+                    root.exitSearch();
+            } else if (text && text.length === 1 && text.charCodeAt(0) >= 32
+                       && text.charCodeAt(0) !== 127
+                       && (mods === Qt.NoModifier || mods === Qt.ShiftModifier)) {
+                root.filterText += text;
+            }
+            body.contentY = 0;
+            return;
+        }
+
         switch (key) {
+        case Qt.Key_Slash:
+            root.enterSearch();
+            break;
         case Qt.Key_K:
             // qtile's `k` is BOTH "show the WM sheet" and "scroll up", and
             // which one it means depends on whether a sheet is already up.
@@ -427,12 +501,14 @@ PopupChrome {
     footer: Text {
         anchors.centerIn: parent
         text: {
+            if (root.sections.length === 0)
+                return "no rows — is cheatsheet.py readable?";
             let rows = 0;
-            for (const s of root.sections)
+            for (const s of root.filteredSections)
                 rows += s.rows ? s.rows.length : 0;
-            return root.sections.length === 0
-                ? "no rows — is cheatsheet.py readable?"
-                : root.sections.length + " sections  ·  " + rows + " keys";
+            if (root.searching && root.filterText !== "" && rows === 0)
+                return "no matches for “" + root.filterText + "”";
+            return root.filteredSections.length + " sections  ·  " + rows + " keys";
         }
         color: root.cMuted
         font.family: PopupMetrics.font

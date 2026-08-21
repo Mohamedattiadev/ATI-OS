@@ -35,7 +35,9 @@ DISK="$VM_DIR/arch.qcow2"
 MIRROR="https://geo.mirror.pkgbuild.com/iso/latest"
 
 # Sized from what the install actually does, not from round numbers:
-# dcli sync (~5 min of pacman), whisper small.en (~500 MB), piper voices
+# dcli sync (~5 min of pacman), voxtype's base.en model (~150 MB, down from
+# whisper's old ~630MB two-model download -- see the historical comments
+# below for what THAT used to cost this VM's disk budget), piper voices
 # (~60 MB), wallpapers clone (~500 MB), plus the base system.
 VM_RAM_MB="${VM_RAM_MB:-4096}"            # override for a tighter host
 SMOKE_RAM_MB=2048                         # --smoke only reaches a login prompt

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # ati-voice-dictate — press keybind to start; press again to stop and paste transcript.
-# Backend: whisper.cpp (small.en model). Requires: whisper-cli (whisper.cpp), sox, xdotool.
+# Backend: whisper.cpp (small.en model). Requires: whisper-cli (whisper.cpp), sox, wtype.
+# wtype, not xdotool: xdotool's fake input is XTest-based and only reaches
+# XWayland clients -- a no-op against a native-Wayland window, which on this
+# Hyprland session is effectively every window.
 #
 # One-time setup:
 #   yay -S whisper.cpp-git
@@ -49,7 +52,7 @@ if [[ ! -f "$MODEL" ]]; then
   exit 1
 fi
 
-for bin in sox whisper-cli xdotool; do
+for bin in sox whisper-cli wtype; do
   command -v "$bin" >/dev/null || {
     pill critical "ati-voice-dictate" "Missing binary: $bin"
     exit 1
@@ -81,7 +84,13 @@ if [[ -f "$PIDFILE" ]]; then
     exit 0
   fi
 
-  xdotool type --delay 8 "$TXT"
+  # xdotool's fake input only reaches XWayland clients -- it is a no-op
+  # against a native-Wayland window (this session's focused windows are
+  # native, e.g. kitty with `xwayland: 0`), which is why dictated text
+  # never actually landed anywhere despite whisper-cli transcribing fine.
+  # wtype uses the virtual-keyboard Wayland protocol instead, which
+  # Hyprland (and native Wayland clients) actually implement.
+  wtype -d 8 -- "$TXT"
   pill normal "  Pasted" "${TXT:0:80}"
   sleep 1
   clear_pill

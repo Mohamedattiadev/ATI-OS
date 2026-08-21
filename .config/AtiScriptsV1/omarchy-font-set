@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# omarchy-font-set <family> — apply a font choice to JUST the ati-menu
+# popup, via OMARCHY_MENU_FONT (Style.qml's own already-built per-surface
+# override -- see menuFontFamily), not the shared `monospace` fontconfig
+# alias in ~/.config/fontconfig/fonts.conf. That file is deliberately
+# curated (its own header comment explains why: keeping eww/dunst/
+# qtile-popups on one typeface after a prior silent-substitution bug) --
+# a menu font-switcher has no business quietly undoing that system-wide.
+#
+# Called by the vendored Menu.qml's own "fonts" provider
+# (`actionFor`, Menu.qml:313) as `omarchy-font-set <value>` on select --
+# do not rename.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/ati-rofi-common.sh"
+
+FONT_CONF="$HOME/.config/hypr/menu-font.conf"
+HYPRLAND_CONF="$HOME/.config/hypr/hyprland.conf"
+
+name="${1:-}"
+if [[ -z "$name" ]]; then
+  echo "usage: omarchy-font-set <family>" >&2
+  exit 2
+fi
+
+resolved="$(fc-match -f '%{family[0]}' "$name" 2>/dev/null)"
+if [[ "$resolved" != "$name" ]]; then
+  notify_safe "omarchy-font-set" "'$name' does not resolve to itself (got '$resolved') -- refusing"
+  exit 1
+fi
+
+printf 'env = OMARCHY_MENU_FONT,%s\n' "$name" > "$FONT_CONF"
+
+# Persist for future full sessions (Hyprland's `env =` only applies at
+# compositor start) -- add the source line once, never duplicate it.
+if [[ -f "$HYPRLAND_CONF" ]] && ! grep -qF 'source = ./menu-font.conf' "$HYPRLAND_CONF"; then
+  printf 'source = ./menu-font.conf\n' >> "$HYPRLAND_CONF"
+fi
+
+# Apply now, to the resident menu instance, not just future sessions --
+# same isolated restart Phase A's checkpoint already exercised: this
+# process is keyed by its own config path, so restarting it cannot take
+# topbar/tide-island-fork down with it.
+if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+  pkill -f 'quickshell -p .*quickshell/ati-menu$' 2>/dev/null
+  sleep 0.3
+  OMARCHY_MENU_FONT="$name" setsid -f quickshell -p "$HOME/.config/quickshell/ati-menu" >/dev/null 2>&1
+fi
+
+notify_safe "ati-menu font" "Set to $name"

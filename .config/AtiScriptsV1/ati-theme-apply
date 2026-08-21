@@ -180,6 +180,37 @@ if [[ "$MODE" != "wal" && -f "$THEME_DIR/colors.toml" ]]; then
   fi
 fi
 
+# ---- ati-menu's own palette (Commons/Color.qml, vendored from Omarchy) ----
+#
+# Color.qml reads ~/.local/state/omarchy/current/theme/{colors.toml,
+# shell.toml} -- Omarchy's own theme-state path, which nothing on this
+# machine ever wrote to (confirmed: the directory did not exist), so the
+# QML menu and every ati-menu-select picker it renders were stuck on
+# Color.qml's hardcoded fallback palette regardless of which theme was
+# actually applied. Different key names from ATI-OS's own colors.toml
+# (background/foreground/accent vs bg/fg/accent) but loadColors() only
+# ever reads four of them (see its own source) -- no need to emit the
+# full color0-15 ramp it also tolerates.
+#
+# shell.toml (per-surface role overrides) is deliberately NOT written:
+# absent is a real, handled case (loadShell("") on a missing file), and
+# every surface falls back to this foundational palette through Style.qml's
+# own pick()/fallback chain -- writing a half-guessed shell.toml would be
+# worse than leaving the gap Omarchy's own fallback already covers.
+#
+# wal mode is NOT covered here (T_BG etc are only populated in the
+# THEME_LOADED branch above, themes/<mode>/colors.toml, not wal's
+# dynamically-generated palette) -- out of scope for this pass.
+if [[ "$THEME_LOADED" == 1 ]]; then
+  ATI_MENU_THEME_DIR="$HOME/.local/state/omarchy/current/theme"
+  mkdir -p "$ATI_MENU_THEME_DIR" 2>/dev/null && cat > "$ATI_MENU_THEME_DIR/colors.toml" <<EOF
+background = "$T_BG"
+foreground = "$T_FG"
+accent = "$T_ACCENT"
+red = "$T_RED"
+EOF
+fi
+
 # ---- SNAPSHOT THE OUTGOING PALETTE, BEFORE ANYTHING OVERWRITES IT ----
 #
 # qtile's apply_palette_live() (config.py) needs the palette THIS script

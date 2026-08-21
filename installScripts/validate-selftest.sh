@@ -42,7 +42,17 @@ CASES=(
 "font-qtile|.config/qtile/config.py|s=s.replace('font=\"Ubuntu Mono\"','font=\"Totally Fake Sans\"',1)|Totally Fake Sans"
 "docs-clip-drift|docs/assets/img/layouts.gif|BINARY_COPY:IMGS/overview.gif|differs from IMGS/layouts.gif"
 "docs-orphan|docs/assets/img/zz-orphan.gif|BINARY_NEW:IMGS/groups.gif|warn:referenced by no page"
-"wizard-count|installScripts/wizard.sh|s=s.replace('  whisper-fast mic-gain scrcpy','  whisper-fast mic-gain scrcpy newmodule',1)|wizard.sh runs 48"
+# Targets registry.sh, not wizard.sh: MOD_ORDER moved there when the
+# installer split into phase directories (see that file's own header), and
+# this case's file/string were never updated for the move -- the replace
+# was a silent no-op (the substring did not exist in wizard.sh at all) and
+# the case was not actually proving anything. Also recomputed the expected
+# count while fixing it: whisper+whisper-fast (2 modules) became voxtype
+# (1), a real -1 this case's old "48" predates by more than that one
+# change -- verify the live number with validate.sh's own
+# MOD_ORDER-minus-OPTIN_MODS logic (see its ~line 594) rather than trusting
+# either number if this drifts again.
+"wizard-count|installScripts/install/lib/registry.sh|s=s.replace('  mic-gain scrcpy','  mic-gain scrcpy newmodule',1)|wizard.sh runs 47"
 "wizard-order|docs/install-git.html|s=s.replace('<tr><td>2</td><td><code>bootstrap</code></td>','<tr><td>2</td><td><code>zzz-wrong</code></td>',1)|disagrees with MOD_ORDER"
 "nvim-disabled|.config/nvim/lua/plugins/themes.lua|s=s.replace('{ \"Mofiqul/dracula.nvim\", lazy = true }','{ \"Mofiqul/dracula.nvim\", lazy = true, enabled = false }',1)|enabled = false"
 "pkg-count|docs/under-the-hood.html|s=s.replace('data-count=\"declared-packages\">277','data-count=\"declared-packages\">999',1)|says 999 declared packages"

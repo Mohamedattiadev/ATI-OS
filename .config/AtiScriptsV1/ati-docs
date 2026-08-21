@@ -95,6 +95,33 @@ DOCS_GEO='window { width: 45%; } listview { lines: 8; dynamic: false; }'
 RC=0
 pick() {
   local out
+  # ati-menu-select only under native — it pops ati-menu's own separate
+  # floating window, which reads as "the wrong picker opened" from inside
+  # an island-mode surface (reported directly: clicking About from the
+  # new island menu panel opened this instead of anything island-styled).
+  # Same fix as ati-default-app/ati-webapp-remove/ati-keybindings/
+  # ati-emoji-insert, see ati-default-app's own comment on this exact
+  # condition. rofi already runs fine under this Hyprland session
+  # regardless of bar mode (bar-chooser itself is a plain rofi menu on a
+  # Hyprland keybind), so island mode gets that instead of a second
+  # special case.
+  if use_ati_menu_select; then
+    # No -mesg equivalent in the QML dmenu payload -- folded into the
+    # prompt itself instead of dropped, same as rofi_confirm/rofi_input
+    # in ati-rofi-common.sh handle it.
+    local full_prompt="$1"
+    [[ -n "${2:-}" ]] && full_prompt="$1 ($2)"
+    # --width 700, not the default 300: every row this file hands `pick`
+    # is hand-padded plain text ("About<spaces>user · theme · gpu ·
+    # kernel") sized for rofi's DOCS_GEO (45% of screen, easily 700px+),
+    # not for the QML dmenu's default box. At 300 the right-hand
+    # description got clipped -- reported live as "the About panel opens
+    # small and the description on the right isn't fully visible".
+    out="$(ati-menu-select --mode select --width 700 --prompt "$full_prompt")"
+    RC=$?
+    printf '%s' "$out"
+    return
+  fi
   out="$(rofi -dmenu -i -p "$1" ${2:+-mesg "$2"} -theme-str "$DOCS_GEO")"
   RC=$?
   printf '%s' "$out"

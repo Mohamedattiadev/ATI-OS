@@ -146,8 +146,26 @@ Item {
   // between them) -- just independent of displayModel.count. dmenu mode
   // (a different feature, not used by ati-menu.json's own tree) is left on
   // its original content-hugging behavior.
-  property int fixedVisibleRows: 10
+  // ATI-OS: 7, not Omarchy's own 10 -- reported too tall against a
+  // 10-item root level filling the whole card height every time it
+  // opened. Still fixed (not content-hugging, see this property's own
+  // history), just a smaller fixed number; the fold/peek affordance
+  // already built for a long submenu now also covers the root level.
+  property int fixedVisibleRows: 7
   property int fixedRowsHeight: fixedVisibleRows * baseRowHeight + Math.max(0, fixedVisibleRows - 1) * rowSpacing
+  // ATI-OS: dmenu's own fixed size, deliberately smaller than the main
+  // menu's fixedRowsHeight above -- "the width/height should be fixed,
+  // same as the lock screen's" (hyprlock.conf's `input-field { size = 300,
+  // 46 }`, a small box that never resizes to its content). dmenuWidth
+  // already defaults to 300 (ati-menu-select's own default, matching that
+  // box's width exactly); a Yes/No confirm or a reminder prompt reserving
+  // the main menu's full 10-row height read as an oversized empty card
+  // next to a 2-line answer, so this is its own smaller constant rather
+  // than reusing fixedRowsHeight -- still fixed either way, just sized for
+  // what a dmenu prompt actually is: a small compact box, not a browse
+  // level of the tree.
+  property int dmenuFixedVisibleRows: 6
+  property int dmenuFixedRowsHeight: dmenuFixedVisibleRows * baseRowHeight + Math.max(0, dmenuFixedVisibleRows - 1) * rowSpacing
   property int visibleRowsHeight: root.dmenuActive ? dmenuRowListHeight(layoutSerial, displayModel.count, filterText) : fixedRowsHeight
   property int cardHeight: root.dmenuActive
     ? Math.min(contentMargin * 2 + headerHeight + (mode === "input" ? 0 : contentSpacing + visibleRowsHeight), panel.height - Style.gapsOut * 2)
@@ -236,6 +254,14 @@ Item {
     return foldedListHeight(totals, availableRowsHeight())
   }
 
+  // ATI-OS: fixed like the main menu's fixedRowsHeight (see that property's
+  // own comment) rather than content-hugging -- a 2-row Yes/No confirm and
+  // a 300-entry font list now render at the same card height, matching
+  // both the main menu's own already-fixed geometry and the lock screen's
+  // input-field (hyprlock.conf's `size = 300, 46`, never resizing to its
+  // content either). Reuses fixedRowsHeight/fixedVisibleRows directly
+  // rather than a second constant, so the two stay in lockstep by
+  // construction instead of by remembering to edit both.
   function dmenuRowListHeight(_serial, _count, _filter) {
     if (root.mode === "input") return 0
     if (displayModel.count === 0) return root.baseRowHeight
@@ -243,15 +269,7 @@ Item {
     var available = availableRowsHeight()
     if (root.dmenuMaxHeight > 0) available = Math.min(available, Style.space(root.dmenuMaxHeight))
 
-    var totals = []
-    var total = 0
-    for (var i = 0; i < displayModel.count; i++) {
-      if (i > 0) total += root.rowSpacing
-      total += root.rowHeightForDetail(displayModel.get(i).detail)
-      totals.push(total)
-    }
-
-    return foldedListHeight(totals, available)
+    return Math.min(root.dmenuFixedRowsHeight, available)
   }
 
   function item(id) {
@@ -661,9 +679,22 @@ Item {
       var currentRows = []
       var drilldownRows = []
 
+      // ATI-OS: installed apps are excluded from the flattened cross-tree
+      // search unless you are already browsing inside Apps. Upstream
+      // treats "apps" as just another branch, so typing "zen" from the
+      // root landed on Zen Browser exactly like it would land on
+      // "Install > Zen" -- reported as making the whole menu read like a
+      // second drun instead of a settings/tools tree with its own Apps
+      // section. Apps are still fully searchable on their own turf: once
+      // `active` is "apps" (or a descendant of it), this exclusion does
+      // not apply and typing filters the app list normally, same as any
+      // other section filtering its own children.
+      var searchingApps = active === "apps" || root.isDescendantOf(active, "apps")
+
       for (var i = 0; i < root.itemOrder.length; i++) {
         var entry = root.item(root.itemOrder[i])
         if (!entry || entry.id === "root") continue
+        if (!searchingApps && (entry.id === "apps" || entry.id.indexOf("apps.") === 0)) continue
         if (!root.isDescendantOf(entry.id, active)) continue
         if (!root.matchesQuery(entry, query)) continue
 

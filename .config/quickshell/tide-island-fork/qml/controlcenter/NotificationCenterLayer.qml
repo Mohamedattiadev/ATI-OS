@@ -46,8 +46,8 @@ Item {
 
     property var notificationModel: null
     property string iconFontFamily: userConfig.iconFontFamily
-    property string textFontFamily: userConfig.textFontFamily
-    property string heroFontFamily: userConfig.heroFontFamily
+    property string textFontFamily: SystemFont.family
+    property string heroFontFamily: SystemFont.family
 
     readonly property bool hasNotifications: notificationModel && notificationModel.count > 0
     // 10 -> 16. The footer sat 10 px above the panel's bottom edge, which is

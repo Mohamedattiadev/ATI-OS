@@ -79,10 +79,15 @@ PanelWindow {
 
     Rectangle {
         anchors.fill: parent
-        color: IslandTheme.alpha(IslandTheme.background, 0.949)
-        border.color: root.cSurfaceAlt
-        border.width: PopupMetrics.s(2)
-        radius: PopupMetrics.s(14)
+        // Matched to PopupChrome.qml's own chrome pass (opaque background,
+        // 1px hairline, radius 10 — the same as ati-menu's card) — this
+        // dialog predates PopupChrome and was missed the first time round
+        // since it doesn't extend it (it deliberately can't: see the file
+        // header on WlrKeyboardFocus.None).
+        color: IslandTheme.background
+        border.color: IslandTheme.hairlineStrong
+        border.width: PopupMetrics.s(1)
+        radius: PopupMetrics.s(10)
 
         // fade_in_popup(layout, duration=0.16, steps=10) — shorter than the
         // panel popups' 0.28, and that difference is qtile's: this one is

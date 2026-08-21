@@ -38,7 +38,7 @@ Item {
     property real trackProgress: 0
     property var activePlayer: null
     property string iconFontFamily: userConfig.iconFontFamily
-    property string textFontFamily: userConfig.textFontFamily
+    property string textFontFamily: SystemFont.family
     property int timerSelectedHours: 0
     property int timerSelectedMinutes: 5
     property int timerTotalSeconds: 300
@@ -832,7 +832,7 @@ Item {
 
         readonly property var userConfig: UserConfig
 
-        property string textFontFamily: userConfig.textFontFamily
+        property string textFontFamily: SystemFont.family
         property int timerSelectedHours: 0
         property int timerSelectedMinutes: 5
         property int timerTotalSeconds: 300

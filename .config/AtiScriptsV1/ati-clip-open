@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# ati-clip-open — trigger.clipboard's action, and Alt+V's (via
+# ati-bar-action tide showPicker clipboard). Hyprland gets the dedicated
+# split-pane QML clipboard picker (plugins/clipboard/Clipboard.qml, real
+# image thumbnails + copy timestamps, capturing independently via
+# ati-clip-capture); X11/qtile has no Wayland compositor for that view's
+# WlrLayershell surface to bind to (same fact every other QML-vs-rofi
+# split in this repo rests on), so it keeps the rofi-based ati-copyq-rofi
+# there.
+#
+# NOT the same script as ati-clip-view-entry, despite the similar name --
+# that one opens a SINGLE history entry full-size/full-text from inside
+# the picker (Clipboard.qml's Alt+Enter), this one opens the picker
+# itself. The two used to collide under this one filename (a second
+# `Write` here silently overwrote the first), which is exactly why Alt+V
+# stopped doing anything -- fixed by giving the per-entry script its own
+# name instead.
+set -euo pipefail
+
+if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+  IPC_BIN=qs
+  command -v qsipc >/dev/null 2>&1 && IPC_BIN=qsipc
+  exec "$IPC_BIN" -p "$HOME/.config/quickshell/ati-menu" ipc call clip open
+else
+  exec ati-copyq-rofi
+fi

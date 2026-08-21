@@ -368,7 +368,7 @@ PopupChrome {
         fg: root.cFg
         muted: root.cMuted
         highlight: root.cHighlight
-        highlightInk: root.cHighlightInk
+        highlightText: root.cAccentText
 
         rows: root.view === "modes"
             ? root.modeList.map((m) => ({

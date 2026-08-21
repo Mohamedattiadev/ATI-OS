@@ -85,6 +85,25 @@ LO_PROFILE="${XDG_RUNTIME_DIR:-/tmp}/ilovepdf-lo-profile"
 menu() {
 	local prompt="$1" mesg="${2:-}"
 	shift 2 || true
+
+	# A plain call (no extra rofi flags like -multi-select, which every
+	# caller here that needs it passes explicitly) routes through the QML
+	# menu's own dmenu view on Hyprland, same as every other picker in this
+	# repo now. A caller passing extras depends on rofi-only behavior the
+	# QML payload has no equivalent for -- multi-select in particular has
+	# no concept in Menu.qml's dmenu contract at all -- so it stays on rofi
+	# regardless of session rather than silently losing that capability.
+	if [[ $# -eq 0 ]] && [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v ati-menu-select >/dev/null 2>&1; then
+		local full_prompt="$prompt"
+		[[ -n "$mesg" ]] && full_prompt="$prompt ($mesg)"
+		local out rc=0
+		out="$(ati-menu-select --mode select --prompt "$full_prompt")" || rc=$?
+		(( rc > 1 )) && return 2
+		(( rc == 1 )) && return 1
+		printf '%s' "$out"
+		return 0
+	fi
+
 	local -a m=(); [[ -n "$mesg" ]] && m=(-mesg "$mesg")
 	local out rc=0
 	out="$(rofi -dmenu -i -p "$prompt" "${m[@]}" "$@")" || rc=$?
@@ -103,12 +122,25 @@ menu() {
 # older theme grammar ignores one or the other.
 ask_text() {
 	local prompt="$1" mesg="${2:-}" out rc=0
+	if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v ati-menu-select >/dev/null 2>&1; then
+		local full_prompt="$prompt"
+		[[ -n "$mesg" ]] && full_prompt="$prompt ($mesg)"
+		out="$(ati-menu-select --mode input --prompt "$full_prompt")" || rc=$?
+		(( rc != 0 )) && return 1
+		printf '%s' "$out"
+		return
+	fi
 	local -a m=(); [[ -n "$mesg" ]] && m=(-mesg "$mesg")
 	out="$(printf '' | rofi -dmenu -i -p "$prompt" "${m[@]}" \
 		-l 0 -theme-str 'listview { lines: 0; }')" || rc=$?
 	(( rc != 0 )) && return 1
 	printf '%s' "$out"
 }
+# Deliberately NOT routed through the QML dmenu view even on Hyprland: the
+# "input" payload has no masked/password echo mode, and a password typed in
+# plain text on screen is a real regression -- same reasoning as
+# ati-rofi-common.sh's rofi_input_secret, this stays on rofi -password
+# unconditionally.
 ask_secret() {
 	local prompt="$1" mesg="${2:-}" out rc=0
 	local -a m=(); [[ -n "$mesg" ]] && m=(-mesg "$mesg")

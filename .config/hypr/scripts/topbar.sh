@@ -30,8 +30,20 @@ set -euo pipefail
 
 CONFIG_DIR="${TOPBAR_CONFIG_DIR:-$HOME/.config/quickshell/topbar}"
 
-if [[ ! -f "$CONFIG_DIR/shell.qml" ]]; then
-  echo "topbar.sh: no config at $CONFIG_DIR — has stow run?" >&2
+# THE ACTUAL BAR THIS SCRIPT STARTS — no longer shell.qml.
+#
+# "i want this new bar and the island to switch between and the qtile
+# like one will be disabled". shell.qml (the qtile-faithful bar this
+# script used to launch via the `-p <dir>` directory convention, which
+# always resolves to shell.qml) is NOT deleted and NOT edited — it stays
+# on disk exactly as it was, kept deliberately ("keep it, i love it").
+# It's just no longer what bar-switch's `native` mode runs: this points
+# at the file directly instead of the directory, which is why the
+# directory convention no longer applies here.
+TOPBAR_ENTRY="${TOPBAR_ENTRY:-$CONFIG_DIR/redesign-e-final.qml}"
+
+if [[ ! -f "$TOPBAR_ENTRY" ]]; then
+  echo "topbar.sh: no config at $TOPBAR_ENTRY — has stow run?" >&2
   exit 1
 fi
 
@@ -142,9 +154,9 @@ fi
 # and bar-switch runs under `set -e` with a rollback on any non-zero — so
 # exiting non-zero here would make an idempotent call look like a failed
 # switch and roll ~/.cache/bar-mode back to the bar that is NOT running.
-if entry_running "$CONFIG_DIR"; then
-  echo "topbar.sh: a topbar is already running for $CONFIG_DIR — not starting a second" >&2
+if entry_running "$TOPBAR_ENTRY"; then
+  echo "topbar.sh: a topbar is already running for $TOPBAR_ENTRY — not starting a second" >&2
   exit 0
 fi
 
-exec quickshell -p "$CONFIG_DIR" "$@"
+exec quickshell -p "$TOPBAR_ENTRY" "$@"

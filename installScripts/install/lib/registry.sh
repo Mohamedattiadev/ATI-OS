@@ -16,8 +16,8 @@ declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
   sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts hintium simplenote ui-scale githooks
   pacman-guard boot-fallback boot-splash login-shell
-  touchpad xinit xresources xmodmap keyd lid image-envs flatpak piper ankiconnect vaultwarden vaultwarden-phone tmux-tpm whisper
-  whisper-fast mic-gain scrcpy
+  touchpad xinit xresources xmodmap keyd lid image-envs flatpak piper ankiconnect vaultwarden vaultwarden-phone tmux-tpm voxtype
+  mic-gain scrcpy
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes dark-mode browser-flags browser-memory chrome-policy
   dcli-sync-extra grub-boost ydotool
@@ -115,8 +115,7 @@ _reg ankiconnect       "AnkiConnect"         Media     "Anki addon rofi_anki tal
 _reg vaultwarden       "Vaultwarden"         Apps      "Local password server on :8222 + rbw for Mod+p p"        "step_vaultwarden"
 _reg vaultwarden-phone "Vaultwarden on phone" Apps     "Tailscale proxy so the Bitwarden app can reach it"        "step_vaultwarden_phone"
 _reg tmux-tpm          "tmux plugins (TPM)"  Dotfiles  "Clone TPM + install plugins (was a manual README step)"   "step_tmux_tpm"
-_reg whisper           "Whisper models"      Media     "base.en (live dictation) + small.en (batch) STT (~630MB)" "step_whisper"
-_reg whisper-fast      "Whisper fast build"  Media     "Rebuild whisper-cli/-stream Release (AUR pkg is ~13x slower unoptimized)" "step_whisper_fast"
+_reg voxtype           "Voxtype dictation"   Media     "voxtype-bin (AUR) + base.en model (~150MB) + systemd service, Alt+F8" "step_voxtype"
 _reg mic-gain          "Mic gain fix"        System    "Reassert mic capture gain WirePlumber resets on login"  "step_mic_gain"
 _reg scrcpy            "Android screen"      Apps      "adbusers + avahi + mDNS through ufw, so Super+Shift+F6 finds the phone" "step_scrcpy"
 _reg passwordless-sudo "Passwordless sudo"   System    "Add user to NOPASSWD sudoers"                           "step_nopasswd"

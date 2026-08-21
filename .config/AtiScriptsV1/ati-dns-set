@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# ati-dns-set {dhcp|cloudflare|google|custom} — quick DNS-provider switch on
+# the active NetworkManager connection. Same `-t` terse-output convention
+# qtile/popups/WifiPopup.py already uses to READ the current DNS servers;
+# this is the write side that convention never had.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/ati-rofi-common.sh"
+
+require_cmd nmcli || exit 1
+
+# Active Wi-Fi/ethernet connection -- first row of `nmcli -t con show
+# --active` whose device isn't "lo"/a VPN. Good enough for the common case
+# of "one real network connection up at a time"; a machine bridging
+# multiple active connections would need to pick explicitly, out of scope
+# here.
+conn="$(nmcli -t -f NAME,DEVICE,TYPE con show --active 2>/dev/null | \
+  awk -F: '$3 == "802-11-wireless" || $3 == "802-3-ethernet" {print $1; exit}')"
+
+if [[ -z "$conn" ]]; then
+  notify_safe "ati-dns-set" "No active Wi-Fi/ethernet connection found"
+  exit 1
+fi
+
+prompt_input() {
+  if use_ati_menu_select; then
+    ati-menu-select --mode input --prompt "$1"
+  else
+    rofi_input "$1"
+  fi
+}
+
+case "${1:-}" in
+  dhcp)
+    nmcli con mod "$conn" ipv4.ignore-auto-dns no ipv4.dns ""
+    ;;
+  cloudflare)
+    nmcli con mod "$conn" ipv4.dns "1.1.1.1 1.0.0.1" ipv4.ignore-auto-dns yes
+    ;;
+  google)
+    nmcli con mod "$conn" ipv4.dns "8.8.8.8 8.8.4.4" ipv4.ignore-auto-dns yes
+    ;;
+  custom)
+    servers="$(prompt_input "DNS servers (space-separated)")"
+    [[ -z "$servers" ]] && exit 0
+    nmcli con mod "$conn" ipv4.dns "$servers" ipv4.ignore-auto-dns yes
+    ;;
+  *)
+    echo "usage: ati-dns-set {dhcp|cloudflare|google|custom}" >&2
+    exit 2
+    ;;
+esac
+
+nmcli con up "$conn" >/dev/null
+notify_safe "ati-dns-set" "DNS set to: ${1}"

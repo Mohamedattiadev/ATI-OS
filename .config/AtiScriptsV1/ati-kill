@@ -131,17 +131,10 @@ build_rofi_input() {
             return name_colors[(h % n_colors) + 1]
         }
         function pick_icon(cmd) {
-            if (cmd ~ /firefox/) return ""
-            if (cmd ~ /brave/) return ""
-            if (cmd ~ /chrom/) return ""
-            if (cmd ~ /nautilus|thunar|nemo|pcmanfm/) return ""
-            if (cmd ~ /code|nvim|vim/) return ""
-            if (cmd ~ /steam/) return ""
-            if (cmd ~ /vlc|mpv/) return ""
-            if (cmd ~ /spotify/) return ""
-            if (cmd ~ /discord/) return ""
-            if (cmd ~ /python|node|ruby|java/) return ""
-            return ""
+            if (cmd ~ /firefox|brave|chrom/) return "󰌶"
+            if (cmd ~ /nautilus|thunar|nemo|pcmanfm/) return "󰅺"
+            if (cmd ~ /code|nvim|vim/) return "󰍉"
+            return "󰄰"
         }
         function lookup_title(pid,   cur, hops, t) {
             cur = pid; hops = 0
@@ -201,6 +194,156 @@ sort_label() {
         mem_asc)  echo "MEM↑" ;;
     esac
 }
+
+# ---------------------------------------------------------------------------
+#  Hyprland: same process data, rendered plain for the QML dmenu view
+# ---------------------------------------------------------------------------
+# The rofi flow below is a genuinely rich rofi session -- pango-colored
+# columns and FIVE custom in-session keybinds (Alt+c/m sort, Alt+p/Ctrl+y
+# yank, Alt+k force-kill) -- none of which the QML dmenu payload has any
+# concept of (Menu.qml's "select" mode is pick-one-row-get-one-value, full
+# stop). Rather than drop those actions entirely on Hyprland, they become
+# an explicit second step: pick a process, then pick what to do to it. Two
+# selections instead of one keystroke, but every action survives.
+#
+# The row's RETURNED value is the bare PID, not the display text: rows are
+# built as "<icon>\t<pid>\t<readable columns>" -- Menu.qml drops the icon
+# field and returns only the label, so making the label the pid itself
+# means no parsing-the-selection-back-out step is needed at all, the same
+# problem build_rofi_input's PID_MAP_FILE exists to solve for rofi's own
+# markup-soup selection text.
+build_plain_rows() {
+    local sep_color="$PAL_SEL1"
+    {
+        # hyprctl, not wmctrl -- wmctrl is X11-only and, checked directly,
+        # sees exactly one XWayland-rootless window on this Hyprland
+        # session (a single pcmanfm-qt instance) while every native Wayland
+        # window -- brave, chrome, kitty, anki, all of them -- is invisible
+        # to it. Same class of bug ati-satty's own header documents for
+        # maim/xdotool under Wayland: the X11 tool "succeeds" against
+        # nothing. `hyprctl clients -j` is the Hyprland-native equivalent,
+        # confirmed live to report the same windows with real titles.
+        if command -v hyprctl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+            hyprctl clients -j 2>/dev/null | jq -r '
+                .[] | select(.pid != null and .title != "")
+                | [.pid, (.title | gsub("[\t\n]"; " "))] | @tsv
+            ' | awk -F'\t' '{printf "T\t%s\t%s\n", $1, $2}'
+        elif command -v wmctrl >/dev/null 2>&1; then
+            wmctrl -lp 2>/dev/null | awk '{
+                pid=$3; if (pid !~ /^[0-9]+$/) next;
+                title=""; for(i=5;i<=NF;i++) title=title (i>5?" ":"") $i;
+                if (title=="") next;
+                printf "T\t%s\t%s\n", pid, title;
+            }'
+        fi
+        ps -eo pid=,ppid= | awk '{printf "P\t%s\t%s\n", $1, $2}'
+        ps -eo pid,comm:32,pcpu,pmem,etime,user \
+            --sort="$(get_sort_flag "$SORT_MODE")" \
+            | awk 'NR>1{printf "R\t%s\t%s\t%s\t%s\t%s\t%s\n", $1,$2,$3,$4,$5,$6}'
+    } | awk -F'\t' -v exclude="$EXCLUDE" '
+        function pick_icon(cmd) {
+            if (cmd ~ /firefox|brave|chrom/) return "󰌶"
+            if (cmd ~ /nautilus|thunar|nemo|pcmanfm/) return "󰅺"
+            if (cmd ~ /code|nvim|vim/) return "󰍉"
+            return "󰄰"
+        }
+        function truncate(s, max) {
+            if (length(s) > max) return substr(s, 1, max-1) "…"
+            return s
+        }
+        function lookup_title(pid,   cur, hops, t) {
+            cur = pid; hops = 0
+            while (hops < 6 && cur != "" && cur != "1" && cur != "0") {
+                t = titles[cur]
+                if (t != "") return t
+                cur = ppid_of[cur]
+                hops++
+            }
+            return ""
+        }
+        $1 == "T" {
+            if (titles[$2] == "") titles[$2] = $3
+            else titles[$2] = titles[$2] " · " $3
+            next
+        }
+        $1 == "P" { ppid_of[$2] = $3; next }
+        $1 == "R" {
+            pid = $2; cmd = $3; cpu = $4 + 0; mem = $5 + 0
+            if (cmd ~ exclude) next
+            title = titles[pid]
+            if (title == "" && cmd ~ /brave|chrom|firefox|electron|code|discord|slack|thunderbird/) {
+                title = lookup_title(pid)
+            }
+            # Label leads with the real app/window name -- with 5+ brave
+            # windows open, "4073345" tells you nothing, "brave — Job
+            # Application - Gmail" does. PID stays first-field-parseable
+            # (qml_kill_flow splits on the first space) rather than hidden.
+            label = pid " " cmd
+            if (title != "") label = label " — " truncate(title, 60)
+            subtext = sprintf("%.1f%% cpu  ·  %.1f%% mem", cpu, mem)
+            printf "%s\t%s\t%s\n", pick_icon(cmd), label, subtext
+        }
+    '
+}
+
+qml_kill_flow() {
+    local sel pid action name
+    while true; do
+        # Wider than the 300px default -- window titles ("brave — Job
+        # Application - Gmail") run long, and 300px clipped almost every
+        # one of them to a handful of characters.
+        sel="$(build_plain_rows | ati-menu-select --mode select --width 560 \
+            --prompt "Kill a process [$(sort_label)]")"
+        [[ -z "$sel" ]] && return 0
+
+        # Label is "<pid> <cmd>[ — <title>]" now (see build_plain_rows),
+        # not a bare PID -- the pid is the leading digits up to the first
+        # space, everything after it is display-only.
+        pid="${sel%% *}"
+        if ! [[ "$pid" =~ ^[0-9]+$ ]]; then
+            continue
+        fi
+        name="$(ps -p "$pid" -o comm= 2>/dev/null)"
+        if [[ -z "$name" ]]; then
+            notify_safe "❌ PID $pid already gone"
+            continue
+        fi
+
+        action="$(printf 'Kill\nForce kill (SIGKILL)\nYank PID\nYank command line\nToggle sort\nCancel\n' \
+            | ati-menu-select --mode select --width 400 --prompt "PID $pid ($name)")"
+        case "$action" in
+            Kill)
+                rofi_confirm "Kill PID $pid ($name)?" "" && kill_guaranteed "$pid"
+                ;;
+            "Force kill (SIGKILL)")
+                rofi_confirm "Force kill PID $pid?" "$name" && kill_guaranteed "$pid" force
+                ;;
+            "Yank PID")
+                copy_to_clipboard "$pid"
+                notify_safe "📋 Copied PID" "$pid"
+                ;;
+            "Yank command line")
+                local path; path="$(ps -p "$pid" -o args= 2>/dev/null)"
+                if [[ -n "$path" ]]; then
+                    copy_to_clipboard "$path"
+                    notify_safe "📋 Yanked path" "$path"
+                else
+                    notify_safe "❌ PID $pid gone"
+                fi
+                ;;
+            "Toggle sort")
+                SORT_MODE="$(next_sort_mode "$SORT_MODE")"
+                echo "$SORT_MODE" >"$STATE_FILE"
+                ;;
+            *) : ;;
+        esac
+    done
+}
+
+if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    qml_kill_flow
+    exit 0
+fi
 
 chosen=$(
     build_rofi_input | rofi -markup-rows -dmenu -i \

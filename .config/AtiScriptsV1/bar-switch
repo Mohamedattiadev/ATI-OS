@@ -46,6 +46,14 @@ ISLAND_LAUNCH="$HOME/.config/hypr/scripts/island.sh"
 FORK_DIR="$HOME/.config/quickshell/tide-island-fork"
 TOPBAR_LAUNCH="$HOME/.config/hypr/scripts/topbar.sh"
 TOPBAR_DIR="$HOME/.config/quickshell/topbar"
+# Kept in step with topbar.sh's OWN default by hand rather than sourcing that
+# script for one variable: topbar.sh no longer launches shell.qml via the
+# `-p $TOPBAR_DIR` directory convention (see its own header — "i want this
+# new bar and the island to switch between and the qtile like one will be
+# disabled") and now runs `-p $TOPBAR_DIR/redesign-e-final.qml` directly, so
+# the PID matcher below has to look for THAT argv value or it will never
+# find the process it just started.
+TOPBAR_ENTRY="$TOPBAR_DIR/redesign-e-final.qml"
 DEFAULT_MODE="island"
 
 die() { printf 'bar-switch: %s\n' "$*" >&2; exit 1; }
@@ -289,13 +297,17 @@ PY
 # Asked of the filesystem rather than assumed, because the answer is "no" on
 # any machine where stow has not run yet, and that is exactly when a wrong
 # answer would leave the desktop bare.
-hypr_native_available() { [[ -f "$TOPBAR_DIR/shell.qml" && -x "$TOPBAR_LAUNCH" ]]; }
+hypr_native_available() { [[ -f "$TOPBAR_ENTRY" && -x "$TOPBAR_LAUNCH" ]]; }
 
 # Matched on the argv list rather than with `pkill -f`, for the reason
 # island_pid() gives: `pgrep -f`/`pkill -f` match this script's OWN command
 # line, which is the trap recorded in hypr/NEXT-SESSION.md's RULES.
+#
+# Matches $TOPBAR_ENTRY (the file), not $TOPBAR_DIR (the directory) — see
+# TOPBAR_ENTRY's own comment above for why those stopped being the same
+# argv value.
 topbar_pid() {
-  ps -eo pid=,args= | awk -v want="$TOPBAR_DIR" \
+  ps -eo pid=,args= | awk -v want="$TOPBAR_ENTRY" \
     '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { print $1; exit } }'
 }
 

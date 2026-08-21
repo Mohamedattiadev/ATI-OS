@@ -630,6 +630,18 @@ PanelWindow {
                 // leaking into a terminal is the same accident as a filter
                 // leaking into one.
                 || islandContainer.calculatorLayerVisible
+                // The command menu, for the same reason the calculator is
+                // on this list immediately above: it has a search field
+                // that is ALWAYS focused (rofi-style, not `/`-gated), so
+                // every character typed — including hjkl — has to land in
+                // it rather than in whatever window was focused behind the
+                // panel. Missing here was the actual root cause of "Ctrl+
+                // H/J/K/L not working": without an exclusive grab, no key
+                // at all reaches this panel, regardless of it having its
+                // own FocusScope — `hyprctl activewindow` confirmed a
+                // background kitty window stayed focused the whole time
+                // this panel was open, before this line was added.
+                || islandContainer.menuLayerVisible
                 || islandContainer.settingsLayerVisible
                 // The generic picker, for the reason the cheatsheet is here
                 // and ModeKeysLayer deliberately is not: it has a search
@@ -768,9 +780,9 @@ PanelWindow {
     // refusing to honour one right now").
     property bool superHeld: false
     readonly property string iconFontFamily: userConfig.iconFontFamily
-    readonly property string textFontFamily: userConfig.textFontFamily
-    readonly property string heroFontFamily: userConfig.heroFontFamily
-    readonly property string timeFontFamily: userConfig.timeFontFamily
+    readonly property string textFontFamily: SystemFont.family
+    readonly property string heroFontFamily: SystemFont.family
+    readonly property string timeFontFamily: SystemFont.family
     readonly property int bodyFontSize: userConfig.bodyFontSize
     readonly property int titleFontSize: userConfig.titleFontSize
     readonly property int iconFontSize: userConfig.iconFontSize
@@ -1815,6 +1827,16 @@ PanelWindow {
             islandContainer.showCalculator();
     }
 
+    // FORK: the command menu — a real island panel for the same tree
+    // ati-menu (Super+Shift+/) reads, for bar-mode=island. See
+    // qml/island/MenuLayer.qml for what is and is not ported from it.
+    function toggleMenuWindow() {
+        if (islandContainer.islandState === "menu")
+            islandContainer.smartRestoreState();
+        else
+            islandContainer.showMenu();
+    }
+
     // FORK: the generic list picker. Toggling on the MENU and not just on
     // the state, exactly like toggleCheatsheetWindow: pressing the chord's
     // key for `processes` while the `windows` picker is open should switch
@@ -2336,6 +2358,7 @@ PanelWindow {
             || islandState === "calendar"
             || islandState === "power_menu"
             || islandState === "calculator"
+            || islandState === "menu"
             || islandState === "settings"
             || islandState === "picker"
 
@@ -2596,6 +2619,8 @@ PanelWindow {
         // FORK: the calculator, replacing the qalculate-gtk scratchpad.
         // See qml/island/CalculatorLayer.qml.
         readonly property bool calculatorLayerVisible: !root.overviewVisible && islandState === "calculator"
+        // FORK: the command menu. See qml/island/MenuLayer.qml.
+        readonly property bool menuLayerVisible: !root.overviewVisible && islandState === "menu"
         readonly property bool settingsLayerVisible: !root.overviewVisible && islandState === "settings"
         // FORK: the generic list picker — one panel behind three (so far) of
         // the rofi chord's menus. `pickerMenu` is the menu name the backing
@@ -3819,6 +3844,16 @@ PanelWindow {
             stopAutoHideTimer();
         }
 
+        // FORK: the command menu. See qml/island/MenuLayer.qml.
+        function showMenu() {
+            cancelSideSwipeSettle();
+            abortSideTransientMode();
+            clearTransientCapsule();
+            islandState = "menu";
+            mainCapsule.displayedWidth = mainCapsule.baseTargetWidth;
+            stopAutoHideTimer();
+        }
+
         // FORK: the settings surface. The packaged tide-island-config-app is
         // a compiled binary that `yay -Syu` overwrites, so this is a state
         // rather than a patch. See qml/island/SettingsLayer.qml.
@@ -4946,6 +4981,13 @@ PanelWindow {
                     // panel edge — extra width past what the tape needs is
                     // empty space between the expression and its answer.
                     return Metrics.px(340);
+                case "menu":
+                    // A command tree with labels like "Xbox Cloud Gaming"
+                    // and a breadcrumb title that can read "Install ›
+                    // Gaming" — narrower than the power menu's 400 reads as
+                    // cramped on either of those; matched to it rather than
+                    // guessing a third number.
+                    return Metrics.px(400);
                 case "settings":
                     // The list-plus-details shape the display and audio
                     // panels use, and sized between them: rows are
@@ -5156,6 +5198,15 @@ PanelWindow {
                         ? Math.min(calculatorLoader.item.preferredHeight,
                                    root.screen.height - Metrics.px(60))
                         : Metrics.px(190);
+                case "menu":
+                    // Content-sized the same way: a root level with nine
+                    // sections is much shorter than a search hitting thirty
+                    // rows, and MenuLayer's own preferredHeight already caps
+                    // itself at 8 visible rows before scrolling takes over.
+                    return menuLoader.item
+                        ? Math.min(menuLoader.item.preferredHeight,
+                                   root.screen.height - Metrics.px(60))
+                        : Metrics.px(300);
                 case "settings":
                     // FORK: the height half of "a bit smaller", still true
                     // after item 13 reversed the DETACHED half of this
@@ -5361,6 +5412,7 @@ PanelWindow {
                 case "calendar":
                 case "power_menu":
                 case "calculator":
+                case "menu":
                 case "settings":
                 case "picker":
                     return Metrics.px(34);
@@ -6867,6 +6919,28 @@ PanelWindow {
                         heroFontFamily: root.heroFontFamily
                         iconFontFamily: root.iconFontFamily
                         showCondition: islandContainer.calculatorLayerVisible
+                        onCloseRequested: islandContainer.smartRestoreState()
+                    }
+                }
+            }
+
+            // FORK: the command menu. Not retained, unlike the calculator —
+            // it has no session state worth keeping (no tape, no history);
+            // reopening at the root each time is the same "closing means
+            // gone" every browse-only panel here already uses (theme
+            // picker, wallpaper picker). See qml/island/MenuLayer.qml.
+            PanelLoader {
+                id: menuLoader
+                anchors.fill: parent
+                focus: live
+                live: islandContainer.menuLayerVisible
+
+                sourceComponent: Component {
+                    MenuLayer {
+                        textFontFamily: root.textFontFamily
+                        heroFontFamily: root.heroFontFamily
+                        iconFontFamily: root.iconFontFamily
+                        showCondition: islandContainer.menuLayerVisible
                         onCloseRequested: islandContainer.smartRestoreState()
                     }
                 }

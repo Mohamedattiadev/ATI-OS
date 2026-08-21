@@ -94,8 +94,8 @@ Item {
 
     property bool showCondition: false
     property bool previewsEnabled: showCondition
-    property string textFontFamily: userConfig.textFontFamily
-    property string heroFontFamily: userConfig.heroFontFamily
+    property string textFontFamily: SystemFont.family
+    property string heroFontFamily: SystemFont.family
     property string wallpaperPath: userConfig.wallpaperPath
     property real windowCornerRadius: 15
     property real scale: 0.18

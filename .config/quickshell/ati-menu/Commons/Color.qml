@@ -219,21 +219,32 @@ QtObject {
     mergeShell()
   }
 
-  // Startup load only. Runtime theme switches push the payload explicitly
-  // through shell IPC.
+  // ATI-OS: watched, not startup-only. Upstream's own comment here used to
+  // read "Startup load only. Runtime theme switches push the payload
+  // explicitly through shell IPC" -- that IPC push lives in Omarchy's own
+  // top-level omarchy-shell.qml, which was never vendored (only the menu
+  // plugin + Commons/Ui support libraries were), so this menu had no path
+  // to that push at all. File-watching is the mechanism this exact
+  // codebase already trusts for live reload elsewhere (userShellFile right
+  // below, ati-menu.json's own defaultMenuFile/userMenuFile) -- ati-theme
+  // -apply now writes this path itself (see its own comment there), so
+  // watching it is what makes `style.theme` picks actually reach the menu
+  // without restarting it.
   property FileView colorsFile: FileView {
     id: colorsFile
     path: root.currentThemePath + "/colors.toml"
-    watchChanges: false
+    watchChanges: true
     printErrors: false
     onLoaded: root.loadColors(text())
+    onFileChanged: reload()
   }
   property FileView shellFile: FileView {
     id: shellFile
     path: root.currentThemePath + "/shell.toml"
-    watchChanges: false
+    watchChanges: true
     printErrors: false
     onLoaded: root.loadShell(text())
+    onFileChanged: reload()
     onLoadFailed: root.loadShell("")
   }
   // Machine-level override, layered on top of whatever theme is active. This

@@ -55,8 +55,12 @@ for e in "${ENTRIES[@]}"; do
   fi
 done
 
-CHOICE="$(printf '%s' "$LIST" | rofi -dmenu -i -p "Theme" \
-  -mesg "$(rofi_hint "↵ retint everything" "Esc cancels" "● is active" "${#ENTRIES[@]} palettes")")"
+if use_ati_menu_select; then
+  CHOICE="$(printf '%s' "$LIST" | ati-menu-select --mode select --prompt "Theme")"
+else
+  CHOICE="$(printf '%s' "$LIST" | rofi -dmenu -i -p "Theme" \
+    -mesg "$(rofi_hint "↵ retint everything" "Esc cancels" "● is active" "${#ENTRIES[@]} palettes")")"
+fi
 [[ -z "$CHOICE" ]] && exit 0
 
 # Strip marker prefix ("● " or "○ ") — display name only.

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# ati-copyq-clip-delete <idx> — remove a &clipboard tab entry. Called by
+# the QML clipboard picker's Delete key.
+set -euo pipefail
+
+idx="${1:-}"
+[[ "$idx" =~ ^[0-9]+$ ]] || exit 2
+
+copyq eval - <<JSEOF
+tab("&clipboard");
+remove($idx);
+JSEOF

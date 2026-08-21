@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# ati-edit-config <path> — jump straight to one specific file, in the same
+# editor dm-confedit already opens files in ($DMEDITOR: alacritty -e nvim,
+# readlink -f first so nvim's syntax highlighting isn't confused by a
+# symlinked path). dm-confedit itself always starts at its own root browse
+# menu (~/.config vs ~/.dotfiles) -- it has no "open this exact file" mode
+# -- so Omarchy-style setup.* shortcuts ("jump straight to hyprland.conf")
+# need this thin sibling instead of calling dm-confedit with an argument it
+# doesn't accept.
+set -euo pipefail
+
+DMEDITOR="alacritty -e nvim"
+
+if [[ $# -ne 1 ]]; then
+  echo "usage: ati-edit-config <path>" >&2
+  exit 2
+fi
+
+real_path="$(readlink -f "$1")"
+
+if [[ ! -f "$real_path" ]]; then
+  notify-send "ati-edit-config" "File not found: $1"
+  exit 1
+fi
+
+exec $DMEDITOR "$real_path"

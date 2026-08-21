@@ -76,7 +76,7 @@ call_gemini() {
 
 # -------------------------- Main Script Logic --------------------------
 SOURCE_LANG=$(trans -b -id "$WORD")
-TARGET_LANG=$(echo -e "en\nde\nar\ntr" | rofi -dmenu -i -p "Translate to ($SOURCE_LANG detected)")
+TARGET_LANG=$(echo -e "en\nde\nar\ntr" | rofi_select "Translate to ($SOURCE_LANG detected)")
 [ -z "$TARGET_LANG" ] && exit 0
 
 BODY=""

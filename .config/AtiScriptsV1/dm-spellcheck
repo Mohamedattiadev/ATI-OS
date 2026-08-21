@@ -142,6 +142,23 @@ def notify(title, msg, timeout=5000):
         pass
 
 
+def wayland_active():
+    return bool(os.environ.get("WAYLAND_DISPLAY"))
+
+
+def qml_select(prompt, rows, width=None):
+    """ati-menu-select --mode select, matching rofi's own -format i / plain
+    contract closely enough for this file's call sites: rows is a list of
+    plain strings (no pango markup -- the QML dmenu payload doesn't render
+    it), returns the chosen row's text verbatim, or "" on Escape/timeout.
+    """
+    argv = ["ati-menu-select", "--mode", "select", "--prompt", prompt]
+    if width:
+        argv += ["--width", str(width)]
+    rc, out = run_full(argv, stdin_text="\n".join(rows))
+    return out.strip() if rc == 0 else ""
+
+
 def esc(text):
     return html.escape(text, quote=False)
 
@@ -278,6 +295,8 @@ def ask_text(prefill=""):
 
 
 def pick_replacement(word, options):
+    if wayland_active():
+        return qml_select(f"Replace {word} with", options)
     idx = run(
         ["rofi", "-dmenu", "-i", "-format", "i",
          "-p", f"Replace {word} with"],
@@ -429,19 +448,108 @@ def review(text):
         text = apply_fix(text, match, pick)
 
 
+# ---------------- Hyprland: same LT check, QML picker instead of rofi ----------------
+#
+# rofi's 2 custom keybinds (Ctrl+r other suggestions, Ctrl+t new text) have
+# no equivalent in the QML dmenu payload -- same class of gap ati-kill's
+# own qml_kill_flow works around, same fix: an explicit second selection
+# instead of a hidden key. Plain text rows here, not render_table()'s
+# pango markup -- the QML dmenu view has no markup support to render it
+# with.
+def review_qml(text):
+    language = detect_language(text)
+
+    while True:
+        try:
+            matches, lang_name = lt_check(text, language)
+        except Exception as e:  # noqa: BLE001 — offline is the common case
+            notify("Spell check", f"LanguageTool unreachable: {esc(str(e))}")
+            return "quit"
+
+        header = f"{lang_name or language} · {len(matches) or 'no'} mistake" \
+                 f"{'' if len(matches) == 1 else 's'}"
+        rows = [f"✓ Copy corrected text as-is"]
+        row_actions = [("copy", None)]
+        if len(matches) > 1:
+            rows.append(f"⚡ Fix all {len(matches)} mistakes")
+            row_actions.append(("all", None))
+        for i, match in enumerate(matches, 1):
+            bad = bad_text(text, match)
+            reps = top_replacements(match, 3)
+            best = reps[0] if reps else ""
+            line = f"{i}. {bad}"
+            if best:
+                line += f"  →  {best}"
+            if len(reps) > 1:
+                line += f"  ({', '.join(reps[1:])})"
+            rows.append(line)
+            row_actions.append(("fix", match))
+        rows.append("↻ Check different text")
+        row_actions.append(("new", None))
+
+        chosen = qml_select(f"Spell-check [{header}]", rows, width=700)
+        if not chosen:
+            return "quit"
+        try:
+            sel_i = rows.index(chosen)
+        except ValueError:
+            continue
+        kind, match = row_actions[sel_i]
+
+        if kind == "copy":
+            copy(text)
+            return "quit"
+        if kind == "new":
+            return "new", text
+        if kind == "all":
+            text = apply_all(text, matches)
+            continue
+
+        options = top_replacements(match)
+        if not options:
+            notify("Spell check", match.get("message", "No suggestion"))
+            continue
+        action = qml_select(
+            f"Fix “{bad_text(text, match)}”",
+            (["Apply: " + options[0]] if options else [])
+            + (["Choose a different suggestion"] if len(options) > 1 else [])
+            + ["Skip"],
+        )
+        if not action or action == "Skip":
+            continue
+        if action == "Choose a different suggestion":
+            pick = pick_replacement(bad_text(text, match), options)
+            if not pick:
+                continue
+        else:
+            pick = options[0]
+        text = apply_fix(text, match, pick)
+
+
 def main():
     # Accepted for dmscripts compatibility (qtile calls `dm-spellcheck -r`);
-    # the picker is rofi-only, so they change nothing.
+    # ask_text stays rofi-only regardless of session (its rofi -filter
+    # prefill has no QML dmenu equivalent -- input mode always starts
+    # empty, confirmed against Menu.qml's openDmenu() -- and prefilling
+    # the text to check is the entire point of this prompt, not a nicety
+    # to drop); review() below picks rofi vs the QML flow per session.
     args = [a for a in sys.argv[1:] if a not in ("-r", "-d", "-f")]
 
     text = " ".join(args).strip()
     if not text:
-        text = strip_bidi(run(["xclip", "-o", "-selection", "primary"])).strip()
+        # xclip is X11-only; wl-paste is the Wayland equivalent for the
+        # primary selection.
+        if wayland_active():
+            text = strip_bidi(run(["wl-paste", "--primary", "--no-newline"])).strip()
+        else:
+            text = strip_bidi(run(["xclip", "-o", "-selection", "primary"])).strip()
     # The selection is a prefill, not a decision: the box always opens.
     text = ask_text(text)
 
+    reviewer = review_qml if wayland_active() else review
+
     while text:
-        result = review(text)
+        result = reviewer(text)
         if result == "quit":
             return 0
         text = ask_text(result[1])

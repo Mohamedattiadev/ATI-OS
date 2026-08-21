@@ -96,7 +96,7 @@ run the installer against nothing.</p>
 
 <h2 id="wait">2. Wait</h2>
 
-<p>47 steps run in order. Nothing for you to do.</p>
+<p>46 steps run in order. Nothing for you to do.</p>
 
 <div class="warn">
 <p><b>It will look frozen. It is not.</b> One step compiles a piece of safety software from
@@ -272,12 +272,12 @@ about how the desktop looks or works.</b> Add it whenever:</p>
 way to get capital-lock back. Right for a laptop with a broken Alt key, surprising everywhere
 else. Your real Alt keys keep working.</p>
 
-<h2 id="modules">What the 47 steps actually do</h2>
+<h2 id="modules">What the 46 steps actually do</h2>
 
 <p>You do not need this to install. It is here so a failed step means something.</p>
 
 <details class="why">
-<summary>Show all 47 steps, in the order they run</summary>
+<summary>Show all 46 steps, in the order they run</summary>
 <div class="tw">
 <table>
 <thead><tr><th>#</th><th>Name</th><th>What it does</th></tr></thead>
@@ -314,21 +314,20 @@ else. Your real Alt keys keep working.</p>
 <tr><td>30</td><td><code>vaultwarden</code></td><td>Starts the password server on your own computer</td></tr>
 <tr><td>31</td><td><code>vaultwarden-phone</code></td><td>Optional bridge so the phone app can reach that server</td></tr>
 <tr><td>32</td><td><code>tmux-tpm</code></td><td>Installs the terminal multiplexer's add-ons</td></tr>
-<tr><td>33</td><td><code>whisper</code></td><td>Downloads the speech-recognition models for dictation (~630&nbsp;MB)</td></tr>
-<tr><td>34</td><td><code>whisper-fast</code></td><td>Rebuilds the dictation engine properly. The stock build is around 13&times; slower. <b>Skips itself with a warning if it cannot</b>, since it is a speed-up and not a requirement</td></tr>
-<tr><td>35</td><td><code>mic-gain</code></td><td>Stops your microphone volume being reset to a distorting level at every login</td></tr>
-<tr><td>36</td><td><code>scrcpy</code></td><td>Sets up Android phone mirroring, including letting your computer find the phone by itself</td></tr>
-<tr><td>37</td><td><code>passwordless-sudo</code></td><td>Stops asking for your password for admin tasks. Checked before it is applied, and undone if the check fails</td></tr>
-<tr><td>38</td><td><code>ownership</code></td><td>Makes sure the settings files belong to you</td></tr>
-<tr><td>39</td><td><code>disable-dm</code></td><td><b>Switches off every graphical login screen.</b> This is why you log in on a text screen</td></tr>
-<tr><td>40</td><td><code>candy-icons</code></td><td>Installs an icon set</td></tr>
-<tr><td>41</td><td><code>wallpapers</code></td><td>Downloads the wallpaper collection</td></tr>
-<tr><td>42</td><td><code>speed</code></td><td>Memory tuning, sized to how much your computer has</td></tr>
-<tr><td>43</td><td><code>themes</code></td><td>Builds the 22 colour schemes and applies the default one</td></tr>
-<tr><td>44</td><td><code>dark-mode</code></td><td>Tells websites you prefer dark mode, so they serve their own dark design</td></tr>
-<tr><td>45</td><td><code>browser-flags</code></td><td>Makes the browsers follow your colour scheme</td></tr>
-<tr><td>46</td><td><code>browser-memory</code></td><td>Lets the browser free up memory from tabs you are not using</td></tr>
-<tr><td>47</td><td><code>chrome-policy</code></td><td>The Chrome side of the colour scheme</td></tr>
+<tr><td>33</td><td><code>voxtype</code></td><td>Downloads the dictation engine's speech-recognition model (~150&nbsp;MB) and starts it as a background service</td></tr>
+<tr><td>34</td><td><code>mic-gain</code></td><td>Stops your microphone volume being reset to a distorting level at every login</td></tr>
+<tr><td>35</td><td><code>scrcpy</code></td><td>Sets up Android phone mirroring, including letting your computer find the phone by itself</td></tr>
+<tr><td>36</td><td><code>passwordless-sudo</code></td><td>Stops asking for your password for admin tasks. Checked before it is applied, and undone if the check fails</td></tr>
+<tr><td>37</td><td><code>ownership</code></td><td>Makes sure the settings files belong to you</td></tr>
+<tr><td>38</td><td><code>disable-dm</code></td><td><b>Switches off every graphical login screen.</b> This is why you log in on a text screen</td></tr>
+<tr><td>39</td><td><code>candy-icons</code></td><td>Installs an icon set</td></tr>
+<tr><td>40</td><td><code>wallpapers</code></td><td>Downloads the wallpaper collection</td></tr>
+<tr><td>41</td><td><code>speed</code></td><td>Memory tuning, sized to how much your computer has</td></tr>
+<tr><td>42</td><td><code>themes</code></td><td>Builds the 22 colour schemes and applies the default one</td></tr>
+<tr><td>43</td><td><code>dark-mode</code></td><td>Tells websites you prefer dark mode, so they serve their own dark design</td></tr>
+<tr><td>44</td><td><code>browser-flags</code></td><td>Makes the browsers follow your colour scheme</td></tr>
+<tr><td>45</td><td><code>browser-memory</code></td><td>Lets the browser free up memory from tabs you are not using</td></tr>
+<tr><td>46</td><td><code>chrome-policy</code></td><td>The Chrome side of the colour scheme</td></tr>
 </tbody>
 </table>
 </div>
@@ -351,7 +350,7 @@ else. Your real Alt keys keep working.</p>
 ./wizard.sh --dry-run       # show every command, change nothing
 ./wizard.sh --yes           # exactly the same as ./install.sh
 ./wizard.sh --only=themes   # run one step (or several, comma-separated)
-./wizard.sh --skip=whisper  # run everything except these
+./wizard.sh --skip=voxtype  # run everything except these
 ./wizard.sh --audit         # compare what should be installed against what is
 ./wizard.sh --uninstall     # undo the settings changes</code></pre>
 
@@ -374,7 +373,7 @@ choice for the other two is reasoned from documentation, not observed.</li>
 correct; nobody has looked at the result on a real 4K screen.</li>
 <li><b>Some laptop battery indicators</b>, on models that name them unusually.</li>
 </ul>
-<p>Proven on a clean test machine: all 47 steps complete, the desktop starts, and it loads
+<p>Proven on a clean test machine: all 46 steps complete, the desktop starts, and it loads
 these settings instead of silently falling back to a default. On the author's own hardware,
 also the startup screen and the window animations.</p>
 </div>

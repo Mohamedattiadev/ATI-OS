@@ -37,8 +37,8 @@ Item {
 
     property bool showCondition: false
     property string iconFontFamily: userConfig.iconFontFamily
-    property string textFontFamily: userConfig.textFontFamily
-    property string heroFontFamily: userConfig.heroFontFamily
+    property string textFontFamily: SystemFont.family
+    property string heroFontFamily: SystemFont.family
 
     // FORK: the live palette accent, for the filament faders. Passed down
     // from DynamicIslandWindow's IslandTheme rather than read here — this

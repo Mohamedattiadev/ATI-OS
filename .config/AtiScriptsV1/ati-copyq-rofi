@@ -96,6 +96,20 @@ esc_pango() {
   printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
 }
 
+# `xdotool key ctrl+v` is an X11 tool -- under Hyprland it only ever reaches
+# XWayland-rootless windows, the same class of silent-black-screenshot bug
+# ati-satty's own header documents for maim/xdotool under Wayland. Native
+# Wayland windows never saw the paste at all; this was broken before the
+# QML picker below existed, just never loud about it since copyq's select()
+# call above it always "succeeded".
+synth_paste() {
+  if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wtype >/dev/null 2>&1; then
+    wtype -M ctrl -k v -m ctrl
+  else
+    xdotool key --clearmodifiers ctrl+v
+  fi
+}
+
 build_input() {
   for row in "${rows[@]}"; do
     IFS=$'\t' read -r idx pin label icon <<< "$row"
@@ -114,6 +128,101 @@ build_input() {
     fi
   done
 }
+
+# view_entry <idx> <icon> -- image entries open in imv (reusing the thumb
+# already on disk), text entries open read-only in a floating nvim. Shared
+# between the rofi flow's Alt+w and the QML flow's "View" action below.
+view_entry() {
+  local idx="$1" icon="${2:-}"
+  if [ -n "$icon" ] && [ -f "$icon" ]; then
+    setsid imv -W 820 -H 500 -s shrink "$icon" >/dev/null 2>&1 < /dev/null &
+    disown
+  else
+    local tmp; tmp=$(mktemp --suffix=.txt /tmp/copyq-view.XXXXXX)
+    copyq eval - > "$tmp" <<JSEOF5
+tab("$TAB");
+print(str(read($idx)));
+JSEOF5
+    setsid alacritty --class clip-view --title "clip-view" \
+      -o "window.dimensions.columns=80" \
+      -o "window.dimensions.lines=20" \
+      -o "window.padding.x=8" \
+      -o "window.padding.y=8" \
+      -o "font.size=10" \
+      -e nvim -R -c "set nonumber norelativenumber signcolumn=no laststatus=0" "$tmp" \
+      >/dev/null 2>&1 < /dev/null &
+    disown
+  fi
+}
+
+# ---------------------------------------------------------------------------
+#  Hyprland: same clipboard data, same actions, QML dmenu instead of rofi
+# ---------------------------------------------------------------------------
+# rofi's -show-icons is doing real work below -- actual image thumbnails,
+# not a glyph -- which the QML dmenu row format has no equivalent for at
+# all (icon field is a single font glyph, not an image path). Rather than
+# lose image entries silently, they fall back to a plain "image WxH" text
+# label (already computed above as the non-thumbnail label anyway) --
+# genuinely worse than a real thumbnail, but a real entry you can still
+# pick, not a missing one. Paste/View/Delete survive as an explicit second
+# step, same shape as ati-kill's own QML flow.
+qml_clip_flow() {
+  local sel idx action match_label match_icon row ridx rlabel ricon glyph qrows
+  while true; do
+    N=${#rows[@]}
+    (( N == 0 )) && return 0
+
+    qrows=""
+    for row in "${rows[@]}"; do
+      IFS=$'\t' read -r idx _ rlabel ricon <<< "$row"
+      [ -z "${idx:-}" ] && continue
+      qrows+="${idx}"$'\t'"${idx}"$'\t'"${rlabel}"$'\n'
+    done
+
+    sel="$(printf '%s' "$qrows" | ati-menu-select --mode select --prompt "Clipboard ($N entries)")"
+    [[ -z "$sel" ]] && return 0
+    [[ "$sel" =~ ^[0-9]+$ ]] || return 0
+    idx="$sel"
+
+    match_label=""; match_icon=""
+    for row in "${rows[@]}"; do
+      IFS=$'\t' read -r ridx _ rlabel ricon <<< "$row"
+      if [[ "$ridx" == "$idx" ]]; then match_label="$rlabel"; match_icon="$ricon"; break; fi
+    done
+
+    action="$(printf 'Paste\nView\nDelete\nCancel\n' \
+      | ati-menu-select --mode select --prompt "${match_label:0:40}")"
+    case "$action" in
+      Paste)
+        copyq eval - <<JSEOF2
+tab("$TAB");
+select($idx);
+JSEOF2
+        sleep 0.05
+        synth_paste
+        return 0
+        ;;
+      Delete)
+        copyq eval - <<JSEOF3
+tab("$TAB");
+remove($idx);
+JSEOF3
+        load_rows
+        (( ${#rows[@]} == 0 )) && return 0
+        ;;
+      View)
+        view_entry "$idx" "$match_icon"
+        return 0
+        ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+  qml_clip_flow
+  exit 0
+fi
 
 while true; do
   N=${#rows[@]}
@@ -144,7 +253,7 @@ tab("$TAB");
 select($idx);
 JSEOF2
       sleep 0.05
-      xdotool key --clearmodifiers ctrl+v
+      synth_paste
       exit 0
       ;;
     10)

@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# ati-transcode — pick an image or video from ~/Pictures or ~/Videos, then a
+# format + rough quality tier, then convert it. Pictures go through
+# ImageMagick with a fixed -quality 85 -strip (mirrors Omarchy's own
+# bin/omarchy-transcode, which uses the same fixed quality rather than a
+# free-form prompt). The video branch is this repo's own design, not a
+# port: Omarchy's video path wasn't available to read during the research
+# pass that scoped this, so it uses a small fixed crf tier set (matching
+# the picture branch's "fixed quality, not free-form" idiom) instead of
+# inventing a more elaborate UX.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/ati-rofi-common.sh"
+
+if ! command -v magick >/dev/null 2>&1 && ! command -v convert >/dev/null 2>&1; then
+  notify_safe "ati-transcode" "Missing dependency: ImageMagick"
+  exit 1
+fi
+require_cmd ffmpeg || exit 1
+
+IMG_EXT=(jpg jpeg png webp bmp tiff)
+VID_EXT=(mp4 mkv mov webm avi)
+
+prompt_select() {  # prompt_select <prompt>  (rows on stdin)
+  if use_ati_menu_select; then
+    ati-menu-select --mode select --prompt "$1"
+  else
+    rofi -dmenu -i -theme "$HOME/.config/rofi/themes/base.rasi" \
+      -theme-str 'listview { lines: 10; dynamic: false; }' -p "$1"
+  fi
+}
+
+# Same "-iname per extension, -o joined" find idiom dm-confedit's own
+# EXCLUDE_PATTERNS loop uses, inverted to an include-list of media types.
+find_expr=()
+for e in "${IMG_EXT[@]}" "${VID_EXT[@]}"; do
+  [[ ${#find_expr[@]} -gt 0 ]] && find_expr+=(-o)
+  find_expr+=(-iname "*.$e")
+done
+
+mapfile -t files < <(find -L "$HOME/Pictures" "$HOME/Videos" -maxdepth 3 -type f \( "${find_expr[@]}" \) 2>/dev/null | sort)
+
+if [[ ${#files[@]} -eq 0 ]]; then
+  notify_safe "ati-transcode" "No images or videos found in ~/Pictures or ~/Videos"
+  exit 1
+fi
+
+sel_file="$(printf '%s\n' "${files[@]}" | prompt_select "Transcode which file?")"
+[[ -z "$sel_file" ]] && exit 0
+[[ -f "$sel_file" ]] || { notify_safe "ati-transcode" "File not found: $sel_file"; exit 1; }
+
+ext_lower="${sel_file##*.}"; ext_lower="${ext_lower,,}"
+is_video=0
+for e in "${VID_EXT[@]}"; do [[ "$ext_lower" == "$e" ]] && is_video=1; done
+
+out=""
+if [[ $is_video -eq 0 ]]; then
+  fmt="$(printf 'jpg\npng\n' | prompt_select "Output format")"
+  [[ -z "$fmt" ]] && exit 0
+
+  tier="$(printf 'high (1920px)\nmedium (1280px)\nlow (800px)\n' | prompt_select "Resolution")"
+  [[ -z "$tier" ]] && exit 0
+  case "$tier" in
+    high*)   res=1920 ;;
+    medium*) res=1280 ;;
+    low*)    res=800 ;;
+    *) exit 0 ;;
+  esac
+
+  out="${sel_file%.*}.transcoded.${fmt}"
+  magick_bin="magick"; command -v magick >/dev/null 2>&1 || magick_bin="convert"
+  "$magick_bin" "$sel_file" -resize "${res}x${res}>" -quality 85 -strip "$out"
+else
+  tier="$(printf '4k\n1080p\n720p\n' | prompt_select "Resolution")"
+  [[ -z "$tier" ]] && exit 0
+  case "$tier" in
+    4k)    scale="3840:-2"; crf=18 ;;
+    1080p) scale="1920:-2"; crf=23 ;;
+    720p)  scale="1280:-2"; crf=28 ;;
+    *) exit 0 ;;
+  esac
+
+  out="${sel_file%.*}.transcoded.mp4"
+  ffmpeg -y -i "$sel_file" -vf "scale=$scale" -crf "$crf" -preset medium "$out" \
+    </dev/null >/dev/null 2>&1
+fi
+
+if [[ -n "$out" && -f "$out" ]]; then
+  notify_safe "ati-transcode" "Saved: $(basename "$out")"
+else
+  notify_safe "ati-transcode" "Transcode failed"
+  exit 1
+fi

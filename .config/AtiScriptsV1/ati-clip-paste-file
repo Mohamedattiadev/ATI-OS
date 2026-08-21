@@ -1,0 +1,58 @@
+#!/bin/bash
+# Vendored from Omarchy's bin/omarchy-clipboard-paste-file (MIT, see
+# ../../NOTICE.md). ATI-OS delta: wl-copy's exit status is now checked
+# before sending the paste keystroke -- reported live, "click an image
+# row, it pastes the last text instead": traced via [clip-debug] logging
+# in Clipboard.qml that entryType/mime/path reaching this script were
+# always correct, so the bug was here, not in the QML. Upstream sends
+# Shift+Insert unconditionally 0.15s after `wl-copy`, whether or not that
+# actually succeeded (`set -uo pipefail`, no `set -e`, so a failing
+# wl-copy is silently swallowed). If wl-copy loses that race, or the
+# compositor hasn't taken ownership of the new clipboard offer yet, the
+# paste keystroke still fires and the target app grabs whatever text was
+# on the clipboard before -- exactly the reported symptom.
+set -uo pipefail
+
+copy_only=false
+
+if [[ ${1:-} == "--copy-only" ]]; then
+  copy_only=true
+  shift
+fi
+
+mime=${1:-}
+path=${2:-}
+
+if [[ -z $mime || -z $path ]]; then
+  echo "Usage: ati-clip-paste-file [--copy-only] <mime-type> <path>" >&2
+  exit 1
+fi
+
+[[ -r $path ]] || exit 1
+
+wl-copy --type "$mime" < "$path" || exit 1
+
+if [[ $copy_only == "true" ]]; then
+  exit
+fi
+
+# Give the compositor a moment to actually register wl-copy as the new
+# clipboard owner before asking the focused app to paste -- 0.15s was
+# upstream's own number and, on this session, not always enough for that
+# handoff to land before the keystroke fires.
+sleep 0.3
+
+# Confirm the clipboard really did switch to this mime before pasting --
+# wl-copy can report success (exit 0) before the compositor has actually
+# taken it as the active offer. Retry briefly rather than trusting the
+# first check: pasting nothing (silent no-op) beats pasting stale text.
+attempts=0
+until wl-paste --list-types 2>/dev/null | grep -qx "$mime"; do
+  attempts=$((attempts + 1))
+  if (( attempts >= 5 )); then
+    exit 1
+  fi
+  sleep 0.1
+done
+
+wtype -M shift -k Insert -m shift 2>/dev/null || true

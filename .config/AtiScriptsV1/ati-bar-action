@@ -134,33 +134,42 @@ island() {
 }
 
 # ---------------------------------------------------------------------------
-#  toggleMenu — the ONE key that does not care which BAR is up, but does
-#  care which SESSION it's in
+#  toggleMenu -- DOES now care which bar is up, reversing this function's
+#  own former header comment, on purpose
 # ---------------------------------------------------------------------------
 #
-# Every other function on this page picks island vs native because the two
-# sides are genuinely different surfaces (a rofi script vs an island QML
-# panel). ati-menu's Wayland half is neither: it is its OWN resident
-# Quickshell instance (.config/quickshell/ati-menu/), addressed by its own
-# IPC target ("menu"), entirely independent of bar-switch and the
-# FORK_DIR/island()/native-table machinery below. Routing it through the
-# usual read_mode() branch would have made it native-only for no reason --
-# the island-mode half would have forwarded to the island's OWN "tide" IPC,
-# which has no "toggleMenu" method and silently does nothing, the exact
-# failure class the header comment above describes for showPicker
-# hub/shared before that native-table entry existed.
+# Used to route to ati-menu's own resident Quickshell instance
+# unconditionally under Wayland, on the grounds that ati-menu is
+# independent of bar-switch and native-vs-island is a question only the
+# OTHER functions on this page need to ask. Reported directly, after that
+# ran under bar-mode=island: "it opens not as popup island" -- ati-menu's
+# card is a plain centred window with no relationship to the capsule, and
+# no amount of repositioning or animating IT reads as "the island",
+# because it genuinely is not part of the island.
 #
-# But it DOES need a session check, unlike everything else here: Menu.qml
-# uses Quickshell.Wayland's WlrLayershell, a Wayland-only protocol, and this
-# repo's qtile session is plain X11 (autostart.sh's own "Pre-X
-# configuration" section says so) -- there is no Wayland compositor under
-# qtile for a layer-shell surface to bind to. So under qtile this key falls
-# back to ati-menu, the original rofi-based engine (still fully
-# maintained -- same JSON files, same actions, just rofi rather than QML
-# rendering them), rather than silently failing against a Quickshell
-# instance that was never started there and never could be.
+# `tide toggleMenu` (DynamicIslandWindow.qml's own
+# `toggleMenuWindow`/`showMenu`, qml/island/MenuLayer.qml) is a real
+# island panel instead -- morphs out of the capsule the same as every
+# other one, reading the same ati-menu.json. So this key now DOES pick
+# island vs native, same as the rest of the table below, for exactly the
+# reason every one of them does: island and native are genuinely
+# different surfaces.
+#
+# Native mode keeps ati-menu's own window -- there is no island capsule
+# for a native-mode panel to morph out of, so there is nothing for a
+# native-mode menu panel to gain over the existing one.
+#
+# The qtile/X11 fallback is UNCHANGED: Menu.qml uses Quickshell.Wayland's
+# WlrLayershell, a Wayland-only protocol, and this repo's qtile session is
+# plain X11 (autostart.sh's own "Pre-X configuration" section says so) --
+# there is no Wayland compositor under qtile for a layer-shell surface to
+# bind to, island or native. So under qtile this key still falls back to
+# ati-menu, the original rofi-based engine (still fully maintained -- same
+# JSON files, same actions, just rofi rather than QML rendering them).
 if [[ "$func" == toggleMenu ]]; then
-  if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+  if [[ -n "${WAYLAND_DISPLAY:-}" && "$(read_mode)" == island ]]; then
+    exec "$IPC_BIN" -p "$FORK_DIR" ipc call tide toggleMenu
+  elif [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
     exec "$IPC_BIN" -p "$HOME/.config/quickshell/ati-menu" ipc call menu toggle
   else
     run ati-menu
@@ -208,6 +217,16 @@ if [[ "$target" == bar ]]; then
     native/systemBox)  topbar_call toggleSystemBox ;;
     native/secondBox)  topbar_call toggleSecondBox ;;
     native/trayBox)    topbar_call toggleTrayBox ;;
+    native/toggleHidden)     topbar_call toggleHidden ;;
+    native/togglePercentage) topbar_call togglePercentage ;;
+    island/toggleHidden|island/togglePercentage)
+      # Same "no counterpart" shape as trayBox above: the chip-hide toggle
+      # and the battery-percentage toggle are properties of topbar/shell.qml
+      # specifically (see its own `hidden`/`showBatteryPercentage`), with no
+      # island equivalent built. Say so rather than a silent no-op.
+      notify-send -u low "ati-bar-action" \
+        "that toggle is the topbar's; switch bars with \$mod SHIFT P" 2>/dev/null || true
+      exit 0 ;;
     *)
       echo "ati-bar-action: unknown box \"$func\"" >&2
       exit 2 ;;
@@ -227,7 +246,25 @@ key="$func"
 
 case "$key" in
   # ---- launchers and menus ----
-  toggleApplicationLauncher)  run rofi -show drun -show-icons ;;
+  toggleApplicationLauncher)
+    # Native/topbar bar mode has no launcher of its own the way the island
+    # does (its own toggleApplicationLauncher IPC, handled by the island()
+    # branch above, untouched here) -- this case existed purely to give
+    # native mode SOME app launcher, and `rofi -show drun` was it. On
+    # Wayland, ati-menu already has a full Apps section (real desktop-entry
+    # search + launch, see NOTICE.md) sitting right there independently of
+    # which bar is active -- same reasoning toggleMenu's own WAYLAND_DISPLAY
+    # branch above gives, just scoped to this one native-mode case instead
+    # of a blanket override, since island mode already has its own answer
+    # and must keep it. X11/qtile has no Wayland compositor for ati-menu's
+    # WlrLayershell surface to bind to (same fact toggleMenu's comment
+    # explains), so it stays on real rofi -show drun there.
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+      exec "$IPC_BIN" -p "$HOME/.config/quickshell/ati-menu" ipc call menu summon apps
+    else
+      run rofi -show drun -show-icons
+    fi
+    ;;
   togglePowerMenu)            run ati-logout ;;
   # NOT ati_palette.py — that is a colour-role LIBRARY (load(), imported
   # by the translator/dm-spellcheck for their own pango tables), not an
@@ -241,7 +278,7 @@ case "$key" in
   # consulted. See that block's comment for why.
 
   # ---- the picker's menus, one rofi script each ----
-  "showPicker clipboard")     run ati-copyq-rofi ;;
+  "showPicker clipboard")     run ati-clip-open ;;
   "showPicker anki")          run rofi_anki ;;
   "showPicker documents")     run ati-docs ;;
   "showPicker translate")     run rofi_translator ;;

@@ -310,7 +310,7 @@ HELP
   cat <<'HELP'
 
 Example (safe non-network test — skip heavy downloads):
-  ./wizard.sh --yes --skip=dcli-sync,whisper,whisper-fast,piper,wallpapers,flatpak
+  ./wizard.sh --yes --skip=dcli-sync,voxtype,piper,wallpapers,flatpak
 
 Uninstall (reverse config files + sudoers + policies wizard wrote —
 NEVER touches pacman packages, dcli syncs, or downloaded models):
@@ -427,8 +427,7 @@ UMOD_CMD[ankiconnect]="uninstall_ankiconnect"
 UMOD_CMD[vaultwarden]="uninstall_vaultwarden"
 UMOD_CMD[vaultwarden-phone]="uninstall_vaultwarden_phone"
 UMOD_CMD[tmux-tpm]="uninstall_tmux_tpm"
-UMOD_CMD[whisper]="uninstall_whisper"
-UMOD_CMD[whisper-fast]="uninstall_whisper_fast"
+UMOD_CMD[voxtype]="uninstall_voxtype"
 UMOD_CMD[mic-gain]="uninstall_mic_gain"
 UMOD_CMD[scrcpy]="uninstall_scrcpy"
 UMOD_CMD[passwordless-sudo]="uninstall_passwordless_sudo"
@@ -479,7 +478,7 @@ page_welcome() {
   _DIM  "  · Dotfile deployment via stow"
   _DIM  "  · Wal-themed kitty/rofi/dunst/qtile/gtk/eww"
   _DIM  "  · Brave/chromium wal theme extension + policy"
-  _DIM  "  · Optional media/voice models (piper + whisper)"
+  _DIM  "  · Optional media/voice models (piper + voxtype)"
   if (( ASSUME_YES )); then
     _DIM "  (--yes: skipping interactive prompts)"
     return

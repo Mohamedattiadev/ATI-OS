@@ -54,6 +54,10 @@ packages:
   - mission-center
   - maim
   - satty
+  - hyprpicker  # trigger.capture.color in ati-menu.json -- Hyprland's own
+                # color picker, toggled with `pkill hyprpicker || hyprpicker -a`
+  - zbar        # trigger.capture.qr in ati-menu.json -- provides zbarimg,
+                # decodes a screen-region QR code (ati-capture-qr)
   # Wayland-native live screen annotation (Hyprland's $mod SHIFT W,
   # binds.conf) — replaces gromit-mpx there. gromit is X11-native, proxied
   # through XWayland-rootless under Hyprland, and its pointer grab does

@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# ati-menu-select — a themed `select one of N` / `prompt for text` dialog,
+# drop-in for `rofi -dmenu` on the Hyprland side, routed through the QML
+# ati-menu's own dmenu view (Menu.qml's openDmenu(), vendored from Omarchy)
+# instead of rofi, so every picker Hyprland scripts pop up looks and behaves
+# like the menu itself -- the same "match every picker's style to the QML
+# menu" direction rofi's own base.rasi already carries for the qtile side.
+#
+# openDmenu() was fully wired the day Menu.qml was vendored; what was
+# missing was a way to reach it from outside QML. shell.qml's new `dmenu`
+# IPC function is that path -- this script is the bash side of it.
+#
+# Usage:
+#   printf 'label 1\nlabel 2\n' | ati-menu-select --mode select --prompt "Pick one"
+#   ati-menu-select --mode input --prompt "Minutes"
+#
+# select-mode stdin rows: "label", "glyph\tlabel", or "glyph\tlabel\tsubtext"
+# -- exactly Menu.qml's own row format (MenuModel row splitting), passed
+# through untouched. Prints the chosen label (first field only) on stdout.
+# Nonzero exit and no output on Escape/cancel, matching `rofi -dmenu`'s own
+# contract closely enough that callers can swap one for the other.
+#
+# Two-temp-file poll: the QML side writes the selection to $selection_file
+# then touches $done_file (or touches only $done_file on cancel) --
+# Omarchy's own bin/omarchy-menu-select uses the same shape, deliberately
+# simple, no D-Bus round trip needed.
+set -uo pipefail
+
+MODE="select"
+PROMPT="Select"
+WIDTH=300
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --mode) MODE="$2"; shift 2 ;;
+    --prompt) PROMPT="$2"; shift 2 ;;
+    --width) WIDTH="$2"; shift 2 ;;
+    # Bare positional prompt, same convention `rofi -dmenu -i -p PROMPT`
+    # takes -- so this script is a drop-in for existing `${RMENU} "prompt"`
+    # call sites that swap their RMENU default per-session, no other
+    # changes needed at the call site.
+    *) PROMPT="$1"; shift ;;
+  esac
+done
+
+case "$MODE" in
+  select|input) ;;
+  *) echo "ati-menu-select: --mode must be 'select' or 'input'" >&2; exit 2 ;;
+esac
+
+# -u: name only, don't create -- QML's finishRequest() distinguishes
+# "not done yet" from "done" by the done_file's mere EXISTENCE, so this
+# script must not leave it pre-created by mktemp.
+selection_file="$(mktemp -u)"
+done_file="$(mktemp -u)"
+payload_file="$(mktemp --suffix=.json)"
+trap 'rm -f "$selection_file" "$done_file" "$payload_file"' EXIT
+
+options_json="[]"
+if [[ "$MODE" == "select" ]]; then
+  options_json="$(jq -Rn '[inputs | select(length > 0)]')"
+fi
+
+jq -n \
+  --arg mode "$MODE" \
+  --arg prompt "$PROMPT" \
+  --argjson options "$options_json" \
+  --arg selectionFile "$selection_file" \
+  --arg doneFile "$done_file" \
+  --argjson width "$WIDTH" \
+  '{mode: $mode, prompt: $prompt, options: $options, selectionFile: $selectionFile, doneFile: $doneFile, width: $width}' \
+  > "$payload_file"
+
+IPC_BIN=qs
+command -v qsipc >/dev/null 2>&1 && IPC_BIN=qsipc
+
+if ! "$IPC_BIN" -p "$HOME/.config/quickshell/ati-menu" ipc call menu dmenu "$payload_file" >/dev/null 2>&1; then
+  echo "ati-menu-select: ati-menu isn't running (IPC call failed)" >&2
+  exit 1
+fi
+
+# Capped at 10 minutes -- the dialog itself has no timeout (Escape cancels
+# it instantly, which touches done_file right away), this cap only guards
+# against the IPC call having silently gone nowhere.
+for _ in $(seq 1 6000); do
+  [[ -e "$done_file" ]] && break
+  sleep 0.1
+done
+
+if [[ ! -e "$done_file" ]]; then
+  echo "ati-menu-select: timed out waiting for a response" >&2
+  exit 1
+fi
+
+if [[ ! -s "$selection_file" ]]; then
+  exit 1
+fi
+
+# First field only (label) -- subtext, when present, is dropped so callers
+# can treat this exactly like `rofi -dmenu` output.
+head -n1 "$selection_file" | cut -f1

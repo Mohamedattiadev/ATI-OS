@@ -7,7 +7,20 @@
 set -euo pipefail
 
 # --- Configuration ---
-RMENU="rofi -dmenu -i -p"
+# QML menu's own dmenu view on Hyprland (same as every other picker in this
+# repo now), plain rofi on X11/qtile -- both take a trailing prompt arg and
+# read rows from stdin, so every call site below is unchanged either way.
+# ati-menu-select only under native bar mode -- it pops ati-menu's own
+# separate floating window, which reads as "the wrong picker opened" from
+# inside an island-mode surface. rofi already runs fine under this
+# Hyprland session regardless of bar mode (bar-chooser itself is a plain
+# rofi menu on a Hyprland keybind).
+if [ -n "${WAYLAND_DISPLAY:-}" ] && [ "$(cat "$HOME/.cache/bar-mode" 2>/dev/null)" != "island" ] \
+    && command -v ati-menu-select >/dev/null 2>&1; then
+  RMENU="ati-menu-select"
+else
+  RMENU="rofi -dmenu -i -p"
+fi
 DMEDITOR="alacritty -e nvim"
 CONFIG_DIR="$HOME/.config"
 DOTFILES_DIR="$HOME/.dotfiles" # Ensure this matches your actual path

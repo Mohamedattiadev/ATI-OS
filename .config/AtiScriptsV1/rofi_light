@@ -7,14 +7,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=ati-rofi-common.sh
 source "$SCRIPT_DIR/ati-rofi-common.sh"
 
-require_cmd rofi light || exit 1
+require_cmd light || exit 1
 
 current=$(light -G 2>/dev/null | awk '{printf "%d", $1}')
 
 choice=$(printf "100\n80\n60\n40\n20\n10\n5" | \
-    rofi -dmenu -i \
-        -p "Brightness" \
-        -mesg "Current: ${current}%")
+    rofi_select "Brightness (current: ${current}%)")
 
 [[ -z "$choice" ]] && exit 0
 

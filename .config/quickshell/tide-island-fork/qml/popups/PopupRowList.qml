@@ -32,8 +32,25 @@ Item {
     property color surface: IslandTheme.background
     property color fg: IslandTheme.foreground
     property color muted: IslandTheme.foreground
-    property color highlight: IslandTheme.green
-    property color highlightInk: IslandTheme.background
+    // Was IslandTheme.green — every current caller (Network/Bluetooth/
+    // Display/Volume) already overrides both to PopupChrome's cHighlight/
+    // cHighlightInk (now theme-accent, not hardcoded green), so this
+    // default was already dead in practice. Matched anyway so a future
+    // caller that forgets to set it gets the theme's colour rather than
+    // silently getting green back — the exact class of bug this whole pass
+    // was reported over.
+    property color highlight: IslandTheme.accent
+    // BLENDED, not solid: ati-menu's own selected row (Menu.qml's
+    // `selectedBackground`) is the accent at low alpha with the TEXT in
+    // the accent, not an opaque fill with inverted ink — matched here
+    // (0.18 is IslandTheme.selectionFill's own established alpha for
+    // exactly this case: "fill is the accent at low alpha so the row's
+    // own text keeps its colour"). `highlightInk` is gone — nothing here
+    // draws inverted ink on a solid block anymore, so a value nobody reads
+    // is exactly the kind of dead binding this whole pass keeps finding.
+    property color highlightText: IslandTheme.accentText
+
+    readonly property color highlightFill: IslandTheme.alpha(root.highlight, 0.18)
 
     readonly property int rowHeight: Math.round(PopupMetrics.rowSize * 1.5)
 
@@ -97,7 +114,7 @@ Item {
                         anchors.fill: parent
                         anchors.rightMargin: PopupMetrics.s(2)
                         visible: parent.selected
-                        color: root.highlight
+                        color: root.highlightFill
                         radius: PopupMetrics.s(4)
                     }
 
@@ -114,7 +131,7 @@ Item {
                         // the log only, with the list looking correct.
                         text: parent.row
                             ? (parent.row.mark + " " + parent.row.left) : ""
-                        color: parent.selected ? root.highlightInk
+                        color: parent.selected ? root.highlightText
                             : (parent.row && parent.row.tone !== undefined
                                 ? parent.row.tone : root.fg)
                         font.family: PopupMetrics.font
@@ -134,7 +151,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: parent.row && parent.row.right !== undefined
                             ? parent.row.right : ""
-                        color: parent.selected ? root.highlightInk : root.muted
+                        color: parent.selected ? root.highlightText : root.muted
                         font.family: PopupMetrics.font
                         font.pixelSize: PopupMetrics.rowSize
                         font.bold: parent.selected

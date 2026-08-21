@@ -17,8 +17,8 @@ Item {
 
     property var notificationModel: null
     property string iconFontFamily: userConfig.iconFontFamily
-    property string textFontFamily: userConfig.textFontFamily
-    property string heroFontFamily: userConfig.heroFontFamily
+    property string textFontFamily: SystemFont.family
+    property string heroFontFamily: SystemFont.family
 
     // FORK: the type here was hardcoded and had no hierarchy — the panel
     // heading and a card's TITLE were both Metrics.font(15) Bold, so a

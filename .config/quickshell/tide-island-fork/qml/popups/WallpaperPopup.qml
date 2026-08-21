@@ -307,7 +307,12 @@ PopupChrome {
                                 anchors.fill: parent
                                 anchors.margins: 0
                                 visible: parent.selected
-                                color: root.cHighlight
+                                // Blended, same as PopupRowList's own
+                                // selected row — a solid block here read as
+                                // a different, heavier selection style than
+                                // every other list-style popup once those
+                                // moved off it.
+                                color: IslandTheme.alpha(root.cHighlight, 0.18)
                                 radius: PopupMetrics.s(3)
                             }
 
@@ -330,7 +335,7 @@ PopupChrome {
                                         : String.fromCodePoint(0xF0765);
                                     return " " + mark + " " + name + " ";
                                 }
-                                color: parent.selected ? root.cHighlightInk
+                                color: parent.selected ? root.cAccentText
                                     : parent.isCurrent ? IslandTheme.success
                                     : root.cFg
                                 font.family: PopupMetrics.font

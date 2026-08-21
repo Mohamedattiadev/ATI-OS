@@ -36,8 +36,12 @@ rows="$(printf '%s\n%s\n%s' \
   "Topbar — top$(mark "$([[ $mode == native && $pos == top ]] && echo yes)")" \
   "Topbar — bottom$(mark "$([[ $mode == native && $pos == bottom ]] && echo yes)")")"
 
-pick="$(printf '%s' "$rows" | rofi -dmenu -i -p "Which bar?" \
-        -theme-str 'window {width: 30%;}' 2>/dev/null)" || exit 0
+if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v ati-menu-select >/dev/null 2>&1; then
+  pick="$(printf '%s' "$rows" | ati-menu-select --mode select --prompt "Which bar?")" || exit 0
+else
+  pick="$(printf '%s' "$rows" | rofi -dmenu -i -p "Which bar?" \
+          -theme-str 'window {width: 30%;}' 2>/dev/null)" || exit 0
+fi
 [[ -n "$pick" ]] || exit 0
 
 case "$pick" in

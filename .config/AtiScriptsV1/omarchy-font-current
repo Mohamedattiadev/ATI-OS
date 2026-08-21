@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# omarchy-font-current — print the font the ati-menu popup currently
+# renders in. NOT the same as this repo's shared `monospace` fontconfig
+# alias (~/.config/fontconfig/fonts.conf) -- that file is deliberately
+# curated to keep eww/dunst/qtile-popups on one typeface (see its own
+# header comment) and this script/provider never touches it. The menu's
+# own font is scoped through OMARCHY_MENU_FONT (Menu.qml's Style.qml
+# already reads this env var as an override -- see menuFontFamily), which
+# omarchy-font-set (this same trio) is the only thing that writes.
+#
+# Called by the vendored Menu.qml's own "fonts" provider script
+# (Menu.qml:310) by this exact literal name -- do not rename.
+set -uo pipefail
+
+FONT_CONF="$HOME/.config/hypr/menu-font.conf"
+
+if [[ -f "$FONT_CONF" ]]; then
+  sed -n 's/^env = OMARCHY_MENU_FONT,//p' "$FONT_CONF" | head -1
+else
+  fc-match -f '%{family[0]}' monospace 2>/dev/null
+fi

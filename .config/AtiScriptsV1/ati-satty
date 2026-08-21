@@ -17,7 +17,20 @@ MAIM_PREFIX="screenshot"
 # test is "take one by hand" is how it came to be captured with an X11 tool in
 # a Wayland session for as long as it was. A stub that echoes a fixed answer
 # turns the whole flow into one command.
-RMENU="${RMENU:-rofi -dmenu -i -p}"
+#
+# Default picker matches the session: ati-menu-select on Hyprland (the QML
+# menu's own dmenu view, same as every other picker in this repo now), rofi
+# -dmenu -i -p on X11/qtile where that is not an option. Both take a single
+# trailing prompt argument and read rows from stdin, so nothing below this
+# line needed to change.
+# ati-menu-select only under native bar mode -- see dm-confedit's own
+# comment on this exact condition for why.
+if [ -n "${WAYLAND_DISPLAY:-}" ] && [ "$(cat "$HOME/.cache/bar-mode" 2>/dev/null)" != "island" ] \
+    && command -v ati-menu-select >/dev/null 2>&1; then
+	RMENU="${RMENU:-ati-menu-select}"
+else
+	RMENU="${RMENU:-rofi -dmenu -i -p}"
+fi
 
 # Create screenshot directory if it doesn't exist
 mkdir -p "${MAIM_DIR}"

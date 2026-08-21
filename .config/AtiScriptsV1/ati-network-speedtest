@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# ati-network-speedtest — runs ati-network-speedtest-probe (vendored from
+# Omarchy) for download then upload, each capped at a fixed duration,
+# printing the live per-second readings followed by a final steady-state
+# figure per direction. Meant for a floating terminal (ati-menu.json's
+# "terminal": true), same as every other visible-output action here.
+set -euo pipefail
+
+DURATION=10
+
+run_direction() {
+	local dir="$1" label="$2" last=0
+	echo "== $label =="
+	while IFS= read -r mbps; do
+		printf '\r%s: %s Mbps   ' "$label" "$mbps"
+		last="$mbps"
+	done < <(timeout "$DURATION" ati-network-speedtest-probe "$dir")
+	printf '\n%s: %s Mbps (final)\n\n' "$label" "$last"
+}
+
+run_direction down "Download"
+run_direction up "Upload"
+
+read -rp "press enter to close" _

@@ -105,6 +105,17 @@ ShellRoot {
     property bool trayBoxOpen: false
     property bool wallpaperBoxOpen: false
 
+    // Chip-surface visibility only -- the reserved screen space is a
+    // SEPARATE window (the "reserver" PanelWindow below, ExclusionMode
+    // .Ignore on both visible bars means it alone holds the zone). Hiding
+    // the chips here does not touch that reservation, on purpose: the
+    // reserver's whole reason to exist is to be independent of the visible
+    // bar's transient state, so tearing that apart just for a show/hide
+    // toggle would undo the separation the surrounding comments explain at
+    // length. A hidden bar leaves its gap; showing it again is instant,
+    // with nothing to re-tile.
+    property bool hidden: false
+
     // Driveable from a script, which is what the keybinding uses. A control
     // with no way in from a script is a control whose bugs only the user finds.
     IpcHandler {
@@ -139,6 +150,19 @@ ShellRoot {
         function hideSystemBox(): void { shellRoot.systemBoxOpen = false; }
         function showSecondBox(): void { shellRoot.secondBoxOpen = true; }
         function hideSecondBox(): void { shellRoot.secondBoxOpen = false; }
+
+        // Chip-surface show/hide (see shellRoot.hidden above) -- explicit
+        // setters alongside the toggle for the same reason every other box
+        // here has both: a script wants show/hide, not "whatever it isn't
+        // right now".
+        function showBar(): void { shellRoot.hidden = false; }
+        function hideBar(): void { shellRoot.hidden = true; }
+        function toggleHidden(): void { shellRoot.hidden = !shellRoot.hidden; }
+
+        function showPercentage(): void { shellRoot.showBatteryPercentage = true; }
+        function hidePercentage(): void { shellRoot.showBatteryPercentage = false; }
+        function togglePercentage(): void { shellRoot.showBatteryPercentage = !shellRoot.showBatteryPercentage; }
+
         function boxes(): string {
             return "system=" + shellRoot.systemBoxOpen
                 + " second=" + shellRoot.secondBoxOpen
@@ -151,8 +175,10 @@ ShellRoot {
 
         PanelWindow {
             id: bar
-            // One bar at a time, as qtile shows one at a time.
-            visible: shellRoot.position === "top"
+            // One bar at a time, as qtile shows one at a time -- plus the
+            // hidden toggle, which does not change WHICH bar is live, only
+            // whether its chips are drawn (see shellRoot.hidden above).
+            visible: shellRoot.position === "top" && !shellRoot.hidden
             required property var modelData
             screen: modelData
 
@@ -991,7 +1017,7 @@ ShellRoot {
         PanelWindow {
             required property var modelData
             screen: modelData
-            visible: shellRoot.position === "bottom"
+            visible: shellRoot.position === "bottom" && !shellRoot.hidden
 
             // Same rule as the top bar above, and the same fix: always Top.
             // The standalone `ModeChip` window covers the fullscreen+mode
@@ -1514,6 +1540,12 @@ ShellRoot {
     readonly property var battery: UPower.displayDevice
     readonly property bool batteryLow:
         battery && battery.isLaptopBattery && battery.percentage <= 0.2
+    // ati-menu's trigger.toggle.battery-percentage: drops just the numeral,
+    // keeps the glyph and charge-direction char (ch already carries its own
+    // trailing space either way, so the two branches read cleanly either
+    // side of the toggle).
+    property bool showBatteryPercentage: true
+
     readonly property string batteryText: {
         if (!battery || !battery.isLaptopBattery) return "";
         const pct = Math.round(battery.percentage * 100);
@@ -1526,6 +1558,8 @@ ShellRoot {
         // exactly: "\uf240  {char}{percent:2.0%}". One space sat the readout
         // a couple of pixels left of qtile's — the sort of thing that only
         // shows up with the two bars stacked on top of each other.
+        if (!shellRoot.showBatteryPercentage)
+            return String.fromCharCode(0xF240) + "  " + ch;
         return String.fromCharCode(0xF240) + "  " + ch + pct + "%";
     }
 

@@ -1,0 +1,73 @@
+#!/bin/bash
+# Vendored from Omarchy's bin/omarchy-clipboard-paste-text (MIT, see
+# ../../NOTICE.md). ATI-OS delta: same fix as ati-clip-paste-file's own
+# header explains -- wl-copy's success is now confirmed (by polling
+# wl-paste --list-types) before the paste keystroke fires, instead of
+# sending it unconditionally 0.15s later and risking a stale paste if
+# that race is lost.
+# Usage: [--shift-insert] [--copy-only] [--history-index <index>|<text>]
+set -uo pipefail
+
+use_shift_insert=false
+copy_only=false
+history_index=""
+text=""
+
+while (( $# > 0 )); do
+  case "$1" in
+    --shift-insert) use_shift_insert=true; shift ;;
+    --copy-only) copy_only=true; shift ;;
+    --history-index) history_index="${2:-}"; shift 2 ;;
+    *) break ;;
+  esac
+done
+
+copy_history_entry() {
+  local history_path="$HOME/.local/state/omarchy/clipboard-history.json"
+
+  [[ $history_index =~ ^[0-9]+$ ]] || exit 1
+  jq -e --argjson index "$history_index" '.[$index].type == "text" and (.[$index].text | type == "string")' "$history_path" >/dev/null || exit 1
+  # pipefail (set above) makes wl-copy's own exit status the pipeline's,
+  # so a failed copy is no longer silently swallowed.
+  jq -j --argjson index "$history_index" '.[$index].text' "$history_path" | wl-copy || exit 1
+}
+
+if [[ -n $history_index ]]; then
+  copy_history_entry
+  if [[ $copy_only != "true" ]]; then
+    use_shift_insert=true
+  fi
+else
+  text=${1:-}
+  [[ -n $text ]] || exit
+  printf '%s' "$text" | wl-copy || exit 1
+fi
+
+if [[ $copy_only == "true" ]]; then
+  exit
+fi
+
+# Give the compositor a moment to actually register wl-copy as the new
+# clipboard owner before asking the focused app to paste -- 0.15s was
+# upstream's own number and, on this session, not always enough for that
+# handoff to land before the keystroke fires (reported live: "click an
+# image row, it pastes the last text instead" -- traced to the sibling
+# ati-clip-paste-file's identical pattern, same fix applied here for the
+# text/history-index path).
+sleep 0.3
+
+if [[ $use_shift_insert == "true" ]]; then
+  # Confirm the clipboard really did switch before pasting -- wl-copy can
+  # report success before the compositor has actually taken it as the
+  # active offer. Retry briefly rather than trusting the first check:
+  # pasting nothing (silent no-op) beats pasting stale text.
+  attempts=0
+  until wl-paste --list-types 2>/dev/null | grep -qx "text/plain"; do
+    attempts=$((attempts + 1))
+    (( attempts >= 5 )) && exit 1
+    sleep 0.1
+  done
+  wtype -M shift -k Insert -m shift 2>/dev/null || true
+else
+  wtype "$text" 2>/dev/null || true
+fi

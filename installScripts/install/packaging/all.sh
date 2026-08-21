@@ -79,20 +79,22 @@ _clear_informant_news() {
 # fails the install is still complete, just fatter -- so it never returns
 # non-zero into the module's exit status.
 # Packages whose build tree a LATER module still needs. Deleting these is
-# not a cleanup, it is a broken install:
+# not a cleanup, it is a broken install.
 #
-#   whisper.cpp-git -- step_whisper_fast (module 33) rebuilds whisper-cli
-#     and whisper-stream from this exact source tree, because the AUR
-#     PKGBUILD ships an unoptimised binary (~13x slower, measured) and
-#     never builds whisper-stream at all. It checks for the directory and
-#     hard-fails when it is missing.
+# Empty for now: whisper.cpp-git (kept here for step_whisper_fast, which
+# rebuilt whisper-cli/whisper-stream from source because the AUR PKGBUILD
+# shipped an unoptimised binary) is gone along with that module -- dictation
+# is voxtype-bin now, a prebuilt "-bin" package with no build tree of its
+# own to protect.
 #
-# The first version of this cleanup did not have that list and removed the
-# tree at module 8, so whisper-fast failed 25 modules later with an empty
-# error log -- because it fails via _ERR and `return 1`, which never
-# reaches the module's stderr. Exactly the sort of action-at-a-distance
-# this whole cleanup was written to stop causing.
-RECLAIM_KEEP=(whisper.cpp-git)
+# The first version of this cleanup did not have a keep-list at all and
+# removed a tree a later module still needed, which then failed 25 modules
+# later with an empty error log -- because it fails via _ERR and `return 1`,
+# which never reaches the module's stderr. Exactly the sort of
+# action-at-a-distance this whole cleanup was written to stop causing. If a
+# future module rebuilds something from an AUR source tree, its package
+# name goes back in this array.
+RECLAIM_KEEP=()
 
 _reclaim_build_cache() {
   (( DRY_RUN )) && { _DIM "  [dry] clean AUR build caches"; return 0; }
@@ -477,105 +479,37 @@ EOF
 }
 
 
-step_whisper() {
-  local dir="$HOME/.local/share/whisper"
-  run "mkdir -p $dir"
-  # base.en: ati-voice-dictate-live (Super+Shift+V) -- fast enough to feel
-  # instant on modest hardware, traded for lower accuracy.
-  # small.en: ati-voice-dictate (Super+Shift+B) -- much more accurate, not
-  # instant. Benchmarked repeatedly on a weak 2-core CPU: small.en runs
-  # ~4x slower than real-time even with the fast build below and GPU
-  # offload, so it's kept for batch (manual stop) dictation only, not
-  # the live mode.
-  for model in ggml-base.en.bin ggml-small.en.bin; do
-    local out="$dir/$model"
-    if (( DRY_RUN )); then _DIM "  [dry] curl whisper $model (retry x3)"; continue; fi
-    [[ -f "$out" ]] && continue
-    retry_net 3 10 curl -fL --retry 3 --continue-at - -o "$out" \
-      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$model" || \
-      { _ERR "whisper model $model download failed after 3 retries"; return 1; }
-  done
-}
-
-
-step_whisper_fast() {
-  # whisper.cpp-git's PKGBUILD builds with `-D CMAKE_BUILD_TYPE=None` --
-  # no optimization flags at all, no -march=native. Measured on this
-  # hardware: encoding 2s of audio took 28s with the pacman-built
-  # whisper-cli vs 2.1s with a Release build of the identical source/
-  # model -- a ~13x slowdown, present in every binary the package ships.
-  # It also doesn't build whisper-stream at all (needs -DWHISPER_SDL2=ON,
-  # which the PKGBUILD doesn't pass), and ati-voice-dictate-live needs
-  # whisper-stream patched with patches/whisper-stream-poll-ms.patch
-  # (adds --poll-ms/--vad-tail-ms, hardcoded upstream with no CLI flag).
+step_voxtype() {
+  # voxtype-bin (declared in system-tools.yaml, installed by the generic
+  # package pass before this step runs) is the whole dictation daemon --
+  # capture, VAD, whisper transcription and Wayland text output, all in one
+  # prebuilt binary. Nothing here builds anything; this step is only the
+  # one-time setup Omarchy's own installer does after the package lands
+  # (bin/omarchy-voxtype-install in basecamp/omarchy):
   #
-  # Builds both from the whisper.cpp-git AUR package's own cached source
-  # (already fetched by dcli-sync/yay) and shadows the slow system
-  # binaries via /usr/local/bin (already earlier in $PATH than /usr/bin)
-  # + /usr/local/lib/whisper-cpp (registered through /etc/ld.so.conf.d,
-  # so they keep working even if the yay cache is later cleared). See
-  # .config/AtiScriptsV1/patches/README.md for the full writeup.
-  local src="$HOME/.cache/yay/whisper.cpp-git/src/whisper.cpp-git"
-  local patch="$DOTFILES_DIR/.config/AtiScriptsV1/patches/whisper-stream-poll-ms.patch"
-  local build="$src/build-fast"
-  local libdir="/usr/local/lib/whisper-cpp"
-
+  #   1. config already lives at .config/voxtype/config.toml and is on disk
+  #      via stow, same as any other tracked config -- nothing to copy here.
+  #   2. `voxtype setup --download` pulls the base.en whisper model
+  #      (~150MB) into ~/.local/share/voxtype/models.
+  #   3. `voxtype setup systemd` installs + enables a systemd --user unit
+  #      so the daemon is up on every login, not just after a manual start.
+  #
+  # This replaces the old whisper.cpp-git/ati-voice-dictate-live pipeline
+  # (hand-rolled whisper-stream capture, a patched --poll-ms build, xdotool
+  # typing that silently did nothing under native Wayland) -- see git log
+  # for that history if it's ever worth resurrecting.
   if (( DRY_RUN )); then
-    _DIM "  [dry] build whisper-cli + whisper-stream (Release, patched) from AUR cache, shadow via /usr/local"
+    _DIM "  [dry] voxtype setup --download --no-post-install"
+    _DIM "  [dry] voxtype setup systemd"
     return
   fi
 
-  # The AUR build tree is NOT guaranteed to still be there. dcli sync's own
-  # yay invocation cleans it, so on a clean machine this module found
-  # nothing 25 modules after the package was built and hard-failed -- while
-  # working forever on a developer box where the tree happened to survive.
-  # Depending on another tool's leftovers is the bug; re-fetching is the
-  # fix.
-  if [[ ! -d "$src" ]]; then
-    _DIM "  AUR build tree is gone — re-fetching whisper.cpp-git sources"
-    local fetch="$HOME/.cache/whisper-fast-src"
-    rm -rf "$fetch"; mkdir -p "$fetch"
-    if ( cd "$fetch" && yay -G whisper.cpp-git >/dev/null 2>&1 \
-         && cd whisper.cpp-git \
-         && makepkg --nobuild --noconfirm --skippgpcheck --nodeps >/dev/null 2>&1 ); then
-      src="$fetch/whisper.cpp-git/src/whisper.cpp-git"
-      build="$src/build-fast"
-    fi
-  fi
+  command -v voxtype >/dev/null 2>&1 || { _ERR "voxtype binary not found — did the voxtype-bin package install?"; return 1; }
 
-  # Still nothing: warn and skip rather than fail the install. This module
-  # is a SPEEDUP, not a requirement -- the pacman-built whisper-cli works,
-  # just ~13x slower -- so a missing source tree is not worth turning a
-  # complete install into a failed one.
-  if [[ ! -d "$src" ]]; then
-    _WARN "whisper.cpp-git source unavailable — keeping the slower packaged whisper-cli"
-    _WARN "  rebuild later with: ./wizard.sh --yes --only=whisper-fast"
-    return 0
-  fi
-
-  # Idempotent: skip the (slow, few-minute) rebuild if already shadowed.
-  # Checked via the patched --poll-ms flag rather than ldd against
-  # $libdir: RUNPATH prefers whichever path resolves first, and an
-  # earlier build's cache dir resolving fine (same file contents either
-  # way) doesn't mean it's still pointed at $libdir specifically.
-  if /usr/local/bin/whisper-stream --help 2>&1 | grep -q -- "--poll-ms"; then
-    _OK "whisper-cli/whisper-stream already built + shadowed via /usr/local"
-    return
-  fi
-
-  # --poll-ms/--vad-tail-ms not already in stream.cpp -> patch not
-  # applied yet on this checkout of the AUR cache.
-  if ! grep -q -- "--poll-ms" "$src/examples/stream/stream.cpp" 2>/dev/null; then
-    run "cd $src && git apply $patch"
-  fi
-  run "cmake -S $src -B $build -DWHISPER_SDL2=ON -DCMAKE_BUILD_TYPE=Release -W no-dev"
-  run "cmake --build $build --target whisper-cli whisper-stream -j$(nproc)"
-  run "sudo mkdir -p $libdir"
-  run "sudo cp $build/bin/lib*.so* $libdir/"
-  run "echo $libdir | sudo tee /etc/ld.so.conf.d/whisper-cpp.conf >/dev/null"
-  run "sudo ldconfig"
-  run "sudo install -Dm755 $build/bin/whisper-cli /usr/local/bin/whisper-cli"
-  run "sudo install -Dm755 $build/bin/whisper-stream /usr/local/bin/whisper-stream"
+  # Idempotent: setup --download skips a model already on disk, and
+  # `setup systemd` re-running just reinstalls + re-enables the same unit.
+  run "voxtype setup --download --no-post-install" || { _ERR "voxtype model download failed"; return 1; }
+  run "voxtype setup systemd"
 }
 
 
@@ -725,6 +659,10 @@ uninstall_ankiconnect() {
   run "rm -rf $HOME/.local/share/Anki2/addons21/2055492159"
 }
 
-uninstall_whisper()           { :; }  # models may be shared
-
-uninstall_whisper_fast()      { :; }  # leave the fast binaries in place -- reverting to the ~13x slower pacman ones helps no one
+uninstall_voxtype() {
+  # Stop + disable the service; leave the downloaded model in place, same
+  # "models may be shared" reasoning uninstall_whisper used to -- deleting
+  # 150MB nobody asked to reclaim helps no one and re-downloading it on the
+  # next install is the actual cost of getting this wrong.
+  run "systemctl --user disable --now voxtype.service" || true
+}

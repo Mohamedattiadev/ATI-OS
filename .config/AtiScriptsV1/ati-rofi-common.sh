@@ -154,6 +154,25 @@ copy_to_clipboard() {
     fi
 }
 
+# True when a caller should reach for ati-menu-select over plain rofi --
+# i.e. Wayland AND native bar mode. ati-menu-select pops ati-menu's OWN
+# separate floating window, which under bar-mode=island reads as "the
+# wrong picker opened" from inside an island-mode surface (reported
+# directly, after the new island command-menu panel started calling into
+# scripts that had this hardcoded). Centralised here after the same
+# one-line condition was copied into five call sites
+# (ati-default-app/ati-webapp-remove/ati-keybindings/ati-emoji-insert/
+# ati-docs) before this existed -- a sixth and seventh copy is exactly the
+# kind of drift a shared function stops. rofi already runs fine under this
+# Hyprland session regardless of bar mode (bar-chooser itself is a plain
+# rofi menu on a Hyprland keybind), so island mode falling back to it is
+# not a new code path, just a wider use of an already-proven one.
+use_ati_menu_select() {
+    [[ -n "${WAYLAND_DISPLAY:-}" ]] || return 1
+    [[ "$(cat "$HOME/.cache/bar-mode" 2>/dev/null)" != "island" ]] || return 1
+    command -v ati-menu-select >/dev/null 2>&1
+}
+
 # Notify wrapper — no-op if notify-send missing.
 notify_safe() {
     command -v notify-send &>/dev/null && notify-send "$@"
@@ -184,6 +203,19 @@ rofi_confirm() {
     local prompt="${1:-Confirm?}"
     local msg="${2:-}"
     local answer i
+
+    # Hyprland: route through the QML menu's own dmenu view instead of
+    # rofi, same as every picker built after ati-menu-select existed --
+    # folding $msg into the prompt since the QML "select" payload has no
+    # separate subtitle field the way rofi's -mesg does.
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v ati-menu-select >/dev/null 2>&1; then
+        local full_prompt="$prompt"
+        [[ -n "$msg" ]] && full_prompt="$prompt ($msg)"
+        answer="$(printf 'Yes\nNo\n' | ati-menu-select --mode select --prompt "$full_prompt")"
+        [[ "$answer" == "Yes" ]]
+        return
+    fi
+
     # Wait for any lingering rofi instance to fully exit.
     for i in 1 2 3 4 5 6 7 8 9 10; do
         pgrep -x rofi >/dev/null 2>&1 || break
@@ -207,6 +239,26 @@ rofi_confirm() {
     [[ "$answer" == "Yes" ]]
 }
 
+# Plain "pick one of N" list, one option per stdin line, no icons/markup/
+# custom theme needed:
+#
+#   choice="$(printf '%s\n' "${opts[@]}" | rofi_select "Prompt")"
+#
+# Same QML-dmenu-on-Hyprland / rofi-dmenu-on-X11 split as rofi_confirm and
+# rofi_input above -- the shared home for any caller whose picker is just a
+# bare `rofi -dmenu -i -p "$prompt"` with nothing else on it. A caller
+# using rofi's own icons/markup/multi-column rows (ati-copyq-rofi, ati-kill,
+# rofi_todo's task list) has no QML dmenu equivalent for those and stays on
+# rofi directly instead of calling this.
+rofi_select() {
+    local prompt="${1:-Select}"
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v ati-menu-select >/dev/null 2>&1; then
+        ati-menu-select --mode select --prompt "$prompt"
+        return
+    fi
+    rofi -dmenu -i -p "$prompt"
+}
+
 # Single-line text entry: ask a question, read one answer.
 #
 #   answer="$(rofi_input "New title" "https://example.com" "$old_title")"
@@ -221,6 +273,19 @@ rofi_confirm() {
 # Args: prompt [mesg] [prefilled text]
 rofi_input() {
     local prompt="${1:-Input}" mesg="${2:-}" prefill="${3:-}"
+
+    # Hyprland: same QML dmenu route as rofi_confirm above. The "input"
+    # payload has no prefill field at all (Menu.qml's applyDmenuSelection
+    # for input mode always starts from an empty filterText) -- a caller
+    # that relies on $prefill actually being pre-typed loses that on this
+    # path, everything else carries through.
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v ati-menu-select >/dev/null 2>&1; then
+        local full_prompt="$prompt"
+        [[ -n "$mesg" ]] && full_prompt="$prompt ($mesg)"
+        ati-menu-select --mode input --prompt "$full_prompt"
+        return
+    fi
+
     printf '' | rofi -dmenu -i \
         -p "$prompt" \
         -theme "$HOME/.config/rofi/themes/base.rasi" \
@@ -234,6 +299,12 @@ rofi_input() {
 # rofi's -password hides the characters; it does NOT stop the value
 # appearing in this process's argv, so the answer must be read from
 # stdout (as here) and never passed to anything as a command argument.
+#
+# Deliberately NOT routed through the QML dmenu view even on Hyprland:
+# Menu.qml's "input" mode has no masked/password echo mode in its payload
+# contract, and a password typed in plain text on screen is a real
+# regression, not a style mismatch -- this one stays on rofi -password
+# unconditionally rather than silently trading security for consistency.
 rofi_input_secret() {
     local prompt="${1:-Password}" mesg="${2:-}"
     printf '' | rofi -dmenu -i -password \

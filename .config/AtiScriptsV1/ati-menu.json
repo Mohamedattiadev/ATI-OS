@@ -1,15 +1,104 @@
 {
   "apps": {"icon": "󰀻", "label": "Apps", "aliases": ["app", "applications"], "provider": "apps"},
 
+  "learn": {"icon": "󰧑", "label": "Learn"},
+  "learn.arch": {"icon": "󰣇", "label": "Arch Wiki", "action": "xdg-open https://wiki.archlinux.org/"},
+  "learn.hyprland": {"icon": "󰤰", "label": "Hyprland Wiki", "action": "xdg-open https://wiki.hypr.land/"},
+  "learn.qtile": {"icon": "󰡰", "label": "Qtile docs", "action": "xdg-open https://docs.qtile.org/"},
+  "learn.neovim": {"icon": "", "label": "Neovim", "action": "xdg-open https://www.lazyvim.org/keymaps"},
+  "learn.bash": {"icon": "󰒉", "label": "Bash", "action": "xdg-open https://devhints.io/bash"},
+
+  "trigger": {"icon": "󱓞", "label": "Trigger"},
+  "trigger.clipboard": {"icon": "󰜤", "label": "Clipboard history", "action": "ati-clip-open"},
+  "trigger.calculator": {"icon": "󰇬", "label": "Calculator", "action": "ati-bar-action tide toggleCalculator"},
+  "trigger.wifi": {"icon": "󰛳", "label": "Wi-Fi panel", "action": "ati-bar-action tide toggleWifiPanel"},
+  "trigger.wifi-qr": {"icon": "󰐲", "label": "Wi-Fi QR code", "action": "ati-bar-action tide toggleWifiQr"},
+  "trigger.bluetooth": {"icon": "󰂯", "label": "Bluetooth panel", "action": "ati-bar-action tide toggleBluetoothPanel"},
+  "trigger.audio": {"icon": "󰕾", "label": "Audio panel", "action": "ati-bar-action tide toggleAudioPanel"},
+  "trigger.display": {"icon": "󰍹", "label": "Display panel", "action": "ati-bar-action tide toggleDisplayPanel"},
+
+  "trigger.emoji": {"icon": "", "label": "Emoji", "action": "ati-emoji-insert"},
+
+  "trigger.toggle": {"icon": "󰔡", "label": "Toggle"},
+  "trigger.toggle.nightlight": {"icon": "", "label": "Night Light", "action": "ati-bar-action tide toggleNightLight"},
+  "trigger.toggle.notifications": {"icon": "", "label": "Do Not Disturb", "action": "ati-bar-action tide toggleFocus"},
+  "trigger.toggle.menu-bar": {"icon": "󰃥", "label": "Menu Bar", "action": "ati-bar-action bar toggleHidden"},
+  "trigger.toggle.battery-percentage": {"icon": "󰂒", "label": "Battery Percentage", "action": "ati-bar-action bar togglePercentage"},
+  "trigger.toggle.stay-awake": {"icon": "󰅶", "label": "Stay Awake", "action": "ati-stay-awake toggle"},
+
+  "trigger.keybindings": {"icon": "󰌌", "label": "Keybindings (search + run)", "when": "command -v hyprctl >/dev/null 2>&1 && hyprctl version >/dev/null 2>&1", "action": "ati-keybindings"},
+
+  "trigger.reminder": {"icon": "󰀠", "label": "Reminder"},
+  "trigger.reminder.set": {"icon": "󰀠", "label": "Set reminder", "action": "ati-reminder set"},
+  "trigger.reminder.show": {"icon": "󰥔", "label": "Show pending", "action": "ati-reminder show"},
+  "trigger.reminder.clear": {"icon": "󰅘", "label": "Cancel reminder", "action": "ati-reminder clear"},
+
+  "trigger.transcode": {"icon": "󰓴", "label": "Transcode", "action": "ati-transcode"},
+  "trigger.tests": {"icon": "󰎓", "label": "Speed Test"},
+  "trigger.tests.network-speedtest": {"icon": "󰎓", "label": "Network Speed Test", "action": "ati-run-in-terminal ati-network-speedtest"},
+  "trigger.tests.disk-speedtest": {"icon": "󰉊", "label": "Disk Speed Test", "action": "ati-run-in-terminal ati-disk-speedtest"},
+
+  "trigger.capture": {"icon": "󰄀", "label": "Capture"},
+  "trigger.capture.screenshot": {"icon": "󰄀", "label": "Screenshot", "action": "ati-satty"},
+  "trigger.capture.screenrecord": {"icon": "󰔷", "label": "Screen record", "action": "ati-record"},
+  "trigger.capture.color": {"icon": "󰎈", "label": "Pick Color", "action": "pkill hyprpicker || hyprpicker -a"},
+  "trigger.capture.text": {"icon": "󰈜", "label": "OCR Text", "action": "ati-capture-text"},
+  "trigger.capture.qr": {"icon": "󰍁", "label": "QR Code", "action": "ati-capture-qr"},
+
   "style": {"icon": "󰏘", "label": "Style"},
   "style.theme": {"icon": "󰸌", "label": "Theme", "action": "ati-theme-toggle"},
   "style.wallpaper": {"icon": "󰸉", "label": "Wallpaper", "action": "ati-bar-action tide toggleWallpaperPicker"},
   "style.ui-scale": {"icon": "󰍹", "label": "UI scale", "action": "ui-scale-toggle"},
+  "style.font": {"icon": "󰏘", "label": "Font", "aliases": ["typeface", "typography"], "provider": "fonts"},
 
-  "system": {"icon": "󰐥", "label": "System", "action": "ati-logout"},
+  "setup": {"icon": "󰄺", "label": "Setup"},
+  "setup.config": {"icon": "󰑎", "label": "Config files", "action": "dm-confedit"},
+  "setup.edit": {"icon": "󰙏", "label": "Edit config"},
+  "setup.edit.hyprland": {"icon": "󰙏", "label": "hyprland.conf", "action": "ati-edit-config ~/.config/hypr/hyprland.conf"},
+  "setup.edit.qtile": {"icon": "󰙏", "label": "qtile config.py", "action": "ati-edit-config ~/.config/qtile/config.py"},
 
-  "setup": {"icon": "", "label": "Setup"},
-  "setup.config": {"icon": "", "label": "Config files", "action": "dm-confedit"},
+  "setup.network": {"icon": "󰖟", "label": "Network"},
+  "setup.network.dns": {"icon": "󰤷", "label": "DNS"},
+  "setup.network.dns.dhcp": {"icon": "󰤷", "label": "DHCP (default)", "action": "ati-dns-set dhcp"},
+  "setup.network.dns.cloudflare": {"icon": "󰤷", "label": "Cloudflare (1.1.1.1)", "action": "ati-dns-set cloudflare"},
+  "setup.network.dns.google": {"icon": "󰤷", "label": "Google (8.8.8.8)", "action": "ati-dns-set google"},
+  "setup.network.dns.custom": {"icon": "󰤷", "label": "Custom", "action": "ati-dns-set custom"},
+
+  "setup.default-apps": {"icon": "󰇆", "label": "Default apps"},
+  "setup.default-apps.browser": {"icon": "󰇆", "label": "Browser", "action": "ati-default-app browser"},
+
+  "install": {"icon": "󰉉", "label": "Install"},
+  "install.docker": {"icon": "󰏓", "label": "Docker", "disabled": "pacman -Qi docker >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli install docker'"},
+  "install.gimp": {"icon": "󰏓", "label": "GIMP", "disabled": "pacman -Qi gimp >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli install gimp'"},
+  "install.webapp": {"icon": "󰖟", "label": "Web App", "action": "ati-run-in-terminal ati-webapp-install"},
+
+  "install.gaming": {"icon": "", "label": "Gaming"},
+  "install.gaming.steam": {"icon": "", "label": "Steam", "disabled": "pacman -Qi steam >/dev/null 2>&1", "action": "ati-run-in-terminal ati-install-gaming-steam"},
+  "install.gaming.retroarch": {"icon": "󰯉", "label": "RetroArch", "disabled": "pacman -Qi retroarch >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli install retroarch'"},
+  "install.gaming.lutris": {"icon": "󰹫", "label": "Lutris", "disabled": "pacman -Qi lutris >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli install lutris'"},
+  "install.gaming.heroic": {"icon": "󱓟", "label": "Heroic (Epic Games)", "disabled": "pacman -Qi heroic-games-launcher-bin >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli install heroic-games-launcher-bin'"},
+  "install.gaming.minecraft": {"icon": "󰍳", "label": "Minecraft", "disabled": "pacman -Qi minecraft-launcher >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli install minecraft-launcher'"},
+  "install.gaming.battlenet": {"icon": "", "label": "Battle.net (via Lutris)", "disabled": "pacman -Qi lutris >/dev/null 2>&1", "action": "ati-run-in-terminal ati-install-gaming-battlenet"},
+  "install.gaming.geforce-now": {"icon": "󰢹", "label": "NVIDIA GeForce NOW", "disabled": "flatpak info com.nvidia.geforcenow >/dev/null 2>&1", "action": "ati-run-in-terminal ati-install-gaming-geforce-now"},
+  "install.gaming.xbox-cloud": {"icon": "󰁲", "label": "Xbox Cloud Gaming", "disabled": "[[ -f \"$HOME/.local/share/applications/Xbox Cloud Gaming.desktop\" ]]", "action": "ati-webapp-install 'Xbox Cloud Gaming' 'https://www.xbox.com/en-US/play' 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/xbox.png' && ati-launch-webapp 'https://www.xbox.com/en-US/play'"},
+  "install.gaming.xbox-controllers": {"icon": "󰂯", "label": "Xbox Controllers", "disabled": "pacman -Qi xpadneo-dkms >/dev/null 2>&1", "action": "ati-run-in-terminal ati-install-gaming-xbox-controllers"},
+
+  "remove": {"icon": "󰭌", "label": "Remove"},
+  "remove.docker": {"icon": "󰏓", "label": "Docker", "when": "pacman -Qi docker >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli remove docker'"},
+  "remove.gimp": {"icon": "󰏓", "label": "GIMP", "when": "pacman -Qi gimp >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli remove gimp'"},
+  "remove.webapp": {"icon": "󰖟", "label": "Web App", "when": "grep -qlE '^Exec=.*ati-launch-webapp' \"$HOME\"/.local/share/applications/*.desktop 2>/dev/null", "action": "ati-run-in-terminal ati-webapp-remove"},
+
+  "remove.gaming": {"icon": "", "label": "Gaming"},
+  "remove.gaming.steam": {"icon": "", "label": "Steam", "when": "pacman -Qi steam >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli remove steam'"},
+  "remove.gaming.retroarch": {"icon": "󰯉", "label": "RetroArch", "when": "pacman -Qi retroarch >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli remove retroarch'"},
+  "remove.gaming.lutris": {"icon": "󰹫", "label": "Lutris", "when": "pacman -Qi lutris >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli remove lutris'"},
+  "remove.gaming.heroic": {"icon": "󱓟", "label": "Heroic (Epic Games)", "when": "pacman -Qi heroic-games-launcher-bin >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli remove heroic-games-launcher-bin'"},
+  "remove.gaming.minecraft": {"icon": "󰍳", "label": "Minecraft", "when": "pacman -Qi minecraft-launcher >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli remove minecraft-launcher'"},
+  "remove.gaming.xbox-controllers": {"icon": "󰂯", "label": "Xbox Controllers", "when": "pacman -Qi xpadneo-dkms >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli remove xpadneo-dkms'"},
+
+  "update": {"icon": "󰚰", "label": "Update"},
+  "update.dotfiles-check": {"icon": "󰈞", "label": "Check for dotfiles updates", "action": "ati-run-in-terminal 'ati-update --check'"},
+  "update.dotfiles-apply": {"icon": "󰚰", "label": "Pull & apply dotfiles", "action": "ati-run-in-terminal ati-update"},
 
   "docs": {"icon": "󰈙", "label": "Docs & Maintenance"},
   "docs.keybindings": {"icon": "󰌌", "label": "Keybindings", "action": "ati-docs keys"},
@@ -19,31 +108,7 @@
   "docs.system-info": {"icon": "󰒓", "label": "System info", "action": "ati-docs system"},
   "docs.maintenance": {"icon": "󰃢", "label": "Maintenance", "action": "ati-docs maintenance"},
 
-  "install": {"icon": "󰉉", "label": "Install"},
-  "install.docker": {"icon": "󰏓", "label": "Docker", "disabled": "pacman -Qi docker >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli install docker'"},
-  "install.gimp": {"icon": "󰏓", "label": "GIMP", "disabled": "pacman -Qi gimp >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli install gimp'"},
+  "about": {"icon": "⬡", "label": "About", "action": "ati-docs system"},
 
-  "remove": {"icon": "󰭌", "label": "Remove"},
-  "remove.docker": {"icon": "󰏓", "label": "Docker", "when": "pacman -Qi docker >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli remove docker'"},
-  "remove.gimp": {"icon": "󰏓", "label": "GIMP", "when": "pacman -Qi gimp >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli remove gimp'"},
-
-  "update": {"icon": "󰚰", "label": "Update"},
-  "update.dotfiles-check": {"icon": "󰈞", "label": "Check for dotfiles updates", "action": "ati-run-in-terminal 'ati-update --check'"},
-  "update.dotfiles-apply": {"icon": "󰚰", "label": "Pull & apply dotfiles", "action": "ati-run-in-terminal ati-update"},
-
-  "trigger": {"icon": "󱓞", "label": "Trigger"},
-  "trigger.screenshot": {"icon": "󰄀", "label": "Screenshot", "action": "ati-satty"},
-  "trigger.screenrecord": {"icon": "", "label": "Screen record", "action": "ati-record"},
-  "trigger.clipboard": {"icon": "", "label": "Clipboard history", "action": "ati-copyq-rofi"},
-  "trigger.calculator": {"icon": "", "label": "Calculator", "action": "ati-bar-action tide toggleCalculator"},
-  "trigger.wifi": {"icon": "󰛳", "label": "Wi-Fi panel", "action": "ati-bar-action tide toggleWifiPanel"},
-  "trigger.wifi-qr": {"icon": "󰐲", "label": "Wi-Fi QR code", "action": "ati-bar-action tide toggleWifiQr"},
-  "trigger.bluetooth": {"icon": "", "label": "Bluetooth panel", "action": "ati-bar-action tide toggleBluetoothPanel"},
-  "trigger.audio": {"icon": "", "label": "Audio panel", "action": "ati-bar-action tide toggleAudioPanel"},
-  "trigger.display": {"icon": "󰍹", "label": "Display panel", "action": "ati-bar-action tide toggleDisplayPanel"},
-
-  "learn": {"icon": "󰧑", "label": "Learn"},
-  "learn.arch": {"icon": "󰣇", "label": "Arch Wiki", "action": "xdg-open https://wiki.archlinux.org/"},
-  "learn.hyprland": {"icon": "", "label": "Hyprland Wiki", "action": "xdg-open https://wiki.hypr.land/"},
-  "learn.qtile": {"icon": "", "label": "Qtile docs", "action": "xdg-open https://docs.qtile.org/"}
+  "system": {"icon": "󰐥", "label": "System", "action": "ati-logout"}
 }

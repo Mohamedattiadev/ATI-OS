@@ -12,8 +12,21 @@
 # These are needed as we use prompts in the scripts.
 
 # DMENU="dmenu -i -l 20 -p"
-DMENU="rofi -dmenu -i -p"
-RMENU="rofi -dmenu -i -p"
+# Default picker matches the session: ati-menu-select on Hyprland (the QML
+# menu's own dmenu view, same as every other picker in this repo now),
+# rofi -dmenu -i -p on X11/qtile where that is not an option. Both take a
+# single trailing prompt argument and read rows from stdin, so every
+# dmscript below is unchanged. FMENU is left on rofi -- its fzf-flavored
+# "print whatever was typed, even with no matching row" behavior has no
+# equivalent in the QML dmenu's select/input split, and guessing at one
+# risked silently breaking whichever dmscripts actually depend on it.
+if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v ati-menu-select >/dev/null 2>&1; then
+  DMENU="ati-menu-select"
+  RMENU="ati-menu-select"
+else
+  DMENU="rofi -dmenu -i -p"
+  RMENU="rofi -dmenu -i -p"
+fi
 FMENU="rofi -dmenu -i -p"
 # FMENU="fzf --bind=enter:replace-query+print-query --border=rounded --margin=5% --color=dark --height 100% --reverse --header=$(basename "$0") --info=hidden --header-first --prompt"
 

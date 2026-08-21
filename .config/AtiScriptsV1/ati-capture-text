@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# ati-capture-text — OCR a screen region straight to the clipboard. Same
+# pipeline Omarchy's own bin/omarchy-capture-text uses: hyprpicker -r -z
+# freezes the screen (so slurp's region overlay draws over a still frame,
+# not a live desktop) while slurp does the actual region pick, grim
+# captures just that region, tesseract (already installed, apps.yaml) reads
+# the text out, wl-copy puts it on the clipboard. hyprpicker itself is only
+# ever used here for its freeze side effect -- its own click-to-pick-a-color
+# behavior is never reached, it gets killed the moment slurp returns.
+#
+# Hyprland/Wayland-only -- freeze+slurp+grim have no X11 equivalent in this
+# repo's toolset, and ati-satty (the X11-side capture tool) has no OCR step
+# to hang this off of, so there is no meaningful qtile-side fallback.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/ati-rofi-common.sh"
+
+require_cmd hyprpicker slurp grim tesseract wl-copy || exit 1
+
+if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+  notify_safe "ati-capture-text" "OCR capture needs Hyprland/Wayland"
+  exit 1
+fi
+
+hyprpicker -r -z >/dev/null 2>&1 &
+freeze_pid=$!
+sleep 0.15  # let the freeze overlay actually paint before slurp grabs input
+
+region="$(slurp)"
+kill "$freeze_pid" 2>/dev/null
+wait "$freeze_pid" 2>/dev/null
+
+[[ -z "$region" ]] && exit 0
+
+text="$(grim -g "$region" - | tesseract --oem 1 --psm 6 - - 2>/dev/null)"
+
+if [[ -z "$text" ]]; then
+  notify_safe "ati-capture-text" "No text recognized"
+  exit 1
+fi
+
+printf '%s' "$text" | wl-copy
+notify_safe "ati-capture-text" "Copied to clipboard"

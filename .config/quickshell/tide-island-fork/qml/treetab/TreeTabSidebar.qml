@@ -181,6 +181,16 @@ import "../common/Motion.js" as Motion
 //
 // ==================== THE CONTRAST BUG THAT IS NOT PORTED ====================
 //
+// SUPERSEDED for the inactive fill: "I want the style to fit the new bar"
+// replaced the wall-of-red block fill with the topbar's own chip language
+// (radius 8, translucent plate, hairline accent border — see rowRadiusPx
+// and the row Rectangle below). The INACTIVE ink is `IslandTheme.textPrimary`
+// now, not `inkOn(red)`, because there is no red fill left to solve ink
+// against. Kept below because it is still the reason the ACTIVE row is a
+// solid accent fill rather than a chip like everything else: that pairing
+// (accent_bg/accentInk) is the one signal in the panel that still has to
+// read as "loud", and the paragraph on why it needs no rescue is unchanged.
+//
 // config.py sets `inactive_fg=colors[0]` on `inactive_bg=colors[3]` —
 // the BACKGROUND slot used as ink on the RED slot. Measured over the
 // palettes this shell ships: gruvbox 4.29:1, nord 3.05:1, both under the
@@ -311,6 +321,16 @@ PanelWindow {
     readonly property int rowPitch: root.rowBoxHeight + root.vspacePx + root.borderWidthPx
     readonly property int rowInset: Math.round(root.borderWidthPx / 2)
 
+    // FORK: "I want the style to fit the new bar" (topbar/redesign-e-final.qml).
+    // That bar's whole vocabulary is one shape, `Strip` — radius 8, a
+    // translucent plate, a hairline accent border — reused for every chip
+    // it draws. `8` here is that same radius (== redesign-e-final's
+    // Metrics.s(8), == tide-island-fork/qml/common/Metrics.js's own
+    // RADIUS.card), not derived from qtile's `height / 10` any more: this
+    // is the point where the port stops chasing qtile pixel-for-pixel and
+    // starts matching the shell it now has to sit next to.
+    readonly property int rowRadiusPx: 8
+
     // ---------------------------------------------------------------
     //  Which workspace this surface is describing
     // ---------------------------------------------------------------
@@ -397,7 +417,14 @@ PanelWindow {
     // as correct as one that arrives with it.
     onMonitorInfoChanged: gapsProc.running = true
 
-    Component.onCompleted: gapsProc.running = true
+    Component.onCompleted: {
+        gapsProc.running = true;
+        // Belt-and-braces alongside onSectionsChanged: `sections`' own
+        // first evaluation may or may not fire its change signal depending
+        // on QML's init order, and an empty flatModel until the next real
+        // Hyprland event is an empty-looking panel until something happens.
+        root.syncModel(root.sections);
+    }
 
     readonly property int topInset: {
         const m = root.monitorInfo;
@@ -604,6 +631,118 @@ PanelWindow {
         return built;
     }
 
+    // FORK: "make it smoother... when I switch I don't want to feel it that
+    // much". `root.sections` above is a brand-new JS array on every
+    // affecting Hyprland event (HyprlandData.qml reassigns `windowList`
+    // wholesale, debounced 90ms) — including a plain focus change between
+    // two windows already in the stack. A `Repeater` bound directly to that
+    // array — what this used to be — treats a new array reference as
+    // entirely new content and destroys/recreates EVERY delegate every
+    // time; confirmed against Qt's own Repeater docs, not assumed. An
+    // earlier pass added fade transitions on top of that, which animated
+    // the wrong thing: the WHOLE panel cross-faded on an action as routine
+    // as alt-tab, which is "feeling" the update far more than the original
+    // instant-snap ever was.
+    //
+    // `flatModel` is a real `ListModel` with a stable per-row `key`, and
+    // `syncModel` below diffs the freshly-built `sections` against it
+    // instead of replacing it wholesale: same key at the same position ->
+    // only the fields that changed are written (`ListModel.setProperty`),
+    // which updates that ONE delegate's bindings in place and lets the row
+    // fill's existing `Behavior on color` do a small cross-fade on just
+    // that row — nothing else so much as repaints. A key found further
+    // down -> `ListModel.move()`. No match -> insert (a window joined) or
+    // the tail is trimmed (a window left) — the only two cases that still
+    // get a transition, because they are the only two cases that are
+    // actually a structural change.
+    onSectionsChanged: root.syncModel(root.sections)
+
+    function flattenSections(sectionsList) {
+        const out = [];
+        for (let s = 0; s < sectionsList.length; s++) {
+            const section = sectionsList[s];
+            out.push({
+                key: "header:" + section.key,
+                kind: "header",
+                sectionKey: section.key,
+                title: section.title,
+                label: "",
+                address: "",
+                isActive: false
+            });
+            for (let r = 0; r < section.rows.length; r++) {
+                const row = section.rows[r];
+                out.push({
+                    key: "row:" + section.key + ":" + row.address,
+                    kind: "row",
+                    sectionKey: section.key,
+                    title: "",
+                    label: row.label,
+                    address: row.address,
+                    isActive: row.isActive
+                });
+            }
+            out.push({
+                key: "spacer:" + section.key,
+                kind: "spacer",
+                sectionKey: section.key,
+                title: "",
+                label: "",
+                address: "",
+                isActive: false
+            });
+        }
+        return out;
+    }
+
+    // Positional diff with one-sided lookahead: cheap, and this list is at
+    // most a few dozen rows, so there is no case where a real LCS would
+    // choose differently. `i` walks `flatModel` in lockstep with `wanted`;
+    // whenever the two disagree, either the wanted key is found further
+    // down (a move) or it is not (an insert), and whatever `flatModel`
+    // still has past the end of `wanted` is stale (trimmed once at the end).
+    function syncModel(sectionsList) {
+        const wanted = root.flattenSections(sectionsList);
+        let i = 0;
+        for (let j = 0; j < wanted.length; j++) {
+            const entry = wanted[j];
+            if (i < flatModel.count && flatModel.get(i).key === entry.key) {
+                root.updateEntryIfChanged(i, entry);
+                i++;
+                continue;
+            }
+
+            let found = -1;
+            for (let k = i + 1; k < flatModel.count; k++) {
+                if (flatModel.get(k).key === entry.key) {
+                    found = k;
+                    break;
+                }
+            }
+
+            if (found !== -1) {
+                flatModel.move(found, i, 1);
+                root.updateEntryIfChanged(i, entry);
+            } else {
+                flatModel.insert(i, entry);
+            }
+            i++;
+        }
+
+        while (flatModel.count > i)
+            flatModel.remove(flatModel.count - 1);
+    }
+
+    function updateEntryIfChanged(index, entry) {
+        const current = flatModel.get(index);
+        if (current.label !== entry.label)
+            flatModel.setProperty(index, "label", entry.label);
+        if (current.isActive !== entry.isActive)
+            flatModel.setProperty(index, "isActive", entry.isActive);
+        if (current.title !== entry.title)
+            flatModel.setProperty(index, "title", entry.title);
+    }
+
     // Counted from the clients, not from `sections`, so collapsing every
     // section does not retract the panel out from under the heading you
     // just clicked.
@@ -694,6 +833,21 @@ PanelWindow {
         font.pixelSize: root.rowFontPx
     }
 
+    // Was one per section Item (there could be several); hoisted to one
+    // shared instance now that the section heading is a delegate kind
+    // rather than a per-section Column — it depends only on the font, not
+    // on which section it's measuring.
+    FontMetrics {
+        id: sectionFontMetrics
+        font.family: "Inter Medium"
+        font.pixelSize: root.sectionFontPx
+    }
+
+    // See syncModel()/flattenSections() above: the diffed, stable-identity
+    // backing store for the Repeater below, so a delegate is only ever
+    // destroyed for a real structural change.
+    ListModel { id: flatModel }
+
     HyprlandDispatch { id: dispatcher }
 
     Item {
@@ -725,17 +879,71 @@ PanelWindow {
                 width: parent.width
                 spacing: 0
 
+                // Real moves only now — see syncModel() above. A window
+                // reordering within the stack is rare, so this is not felt
+                // on anything as routine as a focus change; it only plays
+                // when something has actually slid to a new position.
+                //
+                // `Column` is a Positioner, and a Positioner's transition
+                // set is `add`/`move`/`populate` only — there is no
+                // `remove` (confirmed the hard way: assigning one is a
+                // load-time error, "Cannot assign to non-existent property
+                // 'remove'", caught by launching this file standalone
+                // against a headless output before calling this done).
+                // A row leaving therefore just disappears instantly
+                // instead of fading — which given the ask was "less felt
+                // motion", not more, is the right default in the absence
+                // of a `remove` to tune.
+                move: Transition {
+                    NumberAnimation { properties: "y"; duration: 140; easing.type: Easing.OutQuad }
+                }
+                // Fires only for a REAL structural change (a window
+                // joining, or a section expanding), because syncModel()
+                // only inserts on a genuine key mismatch — not on every
+                // Hyprland event.
+                add: Transition {
+                    NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 110 }
+                }
+
                 Repeater {
-                    model: root.sections
+                    model: flatModel
 
-                    Column {
-                        id: sectionItem
+                    Item {
+                        id: entry
 
-                        required property var modelData
+                        required property string kind
+                        required property string sectionKey
+                        required property string title
+                        required property string label
+                        required property string address
+                        required property bool isActive
 
                         width: sectionColumn.width
-                        spacing: 0
+                        height: entry.kind === "row" ? root.rowPitch
+                            : entry.kind === "header" ? entry.headerHeight
+                            : root.sectionBottomPx
 
+                        // section_top above the label, section_padding
+                        // below it, both from Section.draw's
+                        // `top += layout.height + section_top + section_padding`.
+                        readonly property int headerHeight: root.sectionTopPx
+                            + Math.ceil(sectionFontMetrics.height)
+                            + root.sectionPaddingPx
+
+                        // FORK: the wall-of-red block fill is gone — "fit
+                        // the new bar" — except on the active row, which
+                        // stays a solid accent fill because it is the one
+                        // signal in this panel that still has to read as
+                        // "loud" (see the SUPERSEDED note in "THE CONTRAST
+                        // BUG THAT IS NOT PORTED" above). Every other row
+                        // is now the topbar's own chip: a translucent
+                        // raised plate with a hairline accent border, not
+                        // a coloured block.
+                        readonly property color fillColor: entry.isActive
+                            ? IslandTheme.accent
+                            : (rowMouse.containsMouse ? IslandTheme.surfaceRaisedHover : IslandTheme.surfaceRaised)
+
+                        // ---- header ----
                         // Section.draw's first act: a 1 px rule across the
                         // full panel width in section_fg, at the section's
                         // own top. The first section's rule therefore sits
@@ -743,144 +951,134 @@ PanelWindow {
                         // 0)` starts at y=0 — which is why there is no
                         // leading margin here.
                         Rectangle {
-                            width: sectionItem.width
+                            visible: entry.kind === "header"
+                            width: entry.width
                             height: 1
                             color: IslandTheme.purpleText
                         }
 
-                        Item {
-                            width: sectionItem.width
-                            // section_top above the label, section_padding
-                            // below it, both from Section.draw's
-                            // `top += layout.height + section_top + section_padding`.
-                            height: root.sectionTopPx
-                                + Math.ceil(sectionFontMetrics.height)
-                                + root.sectionPaddingPx
+                        Text {
+                            visible: entry.kind === "header"
+                            x: root.sectionLeftPx
+                            y: root.sectionTopPx
+                            width: entry.width - 2 * root.sectionLeftPx
+                            // reset_width() — "no centering". The section
+                            // heading is the one thing in this panel that
+                            // is left aligned.
+                            horizontalAlignment: Text.AlignLeft
+                            elide: Text.ElideRight
+                            text: entry.title
+                            color: IslandTheme.purpleText
+                            font.family: "Inter Medium"
+                            font.pixelSize: root.sectionFontPx
+                            // Not qtile's, and the only typographic
+                            // liberty taken: at 10 px a short uppercase
+                            // word set solid reads as a smudge, and this
+                            // heading has to be distinguishable from a row
+                            // title at a glance rather than by colour
+                            // alone.
+                            font.letterSpacing: 1
+                        }
 
-                            FontMetrics {
-                                id: sectionFontMetrics
-                                font.family: "Inter Medium"
-                                font.pixelSize: root.sectionFontPx
+                        MouseArea {
+                            visible: entry.kind === "header"
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            // collapse_branch / expand_branch, moved from
+                            // a keybind to the heading itself: this
+                            // surface has no keyboard focus to press a key
+                            // into (see keyboardFocus above), and the
+                            // heading is the only part of a section that
+                            // is not a window.
+                            onClicked: root.toggleSection(entry.sectionKey)
+                        }
+
+                        // ---- row ----
+                        Rectangle {
+                            id: rowFill
+                            visible: entry.kind === "row"
+                            // Reported: "its out of the frame" — a window
+                            // title carrying a leading status glyph (kitty
+                            // tab icons, Claude Code's own session-status
+                            // marker) rendered past the pill's left edge.
+                            // `Text` does not clip its own overflow, and
+                            // `elide: Text.ElideRight` only ever trims the
+                            // END of a string — a wide leading glyph's ink
+                            // extent can still exceed the laid-out width on
+                            // the side elide never touches. It was
+                            // invisible on the old full-bleed block fill
+                            // (nothing to visually cross); it is glaring on
+                            // a bordered, translucent chip. Clip to the
+                            // shape itself, not just its bounding box — Qt6
+                            // Rectangle clipping follows `radius`.
+                            clip: true
+
+                            // padding_left + level * level_shift, plus
+                            // draw_fill's border_width/2 inset. Level is
+                            // always 0 — see "NO INDENTATION" in the
+                            // header.
+                            x: root.padLeftPx + root.rowInset
+                            y: root.rowInset
+                            width: entry.width - x
+                            height: root.rowPaintedHeight
+                            // No longer qtile's `height / 10` — see
+                            // rowRadiusPx.
+                            radius: root.rowRadiusPx
+
+                            color: entry.isActive && rowMouse.containsMouse
+                                ? IslandTheme.mix(IslandTheme.accent, IslandTheme.ink, 0.14)
+                                : entry.fillColor
+
+                            // Only the inactive chip gets a border — the
+                            // active row's solid accent fill is already
+                            // its own edge; adding the same hairline there
+                            // would just be a barely visible ring on top
+                            // of a fill that doesn't need one.
+                            border.width: entry.isActive ? 0 : 1
+                            border.color: IslandTheme.alpha(IslandTheme.accent, 0.3)
+
+                            Behavior on color {
+                                ColorAnimation { duration: Motion.controlDuration() }
                             }
 
                             Text {
-                                x: root.sectionLeftPx
-                                y: root.sectionTopPx
-                                width: sectionItem.width - 2 * root.sectionLeftPx
-                                // reset_width() — "no centering". The
-                                // section heading is the one thing in this
-                                // panel that is left aligned.
-                                horizontalAlignment: Text.AlignLeft
-                                elide: Text.ElideRight
-                                text: sectionItem.modelData.title
-                                color: IslandTheme.purpleText
-                                font.family: "Inter Medium"
-                                font.pixelSize: root.sectionFontPx
-                                // Not qtile's, and the only typographic
-                                // liberty taken: at 10 px a short uppercase
-                                // word set solid reads as a smudge, and
-                                // this heading has to be distinguishable
-                                // from a row title at a glance rather than
-                                // by colour alone.
-                                font.letterSpacing: 1
-                            }
-
-                            MouseArea {
                                 anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                // collapse_branch / expand_branch, moved
-                                // from a keybind to the heading itself:
-                                // this surface has no keyboard focus to
-                                // press a key into (see keyboardFocus
-                                // above), and the heading is the only part
-                                // of a section that is not a window.
-                                onClicked: root.toggleSection(sectionItem.modelData.key)
+                                anchors.leftMargin: root.padXPx
+                                anchors.rightMargin: root.padXPx
+                                // ALIGN_CENTER, and Window.draw sets an
+                                // explicit layout width so it actually
+                                // takes effect. This is the panel's
+                                // signature after the colour.
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideRight
+                                text: entry.label
+                                // Active: inkOn(accent), same rule as
+                                // every other accent fill in this shell.
+                                // Inactive: textPrimary, the theme's own
+                                // contrast-checked (4.5:1 floor) ink for
+                                // text on `surface` — replaces inkOn(red)
+                                // now that there is no red fill to solve
+                                // ink against.
+                                color: entry.isActive
+                                    ? IslandTheme.inkOn(IslandTheme.accent)
+                                    : IslandTheme.textPrimary
+                                font.family: "Inter Medium"
+                                font.pixelSize: root.rowFontPx
                             }
                         }
 
-                        Repeater {
-                            model: sectionItem.modelData.rows
-
-                            Item {
-                                id: rowItem
-
-                                required property var modelData
-
-                                width: sectionItem.width
-                                height: root.rowPitch
-
-                                readonly property color fillColor: rowItem.modelData.isActive
-                                    ? IslandTheme.accent
-                                    : IslandTheme.red
-
-                                Rectangle {
-                                    id: rowFill
-
-                                    // padding_left + level * level_shift,
-                                    // plus draw_fill's border_width/2
-                                    // inset. Level is always 0 — see "NO
-                                    // INDENTATION" in the header.
-                                    x: root.padLeftPx + root.rowInset
-                                    y: root.rowInset
-                                    width: sectionItem.width - x
-                                    height: root.rowPaintedHeight
-                                    // _rounded_rect's corner_radius is
-                                    // height / 10, which is the reason
-                                    // these are very nearly square.
-                                    radius: Math.round(root.rowPaintedHeight / 10)
-
-                                    color: rowMouse.containsMouse
-                                        ? IslandTheme.mix(rowItem.fillColor, IslandTheme.ink, 0.14)
-                                        : rowItem.fillColor
-
-                                    Behavior on color {
-                                        ColorAnimation { duration: Motion.controlDuration() }
-                                    }
-
-                                    Text {
-                                        anchors.fill: parent
-                                        anchors.leftMargin: root.padXPx
-                                        anchors.rightMargin: root.padXPx
-                                        // ALIGN_CENTER, and Window.draw
-                                        // sets an explicit layout width so
-                                        // it actually takes effect. This
-                                        // is the panel's signature after
-                                        // the colour.
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
-                                        elide: Text.ElideRight
-                                        text: rowItem.modelData.label
-                                        // NOT config.py's active_fg /
-                                        // inactive_fg. See "THE CONTRAST
-                                        // BUG THAT IS NOT PORTED" — its
-                                        // inactive pair measures 4.29:1 on
-                                        // gruvbox and 3.05:1 on nord.
-                                        color: IslandTheme.inkOn(rowItem.fillColor)
-                                        font.family: "Inter Medium"
-                                        font.pixelSize: root.rowFontPx
-                                    }
-                                }
-
-                                MouseArea {
-                                    id: rowMouse
-                                    anchors.fill: rowFill
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    // process_button_click ->
-                                    // group.focus(node.window). On a
-                                    // grouped window `focuswindow` also
-                                    // makes it the visible member, which
-                                    // is what makes this panel a tab
-                                    // strip rather than a list.
-                                    onClicked: dispatcher.focusWindow(rowItem.modelData.address)
-                                }
-                            }
-                        }
-
-                        // section_bottom.
-                        Item {
-                            width: sectionItem.width
-                            height: root.sectionBottomPx
+                        MouseArea {
+                            id: rowMouse
+                            visible: entry.kind === "row"
+                            anchors.fill: rowFill
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            // process_button_click -> group.focus(node.window).
+                            // On a grouped window `focuswindow` also makes
+                            // it the visible member, which is what makes
+                            // this panel a tab strip rather than a list.
+                            onClicked: dispatcher.focusWindow(entry.address)
                         }
                     }
                 }

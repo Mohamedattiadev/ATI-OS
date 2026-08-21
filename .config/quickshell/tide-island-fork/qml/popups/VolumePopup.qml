@@ -387,7 +387,7 @@ PopupChrome {
         fg: root.cFg
         muted: root.cMuted
         highlight: root.cHighlight
-        highlightInk: root.cHighlightInk
+        highlightText: root.cAccentText
 
         rows: root.rows.map((o) => ({
             mark: o.isDefault ? String.fromCodePoint(0xF012C)

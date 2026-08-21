@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# omarchy-font-list — print candidate font family names, one per line, for
+# the "fonts" provider (Menu.qml:308-313, vendored/unmodified) to turn into
+# a style.font submenu. Called by that provider's own script by this exact
+# literal name -- do not rename.
+#
+# Every name is verified with `fc-match -f "%{family[0]}" "$name"`
+# resolving back to itself before being offered -- an unmatched name
+# substitutes with NO WARNING (this repo's own noted "font names fall back
+# silently" trap), so an unfiltered list would let you "pick" a font that
+# silently renders as something else entirely.
+set -uo pipefail
+
+fc-list :outline=true family 2>/dev/null \
+  | tr ',' '\n' \
+  | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+  | sort -u \
+  | while IFS= read -r name; do
+      [[ -z "$name" ]] && continue
+      resolved="$(fc-match -f '%{family[0]}' "$name" 2>/dev/null)"
+      [[ "$resolved" == "$name" ]] && printf '%s\n' "$name"
+    done

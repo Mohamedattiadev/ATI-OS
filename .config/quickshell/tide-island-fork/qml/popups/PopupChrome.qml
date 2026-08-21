@@ -101,6 +101,14 @@ PanelWindow {
     signal keyPressed(int key, int modifiers, string text)
     signal dismissed()
 
+    // Set by a caller (e.g. CheatsheetPopup's `/`-search) for exactly as
+    // long as Escape should mean "leave search" rather than "close the
+    // popup" — the same two-tier Escape ati-menu's own Menu.qml already
+    // does ("if filterText, clear it; else cancel", Menu.qml's own Escape
+    // branch). False by default, so every other popup's Escape keeps
+    // closing immediately, unchanged.
+    property bool suppressEscapeDismiss: false
+
     // ---- THE SURFACE ----
     //
     // No anchors at all: an unanchored layer surface is CENTRED, which is
@@ -268,20 +276,47 @@ PanelWindow {
                                                       IslandTheme.foreground, 0.07)
     readonly property color cSurfaceAlt: IslandTheme.mix(IslandTheme.background,
                                                          IslandTheme.foreground, 0.14)
-    // highlight_bg = the dominant accent, highlight_fg = bg "so selected text
-    // pops against accent".
-    readonly property color cHighlight: IslandTheme.green
-    readonly property color cHighlightInk: IslandTheme.background
+    // Was IslandTheme.green / IslandTheme.background — a hardcoded green
+    // selection regardless of theme, reported directly: "the colors [do]
+    // not follow the theme". ati-menu's own selected row (Menu.qml's
+    // `selectedBackground`/`selectedText`, Commons/Color.qml's `menu.
+    // selected-*`) is accent-tinted, not a fixed hue — these popups now use
+    // the same source, `IslandTheme.accent`, so a selected Wi-Fi/Bluetooth/
+    // volume row reads as "the theme's colour" the same way a selected menu
+    // row does, on every palette rather than only the ones whose accent
+    // happens to be green. `accentInk` is IslandTheme's own already-
+    // contrast-solved "text on this accent fill" role — the same problem
+    // `menu.selected-text` solves for the menu, solved once, not twice.
+    readonly property color cHighlight: IslandTheme.accent
+    readonly property color cHighlightInk: IslandTheme.accentInk
+    // For a BLENDED selection (a translucent accent wash, not a solid
+    // block) — ati-menu's own selected row is `menu.selected-background`
+    // at ~8-18% alpha with TEXT in `menu.selected-text` (the accent),
+    // not an inverted-ink solid fill. cHighlight/cHighlightInk stay solid
+    // on purpose for the chip/pill/scrollbar cases (badge, tabsRow,
+    // wallpaper tab strip) that legitimately want a filled block; this is
+    // for list-row selection specifically — see PopupRowList.qml.
+    readonly property color cAccentText: IslandTheme.accentText
     readonly property color cMuted: IslandTheme.textMuted
     readonly property color cFg: IslandTheme.textPrimary
 
     Rectangle {
         anchors.fill: parent
-        // background=COLORS["bg"] + "F2" — 0xF2/255 = 0.949.
-        color: IslandTheme.alpha(IslandTheme.background, 0.949)
-        border.color: root.cSurfaceAlt
-        border.width: PopupMetrics.s(2)
-        radius: PopupMetrics.s(14)
+        // Was 0.949 (COLORS["bg"] + "F2", ported from the qtile popup this
+        // file copies) and a 2px opaque border. ati-menu's own card
+        // (Commons/BorderSurface.qml under Menu.qml, `color: root.
+        // background`) is fully opaque with a 1px hairline border (Style.
+        // qml's `normalBorderWidth`/`normalBorderAlpha`) — matched here so
+        // the two surfaces read as the same weight of chrome instead of
+        // this one looking a shade more see-through with a heavier frame.
+        color: IslandTheme.background
+        border.color: IslandTheme.hairlineStrong
+        border.width: PopupMetrics.s(1)
+        // Was PopupMetrics.s(14). ati-menu's own card radius is Style.
+        // cornerRadius, itself matched to Hyprland's `decoration:rounding`
+        // (10, see Style.qml's own comment) — matched here rather than
+        // carrying its own independent number.
+        radius: PopupMetrics.s(10)
 
         // ---- THE FADE, AND WHY IT IS ON THIS RECTANGLE ----
         //
@@ -383,14 +418,25 @@ PanelWindow {
         }
 
         // ---- KEY HINTS ----
-        Rectangle {
+        //
+        // Was a filled, bordered bar (cSurface fill, radius 8) with every
+        // key in its OWN bordered pill (cSurfaceAlt fill, radius 4) — a
+        // toolbar sitting inside the card. Reported directly: "still bad,
+        // not fitting the clean new qml of menu" — ati-menu's own Menu.qml
+        // has no hint bar, no keycaps, no boxes anywhere in it at all
+        // (grepped: zero hits for "hint"/"footer"/"keycap" in the whole
+        // 1554-line file) — its only chrome is the one card. So this is no
+        // longer a second surface INSIDE the surface: same geometry (x/y/
+        // width/height unchanged, so body/footer positioning below is not
+        // touched), no fill, no per-key box — just text, the key itself
+        // bold and full-strength ink, the description muted, the same way
+        // a caption reads under a photo rather than like a row of buttons.
+        Item {
             id: hintBar
             x: root.popupWidth * 0.035
             y: PopupMetrics.s(92)
             width: root.popupWidth * 0.93
             height: PopupMetrics.s(30)
-            color: root.cSurface
-            radius: PopupMetrics.s(8)
 
             Row {
                 anchors.centerIn: parent
@@ -400,24 +446,16 @@ PanelWindow {
                     model: root.hints
                     delegate: Row {
                         required property var modelData
-                        spacing: PopupMetrics.s(6)
+                        spacing: PopupMetrics.s(5)
 
-                        Rectangle {
-                            color: root.cSurfaceAlt
-                            radius: PopupMetrics.s(4)
-                            width: capText.implicitWidth + PopupMetrics.s(12)
-                            height: capText.implicitHeight + PopupMetrics.s(4)
+                        Text {
+                            text: modelData.key
+                            color: root.cFg
+                            font.family: PopupMetrics.font
+                            font.pixelSize: PopupMetrics.hintSize
+                            font.bold: true
                             anchors.verticalCenter: parent.verticalCenter
-                            Text {
-                                id: capText
-                                anchors.centerIn: parent
-                                text: modelData.key
-                                color: root.cFg
-                                font.family: PopupMetrics.font
-                                font.pixelSize: PopupMetrics.hintSize
-                                font.bold: true
-                                renderType: Text.NativeRendering
-                            }
+                            renderType: Text.NativeRendering
                         }
                         Text {
                             text: modelData.desc
@@ -498,14 +536,28 @@ PanelWindow {
             height: Math.max(0, footerArea.y - y - PopupMetrics.s(14))
         }
 
-        Rectangle {
+        // Was a filled, bordered bar (cSurface fill, radius 10) — the same
+        // "second surface inside the surface" problem the hint bar had, for
+        // the same reported reason. A single hairline across the top is
+        // the whole separation ati-menu itself uses between its own
+        // sections (its scroll-scrim gradients fade to the CARD's own
+        // background, not a second fill) — kept here because this footer's
+        // content is a live status line (connected/error/busy) that
+        // benefits from a light anchor, unlike the hint bar's static text.
+        Item {
             id: footerArea
             x: root.popupWidth * 0.035
             y: root.popupHeight - PopupMetrics.s(30) - PopupMetrics.s(62)
             width: root.popupWidth * 0.93
             height: PopupMetrics.s(62)
-            color: root.cSurface
-            radius: PopupMetrics.s(10)
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: PopupMetrics.s(1)
+                color: IslandTheme.hairline
+            }
         }
     }
 
@@ -526,8 +578,17 @@ PanelWindow {
                 superHeldSafety.restart();
                 return;
             }
+            if (event.key === Qt.Key_Escape && root.suppressEscapeDismiss) {
+                // The caller owns Escape while this is set (mid-search) —
+                // forward it instead of closing, same as ati-menu clearing
+                // its filter on the first Escape rather than cancelling.
+                root.keyPressed(event.key, event.modifiers, event.text);
+                event.accepted = true;
+                return;
+            }
             if (event.key === Qt.Key_Escape
-                    || (event.key === Qt.Key_Q && event.modifiers === Qt.NoModifier)) {
+                    || (event.key === Qt.Key_Q && event.modifiers === Qt.NoModifier
+                        && !root.suppressEscapeDismiss)) {
                 root.dismissed();
                 event.accepted = true;
                 return;

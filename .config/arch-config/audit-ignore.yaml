@@ -80,3 +80,15 @@ packages:
   - xf86-video-ati
   - xf86-video-nouveau
   - vulkan-nouveau
+
+  # --- superseded by voxtype-bin (system-tools.yaml), same shape as the
+  #     gtkmm/pcmanfm entries above: left installed rather than removed. ---
+  - whisper.cpp-git  # the custom whisper.cpp pipeline voxtype-bin's own
+                     # comment says it replaces (see system-tools.yaml:
+                     # "replacing the old whisper.cpp-git/ati-voice-dictate").
+                     # pacman -Rns whisper.cpp-git whenever you like.
+  - cmake            # was whisper.cpp-git's build dependency (AUR builds
+                     # from source). Not reclaimed alongside it: cmake is a
+                     # generic build tool other AUR packages may still pull
+                     # in, so removing it isn't as safe a call as the
+                     # package it was actually installed for.

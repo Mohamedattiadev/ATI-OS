@@ -68,8 +68,20 @@ VAD_TAIL_MS="${WHISPER_VAD_TAIL_MS:-350}"
 WORK_DIR="${XDG_RUNTIME_DIR:-/tmp}/ati-voice-dictate-live-$(id -u)"
 PIDFILE="$WORK_DIR/stream.pid"
 NOTIFY_TAG="ati-voice-dictate-live"
+# Read by tide-island-fork's DictationOsdWindow (shell.qml's
+# dictationStateWatcher) to show/hide the mic waveform. Written with plain
+# shell redirection everywhere below -- never `mv`/atomic-replace -- because
+# that FileView is a QFileSystemWatcher on the file's INODE, and a watch on a
+# replaced inode is a watch on an unlinked one (see shell.qml's own comment
+# on this same file for the long version).
+STATE_FILE="$WORK_DIR/state"
 
 mkdir -p "$WORK_DIR"
+# Idempotent: quickshell's own dictationStateInit does the same thing at
+# shell startup, so whichever of the two runs first on a given login is the
+# one that actually creates it. Both write "idle", so there is nothing to
+# reconcile if they race.
+[[ -f "$STATE_FILE" ]] || printf '%s' "idle" >"$STATE_FILE"
 
 pill() {
   local urgency="$1" summary="$2" body="${3:-}"
@@ -92,7 +104,7 @@ if [[ ! -f "$MODEL" ]]; then
   exit 1
 fi
 
-for bin in whisper-stream xdotool python3; do
+for bin in whisper-stream wtype python3; do
   command -v "$bin" >/dev/null || {
     pill critical "ati-voice-dictate-live" "Missing binary: $bin"
     exit 1
@@ -112,6 +124,12 @@ if [[ -f "$PIDFILE" ]]; then
   PID="$(cat "$PIDFILE")"
   rm -f "$PIDFILE"
   kill "$PID" 2>/dev/null || true
+  # Written before the teardown wait below, not after: the waveform
+  # disappearing is the "you can stop talking now" signal, and there is no
+  # reason to make that wait on whisper-stream's ~2s SDL audio-device
+  # teardown when the mic itself already stopped being captured for it the
+  # instant the process got the kill.
+  printf '%s' "idle" >"$STATE_FILE"
   # whisper-stream takes a moment to tear down the SDL audio device --
   # a plain kill without waiting can leave it holding the mic briefly.
   for _ in $(seq 1 20); do
@@ -127,6 +145,7 @@ fi
 # Start mode: launch whisper-stream, hand its stdout to the Python typer.
 # ------------------------------------------------------------------
 pill normal "🎙  Listening…" "speak — press bind again to stop"
+printf '%s' "listening" >"$STATE_FILE"
 
 # `$!` after a backgrounded `cmd > >(...) &` is cmd's own PID, not the
 # process-substitution reader's -- that's what we need in the PID file

@@ -229,7 +229,7 @@ fi
 if [[ -n "$ANSWERS_FILE" ]]; then
   CHOICE=$(answer front_lang)
 else
-  CHOICE=$(echo -e "en (front: English)\nde (front: German)" | rofi -dmenu -p "Choose front language")
+  CHOICE=$(echo -e "en (front: English)\nde (front: German)" | rofi_select "Choose front language")
 fi
 [ -z "$CHOICE" ] && exit 0
 if [[ "$CHOICE" == en* ]]; then
@@ -273,10 +273,10 @@ if [[ -n "$ANSWERS_FILE" ]]; then
   IMG_URL_ANSWER=$(answer image_url)
   WANT_IMAGE=$([[ -n "$IMG_URL_ANSWER" ]] && echo yes || echo no)
 else
-  WANT_VOICE_NORMAL=$(echo -e "yes\nno" | rofi -dmenu -i -p "Include 'Word once' audio?")
-  WANT_VOICE_REPEAT=$(echo -e "yes\nno" | rofi -dmenu -i -p "Include 'Word Three Times' audio?")
-  WANT_VOICE_SPELL=$(echo -e "yes\nno" | rofi -dmenu -i -p "Include 'Spelling' audio?")
-  WANT_IMAGE=$(echo -e "yes\nno" | rofi -dmenu -i -p "Add an image?")
+  WANT_VOICE_NORMAL=$(echo -e "yes\nno" | rofi_select "Include 'Word once' audio?")
+  WANT_VOICE_REPEAT=$(echo -e "yes\nno" | rofi_select "Include 'Word Three Times' audio?")
+  WANT_VOICE_SPELL=$(echo -e "yes\nno" | rofi_select "Include 'Spelling' audio?")
+  WANT_IMAGE=$(echo -e "yes\nno" | rofi_select "Add an image?")
 fi
 TS=$(date +%s)
 

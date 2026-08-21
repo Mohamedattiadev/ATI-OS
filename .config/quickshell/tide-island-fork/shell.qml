@@ -995,6 +995,10 @@ Scope {
             shellRoot.forFocusedWindow((window) => window.toggleCalculatorWindow());
         }
 
+        function toggleMenu() {
+            shellRoot.forFocusedWindow((window) => window.toggleMenuWindow());
+        }
+
         function toggleSettings() {
             shellRoot.forFocusedWindow((window) => window.toggleSettingsWindow());
         }
@@ -1192,6 +1196,214 @@ Scope {
         onTriggered: shellRoot.ringOsdShown = false
     }
 
+    // ---- THE DICTATION OSD ----
+    //
+    // FORK — new block. Same "state lives here, windows bind down to it"
+    // shape as the ring OSD above, but fed by a FILE rather than a signal:
+    // ati-voice-dictate-live (Alt+F8) is a plain bash script with no D-Bus
+    // service and nothing else in this shell already watches it, so unlike
+    // volume/brightness/battery there is no existing push channel to hang
+    // this off of. It writes a one-word state file instead — the same idea
+    // Omarchy's own dictation tool (Voxtype) uses for its waybar module,
+    // borrowed here for a script that isn't Voxtype.
+    //
+    // Two separate live feeds, both gated on the same boolean:
+    //   dictationActive      <- FileView watching that state file.
+    //   dictationWaveformRing /
+    //   dictationPeakDbfs /
+    //   dictationHeldDbfs    <- a second, mic-reading cava instance (see
+    //                           qml/osd/dictation-cava.conf), running only
+    //                           while dictationActive is true. It is NOT the
+    //                           same cava IslandBackend already runs for the
+    //                           music EQ — that one reads the sink monitor,
+    //                           this one reads the source, and there is no
+    //                           single cava invocation that reads both at
+    //                           once.
+    //
+    // The waveform math below (dBFS conversion, held-peak decay, ring
+    // capacity) is ported from Voxtype's own Quickshell OSD frontend
+    // (github.com/peteonrails/voxtype, MIT — quickshell/voxtype-shared/
+    // AudioBridge.qml's onFrameReceived and Theme.qml's constants), NOT
+    // reinvented. We don't run Voxtype's daemon or its voxtype-audio-bridge
+    // sidecar (no audio.sock to connect to), so cava's single-bar output
+    // stands in for their `peak` field — same role, different source.
+    readonly property string dictationXdgRuntimeDir: Quickshell.env("XDG_RUNTIME_DIR")
+    // systemd-logind creates XDG_RUNTIME_DIR as exactly /run/user/<uid> —
+    // the same guarantee ati-voice-dictate-live's own WORK_DIR relies on
+    // (see that script's header comment). Reading the uid back off the tail
+    // of the path avoids spawning a process just to ask `id -u` for a number
+    // already sitting in an env var this session already has.
+    readonly property string dictationWorkDir: dictationXdgRuntimeDir
+        + "/ati-voice-dictate-live-"
+        + dictationXdgRuntimeDir.substring(dictationXdgRuntimeDir.lastIndexOf("/") + 1)
+    readonly property string dictationStatePath: dictationWorkDir + "/state"
+    property bool dictationActive: false
+
+    // Scrolling amplitude history DictationOsdWindow draws as a waveform
+    // trace. Newest sample at the END (push + shift-when-full), oldest at
+    // index 0 — same shape as Voxtype's AudioBridge `ring`. Capacity is
+    // Theme.qml's waveformWindowSecs (3.0) times dictation-cava.conf's own
+    // framerate (30) = 90; hardcoded rather than computed since both
+    // sources are static config, not runtime values.
+    property var dictationWaveformRing: []
+    // dBFS peak meter state — ported verbatim from AudioBridge.qml's
+    // onFrameReceived (see dictationCavaProcess below for the actual
+    // decay math, comments there explain the ts_ms substitution).
+    property real dictationPeakDbfs: -120
+    property real dictationHeldDbfs: -120
+    property real dictationLastFrameTsMs: 0
+
+    // Same reason OsdSurface.qml's onDaemonStateChanged calls _resetMeters()
+    // when the daemon goes idle: without this, starting a NEW dictation
+    // session would briefly draw the PREVIOUS session's trailing waveform
+    // and held-peak tick until enough fresh frames arrive to push the old
+    // ones out of the ring.
+    function dictationResetMeters() {
+        dictationWaveformRing = [];
+        dictationPeakDbfs = -120;
+        dictationHeldDbfs = -120;
+        dictationLastFrameTsMs = 0;
+    }
+    onDictationActiveChanged: {
+        if (!dictationActive)
+            dictationResetMeters();
+    }
+
+    // Ensures the directory and state file exist BEFORE the FileView below
+    // ever tries to watch them. FileView is a QFileSystemWatcher underneath
+    // (see QdropStore.qml's note on the same type), and a watcher cannot be
+    // attached to a path that does not exist yet — if quickshell starts
+    // before Alt+F8 has ever been pressed in this session, a watch on a
+    // missing file would just never fire the day it finally appears. Runs
+    // once at startup; ati-voice-dictate-live also creates this file
+    // idempotently on its own first run, so the two only race on the very
+    // first ever invocation, and both write "idle", not different values.
+    Process {
+        id: dictationStateInit
+        command: ["sh", "-c",
+            "mkdir -p \"$1\" && { [ -e \"$1/state\" ] || printf idle > \"$1/state\"; }",
+            "_", shellRoot.dictationWorkDir]
+        running: true
+    }
+
+    FileView {
+        id: dictationStateWatcher
+        path: shellRoot.dictationStatePath
+        watchChanges: true
+        printErrors: false
+
+        // Same in-place-write requirement IslandTheme.qml and QdropStore.qml
+        // already document for this type: FileView's watch is a
+        // QFileSystemWatcher on the INODE, and a write that replaces the
+        // inode (atomic rename) is a watch on an unlinked file from then on.
+        // ati-voice-dictate-live writes this file with plain shell
+        // redirection (`>`, truncate-in-place), never `mv` — if that ever
+        // changes, this watcher silently stops updating after the first
+        // toggle, with no error to say why.
+        // reload() before re-reading, matching ForkConfig.qml's pattern for
+        // the same reason: `text()` after a bare onFileChanged is not
+        // guaranteed to reflect the write that just triggered it otherwise.
+        onFileChanged: {
+            reload();
+            shellRoot.dictationActive = text().trim() === "listening";
+        }
+        onLoaded: {
+            shellRoot.dictationActive = text().trim() === "listening";
+            dictationStateRetryTimer.running = false;
+        }
+        // Missing file reads as "not dictating" — correct default, and the
+        // common case is just "quickshell started before dictationStateInit's
+        // Process finished spawning", a few ms at most. QFileSystemWatcher
+        // (what FileView is built on) cannot attach a watch to a path that
+        // does not exist yet, and does not retroactively notice the file
+        // showing up later on its own — so without the retry below, losing
+        // that first race would leave this watcher permanently blind for the
+        // rest of the quickshell session, not just briefly wrong.
+        onLoadFailed: {
+            shellRoot.dictationActive = false;
+            dictationStateRetryTimer.running = true;
+        }
+    }
+
+    // Bounded retry for the startup race above. 20 x 500ms = 10s, which is
+    // generously past how long a trivial `sh -c mkdir+printf` Process spawn
+    // ever takes — this exists for the race, not to paper over a genuinely
+    // broken path.
+    Timer {
+        id: dictationStateRetryTimer
+        interval: 500
+        repeat: true
+        running: false
+        property int attempts: 0
+
+        onTriggered: {
+            attempts += 1;
+            if (attempts >= 20) {
+                running = false;
+                return;
+            }
+            dictationStateWatcher.reload();
+        }
+    }
+
+    // The mic-input cava feed. Only runs while dictationActive — this is a
+    // second cava PROCESS alongside whatever IslandBackend already keeps
+    // open for music, not a heavier config on the existing one, and its
+    // cost (one more `cava` at 30fps) exists only for however long a
+    // dictation session runs.
+    Process {
+        id: dictationCavaProcess
+        command: ["cava", "-p",
+            Quickshell.env("HOME") + "/.config/quickshell/tide-island-fork/qml/osd/dictation-cava.conf"]
+        running: shellRoot.dictationActive
+
+        stdout: SplitParser {
+            onRead: function(line) {
+                const trimmed = line.trim();
+                if (trimmed === "")
+                    return;
+                // dictation-cava.conf runs `bars = 1` — ONE 0..100 integer
+                // per frame, with a trailing `;` before the newline (hence
+                // the filter dropping the resulting empty second token).
+                const tokens = trimmed.split(";").filter(function(token) { return token.length > 0; });
+                if (tokens.length === 0)
+                    return;
+                const value = Number(tokens[0]);
+                const peak = isFinite(value) ? Math.max(0, Math.min(1, value / 100)) : 0;
+
+                // ---- Waveform ring: push newest, drop oldest past capacity.
+                const ring = shellRoot.dictationWaveformRing.slice();
+                ring.push(peak);
+                while (ring.length > 90) // 3s @ 30fps — see property doc above.
+                    ring.shift();
+                shellRoot.dictationWaveformRing = ring;
+
+                // ---- dBFS + held-peak decay, ported from Voxtype's
+                // AudioBridge.qml onFrameReceived (MIT). Their dt comes from
+                // the daemon's own monotonic ts_ms field over the NDJSON
+                // protocol; cava's raw ascii output carries no timestamp, so
+                // Date.now() at each line stands in — same role (the delta
+                // between two frames), different clock source.
+                const dbfs = peak > 0.0 ? 20 * Math.log10(peak) : -120;
+                shellRoot.dictationPeakDbfs = dbfs;
+
+                const nowMs = Date.now();
+                const dtMs = shellRoot.dictationLastFrameTsMs > 0
+                    ? Math.max(0, nowMs - shellRoot.dictationLastFrameTsMs)
+                    : 10;
+                shellRoot.dictationLastFrameTsMs = nowMs;
+                const dt = dtMs / 1000;
+                if (dbfs > shellRoot.dictationHeldDbfs) {
+                    shellRoot.dictationHeldDbfs = dbfs;
+                } else {
+                    // 6.0 dB/sec — Voxtype Theme.qml's peakDecayDbPerSec.
+                    const decayed = shellRoot.dictationHeldDbfs - 6.0 * dt;
+                    shellRoot.dictationHeldDbfs = decayed < -120 ? -120 : decayed;
+                }
+            }
+        }
+    }
+
     // ---- THE SCREEN CORNERS ----
     //
     // Per-output through Variants, exactly like the island, the ring OSD, the
@@ -1276,6 +1488,45 @@ Scope {
             rawPercent: shellRoot.ringOsdRawPercent
             shown: shellRoot.ringOsdShown
             iconFontFamily: shellRoot.userConfig.iconFontFamily
+            accentColor: IslandTheme.accent
+            shellFill: IslandTheme.shellFill
+        }
+    }
+
+    // Same per-backend Variants split as the ring OSD above, for the same
+    // reason (see ../common/BackendSurface.md) — one machine-wide surface,
+    // shown wherever the pointer happens to be, not per-monitor state.
+    Variants {
+        id: dictationOsdVariantsWayland
+        model: shellRoot.onWayland ? Quickshell.screens : []
+
+        DictationOsdWindowWayland {
+            required property var modelData
+
+            screen: modelData
+            shellRootController: shellRoot
+            ring: shellRoot.dictationWaveformRing
+            peakDbfs: shellRoot.dictationPeakDbfs
+            heldDbfs: shellRoot.dictationHeldDbfs
+            shown: shellRoot.dictationActive
+            accentColor: IslandTheme.accent
+            shellFill: IslandTheme.shellFill
+        }
+    }
+
+    Variants {
+        id: dictationOsdVariantsX11
+        model: shellRoot.onWayland ? [] : Quickshell.screens
+
+        DictationOsdWindowX11 {
+            required property var modelData
+
+            screen: modelData
+            shellRootController: shellRoot
+            ring: shellRoot.dictationWaveformRing
+            peakDbfs: shellRoot.dictationPeakDbfs
+            heldDbfs: shellRoot.dictationHeldDbfs
+            shown: shellRoot.dictationActive
             accentColor: IslandTheme.accent
             shellFill: IslandTheme.shellFill
         }

@@ -92,8 +92,14 @@ def is_hallucination(text):
 
 
 def xdotool_type(text):
+    # Name kept (call sites still say xdotool_type) but this now shells out
+    # to wtype: xdotool's fake input is XTest-based and only reaches
+    # XWayland clients, a no-op against a native-Wayland window -- which is
+    # every window on this Hyprland session (`hyprctl activewindow` shows
+    # `xwayland: 0` for e.g. kitty). wtype uses the virtual-keyboard
+    # Wayland protocol instead, which Hyprland actually implements.
     if text:
-        subprocess.run(["xdotool", "type", "--delay", "4", "--", text], check=False)
+        subprocess.run(["wtype", "-d", "4", "--", text], check=False)
 
 
 def pill(text):

@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "../common"
 
 //
 // FORK — new file. The scale and the type scale for the qtile-style popups.
@@ -34,10 +35,19 @@ Singleton {
         return Math.max(1, Math.round(px * root.scale));
     }
 
-    // popups/WallpaperPopup.py's FONT. Monospace and NOT the bar's Ubuntu:
-    // "the padded rows only line up in a fixed-width face", and the rows in
-    // all three of these popups are padded columns.
-    readonly property string font: "JetBrainsMono Nerd Font"
+    // Was the hardcoded literal "JetBrainsMono Nerd Font", mirroring
+    // popups/WallpaperPopup.py's FONT. Now the same live-resolved shared
+    // `monospace` fontconfig alias ati-menu's own base font (and dunst/eww/
+    // qtile-popups) already follow (see qml/common/SystemFont.qml) — asked
+    // and confirmed explicitly, so these popups (network/Wi-Fi/Bluetooth/
+    // display/volume) match the Super+Shift+/ menu's typeface instead of a
+    // separately pinned one, and stay in sync if the alias is ever
+    // repointed. Still genuinely monospace either way, which is the actual
+    // requirement here: "the padded rows only line up in a fixed-width
+    // face", and the rows in these popups are padded columns — fonts.conf's
+    // curated `monospace` alias is itself a fixed-width family, so that
+    // constraint still holds.
+    readonly property string font: SystemFont.family
 
     // ROW_SIZE / HEAD_SIZE / HINT_SIZE / FOOT_SIZE, and they are PIXELS —
     // that file says so in as many words: "qtile builds these layouts with a
