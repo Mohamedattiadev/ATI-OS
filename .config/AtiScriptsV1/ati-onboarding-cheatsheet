@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# onboarding-cheatsheet — open the qtile cheatsheet from the eww tour, then
+# ati-onboarding-cheatsheet — open the qtile cheatsheet from the eww tour, then
 # hand the tour back its last page once you close the sheet again.
 #
 # The tour used to open the sheet on a five second timer from the previous
@@ -29,7 +29,7 @@
 #      open it came up UNDER the tour page that had just announced it. The
 #      page is closed here first, and reopened as the finish page after.
 #
-# Usage: onboarding-cheatsheet [delay-seconds]
+# Usage: ati-onboarding-cheatsheet [delay-seconds]
 
 set -uo pipefail
 

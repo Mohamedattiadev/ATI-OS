@@ -74,7 +74,7 @@ effortless.")
       (button
         :class "onb-btn"
         :timeout "3000ms"
-        :onclick "setsid -f onboarding-cheatsheet 0"
+        :onclick "setsid -f ati-onboarding-cheatsheet 0"
         "Cheatsheet")
 
       (button

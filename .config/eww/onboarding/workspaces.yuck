@@ -88,7 +88,7 @@ Apps open where they belong: 1 <b><span foreground='${palette.yellow}'>Tasks</sp
         :onclick "sh -c 'eww close onboarding-welcome bar-tooltip onboarding-workspaces onboarding-keybindings onboarding-finish 2>/dev/null; eww open bar-tooltip'"
         "Back")
 
-      ;; This used to also fire `setsid -f onboarding-cheatsheet 5`, so the
+      ;; This used to also fire `setsid -f ati-onboarding-cheatsheet 5`, so the
       ;; cheatsheet took over the screen five seconds into the next page --
       ;; hence the warning that page had to carry. The next page opens it
       ;; on demand instead, so nothing is scheduled here.
