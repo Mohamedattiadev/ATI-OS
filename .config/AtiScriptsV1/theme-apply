@@ -122,17 +122,31 @@ if [[ "$MODE" != "wal" && -f "$THEME_DIR/colors.toml" ]]; then
   T_PURPLE="$(_toml_get "$THEME_DIR/colors.toml" purple)"
   T_CYAN="$(_toml_get "$THEME_DIR/colors.toml" cyan)"
   T_ACCENT="$(_toml_get "$THEME_DIR/colors.toml" accent)"
+  # dunst_bg/dunst_fg/ok are NOT always equal to bg/fg/green: checked
+  # field-by-field across all 21 hardcoded presets before deciding this
+  # (a scratchpad script, not committed), and doomone/dracula pick a
+  # different dunst bg/fg than their desktop palette, and rose-pine's
+  # dunst+GTK "ok"/success colour is its cyan slot, not its (quite dark)
+  # green. Stored explicitly rather than assumed, even though they equal
+  # bg/fg/green for 18-20 of the 21 themes -- a assumption that held for
+  # a few spot-checked themes is not the same as one verified for all of
+  # them, and this repo already had one script (theme-list.sh) built on
+  # exactly that kind of unverified assumption.
+  T_DUNST_BG="$(_toml_get "$THEME_DIR/colors.toml" dunst_bg)"
+  T_DUNST_FG="$(_toml_get "$THEME_DIR/colors.toml" dunst_fg)"
+  T_OK="$(_toml_get "$THEME_DIR/colors.toml" ok)"
   T_BG_CRIT="$(_toml_get "$THEME_DIR/colors.toml" bg_crit)"
   T_FG_CRIT="$(_toml_get "$THEME_DIR/colors.toml" fg_crit)"
   T_GTK_THEME="$(_toml_get "$THEME_DIR/colors.toml" gtk_theme)"
   T_GTK_ICON="$(_toml_get "$THEME_DIR/colors.toml" gtk_icon)"
   T_ICON_COLOR="$(_toml_get "$THEME_DIR/colors.toml" icon_color)"
-  # All 15 fields must be present -- a partially-written colors.toml
-  # (e.g. an interrupted edit) must fall back to the hardcoded block
-  # rather than apply a palette with holes in it.
+  # All fields must be present -- a partially-written colors.toml (e.g.
+  # an interrupted edit) must fall back to the hardcoded block rather
+  # than apply a palette with holes in it.
   if [[ -n "$T_BG" && -n "$T_BG_ALT" && -n "$T_FG" && -n "$T_RED" && -n "$T_GREEN" \
      && -n "$T_YELLOW" && -n "$T_BLUE" && -n "$T_PURPLE" && -n "$T_CYAN" \
-     && -n "$T_ACCENT" && -n "$T_BG_CRIT" && -n "$T_FG_CRIT" \
+     && -n "$T_ACCENT" && -n "$T_DUNST_BG" && -n "$T_DUNST_FG" && -n "$T_OK" \
+     && -n "$T_BG_CRIT" && -n "$T_FG_CRIT" \
      && -n "$T_GTK_THEME" && -n "$T_GTK_ICON" && -n "$T_ICON_COLOR" ]]; then
     THEME_LOADED=1
   fi
@@ -1349,7 +1363,7 @@ render_dunstrc() {
 
 if [[ -f "$DUNST_TMPL" ]]; then
   if (( THEME_LOADED )); then
-    render_dunstrc "$T_BG" "$T_FG" "$T_BG_CRIT" "$T_FG_CRIT" "$T_ACCENT" "$T_GREEN" "$T_RED"
+    render_dunstrc "$T_DUNST_BG" "$T_DUNST_FG" "$T_BG_CRIT" "$T_FG_CRIT" "$T_ACCENT" "$T_OK" "$T_RED"
   else
   case "$MODE" in
     wal)
@@ -1453,7 +1467,7 @@ EOF
 }
 
 if (( THEME_LOADED )); then
-  gen_gtk_css "$T_BG" "$T_BG_ALT" "$T_FG" "$T_ACCENT" "$T_RED" "$T_GREEN"
+  gen_gtk_css "$T_BG" "$T_BG_ALT" "$T_FG" "$T_ACCENT" "$T_RED" "$T_OK"
 else
 case "$MODE" in
   wal)
