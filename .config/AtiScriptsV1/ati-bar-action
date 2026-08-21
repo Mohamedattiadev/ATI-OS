@@ -134,6 +134,41 @@ island() {
 }
 
 # ---------------------------------------------------------------------------
+#  toggleMenu — the ONE key that does not care which BAR is up, but does
+#  care which SESSION it's in
+# ---------------------------------------------------------------------------
+#
+# Every other function on this page picks island vs native because the two
+# sides are genuinely different surfaces (a rofi script vs an island QML
+# panel). ati-menu's Wayland half is neither: it is its OWN resident
+# Quickshell instance (.config/quickshell/ati-menu/), addressed by its own
+# IPC target ("menu"), entirely independent of bar-switch and the
+# FORK_DIR/island()/native-table machinery below. Routing it through the
+# usual read_mode() branch would have made it native-only for no reason --
+# the island-mode half would have forwarded to the island's OWN "tide" IPC,
+# which has no "toggleMenu" method and silently does nothing, the exact
+# failure class the header comment above describes for showPicker
+# hub/shared before that native-table entry existed.
+#
+# But it DOES need a session check, unlike everything else here: Menu.qml
+# uses Quickshell.Wayland's WlrLayershell, a Wayland-only protocol, and this
+# repo's qtile session is plain X11 (autostart.sh's own "Pre-X
+# configuration" section says so) -- there is no Wayland compositor under
+# qtile for a layer-shell surface to bind to. So under qtile this key falls
+# back to ati-menu, the original rofi-based engine (still fully
+# maintained -- same JSON files, same actions, just rofi rather than QML
+# rendering them), rather than silently failing against a Quickshell
+# instance that was never started there and never could be.
+if [[ "$func" == toggleMenu ]]; then
+  if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    exec "$IPC_BIN" -p "$HOME/.config/quickshell/ati-menu" ipc call menu toggle
+  else
+    run ati-menu
+    exit 0
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 #  target `bar` — the keys that address the BAR ITSELF
 # ---------------------------------------------------------------------------
 #
@@ -202,11 +237,8 @@ case "$key" in
   # ati-theme-toggle is the real rofi theme picker — same script SHIFT+C in
   # this chord already spawns directly in config.py, confirmed working.
   toggleThemePicker)          run ati-theme-toggle ;;
-  # ati-menu: the declarative command tree (Style/System/Docs/Install/
-  # Remove/Update). Bound at Super+C, not nested in this chord -- every
-  # bare letter in the Super+P chord is already spoken for on both
-  # sessions.
-  toggleMenu)                 run ati-menu ;;
+  # toggleMenu is NOT here -- intercepted above, before read_mode() is even
+  # consulted. See that block's comment for why.
 
   # ---- the picker's menus, one rofi script each ----
   "showPicker clipboard")     run ati-copyq-rofi ;;

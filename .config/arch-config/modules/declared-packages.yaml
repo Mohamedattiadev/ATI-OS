@@ -1,2 +1,13 @@
 description: Packages installed via dcli install or dcli search commands
 packages: []
+deb_packages: []
+exclude: []
+conflicts: []
+pre_install_hook: null
+post_install_hook: null
+hook_behavior: ask
+pre_hook_behavior: null
+post_hook_behavior: null
+run_hooks_as_user: false
+post_disable_hook: null
+post_disable_behavior: null
