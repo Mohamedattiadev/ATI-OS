@@ -15,13 +15,13 @@ ROFI_THEME="$HOME/.config/rofi/themes/kill-large.rasi"
 # are shared-namespace files, so on a machine with two accounts whichever
 # one runs this first creates them mode 644 and every subsequent account's
 # write fails with EACCES.
-STATE_FILE="$ROFI_RUNTIME_DIR/rofi-kill-sort-mode"
-ROW_STATE_FILE="$ROFI_RUNTIME_DIR/rofi-kill-selected-row"
+STATE_FILE="$ROFI_RUNTIME_DIR/ati-kill-sort-mode"
+ROW_STATE_FILE="$ROFI_RUNTIME_DIR/ati-kill-selected-row"
 # Row → PID map, rebuilt each invocation. Solves pid-extraction
 # problem: rofi -format 's' with -markup-rows returns raw pango so
 # regex against the visible line is unreliable.
-PID_MAP_FILE="$ROFI_RUNTIME_DIR/rofi-kill-pidmap"
-KILL_LOG="$ROFI_RUNTIME_DIR/rofi-kill.log"
+PID_MAP_FILE="$ROFI_RUNTIME_DIR/ati-kill-pidmap"
+KILL_LOG="$ROFI_RUNTIME_DIR/ati-kill.log"
 
 SORT_MODE="${1:-$(cat "$STATE_FILE" 2>/dev/null || echo 'mem_desc')}"
 LAST_ROW="${2:-$(cat "$ROW_STATE_FILE" 2>/dev/null || echo 1)}"

@@ -116,7 +116,7 @@ load_palette() {
         val="${val%;*}"
         [[ "$val" =~ ^#[0-9a-fA-F]{6}$ ]] || continue
         # These are the whole point of sourcing this file: rofi_todo,
-        # rofi-kill, rofi_shared and theme-apply all read PAL_*. Unused
+        # ati-kill, rofi_shared and theme-apply all read PAL_*. Unused
         # *here* by design.
         # shellcheck disable=SC2034
         case "$key" in
@@ -246,7 +246,7 @@ rofi_input_secret() {
 # Standard hint line for the -mesg footer.
 #
 # Every rofi menu here had grown its own idea of what the strip under the
-# prompt is for. rofi-kill and rofi_todo listed keybindings in bold;
+# prompt is for. ati-kill and rofi_todo listed keybindings in bold;
 # rofi_light showed a value; rofi_docs explained navigation; theme-toggle
 # and ui-scale-toggle had no footer at all, so the two menus that CHANGE
 # THE WHOLE DESKTOP were also the two that said nothing about what Enter

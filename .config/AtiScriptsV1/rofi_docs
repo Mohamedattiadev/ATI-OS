@@ -816,7 +816,7 @@ sec_maintenance() {
         # and taken the sudo password. This is the cheap one to say no to.
         #
         # Short strings on purpose: rofi_confirm is the SHARED compact
-        # dialog (22% wide, ~26 columns), used by rofi_todo and rofi-kill
+        # dialog (22% wide, ~26 columns), used by rofi_todo and ati-kill
         # too, so it is not this script's to widen. "Run a full system
         # upgrade?" overflowed it and rendered clipped mid-word.
         rofi_confirm "Upgrade the system?" \

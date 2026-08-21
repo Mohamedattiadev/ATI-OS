@@ -27,7 +27,7 @@
 # WHY A TABLE AND NOT A NAMING CONVENTION
 # ---------------------------------------
 # The two sides do not correspond one-to-one. The island's `showPicker
-# processes` is rofi-kill; its `showPicker brightness` is rofi_light; its
+# processes` is ati-kill; its `showPicker brightness` is rofi_light; its
 # power menu is dm-logout. Deriving a script name from an IPC function name
 # would be wrong for most of them, and wrong SILENTLY, because a missing
 # script and a working one both exit without saying much.
@@ -212,7 +212,7 @@ case "$key" in
   "showPicker pass")          run ati-pass ;;
   "showPicker notes")         run rofi_todo ;;
   "showPicker todo")          run rofi_todo ;;
-  "showPicker processes")     run rofi-kill ;;
+  "showPicker processes")     run ati-kill ;;
   "showPicker brightness")    run rofi_light ;;
   "showPicker ilovepdf")      run rofi_ilovepdf ;;
   "showPicker spellcheck")    run dm-spellcheck ;;

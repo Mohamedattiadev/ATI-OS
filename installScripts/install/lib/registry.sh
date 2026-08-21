@@ -96,7 +96,7 @@ _reg radios            "Network + Bluetooth" System    "Enable NetworkManager + 
 _reg gpu               "GPU + microcode"     System    "Detect Intel/AMD/NVIDIA from PCI ids, install matching drivers" "step_gpu"
 _reg picom-pin         "picom (pinned)"      System    "Build the animation fork from a fixed commit, not branch HEAD"  "step_picom_pin"
 _reg cargo             "Cargo tools"         System    "pomodoro-tui"                                           "step_cargo"
-_reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install rofi-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
+_reg ati-scripts       "AtiScriptsV1"        Dotfiles  "Install ati-kill · theme-apply · etc to /usr/local/bin" "step_ati_scripts"
 _reg hintium           "Hintium"             Apps      "Hint, scroll and caret modes driven from the home row"   "step_hintium"
 _reg simplenote        "Simplenote push"     Apps      "Mirror the Mod+Shift+S TODOS note to your phone (asks for login at the end)" "step_simplenote"
 _reg touchpad          "Touchpad tap"        System    "Enable tap-to-click"                                    "step_touchpad"

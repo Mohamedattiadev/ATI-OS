@@ -328,7 +328,7 @@ def _ellipsis(text, limit):
 def processes_list():
     """Top processes by RSS.
 
-    Sorted by memory and not by CPU, which is what rofi-kill does too: a
+    Sorted by memory and not by CPU, which is what ati-kill does too: a
     runaway process is nearly always the one holding the memory, and CPU
     ordering churns between the moment the list is drawn and the moment you
     read it.

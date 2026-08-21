@@ -51,7 +51,7 @@ mainbox {
     /* `message` has to be listed here or rofi silently DROPS every -mesg it
        is handed. It was styled forty lines further down but never packed,
        so the hint line under the prompt has never once been drawn --
-       rofi-kill's "Alt+k force / Ctrl+y yank PID", rofi_todo's shortcuts,
+       ati-kill's "Alt+k force / Ctrl+y yank PID", rofi_todo's shortcuts,
        rofi_docs' navigation: all written, all invisible. rofi only builds
        the widget when there is a message to put in it, so menus that pass
        no -mesg are unchanged and gain no empty box. */

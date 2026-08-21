@@ -242,7 +242,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 
 ### Every rofi menu stops opening after a wallpaper change, and the theme switch said it worked
 - **Symptom:** switch wallpaper, and afterwards nothing bound to rofi
-  responds — the launcher, `rofi-kill`, the power menu, every
+  responds — the launcher, `ati-kill`, the power menu, every
   confirmation dialog. The keys do nothing at all, as if they were never
   bound. `theme-apply` reported success.
 - **Root cause:** the legacy (no-precompile) path in `theme-apply` builds
@@ -782,7 +782,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   reference it with `EnvironmentFile=` from the drop-in, so it is read
   last and wins.
 
-### rofi-kill takes 10-18 seconds to open
+### ati-kill takes 10-18 seconds to open
 - **Symptom:** Alt+Q (kill picker) freezes before menu appears.
 - **Root cause:** bash `while read` loop iterating 280+ processes with
   6 subshells per iteration. Rofi cannot show its window until stdin
@@ -791,7 +791,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   ppid map (`P\t`), and ps rows (`R\t`) into one stream; awk builds
   in-memory lookups and emits pango rows in one pass. New total: <200ms.
 
-### rofi-kill vertical dividers misaligned
+### ati-kill vertical dividers misaligned
 - **Symptom:** `│` between columns shifts left on some rows.
 - **Root cause:** rofi's base font is **proportional** (Noto Sans CJK KR
   — see `base.rasi`, it is deliberate). Different glyph widths in the
@@ -805,16 +805,16 @@ subsystem. Each entry: **symptom → root cause → fix**.
   the base proportional font so rofi UI stays consistent with other
   menus.
 
-### rofi_common.sh not found when running rofi-kill
+### rofi_common.sh not found when running ati-kill
 - **Symptom:** `rofi_common.sh: No such file or directory`.
-- **Root cause:** stale copy of `rofi-kill` in `~/.local/bin` without
+- **Root cause:** stale copy of `ati-kill` in `~/.local/bin` without
   its sibling `rofi_common.sh`. `~/.local/bin` precedes `/usr/local/bin`
   in `$PATH`, so the broken one wins.
-- **Fix:** remove `~/.local/bin/rofi-kill` (installer uses
+- **Fix:** remove `~/.local/bin/ati-kill` (installer uses
   `/usr/local/bin` which has the sibling). Or copy `rofi_common.sh`
   alongside every rofi-* script you place in `~/.local/bin`.
 
-### rofi-kill kill did not actually kill the process
+### ati-kill kill did not actually kill the process
 - **Symptom:** confirmed kill, target process still running afterwards.
 - **Root cause:** `kill -15` (SIGTERM) is a request — trap-immune
   processes (own SIGTERM handler, zombie state, uninterruptible sleep)
@@ -824,13 +824,13 @@ subsystem. Each entry: **symptom → root cause → fix**.
   reports success if `kill -0` fails. Alt+k skips grace and goes
   straight to SIGKILL. Both call the same helper for consistency.
 
-### rofi-kill confirm defaults to No — friction on every kill
+### ati-kill confirm defaults to No — friction on every kill
 - **Symptom:** Enter on process → arrow-down → Enter again.
 - **Fix:** confirm defaults to Yes (single Enter confirms). Escape
   cancels. Users triggered the action intentionally; accidental
   double-Enter from the caller is rare.
 
-### rofi-kill kills without asking Yes/No
+### ati-kill kills without asking Yes/No
 - **Symptom:** hit Enter on a process, it dies immediately, no confirm.
 - **Root cause:** `rofi_confirm` inherited the caller's `ROFI_THEME`
   (kill-large.rasi is huge). `-theme-str` overrides could not fully
@@ -841,7 +841,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   compact popup renders centered regardless of caller theme. Default
   `-selected-row 0` = No so accidental Enter cancels safely.
 
-### Bash syntax error inside rofi-kill from an apostrophe
+### Bash syntax error inside ati-kill from an apostrophe
 - **Symptom:** script fails to launch, `bash -n` reports "syntax
   error near unexpected token" inside the awk block.
 - **Root cause:** an apostrophe (`don't`) in a comment inside the
@@ -875,7 +875,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 ### Every confirmation dialog answers "cancel" by itself — on a second account
 - **Symptom:** on a machine with more than one user, one account's rofi
   Yes/No confirms work and another account's never appear at all.
-  `rofi-kill` asks nothing and kills nothing; the confirms in `dm-setbg`
+  `ati-kill` asks nothing and kills nothing; the confirms in `dm-setbg`
   and friends do nothing. Every action behaves exactly as though you had
   pressed Escape.
 - **Root cause:** `rofi_common.sh`'s `rofi_confirm` sent rofi's stderr to

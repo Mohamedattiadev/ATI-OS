@@ -10,7 +10,7 @@ window {
 }
 
 /* Font inherited from base.rasi ("FiraCode Nerd Font Mono 12") so
- * rofi-kill matches other menus. */
+ * ati-kill matches other menus. */
 listview {
     lines:   15;
     dynamic: true;
