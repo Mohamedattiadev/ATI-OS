@@ -3416,7 +3416,7 @@ MENUS = {
 #  PDF toolkit that has lost merge. Neither is worth it for a menu that ends
 #  by opening a file manager anyway.
 #
-#  Outside the chord, `phone_screen` ($mod SHIFT F6) and `theme-toggle`
+#  Outside the chord, `ati-phone-screen` ($mod SHIFT F6) and `theme-toggle`
 #  ($mod P, SHIFT C) also stay on rofi, each for a reason recorded at its
 #  bind in binds.conf / submaps.conf: both must keep working with this shell
 #  down, which is precisely when they are reached for.

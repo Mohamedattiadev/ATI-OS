@@ -4473,7 +4473,7 @@ def _clamp_phone_mirror(*_args):
 
     scrcpy sizes its window to the device's real framebuffer, so turning
     the phone sideways -- opening a video fullscreen, say -- makes it
-    swap width and height on its own. phone_screen parks it flush against
+    swap width and height on its own. ati-phone-screen parks it flush against
     the right edge in portrait (~307x684 here), and the rotated window is
     then ~684 wide from the same left edge: most of it hangs off the
     screen, controls included, with no way to reach them.
@@ -4528,7 +4528,7 @@ def _clamp_phone_mirror(*_args):
 #
 # That leaves this hook covering exactly one case: the phone is already
 # sideways when the mirror opens. Rotation DURING a session is handled by
-# the bounds watcher in phone_screen, which is the only thing that can
+# the bounds watcher in ati-phone-screen, which is the only thing that can
 # see it.
 hook.subscribe.client_managed(_clamp_phone_mirror)
 
@@ -7336,12 +7336,12 @@ keys = [
         # keeps that pair adjacent. The F6/F7 contention noted above
         # applies to the BARE keys; under Super+Shift the row is free.
         #
-        # phone_screen does the discovery adb cannot: Arch's android-tools
+        # ati-phone-screen does the discovery adb cannot: Arch's android-tools
         # is built without mDNS, so it never finds a wirelessly-debugging
         # phone by itself and the address+port have to be copied off the
         # phone by hand every session. The script reads the same mDNS
         # announcement through avahi-browse and hands adb a host:port.
-        lazy.spawn("phone_screen"),
+        lazy.spawn("ati-phone-screen"),
         desc="Mirror the Android phone (scrcpy, USB or Wi-Fi)",
     ),
     # ---screenshot: select an area, straight to the clipboard---
@@ -9225,7 +9225,7 @@ floating_layout = layout.Floating(
         # wastes most of it. Floating keeps the phone's aspect ratio,
         # which is the whole point of looking at it.
         Match(wm_class="scrcpy"),
-        # phone_screen's pairing QR. It asks feh for a small centred
+        # ati-phone-screen's pairing QR. It asks feh for a small centred
         # geometry, and a tiled window discards that request and stretches
         # a 260px code across a whole tile. The Match(title="feh") below
         # does not cover it: this window sets its own title.

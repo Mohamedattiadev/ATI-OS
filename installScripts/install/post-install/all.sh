@@ -266,7 +266,7 @@ step_scrcpy() {
   fi
 
   # ─── mDNS, which is what makes the wireless path automatic ─────────
-  # phone_screen (Mod+Shift+A) finds the phone's wireless-debugging
+  # ati-phone-screen (Mod+Shift+A) finds the phone's wireless-debugging
   # host:port from its own mDNS announcement rather than making you copy
   # a fresh random port off the phone every session. Arch's android-tools
   # is built without mDNS, so avahi does that lookup -- and an installed
@@ -289,7 +289,7 @@ step_scrcpy() {
     fi
   fi
 
-  # ─── the pieces phone_screen leans on ──────────────────────────────
+  # ─── the pieces ati-phone-screen leans on ──────────────────────────────
   # All four are declared in modules dcli-sync already installed, so this
   # is a check rather than an install -- but each one fails in a way that
   # is hard to read from the outside: no qrencode and the pairing dialog
@@ -301,9 +301,9 @@ step_scrcpy() {
     command -v "$bin" >/dev/null || miss+=("$bin")
   done
   if (( ${#miss[@]} )); then
-    _WARN "missing for phone_screen: ${miss[*]} — run dcli sync"
+    _WARN "missing for ati-phone-screen: ${miss[*]} — run dcli sync"
   else
-    _OK "phone_screen has everything it needs"
+    _OK "ati-phone-screen has everything it needs"
   fi
 
   _DIM "  phone: Settings > About > tap Build number 7x > Developer options"

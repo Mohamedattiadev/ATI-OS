@@ -170,7 +170,7 @@ session, for that specific clip.
 | theme switch, whole desktop (`theme-apply.gif` above) | `theme-apply gruvbox` | `theme-apply` **restarts qtile and rewrites global state** — `~/.cache/wal`, the rofi `current-palette.rasi`, GTK/Qt settings, the browser theme extension. It cannot be contained in the nested display; it would recolour and restart the **owner's live session**. If it is ever recorded, it is one supervised take on the real desktop, and the session **must** be restored immediately afterwards with `theme-apply mono-dark` (the current mode, per `~/.cache/qtile/theme_mode`). |
 | wallpaper *apply* (as opposed to browsing) | `Super+P , W` then `Enter` | Selecting rewrites `~/.cache/wall` and can re-derive the whole `wal` palette. The `wallpaper-picker.gif` row above navigates only and exits with `Esc`; do not press Enter. |
 | voice dictation | `F8` (live) / `F9` (batch) | Needs the microphone and the owner's voice; the transcript is whatever was said. |
-| phone mirror | `Super+Shift+F6` (`phone_screen`) | Mirrors the owner's Android phone — home screen, notifications, messages. |
+| phone mirror | `Super+Shift+F6` (`ati-phone-screen`) | Mirrors the owner's Android phone — home screen, notifications, messages. |
 | anki | `Super+P , A` (`rofi_anki`) | The owner's decks and cards. |
 | translator | `Super+P , E` | Needs `GEMINI_API_KEY` from `~/.config/secrets.env`, and the input is whatever text is selected. README already marks it ~70 %. |
 | shared link preview / youtube menu | `Super+P , Z` / `Super+P , Y` | Reads the owner's clipboard and browsing history. |

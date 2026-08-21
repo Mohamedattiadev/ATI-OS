@@ -3805,7 +3805,7 @@ ping -c 8 <phone-ip>
 
 Anything over ~20ms average, or with double-digit jitter, is felt
 immediately: it is already a frame or two of delay before a single pixel
-is encoded. **Plug in a USB cable** — `phone_screen` prefers it
+is encoded. **Plug in a USB cable** — `ati-phone-screen` prefers it
 automatically and raises the quality ceiling when it gets one.
 
 scrcpy decodes in *software*; there is no hardware-decode option in
@@ -3830,7 +3830,7 @@ shell keeps the old set no matter what `/etc/group` now says.
 
 The wireless port changes on every phone reboot. That is handled — the
 script re-reads it from mDNS each run. What is *not* automatic is a stale
-`offline` entry left behind by the old port; `phone_screen` prunes those
+`offline` entry left behind by the old port; `ati-phone-screen` prunes those
 on every run, but by hand it is `adb disconnect`.
 
 A stale entry matters because scrcpy aborts outright when `adb devices`

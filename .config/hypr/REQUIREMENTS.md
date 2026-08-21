@@ -1068,9 +1068,9 @@ the others:
 | `$mod P` → `a` | `rofi_anki` | **no longer — PORTED, see below** |
 | `$mod P` → `v` | `ati-ilovepdf` | yes — deliberate, a file-picker/page-range/OCR pipeline |
 | `$mod P` → `SHIFT c` | `theme-toggle` | yes — deliberate and documented; it is the qtile session's picker and it keeps working when the island is down |
-| **`$mod SHIFT F6`** | **`phone_screen`** | **yes, and undocumented anywhere.** Its QR/pairing path calls `require_cmd qrencode rofi` and pipes into `rofi -dmenu -i -format f` against `~/.config/rofi/themes/base.rasi` |
+| **`$mod SHIFT F6`** | **`ati-phone-screen`** | **yes, and undocumented anywhere.** Its QR/pairing path calls `require_cmd qrencode rofi` and pipes into `rofi -dmenu -i -format f` against `~/.config/rofi/themes/base.rasi` |
 
-`phone_screen` is a fourth rofi surface that nothing recorded. It is not
+`ati-phone-screen` is a fourth rofi surface that nothing recorded. It is not
 obviously wrong — it is a wizard like the other two deliberate ones, and
 by that reasoning it belongs with them rather than in the picker. But it
 was never *decided*, and "the only two" has been stated in `binds.conf`
@@ -1122,7 +1122,7 @@ from `hyprctl binds -j`.
 |---|---|
 | `ati-ilovepdf` (`$mod P` → `v`) | it is a **file manager**, not a wizard. `order_files` selects SEVERAL files and orders them so merge has an order to merge in, and the picker protocol carries exactly one id back per page. Porting it means building selection state into `PickerLayer.qml` or shipping a PDF toolkit that has lost merge |
 | `theme-toggle` (`$mod P` → `SHIFT c`) | `c` is already the island's theme picker on the same chord. This one exists to keep working when the island is down, and it is the qtile session's picker |
-| `phone_screen` (`$mod SHIFT F6`) | decided above and unchanged |
+| `ati-phone-screen` (`$mod SHIFT F6`) | decided above and unchanged |
 
 The standing policy in this item — "rofi keeps the `dm-*` launchers" — was
 treated as rebuttable and it lost once and held twice. What decided each
@@ -1132,7 +1132,7 @@ the shell being down.
 
 Method note, because the claim had gone unchecked for several sessions:
 seven `AtiScriptsV1` scripts are reachable from a Hyprland bind at all —
-`clock_popup`, `phone_screen`, `rofi_anki`, `ati-ilovepdf`,
+`clock_popup`, `ati-phone-screen`, `rofi_anki`, `ati-ilovepdf`,
 `theme-toggle`, `ati-voice-dictate`, `ati-voice-dictate-live`. `clock_popup`
 mentions rofi only in comments. Everything else in that directory is
 qtile's, or is called by another script, and cannot be reached from this
@@ -1488,9 +1488,9 @@ history.
 **3. ~~`wf-recorder` is not installed.~~ CLOSED — installed** (`0.6.0-2`)
 and wired into `island-picker.py`'s recording path (`_island_recording()`).
 
-**4. ~~`phone_screen` (`$mod SHIFT F6`) opens a rofi window~~ CLOSED —
+**4. ~~`ati-phone-screen` (`$mod SHIFT F6`) opens a rofi window~~ CLOSED —
 decided and the claim corrected.** It does open one, through
-`rofi -dmenu -i -format f` in `AtiScriptsV1/phone_screen`, and
+`rofi -dmenu -i -format f` in `AtiScriptsV1/ati-phone-screen`, and
 `binds.conf`'s note that the only rofi routes left were "the two wizards
 named in submaps.conf" was wrong by one. Three routes, not two; the note
 now says so, and the bind carries a pointer to it. It **stays** on rofi,
@@ -1629,7 +1629,7 @@ two-thirds ported with no explanation, and so nobody re-opens it as a gap.
 |---|---|
 | `ati-satty`'s X11 tools | **superseded.** Rewritten, not wrapped: the picker's screenshot menu is grim + slurp + hyprctl + wl-copy + satty. `ati-satty` is unreachable from any Hyprland bind and stays on disk for the qtile session |
 | `qdrop.py` / `qdrop_watch.py` | **superseded** by special workspaces |
-| "leave the launcher problems on rofi" | **superseded as policy.** The chord is the island's picker on every key but ONE (`v`, ati-ilovepdf), plus `theme-toggle` and `phone_screen`. `rofi_anki` was the last wizard to move, and what decided it was not the launcher/popup split at all — see item 3 |
+| "leave the launcher problems on rofi" | **superseded as policy.** The chord is the island's picker on every key but ONE (`v`, ati-ilovepdf), plus `theme-toggle` and `ati-phone-screen`. `rofi_anki` was the last wizard to move, and what decided it was not the launcher/popup split at all — see item 3 |
 | Per-state layout vs the reference video | **abandoned as a test, not as work.** I cannot see video frames and never could. DESIGN-SPEC.md — a transcript of the author narrating his own numbers — is matched everywhere it gives a number. Where it gives only a description this is a judgement call that has been made. Calling it "open" implies an unrun test; there is none |
 
 ### Could not verify, and why
@@ -1745,7 +1745,7 @@ from there to this file's polkit section is enough.
 
 ### Still needing a decision from you
 
-1. **`phone_screen`'s rofi window** — leave it as a third deliberate
+1. **`ati-phone-screen`'s rofi window** — leave it as a third deliberate
    wizard, or port it? Either is defensible; what is not defensible is
    `binds.conf` claiming there are two.
 2. **Notifications: island or dunst?** Both draw every notification right
