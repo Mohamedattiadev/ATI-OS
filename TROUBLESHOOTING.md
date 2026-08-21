@@ -698,7 +698,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 - **Symptom:** empty menu, while every other wallpaper tool works fine.
 - **Root cause:** `setbg_dir="$HOME/Pictures/Wallpaper"` — singular. The
   directory is `~/Pictures/Wallpapers`, which is what the `wallpapers`
-  module clones into and what `wal-precompile` and `wal-audit` read.
+  module clones into and what `wal-precompile` and `ati-wal-audit` read.
 - **Fix:** corrected to the plural. The menu lists 363 wallpapers now.
 
 ### dm-documents: "file not found" for some PDFs but not others
