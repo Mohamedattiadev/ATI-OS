@@ -202,6 +202,11 @@ case "$key" in
   # ati-theme-toggle is the real rofi theme picker — same script SHIFT+C in
   # this chord already spawns directly in config.py, confirmed working.
   toggleThemePicker)          run ati-theme-toggle ;;
+  # ati-menu: the declarative command tree (Style/System/Docs/Install/
+  # Remove/Update). Bound at Super+C, not nested in this chord -- every
+  # bare letter in the Super+P chord is already spoken for on both
+  # sessions.
+  toggleMenu)                 run ati-menu ;;
 
   # ---- the picker's menus, one rofi script each ----
   "showPicker clipboard")     run ati-copyq-rofi ;;

@@ -7449,8 +7449,13 @@ keys = [
         desc="Island: workspaces picker (overview is Wayland-only)"),
     Key([mod, "shift"], "i", lazy.spawn("ati-bar-action tide showOnboarding 0"),
         desc="Island: onboarding"),
-    Key([mod, "shift"], "slash", lazy.spawn("ati-bar-action tide showCheatsheet docs"),
-        desc="Island: docs cheatsheet"),
+    # ati-menu: the declarative command tree (Style/System/Docs/Install/
+    # Remove/Update) -- the equivalent of Omarchy's own Super+Space menu.
+    # Was showCheatsheet docs -- redundant with two other existing paths to
+    # the same ati-docs (the logo chip click, and the Super+P,D chord entry)
+    # -- reassigned here rather than adding a third binding.
+    Key([mod, "shift"], "slash", lazy.spawn("ati-bar-action tide toggleMenu"),
+        desc="ati-menu: command tree"),
     Key([mod, "shift"], "b", lazy.spawn("ati-bar-action tide toggleWallpaperPicker"),
         desc="Island: wallpaper picker"),
     # ---today & week: plans-todos popup---
