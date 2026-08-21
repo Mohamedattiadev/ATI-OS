@@ -304,8 +304,8 @@ if [[ -f "$WALLPAPER_ONLY_MARKER" ]]; then
   # the full pipeline same as always. Only a NAMED preset can have a
   # wallpaper swap that touches nothing else.
   if [[ "$MODE" != "wal" ]]; then
-    if command -v theme-wallpaper >/dev/null 2>&1; then
-      theme-wallpaper apply "$MODE" instant || true
+    if command -v ati-theme-wallpaper >/dev/null 2>&1; then
+      ati-theme-wallpaper apply "$MODE" instant || true
     fi
     printf '%s\n' 'THEME_APPLY_VISIBLE_DONE'
     exit 0
@@ -2004,7 +2004,7 @@ fi
 #  NOT for wal. In wal mode the wallpaper is the INPUT to the palette, so
 #  a per-theme wallpaper is meaningless there — and this is also one of
 #  the two guards against a loop, since wallpaper-set.sh re-runs
-#  `theme-apply wal` after a pick. The other guard is that theme-wallpaper
+#  `theme-apply wal` after a pick. The other guard is that ati-theme-wallpaper
 #  pokes the daemon itself and never calls wallpaper-set.sh.
 #
 #  `|| true` because a theme with no wallpaper must not fail a theme
@@ -2012,12 +2012,12 @@ fi
 #  xwallpaper should still get its colours.
 # WALL_APPLIED is read only by the notification at the end of this script,
 # which says "and the wallpaper too" and must not say it when the wallpaper
-# did not move. Compared by resolved target rather than by theme-wallpaper's
+# did not move. Compared by resolved target rather than by ati-theme-wallpaper's
 # exit code: the `|| true` above swallows that code by design, and a theme
 # with an empty set exits 0 having changed nothing.
 WALL_BEFORE="$(readlink -f "$HOME/.cache/wall" 2>/dev/null || true)"
-if [ "$MODE" != "wal" ] && command -v theme-wallpaper >/dev/null 2>&1; then
-  theme-wallpaper apply "$MODE" instant || true
+if [ "$MODE" != "wal" ] && command -v ati-theme-wallpaper >/dev/null 2>&1; then
+  ati-theme-wallpaper apply "$MODE" instant || true
 fi
 WALL_APPLIED="$(readlink -f "$HOME/.cache/wall" 2>/dev/null || true)"
 [ "$WALL_APPLIED" = "$WALL_BEFORE" ] && WALL_APPLIED=""
@@ -2515,7 +2515,7 @@ fi
 # The body names the WALLPAPER, and that is the point of the rewrite rather
 # than a decoration. A theme now draws one image at random out of its set,
 # so "which one did I get" is a real question with a real follow-up — the
-# answer is what you pass to `theme-wallpaper bind` if you want to keep it.
+# answer is what you pass to `ati-theme-wallpaper bind` if you want to keep it.
 # It is omitted, not faked, when nothing moved: wal mode derives the palette
 # FROM the wallpaper and never sets one, and a theme with an empty set exits
 # 0 having changed nothing.

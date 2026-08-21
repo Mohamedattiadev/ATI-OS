@@ -86,7 +86,7 @@ thing that should write `colors.conf`.
 1. The shell's `ThemeTransitionWindow` covers the screen with a frozen
    frame the moment a change starts.
 2. `theme-apply` rewrites every consumer's colours, then sets the theme's
-   wallpaper with `theme-wallpaper apply <theme> instant`.
+   wallpaper with `ati-theme-wallpaper apply <theme> instant`.
 3. It prints `THEME_APPLY_VISIBLE_DONE`.
 4. The shell sweeps the cover away, revealing the new palette **and** the
    new wallpaper together.
@@ -101,7 +101,7 @@ measurements.
 
 ## Wallpapers
 
-`theme-wallpaper` resolves a theme to an image in four layers:
+`ati-theme-wallpaper` resolves a theme to an image in four layers:
 
 1. **override** — `~/.cache/qtile/theme-walls.json`. Picking a wallpaper
    while a theme is active *rebinds* that theme to it.
@@ -120,7 +120,7 @@ measurements.
    blank the desktop.
 
 The override deliberately beats the set: otherwise a deliberate pick would
-survive only until the next theme change. `theme-wallpaper forget <theme>`
+survive only until the next theme change. `ati-theme-wallpaper forget <theme>`
 hands a theme back to its set.
 
 ## The panels, and the keys that open them

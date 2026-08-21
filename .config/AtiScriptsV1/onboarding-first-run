@@ -94,7 +94,7 @@ esac
 #
 # On what is actually RUNNING, not on XDG_SESSION_TYPE alone: this is
 # invoked from autostart and inherits whatever environment that had, and
-# theme-wallpaper carries the same comment for the same reason.
+# ati-theme-wallpaper carries the same comment for the same reason.
 #
 # Hyprland's tour needs no daemon wait of its own -- `qs ipc call` either
 # reaches a running shell or it does not, and there is no equivalent of

@@ -546,11 +546,11 @@ TROUBLE_SECTIONS = [
     ]),
     ("WALLPAPER", [
         ("a theme change did not change the wallpaper",
-         "theme-wallpaper list"),
+         "ati-theme-wallpaper list"),
         ("a theme is stuck on one image",
-         "it is bound -- theme-wallpaper forget <theme>"),
+         "it is bound -- ati-theme-wallpaper forget <theme>"),
         ("what is in a theme's set",
-         "theme-wallpaper set <theme>"),
+         "ati-theme-wallpaper set <theme>"),
         ("the wallpaper daemon is not answering",
          "awww query"),
     ]),
@@ -597,9 +597,9 @@ DOCS_SECTIONS = [
     ]),
     ("THEMES AND WALLPAPER", [
         ("apply a theme everywhere", "theme-apply <theme>"),
-        ("every theme and its set size", "theme-wallpaper list"),
-        ("bind the current image to a theme", "theme-wallpaper bind <theme> <img>"),
-        ("hand a theme back to its set", "theme-wallpaper forget <theme>"),
+        ("every theme and its set size", "ati-theme-wallpaper list"),
+        ("bind the current image to a theme", "ati-theme-wallpaper bind <theme> <img>"),
+        ("hand a theme back to its set", "ati-theme-wallpaper forget <theme>"),
         ("rebuild the per-theme sets", "ati-theme-wallpaper-fetch build --apply"),
     ]),
 ]

@@ -84,7 +84,7 @@ ln -sfn -- "$img" "$WALL_LINK"
 # looks: there is no wave TO have on X11, but there IS the circular-
 # reveal overlay, and this script was never wired to it. qtile's OWN
 # native-bar wallpaper popup (WallpaperPopup.py) got exactly this fix
-# already this session — same theme-wallpaper bind + theme-animate +
+# already this session — same ati-theme-wallpaper bind + theme-animate +
 # wallpaper-only fast-path marker — and this is the island's mirror of
 # it, so picking a wallpaper from the island under qtile now looks the
 # same as picking one from qtile's own popup, and both now use the same
@@ -104,10 +104,10 @@ ln -sfn -- "$img" "$WALL_LINK"
 _early_mode="$(cat "$HOME/.cache/qtile/theme_mode" 2>/dev/null || true)"
 _animated_x11=false
 if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -n "$_early_mode" ] && [ "$_early_mode" != "wal" ] \
-   && command -v theme-wallpaper >/dev/null 2>&1 && command -v theme-animate >/dev/null 2>&1
+   && command -v ati-theme-wallpaper >/dev/null 2>&1 && command -v theme-animate >/dev/null 2>&1
 then
     _animated_x11=true
-    theme-wallpaper bind "$_early_mode" "$img" \
+    ati-theme-wallpaper bind "$_early_mode" "$img" \
         || echo "wallpaper-set: applied, but could not bind it to theme $_early_mode" >&2
     mkdir -p "$HOME/.cache/qtile"
     : >"$HOME/.cache/qtile/.wallpaper_only_pending" 2>/dev/null || true
@@ -156,7 +156,7 @@ fi
 #
 #  No recursion, and this now needs saying rather than observing:
 #  theme-apply DOES set a wallpaper as of ask #5, but it does it through
-#  `theme-wallpaper apply`, which pokes awww/xwallpaper directly and never
+#  `ati-theme-wallpaper apply`, which pokes awww/xwallpaper directly and never
 #  calls back into either of these scripts. The second guard is that
 #  theme-apply skips the wallpaper entirely in wal mode, which is the only
 #  mode in which the branch below re-enters theme-apply.
@@ -173,7 +173,7 @@ MODE_FILE="$HOME/.cache/qtile/theme_mode"
 #  thirty seconds earlier and the pick would not have stuck at all.
 #
 #  Not in wal mode: there the wallpaper drives the palette rather than
-#  belonging to it, so there is no theme to bind it to. `theme-wallpaper
+#  belonging to it, so there is no theme to bind it to. `ati-theme-wallpaper
 #  forget <theme>` puts the generated default back.
 #
 #  Non-fatal, like the re-derive below and for the same reason — the
@@ -183,13 +183,13 @@ mode="$(cat "$MODE_FILE" 2>/dev/null || true)"
 # $_animated_x11's own branch above already did exactly this bind — same
 # mode, same image, since neither can have changed in between — so this
 # is skipped rather than repeated. Not merely a micro-optimisation:
-# calling theme-wallpaper bind a second time is harmless on its own, but
+# calling ati-theme-wallpaper bind a second time is harmless on its own, but
 # it is one more subprocess between the pick and the reveal on the path
 # this session's own measurements said was the slow one.
 if [ "$_animated_x11" != true ] && [ -n "$mode" ] && [ "$mode" != "wal" ] \
-   && command -v theme-wallpaper >/dev/null 2>&1
+   && command -v ati-theme-wallpaper >/dev/null 2>&1
 then
-    theme-wallpaper bind "$mode" "$img" \
+    ati-theme-wallpaper bind "$mode" "$img" \
         || echo "wallpaper-set: applied, but could not bind it to theme $mode" >&2
 fi
 

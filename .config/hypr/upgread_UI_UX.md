@@ -1538,8 +1538,8 @@ were checked and rejected too — the best collection found
 (`yukazakiri/themed-wallpapers`, 1100+ images, ~1 GB, itself generated with
 `gowall`) covers 22 palettes but only 12 of these 21 by name.
 
-The generator is `AtiScriptsV1/theme-wallpaper-gen`; the runtime half is
-`AtiScriptsV1/theme-wallpaper`, called by theme-apply after the visible-done
+The generator is `AtiScriptsV1/ati-theme-wallpaper-gen`; the runtime half is
+`AtiScriptsV1/ati-theme-wallpaper`, called by theme-apply after the visible-done
 marker and by wallpaper-set.sh on a manual pick. Full reasoning lives in
 those two headers and is not repeated here.
 
@@ -1890,7 +1890,7 @@ frames differenced against each other:
     after    marker +1486 ms   wallpaper changes ONCE, +1565 ms
 
 The seam goes from 1685 ms to 79 ms. **The freeze did grow**, by about
-170 ms — that is what `theme-wallpaper apply` costs, timed directly five
+170 ms — that is what `ati-theme-wallpaper apply` costs, timed directly five
 times at 160-203 ms — against a 1606 ms seam removed and
 time-to-fully-settled dropping from 3071 ms to 1565 ms. Backgrounding the
 apply would buy the 170 ms back and reintroduce a ~90 ms pop, because the
@@ -1919,7 +1919,7 @@ discriminating, it was agreeing. Only a contact sheet showed it: gruvbox
 **mono-light cannot be served by selection at all.** Zero of 3,759 scored
 within 60 of it. Its background is #ffffff and no light wallpaper exists
 in any of these repos — which independently confirms what
-theme-wallpaper-gen's header already recorded. It is generated, via a new
+ati-theme-wallpaper-gen's header already recorded. It is generated, via a new
 `--per-theme N`.
 
 `catppuccin/wallpapers` does not exist; it 404s.
@@ -2067,13 +2067,13 @@ those four covers all thirteen prompting paths.
   sets converged on themselves, and the "already in the repo, link it" branch
   wrote symlinks pointing at their own filenames — 170 of 496 files were
   broken, and `ls` counted them, so the sets looked complete while
-  `theme-wallpaper list` reported 16 of 25.
+  `ati-theme-wallpaper list` reported 16 of 25.
 * **The palette cache never hit**, because its key used Python's
   per-process-salted `hash()`. Every run re-extracted all 3,875 palettes
   (~20 min) and left another full set of files behind. A cache that always
   misses is a cache that always works, which is why nothing reported it.
 
-And `theme-wallpaper-gen --only` filtered at PRINT time, after a global
+And `ati-theme-wallpaper-gen --only` filtered at PRINT time, after a global
 greedy allocation had already given the images away — so the one theme that
 mode exists for, mono-light, got zero.
 

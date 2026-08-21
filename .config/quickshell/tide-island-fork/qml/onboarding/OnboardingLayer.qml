@@ -141,7 +141,7 @@ Item {
                 { k: "theme-apply <name>", v: "apply a theme everywhere" },
                 { k: "picker", v: "each theme draws at random from its own set of wallpapers" },
                 { k: "pick one by hand", v: "and that theme is bound to it from then on" },
-                { k: "theme-wallpaper forget", v: "hands a theme back to its random set" }
+                { k: "ati-theme-wallpaper forget", v: "hands a theme back to its random set" }
             ]
         },
         {

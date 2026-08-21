@@ -452,7 +452,7 @@ def apply_wallpaper():
             # THEME_APPLY_COVERED wait loop in theme-apply): `bind` records
             # this image as MODE's wallpaper, then `theme-animate MODE`
             # re-applies the SAME theme behind the circular-reveal overlay.
-            # theme-apply already runs `theme-wallpaper apply "$MODE"
+            # theme-apply already runs `ati-theme-wallpaper apply "$MODE"
             # instant` unconditionally for every non-wal mode (ask #5) — it
             # picks up the just-bound image and displays it from there, so
             # nothing new has to reach into the overlay's own QML at all.
@@ -481,7 +481,7 @@ def apply_wallpaper():
             except OSError:
                 pass
             subprocess.run(
-                ["theme-wallpaper", "bind", mode, path],
+                ["ati-theme-wallpaper", "bind", mode, path],
                 check=False,
                 timeout=10,
             )
