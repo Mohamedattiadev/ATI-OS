@@ -72,7 +72,22 @@ fi
 echo $$ >"$LOCK"
 trap 'rm -f "$LOCK"' EXIT INT TERM
 
-PRESETS=(doomone dracula gruvbox nord tokyonight catppuccin monokai everforest rose-pine kanagawa oxocarbon cyberpunk-neon synthwave matrix mono-dark mono-light nightowl onedark palenight github-dark ayu-mirage)
+# Every preset now has a themes/<mode>/ folder (see below), so this list
+# is read from the filesystem instead of being separately maintained --
+# collapses what used to be a 6th hand-kept copy of the same 21 names
+# (this array), on top of theme-toggle's ENTRIES and the awk-scrape
+# .config/hypr/scripts/theme-list.sh had resorted to for lack of a single
+# source of truth. Sorted for a stable, predictable usage message; picker
+# DISPLAY ORDER (theme-toggle's ENTRIES) is unrelated and untouched --
+# those carry hand-written labels ("GitHub Dark", not "github-dark") that
+# aren't mechanically derivable from the folder name anyway.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PRESETS=()
+if [[ -d "$SCRIPT_DIR/themes" ]]; then
+  while IFS= read -r -d '' d; do
+    PRESETS+=("$(basename "$d")")
+  done < <(find "$SCRIPT_DIR/themes" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+fi
 
 is_preset() {
   local m="$1"
@@ -83,7 +98,8 @@ is_preset() {
 }
 
 if [[ "$MODE" != "wal" ]] && ! is_preset "$MODE"; then
-  echo "usage: theme-apply <doomone|dracula|gruvbox|nord|tokyonight|catppuccin|monokai|everforest|rose-pine|kanagawa|oxocarbon|cyberpunk-neon|synthwave|matrix|mono-dark|mono-light|nightowl|onedark|palenight|github-dark|ayu-mirage|wal>" >&2
+  _usage_list="$(IFS='|'; echo "${PRESETS[*]}")"
+  echo "usage: theme-apply <${_usage_list}|wal>" >&2
   exit 1
 fi
 
@@ -106,8 +122,8 @@ fi
 # themes/<mode>/colors.toml yet, THEME_LOADED stays 0 and every case
 # block runs exactly as it always has. This is the safety net for
 # migrating one theme at a time -- nothing is deleted from the hardcoded
-# tables until every mode has a folder.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# tables until every mode has a folder. (SCRIPT_DIR is set above, where
+# PRESETS is derived from this same themes/ directory.)
 THEME_DIR="$SCRIPT_DIR/themes/$MODE"
 THEME_LOADED=0
 if [[ "$MODE" != "wal" && -f "$THEME_DIR/colors.toml" ]]; then
