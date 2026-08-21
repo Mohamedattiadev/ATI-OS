@@ -30,16 +30,29 @@ PopupWindow {
     // hovered and the popup is not shown.
     property var target: null
 
+    // "the tooltip for the topbar should be a bit under the bar, a bit
+    // gap, and for the bottom one the tooltip should be a bit up" — now
+    // that this bar actually has a working bottom position, hanging
+    // BELOW the target unconditionally would try to render off the
+    // bottom of the screen down there. true = hang below (top-bar case,
+    // the only case this ever had to handle before); false = hang above.
+    property bool belowTarget: true
+    // The bar's own edge already has margins.top/bottom around it; this
+    // is the EXTRA breathing room between the bar and the tooltip beyond
+    // that, asked for directly ("a bit gap") against the flush-against-
+    // the-bar look it had.
+    property int gap: 6
+
     visible: root.target !== null && root.text !== ""
 
     anchor {
         window: root.target ? root.target.QsWindow.window : null
         rect.x: root.target ? root.target.mapToItem(null, 0, 0).x : 0
-        rect.y: root.target ? root.target.height : 0
+        rect.y: root.target ? (root.belowTarget ? root.target.height + root.gap : -root.gap) : 0
         rect.width: root.target ? root.target.width : 0
-        // Centred under the chip, hanging below the bar.
-        edges: Edges.Bottom
-        gravity: Edges.Bottom
+        // Centred under/over the chip depending on belowTarget.
+        edges: root.belowTarget ? Edges.Bottom : Edges.Top
+        gravity: root.belowTarget ? Edges.Bottom : Edges.Top
     }
 
     // ---- CAPPED, AND WRAPPED RATHER THAN LEFT TO GROW ----

@@ -116,7 +116,70 @@ ShellRoot {
             }
         }
     }
-    function refreshWs() { wsProc.running = true; activeWsProc.running = true; }
+    // ---- WHAT'S OPEN, PER WORKSPACE — real now. Was a fixed mock list
+    // (["kitty","firefox","code"]) since the very first pass; asked
+    // directly, three times over, to make it the apps actually open on
+    // the CURRENT workspace. `hyprctl -j clients` gives every window's
+    // class and its workspace id together, so this is one Process rather
+    // than tide-island-fork/qml/island/WindowRingStrip.qml's
+    // Hyprland.toplevels model (that model lives in a different file this
+    // one can't import — see TourPopup.qml's own header on why — and
+    // hyprctl -j is the same real-data pattern demo.wsList/focusedWsId
+    // already use here). `activewindow` in the same call is what makes
+    // `wsActiveIndex` real instead of just "the last one".
+    property var wsApps: []
+    property int wsActiveIndex: -1
+    // WindowRingStrip.qml's own alias table, ported: three of this
+    // user's own scratchpad kitty windows (--class scratch-term1/2,
+    // sum-md) have no desktop entry and no icon of that name — they ARE
+    // kitty, verified by that file's own comment reading `comm` off each
+    // window's pid.
+    readonly property var appIdAliases: ({
+        "scratch-term1": "kitty",
+        "scratch-term2": "kitty",
+        "sum-md": "kitty"
+    })
+    Process {
+        id: wsAppsProc
+        command: ["sh", "-c", "hyprctl -j clients; echo '::ACTIVE::'; hyprctl -j activewindow"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const parts = text.split("::ACTIVE::");
+                    const clients = JSON.parse(parts[0]);
+                    const active = parts[1] && parts[1].trim() !== "" ? JSON.parse(parts[1]) : null;
+                    const onWs = clients.filter((c) => c.workspace && c.workspace.id === demo.focusedWsId);
+                    const alias = (cls) => demo.appIdAliases[cls] || demo.appIdAliases[String(cls).toLowerCase()] || cls;
+                    const rawIds = onWs.map((c) => alias(c.class || c.initialClass || ""));
+
+                    // "the opened icons in the bar if the same icon opens
+                    // so put the icon once and write '+then the number'" —
+                    // three kitty windows used to mean three identical
+                    // kitty icons in a row. Grouped by appId instead,
+                    // first-seen order, each group carrying its own count;
+                    // AppFileStack draws the "+N" badge itself when
+                    // count > 1.
+                    const groups = [];
+                    const groupIndexOf = {};
+                    rawIds.forEach((id) => {
+                        if (groupIndexOf[id] === undefined) {
+                            groupIndexOf[id] = groups.length;
+                            groups.push({ appId: id, count: 1 });
+                        } else {
+                            groups[groupIndexOf[id]].count += 1;
+                        }
+                    });
+                    demo.wsApps = groups;
+
+                    const activeRawIndex = active
+                        ? onWs.findIndex((c) => c.address === active.address) : -1;
+                    demo.wsActiveIndex = activeRawIndex >= 0
+                        ? groupIndexOf[rawIds[activeRawIndex]] : -1;
+                } catch (e) { /* keep the last good list */ }
+            }
+        }
+    }
+    function refreshWs() { wsProc.running = true; activeWsProc.running = true; wsAppsProc.running = true; }
 
     // ---- KEYBOARD LAYOUT — real readback, not a hardcoded "EN". Asked
     // for directly ("EN not switching to ar/en/tr"): submaps.conf's own
@@ -276,6 +339,11 @@ ShellRoot {
             return;
         demo.position = p;
         positionFile.setText(p + "\n");
+        // Switching TO bottom while already faded (idle on top) must not
+        // stay faded — the hide timers now refuse to fire in bottom mode,
+        // but that only stops FUTURE fades, not one already in effect.
+        if (p === "bottom")
+            bar.wakeBoth();
     }
 
     // ---- CLOCK — real, ticking every second.
@@ -539,8 +607,17 @@ ShellRoot {
         // 0.78 keeps a hint of transparency; the theme's own tone still
         // reads through faintly, it just isn't fighting the wallpaper's
         // saturation for control of the pixel any more.
-        color: BarTheme.alpha(BarTheme.plate, 0.78)
-        border.width: 1
+        // "the bottom bar make it a full bar bro not sep pills" — qtile's
+        // own bottom bar is ONE opaque bar, not a row of chips (its own
+        // note: "no chips, no plates... a solid background. Reproducing
+        // it with chips would be reproducing the wrong bar"). `barFull`
+        // below IS that one solid background for bottom mode; every
+        // individual Strip going transparent/borderless here is what
+        // stops each cluster ALSO drawing its own pill on top of it —
+        // without this every group still looked like a separate floating
+        // chip sitting on a bar, which is the opposite of "one bar".
+        color: demo.position === "bottom" ? "transparent" : BarTheme.alpha(BarTheme.plate, 0.78)
+        border.width: demo.position === "bottom" ? 0 : 1
         border.color: BarTheme.alpha(BarTheme.accent, 0.3)
 
         // Per-instance opt-out — asked for directly: "when I switch
@@ -751,9 +828,38 @@ ShellRoot {
 
                 IconImage {
                     anchors.centerIn: parent
-                    source: Quickshell.iconPath(modelData, true)
+                    source: Quickshell.iconPath(modelData.appId, true)
                     width: parent.width - Metrics.s(5)
                     height: width
+                }
+
+                // "if the same icon opens so put the icon once and write
+                // '+then the number' ex +3" — three kitty windows on one
+                // workspace used to be three identical kitty icons; now
+                // one icon plus this badge, since demo.wsApps already
+                // groups by appId (see its own Process) and hands each
+                // chip a real count instead of a duplicate entry.
+                Rectangle {
+                    visible: modelData.count > 1
+                    width: countLabel.implicitWidth + Metrics.s(4)
+                    height: countLabel.implicitHeight + Metrics.s(1)
+                    radius: height / 2
+                    color: BarTheme.accent
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.rightMargin: -Metrics.s(2)
+                    anchors.bottomMargin: -Metrics.s(2)
+                    z: 200
+                    Text {
+                        id: countLabel
+                        anchors.centerIn: parent
+                        text: "+" + modelData.count
+                        color: BarTheme.bg
+                        font.family: Metrics.textFamily
+                        font.pixelSize: Metrics.s(7)
+                        font.bold: true
+                        renderType: Text.NativeRendering
+                    }
                 }
             }
         }
@@ -892,9 +998,57 @@ ShellRoot {
         property real leftOpacity: 1
         property real rightOpacity: 1
 
-        Timer { id: leftHideTimer; interval: bar.autoHideMs; onTriggered: bar.leftOpacity = 0 }
-        Timer { id: rightHideTimer; interval: bar.autoHideMs; onTriggered: bar.rightOpacity = 0 }
+        // "make the bottom bar not hide at all" — qtile's own bottom bar
+        // never auto-hides (it's the "normal user" bar: "everything
+        // reachable by pointer", not a minimal strip that gets out of the
+        // way). Guarded here rather than on each opacity binding: every
+        // cluster's opacity already just reads bar.leftOpacity/
+        // rightOpacity, so refusing to let THOSE drop to 0 in bottom mode
+        // covers all of them at once.
+        Timer {
+            id: leftHideTimer
+            interval: bar.autoHideMs
+            onTriggered: if (demo.position !== "bottom") bar.leftOpacity = 0
+        }
+        Timer {
+            id: rightHideTimer
+            interval: bar.autoHideMs
+            onTriggered: if (demo.position !== "bottom") bar.rightOpacity = 0
+        }
         Component.onCompleted: { leftHideTimer.start(); rightHideTimer.start(); }
+
+        // "when the right part is hidden and i click win+` should appear
+        // and show the opening and closing... and then when the req time
+        // finished it disappear as it is" — the hover zone already does
+        // this (leftOpacity/rightOpacity = 1 + stop the hide timer while
+        // the pointer is there); the IPC-driven opens (Win+`/Alt+`,
+        // ati-bar-action) bypassed hover entirely, so opening a box while
+        // auto-hidden opened it invisibly. This is the same wake, called
+        // from those IPC functions instead of a HoverHandler — `restart`,
+        // not `stop`, so it fades back out on its own after the normal
+        // autoHideMs, exactly like hovering-then-leaving does.
+        function wakeRight() {
+            bar.rightOpacity = 1;
+            rightHideTimer.restart();
+        }
+        function wakeBoth() {
+            bar.leftOpacity = 1;
+            bar.rightOpacity = 1;
+            leftHideTimer.restart();
+            rightHideTimer.restart();
+        }
+
+        // THE ONE FULL BAR — bottom mode only. qtile's own bottom bar is
+        // edge-to-edge opaque; this is that background, sitting BEHIND
+        // `content` (declared first, so it paints under everything) and
+        // filling `bar` itself rather than `content`'s inset area, so it
+        // reaches every edge the way qtile's does instead of floating
+        // with the same margins the individual pills use.
+        Rectangle {
+            anchors.fill: parent
+            visible: demo.position === "bottom"
+            color: BarTheme.bg
+        }
 
         Item {
             id: content
@@ -991,6 +1145,7 @@ ShellRoot {
             Tooltip {
                 target: tooltipDelay.running ? null : barTooltip.current
                 text: barTooltip.current ? barTooltip.currentText : ""
+                belowTarget: demo.position === "top"
             }
 
             // ================= LEFT: the Arch logo =================
@@ -1009,7 +1164,12 @@ ShellRoot {
                     // colors.json), so this now actually retints when
                     // the theme does, the same as the clock already did.
                     fg: BarTheme.accent
-                    font.pixelSize: Metrics.s(14)
+                    // "make the bottom bar sizes... same size and space
+                    // like the old qtile bar bottom one" — BottomBar.qml's
+                    // own brand icon is pixelSize 19 (bigger than the top
+                    // bar's 14, since main_icon_chip_nu is a bigger target
+                    // on the "everything reachable by pointer" bar).
+                    font.pixelSize: demo.position === "bottom" ? Metrics.s(19) : Metrics.s(14)
                     // L-click -> the actual menu bound to mod+shift+/
                     // (binds.conf: `ati-bar-action tide toggleMenu`,
                     // which opens the island's own MenuLayer.qml — the
@@ -1032,6 +1192,80 @@ ShellRoot {
                                 Quickshell.execDetached(["kitty"]);
                             else
                                 Quickshell.execDetached(["ati-bar-action", "tide", "toggleMenu"]);
+                        }
+                    }
+                }
+            }
+
+            // ================= LEFT (bottom mode only): the launcher row
+            // — qtile's "normal user" bottom bar's own concept
+            // (BottomBar.qml: "a launcher row... five fixed application
+            // icons, which is what makes it the normal user bar —
+            // everything reachable by pointer"), restyled as Strip/Glyph
+            // pills instead of that bar's bare pipe-separated text on an
+            // opaque background. "i want the bottom bar same concept like
+            // the qtile like one but with the new style" — the CONTENT is
+            // qtile's, the CHROME is this bar's.
+            Strip {
+                id: launcherStrip
+                visible: demo.position === "bottom"
+                anchors.left: brandStrip.right
+                // BottomBar.qml's brand-icon padding (16) plus its "|"
+                // separator's (3) — the gap between the brand icon and
+                // what follows it on that bar.
+                anchors.leftMargin: Metrics.s(16)
+                anchors.verticalCenter: parent.verticalCenter
+                opacity: bar.leftOpacity
+                Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
+
+                Row {
+                    // "same size and space like the old qtile bar bottom
+                    // one" — BottomBar.qml gives each launcher icon
+                    // padding 12 (per side), so ~2x12 between two of them;
+                    // this Row's single `spacing` is the equivalent total
+                    // gap, not a per-side inset, hence 20 rather than 12.
+                    spacing: Metrics.s(20)
+                    anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+
+                    Repeater {
+                        // BottomBar.qml's `launchers`, verbatim codepoints
+                        // and commands.
+                        model: [
+                            { cp: 0xF269,  cmd: "brave",       name: "Brave Browser" },
+                            { cp: 0xF484,  cmd: "qutebrowser", name: "Qutebrowser" },
+                            { cp: 0xEBC4,  cmd: "kitty",       name: "Kitty Terminal" },
+                            { cp: 0xF07B,  cmd: "pcmanfm-qt",  name: "File Manager" },
+                            { cp: 0xF0A1E, cmd: "code",        name: "VS Code" }
+                        ]
+                        delegate: Glyph {
+                            required property var modelData
+                            text: String.fromCodePoint(modelData.cp)
+                            // BottomBar.qml's own launcher pixelSize.
+                            font.pixelSize: Metrics.s(14)
+                            MouseArea {
+                                anchors.fill: parent
+                                anchors.margins: -Metrics.s(5)
+                                hoverEnabled: true
+                                onClicked: Quickshell.execDetached([parent.modelData.cmd])
+                                onEntered: barTooltip.enter(parent, parent.modelData.name)
+                                onExited: barTooltip.exit(parent)
+                            }
+                        }
+                    }
+
+                    Divider {}
+
+                    Glyph {
+                        text: String.fromCodePoint(0xF0E51)   // screenshot_chip_nu
+                        // BottomBar.qml's own screenshot-chip pixelSize.
+                        font.pixelSize: Metrics.s(16)
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -Metrics.s(5)
+                            hoverEnabled: true
+                            onClicked: Quickshell.execDetached(["ati-satty"])
+                            onEntered: barTooltip.enter(parent, "Screenshot area → clipboard")
+                            onExited: barTooltip.exit(parent)
                         }
                     }
                 }
@@ -1063,7 +1297,13 @@ ShellRoot {
                 // floor against the left/brand cluster) the instant
                 // there isn't.
                 x: Math.max(
-                    brandStrip.x + brandStrip.width + Metrics.s(12),
+                    // The launcher row (bottom mode only) extends the left
+                    // cluster's real right edge past brandStrip's own —
+                    // floor against whichever is actually further right,
+                    // or centerStrip would sit UNDER the launcher icons the
+                    // moment the bar drops to the bottom edge.
+                    (launcherStrip.visible ? launcherStrip.x + launcherStrip.width
+                                            : brandStrip.x + brandStrip.width) + Metrics.s(12),
                     Math.min(
                         (content.width - width) / 2,
                         rightRow.x - Metrics.s(12) - width
@@ -1264,15 +1504,14 @@ ShellRoot {
 
                         Divider {}
 
-                        // WHAT'S OPEN — still mock. Making this real needs the
-                        // toplevel/appId model tide-island-fork's own
-                        // WindowRingStrip.qml uses (Hyprland.toplevels + its
-                        // iconFor() alias table) — a real port on its own, not
-                        // done in this pass. Everything above this Divider now
-                        // is real; this row is the one honest gap left.
+                        // WHAT'S OPEN — real now: demo.wsApps/wsActiveIndex,
+                        // the actual windows on the FOCUSED workspace (see
+                        // their own Process above), not the fixed
+                        // ["kitty","firefox","code"] mock this carried
+                        // through every earlier pass.
                         AppFileStack {
-                            appIds: ["kitty", "firefox", "code"]
-                            activeIndex: 2
+                            appIds: demo.wsApps
+                            activeIndex: demo.wsActiveIndex
                         }
 
                         // "a red circle on off till i finish the
@@ -1973,9 +2212,9 @@ ShellRoot {
     // doesn't have as two separate boxes.
     IpcHandler {
         target: "topbar"
-        function toggleNotifCenter(): void { demo.notifCenterOpen = !demo.notifCenterOpen; }
-        function toggleStats(): void { utilStrip.statsOpen = !utilStrip.statsOpen; }
-        function toggleTrayBox(): void { utilStrip.trayOpen = !utilStrip.trayOpen; }
+        function toggleNotifCenter(): void { demo.notifCenterOpen = !demo.notifCenterOpen; bar.wakeRight(); }
+        function toggleStats(): void { utilStrip.statsOpen = !utilStrip.statsOpen; bar.wakeRight(); }
+        function toggleTrayBox(): void { utilStrip.trayOpen = !utilStrip.trayOpen; bar.wakeRight(); }
         // Win+Shift+Z, ported from shell.qml's own `topbar toggle`/`status`.
         function toggle(): void { demo.setPosition(demo.position === "top" ? "bottom" : "top"); }
         function status(): string { return demo.position; }
