@@ -2,8 +2,8 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=rofi_common.sh
-source "$SCRIPT_DIR/rofi_common.sh"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/ati-rofi-common.sh"
 
 require_cmd rofi gawk sed grep flock || exit 1
 load_palette

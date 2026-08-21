@@ -4,14 +4,14 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=rofi_common.sh
-source "$SCRIPT_DIR/rofi_common.sh"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/ati-rofi-common.sh"
 
 require_cmd rofi ps awk || exit 1
 load_palette
 
 ROFI_THEME="$HOME/.config/rofi/themes/kill-large.rasi"
-# $ROFI_RUNTIME_DIR (from rofi_common.sh), not a fixed path in /tmp: these
+# $ROFI_RUNTIME_DIR (from ati-rofi-common.sh), not a fixed path in /tmp: these
 # are shared-namespace files, so on a machine with two accounts whichever
 # one runs this first creates them mode 644 and every subsequent account's
 # write fails with EACCES.

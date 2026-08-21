@@ -2,8 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=rofi_common.sh
-source "$SCRIPT_DIR/rofi_common.sh"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/ati-rofi-common.sh"
 
 # ----------------- User config -----------------
 ANKI_URL="http://127.0.0.1:8765"
@@ -63,7 +63,7 @@ trap cleanup EXIT
 #    "voice_spell":"yes"|"no", "image_url":"https://..."}
 #
 # A FILE, not argv: the card text is arbitrary user input and argv is
-# world-readable through /proc. It is the same reasoning rofi_common.sh
+# world-readable through /proc. It is the same reasoning ati-rofi-common.sh
 # gives for reading a password off rofi's stdout rather than passing it.
 ANSWERS_FILE=""
 if [[ "${1:-}" == "--answers" ]]; then
@@ -142,7 +142,7 @@ generate_main_wav() {
 }
 
 # Ask Gemini for translation + synonyms + examples as one JSON object.
-# The model list and transport now live in rofi_common.sh's gemini(),
+# The model list and transport now live in ati-rofi-common.sh's gemini(),
 # shared with both translators, so there is one place to update when
 # Google retires a model again.
 get_gemini_data() {

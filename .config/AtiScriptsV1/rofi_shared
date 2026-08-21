@@ -4,8 +4,8 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=rofi_common.sh
-source "$SCRIPT_DIR/rofi_common.sh"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/ati-rofi-common.sh"
 
 require_cmd rofi curl grep sed || exit 1
 load_palette
@@ -16,7 +16,7 @@ load_palette
 # one was on the big process-killer theme; then on base.rasi, which skips
 # dtos-center's width and lines and came out wider than rofi_light.
 # Per-user, not a fixed /tmp path — rewritten every run, so a shared path
-# locks every account but the first out of it. See rofi_common.sh.
+# locks every account but the first out of it. See ati-rofi-common.sh.
 ROFI_THEME="$ROFI_RUNTIME_DIR/rofi-shared-theme.rasi"
 cat >"$ROFI_THEME" <<'RASI'
 @import "~/.config/rofi/themes/dtos-center.rasi"

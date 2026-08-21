@@ -28,8 +28,8 @@ set -euo pipefail
 # sourced, so the helper next to it could not be found from anywhere but a
 # direct run -- which also made the conversion logic untestable.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=rofi_common.sh
-source "$SCRIPT_DIR/rofi_common.sh"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/ati-rofi-common.sh"
 
 # pdfinfo was a declared dependency that was never checked, so "Split PDF"
 # reached its page-count call and failed there instead of saying what was
