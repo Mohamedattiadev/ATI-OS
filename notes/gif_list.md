@@ -189,7 +189,7 @@ are worth more than the list was.
 | script | outcome |
 |---|---|
 | `rofi_ilovepdf` | **Wired** to `Super+P , V`, then rebuilt into a 23-action offline PDF toolkit. Four of its original twelve actions did not work. |
-| `rofi_keymaps` | **Wired** into the docs menu, Cheatsheets → "Your own shortcuts". Worth having beside the three hand-written sheets because it is parsed live: `FishCheatsheet.py` never reads `config.fish`, so the 79 functions and aliases actually defined there appeared on no sheet at all. Also lists 91 qtile bindings. |
+| `ati-keymaps` | **Wired** into the docs menu, Cheatsheets → "Your own shortcuts". Worth having beside the three hand-written sheets because it is parsed live: `FishCheatsheet.py` never reads `config.fish`, so the 79 functions and aliases actually defined there appeared on no sheet at all. Also lists 91 qtile bindings. |
 | `collector_app.py` | **Deleted.** It could not run: imported nowhere, the `it.mijorus.collector` flatpak is not installed, and the `_collector` group it parks its window in is not defined in `config.py`. In git history if it is ever wanted. |
 
 Two earlier claims in this file were wrong, and are corrected above and in

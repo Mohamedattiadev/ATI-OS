@@ -24,7 +24,7 @@ import "../common"
 // bar-action's native branch is
 //
 //     "showCheatsheet docs")  run rofi_docs
-//     showCheatsheet*)        run rofi_keymaps
+//     showCheatsheet*)        run ati-keymaps
 //
 // so every sheet key — v, f, k, i — opened one generic rofi keymap list.
 // Under the island you get the vim sheet; under the topbar you got

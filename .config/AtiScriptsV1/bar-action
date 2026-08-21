@@ -218,7 +218,7 @@ case "$key" in
   "showPicker spellcheck")    run dm-spellcheck ;;
   "showPicker record")        run dm-recordV2 ;;
   "showPicker screenshot")    run dm-satty ;;
-  "showPicker keymaps")       run rofi_keymaps ;;
+  "showPicker keymaps")       run ati-keymaps ;;
   # Added when the qtile session's chord was moved onto bar-action. Both
   # menus exist on both sides — island-picker.py's MENUS has `man` and
   # `youtube`, and the dm-* scripts are what qtile's chord already spawned —
