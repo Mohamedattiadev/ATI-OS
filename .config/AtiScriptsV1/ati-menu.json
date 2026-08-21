@@ -15,16 +15,16 @@
   "docs.maintenance": {"icon": "󰃢", "label": "Maintenance", "action": "ati-docs maintenance"},
 
   "install": {"icon": "󰉉", "label": "Install"},
-  "install.docker": {"icon": "󰏓", "label": "Docker", "disabled": "pacman -Qi docker >/dev/null 2>&1", "action": "dcli install docker", "terminal": true},
-  "install.gimp": {"icon": "󰏓", "label": "GIMP", "disabled": "pacman -Qi gimp >/dev/null 2>&1", "action": "dcli install gimp", "terminal": true},
+  "install.docker": {"icon": "󰏓", "label": "Docker", "disabled": "pacman -Qi docker >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli install docker'"},
+  "install.gimp": {"icon": "󰏓", "label": "GIMP", "disabled": "pacman -Qi gimp >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli install gimp'"},
 
   "remove": {"icon": "󰭌", "label": "Remove"},
-  "remove.docker": {"icon": "󰏓", "label": "Docker", "when": "pacman -Qi docker >/dev/null 2>&1", "action": "dcli remove docker", "terminal": true},
-  "remove.gimp": {"icon": "󰏓", "label": "GIMP", "when": "pacman -Qi gimp >/dev/null 2>&1", "action": "dcli remove gimp", "terminal": true},
+  "remove.docker": {"icon": "󰏓", "label": "Docker", "when": "pacman -Qi docker >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli remove docker'"},
+  "remove.gimp": {"icon": "󰏓", "label": "GIMP", "when": "pacman -Qi gimp >/dev/null 2>&1", "action": "ati-run-in-terminal 'dcli remove gimp'"},
 
   "update": {"icon": "󰚰", "label": "Update"},
-  "update.dotfiles-check": {"icon": "󰈞", "label": "Check for dotfiles updates", "action": "ati-update --check", "terminal": true},
-  "update.dotfiles-apply": {"icon": "󰚰", "label": "Pull & apply dotfiles", "action": "ati-update", "terminal": true},
+  "update.dotfiles-check": {"icon": "󰈞", "label": "Check for dotfiles updates", "action": "ati-run-in-terminal 'ati-update --check'"},
+  "update.dotfiles-apply": {"icon": "󰚰", "label": "Pull & apply dotfiles", "action": "ati-run-in-terminal ati-update"},
 
   "trigger": {"icon": "󱓞", "label": "Trigger"},
   "trigger.screenshot": {"icon": "󰄀", "label": "Screenshot", "action": "ati-satty"},
