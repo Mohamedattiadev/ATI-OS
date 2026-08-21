@@ -23,12 +23,12 @@
 #
 # THE FIX, AND WHY IT LIVES HERE
 # -------------------------------
-# Every rofi_* picker (rofi_docs, rofi_anki, ati-pass, ...), bar-action's
+# Every rofi_* picker (rofi_docs, rofi_anki, ati-pass, ...), ati-bar-action's
 # two direct `rofi -show ...` calls, and WallpaperPopup.qml's `/` search
 # all invoke the bare `rofi` command — a dozen-plus call sites for one
 # bug. Fixing it once here, as a shim installed to /usr/local/bin ahead of
 # /usr/bin in $PATH (AtiScriptsV1/install.sh does this for every file in
-# this directory, the same way bar-action and rofi_docs already get
+# this directory, the same way ati-bar-action and rofi_docs already get
 # there), covers all of them without touching any of the callers.
 #
 # Retries ONLY an exit-0 return that came back suspiciously fast. A real

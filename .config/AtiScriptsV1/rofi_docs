@@ -319,7 +319,7 @@ open_cheatsheet() {
   # this menu answered with the error box below, on the desktop where the
   # logo chip is the most prominent click on the bar.
   #
-  # bar-action already routes `showCheatsheet` to whichever surface the
+  # ati-bar-action already routes `showCheatsheet` to whichever surface the
   # current bar owns — the island's panel under the island, the popups
   # shell's under the topbar — so the Hyprland side is one call. The names
   # line up without translation: cheatsheet.py takes "qtile" as an alias for
@@ -330,7 +330,7 @@ open_cheatsheet() {
   # manager sets and which is absent for a session started any other way —
   # the rule is in hypr/NEXT-SESSION.md and this file serves both sessions.
   if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
-    if bar-action tide showCheatsheet "$1" >/dev/null 2>&1; then
+    if ati-bar-action tide showCheatsheet "$1" >/dev/null 2>&1; then
       LAUNCHED=1
     else
       rofi -e "could not open the $1 cheatsheet"

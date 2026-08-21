@@ -13,7 +13,7 @@ aiming a pointer, and says so rather than pretending to cover more:
   1. THE BAR'S OWN STATE: position top/bottom/toggle and the three widget
      boxes, driven over IPC and read back over IPC.
 
-  2. EVERY ACTION bar-action CAN TAKE. That table is the topbar's action
+  2. EVERY ACTION ati-bar-action CAN TAKE. That table is the topbar's action
      surface — every chip and every key under this bar ends up in it — and
      its failure mode is a command that is not there. That is not
      hypothetical: `display-ctl.py --menu` was dead code guarding an
@@ -35,7 +35,7 @@ import time
 HOME = os.path.expanduser("~")
 TOPBAR = f"{HOME}/.config/quickshell/topbar"
 POPUPS = f"{HOME}/.config/quickshell/tide-island-fork/popups.qml"
-BAR_ACTION = f"{HOME}/.config/AtiScriptsV1/bar-action"
+BAR_ACTION = f"{HOME}/.config/AtiScriptsV1/ati-bar-action"
 
 
 def ipc(path, target, *args):
@@ -93,7 +93,7 @@ def sweep_bar_state():
 
 
 def bar_action_commands():
-    """Every command the native branch of bar-action can run.
+    """Every command the native branch of ati-bar-action can run.
 
     Parsed out of the script rather than duplicated here: a copy would drift
     the first time a row is added, and the whole point is to catch a row that
@@ -131,7 +131,7 @@ def first_word(rest):
 
 
 def sweep_actions():
-    print("\n-- every action bar-action can take (native branch) --")
+    print("\n-- every action ati-bar-action can take (native branch) --")
     passed = failed = 0
     popup_names = set()
 

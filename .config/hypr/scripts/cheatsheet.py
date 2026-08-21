@@ -107,9 +107,9 @@ def island_call(arg):
     TWO SPELLINGS REACH THE SAME IPC, and only one of them was recognised.
 
         qs -p <fork> ipc call tide showPicker anki
-        bar-action           tide showPicker anki
+        ati-bar-action           tide showPicker anki
 
-    `bar-action` is the WRAPPER that picks between the island's IPC and the
+    `ati-bar-action` is the WRAPPER that picks between the island's IPC and the
     rofi twin depending on which bar is up, and every bind in the rofi submap
     goes through it. A labeller that reduces an exec to its PROGRAM therefore
     collapsed twenty-six different keys to the wrapper's own name -- the whole
@@ -125,9 +125,9 @@ def island_call(arg):
     words = arg.split()
     for index, word in enumerate(words):
         # By BASENAME and by whole argument, not by substring: a path to the
-        # script and a bare `bar-action` are the same command, and a window
+        # script and a bare `ati-bar-action` are the same command, and a window
         # title that happens to contain the word is not.
-        if os.path.basename(word) == "bar-action":
+        if os.path.basename(word) == "ati-bar-action":
             return " ".join(words[index + 1:]).strip()
     return ""
 
@@ -142,7 +142,7 @@ def describe(entry):
         # end -- "qs -p ... ipc call tide toggleControlCenter" should read as
         # "toggleControlCenter", not as forty characters of socket path.
         #
-        # Deliberately NOT island_call(): a `bar-action` line is already short
+        # Deliberately NOT island_call(): a `ati-bar-action` line is already short
         # and it is already exact, and the printed sheet wants the command
         # that runs. Calling it "island:" would also be a lie under the topbar,
         # where the same key opens a rofi menu.
@@ -291,16 +291,16 @@ def short_label(entry):
         call = island_call(arg)
         if call:
             # "... ipc call tide toggleWallpaperPicker" -> "wallpaper picker"
-            # "bar-action  tide showPicker anki"        -> "anki"
-            # "bar-action  bar  systemBox"              -> "system box"
-            # "bar-action  overview toggle"             -> "overview"
-            # "bar-action  tide showOnboarding 0"       -> "onboarding"
+            # "ati-bar-action  tide showPicker anki"        -> "anki"
+            # "ati-bar-action  bar  systemBox"              -> "system box"
+            # "ati-bar-action  overview toggle"             -> "overview"
+            # "ati-bar-action  tide showOnboarding 0"       -> "onboarding"
             #
             # No table: a function that takes a NAME is named by it (showPicker
             # is one function covering fourteen menus, and they differ nowhere
             # else), a function that takes none is named by itself, and the
             # TARGET is the last resort for the two whose function is a bare
-            # verb. `bar-action`'s own case statement stays the authority for
+            # verb. `ati-bar-action`'s own case statement stays the authority for
             # what each of these DOES; this only has to tell them apart.
             parts = call.split()
             target = parts[0] if parts else ""
@@ -750,7 +750,7 @@ def submap_keys_from_qtile(name):
                 # Through the SAME prettifier the Hyprland HUD uses, so one
                 # chord key reads identically in both sessions. It matters
                 # here for the same reason it mattered there: qtile spawns
-                # `bar-action tide <function>` too, and the raw string is the
+                # `ati-bar-action tide <function>` too, and the raw string is the
                 # wrapper's name plus a function nobody typed.
                 action = short_label({"dispatcher": "exec", "arg": arg})
             elif cmd == "function":

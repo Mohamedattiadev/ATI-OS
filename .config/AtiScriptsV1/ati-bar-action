@@ -1,0 +1,332 @@
+#!/usr/bin/env bash
+# ati-bar-action <target> <function> [arg]
+#
+# One keybinding, two answers, decided by which bar the desktop is wearing.
+#
+#     island mode  ->  qs -p <fork> ipc call <target> <function> [arg]
+#     native mode  ->  the rofi menu or script that does the same job
+#
+# Called with EXACTLY the arguments `qs ipc call` takes, so a binding reads the
+# same as it did before:
+#
+#     bind = $mod, D, exec, ati-bar-action tide toggleApplicationLauncher
+#     bind = , V,     exec, ati-bar-action tide showPicker clipboard
+#
+# WHY THIS HAS TO EXIST
+# ---------------------
+# Asked for directly: "if the topbar is the qtile one the keymaps should open
+# the rofi, and if the island so it will open the island popup".
+#
+# It is not only a preference. bar-switch STOPS one bar to start the other, so
+# in native mode there is no island process at all — and `qs ipc call` against
+# a config with no running instance EXITS 0 having done nothing. Every island
+# binding in the Hyprland session was therefore a dead key the moment the
+# topbar was switched on, silently, with no error and no window. That is the
+# same failure mode the topbar's own chips had before they were moved to rofi.
+#
+# WHY A TABLE AND NOT A NAMING CONVENTION
+# ---------------------------------------
+# The two sides do not correspond one-to-one. The island's `showPicker
+# processes` is ati-kill; its `showPicker brightness` is rofi_light; its
+# power menu is dm-logout. Deriving a script name from an IPC function name
+# would be wrong for most of them, and wrong SILENTLY, because a missing
+# script and a working one both exit without saying much.
+#
+# Anything with no rofi counterpart says so rather than doing nothing — see
+# the fallback at the bottom. A key that reports "island only" is debuggable;
+# a key that does nothing is not.
+
+set -euo pipefail
+
+FORK_DIR="${TIDE_ISLAND_FORK_DIR:-$HOME/.config/quickshell/tide-island-fork}"
+STATE_FILE="$HOME/.cache/bar-mode"
+SCRIPTS_DIR="$HOME/.config/AtiScriptsV1"
+HYPR_SCRIPTS="$HOME/.config/hypr/scripts"
+
+[[ $# -ge 2 ]] || { echo "usage: ati-bar-action <target> <function> [arg]" >&2; exit 2; }
+
+target="$1"; func="$2"; arg="${3:-}"
+
+read_mode() {
+  local m=""
+  [[ -r "$STATE_FILE" ]] && m="$(<"$STATE_FILE")"
+  m="${m//[[:space:]]/}"
+  # Default ISLAND, matching bar-switch's DEFAULT_MODE. On a machine that has
+  # never switched, the Hyprland session has always had the island.
+  case "$m" in native) echo native ;; *) echo island ;; esac
+}
+
+run() { setsid -f "$@" >/dev/null 2>&1 || true; }
+
+# The popups shell. Its own instance, addressed by ENTRY FILE rather than by
+# directory: it is a second entry point into the island's config so that it can
+# reach IslandTheme, and `qs -p` keys an instance by the path it was given.
+POPUPS_ENTRY="$HOME/.config/quickshell/tide-island-fork/popups.qml"
+
+# ---------------------------------------------------------------------------
+#  SELF-HEALING: this instance can die with no crash and no trace
+# ---------------------------------------------------------------------------
+# Found live: `qs -p "$POPUPS_ENTRY" ipc call ...` returning 255, "No running
+# instances", with 38 DEAD instance ids already piled up under
+# ~/.cache/quickshell (by-id/*/log.qslog) and the process from this session's
+# own `pgrep` output simply gone — no coredump (`coredumpctl list` had
+# nothing for qs/quickshell), nothing in the journal. It does not crash
+# loudly, it is just not there any more. Reported as "the rofi/media/island
+# popups do not open" — every panel this file opens in native mode
+# (wifi, bluetooth, audio, wallpaper, display, wifi-qr, cheatsheet) goes
+# through `qs -p ... ipc call`, and `|| true` on that call means a dead
+# instance fails EXACTLY as silently as a working one that decided to show
+# nothing — no error ever reached the user, on any of these keys, for as
+# long as the instance stayed dead.
+#
+# topbar.sh already starts this instance once, at bar-switch/session start,
+# with the same `-p <path>` argv match `entry_running()` uses there — but
+# only there. Nothing after that ever checks it is still alive. This is
+# that check, run before every popup call instead of only at startup, so a
+# death mid-session gets a respawn instead of a silent no-op for the rest
+# of the session.
+popup_running() {
+  ps -eo args= | awk -v want="$POPUPS_ENTRY" \
+    '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { found = 1 } }
+     END { exit !found }'
+}
+
+ensure_popups() {
+  popup_running && return 0
+  setsid -f quickshell -p "$POPUPS_ENTRY" >/dev/null 2>&1 || true
+  # Give the QML compile a moment before the IPC call that follows — a call
+  # made before the instance is registered fails exactly like a dead one.
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    popup_running && return 0
+    sleep 0.1
+  done
+}
+
+# qsipc, not qs, when it is there. Same `-p <path> ipc call <target>
+# <function> [args...]` argv shape as qs (qsipc's own header explains
+# why — cheatsheet.py's labeller pattern-matches " ipc call " in a bind's
+# exec string, so keeping the text identical means every call site below
+# is a pure binary-name swap, nothing downstream needs to change), 40ms ->
+# 15ms measured because it links Qt6Core + Qt6Network alone instead of
+# running the full quickshell binary /usr/bin/qs is symlinked to.
+# Resolved once, not per call site, so there is one place to ask rather
+# than four `command -v` checks. Falls back to `qs` if qsipc is not
+# installed — a fresh machine before AtiScriptsV1/install.sh's build step
+# has run, or one missing g++/Qt6 dev files, see that script's own note.
+IPC_BIN=qs
+command -v qsipc >/dev/null 2>&1 && IPC_BIN=qsipc
+
+run_popup() {
+  ensure_popups
+  setsid -f "$IPC_BIN" -p "$POPUPS_ENTRY" ipc call popups "$1" >/dev/null 2>&1 || true
+}
+# Same as run_popup, for the one IPC that takes an argument — the cheatsheet
+# needs to know WHICH sheet, and dropping the argument is how every sheet key
+# ends up opening the same one.
+run_popup_arg() {
+  ensure_popups
+  setsid -f "$IPC_BIN" -p "$POPUPS_ENTRY" ipc call popups "$1" "$2" >/dev/null 2>&1 || true
+}
+run_sh() { setsid -f sh -c "$1" >/dev/null 2>&1 || true; }
+
+island() {
+  exec "$IPC_BIN" -p "$FORK_DIR" ipc call "$target" "$func" ${arg:+"$arg"}
+}
+
+# ---------------------------------------------------------------------------
+#  target `bar` — the keys that address the BAR ITSELF
+# ---------------------------------------------------------------------------
+#
+# Every other target here names an island IPC and asks what the rofi
+# equivalent is. These three are the other shape: they name a qtile WIDGET
+# BOX, and the two sides are genuinely different features rather than two
+# renderings of one.
+#
+#     $alt `     systemBox    qtile: CPU + memory      island: notifications
+#     $mod `     secondBox    qtile: updates/disk/vol  island: system monitor
+#     $alt Tab   trayBox      qtile: the system tray   island: —
+#
+# The island bindings are the ones binds.conf already had on those keys and
+# documents at length; they are not changed, only moved behind the same switch
+# as everything else. What is new is the native side, which until now was the
+# island's answer on a key whose bar has no such panel — reported as "win+`
+# and alt+` should behave like qtile's, toggle opening the chip and closing".
+#
+# Keyed on the BOX and not on an island function name, because two of those
+# island functions are bound to other keys as well ($mod SHIFT N is also the
+# notification centre), and routing on the function would have changed what
+# those keys do too.
+if [[ "$target" == bar ]]; then
+  topbar_call() {
+    exec "$IPC_BIN" -p "$HOME/.config/quickshell/topbar" ipc call topbar "$1"
+  }
+  case "$(read_mode)/$func" in
+    island/systemBox)  target=tide; func=toggleNotificationCenter; arg=""; island ;;
+    island/secondBox)  target=tide; func=toggleSysmon;             arg=""; island ;;
+    island/trayBox)
+      # No counterpart, and saying so is the point — the island has no tray
+      # widget to open. A key that silently does nothing is exactly what this
+      # script exists to stop.
+      notify-send -u low "ati-bar-action" \
+        "the tray box is the topbar's; switch bars with \$mod SHIFT P" 2>/dev/null || true
+      exit 0 ;;
+    native/systemBox)  topbar_call toggleSystemBox ;;
+    native/secondBox)  topbar_call toggleSecondBox ;;
+    native/trayBox)    topbar_call toggleTrayBox ;;
+    *)
+      echo "ati-bar-action: unknown box \"$func\"" >&2
+      exit 2 ;;
+  esac
+fi
+
+[[ "$(read_mode)" == island ]] && island
+
+# ---------------------------------------------------------------------------
+#  native — the qtile-style topbar is up, so the qtile-style menus answer
+# ---------------------------------------------------------------------------
+#
+# Keyed on "<function> <arg>" where an arg exists, because showPicker is one
+# function covering fourteen different menus.
+key="$func"
+[[ -n "$arg" ]] && key="$func $arg"
+
+case "$key" in
+  # ---- launchers and menus ----
+  toggleApplicationLauncher)  run rofi -show drun -show-icons ;;
+  togglePowerMenu)            run dm-logout ;;
+  # NOT ati_palette.py — that is a colour-role LIBRARY (load(), imported
+  # by the translator/dm-spellcheck for their own pango tables), not an
+  # entry point: no __main__, no rofi invocation, nothing to show. Calling
+  # it directly exits 0 having drawn nothing, which is exactly the silent
+  # "Win+P, C does nothing under qtile's own bar" this was reported as.
+  # theme-toggle is the real rofi theme picker — same script SHIFT+C in
+  # this chord already spawns directly in config.py, confirmed working.
+  toggleThemePicker)          run theme-toggle ;;
+
+  # ---- the picker's menus, one rofi script each ----
+  "showPicker clipboard")     run ati-copyq-rofi ;;
+  "showPicker anki")          run rofi_anki ;;
+  "showPicker documents")     run rofi_docs ;;
+  "showPicker translate")     run rofi_translator ;;
+  "showPicker confedit")      run dm-confedit ;;
+  "showPicker pass")          run ati-pass ;;
+  "showPicker notes")         run rofi_todo ;;
+  "showPicker todo")          run rofi_todo ;;
+  "showPicker processes")     run ati-kill ;;
+  "showPicker brightness")    run rofi_light ;;
+  "showPicker ilovepdf")      run ati-ilovepdf ;;
+  "showPicker spellcheck")    run dm-spellcheck ;;
+  "showPicker record")        run ati-record ;;
+  "showPicker screenshot")    run ati-satty ;;
+  "showPicker keymaps")       run ati-keymaps ;;
+  # Added when the qtile session's chord was moved onto ati-bar-action. Both
+  # menus exist on both sides — island-picker.py's MENUS has `man` and
+  # `youtube`, and the dm-* scripts are what qtile's chord already spawned —
+  # so leaving them out of this table would have made the native half of two
+  # working keys fall through to the "island-only" notification below.
+  "showPicker man")           run dm-man -r ;;
+  "showPicker youtube")       run dm-youtube -r ;;
+  # The bar chooser. Its island twin is island-picker.py's `bars` menu, so
+  # this one key asks the question in whichever shell is up.
+  "showPicker bars")          run bar-chooser ;;
+
+  # ---- windows and workspaces: rofi has modes for both ----
+  "showPicker windows")       run rofi -show window -show-icons ;;
+  "showPicker workspaces")    run rofi -show window -show-icons ;;
+
+  # ---- the cheatsheets ----
+  #
+  # Reported: "the cheatsheet of vim and fish — you did not make the same
+  # like in here". The SHEETS were never missing; cheatsheet.py parses them
+  # out of qtile's own VimCheatsheet.py and FishCheatsheet.py and
+  # `--sheet-json` answers for all four (vim 12 sections / 64 rows, fish
+  # 9 / 41, hypr 9 / 215, island 7 / 44). What was missing is this line:
+  # every sheet key fell through to ONE generic rofi keymap list, so under
+  # the island `v` gave you vim and under the topbar it gave you something
+  # else on the same key — the exact substitution this table exists to stop.
+  #
+  # The popups shell hosts the viewer now, and the argument survives, so
+  # `v` opens the vim sheet on both bars.
+  #
+  # `docs` is the one exception, and it is not an oversight in the rule
+  # above — it is a second surface pointing at the same content. topbar's
+  # logo chip already opens `rofi_docs` on left-click (see topbar's own
+  # shell.qml, "ROFI, NOT THE ISLAND'S PANELS"), and that menu's
+  # Documentation/Troubleshooting/Keybindings sections are the native-mode
+  # answer to what the island's "docs" cheatsheet shows. Routing this key
+  # through the popup viewer instead would give the topbar TWO different
+  # docs surfaces on two different triggers — the chip's click and this
+  # chord — asked to stop being two: "make it open the rofi which is in
+  # the windowchip", so the chord now opens exactly what the chip does.
+  "showCheatsheet docs")      run rofi_docs ;;
+  showCheatsheet*)            run_popup_arg cheatsheet "${arg:-hypr}" ;;
+
+  # ---- the three qtile POPUPS ----
+  #
+  # These were a rofi menu, pavucontrol and nm-connection-editor: three
+  # different programs standing in for three surfaces qtile actually has, in
+  # popups/WallpaperPopup.py, AudioPopup.py and WifiPopup.py. They are
+  # reimplemented now, in the shell this desktop already runs — one Quickshell
+  # process holding all three, started beside the topbar by topbar.sh.
+  #
+  # `popups <name>` is a TOGGLE, so the same key closes what it opened, which
+  # is what the chords did: entering a chord you are already in leaves it.
+  toggleWallpaperPicker)      run_popup wallpaper ;;
+  toggleWifiPanel)            run_popup network ;;
+  toggleAudioPanel)           run_popup volume ;;
+
+  # ---- panels that have a real GUI rather than a rofi menu ----
+  # Was blueman-manager, a GTK window standing in for a surface qtile has:
+  # popups/BluetoothPopup.py, whose chord is Rofi-Mode `b` and whose own
+  # header is emphatic that "blueman's window is not involved" — scan, pair,
+  # trust, connect, disconnect and remove all happen in the popup.
+  toggleBluetoothPanel)       run_popup bluetooth ;;
+  toggleSysmon)               run_sh 'env GTK_THEME=Adwaita:dark missioncenter' ;;
+  toggleCalendar)             run clock_popup ;;
+  # Was `display-ctl.py --menu || nwg-displays`, and BOTH halves were dead.
+  # The script has no --menu; it answers `{"ok": false, "status": "unknown
+  # subcommand --menu"}` and EXITS 0, so a command that fails by printing
+  # never reaches the `||`. nwg-displays is not installed either. The island's
+  # own DisplayPanel — itself the port of qtile's DisplayPopup.py — is hosted
+  # in a popup window now, so both bars open the same panel.
+  toggleDisplayPanel)         run_popup display ;;
+  # Was `run wifi-qr.py`, which generated the code correctly and showed
+  # nobody: that script PRINTS JSON and writes a PNG, and the island renders
+  # it in its wifi_qr state. Under the topbar there was no renderer, so the
+  # chip did its whole job invisibly. The popup is the missing half.
+  toggleWifiQr)               run_popup wifiqr ;;
+  # qtile's calculator, because under qtile's bar this is qtile's key.
+  #
+  # It was `rofi -show calc || kitty -e qalc`, and both halves were wrong: the
+  # rofi-calc plugin is absent — /usr/lib/rofi does not exist at all — so it
+  # always fell through to a TERMINAL. rofi-calc was never the target anyway;
+  # config.py's $alt 5 is `dropdown_toggle("calc")` over
+  # `env GTK_THEME=Adwaita:dark qalculate-gtk`.
+  #
+  # Briefly answered with a Quickshell panel over `qalc` instead, on the
+  # argument binds.conf still records — that the GTK_THEME pin is a confession
+  # the app cannot follow theme-apply, so it is the same grey box under all 22
+  # palettes. Asked for directly afterwards: "the calc, you can open the
+  # calculator which is in the config of the qtile, the gtk one". So the
+  # argument stands and the decision does not, which is what this branch is
+  # FOR — the island keeps its own panel on this key, and under the qtile-like
+  # bar the key opens qtile's application, in qtile's scratchpad, at qtile's
+  # geometry.
+  toggleCalculator)           run_sh "$HYPR_SCRIPTS/scratchpad.sh calc env GTK_THEME=Adwaita:dark qalculate-gtk" ;;
+
+  # ---- notifications: dunst serves them while the island is down ----
+  dismissNotification)        run dunstctl close ;;
+  toggleNotificationCenter)   run dunstctl history-pop ;;
+
+  # ---- the tour ----
+  showOnboarding)             run_sh 'eww close onboarding-welcome 2>/dev/null || eww open onboarding-welcome' ;;
+
+  *)
+    # Deliberately loud. These are island-only surfaces with no qtile
+    # counterpart — the control centre, the settings app, focus mode, the
+    # workspace overview — and a key that silently does nothing is exactly
+    # what this script exists to stop happening.
+    notify-send -u low "ati-bar-action" \
+      "\"$key\" is island-only; switch bars with \$mod SHIFT P" 2>/dev/null || true
+    ;;
+esac

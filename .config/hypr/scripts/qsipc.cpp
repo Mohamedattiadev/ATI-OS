@@ -42,7 +42,7 @@
 // Returns every by-id directory whose instance.lock names this config path,
 // newest instance.lock mtime first. NOT deduplicated to one answer here: a
 // dead instance's by-id directory can outlive the process that made it (see
-// AtiScriptsV1/bar-action's own note on this -- 38 stale ids measured piled
+// AtiScriptsV1/ati-bar-action's own note on this -- 38 stale ids measured piled
 // up under ~/.cache/quickshell once), and this machine had exactly that for
 // popups.qml while this file was being tested: two entries, one live. Trying
 // the newest first and falling through on a failed connect (in main(), not
@@ -90,7 +90,7 @@ static QStringList resolveSocketCandidates(const QString& configPathArg) {
 // `arg.split(" ipc call ", 1)`) -- a bind rewritten to drop that text
 // would silently fall back to showing the raw command instead of a real
 // label, the exact class of regression this file's own history already
-// records once for `bar-action` (commit 966673b, "the rofi/chord mode
+// records once for `ati-bar-action` (commit 966673b, "the rofi/chord mode
 // HUD said 'bar action' 26 times"). Keeping `-p <path> ipc call <target>
 // <function> [args...]` means every call site becomes a pure binary-name
 // swap -- `s/^qs /qsipc /` -- with nothing downstream needing to change.

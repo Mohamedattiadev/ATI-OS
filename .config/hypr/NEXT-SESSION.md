@@ -794,7 +794,7 @@ Recordings kept: `~/Pictures/island-debug/`.
     can resolve `-p <path>` to a socket itself, trying every match
     newest-first and falling through on a dead one (this machine had a
     stale `by-id` entry for `popups.qml` while this was being tested — the
-    same class of bug `bar-action`'s self-heal fix exists for).
+    same class of bug `ati-bar-action`'s self-heal fix exists for).
 
     Measured: 37-45 ms (`qs`) vs 14-22 ms (`qsipc`), byte-exact-verified
     against real `qs` on status/void/string-return/argument/error-path
@@ -807,7 +807,7 @@ Recordings kept: `~/Pictures/island-debug/`.
     identical means every call site is a pure binary-name swap, verified
     by reading cheatsheet.py's matcher rather than assumed.
 
-    Rewired: `bar-action` (the dispatcher ~46 binds route through —
+    Rewired: `ati-bar-action` (the dispatcher ~46 binds route through —
     `run_popup`/`run_popup_arg`/`island`/`topbar_call`, one `IPC_BIN`
     resolved once), `submap-indicator.sh` (fires on every submap
     enter/exit — restarted live to pick up the change, verified with a
@@ -872,7 +872,7 @@ systematic sweep (`scripts/test/sweep-island.py`, `sweep-topbar.py` —
 
 * `AtiScriptsV1/bar-switch` — `$mod SHIFT P`, both sessions. Owns the one rule
   that must not break: **no path may leave the session without a bar.**
-* `AtiScriptsV1/bar-action` — keys follow the bar. Under the island a bind
+* `AtiScriptsV1/ati-bar-action` — keys follow the bar. Under the island a bind
   calls island IPC; under the topbar it runs the equivalent rofi menu, script
   or popup. Its `bar` target is the third shape: keys that address the BAR
   itself and mean different things on each ($alt `, $mod `, $alt Tab).
@@ -1052,19 +1052,19 @@ not guessed — start from the measurement, not from the symptom.
 
 * ~~**The Wi-Fi QR chip does nothing.**~~ **FIXED.** The diagnosis was
   right and both callers had it: the chip in `topbar/shell.qml` ran the
-  script directly and so did `bar-action`'s `toggleWifiQr`, and the script
+  script directly and so did `ati-bar-action`'s `toggleWifiQr`, and the script
   is a DATA PRODUCER — it writes `~/.cache/hypr/wifi-qr.png` and prints the
   path. `qml/popups/WifiQrPopup.qml` is the viewer, both callers go through
   `popups wifiqr`, and it was driven by IPC and by a synthesised click on
   the chip.
 * **`$alt 5` (calculator) and `$alt 4` (display) do nothing under the
-  topbar.** Both are bound and both reach `bar-action`; the NATIVE branch is
+  topbar.** Both are bound and both reach `ati-bar-action`; the NATIVE branch is
   what fails, and the display one has a precise cause worth fixing first:
 
       $ python3 scripts/display-ctl.py --menu
       {"ok": false, "status": "unknown subcommand --menu"}   # and EXITS 0
 
-  bar-action's `--menu || nwg-displays` fallback therefore never fires, and
+  ati-bar-action's `--menu || nwg-displays` fallback therefore never fires, and
   `nwg-displays` is not installed either. The calculator's `rofi -show calc`
   needs the rofi-calc plugin, which is not installed — `/usr/lib/rofi/` is
   empty — so it falls through to `kitty -e qalc`, a terminal rather than the

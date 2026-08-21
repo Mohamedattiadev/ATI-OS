@@ -190,7 +190,7 @@ PopupChrome {
     property string pendingOk: ""
 
     // display-ctl EXITS 0 EVEN WHEN IT FAILS — its own header says so, and it
-    // is why bar-action's `--menu || nwg-displays` fallback was dead code.
+    // is why ati-bar-action's `--menu || nwg-displays` fallback was dead code.
     // So the exit status is never consulted here: `ok` in the JSON is the
     // only thing that says whether it worked.
     function ctl(args, busy, ok) {

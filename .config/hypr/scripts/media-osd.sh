@@ -23,7 +23,7 @@
 # ------------
 # The island watches Pipewire itself and draws its own OSD, so raising a
 # notification while it is up would show TWO for one keypress. The bar mode
-# decides, the same way AtiScriptsV1/bar-action decides everything else:
+# decides, the same way AtiScriptsV1/ati-bar-action decides everything else:
 #
 #     island  ->  the island already drew it; do nothing
 #     native  ->  qtile's notification, which IS qtile's OSD
@@ -57,7 +57,7 @@ bar_mode() {
     local m=""
     [[ -r "$MODE_FILE" ]] && m="$(<"$MODE_FILE")"
     m="${m//[[:space:]]/}"
-    # Default ISLAND, matching bar-action and bar-switch: on a machine that
+    # Default ISLAND, matching ati-bar-action and bar-switch: on a machine that
     # has never switched, the Hyprland session has always had the island.
     case "$m" in native) echo native ;; *) echo island ;; esac
 }

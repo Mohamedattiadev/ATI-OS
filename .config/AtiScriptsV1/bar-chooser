@@ -2,7 +2,7 @@
 # bar-chooser — "which shape do you want", in rofi.
 #
 # The ROFI half of the bar chooser. The island half is island-picker.py's
-# `bars` menu, and `bar-action tide showPicker bars` picks between them by the
+# `bars` menu, and `ati-bar-action tide showPicker bars` picks between them by the
 # current mode — so one key gives you the chooser in whichever shell is up.
 #
 # Three shapes, not two, because the qtile-style bar genuinely has two forms:

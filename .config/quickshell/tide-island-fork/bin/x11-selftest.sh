@@ -171,9 +171,9 @@ PY
 # ---------------------------------------------------------------------------
 head_ "keys: island actions qtile can reach"
 # ---------------------------------------------------------------------------
-count=$(grep -c 'bar-action ' "$HOME/.config/qtile/config.py")
-[[ "$count" -ge 35 ]] && ok "$count bar-action bindings wired" \
-                      || bad "bar-action bindings wired" "only $count"
+count=$(grep -c 'ati-bar-action ' "$HOME/.config/qtile/config.py")
+[[ "$count" -ge 35 ]] && ok "$count ati-bar-action bindings wired" \
+                      || bad "ati-bar-action bindings wired" "only $count"
 
 for chord in Rofi-Mode Media-Mode Bluetooth-Mode Wifi-Mode Audio-Mode Display-Mode CheatSheet-Mode; do
   found=$(qeval "str(__import__('sys').modules['config']._find_chord('$chord') is not None)")

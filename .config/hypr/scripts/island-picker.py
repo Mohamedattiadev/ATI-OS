@@ -3302,7 +3302,7 @@ def ilovepdf_run(item_id, text=""):
 #  for the island and as rofi for the qtile".
 #
 #  This is the ISLAND half. The rofi half is AtiScriptsV1/bar-chooser, and
-#  bar-action picks between them by the current mode, so one key gives you the
+#  ati-bar-action picks between them by the current mode, so one key gives you the
 #  chooser in whichever shell is up.
 #
 #  Three shapes, not two, because the qtile-style bar genuinely has two forms:

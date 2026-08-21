@@ -51,7 +51,7 @@ Six commits, each with its own measurement, newest first:
              in git history (`git show 5f50cdc:.config/hypr/PROMPT-NEXT.md`)
              for the full writeup if it's needed again.
     966673b  The rofi/chord mode HUD said "bar action" 26 times — labeller
-             now looks past the `bar-action` wrapper at its arguments.
+             now looks past the `ati-bar-action` wrapper at its arguments.
 
 New test tools, both already in `hypr/scripts/test/`:
 

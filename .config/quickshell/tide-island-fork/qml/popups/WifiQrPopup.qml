@@ -17,7 +17,7 @@ import "../common"
 //      "status": "scan with a phone"}          exit 0
 //
 // It is a DATA PRODUCER. It writes a PNG and prints where it put it, and the
-// island renders that in its `wifi_qr` state. bar-action's native branch ran
+// island renders that in its `wifi_qr` state. ati-bar-action's native branch ran
 // it and threw stdout away, so the whole feature was one missing viewer —
 // the QR was being generated correctly on every press, into a file nobody
 // opened.

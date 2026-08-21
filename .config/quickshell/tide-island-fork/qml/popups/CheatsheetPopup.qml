@@ -20,8 +20,8 @@ import "../common"
 // and `--sheet-json` answers for all four. Measured: vim 12 sections / 64
 // rows, fish 9 / 41, hypr 9 / 215, island 7 / 44.
 //
-// The gap is WHO DRAWS THEM. `$tide = bar-action tide`, and under the topbar
-// bar-action's native branch is
+// The gap is WHO DRAWS THEM. `$tide = ati-bar-action tide`, and under the topbar
+// ati-bar-action's native branch is
 //
 //     "showCheatsheet docs")  run rofi_docs
 //     showCheatsheet*)        run ati-keymaps
@@ -29,7 +29,7 @@ import "../common"
 // so every sheet key — v, f, k, i — opened one generic rofi keymap list.
 // Under the island you get the vim sheet; under the topbar you got
 // something else wearing the same key, which is the exact shape this whole
-// bar-action table exists to stop.
+// ati-bar-action table exists to stop.
 //
 // SO THIS IS THE VIEWER, and the data stays in the script. One `--sheet-json`
 // call per sheet, no second parser, and a row can still be checked by opening

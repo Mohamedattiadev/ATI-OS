@@ -1070,11 +1070,11 @@ def bar_switch_mode():
 
 # ---- THE CHORDS THE ISLAND OWNS WHILE IT IS THE BAR ------------------------
 #
-# bar-action already gives ONE KEY TWO ANSWERS for anything that is a single
+# ati-bar-action already gives ONE KEY TWO ANSWERS for anything that is a single
 # action. These five are the other shape: qtile answers them with a stateful
 # CHORD -- a mode you enter, drive with j/k, and leave -- while the island
 # answers with a self-contained panel that does its own navigation. A chord
-# cannot be "routed" by bar-action, because entering it is a qtile-internal
+# cannot be "routed" by ati-bar-action, because entering it is a qtile-internal
 # transition that never runs a command.
 #
 # Reported as "win+p then b for bluetooth not working, and audio and display
@@ -1115,13 +1115,13 @@ def island_or(action, native):
     fails on the next reload with NameError, i.e. a session with no
     keybindings at all.
 
-    bar-action is the right tool whenever both halves are commands a shell can
+    ati-bar-action is the right tool whenever both halves are commands a shell can
     run. It is the wrong tool for these, for two different reasons:
 
       * qtile's widget boxes and its calculator scratchpad are not commands at
         all -- they are `lazy.widget[...]` / ScratchPad calls inside this
         process, and there is nothing for a script to exec.
-      * bar-action's `bar` target does have a native branch, but it talks to
+      * ati-bar-action's `bar` target does have a native branch, but it talks to
         the HYPRLAND session's Quickshell topbar (`topbar_call`). Routing
         qtile's widget-box keys through it would address a shell that is not
         running in this session and silently do nothing.
@@ -1131,7 +1131,7 @@ def island_or(action, native):
     """
     def _dispatch(qtile):
         if bar_switch_mode() == "island":
-            qtile.spawn("bar-action tide %s" % action)
+            qtile.spawn("ati-bar-action tide %s" % action)
         else:
             native(qtile)
 
@@ -4602,14 +4602,14 @@ def island_shows_chord_legend(chord_name):
     # It fetches its rows from `cheatsheet.py --submap-json <name>`, which now
     # answers for qtile's chords too -- so the name passed here is qtile's own
     # chord name and there is no translation table to drift.
-    qtile.spawn(["bar-action", "tide", "showModeKeys", chord_name])
+    qtile.spawn(["ati-bar-action", "tide", "showModeKeys", chord_name])
 
 
 @hook.subscribe.leave_chord
 def island_clears_chord_legend():
     if bar_switch_mode() != "island":
         return
-    qtile.spawn(["bar-action", "tide", "clearModeKeys"])
+    qtile.spawn(["ati-bar-action", "tide", "clearModeKeys"])
 
 
 @hook.subscribe.enter_chord
@@ -4638,7 +4638,7 @@ def island_takes_over_chord(chord_name):
     def _hand_over():
         if getattr(qtile, "chord_stack", None):
             qtile.ungrab_chord()
-        qtile.spawn("bar-action tide %s" % action)
+        qtile.spawn("ati-bar-action tide %s" % action)
 
     qtile.call_later(0, _hand_over)
 
@@ -7385,7 +7385,7 @@ keys = [
     #
     # THE PARITY GAP THIS CLOSES. binds.conf has had
     #
-    #     bind = $mod SHIFT, Y, exec, bar-action tide showPicker bars
+    #     bind = $mod SHIFT, Y, exec, ati-bar-action tide showPicker bars
     #
     # since the bar-switch work, and qtile had no counterpart -- confirmed
     # against the RUNNING qtile, not just by grepping this file: the live key
@@ -7398,43 +7398,43 @@ keys = [
     # topbar-top, topbar-bottom) and a two-way toggle cannot reach the third;
     # the picker lists all of them and marks which is current.
     #
-    # Same command as Hyprland's, deliberately. bar-action routes `showPicker
+    # Same command as Hyprland's, deliberately. ati-bar-action routes `showPicker
     # bars` to island-picker.py's `bars` page while the island is up and to
     # bar-chooser while the topbar is, so one binding is correct under either
     # bar -- verified working under qtile with the island running.
     Key(
         [mod, "shift"],
         "y",
-        lazy.spawn("bar-action tide showPicker bars"),
+        lazy.spawn("ati-bar-action tide showPicker bars"),
         desc="Bar: pick one (island / topbar top / topbar bottom)",
     ),
     # ---- THE ISLAND SURFACES QTILE HAD NO KEY FOR AT ALL ----
     #
     # Audited against the Hyprland session rather than guessed: every
-    # `bar-action` bind in hypr/binds.conf and hypr/submaps.conf was compared
+    # `ati-bar-action` bind in hypr/binds.conf and hypr/submaps.conf was compared
     # with this file, and 29 of 47 island actions had no qtile binding. These
     # are the ones with no qtile counterpart to shadow -- the island's own
-    # surfaces -- so they are plain bar-action keys.
+    # surfaces -- so they are plain ati-bar-action keys.
     #
     # SAME KEYS AS HYPRLAND, deliberately. Parity across the two sessions is
     # the whole point of bar-switch, and a key that means one thing in one
     # session and another in the other is worse than no key. Every one was
     # checked free in this config first.
     #
-    # In native mode bar-action answers each of these with its rofi twin where
+    # In native mode ati-bar-action answers each of these with its rofi twin where
     # one exists, and otherwise says "island-only" out loud rather than doing
     # nothing -- see its fallback.
-    Key([mod, "shift"], "a", lazy.spawn("bar-action tide toggleControlCenter"),
+    Key([mod, "shift"], "a", lazy.spawn("ati-bar-action tide toggleControlCenter"),
         desc="Island: control centre"),
-    Key([mod, "shift"], "n", lazy.spawn("bar-action tide toggleNotificationCenter"),
+    Key([mod, "shift"], "n", lazy.spawn("ati-bar-action tide toggleNotificationCenter"),
         desc="Island: notification centre"),
-    Key([mod2, "shift"], "n", lazy.spawn("bar-action tide toggleFocus"),
+    Key([mod2, "shift"], "n", lazy.spawn("ati-bar-action tide toggleFocus"),
         desc="Island: focus mode"),
-    Key([mod2], "6", lazy.spawn("bar-action tide toggleCalendar"),
+    Key([mod2], "6", lazy.spawn("ati-bar-action tide toggleCalendar"),
         desc="Island: calendar"),
-    Key([mod2], "7", lazy.spawn("bar-action tide toggleSettings"),
+    Key([mod2], "7", lazy.spawn("ati-bar-action tide toggleSettings"),
         desc="Island: settings"),
-    # NOT `bar-action overview toggle`. The island's workspace overview is
+    # NOT `ati-bar-action overview toggle`. The island's workspace overview is
     # built on `Hyprland.monitorFor(screen)` and `ToplevelManager` -- both
     # empty on X11 -- so under qtile it opens a panel with nothing in it.
     # Verified by opening it: a blank dark sheet, no workspaces, no thumbnails.
@@ -7444,31 +7444,31 @@ keys = [
     # The workspaces PICKER answers the same question ("which workspace, and
     # what is on it") and works today, so the key points there rather than at
     # a panel that opens empty. A dead key is the one outcome this whole
-    # bar-action arrangement exists to avoid.
-    Key([mod, "shift"], "grave", lazy.spawn("bar-action tide showPicker workspaces"),
+    # ati-bar-action arrangement exists to avoid.
+    Key([mod, "shift"], "grave", lazy.spawn("ati-bar-action tide showPicker workspaces"),
         desc="Island: workspaces picker (overview is Wayland-only)"),
-    Key([mod, "shift"], "i", lazy.spawn("bar-action tide showOnboarding 0"),
+    Key([mod, "shift"], "i", lazy.spawn("ati-bar-action tide showOnboarding 0"),
         desc="Island: onboarding"),
-    Key([mod, "shift"], "slash", lazy.spawn("bar-action tide showCheatsheet docs"),
+    Key([mod, "shift"], "slash", lazy.spawn("ati-bar-action tide showCheatsheet docs"),
         desc="Island: docs cheatsheet"),
-    Key([mod, "shift"], "b", lazy.spawn("bar-action tide toggleWallpaperPicker"),
+    Key([mod, "shift"], "b", lazy.spawn("ati-bar-action tide toggleWallpaperPicker"),
         desc="Island: wallpaper picker"),
     # ---today & week: plans-todos popup---
     Key(
         [mod2],
         "p",
-        lazy.spawn("bar-action tide toggleCalendar"),
+        lazy.spawn("ati-bar-action tide toggleCalendar"),
         desc="clock popup (today & week: plans-todos)",
     ),
     # ---close notifications---
     Key(
         [mod2],
         "n",
-        lazy.spawn("bar-action tide dismissNotification"),
+        lazy.spawn("ati-bar-action tide dismissNotification"),
         desc="Dismiss the top notification (island or dunst)",
     ),
     # ---copyq clipboard popup---
-    Key([mod2], "v", lazy.spawn("bar-action tide showPicker clipboard"), desc="CopyQ clipboard rofi picker (ctrl+j/k nav, thumbnails)"),
+    Key([mod2], "v", lazy.spawn("ati-bar-action tide showPicker clipboard"), desc="CopyQ clipboard rofi picker (ctrl+j/k nav, thumbnails)"),
     # ---gptscript-inline---
     # FIX:  was working but now not......
     # Key(
@@ -7511,7 +7511,7 @@ keys = [
     Key(
         [mod, "shift"],
         "Return",
-        lazy.spawn("bar-action tide toggleApplicationLauncher"),
+        lazy.spawn("ati-bar-action tide toggleApplicationLauncher"),
         desc="Run Launcher",
     ),
     # ---toggle between layouts---
@@ -7528,7 +7528,7 @@ keys = [
         desc="Restart qtile (preserves window state)",
     ),
     # --- logout menu ---
-    Key([mod, "shift"], "q", lazy.spawn("bar-action tide togglePowerMenu"), desc="Logout menu"),
+    Key([mod, "shift"], "q", lazy.spawn("ati-bar-action tide togglePowerMenu"), desc="Logout menu"),
     # --- theme toggle (doomone <-> pywal) ---
     # Theme picker moved to win+p → c (KeyChord below).
     # Switch between windows
@@ -7647,7 +7647,7 @@ keys = [
             # replaces it: a rofi picker over Vaultwarden (local, on
             # 127.0.0.1:8222) via rbw, so the same vault the Bitwarden
             # phone app syncs from is the one this reads.
-            Key([], "p", lazy.spawn("bar-action tide showPicker pass"), desc="Passwords (Vaultwarden)"),
+            Key([], "p", lazy.spawn("ati-bar-action tide showPicker pass"), desc="Passwords (Vaultwarden)"),
             # Key([], "u", lazy.spawn("dm-music -r"), desc='Toggle music mpc/mpd')
             # Key([], "r", lazy.spawn("dm-record -r"), desc='record'),
             # Key([], "s", lazy.spawn("dm-websearch -r"), desc='Search various engines'),
@@ -7657,12 +7657,12 @@ keys = [
             Key(
                 [],
                 "e",
-                lazy.spawn("bar-action tide showPicker translate"),
+                lazy.spawn("ati-bar-action tide showPicker translate"),
                 desc="Translate text",
             ),
             # --- add anki note ---
             # FIX: this is %50 working
-            Key([], "a", lazy.spawn("bar-action tide showPicker anki"), desc="add anki note"),
+            Key([], "a", lazy.spawn("ati-bar-action tide showPicker anki"), desc="add anki note"),
             # --- Close all notifications ---
             Key(
                 [],
@@ -7671,13 +7671,13 @@ keys = [
                 desc="Close all notifications",
             ),
             # --- List all dmscripts ---
-            Key([], "h", lazy.spawn("bar-action tide showPicker hub"), desc="List all dmscripts"),
+            Key([], "h", lazy.spawn("ati-bar-action tide showPicker hub"), desc="List all dmscripts"),
             # --- Choose a config file to edit ---
             Key(
-                [], "f", lazy.spawn("bar-action tide showPicker confedit"), desc="Choose a config file to edit"
+                [], "f", lazy.spawn("ati-bar-action tide showPicker confedit"), desc="Choose a config file to edit"
             ),
             # --- choose shared link-preview ---
-            Key([], "z", lazy.spawn("bar-action tide showPicker shared"), desc="shared link-preview"),
+            Key([], "z", lazy.spawn("ati-bar-action tide showPicker shared"), desc="shared link-preview"),
             # --- a Special mode for "Wallpaper Picker" ---
             # --- Wallpaper MODE ---
             # w for wallpaper. (Was b, which now opens Bluetooth.)
@@ -7829,7 +7829,7 @@ keys = [
                 desc="WiFi network picker",
             ),
             # --- show documents ---
-            Key([], "d", lazy.spawn("bar-action tide showPicker documents"), desc="Show documents"),
+            Key([], "d", lazy.spawn("ati-bar-action tide showPicker documents"), desc="Show documents"),
             # Theme picker (rofi).
             # PARITY WITH HYPRLAND, WHICH SPLITS THESE TWO DELIBERATELY.
             # submaps.conf binds `c` to the island's theme picker and SHIFT+C
@@ -7845,32 +7845,32 @@ keys = [
             ),
             # The island's list pickers that qtile had no key for. Same keys
             # as hypr/submaps.conf: j workspaces, SHIFT+K windows.
-            Key([], "j", lazy.spawn("bar-action tide showPicker workspaces"),
+            Key([], "j", lazy.spawn("ati-bar-action tide showPicker workspaces"),
                 desc="Workspaces picker"),
             # SHIFT+S, the key hypr/submaps.conf uses. Bare `s` in this chord
             # is already "Search wifi" in both sessions.
-            Key(["shift"], "s", lazy.spawn("bar-action tide toggleWifiQr"),
+            Key(["shift"], "s", lazy.spawn("ati-bar-action tide toggleWifiQr"),
                 desc="WiFi QR code"),
-            Key(["shift"], "k", lazy.spawn("bar-action tide showPicker windows"),
+            Key(["shift"], "k", lazy.spawn("ati-bar-action tide showPicker windows"),
                 desc="Windows picker"),
             Key(
                 [],
                 "c",
-                lazy.spawn("bar-action tide toggleThemePicker"),
+                lazy.spawn("ati-bar-action tide toggleThemePicker"),
                 desc="Theme picker (island / rofi palette)",
             ),
             # --- Take a screenshot v2 of dm-maim ---
             Key(
-                [], "i", lazy.spawn("bar-action tide showPicker screenshot"), desc="Take a screenshot v2 of dm-maim"
+                [], "i", lazy.spawn("ati-bar-action tide showPicker screenshot"), desc="Take a screenshot v2 of dm-maim"
             ),
             # --- Kill processes ---
-            Key([], "k", lazy.spawn("bar-action tide showPicker processes"), desc="Kill processes "),
+            Key([], "k", lazy.spawn("ati-bar-action tide showPicker processes"), desc="Kill processes "),
             # --- View manpages ---
-            Key([], "m", lazy.spawn("bar-action tide showPicker man"), desc="View manpages"),
+            Key([], "m", lazy.spawn("ati-bar-action tide showPicker man"), desc="View manpages"),
             # --- Store and copy notes ---
             # Moved off n (now the WiFi picker) to o -- "nOte". g/j/u/v/y are
             # the other free letters in this chord.
-            Key([], "o", lazy.spawn("bar-action tide showPicker notes"), desc="Store and copy notes"),
+            Key([], "o", lazy.spawn("ati-bar-action tide showPicker notes"), desc="Store and copy notes"),
             # --- rofi password menu ---
             # Removed: a second Key([], "p") in this same chord, so it
             # duplicated the binding above and only one could ever win.
@@ -7882,28 +7882,28 @@ keys = [
             Key(
                 [],
                 "y",
-                lazy.spawn("bar-action tide showPicker youtube"),
+                lazy.spawn("ati-bar-action tide showPicker youtube"),
                 desc="youtube menu",
             ),
             # --- logout menu ---
-            Key([], "q", lazy.spawn("bar-action tide togglePowerMenu"), desc="Logout menu"),
+            Key([], "q", lazy.spawn("ati-bar-action tide togglePowerMenu"), desc="Logout menu"),
             # --- record  Version2 ---
-            Key([], "r", lazy.spawn("bar-action tide showPicker record"), desc="record"),
+            Key([], "r", lazy.spawn("ati-bar-action tide showPicker record"), desc="record"),
             # ---  Spell check menu ---
-            Key([], "s", lazy.spawn("bar-action tide showPicker spellcheck"), desc="Spell check menu"),
+            Key([], "s", lazy.spawn("ati-bar-action tide showPicker spellcheck"), desc="Spell check menu"),
             # --- Search weather ---
             # Disabled: `w` now opens the WiFi picker (chord above).
             # --- Open todo manager ---
-            Key([], "t", lazy.spawn("bar-action tide showPicker todo"), desc="Open todo manager"),
+            Key([], "t", lazy.spawn("ati-bar-action tide showPicker todo"), desc="Open todo manager"),
             # --- screen light ---
-            Key([], "l", lazy.spawn("bar-action tide showPicker brightness"), desc="screen light"),
+            Key([], "l", lazy.spawn("ati-bar-action tide showPicker brightness"), desc="screen light"),
             # --- PDF conversions ---
             # "v" for conVert: p/f/d/c are all taken in this chord, and
             # ati-ilovepdf had no trigger at all -- it was reachable only by
             # typing its name in a shell, despite all six of its dependencies
             # (rofi, libreoffice, imagemagick, ghostscript, poppler, qpdf)
             # being installed.
-            Key([], "v", lazy.spawn("bar-action tide showPicker ilovepdf"), desc="PDF conversions"),
+            Key([], "v", lazy.spawn("ati-bar-action tide showPicker ilovepdf"), desc="PDF conversions"),
             # NOTE:  workspace switching inside the modes ("by using 1,2,3,4,5,6,7,8,9,0")
             *group_keys(),
         ],
