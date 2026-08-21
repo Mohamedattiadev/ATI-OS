@@ -80,6 +80,19 @@ menu_cond() {  # menu_cond <shell-expr> — true (rc 0) if empty or succeeds
   bash -c "$1" >/dev/null 2>&1
 }
 
+# rofi's -p (and -mesg) are pango markup, unlike plain dmenu row text --
+# confirmed directly: `rofi -dmenu -p "A & B"` renders a BLANK prompt, no
+# error, because a bare & is invalid XML. Only the breadcrumb (built from a
+# node's `label` field, which may come from ati-menu-extensions.json, i.e.
+# not fully author-controlled) goes through -p, so only it needs escaping.
+pango_escape() {
+  local s="$1"
+  s="${s//&/&amp;}"
+  s="${s//</&lt;}"
+  s="${s//>/&gt;}"
+  printf '%s' "$s"
+}
+
 # Runs a leaf's action. `terminal: true` routes through run_in_terminal
 # (ati-rofi-common.sh), reusing the --class docs-view float/center
 # convention so qtile's existing _float_and_center_docs hook sizes it the
@@ -151,6 +164,7 @@ while :; do
     breadcrumb="$(menu_field "$current" label)"
     [[ -z "$breadcrumb" ]] && breadcrumb="$current"
   fi
+  breadcrumb="$(pango_escape "$breadcrumb")"
 
   choice="$(rofi -dmenu -i -p "$breadcrumb" -format i -theme-str "$MENU_GEO" \
     -mesg "$(rofi_hint "↵ open" "Esc back")" < "$rows_file")"

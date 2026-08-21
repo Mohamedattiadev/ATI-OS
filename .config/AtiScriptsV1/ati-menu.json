@@ -1,5 +1,16 @@
 {
-  "test": {"icon": "", "label": "Test"},
-  "test.checked-demo": {"icon": "", "label": "Checked demo", "checked": "true", "action": "notify-send 'ati-menu' 'checked-demo fired'"},
-  "test.disabled-demo": {"icon": "", "label": "Disabled demo", "disabled": "true", "action": "notify-send 'ati-menu' 'should never fire'"}
+  "style": {"icon": "󰏘", "label": "Style"},
+  "style.theme": {"icon": "󰸌", "label": "Theme", "action": "ati-theme-toggle"},
+  "style.wallpaper": {"icon": "󰸉", "label": "Wallpaper", "action": "ati-bar-action tide toggleWallpaperPicker"},
+  "style.ui-scale": {"icon": "󰍹", "label": "UI scale", "action": "ui-scale-toggle"},
+
+  "system": {"icon": "󰐥", "label": "System", "action": "ati-logout"},
+
+  "docs": {"icon": "󰈙", "label": "Docs & Maintenance"},
+  "docs.keybindings": {"icon": "󰌌", "label": "Keybindings", "action": "ati-docs keys"},
+  "docs.cheatsheets": {"icon": "󰘳", "label": "Cheatsheets", "action": "ati-docs cheats"},
+  "docs.documentation": {"icon": "󰈙", "label": "Documentation", "action": "ati-docs docs"},
+  "docs.espanso": {"icon": "󰛄", "label": "Espanso", "action": "ati-docs espanso"},
+  "docs.system-info": {"icon": "󰒓", "label": "System info", "action": "ati-docs system"},
+  "docs.maintenance": {"icon": "󰃢", "label": "Maintenance", "action": "ati-docs maintenance"}
 }
