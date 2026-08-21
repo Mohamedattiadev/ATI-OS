@@ -186,18 +186,18 @@ subsystem. Each entry: **symptom → root cause → fix**.
   `gen_qb_css`'s `--accent: {green}`) so qb's native chrome and its
   homepage always agree.
 
-### Concurrent theme-apply races
+### Concurrent ati-theme-apply races
 - **Symptom:** partial consumer writes, half-tinted UI after rapid
   wallpaper switches / keybind spam.
 - **Fix:** `flock -n` on `~/.cache/qtile/.theme-apply.lock`; second
   caller drops silently with a notify-send.
 
-### `theme-apply` fails during install, before you've ever run `startx`
+### `ati-theme-apply` fails during install, before you've ever run `startx`
 - **Symptom:** wizard's `themes` step fails with
   `Failed to show notification: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable`,
   even though `ati-wal-precompile` above it clearly finished (all
   wallpapers processed, report written).
-- **Root cause:** `theme-apply` runs under `set -euo pipefail` and
+- **Root cause:** `ati-theme-apply` runs under `set -euo pipefail` and
   ends with an unconditional `notify-send`. On a bare TTY — which is
   exactly where the installer runs before your first `startx` — there
   is no notification daemon (`dunst`) or D-Bus session for it to talk
