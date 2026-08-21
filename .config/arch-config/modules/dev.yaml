@@ -15,8 +15,7 @@ packages:
   - btop
   - starship
   - zoxide
-  - fnm
-  - pyenv
+  - mise
   - rustup
   - code
   - silicon

@@ -756,12 +756,6 @@ if not string match -q -- $PNPM_HOME $PATH
     set -gx PATH "$PNPM_HOME" $PATH
 end
 
-# fnm (nvm alter)
-# --use-on-cd auto-switches Node per .nvmrc when you cd into a project
-if type -q fnm
-    fnm env --use-on-cd --shell fish | source
-end
-
 # =============================================================================
 # FZF Configuration
 # =============================================================================
@@ -826,12 +820,13 @@ end
 # FZF Configuration END
 # =============================================================================
 
-# pyenv
-set -gx PYENV_ROOT $HOME/.pyenv
-set -gx PATH $PYENV_ROOT/bin $PATH
-
-# Initialize pyenv
-status --is-interactive; and source (pyenv init -|psub)
+# mise — replaces fnm + pyenv (Node/Python/etc via one tool + one
+# .mise.toml/.tool-versions, instead of a separate manager per language).
+# --use-on-cd equivalent is mise's default behavior: it activates a
+# directory's pinned versions automatically on cd, no flag needed.
+if type -q mise
+    mise activate fish | source
+end
 
 #zoxide
 zoxide init fish | source
