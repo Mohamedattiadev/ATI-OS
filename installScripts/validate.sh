@@ -585,13 +585,13 @@ head_ "wizard steps vs docs"
 # `hintium` was added on 2026-08-05 and took the count 46 -> 47, which is
 # why screenshots and notes from 2026-08-03/04 legitimately say 46. Both
 # were right when written. Only a check keeps them right.
-_ws_src="$(sed -n '/^MOD_ORDER=(/,/^)/p' installScripts/wizard.sh)"
+_ws_src="$(sed -n '/^MOD_ORDER=(/,/^)/p' installScripts/install/lib/registry.sh)"
 if [[ -z "$_ws_src" ]]; then
   skip "wizard step count (MOD_ORDER not found)"
 else
   # shellcheck disable=SC1090,SC2154
   eval "$_ws_src"
-  _optin_src="$(grep -E '^OPTIN_MODS=\(' installScripts/wizard.sh)"
+  _optin_src="$(grep -E '^OPTIN_MODS=\(' installScripts/install/lib/registry.sh)"
   eval "$_optin_src"
   _code_ids=()
   for _id in "${MOD_ORDER[@]}"; do
