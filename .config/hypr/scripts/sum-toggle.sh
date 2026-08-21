@@ -68,7 +68,7 @@
 #
 #  ---- THE PULL ----
 #
-#  Every branch that SHOWS the window runs simplenote_push --pull first, to
+#  Every branch that SHOWS the window runs ati-simplenote-push --pull first, to
 #  fetch anything typed on the phone. Backgrounded, never waited on: qtile's
 #  comment records that the script allows itself 15s on a stalled
 #  connection, and its event loop is single-threaded so blocking froze the
@@ -81,7 +81,7 @@ set -euo pipefail
 file="$HOME/$(printf '%s' "${USER:-$LOGNAME}" | tr '[:lower:]' '[:upper:]')TODOS/TODOS.md"
 cls="sum-md"
 stash="special:sum"
-pull="$HOME/.config/AtiScriptsV1/simplenote_push"
+pull="$HOME/.config/AtiScriptsV1/ati-simplenote-push"
 
 # 55% x 65%, floors of 600x400 — sum_app.py's FLOAT_W_RATIO / FLOAT_H_RATIO
 # / FLOAT_W_MIN / FLOAT_H_MIN. Resolved against the FOCUSED monitor at press

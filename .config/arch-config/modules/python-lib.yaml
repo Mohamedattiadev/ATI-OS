@@ -21,7 +21,7 @@ packages:
                         # the veil cannot start and Super+Shift+R silently
                         # falls back to a plain restart -- the window pile
                         # comes back and nothing says why.
-  - python-simplenote   # simplenote_push: two-way sync between the Mod+Shift+S
+  - python-simplenote   # ati-simplenote-push: two-way sync between the Mod+Shift+S
                         # TODOS note and the Simplenote phone app (push on :w,
                         # pull when the window opens). Without it the hook logs
                         # an ImportError to ~/.local/state/simplenote-push/ and

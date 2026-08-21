@@ -36,12 +36,12 @@ if sn_target then
       end
       -- detached vim.system(), never :! -- this talks to the network, and a
       -- stalled request must not freeze the editor mid-save.
-      vim.system({ vim.fn.expand("~/.config/AtiScriptsV1/simplenote_push") }, { detach = true })
+      vim.system({ vim.fn.expand("~/.config/AtiScriptsV1/ati-simplenote-push") }, { detach = true })
     end,
     desc = "Mirror TODOS.md into Simplenote",
   })
 
-  -- The other direction. qtile fires `simplenote_push --pull` when the
+  -- The other direction. qtile fires `ati-simplenote-push --pull` when the
   -- Mod+Shift+S window opens, but it cannot block the WM waiting for the
   -- network -- so the pull often lands a second or two AFTER nvim has already
   -- read the file. Without this the phone's edits sit on disk, invisible, until

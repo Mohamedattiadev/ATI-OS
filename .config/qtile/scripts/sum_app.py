@@ -2,7 +2,7 @@ import os
 
 from libqtile.backend.base import FloatStates
 
-SUM_PULL_CMD = os.path.expanduser("~/.config/AtiScriptsV1/simplenote_push") + " --pull"
+SUM_PULL_CMD = os.path.expanduser("~/.config/AtiScriptsV1/ati-simplenote-push") + " --pull"
 
 FLOAT_W_RATIO = 0.55
 FLOAT_H_RATIO = 0.65
@@ -71,7 +71,7 @@ def pull_sum(qtile):
     """Fetch anything typed on the phone before the window comes up.
 
     qtile.spawn(), never a blocking call: qtile's event loop is single-threaded,
-    and simplenote_push allows itself up to 15s on a stalled connection. Waiting
+    and ati-simplenote-push allows itself up to 15s on a stalled connection. Waiting
     for it here would freeze the whole WM -- every key, every redraw -- for that
     long, on a keybind pressed dozens of times a day.
 

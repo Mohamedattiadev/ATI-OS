@@ -3364,7 +3364,7 @@ something the dotfiles should decide.
 
 ### The TODOS note stops reaching the phone
 
-`simplenote_push` mirrors `~/<USER>TODOS/TODOS.md` into a single Simplenote
+`ati-simplenote-push` mirrors `~/<USER>TODOS/TODOS.md` into a single Simplenote
 note on every write (a `BufWritePost` autocmd in
 `nvim/lua/config/autocmds.lua`, so `:w`, `:wa`, `:wq`, `:wqa` and `:x` all
 count). It is **deliberately silent**: it exits 0 on every failure, because a
@@ -3372,7 +3372,7 @@ dropped wifi connection must never break `:w`.
 
 - **Where the failure actually shows up:** `~/.local/state/simplenote-push/push.log`.
   Nothing surfaces inside nvim, by design.
-- **Test by hand:** `~/.config/AtiScriptsV1/simplenote_push` — silence means
+- **Test by hand:** `~/.config/AtiScriptsV1/ati-simplenote-push` — silence means
   it worked.
 
 ### Edits made on the phone do not appear on the PC
@@ -3380,7 +3380,7 @@ dropped wifi connection must never break `:w`.
 - **How the two directions differ:** the desktop pushes on every write
   (`BufWritePost`), but the phone has no way to notify anything — so the
   pull is triggered by **opening the window**. `Mod+Shift+S` runs
-  `simplenote_push --pull` before showing it.
+  `ati-simplenote-push --pull` before showing it.
 - **Why it can take a second:** the pull is fired with `qtile.spawn()` and
   deliberately **not** waited on. qtile's event loop is single-threaded and
   the script allows itself 15s on a stalled connection — blocking would

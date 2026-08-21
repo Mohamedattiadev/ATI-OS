@@ -3,8 +3,8 @@
 
 Two directions, two entry points:
 
-  simplenote_push          push  -- local file wins, run from nvim's BufWritePost
-  simplenote_push --pull   pull  -- remote note wins, run before the window opens
+  ati-simplenote-push          push  -- local file wins, run from nvim's BufWritePost
+  ati-simplenote-push --pull   pull  -- remote note wins, run before the window opens
 
 The state dir keeps `last_sync`, a copy of the content at the moment the two
 sides last agreed. That common ancestor is what makes this safe: it can tell
