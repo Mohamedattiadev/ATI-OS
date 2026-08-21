@@ -39,8 +39,13 @@ source "$SCRIPT_DIR/ati-rofi-common.sh"
 
 MENU_DEFAULT="$SCRIPT_DIR/ati-menu.json"
 MENU_EXT="$SCRIPT_DIR/ati-menu-extensions.json"
-# Wider/taller than ati-docs's DOCS_GEO -- a command tree runs deeper and
-# denser than ati-docs's hand-picked 3-8 row sections.
+# No -theme override: base.rasi itself now carries the QML-matched corner
+# radius/padding ("i want all rofi to be same style of qml"), so every
+# picker in the repo -- this one included -- gets it through the normal
+# @import chain (config.rasi -> current.rasi -> dtos-center.rasi ->
+# base.rasi) with no per-script theme file needed. Wider/taller than
+# ati-docs's DOCS_GEO -- a command tree runs deeper and denser than
+# ati-docs's hand-picked 3-8 row sections.
 MENU_GEO='window { width: 40%; } listview { lines: 10; dynamic: false; }'
 
 MERGED="$(mktemp --suffix=.json)"

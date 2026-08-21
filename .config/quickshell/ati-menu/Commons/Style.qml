@@ -28,7 +28,14 @@ import Quickshell.Io
 QtObject {
   id: root
 
-  property int cornerRadius: 0
+  // ATI-OS: Omarchy's own default is 0 (square), overridden at runtime by
+  // whatever the loaded theme.json's `[decoration] rounding` says -- no
+  // theme config is loaded here, so 0 was the actual effective value,
+  // giving the card sharp corners while every rofi picker in this repo
+  // (base.rasi's own 8-12px radii) and Hyprland's own window rounding
+  // (hypr/looks.conf: `rounding = 10`) are rounded. Matched to that same
+  // 10px so the two surfaces read as the same visual language.
+  property int cornerRadius: 10
   property int gapsOut: 5
 
   // ---------------------------------------------------------- state tokens

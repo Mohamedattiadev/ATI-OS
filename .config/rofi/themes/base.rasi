@@ -41,8 +41,14 @@ window {
     background-color: @background;
     location:         center;
     anchor:           center;
-    padding:          16px;
-    border-radius:    12px;
+    /* Matched to ati-menu's QML engine (Commons/Style.qml: cornerRadius
+     * 10px, matching Hyprland's own `rounding = 10` in hypr/looks.conf;
+     * panelPadding 18px) rather than kept at whatever this had before --
+     * asked for directly, "i want all rofi to be same style of qml". Every
+     * picker in the repo imports this file, so the match is repo-wide with
+     * no per-script theme deltas needed. */
+    padding:          18px;
+    border-radius:    10px;
     border:           1px;
     border-color:     @selected;
 }
