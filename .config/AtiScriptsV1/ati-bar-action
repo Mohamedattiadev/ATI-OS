@@ -226,6 +226,13 @@ case "$key" in
   # working keys fall through to the "island-only" notification below.
   "showPicker man")           run dm-man -r ;;
   "showPicker youtube")       run dm-youtube -r ;;
+  # Bound from both qtile (H/Z in the same chord as the rest of this table)
+  # and Hyprland's submaps.conf, same as every other "showPicker X" entry --
+  # but these two were missing from this case table entirely, so the native
+  # half of both keys fell through to the "island-only" notify below while
+  # the scripts themselves worked fine standalone.
+  "showPicker hub")           run dm-hub -r ;;
+  "showPicker shared")        run rofi_shared ;;
   # The bar chooser. Its island twin is island-picker.py's `bars` menu, so
   # this one key asks the question in whichever shell is up.
   "showPicker bars")          run bar-chooser ;;
