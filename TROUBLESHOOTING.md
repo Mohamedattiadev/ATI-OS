@@ -3298,14 +3298,14 @@ something the dotfiles should decide.
   notifications. Also made an edited watcher script look like it had not
   changed at all, since old copies were still running.
 - **Root cause:** `autostart.sh` runs again on **every qtile restart**,
-  and `keyboard_layout_watcher`, `adhkar` and `battery-events` were
+  and `ati-keyboard-layout-watcher`, `adhkar` and `battery-events` were
   started with no guard — unlike the python daemons directly below them,
   which all use `pgrep … ||`. Every restart therefore left another copy
   running. Three keyboard watchers and six `battery-events` processes
   were live before this was noticed.
 - **Fix:** the same `pgrep -f '<name>$' >/dev/null || <name> &` guard on
   all three.
-- **Check for it:** `pgrep -cf 'keyboard_layout_watcher$'` — anything
+- **Check for it:** `pgrep -cf 'ati-keyboard-layout-watcher$'` — anything
   above 1 means duplicates. Same for any other `while true` script.
 - **Gotcha when editing a watcher:** the running process keeps executing
   the *old* file. Restart it (`pkill -f '<name>$'` then relaunch) or the
@@ -3313,7 +3313,7 @@ something the dotfiles should decide.
   look broken when it was already correct.
 - **Notification dedup:** repeat popups from the same source carry
   `-h string:x-dunst-stack-tag:<tag>` so a new one replaces the previous
-  instead of stacking. Used by `keyboard_layout_watcher`,
+  instead of stacking. Used by `ati-keyboard-layout-watcher`,
   `ati-battery-notify` and `clock_popup`. It only dedups within one sender —
   it cannot save you from duplicate daemons.
 

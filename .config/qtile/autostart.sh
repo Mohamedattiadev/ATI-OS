@@ -182,7 +182,7 @@ lxqt-policykit-agent &
   # protect against is a re-login into an existing session and manual
   # re-runs of this script; both can leave a second copy alive, which is
   # what made one layout switch pop up three notifications at once.
-  pgrep -f 'keyboard_layout_watcher$' >/dev/null || keyboard_layout_watcher &
+  pgrep -f 'ati-keyboard-layout-watcher$' >/dev/null || ati-keyboard-layout-watcher &
   pgrep -f 'adhkar$' >/dev/null || adhkar &
   pgrep -f 'battery-events$' >/dev/null || battery-events &
   pgrep -f 'scripts/qdrop.py$' >/dev/null || python3 ~/.config/qtile/scripts/qdrop.py &
