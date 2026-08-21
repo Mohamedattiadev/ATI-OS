@@ -12,5 +12,13 @@
   "docs.documentation": {"icon": "󰈙", "label": "Documentation", "action": "ati-docs docs"},
   "docs.espanso": {"icon": "󰛄", "label": "Espanso", "action": "ati-docs espanso"},
   "docs.system-info": {"icon": "󰒓", "label": "System info", "action": "ati-docs system"},
-  "docs.maintenance": {"icon": "󰃢", "label": "Maintenance", "action": "ati-docs maintenance"}
+  "docs.maintenance": {"icon": "󰃢", "label": "Maintenance", "action": "ati-docs maintenance"},
+
+  "install": {"icon": "󰉉", "label": "Install"},
+  "install.docker": {"icon": "󰏓", "label": "Docker", "disabled": "pacman -Qi docker >/dev/null 2>&1", "action": "dcli install docker", "terminal": true},
+  "install.gimp": {"icon": "󰏓", "label": "GIMP", "disabled": "pacman -Qi gimp >/dev/null 2>&1", "action": "dcli install gimp", "terminal": true},
+
+  "remove": {"icon": "󰭌", "label": "Remove"},
+  "remove.docker": {"icon": "󰏓", "label": "Docker", "when": "pacman -Qi docker >/dev/null 2>&1", "action": "dcli remove docker", "terminal": true},
+  "remove.gimp": {"icon": "󰏓", "label": "GIMP", "when": "pacman -Qi gimp >/dev/null 2>&1", "action": "dcli remove gimp", "terminal": true}
 }
