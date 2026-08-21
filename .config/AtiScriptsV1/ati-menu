@@ -57,28 +57,52 @@ if ! jq -s '.[0] * .[1]' "$MENU_DEFAULT" "$MENU_EXT" > "$MERGED" 2>/dev/null; th
   exit 1
 fi
 
+# Everything below reads the TREE SHAPE (ids, icons, labels, action
+# strings) from two bash structures loaded with exactly two jq calls
+# total, not one jq call per field per id per draw. That used to be the
+# design -- menu_field() spawned a fresh jq for every icon/label/when/
+# checked/disabled/action lookup -- and it visibly slowed down as the
+# flatten-for-search list grew (28 leaves needed ~2s to render vs ~0.8s
+# at the original 3-entry test tree, timed by how long screenshots
+# needed to wait during testing). The when/checked/disabled *values*
+# still get `bash -c`'d live, every draw, same as always -- only the
+# JSON field lookups themselves are batched, since those can't go stale
+# mid-session the way a shell condition's truth value can.
+mapfile -t ALL_IDS < <(jq -r 'keys[]' "$MERGED")
+
+declare -A MENU_DATA
+while IFS=$'\t' read -r id field value; do
+  MENU_DATA["$id:$field"]="$value"
+done < <(jq -r '
+  to_entries[] | .key as $id | .value as $v
+  | ($v | to_entries[] | "\($id)\t\(.key)\t\(.value)")
+' "$MERGED")
+
 # menu_children <id> — immediate child ids of <id> ("root" = top level), in
-# file order (jq preserves object key order = authoring order).
+# file order (ALL_IDS is jq `keys[]` order = authoring order already).
 menu_children() {
-  local parent="$1"
-  jq -r --arg p "$parent" '
-    to_entries[] | .key as $k
-    | (if $p == "root"
-       then ($k | test("^[^.]+$"))
-       else (($k | startswith($p + ".")) and (($k[($p|length)+1:]) | test("^[^.]+$")))
-       end) as $isChild
-    | select($isChild) | $k
-  ' "$MERGED"
+  local parent="$1" id rest
+  for id in "${ALL_IDS[@]}"; do
+    if [[ "$parent" == "root" ]]; then
+      [[ "$id" != *.* ]] && printf '%s\n' "$id"
+    elif [[ "$id" == "$parent".* ]]; then
+      rest="${id#"$parent".}"
+      [[ "$rest" != *.* ]] && printf '%s\n' "$id"
+    fi
+  done
 }
 
 menu_field() {  # menu_field <id> <field>
-  jq -r --arg id "$1" --arg f "$2" '.[$id][$f] // empty' "$MERGED"
+  printf '%s' "${MENU_DATA["$1:$2"]:-}"
 }
 
 # menu_all_leaves — every id in the tree with a non-empty action, at any
 # depth (a "leaf" per the same has-action inference used everywhere else).
 menu_all_leaves() {
-  jq -r 'to_entries[] | select(.value.action != null and .value.action != "") | .key' "$MERGED"
+  local id
+  for id in "${ALL_IDS[@]}"; do
+    [[ -n "${MENU_DATA["$id:action"]:-}" ]] && printf '%s\n' "$id"
+  done
 }
 
 # menu_breadcrumb_for <id> — "Parent › Grandparent's-parent..." for id's
