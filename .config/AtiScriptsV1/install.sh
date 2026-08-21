@@ -57,4 +57,41 @@ for f in "$SCRIPT_DIR"/*; do
     fi
 done
 
+# Prune dangling symlinks left behind by a rename: the loop above only
+# ever adds/updates a link for a file that currently exists here, so a
+# renamed or deleted script's OLD name stays behind in /usr/local/bin
+# (and ~/.local/bin) forever, pointing at nothing, until something
+# removes it. Scoped to symlinks that point INSIDE this directory, so a
+# rename here can never touch an unrelated dangling link for some other
+# reason (a half-installed package, etc).
+#
+# Canonicalize both sides with readlink -f before comparing, not a plain
+# string prefix match: SCRIPT_DIR resolves differently depending on
+# whether install.sh was invoked through the stow symlink
+# (~/.config/AtiScriptsV1) or the real checkout (~/.dotfiles/.config/
+# AtiScriptsV1) it points at -- same files, two different path strings.
+# readlink -f canonicalizes a dangling symlink's target fine even though
+# the final component doesn't exist, since only that last component is
+# missing; every directory above it is real (the stow symlink itself).
+# A naive prefix match against the un-resolved $SCRIPT_DIR silently
+# missed every link created via the other invocation style -- caught by
+# creating a synthetic dangling link the same way the real stale ones
+# were shaped, and confirming the prune actually fired on it.
+REAL_SCRIPT_DIR="$(readlink -f "$SCRIPT_DIR")"
+for bindir in /usr/local/bin "$HOME/.local/bin"; do
+    [[ -d "$bindir" ]] || continue
+    for link in "$bindir"/*; do
+        [[ -L "$link" ]] || continue
+        real_target="$(readlink -f "$link")"
+        [[ "$real_target" == "$REAL_SCRIPT_DIR"/* ]] || continue
+        [[ -e "$real_target" ]] && continue
+        if [[ -w "$bindir" ]]; then
+            rm -f "$link"
+        else
+            sudo rm -f "$link"
+        fi
+        echo "AtiScriptsV1 → removed stale link $link (target no longer exists: $real_target)"
+    done
+done
+
 echo "AtiScriptsV1 → symlinked to /usr/local/bin (edits in dotfiles apply immediately)."
