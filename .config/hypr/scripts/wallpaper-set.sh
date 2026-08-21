@@ -84,7 +84,7 @@ ln -sfn -- "$img" "$WALL_LINK"
 # looks: there is no wave TO have on X11, but there IS the circular-
 # reveal overlay, and this script was never wired to it. qtile's OWN
 # native-bar wallpaper popup (WallpaperPopup.py) got exactly this fix
-# already this session — same ati-theme-wallpaper bind + theme-animate +
+# already this session — same ati-theme-wallpaper bind + ati-theme-animate +
 # wallpaper-only fast-path marker — and this is the island's mirror of
 # it, so picking a wallpaper from the island under qtile now looks the
 # same as picking one from qtile's own popup, and both now use the same
@@ -96,7 +96,7 @@ ln -sfn -- "$img" "$WALL_LINK"
 #
 # wal mode is also untouched, deliberately: there the wallpaper IS the
 # palette, so wallpaper-sync.sh's instant xwallpaper here plus the
-# existing theme-animate wal call further down (which was ALREADY
+# existing ati-theme-animate wal call further down (which was ALREADY
 # correct — see the "IN wal MODE" block) is the right shape already.
 # Only a NAMED preset can have a wallpaper swap that touches nothing
 # else, which is exactly the case the wallpaper-only fast-path marker
@@ -104,7 +104,7 @@ ln -sfn -- "$img" "$WALL_LINK"
 _early_mode="$(cat "$HOME/.cache/qtile/theme_mode" 2>/dev/null || true)"
 _animated_x11=false
 if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -n "$_early_mode" ] && [ "$_early_mode" != "wal" ] \
-   && command -v ati-theme-wallpaper >/dev/null 2>&1 && command -v theme-animate >/dev/null 2>&1
+   && command -v ati-theme-wallpaper >/dev/null 2>&1 && command -v ati-theme-animate >/dev/null 2>&1
 then
     _animated_x11=true
     ati-theme-wallpaper bind "$_early_mode" "$img" \
@@ -113,9 +113,9 @@ then
     : >"$HOME/.cache/qtile/.wallpaper_only_pending" 2>/dev/null || true
     # Detached: this script's own exit code is what the island's picker
     # reads to report "applied", and the wallpaper genuinely will be —
-    # theme-animate finding no overlay to answer would fall back to a
+    # ati-theme-animate finding no overlay to answer would fall back to a
     # plain, unanimated theme-apply, never to doing nothing.
-    setsid -f theme-animate "$_early_mode" >/dev/null 2>&1 &
+    setsid -f ati-theme-animate "$_early_mode" >/dev/null 2>&1 &
     disown
 else
     # Delegate the actual set, so there is exactly ONE place that knows how
@@ -199,21 +199,21 @@ if [ -r "$MODE_FILE" ] && [ "$(cat "$MODE_FILE" 2>/dev/null)" = "wal" ]; then
     # reads the exit code to decide whether to report "applied", and the
     # wallpaper genuinely was. Loud on stderr, non-fatal to the exit code.
     #
-    # theme-animate rather than theme-apply directly: in wal mode a wallpaper
+    # ati-theme-animate rather than theme-apply directly: in wal mode a wallpaper
     # change IS a theme change, so it should look like one. Asked for in as
     # many words — "when I change the theme and wallpaper I want the same
     # animation of the island" — and this is the second half of it, since the
     # picker only covers the first. It hands the change to whichever shell can
     # draw the circular reveal and falls back to theme-apply when there is
     # none, so the failure branch below still means what it meant.
-    # Guarded for the same reason theme-toggle guards it: theme-animate is a
+    # Guarded for the same reason theme-toggle guards it: ati-theme-animate is a
     # new script and is absent until AtiScriptsV1/install.sh has been re-run.
     # `set -e` is on here, so an unguarded call to a missing command would end
     # this script — after the wallpaper was already applied and recorded, i.e.
     # at exactly the point where the caller reads the exit code to decide
     # whether to say "applied".
-    if command -v theme-animate >/dev/null 2>&1; then
-        theme_cmd=theme-animate
+    if command -v ati-theme-animate >/dev/null 2>&1; then
+        theme_cmd=ati-theme-animate
     else
         theme_cmd=theme-apply
     fi

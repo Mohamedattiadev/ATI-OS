@@ -199,9 +199,9 @@ case "$key" in
   # entry point: no __main__, no rofi invocation, nothing to show. Calling
   # it directly exits 0 having drawn nothing, which is exactly the silent
   # "Win+P, C does nothing under qtile's own bar" this was reported as.
-  # theme-toggle is the real rofi theme picker — same script SHIFT+C in
+  # ati-theme-toggle is the real rofi theme picker — same script SHIFT+C in
   # this chord already spawns directly in config.py, confirmed working.
-  toggleThemePicker)          run theme-toggle ;;
+  toggleThemePicker)          run ati-theme-toggle ;;
 
   # ---- the picker's menus, one rofi script each ----
   "showPicker clipboard")     run ati-copyq-rofi ;;

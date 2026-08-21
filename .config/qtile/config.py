@@ -7833,14 +7833,14 @@ keys = [
             # Theme picker (rofi).
             # PARITY WITH HYPRLAND, WHICH SPLITS THESE TWO DELIBERATELY.
             # submaps.conf binds `c` to the island's theme picker and SHIFT+C
-            # to `theme-toggle`, and the split is not cosmetic: theme-toggle
+            # to `ati-theme-toggle`, and the split is not cosmetic: ati-theme-toggle
             # is rofi and must keep working with the shell DOWN, which is
             # exactly when it gets reached for. qtile had only the rofi half,
             # on the key Hyprland uses for the island one.
             Key(
                 ["shift"],
                 "c",
-                lazy.spawn("theme-toggle"),
+                lazy.spawn("ati-theme-toggle"),
                 desc="Theme picker (rofi, works with the shell down)",
             ),
             # The island's list pickers that qtile had no key for. Same keys
