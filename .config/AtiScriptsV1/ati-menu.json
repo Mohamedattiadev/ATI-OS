@@ -20,5 +20,9 @@
 
   "remove": {"icon": "󰭌", "label": "Remove"},
   "remove.docker": {"icon": "󰏓", "label": "Docker", "when": "pacman -Qi docker >/dev/null 2>&1", "action": "dcli remove docker", "terminal": true},
-  "remove.gimp": {"icon": "󰏓", "label": "GIMP", "when": "pacman -Qi gimp >/dev/null 2>&1", "action": "dcli remove gimp", "terminal": true}
+  "remove.gimp": {"icon": "󰏓", "label": "GIMP", "when": "pacman -Qi gimp >/dev/null 2>&1", "action": "dcli remove gimp", "terminal": true},
+
+  "update": {"icon": "󰚰", "label": "Update"},
+  "update.dotfiles-check": {"icon": "󰈞", "label": "Check for dotfiles updates", "action": "ati-update --check", "terminal": true},
+  "update.dotfiles-apply": {"icon": "󰚰", "label": "Pull & apply dotfiles", "action": "ati-update", "terminal": true}
 }
