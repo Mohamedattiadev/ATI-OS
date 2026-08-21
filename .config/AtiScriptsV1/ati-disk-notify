@@ -1,5 +1,5 @@
 #!/bin/bash
-# disk_notify -- dunst popup with usage for / and /home (bar chip click).
+# ati-disk-notify -- dunst popup with usage for / and /home (bar chip click).
 #
 # Rendering notes, both easy to regress:
 #

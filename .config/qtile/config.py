@@ -5061,7 +5061,7 @@ def normal_user_bar():
                 show_short_text=False,
                 mouse_callbacks={
                     "Button1": lambda: qtile.spawn(
-                        'battery_notify'
+                        'ati-battery-notify'
                     )
                 },
             ),
@@ -5532,7 +5532,7 @@ def right_side_widgets():
                     fontsize=_s(10),
                     padding=11,
                     foreground=colors[1],
-                    mouse_callbacks={"Button1": lambda: qtile.spawn("disk_notify")},
+                    mouse_callbacks={"Button1": lambda: qtile.spawn("ati-disk-notify")},
                 ),
                 # Volume
                 chip(
@@ -5563,7 +5563,7 @@ def right_side_widgets():
                 show_short_text=False,
                 mouse_callbacks={
                     "Button1": lambda: qtile.spawn(
-                        'battery_notify'
+                        'ati-battery-notify'
                     )
                 },
             ),

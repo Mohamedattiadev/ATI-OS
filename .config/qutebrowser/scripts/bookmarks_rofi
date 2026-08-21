@@ -2,7 +2,7 @@
 # Pick a qutebrowser bookmark in rofi and open it.
 #
 # Colors come from ~/.cache/qtile/current_palette.json (same inline
-# python pattern as battery_notify) -- the hardcoded Dracula hexes this
+# python pattern as ati-battery-notify) -- the hardcoded Dracula hexes this
 # used to carry stayed purple/orange over every gruvbox/wal desktop.
 set -euo pipefail
 

@@ -590,7 +590,7 @@ ShellRoot {
                                 fontPixelSize: Metrics.s(10)
                                 clickable: true
                                 height: parent.height
-                                onClicked: Quickshell.execDetached(["disk_notify"])
+                                onClicked: Quickshell.execDetached(["ati-disk-notify"])
                             }
                             // ---- w_volume IS NOT INERT ----
                             //
@@ -800,7 +800,7 @@ ShellRoot {
                         fontPixelSize: Metrics.s(10)
                         clickable: true
                         height: parent.height
-                        onClicked: Quickshell.execDetached(["battery_notify"])
+                        onClicked: Quickshell.execDetached(["ati-battery-notify"])
                     }
 
                     Chip {

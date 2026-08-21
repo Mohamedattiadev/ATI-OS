@@ -492,7 +492,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 - **Knock-on:** the UI font is now *proportional*, so any notification
   body that aligns columns with padded spaces renders ragged. Wrap just
   that block in `<tt>` (pango monospace) rather than reverting the font —
-  see `disk_notify`. Requires `markup = full`, which is set globally.
+  see `ati-disk-notify`. Requires `markup = full`, which is set globally.
   Fixed-width `-----` separators are fine (they actually stopped wrapping
   onto a second line, since `Sans` is narrower than the old mono face).
 
@@ -1289,7 +1289,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
     compact; the full breakdown is still one click away.
   The click-tooltip (`_disk_parts_text`, wired via
   `_make_tooltip_dynamic`) continues to list every mounted filesystem
-  on hover, and the click handler (`disk_notify`) was rewritten the
+  on hover, and the click handler (`ati-disk-notify`) was rewritten the
   same way: compares `df --output=source` for `/` vs `/home` and
   shows a TOTAL/USED/FREE notification block for both when they're
   separate partitions, or just one block when they're not.
@@ -3314,7 +3314,7 @@ something the dotfiles should decide.
 - **Notification dedup:** repeat popups from the same source carry
   `-h string:x-dunst-stack-tag:<tag>` so a new one replaces the previous
   instead of stacking. Used by `keyboard_layout_watcher`,
-  `battery_notify` and `clock_popup`. It only dedups within one sender —
+  `ati-battery-notify` and `clock_popup`. It only dedups within one sender —
   it cannot save you from duplicate daemons.
 
 ### A stray drag reorders the workspace icons and apps open in the wrong group
@@ -3346,7 +3346,7 @@ something the dotfiles should decide.
 - Was an inline `notify-send "Battery Status" "$(acpi | cut -d, -f2-)"`
   in `config.py`, printing a raw fragment like `" 100%"` — leading space,
   no context, no sense of whether the number is good or bad. Now
-  `AtiScriptsV1/battery_notify`, matching `disk_notify`: percentage, a
+  `AtiScriptsV1/ati-battery-notify`, matching `ati-disk-notify`: percentage, a
   bar coloured by level, charge state and an ETA.
 - **Reads sysfs directly** (`/sys/class/power_supply/BAT*`) instead of
   parsing `acpi(1)` — no extra package, and no locale-dependent text to

@@ -1,12 +1,12 @@
 #!/bin/bash
-# battery_notify -- dunst popup with charge level and state (bar chip click).
+# ati-battery-notify -- dunst popup with charge level and state (bar chip click).
 #
 # Was an inline `notify-send "Battery Status" "$(acpi | cut -d, -f2-)"`
 # in config.py, which printed a raw acpi fragment like " 100%" or
 # " 47%, 01:23:14 remaining" -- leading space, percent with no context,
 # and no indication of whether that number is good or bad.
 #
-# Same conventions as disk_notify: <tt> for the bar (dunst's UI font is
+# Same conventions as ati-disk-notify: <tt> for the bar (dunst's UI font is
 # proportional, so space-padded columns do not align), and colors from
 # ~/.cache/qtile/current_palette.json so it tracks the active theme.
 
