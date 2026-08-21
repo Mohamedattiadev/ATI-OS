@@ -117,7 +117,16 @@ Item {
   property int dividerHeight: Style.space(17)
   property bool searchDivider: false
   property int layoutSerial: 0
-  property int cardWidth: Math.min(root.dmenuActive ? Style.space(root.dmenuWidth) : ((root.activeMenu === "trigger.capture.screenrecord" || root.activeMenu === "style.font") ? Style.space(520) : Style.space(300)), panel.width - Style.gapsOut * 2)
+  // ATI-OS: one fixed width for every level, matching the rofi-based
+  // ati-menu's own `-theme-str 'window { width: 40%; }'` -- not Omarchy's
+  // 300/520 split (a wider card for their own "trigger.capture.screenrecord"/
+  // "style.font" submenus specifically, neither of which exists in this
+  // tree). 40% of the panel (== the full output width; PanelWindow anchors
+  // to all four edges) rather than a fixed Style.space(300) px, so it stays
+  // proportional across different monitor sizes the same way the rofi
+  // geometry did, instead of looking cramped on a small display or tiny on
+  // a large one.
+  property int cardWidth: Math.min(root.dmenuActive ? Style.space(root.dmenuWidth) : Math.round(panel.width * 0.4), panel.width - Style.gapsOut * 2)
   property int visibleRowsHeight: root.dmenuActive ? dmenuRowListHeight(layoutSerial, displayModel.count, filterText) : rowListHeight(layoutSerial, displayModel.count, filterText, searchDivider)
   property int cardHeight: root.dmenuActive
     ? Math.min(contentMargin * 2 + headerHeight + (mode === "input" ? 0 : contentSpacing + visibleRowsHeight), panel.height - Style.gapsOut * 2)
