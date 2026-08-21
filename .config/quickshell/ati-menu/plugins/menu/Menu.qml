@@ -1197,6 +1197,35 @@ Item {
             } else if (root.cursorActive) root.activateIndex(root.selectedIndex)
             else root.settleCursor()
             event.accepted = true
+          // ATI-OS: Ctrl+HJKL vim motion, parallel to the arrow/Enter/
+          // Backspace bindings above rather than replacing them -- same
+          // functions those already call (select()/activateIndex()/
+          // goBack()), not reimplemented copies, so behavior can't drift
+          // between the two input styles. `event.modifiers === Qt.
+          // ControlModifier` (exact match, not `&`) is this file's own
+          // existing convention for a Ctrl-only chord -- see Commons/
+          // Util.qml's editsFilter(), Ctrl+U. Checked before the plain-
+          // character-to-filter branch below, but doesn't actually need to
+          // be: h/j/k/l with Ctrl held never matches that branch's
+          // NoModifier-or-Shift-only guard, so plain h/j/k/l (no modifier)
+          // still types into the search filter exactly as before -- vim
+          // motion is strictly additive, not a takeover of those letters.
+          } else if (event.modifiers === Qt.ControlModifier && event.key === Qt.Key_K) {
+            root.select(-1)
+            event.accepted = true
+          } else if (event.modifiers === Qt.ControlModifier && event.key === Qt.Key_J) {
+            root.select(1)
+            event.accepted = true
+          } else if (event.modifiers === Qt.ControlModifier && event.key === Qt.Key_L) {
+            if (root.dmenuActive) {
+              if (root.mode === "input") root.applyDmenuSelection(root.filterText)
+              else if (displayModel.count > 0) root.activateIndex(root.cursorActive ? root.selectedIndex : 0)
+            } else if (root.cursorActive) root.activateIndex(root.selectedIndex)
+            else root.settleCursor()
+            event.accepted = true
+          } else if (event.modifiers === Qt.ControlModifier && event.key === Qt.Key_H) {
+            root.goBack()
+            event.accepted = true
           } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127 && (event.modifiers === Qt.NoModifier || event.modifiers === Qt.ShiftModifier)) {
             root.setFilter(root.filterText + event.text)
             event.accepted = true
