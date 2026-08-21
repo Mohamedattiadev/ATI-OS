@@ -16,7 +16,7 @@ is: a different program.
 
 WHAT IS NOT HERE, AND WHY
 -------------------------
-This paragraph used to name rofi_anki (373 lines) and rofi_ilovepdf (1267)
+This paragraph used to name rofi_anki (373 lines) and ati-ilovepdf (1267)
 together, on one argument: each is a LINEAR WIZARD over an external service
 where every step's validity depends on the answers before it, so porting
 either would mean "this file growing a second copy of each script's control
@@ -31,7 +31,7 @@ window asked. So the `anki` menu below asks the eight questions and hands
 the answers to `rofi_anki --answers FILE`. There is still exactly one copy
 of the card logic, and the qtile session's rofi path is its default.
 
-rofi_ilovepdf stays, and for a reason this paragraph never gave: it is a
+ati-ilovepdf stays, and for a reason this paragraph never gave: it is a
 file manager with multi-select, and the protocol below carries one id per
 page. See the note above `MENUS`.
 
@@ -2981,7 +2981,7 @@ def hub_run(item_id):
 #  was also the LAST key in the rofi chord still opening rofi, and
 #  submaps.conf said why it was the last:
 #
-#      "V's real reason is that rofi_ilovepdf is a FILE MANAGER ... The
+#      "V's real reason is that ati-ilovepdf is a FILE MANAGER ... The
 #       picker protocol carries exactly one id back per page, so
 #       multi-select cannot be expressed in it at all — porting V means
 #       either building selection state into PickerLayer.qml or shipping a
@@ -2997,7 +2997,7 @@ def hub_run(item_id):
 #
 #  WHAT IS PORTED, AND WHAT IS NOT
 #  -------------------------------
-#  The 1,267-line toolkit is NOT reimplemented. rofi_ilovepdf grew two verbs,
+#  The 1,267-line toolkit is NOT reimplemented. ati-ilovepdf grew two verbs,
 #  `--list-tools` and `--exec`, and everything below drives them: the
 #  conversion logic, the encryption checks, the page-range validation and the
 #  output naming stay in the one place that has always owned them, and the
@@ -3008,7 +3008,7 @@ def hub_run(item_id):
 #  offer a reordering step before a merge. Here the order is the order you
 #  TICK them in, which is the thing that step existed to recover.
 
-_PDF = "rofi_ilovepdf"
+_PDF = "ati-ilovepdf"
 _PDF_STATE = os.path.join(RUNTIME, "island-pdf.json")
 
 
@@ -3074,7 +3074,7 @@ def ilovepdf_list():
     tools = _pdf_tools()
     if not tools:
         return _message("iLovePDF",
-                        "rofi_ilovepdf --list-tools returned nothing. "
+                        "ati-ilovepdf --list-tools returned nothing. "
                         "Check that it is on PATH and that its dependencies "
                         "are installed (it says which).")
     items = []
@@ -3407,7 +3407,7 @@ MENUS = {
 
 #  STILL SPAWNED BY THE ROFI CHORD, ON PURPOSE
 #  -------------------------------------------
-#  rofi_ilovepdf ($mod P, V) is the one key in this chord that still opens a
+#  ati-ilovepdf ($mod P, V) is the one key in this chord that still opens a
 #  rofi window, and the reason is not its length. It is a FILE MANAGER: it
 #  walks directories, and `order_files` selects SEVERAL files and orders them
 #  so that merge has an order to merge in. This protocol carries exactly one

@@ -1056,7 +1056,7 @@ qtile session still uses every one of them.
 
 ##### What still opens a rofi window under Hyprland — the count was wrong
 
-`rofi_anki` (`$mod P` → `a`) and `rofi_ilovepdf` (`$mod P` → `v`) are the
+`rofi_anki` (`$mod P` → `a`) and `ati-ilovepdf` (`$mod P` → `v`) are the
 deliberate exceptions, and `binds.conf` calls them "the only two keys in
 this chord that are still rofi". Within the chord that is true. **As a
 statement about the session it is not**, and cross-referencing
@@ -1066,7 +1066,7 @@ the others:
 | bind | script | rofi? |
 |---|---|---|
 | `$mod P` → `a` | `rofi_anki` | **no longer — PORTED, see below** |
-| `$mod P` → `v` | `rofi_ilovepdf` | yes — deliberate, a file-picker/page-range/OCR pipeline |
+| `$mod P` → `v` | `ati-ilovepdf` | yes — deliberate, a file-picker/page-range/OCR pipeline |
 | `$mod P` → `SHIFT c` | `theme-toggle` | yes — deliberate and documented; it is the qtile session's picker and it keeps working when the island is down |
 | **`$mod SHIFT F6`** | **`phone_screen`** | **yes, and undocumented anywhere.** Its QR/pairing path calls `require_cmd qrencode rofi` and pipes into `rofi -dmenu -i -format f` against `~/.config/rofi/themes/base.rasi` |
 
@@ -1120,7 +1120,7 @@ from `hyprctl binds -j`.
 
 | route | why it stays |
 |---|---|
-| `rofi_ilovepdf` (`$mod P` → `v`) | it is a **file manager**, not a wizard. `order_files` selects SEVERAL files and orders them so merge has an order to merge in, and the picker protocol carries exactly one id back per page. Porting it means building selection state into `PickerLayer.qml` or shipping a PDF toolkit that has lost merge |
+| `ati-ilovepdf` (`$mod P` → `v`) | it is a **file manager**, not a wizard. `order_files` selects SEVERAL files and orders them so merge has an order to merge in, and the picker protocol carries exactly one id back per page. Porting it means building selection state into `PickerLayer.qml` or shipping a PDF toolkit that has lost merge |
 | `theme-toggle` (`$mod P` → `SHIFT c`) | `c` is already the island's theme picker on the same chord. This one exists to keep working when the island is down, and it is the qtile session's picker |
 | `phone_screen` (`$mod SHIFT F6`) | decided above and unchanged |
 
@@ -1132,7 +1132,7 @@ the shell being down.
 
 Method note, because the claim had gone unchecked for several sessions:
 seven `AtiScriptsV1` scripts are reachable from a Hyprland bind at all —
-`clock_popup`, `phone_screen`, `rofi_anki`, `rofi_ilovepdf`,
+`clock_popup`, `phone_screen`, `rofi_anki`, `ati-ilovepdf`,
 `theme-toggle`, `ati-voice-dictate`, `ati-voice-dictate-live`. `clock_popup`
 mentions rofi only in comments. Everything else in that directory is
 qtile's, or is called by another script, and cannot be reached from this
@@ -1629,7 +1629,7 @@ two-thirds ported with no explanation, and so nobody re-opens it as a gap.
 |---|---|
 | `ati-satty`'s X11 tools | **superseded.** Rewritten, not wrapped: the picker's screenshot menu is grim + slurp + hyprctl + wl-copy + satty. `ati-satty` is unreachable from any Hyprland bind and stays on disk for the qtile session |
 | `qdrop.py` / `qdrop_watch.py` | **superseded** by special workspaces |
-| "leave the launcher problems on rofi" | **superseded as policy.** The chord is the island's picker on every key but ONE (`v`, rofi_ilovepdf), plus `theme-toggle` and `phone_screen`. `rofi_anki` was the last wizard to move, and what decided it was not the launcher/popup split at all — see item 3 |
+| "leave the launcher problems on rofi" | **superseded as policy.** The chord is the island's picker on every key but ONE (`v`, ati-ilovepdf), plus `theme-toggle` and `phone_screen`. `rofi_anki` was the last wizard to move, and what decided it was not the launcher/popup split at all — see item 3 |
 | Per-state layout vs the reference video | **abandoned as a test, not as work.** I cannot see video frames and never could. DESIGN-SPEC.md — a transcript of the author narrating his own numbers — is matched everywhere it gives a number. Where it gives only a description this is a judgement call that has been made. Calling it "open" implies an unrun test; there is none |
 
 ### Could not verify, and why

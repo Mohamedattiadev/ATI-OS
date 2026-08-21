@@ -7899,7 +7899,7 @@ keys = [
             Key([], "l", lazy.spawn("bar-action tide showPicker brightness"), desc="screen light"),
             # --- PDF conversions ---
             # "v" for conVert: p/f/d/c are all taken in this chord, and
-            # rofi_ilovepdf had no trigger at all -- it was reachable only by
+            # ati-ilovepdf had no trigger at all -- it was reachable only by
             # typing its name in a shell, despite all six of its dependencies
             # (rofi, libreoffice, imagemagick, ghostscript, poppler, qpdf)
             # being installed.

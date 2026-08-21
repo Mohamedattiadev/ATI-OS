@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Script name: rofi_ilovepdf
+# Script name: ati-ilovepdf
 # Description: An offline PDF toolkit in rofi. Everything ilovepdf.com is
 #              normally used for, done locally -- no upload, no account, no
 #              page limit, no watermark on the way out.
-# Usage:       rofi_ilovepdf [file...]   -- files given here skip the browser
+# Usage:       ati-ilovepdf [file...]   -- files given here skip the browser
 # Dependencies: rofi, qpdf, poppler-utils, ghostscript, imagemagick,
 #               libreoffice. Optional: tesseract (enables OCR).
 # License: MIT
@@ -1260,12 +1260,12 @@ navigate() {
 # TWO VERBS, and nothing else changes: the interactive run is untouched and
 # the qtile session still uses it.
 #
-#   rofi_ilovepdf --list-tools
+#   ati-ilovepdf --list-tools
 #       one tool per line, TAB-separated: label, extension, multi (0|1),
 #       and the number of answers the tool will ask for. The last field is
 #       what lets a caller know whether to collect anything before running.
 #
-#   ILOVEPDF_ANSWERS=$'…\n…' rofi_ilovepdf --exec <label> <file>…
+#   ILOVEPDF_ANSWERS=$'…\n…' ati-ilovepdf --exec <label> <file>…
 #       run one tool over one or more files with the prompts pre-answered.
 #
 # WHY THE ANSWERS ARE A QUEUE AND NOT NAMED OPTIONS
@@ -1343,7 +1343,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		;;
 	--exec)
 		shift
-		[[ $# -ge 2 ]] || { echo "usage: rofi_ilovepdf --exec <tool> <file>..." >&2; exit 2; }
+		[[ $# -ge 2 ]] || { echo "usage: ati-ilovepdf --exec <tool> <file>..." >&2; exit 2; }
 		_action="$1"; shift
 		declare -a _files=()
 		for _a in "$@"; do
@@ -1361,7 +1361,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	esac
 
 	# Files given on the command line skip the browser, so a file manager's
-	# "Open with" or a shell `rofi_ilovepdf scan.pdf` lands straight on the
+	# "Open with" or a shell `ati-ilovepdf scan.pdf` lands straight on the
 	# tool list with the input already chosen. Anything unreadable is
 	# dropped here rather than failing later with a path the user cannot
 	# see, and an empty list just means the normal interactive run.

@@ -864,7 +864,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   `AtiScriptsV1/ati-satty` and the sibling `dmscripts/scripts/dm-maim`
   (same copy-pasted line, same bug, in both places).
 
-### rofi_ilovepdf silently does nothing (missing zenity / libreoffice)
+### ati-ilovepdf silently does nothing (missing zenity / libreoffice)
 - **Symptom:** the ilovepdf rofi menu never opens a file picker, or
   document→PDF conversion never happens.
 - **Root cause:** `zenity` (file picker) and `libreoffice-fresh` (doc

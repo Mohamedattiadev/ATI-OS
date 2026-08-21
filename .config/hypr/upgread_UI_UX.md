@@ -1730,7 +1730,7 @@ reader creates exactly that collision — two readers for one key the day
 ## The ask was verification, and the doc's "NOT STARTED" was wrong
 
 `scratchpad.sh`, `toggle-app.sh` and `sum-toggle.sh` all existed, bound and
-commented. `rofi_ilovepdf` is on PATH and bound at `$mod P` → `V`, kept as
+commented. `ati-ilovepdf` is on PATH and bound at `$mod P` → `V`, kept as
 rofi deliberately — it is a file manager with multi-select and the picker's
 protocol carries one id per page. So the migration table's row for it was as
 stale as the handoff warned.
@@ -2046,7 +2046,7 @@ per measurement; do not untag one.
 
 ## "Multi-select cannot be expressed in the picker protocol" was wrong
 
-submaps.conf said porting `rofi_ilovepdf` meant either building selection
+submaps.conf said porting `ati-ilovepdf` meant either building selection
 state into PickerLayer or shipping a toolkit that had lost merge. One id per
 page is not a limit when the page comes back: `tog:<path>` toggles a file in
 a set held under `$XDG_RUNTIME_DIR` and returns the same page re-rendered
@@ -2056,7 +2056,7 @@ Same shape of mistake island-picker.py's own header records making about the
 prompting menus, and it went the same way — the primitive already existed and
 the conclusion had been drawn before it did.
 
-The toolkit is not reimplemented: `rofi_ilovepdf` grew `--list-tools` and
+The toolkit is not reimplemented: `ati-ilovepdf` grew `--list-tools` and
 `--exec`, and every prompt funnels through four functions, so overriding
 those four covers all thirteen prompting paths.
 

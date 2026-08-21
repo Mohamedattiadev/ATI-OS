@@ -214,7 +214,7 @@ case "$key" in
   "showPicker todo")          run rofi_todo ;;
   "showPicker processes")     run ati-kill ;;
   "showPicker brightness")    run rofi_light ;;
-  "showPicker ilovepdf")      run rofi_ilovepdf ;;
+  "showPicker ilovepdf")      run ati-ilovepdf ;;
   "showPicker spellcheck")    run dm-spellcheck ;;
   "showPicker record")        run ati-record ;;
   "showPicker screenshot")    run ati-satty ;;
