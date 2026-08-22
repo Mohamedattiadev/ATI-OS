@@ -277,7 +277,20 @@ PanelWindow {
             const text = event.text;
 
             if (key === Qt.Key_Escape || text === "q") {
-                center.visible = false;
+                // NOT `center.visible = false` — `visible` is bound from
+                // OUTSIDE (`visible: demo.notifCenterOpen` in
+                // redesign-e-final.qml), and an assignment to a property
+                // from WITHIN its own scope permanently replaces that
+                // binding, the classic QML trap. The first Escape ever
+                // pressed broke it silently: no error, just a `visible`
+                // that was now a plain `false` forever after, with no
+                // wiring back to demo.notifCenterOpen — exactly what "not
+                // working" looked like (IPC calls set the property, the
+                // window just never noticed). `requestClose()` instead:
+                // the signal redesign-e-final.qml already listens to,
+                // which sets demo.notifCenterOpen, which the STILL-INTACT
+                // external binding reads back into `visible`.
+                center.requestClose();
                 event.accepted = true;
                 return;
             }

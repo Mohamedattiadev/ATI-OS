@@ -1041,14 +1041,20 @@ ShellRoot {
             rightHideTimer.restart();
         }
 
-        // THE ONE FULL BAR — bottom mode only. qtile's own bottom bar is
-        // edge-to-edge opaque; this is that background, sitting BEHIND
-        // `content` (declared first, so it paints under everything) and
-        // filling `bar` itself rather than `content`'s inset area, so it
-        // reaches every edge the way qtile's does instead of floating
-        // with the same margins the individual pills use.
+        // THE ONE FULL BAR — bottom mode only. Was truly edge-to-edge
+        // (anchors.fill, no margins) — WRONG against shell.qml's own
+        // bottom bar, which insets its opaque background by
+        // Metrics.marginH left/right (and marginV top/bottom) same as
+        // the top bar's own `content` does; "should not be touching the
+        // screen border from left and right like the qtile one" is
+        // exactly that gap being missing here. Matched to those same
+        // margins now instead of filling the raw window.
         Rectangle {
             anchors.fill: parent
+            anchors.leftMargin: Metrics.marginH
+            anchors.rightMargin: Metrics.marginH
+            anchors.topMargin: Metrics.marginV
+            anchors.bottomMargin: Metrics.marginV
             visible: demo.position === "bottom"
             color: BarTheme.bg
         }
