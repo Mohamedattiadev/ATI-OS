@@ -1507,7 +1507,17 @@ ShellRoot {
                                     // hide_unused — Workspaces.qml's own term for
                                     // exactly this rule.
                                     visible: wsOccupied || wsActive
-                                    width: visible ? pairRow.implicitWidth + (wsActive ? Metrics.s(12) : Metrics.s(3)) : 0
+                                    // The extra Metrics.s(12) is room for the
+                                    // divider + layout glyph that only draw
+                                    // when wsOccupied too (see pairRow below) —
+                                    // gated the same way here, or an active,
+                                    // empty workspace reserved that space
+                                    // anyway and sat with a dead gap where the
+                                    // "|" used to be, which read as the same
+                                    // bug the divider's own gate had just
+                                    // fixed. Reported as "still there" against
+                                    // a screenshot of exactly this pill.
+                                    width: visible ? pairRow.implicitWidth + ((wsActive && wsOccupied) ? Metrics.s(12) : Metrics.s(3)) : 0
                                     height: Metrics.s(21)
                                     radius: height / 3
                                     color: wsActive ? BarTheme.alpha(BarTheme.accent, 0.22) : "transparent"
@@ -1581,7 +1591,15 @@ ShellRoot {
                             }
                         }
 
-                        Divider {}
+                        // Gated on there actually being something after it --
+                        // AppFileStack itself collapses to implicitWidth 0
+                        // with no apps, but this divider had no such check
+                        // and stayed visible regardless, dangling at the
+                        // right of the row with nothing behind it whenever
+                        // the focused workspace has zero windows. Reported
+                        // directly, against a workspace switched to on
+                        // purpose to have nothing open.
+                        Divider { visible: demo.wsApps.length > 0 }
 
                         // WHAT'S OPEN — real now: demo.wsApps/wsActiveIndex,
                         // the actual windows on the FOCUSED workspace (see
