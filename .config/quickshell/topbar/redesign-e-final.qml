@@ -1508,16 +1508,14 @@ ShellRoot {
                                     // exactly this rule.
                                     visible: wsOccupied || wsActive
                                     // The extra Metrics.s(12) is room for the
-                                    // divider + layout glyph that only draw
-                                    // when wsOccupied too (see pairRow below) —
-                                    // gated the same way here, or an active,
-                                    // empty workspace reserved that space
-                                    // anyway and sat with a dead gap where the
-                                    // "|" used to be, which read as the same
-                                    // bug the divider's own gate had just
-                                    // fixed. Reported as "still there" against
-                                    // a screenshot of exactly this pill.
-                                    width: visible ? pairRow.implicitWidth + ((wsActive && wsOccupied) ? Metrics.s(12) : Metrics.s(3)) : 0
+                                    // divider + layout glyph, which draw
+                                    // whenever the workspace is active (see
+                                    // pairRow below) regardless of occupancy
+                                    // -- the layout glyph is real content
+                                    // (the tiling mode), not "nothing", so it
+                                    // and its divider belong on an empty
+                                    // active workspace same as a full one.
+                                    width: visible ? pairRow.implicitWidth + (wsActive ? Metrics.s(12) : Metrics.s(3)) : 0
                                     height: Metrics.s(21)
                                     radius: height / 3
                                     color: wsActive ? BarTheme.alpha(BarTheme.accent, 0.22) : "transparent"
@@ -1556,26 +1554,28 @@ ShellRoot {
                                             anchors.verticalCenter: undefined
                                         }
                                         // A real "|" between the workspace icon and
-                                        // the layout glyph — only when there is a
-                                        // layout worth naming, i.e. the active
-                                        // workspace actually has windows on it.
-                                        // Gated on wsActive alone, this drew a
-                                        // dangling "|" with nothing after it on an
-                                        // empty active workspace (no icon, no
-                                        // apps) — reported directly.
+                                        // the layout glyph. Gated on wsActive
+                                        // alone -- the layout mode (monadtall/
+                                        // max/treetab) is real, meaningful
+                                        // content for the active workspace
+                                        // whether or not it currently has any
+                                        // windows, so it and this divider stay
+                                        // regardless of wsOccupied. (The
+                                        // dangling "|" with nothing after it,
+                                        // reported separately, was a DIFFERENT
+                                        // divider -- the one between this
+                                        // whole workspace cluster and the
+                                        // "what's open" AppFileStack further
+                                        // down, gated on demo.wsApps.length.)
                                         Divider {
-                                            visible: wsDelegate.wsActive && wsDelegate.wsOccupied
+                                            visible: wsDelegate.wsActive
                                             height: Metrics.s(11)
                                         }
                                         // The layout glyph — REAL now, from the
                                         // same runtime file LayoutState.qml reads,
-                                        // not a hardcoded monadtall. Same gate as
-                                        // the divider above: a layout glyph for a
-                                        // workspace with nothing tiled on it is
-                                        // exactly as meaningless as the "|" in
-                                        // front of it.
+                                        // not a hardcoded monadtall.
                                         Glyph {
-                                            visible: wsDelegate.wsActive && wsDelegate.wsOccupied
+                                            visible: wsDelegate.wsActive
                                             text: String.fromCodePoint(demo.layoutGlyph)
                                             fg: BarTheme.accent
                                             font.pixelSize: Metrics.s(10)
