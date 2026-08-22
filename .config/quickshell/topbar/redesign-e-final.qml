@@ -462,6 +462,18 @@ ShellRoot {
                     if (combined.length <= demo.notifyTakeoverMaxChars) {
                         demo.notifyActive = true;
                         notifyRevert.restart();
+                        // "not in both at the same time" — a short one used
+                        // to take over the pill AND still sit there as a
+                        // real dunst popup, since this watcher is passive
+                        // (see the header note on why there's no
+                        // NotificationServer of its own to actually own
+                        // delivery). `dunstctl close` closes dunst's own
+                        // most-recent popup — the one that was just this
+                        // Notify call, since this handler fires on the
+                        // exact same bus message dunst itself reacts to.
+                        // Long ones never call this, so they still show in
+                        // dunst uninterrupted, same as before.
+                        Quickshell.execDetached(["dunstctl", "close"]);
                     }
 
                     const entry = { app: demo.notifyApp, summary: demo.notifySummary,
@@ -524,6 +536,21 @@ ShellRoot {
             // active, invisible the rest of the time.
             if (n === "submap")
                 demo.submapName = String(event.data || "").trim();
+            // wayscriber ("draw" mode) is NOT a Hyprland submap — binds.conf's
+            // own note explains why: gromit-mpx's submap got replaced by a
+            // standalone daemon (`wayscriber --daemon-toggle`, $mod SHIFT W)
+            // with its own layer-shell surface instead. No submap event ever
+            // fires for it, so submapMap's stale "draw" entry (ported from
+            // the gromit era, still holding the right letters — C/Z/R/V
+            // verified live against wayscriber's own config.toml keybindings)
+            // never actually showed. openlayer/closelayer on its real
+            // namespace is the live signal instead, confirmed via
+            // `hyprctl layers` while toggling: the "wayscriber" namespace
+            // appears/disappears exactly on daemon-toggle.
+            if (n === "openlayer" && String(event.data || "").trim() === "wayscriber")
+                demo.drawActive = true;
+            if (n === "closelayer" && String(event.data || "").trim() === "wayscriber")
+                demo.drawActive = false;
         }
     }
 
@@ -553,6 +580,9 @@ ShellRoot {
     // ---- CHORD/SUBMAP — real name via the Hyprland event above; empty
     // whenever no submap is active, same as shell.qml's chord chip.
     property string submapName: ""
+    // wayscriber's own layer-surface presence — see the openlayer/
+    // closelayer handler above for why this can't be a submap name.
+    property bool drawActive: false
     // "check the current bar and check the letters of rofi... and all
     // other modes" — this used to be MY OWN derivation off submaps.conf's
     // raw bind lines, curated by hand and wrong in the specific way that
@@ -1380,7 +1410,7 @@ ShellRoot {
                     readonly property string activeFace:
                         demo.notifyActive ? "notify"
                         : demo.voiceActive ? "voice"
-                        : demo.submapName !== "" ? "chord" : "normal"
+                        : (demo.submapName !== "" || demo.drawActive) ? "chord" : "normal"
                     implicitWidth: {
                         if (swap.activeFace === "notify") return notifyFace.implicitWidth;
                         if (swap.activeFace === "voice") return voiceFace.implicitWidth;
@@ -1554,11 +1584,20 @@ ShellRoot {
                     // so it's on the text instead of a plate.
                     Label {
                         id: chordFace
-                        readonly property var entry: demo.submapMap[demo.submapName] || null
+                        // wayscriber wins ties over a real submap here on
+                        // purpose — the two are mutually exclusive in
+                        // practice (submaps grab the keyboard, wayscriber's
+                        // own overlay does too), so this is just "which
+                        // lookup", never a real conflict.
+                        readonly property var entry: demo.drawActive
+                            ? demo.submapMap["draw"]
+                            : (demo.submapMap[demo.submapName] || null)
                         anchors.verticalCenter: parent.verticalCenter
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: demo.submapName === "" ? ""
-                            : (chordFace.entry ? chordFace.entry.text : demo.submapName.toUpperCase())
+                        text: demo.drawActive
+                            ? (chordFace.entry ? chordFace.entry.text : "DRAW")
+                            : demo.submapName === "" ? ""
+                                : (chordFace.entry ? chordFace.entry.text : demo.submapName.toUpperCase())
                         fg: chordFace.entry ? chordFace.entry.colour : BarTheme.accent
                         font.bold: true
                         opacity: swap.activeFace === "chord" ? 1 : 0
@@ -1974,14 +2013,15 @@ ShellRoot {
                                 text: UPower.displayDevice
                                     ? String(Math.round(UPower.displayDevice.percentage * 100))
                                     : "--"
-                                // shell.qml's own batteryLow: percentage <= 0.2,
-                                // BarTheme.red at/under that, BarTheme.fg
-                                // otherwise (plain fg here rather than its
-                                // blue, since this reads as a plain number in
-                                // an outline, not a coloured chip).
+                                // shell.qml's own batteryLow/battery colour,
+                                // verbatim: BarTheme.blue normally,
+                                // BarTheme.red at/under 20%. Plain fg (the
+                                // first pass here) read as uncoloured next
+                                // to shell.qml's actual chip — "should be
+                                // coloured" was exactly that gap.
                                 fg: (UPower.displayDevice && UPower.displayDevice.isLaptopBattery
                                      && UPower.displayDevice.percentage <= 0.2)
-                                    ? BarTheme.red : BarTheme.fg
+                                    ? BarTheme.red : BarTheme.blue
                                 font.pixelSize: Metrics.s(7)
                                 font.bold: true
                             }
