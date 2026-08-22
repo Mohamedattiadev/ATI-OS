@@ -964,7 +964,12 @@ ShellRoot {
             left: true
             right: true
         }
-        implicitHeight: Metrics.barHeight + Metrics.marginV * 2
+        // shell.qml's own bar switches height by position too
+        // (Metrics.barHeight top / Metrics.bottomBarHeight bottom) —
+        // this used barHeight unconditionally, so the bottom bar sat at
+        // 28px instead of the qtile bottom bar's real 40px.
+        implicitHeight: (demo.position === "top"
+            ? Metrics.barHeight : Metrics.bottomBarHeight) + Metrics.marginV * 2
         // Was offset by a whole bar-height-plus-gap so this could sit as
         // a SECOND row underneath the real shell.qml bar during
         // side-by-side preview. shell.qml's own `quickshell -p .../topbar`
@@ -1048,13 +1053,18 @@ ShellRoot {
         // the top bar's own `content` does; "should not be touching the
         // screen border from left and right like the qtile one" is
         // exactly that gap being missing here. Matched to those same
-        // margins now instead of filling the raw window.
+        // margins now instead of filling the raw window. Radius was
+        // missing entirely (square corners) — shell.qml's own bottom
+        // bar background Rectangle carries `radius: Metrics.s(6)`,
+        // matched here too ("width and height and roundness... like
+        // the bar of qtile bottom").
         Rectangle {
             anchors.fill: parent
             anchors.leftMargin: Metrics.marginH
             anchors.rightMargin: Metrics.marginH
             anchors.topMargin: Metrics.marginV
             anchors.bottomMargin: Metrics.marginV
+            radius: Metrics.s(6)
             visible: demo.position === "bottom"
             color: BarTheme.bg
         }
@@ -1964,7 +1974,14 @@ ShellRoot {
                                 text: UPower.displayDevice
                                     ? String(Math.round(UPower.displayDevice.percentage * 100))
                                     : "--"
-                                fg: BarTheme.fg
+                                // shell.qml's own batteryLow: percentage <= 0.2,
+                                // BarTheme.red at/under that, BarTheme.fg
+                                // otherwise (plain fg here rather than its
+                                // blue, since this reads as a plain number in
+                                // an outline, not a coloured chip).
+                                fg: (UPower.displayDevice && UPower.displayDevice.isLaptopBattery
+                                     && UPower.displayDevice.percentage <= 0.2)
+                                    ? BarTheme.red : BarTheme.fg
                                 font.pixelSize: Metrics.s(7)
                                 font.bold: true
                             }
@@ -2073,7 +2090,8 @@ ShellRoot {
                 right: true
             }
             implicitHeight: 1
-            exclusiveZone: Metrics.barHeight + Metrics.marginV * 2
+            exclusiveZone: (demo.position === "top"
+                ? Metrics.barHeight : Metrics.bottomBarHeight) + Metrics.marginV * 2
             color: "transparent"
             // No input at all — otherwise this strip eats clicks along
             // the very top edge of the screen.
