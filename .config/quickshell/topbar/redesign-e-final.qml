@@ -425,37 +425,11 @@ ShellRoot {
     property var notifyHistory: []
     readonly property int notifyHistoryMax: 30
 
-    // ---- NOTIFICATION CENTER — "be the workspace part itself... when i
-    // close come back to be workspace things". A separate popup window
-    // was the first attempt; asked directly to drop that in favour of
-    // taking over THIS pill the same way chord/notify/voice already do —
-    // one more entry in swap.activeFace, not a fifth window. Browses one
-    // entry at a time (j/k) rather than a scrollable list, because the
-    // pill this lives in is one text line tall on purpose, same
-    // constraint every other face here already works inside.
+    // ---- NOTIFICATION CENTER — "i want dropdown card as this pill" — a
+    // real dropdown (NotificationCenter.qml) hanging under the workspace
+    // pill, own window, own selection/vim-motion state. This flag is the
+    // only thing that file and this one share.
     property bool notifCenterOpen: false
-    property int notifCenterIndex: 0
-    function notifCenterClamp() {
-        const n = demo.notifyHistory.length;
-        if (demo.notifCenterIndex < 0) demo.notifCenterIndex = 0;
-        if (demo.notifCenterIndex > n - 1) demo.notifCenterIndex = Math.max(0, n - 1);
-    }
-    function notifCenterDeleteCurrent() {
-        const hist = demo.notifyHistory.slice();
-        if (hist.length === 0) return;
-        // notifCenterIndex counts from the newest entry backward (0 = most
-        // recent), matching the takeover face's own "newest first" read —
-        // map to the real array index before splicing.
-        const realIndex = hist.length - 1 - demo.notifCenterIndex;
-        hist.splice(realIndex, 1);
-        demo.notifyHistory = hist;
-        demo.notifCenterClamp();
-    }
-    onNotifCenterOpenChanged: if (notifCenterOpen) demo.notifCenterIndex = 0
-    // gg/dd double-tap state, same 400ms window TourPopup used to use for
-    // its own (now-removed) popup version of this list.
-    property string notifCenterPendingKey: ""
-    Timer { id: notifCenterPendingReset; interval: 400; onTriggered: demo.notifCenterPendingKey = "" }
     Process {
         id: notifyWatch
         running: true
@@ -1003,22 +977,13 @@ ShellRoot {
         color: "transparent"
         WlrLayershell.layer: WlrLayer.Top
         exclusionMode: ExclusionMode.Ignore
-        // "when it is open i can not move to any workspace" — the FIRST
-        // version of the notification centre was a separate PanelWindow
-        // with WlrKeyboardFocus.Exclusive (copied from TourPopup, which
-        // copied it from PopupChrome). PopupChrome's OWN header already
-        // documents exactly this failure mode and why: "even a direct
-        // hyprctl dispatch workspace N... is refused by Hyprland while
-        // this surface holds WlrKeyboardFocus.Exclusive" — Exclusive
-        // doesn't just grab keyboard-focused input, it blocks Hyprland's
-        // own global dispatch while held. That popup is gone now (the
-        // centre took over this pill directly instead), but the SAME bar
-        // needs j/k/dd/gg/G to reach it without ever taking that grab —
-        // so this is OnDemand, not Exclusive, and ONLY while the
-        // notification centre is actually open the rest of the time
-        // this bar asks for no keyboard focus at all, same as before.
-        WlrLayershell.keyboardFocus: demo.notifCenterOpen
-            ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+        // This bar itself asks for no keyboard focus at all — the
+        // notification centre is its own separate dropdown window now
+        // (NotificationCenter.qml) and owns its own keyboard focus,
+        // OnDemand rather than Exclusive for the exact reason recorded
+        // in that file: Exclusive blocks Hyprland's global dispatch
+        // (workspace switching included) while held, not just
+        // keyboard-focused input.
 
         // ---- AUTO-HIDE: minimal-as-possible, workspace pill always stays ----
         //
@@ -1385,31 +1350,29 @@ ShellRoot {
                 // enough on its own.
                 Item {
                     id: swap
-                    // FIVE faces now. Priority: the notification CENTER —
-                    // deliberately, explicitly opened by the user (a
-                    // middle-click or `notifcenter toggle`) — comes first,
-                    // since you're actively browsing it and a random new
-                    // toast or workspace change shouldn't yank you out of
-                    // it. Then a fresh transient notification (a few
-                    // seconds), then active dictation (you're mid-
-                    // sentence), then a chord mode (a state you're
-                    // deliberately sitting in), then the plain workspace
-                    // view.
+                    // FOUR faces — the notification CENTER is no longer
+                    // one of them. "i want dropdown card as this pill" —
+                    // it's back to being a real dropdown that hangs UNDER
+                    // this pill (see NotificationCenter.qml) rather than
+                    // replacing the pill's own text, so the workspace
+                    // icons stay visible and untouched while it's open.
+                    // Priority for what's left: a fresh transient
+                    // notification (a few seconds) first, then active
+                    // dictation (you're mid-sentence), then a chord mode
+                    // (a state you're deliberately sitting in), then the
+                    // plain workspace view.
                     readonly property string activeFace:
-                        demo.notifCenterOpen ? "notifcenter"
-                        : demo.notifyActive ? "notify"
+                        demo.notifyActive ? "notify"
                         : demo.voiceActive ? "voice"
                         : demo.submapName !== "" ? "chord" : "normal"
                     implicitWidth: {
-                        if (swap.activeFace === "notifcenter") return notifCenterFace.implicitWidth;
                         if (swap.activeFace === "notify") return notifyFace.implicitWidth;
                         if (swap.activeFace === "voice") return voiceFace.implicitWidth;
                         if (swap.activeFace === "chord") return chordFace.implicitWidth;
                         return normalFace.implicitWidth;
                     }
                     implicitHeight: Math.max(normalFace.implicitHeight, chordFace.implicitHeight,
-                                              notifyFace.implicitHeight, voiceFace.implicitHeight,
-                                              notifCenterFace.implicitHeight)
+                                              notifyFace.implicitHeight, voiceFace.implicitHeight)
                     // "the apps should [have a] gap between it and the
                     // bar[pill edge]" — real bug behind it, not a padding
                     // tweak: a plain Item's `width`/`height` do NOT track
@@ -1661,40 +1624,6 @@ ShellRoot {
                         }
                     }
 
-                    // THE NOTIFICATION CENTER FACE — one entry at a time,
-                    // newest first, j/k to step through (Keys handler is
-                    // on `bar` itself, below — this Label only renders the
-                    // current entry). Capped width so a long summary/body
-                    // doesn't stretch the pill past what the bar can
-                    // actually fit; overflow elides rather than growing.
-                    Label {
-                        id: notifCenterFace
-                        readonly property var rows: {
-                            const src = demo.notifyHistory;
-                            const out = [];
-                            for (let i = src.length - 1; i >= 0; i--) out.push(src[i]);
-                            return out;
-                        }
-                        readonly property var current: notifCenterFace.rows[demo.notifCenterIndex] || null
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: Math.min(implicitWidth, Metrics.s(360))
-                        elide: Text.ElideRight
-                        text: {
-                            if (notifCenterFace.rows.length === 0)
-                                return "NOTIFICATIONS — none this session";
-                            const n = demo.notifCenterIndex + 1;
-                            const total = notifCenterFace.rows.length;
-                            const e = notifCenterFace.current;
-                            return "NOTIFICATIONS " + n + "/" + total + " — " + e.app + ": " + e.summary
-                                + (e.body !== "" ? " — " + e.body : "");
-                        }
-                        fg: BarTheme.accent
-                        font.bold: true
-                        opacity: swap.activeFace === "notifcenter" ? 1 : 0
-                        visible: opacity > 0.01
-                        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                    }
                 }
             }
 
@@ -2103,67 +2032,6 @@ ShellRoot {
             }
         }
 
-        // Vim motion for the notification centre face — only takes
-        // QML-level focus while it's actually open (`focus:` below),
-        // matching the WlrKeyboardFocus.OnDemand gate above: the rest of
-        // the time this FocusScope simply isn't the focused item, and no
-        // key here is ever consumed.
-        FocusScope {
-            anchors.fill: parent
-            focus: demo.notifCenterOpen
-            Keys.onPressed: (event) => {
-                if (!demo.notifCenterOpen) return;
-                const key = event.key;
-                const text = event.text;
-
-                if (key === Qt.Key_Escape || text === "q") {
-                    demo.notifCenterOpen = false;
-                    event.accepted = true;
-                    return;
-                }
-                if (text === "j" || key === Qt.Key_Down) {
-                    demo.notifCenterIndex += 1;
-                    demo.notifCenterClamp();
-                    event.accepted = true;
-                    return;
-                }
-                if (text === "k" || key === Qt.Key_Up) {
-                    demo.notifCenterIndex -= 1;
-                    demo.notifCenterClamp();
-                    event.accepted = true;
-                    return;
-                }
-                if (key === Qt.Key_G && (event.modifiers & Qt.ShiftModifier)) {
-                    demo.notifCenterIndex = Math.max(0, demo.notifyHistory.length - 1);
-                    event.accepted = true;
-                    return;
-                }
-                if (text === "g") {
-                    if (demo.notifCenterPendingKey === "g") {
-                        demo.notifCenterIndex = 0;
-                        demo.notifCenterPendingKey = "";
-                        notifCenterPendingReset.stop();
-                    } else {
-                        demo.notifCenterPendingKey = "g";
-                        notifCenterPendingReset.restart();
-                    }
-                    event.accepted = true;
-                    return;
-                }
-                if (text === "d") {
-                    if (demo.notifCenterPendingKey === "d") {
-                        demo.notifCenterDeleteCurrent();
-                        demo.notifCenterPendingKey = "";
-                        notifCenterPendingReset.stop();
-                    } else {
-                        demo.notifCenterPendingKey = "d";
-                        notifCenterPendingReset.restart();
-                    }
-                    event.accepted = true;
-                    return;
-                }
-            }
-        }
     }
 
     // ---- THE RESERVER — ported straight from shell.qml ----
@@ -2212,6 +2080,22 @@ ShellRoot {
         visible: false
     }
 
+    NotificationCenter {
+        id: notificationCenter
+        visible: demo.notifCenterOpen
+        onRequestClose: demo.notifCenterOpen = false
+        // Hangs under centerStrip on the top bar; same reasoning as
+        // Tooltip's own belowTarget fix — hanging below unconditionally
+        // would render off the bottom of the screen once the bar can
+        // actually sit down there, so this hangs ABOVE `bar` instead in
+        // that position.
+        anchorX: Metrics.marginH + centerStrip.x + centerStrip.width / 2
+        anchorTop: demo.position === "top"
+            ? bar.margins.top + bar.implicitHeight + Metrics.s(4)
+            : (bar.screen ? bar.screen.height : 768) - bar.margins.bottom
+                - bar.implicitHeight - notificationCenter.popupHeight - Metrics.s(4)
+    }
+
     // Driveable from a script — same reasoning shell.qml's own IpcHandler
     // gives: a control with no way in from a script is a control whose
     // bugs only the user finds. Added specifically so the stat badges can
@@ -2254,7 +2138,7 @@ ShellRoot {
     // doesn't have as two separate boxes.
     IpcHandler {
         target: "topbar"
-        function toggleNotifCenter(): void { demo.notifCenterOpen = !demo.notifCenterOpen; bar.wakeRight(); }
+        function toggleNotifCenter(): void { demo.notifCenterOpen = !demo.notifCenterOpen; }
         function toggleStats(): void { utilStrip.statsOpen = !utilStrip.statsOpen; bar.wakeRight(); }
         function toggleTrayBox(): void { utilStrip.trayOpen = !utilStrip.trayOpen; bar.wakeRight(); }
         // Win+Shift+Z, ported from shell.qml's own `topbar toggle`/`status`.
