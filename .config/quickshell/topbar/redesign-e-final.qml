@@ -141,14 +141,35 @@ ShellRoot {
     })
     Process {
         id: wsAppsProc
-        command: ["sh", "-c", "hyprctl -j clients; echo '::ACTIVE::'; hyprctl -j activewindow"]
+        command: ["sh", "-c",
+            "hyprctl -j clients; echo '::ACTIVE::'; hyprctl -j activewindow; "
+            + "echo '::MON::'; hyprctl -j monitors"]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
                     const parts = text.split("::ACTIVE::");
                     const clients = JSON.parse(parts[0]);
-                    const active = parts[1] && parts[1].trim() !== "" ? JSON.parse(parts[1]) : null;
-                    const onWs = clients.filter((c) => c.workspace && c.workspace.id === demo.focusedWsId);
+                    const rest = parts[1].split("::MON::");
+                    const active = rest[0] && rest[0].trim() !== "" ? JSON.parse(rest[0]) : null;
+                    const monitors = JSON.parse(rest[1]);
+                    const mon = monitors.find((m) => m.focused) || monitors[0] || null;
+
+                    // "why the file icon there i dont have anything just
+                    // this terminal" — qdrop IS a real window (hyprctl
+                    // confirmed it), but a floating scratchpad tool PARKED
+                    // OFF-SCREEN waiting to be summoned (its own `at`:
+                    // negative Y, well above the visible monitor). A
+                    // window whose box doesn't overlap the monitor at all
+                    // isn't something you can actually see, so it isn't
+                    // "an open app" any more than an unmapped one is.
+                    const onScreen = (c) => {
+                        if (!mon || !c.at || !c.size) return true;
+                        const [x, y] = c.at, [w, h] = c.size;
+                        return x + w > 0 && y + h > 0 && x < mon.width && y < mon.height;
+                    };
+
+                    const onWs = clients.filter((c) =>
+                        c.workspace && c.workspace.id === demo.focusedWsId && onScreen(c));
                     const alias = (cls) => demo.appIdAliases[cls] || demo.appIdAliases[String(cls).toLowerCase()] || cls;
                     const rawIds = onWs.map((c) => alias(c.class || c.initialClass || ""));
 
