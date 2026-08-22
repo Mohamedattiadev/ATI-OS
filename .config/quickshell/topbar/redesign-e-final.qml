@@ -826,11 +826,28 @@ ShellRoot {
                     ? BarTheme.alpha(BarTheme.accent, 0.6)
                     : BarTheme.alpha(BarTheme.fg, 0.2)
 
+                // "why there is an empty gap here" — a real class with no
+                // resolvable icon (qdrop, this desktop's own drop-stash
+                // tool: a plain python3 GUI, no .desktop entry, no icon
+                // named "qdrop" anywhere), not a missing mock-alias entry.
+                // Chasing every custom/internal tool by name one at a time
+                // is a list that never finishes; a generic fallback glyph
+                // is the general fix — an unresolved icon reads as "some
+                // app" instead of a blank box.
+                readonly property bool hasIcon: Quickshell.iconPath(modelData.appId, true) !== ""
                 IconImage {
+                    visible: parent.hasIcon
                     anchors.centerIn: parent
-                    source: Quickshell.iconPath(modelData.appId, true)
+                    source: parent.hasIcon ? Quickshell.iconPath(modelData.appId, true) : ""
                     width: parent.width - Metrics.s(5)
                     height: width
+                }
+                Glyph {
+                    visible: !parent.hasIcon
+                    anchors.centerIn: parent
+                    anchors.verticalCenter: undefined
+                    text: String.fromCodePoint(0xF2D0)   // generic app window
+                    font.pixelSize: parent.width * 0.55
                 }
 
                 // "if the same icon opens so put the icon once and write
@@ -1169,7 +1186,11 @@ ShellRoot {
                     // own brand icon is pixelSize 19 (bigger than the top
                     // bar's 14, since main_icon_chip_nu is a bigger target
                     // on the "everything reachable by pointer" bar).
-                    font.pixelSize: demo.position === "bottom" ? Metrics.s(19) : Metrics.s(14)
+                    // "bottom bar's arch logo is too big make it a bit
+                    // smaller" — BottomBar.qml's own 19 read as too large
+                    // against this bar's actual proportions; dialled back
+                    // rather than matched literally.
+                    font.pixelSize: demo.position === "bottom" ? Metrics.s(16) : Metrics.s(14)
                     // L-click -> the actual menu bound to mod+shift+/
                     // (binds.conf: `ati-bar-action tide toggleMenu`,
                     // which opens the island's own MenuLayer.qml — the
