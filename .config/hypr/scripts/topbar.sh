@@ -30,17 +30,29 @@ set -euo pipefail
 
 CONFIG_DIR="${TOPBAR_CONFIG_DIR:-$HOME/.config/quickshell/topbar}"
 
-# THE ACTUAL BAR THIS SCRIPT STARTS — no longer shell.qml.
+# THE ACTUAL BAR THIS SCRIPT STARTS — no longer shell.qml BY DEFAULT.
 #
 # "i want this new bar and the island to switch between and the qtile
 # like one will be disabled". shell.qml (the qtile-faithful bar this
 # script used to launch via the `-p <dir>` directory convention, which
-# always resolves to shell.qml) is NOT deleted and NOT edited — it stays
+# always resolves to shell.qml) was NOT deleted and NOT edited — it stayed
 # on disk exactly as it was, kept deliberately ("keep it, i love it").
-# It's just no longer what bar-switch's `native` mode runs: this points
-# at the file directly instead of the directory, which is why the
-# directory convention no longer applies here.
-TOPBAR_ENTRY="${TOPBAR_ENTRY:-$CONFIG_DIR/redesign-e-final.qml}"
+#
+# It came back as a picker option ("Qtile", real qtile-faithful bar --
+# the redesign's own qtile-styled layout is "Relic" now instead). Which
+# file "native" actually means is ~/.cache/topbar-impl: "legacy" ->
+# shell.qml, anything else (unset, "redesign", stale garbage) ->
+# redesign-e-final.qml, so a missing/corrupt file fails toward the bar
+# that is actually maintained. bar-switch's topbar_entry() reads the same
+# file the same way, so its process-matching stays in step with whichever
+# file this actually launches.
+IMPL_FILE="$HOME/.cache/topbar-impl"
+_impl="$(cat "$IMPL_FILE" 2>/dev/null || true)"
+if [[ "$_impl" == legacy ]]; then
+  TOPBAR_ENTRY="${TOPBAR_ENTRY:-$CONFIG_DIR/shell.qml}"
+else
+  TOPBAR_ENTRY="${TOPBAR_ENTRY:-$CONFIG_DIR/redesign-e-final.qml}"
+fi
 
 if [[ ! -f "$TOPBAR_ENTRY" ]]; then
   echo "topbar.sh: no config at $TOPBAR_ENTRY — has stow run?" >&2

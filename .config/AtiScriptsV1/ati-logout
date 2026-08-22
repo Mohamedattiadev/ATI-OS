@@ -97,8 +97,18 @@ main() {
     fi
     ;;
   'Lock screen')
-    # shellcheck disable=SC2154
-    ${DMLOCKER}
+    # ${DMLOCKER} (betterlockscreen, from dmscripts/config) is X11-only --
+    # it shells out to i3lock, which needs an X server. Under Hyprland this
+    # failed with no error the menu could see, so "Lock screen" here looked
+    # identical to a working row and just did nothing. loginctl lock-session
+    # is the same command $mod SHIFT X and the island's own PowerMenuLayer.qml
+    # already use (see that file's header on why betterlockscreen was dropped).
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+      loginctl lock-session
+    else
+      # shellcheck disable=SC2154
+      ${DMLOCKER}
+    fi
     ;;
   'Reboot')
     if [[ "$(echo -e "No\nYes" | ${MENU} "${choice}?")" == "Yes" ]]; then

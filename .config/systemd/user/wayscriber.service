@@ -1,0 +1,31 @@
+# Override of /usr/lib/systemd/user/wayscriber.service, kept in this repo's
+# ~/.config/systemd/user/ (which fully shadows the packaged unit of the same
+# name) for one change: WantedBy/PartOf/After moved off graphical-session.target
+# and onto default.target.
+#
+# Raw Hyprland (no uwsm) never activates graphical-session.target itself --
+# see voxtype.service's own header for the same bug, caught first there.
+# journalctl --user -u wayscriber.service -b showed zero entries this boot:
+# not crashing, never even attempted. $mod SHIFT W ("wayscriber --daemon-toggle")
+# toggles an already-running daemon; with the daemon never started, there was
+# nothing for that toggle to talk to, so "the draw thing" appeared to do
+# nothing. default.target is confirmed active every boot regardless of
+# Hyprland/session-manager wiring, same as fix-mic-gain.service already uses.
+[Unit]
+Description=Wayscriber - Screen annotation tool for Wayland
+Documentation=https://wayscriber.com
+PartOf=default.target
+After=default.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sh -c '[ -n "$WAYLAND_DISPLAY" ] && [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]'
+ExecStart="/usr/bin/wayscriber" --daemon
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=75
+SuccessExitStatus=75
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+
+[Install]
+WantedBy=default.target

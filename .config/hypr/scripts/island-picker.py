@@ -3316,6 +3316,7 @@ def ilovepdf_run(item_id, text=""):
 
 BAR_STATE = os.path.join(HOME, ".cache", "bar-mode")
 TOPBAR_POS = os.path.join(HOME, ".cache", "topbar-position")
+TOPBAR_IMPL = os.path.join(HOME, ".cache", "topbar-impl")
 
 
 def _bar_current():
@@ -3325,25 +3326,36 @@ def _bar_current():
                 return fh.read().strip() or default
         except OSError:
             return default
-    return read(BAR_STATE, "island"), read(TOPBAR_POS, "top")
+    return read(BAR_STATE, "island"), read(TOPBAR_POS, "top"), read(TOPBAR_IMPL, "redesign")
 
 
 def bars_list():
-    mode, pos = _bar_current()
+    mode, pos, impl = _bar_current()
     def mark(active):
         return "  \u2713 current" if active else ""
+    # No position word in any label. "Island" is the capsule/panel shell.
+    # "Relic" is the redesign's own 28 px top chip layout (qtile-STYLED,
+    # not qtile itself -- it held the "Qtile" name briefly before the real
+    # one came back, per direct correction, and "Frindo" is that real
+    # one's name now). "Frindo" is shell.qml, the genuinely qtile-faithful
+    # port ("keep it, i love it" -- see topbar.sh's header). The redesign's
+    # 40 px bottom "normal user" layout (was "Nova") is no longer a row
+    # here on request -- the QML itself is untouched, this menu just
+    # doesn't offer it any more. Relic's id ("top") is unchanged; Frindo's
+    # id ("shell") is new, along with topbar-impl -- see bar_run and
+    # bar-switch's topbar_entry() for the other end.
     return _page("Which bar?", [
         {"id": "island",
          "label": "Island",
          "detail": "the capsule that becomes a panel" + mark(mode == "island")},
         {"id": "top",
-         "label": "Topbar \u2014 top",
-         "detail": "qtile's 28 px bar of chips"
-                   + mark(mode == "native" and pos == "top")},
-        {"id": "bottom",
-         "label": "Topbar \u2014 bottom",
-         "detail": "qtile's 40 px normal-user bar, with launchers"
-                   + mark(mode == "native" and pos == "bottom")},
+         "label": "Relic",
+         "detail": "qtile-styled 28 px bar of chips"
+                   + mark(mode == "native" and impl != "legacy")},
+        {"id": "shell",
+         "label": "Frindo",
+         "detail": "the actual qtile-faithful bar"
+                   + mark(mode == "native" and impl == "legacy")},
     ], note="The island and the topbar are separate shells and only one runs "
             "at a time. Keys follow whichever is up: rofi under the topbar, "
             "panels under the island.")
@@ -3353,20 +3365,31 @@ def bars_run(item_id):
     if item_id == "island":
         _spawn_sh("bar-switch island")
         return None
-    if item_id in ("top", "bottom"):
-        # Position FIRST, so the bar comes up already in the requested shape
-        # rather than appearing and then moving. The IPC is a no-op while the
-        # topbar is down, which is exactly when the file write is what counts.
+    if item_id == "top":
+        # Impl and position FIRST, so the bar comes up already in the
+        # requested shape rather than appearing and then moving/swapping.
+        # The IPC is a no-op while the topbar is down, which is exactly
+        # when the file writes are what count. Position is always "top"
+        # now that the bottom row (Nova) is not offered any more.
         _spawn_sh(
             # %%s, not %s: this string is itself %-formatted below, and
             # printf's own placeholder was being eaten as a format slot —
-            # "TypeError: not enough arguments for format string", raised only
-            # on the two rows that reach this branch.
-            "printf '%%s\\n' %s > %s; "
+            # "TypeError: not enough arguments for format string".
+            "printf '%%s\\n' redesign > %s; "
+            "printf '%%s\\n' top > %s; "
             "ipc_bin=qs; command -v qsipc >/dev/null 2>&1 && ipc_bin=qsipc; "
-            "\"$ipc_bin\" -p ~/.config/quickshell/topbar ipc call topbar %s >/dev/null 2>&1; "
+            "\"$ipc_bin\" -p ~/.config/quickshell/topbar ipc call topbar top >/dev/null 2>&1; "
             "bar-switch native"
-            % (shlex.quote(item_id), shlex.quote(TOPBAR_POS), shlex.quote(item_id)))
+            % (shlex.quote(TOPBAR_IMPL), shlex.quote(TOPBAR_POS)))
+        return None
+    if item_id == "shell":
+        # No position write: shell.qml reads the same topbar-position file
+        # and answers the same `topbar top/bottom/toggle` IPC contract
+        # Relic does (same `target: "topbar"` IpcHandler), so whatever
+        # position was last set carries over rather than being forced.
+        _spawn_sh(
+            "printf '%%s\\n' legacy > %s; bar-switch native"
+            % shlex.quote(TOPBAR_IMPL))
         return None
     raise ValueError("unknown bar %s" % item_id)
 

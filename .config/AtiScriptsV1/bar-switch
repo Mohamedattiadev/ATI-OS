@@ -46,14 +46,24 @@ ISLAND_LAUNCH="$HOME/.config/hypr/scripts/island.sh"
 FORK_DIR="$HOME/.config/quickshell/tide-island-fork"
 TOPBAR_LAUNCH="$HOME/.config/hypr/scripts/topbar.sh"
 TOPBAR_DIR="$HOME/.config/quickshell/topbar"
-# Kept in step with topbar.sh's OWN default by hand rather than sourcing that
-# script for one variable: topbar.sh no longer launches shell.qml via the
-# `-p $TOPBAR_DIR` directory convention (see its own header — "i want this
-# new bar and the island to switch between and the qtile like one will be
-# disabled") and now runs `-p $TOPBAR_DIR/redesign-e-final.qml` directly, so
-# the PID matcher below has to look for THAT argv value or it will never
-# find the process it just started.
-TOPBAR_ENTRY="$TOPBAR_DIR/redesign-e-final.qml"
+# Kept in step with topbar.sh's OWN selection by hand rather than sourcing
+# that script for one variable: topbar.sh no longer always launches
+# redesign-e-final.qml via a hardcoded path — ~/.cache/topbar-impl now
+# picks between it and shell.qml (the "Qtile" picker row brought back;
+# see topbar.sh's own header) — so the PID matcher below has to compute
+# the SAME file topbar.sh would, or it will never find the process it
+# just started, or worse, find the WRONG one and report the right bar as
+# already running when it is not.
+TOPBAR_IMPL_FILE="$HOME/.cache/topbar-impl"
+topbar_entry() {
+  local impl
+  impl="$(cat "$TOPBAR_IMPL_FILE" 2>/dev/null || true)"
+  if [[ "$impl" == legacy ]]; then
+    printf '%s/shell.qml\n' "$TOPBAR_DIR"
+  else
+    printf '%s/redesign-e-final.qml\n' "$TOPBAR_DIR"
+  fi
+}
 DEFAULT_MODE="island"
 
 die() { printf 'bar-switch: %s\n' "$*" >&2; exit 1; }
@@ -297,21 +307,62 @@ PY
 # Asked of the filesystem rather than assumed, because the answer is "no" on
 # any machine where stow has not run yet, and that is exactly when a wrong
 # answer would leave the desktop bare.
-hypr_native_available() { [[ -f "$TOPBAR_ENTRY" && -x "$TOPBAR_LAUNCH" ]]; }
+hypr_native_available() { [[ -f "$(topbar_entry)" && -x "$TOPBAR_LAUNCH" ]]; }
 
 # Matched on the argv list rather than with `pkill -f`, for the reason
 # island_pid() gives: `pgrep -f`/`pkill -f` match this script's OWN command
 # line, which is the trap recorded in hypr/NEXT-SESSION.md's RULES.
 #
-# Matches $TOPBAR_ENTRY (the file), not $TOPBAR_DIR (the directory) — see
-# TOPBAR_ENTRY's own comment above for why those stopped being the same
+# Matches topbar_entry() (the file), not $TOPBAR_DIR (the directory) — see
+# topbar_entry()'s own comment above for why those stopped being the same
 # argv value.
 topbar_pid() {
-  ps -eo pid=,args= | awk -v want="$TOPBAR_ENTRY" \
+  ps -eo pid=,args= | awk -v want="$(topbar_entry)" \
     '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && $(i + 1) == want) { print $1; exit } }'
 }
 
 topbar_running() { [[ -n "$(topbar_pid)" ]]; }
+
+# ---- SWITCHING FILES, NOT JUST POSITION ----
+#
+# topbar_pid() matches whichever ONE file topbar_entry() currently names —
+# right for redesign-e-final.qml's own top/bottom toggle, where the file
+# never changes, only ~/.cache/topbar-position does. It stops being enough
+# the moment ~/.cache/topbar-impl itself changes (redesign-e-final.qml <->
+# shell.qml, the "Qtile" picker row): a caller writes the new impl BEFORE
+# calling `native` (so topbar_entry() already answers with the NEW file
+# by the time apply() runs), which means topbar_running()/topbar_pid()
+# look for the NEW file, find nothing, and topbar_start() launches it — on
+# top of the OLD file's process, still running, never asked to stop. Two
+# layer surfaces reserving space at once, the exact bug topbar.sh's own
+# entry_running() was written against, just for the pair of files instead
+# of one file launched twice.
+#
+# So this matches EITHER file topbar-impl could mean, and topbar_reconcile
+# below kills it only when it is NOT the one topbar_entry() wants now —
+# i.e. only when an impl switch actually happened.
+topbar_pid_any() {
+  ps -eo pid=,args= | awk -v a="$TOPBAR_DIR/redesign-e-final.qml" -v b="$TOPBAR_DIR/shell.qml" \
+    '!/awk/ { for (i = 1; i < NF; i++) if ($i == "-p" && ($(i + 1) == a || $(i + 1) == b)) { print $1; exit } }'
+}
+
+topbar_reconcile_impl() {
+  local pid want
+  pid="$(topbar_pid_any)" || true
+  [[ -n "$pid" ]] || return 0
+  want="$(topbar_entry)"
+  case "$(ps -o args= -p "$pid" 2>/dev/null)" in
+    *"$want"*) return 0 ;;  # already the file we want -- topbar_start's own no-op path
+  esac
+  note "topbar-impl changed; stopping the old file (pid $pid) before starting $want"
+  kill "$pid" 2>/dev/null || true
+  for _ in $(seq 1 40); do
+    [[ -z "$(topbar_pid_any)" ]] && return 0
+    sleep 0.1
+  done
+  note "old topbar (pid $pid) did not exit on SIGTERM; sending SIGKILL"
+  kill -9 "$pid" 2>/dev/null || true
+}
 
 topbar_start() {
   topbar_running && return 0
@@ -508,6 +559,10 @@ apply() {
              would leave this session with no bar at all. The island stays.
              If this is a fresh machine, run installScripts/stow_script.sh."
       fi
+      # Before topbar_start's own idempotent check, which only knows about
+      # the file topbar_entry() names NOW -- see topbar_reconcile_impl's own
+      # header for why a bare topbar_start here would orphan the other file.
+      topbar_reconcile_impl
       topbar_start || die "the topbar did not come up; the island stays"
       write_mode native
       island_stop

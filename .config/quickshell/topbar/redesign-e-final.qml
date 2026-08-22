@@ -69,14 +69,20 @@ ShellRoot {
     property var wsList: []
     property int focusedWsId: -999
 
+    // 6 and 7 deliberately have no entry: asked for directly ("6 and 7 no
+    // icon pls") -- they show the plain workspace number instead. 7 having
+    // no icon was also silently falling through iconForWs's old default to
+    // 0xF0E7, workspace 1's OWN icon, i.e. workspace 7 rendered as a second
+    // "1" -- the same "workspace 1 appeared twice" class of bug as the "S"
+    // scratchpad fix above, just never reported because nothing occupies 7
+    // often enough to notice.
     readonly property var wsIcons: ({
         "1": 0xF0E7, "2": 0xF03D, "3": 0xF07C, "4": 0xF121, "5": 0xF0AC,
-        // "6": fa-eye (U+F06E), NOT the U+1F441 emoji Workspaces.qml uses —
-        // asked for directly ("the eye icon not like the others, fix it").
-        // An emoji glyph comes from a completely different font than every
-        // Nerd Font icon around it, which is exactly why it looked wrong.
-        "6": 0xF06E, "8": 0xF02D, "9": 0xF2C6
+        "8": 0xF02D, "9": 0xF2C6
     })
+    function hasIconForWs(name) {
+        return demo.wsIcons[String(name)] !== undefined;
+    }
     function iconForWs(name) {
         const n = String(name);
         return demo.wsIcons[n] !== undefined ? demo.wsIcons[n] : 0xF0E7;
@@ -1514,7 +1520,8 @@ ShellRoot {
                                         spacing: Metrics.s(3)
                                         anchors.centerIn: parent
                                         Glyph {
-                                            text: String.fromCodePoint(demo.iconForWs(wsDelegate.modelData.name))
+                                            visible: demo.hasIconForWs(wsDelegate.modelData.name)
+                                            text: visible ? String.fromCodePoint(demo.iconForWs(wsDelegate.modelData.name)) : ""
                                             // Three states, qtile-style: focused
                                             // (accent), occupied-but-elsewhere
                                             // (full-opacity fill so you can see
@@ -1527,17 +1534,38 @@ ShellRoot {
                                             font.pixelSize: Metrics.s(10)
                                             anchors.verticalCenter: undefined
                                         }
+                                        // Plain number for workspaces with no icon (6, 7) --
+                                        // "Symbols Nerd Font" (Glyph's font) carries icon
+                                        // codepoints only, no digits, so this needs Label's
+                                        // normal text font rather than just an un-mapped Glyph.
+                                        Label {
+                                            visible: !demo.hasIconForWs(wsDelegate.modelData.name)
+                                            text: visible ? String(wsDelegate.modelData.name) : ""
+                                            fg: wsDelegate.wsActive ? BarTheme.accent : BarTheme.alpha(BarTheme.fg, 0.9)
+                                            font.pixelSize: Metrics.s(10)
+                                            anchors.verticalCenter: undefined
+                                        }
                                         // A real "|" between the workspace icon and
-                                        // the layout glyph.
+                                        // the layout glyph — only when there is a
+                                        // layout worth naming, i.e. the active
+                                        // workspace actually has windows on it.
+                                        // Gated on wsActive alone, this drew a
+                                        // dangling "|" with nothing after it on an
+                                        // empty active workspace (no icon, no
+                                        // apps) — reported directly.
                                         Divider {
-                                            visible: wsDelegate.wsActive
+                                            visible: wsDelegate.wsActive && wsDelegate.wsOccupied
                                             height: Metrics.s(11)
                                         }
                                         // The layout glyph — REAL now, from the
                                         // same runtime file LayoutState.qml reads,
-                                        // not a hardcoded monadtall.
+                                        // not a hardcoded monadtall. Same gate as
+                                        // the divider above: a layout glyph for a
+                                        // workspace with nothing tiled on it is
+                                        // exactly as meaningless as the "|" in
+                                        // front of it.
                                         Glyph {
-                                            visible: wsDelegate.wsActive
+                                            visible: wsDelegate.wsActive && wsDelegate.wsOccupied
                                             text: String.fromCodePoint(demo.layoutGlyph)
                                             fg: BarTheme.accent
                                             font.pixelSize: Metrics.s(10)
