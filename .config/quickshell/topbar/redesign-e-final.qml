@@ -1619,6 +1619,41 @@ ShellRoot {
                             active: demo.recordingActive
                             anchors.verticalCenter: parent.verticalCenter
                         }
+
+                        // Keyboard layout, at the far right of the WHOLE
+                        // pill rather than inside the per-workspace box --
+                        // "most right in the pill". Only when it has
+                        // actually left English, so "|ar" / "|tr" / "|de"
+                        // is the last thing in the pill and the rest of the
+                        // time this row ends at RecDot exactly as before.
+                        Divider {
+                            visible: demo.layoutCode !== "EN"
+                            height: Metrics.s(11)
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Label {
+                            visible: demo.layoutCode !== "EN"
+                            // Bumped up from the plain-text default size and
+                            // bolded -- asked for directly ("make its size
+                            // fit the others"), since Label's normal weight
+                            // reads as noticeably smaller/thinner next to
+                            // the bold Nerd Font icons that make up the rest
+                            // of this pill.
+                            text: visible
+                                // demo.layoutCode is active_keymap.slice(0,2)
+                                // -- right for "Arabic" -> "AR" but wrong for
+                                // "Turkish" -> "TU" and "German" -> "GE".
+                                // Corrected only here, not in layoutCode
+                                // itself, so the keyboard-layout label
+                                // elsewhere on the bar is untouched.
+                                ? ({ "TU": "TR", "GE": "DE" }[demo.layoutCode]
+                                    || demo.layoutCode)
+                                : ""
+                            fg: BarTheme.accent
+                            font.bold: true
+                            font.pixelSize: Metrics.s(12)
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                     }
 
                     // THE MODE FACE — shell.qml's real submapMap text,
@@ -1871,24 +1906,6 @@ ShellRoot {
                         }
                         Divider {}
                         StatBadge {
-                            icon: 0xF028; value: demo.statVolume; tint: BarTheme.green   // fa-volume_up
-                            MouseArea {
-                                anchors.fill: parent
-                                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                hoverEnabled: true
-                                onClicked: (mouse) => {
-                                    if (mouse.button === Qt.RightButton)
-                                        Quickshell.execDetached(["pavucontrol"]);
-                                    else
-                                        Quickshell.execDetached(["wpctl", "set-mute",
-                                            "@DEFAULT_AUDIO_SINK@", "toggle"]);
-                                    volPollSoon.restart();
-                                }
-                                onEntered: barTooltip.enter(parent, "Volume · click: mute · right-click: mixer")
-                                onExited: barTooltip.exit(parent)
-                            }
-                        }
-                        StatBadge {
                             icon: 0xF0599; value: demo.statBrightness; tint: BarTheme.yellow // md-weather_sunny
                             MouseArea {
                                 anchors.fill: parent
@@ -2089,32 +2106,29 @@ ShellRoot {
                             onExited: barTooltip.exit(parent)
                         }
                     }
+                    // The standalone keyboard-layout label that used to
+                    // live here is gone -- "no need for the language
+                    // thing", now that the active workspace pill already
+                    // shows "TR"/"AR"/"DE" itself. The volume badge (moved
+                    // out of the CPU/mem pill, same stacked icon+percentage
+                    // and same click/right-click behaviour as it had
+                    // there) takes its slot instead.
                     Divider {}
-                    // Real current layout (polled every 2s off `hyprctl -j
-                    // devices`). REVERSED BACK per the follow-up: opening
-                    // the `lang` submap was the wrong fix — what was
-                    // actually asked for is a plain cycle, L-click forward
-                    // (en -> ar -> tr -> ...), R-click backward, same
-                    // direction convention as the layout chip's R-click in
-                    // shell.qml. Bug behind it not moving before: this
-                    // MouseArea never declared acceptedButtons, so the
-                    // right-click branch was unreachable — same root
-                    // cause as the Arch icon's terminal not opening.
-                    Label {
-                        text: demo.layoutCode
-                        fg: BarTheme.fg
+                    StatBadge {
+                        icon: 0xF028; value: demo.statVolume; tint: BarTheme.green   // fa-volume_up
                         MouseArea {
                             anchors.fill: parent
-                            anchors.margins: -Metrics.s(4)
                             acceptedButtons: Qt.LeftButton | Qt.RightButton
                             hoverEnabled: true
                             onClicked: (mouse) => {
-                                Quickshell.execDetached(
-                                    ["hyprctl", "switchxkblayout", "all",
-                                     mouse.button === Qt.RightButton ? "prev" : "next"]);
-                                kbPollSoon.restart();
+                                if (mouse.button === Qt.RightButton)
+                                    Quickshell.execDetached(["pavucontrol"]);
+                                else
+                                    Quickshell.execDetached(["wpctl", "set-mute",
+                                        "@DEFAULT_AUDIO_SINK@", "toggle"]);
+                                volPollSoon.restart();
                             }
-                            onEntered: barTooltip.enter(parent, "Keyboard layout")
+                            onEntered: barTooltip.enter(parent, "Volume · click: mute · right-click: mixer")
                             onExited: barTooltip.exit(parent)
                         }
                     }

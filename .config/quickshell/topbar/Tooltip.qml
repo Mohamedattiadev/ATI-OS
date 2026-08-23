@@ -48,7 +48,17 @@ PopupWindow {
     anchor {
         window: root.target ? root.target.QsWindow.window : null
         rect.x: root.target ? root.target.mapToItem(null, 0, 0).x : 0
-        rect.y: root.target ? (root.belowTarget ? root.target.height + root.gap : -root.gap) : 0
+        // WINDOW-relative, not target-relative — a chip whose own top
+        // isn't at y=0 in the bar window (anything vertically centred in
+        // a bar taller than the chip, which is most of them) was placing
+        // the popup at "chip height + gap" measured from the WINDOW's
+        // top edge instead of from the chip's actual bottom edge, so the
+        // tooltip landed on top of the bar/pills instead of under them.
+        rect.y: root.target
+            ? (root.belowTarget
+                ? root.target.mapToItem(null, 0, root.target.height).y + root.gap
+                : root.target.mapToItem(null, 0, 0).y - root.gap)
+            : 0
         rect.width: root.target ? root.target.width : 0
         // Centred under/over the chip depending on belowTarget.
         edges: root.belowTarget ? Edges.Bottom : Edges.Top
