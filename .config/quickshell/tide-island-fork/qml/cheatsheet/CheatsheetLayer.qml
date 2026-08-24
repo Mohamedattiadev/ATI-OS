@@ -240,6 +240,7 @@ FocusScope {
     // behind, correct on the first press and lying on every one after.
     // Toggling the Loader destroys the pair and builds a new one.
     function reload() {
+        console.log("[cheatsheet] reload() for sheet '" + root.sheet + "'");
         root.loading = true;
         fetchLoader.active = false;
         fetchLoader.active = true;
@@ -283,6 +284,12 @@ FocusScope {
     // the very first cheatsheet of a session would show "nothing in this
     // sheet" forever, having never asked cheatsheet.py for anything.
     Component.onCompleted: {
+        // If this ever logs mid-session (not just once at the very start),
+        // the whole CheatsheetLayer instance was destroyed and rebuilt --
+        // `sheet` resets to its "hypr" default on that, which would look
+        // exactly like "scroll up and it goes to hyprland" from the
+        // outside even though nothing about scrolling caused it.
+        console.log("[cheatsheet] CheatsheetLayer (re)created, sheet='" + root.sheet + "'");
         if (root.showCondition)
             root.reload();
     }
@@ -293,10 +300,33 @@ FocusScope {
 
         sourceComponent: Component {
             Process {
+                // "switch to vim, scroll down, scroll up again -> it goes
+                // to hyprland". `command` above is a LIVE binding to
+                // root.sheet, but this Process was already spawned for
+                // whatever sheet was current the moment it was created --
+                // reading root.sheet again down in onStreamFinished, after
+                // the fact, answers "what sheet is selected NOW", not
+                // "what sheet was this particular fetch FOR". Two fetches
+                // can be in flight at once (a fast double Tab, or Tab
+                // right as a slow one is still running) and nothing before
+                // this stopped the OLDER one's callback from landing
+                // second and overwriting the newer sheet's content with
+                // the older sheet's data -- exactly the shape reported,
+                // and exactly what reload()'s own comment already named
+                // as the risk ("StdioCollector hand back the PREVIOUS
+                // run's text") without this guard actually closing it.
+                // Captured once, at creation, so it can't drift.
+                id: fetchProcess
+                property string fetchedFor: root.sheet
                 command: ["python3", root.ctl, "--sheet-json", root.sheet]
                 running: true
                 stdout: StdioCollector {
                     onStreamFinished: {
+                        if (fetchProcess.fetchedFor !== root.sheet) {
+                            console.log("[cheatsheet] discarding stale fetch for '"
+                                + fetchProcess.fetchedFor + "', current sheet is '" + root.sheet + "'");
+                            return;
+                        }
                         root.loading = false;
                         try {
                             const parsed = JSON.parse(text);
@@ -338,6 +368,7 @@ FocusScope {
         const order = root.sheetOrder;
         const at = order.indexOf(root.sheet);
         const next = (at < 0 ? 0 : (at + step + order.length) % order.length);
+        console.log("[cheatsheet] cycleSheet(" + step + ") from '" + root.sheet + "' -> '" + order[next] + "'");
         if (order[next] !== root.sheet) {
             searchField.clear();
             root.sheet = order[next];

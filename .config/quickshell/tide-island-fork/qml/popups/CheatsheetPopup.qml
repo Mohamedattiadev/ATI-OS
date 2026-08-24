@@ -353,14 +353,18 @@ PopupChrome {
         case Qt.Key_Slash:
             root.enterSearch();
             break;
-        case Qt.Key_K:
-            // qtile's `k` is BOTH "show the WM sheet" and "scroll up", and
-            // which one it means depends on whether a sheet is already up.
-            // Here one always is, so it is the sheet key and j/k scrolling
-            // lives on j and Up/Down. Reproducing the overload would make the
-            // most-pressed key in the chord ambiguous.
-            root.which = "hypr";
-            break;
+        // "opened the hyprland cheat, switched to vim, scrolled down, and
+        // scrolling back up goes to hyprland" — this WAS `k`: qtile's
+        // chord overloads k as "show the WM sheet"/"scroll up" depending
+        // on context, and porting only the "show the WM sheet" half here
+        // left k silently discarding whatever sheet you were reading and
+        // jumping to hypr, while its own comment even called out that j
+        // scrolls and k does not — the exact asymmetry that bit this: j to
+        // scroll down, k out of the same j/k muscle memory to scroll back
+        // up, landing on the wrong sheet instead. k now scrolls, matching
+        // Up and matching j; the WM sheet is still one key away on its own
+        // letter, same as vim/fish/island/docs/trouble each already are.
+        case Qt.Key_W: root.which = "hypr"; break;
         case Qt.Key_V: root.which = "vim"; break;
         case Qt.Key_F: root.which = "fish"; break;
         case Qt.Key_I: root.which = "island"; break;
@@ -369,7 +373,7 @@ PopupChrome {
         case Qt.Key_J: case Qt.Key_Down:
             body.scrollBy(PopupMetrics.s(60));
             break;
-        case Qt.Key_Up:
+        case Qt.Key_K: case Qt.Key_Up:
             body.scrollBy(-PopupMetrics.s(60));
             break;
         case Qt.Key_Tab:
