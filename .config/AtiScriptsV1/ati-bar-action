@@ -325,8 +325,8 @@ case "$key" in
   "showPicker bars")          run bar-chooser ;;
 
   # ---- windows and workspaces: rofi has modes for both ----
-  "showPicker windows")       run rofi -show window -show-icons ;;
-  "showPicker workspaces")    run rofi -show window -show-icons ;;
+  "showPicker windows")       run rofi_windows ;;
+  "showPicker workspaces")    run rofi_windows ;;
 
   # ---- the cheatsheets ----
   #

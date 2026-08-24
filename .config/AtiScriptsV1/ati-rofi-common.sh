@@ -274,15 +274,14 @@ rofi_select() {
 rofi_input() {
     local prompt="${1:-Input}" mesg="${2:-}" prefill="${3:-}"
 
-    # Hyprland: same QML dmenu route as rofi_confirm above. The "input"
-    # payload has no prefill field at all (Menu.qml's applyDmenuSelection
-    # for input mode always starts from an empty filterText) -- a caller
-    # that relies on $prefill actually being pre-typed loses that on this
-    # path, everything else carries through.
+    # Hyprland: same QML dmenu route as rofi_confirm above. ati-menu-select
+    # now carries prefill through to Menu.qml's openDmenu() (see its own
+    # header), so this no longer loses $prefill the way it used to --
+    # everything else already carried through.
     if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v ati-menu-select >/dev/null 2>&1; then
         local full_prompt="$prompt"
         [[ -n "$mesg" ]] && full_prompt="$prompt ($mesg)"
-        ati-menu-select --mode input --prompt "$full_prompt"
+        ati-menu-select --mode input --prompt "$full_prompt" --prefill "$prefill"
         return
     fi
 

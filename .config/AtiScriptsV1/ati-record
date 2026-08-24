@@ -6,6 +6,16 @@
 
 set -euo pipefail
 
+# rofi_select — "win+p then r [record] opens rofi, i want it open the
+# rofi like qml one". rofi_select already IS that switch (Wayland +
+# ati-menu-select installed -> the same Menu.qml dmenu view the
+# screenshot picker uses; anywhere else -> real rofi, unchanged). This
+# script just never called it, reaching for its own literal `rofi -dmenu`
+# below instead.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/ati-rofi-common.sh"
+
 # Configuration
 record_dir="${record_dir:-$HOME/Videos/Recordings}"
 mkdir -p "$record_dir"
@@ -337,7 +347,16 @@ askrecording() {
       ;;
     esac
   else
-    choice=$(printf "Screen + Audio (full display)\\nScreen Only (full display)\\nScreen Area (selection)\\nAudio Only\\nWebcam (low-res 640x480)\\nWebcam (HD 1920x1080)\\nGIF (screen area)" | ${MENU} "Select recording mode:")
+    # rofi_select picks Menu.qml's dmenu view over real rofi on Wayland
+    # (see the header note); ${MENU} itself is left as-is for the
+    # dmenu/text branches just above, and as rofi_select's own X11/no-qml
+    # fallback, which is real rofi either way -- unchanged behaviour there.
+    # || true: rofi_select exits non-zero on Escape (the ordinary way to
+    # back out), and under this script's own set -e that would otherwise
+    # kill it right here instead of reaching the `*) notify "No selection
+    # made"` case below that already exists to handle exactly that —
+    # same trap rofi_translator had, see its own note on the same fix.
+    choice=$(printf "Screen + Audio (full display)\\nScreen Only (full display)\\nScreen Area (selection)\\nAudio Only\\nWebcam (low-res 640x480)\\nWebcam (HD 1920x1080)\\nGIF (screen area)" | rofi_select "Select recording mode:") || true
     case "$choice" in
     "Screen + Audio (full display)") record_screen_audio ;;
     "Screen Only (full display)") record_screen ;;

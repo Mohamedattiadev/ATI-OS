@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
+import Quickshell.Services.UPower
 
 //
 // qtile's GroupBox, on Hyprland workspaces.
@@ -103,6 +104,11 @@ Item {
 
     property var workspaces: []
     property int focusedId: -1
+
+    // Backs the low-battery marker at the end of the Row, below.
+    readonly property var battery: UPower.displayDevice
+    readonly property bool batteryLow: root.battery && root.battery.isLaptopBattery
+        && root.battery.percentage <= 0.10
 
     // ---- qtile's GROUP LABELS, WHICH ARE ICONS AND NOT DIGITS ----
     //
@@ -474,6 +480,37 @@ Item {
                     }
                 }
             }
+        }
+
+        // ---- LOW-BATTERY MARKER, PINNED TO THE RIGHT OF THE GROUP ----
+        //
+        // Not part of the qtile GroupBox this file otherwise mirrors — added
+        // because a battery at 10% or under is easy to miss in the far-right
+        // battery chip while attention is on the workspace pill itself. A
+        // "|" then the bare glyph — no percentage, the colour and position
+        // already say "low" — as the LAST two children of the Row, so it
+        // always reads as the rightmost thing in the plate regardless of how
+        // many workspaces are visible. Row skips invisible children for both
+        // spacing and position, so both collapse away together when the
+        // battery isn't low.
+        Text {
+            visible: root.batteryLow
+            text: "|"
+            color: BarTheme.fg
+            font.family: Metrics.textFamily
+            font.pixelSize: root.labelPixelSize
+            renderType: Text.NativeRendering
+            anchors.verticalCenter: parent.verticalCenter
+        }
+
+        Text {
+            visible: root.batteryLow
+            text: String.fromCharCode(0xF240)
+            color: BarTheme.red
+            font.family: "Symbols Nerd Font"
+            font.pixelSize: root.labelPixelSize
+            renderType: Text.NativeRendering
+            anchors.verticalCenter: parent.verticalCenter
         }
     }
 }

@@ -1494,6 +1494,12 @@ ShellRoot {
                         visible: opacity > 0.01
                         Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
+                        // Backs the low-battery marker at the very end of
+                        // this Row, below.
+                        readonly property bool lowBattery: UPower.displayDevice
+                            && UPower.displayDevice.isLaptopBattery
+                            && UPower.displayDevice.percentage <= 0.10
+
                         Row {
                             spacing: Metrics.s(6)
                             anchors.verticalCenter: parent ? parent.verticalCenter : undefined
@@ -1614,7 +1620,16 @@ ShellRoot {
                         // "a red circle on off till i finish the
                         // recording, in the workcspcae part" — pulses for
                         // as long as demo.recordingActive (ati-record's
-                        // pidfile) is true, takes zero width otherwise.
+                        // pidfile) is true, takes zero width otherwise. The
+                        // divider is gated on the same flag rather than on
+                        // RecDot's own (delayed) visible, so it disappears
+                        // together with the dot instead of lagging behind
+                        // through RecDot's 220ms fade-out.
+                        Divider {
+                            visible: demo.recordingActive
+                            height: Metrics.s(11)
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                         RecDot {
                             active: demo.recordingActive
                             anchors.verticalCenter: parent.verticalCenter
@@ -1653,6 +1668,58 @@ ShellRoot {
                             font.bold: true
                             font.pixelSize: Metrics.s(12)
                             anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        // Battery at 10% or under — "|battery icon" in the
+                        // most right. Asked for as the SAME hand-drawn
+                        // body+nub shape as the far-right battery indicator
+                        // further down this file, with the percentage
+                        // sitting INSIDE the outline rather than a bare
+                        // glyph next to a number — "make the icon of
+                        // battery like this, which has percentage inside
+                        // it". Two plain Rectangles rather than a font
+                        // glyph for the same reason that one is: the text
+                        // is centred on a box this code drew, not on a
+                        // glyph's undocumented internal padding.
+                        Divider {
+                            visible: normalFace.lowBattery
+                            height: Metrics.s(11)
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Item {
+                            visible: normalFace.lowBattery
+                            width: Metrics.s(18)
+                            height: Metrics.s(10)
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            Rectangle {
+                                id: pillBattBody
+                                width: parent.width - Metrics.s(3)
+                                height: parent.height
+                                radius: Metrics.s(2)
+                                color: "transparent"
+                                border.width: Metrics.s(1)
+                                border.color: BarTheme.red
+
+                                Label {
+                                    anchors.centerIn: parent
+                                    anchors.verticalCenter: undefined
+                                    text: UPower.displayDevice
+                                        ? String(Math.round(UPower.displayDevice.percentage * 100))
+                                        : "--"
+                                    fg: BarTheme.red
+                                    font.pixelSize: Metrics.s(6)
+                                    font.bold: true
+                                }
+                            }
+                            Rectangle {
+                                x: pillBattBody.width
+                                width: Metrics.s(2)
+                                height: parent.height * 0.5
+                                anchors.verticalCenter: pillBattBody.verticalCenter
+                                radius: Metrics.s(1)
+                                color: BarTheme.red
+                            }
                         }
                     }
 

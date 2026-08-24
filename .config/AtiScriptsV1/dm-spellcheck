@@ -285,7 +285,29 @@ def render_table(cells):
 
 
 # ---------------- Rofi steps ----------------
+#
+# "the spellcheck ... still rofi ... i want it open the rofi like qml
+# one" -- this was the one prompt in the file that never had a QML leg
+# at all (review_qml below has had one for a while). It was rofi-only
+# because ati-menu-select's input mode had no prefill field to carry the
+# clipboard/selection text into -- fixed at the source (ati-menu-select
+# --prefill, Menu.qml's openDmenu() seeding filterText from it) rather
+# than worked around here. Ctrl+u/Ctrl+w clearing and the bold <b> mesg
+# footer have no QML equivalent (plain TextInput, no markup) and are
+# dropped on that path -- the prefill was the part actually reported.
+def ask_text_qml(prefill=""):
+    rc, out = run_full(
+        ["ati-menu-select", "--mode", "input",
+         "--prompt", "Spell-check (word or sentence)",
+         "--prefill", prefill],
+        stdin_text="",
+    )
+    return out.strip() if rc == 0 else ""
+
+
 def ask_text(prefill=""):
+    if wayland_active():
+        return ask_text_qml(prefill)
     return run(
         ["rofi", "-dmenu", "-i", "-p", "Spell-check", "-filter", prefill,
          *CLEAR_KEYS,
@@ -432,6 +454,7 @@ def review(text):
             return "quit"
         if kind == "all":
             text = apply_all(text, matches)
+            copy(text)
             continue
 
         options = top_replacements(match)
@@ -445,7 +468,11 @@ def review(text):
                 continue
         else:
             pick = options[0]
+        # Same as review_qml's own copy-on-fix: every individual
+        # correction updates the clipboard, not just the explicit
+        # "Copy corrected text as-is" row.
         text = apply_fix(text, match, pick)
+        copy(text)
 
 
 # ---------------- Hyprland: same LT check, QML picker instead of rofi ----------------
@@ -503,6 +530,7 @@ def review_qml(text):
             return "new", text
         if kind == "all":
             text = apply_all(text, matches)
+            copy(text)
             continue
 
         options = top_replacements(match)
@@ -523,16 +551,20 @@ def review_qml(text):
                 continue
         else:
             pick = options[0]
+        # "when i correct the word ... should be copied in my clipboard"
+        # -- previously only the explicit "Copy corrected text as-is" row
+        # copied anything; every individual fix now updates the clipboard
+        # too, so the latest state of the text is always what's sitting
+        # there, not just whatever you had before you started correcting.
         text = apply_fix(text, match, pick)
+        copy(text)
 
 
 def main():
     # Accepted for dmscripts compatibility (qtile calls `dm-spellcheck -r`);
-    # ask_text stays rofi-only regardless of session (its rofi -filter
-    # prefill has no QML dmenu equivalent -- input mode always starts
-    # empty, confirmed against Menu.qml's openDmenu() -- and prefilling
-    # the text to check is the entire point of this prompt, not a nicety
-    # to drop); review() below picks rofi vs the QML flow per session.
+    # ask_text (just above) and review() (below) both now pick rofi vs
+    # the QML flow per session, ask_text via wayland_active() same as
+    # everything else in this file.
     args = [a for a in sys.argv[1:] if a not in ("-r", "-d", "-f")]
 
     text = " ".join(args).strip()

@@ -618,13 +618,24 @@ Item {
 
     var query = root.filterText.trim().toLowerCase()
     for (var i = 0; i < root.dmenuOptions.length; i++) {
-      // An option is "<label>", "<glyph>\t<label>", or
-      // "<glyph>\t<label>\t<subtext>". The glyph never comes back with the
-      // selection; the subtext renders under the label, filters alongside it,
-      // and returns with the selection as a stable key for same-named rows.
+      // An option is "<label>", "<glyph>\t<label>", "<glyph>\t<label>\t<subtext>",
+      // or "<glyph>\t<label>\t<subtext>\t<appIconName>" -- the fourth field a
+      // real icon-theme name (e.g. a window's WM class) rather than a font
+      // glyph, for callers that have one (rofi_windows). Popped off the
+      // BACK so three-field rows are untouched -- the glyph/label/subtext
+      // contract every existing dmenu caller already relies on. Neither
+      // the glyph nor the appIcon name comes back with the selection; the
+      // subtext renders under the label, filters alongside it, and returns
+      // with the selection as a stable key for same-named rows.
+      //
+      // (A fifth field, rightLabel, briefly existed here for a two-column
+      // single-row layout -- reverted, unverified and implicated in
+      // "the translation not work at all", back to the simpler multi-row
+      // shape every other dmenu caller already uses and is proven to work.)
       var parts = String(root.dmenuOptions[i] || "").split("\t")
       var icon = parts.length > 1 ? parts.shift() : ""
       var label = parts.shift() || ""
+      var appIconName = parts.length > 1 ? parts.pop() : ""
       var detail = parts.join("\t")
       if (query && label.toLowerCase().indexOf(query) < 0
           && detail.toLowerCase().indexOf(query) < 0) continue
@@ -634,7 +645,7 @@ Item {
         kind: "dmenu",
         icon: icon,
         iconFont: "",
-        appIcon: "",
+        appIcon: appIconName,
         appId: "",
         label: label,
         target: "",
@@ -940,7 +951,12 @@ Item {
     dmenuMaxHeight = Math.max(0, Number(payload.maxHeight || 0))
     activeMenu = "root"
     navStack = []
-    filterText = ""
+    // Input mode only -- a select payload's rows are meant to be filtered
+    // from empty, and dropping a stray "prefill" into that would just
+    // pre-narrow the list rather than pre-type an answer. ati-menu-select
+    // sends prefill for "input" alone; this guard is what makes select's
+    // silent absence of that field forgiving instead of a TypeError.
+    filterText = mode === "input" ? String(payload.prefill || "") : ""
     selectedIndex = 0
     cursorActive = mode !== "input"
     root.disarmPointer()
@@ -1362,7 +1378,18 @@ Item {
 
               readonly property bool hasCursor: root.cursorActive && row.index === root.selectedIndex
               readonly property bool isApp: row.kind === "app"
-              readonly property bool hasIcon: row.icon.length > 0 || row.isApp
+              // A dmenu row with a 4th (appIcon) field -- rofi_windows'
+              // real per-window icons, not the glyph font. See the payload
+              // note in rebuildDisplay() for the wire format.
+              readonly property bool hasAppIcon: row.kind === "dmenu" && row.appIcon.length > 0
+              // "the icons are behind the text" -- hasIcon is what the
+              // label Column's own left anchor/margin (below) reserves
+              // room for (anchors to iconText.right, invisible or not,
+              // exactly as the isApp case already relies on). Without
+              // hasAppIcon here the column anchored at the no-icon margin
+              // instead, and the real image just sat on top of it at
+              // x=0-ish -- there was never a gap reserved for it at all.
+              readonly property bool hasIcon: row.icon.length > 0 || row.isApp || row.hasAppIcon
 
               width: ListView.view.width
               height: root.rowHeightForDetail(row.detail)
@@ -1386,7 +1413,7 @@ Item {
 
               Text {
                 id: iconText
-                visible: row.hasIcon && !row.isApp
+                visible: row.hasIcon && !row.isApp && !row.hasAppIcon
                 text: row.icon
                 color: row.hasCursor ? root.selectedText : root.foreground
                 font.family: row.iconFont.length > 0 ? row.iconFont : root.fontFamily
@@ -1401,7 +1428,7 @@ Item {
 
               Image {
                 id: appIconImage
-                visible: row.isApp
+                visible: row.isApp || row.hasAppIcon
                 width: Style.font.iconLarge
                 height: Style.font.iconLarge
                 fillMode: Image.PreserveAspectFit
@@ -1409,7 +1436,8 @@ Item {
                 // PNG icons upscaled and blurry on HiDPI displays.
                 sourceSize.width: width * Screen.devicePixelRatio
                 sourceSize.height: height * Screen.devicePixelRatio
-                source: row.isApp && root.appLibrary ? root.appLibrary.iconSource(row.appIcon) : ""
+                source: (row.isApp || row.hasAppIcon) && root.appLibrary
+                    ? root.appLibrary.iconSource(row.appIcon) : ""
                 asynchronous: true
                 anchors.left: parent.left
                 anchors.leftMargin: root.rowReservedBorderLeft + Style.space(8) + (Style.space(36) - width) / 2

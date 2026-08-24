@@ -29,12 +29,20 @@ set -uo pipefail
 MODE="select"
 PROMPT="Select"
 WIDTH=300
+# input mode only -- Menu.qml's openDmenu() seeds filterText from this so
+# an --mode input caller (dm-spellcheck's ask_text, rofi_input's own
+# $prefill arg) gets the same pre-typed-answer behaviour rofi's own
+# `-filter "$prefill"` gave it. Previously dropped entirely on this path
+# -- see rofi_input's header in ati-rofi-common.sh for the report that
+# named it.
+PREFILL=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --mode) MODE="$2"; shift 2 ;;
     --prompt) PROMPT="$2"; shift 2 ;;
     --width) WIDTH="$2"; shift 2 ;;
+    --prefill) PREFILL="$2"; shift 2 ;;
     # Bare positional prompt, same convention `rofi -dmenu -i -p PROMPT`
     # takes -- so this script is a drop-in for existing `${RMENU} "prompt"`
     # call sites that swap their RMENU default per-session, no other
@@ -56,10 +64,44 @@ done_file="$(mktemp -u)"
 payload_file="$(mktemp --suffix=.json)"
 trap 'rm -f "$selection_file" "$done_file" "$payload_file"' EXIT
 
+# Read once into a variable rather than letting jq consume stdin directly
+# below -- the width fit pass just under this needs the same rows too,
+# and a pipe can only be read once.
+STDIN_ROWS=""
+[[ "$MODE" == "select" ]] && STDIN_ROWS="$(cat)"
+
 options_json="[]"
 if [[ "$MODE" == "select" ]]; then
-  options_json="$(jq -Rn '[inputs | select(length > 0)]')"
+  options_json="$(printf '%s\n' "$STDIN_ROWS" | jq -Rn '[inputs | select(length > 0)]')"
 fi
+
+# ---- auto-fit width: "make the size of the popup fit the size of txt" ----
+#
+# Label/subtext Text elements elide to whatever width the payload carries
+# (Menu.qml, unchanged) -- so a caller-picked WIDTH narrower than its own
+# content truncates with "…", which read as "the translator just shows
+# 'word -> ...'". The content is only known on this side of the IPC call,
+# so it's measured here rather than in Menu.qml: longest FIELD (icon,
+# label, or subtext each render on their own line, never concatenated)
+# across every row, plus the prompt and, for --mode input, the prefill.
+#
+# This only ever WIDENS WIDTH, never shrinks it -- a caller's own guess
+# stays the floor for short content, and this is what pushes past it for
+# long content, not a target everything gets squeezed to.
+longest=${#PROMPT}
+if [[ "$MODE" == "select" && -n "$STDIN_ROWS" ]]; then
+  while IFS=$'\t' read -r -a fields; do
+    for f in "${fields[@]}"; do
+      (( ${#f} > longest )) && longest=${#f}
+    done
+  done <<<"$STDIN_ROWS"
+fi
+[[ "$MODE" == "input" && ${#PREFILL} -gt $longest ]] && longest=${#PREFILL}
+# ~8px/char at this popup's font size, plus the icon column + margins
+# Menu.qml reserves regardless of content (measured against dm-spellcheck's
+# own 700 for a ~75-char row, which was comfortable, not cramped).
+fit_width=$(( longest * 8 + 90 ))
+(( fit_width > WIDTH )) && WIDTH=$fit_width
 
 jq -n \
   --arg mode "$MODE" \
@@ -68,7 +110,8 @@ jq -n \
   --arg selectionFile "$selection_file" \
   --arg doneFile "$done_file" \
   --argjson width "$WIDTH" \
-  '{mode: $mode, prompt: $prompt, options: $options, selectionFile: $selectionFile, doneFile: $doneFile, width: $width}' \
+  --arg prefill "$PREFILL" \
+  '{mode: $mode, prompt: $prompt, options: $options, selectionFile: $selectionFile, doneFile: $doneFile, width: $width, prefill: $prefill}' \
   > "$payload_file"
 
 IPC_BIN=qs

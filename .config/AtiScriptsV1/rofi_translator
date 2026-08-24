@@ -52,14 +52,34 @@ require_cmd xclip rofi trans || exit 1
 mkdir -p "$TMP_DIR"
 
 # -------------------------- Check if word is selected --------------------------
-WORD=$(xclip -o -selection primary 2>/dev/null | tr -d '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+#
+# "win+p then e [translate], check" — traced with bash -x: this whole
+# script was dying right here, silently, under `set -euo pipefail`.
+# xclip exits non-zero when nothing is on the primary selection (the
+# NORMAL case the comment below already expects), pipefail promotes
+# that into the pipeline's own exit status, and set -e then kills the
+# script on THIS assignment before it ever reaches the `[ -z "$WORD" ]`
+# fallback three lines down — no rofi, no qml, nothing, exactly what was
+# reported. `|| true` on each of the two reads below is the fix: let the
+# explicit -z checks that already exist decide what "nothing" means,
+# same as dm-spellcheck's ask_text already does for the same read.
+#
+# xclip is also X11-only. dm-spellcheck branches on wayland_active() and
+# uses wl-paste there; this file never did, so on a pure-Wayland session
+# (no XWayland selection sync) xclip could come back empty or wrong even
+# with real text selected. Same branch, ported.
+if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-paste >/dev/null 2>&1; then
+	WORD=$(wl-paste --primary --no-newline 2>/dev/null | tr -d '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//') || true
+else
+	WORD=$(xclip -o -selection primary 2>/dev/null | tr -d '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//') || true
+fi
 
 # Nothing highlighted is a normal way to reach this, not an error — you
 # often want a word you are thinking of rather than one on screen. Ask
 # for it instead of bailing out.
 if [ -z "$WORD" ]; then
 	WORD=$(rofi_input "Translate" "nothing selected — type a word" |
-		tr -d '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+		tr -d '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//') || true
 fi
 [ -z "$WORD" ] && exit 0
 
@@ -74,9 +94,30 @@ call_gemini() {
 	gemini "$1" || true
 }
 
+# "confirms-> " (blank) — translate-shell's default engine is Google, and
+# Google was rate-limited: `trans -b ":ar" confirms` exits 0 and prints
+# its "[ERROR] Google did not return results" to STDERR, so $(...) here
+# captures nothing and TRANSLATION ends up empty with no failure anywhere
+# to catch. Confirmed live: `trans -e bing` answers the same query fine
+# while Google is still rate-limited. So: try the default engine first
+# (it's usually the better translation), and only reach for bing if that
+# came back empty — same shape as call_gemini's own "degrade, don't die".
+trans_shell() {
+	local out
+	out="$(trans "$@" 2>/dev/null)" || true
+	if [ -z "$out" ]; then
+		out="$(trans -e bing "$@" 2>/dev/null)" || true
+	fi
+	printf '%s' "$out"
+}
+
 # -------------------------- Main Script Logic --------------------------
-SOURCE_LANG=$(trans -b -id "$WORD")
-TARGET_LANG=$(echo -e "en\nde\nar\ntr" | rofi_select "Translate to ($SOURCE_LANG detected)")
+SOURCE_LANG=$(trans_shell -b -id "$WORD")
+# Same set -e/pipefail trap as WORD above: rofi_select exits non-zero on
+# Escape, which is the ordinary way to back out of this prompt, not a
+# fault. `|| true` lets the -z check on the next line be the thing that
+# decides, instead of `set -e` deciding first.
+TARGET_LANG=$(echo -e "en\nde\nar\ntr" | rofi_select "Translate to ($SOURCE_LANG detected)") || true
 [ -z "$TARGET_LANG" ] && exit 0
 
 BODY=""
@@ -99,10 +140,19 @@ if [ "$SOURCE_LANG" = "$TARGET_LANG" ]; then
 else
 	# TRANSLATION MODE
 	TITLE="🌐 Translation → $TARGET_LANG"
-	TRANSLATION=$(trans -b ":$TARGET_LANG" "$WORD")
+	TRANSLATION=$(trans_shell -b ":$TARGET_LANG" "$WORD")
 
+	# RLM used to go straight into $TRANSLATION here, which then fed
+	# espeak-ng (IPA_TARGET), two Gemini prompts, AND the display --
+	# an invisible bidi control character has no business in the first
+	# three, and "the ara translation the text is opposite" tracks with
+	# it reaching a QML Text now too: Qt's Text already runs the real
+	# Unicode bidi algorithm on its own per paragraph (this needed the
+	# nudge for dunst/pango, not for Menu.qml), and forcing RLM in ahead
+	# of that plus this row's own explicit AlignRight/ElideLeft (see
+	# rightLabelText in Menu.qml) fought it rather than helping. Applied
+	# only to the notify-send BODY now, the one path it was ever fixing.
 	RLM=$'\u200f'
-	[ "$TARGET_LANG" = "ar" ] && TRANSLATION="${RLM}${TRANSLATION}"
 
 	IPA_SOURCE=$(espeak-ng -v "$SOURCE_LANG" --ipa -q "$WORD" 2>/dev/null | tr -d '\n' || echo "")
 	IPA_TARGET=$(espeak-ng -v "$TARGET_LANG" --ipa -q "$TRANSLATION" 2>/dev/null | tr -d '\n' || echo "")
@@ -113,8 +163,10 @@ else
 	EXAMPLE_PROMPT="Write 3 natural example sentences in $TARGET_LANG using the word or phrase '$TRANSLATION'. After each sentence, provide its translation to $SOURCE_LANG in parentheses. Number them '1. ', '2. ', '3. '."
 	EXAMPLES=$(call_gemini "$EXAMPLE_PROMPT")
 
+	TRANSLATION_NOTIFY="$TRANSLATION"
+	[ "$TARGET_LANG" = "ar" ] && TRANSLATION_NOTIFY="${RLM}${TRANSLATION}"
 	BODY="<b><span color='#FFD700'>Word:</span></b> <span color='#00CED1'>$WORD</span>\n"
-	BODY+="<b><span color='#FFA500'>Translation:</span></b> <span bgcolor='#333333' color='#ffffff'><b>$TRANSLATION</b></span>\n\n"
+	BODY+="<b><span color='#FFA500'>Translation:</span></b> <span bgcolor='#333333' color='#ffffff'><b>$TRANSLATION_NOTIFY</b></span>\n\n"
 
 	[ -n "$SYNONYMS_SOURCE" ] && BODY+="<b><span color='#ADFF2F'>Synonyms ($SOURCE_LANG):</span></b> <i>$SYNONYMS_SOURCE</i>\n"
 	[ -n "$SYNONYMS_TARGET" ] && BODY+="<b><span color='#ADFF2F'>Synonyms ($TARGET_LANG):</span></b> <i>$SYNONYMS_TARGET</i>\n"
@@ -128,7 +180,82 @@ fi
 # backslash-n. Expand it with %b so the notification and the clipboard
 # both get real line breaks instead of the two-character escape.
 BODY_EXPANDED="$(printf '%b' "$BODY")"
-notify-send -t "$NOTIFY_TIMEOUT" -u normal "$TITLE" "<span font='13'>$BODY_EXPANDED</span>"
+
+# "the translation not showing anything in the popup ... should show in
+# the qml popup right" — two bugs in one screenshot. The empty
+# "Translation:" line was $TRANSLATION/etc. genuinely coming back empty
+# from trans/gemini (unrelated to display); but "Word:" rendering as a
+# stray box was THIS notify-send call: $WORD and friends go into pango
+# markup unescaped, so a word containing '&', '<' or '>' breaks the XML
+# dunst is parsing and it silently drops everything from there on —
+# exactly the "Word: [box], Translation: (nothing)" shape reported.
+#
+# "column, vertical, [] []" asked for the word and the translation as two
+# columns on one row. Built that as a new 5th (rightLabel) field on
+# Menu.qml's dmenu row format -- and that turned out to be the actual
+# cause of "the translation not work at all": the field was read
+# (`row.rightLabel.length`) without ever being declared a `required
+# property` on the delegate, which is a hard QML runtime error on every
+# single row the dmenu view draws, app rows and menu rows included, not
+# just this one. That's reverted (Menu.qml/MenuModel.js, back to the
+# plain label/subtext/appIcon contract every other dmenu caller already
+# uses). Rebuilt here on exactly that proven contract instead: two plain
+# ROWS, word then translation, each with its own subtext -- not literal
+# side-by-side columns, but nothing unverified between the data and the
+# screen this time either.
+CARD_ROWS=()
+if [ "$SOURCE_LANG" = "$TARGET_LANG" ]; then
+	WORD_DETAILS=()
+	[ -n "${IPA:-}" ] && WORD_DETAILS+=("IPA /$IPA/")
+	[ -n "${SYNONYMS:-}" ] && WORD_DETAILS+=("Synonyms: $SYNONYMS")
+	WORD_DETAIL=""
+	for part in "${WORD_DETAILS[@]+"${WORD_DETAILS[@]}"}"; do
+		WORD_DETAIL="${WORD_DETAIL:+$WORD_DETAIL · }$part"
+	done
+	CARD_ROWS+=("$(printf '\t%s\t%s' "$WORD" "$WORD_DETAIL")")
+else
+	SOURCE_DETAILS=()
+	[ -n "${IPA_SOURCE:-}" ] && SOURCE_DETAILS+=("IPA /$IPA_SOURCE/")
+	[ -n "${SYNONYMS_SOURCE:-}" ] && SOURCE_DETAILS+=("Synonyms: $SYNONYMS_SOURCE")
+	SOURCE_DETAIL="$SOURCE_LANG"
+	for part in "${SOURCE_DETAILS[@]+"${SOURCE_DETAILS[@]}"}"; do
+		SOURCE_DETAIL="$SOURCE_DETAIL · $part"
+	done
+	CARD_ROWS+=("$(printf '\t%s\t%s' "$WORD" "$SOURCE_DETAIL")")
+
+	TARGET_DETAILS=()
+	[ -n "${IPA_TARGET:-}" ] && TARGET_DETAILS+=("IPA /$IPA_TARGET/")
+	[ -n "${SYNONYMS_TARGET:-}" ] && TARGET_DETAILS+=("Synonyms: $SYNONYMS_TARGET")
+	TARGET_DETAIL="$TARGET_LANG"
+	for part in "${TARGET_DETAILS[@]+"${TARGET_DETAILS[@]}"}"; do
+		TARGET_DETAIL="$TARGET_DETAIL · $part"
+	done
+	CARD_ROWS+=("$(printf '\t%s\t%s' "$TRANSLATION" "$TARGET_DETAIL")")
+fi
+if [ -n "${EXAMPLES:-}" ]; then
+	CARD_ROWS+=("$(printf '\t%s\t%s' "Examples" "$(printf '%s' "$EXAMPLES" | tr '\n' ' ')")")
+fi
+
+# Debug trail -- every round of "not working" so far has needed a live
+# bash -x trace to actually see what happened, and that trace is what
+# found both the set -e/pipefail death and the RLM-reaching-espeak bug.
+# Logged instead of traced from now on so the next report can be read
+# out of a file (`cat "$TMP_DIR/debug.log"`) rather than needing another
+# live run.
+{
+	printf '[%s] WORD=%s SOURCE_LANG=%s TARGET_LANG=%s\n' \
+		"$(date +%H:%M:%S)" "$WORD" "$SOURCE_LANG" "$TARGET_LANG"
+	printf '  use_ati_menu_select=%s TRANSLATION=%s\n' \
+		"$(use_ati_menu_select && echo yes || echo no)" "${TRANSLATION:-}"
+	printf '  rows:\n'
+	printf '    %s\n' "${CARD_ROWS[@]}"
+} >>"$TMP_DIR/debug.log" 2>&1
+
+if use_ati_menu_select; then
+	printf '%s\n' "${CARD_ROWS[@]}" | rofi_select "$TITLE" >/dev/null || true
+else
+	notify-send -t "$NOTIFY_TIMEOUT" -u normal "$TITLE" "<span font='13'>$BODY_EXPANDED</span>"
+fi
 copy_to_clipboard "$(printf '%s' "$BODY_EXPANDED" | sed 's/<[^>]*>//g')"
 
 # -------------------------- TTS Logic --------------------------

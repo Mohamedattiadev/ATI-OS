@@ -835,3 +835,5 @@ zoxide init fish | source
 if test -d $HOME/.cargo/bin
     set -gx PATH $HOME/.cargo/bin $PATH
 end
+
+fish_add_path $HOME/.npm-global/bin
