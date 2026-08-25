@@ -91,8 +91,8 @@ ShellRoot {
     // qtile's SmartWidgetBoxes are bound to keys as well as to their own
     // glyphs — binds.conf's dead-bind section records all three:
     //
-    //     $alt `     system_widgetbox        CPU + memory
-    //     $mod `     2nd_system_widgetbox    updates · disk · volume
+    //     $alt `     system_widgetbox        CPU + memory + disk
+    //     $mod `     2nd_system_widgetbox    updates · volume
     //     $alt Tab   systray_widgetbox       the tray
     //
     // and they were left dead there on the grounds that there was no bar to
@@ -561,7 +561,7 @@ ShellRoot {
                         height: parent.height
                         spacing: 0
 
-                        // system_widgetbox: CPU and memory.
+                        // system_widgetbox: CPU, memory, and disk.
                         BoxContent {
                             open: shellRoot.systemBoxOpen
                             Chip {
@@ -588,10 +588,22 @@ ShellRoot {
                                 onClicked: Quickshell.execDetached(
                                     ["kitty", "--start-as=fullscreen", "-e", "btop"])
                             }
+                            Chip {
+                                text: shellRoot.diskText
+                                tooltip: "Disk free (/ + /home) · click → notify"
+                                hoverSink: hoverSink
+                                foreground: BarTheme.fg
+                                padding: 11
+                                fontPixelSize: Metrics.s(10)
+                                clickable: true
+                                height: parent.height
+                                onClicked: Quickshell.execDetached(["ati-disk-notify"])
+                            }
                         }
 
-                        // 2nd_system_widgetbox: updates, disk, volume — which
-                        // is exactly what its tooltip in config.py promises.
+                        // 2nd_system_widgetbox: updates, volume. Disk moved
+                        // into system_widgetbox above, next to CPU/RAM, so
+                        // it is visible without an extra click.
                         BoxContent {
                             open: shellRoot.secondBoxOpen
                             Chip {
@@ -606,17 +618,6 @@ ShellRoot {
                                 onClicked: Quickshell.execDetached(
                                     ["python3", Quickshell.env("HOME")
                                         + "/.config/qtile/scripts/qupdate.py", "--toggle"])
-                            }
-                            Chip {
-                                text: shellRoot.diskText
-                                tooltip: "Disk free (/ + /home) \u00b7 click \u2192 notify"
-                                hoverSink: hoverSink
-                                foreground: BarTheme.fg
-                                padding: 11
-                                fontPixelSize: Metrics.s(10)
-                                clickable: true
-                                height: parent.height
-                                onClicked: Quickshell.execDetached(["ati-disk-notify"])
                             }
                             // ---- w_volume IS NOT INERT ----
                             //
@@ -750,7 +751,7 @@ ShellRoot {
                         onToggle: shellRoot.systemBoxOpen = !shellRoot.systemBoxOpen
                         codepointClosed: 0xF05AF
                         codepointOpen: 0xF05B0
-                        tooltip: "CPU + Memory"
+                        tooltip: "CPU + Memory + Disk"
                         hoverSink: hoverSink
                         foreground: BarTheme.purple      // colors[7]
                         fontPixelSize: Metrics.s(15)
@@ -805,7 +806,7 @@ ShellRoot {
                         onToggle: shellRoot.secondBoxOpen = !shellRoot.secondBoxOpen
                         codepointClosed: 0xF0902
                         codepointOpen: 0xF0042
-                        tooltip: "Updates \u00b7 Disk \u00b7 Volume"
+                        tooltip: "Updates \u00b7 Volume"
                         hoverSink: hoverSink
                         foreground: BarTheme.yellow      // colors[5]
                         fontPixelSize: Metrics.s(14)
@@ -1459,12 +1460,16 @@ ShellRoot {
     property string diskText: ""
     Process {
         id: diskProc
-        command: ["sh", "-c", "df -h --output=pcent / | tail -1 | tr -d ' %'"]
+        // Summed across / and /home — see redesign-e-final.qml's diskProc
+        // for why root alone reads alarmingly low on its own here.
+        command: ["sh", "-c",
+            "df --output=avail -B1 / /home 2>/dev/null | tail -n +2 | "
+            + "awk '{s+=$1} END{printf \"%.1fG\", s/1024/1024/1024}'"]
         stdout: StdioCollector {
             onStreamFinished: {
-                const pct = parseInt(text.trim(), 10);
-                if (isFinite(pct))
-                    shellRoot.diskText = String.fromCharCode(0xF0A0) + "  " + pct + "%";
+                const avail = text.trim();
+                if (avail)
+                    shellRoot.diskText = String.fromCharCode(0xF0A0) + "  " + avail;
             }
         }
     }

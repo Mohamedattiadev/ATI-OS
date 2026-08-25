@@ -257,6 +257,7 @@ ShellRoot {
     property string statCpu: "--"
     property string statVolume: "--"
     property string statBrightness: "--"
+    property string statDisk: "--"
     property real _cpuLastIdle: 0
     property real _cpuLastTotal: 0
 
@@ -336,6 +337,25 @@ ShellRoot {
     }
     Timer { interval: 2000; running: true; repeat: true; triggeredOnStart: true; onTriggered: brightnessProc.running = true }
     Timer { id: brightnessPollSoon; interval: 120; repeat: false; onTriggered: brightnessProc.running = true }
+
+    // Disk — free space in GB (not percent), same source/poll shell.qml uses.
+    Process {
+        id: diskProc
+        // Summed across / and /home (two separate partitions on this
+        // machine) so the badge matches "how much room is actually left",
+        // not just root's — which is the smaller, separately-partitioned
+        // 32G slice and reads alarmingly low on its own.
+        command: ["sh", "-c",
+            "df --output=avail -B1 / /home 2>/dev/null | tail -n +2 | "
+            + "awk '{s+=$1} END{printf \"%.1fG\", s/1024/1024/1024}'"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const avail = text.trim();
+                if (avail) demo.statDisk = avail;
+            }
+        }
+    }
+    Timer { interval: 60000; running: true; repeat: true; triggeredOnStart: true; onTriggered: diskProc.running = true }
 
     // ---- POSITION — top/bottom, ported from shell.qml's own
     // shellRoot.position/setPosition. "i want to make the button bar same
@@ -1955,7 +1975,7 @@ ShellRoot {
                             anchors.margins: -Metrics.s(5)
                             hoverEnabled: true
                             onClicked: utilStrip.statsOpen = true
-                            onEntered: barTooltip.enter(parent, "CPU + Memory + Volume + Brightness")
+                            onEntered: barTooltip.enter(parent, "CPU + Memory + Disk + Volume + Brightness")
                             onExited: barTooltip.exit(parent)
                         }
                     }
@@ -1984,6 +2004,16 @@ ShellRoot {
                                 onClicked: Quickshell.execDetached(
                                     ["env", "GTK_THEME=Adwaita:dark", "missioncenter"])
                                 onEntered: barTooltip.enter(parent, "CPU load · click → mission-center")
+                                onExited: barTooltip.exit(parent)
+                            }
+                        }
+                        StatBadge {
+                            icon: 0xF0A0; value: demo.statDisk; tint: BarTheme.fg   // fa-hdd-o
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: Quickshell.execDetached(["ati-disk-notify"])
+                                onEntered: barTooltip.enter(parent, "Disk free (/ + /home) · click → notify")
                                 onExited: barTooltip.exit(parent)
                             }
                         }
