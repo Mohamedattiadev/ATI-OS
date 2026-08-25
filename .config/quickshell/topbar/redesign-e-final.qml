@@ -557,6 +557,18 @@ ShellRoot {
                 demo.drawActive = true;
             if (n === "closelayer" && String(event.data || "").trim() === "wayscriber")
                 demo.drawActive = false;
+            // "i open app -> make it fullscreen -> i want to know if i
+            // clicked a mode and forget it" — the bar itself is Top-layer
+            // and a fullscreen window draws above Top (see modeChip below),
+            // so the centre pill's own chord face (chordFace, further down)
+            // goes invisible right when it matters most: you're keyboard-
+            // grabbed by a submap and can't see the bar under the fullscreen
+            // client to know it. `fullscreen>>1`/`fullscreen>>0` is
+            // Hyprland's own boolean for "the focused window just became /
+            // stopped being fullscreen", same event shell.qml's ModeChip
+            // already reads for the identical reason.
+            if (n === "fullscreen")
+                demo.focusedFullscreen = String(event.data || "").trim() === "1";
         }
     }
 
@@ -589,6 +601,10 @@ ShellRoot {
     // wayscriber's own layer-surface presence — see the openlayer/
     // closelayer handler above for why this can't be a submap name.
     property bool drawActive: false
+    // Whether the focused window is fullscreen right now — read by
+    // `modeChip` below, the standalone Overlay-layer popup that shows the
+    // mode text ABOVE a fullscreen window when the bar itself can't.
+    property bool focusedFullscreen: false
     // "check the current bar and check the letters of rofi... and all
     // other modes" — this used to be MY OWN derivation off submaps.conf's
     // raw bind lines, curated by hand and wrong in the specific way that
@@ -2263,6 +2279,105 @@ ShellRoot {
             // No input at all — otherwise this strip eats clicks along
             // the very top edge of the screen.
             mask: Region {}
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  THE STANDALONE MODE CHIP — shell.qml's, ported here
+    // ---------------------------------------------------------------
+    //
+    // "i open app -> make it fullscreen -> i want to know if i clicked a
+    // mode and forget it right? so i want a part shows me that -> when i
+    // click any mode the workspace part which showing in which mode
+    // appears -> when i finish my work on it disappear". centerStrip
+    // ABOVE already does exactly that swap (see `swap.activeFace`'s
+    // "chord" face) — but it lives inside `bar`, which is plain
+    // WlrLayer.Top, and a fullscreen window draws above Top. So the one
+    // moment this readout matters most — keyboard-grabbed by a submap,
+    // can't see the bar under the fullscreen client — is exactly when it's
+    // invisible.
+    //
+    // Not fixed by promoting `bar` itself to Overlay: that was shell.qml's
+    // first attempt and its own comment records the blast radius — every
+    // chip on the bar comes along, not just this one. Instead, a THIRD,
+    // separate PanelWindow per screen, Overlay always, showing nothing but
+    // the mode text — same shape as shell.qml's ModeChip, same submapMap
+    // table centerStrip's chordFace already reads a few hundred lines up.
+    Variants {
+        model: Quickshell.screens
+
+        PanelWindow {
+            id: chipWindow
+            required property var modelData
+            screen: modelData
+
+            // Same face-selection centerStrip's chordFace uses: wayscriber
+            // wins ties over a real submap (the two are mutually exclusive
+            // in practice — see chordFace's own comment on this).
+            readonly property var entry: demo.drawActive
+                ? demo.submapMap["draw"]
+                : (demo.submapMap[demo.submapName] || null)
+            readonly property string label: demo.drawActive
+                ? (entry ? entry.text : "DRAW")
+                : demo.submapName === "" ? ""
+                    : (entry ? entry.text : demo.submapName.toUpperCase())
+
+            // Gone the instant the mode ends ("when i finish my work on it
+            // disappear") — `label` above already goes "" then, `visible`
+            // just adds the fullscreen gate on top.
+            visible: label !== "" && demo.focusedFullscreen
+
+            // Always Overlay: unlike `bar`, this window has nothing to hide
+            // behind fullscreen for — it exists ONLY to be seen over it.
+            WlrLayershell.layer: WlrLayer.Overlay
+            WlrLayershell.namespace: "quickshell-mode-chip"
+
+            // Reserves nothing — a transient chip must not shove tiled
+            // windows around for however long a mode stays open.
+            exclusionMode: ExclusionMode.Ignore
+            anchors { top: true; left: true; right: true }
+            implicitHeight: Metrics.barHeight + Metrics.marginV * 2
+            color: "transparent"
+
+            // Input is the chip's own rectangle alone — a full-width
+            // surface would eat clicks meant for the fullscreen window
+            // under it, same trap the exclusive-zone reserver above and
+            // the island's own mask both document.
+            mask: Region {
+                x: Math.floor(modeChip.x)
+                y: Math.floor(modeChip.y)
+                width: Math.ceil(modeChip.width)
+                height: Math.ceil(modeChip.height)
+            }
+
+            // Chip.qml (the oval, filled-plate qtile chip) is shell.qml's
+            // look, not this bar's — "not with my bar style". Every plate
+            // on THIS bar is Strip's own math (radius 8, translucent
+            // BarTheme.plate at 0.78, a hairline accent border), with the
+            // mode's identity carried by the TEXT colour rather than a
+            // block of solid colour — chordFace inside centerStrip already
+            // reads that way; this is the same look, just with its own
+            // plate since it has no Strip underneath it out here.
+            Rectangle {
+                id: modeChip
+                anchors.top: parent.top
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.topMargin: Metrics.marginV
+                height: Metrics.barHeight
+                width: modeLabel.implicitWidth + Metrics.s(11) * 2
+                radius: Metrics.s(8)
+                color: BarTheme.alpha(BarTheme.plate, 0.78)
+                border.width: 1
+                border.color: BarTheme.alpha(BarTheme.accent, 0.3)
+
+                Label {
+                    id: modeLabel
+                    anchors.centerIn: parent
+                    text: chipWindow.label
+                    fg: chipWindow.entry ? chipWindow.entry.colour : BarTheme.accent
+                    font.bold: true
+                }
+            }
         }
     }
 

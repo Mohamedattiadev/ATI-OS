@@ -27,3 +27,5 @@ packages:
   # - i386-elf-gcc
   - wine
   - winetricks
+  - dotnet-sdk
+  - dotnet-sdk-8.0
