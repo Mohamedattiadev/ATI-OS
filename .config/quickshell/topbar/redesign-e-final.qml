@@ -499,7 +499,20 @@ ShellRoot {
                         // exact same bus message dunst itself reacts to.
                         // Long ones never call this, so they still show in
                         // dunst uninterrupted, same as before.
-                        Quickshell.execDetached(["dunstctl", "close"]);
+                        //
+                        // ...UNLESS a window is fullscreen. The pill
+                        // takeover lives on the Top-layer bar, and a
+                        // fullscreen client draws above Top (same reason
+                        // modeChip below exists), so the takeover is
+                        // invisible — while `dunstctl close` still killed
+                        // dunst's copy, which DOES clear fullscreen because
+                        // dunst sits on the overlay layer. Net effect,
+                        // reported: bump volume/brightness from the media
+                        // submap while fullscreen and no OSD appears at all.
+                        // So while fullscreen, leave dunst's popup alone —
+                        // it is the only OSD that can actually be seen.
+                        if (!demo.focusedFullscreen)
+                            Quickshell.execDetached(["dunstctl", "close"]);
                     }
 
                     const entry = { app: demo.notifyApp, summary: demo.notifySummary,

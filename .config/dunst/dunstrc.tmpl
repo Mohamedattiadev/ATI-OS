@@ -5,6 +5,14 @@
     always_run_script = true
     monitor = 0
     follow = none
+    # Keep notifications ABOVE fullscreen clients. This is dunst 1.13's
+    # own default, set explicitly because the topbar leans on it: for a
+    # short notification (every volume/brightness OSD) redesign-e-final.qml
+    # takes over the centre pill AND closes dunst's copy -- but the pill is
+    # a Top-layer surface a fullscreen window hides, so while fullscreen it
+    # skips the close and dunst's popup IS the OSD. Drop to `top` and the
+    # media-submap keys give no feedback at all over a fullscreen app.
+    layer = overlay
     width = (260, 340)
     height = (0, 2200)
     origin = top-right
