@@ -8,6 +8,11 @@ packages:
   - qutebrowser
   - obsidian
   - telegram-desktop
+  # Optional dep of telegram-desktop: its embedded webview. Without it,
+  # bot menu buttons / Web Apps, login-via-webview, Instant View and
+  # payment flows fail with "you can't open this menu with your current
+  # system configuration. Please install WebKitGTK".
+  - webkit2gtk-4.1
   - vlc
   - zathura
   - zathura-pdf-poppler
