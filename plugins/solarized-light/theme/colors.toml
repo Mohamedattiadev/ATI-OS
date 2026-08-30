@@ -1,0 +1,39 @@
+# Solarized Light — Ethan Schoonover's palette, unaltered where it has an
+# opinion. https://ethanschoonover.com/solarized/
+#
+# ARCHITECTURE.md Phase 5: a second theme, shipped AS A PLUGIN, to prove the
+# theme/ load point against the picker that was already there. Nothing in
+# AtiScriptsV1/themes/ knows this exists; theme-list.sh finds it by
+# searching the plugin roots, and theme-apply resolves the same name back to
+# this directory.
+#
+# Solarized rather than a new palette invented for the occasion: the point
+# of the phase is the PATH, and a palette with a published, checkable
+# definition means a mistake here is a mistake anyone can spot.
+#
+# fg is base01 (#586e75), the "emphasized content" tone, not base00 body
+# text: this palette is being asked to carry a bar and a notification, which
+# are small text on a light ground, and base00 is a step too pale for that.
+bg = "#fdf6e3"
+bg_alt = "#eee8d5"
+fg = "#586e75"
+red = "#dc322f"
+green = "#859900"
+yellow = "#b58900"
+blue = "#268bd2"
+purple = "#6c71c4"
+cyan = "#2aa198"
+accent = "#268bd2"
+dunst_bg = "#fdf6e3"
+dunst_fg = "#586e75"
+ok = "#859900"
+# The critical pair is NOT from Solarized — it has no "urgent background".
+# Same construction mono-light uses: a pale wash of the palette's own red
+# for the ground, and a darkened version of it for text, so a critical
+# notification stays readable on a light theme instead of inverting into a
+# dark block the way the dark themes' pair would.
+bg_crit = "#ffdcd6"
+fg_crit = "#a02016"
+gtk_theme = "Breeze"
+gtk_icon = "Papirus-Light"
+icon_color = "yellow"

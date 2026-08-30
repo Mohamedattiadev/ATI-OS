@@ -7,7 +7,7 @@
 
 **Arch Linux and a qtile desktop that is already configured.**
 
-22 themes that retint every app at once, a drop-stash, a package picker,
+23 themes that retint every app at once, a drop-stash, a package picker,
 and a restart that doesn't flash.
 
 [**Manual**](https://mohamedattiadev.github.io/ATI-OS/) ·
@@ -66,7 +66,7 @@ modes. Not verified: AMD or NVIDIA graphics, or a HiDPI panel.
 
 |  |  |
 |---|---|
-| **[22 themes](https://mohamedattiadev.github.io/ATI-OS/themes.html)** | One command retints bar, terminal, rofi, GTK, Qt, browser, nvim — and your folder icons |
+| **[23 themes](https://mohamedattiadev.github.io/ATI-OS/themes.html)** | One command retints bar, terminal, rofi, GTK, Qt, browser, nvim — and your folder icons |
 | **[Keyboard-driven](https://mohamedattiadev.github.io/ATI-OS/keybindings.html)** | ~90 bindings, grouped into modes that announce themselves in the bar |
 | **[A bar that does things](https://mohamedattiadev.github.io/ATI-OS/widgets.html)** | Updates, audio, wifi, bluetooth, displays — popups, not terminals |
 | **[~45 tools](https://mohamedattiadev.github.io/ATI-OS/tools.html)** | Drop-stash, package manager, offline PDF toolkit, cheatsheets, screenshots, dictation |

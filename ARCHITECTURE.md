@@ -260,8 +260,37 @@ reading:
   same line existed in `ati-reminder`, where it would have left a timer
   firing for a reminder that had been cancelled; fixed in both.
 
-**Phase 5 — a second theme as a plugin,** proving the `theme/` path against
-the existing picker.
+**Phase 5 — a second theme as a plugin, proving the `theme/` path against
+the existing picker. ✅ DONE.**
+
+`plugins/solarized-light/` — Ethan Schoonover's palette, absent from the 21
+shipped schemes, and the second light one the desktop has ever had. Chosen
+because the point of the phase is the *path*, and a palette with a
+published definition means a mistake in it is one anyone can check.
+
+Nothing in `AtiScriptsV1/themes/` knows it exists. `theme-list.sh` finds it
+by searching the plugin roots and the picker lists 23 where it listed 22;
+`theme-apply` resolves the same name back to the plugin's directory.
+Verified by lifting `theme-apply`'s resolution block out of the shipped file
+and running it verbatim — `solarized-light` resolves into `plugins/`,
+`doomone` and `nord` still resolve into `themes/`, and an unknown name still
+falls through to the hardcoded table. (Lifted rather than executed: the real
+script `pkill`s dunst and eww and calls sudo, so running it to answer a
+question about a variable would have recoloured a live session.)
+
+Two honest limits of the `theme/` surface, both of which a plugin author
+should know and neither of which this phase should paper over:
+
+* **Shipped themes win a name collision.** The plugin root is only consulted
+  when `themes/<name>/colors.toml` does not exist, so a plugin cannot
+  redefine what `doomone` means on a machine that already has it. That is
+  the intended precedence, but it is the opposite of every *other* surface,
+  where the more local thing wins — worth stating rather than discovering.
+* **A plugin theme gets no Neovim colorscheme.** `theme_sync.scheme_of` maps
+  desktop modes to *installed nvim plugins*, and a theme plugin cannot
+  install one. It degrades exactly as `matrix`, `mono-light` and the other
+  unmapped modes already do, which is the existing, documented behaviour —
+  not a new failure, but a real ceiling on what `theme/` can deliver.
 
 ---
 
