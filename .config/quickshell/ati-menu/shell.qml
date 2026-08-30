@@ -17,6 +17,7 @@ import Quickshell
 import Quickshell.Io
 import "plugins/menu" as MenuPlugin
 import "plugins/clipboard" as ClipboardPlugin
+import "plugins/translate" as TranslatePlugin
 import "services" as Services
 
 ShellRoot {
@@ -47,6 +48,41 @@ ShellRoot {
     id: clip
   }
 
+  // Third resident view. Same reasoning as the clipboard one directly above:
+  // this is an editable FORM (two text fields you correct, a language
+  // dropdown that re-runs the lookup), and the generic dmenu payload has no
+  // way to render that at all -- its rows are glyph+label+subtext with
+  // nowhere to type. Resident for the same reason the whole config is: a
+  // fresh `qs -p` per keypress is a QML compile, and this one is summoned
+  // from a word you just highlighted, where several hundred milliseconds is
+  // the difference between a tool and an interruption.
+  TranslatePlugin.Translate {
+    id: translate
+  }
+
+  // The selection badge -- the little square beside the pointer. Separate
+  // from the popup above on purpose: it is a different window with a
+  // different layer policy (it must NEVER hold the keyboard, see its own
+  // header), and folding it into the popup would mean one component with
+  // two contradictory focus modes.
+  TranslatePlugin.TranslateBadge {
+    id: translateBadge
+    onRequested: (word) => translate.open(word)
+  }
+
+  // The badge's payload, same file route as the two above and for the same
+  // reason. Three tab-separated fields: word, cursor x, cursor y -- tabs
+  // rather than spaces because the word can and does contain spaces.
+  FileView {
+    id: badgePayloadFile
+    printErrors: false
+    onLoaded: {
+      const parts = text().replace(/\n+$/, "").split("\t");
+      if (parts.length < 3) return;
+      translateBadge.show(parts[0], parseInt(parts[1], 10) || 0, parseInt(parts[2], 10) || 0);
+    }
+  }
+
   // Menu.qml's openDmenu() (vendored, see NOTICE.md) has been fully wired
   // and working since the day Menu.qml was vendored -- what was missing was
   // any way to REACH it. summon() below only ever builds {initialMenu:
@@ -64,6 +100,16 @@ ShellRoot {
     id: dmenuPayloadFile
     printErrors: false
     onLoaded: menu.open(text())
+  }
+
+  // The same trick for the translate popup's initial word -- see the
+  // `openFile` handler below. Trailing newline trimmed: the writer is a
+  // shell script and every convenient way to write a file from one adds it,
+  // which would otherwise be looked up as part of the word.
+  FileView {
+    id: translatePayloadFile
+    printErrors: false
+    onLoaded: translate.open(text().replace(/\n+$/, ""))
   }
 
   IpcHandler {
@@ -89,6 +135,50 @@ ShellRoot {
     function status(): string {
       return menu.opened ? "open" : "closed";
     }
+  }
+
+  IpcHandler {
+    target: "translate"
+
+    // `open` takes the word as its argument rather than reading the
+    // selection itself: Quickshell IPC args are whitespace-split, so a
+    // multi-word phrase would arrive shredded. ati-translate-popup reads the
+    // selection and passes it base64-encoded for exactly that reason -- see
+    // that script, and `openEncoded` below.
+    function open(word: string): void { translate.open(word || ""); }
+
+    // A FILE PATH, not the text and not base64.
+    //
+    // base64 was the first attempt, decoded with atob() -- which does not
+    // exist in QML's JS engine. It is a browser API, not an ECMAScript one,
+    // so the call threw, the catch swallowed it, and the popup opened with
+    // an empty field every time while `open` with a single bare word worked
+    // fine. Confirmed live before this was changed.
+    //
+    // The file-payload route is the one this shell already established for
+    // exactly this problem, three handlers up: see dmenuPayloadFile and its
+    // comment on why IPC's whitespace-splitting makes a path the only thing
+    // that reliably crosses. ati-translate-popup writes the selection to
+    // this file; nothing else reads it.
+    function openFile(payloadPath: string): void {
+      translatePayloadFile.path = payloadPath;
+      translatePayloadFile.reload();
+    }
+
+    function close(): void { translate.close(); }
+    function toggle(): void { translate.toggle(); }
+    function status(): string { return translate.status(); }
+
+    // Called by ati-translate-watch every time the PRIMARY selection
+    // changes. Shows the badge; does NOT translate anything and does not
+    // open the popup -- selecting text is something you do constantly and
+    // must stay free.
+    function badge(payloadPath: string): void {
+      badgePayloadFile.path = payloadPath;
+      badgePayloadFile.reload();
+    }
+
+    function hideBadge(): void { translateBadge.hide(); }
   }
 
   IpcHandler {

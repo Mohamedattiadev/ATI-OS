@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# ati-do — run an action and remember it, so a single key can do it again.
+#
+#   ati-do <label> <command> [args...]    run it, and record it as "last"
+#   ati-do --repeat                       run whatever was recorded last
+#   ati-do --last                         print the last label (for a chip)
+#   ati-do --clear                        forget it
+#
+# Item 22: *"making the altgr doing the last action i did for example i
+# clciked : alt+space to open hintium , so i click again the altgr it bevioe
+# like the alt+space got it ?"*
+#
+# WHY A WRAPPER AND NOT "REPLAY THE LAST KEYPRESS"
+# ------------------------------------------------
+# The obvious reading is "remember the last key and send it again", and that
+# is the one shape that cannot work. Replaying a keystroke means synthesising
+# input, which races whatever currently holds the keyboard and lands in the
+# wrong window as often as the right one -- qtile's own config.py has a long
+# note about exactly this, and it is why the cheatsheet is opened through a
+# function call rather than through `xdotool key`. So this remembers the
+# ACTION, not the key, and re-runs the action directly. Same result, none of
+# the race.
+#
+# WHY ONLY SOME BINDS GO THROUGH IT
+# ---------------------------------
+# binds.conf is ~1050 lines. Routing all of it through here would mean every
+# window move and every workspace switch overwriting "the last thing you
+# did", so the repeat key would almost always replay a `movefocus` -- which
+# is both useless and the exact thing your fingers are already fast at. Only
+# actions worth REPEATING are wrapped: the launchers, the pickers, the
+# capture tools. The full list is in binds.conf/submaps.conf, each one
+# spelled `exec, ati-do <label> <command>`.
+#
+# The label is what a UI can show ("last: screenshot"); the command is what
+# actually runs.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+STATE="${ATI_LAST_ACTION_FILE:-$ROFI_RUNTIME_DIR/ati-last-action}"
+
+usage() { sed -n '3,9p' "$0" >&2; exit 2; }
+
+case "${1:-}" in
+    --repeat)
+        [[ -s "$STATE" ]] || { notify_safe -t 1500 "Repeat" "nothing to repeat yet"; exit 0; }
+        # Line 1 is the label, the rest are the argv, one element per line.
+        # A newline-delimited file rather than a quoted command string
+        # because the argv is re-executed directly with no shell in between:
+        # an argument containing a space, a quote or a $ must survive, and
+        # re-parsing a flattened string is exactly where that breaks.
+        mapfile -t _lines < "$STATE"
+        (( ${#_lines[@]} >= 2 )) || { notify_safe -t 1500 "Repeat" "last action is unreadable"; exit 1; }
+        # setsid so the repeated action outlives this process the same way it
+        # would have if Hyprland had spawned it directly -- otherwise a
+        # long-running one (a picker, a recorder) dies with this script.
+        setsid -f "${_lines[@]:1}" >/dev/null 2>&1 < /dev/null
+        exit 0
+        ;;
+    --last)
+        [[ -s "$STATE" ]] && head -1 "$STATE" || printf ''
+        exit 0
+        ;;
+    --clear)
+        rm -f "$STATE"
+        exit 0
+        ;;
+    -h|--help|"") usage ;;
+esac
+
+LABEL="$1"; shift
+(( $# )) || usage
+
+# Record BEFORE running, not after. The command replaces this process's
+# children and may never return (a picker you leave open, a terminal); a
+# record-afterwards would then never happen for exactly the long-lived
+# actions most worth repeating.
+#
+# Written to a temp file and moved, so a repeat firing at the same moment
+# reads either the old action or the new one, never half of a line.
+{
+    printf '%s\n' "$LABEL"
+    printf '%s\n' "$@"
+} > "$STATE.tmp" && mv -f "$STATE.tmp" "$STATE"
+
+exec "$@"

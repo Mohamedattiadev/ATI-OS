@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+#
+# ati-update — pull the latest ATI-OS config and apply it.
+#
+# The problem this exists for: the ISO is built occasionally, the config is
+# pushed continuously. Without this, staying current means either rebuilding
+# and reinstalling the ISO, or knowing by heart which of stow, dcli, the
+# script symlinks, the boot splash and a qtile restart a given commit needs.
+# Most updates need some of those and no update needs all of them.
+#
+#   ati-update            fetch, show what changed, ask, apply
+#   ati-update --check    say what would happen and stop
+#   ati-update --yes      no questions (for a cron job or a login hook)
+#
+# WHAT MAKES THIS SAFE TO RUN BLIND
+#
+# A broken push must not black-screen the machine. qtile does not fail loudly
+# on a bad config -- it silently loads its own default one, so the desktop
+# comes back looking like a stranger's with the reason only in a log. So the
+# new config is VALIDATED BEFORE ANYTHING IS APPLIED, and if it does not
+# load, the checkout is put back where it was and nothing else runs.
+#
+# Local edits are never discarded. If tracked files are dirty the update
+# stops and says so; --stash puts them aside and restores them afterwards.
+
+set -euo pipefail
+
+DOTFILES="${DOTFILES_DIR:-$HOME/.dotfiles}"
+BRANCH="${ATI_UPDATE_BRANCH:-main}"
+
+# ── output ───────────────────────────────────────────────────────────
+if [[ -t 1 ]]; then
+	B=$'\e[1m'; DIM=$'\e[90m'; G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; C=$'\e[36m'; Z=$'\e[0m'
+else
+	B=""; DIM=""; G=""; Y=""; R=""; C=""; Z=""
+fi
+say()  { printf '%s\n' "$*"; }
+step() { printf '%s==>%s %s\n' "$C$B" "$Z$B" "$*$Z"; }
+ok()   { printf '  %s✓%s %s\n' "$G" "$Z" "$*"; }
+warn() { printf '  %s!%s %s\n' "$Y" "$Z" "$*"; }
+die()  { printf '%serror:%s %s\n' "$R$B" "$Z" "$*" >&2; exit 1; }
+note() { printf '  %s%s%s\n' "$DIM" "$*" "$Z"; }
+
+CHECK_ONLY=0; ASSUME_YES=0; DO_STASH=0; NO_RESTART=0
+while (( $# )); do
+	case "$1" in
+		--check|-n)   CHECK_ONLY=1 ;;
+		--yes|-y)     ASSUME_YES=1 ;;
+		--stash)      DO_STASH=1 ;;
+		--no-restart) NO_RESTART=1 ;;
+		-h|--help)    sed -n '3,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+		*) die "unknown option: $1  (try --help)" ;;
+	esac
+	shift
+done
+
+# Running this as root would leave every file it touches owned by root, and
+# $HOME would be /root -- so it would update a checkout that is not yours.
+(( EUID == 0 )) && die "do not run this as root. It uses sudo only where it must."
+
+[[ -d "$DOTFILES/.git" ]] || die "$DOTFILES is not a git checkout. Nothing to update."
+cd "$DOTFILES"
+
+git remote get-url origin >/dev/null 2>&1 || die "no 'origin' remote in $DOTFILES"
+
+# ── 1. what is coming ────────────────────────────────────────────────
+step "Checking for updates"
+if ! git fetch --quiet origin "$BRANCH" 2>/dev/null; then
+	die "could not reach origin. Check the network, then run this again."
+fi
+
+LOCAL="$(git rev-parse HEAD)"
+REMOTE="$(git rev-parse "origin/$BRANCH")"
+
+if [[ "$LOCAL" == "$REMOTE" ]]; then
+	ok "Already up to date ($(git rev-parse --short HEAD))."
+	exit 0
+fi
+
+# Behind, or diverged? A user who has committed their own changes must not
+# have them silently rebased away.
+if ! git merge-base --is-ancestor HEAD "origin/$BRANCH"; then
+	warn "Your checkout has commits that are not upstream."
+	note "Nothing was changed. Merge or rebase them yourself, then run this again:"
+	note "  cd $DOTFILES && git log --oneline origin/$BRANCH..HEAD"
+	exit 1
+fi
+
+COUNT="$(git rev-list --count HEAD.."origin/$BRANCH")"
+say ""
+say "  ${B}$COUNT new commit(s)${Z} on $BRANCH:"
+git log --no-merges --format="    ${DIM}%h${Z} %s" HEAD.."origin/$BRANCH" | head -12
+(( COUNT > 12 )) && note "    … and $(( COUNT - 12 )) more"
+say ""
+
+# ── 2. what will that touch ──────────────────────────────────────────
+CHANGED="$(git diff --name-only HEAD "origin/$BRANCH")"
+changed_in() { grep -qE "$1" <<<"$CHANGED"; }
+
+NEED_STOW=0; NEED_PKGS=0; NEED_SCRIPTS=0; NEED_QTILE=0; NEED_SPLASH=0
+changed_in '^\.config/'                    && NEED_STOW=1
+changed_in '^\.config/arch-config/modules/' && NEED_PKGS=1
+changed_in '^\.config/AtiScriptsV1/'       && NEED_SCRIPTS=1
+changed_in '^\.config/qtile/'              && NEED_QTILE=1
+changed_in '^\.config/arch-config/plymouth/|^\.config/AtiScriptsV1/system/boot-splash' && NEED_SPLASH=1
+
+say "  ${B}This update will:${Z}"
+(( NEED_STOW ))    && say "    · link any new settings files into ~/.config"
+(( NEED_PKGS ))    && say "    · install any newly required packages"
+(( NEED_SCRIPTS )) && say "    · refresh the commands in /usr/local/bin"
+(( NEED_SPLASH ))  && say "    · regenerate the boot splash"
+(( NEED_QTILE ))   && say "    · restart the desktop (windows are kept)"
+(( NEED_STOW + NEED_PKGS + NEED_SCRIPTS + NEED_QTILE + NEED_SPLASH == 0 )) \
+	&& say "    · nothing but documentation changed — just pull"
+say ""
+
+if (( CHECK_ONLY )); then
+	note "--check: stopping here. Nothing was changed."
+	exit 0
+fi
+
+# ── 3. local edits ───────────────────────────────────────────────────
+STASHED=0
+if ! git diff --quiet HEAD -- 2>/dev/null; then
+	if (( DO_STASH )); then
+		git stash push -q -u -m "ati-update $(date +%F-%H%M)" \
+			&& { STASHED=1; warn "Your local edits were stashed; they come back at the end."; }
+	else
+		warn "You have local edits to tracked files:"
+		git diff --name-only HEAD -- | sed 's/^/      /'
+		note "Nothing was changed. Either commit them, or re-run with --stash."
+		exit 1
+	fi
+fi
+# If we abort before the deliberate restore below, put the edits back.
+restore_stash_on_abort() {
+	(( STASHED )) || return 0
+	git stash pop -q 2>/dev/null || true
+}
+trap restore_stash_on_abort EXIT
+
+if (( ! ASSUME_YES )); then
+	printf '  Apply? [Y/n] '
+	read -r reply </dev/tty || reply=n
+	[[ -z "$reply" || "$reply" =~ ^[Yy] ]] || { note "Nothing was changed."; exit 0; }
+fi
+
+# ── 4. pull ──────────────────────────────────────────────────────────
+step "Pulling"
+git merge --ff-only -q "origin/$BRANCH" || die "fast-forward failed; your checkout may be modified"
+ok "Now at $(git rev-parse --short HEAD)."
+
+# Put local edits back NOW, before anything is validated or applied.
+#
+# This used to happen in an EXIT trap, which ran after validation and after
+# the restart had already been asked for. Measured consequence: a local edit
+# to a file the update also touched popped WITH CONFLICTS, wrote
+# `<<<<<<<` markers into the live config, left the repo in a conflicted
+# state -- and the script still printed "Up to date". A qtile config full of
+# conflict markers does not fail loudly; qtile silently loads its own
+# default one instead. The restore has to come first so everything after it
+# is judging the file the desktop will actually read.
+if (( STASHED )); then
+	step "Restoring your local edits"
+	if git stash pop -q 2>/dev/null; then
+		STASHED=0
+		ok "restored cleanly"
+	else
+		STASHED=0   # the stash was applied; it is the tree that is wrong now
+		say ""
+		warn "Your edits and this update touched the same lines."
+		git diff --name-only --diff-filter=U | sed 's/^/      /'
+		say ""
+		note "The conflict markers are in those files. Resolve them, then:"
+		note "  cd $DOTFILES && git add -A && git stash drop"
+		note "Nothing was applied and the desktop was NOT restarted."
+		trap - EXIT
+		exit 1
+	fi
+fi
+
+# ── 5. validate BEFORE applying ──────────────────────────────────────
+#
+# The whole reason this is safe to run unattended. qtile silently falls back
+# to its built-in config when ours does not load, so a bad commit would not
+# announce itself -- it would just replace the desktop with a default one.
+if (( NEED_QTILE )) && [[ -x "$DOTFILES/installScripts/validate.sh" ]]; then
+	step "Checking the new config before applying it"
+	if bash "$DOTFILES/installScripts/validate.sh" >/tmp/ati-update-validate.$$ 2>&1; then
+		ok "It loads."
+		rm -f /tmp/ati-update-validate.$$
+	else
+		warn "The new config does NOT load. Rolling back."
+		git reset --hard -q "$LOCAL"
+		say ""
+		tail -20 /tmp/ati-update-validate.$$ | sed 's/^/      /'
+		rm -f /tmp/ati-update-validate.$$
+		say ""
+		die "left at $(git rev-parse --short HEAD); your desktop is untouched. Report this."
+	fi
+fi
+
+# ── 6. apply ─────────────────────────────────────────────────────────
+if (( NEED_STOW )); then
+	step "Linking settings files"
+	bash "$DOTFILES/installScripts/stow_script.sh" >/dev/null 2>&1 \
+		&& ok "done" || warn "stow reported a problem; run installScripts/stow_script.sh to see it"
+fi
+
+if (( NEED_SCRIPTS )); then
+	step "Refreshing commands"
+	# Symlinks, so existing ones already point at the new content; this is
+	# for files that are NEW in this update and have no link yet.
+	( cd "$DOTFILES/.config/AtiScriptsV1" && ./install.sh ) >/dev/null 2>&1 \
+		&& ok "done" || warn "could not link new commands (sudo?)"
+fi
+
+if (( NEED_PKGS )); then
+	step "Installing newly required packages"
+	if command -v dcli >/dev/null 2>&1; then
+		dcli sync || warn "dcli sync reported a problem — packages may be incomplete"
+	else
+		warn "dcli is not installed; skipping packages"
+	fi
+fi
+
+if (( NEED_SPLASH )); then
+	step "Regenerating the boot splash"
+	if command -v boot-splash >/dev/null 2>&1; then
+		boot-splash generate >/dev/null 2>&1 && ok "regenerated" || warn "boot-splash generate failed"
+		note "the boot screen itself changes after: boot-splash sync"
+	fi
+fi
+
+# ── 7. restart ───────────────────────────────────────────────────────
+if (( NEED_QTILE )) && (( ! NO_RESTART )); then
+	if [[ -n "${DISPLAY:-}" ]] && command -v qtile >/dev/null 2>&1 \
+		&& qtile cmd-obj -o cmd -f status >/dev/null 2>&1; then
+		step "Restarting the desktop"
+		note "windows and workspaces are preserved"
+		# Detached: this script is usually launched FROM a terminal that
+		# qtile is about to restart, and a synchronous call would be killed
+		# partway through by the restart it just asked for.
+		setsid bash -c 'sleep 0.6; qtile cmd-obj -o cmd -f restart' >/dev/null 2>&1 &
+		ok "restarting…"
+	else
+		warn "qtile is not running here — the new config applies at your next login."
+	fi
+fi
+
+# Clear the trap: reaching here means the run succeeded and there is no
+# outstanding stash to put back.
+trap - EXIT
+
+# Extension point: anything dropped in hooks/post-update.d/ runs here,
+# after everything else has settled. See ati-hook.
+command -v ati-hook >/dev/null 2>&1 && ati-hook post-update
+
+say ""
+ok "${B}Up to date.${Z}"

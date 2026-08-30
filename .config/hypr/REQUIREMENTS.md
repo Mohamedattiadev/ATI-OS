@@ -1241,7 +1241,7 @@ Original notes below.
 
 **Was: NOT STARTED — but far cheaper than expected**
 
-`~/.dotfiles/.config/AtiScriptsV1/theme-apply` is 1,660 lines and already
+`~/.dotfiles/.config/AtiScriptsV1/theme/theme-apply` is 1,660 lines and already
 does the hard part: **20+ named themes** (doomone, dracula, gruvbox, nord,
 tokyonight, catppuccin, monokai, everforest, rose-pine, kanagawa,
 oxocarbon, cyberpunk-neon, synthwave, matrix, mono-dark, mono-light,
@@ -1490,7 +1490,7 @@ and wired into `island-picker.py`'s recording path (`_island_recording()`).
 
 **4. ~~`ati-phone-screen` (`$mod SHIFT F6`) opens a rofi window~~ CLOSED —
 decided and the claim corrected.** It does open one, through
-`rofi -dmenu -i -format f` in `AtiScriptsV1/ati-phone-screen`, and
+`rofi -dmenu -i -format f` in `AtiScriptsV1/capture/ati-phone-screen`, and
 `binds.conf`'s note that the only rofi routes left were "the two wizards
 named in submaps.conf" was wrong by one. Three routes, not two; the note
 now says so, and the bind carries a pointer to it. It **stays** on rofi,

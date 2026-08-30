@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# ati-translate-query <word> <target-lang> — one JSON object on stdout:
+#
+#   {"word":…,"source":…,"target":…,"translation":…,"explanation":…,"sentence":…}
+#
+# The data half of the translate popup. The QML
+# (quickshell/ati-menu/plugins/translate/Translate.qml) is pure UI: it runs
+# this, parses one JSON blob, and fills its fields.
+#
+# WHY A SCRIPT AND NOT FOUR Processes IN QML
+# ------------------------------------------
+# The popup needs a translation, a one-line explanation, an example sentence
+# and a detected source language. Done in QML that is four Process objects,
+# four StdioCollectors and four half-states to render while they land out of
+# order -- and the Gemini call needs GEMINI_API_KEY out of ~/.config/
+# secrets.env, which ati-rofi-common.sh's load_secrets already handles and
+# QML would have to re-implement. One call, one JSON answer, one thing for
+# the UI to wait on.
+#
+# WHERE EACH FIELD COMES FROM, AND WHY NOT ALL FROM ONE PLACE
+# -----------------------------------------------------------
+# * translation: translate-shell. Deterministic, offline-ish, and works with
+#   no API key at all -- the popup must still translate for someone who has
+#   never set one up. Gemini would be a worse translator AND a hard
+#   dependency.
+# * explanation + sentence: ONE Gemini call returning JSON, not two calls
+#   returning prose. These are the parts a dictionary is bad at and a model
+#   is good at, and asking for both at once halves the latency the popup
+#   spends waiting.
+# * source: trans's own detector.
+#
+# Missing key, no network, rate limit: explanation and sentence come back as
+# empty strings and the popup simply shows fewer rows. Never an error, never
+# a blocked translation -- the same "degrade, don't die" shape call_gemini
+# already has in rofi_translator.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+WORD="${1:-}"
+TARGET="${2:-en}"
+
+# Always answer with a valid object, even on the bad paths: the caller is a
+# JSON.parse() in QML, and a bare error line there is a silent no-op popup.
+emit() {  # emit <source> <translation> <explanation> <sentence>
+    jq -n --arg w "$WORD" --arg s "${1:-}" --arg t "$TARGET" \
+          --arg tr "${2:-}" --arg ex "${3:-}" --arg se "${4:-}" \
+          '{word:$w, source:$s, target:$t, translation:$tr, explanation:$ex, sentence:$se}'
+}
+
+if [[ -z "${WORD//[[:space:]]/}" ]]; then emit "" "" "" ""; exit 0; fi
+command -v trans >/dev/null 2>&1 || { emit "" "" "" ""; exit 0; }
+
+# Same two-engine fallback rofi_translator documents: trans's default engine
+# (Google) exits 0 and prints its failure to STDERR when rate-limited, so an
+# empty result is the only signal that anything went wrong.
+# -no-bidi ON EVERY CALL, and this is the fix for "the arabic not fully
+# vivible not readble".
+#
+# translate-shell's default is to "convert bidirectional texts" for a
+# TERMINAL: it emits Arabic as pre-shaped Presentation Forms-B in VISUAL
+# order. Measured -- `trans -b :ar decision` returns U+FEAD U+FE8D U+FEAE
+# U+FED7, which is قرار already reversed and already joined. That is right
+# for a dumb terminal and catastrophic for Qt, which then applies the real
+# Unicode bidi algorithm to text that has already been reversed, flipping it
+# back to nonsense, using presentation glyphs that cannot re-shape.
+#
+# -no-bidi returns the plain logical-order string instead (U+0642 U+0631
+# U+0627 U+0631) and lets Qt do the shaping and ordering it is good at.
+trans_shell() {
+    local out
+    out="$(trans -no-bidi "$@" 2>/dev/null)" || true
+    [[ -z "$out" ]] && out="$(trans -no-bidi -e bing "$@" 2>/dev/null)" || true
+    printf '%s' "$out"
+}
+
+# Collapse whitespace. translate-shell pads its brief output to align an RTL
+# result, and a word dragged out of a rendered table carries that table's
+# column padding -- both end up in the popup's text field and in the notes
+# file otherwise.
+squash() { printf '%s' "$1" | tr '\n\t' '  ' | sed 's/  */ /g;s/^ *//;s/ *$//'; }
+
+SOURCE="$(squash "$(trans_shell -b -id "$WORD")")"
+TRANSLATION="$(squash "$(trans_shell -b ":$TARGET" "$WORD")")"
+
+EXPLANATION=""
+SENTENCE=""
+
+# ---------------------------------------------------------------------------
+#  DICTIONARY FIRST, AND IT NEEDS NO API KEY
+# ---------------------------------------------------------------------------
+# `trans -d` returns a real dictionary entry -- part of speech, a definition,
+# worked examples, synonyms -- from the same translate-shell that is already a
+# hard dependency here. No key, no network account, nothing to configure.
+#
+# That matters because ~/.config/secrets.env on this machine has
+# `GEMINI_API_KEY=` with an EMPTY value, so the Gemini path below has never
+# produced anything: the explanation and example fields have been blank since
+# the day they were added, in this script and in rofi_translator before it.
+# "should also expalin the word with defitnion and haveing an exmaple" is
+# answered by the dictionary, today, rather than by a key that may never be
+# set.
+#
+# Queried against the TARGET language, which is what makes a de->en lookup
+# return the German definition of the German word rather than an English
+# definition of the translation -- the thing you actually want when you are
+# learning the source language. Confirmed against both directions.
+#
+# A phrase or a sentence returns nothing here, and that is correct: a
+# dictionary defines words. The popup then simply shows the translation with
+# no definition rows, which is the honest result.
+# TWO LOOKUPS, BECAUSE ONE IS OFTEN A MISS.
+#
+# The dictionary is queried on the word you selected first. When that comes
+# back empty -- and it does, often: a word the dictionary does not carry, a
+# language it has no entry set for, an inflected form -- the SECOND attempt
+# is on the TRANSLATION instead.
+#
+# That second one is the more useful miss to cover than it looks. Selecting
+# قرار and getting "appointment" with two empty boxes underneath is the exact
+# case reported ("the sentecne and expaltion should apper"); defining
+# "appointment" instead answers the question the lookup was really asking,
+# which is what the word MEANS. A definition of the thing you translated into
+# is worth far more than no definition at all.
+dict_out="$(timeout 20 trans -d -no-ansi -no-bidi ":$TARGET" "$WORD" 2>/dev/null || true)"
+if [[ -n "$dict_out" ]]; then
+    read -r -d '' _awk <<'AWK' || true
+/^[a-z]+$/ && !pos { pos=1; next }
+pos && !def && /^    [^ -]/ && $0 !~ /^    Synonyms/ { def=$0; sub(/^ +/,"",def) }
+!ex && /^ *- "/ { ex=$0; sub(/^ *- "/,"",ex); sub(/"$/,"",ex) }
+!ex2 && seenex && /^ *- [^"]/ { ex2=$0; sub(/^ *- /,"",ex2) }
+/^Examples$/ { seenex=1 }
+END { print def; print (ex != "" ? ex : ex2) }
+AWK
+    EXPLANATION="$(printf '%s' "$dict_out" | awk "$_awk" | sed -n 1p)"
+    SENTENCE="$(printf '%s' "$dict_out" | awk "$_awk" | sed -n 2p)"
+fi
+
+# Second pass on the translation, only for whatever is still missing, and
+# only when there IS a translation distinct from the word (translating a word
+# into its own language would just re-ask the same failed question).
+if [[ -z "$EXPLANATION" && -n "$TRANSLATION" && "$TRANSLATION" != "$WORD" ]]; then
+    dict2="$(timeout 20 trans -d -no-ansi -no-bidi ":$TARGET" "$TRANSLATION" 2>/dev/null || true)"
+    if [[ -n "$dict2" ]]; then
+        EXPLANATION="$(printf '%s' "$dict2" | awk "$_awk" | sed -n 1p)"
+        [[ -z "$SENTENCE" ]] && SENTENCE="$(printf '%s' "$dict2" | awk "$_awk" | sed -n 2p)"
+    fi
+fi
+
+# Gemini SECOND, and only to fill what the dictionary could not. It is the
+# better answer for a phrase, an idiom, or a word the dictionary does not
+# carry -- but it is optional infrastructure and the dictionary is not, so it
+# refines rather than leads.
+load_secrets
+if [[ -n "${GEMINI_API_KEY:-}" && ( -z "$EXPLANATION" || -z "$SENTENCE" ) ]]; then
+    # Ask for JSON and parse it as JSON. Asking for "explanation on line 1,
+    # sentence on line 2" reads as simpler and is not: models add a preamble,
+    # number the lines, or wrap them in backticks, and every one of those
+    # silently shifts which line is which.
+    #
+    # The fence strip is still needed -- ```json is the single most common
+    # wrapper even when the prompt forbids it -- and the whole thing is
+    # guarded so that unparseable output costs the two optional fields and
+    # nothing else.
+    raw="$(gemini "For the word or phrase \"$WORD\", answer in $TARGET. Return ONLY a JSON object, no markdown, with exactly these keys: \"explanation\" (one short sentence explaining what it means, in $TARGET) and \"sentence\" (one natural example sentence using it, in $TARGET). No other keys." 2>/dev/null)" || raw=""
+    if [[ -n "$raw" ]]; then
+        cleaned="$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*```[a-zA-Z]*//' -e 's/```[[:space:]]*$//')"
+        # Only fills the gaps -- a dictionary definition already in hand is
+        # not replaced by a generated one.
+        g_ex="$(printf '%s' "$cleaned" | jq -r '.explanation // empty' 2>/dev/null || true)"
+        g_se="$(printf '%s' "$cleaned" | jq -r '.sentence // empty' 2>/dev/null || true)"
+        [[ -z "$EXPLANATION" ]] && EXPLANATION="$g_ex"
+        [[ -z "$SENTENCE" ]] && SENTENCE="$g_se"
+    fi
+fi
+
+emit "$SOURCE" "$TRANSLATION" "$(squash "$EXPLANATION")" "$(squash "$SENTENCE")"

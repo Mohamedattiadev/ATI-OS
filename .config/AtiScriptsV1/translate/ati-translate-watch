@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# ati-translate-watch — highlight a word anywhere, get a small square beside
+# the pointer; click it and the translate popup opens on that word.
+#
+#   ati-translate-watch            # run the watcher (autostart.conf)
+#   ati-translate-watch --emit     # internal: one selection, from stdin
+#   ati-translate-watch --show     # on demand: read the selection, show now
+#
+# THE HOVER QUESTION, ANSWERED HONESTLY
+# -------------------------------------
+# "i want a small square appers near the cursor when i hover any word ... like
+# the google translation extenetion". No Wayland client can read the word
+# under the pointer in another application -- that is the security model and
+# there is no way around it from here. But the extension people have in mind
+# does not read hovers either: it reacts to a SELECTION and puts its icon
+# beside it. That is reachable, because the PRIMARY selection is a Wayland
+# protocol and highlighting a word already publishes it. Highlight, and the
+# square appears. No keybind.
+#
+# WHAT IT REFUSES TO REACT TO, AND WHY EACH ONE MATTERS
+# ----------------------------------------------------
+# This runs on EVERY selection you make all day, so the filters are the
+# feature:
+#
+#   * Long selections. Copying a paragraph is not a translation request, and
+#     a badge appearing every time you select a block of code would be
+#     unusable. MAX_WORDS/MAX_CHARS below.
+#   * A repeat of the selection already showing. Some toolkits re-assert
+#     PRIMARY on focus changes, which would otherwise re-arm the badge (and
+#     its 4s timer) without you touching anything.
+#   * Selections made inside the translate popup itself -- you are editing
+#     its fields, and offering to translate your own edit is a loop.
+#   * Anything while the popup is already open.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+MENU_CONFIG="$HOME/.config/quickshell/ati-menu"
+PAYLOAD="$ROFI_RUNTIME_DIR/ati-translate-badge"
+LASTFILE="$ROFI_RUNTIME_DIR/ati-translate-badge.last"
+
+# SENTENCES COUNT, PARAGRAPHS DO NOT.
+#
+# These started at 5 words / 80 chars, which was too tight -- "when i hover on
+# sentece should wokrg". A sentence is exactly the thing you most want
+# translated in a foreign-language page, and it was being filtered out as if
+# it were a bulk copy.
+#
+# 25 words / 240 characters is drawn where a sentence ends and a passage
+# begins: a long sentence fits comfortably, two or three paragraphs of copied
+# text do not, so selecting a block to paste still stays silent. Both limits
+# and not just the word count, because a single 400-character "word" is a URL
+# or a base64 blob rather than vocabulary.
+MAX_WORDS="${ATI_TRANSLATE_MAX_WORDS:-25}"
+MAX_CHARS="${ATI_TRANSLATE_MAX_CHARS:-240}"
+
+ipc_bin() { command -v qsipc >/dev/null 2>&1 && echo qsipc || echo qs; }
+
+# FORCED=1 skips the "same selection as last time" check below. The watcher
+# needs that check (see there); a key you pressed on purpose must never be
+# refused for it -- pressing the key twice on the same word is a perfectly
+# ordinary thing to do when the badge has already timed out.
+FORCED=0
+
+emit() {
+    local sel
+    sel="$(cat)"
+    # Collapse to one line early: the payload is tab-separated and a newline
+    # in the word would be read as the end of the record.
+    sel="$(printf '%s' "$sel" | tr '\n\t' '  ' | sed 's/  */ /g;s/^ *//;s/ *$//')"
+
+    [[ -n "$sel" ]] || exit 0
+    (( ${#sel} <= MAX_CHARS )) || exit 0
+    [[ "$(printf '%s' "$sel" | wc -w)" -le "$MAX_WORDS" ]] || exit 0
+
+    # Unchanged selection: do nothing. Re-arming the badge for a selection
+    # already on screen makes it look like it is flickering on its own.
+    # Never applies to an explicit --show.
+    if (( ! FORCED )) && [[ -f "$LASTFILE" && "$sel" == "$(cat "$LASTFILE" 2>/dev/null)" ]]; then
+        exit 0
+    fi
+    printf '%s' "$sel" > "$LASTFILE"
+
+    local ipc; ipc="$(ipc_bin)"
+
+    # Don't offer a translation on top of the translator. Two cases: the
+    # popup is open (you are editing its own fields), or the focused window
+    # is one of this shell's own layer surfaces.
+    if [[ "$("$ipc" -p "$MENU_CONFIG" ipc call translate status 2>/dev/null)" == "open" ]]; then
+        exit 0
+    fi
+
+    # Pointer position, from the compositor. This is why the badge lands
+    # beside the selection: there is no way to ask where the SELECTION is
+    # on screen (that lives inside the other app's own layout), but the
+    # pointer is where you just finished dragging it, which is the same
+    # place to within a few pixels.
+    local pos x y
+    pos="$(hyprctl cursorpos 2>/dev/null)" || exit 0
+    x="$(printf '%s' "$pos" | cut -d, -f1 | tr -d ' ')"
+    y="$(printf '%s' "$pos" | cut -d, -f2 | tr -d ' ')"
+    [[ "$x" =~ ^-?[0-9]+$ && "$y" =~ ^-?[0-9]+$ ]] || exit 0
+
+    printf '%s\t%s\t%s' "$sel" "$x" "$y" > "$PAYLOAD"
+    "$ipc" -p "$MENU_CONFIG" ipc call translate badge "$PAYLOAD" >/dev/null 2>&1 || true
+}
+
+if [[ "${1:-}" == "--emit" ]]; then
+    emit
+    exit 0
+fi
+
+# ---- on demand ----
+# The keybind route. Two reasons it exists rather than the watcher being the
+# only way in:
+#
+#   1. The watcher is a background process, and a background process is not
+#      running until something starts it. It is in autostart.conf, so it
+#      comes up at login -- but "I added it to autostart" and "it is running
+#      right now" are different statements, and the first time this shipped
+#      the badge simply never appeared because nothing had started the
+#      watcher in the already-running session.
+#   2. The badge times out after four seconds by design. Once it has gone,
+#      the selection is still there but re-selecting the same text does not
+#      re-trigger the watcher (that is the dedupe, and it is correct). A key
+#      is the way back to it.
+#
+# Reads the same PRIMARY-then-clipboard pair as ati-translate-popup, so the
+# key works in the apps that never set PRIMARY too.
+if [[ "${1:-}" == "--show" ]]; then
+    FORCED=1
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-paste >/dev/null 2>&1; then
+        sel="$(wl-paste --primary --no-newline 2>/dev/null || true)"
+        [[ -n "${sel//[[:space:]]/}" ]] || sel="$(wl-paste --no-newline 2>/dev/null || true)"
+    else
+        sel="$(xclip -o -selection primary 2>/dev/null || true)"
+        [[ -n "${sel//[[:space:]]/}" ]] || sel="$(xclip -o -selection clipboard 2>/dev/null || true)"
+    fi
+    # SILENT when nothing is selected, deliberately. This is bound to a bare
+    # backtick (binds.conf, `bindn`), so it runs every single time you type
+    # one -- inside a code fence, in a shell, in the middle of a sentence. A
+    # notification on each of those would be intolerable, and there is
+    # nothing to report anyway: no selection means no translation was asked
+    # for. The badge is the only feedback this has, and it is enough.
+    if [[ -z "${sel//[[:space:]]/}" ]]; then
+        exit 0
+    fi
+    printf '%s' "$sel" | emit
+    exit 0
+fi
+
+# ---- watcher ----
+require_cmd wl-paste hyprctl || exit 1
+[[ -n "${WAYLAND_DISPLAY:-}" ]] || { printf 'needs Wayland\n' >&2; exit 1; }
+
+# ---- BOTH SELECTIONS, NOT JUST PRIMARY ----
+#
+# "should work and appear in nvim and terminal". PRIMARY alone does not
+# reach either of them on this machine, and for two different reasons that
+# were both measured rather than guessed:
+#
+#   * kitty.conf sets `copy_on_select yes` (line 121, which overrides the
+#     `no` at line 81 -- last one wins). So selecting in a terminal puts the
+#     text on the CLIPBOARD, not on PRIMARY.
+#   * nvim's options.lua sets `clipboard = "unnamedplus"`, which routes
+#     yanks to the "+" register -- the CLIPBOARD again. A visual-mode
+#     selection is not a selection in the Wayland sense at all; the yank is
+#     the moment anything leaves nvim.
+#
+# So the clipboard is watched alongside PRIMARY. Both feed the same --emit,
+# and the same-as-last-time check in there means a copy that lands on BOTH
+# (which is the normal case in a browser) still only raises one badge.
+#
+# -t text/plain on both: without a type, wl-paste hands over whatever the
+# source offers first, which for a selection inside a browser is regularly
+# text/html and would put a tag soup in the badge.
+if [[ "${1:-}" == "--watch-clipboard" ]]; then
+    exec wl-paste -t text/plain --watch "$0" --emit
+fi
+
+# The clipboard watcher runs as a child; PRIMARY stays in the foreground so
+# this script's own pid remains the thing to kill. The trap takes the child
+# with it -- an orphaned wl-paste --watch would keep raising badges after the
+# watcher was stopped, with nothing left to stop it.
+"$0" --watch-clipboard &
+_clip_pid=$!
+trap 'kill "$_clip_pid" 2>/dev/null' EXIT INT TERM
+
+wl-paste --primary -t text/plain --watch "$0" --emit

@@ -195,7 +195,7 @@ a paste rather than a rediscovery.
 ## Two bars, and swapping between them
 
 `$mod SHIFT P` — the same key in both sessions — swaps which bar the
-desktop is wearing. `AtiScriptsV1/bar-switch` owns it, and the choice is
+desktop is wearing. `AtiScriptsV1/bar/bar-switch` owns it, and the choice is
 saved to `~/.cache/bar-mode`, which **both** sessions read at startup. Pick
 a bar in Hyprland, log into qtile, and you are still on the bar you picked.
 

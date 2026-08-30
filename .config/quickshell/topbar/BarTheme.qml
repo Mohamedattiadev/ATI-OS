@@ -10,7 +10,7 @@ import Quickshell.Io
 // ONE SOURCE, NOT A SECOND COPY
 // -----------------------------
 // This reads the SAME file the island's IslandTheme reads:
-// ~/.cache/tide-island/colors.json, written by AtiScriptsV1/theme-apply's
+// ~/.cache/tide-island/colors.json, written by AtiScriptsV1/theme/theme-apply's
 // gen_island_colors(). It deliberately does not carry a palette of its own
 // and does not re-read pywal, because a second copy of 22 palettes drifts the
 // first time a shade is adjusted — silently, because a wrong colour still

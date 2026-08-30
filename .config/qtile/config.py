@@ -1051,7 +1051,7 @@ BAR_SWITCH_STATE_FILE = os.path.expanduser("~/.cache/bar-mode")
 def bar_switch_mode():
     """"native" or "island" — which BAR this desktop is currently wearing.
 
-    Written by AtiScriptsV1/bar-switch, read here and by the Hyprland session,
+    Written by AtiScriptsV1/bar/bar-switch, read here and by the Hyprland session,
     so the choice survives a logout and follows you between the two WMs. See
     that script's header for why it is a file and not a flag.
 
@@ -1726,7 +1726,7 @@ def _draw_visible_bars():
 def bar_switch_apply():
     """Re-read ~/.cache/bar-mode and show/hide qtile's bars accordingly.
 
-    The entry point AtiScriptsV1/bar-switch calls over `qtile cmd-obj -f eval`.
+    The entry point AtiScriptsV1/bar/bar-switch calls over `qtile cmd-obj -f eval`.
     It is a separate name from apply_bar_mode() only so that the script has a
     stable thing to look for — the eval checks `hasattr(m, "bar_switch_apply")`
     to find the right module, and pointing that at a name this specific means
@@ -3296,7 +3296,7 @@ def _rescale_then_restart(q):
         import shutil
 
         exe = shutil.which("ati-ui-scale") or os.path.expanduser(
-            "~/.dotfiles/.config/AtiScriptsV1/ati-ui-scale"
+            "~/.dotfiles/.config/AtiScriptsV1/input/ati-ui-scale"
         )
         if os.path.exists(exe):
             subprocess.run(
@@ -7298,7 +7298,7 @@ keys = [
         [mod, "shift"],
         "F5",
         lazy.spawn(
-            'sh -c \'notify-send "Qtile" "Refreshing PC…" && ~/.config/AtiScriptsV1/ati-reset-pc\''
+            'sh -c \'notify-send "Qtile" "Refreshing PC…" && ~/.config/AtiScriptsV1/system/ati-reset-pc\''
         ),
         desc="Refresh PC (ati-reset-pc)",
     ),
@@ -7363,7 +7363,7 @@ keys = [
     # lazy.spawn, not a lazy.function that flips the bars here, and the
     # asymmetry is the point: the island is a separate PROCESS that has to be
     # started, waited for and checked before qtile's bar is allowed to go
-    # away. AtiScriptsV1/bar-switch owns that ordering for both sessions and
+    # away. AtiScriptsV1/bar/bar-switch owns that ordering for both sessions and
     # calls back into bar_switch_apply() over `qtile cmd-obj -f eval` once the
     # island is actually up. Doing it from in here would mean qtile hiding its
     # own bar and only then finding out the island had failed to start.

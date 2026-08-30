@@ -409,7 +409,7 @@ step_simplenote() {
 
   # The push script rides along with the stowed AtiScriptsV1 tree, so there is
   # nothing to copy -- but say so plainly if stow has not run yet.
-  [[ -x "$HOME/.config/AtiScriptsV1/ati-simplenote-push" ]] \
+  [[ -x "$HOME/.config/AtiScriptsV1/notes/ati-simplenote-push" ]] \
     || _WARN "ati-simplenote-push not on disk yet — run the stow module first"
 }
 

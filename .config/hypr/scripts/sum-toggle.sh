@@ -80,8 +80,11 @@ set -euo pipefail
 
 file="$HOME/$(printf '%s' "${USER:-$LOGNAME}" | tr '[:lower:]' '[:upper:]')TODOS/TODOS.md"
 cls="sum-md"
+# Where this window's nvim listens, so a capture can nudge it to reload. Same
+# path ati-todos-append looks for; changing it means changing both.
+nvim_sock="${XDG_RUNTIME_DIR:-/tmp}/nvim-sum-md.sock"
 stash="special:sum"
-pull="$HOME/.config/AtiScriptsV1/ati-simplenote-push"
+pull="$HOME/.config/AtiScriptsV1/notes/ati-simplenote-push"
 
 # 55% x 65%, floors of 600x400 — sum_app.py's FLOAT_W_RATIO / FLOAT_H_RATIO
 # / FLOAT_W_MIN / FLOAT_H_MIN. Resolved against the FOCUSED monitor at press
@@ -122,10 +125,20 @@ if [ -z "$win" ]; then
     # It is NOT taken from $term: that is a Hyprland variable in binds.conf
     # and this is a shell script, which cannot see it. Duplicated
     # deliberately, and this comment is the pointer between the two.
+    # --listen: a named socket so ati-note-capture / ati-todos-append can tell
+    # THIS nvim to ':checktime' the instant they append, instead of the line
+    # sitting on disk unseen until you happen to click into the window and
+    # move the cursor (the autocmd in nvim/lua/config/autocmds.lua fires on
+    # FocusGained/BufEnter/CursorHold, which is right but is not "now").
+    #
+    # Stale socket removed first: a killed nvim leaves the file behind, and
+    # --listen refuses to start on a path that already exists. That would turn
+    # a crash into "the notes key stopped working" until the next reboot.
+    rm -f "$nvim_sock"
     pull_sum
     exec hyprctl dispatch exec "[float; size $w $h; center 1] \
         kitty -o background_opacity=0.70 --name $cls --class $cls --title sum.md \
-        -e nvim -c':set nonumber norelativenumber' $file"
+        -e nvim --listen $nvim_sock -c':set nonumber norelativenumber' $file"
 fi
 
 addr=$(printf '%s' "$win" | jq -r '.address')

@@ -2,7 +2,7 @@ import os
 
 from libqtile.backend.base import FloatStates
 
-SUM_PULL_CMD = os.path.expanduser("~/.config/AtiScriptsV1/ati-simplenote-push") + " --pull"
+SUM_PULL_CMD = os.path.expanduser("~/.config/AtiScriptsV1/notes/ati-simplenote-push") + " --pull"
 
 FLOAT_W_RATIO = 0.55
 FLOAT_H_RATIO = 0.65

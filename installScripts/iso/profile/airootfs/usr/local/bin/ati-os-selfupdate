@@ -193,7 +193,7 @@ say "running: ati-update --yes  (branch $BRANCH)"
 UPDATE_RC=0
 timeout -k 30 "$UPDATE_TIMEOUT" \
   su - "$USER_N" -c \
-  "$ENV_PREFIX command -v ati-update >/dev/null 2>&1 && exec ati-update --yes; exec $Q_DOTS/.config/AtiScriptsV1/ati-update --yes" \
+  "$ENV_PREFIX command -v ati-update >/dev/null 2>&1 && exec ati-update --yes; exec $Q_DOTS/.config/AtiScriptsV1/update/ati-update --yes" \
   || UPDATE_RC=$?
 
 case "$UPDATE_RC" in

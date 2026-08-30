@@ -20,7 +20,7 @@
 # — and pcmanfm-qt runs Wayland-native, putting the file manager you would
 # actually drag from on the wrong side of that bridge for the GTK shelf. That
 # measurement is still true. What changed is which side of it pcmanfm-qt is
-# on: AtiScriptsV1/pcmanfm-qt now forces `QT_QPA_PLATFORM=xcb`, so the file
+# on: AtiScriptsV1/shims/pcmanfm-qt now forces `QT_QPA_PLATFORM=xcb`, so the file
 # manager is XWayland too. The broken row above never applied to
 # XWayland-to-XWayland — that pairing was the ONE row measured working from
 # the start — moving pcmanfm-qt onto it fixes the bridge instead of routing

@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# ati-translate-popup — highlight a word, press the key, get the translate
+# popup with it already looked up.
+#
+# The keybind half of quickshell/ati-menu/plugins/translate/Translate.qml.
+# All this does is read the selection and hand it to the resident ati-menu
+# instance over IPC; the popup itself is already compiled and waiting, which
+# is the whole reason ati-menu is resident (see its shell.qml header).
+#
+# A PAYLOAD FILE, AND WHY NOT JUST THE WORD
+# -----------------------------------------
+# Quickshell IPC arguments are whitespace-split. A single word survives being
+# passed raw; "in Betracht ziehen" arrives as three arguments and the popup
+# receives "in". The selection is arbitrary user text -- spaces, quotes,
+# newlines, non-ASCII -- so it cannot go on the command line.
+#
+# base64 was tried first and is a dead end: decoding it needs atob(), which
+# is a browser API and does not exist in QML's JS engine, so the popup opened
+# with an empty field every time and threw nothing anyone could see.
+#
+# A file is what ati-menu's shell.qml already does for its dmenu payloads,
+# for this exact reason and with the reasoning written down there. Same route
+# here.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+# PRIMARY first, clipboard as the fallback -- same order and same reasoning
+# as ati-note-capture: highlighting is the gesture, but a few toolkits (Zed,
+# some Electron apps) never set PRIMARY at all. `|| true` on both because an
+# empty selection exits non-zero and is the ordinary case here, not a fault.
+read_sel() {
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-paste >/dev/null 2>&1; then
+        [[ "$1" == primary ]] && { wl-paste --primary --no-newline 2>/dev/null || true; } \
+                              || { wl-paste --no-newline 2>/dev/null || true; }
+    else
+        xclip -o -selection "$1" 2>/dev/null || true
+    fi
+}
+
+WORD="$(read_sel primary)"
+[[ -n "${WORD//[[:space:]]/}" ]] || WORD="$(read_sel clipboard)"
+# Trim, and collapse the internal runs: a phrase dragged out of a rendered
+# table arrives padded with the table's own column spacing.
+WORD="$(printf '%s' "$WORD" | tr '\n\t' '  ' | sed 's/  */ /g;s/^ *//;s/ *$//')"
+
+# Empty is fine and is NOT an error: the popup opens with its field focused
+# so you can type a word you were only thinking of. Same allowance
+# rofi_translator makes with its "nothing selected — type a word" prompt.
+#
+# One fixed path, overwritten each time, rather than a mktemp: the popup
+# reads it synchronously the moment the IPC call lands, so there is nothing
+# to clean up afterwards and nothing to leak into $XDG_RUNTIME_DIR over a
+# few hundred lookups. printf, not echo, so no trailing newline is added to
+# the word in the first place.
+PAYLOAD="$ROFI_RUNTIME_DIR/ati-translate-word"
+printf '%s' "$WORD" > "$PAYLOAD" || exit 1
+
+IPC_BIN=qs
+command -v qsipc >/dev/null 2>&1 && IPC_BIN=qsipc
+MENU_CONFIG="$HOME/.config/quickshell/ati-menu"
+
+if ! "$IPC_BIN" -p "$MENU_CONFIG" ipc call translate openFile "$PAYLOAD" >/dev/null 2>&1; then
+    notify_safe "ati-translate-popup" "ati-menu is not running (start it, or check \`qs -p $MENU_CONFIG\`)"
+    exit 1
+fi

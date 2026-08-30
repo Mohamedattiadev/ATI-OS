@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # reset-pc.sh — the Hyprland side of qtile's ati-reset-pc hard reset.
 #
-# qtile's mod+shift+F5 runs ~/.config/AtiScriptsV1/ati-reset-pc: pkill -TERM
+# qtile's mod+shift+F5 runs ~/.config/AtiScriptsV1/system/ati-reset-pc: pkill -TERM
 # then pkill -KILL a list of apps, wmctrl -k every remaining window,
 # restart pipewire/pipewire-pulse/wireplumber/dunst/picom/warpd, restart
 # qtile itself (which is qtile's bar and widgets too), and re-run

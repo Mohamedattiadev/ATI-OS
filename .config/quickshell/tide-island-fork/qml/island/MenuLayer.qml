@@ -122,7 +122,7 @@ FocusScope {
 
     FileView {
         id: menuFile
-        path: Quickshell.env("HOME") + "/.config/AtiScriptsV1/ati-menu.json"
+        path: Quickshell.env("HOME") + "/.config/AtiScriptsV1/lib/ati-menu.json"
         watchChanges: true
         printErrors: false
         onLoaded: root.parseTree(text())

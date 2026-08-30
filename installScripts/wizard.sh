@@ -782,7 +782,7 @@ page_simplenote_creds() {
   # Verify immediately. The script exits 0 on every failure (it must never break
   # :w), so its stderr is what says whether the login actually worked.
   local out
-  out="$("$HOME/.config/AtiScriptsV1/ati-simplenote-push" 2>&1)" || true
+  out="$("$HOME/.config/AtiScriptsV1/notes/ati-simplenote-push" 2>&1)" || true
   if [[ -z "$out" ]]; then
     _OK "  Connected — check the Simplenote app on your phone."
     return 0
@@ -831,7 +831,7 @@ page_simplenote_creds() {
       printf '[simplenote]\nemail = %s\npassword = %s\ntoken = %s\n' \
         "$email" "$password" "$token" >"$tmp2"
       mv "$tmp2" "$cred"; chmod 600 "$cred"
-      out="$("$HOME/.config/AtiScriptsV1/ati-simplenote-push" 2>&1)" || true
+      out="$("$HOME/.config/AtiScriptsV1/notes/ati-simplenote-push" 2>&1)" || true
       if [[ -z "$out" ]]; then
         _OK "  Connected via token — check the Simplenote app on your phone."
         return 0
@@ -839,7 +839,7 @@ page_simplenote_creds() {
       _WARN "  Still failing:  $out"
     fi
   fi
-  _DIM  "  Retry any time:  ~/.config/AtiScriptsV1/ati-simplenote-push"
+  _DIM  "  Retry any time:  ~/.config/AtiScriptsV1/notes/ati-simplenote-push"
   _DIM  "  Details:         TROUBLESHOOTING.md → Simplenote"
 }
 

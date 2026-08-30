@@ -42,7 +42,7 @@
 // Returns every by-id directory whose instance.lock names this config path,
 // newest instance.lock mtime first. NOT deduplicated to one answer here: a
 // dead instance's by-id directory can outlive the process that made it (see
-// AtiScriptsV1/ati-bar-action's own note on this -- 38 stale ids measured piled
+// AtiScriptsV1/bar/ati-bar-action's own note on this -- 38 stale ids measured piled
 // up under ~/.cache/quickshell once), and this machine had exactly that for
 // popups.qml while this file was being tested: two entries, one live. Trying
 // the newest first and falling through on a failed connect (in main(), not

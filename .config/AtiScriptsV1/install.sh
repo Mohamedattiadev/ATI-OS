@@ -42,10 +42,36 @@ if [[ -f "$QSIPC_SRC" ]] && { [[ ! -x "$QSIPC_BIN" ]] || [[ "$QSIPC_SRC" -nt "$Q
     fi
 fi
 
-for f in "$SCRIPT_DIR"/*; do
-    [[ -d "$f" ]] && continue
+# ---- RECURSES, so the scripts can be grouped into subdirectories ----
+#
+# This was `for f in "$SCRIPT_DIR"/*` with `[[ -d ]] && continue`, i.e. flat
+# only. That is the single thing standing between this directory and being
+# grouped by concern (ARCHITECTURE.md, Phase 1): the moment a script moves
+# into a subdirectory the old loop stops seeing it, and its /usr/local/bin
+# symlink dangles.
+#
+# WHAT COUNTS AS A COMMAND, once this recurses:
+#
+#   * everything directly in this directory, as before -- chmod'd and linked
+#     whether or not it already had the bit;
+#   * in a SUBdirectory, only files that are ALREADY EXECUTABLE.
+#
+# That second rule is what keeps the existing subdirectories out of PATH
+# without naming them: themes/ (21 palettes), __pycache__/ (18 .pyc),
+# patches/ and hooks/ hold DATA, and not one file under them is executable --
+# checked. A grouped script, by contrast, arrives with its bit already set,
+# so it is picked up automatically. No allow-list to keep in sync, and a
+# stray README or .pyc can never become a command.
+#
+# The COMMAND NAME IS STILL THE BASENAME. Nothing about grouping changes what
+# anything is called -- `ati-satty` stays `ati-satty` whether it lives here or
+# in capture/. That matters beyond tidiness: `rofi` and `pcmanfm-qt` in this
+# directory are deliberate shims that SHADOW the real binaries in /usr/bin,
+# and they only work because /usr/local/bin precedes it on PATH.
+while IFS= read -r f; do
     name="$(basename "$f")"
-    [[ "$name" == "install.sh" ]] && continue
+    # Subdirectory files must already be executable -- see the note above.
+    [[ "$(dirname "$f")" == "$SCRIPT_DIR" || -x "$f" ]] || continue
     chmod +x "$f"
     sudo ln -sfn "$f" "/usr/local/bin/$name"
     # Purge stale ~/.local/bin copies (older install path).
@@ -55,7 +81,8 @@ for f in "$SCRIPT_DIR"/*; do
     elif [[ -L "$HOME/.local/bin/$name" ]] && [[ "$(readlink "$HOME/.local/bin/$name")" != "$f" ]]; then
         ln -sfn "$f" "$HOME/.local/bin/$name"
     fi
-done
+done < <(find -L "$SCRIPT_DIR" -type f -not -name install.sh \
+              -not -path '*/__pycache__/*' | sort)
 
 # Prune dangling symlinks left behind by a rename: the loop above only
 # ever adds/updates a link for a file that currently exists here, so a

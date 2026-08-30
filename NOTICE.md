@@ -67,7 +67,7 @@ and contributors.
 (Omarchy's shared Quickshell QML component/design-token libraries, copied
 verbatim), `plugins/menu/{Menu.qml,MenuModel.js}` — the tree-walking
 command-menu UI itself, ported here to run against ATI-OS's own
-`.config/AtiScriptsV1/ati-menu.json`/`ati-menu-extensions.json` data files
+`.config/AtiScriptsV1/lib/ati-menu.json`/`ati-menu-extensions.json` data files
 and dispatch commands instead of Omarchy's — and
 `services/{AppLibrary.qml,AppSearch.js}`, the desktop-application list the
 menu's Apps section merges in via `DesktopEntries.applications` (a
@@ -148,7 +148,7 @@ image editor, not installed here) is swapped for `imv`, and
 `omarchy-launch-browser`/`omarchy-launch-editor` are swapped for
 `xdg-open` and this repo's own `alacritty -e nvim` editor idiom.
 
-**Also vendored, near-verbatim**: `.config/AtiScriptsV1/ati-network-speedtest-probe`
+**Also vendored, near-verbatim**: `.config/AtiScriptsV1/system/ati-network-speedtest-probe`
 (Omarchy's `bin/omarchy-network-speedtest`, one line changed —
 `omarchy-cmd-present` isn't installed here, swapped for a plain
 `command -v` check) and `ati-disk-speedtest` (Omarchy's
@@ -159,13 +159,13 @@ download then upload in sequence, since Omarchy's own two-direction UI is
 a dedicated QML panel (`omarchy-shell shell summon omarchy.speedtest`)
 that wasn't ported.
 
-**Also vendored, verbatim, unmodified**: `.config/AtiScriptsV1/ati-emoji-data.json`
+**Also vendored, verbatim, unmodified**: `.config/AtiScriptsV1/lib/ati-emoji-data.json`
 is Omarchy's own `shell/plugins/emojis/emojis.json` (1870 entries of
 `{"e": emoji, "k": "keyword..."}`), copied as-is and read by
 `ati-emoji-insert`; this is data, not code, and nothing in it was changed.
 
 **Adapted, not vendored** — rewritten in bash against ATI-OS's own scripts
-rather than copied: `.config/AtiScriptsV1/ati-launch-webapp`,
+rather than copied: `.config/AtiScriptsV1/apps/ati-launch-webapp`,
 `ati-webapp-install`, and `ati-webapp-remove` reimplement the *behaviour* of
 Omarchy's `bin/omarchy-launch-webapp`, `bin/omarchy-webapp-install`, and
 `bin/omarchy-webapp-remove` (favicon-fetch chain, `.desktop`-launcher

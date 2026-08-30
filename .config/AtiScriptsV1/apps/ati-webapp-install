@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# ati-webapp-install [name url [icon-url-or-path] [custom-exec] [mime-types]]
+#
+# Create a .desktop launcher for a website so it shows up as a real,
+# searchable, selectable entry in Apps -- exactly like any installed
+# program -- rather than living only as a bookmark. Ported from Omarchy's
+# bin/omarchy-webapp-install (MIT, see NOTICE.md): fetch the site's own
+# icon (apple-touch-icon, then /apple-touch-icon.png, then Google's
+# favicon service as a last resort), write it under
+# ~/.local/share/icons/hicolor/256x256/apps/, and write a .desktop file
+# whose Exec launches it through ati-launch-webapp (this repo's port of
+# omarchy-launch-webapp) in app mode.
+#
+# The written .desktop needs nothing else to become searchable: Apps
+# (ati-menu.json's "apps" provider, vendored Omarchy's own AppLibrary.qml)
+# reads Quickshell's DesktopEntries, which scans
+# ~/.local/share/applications the moment a new file lands there -- no
+# separate registration step, same as installing any other app.
+#
+# No terminal presentation of its own: ati-menu.json wires this entry
+# through ati-run-in-terminal, the same floating-terminal wrapper every
+# other install.* action already uses.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+require_cmd curl file || exit 1
+
+ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+
+safe_name() {
+  printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^[:alnum:]]\+/-/g; s/^-//; s/-$//'
+}
+
+download_icon() {  # download_icon <url> <dest>
+  curl -fsSL --max-time 10 -o "$2" "$1" 2>/dev/null &&
+    [[ -s "$2" && "$(file -b --mime-type "$2")" == image/* ]]
+}
+
+fetch_site_icon() {  # fetch_site_icon <site-url> <dest>
+  local site_url="$1" dest="$2" origin page icon_url
+  origin="$(sed -E 's|^(https?://[^/]+).*|\1|' <<<"$site_url")"
+
+  page="$(curl -fsSL --max-time 5 "$site_url" 2>/dev/null | head -c 100000 | tr '\n' ' ')"
+  icon_url="$(grep -oiE "<link[^>]*rel=[\"'][^\"']*apple-touch-icon[^\"']*[\"'][^>]*>" <<<"$page" |
+    grep -oiE "href=[\"'][^\"']+" | head -1 | sed -E "s/^href=[\"']//")"
+
+  case "$icon_url" in
+    http://*|https://*) ;;
+    //*) icon_url="https:$icon_url" ;;
+    /*) icon_url="$origin$icon_url" ;;
+    ?*) icon_url="$origin/$icon_url" ;;
+  esac
+
+  { [[ -n "$icon_url" ]] && download_icon "$icon_url" "$dest"; } ||
+    download_icon "$origin/apple-touch-icon.png" "$dest" ||
+    download_icon "https://www.google.com/s2/favicons?domain=${site_url}&sz=256" "$dest"
+}
+
+if (( $# < 2 )); then
+  require_cmd gum || exit 1
+  echo -e "\e[32mCreate a web app -- it will show up in Apps, searchable like any other.\e[0m\n"
+  APP_NAME="$(gum input --prompt "Name> " --placeholder "My favorite web app")"
+  APP_URL="$(gum input --prompt "URL> " --placeholder "https://example.com")"
+  [[ -z "$APP_NAME" || -z "$APP_URL" ]] && { echo "Name and URL are required." >&2; exit 1; }
+  [[ "$APP_URL" =~ ^[a-zA-Z][a-zA-Z0-9+.-]*: ]] || APP_URL="https://$APP_URL"
+
+  mkdir -p "$ICON_DIR"
+  ICON_VALUE="$(safe_name "$APP_NAME")"
+  if fetch_site_icon "$APP_URL" "$ICON_DIR/$ICON_VALUE.png"; then
+    gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+  else
+    echo "Could not fetch a favicon automatically -- using a generic icon."
+    ICON_VALUE="applications-internet"
+  fi
+  CUSTOM_EXEC=""
+  MIME_TYPES=""
+else
+  APP_NAME="$1"; APP_URL="$2"; ICON_REF="${3:-}"; CUSTOM_EXEC="${4:-}"; MIME_TYPES="${5:-}"
+  [[ "$APP_URL" =~ ^[a-zA-Z][a-zA-Z0-9+.-]*: ]] || APP_URL="https://$APP_URL"
+
+  if [[ -z "$ICON_REF" ]]; then
+    ICON_VALUE="$(safe_name "$APP_NAME")"
+    mkdir -p "$ICON_DIR"
+    if ! fetch_site_icon "$APP_URL" "$ICON_DIR/$ICON_VALUE.png"; then
+      echo "ati-webapp-install: failed to fetch an icon for $APP_URL" >&2
+      exit 1
+    fi
+    gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+  elif [[ "$ICON_REF" =~ ^https?:// ]]; then
+    ICON_VALUE="$(safe_name "$APP_NAME")"
+    mkdir -p "$ICON_DIR"
+    if ! download_icon "$ICON_REF" "$ICON_DIR/$ICON_VALUE.png"; then
+      echo "ati-webapp-install: failed to download icon $ICON_REF" >&2
+      exit 1
+    fi
+    gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+  elif [[ -f "$ICON_REF" ]]; then
+    ext="${ICON_REF##*.}"; [[ "$ext" == "$ICON_REF" ]] && ext="png"
+    ICON_VALUE="$(safe_name "$APP_NAME")"
+    mkdir -p "$ICON_DIR"
+    cp "$ICON_REF" "$ICON_DIR/$ICON_VALUE.$ext"
+    gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+  else
+    ICON_VALUE="$ICON_REF"
+  fi
+fi
+
+EXEC_COMMAND="${CUSTOM_EXEC:-ati-launch-webapp $APP_URL}"
+
+DESKTOP_FILE="$HOME/.local/share/applications/$APP_NAME.desktop"
+mkdir -p "$(dirname "$DESKTOP_FILE")"
+
+{
+  echo "[Desktop Entry]"
+  echo "Version=1.0"
+  echo "Name=$APP_NAME"
+  echo "Comment=$APP_NAME"
+  echo "Exec=$EXEC_COMMAND"
+  echo "Terminal=false"
+  echo "Type=Application"
+  echo "Icon=$ICON_VALUE"
+  echo "StartupNotify=true"
+  [[ -n "$MIME_TYPES" ]] && echo "MimeType=$MIME_TYPES"
+} > "$DESKTOP_FILE"
+chmod +x "$DESKTOP_FILE"
+
+update-desktop-database "$HOME/.local/share/applications" &>/dev/null || true
+
+notify_safe "Web app installed" "$APP_NAME -- find it in Apps"
+echo "$APP_NAME installed. Find it in Apps (searchable, same as any other app)."

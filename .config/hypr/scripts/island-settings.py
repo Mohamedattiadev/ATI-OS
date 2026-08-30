@@ -641,7 +641,7 @@ SETTINGS = [
         "default": False,
         "scope": "packaged",
         "detail": "OFF deliberately, and turning it on is a real hazard "
-                  "rather than a preference. AtiScriptsV1/theme-apply already "
+                  "rather than a preference. AtiScriptsV1/theme/theme-apply already "
                   "owns pywal for BOTH sessions and wallpaper-sync.sh feeds "
                   "hyprpaper from the same cache. Enabling this gives two "
                   "independent things an opinion about one palette, and the "

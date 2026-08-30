@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# ati-stay-awake [toggle|on|off|status] — keep the session from suspending
+# or locking on idle, on demand. Omarchy parity gap #4 from the menu gap
+# analysis (shell/plugins/services/idle/Service.qml's "Stay Awake" toggle,
+# omarchy-menu.jsonc's trigger.toggle.idle-lock).
+#
+# hypridle.conf currently ships with ZERO timeout listeners on this machine
+# (see its own header: "i want the screen not turn off to lock screen at
+# all till i want" -- the idle POLICY was removed, only the daemon and its
+# lock/sleep hooks stay). So there is no idle-triggered lock/dim/screen-off
+# left to inhibit here today. What still fires on its own is SUSPEND (lid
+# close, battery-critical) via systemd-logind -- that's what this actually
+# guards against, plus it future-proofs against any hypridle listener added
+# back later, since hypridle.conf's `ignore_dbus_inhibit = false` means it
+# already honours a systemd-logind inhibitor.
+#
+# Mechanism: hold a single `systemd-inhibit --what=idle:sleep:handle-lid-switch`
+# process alive in the background for as long as "on"; killing it releases
+# the inhibitor immediately. A pidfile is the on/off state -- simpler than
+# omarchy-toggle-idle's own state file, since holding vs not holding the
+# process already IS the state, nothing else to fall out of sync.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+require_cmd systemd-inhibit || exit 1
+
+STATE_DIR="$HOME/.cache/ati"
+PID_FILE="$STATE_DIR/stay-awake.pid"
+mkdir -p "$STATE_DIR"
+
+is_on() {
+  [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null
+}
+
+turn_on() {
+  is_on && return 0
+  setsid systemd-inhibit \
+    --what=idle:sleep:handle-lid-switch \
+    --who=ati-stay-awake \
+    --why="user requested (ati-menu)" \
+    sleep infinity &
+  disown
+  echo $! > "$PID_FILE"
+  notify_safe "Stay Awake" "On -- suspend and lid-close are inhibited"
+}
+
+turn_off() {
+  if is_on; then
+    kill "$(cat "$PID_FILE")" 2>/dev/null
+  fi
+  rm -f "$PID_FILE"
+  notify_safe "Stay Awake" "Off"
+}
+
+case "${1:-toggle}" in
+  on) turn_on ;;
+  off) turn_off ;;
+  toggle) if is_on; then turn_off; else turn_on; fi ;;
+  status) is_on && echo "on" || echo "off" ;;
+  *) echo "usage: ati-stay-awake [toggle|on|off|status]" >&2; exit 2 ;;
+esac

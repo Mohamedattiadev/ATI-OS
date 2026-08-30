@@ -36,7 +36,7 @@ if sn_target then
       end
       -- detached vim.system(), never :! -- this talks to the network, and a
       -- stalled request must not freeze the editor mid-save.
-      local push_script = vim.fn.expand("~/.config/AtiScriptsV1/ati-simplenote-push")
+      local push_script = vim.fn.expand("~/.config/AtiScriptsV1/notes/ati-simplenote-push")
       -- executable() guard: a rename/removal of the script must not turn a
       -- routine :w into an ENOENT error every time this autocmd fires.
       if vim.fn.executable(push_script) == 1 then

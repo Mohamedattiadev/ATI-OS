@@ -54,7 +54,7 @@ hosted by whichever shell is up:
 * the **TreeTab sidebar** — `treetab.qml`, because treetab and max are the
   same arrangement without it;
 * the **theme sweep** — the circular reveal, driven by
-  `AtiScriptsV1/theme-animate`, which hands a theme change to the island, or
+  `AtiScriptsV1/theme/theme-animate`, which hands a theme change to the island, or
   to the popups shell, or to plain `theme-apply` if neither is up.
 
 ## Both of qtile's bars
@@ -237,7 +237,7 @@ toggled their glyph and revealed nothing until that line came out.
    code: fixed left spacer = bar centre − everything left of it, TaskList
    capped by what is left once the right-hand side is paid for.
 5. Tray, MPRIS, the WidgetBoxes, tooltips.
-6. Only then flip `hypr_native_available()` in `AtiScriptsV1/bar-switch` to
+6. Only then flip `hypr_native_available()` in `AtiScriptsV1/bar/bar-switch` to
    true, and add the `$mod SHIFT Z` top/bottom swap that binds.conf reserves.
 
 ## Two things not to rediscover

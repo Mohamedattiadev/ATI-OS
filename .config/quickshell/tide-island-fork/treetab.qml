@@ -21,7 +21,7 @@ import "qml/workspace"
 // not, and the cause is not in the layout — layout-cycle.sh switches to
 // treetab identically under either bar. It is that the 180 px sidebar which
 // IS the difference between treetab and max is instantiated by shell.qml,
-// and AtiScriptsV1/bar-switch STOPS the island to start the topbar. Under
+// and AtiScriptsV1/bar/bar-switch STOPS the island to start the topbar. Under
 // that bar, treetab and max were the same thing under two names.
 //
 // That is a real gap rather than a fidelity nicety: in qtile TreeTab is a

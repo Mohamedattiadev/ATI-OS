@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+#
+# Script name: ati-logout (forked from dmscripts dm-logout)
+# Description: Logout, shutdown, reboot or lock screen.
+# Dependencies: dmenu, fzf, rofi, systemd, slock, notify-send
+# GitLab: https://www.gitlab.com/dwt1/dmscripts
+# License: https://www.gitlab.com/dwt1/dmscripts/LICENSE
+# Contributors: Derek Taylor,
+#               Simon Ingelsson
+
+# Set with the flags "-e", "-u","-o pipefail" cause the script to fail
+# if certain things happen, which is a good thing.  Otherwise, we can
+# get hidden bugs that are hard to discover.
+set -euo pipefail
+
+# The dmscripts helper library. Tried in three places, in order: the
+# current directory (upstream's own convention), $PATH, then the path the
+# dmscripts package actually installs it to.
+#
+# The explicit failure is the point. This used to be two `2>/dev/null`
+# attempts and nothing else, so when both missed, `set -e` killed the
+# script on the next undefined function with no message whatsoever -- a
+# keybinding that did nothing at all, and no way to tell why.
+# shellcheck disable=SC1091
+if ! { source ./_dm-helper.sh 2>/dev/null \
+    || source _dm-helper.sh 2>/dev/null \
+    || source /usr/bin/_dm-helper.sh 2>/dev/null; }; then
+  msg="${0##*/}: cannot find _dm-helper.sh (install the dmscripts package)"
+  command -v notify-send >/dev/null 2>&1 && notify-send "${0##*/}" "$msg"
+  printf '%s\n' "$msg" >&2
+  exit 1
+fi
+
+source_dmscripts_configs
+
+if configs_are_different; then
+  echo "$(date): configs are different" >>"$DM_CONFIG_DIFF_LOGFILE"
+  sleep 1
+fi
+
+# use notify-send if run in dumb term
+# TODO: add abillity to control from config.
+_out="echo"
+if [[ ${TERM} == 'dumb' ]]; then
+  _out="notify-send"
+fi
+
+output() {
+  ${_out} "dm-logout" "$@"
+}
+
+main() {
+  # An array of options to choose.
+  declare -a options=(
+    "Lock screen"
+    "Logout (terminate session)"
+    "Refresh the PC"
+    "Reboot"
+    "Shutdown"
+    "Suspend"
+    "Quit"
+  )
+
+  # look up what managers are used (makes it more dynamic)
+  declare -a managers
+  while IFS= read -r manager; do
+    managers+=("${manager,,}")
+  done < <(grep-desktop)
+  # Original code, used as a refrence and as backup
+  # done < <(grep 'Name=' /usr/share/xsessions/*.desktop | cut -d'=' -f2)
+  managers+=("xmonad-x86_64-linux")
+  # Piping the above array into dmenu, fzf or rofi.
+  # We use "printf '%s\n'" to format the array one item to a line.
+  choice=$(printf '%s\n' "${options[@]}" | ${MENU} 'Shutdown menu:')
+
+  # What to do when/if we choose one of the options.
+  case $choice in
+  'Refresh the PC')
+    if [[ "$(echo -e "No\nYes" | ${MENU} "${choice}?")" == "Yes" ]]; then
+      notify-send "Qtile" "Refreshing session…"
+      ~/.config/AtiScriptsV1/system/ati-reset-pc &
+    else
+      output "User cancelled refresh." && exit 0
+    fi
+    ;;
+  'Logout (terminate session)')
+    if [[ "$(echo -e "No\nYes" | ${MENU} "${choice}?")" == "Yes" ]]; then
+      notify-send "Qtile" "Ending session…"
+
+      if [[ -n "${XDG_SESSION_ID:-}" ]]; then
+        loginctl terminate-session "$XDG_SESSION_ID"
+      else
+        loginctl terminate-seat seat0
+      fi
+    else
+      output "User chose not to logout." && exit 1
+    fi
+    ;;
+  'Lock screen')
+    # ${DMLOCKER} (betterlockscreen, from dmscripts/config) is X11-only --
+    # it shells out to i3lock, which needs an X server. Under Hyprland this
+    # failed with no error the menu could see, so "Lock screen" here looked
+    # identical to a working row and just did nothing. loginctl lock-session
+    # is the same command $mod SHIFT X and the island's own PowerMenuLayer.qml
+    # already use (see that file's header on why betterlockscreen was dropped).
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+      loginctl lock-session
+    else
+      # shellcheck disable=SC2154
+      ${DMLOCKER}
+    fi
+    ;;
+  'Reboot')
+    if [[ "$(echo -e "No\nYes" | ${MENU} "${choice}?")" == "Yes" ]]; then
+      systemctl reboot
+    else
+      output "User chose not to reboot." && exit 0
+    fi
+    ;;
+  'Shutdown')
+    if [[ "$(echo -e "No\nYes" | ${MENU} "${choice}?")" == "Yes" ]]; then
+      systemctl poweroff
+    else
+      output "User chose not to shutdown." && exit 0
+    fi
+    ;;
+  'Suspend')
+    if [[ "$(echo -e "No\nYes" | ${MENU} "${choice}?")" == "Yes" ]]; then
+      systemctl suspend
+    else
+      output "User chose not to suspend." && exit 0
+    fi
+    ;;
+  'Quit')
+    output "Program terminated." && exit 0
+    ;;
+  # It is a common practice to use the wildcard asterisk symbol (*) as a final
+  # pattern to define the default case. This pattern will always match.
+  *)
+    exit 0
+    ;;
+  esac
+
+}
+
+MENU="$(get_menu_program "$@")"
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && main

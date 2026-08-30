@@ -76,7 +76,7 @@ step_ui_scale() {
   # laptop -- the one axis these dotfiles cannot keep identical by copying
   # files, because the right answer depends on the glass.
   local bin
-  bin="$(command -v ati-ui-scale || echo "$DOTFILES_DIR/.config/AtiScriptsV1/ati-ui-scale")"
+  bin="$(command -v ati-ui-scale || echo "$DOTFILES_DIR/.config/AtiScriptsV1/input/ati-ui-scale")"
   [[ -x "$bin" ]] || { _WARN "ati-ui-scale not found — run the ati-scripts module first"; return 0; }
   if [[ -z "${DISPLAY:-}" ]]; then
     # xrandr needs an X server. During a TTY install there is none yet, so

@@ -1,0 +1,265 @@
+#!/usr/bin/env bash
+# ati-todos-append <header> — append stdin under a "### <header>" section of
+# ~/ATITODOS/TODOS.md, creating the section if it isn't there yet.
+#
+# WHY THIS IS ITS OWN SCRIPT
+# --------------------------
+# Two callers want the identical, slightly fiddly behaviour: ati-note-capture
+# (selection -> "### 2026-08-29_research_notes") and rofi_translator
+# (looked-up word -> "### words"). "Find a heading, insert at the END of its
+# section rather than at EOF, create it if missing, don't disturb the
+# headings after it" is enough awk that two copies would drift the first time
+# either one is touched.
+#
+# THE FILE IS SYNCTHING-BACKED AND HAND-EDITED
+# --------------------------------------------
+# ~/ATITODOS/TODOS.md is the same file $mod SHIFT S opens in nvim
+# (hypr/scripts/sum-toggle.sh) and the same one syncthing pushes to the
+# phone. So this never rewrites the file in place: it builds the new content
+# in a temp file alongside it and mv's it over, which is atomic on the same
+# filesystem, and it takes ~/ATITODOS/.rofi_todo.lock via flock first so two
+# captures fired a second apart can't both read the pre-append version and
+# have the second one silently drop the first.
+#
+# It also never touches a byte outside the target section. A capture landing
+# while the file is open in nvim is still a "file changed on disk" prompt
+# there -- nothing can prevent that -- but the content nvim reloads is the
+# whole file with one block added, not a rewrite.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+# Overridable so the self-test can point at a scratch file instead of the
+# real, syncthing-backed one.
+TODOS_FILE="${ATI_TODOS_FILE:-$HOME/ATITODOS/TODOS.md}"
+LOCK_FILE="$(dirname "$TODOS_FILE")/.rofi_todo.lock"
+
+usage() {
+    cat >&2 <<'USAGE'
+usage: ati-todos-append <header> [--dedupe-prefix PREFIX]
+       body is read from stdin
+
+  <header>          section name; matched/created as "### <header>"
+  --dedupe-prefix   before appending, drop any existing entry in that
+                    section whose first line starts with PREFIX (and the
+                    indented continuation lines under it). Used by the
+                    translator so looking a word up twice updates its
+                    entry instead of stacking a second copy.
+USAGE
+    exit 2
+}
+
+HEADER=""
+DEDUPE_PREFIX=""
+while (( $# )); do
+    case "$1" in
+        --dedupe-prefix) DEDUPE_PREFIX="${2:-}"; shift 2 || usage ;;
+        -h|--help)       usage ;;
+        -*)              printf 'unknown option: %s\n' "$1" >&2; usage ;;
+        *)               [[ -n "$HEADER" ]] && usage; HEADER="$1"; shift ;;
+    esac
+done
+[[ -n "$HEADER" ]] || usage
+
+BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/ati-todos-body.XXXXXX")"
+trap 'rm -f "$BODY_FILE"' EXIT
+cat >"$BODY_FILE"
+
+# An empty body would otherwise create a bare header with nothing under it,
+# which is how the section list slowly fills with noise.
+if [[ ! -s "$BODY_FILE" ]] || ! grep -q '[^[:space:]]' "$BODY_FILE"; then
+    printf 'ati-todos-append: empty body, nothing written\n' >&2
+    exit 1
+fi
+
+mkdir -p "$(dirname "$TODOS_FILE")" || exit 1
+[[ -e "$TODOS_FILE" ]] || : >"$TODOS_FILE"
+[[ -e "$LOCK_FILE"  ]] || : >"$LOCK_FILE"
+
+# flock on a dedicated lock file, not on TODOS_FILE itself -- the mv below
+# replaces the inode, so a lock held on the old inode would protect nothing
+# once the first writer landed. ~/ATITODOS/.rofi_todo.lock already exists on
+# this machine for the same reason and is reused rather than adding a second.
+exec 9>"$LOCK_FILE"
+flock -w 5 9 || { printf 'ati-todos-append: could not lock %s\n' "$LOCK_FILE" >&2; exit 1; }
+
+OUT_FILE="$(mktemp "$(dirname "$TODOS_FILE")/.TODOS.md.XXXXXX")"
+
+awk -v hdr="### $HEADER" -v bodyfile="$BODY_FILE" -v dedupe="$DEDUPE_PREFIX" '
+    function emit_body(   line) {
+        while ((getline line < bodyfile) > 0) print line
+        close(bodyfile)
+    }
+    function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+    function blank(s) { return s ~ /^[[:space:]]*$/ }
+    # Any ATX heading. Deliberately "#+ text" and not "### text": a "## "
+    # or a top-level "# " after our section still ENDS our section, so an
+    # insert must stop at whichever heading comes first, not only at a
+    # same-level one.
+    function heading(s) { return s ~ /^#+[ \t]/ }
+
+    { lines[NR] = $0 }
+
+    END {
+        start = 0
+        for (i = 1; i <= NR; i++)
+            if (trim(lines[i]) == hdr) { start = i; break }
+
+        if (start == 0) {
+            # No such section yet -- new one at EOF, after trimming whatever
+            # trailing blank lines the file already ends with so repeated
+            # first-time captures do not stack empty lines.
+            last = NR
+            while (last > 0 && blank(lines[last])) last--
+            for (i = 1; i <= last; i++) print lines[i]
+            if (last > 0) print ""
+            print hdr
+            print ""
+            emit_body()
+            exit
+        }
+
+        # Section runs from start+1 to the line before the next heading.
+        stop = NR + 1
+        for (i = start + 1; i <= NR; i++)
+            if (heading(lines[i])) { stop = i; break }
+
+        # Drop a previous entry for the same key, if asked. An entry is its
+        # first line plus every indented or blank line under it, up to the
+        # next unindented line -- which is what keeps the "  - explanation"
+        # and "  - _sentence_" rows of a translator entry with their word
+        # instead of orphaning them when the word line is replaced.
+        n = 0
+        i = start + 1
+        while (i < stop) {
+            if (dedupe != "" && index(lines[i], dedupe) == 1) {
+                i++
+                while (i < stop && (blank(lines[i]) || lines[i] ~ /^[[:space:]]/)) i++
+                continue
+            }
+            body[++n] = lines[i]
+            i++
+        }
+        # The blank lines wrapping the section are ours to normalise: this
+        # script writes exactly one after the heading and exactly one
+        # before each entry, so a second capture into a section this
+        # script already created must not re-emit the leading blank it
+        # finds there and end up with two.
+        while (n > 0 && blank(body[n])) n--
+        first = 1
+        while (first <= n && blank(body[first])) first++
+
+        for (i = 1; i <= start; i++) print lines[i]
+        print ""
+        for (i = first; i <= n; i++) print body[i]
+        if (n >= first) print ""
+        emit_body()
+        if (stop <= NR) {
+            print ""
+            for (i = stop; i <= NR; i++) print lines[i]
+        }
+    }
+' "$TODOS_FILE" >"$OUT_FILE" || { rm -f "$OUT_FILE"; exit 1; }
+
+# Never replace a good file with an empty one: an awk that died mid-run
+# (or an OOM) would otherwise truncate the notes file to nothing.
+if [[ ! -s "$OUT_FILE" ]]; then
+    rm -f "$OUT_FILE"
+    printf 'ati-todos-append: refusing to write an empty %s\n' "$TODOS_FILE" >&2
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+#  WRITE IN PLACE. NOT `mv`.
+# ---------------------------------------------------------------------------
+# This was `mv -f "$OUT_FILE" "$TODOS_FILE"`, which is the textbook atomic
+# replace and is the wrong call HERE, because this file is almost always open
+# in something. $mod SHIFT S keeps it in an nvim buffer for days at a time,
+# and syncthing watches it.
+#
+# `mv` swaps in a NEW INODE. To anything holding the old one the original file
+# has been unlinked out from under it: nvim's ':checktime' has to notice a
+# replacement rather than a growth, and an inotify watch on the file (as
+# opposed to the directory) stops firing entirely once its inode is gone.
+#
+# `cat > file` keeps the inode, the mode and the ownership, and every watcher
+# just sees the file it already has get longer. The atomicity that costs is
+# not worth much here anyway: the flock above is what actually serialises two
+# captures, and the content being written was fully materialised and checked
+# non-empty before this line runs.
+cat "$OUT_FILE" > "$TODOS_FILE" || { rm -f "$OUT_FILE"; exit 1; }
+rm -f "$OUT_FILE"
+
+# ---------------------------------------------------------------------------
+#  Tell an open notes window to pick it up
+# ---------------------------------------------------------------------------
+# "when i click enter to the todo.md it do not load the thing have copied" --
+# the capture had landed on disk every time; what was missing was anything
+# telling the ALREADY-OPEN nvim to look again. Its own autocmd
+# (nvim/lua/config/autocmds.lua) runs ':checktime' on FocusGained/BufEnter/
+# CursorHold, which is the right mechanism but only fires when you interact
+# with that window -- so a capture made while you were in the browser sat
+# invisible until you clicked into the notes and moved the cursor.
+#
+# EVERY nvim SERVER, NOT ONE NAMED SOCKET
+# ---------------------------------------
+# The first version only spoke to a socket sum-toggle.sh passes via --listen.
+# That is correct and useless: the notes window is opened once and left open
+# for days, so the nvim actually holding the file was started before any of
+# this existed, has no --listen in its argv, and never got the message. Which
+# is exactly what "still same in nvim, shows things but not directly write to
+# it" was.
+#
+# nvim does not need --listen. Every instance already publishes a server
+# socket at $XDG_RUNTIME_DIR/nvim.<n>.0 -- confirmed on this machine, two of
+# them live. Scanning those reaches the window that is ALREADY open, with no
+# restart and no cooperation from whatever started it. (The --listen socket
+# is still checked too, harmlessly, since sum-toggle.sh sets it.)
+#
+# ASK FIRST, AND ASK READ-ONLY. Two things this must not do:
+#   * touch an nvim that does not have this file open. You have other editors
+#     running; a stray :checktime in them is at best noise.
+#   * use --remote-send. `<C-\><C-N>` KICKS THE EDITOR OUT OF INSERT MODE --
+#     firing that into an unrelated nvim while you are mid-word would be a
+#     genuinely destructive thing for a note-taking script to do.
+# So: --remote-expr bufexists() to ask (evaluates an expression, changes no
+# state, cannot alter a mode), and --remote-expr again to run the checktime.
+#
+# Best effort throughout: no servers, a dead socket, no nvim at all -- all
+# ordinary, none of them may turn a successful capture into a failure.
+#
+# A MODIFIED BUFFER IS NOT RELOADED, AND IS NOT SILENTLY IGNORED EITHER.
+# This is the case that was actually happening: the notes buffer had unsaved
+# edits (measured: &modified=1, 33 lines in the buffer against 57 on disk),
+# and nvim will not -- must not -- reload over those. :checktime on a dirty
+# buffer does not quietly skip it, it raises the W12 prompt, which BLOCKS
+# that editor until somebody answers it. Firing a blocking modal into the
+# user's editor from a background capture script is worse than doing nothing.
+# So a dirty buffer is detected and reported instead, which is the one thing
+# that actually gets the capture on screen: the note is safely on disk, and
+# the window needs a decision only its owner can make.
+if command -v nvim >/dev/null 2>&1; then
+    _target_real="$(readlink -f "$TODOS_FILE" 2>/dev/null || printf '%s' "$TODOS_FILE")"
+    _esc="${_target_real//\'/\'\'}"
+    _dirty=0
+    for _sock in "${XDG_RUNTIME_DIR:-/tmp}"/nvim.*.0 "${XDG_RUNTIME_DIR:-/tmp}/nvim-sum-md.sock"; do
+        [[ -S "$_sock" ]] || continue
+        # bufLOADED, not bufexists: bufexists() is true for a buffer nvim
+        # merely remembers (an unloaded entry in :ls), which on this machine
+        # matched an editor that had nothing to do with the notes file.
+        _has="$(timeout 2 nvim --server "$_sock" \
+                    --remote-expr "bufloaded('$_esc')" 2>/dev/null || true)"
+        [[ "$_has" == "1" ]] || continue
+        _mod="$(timeout 2 nvim --server "$_sock" \
+                    --remote-expr "getbufvar(bufnr('$_esc'),'&modified')" 2>/dev/null || true)"
+        if [[ "$_mod" == "1" ]]; then _dirty=1; continue; fi
+        timeout 2 nvim --server "$_sock" --remote-expr 'execute("checktime")' \
+            >/dev/null 2>&1 || true
+    done
+    if (( _dirty )); then
+        notify_safe -t 6000 "📝 saved to the file" \
+            "Your notes window has unsaved edits, so it can't auto-reload. Press :w then :e in it."
+    fi
+fi

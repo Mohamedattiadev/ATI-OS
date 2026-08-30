@@ -188,7 +188,7 @@ notify_clear() {
 # ------------------------------------------------------------
 #  Which bar the desktop is wearing
 # ------------------------------------------------------------
-#  Written by AtiScriptsV1/bar-switch and read by both sessions. Defaulting
+#  Written by AtiScriptsV1/bar/bar-switch and read by both sessions. Defaulting
 #  to `island` matches bar-switch's own DEFAULT_MODE — a machine that has
 #  never switched has always had the island.
 #

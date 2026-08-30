@@ -294,7 +294,7 @@ Scope {
         // ~/.dotfiles/.config/AtiScriptsV1 is not on it.
         if (forkConfig && !forkConfig.themeTransitionEnabled) {
             themeApplyDirect.command = [
-                Quickshell.env("HOME") + "/.dotfiles/.config/AtiScriptsV1/theme-apply",
+                Quickshell.env("HOME") + "/.dotfiles/.config/AtiScriptsV1/theme/theme-apply",
                 String(themeName)];
             themeApplyDirect.running = true;
             return;
@@ -337,7 +337,7 @@ Scope {
     // The theme sweep is the fork feature that matters MOST under X11, which
     // is why it got a wrapper rather than being left Hyprland-only: the qtile
     // session and the Hyprland session share one palette pipeline
-    // (AtiScriptsV1/theme-apply), so a theme change made from either has to
+    // (AtiScriptsV1/theme/theme-apply), so a theme change made from either has to
     // look the same from either.
     Variants {
         id: themeTransitionVariantsWayland
@@ -351,7 +351,7 @@ Scope {
             outputName: modelData && modelData.name !== undefined
                 ? String(modelData.name) : ""
             themeApplyPath: Quickshell.env("HOME")
-                + "/.dotfiles/.config/AtiScriptsV1/theme-apply"
+                + "/.dotfiles/.config/AtiScriptsV1/theme/theme-apply"
             // Only the first screen's overlay runs theme-apply; see the note
             // in ThemeTransitionWindow.qml. Compared by identity against the
             // screen list rather than by an index property, because Variants
@@ -375,7 +375,7 @@ Scope {
             outputName: modelData && modelData.name !== undefined
                 ? String(modelData.name) : ""
             themeApplyPath: Quickshell.env("HOME")
-                + "/.dotfiles/.config/AtiScriptsV1/theme-apply"
+                + "/.dotfiles/.config/AtiScriptsV1/theme/theme-apply"
             ownsThemeApply: Quickshell.screens.length === 0
                 || modelData === Quickshell.screens[0]
 

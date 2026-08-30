@@ -2,7 +2,7 @@
 # topbar.sh — launch the Hyprland topbar, the `native` half of bar-switch.
 #
 # The counterpart to island.sh. That one launches the Tide Island; this one
-# launches the bar that mirrors qtile's, and AtiScriptsV1/bar-switch decides
+# launches the bar that mirrors qtile's, and AtiScriptsV1/bar/bar-switch decides
 # which of the two the session is wearing.
 #
 # WHY THIS IS ITS OWN QUICKSHELL CONFIG AND NOT PART OF THE FORK

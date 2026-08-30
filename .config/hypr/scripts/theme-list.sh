@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# theme-list.sh — emit every theme AtiScriptsV1/theme-apply knows about,
+# theme-list.sh — emit every theme AtiScriptsV1/theme/theme-apply knows about,
 # with a swatch for each, as JSON on stdout.
 #
 # Consumed by the island's theme picker (quickshell/tide-island-fork/

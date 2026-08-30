@@ -240,7 +240,7 @@ Their bar fonts: `Ubuntu Mono` and `JetBrainsMono Nerd Font` (TaskList).
 the aesthetic they want rather than guessing again.
 
 ## 3. theme-apply doesn't use the veil
-`~/.config/AtiScriptsV1/theme-apply` line ~869:
+`~/.config/AtiScriptsV1/theme/theme-apply` line ~869:
 ```bash
 setsid -f bash -c 'qtile cmd-obj -o cmd -f restart' >/dev/null 2>&1 </dev/null || true
 ```

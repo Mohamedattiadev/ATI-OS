@@ -243,7 +243,7 @@ showed the jump. Measured on gruvbox, the theme standing at the time:
 Green and yellow are not shades apart — they are gruvbox's DIM set against
 its BRIGHT set, an olive GroupBox beside a yellow one. Nothing was stale and
 no reload would have fixed it: `qtile/colors.py`'s `_PRESETS` and
-`AtiScriptsV1/theme-apply`'s `resolve_palette` are two hand-written copies of
+`AtiScriptsV1/theme/theme-apply`'s `resolve_palette` are two hand-written copies of
 the same twenty-two palettes, and they had drifted.
 
 **This is the failure the rest of the desktop is already built around
@@ -870,9 +870,9 @@ systematic sweep (`scripts/test/sweep-island.py`, `sweep-topbar.py` —
 | `island` | the Tide Island, ported to X11 | the Tide Island |
 | `native` | qtile's own `bar.Bar` | the Quickshell topbar |
 
-* `AtiScriptsV1/bar-switch` — `$mod SHIFT P`, both sessions. Owns the one rule
+* `AtiScriptsV1/bar/bar-switch` — `$mod SHIFT P`, both sessions. Owns the one rule
   that must not break: **no path may leave the session without a bar.**
-* `AtiScriptsV1/ati-bar-action` — keys follow the bar. Under the island a bind
+* `AtiScriptsV1/bar/ati-bar-action` — keys follow the bar. Under the island a bind
   calls island IPC; under the topbar it runs the equivalent rofi menu, script
   or popup. Its `bar` target is the third shape: keys that address the BAR
   itself and mean different things on each ($alt `, $mod `, $alt Tab).
@@ -905,7 +905,7 @@ start the topbar, something else has to. `bar-switch`'s `topbar_stop` stops
 them again, or the island would come back to a second sidebar and a second set
 of popups holding an exclusive keyboard grab.
 
-`AtiScriptsV1/theme-animate` is the one place that decides who draws a theme
+`AtiScriptsV1/theme/theme-animate` is the one place that decides who draws a theme
 change: island, then the popups shell, then plain `theme-apply`. `theme-toggle`
 and `wallpaper-set.sh` both go through it, which is what gives a wallpaper pick
 the same circular reveal a theme pick has.

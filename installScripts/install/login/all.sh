@@ -19,7 +19,7 @@ step_boot_splash() {
   # failed and the boot path untouched, not with a system that comes up
   # black.
   local mod="$DOTFILES_DIR/.config/arch-config/modules/splash.yaml"
-  local bs="$DOTFILES_DIR/.config/AtiScriptsV1/boot-splash"
+  local bs="$DOTFILES_DIR/.config/AtiScriptsV1/system/boot-splash"
   [[ -f "$mod" ]] || { _ERR "missing $mod"; return 1; }
   [[ -x "$bs" ]] || { _ERR "missing $bs"; return 1; }
 
@@ -182,7 +182,7 @@ EOF"
   # this module exists to prevent. boot-splash owns the comparison; it is
   # read-only, and it checks every entry on the ESP, not just ours.
   if (( ! DRY_RUN )); then
-    local bs="$DOTFILES_DIR/.config/AtiScriptsV1/boot-splash"
+    local bs="$DOTFILES_DIR/.config/AtiScriptsV1/system/boot-splash"
     if [[ -x "$bs" ]]; then
       local vout vrc=0
       vout="$("$bs" verify-root 2>&1)" || vrc=$?
@@ -252,7 +252,7 @@ uninstall_boot_splash() {
   # This one MUST really reverse: leaving the plymouth hook in the
   # initramfs after removing the theme boots to a black screen.
   local bs
-  bs="$(command -v boot-splash || echo "$DOTFILES_DIR/.config/AtiScriptsV1/boot-splash")"
+  bs="$(command -v boot-splash || echo "$DOTFILES_DIR/.config/AtiScriptsV1/system/boot-splash")"
   # if/else, because `A && B || C` here reported "boot-splash not found"
   # whenever `boot-splash disable` FAILED, and returned 0 while doing it --
   # so the uninstall ticked green on the one module whose whole point is

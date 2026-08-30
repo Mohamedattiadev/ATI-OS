@@ -1,0 +1,464 @@
+#!/usr/bin/env bash
+# Rofi password picker, backed by Vaultwarden through rbw.
+#
+# Replaces the commented-out `passmenu` binding on Mod+p p. Styling
+# follows ati-copyq-rofi and rofi_shared so the three pickers read as one
+# family: base.rasi import, dimmed index prefix, alt-key actions in the
+# footer.
+#
+# Why Vaultwarden + rbw:
+#   * Vaultwarden speaks the Bitwarden API, so the official Bitwarden
+#     phone apps sync against it -- no bespoke mobile client to trust.
+#   * rbw keeps the vault decrypted in an agent for lock_timeout
+#     seconds, so you unlock once and the picker is instant after that.
+#
+# Nothing here ever writes a secret to disk. Passwords go to the
+# clipboard and are wiped after CLEAR_AFTER seconds, or are typed
+# straight into the focused window and never touch the clipboard at all.
+
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+require_cmd rofi rbw || exit 1
+load_palette
+load_secrets
+
+CLEAR_AFTER="${RBW_CLIPBOARD_CLEAR:-30}"
+
+# $ROFI_RUNTIME_DIR, not a fixed /tmp path: this file is rewritten on every
+# run, so under the old path a second account on the machine hit EACCES and
+# could not restyle its own picker at all. See ati-rofi-common.sh.
+ROFI_THEME="$ROFI_RUNTIME_DIR/rofi-pass-theme.rasi"
+# Inherit dtos-center.rasi, which is what rofi_light and the plain
+# launcher already use: base.rasi plus `window { width: 45% }` and
+# `listview { lines: 8 }`. That is the whole point -- importing base.rasi
+# directly, as this did, skips both, so the window came out at rofi's 50%
+# default (683px wide against rofi_light's 614) with no fixed row count.
+#
+# The height is deliberately FIXED at 8 rows, so the box is the same size
+# every time regardless of how many entries the vault holds. rofi_light
+# behaves the same way and shows empty space below its 7 entries; a
+# picker that changes size as you filter is more distracting than a
+# little unused black.
+# Only fixed-height is overridden below. Row padding and spacing are left
+# to the inherited theme on purpose: a tighter `element { padding }` here
+# made the window 429px against rofi_light's 472px, which is exactly the
+# mismatch this is meant to remove.
+#
+# Comments inside the heredoc must be /* */ -- rasi has no '#' comment,
+# and one '#' line makes rofi discard the ENTIRE theme with only a
+# warning on stderr, silently falling back to defaults.
+cat >"$ROFI_THEME" <<'RASI'
+@import "~/.config/rofi/themes/dtos-center.rasi"
+
+mainbox   { children: [inputbar, message, listview]; }
+message   { padding: 4px 6px; border: 0; }
+textbox   { text-color: inherit; }
+listview  { fixed-height: 1; }
+RASI
+
+esc_pango() {
+    printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
+}
+
+# --- First-run configuration -------------------------------------------
+#
+# rbw needs the account email before it can log in. Ask once and store it
+# in rbw's own config rather than inventing another dotfile for it.
+current_email() {
+    rbw config show 2>/dev/null |
+        sed -n 's/.*"email"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+}
+
+# The agent caches the config it started with, so a changed email does
+# not take effect until it is restarted. Without this you can fix a typo
+# and still get "incorrect password" from the stale agent.
+set_email() {
+    rbw config set email "$1" || {
+        notify_safe "❌ rbw" "could not save email"; return 1; }
+    rbw stop-agent >/dev/null 2>&1 || true
+}
+
+ensure_configured() {
+    local email
+    email="$(current_email)"
+    if [[ -z "$email" ]]; then
+        email="$(rofi_input "Vaultwarden email" \
+            "first run — the account you created at https://127.0.0.1:8222")"
+        [[ -n "$email" ]] || exit 0
+        set_email "$email" || exit 1
+    fi
+}
+
+# rbw prints "not logged in" / "locked" to stderr and exits non-zero.
+# Unlocking pops rbw's own pinentry dialog, which is the only place the
+# master password is ever entered.
+ensure_unlocked() {
+    rbw unlocked >/dev/null 2>&1 && return 0
+    rbw unlock  >/dev/null 2>&1 && return 0
+
+    # Not logged in yet on this machine.
+    rbw login >/dev/null 2>&1 && return 0
+
+    # Login failed. Vaultwarden answers an UNKNOWN EMAIL and a wrong
+    # password with the identical "Username or password is incorrect"
+    # -- deliberately, so the API cannot be used to enumerate accounts.
+    # So a mistyped email is indistinguishable from a bad password, and
+    # since the email is stored on first run it would otherwise be wrong
+    # forever with no way back through this menu. Offer to re-enter it,
+    # and show which address actually failed.
+    local email
+    email="$(current_email)"
+    if rofi_confirm "Login failed" \
+        "as <b>${email:-<unset>}</b> — a wrong email looks exactly like a wrong password here. Re-enter it?"
+    then
+        local new
+        new="$(rofi_input "Vaultwarden email" "was: ${email:-<unset>}" "$email")"
+        if [[ -n "$new" && "$new" != "$email" ]]; then
+            set_email "$new" || exit 1
+            rbw login >/dev/null 2>&1 && return 0
+        fi
+    fi
+
+    notify_safe "🔒 Vaultwarden login failed" \
+        "email: ${email:-<unset>} · check vaultwarden.service and the address"
+    exit 1
+}
+
+# --- Entry list ---------------------------------------------------------
+# Every lookup goes through the entry's UUID, never its name+user.
+#
+# rbw permits two entries with the SAME name and username, and the moment
+# that happens it refuses to act on either:
+#
+#   rbw get: couldn't find entry for 'olduser@ZZ_UTEST':
+#            multiple entries found: olduser@ZZ_UTEST, olduser@ZZ_UTEST
+#
+# get, edit and remove all fail that way -- so a name+user identity turns
+# a duplicate into an entry you can neither read nor delete from here.
+# The UUID is unique by construction and every rbw NEEDLE accepts one.
+load_entries() {
+    mapfile -t ENTRIES < <(rbw ls --fields id,name,user,folder 2>/dev/null)
+}
+
+build_rows() {
+    local i=0 line id name user folder label
+    for line in "${ENTRIES[@]}"; do
+        IFS=$'\t' read -r id name user folder <<<"$line"
+        [[ -n "${name:-}" ]] || continue
+        label="$(esc_pango "$name")"
+        [[ -n "${user:-}" ]] && label+=" <span alpha=\"55%\">$(esc_pango "$user")</span>"
+        [[ -n "${folder:-}" ]] && label+=" <span alpha=\"40%\">[$(esc_pango "$folder")]</span>"
+        printf '<span alpha="50%%">%02d</span>  %s\n' "$i" "$label"
+        i=$((i + 1))
+    done
+}
+
+# Copy, then wipe. The wipe only fires if the clipboard still holds what
+# we put there -- otherwise a later copy of your own would be destroyed
+# by our timer.
+copy_secret() {
+    local secret="$1" what="$2"
+    copy_to_clipboard "$secret" || return 1
+    notify_safe "🔑 $what copied" "clears in ${CLEAR_AFTER}s"
+    (
+        sleep "$CLEAR_AFTER"
+        local now=""
+        if command -v xclip >/dev/null 2>&1; then
+            now="$(xclip -o -selection clipboard 2>/dev/null)"
+        fi
+        if [[ "$now" == "$secret" ]]; then
+            copy_to_clipboard "" 2>/dev/null
+        fi
+    ) >/dev/null 2>&1 &
+}
+
+# --- Writing to the vault ----------------------------------------------
+#
+# rbw's own help says `add` and `edit` take the password from $EDITOR,
+# and that is true only when stdin is a terminal. Given a pipe it reads
+# the password from stdin instead -- verified: `printf 'x\n' | rbw add
+# NAME USER` stores x, while an $EDITOR wrapper is never even invoked
+# (an instrumented editor logged nothing at all, and the entry was
+# created with no password).
+#
+# That is also the safer path by some distance. The editor route would
+# have meant materialising the password in a temp file for rbw to read;
+# a pipe never touches the disk, and never appears in argv or the
+# environment the way a command-line argument would.
+rbw_write_password() {
+    local pw="$1"; shift
+    printf '%s\n' "$pw" | "$@"
+}
+
+# Ask for a password, or generate one. Echoes the password, or nothing
+# if the user backed out.
+ask_password() {
+    local label="$1" choice pw
+    choice="$(printf 'Generate a strong one (24 chars)\nType it myself\n' |
+        rofi -dmenu -i -no-custom -p "password" \
+            -theme "$HOME/.config/rofi/themes/base.rasi" \
+            -theme-str 'listview { lines: 2; }' \
+            -mesg "for <b>$(esc_pango "$label")</b>")"
+    case "$choice" in
+        Generate*) return 2 ;;   # caller uses `rbw generate`
+        Type*)
+            pw="$(rofi_input_secret "Password for $label")"
+            [[ -n "$pw" ]] || return 1
+            printf '%s' "$pw"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+add_entry() {
+    local name user pw rc
+    name="$(rofi_input "New entry — name" "e.g. github.com")"
+    [[ -n "$name" ]] || return 0
+    user="$(rofi_input "Username for $name" "blank if the entry has none")"
+
+    pw="$(ask_password "$name")"; rc=$?
+    case $rc in
+        2)  # generate: rbw makes the password itself, so no editor needed
+            if rbw generate 24 "$name" ${user:+"$user"} >/dev/null 2>&1; then
+                notify_safe "🔑 Added $name" "generated 24-char password"
+            else
+                notify_safe "❌ Could not add $name" "see rbw output"
+                return 1
+            fi
+            ;;
+        0)
+            if rbw_write_password "$pw" rbw add "$name" ${user:+"$user"} >/dev/null 2>&1; then
+                notify_safe "🔑 Added $name" "${user:-no username}"
+            else
+                notify_safe "❌ Could not add $name" "see rbw output"
+                return 1
+            fi
+            ;;
+        *) return 0 ;;
+    esac
+    rbw sync >/dev/null 2>&1 || true
+}
+
+# rbw has no rename and no way to change a username: `rbw edit` rewrites
+# the password and notes only. So changing the username means recreating
+# the entry, which is destructive and is therefore done in a very
+# specific order -- read everything out FIRST, and only remove once the
+# replacement has been written and verified. If anything fails before
+# that point the original is still there, untouched.
+#
+# What is genuinely lost either way: the entry's UUID and its password
+# history. Say so rather than let it be discovered later.
+change_username() {
+    local idx="$1" id name user new pw
+    IFS=$'\t' read -r id name user _ <<<"${ENTRIES[$idx]}"
+
+    new="$(rofi_input "Username for $name" "was: ${user:-<none>}" "$user")"
+    [[ -n "$new" && "$new" != "$user" ]] || return 0
+
+    rofi_confirm "Change username?" \
+        "rbw cannot rename in place, so <b>$(esc_pango "$name")</b> is recreated — its password history is lost." \
+        || return 0
+
+    # Read the secret out before touching anything.
+    pw="$(rbw get "$id" 2>/dev/null)"
+    if [[ -z "$pw" ]]; then
+        notify_safe "❌ Aborted" "could not read the current password — nothing changed"
+        return 1
+    fi
+
+    # Write the replacement first. Two entries briefly share a name,
+    # which rbw allows because the username differs.
+    if ! rbw_write_password "$pw" rbw add "$name" "$new" >/dev/null 2>&1; then
+        notify_safe "❌ Aborted" "could not create the new entry — nothing changed"
+        return 1
+    fi
+
+    # Only now is it safe to drop the old one.
+    # Remove the OLD one by UUID. Critical: at this instant two entries
+    # share the name, so a name-based remove would hit "multiple entries
+    # found" and leave both behind.
+    if rbw remove "$id" >/dev/null 2>&1; then
+        notify_safe "🔑 $name" "username → $new"
+    else
+        notify_safe "⚠️ $name" "new entry created, but the old one is still there — remove it by hand"
+    fi
+    rbw sync >/dev/null 2>&1 || true
+}
+
+edit_entry() {
+    local idx="$1" id name user pw rc what
+    IFS=$'\t' read -r id name user _ <<<"${ENTRIES[$idx]}"
+
+    what="$(printf 'Password\nUsername\n' |
+        rofi -dmenu -i -no-custom -p "edit" \
+            -theme "$HOME/.config/rofi/themes/base.rasi" \
+            -theme-str 'listview { lines: 2; }' \
+            -mesg "edit what on <b>$(esc_pango "$name")</b>?")"
+    case "$what" in
+        Username) change_username "$idx"; return $? ;;
+        Password) ;;
+        *) return 0 ;;
+    esac
+
+    pw="$(ask_password "$name")"; rc=$?
+    case $rc in
+        2)
+            if rbw generate 24 "$name" ${user:+"$user"} >/dev/null 2>&1; then
+                notify_safe "🔑 Updated $name" "new generated password"
+            else
+                notify_safe "❌ Could not update $name" ""
+                return 1
+            fi
+            ;;
+        0)
+            if rbw_write_password "$pw" rbw edit "$id" >/dev/null 2>&1; then
+                notify_safe "🔑 Updated $name" "${user:-no username}"
+            else
+                notify_safe "❌ Could not update $name" ""
+                return 1
+            fi
+            ;;
+        *) return 0 ;;
+    esac
+    rbw sync >/dev/null 2>&1 || true
+}
+
+remove_entry() {
+    local idx="$1" id name user
+    IFS=$'\t' read -r id name user _ <<<"${ENTRIES[$idx]}"
+    rofi_confirm "Delete this login?" "<b>$(esc_pango "$name")</b> ${user:+· $(esc_pango "$user")}" || return 0
+    if rbw remove "$id" >/dev/null 2>&1; then
+        notify_safe "🗑️ Deleted $name" "${user:-}"
+        rbw sync >/dev/null 2>&1 || true
+    else
+        notify_safe "❌ Could not delete $name" ""
+    fi
+}
+
+field_of() {
+    local idx="$1" field="$2" id user
+    IFS=$'\t' read -r id _ user _ <<<"${ENTRIES[$idx]}"
+    case "$field" in
+        password) rbw get "$id" 2>/dev/null ;;
+        user)     printf '%s' "$user" ;;
+        totp)     rbw code "$id" 2>/dev/null ;;
+        uri)      rbw get --full "$id" 2>/dev/null |
+                      sed -n 's/^URI: //p' | head -1 ;;
+    esac
+}
+
+# --- Main ---------------------------------------------------------------
+ensure_configured
+ensure_unlocked
+load_entries
+
+# The footer lists three actions, not eight.
+#
+# Every key below still works -- alt+u username, alt+t TOTP, alt+o open
+# the site, alt+a type it into the focused window, alt+e edit, alt+s
+# sync. They are simply not all spelled out on screen: nine actions in
+# the hint line wrapped onto two rows and turned a password picker into
+# something you had to read before using. Enter copies the password,
+# which is what you came for 95% of the time; the rest are there when
+# you want them and documented in the README.
+#
+# Loop, so that adding, editing or deleting drops you back on the list
+# instead of ending the session -- you rarely add exactly one entry and
+# then want the menu gone.
+while true; do
+    # An empty vault used to be a dead end that just told you to go and
+    # use a different application. Offer to fill it from here.
+    if (( ${#ENTRIES[@]} == 0 )); then
+        if rofi_confirm "Vault is empty" "add your first login now?"; then
+            add_entry
+            load_entries
+            continue
+        fi
+        exit 0
+    fi
+
+    sel=$(build_rows | rofi -dmenu -i -markup-rows -no-custom -format i \
+        -theme "$ROFI_THEME" \
+        -p "pass" \
+        -mesg "$(printf '<span alpha="60%%">↵ copy password · alt+n new · alt+e edit · alt+x delete</span>')" \
+        -kb-custom-1 'Alt+u' \
+        -kb-custom-2 'Alt+t' \
+        -kb-custom-3 'Alt+o' \
+        -kb-custom-4 'Alt+a' \
+        -kb-custom-5 'Alt+n' \
+        -kb-custom-6 'Alt+e' \
+        -kb-custom-7 'Alt+x' \
+        -kb-custom-8 'Alt+s')
+    rc=$?
+
+    # Alt+n is valid with nothing highlighted, so it is handled before
+    # the index check that every other action needs.
+    if (( rc == 14 )); then
+        add_entry
+        load_entries
+        continue
+    fi
+    if (( rc == 17 )); then
+        rbw sync >/dev/null 2>&1 && notify_safe "🔄 Synced" "vault refreshed"
+        load_entries
+        continue
+    fi
+
+    [[ "$sel" =~ ^[0-9]+$ ]] || exit 0
+    (( sel < ${#ENTRIES[@]} )) || exit 0
+
+    case $rc in
+        0)  # copy password
+            pw="$(field_of "$sel" password)"
+            [[ -n "$pw" ]] && copy_secret "$pw" "Password" \
+                || notify_safe "❌ no password" "entry has no password field"
+            exit 0
+            ;;
+        10) # copy username
+            u="$(field_of "$sel" user)"
+            [[ -n "$u" ]] && copy_secret "$u" "Username" \
+                || notify_safe "❌ no username" "entry has no username"
+            exit 0
+            ;;
+        11) # copy TOTP
+            code="$(field_of "$sel" totp)"
+            [[ -n "$code" ]] && copy_secret "$code" "TOTP" \
+                || notify_safe "❌ no TOTP" "entry has no authenticator key"
+            exit 0
+            ;;
+        12) # open the entry's URI
+            uri="$(field_of "$sel" uri)"
+            if [[ -n "$uri" ]]; then
+                "${BROWSER:-xdg-open}" "$uri" >/dev/null 2>&1 &
+            else
+                notify_safe "❌ no URI" "entry has no website"
+            fi
+            exit 0
+            ;;
+        13) # type it into whatever had focus, bypassing the clipboard
+            if ! command -v xdotool >/dev/null 2>&1; then
+                notify_safe "❌ xdotool missing" "needed for auto-type"
+                exit 1
+            fi
+            pw="$(field_of "$sel" password)"
+            [[ -n "$pw" ]] || exit 0
+            # Let rofi's window go away and focus return before typing.
+            sleep 0.3
+            xdotool type --clearmodifiers --delay 12 -- "$pw"
+            exit 0
+            ;;
+        15) # edit
+            edit_entry "$sel"
+            load_entries
+            ;;
+        16) # remove
+            remove_entry "$sel"
+            load_entries
+            ;;
+        *)  exit 0 ;;
+    esac
+done

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Screen brightness picker via `light`.
+
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+require_cmd light || exit 1
+
+current=$(light -G 2>/dev/null | awk '{printf "%d", $1}')
+
+choice=$(printf "100\n80\n60\n40\n20\n10\n5" | \
+    rofi_select "Brightness (current: ${current}%)")
+
+[[ -z "$choice" ]] && exit 0
+
+# `light`, not /usr/bin/light: require_cmd above already proved it is on
+# PATH, and the absolute path contradicted that check -- a copy installed
+# to /usr/local/bin (where the AUR light-git and any hand-built one land)
+# passed require_cmd and then failed with "No such file or directory".
+light -S "$choice" && notify_safe \
+    -a Brightness \
+    -h string:x-dunst-stack-tag:brightness \
+    -h "int:value:${choice}" \
+    -i display-brightness-medium-symbolic \
+    "Brightness" "${choice}%"

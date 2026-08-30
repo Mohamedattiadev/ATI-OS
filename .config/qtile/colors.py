@@ -375,7 +375,7 @@ _PRESETS = {
 # Green and yellow are not shades apart, they are gruvbox's DIM set against
 # its BRIGHT set — an olive GroupBox beside a yellow one. Nothing was stale
 # and no reload would have fixed it: `_PRESETS` below and
-# `AtiScriptsV1/theme-apply`'s `resolve_palette` are two hand-written copies
+# `AtiScriptsV1/theme/theme-apply`'s `resolve_palette` are two hand-written copies
 # of the same twenty-two palettes, and they had drifted.
 #
 # This is the exact failure the rest of this desktop is already built around

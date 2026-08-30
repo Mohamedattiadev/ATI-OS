@@ -1,0 +1,449 @@
+#!/usr/bin/env bash
+# Rofi process killer. Palette follows wallpaper via rofi_common.
+
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+require_cmd rofi ps awk || exit 1
+load_palette
+
+ROFI_THEME="$HOME/.config/rofi/themes/kill-large.rasi"
+# $ROFI_RUNTIME_DIR (from ati-rofi-common.sh), not a fixed path in /tmp: these
+# are shared-namespace files, so on a machine with two accounts whichever
+# one runs this first creates them mode 644 and every subsequent account's
+# write fails with EACCES.
+STATE_FILE="$ROFI_RUNTIME_DIR/ati-kill-sort-mode"
+ROW_STATE_FILE="$ROFI_RUNTIME_DIR/ati-kill-selected-row"
+# Row → PID map, rebuilt each invocation. Solves pid-extraction
+# problem: rofi -format 's' with -markup-rows returns raw pango so
+# regex against the visible line is unreliable.
+PID_MAP_FILE="$ROFI_RUNTIME_DIR/ati-kill-pidmap"
+KILL_LOG="$ROFI_RUNTIME_DIR/ati-kill.log"
+
+SORT_MODE="${1:-$(cat "$STATE_FILE" 2>/dev/null || echo 'mem_desc')}"
+LAST_ROW="${2:-$(cat "$ROW_STATE_FILE" 2>/dev/null || echo 1)}"
+# Header at row 0 is nonselectable — never start selection there.
+[[ "$LAST_ROW" =~ ^[0-9]+$ ]] || LAST_ROW=1
+(( LAST_ROW < 1 )) && LAST_ROW=1
+
+# Noise procs. Regex anchored on comm (widened to 32 chars via ps -o).
+EXCLUDE='^(bash|zsh|sh|fish|rofi|Xorg|gnome-shell|systemd|systemd-.*|ps|awk|sed|dbus.*|kwin.*|plasmashell|pipewire.*|wireplumber|gpg-agent|ibus.*|xdg-.*|at-spi.*|gvfsd.*|goa-.*|Thread.*|kworker.*|ksoftirqd.*|migration.*|rcu_.*|watchdog.*|scsi_.*|kthreadd|khugepaged|kswapd.*|ksmd|kcompactd.*|khungtaskd|snapd|udisksd|polkitd|NetworkManager|wpa_supplicant|avahi-daemon|cron|agetty)$'
+
+get_sort_flag() {
+    case "$1" in
+        cpu_asc)  echo "%cpu" ;;
+        cpu_desc) echo "-%cpu" ;;
+        mem_asc)  echo "%mem" ;;
+        mem_desc) echo "-%mem" ;;
+        *)        echo "-%mem" ;;
+    esac
+}
+
+next_sort_mode() {
+    case "$1" in
+        cpu_desc) echo "cpu_asc" ;;
+        cpu_asc)  echo "cpu_desc" ;;
+        mem_desc) echo "mem_asc" ;;
+        mem_asc)  echo "mem_desc" ;;
+        *)        echo "mem_desc" ;;
+    esac
+}
+
+# Accent colors (name tint per-proc). Use palette accents for consistency.
+NAME_COLORS=("$PAL_SEL" "$PAL_SEL1" "$PAL_ACTIVE" "#F1FA8C" "#FFB86C" "#FF79C6" "#D6ACFF" "#9AEDFE" "#C1FF72" "#FAF594")
+
+build_rofi_input() {
+    # Single-pass awk render. Previously a bash while-read loop for
+    # ~280 processes took 9-18s (rofi couldn't open until stdin EOF).
+    # Awk version: <200ms. Pre-collect titles + ppid map into stream
+    # tagged lines so awk can build lookups in memory.
+    local sep_color="$PAL_SEL1"
+    {
+        # Tag 'T': window titles (wmctrl -lp: id desk pid host title...).
+        if command -v wmctrl >/dev/null 2>&1; then
+            wmctrl -lp 2>/dev/null | awk '{
+                pid=$3; if (pid !~ /^[0-9]+$/) next;
+                title=""; for(i=5;i<=NF;i++) title=title (i>5?" ":"") $i;
+                if (title=="") next;
+                printf "T\t%s\t%s\n", pid, title;
+            }'
+        fi
+        # Tag 'P': ppid map.
+        ps -eo pid=,ppid= | awk '{printf "P\t%s\t%s\n", $1, $2}'
+        # Tag 'R': process rows.
+        ps -eo pid,comm:32,pcpu,pmem,etime,user \
+            --sort="$(get_sort_flag "$SORT_MODE")" \
+            | awk 'NR>1{printf "R\t%s\t%s\t%s\t%s\t%s\t%s\n", $1,$2,$3,$4,$5,$6}'
+    } | awk -F'\t' \
+        -v exclude="$EXCLUDE" \
+        -v colors="${NAME_COLORS[*]}" \
+        -v urgent="$PAL_URGENT" \
+        -v active="$PAL_ACTIVE" \
+        -v fg="$PAL_FG" \
+        -v sel="$PAL_SEL" \
+        -v sel1="$PAL_SEL1" \
+        -v sep_color="$sep_color" \
+        -v pidmap="$PID_MAP_FILE" '
+        BEGIN {
+            n_colors = split(colors, name_colors, " ")
+            split("▁ ▂ ▃ ▄ ▅ ▆ ▇ █", bars, " ")
+            W_PID=7; W_NAME=52; W_CPU=13; W_MEM=13
+            # Truncate pidmap file for this run. First PID = line 1
+            # (matches rofi row 1 since header row 0 is nonselectable).
+            if (pidmap != "") { printf "" > pidmap; close(pidmap) }
+            row_idx = 0
+            # Force pango monospace family only inside the row content
+            # (prompt + mesg keep the base proportional font). This is
+            # the only way divider bars align without touching base.rasi.
+            sep = "<span foreground=\"" sep_color "\">│</span>"
+            row_open  = "<span face=\"monospace\">"
+            row_close = "</span>"
+            printf("%s<span foreground=\"%s\" weight=\"bold\">%-*s</span>%s<span foreground=\"%s\" weight=\"bold\"> %-*s</span>%s<span foreground=\"%s\" weight=\"bold\"> %-*s</span>%s<span foreground=\"%s\" weight=\"bold\"> %-*s</span>%s\0meta\x1fnonselectable\x1ftrue\n",
+                row_open,
+                sel, W_PID, "PID", sep,
+                sel, W_NAME, "PROCESS [WINDOW]", sep,
+                sel, W_CPU, "CPU", sep,
+                sel, W_MEM, "MEM",
+                row_close)
+        }
+        function draw_bar(v,   idx) {
+            idx = int((v * 7) / 100)
+            if (idx < 0) idx = 0
+            if (idx > 7) idx = 7
+            return bars[idx+1]
+        }
+        function pango_escape(s) {
+            gsub(/&/, "\\&amp;", s)
+            gsub(/</, "\\&lt;", s)
+            gsub(/>/, "\\&gt;", s)
+            return s
+        }
+        function truncate(s, max) {
+            if (length(s) > max) return substr(s, 1, max-1) "…"
+            return s
+        }
+        function hash_color(cmd,   h, i) {
+            h = 0
+            for (i = 1; i <= length(cmd); i++) h += index("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", substr(cmd, i, 1))
+            return name_colors[(h % n_colors) + 1]
+        }
+        function pick_icon(cmd) {
+            if (cmd ~ /firefox|brave|chrom/) return "󰌶"
+            if (cmd ~ /nautilus|thunar|nemo|pcmanfm/) return "󰅺"
+            if (cmd ~ /code|nvim|vim/) return "󰍉"
+            return "󰄰"
+        }
+        function lookup_title(pid,   cur, hops, t) {
+            cur = pid; hops = 0
+            while (hops < 6 && cur != "" && cur != "1" && cur != "0") {
+                t = titles[cur]
+                if (t != "") return t
+                cur = ppid_of[cur]
+                hops++
+            }
+            return ""
+        }
+        $1 == "T" {
+            if (titles[$2] == "") titles[$2] = $3
+            else titles[$2] = titles[$2] " · " $3
+            next
+        }
+        $1 == "P" { ppid_of[$2] = $3; next }
+        $1 == "R" {
+            pid = $2; cmd = $3; cpu = $4 + 0; mem = $5 + 0
+            etime = $6; user = $7
+            if (cmd ~ exclude) next
+            # Record PID for this rofi row so the caller can look it
+            # up by index (rofi -format i s returns markup soup that
+            # would need brittle regex parsing).
+            row_idx++
+            print pid >> pidmap
+            color = hash_color(cmd)
+            icon = pick_icon(cmd)
+            cpu_col = (cpu >= 50) ? urgent : (cpu >= 20 ? "#E5C07B" : fg)
+            mem_col = (mem >= 30) ? urgent : (mem >= 10 ? "#E5C07B" : fg)
+            title = titles[pid]
+            if (title == "" && cmd ~ /brave|chrom|firefox|electron|code|discord|slack|thunderbird/) {
+                title = lookup_title(pid)
+            }
+            title_plain = ""
+            if (title != "") title_plain = " [" truncate(title, 45) "]"
+            name_plain = icon " " cmd title_plain
+            if (length(name_plain) > W_NAME) name_plain = substr(name_plain, 1, W_NAME-1) "…"
+            name_plain = pango_escape(name_plain)
+            cpu_cell = sprintf("%s %.1f%%", draw_bar(int(cpu)), cpu)
+            mem_cell = sprintf("%s %.1f%%", draw_bar(int(mem)), mem)
+            printf("<span face=\"monospace\"><span foreground=\"%s\">%-*s</span>%s <span foreground=\"%s\">%-*s</span>%s <span foreground=\"%s\">%-*s</span>%s <span foreground=\"%s\">%-*s</span></span>\n",
+                sel1, W_PID, pid, sep,
+                color, W_NAME, name_plain, sep,
+                cpu_col, W_CPU, cpu_cell, sep,
+                mem_col, W_MEM, mem_cell)
+        }
+    '
+}
+
+# Prompt suffix shows sort mode.
+sort_label() {
+    case "$SORT_MODE" in
+        cpu_desc) echo "CPU↓" ;;
+        cpu_asc)  echo "CPU↑" ;;
+        mem_desc) echo "MEM↓" ;;
+        mem_asc)  echo "MEM↑" ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+#  Hyprland: same process data, rendered plain for the QML dmenu view
+# ---------------------------------------------------------------------------
+# The rofi flow below is a genuinely rich rofi session -- pango-colored
+# columns and FIVE custom in-session keybinds (Alt+c/m sort, Alt+p/Ctrl+y
+# yank, Alt+k force-kill) -- none of which the QML dmenu payload has any
+# concept of (Menu.qml's "select" mode is pick-one-row-get-one-value, full
+# stop). Rather than drop those actions entirely on Hyprland, they become
+# an explicit second step: pick a process, then pick what to do to it. Two
+# selections instead of one keystroke, but every action survives.
+#
+# The row's RETURNED value is the bare PID, not the display text: rows are
+# built as "<icon>\t<pid>\t<readable columns>" -- Menu.qml drops the icon
+# field and returns only the label, so making the label the pid itself
+# means no parsing-the-selection-back-out step is needed at all, the same
+# problem build_rofi_input's PID_MAP_FILE exists to solve for rofi's own
+# markup-soup selection text.
+build_plain_rows() {
+    local sep_color="$PAL_SEL1"
+    {
+        # hyprctl, not wmctrl -- wmctrl is X11-only and, checked directly,
+        # sees exactly one XWayland-rootless window on this Hyprland
+        # session (a single pcmanfm-qt instance) while every native Wayland
+        # window -- brave, chrome, kitty, anki, all of them -- is invisible
+        # to it. Same class of bug ati-satty's own header documents for
+        # maim/xdotool under Wayland: the X11 tool "succeeds" against
+        # nothing. `hyprctl clients -j` is the Hyprland-native equivalent,
+        # confirmed live to report the same windows with real titles.
+        if command -v hyprctl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+            hyprctl clients -j 2>/dev/null | jq -r '
+                .[] | select(.pid != null and .title != "")
+                | [.pid, (.title | gsub("[\t\n]"; " "))] | @tsv
+            ' | awk -F'\t' '{printf "T\t%s\t%s\n", $1, $2}'
+        elif command -v wmctrl >/dev/null 2>&1; then
+            wmctrl -lp 2>/dev/null | awk '{
+                pid=$3; if (pid !~ /^[0-9]+$/) next;
+                title=""; for(i=5;i<=NF;i++) title=title (i>5?" ":"") $i;
+                if (title=="") next;
+                printf "T\t%s\t%s\n", pid, title;
+            }'
+        fi
+        ps -eo pid=,ppid= | awk '{printf "P\t%s\t%s\n", $1, $2}'
+        ps -eo pid,comm:32,pcpu,pmem,etime,user \
+            --sort="$(get_sort_flag "$SORT_MODE")" \
+            | awk 'NR>1{printf "R\t%s\t%s\t%s\t%s\t%s\t%s\n", $1,$2,$3,$4,$5,$6}'
+    } | awk -F'\t' -v exclude="$EXCLUDE" '
+        function pick_icon(cmd) {
+            if (cmd ~ /firefox|brave|chrom/) return "󰌶"
+            if (cmd ~ /nautilus|thunar|nemo|pcmanfm/) return "󰅺"
+            if (cmd ~ /code|nvim|vim/) return "󰍉"
+            return "󰄰"
+        }
+        function truncate(s, max) {
+            if (length(s) > max) return substr(s, 1, max-1) "…"
+            return s
+        }
+        function lookup_title(pid,   cur, hops, t) {
+            cur = pid; hops = 0
+            while (hops < 6 && cur != "" && cur != "1" && cur != "0") {
+                t = titles[cur]
+                if (t != "") return t
+                cur = ppid_of[cur]
+                hops++
+            }
+            return ""
+        }
+        $1 == "T" {
+            if (titles[$2] == "") titles[$2] = $3
+            else titles[$2] = titles[$2] " · " $3
+            next
+        }
+        $1 == "P" { ppid_of[$2] = $3; next }
+        $1 == "R" {
+            pid = $2; cmd = $3; cpu = $4 + 0; mem = $5 + 0
+            if (cmd ~ exclude) next
+            title = titles[pid]
+            if (title == "" && cmd ~ /brave|chrom|firefox|electron|code|discord|slack|thunderbird/) {
+                title = lookup_title(pid)
+            }
+            # Label leads with the real app/window name -- with 5+ brave
+            # windows open, "4073345" tells you nothing, "brave — Job
+            # Application - Gmail" does. PID stays first-field-parseable
+            # (qml_kill_flow splits on the first space) rather than hidden.
+            label = pid " " cmd
+            if (title != "") label = label " — " truncate(title, 60)
+            subtext = sprintf("%.1f%% cpu  ·  %.1f%% mem", cpu, mem)
+            printf "%s\t%s\t%s\n", pick_icon(cmd), label, subtext
+        }
+    '
+}
+
+qml_kill_flow() {
+    local sel pid action name
+    while true; do
+        # Wider than the 300px default -- window titles ("brave — Job
+        # Application - Gmail") run long, and 300px clipped almost every
+        # one of them to a handful of characters.
+        sel="$(build_plain_rows | ati-menu-select --mode select --width 560 \
+            --prompt "Kill a process [$(sort_label)]")"
+        [[ -z "$sel" ]] && return 0
+
+        # Label is "<pid> <cmd>[ — <title>]" now (see build_plain_rows),
+        # not a bare PID -- the pid is the leading digits up to the first
+        # space, everything after it is display-only.
+        pid="${sel%% *}"
+        if ! [[ "$pid" =~ ^[0-9]+$ ]]; then
+            continue
+        fi
+        name="$(ps -p "$pid" -o comm= 2>/dev/null)"
+        if [[ -z "$name" ]]; then
+            notify_safe "❌ PID $pid already gone"
+            continue
+        fi
+
+        action="$(printf 'Kill\nForce kill (SIGKILL)\nYank PID\nYank command line\nToggle sort\nCancel\n' \
+            | ati-menu-select --mode select --width 400 --prompt "PID $pid ($name)")"
+        case "$action" in
+            Kill)
+                rofi_confirm "Kill PID $pid ($name)?" "" && kill_guaranteed "$pid"
+                ;;
+            "Force kill (SIGKILL)")
+                rofi_confirm "Force kill PID $pid?" "$name" && kill_guaranteed "$pid" force
+                ;;
+            "Yank PID")
+                copy_to_clipboard "$pid"
+                notify_safe "📋 Copied PID" "$pid"
+                ;;
+            "Yank command line")
+                local path; path="$(ps -p "$pid" -o args= 2>/dev/null)"
+                if [[ -n "$path" ]]; then
+                    copy_to_clipboard "$path"
+                    notify_safe "📋 Yanked path" "$path"
+                else
+                    notify_safe "❌ PID $pid gone"
+                fi
+                ;;
+            "Toggle sort")
+                SORT_MODE="$(next_sort_mode "$SORT_MODE")"
+                echo "$SORT_MODE" >"$STATE_FILE"
+                ;;
+            *) : ;;
+        esac
+    done
+}
+
+if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    qml_kill_flow
+    exit 0
+fi
+
+chosen=$(
+    build_rofi_input | rofi -markup-rows -dmenu -i \
+        -theme "$ROFI_THEME" \
+        -p "Kill [$(sort_label)]" \
+        -mesg "<b>↵</b> kill  <b>Alt+k</b> force  <b>Alt+c</b> CPU  <b>Alt+m</b> MEM  <b>Alt+p</b> yank path  <b>Ctrl+y</b> yank PID" \
+        -selected-row "$LAST_ROW" \
+        -format 'i s' \
+        -kb-custom-1 "Alt+c" \
+        -kb-custom-2 "Alt+m" \
+        -kb-custom-3 "Alt+p" \
+        -kb-custom-4 "Alt+k" \
+        -kb-custom-5 "Control+y"
+)
+ret=$?
+
+# -format 'i s' → first line = index (0-based, includes header), second = markup text
+sel_row=$(printf '%s\n' "$chosen" | sed -n '1p')
+sel_line=$(printf '%s\n' "$chosen" | sed -n '2p')
+[[ "$sel_row" =~ ^[0-9]+$ ]] || sel_row="$LAST_ROW"
+echo "$sel_row" > "$ROW_STATE_FILE"
+
+# Look up PID via pidmap file (built during build_rofi_input). Row
+# indices in rofi include the non-selectable header at 0, so the
+# first process is row 1 = line 1 in pidmap.
+pid=""
+if [[ "$sel_row" =~ ^[0-9]+$ && "$sel_row" -ge 1 && -f "$PID_MAP_FILE" ]]; then
+    pid=$(sed -n "${sel_row}p" "$PID_MAP_FILE")
+fi
+# Fallback: strip pango markup from selected line and grab first int.
+if [[ -z "$pid" ]]; then
+    sel_stripped=$(printf '%s' "$sel_line" | sed 's/<[^>]*>//g')
+    [[ "$sel_stripped" =~ ([0-9]+) ]] && pid="${BASH_REMATCH[1]}"
+fi
+
+reexec() {
+    exec "$0" "$SORT_MODE" "$sel_row"
+}
+
+case "$ret" in
+    10) # Alt+c toggle CPU
+        new_mode=$([[ $SORT_MODE == cpu_* ]] && next_sort_mode "$SORT_MODE" || echo "cpu_desc")
+        echo "$new_mode" >"$STATE_FILE"
+        SORT_MODE="$new_mode"; reexec
+        ;;
+    11) # Alt+m toggle MEM
+        new_mode=$([[ $SORT_MODE == mem_* ]] && next_sort_mode "$SORT_MODE" || echo "mem_desc")
+        echo "$new_mode" >"$STATE_FILE"
+        SORT_MODE="$new_mode"; reexec
+        ;;
+    12) # Alt+p yank path
+        if [[ -n "$pid" ]]; then
+            path=$(ps -p "$pid" -o args= 2>/dev/null)
+            if [[ -n "$path" ]]; then
+                copy_to_clipboard "$path"
+                notify_safe "📋 Yanked path" "$path"
+            else
+                notify_safe "❌ PID $pid gone"
+            fi
+        fi
+        reexec
+        ;;
+    13) # Alt+k force kill (skip grace, go straight to SIGKILL)
+        if [[ -n "$pid" ]]; then
+            if rofi_confirm "Force kill PID $pid?" "$(ps -p "$pid" -o comm= 2>/dev/null)"; then
+                kill_guaranteed "$pid" force
+            fi
+        fi
+        reexec
+        ;;
+    14) # Ctrl+y yank PID
+        if [[ -n "$pid" ]]; then
+            copy_to_clipboard "$pid"
+            notify_safe "📋 Copied PID" "$pid"
+        fi
+        reexec
+        ;;
+    0) # Enter — regular kill, guaranteed
+        printf '[%s] Enter sel_row=%s pid=%s sel_line=%s\n' \
+            "$(date +%H:%M:%S)" "$sel_row" "$pid" "${sel_line:0:80}" \
+            >>"$KILL_LOG"
+        if [[ -n "$pid" ]]; then
+            proc_name="$(ps -p "$pid" -o comm= 2>/dev/null)"
+            if [[ -z "$proc_name" ]]; then
+                notify_safe "❌ PID $pid already gone"
+                reexec
+            fi
+            if rofi_confirm "Kill PID $pid ($proc_name)?" ""; then
+                kill_guaranteed "$pid"
+            fi
+            reexec
+        else
+            notify_safe "❌ No PID (row $sel_row)" "check $KILL_LOG"
+            reexec
+        fi
+        ;;
+    1) # Esc
+        exit 0
+        ;;
+    *)
+        exit 0
+        ;;
+esac

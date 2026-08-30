@@ -2903,7 +2903,7 @@ def anki_run(item_id, text=""):
         if not state.get("text"):
             raise ValueError("no text in flight — start again")
         script = shutil.which("rofi_anki") or os.path.join(
-            HOME, ".dotfiles/.config/AtiScriptsV1/rofi_anki")
+            HOME, ".dotfiles/.config/AtiScriptsV1/menu/rofi_anki")
         if not os.path.exists(script):
             raise ValueError("rofi_anki not found")
         # The state file IS the answers file — the wizard's state and
@@ -3301,7 +3301,7 @@ def ilovepdf_run(item_id, text=""):
 #  or something to click and ask which shape do you want, A or B, as a popup
 #  for the island and as rofi for the qtile".
 #
-#  This is the ISLAND half. The rofi half is AtiScriptsV1/bar-chooser, and
+#  This is the ISLAND half. The rofi half is AtiScriptsV1/bar/bar-chooser, and
 #  ati-bar-action picks between them by the current mode, so one key gives you the
 #  chooser in whichever shell is up.
 #

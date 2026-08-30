@@ -1,0 +1,376 @@
+#!/usr/bin/env bash
+# Rofi shared-links picker. Palette follows wallpaper via rofi_common.
+
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+require_cmd rofi curl grep sed || exit 1
+load_palette
+
+# Picker styling deliberately mirrors ati-copyq-rofi (Mod2+v) and ati-pass:
+# all three inherit dtos-center.rasi, the same theme rofi_light and the
+# plain launcher use, so every menu here is one 45%-wide, 8-row box. This
+# one was on the big process-killer theme; then on base.rasi, which skips
+# dtos-center's width and lines and came out wider than rofi_light.
+# Per-user, not a fixed /tmp path — rewritten every run, so a shared path
+# locks every account but the first out of it. See ati-rofi-common.sh.
+ROFI_THEME="$ROFI_RUNTIME_DIR/rofi-shared-theme.rasi"
+cat >"$ROFI_THEME" <<'RASI'
+@import "~/.config/rofi/themes/dtos-center.rasi"
+
+mainbox      { children: [inputbar, message, listview]; }
+message      { padding: 4px 6px; border: 0; }
+textbox      { text-color: inherit; }
+listview     { fixed-height: 1; scrollbar: true; }
+scrollbar    { width: 4px; }
+element-icon { size: 48px; expand: false; }
+RASI
+
+VIDEO_FILE="$HOME/.config/rofi/Todo_files/Shared_Links.md"
+THUMB_DIR="$ROFI_RUNTIME_DIR/link-thumbs"
+mkdir -p "$THUMB_DIR" "$(dirname "$VIDEO_FILE")"
+touch "$VIDEO_FILE"
+
+BROWSER="${BROWSER:-brave}"
+
+# Delimiter (unit separator — safe in titles/urls).
+SEP=$'\x1f'
+
+# Thumbnail cache. Requires wget + optionally jq + convert.
+# Where a URL's thumbnail lives. Pure path computation, no network —
+# the picker needs to decide "do I have an icon for this row" for every
+# row at once, and it cannot pay a fetch per link to find out.
+thumb_path_for() {
+    printf '%s/%s.jpg' "$THUMB_DIR" \
+        "$(printf '%s' "$1" | md5sum | cut -d' ' -f1)"
+}
+
+get_thumbnail() {
+    local url="$1"
+    local thumb_path
+    thumb_path="$(thumb_path_for "$url")"
+
+    if [[ ! -f "$thumb_path" ]]; then
+        if [[ "$url" =~ (youtu\.be|youtube\.com) ]] && command -v wget &>/dev/null; then
+            local vid=""
+            # Pull the id out of the position it actually occupies rather
+            # than grabbing the first 11 legal characters anywhere in the
+            # string — that happened to work for canonical watch?v= links
+            # and picked up a path segment for anything else.
+            if [[ "$url" =~ [?\&]v=([A-Za-z0-9_-]{11}) ]]; then
+                vid="${BASH_REMATCH[1]}"
+            elif [[ "$url" =~ youtu\.be/([A-Za-z0-9_-]{11}) ]]; then
+                vid="${BASH_REMATCH[1]}"
+            elif [[ "$url" =~ /(shorts|embed|live)/([A-Za-z0-9_-]{11}) ]]; then
+                vid="${BASH_REMATCH[2]}"
+            fi
+            if [[ -n "$vid" ]]; then
+                wget -q -O "$thumb_path" "https://img.youtube.com/vi/${vid}/hqdefault.jpg" || true
+            fi
+        fi
+        if [[ ! -s "$thumb_path" ]] && command -v jq &>/dev/null && command -v wget &>/dev/null; then
+            local img_url
+            # The target URL is a query *value*, so it has to be encoded.
+            # Three of the links in Shared_Links.md contain '&', each of
+            # which silently truncated the request and returned no image.
+            img_url=$(curl -sf --max-time 8 --get \
+                --data-urlencode "url=${url}" --data-urlencode "palette=true" \
+                "https://api.microlink.io/" | jq -r '.data.image.url // empty' 2>/dev/null)
+            if [[ -n "$img_url" ]]; then
+                wget -q -O "$thumb_path" "$img_url" || true
+            fi
+        fi
+        if [[ ! -s "$thumb_path" ]] && command -v convert &>/dev/null; then
+            convert -size 480x270 xc:"$PAL_BG_ALT" -gravity center -fill "$PAL_FG" -pointsize 24 -annotate 0 "No Preview" "$thumb_path" 2>/dev/null || true
+        fi
+    fi
+    printf '%s' "$thumb_path"
+}
+
+# Parse the link file into "title<SEP>url" rows.
+#
+# Only '- [title](url)' lines used to be read, so any URL pasted into the
+# file on its own was silently invisible in the picker -- 10 of the 25
+# links in Shared_Links.md were in that state, present on disk and
+# unreachable from the menu. Bare URLs are now first-class: they get a
+# title derived from the URL itself, which is enough to pick them, and
+# add_new_link still writes the nicer markdown form for new entries.
+build_rofi_input() {
+    local line title url
+    while IFS= read -r line; do
+        [[ -z "${line//[[:space:]]/}" ]] && continue
+        if [[ "$line" =~ \[(.*)\]\((https?://[^\)]+)\) ]]; then
+            title="${BASH_REMATCH[1]}"
+            url="${BASH_REMATCH[2]}"
+        elif [[ "$line" =~ (https?://[^[:space:]\)]+) ]]; then
+            url="${BASH_REMATCH[1]}"
+            title="$(derive_title "$url")"
+        else
+            continue
+        fi
+        [[ -n "$url" ]] || continue
+        printf '%s%s%s\n' "$title" "$SEP" "$url"
+    done <"$VIDEO_FILE"
+}
+
+# A readable stand-in title for a URL with no markdown label: the host
+# without "www.", plus whatever the last meaningful path/query bit is.
+derive_title() {
+    local url="$1" host rest
+    host="${url#*://}"; host="${host%%/*}"; host="${host#www.}"
+    case "$url" in
+        *v=*)       rest="${url##*v=}"; rest="${rest%%&*}" ;;
+        */shorts/*) rest="short ${url##*/shorts/}" ;;
+        *youtu.be/*) rest="${url##*youtu.be/}"; rest="${rest%%\?*}" ;;
+        *)          rest="${url#*://}"; rest="${rest#*/}"; rest="${rest%%\?*}" ;;
+    esac
+    rest="${rest%%&*}"
+    if [[ -n "$rest" && "$rest" != "$host" ]]; then
+        printf '%s · %s' "$host" "${rest:0:60}"
+    else
+        printf '%s' "$host"
+    fi
+}
+
+esc_pango() {
+    printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
+}
+
+# A glyph per source, same idea as ati-copyq-rofi's type glyphs — you should
+# be able to tell a video from an article without reading the title.
+link_glyph() {
+    case "$1" in
+        *youtube.com*|*youtu.be*) printf ' ' ;;
+        *github.com*)             printf ' ' ;;
+        *linkedin.com*)           printf ' ' ;;
+        *reddit.com*)             printf ' ' ;;
+        *.pdf)                    printf ' ' ;;
+        *)                        printf ' ' ;;
+    esac
+}
+
+# Emit rofi rows: "<markup>\0icon\x1f<path>" when a thumbnail is already
+# cached, plain markup otherwise. Never fetches.
+build_rofi_rows() {
+    local i=0 line title url icon entry
+    for line in "${LINES[@]}"; do
+        title="${line%%${SEP}*}"
+        url="${line#*${SEP}}"
+        entry="$(printf '<span alpha="50%%">%02d</span> %s%s' \
+            "$i" "$(link_glyph "$url")" "$(esc_pango "$title")")"
+        icon="$(thumb_path_for "$url")"
+        if [[ -s "$icon" ]]; then
+            printf '%s\0icon\x1f%s\n' "$entry" "$icon"
+        else
+            printf '%s\n' "$entry"
+        fi
+        i=$((i + 1))
+    done
+}
+
+# Warm the thumbnail cache for links that do not have one yet. Runs
+# detached from the menu; a slow or dead host costs nothing on screen.
+prefetch_thumbs() {
+    local line url
+    for line in "${LINES[@]}"; do
+        url="${line#*${SEP}}"
+        [[ -s "$(thumb_path_for "$url")" ]] && continue
+        get_thumbnail "$url" >/dev/null 2>&1 || true
+    done
+}
+
+show_preview() {
+    command -v feh &>/dev/null || { notify_safe "feh not installed"; return; }
+    local url="$1"
+    local thumb_path
+    thumb_path=$(get_thumbnail "$url")
+    pkill -f "feh --title link-preview" 2>/dev/null
+    (feh --title "link-preview" \
+        --geometry 200x150 \
+        --scale-down \
+        --zoom max \
+        --force-aliasing \
+        "$thumb_path" </dev/null &>/dev/null &)
+}
+
+add_new_link() {
+    local url="$1"
+    if ! [[ "$url" =~ ^https?:// ]]; then
+        notify_safe "❌ Invalid Input" "'$url' is not a valid URL."
+        return
+    fi
+    notify_safe "⏳ Fetching title for..." "$url"
+    local page_title html
+    html=$(curl -sfL --max-time 10 "$url" 2>/dev/null) || {
+        notify_safe "⚠️  HTTP fetch failed" "$url"
+    }
+    page_title=$(printf '%s' "$html" | grep -io '<title>[^<]*</title>' | sed -e 's/<title>\(.*\)<\/title>/\1/I' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | head -n 1)
+    if [[ -z "$page_title" ]]; then
+        page_title=$(printf '%s' "$url" | sed -E 's_https?://([^/]+)/?.*_\1_')
+        notify_safe "⚠️  Title not found" "Using domain '$page_title'"
+    fi
+    page_title=$(printf '%s' "$page_title" | tr -d '[]')
+    printf -- '- [%s](%s)\n' "$page_title" "$url" >>"$VIDEO_FILE"
+    notify_safe "✅ Link Added" "$page_title"
+}
+
+edit_link_title() {
+    local old_title="$1"
+    local url="$2"
+    local new_title
+    # rofi_input, not a bare -dmenu: with no list to show, rofi still
+    # reserves 15 listview rows and the prompt fills the screen.
+    new_title=$(rofi_input "Edit Title" "$url" "$old_title")
+
+    if [[ -n "$new_title" && "$new_title" != "$old_title" ]]; then
+        # The URL used to be interpolated into a sed address, i.e. treated
+        # as a regex: '.' matched any character, and a '[' anywhere in the
+        # link made sed fail outright. Compare the URL as a literal string
+        # instead.
+        rewrite_link "$url" "$new_title" || return
+        notify_safe "✅ Title Updated" "$new_title"
+    fi
+}
+
+# Rewrite (new_title given) or drop (new_title omitted) the entry whose
+# URL matches exactly. Operates on a temp file so a failure part-way
+# through cannot truncate Shared_Links.md.
+rewrite_link() {
+    local url="$1" new_title="${2-}" tmp
+    tmp="$(mktemp "${TMPDIR:-/tmp}/shared-links.XXXXXX")" || return 1
+    if ! awk -v want="$url" -v newt="$new_title" -v drop="$([[ $# -lt 2 ]] && echo 1 || echo 0)" '
+        {
+            line = $0
+            u = ""
+            if (match(line, /\(https?:\/\/[^)]+\)/)) {
+                # "- [title](url)" form.
+                u = substr(line, RSTART + 1, RLENGTH - 2)
+            } else if (match(line, /https?:\/\/[^ \t)]+/)) {
+                # Bare URL on its own line.
+                u = substr(line, RSTART, RLENGTH)
+            }
+            if (u != want) { print line; next }
+            if (drop) next
+            if (index(line, "](") > 0) {
+                sub(/\[[^]]*\]/, "[" newt "]", line)
+                print line
+            } else {
+                # Retitling a bare URL promotes it to the markdown form,
+                # which is what every other entry looks like.
+                print "- [" newt "](" u ")"
+            }
+        }
+    ' "$VIDEO_FILE" >"$tmp"; then
+        rm -f "$tmp"
+        notify_safe "❌ Could not update" "$VIDEO_FILE unchanged"
+        return 1
+    fi
+    mv "$tmp" "$VIDEO_FILE"
+}
+
+delete_link() {
+    local title="$1"
+    local url="$2"
+    rofi_confirm "Delete link?" "$title" || return
+    # Same literal-match reasoning as edit_link_title: a regex address
+    # built from a URL can delete a line that merely looks similar.
+    rewrite_link "$url" || return
+    notify_safe "🗑️  Link Deleted" "$title"
+}
+
+last_index=0
+
+while true; do
+    mapfile -t LINES < <(build_rofi_input)
+
+    if [[ ${#LINES[@]} -eq 0 ]]; then
+        if rofi_confirm "No links yet. Add one?"; then
+            ret=13
+            selection=""
+        else
+            break
+        fi
+    else
+        # Kick off thumbnail fetches for anything not cached yet, in the
+        # background, so the menu opens now and looks better next time.
+        # Fetching inline would mean one HTTP round trip per link before
+        # a single row appeared.
+        prefetch_thumbs &
+
+        selection=$(build_rofi_rows | \
+            rofi -dmenu -markup-rows -i -format i -show-icons -no-custom \
+                -theme "$ROFI_THEME" \
+                -p "links" \
+                -mesg "$(printf '<span alpha="60%%">%d links · enter open · alt+y copy · alt+s preview · alt+a add · alt+e edit · alt+d del</span>' "${#LINES[@]}")" \
+                -selected-row "$last_index" \
+                -kb-custom-1 "Alt+o" \
+                -kb-custom-2 "Alt+y" \
+                -kb-custom-3 "Alt+s" \
+                -kb-custom-4 "Alt+a" \
+                -kb-custom-5 "Alt+e" \
+                -kb-custom-6 "Alt+d")
+        ret=$?
+    fi
+
+    if [[ $ret -eq 1 ]]; then
+        pkill -f "feh --title link-preview" 2>/dev/null
+        break
+    fi
+
+    # rofi now returns the row index directly (-format i). The old code
+    # searched TITLES for a string equal to what rofi printed, which
+    # picked the wrong URL whenever two links shared a title and failed
+    # outright once pango escaping made the returned text differ from
+    # the stored text.
+    index=-1
+    if [[ "$selection" =~ ^[0-9]+$ ]] && (( selection < ${#LINES[@]} )); then
+        index="$selection"
+    fi
+
+    if [[ $index -lt 0 && $ret -ne 13 ]]; then
+        continue
+    fi
+
+    title=""; url=""
+    if [[ $index -ge 0 ]]; then
+        full_line="${LINES[$index]}"
+        title="${full_line%%${SEP}*}"
+        url="${full_line#*${SEP}}"
+        last_index=$index
+    fi
+
+    case $ret in
+        0|10) # Open
+            if [[ -n "$url" ]]; then
+                # shellcheck disable=SC2086
+                $BROWSER "$url" &
+            fi
+            pkill -f "feh --title link-preview" 2>/dev/null
+            break
+            ;;
+        11) # Copy
+            copy_to_clipboard "$url"
+            notify_safe "📋 Copied URL" "$title"
+            ;;
+        12) # Preview
+            show_preview "$url"
+            ;;
+        13) # Add
+            new_url=$(rofi_input "Enter URL to Add")
+            if [[ -n "$new_url" ]]; then
+                add_new_link "$new_url"
+                last_index=0
+            fi
+            ;;
+        14) # Edit title
+            edit_link_title "$title" "$url"
+            ;;
+        15) # Delete
+            delete_link "$title" "$url"
+            last_index=0
+            ;;
+    esac
+done

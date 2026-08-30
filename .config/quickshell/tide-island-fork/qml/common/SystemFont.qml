@@ -8,7 +8,7 @@ import Quickshell.Io
 // SystemFont — the island's text follows the same shared `monospace`
 // fontconfig alias every other surface in this repo already does (dunst,
 // eww, qtile popups, and ati-menu's own base font — see
-// `.config/AtiScriptsV1/omarchy-font-set`'s header comment for why that
+// `.config/AtiScriptsV1/theme/omarchy-font-set`'s header comment for why that
 // alias is the deliberately shared one).
 //
 // THIS REVERSES A DOCUMENTED PRIOR DECISION, ON PURPOSE

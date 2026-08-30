@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# ati-default-app browser — pick the default browser via proper xdg-mime
+# semantics (not hand-editing mimeapps.list, which xdg-mime already owns).
+#
+# editor/terminal are deliberately NOT here: there is no single
+# indirection point for either in this repo the way $term (binds.conf) is
+# for the terminal KEYBIND specifically -- dm-confedit hardcodes its own
+# `alacritty -e nvim`, other terminal spawns go through their own
+# `$term`/hardcoded calls independently, so "switch the default editor/
+# terminal" would mean touching every callsite individually, not one
+# switch. Out of scope here; browser is the one app class with a real
+# single hook (mimeapps.list via xdg-mime).
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+require_cmd xdg-mime || exit 1
+
+if [[ "${1:-}" != "browser" ]]; then
+  echo "usage: ati-default-app browser" >&2
+  exit 2
+fi
+
+# List installed browsers by scanning applications/*.desktop for a
+# MimeType that includes text/html -- the actual xdg-mime contract, more
+# reliable than guessing by app name.
+mapfile -t desktop_files < <(
+  grep -l "MimeType=.*text/html" \
+    /usr/share/applications/*.desktop "$HOME/.local/share/applications/"*.desktop \
+    2>/dev/null
+)
+
+if [[ ${#desktop_files[@]} -eq 0 ]]; then
+  notify_safe "ati-default-app" "No browser .desktop files found"
+  exit 1
+fi
+
+declare -A name_to_file
+rows=""
+for f in "${desktop_files[@]}"; do
+  name="$(grep -m1 '^Name=' "$f" | cut -d= -f2-)"
+  [[ -z "$name" ]] && name="$(basename "$f" .desktop)"
+  name_to_file["$name"]="$(basename "$f")"
+  rows+="$name"$'\n'
+done
+
+sel=""
+# ati-menu-select only under native — it pops ati-menu's own separate
+# floating window, which reads as "the wrong picker opened" from inside
+# an island-mode surface (reported directly, after the new island menu
+# panel started calling into this script). Same fix as ati-bar-action's
+# own toggleMenu. rofi is already themed to match either way (base.rasi),
+# so island mode gets that instead of a second special case.
+if use_ati_menu_select; then
+  sel="$(printf '%s' "$rows" | ati-menu-select --mode select --prompt "Default browser")"
+else
+  sel="$(printf '%s' "$rows" | rofi -dmenu -i \
+    -theme "$HOME/.config/rofi/themes/base.rasi" \
+    -theme-str 'listview { lines: 8; dynamic: false; }' -p "Default browser")"
+fi
+
+[[ -z "$sel" ]] && exit 0
+chosen="${name_to_file[$sel]:-}"
+if [[ -z "$chosen" ]]; then
+  notify_safe "ati-default-app" "Unknown selection: $sel"
+  exit 1
+fi
+
+xdg-mime default "$chosen" text/html x-scheme-handler/http x-scheme-handler/https
+notify_safe "ati-default-app" "Default browser set to $sel"

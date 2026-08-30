@@ -132,7 +132,7 @@ ShellRoot {
     //
     // The overlay RUNS theme-apply itself, behind a frozen screenshot; that is
     // the whole trick and it is why the trigger cannot be "watch for the theme
-    // changing". Freezing has to happen first. AtiScriptsV1/theme-animate is
+    // changing". Freezing has to happen first. AtiScriptsV1/theme/theme-animate is
     // the one place that decides which shell to hand a theme change to.
     //
     // NOT Wayland only, any more. This process is now ALSO started under
@@ -171,7 +171,7 @@ ShellRoot {
             // compositor, so its PATH is the session's and AtiScriptsV1 is not
             // on it. shell.qml's copy of this line carries the same note.
             themeApplyPath: Quickshell.env("HOME")
-                + "/.dotfiles/.config/AtiScriptsV1/theme-apply"
+                + "/.dotfiles/.config/AtiScriptsV1/theme/theme-apply"
             // Only the first screen's overlay runs theme-apply, and the others
             // wait on its `themeApplied` — without the relay each would sit on
             // a frozen screenshot until its own 12 s cap fired.
@@ -194,7 +194,7 @@ ShellRoot {
             outputName: modelData && modelData.name !== undefined
                 ? String(modelData.name) : ""
             themeApplyPath: Quickshell.env("HOME")
-                + "/.dotfiles/.config/AtiScriptsV1/theme-apply"
+                + "/.dotfiles/.config/AtiScriptsV1/theme/theme-apply"
             ownsThemeApply: Quickshell.screens.length === 0
                 || modelData === Quickshell.screens[0]
 

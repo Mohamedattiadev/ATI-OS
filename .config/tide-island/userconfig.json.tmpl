@@ -36,7 +36,7 @@
   "_clock": "24-hour, matching hyprlock.conf's `date +%H:%M`. Upstream defaults to 12.",
   "clockFormat": "24",
 
-  "_wallpaper": "The island ships its own wallpaper picker, which answers qtile's WallpaperPopup (9 bindings) without a port - it just needs pointing at the library, or it opens and says 'No wallpapers found'. 362 images live in ~/Pictures/Wallpapers. wallpaperPywalEnabled stays FALSE on purpose: AtiScriptsV1/theme-apply already owns pywal for both sessions and hypr/scripts/wallpaper-sync.sh feeds hyprpaper from the same cache, so enabling it here would give two independent things opinions about the same wallpaper and the qtile session would drift.",
+  "_wallpaper": "The island ships its own wallpaper picker, which answers qtile's WallpaperPopup (9 bindings) without a port - it just needs pointing at the library, or it opens and says 'No wallpapers found'. 362 images live in ~/Pictures/Wallpapers. wallpaperPywalEnabled stays FALSE on purpose: AtiScriptsV1/theme/theme-apply already owns pywal for both sessions and hypr/scripts/wallpaper-sync.sh feeds hyprpaper from the same cache, so enabling it here would give two independent things opinions about the same wallpaper and the qtile session would drift.",
   "wallpaperLibraryPath": "@HOME@/Pictures/Wallpapers",
   "wallpaperPywalEnabled": false
 }

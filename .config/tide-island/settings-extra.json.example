@@ -96,6 +96,6 @@
         "type": "bool",
         "default": false,
         "scope": "packaged",
-        "detail": "LEAVE OFF. userconfig.json's `_wallpaper` note is the reason: AtiScriptsV1/theme-apply already owns pywal for both the qtile and Hyprland sessions, and hypr/scripts/wallpaper-sync.sh feeds hyprpaper from that same cache. Turning this on gives two independent things opinions about one wallpaper, and the qtile session is the one that drifts."
+        "detail": "LEAVE OFF. userconfig.json's `_wallpaper` note is the reason: AtiScriptsV1/theme/theme-apply already owns pywal for both the qtile and Hyprland sessions, and hypr/scripts/wallpaper-sync.sh feeds hyprpaper from that same cache. Turning this on gives two independent things opinions about one wallpaper, and the qtile session is the one that drifts."
     }
 ]

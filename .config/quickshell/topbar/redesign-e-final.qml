@@ -1,3 +1,24 @@
+//@ pragma UseQApplication
+//
+// REQUIRED BY THE SYSTEM TRAY'S MENUS, and by nothing else here.
+//
+// A StatusNotifierItem's context menu is a PLATFORM menu, and Quickshell
+// refuses to show one unless it was started under QApplication rather than
+// QGuiApplication -- it says so explicitly and then does nothing:
+//
+//   ERROR: Cannot display PlatformMenuEntry as quickshell was not started
+//          in QApplication mode.
+//   ERROR: To use platform menus, add `//@ pragma UseQApplication` to the
+//          top of your root QML file and restart quickshell.
+//
+// Found by calling display() from a temporary IPC probe in a nested
+// compositor, not by reading: the file LOADS clean without this, and the
+// failure only appears at the moment you right-click a tray icon -- which
+// is exactly why "the left and right click on the icon not working" had no
+// visible cause.
+//
+// It must be the FIRST line of the ROOT file, and it needs a full restart
+// of the quickshell process; a config reload does not change app mode.
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
@@ -5,6 +26,9 @@ import Quickshell.Widgets
 import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Services.UPower
+// The tray. shell.qml imports the same module for the same
+// reason; see the SYSTEM TRAY cluster in the right-hand strip.
+import Quickshell.Services.SystemTray
 
 //
 // DIRECTION E — real app icons, consolidated stats toggle, battery redone,
@@ -68,6 +92,28 @@ ShellRoot {
     // Hyprland.workspaces (the built-in model) doesn't populate reliably.
     property var wsList: []
     property int focusedWsId: -999
+    // ---- ARRIVING SOMEWHERE CLEARS ITS URGENCY, IMMEDIATELY ----
+    //
+    // wsAppsProc also prunes urgent addresses for the focused workspace, but
+    // it CANNOT be the only place that does: focusedWsId is set by a
+    // different Process (activeWsProc) than the one doing the pruning, and
+    // on the refresh where you actually switch workspaces the two can land
+    // in either order. When the apps query wins the race it prunes against
+    // the OLD focus, and nothing afterwards necessarily re-runs -- so the
+    // workspace you are standing in keeps its red marker. Measured in a
+    // nested session: switched to the urgent workspace, and it stayed red.
+    //
+    // Clearing here, off the focus change itself, is not a duplicate of that
+    // pruning; it is the half that is ordered correctly by construction.
+    onFocusedWsIdChanged: {
+        if (urgentWsIds[focusedWsId] === undefined) return;
+        const nextIds = Object.assign({}, urgentWsIds);
+        delete nextIds[focusedWsId];
+        urgentWsIds = nextIds;
+        // Drop the remembered addresses too, or the next wsAppsProc pass
+        // simply puts the workspace back in the list.
+        wsDebounce.restart();
+    }
 
     // 6 and 7 deliberately have no entry: asked for directly ("6 and 7 no
     // icon pls") -- they show the plain workspace number instead. 7 having
@@ -135,6 +181,13 @@ ShellRoot {
     // `wsActiveIndex` real instead of just "the last one".
     property var wsApps: []
     property int wsActiveIndex: -1
+    // Addresses Hyprland has flagged urgent, and the workspace ids they
+    // resolve to. Two properties rather than one because they are written by
+    // two different things: the raw event appends an address the instant it
+    // fires, and wsAppsProc (which already holds every client) turns the set
+    // into workspace ids on the next refresh. See both for the detail.
+    property var urgentAddrs: ({})
+    property var urgentWsIds: ({})
     // WindowRingStrip.qml's own alias table, ported: three of this
     // user's own scratchpad kitty windows (--class scratch-term1/2,
     // sum-md) have no desktop entry and no icon of that name — they ARE
@@ -160,6 +213,32 @@ ShellRoot {
                     const monitors = JSON.parse(rest[1]);
                     const mon = monitors.find((m) => m.focused) || monitors[0] || null;
 
+                    // ---- THE FOCUSED WORKSPACE COMES FROM THIS PAYLOAD ----
+                    //
+                    // Not from demo.focusedWsId, which a DIFFERENT Process
+                    // (activeWsProc) fills in. Those two race, and this side
+                    // loses often enough to matter twice over:
+                    //
+                    //   * At startup and after every config reload,
+                    //     focusedWsId is still its -999 sentinel when this
+                    //     handler runs, so `onWs` matches nothing and the
+                    //     pill shows NO open apps at all -- until some
+                    //     unrelated Hyprland event happens to re-run it.
+                    //     Reproduced directly: reload, empty app stack, one
+                    //     focus change, apps back.
+                    //   * The urgent pruning below decides "am I looking at
+                    //     this workspace" against the same stale value.
+                    //
+                    // `hyprctl -j monitors` already carries activeWorkspace,
+                    // and it is in the SAME payload as the client list -- so
+                    // taking it from here makes the whole computation
+                    // internally consistent and removes the race instead of
+                    // papering over it. Falls back to the property when a
+                    // monitor somehow has no activeWorkspace.
+                    const focusedWs = (mon && mon.activeWorkspace
+                                       && mon.activeWorkspace.id !== undefined)
+                        ? mon.activeWorkspace.id : demo.focusedWsId;
+
                     // "why the file icon there i dont have anything just
                     // this terminal" — qdrop IS a real window (hyprctl
                     // confirmed it), but a floating scratchpad tool PARKED
@@ -175,7 +254,7 @@ ShellRoot {
                     };
 
                     const onWs = clients.filter((c) =>
-                        c.workspace && c.workspace.id === demo.focusedWsId && onScreen(c));
+                        c.workspace && c.workspace.id === focusedWs && onScreen(c));
                     const alias = (cls) => demo.appIdAliases[cls] || demo.appIdAliases[String(cls).toLowerCase()] || cls;
                     const rawIds = onWs.map((c) => alias(c.class || c.initialClass || ""));
 
@@ -186,14 +265,24 @@ ShellRoot {
                     // first-seen order, each group carrying its own count;
                     // AppFileStack draws the "+N" badge itself when
                     // count > 1.
+                    //
+                    // Each group also carries the ADDRESSES of the windows
+                    // in it. That is what makes the icons clickable: the
+                    // stack drew real windows from the first pass but was
+                    // pure decoration, with not one MouseArea in the whole
+                    // component, so the obvious gesture -- click the icon
+                    // of the thing you want -- did nothing. A group is
+                    // several windows ("+3"), so it needs the list and not
+                    // one address: clicking cycles through them.
                     const groups = [];
                     const groupIndexOf = {};
-                    rawIds.forEach((id) => {
+                    rawIds.forEach((id, i) => {
                         if (groupIndexOf[id] === undefined) {
                             groupIndexOf[id] = groups.length;
-                            groups.push({ appId: id, count: 1 });
+                            groups.push({ appId: id, count: 1, addresses: [onWs[i].address] });
                         } else {
                             groups[groupIndexOf[id]].count += 1;
+                            groups[groupIndexOf[id]].addresses.push(onWs[i].address);
                         }
                     });
                     demo.wsApps = groups;
@@ -202,6 +291,46 @@ ShellRoot {
                         ? onWs.findIndex((c) => c.address === active.address) : -1;
                     demo.wsActiveIndex = activeRawIndex >= 0
                         ? groupIndexOf[rawIds[activeRawIndex]] : -1;
+
+                    // ---- URGENT ----
+                    // Hyprland does NOT report urgency in any of its JSON
+                    // dumps -- checked directly: neither `hyprctl -j
+                    // clients` nor `hyprctl -j workspaces` has an `urgent`
+                    // key. It exists only as an EVENT (`urgent>>address`),
+                    // so the address has to be remembered when it fires and
+                    // resolved to a workspace here, where the full client
+                    // list is already in hand for free. No second hyprctl
+                    // call for it.
+                    //
+                    // Addresses that no longer match a live window are
+                    // dropped in the same pass, so closing the window that
+                    // was shouting clears the marker as surely as reading
+                    // it does.
+                    // GOING THERE CLEARS IT, PERMANENTLY.
+                    //
+                    // This used to keep the address and merely hide the
+                    // marker while that workspace was focused -- so leaving
+                    // again brought the red straight back, for something you
+                    // had already seen. "when i got to it the red should go
+                    // and when i go to another workapsce should not be red
+                    // agian till an action really need me": visiting IS
+                    // reading it, so the address is DROPPED rather than
+                    // filtered, and only a fresh `urgent` event from
+                    // Hyprland can put it back.
+                    //
+                    // Addresses whose window no longer exists are dropped in
+                    // the same pass, so closing the window that was shouting
+                    // clears it as surely as reading it does.
+                    const urgentIds = {};
+                    const stillLive = {};
+                    clients.forEach((c) => {
+                        if (!demo.urgentAddrs[c.address]) return;
+                        if (c.workspace && c.workspace.id === focusedWs) return;
+                        stillLive[c.address] = true;
+                        if (c.workspace) urgentIds[c.workspace.id] = true;
+                    });
+                    demo.urgentAddrs = stillLive;
+                    demo.urgentWsIds = urgentIds;
                 } catch (e) { /* keep the last good list */ }
             }
         }
@@ -357,6 +486,106 @@ ShellRoot {
     }
     Timer { interval: 60000; running: true; repeat: true; triggeredOnStart: true; onTriggered: diskProc.running = true }
 
+    // ---- NETWORK: ONE BOOLEAN, ON PURPOSE ----
+    //
+    // "no need to this sep wifi thing" — the first version of this was a
+    // permanent right-hand cluster with the SSID and a signal percentage,
+    // and it was the wrong shape. What the bar actually lacked was not a
+    // readout, it was a WARNING: nothing anywhere on it said you had dropped
+    // off the network, which is the one network fact that ever needs to
+    // interrupt you. The SSID and the signal strength are things you go and
+    // look at (the island's network panel already shows both), not things
+    // worth spending bar width on every second of the day.
+    //
+    // So all this has to answer is "am I online", and it is drawn in the
+    // workspace pill only when the answer is no — see the NETWORK DOWN
+    // marker there. Both the SSID and the signal parsing, and the second
+    // nmcli call that existed solely to produce them, are gone with it.
+    //
+    // nmcli because NetworkManager is what actually runs this machine's wifi
+    // (`nmcli -t -f TYPE,STATE device` answers live). Not Quickshell's own
+    // network service — there isn't one — and not iwd, which is installed
+    // but is not the manager in charge here.
+    property bool netUp: false
+    Process {
+        id: netProc
+        command: ["sh", "-c", "nmcli -t -f TYPE,STATE device 2>/dev/null"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    let up = false;
+                    String(text).split("\n").forEach((line) => {
+                        const f = line.split(":");
+                        if (f.length < 2) return;
+                        // EXACTLY "connected". NetworkManager reports
+                        // tailscale0/docker0/br-* on this machine as
+                        // "connected (externally)" — real interfaces it does
+                        // not manage — and counting those would mean this
+                        // could never go red at all, since docker0 is always
+                        // up. Ethernet counts alongside wifi so a desktop on
+                        // a cable is not permanently marked offline.
+                        if (f[1] !== "connected") return;
+                        if (f[0] === "wifi" || f[0] === "ethernet") up = true;
+                    });
+                    demo.netUp = up;
+                } catch (e) { /* keep the last good reading */ }
+            }
+        }
+    }
+    // 8s. This is a warning, not a gauge: it has to notice you went offline
+    // within a few seconds, and nothing more. A 2s cadence like the CPU's
+    // would be ~40k extra process spawns a day for a boolean that changes
+    // a handful of times.
+    Timer { interval: 8000; running: true; repeat: true; triggeredOnStart: true; onTriggered: netProc.running = true }
+
+    // ---- MIC / CAMERA IN USE ----
+    //
+    // The bar can tell you a screen recording is running (RecDot, off
+    // ati-record's pidfile) and has never been able to tell you something is
+    // listening to you or looking at you. Those are the two that matter more:
+    // a recording is something you started deliberately thirty seconds ago,
+    // a hot microphone is usually something you FORGOT -- a call you left, a
+    // tab that kept the stream open.
+    //
+    // TWO SOURCES, BECAUSE THERE IS NO ONE ANSWER
+    //   * mic: PipeWire/PulseAudio source-outputs. Anything actually reading
+    //     a capture device has one; nothing else does.
+    //   * camera: who holds /dev/video*. There is no audio-server equivalent
+    //     for video -- V4L2 is opened directly by the client -- so the
+    //     question is literally "does any process have the device open",
+    //     which is what fuser answers.
+    //
+    // Both counted in ONE `sh -c`, joined by a marker, the same way
+    // wsAppsProc joins its three hyprctl calls: two Timers polling two
+    // Processes for two booleans that are always read together would be
+    // twice the wakeups for no more information.
+    property bool micActive: false
+    property bool camActive: false
+    Process {
+        id: privacyProc
+        command: ["sh", "-c",
+            "pactl list short source-outputs 2>/dev/null | wc -l; echo '::CAM::'; "
+            + "fuser /dev/video* 2>/dev/null | tr -d ' \n' | wc -c"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const parts = String(text).split("::CAM::");
+                    demo.micActive = parseInt(parts[0], 10) > 0;
+                    // fuser prints the PIDs to stdout and its header to
+                    // stderr, so "any bytes at all" is the test. Counting
+                    // LINES would not work: it prints them all on one.
+                    demo.camActive = parts.length > 1 && parseInt(parts[1], 10) > 0;
+                } catch (e) { /* keep the last good reading */ }
+            }
+        }
+    }
+    // 3s, faster than the network's 8s and slower than the CPU's 2s. This is
+    // a privacy indicator: the lag between a microphone going live and the
+    // bar saying so is the whole quality of the thing, and three seconds is
+    // about the limit of what reads as "immediately" when you are looking
+    // for it.
+    Timer { interval: 3000; running: true; repeat: true; triggeredOnStart: true; onTriggered: privacyProc.running = true }
+
     // ---- POSITION — top/bottom, ported from shell.qml's own
     // shellRoot.position/setPosition. "i want to make the button bar same
     // style like the new bar and i can switch with win+shift+z like
@@ -408,7 +637,7 @@ ShellRoot {
     }
 
     // ---- RECORDING — "a red circle on/off till i finish the recording,
-    // in the workspace part". ati-record (AtiScriptsV1/ati-record) writes
+    // in the workspace part". ati-record (AtiScriptsV1/capture/ati-record) writes
     // $XDG_RUNTIME_DIR/recordingpid when a recording starts and removes it
     // on stop (its own stop_recording(): `rm -f "$recording_pid_file"`) —
     // the same file its own `ps -p "$(cat pidfile)"` liveness check reads
@@ -450,12 +679,25 @@ ShellRoot {
     // so a busy session doesn't grow this forever.
     property var notifyHistory: []
     readonly property int notifyHistoryMax: 30
+    // Unread count. A MONOTONIC total plus a snapshot of it, not
+    // `notifyHistory.length` minus a snapshot: the history is capped at
+    // notifyHistoryMax and shifts its oldest entry out once full, so past 30
+    // notifications its length stops growing and a length-based unread count
+    // would freeze at zero exactly when you are busiest.
+    property int notifyTotal: 0
+    property int notifySeenTotal: 0
+    readonly property int notifyUnread: Math.max(0, notifyTotal - notifySeenTotal)
 
     // ---- NOTIFICATION CENTER — "i want dropdown card as this pill" — a
     // real dropdown (NotificationCenter.qml) hanging under the workspace
     // pill, own window, own selection/vim-motion state. This flag is the
     // only thing that file and this one share.
     property bool notifCenterOpen: false
+    // Opening the list IS reading it. Every route into the centre goes
+    // through this property -- middle-click, the IPC handlers, the keybind --
+    // so marking read here covers all of them instead of each call site
+    // remembering to.
+    onNotifCenterOpenChanged: if (notifCenterOpen) notifySeenTotal = notifyTotal
     Process {
         id: notifyWatch
         running: true
@@ -521,6 +763,7 @@ ShellRoot {
                     const hist = demo.notifyHistory.concat([entry]);
                     while (hist.length > demo.notifyHistoryMax) hist.shift();
                     demo.notifyHistory = hist;
+                    demo.notifyTotal = demo.notifyTotal + 1;
                 } catch (e) {}
             }
         }
@@ -602,6 +845,29 @@ ShellRoot {
             // already reads for the identical reason.
             if (n === "fullscreen")
                 demo.focusedFullscreen = String(event.data || "").trim() === "1";
+            // A window on ANOTHER workspace is asking for you. Nothing in
+            // the bar said so before -- a chat window demanding attention on
+            // workspace 6 was completely silent, which is the one case the
+            // workspace strip exists to cover.
+            //
+            // Hyprland emits this as `urgent>>address` and never emits a
+            // matching "no longer urgent": the flag is cleared by FOCUSING
+            // the window, which is a `activewindow` event, not an urgency
+            // one. So both halves are handled here -- remember the address
+            // now, and let wsAppsProc resolve and expire it (see there).
+            // `Object.assign` into a fresh object rather than mutating in
+            // place: QML only re-evaluates bindings on a var property when
+            // it is ASSIGNED, so mutating the existing object would update
+            // the data and never repaint the pill.
+            if (n === "urgent") {
+                const addr = String(event.data || "").trim();
+                if (addr !== "") {
+                    const next = Object.assign({}, demo.urgentAddrs);
+                    next[addr.indexOf("0x") === 0 ? addr : "0x" + addr] = true;
+                    demo.urgentAddrs = next;
+                    wsDebounce.restart();
+                }
+            }
         }
     }
 
@@ -857,10 +1123,24 @@ ShellRoot {
         id: stack
         property var appIds: []
         property int activeIndex: -1
+        // The bar's single Tooltip instance, handed in by the call site.
+        // It CANNOT be reached by its id from in here: this component is
+        // declared at ShellRoot level and `barTooltip` lives inside the
+        // PanelWindow's own object tree, so naming it directly is a runtime
+        // ReferenceError, not a compile error -- the kind that shows up as a
+        // chip that silently never tooltips. Passed in the same way
+        // BarText's `hoverSink` already is on the other bar.
+        property var tooltipSink: null
         // Sized down again — "increase the space a bit and reduce the
         // icons size", against a screenshot showing the three overlapping
         // into what read as one blob rather than a legible pile.
-        property int chip: Metrics.s(15)
+        // 13, down from 15. THE TWO HALVES OF THIS PILL ARE ONE ROW AND
+        // HAVE TO READ AS ONE. The workspace side is a 10px line-art glyph;
+        // an app chip at 15 is half again as large and dominated it, so the
+        // strip read as a row of small marks followed by a row of big
+        // buttons. Not matched exactly -- a raster app icon needs slightly
+        // more area than a stroke glyph to stay recognisable at all.
+        property int chip: Metrics.s(13)
         // Widened alongside the smaller chip so the actual gap between
         // icons grows rather than just each icon shrinking in place —
         // "increase the space" was about the room between them, not only
@@ -880,7 +1160,11 @@ ShellRoot {
             delegate: Rectangle {
                 width: stack.chip
                 height: stack.chip
-                radius: Metrics.s(4)
+                // height/3, the same ratio the workspace pill uses for its
+                // own plate, instead of a flat 4px. Two different corner
+                // radii sitting 6px apart is most of what made these look
+                // like parts from two different kits.
+                radius: height / 3
                 // Mirrored — asked for directly ("opposite direction").
                 // Earlier entries now sit further RIGHT, so the pile
                 // cascades leftward toward the focused one instead of
@@ -898,13 +1182,30 @@ ShellRoot {
                 // visible" — a touch larger and a stronger fill, not a
                 // ring, so it still doesn't reintroduce the "[]" look.
                 scale: index === stack.activeIndex ? 1.14 : 1.0
+                // ---- ONE RULE FOR THE WHOLE PILL: A PLATE MEANS ACTIVE ----
+                //
+                // Every chip used to carry a 1px border whether or not it
+                // was the focused window, while a workspace glyph carries a
+                // plate ONLY when it is the focused workspace. So the same
+                // strip was saying two different things with the same
+                // device, and an app icon -- which is already a filled,
+                // coloured square of its own artwork -- ended up as a box
+                // inside a box next to bare line-art glyphs.
+                //
+                // The border is the focused marker now and nothing else,
+                // which makes the rule identical on both sides of the
+                // divider: bare mark by default, accent plate when active.
+                //
+                // The opaque background FILL stays on every chip, and that
+                // is not decoration: these are deliberately shingled with a
+                // 2px overlap, and the fill is what stops the icon behind
+                // from showing through the one in front. It was the border
+                // doing that job before.
                 color: index === stack.activeIndex
                     ? BarTheme.alpha(BarTheme.accent, 0.45)
                     : BarTheme.alpha(BarTheme.bg, 0.95)
-                border.width: 1
-                border.color: index === stack.activeIndex
-                    ? BarTheme.alpha(BarTheme.accent, 0.6)
-                    : BarTheme.alpha(BarTheme.fg, 0.2)
+                border.width: index === stack.activeIndex ? 1 : 0
+                border.color: BarTheme.alpha(BarTheme.accent, 0.6)
 
                 // "why there is an empty gap here" — a real class with no
                 // resolvable icon (qdrop, this desktop's own drop-stash
@@ -957,6 +1258,46 @@ ShellRoot {
                         font.bold: true
                         renderType: Text.NativeRendering
                     }
+                }
+
+                // ---- THE STACK IS A CONTROL NOW, NOT A PICTURE ----
+                //
+                // It has drawn the real windows on the focused workspace
+                // since the icons became real, and clicking one did
+                // nothing -- there was not a single MouseArea in this
+                // component. The obvious gesture on a row of open windows
+                // is "take me to that one", so it does that.
+                //
+                // A chip can stand for SEVERAL windows (the "+3" badge),
+                // so one address is not enough. Successive clicks walk the
+                // group, which is the same behaviour a taskbar button with
+                // a window count has everywhere else. `cycle` lives on the
+                // delegate rather than on the stack so each chip keeps its
+                // own place in its own list.
+                //
+                // z above the count badge's 200 so the badge, which
+                // deliberately overhangs the chip's corner, cannot punch a
+                // dead spot in the middle of the target.
+                property int cycle: 0
+                MouseArea {
+                    anchors.fill: parent
+                    z: 300
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        const addrs = modelData.addresses || [];
+                        if (addrs.length === 0) return;
+                        // Re-read modulo the CURRENT length: windows close
+                        // while the bar is up, and a remembered index into
+                        // a list that has since shrunk is how this would
+                        // dispatch at a dead address.
+                        parent.cycle = (parent.cycle + 1) % addrs.length;
+                        Hyprland.dispatch("focuswindow address:" + addrs[parent.cycle]);
+                    }
+                    onEntered: if (stack.tooltipSink) stack.tooltipSink.enter(parent, modelData.count > 1
+                        ? modelData.appId + " · " + modelData.count + " windows · click → cycle"
+                        : modelData.appId + " · click → focus")
+                    onExited: if (stack.tooltipSink) stack.tooltipSink.exit(parent)
                 }
             }
         }
@@ -1552,6 +1893,30 @@ ShellRoot {
                         Row {
                             spacing: Metrics.s(6)
                             anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+
+                            // Scroll over the workspaces to move between them --
+                            // the gesture every bar has and this one did not.
+                            //
+                            // A WheelHandler and NOT a MouseArea, for a concrete
+                            // reason: this is inside a Row, a MouseArea would be a
+                            // visual child and Row would LAY IT OUT, shoving the
+                            // workspaces sideways by its width. Handlers are
+                            // resources, not children, so the Row never sees this
+                            // and the strip is unchanged.
+                            //
+                            // `e+1`/`e-1` rather than arithmetic on ids: Hyprland's
+                            // own relative dispatch already skips the workspaces
+                            // that do not exist, which is the whole difficulty
+                            // here given hide_unused means the strip is not a
+                            // contiguous 1..9.
+                            WheelHandler {
+                                onWheel: (event) => {
+                                    if (event.angleDelta.y === 0) return;
+                                    Hyprland.dispatch(event.angleDelta.y > 0
+                                        ? "workspace e-1" : "workspace e+1");
+                                }
+                            }
+
                             Repeater {
                                 model: demo.wsList
                                 delegate: Rectangle {
@@ -1559,9 +1924,18 @@ ShellRoot {
                                     required property var modelData
                                     readonly property bool wsActive: modelData.id === demo.focusedWsId
                                     readonly property bool wsOccupied: (modelData.windows || 0) > 0
+                                    // Something on this workspace wants you. See
+                                    // demo.urgentWsIds and the `urgent` branch of
+                                    // onRawEvent for where this comes from and why
+                                    // it cannot come from hyprctl.
+                                    readonly property bool wsUrgent: demo.urgentWsIds[modelData.id] === true
                                     // hide_unused — Workspaces.qml's own term for
-                                    // exactly this rule.
-                                    visible: wsOccupied || wsActive
+                                    // exactly this rule. An URGENT workspace is
+                                    // always drawn, occupied or not: the entire
+                                    // point is to show you somewhere you are not
+                                    // looking, and hiding it would defeat that in
+                                    // the one case that matters.
+                                    visible: wsOccupied || wsActive || wsUrgent
                                     // The extra Metrics.s(12) is room for the
                                     // divider + layout glyph, which draw
                                     // whenever the workspace is active (see
@@ -1573,9 +1947,22 @@ ShellRoot {
                                     width: visible ? pairRow.implicitWidth + (wsActive ? Metrics.s(12) : Metrics.s(3)) : 0
                                     height: Metrics.s(21)
                                     radius: height / 3
-                                    color: wsActive ? BarTheme.alpha(BarTheme.accent, 0.22) : "transparent"
+                                    // URGENT IS THE ICON, NOT A BOX AROUND IT.
+                                    // It first borrowed the focused pill's whole
+                                    // shape -- tinted fill plus border -- in red;
+                                    // "should be just a fill red color in the icon
+                                    // itself not need for the squrae around". The
+                                    // plate is what says "you are here", and
+                                    // painting it red for a workspace you are NOT
+                                    // on said the opposite of what it meant. The
+                                    // glyph alone carries it now (see the Glyph's
+                                    // own fg below).
+                                    color: wsActive ? BarTheme.alpha(BarTheme.accent, 0.22)
+                                                    : "transparent"
                                     border.width: wsActive ? 1 : 0
                                     border.color: BarTheme.alpha(BarTheme.accent, 0.5)
+                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                    Behavior on border.color { ColorAnimation { duration: 200 } }
                                     anchors.verticalCenter: parent ? parent.verticalCenter : undefined
 
                                     Row {
@@ -1593,9 +1980,24 @@ ShellRoot {
                                             // third state doesn't need a colour
                                             // now, since hide_unused means it's
                                             // simply not drawn at all.
-                                            fg: wsDelegate.wsActive ? BarTheme.accent : BarTheme.alpha(BarTheme.fg, 0.9)
+                                            fg: wsDelegate.wsUrgent ? BarTheme.red
+                                              : wsDelegate.wsActive ? BarTheme.accent
+                                              : BarTheme.alpha(BarTheme.fg, 0.9)
                                             font.pixelSize: Metrics.s(10)
+                                            // Explicit height + AlignVCenter on all three of these.
+                                            // Reported: the workspace NUMBER and the layout glyph
+                                            // sat at different heights ("7|[] why not in the same
+                                            // line alignment vertically"). They are different
+                                            // FONTS -- a digit comes from Ubuntu via Label, the
+                                            // glyphs from the Nerd Font via Glyph -- and with no
+                                            // height and no vertical anchor a Row simply places
+                                            // both at y=0, so they line up by their own differing
+                                            // ascents rather than by their centres. One shared box
+                                            // per item, each centring its own glyph inside it,
+                                            // makes them agree regardless of the metrics.
                                             anchors.verticalCenter: undefined
+                                            height: Metrics.s(14)
+                                            verticalAlignment: Text.AlignVCenter
                                         }
                                         // Plain number for workspaces with no icon (6, 7) --
                                         // "Symbols Nerd Font" (Glyph's font) carries icon
@@ -1604,9 +2006,13 @@ ShellRoot {
                                         Label {
                                             visible: !demo.hasIconForWs(wsDelegate.modelData.name)
                                             text: visible ? String(wsDelegate.modelData.name) : ""
-                                            fg: wsDelegate.wsActive ? BarTheme.accent : BarTheme.alpha(BarTheme.fg, 0.9)
+                                            fg: wsDelegate.wsUrgent ? BarTheme.red
+                                              : wsDelegate.wsActive ? BarTheme.accent
+                                              : BarTheme.alpha(BarTheme.fg, 0.9)
                                             font.pixelSize: Metrics.s(10)
                                             anchors.verticalCenter: undefined
+                                            height: Metrics.s(14)
+                                            verticalAlignment: Text.AlignVCenter
                                         }
                                         // A real "|" between the workspace icon and
                                         // the layout glyph. Gated on wsActive
@@ -1635,12 +2041,51 @@ ShellRoot {
                                             fg: BarTheme.accent
                                             font.pixelSize: Metrics.s(10)
                                             anchors.verticalCenter: undefined
+                                            height: Metrics.s(14)
+                                            verticalAlignment: Text.AlignVCenter
                                         }
                                     }
 
+                                    // Left goes there; RIGHT cycles the layout, but
+                                    // only on the workspace you are already on.
+                                    //
+                                    // The layout glyph has been display-only since
+                                    // it was added, and it is the one element here
+                                    // that had a working right-click on the bar
+                                    // this replaced -- BottomBar.qml's own note
+                                    // records qtile's "Layout chip: R cycles
+                                    // layout". Restored on the whole pill rather
+                                    // than on the ~10px glyph, because that glyph
+                                    // is too small to be a pointer target and the
+                                    // pill is what the eye is already aiming at.
+                                    //
+                                    // Gated on wsActive because layout-cycle.sh
+                                    // acts on the FOCUSED workspace: right-clicking
+                                    // an inactive pill would silently change a
+                                    // different workspace's layout than the one
+                                    // under the pointer, which is worse than doing
+                                    // nothing.
                                     MouseArea {
                                         anchors.fill: parent
-                                        onClicked: Hyprland.dispatch("workspace " + wsDelegate.modelData.id)
+                                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                        hoverEnabled: true
+                                        onClicked: (mouse) => {
+                                            if (mouse.button === Qt.RightButton) {
+                                                if (wsDelegate.wsActive)
+                                                    Quickshell.execDetached(["sh", "-c",
+                                                        "$HOME/.config/hypr/scripts/layout-cycle.sh next"]);
+                                            } else {
+                                                Hyprland.dispatch("workspace " + wsDelegate.modelData.id);
+                                            }
+                                        }
+                                        onEntered: barTooltip.enter(parent, wsDelegate.wsActive
+                                            ? "Workspace " + wsDelegate.modelData.name
+                                              + " · " + demo.layoutName
+                                              + " · right-click → cycle layout"
+                                            : (wsDelegate.wsUrgent
+                                               ? "Workspace " + wsDelegate.modelData.name + " · wants attention"
+                                               : "Workspace " + wsDelegate.modelData.name))
+                                        onExited: barTooltip.exit(parent)
                                     }
                                 }
                             }
@@ -1664,6 +2109,7 @@ ShellRoot {
                         AppFileStack {
                             appIds: demo.wsApps
                             activeIndex: demo.wsActiveIndex
+                            tooltipSink: barTooltip
                         }
 
                         // "a red circle on off till i finish the
@@ -1768,6 +2214,172 @@ ShellRoot {
                                 anchors.verticalCenter: pillBattBody.verticalCenter
                                 radius: Metrics.s(1)
                                 color: BarTheme.red
+                            }
+                        }
+
+                        // ---- NETWORK DOWN ----
+                        //
+                        // "no need to this sep wifi thing ... if the wifi
+                        // disconnected the networking and no network at all
+                        // shows in the workspace part '|wifi icon in red'
+                        // like the battery when it become 10% and lower".
+                        //
+                        // So this is deliberately NOT an indicator. It is an
+                        // EXCEPTION marker, the same kind as the low-battery
+                        // one directly above and built to the same rule:
+                        // silent while things are fine, and only then does it
+                        // take space in the pill. A permanent Wi-Fi readout
+                        // spends bar width every second of every day to tell
+                        // you something that is almost always "yes"; this
+                        // spends none until the answer changes.
+                        //
+                        // Same divider treatment, same red, same right edge
+                        // of the pill -- one grammar for "something is wrong
+                        // over here", not a second one.
+                        Divider {
+                            visible: !demo.netUp
+                            height: Metrics.s(11)
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Glyph {
+                            visible: !demo.netUp
+                            text: String.fromCodePoint(0xF1EB)   // fa-wifi
+                            fg: BarTheme.red
+                            font.pixelSize: Metrics.s(11)
+                            anchors.verticalCenter: parent.verticalCenter
+                            MouseArea {
+                                anchors.fill: parent
+                                anchors.margins: -Metrics.s(4)
+                                hoverEnabled: true
+                                onClicked: Quickshell.execDetached(
+                                    ["ati-bar-action", "tide", "toggleWifiPanel"])
+                                onEntered: barTooltip.enter(parent, "Offline · click → network list")
+                                onExited: barTooltip.exit(parent)
+                            }
+                        }
+
+                        // ---- SOMETHING IS LISTENING / WATCHING ----
+                        //
+                        // Third marker in the pill, same exception rule as
+                        // the low battery and the offline wifi above it:
+                        // absent entirely in the normal case, red when not.
+                        //
+                        // Red and NOT the accent colour, and not the
+                        // recording dot's pulse either. Both of those say
+                        // "a thing is happening"; this says "a thing is
+                        // happening that you may not have meant", which is
+                        // the same class as a dying battery and a dropped
+                        // network and is drawn like them.
+                        //
+                        // One divider for the pair, not one each -- mic and
+                        // camera are usually on together (a video call), and
+                        // two dividers around two glyphs reads as two
+                        // separate warnings.
+                        Divider {
+                            visible: demo.micActive || demo.camActive
+                            height: Metrics.s(11)
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Row {
+                            visible: demo.micActive || demo.camActive
+                            spacing: Metrics.s(4)
+                            anchors.verticalCenter: parent.verticalCenter
+                            Glyph {
+                                visible: demo.micActive
+                                text: String.fromCodePoint(0xF130)   // fa-microphone
+                                fg: BarTheme.red
+                                font.pixelSize: Metrics.s(11)
+                                anchors.verticalCenter: undefined
+                                MouseArea {
+                                    anchors.fill: parent
+                                    anchors.margins: -Metrics.s(3)
+                                    hoverEnabled: true
+                                    onEntered: barTooltip.enter(parent, "Microphone in use")
+                                    onExited: barTooltip.exit(parent)
+                                }
+                            }
+                            Glyph {
+                                visible: demo.camActive
+                                text: String.fromCodePoint(0xF03D)   // fa-video-camera
+                                fg: BarTheme.red
+                                font.pixelSize: Metrics.s(11)
+                                anchors.verticalCenter: undefined
+                                MouseArea {
+                                    anchors.fill: parent
+                                    anchors.margins: -Metrics.s(3)
+                                    hoverEnabled: true
+                                    onEntered: barTooltip.enter(parent, "Camera in use")
+                                    onExited: barTooltip.exit(parent)
+                                }
+                            }
+                        }
+
+                        // ---- UNREAD NOTIFICATIONS ----
+                        //
+                        // The notification centre has only ever opened on a
+                        // MIDDLE-CLICK of this pill, with nothing anywhere
+                        // hinting that it exists -- an undiscoverable panel
+                        // and a silent one: no count, no mark, nothing to say
+                        // three messages arrived while you were in a
+                        // fullscreen window.
+                        //
+                        // Same exception-marker rule as the two above: absent
+                        // entirely at zero unread, so the pill is unchanged
+                        // the moment you have read them. Also LEFT-clickable,
+                        // which is what actually fixes the discoverability --
+                        // a badge you can see and click is a different thing
+                        // from a chord you have to be told about.
+                        Divider {
+                            visible: demo.notifyUnread > 0
+                            height: Metrics.s(11)
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Item {
+                            visible: demo.notifyUnread > 0
+                            width: Metrics.s(13)
+                            height: Metrics.s(13)
+                            anchors.verticalCenter: parent.verticalCenter
+                            Glyph {
+                                id: bellGlyph
+                                anchors.centerIn: parent
+                                anchors.verticalCenter: undefined
+                                text: String.fromCodePoint(0xF0F3)   // fa-bell
+                                fg: BarTheme.accent
+                                font.pixelSize: Metrics.s(10)
+                            }
+                            Rectangle {
+                                width: unreadLabel.implicitWidth + Metrics.s(4)
+                                height: unreadLabel.implicitHeight + Metrics.s(1)
+                                radius: height / 2
+                                color: BarTheme.accent
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.rightMargin: -Metrics.s(4)
+                                anchors.topMargin: -Metrics.s(2)
+                                Text {
+                                    id: unreadLabel
+                                    anchors.centerIn: parent
+                                    // Caps the WIDTH, not the count: a badge
+                                    // that renders "9+" cannot shove the
+                                    // centre pill sideways the way "127"
+                                    // would, and past nine the exact number
+                                    // has stopped being information anyway.
+                                    text: demo.notifyUnread > 9 ? "9+" : String(demo.notifyUnread)
+                                    color: BarTheme.bg
+                                    font.family: Metrics.textFamily
+                                    font.pixelSize: Metrics.s(7)
+                                    font.bold: true
+                                    renderType: Text.NativeRendering
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                anchors.margins: -Metrics.s(4)
+                                hoverEnabled: true
+                                onClicked: demo.notifCenterOpen = !demo.notifCenterOpen
+                                onEntered: barTooltip.enter(parent,
+                                    demo.notifyUnread + " unread · click → notifications")
+                                onExited: barTooltip.exit(parent)
                             }
                         }
                     }
@@ -1929,6 +2541,12 @@ ShellRoot {
                     id: utilStrip
                     property bool statsOpen: false
                     property bool trayOpen: false
+                    // The tray's own open state. Independent of statsOpen/
+                    // trayOpen on purpose: the strip's idiom is that each
+                    // cluster remembers whether YOU opened it, and one shared
+                    // "which panel is showing" would make opening the tray
+                    // close the stats you were watching.
+                    property bool sysTrayOpen: false
 
                     // Lamp/tips — leftmost, per direct ask. Used to shell
                     // out to `eww open/close onboarding-welcome`, a whole
@@ -2159,6 +2777,207 @@ ShellRoot {
                             anchors.fill: parent
                             anchors.margins: -Metrics.s(5)
                             onClicked: utilStrip.trayOpen = false
+                        }
+                    }
+
+                    // Only when there is actually a tray to divide from.
+                    Divider { visible: SystemTray.items.values.length > 0 }
+
+                    // ================= SYSTEM TRAY =================
+                    //
+                    // shell.qml has had a real tray since it was written
+                    // (Quickshell.Services.SystemTray, via Tray.qml); this
+                    // bar replaced it and never carried one over, so every
+                    // app that speaks ONLY StatusNotifierItem -- syncthing,
+                    // blueman, an app minimised to tray -- has been
+                    // completely invisible here. That is not a missing
+                    // decoration, it is a whole class of app you cannot
+                    // reach.
+                    //
+                    // Collapsible like everything else in this strip, and
+                    // the closed glyph carries the COUNT, because a tray
+                    // you cannot see the size of is one you forget to open.
+                    // The whole cluster hides when the tray is empty rather
+                    // than sitting there as a dead icon.
+                    Item {
+                        visible: !utilStrip.sysTrayOpen && SystemTray.items.values.length > 0
+                        implicitWidth: trayGlyph.implicitWidth
+                        implicitHeight: trayGlyph.implicitHeight
+                        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                        Glyph {
+                            id: trayGlyph
+                            text: String.fromCodePoint(0xF00A)   // fa-th, a grid
+                            anchors.verticalCenter: undefined
+                        }
+                        Rectangle {
+                            visible: SystemTray.items.values.length > 1
+                            width: trayCount.implicitWidth + Metrics.s(4)
+                            height: trayCount.implicitHeight + Metrics.s(1)
+                            radius: height / 2
+                            color: BarTheme.accent
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.rightMargin: -Metrics.s(3)
+                            anchors.bottomMargin: -Metrics.s(3)
+                            Text {
+                                id: trayCount
+                                anchors.centerIn: parent
+                                text: String(SystemTray.items.values.length)
+                                color: BarTheme.bg
+                                font.family: Metrics.textFamily
+                                font.pixelSize: Metrics.s(7)
+                                font.bold: true
+                                renderType: Text.NativeRendering
+                            }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -Metrics.s(5)
+                            hoverEnabled: true
+                            onClicked: utilStrip.sysTrayOpen = true
+                            onEntered: barTooltip.enter(parent,
+                                "System tray · " + SystemTray.items.values.length + " item(s)")
+                            onExited: barTooltip.exit(parent)
+                        }
+                    }
+                    Row {
+                        visible: utilStrip.sysTrayOpen && SystemTray.items.values.length > 0
+                        spacing: Metrics.s(7)
+                        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                        Repeater {
+                            model: SystemTray.items
+                            delegate: Item {
+                                id: trayEntry
+                                required property var modelData
+                                // 11, not 14. A tray icon is a RASTER image
+                                // that fills its whole box; the glyphs beside
+                                // it are FONT characters at pixelSize 12,
+                                // which ink roughly three quarters of their em
+                                // square. Matching the two numbers therefore
+                                // does NOT match the two sizes -- at 14 the
+                                // tray drew about 60% more mark than its
+                                // neighbours and read as a different, larger
+                                // class of thing. 11 puts the actual ink on
+                                // the same optical size.
+                                // 12. Landed between two reports: at 14 the
+                                // tray read as a larger class of thing than
+                                // the glyphs beside it, at 11 it read as
+                                // small. A raster icon inks its whole box
+                                // where a 12px font glyph inks about three
+                                // quarters of its em square, so 12 sits a
+                                // touch above optical parity -- which is
+                                // right for the tray, whose icons are the
+                                // only coloured artwork on the bar and have
+                                // to stay recognisable.
+                                implicitWidth: Metrics.s(12)
+                                implicitHeight: Metrics.s(12)
+                                anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                                Image {
+                                    id: trayIcon
+                                    anchors.fill: parent
+                                    // 2x the drawn size: these are the only
+                                    // raster images on the bar and at 1x they
+                                    // are visibly soft next to the vector
+                                    // glyphs beside them. Tray.qml already
+                                    // does exactly this.
+                                    sourceSize.width: Metrics.s(24)
+                                    sourceSize.height: Metrics.s(24)
+                                    fillMode: Image.PreserveAspectFit
+                                    asynchronous: true
+                                    source: trayEntry.modelData.icon
+                                    visible: status === Image.Ready
+                                }
+                                // A tray item whose icon does not resolve.
+                                // Not hypothetical: the first live run logged
+                                //   Could not load icon
+                                //   "wayscriber-symbolic?path=/usr/share/icons"
+                                // and drew an invisible, still-clickable gap
+                                // in the row. Same failure AppFileStack already
+                                // hit with qdrop, and the same fix its own note
+                                // argues for -- chasing each app's icon name
+                                // one at a time is a list that never ends, a
+                                // generic glyph is the general answer. An
+                                // unresolved item now reads as "some tray app"
+                                // instead of as nothing at all.
+                                Glyph {
+                                    visible: trayIcon.status !== Image.Ready
+                                    anchors.centerIn: parent
+                                    anchors.verticalCenter: undefined
+                                    text: String.fromCodePoint(0xF2D0)   // generic app window
+                                    font.pixelSize: parent.width * 0.8
+                                }
+                                // ---- THE REAL TRAY CONTRACT ----
+                                //
+                                // Left/right click did nothing useful because
+                                // this called activate() and secondaryActivate().
+                                // secondaryActivate() is the MIDDLE-click action
+                                // in StatusNotifierItem, and most items do not
+                                // implement it at all -- so right-clicking
+                                // nm-applet or blueman silently did nothing,
+                                // where a real tray gives you their menu.
+                                //
+                                // The menu is a separate thing entirely: the item
+                                // exposes `hasMenu`/`menu` and a `display(window,
+                                // x, y)` that pops the actual DBusMenu. That is
+                                // what a right-click has to call, and it is what
+                                // brings up nm-applet's network list and
+                                // blueman's device menu.
+                                //
+                                // Left click honours `onlyMenu`: some items have
+                                // NO activate action and expect a left click to
+                                // open the menu too. Calling activate() on those
+                                // is a no-op, which is the other half of "left and
+                                // right click on the icon not working".
+                                MouseArea {
+                                    anchors.fill: parent
+                                    anchors.margins: -Metrics.s(3)
+                                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                    hoverEnabled: true
+                                    onClicked: (event) => {
+                                        const item = trayEntry.modelData;
+                                        const wantMenu = event.button === Qt.RightButton
+                                                         || item.onlyMenu;
+                                        if (wantMenu && item.hasMenu) {
+                                            // Anchored to this chip's own bottom
+                                            // edge, in the panel window's
+                                            // coordinates -- display() places the
+                                            // menu relative to the window, not to
+                                            // the item, so the item's position has
+                                            // to be mapped into it or every menu
+                                            // opens in the top-left corner.
+                                            // `bar` is this file's own PanelWindow,
+                                            // used directly rather than through an
+                                            // attached window property this
+                                            // Quickshell build does not expose.
+                                            //
+                                            // mapToItem(null, ...) gives scene
+                                            // coordinates -- coordinates in the
+                                            // window -- which is the frame
+                                            // display() measures its x/y in.
+                                            const p = trayEntry.mapToItem(null, 0, trayEntry.height);
+                                            item.display(bar, Math.round(p.x), Math.round(p.y));
+                                        } else if (!item.onlyMenu) {
+                                            item.activate();
+                                        }
+                                    }
+                                    onEntered: barTooltip.enter(parent,
+                                        (trayEntry.modelData.tooltipTitle
+                                         || trayEntry.modelData.title
+                                         || trayEntry.modelData.id || "Tray item")
+                                        + " · L: open · R: menu")
+                                    onExited: barTooltip.exit(parent)
+                                }
+                            }
+                        }
+                    }
+                    Glyph {
+                        visible: utilStrip.sysTrayOpen && SystemTray.items.values.length > 0
+                        text: String.fromCodePoint(0xF105)
+                        fg: BarTheme.accent
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -Metrics.s(5)
+                            onClicked: utilStrip.sysTrayOpen = false
                         }
                     }
                 }
@@ -2490,6 +3309,16 @@ ShellRoot {
         function toggleNotifCenter(): void { demo.notifCenterOpen = !demo.notifCenterOpen; }
         function toggleStats(): void { utilStrip.statsOpen = !utilStrip.statsOpen; bar.wakeRight(); }
         function toggleTrayBox(): void { utilStrip.trayOpen = !utilStrip.trayOpen; bar.wakeRight(); }
+        // The tray, on the same terms as the two above -- every collapsible
+        // thing on this bar is reachable from a script, so a key can be bound
+        // to it without touching this file again.
+        //
+        // `toggleTrayBox` above is NOT the tray; it is the nightlight/Wi-Fi-QR/
+        // updates box, which inherited that name from shell.qml before this bar
+        // had a real tray at all. Renaming it would break ati-bar-action and
+        // the `mod+grave` bind that already call it, so the actual tray gets
+        // the unambiguous name instead.
+        function toggleSystemTray(): void { utilStrip.sysTrayOpen = !utilStrip.sysTrayOpen; bar.wakeRight(); }
         // Win+Shift+Z, ported from shell.qml's own `topbar toggle`/`status`.
         function toggle(): void { demo.setPosition(demo.position === "top" ? "bottom" : "top"); }
         function status(): string { return demo.position; }
@@ -2506,6 +3335,7 @@ ShellRoot {
             leftHideTimer.stop();
             rightHideTimer.stop();
             utilStrip.statsOpen = true;
+            utilStrip.sysTrayOpen = true;
         }
         function forceVoice(state: string): void { demo.voiceState = state; }
     }

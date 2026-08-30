@@ -19,7 +19,7 @@ import "../common"
 // prompt, wallpaper picker, theme switcher") and which upstream Tide Island
 // does not have at all.
 //
-// It is a front-end for AtiScriptsV1/theme-apply, which already applies 22
+// It is a front-end for AtiScriptsV1/theme/theme-apply, which already applies 22
 // themes across kitty, rofi, dunst, GTK, Qt, btop, browsers, nvim AND
 // Hyprland, and which is shared with the still-running qtile session. This
 // layer deliberately owns no theming logic of its own: it lists what
@@ -267,7 +267,7 @@ FocusScope {
             return;
         }
 
-        applyProcess.command = [Quickshell.env("HOME") + "/.dotfiles/.config/AtiScriptsV1/theme-apply", name];
+        applyProcess.command = [Quickshell.env("HOME") + "/.dotfiles/.config/AtiScriptsV1/theme/theme-apply", name];
         applyProcess.running = true;
     }
 

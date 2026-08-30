@@ -179,7 +179,7 @@ has a wallpaper picker and no theme picker at all. New layer, plus a
 `theme_picker` island state in `DynamicIslandWindow.qml` and a
 `tide toggleThemePicker` IPC entry in `shell.qml`.
 
-It owns no theming logic: it lists what `AtiScriptsV1/theme-apply` offers
+It owns no theming logic: it lists what `AtiScriptsV1/theme/theme-apply` offers
 and runs `theme-apply`. Swatches come from `hypr/scripts/theme-list.sh`,
 which parses `theme-apply`'s own `resolve_palette` table rather than
 carrying a copy — a second copy would drift silently, and a wrong swatch

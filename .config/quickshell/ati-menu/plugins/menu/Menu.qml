@@ -56,8 +56,8 @@ Item {
   // -- one source of truth for the tree, whichever renderer is live. Plain
   // JSON, not JSONC, but parseMenuJsonc's stripJsonc() step is a no-op on
   // plain JSON (nothing to strip), so this needs no format conversion.
-  property string defaultMenuPath: Quickshell.env("HOME") + "/.config/AtiScriptsV1/ati-menu.json"
-  property string userMenuPath: Quickshell.env("HOME") + "/.config/AtiScriptsV1/ati-menu-extensions.json"
+  property string defaultMenuPath: Quickshell.env("HOME") + "/.config/AtiScriptsV1/lib/ati-menu.json"
+  property string userMenuPath: Quickshell.env("HOME") + "/.config/AtiScriptsV1/lib/ati-menu-extensions.json"
   property var defaultMenuItems: []
   property var userMenuItems: []
   property bool opened: false

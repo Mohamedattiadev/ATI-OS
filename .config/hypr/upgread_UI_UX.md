@@ -1539,7 +1539,7 @@ were checked and rejected too — the best collection found
 `gowall`) covers 22 palettes but only 12 of these 21 by name.
 
 The generator is `AtiScriptsV1/ati-theme-wallpaper-gen`; the runtime half is
-`AtiScriptsV1/ati-theme-wallpaper`, called by theme-apply after the visible-done
+`AtiScriptsV1/theme/ati-theme-wallpaper`, called by theme-apply after the visible-done
 marker and by wallpaper-set.sh on a manual pick. Full reasoning lives in
 those two headers and is not repeated here.
 

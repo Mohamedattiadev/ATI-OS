@@ -61,7 +61,7 @@ PICOM_GPU_FLAGS=""
 # 2b. The bar — qtile's own, or the Tide Island
 # ---------------------------------------------------------
 # Which bar this session wears is a SAVED CHOICE, not a property of the
-# session: ~/.cache/bar-mode is written by AtiScriptsV1/bar-switch and read by
+# session: ~/.cache/bar-mode is written by AtiScriptsV1/bar/bar-switch and read by
 # both this session and the Hyprland one, so picking the island in Hyprland
 # and then logging into qtile lands you on the island here too.
 #
@@ -216,7 +216,7 @@ lxqt-policykit-agent &
   if command -v onboarding-first-run >/dev/null 2>&1; then
     onboarding-first-run
   else
-    "$HOME/.config/AtiScriptsV1/onboarding-first-run"
+    "$HOME/.config/AtiScriptsV1/menu/onboarding-first-run"
   fi
 ) &
 

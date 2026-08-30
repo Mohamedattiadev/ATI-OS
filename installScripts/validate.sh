@@ -229,13 +229,13 @@ fi
 # Skipped, not failed, when ImageMagick or the block font is absent: this
 # has to pass in a container that has neither.
 head_ "boot splash"
-if [[ ! -x .config/AtiScriptsV1/boot-splash ]]; then
+if [[ ! -x .config/AtiScriptsV1/system/boot-splash ]]; then
   skip "boot-splash not present"
 elif ! command -v magick >/dev/null 2>&1; then
   skip "no imagemagick — cannot render the name matrix"
 elif [[ ! -f /usr/share/fonts/TTF/FiraCodeNerdFontMono-Bold.ttf ]]; then
   skip "block-art font not installed — cannot render the name matrix"
-elif .config/AtiScriptsV1/boot-splash selftest >/dev/null 2>&1; then
+elif .config/AtiScriptsV1/system/boot-splash selftest >/dev/null 2>&1; then
   pass "every name in the matrix renders and fits on screen"
 else
   fail "boot-splash selftest failed — run: boot-splash selftest"
@@ -252,13 +252,13 @@ fi
 # `sudo -n` and reports a skip rather than a pass when there is no cached
 # credential. validate.sh does not prompt for a password.
 boot_root_out=""
-if [[ ! -x .config/AtiScriptsV1/boot-splash ]]; then
+if [[ ! -x .config/AtiScriptsV1/system/boot-splash ]]; then
   :
 elif ! command -v findmnt >/dev/null 2>&1; then
   skip "no findmnt — cannot resolve the running root device"
 else
   boot_root_rc=0
-  boot_root_out="$(.config/AtiScriptsV1/boot-splash verify-root 2>&1)" || boot_root_rc=$?
+  boot_root_out="$(.config/AtiScriptsV1/system/boot-splash verify-root 2>&1)" || boot_root_rc=$?
   case "$boot_root_rc" in
     0) pass "every boot entry's root= matches the running root device" ;;
     2) skip "ESP not readable without a password — boot entries unverified" ;;

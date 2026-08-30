@@ -23,7 +23,7 @@
 # ------------
 # The island watches Pipewire itself and draws its own OSD, so raising a
 # notification while it is up would show TWO for one keypress. The bar mode
-# decides, the same way AtiScriptsV1/ati-bar-action decides everything else:
+# decides, the same way AtiScriptsV1/bar/ati-bar-action decides everything else:
 #
 #     island  ->  the island already drew it; do nothing
 #     native  ->  qtile's notification, which IS qtile's OSD

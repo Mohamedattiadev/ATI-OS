@@ -35,7 +35,7 @@ import time
 HOME = os.path.expanduser("~")
 TOPBAR = f"{HOME}/.config/quickshell/topbar"
 POPUPS = f"{HOME}/.config/quickshell/tide-island-fork/popups.qml"
-BAR_ACTION = f"{HOME}/.config/AtiScriptsV1/ati-bar-action"
+BAR_ACTION = f"{HOME}/.config/AtiScriptsV1/bar/ati-bar-action"
 
 
 def ipc(path, target, *args):

@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# ati-note-capture — "I'm reading something, I highlight a line, I press the
+# key, it's in my notes." Item 16, verbatim: *"i want to make a script to
+# what selected copy it to a file so lets say iam reading from gpt ok i
+# seelecte a line and click keymap and it directly goes to a speicifc file
+# and i prefer to be ~/ATITODOS/TODOS.md under ### Date_reseach_notes"*.
+#
+# THE PRIMARY SELECTION, NOT THE CLIPBOARD
+# ----------------------------------------
+# Highlighting IS the gesture -- no Ctrl+C first. On X11 that's the PRIMARY
+# selection; on Wayland it's `wl-paste --primary`, and both are read here
+# with the same branch rofi_translator and dm-spellcheck already use.
+#
+# The CLIPBOARD is still tried as a fallback, and that is not belt-and-
+# braces: a few toolkits genuinely never set PRIMARY (Electron apps with
+# their own text layers, and Zed, are the ones that bite on this machine),
+# so on those "highlight and press" would silently do nothing at all. If
+# neither selection has anything, it asks -- same shape as rofi_translator's
+# "nothing selected -- type a word", because deciding to jot a thought down
+# is a normal way to reach this key too.
+#
+# WHERE IT LANDS
+# --------------
+# ~/ATITODOS/TODOS.md, under "### <today>_research_notes" -- one section per
+# day, created on the day's first capture and appended to after that. The
+# insert itself is ati-todos-append's job (locking, atomic replace, not
+# disturbing any other section); this script only decides WHAT to write.
+#
+# Each entry carries the time and the app it came from, because a captured
+# paragraph with no provenance is the thing you cannot use a week later --
+# "did I write this or did GPT?" is exactly the question the source line
+# answers.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+HEADER_SUFFIX="${ATI_NOTE_HEADER_SUFFIX:-research_notes}"
+HEADER="$(date +%F)_${HEADER_SUFFIX}"
+
+# ---------------------------------------------------------------------------
+#  Which app am I reading?
+# ---------------------------------------------------------------------------
+# Read BEFORE any prompt is shown. A keybind does not move focus, so at this
+# point the source window is still the focused one -- but rofi_input below
+# would take focus itself, and then every prompted note would be sourced to
+# "rofi".
+source_app() {
+    local cls=""
+    if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && command -v hyprctl >/dev/null 2>&1; then
+        cls="$(hyprctl activewindow -j 2>/dev/null | jq -r '.class // empty' 2>/dev/null)"
+    elif command -v xdotool >/dev/null 2>&1; then
+        cls="$(xdotool getactivewindow getwindowclassname 2>/dev/null)"
+    fi
+    printf '%s' "${cls:-unknown}"
+}
+SOURCE_APP="$(source_app)"
+
+# ---------------------------------------------------------------------------
+#  The text
+# ---------------------------------------------------------------------------
+# Same `|| true` discipline rofi_translator needed: wl-paste/xclip exit
+# non-zero when the selection is empty, which is an ordinary state here, and
+# under `set -o pipefail` that would otherwise kill the script on the
+# assignment itself -- before the -z check that is supposed to handle it.
+read_selection() {  # read_selection primary|clipboard
+    local which="$1"
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-paste >/dev/null 2>&1; then
+        if [[ "$which" == primary ]]; then
+            wl-paste --primary --no-newline 2>/dev/null || true
+        else
+            wl-paste --no-newline 2>/dev/null || true
+        fi
+    else
+        xclip -o -selection "$which" 2>/dev/null || true
+    fi
+}
+
+TEXT=""
+FORCE_CLIP=0
+[[ "${1:-}" == "--clip" ]] && { FORCE_CLIP=1; shift; }
+# Anything left on the command line is the note itself, so other scripts can
+# reuse this without going through a selection at all.
+if (( $# )); then
+    TEXT="$*"
+elif (( FORCE_CLIP )); then
+    TEXT="$(read_selection clipboard)"
+else
+    TEXT="$(read_selection primary)"
+    [[ -n "${TEXT//[[:space:]]/}" ]] || TEXT="$(read_selection clipboard)"
+fi
+
+if [[ -z "${TEXT//[[:space:]]/}" ]]; then
+    if use_ati_menu_select; then
+        TEXT="$(ati-menu-select --mode input --prompt "Note" 2>/dev/null)" || true
+    else
+        TEXT="$(rofi_input "Note" "nothing selected — type a note")" || true
+    fi
+fi
+[[ -n "${TEXT//[[:space:]]/}" ]] || exit 0
+
+# ---------------------------------------------------------------------------
+#  The entry
+# ---------------------------------------------------------------------------
+# A timestamped bullet with the text as a nested blockquote. Blockquote
+# rather than a plain indented paragraph because captured text is very often
+# somebody else's words (that is the whole GPT-reading use case), and "> "
+# says so in every markdown reader including the phone's.
+#
+# Windows-style CR is stripped: a selection copied out of a web page or a
+# terminal carries them often enough, and a stray ^M inside the file shows up
+# in nvim as a literal character on a line this script promised was clean.
+ENTRY="$(
+    printf -- '- %s · %s\n' "$(date +%H:%M)" "$SOURCE_APP"
+    printf '%s\n' "$TEXT" \
+        | tr -d '\r' \
+        | sed -e 's/[[:space:]]*$//' -e 's/^/  > /'
+)"
+
+# Called by path rather than by name. Every other script here reaches its
+# siblings bare because install.sh has symlinked them into /usr/local/bin --
+# but that only happens on the next install run, and this key should work the
+# moment the file exists.
+if printf '%s\n' "$ENTRY" | "$SCRIPT_DIR/../notes/ati-todos-append" "$HEADER"; then
+    # Preview, not the whole thing -- a captured paragraph in a notification
+    # is unreadable and pushes everything else off the screen.
+    PREVIEW="$(printf '%s' "$TEXT" | tr '\n' ' ' | cut -c1-90)"
+    [[ "${#TEXT}" -gt 90 ]] && PREVIEW="$PREVIEW…"
+    notify_safe -t 3000 "📝 → ### $HEADER" "$PREVIEW"
+else
+    notify_safe -u critical "ati-note-capture" "could not write to the notes file"
+    exit 1
+fi

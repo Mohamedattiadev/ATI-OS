@@ -88,7 +88,7 @@ fi
 # none here, so it cannot even start — `awww query`/`awww-daemon` just
 # fail, silently, forever, which is the qtile half of "wallpaper picker
 # does nothing". `xwallpaper --stretch` is the tool already used for this
-# exact case: AtiScriptsV1/ati-theme-wallpaper's X11 branch and qtile's own
+# exact case: AtiScriptsV1/theme/ati-theme-wallpaper's X11 branch and qtile's own
 # WallpaperPopup.py both reach for it. Split on WAYLAND_DISPLAY per the
 # RULES, not XDG_SESSION_TYPE — that is unset for a session started any
 # way other than a display manager, and this one is.

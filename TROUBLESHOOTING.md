@@ -157,7 +157,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   whatever colors it had before, as if `theme-apply` never ran.
 - **Root cause:** both `WallpaperPopup.apply_wallpaper()` and
   `dm-setbg`'s `reapply_wal()` (both copies —
-  `AtiScriptsV1/ati-dm-setbg` and `dmscripts/scripts/dm-setbg`) only
+  `AtiScriptsV1/theme/ati-dm-setbg` and `dmscripts/scripts/dm-setbg`) only
   called `theme-apply wal` if `~/.cache/qtile/theme_mode` was
   *already* `wal`. If you were on any preset (doomone, dracula, ...)
   and picked a new wallpaper, nothing retheme'd — the check silently
@@ -306,7 +306,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
 - **Fix:** gate the `theme-apply wal` call on
   `~/.cache/qtile/theme_mode` already being `wal`, in all three
   setters:
-  - `.config/AtiScriptsV1/ati-dm-setbg` (`setbg()`)
+  - `.config/AtiScriptsV1/theme/ati-dm-setbg` (`setbg()`)
   - `.config/dmscripts/scripts/dm-setbg` (`reapply_wal()`)
   - `.config/qtile/popups/WallpaperPopup.py` (`apply_wallpaper()`, via
     the new `current_theme_mode()` helper in `popups/_wal_colors.py`)
@@ -861,7 +861,7 @@ subsystem. Each entry: **symptom → root cause → fix**.
   not preceded by valid subpattern`. Under `set -euo pipefail` that
   kills the script before it can prompt for anything.
 - **Fix:** escape it — `awk '/\+/ {...}'`. Fixed in both
-  `AtiScriptsV1/ati-satty` and the sibling `dmscripts/scripts/dm-maim`
+  `AtiScriptsV1/capture/ati-satty` and the sibling `dmscripts/scripts/dm-maim`
   (same copy-pasted line, same bug, in both places).
 
 ### ati-ilovepdf silently does nothing (missing zenity / libreoffice)
@@ -3347,7 +3347,7 @@ something the dotfiles should decide.
 - Was an inline `notify-send "Battery Status" "$(acpi | cut -d, -f2-)"`
   in `config.py`, printing a raw fragment like `" 100%"` — leading space,
   no context, no sense of whether the number is good or bad. Now
-  `AtiScriptsV1/ati-battery-notify`, matching `ati-disk-notify`: percentage, a
+  `AtiScriptsV1/system/ati-battery-notify`, matching `ati-disk-notify`: percentage, a
   bar coloured by level, charge state and an ETA.
 - **Reads sysfs directly** (`/sys/class/power_supply/BAT*`) instead of
   parsing `acpi(1)` — no extra package, and no locale-dependent text to
@@ -3373,7 +3373,7 @@ dropped wifi connection must never break `:w`.
 
 - **Where the failure actually shows up:** `~/.local/state/simplenote-push/push.log`.
   Nothing surfaces inside nvim, by design.
-- **Test by hand:** `~/.config/AtiScriptsV1/ati-simplenote-push` — silence means
+- **Test by hand:** `~/.config/AtiScriptsV1/notes/ati-simplenote-push` — silence means
   it worked.
 
 ### Edits made on the phone do not appear on the PC
@@ -3586,7 +3586,7 @@ before a single file is written. Refuses under 3G free on `/`.
   you. A pacman hook has no wrapper to bypass and no third-party format
   to drift.
 - Installed by wizard module `pacman-guard`. The script itself
-  (`AtiScriptsV1/pacman-preflight`) is symlinked by `ati-scripts`, so
+  (`AtiScriptsV1/update/pacman-preflight`) is symlinked by `ati-scripts`, so
   `pacman-guard` must run **after** it in `MOD_ORDER`.
 
 **2. dcli pre_update — `arch-config/scripts/pre-update.sh`**

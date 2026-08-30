@@ -23,7 +23,7 @@
 #  ~/.cache/wall is the single source of truth for "the current
 #  wallpaper" across BOTH sessions:
 #
-#      AtiScriptsV1/theme-apply   reads it (WALL_LINK, ~line 145) in
+#      AtiScriptsV1/theme/theme-apply   reads it (WALL_LINK, ~line 145) in
 #                                 every theme mode, wal included
 #      hypr/scripts/wallpaper-sync.sh   reads it at login
 #      ati-dm-setbg / the qtile WallpaperPopup   maintain it

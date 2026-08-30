@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# ati-keybindings — search Hyprland's OWN LIVE bind table (`hyprctl binds -j`,
+# not a static doc) and dispatch the one you pick immediately. Omarchy
+# parity gap #6 from the menu gap analysis (bin/omarchy-menu-keybindings):
+# "forgot my keybind, let me search for it and also just run it from here."
+#
+# Hyprland-only, deliberately: `hyprctl` has no qtile/X11 equivalent, and
+# qtile's own live cheatsheet (ati-docs keys / ati-qtile-keys) already
+# covers browsing keybinds there -- this is a different, additive
+# capability (search + IMMEDIATE DISPATCH), not a replacement for it.
+# ati-menu.json only surfaces this entry under Hyprland (see its own
+# "when" guard) for exactly that reason.
+#
+# Simpler than Omarchy's version on purpose: no Lua-config-aware bind
+# resolution or XKB keycode-to-symbol lookup -- `hyprctl binds -j` already
+# reports the key as a symbol (e.g. "Return", not a keycode), so none of
+# that machinery is needed here. Reduced scope, not a partial port: this
+# covers the exact same "search live binds, dispatch on select" behavior
+# Omarchy's tool provides, just without a mechanism this repo's own bind
+# table (binds.conf) never needed in the first place.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+require_cmd hyprctl jq || exit 1
+hyprctl version &>/dev/null || { notify_safe "ati-keybindings" "Hyprland is not running"; exit 1; }
+
+mod_string() {  # mod_string <modmask>
+  local mask=$1 out=""
+  (( mask & 1 ))   && out+="SHIFT+"
+  (( mask & 4 ))   && out+="CTRL+"
+  (( mask & 8 ))   && out+="ALT+"
+  (( mask & 64 ))  && out+="SUPER+"
+  (( mask & 16 ))  && out+="MOD2+"
+  (( mask & 32 ))  && out+="MOD3+"
+  (( mask & 128 )) && out+="MOD5+"
+  printf '%s' "$out"
+}
+
+declare -a labels=()
+declare -a actions=()
+
+while IFS=$'\t' read -r modmask key dispatcher arg desc; do
+  [[ -z "$dispatcher" ]] && continue
+  combo="$(mod_string "$modmask")$key"
+  what="$dispatcher"
+  [[ -n "$arg" ]] && what+=" $arg"
+  [[ -n "$desc" ]] && what="$desc  ($what)"
+  labels+=("$combo  →  $what")
+  actions+=("$dispatcher"$'\x1f'"$arg")
+done < <(hyprctl binds -j | jq -r '.[] | select(.mouse == false) |
+  [.modmask, .key, .dispatcher, .arg, .description] | @tsv')
+
+if (( ${#labels[@]} == 0 )); then
+  notify_safe "ati-keybindings" "No binds found"
+  exit 1
+fi
+
+sel=""
+# ati-menu-select only under native — see ati-default-app's own comment
+# on this exact condition for why.
+if use_ati_menu_select; then
+  sel="$(printf '%s\n' "${labels[@]}" | ati-menu-select --mode select --prompt "Keybindings")"
+else
+  sel="$(printf '%s\n' "${labels[@]}" | rofi -dmenu -i \
+    -theme "$HOME/.config/rofi/themes/base.rasi" \
+    -theme-str 'listview { lines: 12; dynamic: false; }' -p "Keybindings")"
+fi
+
+[[ -z "$sel" ]] && exit 0
+
+idx=-1
+for i in "${!labels[@]}"; do
+  [[ "${labels[$i]}" == "$sel" ]] && { idx=$i; break; }
+done
+(( idx < 0 )) && exit 0
+
+IFS=$'\x1f' read -r dispatcher arg <<<"${actions[$idx]}"
+if [[ -n "$arg" ]]; then
+  hyprctl dispatch "$dispatcher" "$arg" >/dev/null
+else
+  hyprctl dispatch "$dispatcher" >/dev/null
+fi

@@ -440,7 +440,7 @@ assuming it is the same bug as item 2**:
   indicator, not a panel with a shape morph, so item 2's cause may not
   apply and the defect could be something else entirely (position,
   z-order, a stale binding).
-* **The bar-switching popup** — this is `AtiScriptsV1/bar-chooser`, a plain
+* **The bar-switching popup** — this is `AtiScriptsV1/bar/bar-chooser`, a plain
   **rofi** menu (`rofi -dmenu -i -p "Which bar?"`), not part of the
   Quickshell tree at all. A "glitch" here is either a rofi theming/config
   issue (`~/.config/rofi/` or whatever `bar-chooser` passes on its `rofi`

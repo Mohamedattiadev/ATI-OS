@@ -12,7 +12,7 @@ import Quickshell.Services.Mpris
 //  The Hyprland topbar — qtile's bar, reimplemented
 // ============================================================
 //
-// The `native` half of AtiScriptsV1/bar-switch on Hyprland. The island is the
+// The `native` half of AtiScriptsV1/bar/bar-switch on Hyprland. The island is the
 // other half; this is what you get when you ask for the session's own bar.
 //
 // It is a REIMPLEMENTATION and could never be anything else: qtile's bar is

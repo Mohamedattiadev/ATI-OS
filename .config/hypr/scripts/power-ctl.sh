@@ -27,7 +27,7 @@
 #      idle-locking and menu-locking go through one path and cannot
 #      disagree.
 #
-#   2. REFRESH. dm-logout runs ~/.config/AtiScriptsV1/ati-reset-pc as its single
+#   2. REFRESH. dm-logout runs ~/.config/AtiScriptsV1/system/ati-reset-pc as its single
 #      "Refresh the PC" row. Read before porting it, and it is not a config
 #      reload: it pkill -TERM then pkill -KILL's 20 named applications
 #      (browsers, terminals, editors, Obsidian, Anki, mpv...), restarts
@@ -129,7 +129,7 @@ command_for() {
         # `hyprctl reload`/reload_config deliberately do not. X11 still has
         # the genuine article; Wayland gets its adapted twin.
         if on_x11; then
-            printf '%s/AtiScriptsV1/ati-reset-pc' "$HOME/.config"
+            printf '%s/AtiScriptsV1/system/ati-reset-pc' "$HOME/.config"
         else
             printf '%s/hypr/scripts/reset-pc.sh' "$HOME/.config"
         fi
@@ -154,7 +154,7 @@ list_actions() {
     if on_x11; then
         lock_detail='betterlockscreen -l'
         refresh_detail='qtile reload_config'
-        hardreset_detail='~/.config/AtiScriptsV1/ati-reset-pc'
+        hardreset_detail='~/.config/AtiScriptsV1/system/ati-reset-pc'
     else
         lock_detail='loginctl lock-session → hyprlock'
         refresh_detail='hyprctl reload'

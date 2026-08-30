@@ -6,7 +6,7 @@ import Quickshell.Io
 
 //
 // FORK — the shell's ONE colour system. Read live from the palette
-// AtiScriptsV1/theme-apply generates for every theme.
+// AtiScriptsV1/theme/theme-apply generates for every theme.
 //
 // THIS REVERSES DESIGN-SPEC.md, ON PURPOSE
 // ----------------------------------------

@@ -820,7 +820,7 @@ cd "$HOME/.dotfiles/installScripts"
 # layer: validate.sh loads the real qtile config and resolves real fonts,
 # and verify-root compares this guest's boot entry against its own root.
 ./validate.sh && echo VMTEST_VALIDATE_OK
-"$HOME/.dotfiles/.config/AtiScriptsV1/boot-splash" verify-root && echo VMTEST_VERIFYROOT_OK
+"$HOME/.dotfiles/.config/AtiScriptsV1/system/boot-splash" verify-root && echo VMTEST_VERIFYROOT_OK
 GUEST
 }
 

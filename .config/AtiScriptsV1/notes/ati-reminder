@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# ati-reminder {set|show|clear} — general "remind me in N minutes, with an
+# optional message" utility. NOT ati-adhkar: that's a fixed-content Islamic
+# dhikr rotator firing on a random interval with no user input at all; this
+# is user-specified delay + user-specified message, set/listed/cancelled on
+# demand. Same feature Omarchy's bin/omarchy-reminder covers.
+#
+# Backing mechanism is a transient `systemd --user` timer, not a hand-rolled
+# .timer/.service pair -- `systemd-run --unit=NAME` already names both units
+# NAME.timer/NAME.service (confirmed directly: `systemctl --user list-timers`
+# shows exactly that pair), so `show`/`clear` can glob-match our own prefix
+# without parsing anything hand-written.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+UNIT_PREFIX="ati-reminder-"
+
+# Text prompt: the QML menu's own dmenu view under Hyprland (matches every
+# other new picker in this repo, see ati-menu-select), rofi_input's compact
+# "listview{lines:0;}" prompt (ati-rofi-common.sh) under X11/qtile -- same
+# WAYLAND_DISPLAY check ati-bar-action's own fallback branch uses.
+prompt_input() {  # prompt_input <prompt>
+  if use_ati_menu_select; then
+    ati-menu-select --mode input --prompt "$1"
+  else
+    rofi_input "$1"
+  fi
+}
+
+prompt_select() {  # prompt_select <prompt>  (rows on stdin, one per line)
+  if use_ati_menu_select; then
+    ati-menu-select --mode select --prompt "$1"
+  else
+    rofi -dmenu -i -theme "$HOME/.config/rofi/themes/base.rasi" \
+      -theme-str 'listview { lines: 8; dynamic: false; }' -p "$1"
+  fi
+}
+
+cmd_set() {
+  local minutes message ts unit
+  minutes="$(prompt_input "Remind me in (minutes)")"
+  [[ -z "$minutes" ]] && exit 0
+  if ! [[ "$minutes" =~ ^[0-9]+$ ]] || [[ "$minutes" -eq 0 ]]; then
+    notify_safe "ati-reminder" "Not a whole number of minutes: $minutes"
+    exit 1
+  fi
+
+  message="$(prompt_input "Reminder message (optional)")"
+
+  ts="$(date +%s)"
+  unit="${UNIT_PREFIX}${ts}"
+  systemd-run --user --on-active="${minutes}min" --unit="$unit" \
+    notify-send "Reminder" "${message:-Time is up}" >/dev/null
+
+  notify_safe "ati-reminder" "Set for ${minutes}m: ${message:-(no message)}"
+}
+
+cmd_show() {
+  local rows
+  rows="$(systemctl --user list-timers "${UNIT_PREFIX}*" --no-legend 2>/dev/null)"
+  if [[ -z "$rows" ]]; then
+    notify_safe "ati-reminder" "No pending reminders"
+    return
+  fi
+  if use_ati_menu_select; then
+    printf '%s\n' "$rows" | awk '{print $1" "$2" "$3" left: "$5}' | \
+      ati-menu-select --mode select --prompt "Pending reminders" >/dev/null
+  else
+    printf '%s\n' "$rows" | awk '{print $1" "$2" "$3" left: "$5}' | \
+      rofi -dmenu -theme "$HOME/.config/rofi/themes/base.rasi" \
+        -theme-str 'listview { lines: 8; dynamic: false; }' -p "Pending reminders"
+  fi
+}
+
+cmd_clear() {
+  local rows sel timer_unit
+  # 2nd-to-last field is the .timer unit name (systemd-run's own naming,
+  # confirmed live: "... <left> <last> <passed> NAME.timer NAME.service").
+  # Each row is a single "unit: readable text" line (no tab) -- both prompt
+  # backends return the row verbatim on select, so the unit name (no colons
+  # of its own) can be split back out of whatever comes back.
+  rows="$(systemctl --user list-timers "${UNIT_PREFIX}*" --no-legend 2>/dev/null | \
+    awk '{unit=$(NF-1); print unit": "$1" "$2" "$3" left: "$5}')"
+  if [[ -z "$rows" ]]; then
+    notify_safe "ati-reminder" "No pending reminders"
+    return
+  fi
+
+  sel="$(printf '%s\n' "$rows" | prompt_select "Cancel which reminder?")"
+  [[ -z "$sel" ]] && return
+
+  timer_unit="${sel%%:*}"
+  systemctl --user stop "$timer_unit" 2>/dev/null
+  notify_safe "ati-reminder" "Cancelled $timer_unit"
+}
+
+case "${1:-}" in
+  set) cmd_set ;;
+  show) cmd_show ;;
+  clear) cmd_clear ;;
+  *) echo "usage: ati-reminder {set|show|clear}" >&2; exit 2 ;;
+esac
