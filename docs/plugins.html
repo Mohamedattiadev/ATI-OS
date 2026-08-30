@@ -72,6 +72,7 @@ one folder in it. A plugin that is only a command has one folder and one file.</
 <tr><td><code>menu.json</code></td><td>Entries in the <kbd>Super</kbd>+<kbd>?</kbd> menu</td></tr>
 <tr><td><code>theme/</code></td><td>A colour scheme in the theme picker</td></tr>
 <tr><td><code>qml/</code></td><td>A panel or popup on screen</td></tr>
+<tr><td><code>[service]</code> in the manifest</td><td>Something that runs in the background from the moment you log in</td></tr>
 </tbody>
 </table>
 </div>
@@ -159,6 +160,42 @@ plugin cannot redefine what <code>doomone</code> means on a machine that already
 happens. If your <code>qml/main.qml</code> has an error in it, it is skipped by name in the
 log and every other plugin still loads. The desktop is not allowed to break because
 something in this folder did.</p>
+
+<h2 id="service">If you want something running in the background</h2>
+
+<p>Some things are not a command you run, they are a program that sits there: a timer, a
+watcher, something that puts a notification up every so often. Say so in the manifest:</p>
+
+<pre><code>[service]
+exec = "ati-adhkar"</code></pre>
+
+<p><code>ati-plugin sync</code> starts it, and it starts again by itself at every login. You
+do not add a line to any autostart file &mdash; there is nowhere to add one, on purpose.</p>
+
+<p class="screen">It runs as a supervised background service, not as part of the desktop
+starting up. That distinction is the reason this is allowed at all: a plugin that ran inside
+the startup sequence could hang it, and then the desktop would not come up. This one cannot
+&mdash; if it crashes, it is a stopped service and nothing else. You can see it and stop it
+like anything else on the system:</p>
+
+<pre><code>$ systemctl --user list-units 'ati-plugin-*'
+  ati-plugin-adhkar.service   loaded active running
+
+$ systemctl --user stop ati-plugin-adhkar.service</code></pre>
+
+<p>Your plugin's own <code>bin/</code> is on the service's PATH, so it can call its own
+helper scripts by name.</p>
+
+<h2 id="shipped">Plugins that came with the desktop</h2>
+
+<p>Some plugins ship with ATI-OS itself and live in the repository rather than in your own
+folder. <code>ati-plugin list</code> marks them <code>[shipped]</code>. They follow exactly
+the same rules as yours &mdash; <code>adhkar</code>, the remembrance notifier, is one, and
+it is a <code>plugin.toml</code>, a <code>bin/</code> and a <code>[service]</code> line like
+any other.</p>
+
+<p>If you want to change one, make a plugin of your own with the same name in
+<code>~/.config/ati-plugins/</code>. Yours wins, and the shipped one is ignored.</p>
 
 <h2 id="qml">If you want to draw something</h2>
 

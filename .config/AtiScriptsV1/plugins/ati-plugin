@@ -51,6 +51,19 @@
 set -uo pipefail
 
 PLUGIN_DIR="${ATI_PLUGIN_DIR:-$HOME/.config/ati-plugins}"
+# FIRST-PARTY plugins, shipped by this repo, scanned alongside the user's.
+#
+# Phase 4 is the first thing that needed this: `ati-adhkar` moved OUT of
+# AtiScriptsV1 and into a plugin, and a plugin that only exists in
+# ~/.config/ati-plugins would not survive a fresh install -- the feature
+# would simply be gone on every new machine. Two roots, not a symlink farm
+# into the user's directory: a symlink would make `ati-plugin list` show a
+# repo-shipped plugin as if somebody had installed it by hand, and deleting
+# it would "work" until the next sync put it back.
+#
+# The user's directory wins a name collision, so a first-party plugin can be
+# replaced by a local one of the same name without touching the repo.
+REPO_PLUGIN_DIR="${ATI_REPO_PLUGIN_DIR:-$HOME/.dotfiles/plugins}"
 # ~/.local/bin, not /usr/local/bin: AtiScriptsV1's own install.sh needs sudo
 # because it writes to /usr/local/bin, and a sync that prompts for a password
 # is a sync nobody runs. ~/.local/bin is already ahead of /usr/local/bin on
@@ -83,16 +96,21 @@ bad()  { printf '%s✖%s %s\n' "$(_c 1)" "$(_r)" "$*"; }
 # declare, which surfaces exist on disk) and shelling out per plugin per
 # question is how a loader gets slow enough to be skipped.
 _scan() {
-  PLUGIN_DIR="$PLUGIN_DIR" python3 <<'PY'
+  PLUGIN_DIR="$PLUGIN_DIR" REPO_PLUGIN_DIR="$REPO_PLUGIN_DIR" python3 <<'PY'
 import json, os, sys
 try:
     import tomllib
 except ModuleNotFoundError:                      # python < 3.11
     tomllib = None
 
-root = os.environ["PLUGIN_DIR"]
-out = []
-if os.path.isdir(root):
+# User directory LAST so it wins: same name in both, the local one is the
+# one that gets scanned and the shipped one is ignored entirely.
+roots = [("repo", os.environ.get("REPO_PLUGIN_DIR", "")),
+         ("user", os.environ["PLUGIN_DIR"])]
+out, seen = [], {}
+for origin, root in roots:
+    if not root or not os.path.isdir(root):
+        continue
     for name in sorted(os.listdir(root)):
         d = os.path.join(root, name)
         # A dotfile is not a plugin. This is what lets the directory hold a
@@ -100,7 +118,8 @@ if os.path.isdir(root):
         # without the loader trying to load it.
         if not os.path.isdir(d) or name.startswith("."):
             continue
-        p = {"name": name, "dir": d, "errors": [], "meta": {}, "surfaces": []}
+        p = {"name": name, "dir": d, "origin": origin,
+             "errors": [], "meta": {}, "surfaces": []}
         man = os.path.join(d, "plugin.toml")
         if not os.path.isfile(man):
             p["errors"].append("no plugin.toml")
@@ -126,6 +145,8 @@ if os.path.isdir(root):
                     "depends":     [str(x) for x in m.get("depends", []) or []],
                     "requires":    {str(k): str(v) for k, v in (m.get("requires") or {}).items()},
                     "hooks":       {str(k): str(v) for k, v in (m.get("hooks") or {}).items()},
+                    # The SIXTH surface, added in Phase 4 -- see the header.
+                    "service":     str((m.get("service") or {}).get("exec", "")),
                 }
             except Exception as e:
                 p["errors"].append("plugin.toml is not valid TOML: %s" % e)
@@ -134,17 +155,37 @@ if os.path.isdir(root):
                              ("menu", "menu.json"), ("theme", "theme"), ("qml", "qml")):
             if os.path.exists(os.path.join(d, rel)):
                 p["surfaces"].append(surface)
+        # `service` is declared in the manifest rather than by a file
+        # existing, because it is a COMMAND and not a directory -- and
+        # because a surface that starts a process at login should have to be
+        # written down in words, not inferred from a filename.
+        if p["meta"].get("service"):
+            p["surfaces"].append("service")
         p["bins"] = sorted(
             f for f in os.listdir(os.path.join(d, "bin"))
             if os.path.isfile(os.path.join(d, "bin", f))
                and os.access(os.path.join(d, "bin", f), os.X_OK)
         ) if os.path.isdir(os.path.join(d, "bin")) else []
-        out.append(p)
+        seen[name] = p
+out = [seen[k] for k in sorted(seen)]
 json.dump(out, sys.stdout)
 PY
 }
 
 _jq() { command -v jq >/dev/null 2>&1; }
+
+# Pull unit names out of `systemctl list-units` on stdin.
+#
+# NOT `awk '{print $1}'`. systemctl prefixes a line with a status bullet
+# when the unit is not simply loaded-and-active -- "● name.service loaded
+# activating auto-restart ..." -- so field 1 is the BULLET for exactly the
+# units a teardown most needs to find: the failed ones and the ones stuck
+# restarting. Measured: a crash-looping plugin service survived every
+# `ati-plugin sync` after its plugin had been deleted, because the name the
+# loop compared against was "●".
+_unit_names() {
+  awk '{ for (i = 1; i <= NF; i++) if ($i ~ /\.service$/ || $i ~ /\.timer$/) { print $i; break } }'
+}
 
 # ---------------------------------------------------------------------------
 #  list
@@ -166,7 +207,8 @@ for p in json.loads(os.environ["SCAN"]):
     mark = "✖" if p["errors"] else "✔"
     ver  = p["meta"].get("version") or "-"
     surf = ", ".join(p["surfaces"]) or "nothing"
-    print("%s %-20s %-8s %s" % (mark, p["name"], ver, surf))
+    origin = "" if p.get("origin") == "user" else "  [shipped]"
+    print("%s %-20s %-8s %s%s" % (mark, p["name"], ver, surf, origin))
     if p["meta"].get("description"):
         print("    %s" % p["meta"]["description"])
     for e in p["errors"]:
@@ -213,16 +255,29 @@ cmd_sync() {
   local skipped=0 linked=0
 
   # ---- PATH ----
-  local name bin src dst
-  while IFS=$'\t' read -r name bin; do
+  # `dir` comes from the scan, because there are two roots now: a
+  # first-party plugin lives in the repo and a user's in ~/.config, and
+  # rebuilding the path from $PLUGIN_DIR would point every shipped plugin's
+  # symlink at a directory that does not exist. (It did, for one commit --
+  # the link resolved into ~/.config/ati-plugins for a plugin that was never
+  # there, and the service died with status=127.)
+  local name dir bin src dst
+  while IFS=$'\t' read -r name dir bin; do
     [[ -z "$name" ]] && continue
-    src="$PLUGIN_DIR/$name/bin/$bin"
+    src="$dir/bin/$bin"
     dst="$BIN_DIR/$bin"
     if [[ -e "$dst" && ! -L "$dst" ]]; then
       warn "$name: $bin not linked — a real file already owns $dst"
       skipped=$(( skipped + 1 )); continue
     fi
-    if [[ -L "$dst" ]] && [[ "$(readlink -f "$dst")" != "$(readlink -f "$src")" ]]; then
+    # A DANGLING link is not "already points somewhere else", it is litter
+    # from a previous life, and refusing to replace it is how a migration
+    # silently fails. Phase 4 hit exactly this: moving ati-adhkar out of
+    # AtiScriptsV1 left ~/.local/bin/ati-adhkar pointing at the old path,
+    # and the guard below would have declined to fix the very link the move
+    # had just broken. Only a link resolving to a file that EXISTS and is
+    # not ours is a real conflict.
+    if [[ -L "$dst" && -e "$dst" ]] && [[ "$(readlink -f "$dst")" != "$(readlink -f "$src")" ]]; then
       warn "$name: $bin not linked — $dst already points somewhere else"
       skipped=$(( skipped + 1 )); continue
     fi
@@ -258,10 +313,12 @@ for p in scan:
         if b in core or b in claimed:
             continue
         claimed[b] = p["name"]
-        print("%s\t%s" % (p["name"], b))
+        print("%s\t%s\t%s" % (p["name"], p["dir"], b))
 PYSYNC
 )
 
+  # ---- services ----
+  _sync_services "$scan"
   # ---- keybinds ----
   _write_hypr_conf "$scan"
   # ---- menu ----
@@ -289,6 +346,115 @@ print(len([p for p in json.loads(os.environ["SCAN"]) if not p["errors"]]))
   ok "synced $n plugin(s): $linked command(s) linked$note"
 }
 
+# ---------------------------------------------------------------------------
+#  The SERVICE surface — PHASE 4's correction to the contract
+# ---------------------------------------------------------------------------
+# ARCHITECTURE.md §3 lists five surfaces and none of them can say "run this
+# at login". §6 then forbids the obvious workaround outright:
+#
+#   "Do not let a plugin run arbitrary code at load. Hooks run at INSTALL
+#    time, once, visibly. A plugin that executes on every login is a plugin
+#    that can make the desktop unbootable."
+#
+# Phase 4's candidate is `ati-adhkar`, and ati-adhkar is a LOGIN DAEMON: a
+# `while true` of notify-send on a random interval, started by
+# autostart.conf. So the contract as written cannot express the one feature
+# the phase picked to prove it with -- which is precisely what §5 said this
+# phase was for ("if it cannot be expressed as a plugin, the contract in §3
+# is wrong and this is where that is discovered").
+#
+# The resolution is a sixth surface that keeps §6's INTENT rather than its
+# letter. What §6 is actually protecting against is a plugin that can make
+# the desktop unbootable, and every part of that danger comes from running
+# the plugin's code INSIDE the session's startup path: an exec-once that
+# blocks, or crashes, or hangs, takes the compositor's startup with it.
+#
+# A transient `systemd --user` unit has none of those properties:
+#
+#   * it is not in the compositor's startup path, so it cannot block or
+#     break the session no matter what it does
+#   * it is supervised -- a crash is a failed unit, not a broken desktop
+#   * it is VISIBLE, which is the other half of §6's demand: every one of
+#     them shows up in `systemctl --user list-units 'ati-plugin-*'`
+#   * it is stoppable without editing, moving or uninstalling the plugin
+#
+# It is also the mechanism this repo already reaches for: `ati-reminder`
+# schedules with `systemd-run --user`, for the same reasons.
+#
+# Reconciled, not restarted. A sync runs on every login and after every
+# plugin change; restarting a running daemon each time would make `sync`
+# something you think twice about, and the whole design rests on it being
+# safe to run at any moment.
+_sync_services() {
+  local scan="$1" name dir exec unit
+  command -v systemd-run >/dev/null 2>&1 || return 0
+
+  # Stop the units of plugins that are gone, or that no longer declare a
+  # service. Derived from OUR unit prefix and nothing else -- a unit this
+  # command did not name is a unit it will not touch.
+  local declared
+  declared="$(SCAN="$scan" python3 -c '
+import json, os
+for p in json.loads(os.environ["SCAN"]):
+    if not p["errors"] and p["meta"].get("service"):
+        print("ati-plugin-%s.service" % p["name"])
+')"
+  while read -r unit; do
+    [[ -z "$unit" ]] && continue
+    if ! grep -qxF "$unit" <<<"$declared"; then
+      systemctl --user stop "$unit" >/dev/null 2>&1
+      systemctl --user reset-failed "$unit" >/dev/null 2>&1
+    fi
+  done < <(systemctl --user list-units --type=service --all --no-legend \
+             'ati-plugin-*' 2>/dev/null | _unit_names)
+
+  while IFS=$'\t' read -r name dir exec; do
+    [[ -z "$name" ]] && continue
+    unit="ati-plugin-${name}.service"
+    systemctl --user is-active --quiet "$unit" && continue
+    # Not active, but not necessarily absent either: a unit sitting in
+    # "activating (auto-restart)" after a crash still OWNS the name, and
+    # `systemd-run --unit=` on a name that exists fails outright. Clear the
+    # corpse in both of its shapes before claiming the name -- reset-failed
+    # alone does nothing to one that is mid-restart, which is how a fixed
+    # command kept reporting "service failed to start" after the bug in it
+    # had already been repaired.
+    systemctl --user stop "$unit" >/dev/null 2>&1
+    systemctl --user reset-failed "$unit" >/dev/null 2>&1
+    # /bin/sh -c because `exec` is a command LINE from a manifest, not an
+    # argv: a plugin author writes `exec = "ati-adhkar"` and should be able
+    # to write `exec = "ati-adhkar --quiet"` without learning how this is
+    # spawned.
+    #
+    # Restart=on-failure, not always: a service that exits 0 has finished,
+    # and respawning it forever would turn a one-shot into a spin. --collect
+    # so a unit that fails and stops does not sit in the list as a corpse
+    # that blocks the next start under the same name.
+    # An EXPLICIT PATH, and this is not belt-and-braces. A `systemd --user`
+    # service inherits the user manager's environment, which is whatever
+    # existed when the manager started -- not the login shell's, and not
+    # necessarily containing ~/.local/bin, which is where sync puts a
+    # plugin's commands. `exec = "ati-adhkar"` would then fail with status
+    # 127 on a machine whose manager never imported it, and the plugin would
+    # be "installed" and permanently dead.
+    #
+    # The plugin's OWN bin/ goes first, so a plugin can call its own helper
+    # scripts by bare name without knowing where sync linked them, or
+    # whether sync refused to link one because the name was taken.
+    if ! systemd-run --user --unit="ati-plugin-${name}" --collect \
+           --property=Restart=on-failure --property=RestartSec=5 \
+           --setenv="PATH=$dir/bin:$BIN_DIR:/usr/local/bin:/usr/bin:/bin" \
+           /bin/sh -c "$exec" >/dev/null 2>&1; then
+      warn "$name: service failed to start — systemctl --user status $unit"
+    fi
+  done < <(SCAN="$scan" python3 -c '
+import json, os
+for p in json.loads(os.environ["SCAN"]):
+    if not p["errors"] and p["meta"].get("service"):
+        print("%s\t%s\t%s" % (p["name"], p["dir"], p["meta"]["service"]))
+')
+}
+
 # Rewrites ~/.config/hypr/plugins.conf. Hyprland re-reads it on its own --
 # the file is inside the config tree it already watches -- so there is no
 # `hyprctl reload` here: reloading the whole config as a side effect of a
@@ -309,14 +475,14 @@ _write_hypr_conf() {
     printf '# the desktop, so the file has to exist before any script has run.\n'
     printf '# With no plugins installed the output below is empty and this file\n'
     printf '# is byte-identical to what the repo ships.\n'
-    SCAN="$scan" PLUGIN_DIR="$PLUGIN_DIR" python3 -c '
+    SCAN="$scan" python3 -c '
 import json, os
 for p in json.loads(os.environ["SCAN"]):
     if p["errors"] or "binds" not in p["surfaces"]:
         continue
     print("")
-    print("# %s" % p["name"])
-    print("source = %s/%s/binds.conf" % (os.environ["PLUGIN_DIR"], p["name"]))
+    print("# %s (%s)" % (p["name"], p["origin"]))
+    print("source = %s/binds.conf" % p["dir"])
 '
   } > "$tmp"
   if ! cmp -s "$tmp" "$HYPR_CONF" 2>/dev/null; then
@@ -390,10 +556,22 @@ cmd_doctor() {
   local scan rc=0
   scan="$(_scan)" || { bad "could not scan $PLUGIN_DIR"; return 1; }
 
-  say "plugin directory: $PLUGIN_DIR"
-  if [[ ! -d "$PLUGIN_DIR" ]]; then
-    ok "not created yet — zero plugins, which is the shipped state"
-  fi
+  # BOTH roots, and say which is which. Reporting only the user's made the
+  # line "not created yet — zero plugins" print on a machine that had a
+  # first-party plugin loaded and running, which is not a small wording
+  # problem: doctor is the thing you read when you cannot tell what is
+  # installed.
+  local n_repo n_user
+  n_repo="$(SCAN="$scan" python3 -c '
+import json, os
+print(len([p for p in json.loads(os.environ["SCAN"]) if p["origin"] == "repo"]))')"
+  n_user="$(SCAN="$scan" python3 -c '
+import json, os
+print(len([p for p in json.loads(os.environ["SCAN"]) if p["origin"] == "user"]))')"
+  say "shipped with the repo: $REPO_PLUGIN_DIR ($n_repo)"
+  say "installed by you:      $PLUGIN_DIR ($n_user)"
+  [[ -d "$PLUGIN_DIR" ]] || say "                       (not created yet — nothing installed by hand)"
+  say ""
 
   # -- manifests --
   local bad_manifests
@@ -521,6 +699,29 @@ PY
   fi
   (( drift )) && { warn "$HYPR_CONF was out of date and has been regenerated"; }
   (( drift )) || ok "generated files are up to date"
+
+  # -- declared services --
+  # A daemon that is silently dead is the failure mode this whole surface
+  # was added for: ati-adhkar spent an unknown number of boots not running
+  # (autostart.conf's own comment records the pgrep guard that matched its
+  # own parent shell), and nothing anywhere said so. It says so here.
+  local svc_bad=""
+  while IFS=$'\t' read -r name _exec; do
+    [[ -z "$name" ]] && continue
+    if systemctl --user is-active --quiet "ati-plugin-${name}.service"; then
+      ok "service ${name}: running"
+    else
+      svc_bad+="service ${name}: not running — ati-plugin sync, then systemctl --user status ati-plugin-${name}.service"$'\n'
+    fi
+  done < <(SCAN="$scan" python3 -c '
+import json, os
+for p in json.loads(os.environ["SCAN"]):
+    if not p["errors"] and p["meta"].get("service"):
+        print("%s\t%s" % (p["name"], p["meta"]["service"]))
+')
+  if [[ -n "$svc_bad" ]]; then
+    while IFS= read -r l; do [[ -n "$l" ]] && bad "$l"; done <<<"$svc_bad"; rc=1
+  fi
 
   # -- the QML contract --
   local qmlmiss

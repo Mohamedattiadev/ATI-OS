@@ -1434,9 +1434,13 @@ subsystem. Each entry: **symptom → root cause → fix**.
   they will need again.
 
 ### `ati-adhkar` reminders behave oddly / bash-isms silently misfire
-- **Symptom:** the `ati-adhkar` notifier autostarted by `autostart.sh` runs,
-  but anything bash-specific in it is unreliable. No error is printed
-  anywhere you would look.
+- **Symptom:** the `ati-adhkar` notifier runs, but anything bash-specific in
+  it is unreliable. No error is printed anywhere you would look.
+- **Where it lives now:** `plugins/adhkar/bin/ati-adhkar` — it became a
+  plugin in ARCHITECTURE.md Phase 4 and is started as
+  `ati-plugin-adhkar.service`, not by an autostart line. `systemctl --user
+  status ati-plugin-adhkar.service` is where its output goes now, which is
+  itself most of the fix for "no error is printed anywhere you would look".
 - **Root cause:** the file began with a **blank line before `#!/bin/bash`**.
   A shebang is only honoured on byte 0 of the file; with a leading
   newline the kernel returns `ENOEXEC`, and the parent shell falls back

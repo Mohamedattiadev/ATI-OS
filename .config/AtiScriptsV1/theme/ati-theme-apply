@@ -148,9 +148,16 @@ THEME_DIR="$SCRIPT_DIR/../themes/$MODE"
 # already had it. `ati-plugin doctor` has no way to flag this one -- the
 # collision is with a directory name, not with a bind or a command -- so the
 # precedence is the whole enforcement.
+# Both plugin roots, user's first so a local plugin overrides a shipped one
+# of the same name -- the same precedence ati-plugin's own scan applies.
 if [[ ! -f "$THEME_DIR/colors.toml" ]]; then
-  _ati_plugin_theme="${ATI_PLUGIN_DIR:-$HOME/.config/ati-plugins}/$MODE/theme"
-  [[ -f "$_ati_plugin_theme/colors.toml" ]] && THEME_DIR="$_ati_plugin_theme"
+  for _ati_plugin_root in "${ATI_PLUGIN_DIR:-$HOME/.config/ati-plugins}" \
+                          "${ATI_REPO_PLUGIN_DIR:-$HOME/.dotfiles/plugins}"; do
+    if [[ -f "$_ati_plugin_root/$MODE/theme/colors.toml" ]]; then
+      THEME_DIR="$_ati_plugin_root/$MODE/theme"
+      break
+    fi
+  done
 fi
 THEME_LOADED=0
 if [[ "$MODE" != "wal" && -f "$THEME_DIR/colors.toml" ]]; then

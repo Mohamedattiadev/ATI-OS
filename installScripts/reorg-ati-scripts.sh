@@ -72,6 +72,11 @@ group_for() {
         ati-install-gaming-*|ati-webapp-*|ati-launch-webapp|ati-default-app) echo apps ;;
         ati-keymaps|ati-keybindings|ati-qtile-keys|ati-keyboard-layout-watcher) echo input ;;
         ati-emoji-insert|ati-ui-scale|ui-scale*|ati-do)               echo input ;;
+        # ati-adhkar left this tree entirely in ARCHITECTURE.md Phase 4 --
+        # it is plugins/adhkar/bin/ati-adhkar now. The mapping stays because
+        # this script is the RECORD of the Phase 1 move, and rewriting
+        # history to match a later phase would make it stop describing what
+        # it actually did.
         ati-adhkar)                                                   echo islam ;;
         ati-menu|ati-menu-select|ati-docs|ati-onboarding-cheatsheet|onboarding-first-run) echo menu ;;
         rofi_anki|rofi_windows|rofi_light|ati-kill|ati-pass|ati-ilovepdf|dm-confedit) echo menu ;;

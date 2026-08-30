@@ -1,0 +1,15 @@
+name        = "adhkar"
+description = "A short Islamic remembrance, on screen every 5-10 minutes"
+version     = "1.0.0"
+
+# notify-send is the whole output surface: without it this plugin runs a
+# loop that produces nothing at all, silently. Declared so `ati-plugin
+# doctor` can say that in one line instead of leaving it to be discovered.
+depends     = ["notify-send"]
+
+# THE SIXTH SURFACE — see ARCHITECTURE.md §3, and ati-plugin's own
+# _sync_services() for why a transient `systemd --user` unit rather than an
+# exec-once. This is a login daemon: a `while true` with a randomised sleep,
+# not something a keybind starts.
+[service]
+exec = "ati-adhkar"

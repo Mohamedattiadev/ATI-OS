@@ -78,6 +78,21 @@ well-known subdirectories. Nothing else. It is installed by being present.
     qml/                # a bar chip or a popup, loaded by the shell
 ```
 
+A **sixth** surface is declared in the manifest rather than by a directory,
+because it is a command and not a folder — added in Phase 4, see there for
+why the five above were not enough:
+
+```toml
+[service]
+exec = "ati-adhkar"     # a login daemon, run as a supervised systemd --user unit
+```
+
+First-party plugins ship in the repo's own `plugins/` directory and are
+scanned alongside `~/.config/ati-plugins/`; the user's copy wins a name
+collision. A plugin that only existed in `~/.config` would not survive a
+fresh install, which would make "migrate a feature to a plugin" a synonym
+for "delete it on every new machine".
+
 `plugin.toml`:
 
 ```toml
@@ -201,11 +216,49 @@ not merely reported by `doctor`: a plugin shipping `bin/ati-menu` is
 refused the symlink rather than being allowed to shadow the real command on
 PATH.
 
-**Phase 4 — move one existing feature out into a plugin.**
+**Phase 4 — move one existing feature out into a plugin. ✅ DONE.**
 `ati-adhkar` is the right candidate: self-contained, optional, has its own
 timer and notification, and nobody else's code depends on it. If it cannot
 be expressed as a plugin, the contract in §3 is wrong and this is where that
 is discovered — before anything else is migrated.
+
+**It could not be, and that is the finding.** adhkar is a *login daemon* — a
+`while true` of `notify-send` on a randomised interval, started by
+`autostart.conf`. None of the five surfaces can say "run this at login", and
+§6 forbade the obvious workaround in as many words. The phase did exactly
+what it was written to do: the contract met the first feature it had to
+carry and came up one surface short.
+
+Resolved with `[service]`, above, and §6 qualified rather than overruled —
+the danger it names comes from running plugin code inside the session's
+startup path, and a transient `systemd --user` unit is not in it. The
+mechanism was already in this repo: `ati-reminder` schedules with
+`systemd-run --user` for the same reasons.
+
+The migration is complete in the sense that matters: **nothing in the base
+config knows adhkar's name any more.** `autostart.conf` and qtile's
+`autostart.sh` both say `ati-plugin sync` and nothing else, so installing or
+removing adhkar is a directory appearing or disappearing. The `pgrep` guard
+went with it — a systemd unit cannot start twice, so there is nothing to
+guard against, and the guard that used to be there is the one whose
+post-mortem (it matched its own parent shell, and adhkar had never started
+on any boot) is still written out above the line that replaced it.
+
+Three bugs came out of doing it, each caught by a fixture rather than by
+reading:
+
+* `sync` rebuilt symlink targets from a fixed root, so every shipped
+  plugin's command pointed into `~/.config/ati-plugins` where it had never
+  been — the service died with `status=127`.
+* A **dangling** symlink was treated as "already points somewhere else" and
+  refused, which meant the migration declined to repair the very link the
+  move had just broken.
+* `systemctl list-units` prefixes a line with a status bullet, so
+  `awk '{print $1}'` read `●` instead of the unit name — for precisely the
+  failed and restarting units a teardown most needs to find. A crash-looping
+  plugin service survived every `sync` after its plugin was deleted. The
+  same line existed in `ati-reminder`, where it would have left a timer
+  firing for a reminder that had been cancelled; fixed in both.
 
 **Phase 5 — a second theme as a plugin,** proving the `theme/` path against
 the existing picker.
@@ -223,6 +276,17 @@ the existing picker.
 - **Do not let a plugin run arbitrary code at load.** Hooks run at *install*
   time, once, visibly. A plugin that executes on every login is a plugin
   that can make the desktop unbootable.
+
+  *Qualified by Phase 4, which is what happens when a rule meets the first
+  feature it has to carry.* What this is protecting against is a plugin
+  that can break the session, and every part of that danger comes from
+  running the plugin's code **inside the session's startup path** — an
+  `exec-once` that blocks, hangs or crashes takes the compositor's startup
+  with it. A `[service]` declaration does not: `ati-plugin sync` runs it as
+  a transient `systemd --user` unit, which is outside the startup path,
+  supervised, visible in `systemctl --user list-units 'ati-plugin-*'`, and
+  stoppable without touching the plugin. The ban stands for *arbitrary* and
+  *implicit* execution; a declared, named, supervised daemon is not that.
 - **Do not build a registry, a marketplace, or an updater** until there is
   more than one plugin that is not written by this repo's author. Omarchy's
   own extension story is a directory and a convention.

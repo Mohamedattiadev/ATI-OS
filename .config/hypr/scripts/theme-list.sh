@@ -54,12 +54,20 @@ _toml_get() { sed -n "s/^$2 = \"\\(.*\\)\"\$/\\1/p" "$1"; }
 # would be a theme that keeps appearing after its plugin is gone -- and
 # picking it would apply a palette read from a directory that no longer
 # exists.
+# Two plugin roots, the same two ati-plugin scans: the repo's first-party
+# plugins and the user's own. Kept in step with ati-plugin by having the
+# same two defaults, not by asking it -- theme-list.sh is on the draw path
+# of the picker and must not shell out to a second script to answer.
 ATI_PLUGIN_DIR="${ATI_PLUGIN_DIR:-$HOME/.config/ati-plugins}"
+ATI_REPO_PLUGIN_DIR="${ATI_REPO_PLUGIN_DIR:-$HOME/.dotfiles/plugins}"
 
 _theme_dirs() {
   find "$THEMES_DIR" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null
-  [[ -d "$ATI_PLUGIN_DIR" ]] &&
-    find "$ATI_PLUGIN_DIR" -mindepth 2 -maxdepth 2 -type d -name theme -print0 2>/dev/null
+  local r
+  for r in "$ATI_REPO_PLUGIN_DIR" "$ATI_PLUGIN_DIR"; do
+    [[ -d "$r" ]] &&
+      find "$r" -mindepth 2 -maxdepth 2 -type d -name theme -print0 2>/dev/null
+  done
 }
 
 out=()
