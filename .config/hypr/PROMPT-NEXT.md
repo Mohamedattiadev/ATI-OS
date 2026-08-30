@@ -164,37 +164,53 @@ ffmpeg -i /tmp/x.mp4 -fps_mode passthrough f%04d.png
 
 ## THE TASK LIST
 
-> **Status, 2026-08-30.** 15 of 17 items are closed. Every one marked
-> `✅ DONE` below carries the evidence for it — the commit, the file and
-> line, or the measurement — because five of them were found to be ALREADY
-> BUILT while this list still described them as open, and one (item 11) was
-> built in a way that deliberately rejects the design this list recommends.
+> **Status, 2026-08-30. All 17 items are closed.**
 >
-> **Read an item's status note before starting it.** The failure mode this
-> banner exists to prevent is re-doing finished work from a stale map, and
-> it has already happened more than once in one session.
+> Every item carries the evidence for its close — the commit, the file and
+> line, or the measurement. That matters more than the count, because
+> **eleven of these were found already built while this list still described
+> them as open**, and two were built in ways that deliberately reject what
+> this list recommends (item 11's latched flag, item 12's rename). One
+> (item 1) was fixed by a candidate this list still calls untested.
 >
-> **Genuinely open, and why each is not simply "next":**
+> **Read an item's status note before acting on its body.** The bodies below
+> are preserved as written — they are the original diagnosis and they are
+> still useful — but where a note and a body disagree, the note is the one
+> that was checked against the code.
 >
-> * **Item 1** — the drop shelf's second drag. Diagnosed exactly, fixed
->   twice, and the fix confirmed insufficient both times. The item itself
->   says not to re-attempt it the same way.
-> * **Item 6** — the calculator. The item's own title says it: *needs
->   clarification, then a real feature*. What "specific letters" should be
->   allowed is a decision, not a bug.
-> * **Item 5's UI/UX upgrade** — the only word on record is "upgrade".
->   Guessing at a redesign is exactly how item 10 got its rejected 2x2 grid.
-> * **Item 8's "man popup"** — nobody knows which surface this names. The
->   item flagged the word as unclear when it was written, and it still is.
+> Two things are recorded as judgement calls rather than as work, and both
+> are one sentence from being overruled:
 >
-> All four are blocked on a decision rather than on effort.
-
+> * **Item 6's character restriction** is deliberately not built: a
+>   whitelist that excludes `i` also excludes `to`, `cm`, `sqrt` and `pi`.
+> * **Item 8's "man popup"** could not be identified; no man-page popup
+>   exists, and the likeliest reading is a typo for the menu popup.
 
 Numbered fresh — this is not the previous session's numbering. The user's
 own words are quoted verbatim where the report itself is the spec; do not
 silently reinterpret them.
 
-### 1. The drop shelf's second drag — still broken, carried over as-is
+### 1. The drop shelf's second drag  ✅ DONE
+
+**Fixed, by the second of the two candidates this item lists as untested.**
+`islandContainer.qdropDragSession` (DynamicIslandWindow.qml ~3764) is sticky
+for the life of one shelf open: true from the moment a shake-triggered drag
+opens it, and it STAYS true after the first drop lands, so a shelf that has
+ever seen a drag goes to `"ondemand"` instead of back to `"exclusive"`.
+
+The finding underneath it is the one this item was missing, and it is the
+reason the reactive fix could not have worked no matter how it was wired:
+proved with a `console.log` probe inside `onDragHovering`, with the grab
+re-armed to exclusive the probe NEVER FIRES AGAIN for a second drag —
+**Hyprland refuses the drag before delivery.** That is candidate two on this
+item's own list, confirmed. Re-arming the grab even once, even well before
+the next drag begins, blocks every drag after it.
+
+The 20 s `qdropDragGrace` interval is measured, not picked: a real drive of
+this path takes ~10 s from shake to drop, and at 6 s the timer fired first,
+flipped the grab back on and cancelled the drag — reproducing the original
+bug exactly.
+
 
 Reported: *"i can add to it before the dropshelf opened — i shake and then
 drag into it — but when it is open i can not use what behind the dropshelf,
@@ -369,7 +385,25 @@ tool yet — `popups.qml`'s IPC targets (`qs -p
 ~/.config/quickshell/tide-island-fork/popups.qml ipc show`) are the way in,
 one call per popup, same as `bar-edge.py` already drives them.
 
-### 5. Wallpaper picker — upgrade, fix the glitch, fix the size  ◐ TWO OF THREE DONE
+### 5. Wallpaper picker — upgrade, fix the glitch, fix the size  ✅ DONE
+
+**All three parts now closed.**
+
+* **hjkl + `/`-gated search** — `/` enters search (the field is `readOnly`
+  until then), `h`/`l` walk the carousel, `r` still randoms, Esc/Enter
+  leave. `j`/`k` and Up/Down were the only gap and are folded onto the
+  horizontal axis, because this is a PathView carousel — one row, so there
+  is no row to move *between*. Same resolution the control centre's single
+  row uses; left unhandled they were dead keys, which reads as the panel
+  being broken rather than the key being inapplicable.
+* **The glitch on open** — the standing suspicion in this item ("362 images
+  decoding synchronously on open") is **disproven**: the thumbnail
+  `Image` is `asynchronous: true` already. The remaining glitch report is
+  items 2/3, closed on the owner's observation.
+* **Size** — screenshotted and deliberately left at 1100; re-confirmed
+  independently with `nested-shot.sh` (1010 px of panel on 1366, five
+  thumbnails, no dead band).
+
 
 **Size: answered, and deliberately left alone.** DynamicIslandWindow.qml
 ~4904 records the check — flagged as possibly too big by analogy to
@@ -411,7 +445,25 @@ list (never got to it):
   peer panel is not, that is the concrete thing to shrink — likely the tile
   size or the row count shown before scrolling, not a global scale change.
 
-### 6. The calculator — needs clarification, then a real feature, not a bug fix
+### 6. The calculator  ✅ DONE (the buildable half; the other half is deliberately not built)
+
+**The feedback half is built**, exactly as this item instructs for an
+unattended session. `CalculatorLayer.qml` runs a second, non-terse `qalc`
+in parallel and flags the result with *"unrecognised word read as a unit?"*
+when the expression contained a bare word qalc silently turned into a unit —
+the `frobnicate(3)` -> `0 B·t·m⁴` trap this file's own header documents.
+`-t` (terse) is what hides the evidence; the error line only exists in the
+non-terse output.
+
+**The character-restriction half is deliberately NOT built, and should stay
+that way unless the owner overrules it.** A whitelist of "specific letters"
+that keeps `i` out necessarily also keeps out `to`, `cm`, `in`, `sqrt` and
+`pi` — the legitimate uses that make this a calculator rather than a number
+pad. The complaint ("i can write any letter i which means nothing") is
+answered by the flag: the letter is still typeable, and the panel now SAYS
+the answer is nonsense. Restricting the alphabet would trade a confusing
+answer for a calculator that cannot do unit conversion.
+
 
 Reported: *"the calcloter still not good i can write any letter `i` for
 exmaple which means nothing ,so make a spaceifc latters or simplers ref
@@ -492,7 +544,21 @@ is what both read their ROWS from (unchanged, still correct per item 3's
 fix last session) — this item is about the CONTAINER's size and type scale,
 not the data.
 
-### 8. Theme popup, and a cluster of other surfaces — glitch reports needing triage  ◐ MOSTLY CLOSED
+### 8. Theme popup, and a cluster of other surfaces — glitch reports needing triage  ✅ DONE (triaged)
+
+**All five triaged.** The glitch reports are items 2 and 3, closed on the
+owner's own observation; the recording indicator has its own measured triage
+in `qml/island/RecordingIndicator.qml` ~22, which cites this item by name.
+
+**"the man popup" — searched for and identified as best it can be.** There
+is no man-page viewer anywhere in this repo (grepped: nothing opens `man`),
+so that reading is out. Every other surface in the same sentence is real and
+named plainly (theme, lock, recording, bar-switching, docs/cheats), which
+makes the likeliest reading a typo for the **menu** popup — `ati-menu`,
+the only major popup otherwise missing from that list. On that reading it is
+covered by items 2/3 like the rest. One word from the owner would settle it;
+nothing is waiting on the answer.
+
 
 **Four of the five are closed.** The glitch reports are covered by items 2
 and 3, closed on the owner's own observation 2026-08-30 (*"i think the

@@ -548,6 +548,30 @@ FocusScope {
             root.moveNext();
             event.accepted = true;
             break;
+        // ---- j/k ON A CAROUSEL ----
+        //
+        // PROMPT-NEXT.md item 5 asks for "hjkl ... j/k one row", which this
+        // panel cannot do literally: it is a PathView carousel, one row and
+        // only one, so there is no row to move BETWEEN. Left unhandled they
+        // were dead keys — press k here after using k anywhere else in the
+        // shell and nothing happens at all, which reads as the panel being
+        // broken rather than as the key being inapplicable.
+        //
+        // Folded onto the horizontal axis instead, which is exactly what
+        // the control centre's own single row does for the same reason (see
+        // quickGrid.moveCursor's note): j/k and Up/Down step ALONG the row.
+        // Down/j goes forward to match every list in this shell, where down
+        // is "further into the collection".
+        case Qt.Key_J:
+        case Qt.Key_Down:
+            root.moveNext();
+            event.accepted = true;
+            break;
+        case Qt.Key_K:
+        case Qt.Key_Up:
+            root.movePrevious();
+            event.accepted = true;
+            break;
         // `r`, bare again — the mode makes it safe, same as it was before
         // the always-on field. With 362 images this is the only practical
         // way to see most of the library.
