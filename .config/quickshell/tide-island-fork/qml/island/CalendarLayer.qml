@@ -171,6 +171,49 @@ FocusScope {
             next[key] = trimmed;
         root.reminders = next;
         root.persistReminders();
+        root.armReminders();
+    }
+
+    // ---- AND THEN SOMETHING HAS TO ACTUALLY REMIND YOU ----
+    //
+    // Everything above this line stores a day and draws a dot on it. That is
+    // a note, not a reminder: nothing fires, and a reminder you have to
+    // remember to come and look at is one you did not need.
+    //
+    // `ati-reminder sync` is the half that fires. It reads the very file
+    // persistReminders() just wrote and projects it onto transient
+    // `systemd --user` timers -- the same mechanism ati-reminder's own
+    // "remind me in N minutes" already used, so this panel does not own a
+    // scheduler, a daemon, or a second copy of "what is due". It is
+    // idempotent (it stops its whole timer family and rebuilds from the
+    // file), which is exactly why calling it after EVERY save is fine and
+    // why the QML never has to track what it scheduled last time.
+    //
+    // Deliberately fire-and-forget. A save must not wait on a subprocess to
+    // put text on screen, and the panel has nothing useful to do with a
+    // failure it cannot fix -- the file is written either way, so the worst
+    // case is a reminder that shows its dot and stays silent, and the next
+    // save or the next login re-arms it. Only the console hears about it.
+    function armReminders() {
+        // Restart rather than "start if idle": two saves a second apart must
+        // end with a sync that saw the SECOND one, and a run still in flight
+        // read the file before it changed.
+        syncProcess.running = false;
+        syncProcess.running = true;
+    }
+
+    Process {
+        id: syncProcess
+        // By name, not by path. install.sh's contract is that every file in
+        // AtiScriptsV1 is symlinked into /usr/local/bin, and the tree it
+        // sits in was regrouped by concern once already (notes/ today) --
+        // hardcoding that directory here would make the next regrouping a
+        // silent breakage of this panel.
+        command: ["ati-reminder", "sync"]
+        onExited: function (exitCode) {
+            if (exitCode !== 0)
+                console.warn("[calendar] ati-reminder sync exited " + exitCode);
+        }
     }
 
     FileView {
@@ -735,7 +778,14 @@ FocusScope {
             // nf-fa-sticky-note-o, by codepoint — see the icon property's
             // own note on why a pasted glyph does not survive.
             icon: String.fromCharCode(0xf249)
-            placeholder: "click a day, or type a reminder for " + Qt.formatDate(root.cursor, "MMM d")
+            // Teaches the one piece of syntax there is, by example, in the
+            // only place it can be read at the moment it is useful: an
+            // "HH:MM " prefix sets the time the notification fires, and
+            // without one the day fires at ati-reminder's default hour.
+            // The key-hint strip below is full (five entries already), and a
+            // sixth would wrap it -- a placeholder is the empty field's own
+            // documentation and costs no width when the field is in use.
+            placeholder: "09:30 dentist — reminder for " + Qt.formatDate(root.cursor, "MMM d")
             escapeClearsQuery: false
 
             onSubmitted: {

@@ -3,6 +3,15 @@
 # THROWAWAY nested Hyprland and report whether it came up clean.
 #
 #   ./nested-qml-check.sh ~/.config/quickshell/topbar/redesign-e-final.qml
+#   NESTED_QML_IPC='tide toggleCalendar' ./nested-qml-check.sh ~/.config/quickshell/tide-island-fork/shell.qml
+#
+# NESTED_QML_IPC — one IPC call per line, run against the NESTED instance
+# once it is up, before the verdict is read. This is not a convenience: a
+# panel behind a `PanelLoader { live: ... }` is not instantiated until it is
+# opened, so a plain load says nothing at all about it. The island has
+# fourteen of those loaders; "loaded clean" for shell.qml means the capsule
+# is fine and every panel in the fork is still untested. Open the one you
+# edited, or the check is a green light for a file that never ran.
 #
 # WHY THIS EXISTS
 # ---------------
@@ -51,8 +60,10 @@ command -v qs >/dev/null || { printf 'quickshell (qs) not installed\n' >&2; exit
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/nested-qml.XXXXXX")"
 NESTED_PID=""
+QS_PID=""
 sig=""
 cleanup() {
+    [[ -n "$QS_PID" ]] && kill "$QS_PID" 2>/dev/null
     [[ -n "$NESTED_PID" ]] && kill "$NESTED_PID" 2>/dev/null
     # Give it a moment to take its wayland socket with it; a nested
     # compositor left running is worse than a failed test.
@@ -126,9 +137,54 @@ disp="$(comm -13 <(printf '%s\n' "$sockets_before") <(ls "$XDG_RUNTIME_DIR"/wayl
 disp="$(basename "${disp:-}")"
 [[ -n "$disp" ]] || { printf 'could not identify the nested wayland socket\n' >&2; exit 2; }
 
-timeout "$SECONDS_UP" env WAYLAND_DISPLAY="$disp" HYPRLAND_INSTANCE_SIGNATURE="$sig" \
-    qs -p "$TARGET" >"$WORK/qs.log" 2>&1
-rc=$?
+if [[ -z "${NESTED_QML_IPC:-}" ]]; then
+    timeout "$SECONDS_UP" env WAYLAND_DISPLAY="$disp" HYPRLAND_INSTANCE_SIGNATURE="$sig" \
+        qs -p "$TARGET" >"$WORK/qs.log" 2>&1
+    rc=$?
+else
+    # Driven mode. quickshell goes to the BACKGROUND so there is something
+    # to talk to; `timeout` in front of it would have been the same process
+    # this needs to outlive the calls.
+    env WAYLAND_DISPLAY="$disp" HYPRLAND_INSTANCE_SIGNATURE="$sig" \
+        qs -p "$TARGET" >"$WORK/qs.log" 2>&1 &
+    QS_PID=$!
+
+    # `ipc show` is the readiness probe: the socket exists only once the
+    # config has loaded far enough to serve it, which is precisely the point
+    # at which a call will not be dropped.
+    ready=0
+    for _ in $(seq 1 40); do
+        kill -0 "$QS_PID" 2>/dev/null || break
+        if env WAYLAND_DISPLAY="$disp" HYPRLAND_INSTANCE_SIGNATURE="$sig" \
+             qs -p "$TARGET" ipc show >/dev/null 2>&1; then
+            ready=1
+            break
+        fi
+        sleep 0.25
+    done
+    if (( ready == 0 )); then
+        printf 'FAIL  %s — never served IPC to drive it with\n' "$TARGET"
+        tail -10 "$WORK/qs.log"
+        exit 1
+    fi
+
+    while IFS= read -r call; do
+        [[ -z "${call// }" ]] && continue
+        # shellcheck disable=SC2086  # deliberate: the line IS the argv
+        env WAYLAND_DISPLAY="$disp" HYPRLAND_INSTANCE_SIGNATURE="$sig" \
+            qs -p "$TARGET" ipc call $call >>"$WORK/qs.log" 2>&1
+        # Panels open behind an animation and instantiate on the way in;
+        # reading the log before that has finished is reading it too early.
+        sleep 1.5
+    done <<<"$NESTED_QML_IPC"
+
+    sleep 1
+    # Same verdict the foreground path encodes in rc=124: still up after
+    # everything it was asked to do is the pass.
+    if kill -0 "$QS_PID" 2>/dev/null; then rc=124; else wait "$QS_PID"; rc=$?; fi
+    kill "$QS_PID" 2>/dev/null
+    QS_PID=""
+fi
 
 # Strip the SGR colour codes quickshell emits, or the greps below never
 # match a highlighted "ERROR".

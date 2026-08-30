@@ -1,15 +1,28 @@
 #!/usr/bin/env bash
-# ati-reminder {set|show|clear} — general "remind me in N minutes, with an
-# optional message" utility. NOT ati-adhkar: that's a fixed-content Islamic
-# dhikr rotator firing on a random interval with no user input at all; this
-# is user-specified delay + user-specified message, set/listed/cancelled on
-# demand. Same feature Omarchy's bin/omarchy-reminder covers.
+# ati-reminder {set|show|clear|sync} — "remind me", in the two shapes this
+# desktop actually has one. NOT ati-adhkar: that's a fixed-content Islamic
+# dhikr rotator firing on a random interval with no user input at all.
 #
-# Backing mechanism is a transient `systemd --user` timer, not a hand-rolled
-# .timer/.service pair -- `systemd-run --unit=NAME` already names both units
-# NAME.timer/NAME.service (confirmed directly: `systemctl --user list-timers`
-# shows exactly that pair), so `show`/`clear` can glob-match our own prefix
-# without parsing anything hand-written.
+#   set/show/clear  RELATIVE: "in N minutes, with this message", prompted.
+#                   Same feature Omarchy's bin/omarchy-reminder covers.
+#   sync            DATED: whatever the island calendar has stored for a
+#                   day. CalendarLayer.qml writes a { "YYYY-MM-DD": "text" }
+#                   map and draws a dot on the day, and until this existed
+#                   that was ALL it did -- a reminder that never reminds you
+#                   is a note. `sync` is the half that fires.
+#
+# Backing mechanism for both is a transient `systemd --user` timer, not a
+# hand-rolled .timer/.service pair -- `systemd-run --unit=NAME` already names
+# both units NAME.timer/NAME.service (confirmed directly: `systemctl --user
+# list-timers` shows exactly that pair), so show/clear/sync can glob-match
+# our own prefixes without parsing anything hand-written.
+#
+# The two families get two prefixes on purpose. A relative reminder is a
+# one-shot the user armed by hand and nothing but `clear` should ever
+# retract; a dated one is a PROJECTION of the calendar file, and `sync` is
+# free to stop and rebuild every one of them precisely because the file, not
+# the timer, is the source of truth. Mixing them under one prefix would mean
+# a sync silently cancelling a "remind me in 20 minutes" set two minutes ago.
 set -uo pipefail
 
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
@@ -17,6 +30,16 @@ SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
 
 UNIT_PREFIX="ati-reminder-"
+CAL_PREFIX="ati-calreminder-"
+# Written by qml/island/CalendarLayer.qml (FileView + setText(JSON.stringify)).
+CAL_FILE="${ATI_CALENDAR_REMINDERS:-$HOME/.cache/tide-island/calendar-reminders.json}"
+# What "sometime that day" means in clock terms. A dated reminder whose text
+# carries no "HH:MM " prefix has no time of its own, and firing it at 00:00
+# would put it in the middle of the night before the day it belongs to.
+CAL_DEFAULT_TIME="${ATI_REMINDER_DEFAULT_TIME:-09:00}"
+# Days already announced, so a catch-up fires ONCE. Pruned by the same pass
+# that writes it -- see cmd_sync.
+CAL_FIRED_FILE="${ATI_CALENDAR_FIRED:-$HOME/.cache/tide-island/calendar-reminders-fired.json}"
 
 # Text prompt: the QML menu's own dmenu view under Hyprland (matches every
 # other new picker in this repo, see ati-menu-select), rofi_input's compact
@@ -58,18 +81,24 @@ cmd_set() {
   notify_safe "ati-reminder" "Set for ${minutes}m: ${message:-(no message)}"
 }
 
+# Rows are "<day> <date> <time>" and NOT systemd's own "left" column. That
+# column was read positionally ($5), which held only while every reminder
+# was minutes away: a dated one elapses in "3 weeks 5 days", the field count
+# changes under the awk, and the row rendered as "left: 3". The absolute
+# moment needs no arithmetic and is the more useful half for a dated
+# reminder anyway.
 cmd_show() {
   local rows
-  rows="$(systemctl --user list-timers "${UNIT_PREFIX}*" --no-legend 2>/dev/null)"
+  rows="$(systemctl --user list-timers "${UNIT_PREFIX}*" "${CAL_PREFIX}*" --no-legend 2>/dev/null)"
   if [[ -z "$rows" ]]; then
     notify_safe "ati-reminder" "No pending reminders"
     return
   fi
   if use_ati_menu_select; then
-    printf '%s\n' "$rows" | awk '{print $1" "$2" "$3" left: "$5}' | \
+    printf '%s\n' "$rows" | awk '{print $1" "$2" "$3}' | \
       ati-menu-select --mode select --prompt "Pending reminders" >/dev/null
   else
-    printf '%s\n' "$rows" | awk '{print $1" "$2" "$3" left: "$5}' | \
+    printf '%s\n' "$rows" | awk '{print $1" "$2" "$3}' | \
       rofi -dmenu -theme "$HOME/.config/rofi/themes/base.rasi" \
         -theme-str 'listview { lines: 8; dynamic: false; }' -p "Pending reminders"
   fi
@@ -82,8 +111,8 @@ cmd_clear() {
   # Each row is a single "unit: readable text" line (no tab) -- both prompt
   # backends return the row verbatim on select, so the unit name (no colons
   # of its own) can be split back out of whatever comes back.
-  rows="$(systemctl --user list-timers "${UNIT_PREFIX}*" --no-legend 2>/dev/null | \
-    awk '{unit=$(NF-1); print unit": "$1" "$2" "$3" left: "$5}')"
+  rows="$(systemctl --user list-timers "${UNIT_PREFIX}*" "${CAL_PREFIX}*" --no-legend 2>/dev/null | \
+    awk '{unit=$(NF-1); print unit": "$1" "$2" "$3}')"
   if [[ -z "$rows" ]]; then
     notify_safe "ati-reminder" "No pending reminders"
     return
@@ -94,12 +123,206 @@ cmd_clear() {
 
   timer_unit="${sel%%:*}"
   systemctl --user stop "$timer_unit" 2>/dev/null
+
+  # Cancelling a DATED one has to reach the file, not just the timer.
+  # `sync` rebuilds its whole family from CAL_FILE, so stopping the unit
+  # alone would un-cancel the reminder at the next save or the next login --
+  # the timer is a projection, and you cannot retract a projection by
+  # editing the projection. The day's key comes straight out of the unit
+  # name (ati-calreminder-YYYY-MM-DD), which is why it is named that way.
+  if [[ "$timer_unit" == "${CAL_PREFIX}"* ]]; then
+    local day_key="${timer_unit#"$CAL_PREFIX"}"
+    day_key="${day_key%.timer}"
+    CAL_FILE="$CAL_FILE" DAY_KEY="$day_key" python3 - <<'PY' 2>/dev/null
+import json, os
+path, key = os.environ["CAL_FILE"], os.environ["DAY_KEY"]
+try:
+    with open(path) as fh:
+        data = json.load(fh)
+except Exception:
+    raise SystemExit(0)
+if isinstance(data, dict) and data.pop(key, None) is not None:
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(data, fh)
+    os.replace(tmp, path)
+PY
+    # The panel is watching the file (FileView watchChanges), so the dot on
+    # that day goes out on its own -- nothing to poke over IPC.
+  fi
+
   notify_safe "ati-reminder" "Cancelled $timer_unit"
+}
+
+
+# ---------------------------------------------------------------------------
+#  sync -- project the island calendar's stored days onto real timers
+# ---------------------------------------------------------------------------
+# Idempotent by construction: it stops every timer in its own family and
+# rebuilds the set from the file. That is what makes it safe to call from
+# anywhere -- CalendarLayer.qml runs it after every save, autostart.conf runs
+# it once at login, and neither has to know what the other did.
+#
+# Two kinds of entry come out of the file:
+#
+#   SCHED  the moment is still ahead        -> a --on-calendar timer
+#   FIRE   the moment is today but passed   -> notify NOW, once, and record
+#          it in CAL_FIRED_FILE so the next sync (or the next save, seconds
+#          later) does not announce it a second time
+#
+# The FIRE half is why the fired-state file exists at all. Without it a
+# reminder for 09:00 that you were asleep for is simply never delivered:
+# `systemd-run --on-calendar` with a past stamp arms a timer that can never
+# elapse, so "schedule it anyway" is not a fallback, it is a silent drop.
+cmd_sync() {
+  # A machine that has never opened the calendar is a calendar with no
+  # reminders, not an error -- the reading CalendarLayer's own FileView
+  # takes too (printErrors: false).
+  [[ -r "$CAL_FILE" ]] || return 0
+
+  # Cancel our own projection first. list-units --all, not list-timers:
+  # list-timers omits a transient timer that has already elapsed, and those
+  # are exactly the leftovers a rebuild has to clear.
+  local unit
+  while read -r unit; do
+    [[ -z "$unit" ]] && continue
+    systemctl --user stop "$unit" >/dev/null 2>&1
+    systemctl --user reset-failed "$unit" >/dev/null 2>&1
+  done < <(systemctl --user list-units --type=timer --all --no-legend \
+             "${CAL_PREFIX}*" 2>/dev/null | awk '{print $1}' | grep -F '.timer')
+
+  local notify_bin
+  notify_bin="$(command -v notify-send 2>/dev/null)" || true
+  if [[ -z "$notify_bin" ]]; then
+    echo "ati-reminder sync: notify-send not installed, nothing to schedule" >&2
+    return 1
+  fi
+
+  # One python pass reads the map, decides SCHED vs FIRE vs drop, and
+  # rewrites the fired-state file (pruned to keys the map still holds, so a
+  # deleted-then-recreated day is announced again rather than being
+  # suppressed forever by a stale mark).
+  local rows scheduled=0 fired=0
+  rows="$(CAL_FILE="$CAL_FILE" CAL_FIRED_FILE="$CAL_FIRED_FILE" \
+          CAL_DEFAULT_TIME="$CAL_DEFAULT_TIME" python3 <<'PY' 2>/dev/null
+import json, os, re, sys
+from datetime import datetime
+
+path         = os.environ["CAL_FILE"]
+fired_path   = os.environ["CAL_FIRED_FILE"]
+default_time = os.environ.get("CAL_DEFAULT_TIME", "09:00")
+
+def load(p, fallback):
+    try:
+        with open(p) as fh:
+            v = json.load(fh)
+        return v if isinstance(v, dict) else fallback
+    except Exception:
+        return fallback
+
+entries = load(path, {})
+fired   = load(fired_path, {})
+now     = datetime.now()
+
+# "HH:MM rest" / "H:MM rest", and nothing cleverer. A dated reminder is a
+# line of prose with an optional clock on the front; parsing "next tuesday"
+# out of it is a different feature, and one that would have to round-trip
+# back into the panel's own text field, which it cannot.
+TIME_RE = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*[-–·]?\s*(.*)$", re.S)
+
+rows, keep = [], {}
+for key in sorted(entries):
+    text = entries[key]
+    if not isinstance(text, str) or not text.strip():
+        continue
+    try:
+        day = datetime.strptime(key, "%Y-%m-%d")
+    except ValueError:
+        continue
+
+    body, hh, mm = text.strip(), None, None
+    m = TIME_RE.match(text)
+    if m:
+        h, mi = int(m.group(1)), int(m.group(2))
+        if 0 <= h <= 23 and 0 <= mi <= 59:
+            hh, mm, body = h, mi, (m.group(3).strip() or text.strip())
+    if hh is None:
+        try:
+            hh, mm = (int(x) for x in default_time.split(":"))
+        except Exception:
+            hh, mm = 9, 0
+
+    due   = day.replace(hour=hh, minute=mm)
+    # The clock lands in the TITLE, so a notification says when the thing
+    # is and not merely that something is.
+    title = "Reminder · " + due.strftime("%a %-d %b, %H:%M")
+    stamp = due.strftime("%Y-%m-%d %H:%M:00")
+
+    if due > now:
+        rows.append("\t".join(("SCHED", key, stamp, title, body)))
+    elif due.date() == now.date() and fired.get(key) != stamp:
+        # Only TODAY catches up. A reminder from three weeks ago that this
+        # machine was powered off for is not news, and announcing a backlog
+        # at login is how a notification surface gets muted for good.
+        rows.append("\t".join(("FIRE", key, stamp, title, body)))
+        keep[key] = stamp
+    elif key in fired:
+        keep[key] = fired[key]
+
+# Carry forward marks for days still in the map. The mark is the DUE STAMP,
+# not a boolean, so re-editing a day to a later time that has not passed yet
+# leaves it free to fire again.
+for key, stamp in fired.items():
+    if key in entries and key not in keep:
+        keep[key] = stamp
+
+try:
+    os.makedirs(os.path.dirname(fired_path), exist_ok=True)
+    tmp = fired_path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(keep, fh)
+    os.replace(tmp, fired_path)
+except Exception:
+    pass  # a lost mark costs one duplicate notification, not the feature
+
+sys.stdout.write("\n".join(rows))
+PY
+)"
+
+  local kind key stamp title body
+  while IFS=$'\t' read -r kind key stamp title body; do
+    [[ -z "${kind:-}" ]] && continue
+    case "$kind" in
+      SCHED)
+        if systemd-run --user --on-calendar="$stamp" \
+             --unit="${CAL_PREFIX}${key}" --timer-property=AccuracySec=30s \
+             "$notify_bin" -a "Calendar" -i appointment-soon -u normal \
+             "$title" "$body" >/dev/null 2>&1; then
+          scheduled=$((scheduled + 1))
+        else
+          echo "ati-reminder sync: could not arm ${CAL_PREFIX}${key}" >&2
+        fi
+        ;;
+      FIRE)
+        "$notify_bin" -a "Calendar" -i appointment-soon -u normal \
+          "$title" "$body" >/dev/null 2>&1
+        fired=$((fired + 1))
+        ;;
+    esac
+  done <<<"$rows"
+
+  # Quiet unless asked: this runs on every save the panel commits, and a
+  # notification confirming that a notification was scheduled is noise.
+  if [[ "${SYNC_VERBOSE:-0}" == "1" ]]; then
+    notify_safe "ati-reminder" "Calendar: ${scheduled} armed, ${fired} caught up"
+  fi
+  echo "armed=${scheduled} caught_up=${fired}"
 }
 
 case "${1:-}" in
   set) cmd_set ;;
   show) cmd_show ;;
   clear) cmd_clear ;;
-  *) echo "usage: ati-reminder {set|show|clear}" >&2; exit 2 ;;
+  sync) cmd_sync ;;
+  *) echo "usage: ati-reminder {set|show|clear|sync}" >&2; exit 2 ;;
 esac

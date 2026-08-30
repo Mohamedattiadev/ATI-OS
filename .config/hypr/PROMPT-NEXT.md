@@ -448,7 +448,7 @@ assuming it is the same bug as item 2**:
   `bar-chooser` end to end, since this is a much smaller, simpler surface
   than everything else on this list.
 
-### 9. Calendar — clicking a day should let you add a reminder
+### 9. Calendar — clicking a day should let you add a reminder  ✅ DONE
 
 Reported: *"calender when i click on the day i can add reminder or
 somthing."*
@@ -476,6 +476,32 @@ any text. Needs, in order:
 * `markedDays` should probably become "has a reminder" once this exists,
   rather than being a separate concept — check what currently FEEDS
   `markedDays` before deciding whether to merge or keep them separate.
+
+**Built.** Two commits, and the second one is the half that is easy to
+forget was missing:
+
+* `CalendarLayer.qml` — day cells got `onClicked`, a fixed reminder row
+  under the grid (`PanelSearchField`, the calculator's pattern, not a
+  dialog), and a `{ "YYYY-MM-DD": "text" }` map through a plain `FileView`
+  in `~/.cache/tide-island/calendar-reminders.json`. `markedDays` stayed a
+  separate SOURCE sharing ONE dot — the reasoning is in the property's own
+  comment: it feeds from `ATITODOS/TODOS.md`, which this panel must not
+  edit.
+* `ati-reminder sync` — **a stored reminder that never announces itself is
+  a note.** The panel calls it after every save, `autostart.conf` calls it
+  at login, and it projects the file onto transient `systemd --user` timers
+  (the same mechanism `ati-reminder set` already used). An `HH:MM ` prefix
+  in the text sets the time; without one the day fires at
+  `ATI_REMINDER_DEFAULT_TIME`, 09:00. A day whose moment passed while the
+  machine was off is announced once, on the next sync, and only if it is
+  still today — see the fired-state file for why that needs state at all.
+  `ati-reminder clear` on a dated one deletes the day from the FILE, not
+  just the timer, because sync would otherwise re-arm it a second later.
+
+Left undone deliberately: one reminder per day (the map is keyed by day),
+no recurrence, and no agenda view. All three are the "with no ancestor to
+constrain it, a calendar grows a week view" failure mode the file's own
+header argues against.
 
 ### 10. Control centre — drop battery, add the music player, go minimal
 
