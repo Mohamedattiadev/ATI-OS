@@ -67,6 +67,7 @@ modes. Not verified: AMD or NVIDIA graphics, or a HiDPI panel.
 |  |  |
 |---|---|
 | **[23 themes](https://mohamedattiadev.github.io/ATI-OS/themes.html)** | One command retints bar, terminal, rofi, GTK, Qt, browser, nvim — and your folder icons |
+| **[Plugins](https://mohamedattiadev.github.io/ATI-OS/plugins.html)** | One directory adds a command, a keybind, a menu entry, a colour scheme, a panel or a background service. No file of anyone else's to edit |
 | **[Keyboard-driven](https://mohamedattiadev.github.io/ATI-OS/keybindings.html)** | ~90 bindings, grouped into modes that announce themselves in the bar |
 | **[A bar that does things](https://mohamedattiadev.github.io/ATI-OS/widgets.html)** | Updates, audio, wifi, bluetooth, displays — popups, not terminals |
 | **[~45 tools](https://mohamedattiadev.github.io/ATI-OS/tools.html)** | Drop-stash, package manager, offline PDF toolkit, cheatsheets, screenshots, dictation |
