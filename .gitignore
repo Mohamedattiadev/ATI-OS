@@ -155,3 +155,16 @@ secrets.env
 # history just because they ran ati-hook-install once.
 .config/AtiScriptsV1/hooks/*
 !.config/AtiScriptsV1/hooks/README.md
+
+# Personal services, not part of ati-os. Both drive projects that live
+# outside this repo — a Cloudflare quick tunnel for a local Stremio server,
+# and a Telegram bot — so shipping their units would mean shipping an
+# enabled service every fresh checkout has no payload for.
+#
+# IGNORED, not deleted: ~/.config/systemd is a symlink INTO this repo, so
+# these files are the live units of two running services. `git rm` on them
+# would take the services with it. They stay on disk, untracked.
+.config/systemd/user/stremio-tunnel.service
+.config/systemd/user/wtsh-bot.service
+.config/systemd/user/default.target.wants/stremio-tunnel.service
+.config/systemd/user/default.target.wants/wtsh-bot.service
