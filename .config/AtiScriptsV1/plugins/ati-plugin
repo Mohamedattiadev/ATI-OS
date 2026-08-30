@@ -763,6 +763,25 @@ case "${1:-}" in
   list)   cmd_list ;;
   sync)   cmd_sync ;;
   doctor) cmd_doctor ;;
-  dir)    say "$PLUGIN_DIR" ;;
+  # STDOUT stays exactly one path and nothing else, because the whole point
+  # of this subcommand is `cd (ati-plugin dir)` — anything chatty on stdout
+  # ends up inside the command substitution. The context goes to STDERR,
+  # which command substitution does not capture.
+  #
+  # Reported: `ati-plugin dir` printed ~/.config/ati-plugins, and the
+  # directory was not there. It is created on demand by `sync`, and until
+  # somebody installs a plugin by hand there is nothing to create it for —
+  # so the honest answer names the path AND says it does not exist yet,
+  # rather than printing a path and letting you find out by `ls`.
+  dir)
+    say "$PLUGIN_DIR"
+    if [[ ! -d "$PLUGIN_DIR" ]]; then
+      printf 'does not exist yet — nothing has been installed by hand.\n' >&2
+      printf 'create it with:  mkdir -p %s\n' "$PLUGIN_DIR" >&2
+    fi
+    if [[ -d "$REPO_PLUGIN_DIR" ]]; then
+      printf 'plugins shipped with the repo live in: %s\n' "$REPO_PLUGIN_DIR" >&2
+    fi
+    ;;
   *)      echo "usage: ati-plugin {list|sync|doctor|dir}" >&2; exit 2 ;;
 esac
