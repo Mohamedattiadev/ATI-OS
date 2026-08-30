@@ -238,6 +238,38 @@ add mod1 = Alt_L Alt_R
 XMM_EOF
 }
 
+# ─── system/ — files this repo owns OUTSIDE $HOME ────────────────────
+#
+# ARCHITECTURE.md Phase 2. The tree at $DOTFILES_DIR/system mirrors real
+# absolute paths (system/etc/keyd/default.conf -> /etc/keyd/default.conf)
+# and this walks it. The directory layout is the manifest, so adding a file
+# to the repo is the entire act of shipping it -- nothing here needs
+# editing for the second one.
+#
+# Why this module exists at all, concretely: step_keyd used to write
+# /etc/keyd/default.conf from an inline heredoc holding four lines and only
+# the Caps->Alt remap, while .config/keyd/default.conf in the SAME repo held
+# that plus the AltGr repeat key. Two records of one file, disagreeing, and
+# the installer's copy was the one that would win. That is gap 2.3 in its
+# purest form and it is why the rule is one file, one place.
+#
+# README.md is skipped: system/README.md documents the convention for a
+# reader of the repo and has no business in /etc. The skip is by NAME, so a
+# README anywhere in the tree is treated the same way -- deliberate, since
+# there is no path under / where shipping one would be right.
+step_system_files() {
+  local root="$DOTFILES_DIR/system" rel n=0
+  if [[ ! -d "$root" ]]; then
+    _OK "  no system/ tree — nothing owned outside \$HOME"
+    return 0
+  fi
+  while IFS= read -r rel; do
+    [[ -z "$rel" ]] && continue
+    install_system_file "$rel" && n=$(( n + 1 ))
+  done < <(cd "$root" && find . -type f ! -name 'README.md' -printf '%P\n' 2>/dev/null | sort)
+  _OK "  $n file(s) installed from system/"
+}
+
 step_keyd() {
   # The same Caps->Alt remap as step_xmodmap, one layer lower.
   #
@@ -261,15 +293,23 @@ step_keyd() {
   # reboot rather than needing a modprobe every time.
   run "echo uinput | sudo tee /etc/modules-load.d/uinput.conf > /dev/null"
   run "sudo modprobe uinput || true"
-  run "sudo mkdir -p /etc/keyd"
-  run "sudo tee /etc/keyd/default.conf > /dev/null << 'EOF'
-[ids]
-*
 
-[main]
-capslock = leftalt
-EOF"
+  # The config comes from system/etc/keyd/default.conf, NOT from a heredoc
+  # here. It used to be a heredoc, and that heredoc had drifted: it wrote
+  # the Caps->Alt remap alone, while the repo's own copy of the same file
+  # also carried `rightalt = overload(altgr, f13)` -- the AltGr repeat key.
+  # Running this module would have deleted a working feature and left no
+  # trace of why it stopped. Installed here as well as by step_system_files
+  # so that `--only=keyd` is still a complete, self-sufficient install of
+  # keyd; both call the same helper on the same file, so a double run is a
+  # second identical copy and nothing else.
+  install_system_file etc/keyd/default.conf
+
   run "sudo systemctl enable --now keyd"
+  # A config that is on disk but not loaded is the failure this whole
+  # arrangement exists to prevent, and `enable --now` does NOT re-read it
+  # when the daemon is already running.
+  run "sudo keyd reload || true"
   # Verify rather than assume: keyd silently does nothing if the service
   # failed to bind the device, and the failure mode is a third of the
   # keyboard going dead at the next login. Immediately after a kernel
@@ -552,6 +592,19 @@ uninstall_xmodmap()          { run "rm -f $HOME/.Xmodmap"; }
 
 uninstall_keyd()             { run "sudo systemctl disable --now keyd"
                                run "sudo rm -f /etc/keyd/default.conf"; }
+
+# Removes exactly the paths system/ claims, one at a time, and never a
+# directory: /etc/keyd is ours to empty but /etc is not, and a tree-shaped
+# `rm -r` derived from a repo path is one bad relative path away from being
+# the worst command in this file.
+uninstall_system_files() {
+  local root="$DOTFILES_DIR/system" rel
+  [[ -d "$root" ]] || return 0
+  while IFS= read -r rel; do
+    [[ -z "$rel" ]] && continue
+    run "sudo rm -f \"/$rel\""
+  done < <(cd "$root" && find . -type f ! -name 'README.md' -printf '%P\n' 2>/dev/null | sort)
+}
 
 # .Xresources is NOT deleted: step_xresources appends a marker-guarded
 # block to a file the user may own. Strip only our block.

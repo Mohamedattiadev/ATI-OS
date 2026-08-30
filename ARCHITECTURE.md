@@ -146,11 +146,27 @@ so every keybind, menu entry and cross-reference in 17k lines of scripts
 keeps working. This is a pure `git mv` plus one loop change, and it closes
 gap 2.2 on its own.
 
-**Phase 2 — write down what is owned outside `$HOME`.**
+**Phase 2 — write down what is owned outside `$HOME`. ✅ DONE.**
 A `system/` directory in the repo mirroring the real paths
 (`system/etc/keyd/default.conf`), and an installer module that copies them
 with `install -m`. Closes 2.3. Small, and it stops the next silent
 dependency.
+
+Built as described, and it found the failure 2.3 predicts already in
+progress: `step_keyd` wrote `/etc/keyd/default.conf` from an inline heredoc
+carrying only `capslock = leftalt`, while `.config/keyd/default.conf` in
+the same repo carried that **plus** the AltGr repeat key. Two records of
+one file, disagreeing, with the installer's copy the one that would win — a
+`--only=keyd` would have silently deleted a working feature. The heredoc is
+gone; both `step_keyd` and the new `step_system_files` now install the one
+file in `system/`, through one helper (`install_system_file`, in
+`install/lib/common.sh`).
+
+The directory layout is the manifest: `system/<path>` installs to `/<path>`,
+so shipping the second file is adding the second file. See
+`system/README.md` for what belongs there — and, more usefully, for the
+three categories that do not (files this repo only *edits*, generated
+files, anything holding a secret).
 
 **Phase 3 — the plugin loader, read-only first.**
 Implement `ati-plugin list|sync|doctor` and the five load points. Ship it

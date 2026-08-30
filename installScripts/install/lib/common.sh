@@ -117,6 +117,29 @@ run() {
   fi
 }
 
+# ─── install_system_file() — the one way a file leaves system/ ───────
+#
+# `install_system_file etc/keyd/default.conf` copies
+# $DOTFILES_DIR/system/etc/keyd/default.conf to /etc/keyd/default.conf.
+# The relative path under system/ IS the absolute path, which is the whole
+# convention (see system/README.md): there is no manifest mapping one to the
+# other, so there is no manifest to forget to update.
+#
+# -D so a machine that has never had the owning package still gets the
+# parent directory. Mode is passed, never inherited from the source file:
+# a git checkout's bits depend on the umask of whoever cloned it, and
+# /etc/keyd/default.conf coming out 0664 on one machine and 0644 on another
+# is exactly the kind of drift this directory exists to end.
+install_system_file() {
+  local rel="${1#/}" mode="${2:-644}"
+  local src="$DOTFILES_DIR/system/$rel"
+  if [[ ! -f "$src" ]]; then
+    _WARN "  system/$rel missing — skipped"
+    return 1
+  fi
+  run "sudo install -Dm$mode \"$src\" \"/$rel\""
+}
+
 # Read-only privileged probes -- `sudo test -e`, `sudo bootctl --print-esp-path`
 # and friends. A --dry-run is supposed to be free: it changes nothing and it
 # should need nothing. These probes were plain `sudo`, so previewing an install

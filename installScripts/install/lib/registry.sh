@@ -16,7 +16,7 @@ declare -A MOD_TITLE MOD_DESC MOD_GROUP MOD_CMD
 MOD_ORDER=(
   sanity bootstrap yay dcli stow arch-config paths dcli-sync radios gpu picom-pin cargo ati-scripts hintium simplenote ui-scale githooks
   pacman-guard boot-fallback boot-splash login-shell
-  touchpad xinit xresources xmodmap keyd lid image-envs flatpak piper ankiconnect vaultwarden vaultwarden-phone tmux-tpm voxtype
+  touchpad xinit xresources xmodmap system-files keyd lid image-envs flatpak piper ankiconnect vaultwarden vaultwarden-phone tmux-tpm voxtype
   mic-gain scrcpy
   passwordless-sudo ownership disable-dm candy-icons wallpapers speed
   themes dark-mode browser-flags browser-memory chrome-policy
@@ -41,6 +41,22 @@ MOD_ORDER=(
 # cmdline of the primary one. A splashed boot that hangs is then one menu
 # pick away from a boot that tells you why.
 #
+# system-files is opt-in for a third reason, and it is a dependency of the
+# second one: system/ currently holds exactly one file,
+# etc/keyd/default.conf, and keyd is opt-in. A default system-files would
+# write a keyd config onto every fresh machine INCLUDING the ones that
+# deliberately skipped keyd -- inert, since the service is not enabled
+# there, but still this repo putting a file in /etc for a feature the user
+# said no to. The keyd module installs that file itself (same helper, same
+# source), so nothing is lost by keeping the generic walker off the default
+# path.
+#
+# Revisit this the day system/ holds a file that is NOT tied to an opt-in
+# module. At that point the walker has something every machine needs and
+# belongs in the default run -- and the docs' step count and the step table
+# in docs/install-git.html have to move with it, which validate.sh will
+# insist on.
+#
 # xmodmap is opt-in for a different reason: it is correct for exactly one
 # machine. It repurposes Caps Lock as a third Alt because Alt is dead in
 # hardware on the author's laptop -- which nothing can detect at runtime,
@@ -54,7 +70,7 @@ MOD_ORDER=(
 # /etc/default/grub -- the script itself is careful (backs up first, only
 # adds missing flags, no-ops cleanly on a non-GRUB machine), but that is
 # not a change to make without asking even so.
-OPTIN_MODS=(dcli-sync-extra xmodmap keyd grub-boost ydotool)
+OPTIN_MODS=(dcli-sync-extra xmodmap system-files keyd grub-boost ydotool)
 _is_optin() {
   local id m
   id="$1"
@@ -106,6 +122,7 @@ _reg login-shell       "Fish login shell"    System    "chsh to fish so the TTY 
 _reg xinit             ".xinitrc"            Dotfiles  "Auto-start qtile + picom + cursor size"                 "step_xinit"
 _reg xresources        ".Xresources"         Dotfiles  "Xcursor size 24 + Breeze theme (load via xrdb)"         "step_xresources"
 _reg xmodmap           ".Xmodmap"            Optional  "Caps fully repurposed as Alt · opt-in · one broken-Alt laptop" "step_xmodmap"
+_reg system-files      "Files outside \$HOME"  System    "Copy system/ to its real paths · /etc/keyd/default.conf and anything added beside it" "step_system_files"
 _reg keyd              "keyd Caps→Alt"       Optional  "The same remap below the display server · works on X11 AND Wayland" "step_keyd"
 _reg lid               "Lid = ignore"        System    "Never sleep on lid close"                               "step_lid"
 _reg image-envs        "Image env"           Dotfiles  "Suppress VIPS warnings + ensure ~/tmp (fish TMPDIR)"    "step_image_envs"
