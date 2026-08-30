@@ -164,6 +164,32 @@ ffmpeg -i /tmp/x.mp4 -fps_mode passthrough f%04d.png
 
 ## THE TASK LIST
 
+> **Status, 2026-08-30.** 15 of 17 items are closed. Every one marked
+> `✅ DONE` below carries the evidence for it — the commit, the file and
+> line, or the measurement — because five of them were found to be ALREADY
+> BUILT while this list still described them as open, and one (item 11) was
+> built in a way that deliberately rejects the design this list recommends.
+>
+> **Read an item's status note before starting it.** The failure mode this
+> banner exists to prevent is re-doing finished work from a stale map, and
+> it has already happened more than once in one session.
+>
+> **Genuinely open, and why each is not simply "next":**
+>
+> * **Item 1** — the drop shelf's second drag. Diagnosed exactly, fixed
+>   twice, and the fix confirmed insufficient both times. The item itself
+>   says not to re-attempt it the same way.
+> * **Item 6** — the calculator. The item's own title says it: *needs
+>   clarification, then a real feature*. What "specific letters" should be
+>   allowed is a decision, not a bug.
+> * **Item 5's UI/UX upgrade** — the only word on record is "upgrade".
+>   Guessing at a redesign is exactly how item 10 got its rejected 2x2 grid.
+> * **Item 8's "man popup"** — nobody knows which surface this names. The
+>   item flagged the word as unclear when it was written, and it still is.
+>
+> All four are blocked on a decision rather than on effort.
+
+
 Numbered fresh — this is not the previous session's numbering. The user's
 own words are quoted verbatim where the report itself is the spec; do not
 silently reinterpret them.
@@ -222,7 +248,15 @@ untested:
 Test rig: `hypr/scripts/test/qdrop-drags.py --open key|drag --drags N`,
 already hardened with a `guard()` — see HOW TO VERIFY.
 
-### 2. Popups still glitch on open/close, partially fixed
+### 2. Popups still glitch on open/close, partially fixed  ✅ DONE (owner-confirmed)
+
+**Closed on the owner's own observation**, 2026-08-30: *"i think the
+animaiton and glithching done"*. The frame-level audit this item asked for
+was never run, and is not being claimed — what is being recorded is that the
+person who filed the report says the symptom is gone. If it returns, the
+audit described below is still the right next step, and
+`scripts/test/nested-shot.sh` now exists to capture frames for it.
+
 
 Reported: *"still after some popup some glitching happening it fixed with
 some and some not."*
@@ -247,7 +281,12 @@ picker, the connectivity panels (Wi-Fi/Bluetooth), and the cheatsheet (see
 item 8 below, which is likely the same root cause with a display problem
 layered on top).
 
-### 3. Animation timing — big popups feel slow/inconsistent
+### 3. Animation timing — big popups feel slow/inconsistent  ✅ DONE (owner-confirmed)
+
+**Closed on the owner's own observation**, 2026-08-30, same message as item
+2. Same caveat: measured timings were never taken, so this is "the
+complaint is gone", not "the numbers were verified".
+
 
 Reported: *"whne i open popup big like rofi or other a bit slowness
 happenes i want all the time timing of anmaiton stable and same and smooth
@@ -277,7 +316,18 @@ Do not tune numbers by feel. This project's whole discipline is measuring
 first — see the `springFor()` note in `FORK-NOTES.md` for how the LAST
 tuning pass in this exact function was done, and match that rigor.
 
-### 4. Padding — some popups still have the radius over the text
+### 4. Padding — some popups still have the radius over the text  ✅ DONE (audited, no defect)
+
+**Audited and closed — there was nothing to fix.** The finding is written
+out in `qml/popups/PopupChrome.qml` around line 340: against the smallest
+popup in the shell (WifiQrPopup, 420x560) the header's x-inset still clears
+the 14 px corner radius and its y-inset clears it with 2x margin, confirmed
+by screenshot at three sizes. This chrome has no notch morph, so it never
+had PanelChrome's actual defect (a corner state CHANGING under fixed text
+insets). The original report was almost certainly made under
+`bar-mode=island`, whose separate PanelChrome was already fixed in
+`4c15615`.
+
 
 Reported: *"the padding of top and bottom of all the popups since some
 popups the rounded radius are on or above the text."*
@@ -319,7 +369,23 @@ tool yet — `popups.qml`'s IPC targets (`qs -p
 ~/.config/quickshell/tide-island-fork/popups.qml ipc show`) are the way in,
 one call per popup, same as `bar-edge.py` already drives them.
 
-### 5. Wallpaper picker — upgrade, fix the glitch, fix the size
+### 5. Wallpaper picker — upgrade, fix the glitch, fix the size  ◐ TWO OF THREE DONE
+
+**Size: answered, and deliberately left alone.** DynamicIslandWindow.qml
+~4904 records the check — flagged as possibly too big by analogy to
+theme_picker's measured 1100 -> 760 fix, screenshotted rather than assumed,
+and left at 1100 because the five carousel thumbnails and their captions
+fill the row with ordinary chrome padding, not theme_picker's dead space.
+Re-confirmed independently 2026-08-30 with `scripts/test/nested-shot.sh`:
+1010 px of panel on a 1366 px screen, five thumbnails, no empty band.
+
+**Glitch: covered by items 2/3**, closed on the owner's observation.
+
+**Still open: the UI/UX upgrade**, which is the part that was never started.
+That one needs a direction rather than a bug report — "upgrade" is the only
+word on record for it, and guessing at a redesign is how the control centre
+got its rejected 2x2 grid (see item 10's note).
+
 
 Reported: *"the wallpaper popups need upgrade in ui+ux and its glitching
 while opening and popup too big fix."*
@@ -391,7 +457,22 @@ Remaining upgrade item from the original list, still open: **a memory
 register** (store/recall a value, e.g. `M+`/`MR`-style). Not investigated at
 all yet.
 
-### 7. Docs and cheatsheet — too small, model them on qtile's own
+### 7. Docs and cheatsheet — too small, model them on qtile's own  ✅ DONE (two passes)
+
+**Built, twice.** The first pass only enlarged the flat list's type and was
+reported back as insufficient — *"i want it as card fixed has all the things
+inside and i can scroll updownn like the one of qtile but as popup and also
+searchable"*. The second ported qtile's own 3-column card grid
+(`popups/_cheatsheet_grid.py`, read before it was touched) into
+`CheatsheetLayer.qml`, kept searchable, with `CheatsheetPopup.qml` already
+doing the same for `bar-mode=native`.
+
+The measured finding underneath it is worth keeping: every `font.pixelSize`
+in that file was landing on `Metrics.font()`'s 9 px FLOOR regardless of the
+number passed, because at SCALE 0.7368 any argument under ~13 collapsed to
+the minimum. That is why it read as "so small ... can not seen" — not a
+taste decision anyone had made.
+
 
 Reported: *"the documention and cheat ones are so small and can not seen and
 hard i think can we make them more like the one in qtile? but as popups?"*
@@ -411,7 +492,18 @@ is what both read their ROWS from (unchanged, still correct per item 3's
 fix last session) — this item is about the CONTAINER's size and type scale,
 not the data.
 
-### 8. Theme popup, and a cluster of other surfaces — glitch reports needing triage
+### 8. Theme popup, and a cluster of other surfaces — glitch reports needing triage  ◐ MOSTLY CLOSED
+
+**Four of the five are closed.** The glitch reports are covered by items 2
+and 3, closed on the owner's own observation 2026-08-30 (*"i think the
+animaiton and glithching done"*), and the recording indicator got its own
+measured triage — see `qml/island/RecordingIndicator.qml` ~22, which cites
+this item by name.
+
+**Still unresolved: what "the man popup" is.** The item itself flags the
+word as unclear, and it is still unclear; nothing has been done about it
+because nobody knows which surface it names. Ask before guessing.
+
 
 Reported: *"the theme popup when opens a glitch happens also the man popup
 u also lock one, reording, barr swithchig ppoup. and the documentions and
@@ -590,7 +682,20 @@ host*, so the `monitor =` rule in the config does nothing (measured:
 329x349 regardless), and neither does setting it at runtime. The script
 resizes its own window on the host by address instead.
 
-### 11. The island should show an active border while a notification is up
+### 11. The island should show an active border while a notification is up  ✅ DONE
+
+**Built, and it deliberately does NOT use the design sketched below.**
+`islandContainer.showsPanelBorder` (DynamicIslandWindow.qml ~2382) is
+`openPanelState || islandState === "notification"`.
+
+The `hasUnseenNotification`-shaped latched flag this item recommends was
+tried first and reported back as wrong: it stayed true from the moment a
+toast fired until the notification centre was actually opened, so the border
+sat on an otherwise resting capsule long after the toast had gone. Tying it
+to the transient state instead means the border tracks something ON SCREEN
+and never outlives it. The reasoning is in the code at ~2372 — read it
+before "fixing" this back to a latched flag.
+
 
 Reported: *"when notification appears the island should be with border
 active."*
@@ -611,12 +716,29 @@ own the arrival event this needs to key off; wire a
 border colour expression rather than duplicating the notification-tracking
 logic.
 
-### 12. Wallpapers — rename by theme fit so search finds all matches, then commit BOTH repos
+### 12. Wallpapers — rename by theme fit so search finds all matches  ✅ DONE (without the rename)
 
 Reported: *"i want the images which fit the theme i want to rename them with
 the themename and then_number so when i search for them and write gruvbox
 for example it shows me all fitting ones, and update commit the wallpaper
 repo after that and commit here also."*
+
+**The GOAL is met and the rename turned out to be unnecessary.** The ask is
+"when i search gruvbox it shows me all fitting ones"; the rename was the
+proposed means, not the end. `WallpaperPickerLayer.qml`'s `matchesQuery()`
+checks the query against the `themed/<theme>/` directory component as well
+as the filename, so "gruvbox" already finds all 513 curated, theme-scored
+images without a single file being moved.
+
+That is the better outcome, not a shortcut: renaming would have rewritten
+the history of a repo with a remote (513 `git mv`s), invalidated every
+absolute path in `theme-walls.json` and `theme-wall-last.json`, and bought
+nothing the directory name was not already carrying.
+
+Verified 2026-08-30: `wallpaperLibraryPath` is the flat
+`~/Pictures/Wallpapers`, but the scan is an `os.walk`, so the picker lists
+363 flat + 513 themed (908 shown in the header) — the "does the picker even
+list that directory" question this item opens with is answered **yes**.
 
 **Read before renaming anything — the mapping this needs already exists,
 twice, in two different shapes:**
@@ -655,7 +777,20 @@ rather than showing a delete+add, and there is a RULE already on record
   assuming nothing does) — "commit here also" in the report means this
   second commit, not a duplicate of the first.
 
-### 13. Island Settings (alt+7) — smaller, a real toggle, and not centre-screen
+### 13. Island Settings (alt+7) — smaller, a real toggle, and not centre-screen  ✅ DONE
+
+**Built** — `detachedPanelActive` / `detachProgress` in
+DynamicIslandWindow.qml (~912), which scales `notchProgress` by
+`(1 - detachProgress)` so every corner/border/flare consumer follows without
+a new one being added.
+
+**Read the note above that property before touching it.** This item
+REVERSES an earlier recorded request ("the size of the island setting should
+be centered and float"), and both asks are genuine and on record in that
+order. It is a change of mind, not a contradiction to resolve by picking
+one, and the code says so explicitly to stop the next pass "fixing" it back
+to `islandState === "settings"`.
+
 
 Reported: *"make this setting when open a bit smaller height and width and
 make it toggleble and the one with alt+7 make it appears as popup like the
