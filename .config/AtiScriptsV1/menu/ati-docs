@@ -472,6 +472,67 @@ doc_index() {  # doc_index <file> <prompt>
   [[ "$line" =~ ^[0-9]+$ ]] && view_md_at "$f" "$line"
 }
 
+# ── skills ───────────────────────────────────────────────────────────
+# TODOS item 18: "learning will be just a badge of the names of skills and
+# techno and i click on it a well organized .md will appear".
+#
+# A BADGE LIST AND NOTHING ELSE. The ask opens with "remove the complexity
+# of unneeded things", so this deliberately has no progress tracking, no
+# per-skill state, no dates and no scoring: those are the features that turn
+# a study list into a second thing to maintain, and the reason the last one
+# stopped being opened. A skill is a file; the badge is its name; there is
+# nothing to keep in step.
+#
+# The viewer is doc_index(), the same one the Documentation section uses, so
+# a skill page opens on a searchable index of its own headings and renders
+# read-only in nvim with the current theme. Nothing new was built to display
+# these -- which is the whole reason they are markdown files in a directory.
+sec_skills() {
+  local dir="$DOTFILES/learn"
+  if [[ ! -d "$dir" ]]; then
+    rofi -e "no skills library at $dir"
+    return
+  fi
+  while :; do
+    local sel f rows n
+    # Badge text is the file's own H1, not its filename, so a page can be
+    # called what it is ("SQL", "Docker & containers") without the filename
+    # having to carry punctuation. Falls back to the stem when a page has no
+    # H1 yet -- a half-written page should still be reachable.
+    rows="$(
+      for f in "$dir"/*.md; do
+        [[ -f "$f" ]] || continue
+        # README.md is about the library, and anything starting with an
+        # underscore is scaffolding — _TEMPLATE.md listed itself as a skill
+        # called "<Skill name — this line is the badge>" the first time this
+        # ran, which is exactly the kind of thing a badge list must not do.
+        [[ "$(basename "$f")" == "README.md" ]] && continue
+        [[ "$(basename "$f")" == _* ]] && continue
+        local base title
+        base="$(basename "$f" .md)"
+        title="$(sed -n 's/^# \+//p' "$f" | head -1)"
+        [[ -z "$title" ]] && title="$base"
+        printf '󰃀  %-42s ::%s\n' "$title" "$f"
+      done | sort
+    )"
+    if [[ -z "$rows" ]]; then
+      rofi -e "no skill pages in $dir yet — see $dir/README.md"
+      return
+    fi
+    n="$(printf '%s\n' "$rows" | grep -c '')"
+    sel="$(printf '%s\n' "$rows" | pick "Skills" "$(rofi_hint "↵ open" "Esc back" "$n skills" "/ searches")")"
+    (( RC != 0 )) && return
+    [[ -z "$sel" ]] && return
+    # `::` and not `:` as the separator: a badge is a free-text H1 and may
+    # contain a colon of its own ("Git: the parts a job asks about"), and
+    # splitting on the last single colon would then cut the title instead of
+    # the path.
+    f="${sel##*::}"
+    [[ -f "$f" ]] && doc_index "$f" "$(basename "$f" .md)"
+    (( LAUNCHED )) && return
+  done
+}
+
 # ── documentation ────────────────────────────────────────────────────
 sec_docs() {
   while :; do
@@ -1087,6 +1148,7 @@ main_menu() {
     c="$(printf '%s\n' \
       "󰌌  Keybindings       ▸ every shortcut" \
       "󰘳  Cheatsheets       ▸ qtile · vim · fish" \
+      "󰧑  Skills            ▸ what to learn, and in what order" \
       "󰈙  Documentation     ▸ README · troubleshooting" \
       "󰛄  Espanso           ▸ text expansion snippets" \
       "󰏘  Appearance        ▸ theme · scale · wallpaper" \
@@ -1097,6 +1159,7 @@ main_menu() {
     case "$c" in
       *Keybindings*)   sec_keys ;;
       *Cheatsheets*)   sec_cheats ;;
+      *Skills*)        sec_skills ;;
       *Documentation*) sec_docs ;;
       *Espanso*)       sec_espanso ;;
       *Appearance*)    sec_appearance ;;
@@ -1117,6 +1180,7 @@ case "${1:-}" in
   "")          main_menu ;;
   keys)        sec_keys ;;
   cheats)      sec_cheats ;;
+  skills|learn) sec_skills ;;
   docs)        sec_docs ;;
   trouble)     sec_trouble ;;
   espanso)     sec_espanso ;;

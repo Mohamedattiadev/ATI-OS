@@ -2,6 +2,7 @@
   "apps": {"icon": "󰀻", "label": "Apps", "aliases": ["app", "applications"], "provider": "apps"},
 
   "learn": {"icon": "󰧑", "label": "Learn"},
+  "learn.skills": {"icon": "󰃀", "label": "Skills (what to learn, in order)", "action": "ati-docs skills"},
   "learn.arch": {"icon": "󰣇", "label": "Arch Wiki", "action": "xdg-open https://wiki.archlinux.org/"},
   "learn.hyprland": {"icon": "󰤰", "label": "Hyprland Wiki", "action": "xdg-open https://wiki.hypr.land/"},
   "learn.qtile": {"icon": "󰡰", "label": "Qtile docs", "action": "xdg-open https://docs.qtile.org/"},
