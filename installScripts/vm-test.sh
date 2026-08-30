@@ -407,6 +407,28 @@ unattended() {
       printf '            Or test the pushed state deliberately:  VMTEST_ALLOW_UNPUSHED=1 ...\n'
       [[ -n "${VMTEST_ALLOW_UNPUSHED:-}" ]] || exit 1
     fi
+
+    # WHICH BRANCH, SAID OUT LOUD.
+    #
+    # The check above proves a ref is PUSHED. It cannot prove it is the ref
+    # you meant, and those are different mistakes with the same price. The
+    # default is `main`, so working on a feature branch and running this
+    # unchanged tests something else entirely — silently, because main is
+    # usually pushed and clean, so the check above passes without a word.
+    #
+    # Measured, 2026-08-30: a 2.5-hour unattended run that installed `main`
+    # while every change under test sat on `test`. Nothing in the output
+    # named the branch, so the result read as a real result — 34 of 47
+    # modules and a genuine-looking timeout, about code that was not the
+    # code in question.
+    local local_branch
+    local_branch="$(git -C "$(dirname "${BASH_SOURCE[0]}")/.." \
+                     rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+    say "installing ref: $DOTFILES_REF  (guest clones $DOTFILES_REPO)"
+    if [[ -n "$local_branch" && "$local_branch" != "HEAD" && "$local_branch" != "$DOTFILES_REF" ]]; then
+      warn "you are on '$local_branch', but this run installs '$DOTFILES_REF'"
+      printf '            To test your own branch:  DOTFILES_REF=%s ./vm-test.sh --unattended\n' "$local_branch"
+    fi
   fi
 
   # A wedged previous run leaves the port bound; say so rather than letting
