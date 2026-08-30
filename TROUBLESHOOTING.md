@@ -2888,6 +2888,48 @@ that fix has been reverted — see the entry above.
 
 ---
 
+## Hyprland / Quickshell
+
+### A bar feature that is plainly in the QML is missing from the running bar (e.g. "the systray disappeared")
+- **Symptom:** something the config clearly defines is simply not on the
+  bar. No error, nothing in the instance log but a cheerful
+  `INFO: Configuration Loaded`. Restarting the *PC* appears not to fix it
+  — usually because the PC was never actually restarted; check
+  `uptime` before believing a reboot happened, since a Hyprland session
+  that survived carries the stale process with it.
+- **Root cause:** Quickshell re-checks its config only when a file event
+  reaches it, and events that arrive **while a reload is already running**
+  are dropped rather than queued. One editor save touching two files is
+  enough. From the topbar's own log on 2026-08-30:
+
+      03:00:04.302  INFO: Reloading configuration...
+      03:00:04.372                                    <- BarTheme.qml written
+      03:00:06.692  INFO: Configuration Loaded
+      (nothing for the next twelve hours)
+
+  The reload started 70 ms before the second file landed, read the tree
+  mid-write, and never looked again. The system tray had been added at
+  03:03; the process had never once had it compiled in.
+- **How to confirm in one command:** compare the LIVE surface against the
+  file rather than trusting the file. `qs ipc --pid <pid> show` lists the
+  `IpcHandler` functions the instance *actually* has. If the file defines
+  one it does not list, it is stale:
+
+      $ qs ipc --pid 1845982 show | grep toggleSystemTray   # nothing
+      $ grep -c 'function toggleSystemTray' redesign-e-final.qml   # 1
+
+- **Fix, immediately:** `touch` the entry file. That is not a brute-force
+  restart — Quickshell reloads on a *content* difference, so a touch is a
+  "go and re-check against disk" that reloads iff the instance is stale,
+  and does nothing at all when it is current (measured both ways).
+- **Fix, permanently:** `hypr/scripts/qs-reload-guard.sh`, started from
+  `autostart.conf`. It debounces writes and re-checks every instance ~1 s
+  after a batch settles, plus a 60 s heartbeat for events inotify never
+  delivered at all. Note a git hook would **not** have caught this one:
+  the write that lost the tray was an editor batch, not a git operation.
+
+---
+
 ## Fish shell
 
 ### Fish startup errors: `Unknown command: colorscript`, `mktemp: failed to create file via template '~/tmp/.psub.XXXXXX'`, Rust panic `Broken pipe`, `source: missing filename argument`
