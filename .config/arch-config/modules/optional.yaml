@@ -75,5 +75,16 @@ packages:
   - gptfdisk              # sgdisk: partitions the dual-boot test fixture
   - git-filter-repo       # rewriting commit history
 
+  # --- personal media ---
+  # A CLI for watching films/series. Installed on this machine by hand,
+  # which is what the package audit caught: present but declared nowhere,
+  # so a fresh install would silently not have it.
+  #
+  # optional.yaml rather than apps.yaml on this module's own test -- leave
+  # it out and you still have a booting machine with the bar, the themes
+  # and the fonts all correct. Move it to apps.yaml if it should land on
+  # every machine rather than behind `./wizard.sh --only=dcli-sync-extra`.
+  - flix-cli
+
 exclude: []
 conflicts: []
