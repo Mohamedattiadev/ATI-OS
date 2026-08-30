@@ -705,9 +705,26 @@ PY
   # was added for: ati-adhkar spent an unknown number of boots not running
   # (autostart.conf's own comment records the pgrep guard that matched its
   # own parent shell), and nothing anywhere said so. It says so here.
+  # CAN WE EVEN TALK TO THE USER MANAGER? Without DBUS_SESSION_BUS_ADDRESS
+  # and XDG_RUNTIME_DIR -- a cron job, a `su`, an `env -i`, a unit with a
+  # clean environment -- `systemctl --user` cannot connect, and then EVERY
+  # service reads as "not running". Reporting that as a dead daemon sends
+  # you to debug something that is fine.
+  #
+  # Measured 2026-08-30: doctor run under `env -i` printed
+  #   ✖ service adhkar: not running
+  # while the unit was active the whole time. "I could not ask" and "the
+  # answer is no" are different findings and must not print the same line.
+  local systemd_reachable=1
+  systemctl --user show-environment >/dev/null 2>&1 || systemd_reachable=0
+
   local svc_bad=""
   while IFS=$'\t' read -r name _exec; do
     [[ -z "$name" ]] && continue
+    if (( ! systemd_reachable )); then
+      warn "service ${name}: cannot reach the user systemd bus — state unknown, not necessarily stopped"
+      continue
+    fi
     if systemctl --user is-active --quiet "ati-plugin-${name}.service"; then
       ok "service ${name}: running"
     else
