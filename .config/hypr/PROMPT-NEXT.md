@@ -503,7 +503,7 @@ no recurrence, and no agenda view. All three are the "with no ancestor to
 constrain it, a calendar grows a week view" failure mode the file's own
 header argues against.
 
-### 10. Control centre — drop battery, add the music player, go minimal
+### 10. Control centre — drop battery, add the music player, go minimal  ✅ DONE
 
 Reported: *"make the control center contain the music player, no need for
 battery thing, and making its ui ux like the mac one — the display and
@@ -560,6 +560,35 @@ small fix. Three changes, and they should probably be three commits:
 adding new individual toggles beyond what is asked for, this is a
 subtraction task first (battery out) and a consolidation task second
 (sliders in one visual language).
+
+**All three shipped, plus the follow-on.** 1/3 `13f19453` (battery drawer
+out), 2/3 `d11d56a5` (compact player card), 3/3 the switches, and the
+right-click follow-on is live — `userconfig.json` carries
+`"dynamicIslandSecondaryAction": "toggleCalendar"` and
+`handleConfiguredClickAction()` has the matching `case`.
+
+On 3/3, two things worth keeping:
+
+* **The icon became the knob.** The obvious build — keep the 44 px square,
+  add a pill under it — would have added ~20 px per toggle to a panel whose
+  previous pass was specifically about reclaiming height. Folding the glyph
+  into the thumb means the switch *replaces* the square: 26 px against 44,
+  so the row got shorter while gaining the thing it lacked. Filled says
+  *highlighted*; only position says *switched*.
+* **The first build was wrong and only a capture said so.** Track and knob
+  were both `surfaceRaised`, so an OFF switch had no visible track — Focus
+  and Night rendered as two circles floating in the row, which is the shape
+  the commit exists to replace. The track is `surfaceSunken` now: a knob
+  reads as a knob because it sits *in* something. The doc's own instruction
+  ("screenshot the current cards, mock the toggle shape, and confirm the
+  shape reads as a toggle before wiring") is what caught it.
+
+The capture harness for that is `scripts/test/nested-shot.sh` — same
+throwaway nested Hyprland as `nested-qml-check.sh`, but it keeps the pixels.
+Note for whoever uses it: the nested output's size is its *window on the
+host*, so the `monitor =` rule in the config does nothing (measured:
+329x349 regardless), and neither does setting it at runtime. The script
+resizes its own window on the host by address instead.
 
 ### 11. The island should show an active border while a notification is up
 

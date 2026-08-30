@@ -1631,11 +1631,33 @@ Item {
                     enabled: qb.interactive
                 }
 
+                // ---- IT IS A SWITCH NOW, NOT A LIT SQUARE ----
+                //
+                // Item 10 (3/3). The request drew the shape rather than
+                // naming it — "(0===)(===0)" — which is a track with the
+                // knob at one end and then at the other. The 44 px square
+                // this replaces DID say on/off, by filling with the accent,
+                // but "filled" reads as *highlighted* or *selected*; only
+                // position reads as *switched*.
+                //
+                // THE ICON IS THE KNOB, and that is what makes this cost
+                // nothing. The obvious build — keep the square, add a pill
+                // underneath — would have added ~20 px per toggle to a panel
+                // whose previous pass was specifically about reclaiming
+                // height (see the note above this Item). Folding the glyph
+                // into the thumb means the switch replaces the square rather
+                // than joining it: 26 px tall against the old 44, so the row
+                // gets SHORTER while gaining the one thing it was missing.
+                //
+                // Travel is the whole signal, so the track is deliberately
+                // wider than the knob by more than a hair: at 44 px wide with
+                // a 22 px knob there is 18 px of movement, which is legible
+                // from across the room in a way a colour change alone is not.
                 Rectangle {
                     id: buttonPlate
                     width: parent.width
-                    height: Metrics.px(44)
-                    radius: Metrics.px(14)
+                    height: Metrics.px(26)
+                    radius: height / 2
 
                     // ---- DEPTH, WHICH THE FLAT VERSION HAD NONE OF ----
                     //
@@ -1662,11 +1684,20 @@ Item {
                     // surfaceRaised / surfaceRaisedHover are 7% and 12% toward
                     // the ink, i.e. the same two steps in the direction that is
                     // actually "up" for whatever surface is underneath.
+                    // OFF IS SUNKEN, NOT RAISED, and the first build of this
+                    // switch got it exactly wrong. Track and knob were both
+                    // surfaceRaised, so an OFF switch had no visible track at
+                    // all: Focus and Night rendered as two circles floating in
+                    // the row — the very shape this commit replaces. Caught in
+                    // a capture, not by reading it.
+                    //
+                    // A switch reads as a switch because the knob sits IN
+                    // something. surfaceSunken is the role that already means
+                    // "recessed" here (inputFill is the same colour), so the
+                    // track is a groove and the knob is the part above it.
                     color: qb.on
                         ? IslandTheme.alpha(controlCenter.accentColor, 0.92)
-                        : (qbHover.hovered
-                            ? IslandTheme.surfaceRaisedHover
-                            : IslandTheme.surfaceRaised)
+                        : IslandTheme.surfaceSunken
                     opacity: qb.available ? 1 : 0.35
 
                     Behavior on color { ColorAnimation { duration: Motion.controlDuration() } }
@@ -1705,39 +1736,69 @@ Item {
                         visible: qb.cursored
                     }
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: qb.glyph
-                        // Ink solved against the plate, which is now a real
-                        // fill rather than an 18% tint — so on a lit button
-                        // this genuinely has to be accentInk, and on an
-                        // unlit one it must not be.
-                        color: qb.on ? IslandTheme.accentInk : IslandTheme.textSecondary
-                        font.pixelSize: Metrics.font(18)
-                        font.family: controlCenter.iconFontFamily
-                        opacity: qb.busy ? 0.45 : 1
-
-                        Behavior on color { ColorAnimation { duration: Motion.controlDuration() } }
-                    }
-
-                    // The list affordance, as a corner dot rather than a
-                    // chevron. At 44 px there is no room for a 30 px chevron
-                    // box beside the glyph, and the dot says the same thing
-                    // — "there is more behind this" — in 5 px. The whole
-                    // button opens the list on a RIGHT click for the same
-                    // reason, since the dot itself is too small to aim at.
+                    // The knob. Its X is the state — the colour is only
+                    // corroboration, which is the point of the change.
                     Rectangle {
-                        visible: qb.hasList
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.margins: Metrics.px(6)
-                        width: Metrics.px(4)
+                        id: qbKnob
+                        y: (parent.height - height) / 2
+                        x: qb.on ? parent.width - width - Metrics.px(2) : Metrics.px(2)
+                        width: Metrics.px(22)
                         height: width
                         radius: width / 2
+
+                        // On a lit track the thumb has to be the INK colour,
+                        // or it disappears into the accent it is sliding on.
+                        // Off, it is the raised surface again — the same two
+                        // steps toward the ink the old plate used, so the
+                        // switch belongs to the same material family as
+                        // everything else in the panel.
                         color: qb.on
-                            ? IslandTheme.alpha(IslandTheme.accentInk, qb.listOpen ? 0.95 : 0.5)
-                            : IslandTheme.alpha(IslandTheme.textPrimary, qb.listOpen ? 0.95 : 0.35)
+                            ? IslandTheme.accentInk
+                            : (qbHover.hovered ? IslandTheme.surfaceRaisedHover : IslandTheme.surfaceRaised)
+                        opacity: qb.busy ? 0.45 : 1
+
+                        // A hairline, so the knob keeps an edge against the
+                        // groove on a palette where raised and sunken land
+                        // close together — mono-light is the one that does.
+                        border.width: qb.on ? 0 : 1
+                        border.color: IslandTheme.alpha(IslandTheme.ink, 0.10)
+
+                        // Spring, not a linear slide: a switch that eases
+                        // into its stop is the difference between "it moved"
+                        // and "it snapped", and snapping is what makes the
+                        // gesture feel like a physical control.
+                        Behavior on x {
+                            NumberAnimation {
+                                duration: Motion.controlDuration()
+                                easing.type: Easing.OutBack
+                                easing.overshoot: 1.1
+                            }
+                        }
+                        Behavior on color { ColorAnimation { duration: Motion.controlDuration() } }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: qb.glyph
+                            // Solved against the KNOB now, not the track:
+                            // on, the knob is accentInk and the glyph must be
+                            // the accent again; off, the knob is the raised
+                            // surface and the glyph is ordinary secondary
+                            // text. Getting this pair backwards is how an
+                            // icon vanishes in exactly one of the two states.
+                            color: qb.on ? controlCenter.accentColor : IslandTheme.textSecondary
+                            font.pixelSize: Metrics.font(12)
+                            font.family: controlCenter.iconFontFamily
+
+                            Behavior on color { ColorAnimation { duration: Motion.controlDuration() } }
+                        }
                     }
+
+                    // The corner dot is gone with the square. A 4 px dot in
+                    // the corner of a 26 px track sits on the knob's path,
+                    // and a marker the moving part slides under is a marker
+                    // that flickers. The list affordance moved to the label,
+                    // which is where the request put it: "when i click on it
+                    // opens the network or bluetooth thing".
 
                     MouseArea {
                         anchors.fill: parent
@@ -1746,6 +1807,13 @@ Item {
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
                         onClicked: function(mouse) {
                             quickGrid.cursor = qb.index;
+                            // THE SWITCH SWITCHES. It is the one gesture a
+                            // switch has, and overloading it to open a panel
+                            // is how you get a control that does something
+                            // different from what it looks like it does.
+                            // Right-click still opens the list, unchanged, so
+                            // the habit that existed before this commit keeps
+                            // working.
                             if (mouse.button === Qt.RightButton && qb.hasList)
                                 qb.listRequested();
                             else
@@ -1765,17 +1833,47 @@ Item {
                     // here: the Row's 14 px gap absorbs the overhang, and the
                     // label is centred on its button so the association is
                     // unambiguous even when it is wider than what it names.
-                    width: parent.width + Metrics.px(14)
-                    x: -Metrics.px(7)
+                    // +26, not +14. The chevron this commit appends pushed
+                    // "Bluetooth ›" past the old allowance and it elided to
+                    // "Bluetoot..." — the exact failure the note above records
+                    // for "Bluetooth" at 44 px, reintroduced by making the
+                    // string longer. The row's spread leaves ~40 px between
+                    // switches, so 26 fits without two labels ever touching.
+                    width: parent.width + Metrics.px(26)
+                    x: -Metrics.px(13)
                     height: Metrics.px(13)
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    text: qb.label
-                    color: qb.on ? controlCenter.textPrimary : IslandTheme.textMuted
+                    // A chevron only when there IS something behind it, so
+                    // the two toggles with a list (Wi-Fi, Bluetooth) are
+                    // visibly different from the two without (Focus, Night)
+                    // rather than looking identical and behaving differently.
+                    text: qb.hasList ? qb.label + " ›" : qb.label
+                    color: qb.listOpen
+                        ? controlCenter.accentColor
+                        : (qb.on ? controlCenter.textPrimary : IslandTheme.textMuted)
                     font.pixelSize: Metrics.font(10)
                     font.family: controlCenter.textFontFamily
                     font.weight: Font.Medium
                     elide: Text.ElideRight
+
+                    // "when i click on it opens the network or bluetooth
+                    // thing" — this is that click. The label is the row's
+                    // name, and a name is what you click to see what is
+                    // behind it; the switch beside it stays a switch.
+                    MouseArea {
+                        anchors.fill: parent
+                        // A 13 px line is a thin target, so the hit area is
+                        // grown downward into the gap under the row rather
+                        // than the text being made bigger.
+                        anchors.bottomMargin: -Metrics.px(6)
+                        enabled: qb.interactive && qb.hasList
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            quickGrid.cursor = qb.index;
+                            qb.listRequested();
+                        }
+                    }
                 }
             }
 
