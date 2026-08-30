@@ -166,6 +166,24 @@ environment variables &mdash; put them wherever you keep yours:</p>
 <p>Rates are fetched at most once every six hours and cached in between, so the tooltip
 opens instantly and the machine is not asking the internet every time you pass the clock.</p>
 
+<h2 id="reminders">The calendar, and reminders</h2>
+
+<p>Clicking the clock opens a calendar. <b>Click any day and type a reminder for it</b>, then
+press Enter. A dot appears on that day, and the text comes back whenever you land on it
+again.</p>
+
+<p>Start the text with a time and it fires at that time:</p>
+
+<pre><code>09:30 dentist</code></pre>
+
+<p class="screen">Without a time it arrives at 09:00. The reminder is a real notification,
+not just a note in the calendar &mdash; it is handed to a background timer, so it still
+arrives if the calendar is closed, and it survives a reboot. If your computer was off when
+one was due, you get it the next time you log in, once, and only if it was due today.</p>
+
+<p>To clear one, open the day and delete the text. Empty means gone: no dot, no
+notification.</p>
+
 <h2 id="boxes">Hidden groups of icons</h2>
 
 <p>The bar cannot fit everything. Some icons live in groups you open when you want them.</p>
