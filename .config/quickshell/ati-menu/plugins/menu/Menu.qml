@@ -58,8 +58,16 @@ Item {
   // plain JSON (nothing to strip), so this needs no format conversion.
   property string defaultMenuPath: Quickshell.env("HOME") + "/.config/AtiScriptsV1/lib/ati-menu.json"
   property string userMenuPath: Quickshell.env("HOME") + "/.config/AtiScriptsV1/lib/ati-menu-extensions.json"
+  // Phase 3's menu load point. One AGGREGATE written by `ati-plugin sync`,
+  // not a glob over ~/.config/ati-plugins/*/menu.json: this renderer and the
+  // bash one both read it, so precedence BETWEEN plugins is decided once, by
+  // ati-plugin, instead of twice by two merge implementations that can drift.
+  // Absent until a plugin is installed, which is why its FileView clears to
+  // [] on a load failure rather than treating it as an error.
+  property string pluginMenuPath: Quickshell.env("HOME") + "/.cache/ati-plugins/menu.json"
   property var defaultMenuItems: []
   property var userMenuItems: []
+  property var pluginMenuItems: []
   property bool opened: false
   property string mode: "menu"
   readonly property bool dmenuActive: mode === "select" || mode === "input"
@@ -301,7 +309,7 @@ Item {
   // on a per-key basis (so the user can tweak label/icon/action without
   // re-declaring the whole row).
   function rebuildItemsFromSources() {
-    var mergedMenu = MenuModel.mergeMenuSources(root.defaultMenuItems, root.userMenuItems)
+    var mergedMenu = MenuModel.mergeMenuSources(root.defaultMenuItems, root.pluginMenuItems, root.userMenuItems)
     root.providerRevision += 1
     root.providersLoaded = ({})
     root.providerQueue = []
@@ -1064,6 +1072,24 @@ Item {
     printErrors: false
     onLoaded: { root.userMenuItems = root.parseMenuJsonc(text()); root.rebuildItemsFromSources() }
     onLoadFailed: { root.userMenuItems = []; root.rebuildItemsFromSources() }
+    onFileChanged: reload()
+  }
+
+  // The plugin aggregate. watchChanges so that `ati-plugin sync` in a
+  // terminal puts a plugin's entries in the menu without restarting the
+  // shell -- the same live-edit property the two files above already have,
+  // and the thing that makes "install a plugin" feel like one step.
+  //
+  // A machine with no plugins has no such file, and that is the shipped
+  // state, not a fault: onLoadFailed clears to [] and the merge below is
+  // then byte-for-byte the two-source merge it always was.
+  FileView {
+    id: pluginMenuFile
+    path: root.pluginMenuPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: { root.pluginMenuItems = root.parseMenuJsonc(text()); root.rebuildItemsFromSources() }
+    onLoadFailed: { root.pluginMenuItems = []; root.rebuildItemsFromSources() }
     onFileChanged: reload()
   }
 

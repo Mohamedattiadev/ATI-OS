@@ -100,7 +100,20 @@ step_githooks() {
 }
 
 
-step_ati_scripts()  { run "cd $DOTFILES_DIR/.config/AtiScriptsV1 && ./install.sh"; }
+step_ati_scripts()  {
+  run "cd $DOTFILES_DIR/.config/AtiScriptsV1 && ./install.sh"
+  # ARCHITECTURE.md Phase 3. Called by PATH and not by absolute path: the
+  # line above has just symlinked every AtiScriptsV1 command into
+  # /usr/local/bin, so ati-plugin is there by the time this runs.
+  #
+  # With zero plugins installed — the shipped state — this writes two empty
+  # aggregates into ~/.cache/ati-plugins and regenerates a plugins.conf
+  # identical to the one the repo ships. It is here anyway so that a machine
+  # restored from a backup, or one where somebody has already dropped a
+  # plugin into ~/.config/ati-plugins before the first install, comes up
+  # wired rather than needing a command nobody told them about.
+  run "ati-plugin sync || true"
+}
 
 step_pacman_guard() {
   # Installs the PreTransaction hook that refuses a package operation when

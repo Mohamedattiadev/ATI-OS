@@ -63,10 +63,17 @@ function parseMenuJsonc(raw) {
   return out
 }
 
-function mergeMenuSources(defaultItems, userItems) {
+// ARCHITECTURE.md Phase 3 widened this from two sources to three. The order
+// is DEFAULT, PLUGINS, USER, and later wins per key -- the same precedence
+// ati-menu (the bash renderer) uses for the same three files, because the
+// two must not disagree about which entry a person sees. A plugin may add to
+// the tree and may override a shipped entry; ati-menu-extensions.json is
+// hand-edited by the person at the keyboard, so nothing installed overrules
+// it.
+function mergeMenuSources(defaultItems, pluginItems, userItems) {
   var nextItems = ({})
   var nextOrder = []
-  var sources = [defaultItems || [], userItems || []]
+  var sources = [defaultItems || [], pluginItems || [], userItems || []]
 
   for (var s = 0; s < sources.length; s++) {
     var src = sources[s]

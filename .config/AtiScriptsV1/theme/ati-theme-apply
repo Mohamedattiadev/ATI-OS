@@ -137,6 +137,21 @@ fi
 # tables until every mode has a folder. (SCRIPT_DIR is set above, where
 # PRESETS is derived from this same themes/ directory.)
 THEME_DIR="$SCRIPT_DIR/../themes/$MODE"
+# ARCHITECTURE.md Phase 3's theme load point, the apply half: if the mode is
+# not one of the shipped themes, it may be a PLUGIN's. theme-list.sh offers
+# <plugin>/theme/colors.toml under the plugin's own name, so the same name
+# has to resolve back to that directory here or the picker would list a
+# theme that cannot be applied.
+#
+# Shipped themes are checked FIRST and win a name collision, deliberately: a
+# plugin must not be able to redefine what `doomone` means on a machine that
+# already had it. `ati-plugin doctor` has no way to flag this one -- the
+# collision is with a directory name, not with a bind or a command -- so the
+# precedence is the whole enforcement.
+if [[ ! -f "$THEME_DIR/colors.toml" ]]; then
+  _ati_plugin_theme="${ATI_PLUGIN_DIR:-$HOME/.config/ati-plugins}/$MODE/theme"
+  [[ -f "$_ati_plugin_theme/colors.toml" ]] && THEME_DIR="$_ati_plugin_theme"
+fi
 THEME_LOADED=0
 if [[ "$MODE" != "wal" && -f "$THEME_DIR/colors.toml" ]]; then
   _toml_get() { sed -n "s/^$2 = \"\\(.*\\)\"\$/\\1/p" "$1"; }

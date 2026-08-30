@@ -43,9 +43,31 @@ current=""
 
 _toml_get() { sed -n "s/^$2 = \"\\(.*\\)\"\$/\\1/p" "$1"; }
 
+# ARCHITECTURE.md Phase 3's theme load point: plugins are a SECOND search
+# path, not a copy into themes/. A plugin's palette lives at
+# <plugin>/theme/colors.toml and is offered under the PLUGIN's name, since
+# the directory itself is always called "theme".
+#
+# Searched live rather than materialised into themes/ by `ati-plugin sync`,
+# and that is the whole reason this is a path and not a symlink farm: a
+# theme is resolved by name at the moment the picker draws, so a stale copy
+# would be a theme that keeps appearing after its plugin is gone -- and
+# picking it would apply a palette read from a directory that no longer
+# exists.
+ATI_PLUGIN_DIR="${ATI_PLUGIN_DIR:-$HOME/.config/ati-plugins}"
+
+_theme_dirs() {
+  find "$THEMES_DIR" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null
+  [[ -d "$ATI_PLUGIN_DIR" ]] &&
+    find "$ATI_PLUGIN_DIR" -mindepth 2 -maxdepth 2 -type d -name theme -print0 2>/dev/null
+}
+
 out=()
 while IFS= read -r -d '' dir; do
   name="$(basename "$dir")"
+  # A plugin's palette directory is always literally "theme"; the name the
+  # picker shows is the plugin's.
+  [[ "$name" == "theme" ]] && name="$(basename "$(dirname "$dir")")"
   toml="$dir/colors.toml"
   [[ -f "$toml" ]] || continue
   bg="$(_toml_get "$toml" bg)"
@@ -54,7 +76,7 @@ while IFS= read -r -d '' dir; do
   accent="$(_toml_get "$toml" accent)"
   [[ -n "$bg" && -n "$fg" && -n "$alt" && -n "$accent" ]] || continue
   out+=("{\"name\":\"$name\",\"bg\":\"$bg\",\"fg\":\"$fg\",\"alt\":\"$alt\",\"accent\":\"$accent\"}")
-done < <(find "$THEMES_DIR" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+done < <(_theme_dirs | sort -z)
 
 # wal has no folder — it has no fixed palette, it's derived from the
 # current wallpaper. Still a valid argument to theme-apply, so it's

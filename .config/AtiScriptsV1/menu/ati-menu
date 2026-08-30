@@ -57,8 +57,24 @@ trap 'rm -f "$MERGED"' EXIT
 # per draw: the TREE shape rarely changes mid-session; what must stay live
 # is the when/checked/disabled *conditions*, evaluated fresh every draw
 # below.
-if ! jq -s '.[0] * .[1]' "$MENU_DEFAULT" "$MENU_EXT" > "$MERGED" 2>/dev/null; then
-  rofi -e "ati-menu: ati-menu.json or ati-menu-extensions.json is invalid JSON"
+# ARCHITECTURE.md Phase 3's menu load point: the merge widens from two files
+# to three, the third being every installed plugin's menu.json aggregated by
+# `ati-plugin sync`. An AGGREGATE and not a glob here, so that this and
+# Menu.qml cannot disagree about precedence between plugins -- ati-plugin
+# resolves that once (first plugin to claim a key keeps it) and both
+# renderers read the result.
+#
+# ORDER IS DEFAULT, PLUGINS, THEN THE USER'S OWN EXTENSIONS, and the last
+# one wins: a plugin may add to the tree and may override a shipped entry,
+# but ati-menu-extensions.json is the file the person at the keyboard edits
+# by hand, so nothing installed is allowed to overrule it.
+MENU_PLUGINS="$HOME/.cache/ati-plugins/menu.json"
+menu_sources=("$MENU_DEFAULT")
+[[ -s "$MENU_PLUGINS" ]] && menu_sources+=("$MENU_PLUGINS")
+menu_sources+=("$MENU_EXT")
+
+if ! jq -s 'reduce .[] as $x ({}; . * $x)' "${menu_sources[@]}" > "$MERGED" 2>/dev/null; then
+  rofi -e "ati-menu: ati-menu.json, ati-menu-extensions.json or a plugin menu.json is invalid JSON"
   exit 1
 fi
 

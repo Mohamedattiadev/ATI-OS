@@ -168,10 +168,38 @@ so shipping the second file is adding the second file. See
 three categories that do not (files this repo only *edits*, generated
 files, anything holding a secret).
 
-**Phase 3 — the plugin loader, read-only first.**
+**Phase 3 — the plugin loader, read-only first. ✅ DONE.**
 Implement `ati-plugin list|sync|doctor` and the five load points. Ship it
 with **zero** plugins. Nothing changes for the user; the mechanism gets to
 be proven while the blast radius is nil.
+
+Built, with two corrections to §4 that only showed up against a real
+Hyprland:
+
+* **The keybind surface is not a glob.** §4 specifies
+  `source = ~/.config/ati-plugins/*/binds.conf`. Hyprland does support glob
+  sourcing, but measured in a throwaway nested compositor, a glob matching
+  nothing is an *error* — `source= globbing error: found no match`, plus the
+  full-width red overlay across the screen. A single missing file behaves
+  the same; a single empty file is clean. Since this phase ships with zero
+  plugins by design, the spec's line would have put an error banner on every
+  machine. Hyprland sources one always-present tracked file,
+  `~/.config/hypr/plugins.conf`, which `ati-plugin sync` rewrites.
+* **The QML surface is hosted by `ati-menu`, not by a bar.** §4 calls it
+  "bar / popups", but there are *two* bars and `bar-switch` stops one to
+  start the other, so a bar-hosted plugin would vanish on a switch or need
+  implementing twice. `ati-menu` is exec-once'd regardless of which bar the
+  session wears, and Quickshell keys its instance by config path — so rule
+  4 ("a plugin whose QML fails to load must not take the bar down") holds at
+  the *process* level, which is stronger than any Loader inside the bar
+  could give. Verified: with a deliberately broken plugin QML, the shell
+  stayed up, logged `badqml: qml/main.qml failed to load — skipped`, and
+  the other plugin still loaded.
+
+Rule 3 ("namespacing is enforced, not requested") is enforced in `sync`,
+not merely reported by `doctor`: a plugin shipping `bin/ati-menu` is
+refused the symlink rather than being allowed to shadow the real command on
+PATH.
 
 **Phase 4 — move one existing feature out into a plugin.**
 `ati-adhkar` is the right candidate: self-contained, optional, has its own

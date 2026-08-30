@@ -15,6 +15,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "plugins/atiplugins" as AtiPlugins
 import "plugins/menu" as MenuPlugin
 import "plugins/clipboard" as ClipboardPlugin
 import "plugins/translate" as TranslatePlugin
@@ -35,6 +36,11 @@ ShellRoot {
     id: menu
     shell: shellRoot
   }
+
+  // Phase 3's fifth load point. Zero plugins installed means zero objects
+  // instantiated and one FileView watching a path that does not exist — see
+  // PluginSurfaces.qml for why this process, and not a bar, is the host.
+  AtiPlugins.PluginSurfaces { }
 
   // Second resident view, same process -- a split-pane clipboard picker
   // (real image thumbnails + copy timestamp on the right) that the generic
