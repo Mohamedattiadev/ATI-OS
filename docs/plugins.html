@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Writing a plugin &mdash; ATI-OS Manual</title>
+<meta name="description" content="A plugin is one directory with a manifest. Add a command, a keybind, a menu entry, a colour scheme or a panel without editing a single file you do not own.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="navbtn" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"><span class="bars" aria-hidden="true"></span></button>
+  <a class="brand" href="index.html"><svg class="brand-mark" viewBox="0 0 84 15" width="84" height="15" role="img" aria-label="ATI-OS" fill="currentColor" shape-rendering="crispEdges" focusable="false"><path d="M2 0h10v3h-10zM16 0h16v3h-16zM34 0h4v3h-4zM54 0h12v3h-12zM70 0h14v3h-14zM0 3h4v3h-4zM10 3h4v3h-4zM22 3h4v3h-4zM34 3h4v3h-4zM52 3h4v3h-4zM64 3h4v3h-4zM70 3h4v3h-4zM0 6h14v3h-14zM22 6h4v3h-4zM34 6h4v3h-4zM40 6h10v3h-10zM52 6h4v3h-4zM64 6h4v3h-4zM70 6h14v3h-14zM0 9h4v3h-4zM10 9h4v3h-4zM22 9h4v3h-4zM34 9h4v3h-4zM52 9h4v3h-4zM64 9h4v3h-4zM80 9h4v3h-4zM0 12h4v3h-4zM10 12h4v3h-4zM22 12h4v3h-4zM34 12h4v3h-4zM54 12h12v3h-12zM70 12h14v3h-14z"/></svg><small>Arch + qtile, packaged</small></a>
+  <div class="spacer"></div>
+  <div class="search">
+    <svg class="search-ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14"/></svg>
+    <input id="search-input" type="search" placeholder="Search the manual" autocomplete="off" spellcheck="false" aria-label="Search">
+    <kbd class="search-hint" aria-hidden="true">/</kbd>
+    <div class="search-results" id="search-results"></div>
+  </div>
+  <a class="iconbtn gh-btn" href="https://github.com/Mohamedattiadev/ATI-OS" aria-label="ATI-OS on GitHub"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg></a>
+  <button class="iconbtn theme-btn" id="theme-toggle" type="button" aria-label="Switch colour theme"><svg class="ico-sun" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="3.1"/><path d="M8 1.2v1.6M8 13.2v1.6M14.8 8h-1.6M2.8 8H1.2M12.81 3.19l-1.13 1.13M4.32 11.68l-1.13 1.13M12.81 12.81l-1.13-1.13M4.32 4.32 3.19 3.19"/></svg><svg class="ico-moon" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.6 9.7A5.9 5.9 0 0 1 6.3 2.4a5.9 5.9 0 1 0 7.3 7.3z"/></svg></button>
+</header>
+
+<div class="shell">
+<nav class="sidebar" aria-label="Manual">
+  <h2>Start here</h2>
+  <ol>
+    <li><a href="start.html">Start here</a></li>
+    <li><a href="install-usb.html">Install from a USB stick</a></li>
+    <li><a href="install-git.html">Install onto Arch you already have</a></li>
+  </ol>
+  <h2>Using the desktop</h2>
+  <ol>
+    <li><a href="keybindings.html">Keyboard shortcuts</a></li>
+    <li><a href="themes.html">Changing the colours</a></li>
+    <li><a href="widgets.html">The bar and the popups</a></li>
+    <li><a href="tools.html">The tools you get</a></li>
+  </ol>
+  <h2>When it breaks</h2>
+  <ol>
+    <li><a href="troubleshooting.html">Troubleshooting</a></li>
+  </ol>
+  <h2>Going deeper</h2>
+  <ol>
+    <li><a href="reference.html">Where everything lives</a></li>
+    <li><a href="under-the-hood.html">How it works</a></li>
+    <li><a class="current" href="plugins.html">Writing a plugin</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>Writing a plugin</h1>
+
+<p class="lede">A plugin is one directory. Put it in <code>~/.config/ati-plugins/</code> and it is
+installed &mdash; there is no register step, no list to add yourself to, and no file of
+someone else's that you have to edit.</p>
+
+<h2 id="what">What a plugin can add</h2>
+
+<p>Five things, and you pick any subset of them. A plugin that is only a colour scheme has
+one folder in it. A plugin that is only a command has one folder and one file.</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>You put this in your plugin</th><th>And you get</th></tr></thead>
+<tbody>
+<tr><td><code>bin/</code></td><td>Commands you can type anywhere, like the built-in ones</td></tr>
+<tr><td><code>binds.conf</code></td><td>Keyboard shortcuts</td></tr>
+<tr><td><code>menu.json</code></td><td>Entries in the <kbd>Super</kbd>+<kbd>?</kbd> menu</td></tr>
+<tr><td><code>theme/</code></td><td>A colour scheme in the theme picker</td></tr>
+<tr><td><code>qml/</code></td><td>A panel or popup on screen</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The only required file is the manifest.</p>
+
+<h2 id="first">Your first plugin</h2>
+
+<ol class="steps">
+  <li>
+    <p>Make the directory. The name you choose here is the plugin's name everywhere else.</p>
+    <p><code>mkdir -p ~/.config/ati-plugins/pomodoro/bin</code></p>
+  </li>
+  <li>
+    <p>Write the manifest at <code>~/.config/ati-plugins/pomodoro/plugin.toml</code>:</p>
+<pre><code>name        = "pomodoro"
+description = "A work timer that mutes notifications while running"
+version     = "1.0.0"
+depends     = ["notify-send"]</code></pre>
+    <p class="screen"><code>name</code> has to match the directory name. Everything else is
+    optional, but <code>depends</code> earns its keep: it is what lets
+    <code>ati-plugin doctor</code> tell somebody <em>why</em> your plugin does nothing on
+    their machine instead of leaving them to guess.</p>
+  </li>
+  <li>
+    <p>Put an executable in <code>bin/</code>, and make it executable:</p>
+    <p><code>chmod +x ~/.config/ati-plugins/pomodoro/bin/ati-pomodoro</code></p>
+  </li>
+  <li>
+    <p>Run <code>ati-plugin sync</code>.</p>
+    <p class="screen"><code>✔ synced 1 plugin(s): 1 command(s) linked</code> &mdash; and
+    <code>ati-pomodoro</code> now runs from any terminal.</p>
+  </li>
+</ol>
+
+<h2 id="commands">The three commands</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>ati-plugin list</code></td><td>Every plugin, its version, and which of the five surfaces it uses</td></tr>
+<tr><td><code>ati-plugin sync</code></td><td>Makes it all live. Run it after adding, changing or deleting a plugin</td></tr>
+<tr><td><code>ati-plugin doctor</code></td><td>Everything that is wrong, in one place. Exits non-zero, so a script can use it</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><code>sync</code> is the only one that writes anything. It is safe to run at any time and
+as often as you like: it works out the whole picture from what is on disk and rebuilds,
+so running it twice does exactly what running it once did.</p>
+
+<h2 id="removing">Removing a plugin</h2>
+
+<p>Delete the directory and run <code>ati-plugin sync</code>. That is the whole procedure.</p>
+
+<p>There is no uninstall step to forget, because a plugin never edits anything outside its
+own folder. <code>sync</code> remembers what it created last time and removes it before it
+builds again, so the command it put on your PATH and the shortcut it added both go when the
+folder does.</p>
+
+<h2 id="rules">Three rules worth knowing before you write one</h2>
+
+<h3 id="rule-names">Your names cannot shadow anything</h3>
+
+<p>If your <code>bin/</code> holds a file called <code>ati-menu</code>, it will not be linked
+&mdash; the built-in command of that name keeps working. The same goes for a keyboard
+shortcut the desktop already uses: <code>doctor</code> names the clash and the shortcut stays
+with the base config.</p>
+
+<p class="screen">This is deliberate and it is not negotiable. A plugin that could quietly
+take over <kbd>Super</kbd>+<kbd>Space</kbd> would produce the symptom "my launcher stopped
+working" a week after you installed it, with nothing on screen connecting the two.</p>
+
+<h3 id="rule-order">You can override the desktop, but not the person using it</h3>
+
+<p>A <code>menu.json</code> entry with the same key as a built-in one replaces it. But the
+file <em>you</em> hand-edit, <code>ati-menu-extensions.json</code>, is merged last and wins
+over every plugin. A colour scheme works the other way round: the shipped ones win, so a
+plugin cannot redefine what <code>doomone</code> means on a machine that already had it.</p>
+
+<h3 id="rule-break">A broken plugin is skipped, not fatal</h3>
+
+<p>If your manifest does not parse, your plugin is listed with the reason and nothing else
+happens. If your <code>qml/main.qml</code> has an error in it, it is skipped by name in the
+log and every other plugin still loads. The desktop is not allowed to break because
+something in this folder did.</p>
+
+<h2 id="qml">If you want to draw something</h2>
+
+<p><code>qml/main.qml</code> is loaded once. It gets no window and no parent &mdash; if you
+want something on screen, declare your own <code>PanelWindow</code> inside it; if you only
+want to run logic, declare none.</p>
+
+<p class="screen">It is hosted by the menu process, not by the bar. That is on purpose:
+there are two bars and switching between them stops one and starts the other, so anything
+hosted by a bar would disappear when you switched. The menu process runs in both, and
+because it is a separate process, a plugin that crashes it cannot take your bar with it.</p>
+
+<h2 id="checking">When something is not working</h2>
+
+<p>Run <code>ati-plugin doctor</code>. It checks the manifests, the programs your plugin says
+it needs, name clashes against both the built-in commands and other plugins, keyboard
+shortcut clashes against the desktop's own, and whether the generated files are up to date.</p>
+
+<pre><code>$ ati-plugin doctor
+✖ pomodoro needs notify-send
+✖ rude: bin/ati-menu shadows an AtiScriptsV1 command of the same name
+✖ rude: (no mod) F9 is already bound by binds.conf
+✖ doctor: problems above</code></pre>
+
+<p>If a plugin is not listed at all, check that the directory does not start with a dot and
+that it contains a <code>plugin.toml</code>.</p>
+
+<footer class="pagefoot">
+  <span>Every command and message on this page was run against a real plugin, not written from the design.</span>
+  <a href="reference.html">Next: where everything lives &rarr;</a>
+</footer>
+
+</main>
+
+<aside class="toc" aria-label="On this page">
+  <div class="toc-inner">
+    <h2>On this page</h2>
+    <ol id="toc"></ol>
+  </div>
+</aside>
+</div>
+
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

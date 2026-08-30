@@ -27,6 +27,7 @@ PAGES = [
     ("themes.html", "Changing the colours"),
     ("widgets.html", "The bar and the popups"),
     ("tools.html", "The tools you get"),
+    ("plugins.html", "Writing a plugin"),
     ("troubleshooting.html", "Troubleshooting"),
     ("reference.html", "Where everything lives"),
     ("under-the-hood.html", "How it works"),
