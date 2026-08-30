@@ -185,6 +185,26 @@ step_dcli_sync() {
   fi
   run "cd $DOTFILES_DIR && dcli sync --force && { command -v mandb >/dev/null && sudo mandb || true; } && fc-cache -fv"
   (( DRY_RUN )) && return
+
+  # UNCONDITIONALLY, and before anything below can `return` early.
+  #
+  # This used to be called only on the paths where the sync came out CLEAN,
+  # and that made informant's blockade conditional on something unrelated to
+  # informant. Measured in a VM on 2026-08-30: pacman-static and paru failed
+  # to build (AUR, upstream), so `pending` stayed non-zero, the retry loop
+  # fell through to `return 1` — and the call below it never ran. informant
+  # stayed armed for the whole rest of the install, so boot-splash got no
+  # plymouth and the desktop check got no Xvfb.
+  #
+  # ONE AUR BUILD FAILURE, FOUR FAILED MODULES. The function's own header
+  # already warns that this is "reported, of course, as unrelated broken
+  # modules" — it was, again, because the fix was on the happy path. A
+  # blockade that outlives the step that raised it has to be cleared where
+  # it cannot be skipped.
+  #
+  # Safe to call here: it no-ops when informant is absent or has nothing
+  # unread, so a machine that never installs informant pays nothing.
+  _clear_informant_news
   # dcli can report the sync step as done even when an individual AUR
   # package's post-build install silently failed (e.g. a sudo hiccup
   # mid-build, long before the sudo-keepalive fix existed). Verify
@@ -195,7 +215,7 @@ step_dcli_sync() {
   while (( attempt < 2 )); do
     pending=$(cd "$DOTFILES_DIR" && dcli sync --dry-run 2>/dev/null | grep -oP 'Packages to install: \K[0-9]+' | head -1)
     if [[ -z "$pending" || "$pending" == "0" ]]; then
-      _clear_informant_news
+      # informant is already cleared above, on every path
       _reclaim_build_cache
       return 0
     fi
@@ -208,7 +228,6 @@ step_dcli_sync() {
     echo "dcli sync still has $pending package(s) uninstalled after retries — run 'dcli sync --force' manually later"
     return 1
   fi
-  _clear_informant_news
   _reclaim_build_cache
 }
 
