@@ -261,7 +261,22 @@ smoke() {
   local slog="$VM_DIR/smoke-serial.log"
 
   [[ -f "$ISO" ]] || { bad "no ISO yet — run ./vm-test.sh first (or --check)"; exit 1; }
-  if [[ ! -f "$k" || ! -f "$i" ]]; then
+  # `-nt`, not merely "is it missing". Guarding extraction on EXISTENCE alone
+  # means a VM dir that has ever been used keeps the kernel it extracted the
+  # first time, while `fetch_iso` happily replaces the ISO underneath it with
+  # a newer release. The guest then boots an OLD vmlinuz against the NEW
+  # ISO's squashfs, so /lib/modules/<running version> does not exist and no
+  # module can load.
+  #
+  # Measured here, 2026-08-30: extracted kernel 7.0.14-arch1-1 (2026-07-01)
+  # against an ISO carrying 7.1.5-arch1-2, and phase B died on
+  #
+  #     mount: /mnt/boot: unknown filesystem type 'vfat'
+  #
+  # which reads as a broken ISO or a missing dosfstools -- mkfs.fat had just
+  # succeeded on the same partition -- rather than as a stale cache. Re-extract
+  # whenever the ISO is newer than what was pulled out of it.
+  if [[ ! -f "$k" || ! -f "$i" || "$ISO" -nt "$k" ]]; then
     say "extracting kernel + initramfs from the ISO…"
     bsdtar -xf "$ISO" -C "$VM_DIR" \
       arch/boot/x86_64/vmlinuz-linux arch/boot/x86_64/initramfs-linux.img
@@ -410,7 +425,22 @@ unattended() {
   ssh-keygen -q -t ed25519 -N '' -f "$SSH_KEY" -C vm-test
   local pubkey; pubkey="$(cat "$SSH_KEY.pub")"
 
-  if [[ ! -f "$k" || ! -f "$i" ]]; then
+  # `-nt`, not merely "is it missing". Guarding extraction on EXISTENCE alone
+  # means a VM dir that has ever been used keeps the kernel it extracted the
+  # first time, while `fetch_iso` happily replaces the ISO underneath it with
+  # a newer release. The guest then boots an OLD vmlinuz against the NEW
+  # ISO's squashfs, so /lib/modules/<running version> does not exist and no
+  # module can load.
+  #
+  # Measured here, 2026-08-30: extracted kernel 7.0.14-arch1-1 (2026-07-01)
+  # against an ISO carrying 7.1.5-arch1-2, and phase B died on
+  #
+  #     mount: /mnt/boot: unknown filesystem type 'vfat'
+  #
+  # which reads as a broken ISO or a missing dosfstools -- mkfs.fat had just
+  # succeeded on the same partition -- rather than as a stale cache. Re-extract
+  # whenever the ISO is newer than what was pulled out of it.
+  if [[ ! -f "$k" || ! -f "$i" || "$ISO" -nt "$k" ]]; then
     say "extracting kernel + initramfs from the ISO…"
     bsdtar -xf "$ISO" -C "$VM_DIR" \
       arch/boot/x86_64/vmlinuz-linux arch/boot/x86_64/initramfs-linux.img
