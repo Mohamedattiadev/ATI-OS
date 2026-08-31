@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# hyprland-lua-guard -- refuse to install Hyprland 0.57+ onto a .conf config.
+#
+# WHY THIS EXISTS
+# ---------------
+# Hyprland 0.55 replaced hyprlang (`hyprland.conf`) with a Lua config
+# (`hyprland.lua`). 0.56 still reads .conf and only nags about it; 0.57
+# DROPS .conf entirely. On that upgrade the config stops loading and the
+# session comes up in safe mode with default binds -- discovered at the
+# worst possible moment, which is the next time you log in.
+#
+# WHY NOT `IgnorePkg = hyprland`
+# ------------------------------
+# Because it does not work. Hyprland links hyprutils, hyprlang, aquamarine
+# and hyprgraphics, and Arch bumps their sonames in lockstep with the
+# compositor. Holding hyprland alone gets you a binary that no longer
+# finds its libraries -- the same broken desktop, by a different road, and
+# without the warning. Holding the whole stack just moves the drift to
+# xdg-desktop-portal-hyprland and the plugins.
+#
+# So nothing is held. The upgrade is simply refused until the config is
+# actually ready for it, which is the condition that matters.
+#
+# SELF-EXPIRING: the moment ~/.config/hypr/hyprland.lua exists, this stops
+# doing anything at all. There is nothing to remember to turn off.
+#
+# Run by /etc/pacman.d/hooks/10-hyprland-lua-guard.hook, which is
+# AbortOnFail: a non-zero exit here stops the transaction before a single
+# file is written.
+
+set -uo pipefail
+
+r=$'\033[31m'; y=$'\033[33m'; o=$'\033[0m'
+
+# The hook passes matching targets on stdin (NeedsTargets). Only act when
+# Hyprland itself is in the transaction -- never on an unrelated install.
+# Scoping is really done by the hook's Target=; stdin is belt and braces,
+# so an unexpected format must fail OPEN rather than skip the check.
+targets=$(cat 2>/dev/null)
+if [[ -n "$targets" ]] && ! grep -qi hyprland <<< "$targets"; then
+  exit 0
+fi
+
+# Already migrated? Then 0.57 is exactly what you want. Root runs this, so
+# the user's home cannot be found via ~; glob instead.
+for f in /home/*/.config/hypr/hyprland.lua; do
+  [[ -e "$f" ]] && exit 0
+done
+
+# Deliberate override, for when you know what you are doing.
+[[ -e /etc/hyprland-lua-guard.ack ]] && exit 0
+
+# Which version is coming in. If this cannot be read, do not block --
+# same principle as pacman-preflight: a guard that guesses is worse than
+# no guard.
+cand=$(pacman -Sddp --print-format '%v' hyprland 2>/dev/null | tail -1)
+[[ -n "$cand" ]] || cand=$(pacman -Si hyprland 2>/dev/null | awk '/^Version/{print $3; exit}')
+[[ -n "$cand" ]] || exit 0
+
+# vercmp: >0 means cand is newer than 0.57, 0 means equal. Both abort.
+(( $(vercmp "$cand" 0.57) >= 0 )) || exit 0
+
+cat >&2 <<EOF
+
+${r}==> ABORTING: Hyprland $cand drops the .conf config format${o}
+
+    Your config is still hyprlang (~/.config/hypr/hyprland.conf and the
+    files it sources). 0.57 removes that parser. Installing this would
+    bring the session up in SAFE MODE with default keybinds: no bar, no
+    submaps, no scratchpads, and SUPER+Q for a terminal.
+
+    ${y}The migration is a project, not a flag.${o} Beyond the ~570 lines of
+    config, ${y}hyprctl keyword${o} stops working outright and every legacy
+    ${y}hyprctl dispatch${o} call becomes a Lua syntax error -- roughly 80 call
+    sites across the scripts and the Quickshell bar.
+
+    Plan and inventory: ~/.config/hypr/LUA-MIGRATION.md
+
+    This guard disappears on its own the moment hyprland.lua exists.
+    To override it once, deliberately:
+
+        sudo touch /etc/hyprland-lua-guard.ack
+
+EOF
+exit 1

@@ -141,6 +141,24 @@ step_pacman_guard() {
     return 1
   fi
   run "sudo install -Dm644 $hook /etc/pacman.d/hooks/00-preflight.hook"
+
+  # Second guard, same shape and the same refusal rule: it will not let
+  # Hyprland 0.57+ install while ~/.config/hypr is still hyprlang (.conf),
+  # because 0.57 drops that parser and the session comes up in safe mode.
+  # Self-expiring -- once hyprland.lua exists the script is a no-op. See
+  # .config/arch-config/README.md and ~/.config/hypr/LUA-MIGRATION.md.
+  local luahook="$DOTFILES_DIR/.config/arch-config/pacman-hooks/10-hyprland-lua-guard.hook"
+  if [[ ! -f "$luahook" ]]; then
+    _WARN "hyprland lua guard hook missing from repo — skipping"
+    return 0
+  fi
+  if (( ! DRY_RUN )) && [[ ! -x /usr/local/bin/hyprland-lua-guard ]]; then
+    _ERR "/usr/local/bin/hyprland-lua-guard missing — refusing to install an"
+    _ERR "AbortOnFail hook that would break every hyprland transaction."
+    _ERR "Run the ati-scripts module first:  ./wizard.sh --yes --only=ati-scripts"
+    return 1
+  fi
+  run "sudo install -Dm644 $luahook /etc/pacman.d/hooks/10-hyprland-lua-guard.hook"
 }
 
 step_xinit() {

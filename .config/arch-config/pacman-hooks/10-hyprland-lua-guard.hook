@@ -1,0 +1,23 @@
+# Refuses an upgrade to Hyprland 0.57+ while the config is still hyprlang
+# (.conf), because 0.57 removes that parser and the session would come up
+# in safe mode. See the script for why this is a hook and not IgnorePkg.
+#
+# Target is hyprland only, with NeedsTargets, so it fires exactly when the
+# compositor is in the transaction and never on an unrelated install.
+#
+# AbortOnFail: a non-zero exit stops the transaction before any file is
+# written, which is the only point at which stopping costs nothing.
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = hyprland
+Target = hyprland-git
+
+[Action]
+Description = Checking Hyprland config format before upgrading...
+When = PreTransaction
+Exec = /usr/local/bin/hyprland-lua-guard
+AbortOnFail
+NeedsTargets

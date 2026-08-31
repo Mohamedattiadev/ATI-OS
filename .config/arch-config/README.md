@@ -56,7 +56,7 @@ arch-config/
 ├── hosts/ati.yaml           # enabled_modules, host packages, update hooks
 ├── modules/*.yaml           # the actual package lists, grouped by purpose
 ├── scripts/                 # dcli update hooks (pre/post)
-├── pacman-hooks/            # tool-independent PreTransaction guard
+├── pacman-hooks/            # tool-independent PreTransaction guards
 ├── browser-policies/        # Chromium-family managed policy JSON
 ├── boot/                    # reference snapshots of boot entries (not deployed)
 └── state/                   # dcli's own bookkeeping
@@ -142,7 +142,9 @@ safety check.
   still at the keyboard, rather than a week later when an app fails to
   launch and the cause is no longer obvious.
 
-## The pacman hook
+## The pacman hooks
+
+### `00-preflight.hook`
 
 `pacman-hooks/00-preflight.hook` is installed to
 `/etc/pacman.d/hooks/` by the wizard module `pacman-guard`. It duplicates
@@ -158,6 +160,31 @@ It is `AbortOnFail`, and its `Exec=` points at
 transaction fails, including the one that would fix it.** The wizard
 therefore refuses to install this hook until the script is in place; see
 TROUBLESHOOTING.md if you have already managed it.
+
+### `10-hyprland-lua-guard.hook`
+
+Refuses to install Hyprland 0.57+ while `~/.config/hypr/hyprland.lua`
+does not exist. 0.57 removes the hyprlang (`.conf`) parser this config
+still uses, and the failure mode is a session in safe mode with default
+keybinds -- found at login, which is the worst place to find it.
+
+`Target = hyprland` with `NeedsTargets`, so it fires only when the
+compositor is actually in the transaction, never on an unrelated
+install. Its `Exec=` is `/usr/local/bin/hyprland-lua-guard`, a symlink to
+`.config/AtiScriptsV1/update/hyprland-lua-guard` -- same arrangement, and
+same hazard, as the preflight hook above: **if that target goes missing,
+every hyprland transaction fails.** Install the symlink first.
+
+It is self-expiring. Once `hyprland.lua` exists the script exits 0
+immediately and forever; there is nothing to remember to remove. To
+override it once: `sudo touch /etc/hyprland-lua-guard.ack`.
+
+`IgnorePkg = hyprland` would have been the obvious alternative and is
+wrong: hyprland links hyprutils, hyprlang, aquamarine and hyprgraphics,
+whose sonames Arch bumps in lockstep with it, so holding the compositor
+alone breaks it on the next library update instead. Nothing is held here.
+
+Background and the migration plan: `~/.config/hypr/LUA-MIGRATION.md`.
 
 ## Browser policies
 
