@@ -1,0 +1,11 @@
+# containerd stores Docker's images here: docker uses the containerd
+# snapshotter (Storage Driver: overlayfs), so image layers live under this
+# root, not under /var/lib/docker. Moved off / because that partition is
+# only 32G and the two stores were 12.7G of it.
+#
+# Two keys only, on purpose: containerd fills every unset key from its
+# built-in defaults, so this cannot pin stale defaults across upgrades the
+# way a full `containerd config default` dump does.
+# version = 3 is the config schema for containerd 2.x.
+version = 3
+root = "/home/.container-storage/containerd"

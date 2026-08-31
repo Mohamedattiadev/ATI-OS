@@ -42,14 +42,15 @@ MOD_ORDER=(
 # pick away from a boot that tells you why.
 #
 # system-files is opt-in for a third reason, and it is a dependency of the
-# second one: system/ currently holds exactly one file,
-# etc/keyd/default.conf, and keyd is opt-in. A default system-files would
-# write a keyd config onto every fresh machine INCLUDING the ones that
-# deliberately skipped keyd -- inert, since the service is not enabled
-# there, but still this repo putting a file in /etc for a feature the user
-# said no to. The keyd module installs that file itself (same helper, same
-# source), so nothing is lost by keeping the generic walker off the default
-# path.
+# second one: every file system/ holds belongs to opt-in software --
+# etc/keyd/default.conf (keyd), and the container data-root configs
+# etc/docker/daemon.json + etc/containerd/config.toml (docker, which lives
+# in optional.yaml). A default system-files would write a keyd config onto
+# every fresh machine INCLUDING the ones that deliberately skipped keyd --
+# inert, since the service is not enabled there, but still this repo
+# putting a file in /etc for a feature the user said no to. The keyd module
+# installs that file itself (same helper, same source), so nothing is lost
+# by keeping the generic walker off the default path.
 #
 # Revisit this the day system/ holds a file that is NOT tied to an opt-in
 # module. At that point the walker has something every machine needs and
