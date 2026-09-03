@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# ati-todo-open — the keybind half of quickshell/ati-menu/plugins/todo/
+# Todo.qml, same shape as ati-translate-popup and ati-anki-popup beside it.
+#
+# No selection to read here (unlike those two) — todo's `open` takes no
+# argument, it just asks the resident ati-menu instance to show the panel
+# and refresh it off ati-todo-popup's own `list`.
+set -uo pipefail
+
+IPC_BIN=qs
+command -v qsipc >/dev/null 2>&1 && IPC_BIN=qsipc
+MENU_CONFIG="$HOME/.config/quickshell/ati-menu"
+
+if ! "$IPC_BIN" -p "$MENU_CONFIG" ipc call todo open >/dev/null 2>&1; then
+    notify-send "ati-todo-open" "ati-menu is not running (start it, or check \`qs -p $MENU_CONFIG\`)" 2>/dev/null || true
+    exit 1
+fi

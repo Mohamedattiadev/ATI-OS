@@ -12,7 +12,7 @@ set -euo pipefail
 # screenshot picker uses; anywhere else -> real rofi, unchanged). This
 # script just never called it, reaching for its own literal `rofi -dmenu`
 # below instead.
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 # shellcheck source=ati-rofi-common.sh
 source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
 

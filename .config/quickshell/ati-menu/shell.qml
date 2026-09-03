@@ -19,6 +19,8 @@ import "plugins/atiplugins" as AtiPlugins
 import "plugins/menu" as MenuPlugin
 import "plugins/clipboard" as ClipboardPlugin
 import "plugins/translate" as TranslatePlugin
+import "plugins/anki" as AnkiPlugin
+import "plugins/todo" as TodoPlugin
 import "services" as Services
 
 ShellRoot {
@@ -64,6 +66,23 @@ ShellRoot {
   // the difference between a tool and an interruption.
   TranslatePlugin.Translate {
     id: translate
+  }
+
+  // Fourth resident view, same reasoning as the two directly above: an
+  // editable FORM (word, front-language, tags, three audio toggles, an
+  // image URL), which the generic dmenu payload cannot render any more
+  // than the translate popup's fields could. See plugins/anki/Anki.qml.
+  AnkiPlugin.Anki {
+    id: anki
+  }
+
+  // Fifth resident view. List-shaped rather than a form, but resident for
+  // the same reason as the three above: `qs -p` per keypress is a QML
+  // compile, and this one has to be open before you have finished reaching
+  // for the key. See plugins/todo/Todo.qml for what it does and does not
+  // cover.
+  TodoPlugin.Todo {
+    id: todo
   }
 
   // The selection badge -- the little square beside the pointer. Separate
@@ -116,6 +135,14 @@ ShellRoot {
     id: translatePayloadFile
     printErrors: false
     onLoaded: translate.open(text().replace(/\n+$/, ""))
+  }
+
+  // Same trick, same reason, for the anki popup's initial text — see
+  // ati-anki-popup and the `openFile` handler below.
+  FileView {
+    id: ankiPayloadFile
+    printErrors: false
+    onLoaded: anki.open(text().replace(/\n+$/, ""))
   }
 
   IpcHandler {
@@ -185,6 +212,34 @@ ShellRoot {
     }
 
     function hideBadge(): void { translateBadge.hide(); }
+  }
+
+  IpcHandler {
+    target: "anki"
+
+    // Same whitespace-splitting reasoning as `translate`'s `open` — fine
+    // for a single word, wrong for a sentence. ati-anki-popup uses
+    // `openFile` for that reason; `open` stays for a caller that already
+    // has a clean single-argument word in hand.
+    function open(word: string): void { anki.open(word || ""); }
+
+    function openFile(payloadPath: string): void {
+      ankiPayloadFile.path = payloadPath;
+      ankiPayloadFile.reload();
+    }
+
+    function close(): void { anki.close(); }
+    function toggle(): void { anki.toggle(); }
+    function status(): string { return anki.status(); }
+  }
+
+  IpcHandler {
+    target: "todo"
+
+    function open(): void { todo.open(); }
+    function close(): void { todo.close(); }
+    function toggle(): void { todo.toggle(); }
+    function status(): string { return todo.status(); }
   }
 
   IpcHandler {

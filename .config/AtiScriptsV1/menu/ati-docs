@@ -43,7 +43,7 @@ VIEWER=nvim
 # of each script inventing its own. readlink -f because this is reached
 # through a /usr/local/bin symlink.
 # shellcheck source=ati-rofi-common.sh
-source "$(dirname "$(readlink -f "$0")")/ati-rofi-common.sh"
+source "$(dirname "$(readlink -f "$0")")/../lib/ati-rofi-common.sh"
 
 # ONE geometry for every menu in this script, applied here rather than by
 # each caller, so a new section cannot forget it and drift.

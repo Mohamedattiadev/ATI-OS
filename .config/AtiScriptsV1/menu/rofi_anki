@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 # shellcheck source=ati-rofi-common.sh
 source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
 
@@ -74,6 +74,30 @@ if [[ "${1:-}" == "--answers" ]]; then
   fi
 fi
 
+# --- Preview mode: same JSON contract's {front_lang,text}, but only the
+# lookup half — no Anki, no AnkiConnect, no audio, no image.
+#
+#   rofi_anki --preview FILE   -- FILE: {"front_lang":"en"|"de","text":"..."}
+#   prints:  {"translation":"...","synonyms":[...],"examples":[...],"ipa":"..."}
+#
+# "should add the word with its translation, example etc auto when i
+# click" — the enrichment already ran unconditionally on submit (Gemini
+# if HAVE_GEMINI, translate-shell otherwise), it just had nowhere to
+# SHOW: Anki.qml sent the front text straight to --answers and never saw
+# what came back until the card was already in Anki. ati-anki-popup's
+# Anki.qml calls this the moment the front field loses focus, using the
+# SAME get_gemini_data/get_offline_data path --answers uses a moment
+# later — same functions, same inputs, so preview and submission cannot
+# disagree the way two separate implementations could.
+PREVIEW_FILE=""
+if [[ "${1:-}" == "--preview" ]]; then
+  PREVIEW_FILE="${2:-}"
+  if [[ -z "$PREVIEW_FILE" || ! -r "$PREVIEW_FILE" ]]; then
+    echo "rofi_anki: --preview needs a readable file" >&2
+    exit 1
+  fi
+fi
+
 # `// ""` covers both a missing key and an explicit null, so every optional
 # answer defaults to empty and the `== "yes"` tests below simply fail.
 answer() { jq -r --arg k "$1" '.[$k] // ""' "$ANSWERS_FILE"; }
@@ -102,7 +126,7 @@ HAVE_GEMINI=0
 # in --answers mode would make the island's route fail on a machine where
 # rofi is absent, for a window it never opens.
 REQUIRED=(jq curl ffmpeg file python3)
-[[ -z "$ANSWERS_FILE" ]] && REQUIRED+=(rofi)
+[[ -z "$ANSWERS_FILE" && -z "$PREVIEW_FILE" ]] && REQUIRED+=(rofi)
 require_cmd "${REQUIRED[@]}" || exit 1
 
 # =================== Helper Functions ===================
@@ -163,6 +187,38 @@ get_offline_data() {
   command -v trans >/dev/null 2>&1 && tr="$(trans -b ":${target_code}" "$text" 2>/dev/null || true)"
   jq -n --arg t "$tr" '{translation:$t, synonyms:[], examples:[]}'
 }
+
+# --- Preview: run the lookup half only, print JSON, exit — see the flag's
+# own header comment above for why this exists and why it reuses these
+# two functions rather than a third implementation of the same lookup.
+if [[ -n "$PREVIEW_FILE" ]]; then
+  P_TEXT="$(jq -r '.text // ""' "$PREVIEW_FILE")"
+  P_FRONT_LANG="$(jq -r '.front_lang // "en"' "$PREVIEW_FILE")"
+  if [[ -z "${P_TEXT// }" ]]; then
+    echo '{"translation":"","synonyms":[],"examples":[],"ipa":""}'
+    exit 0
+  fi
+  if [[ "$P_FRONT_LANG" == de* ]]; then
+    P_FRONT_LANG="de"; P_SRC_NAME="German"; P_TGT_NAME="English"; P_TGT_CODE="en"
+  else
+    P_FRONT_LANG="en"; P_SRC_NAME="English"; P_TGT_NAME="German"; P_TGT_CODE="de"
+  fi
+
+  P_JSON=""
+  if (( HAVE_GEMINI )); then
+    P_JSON="$(get_gemini_data "$P_TEXT" "$P_SRC_NAME" "$P_TGT_NAME" || true)"
+  fi
+  if [[ -z "$P_JSON" ]] || ! jq -e . >/dev/null 2>&1 <<<"$P_JSON"; then
+    P_JSON="$(get_offline_data "$P_TEXT" "$P_TGT_CODE")"
+  fi
+
+  P_IPA=""
+  if command -v espeak-ng >/dev/null 2>&1; then
+    P_IPA="$(espeak-ng -v "$P_FRONT_LANG" --ipa -q "$P_TEXT" 2>/dev/null | tr -d '\n' | sed 's/[[:space:]]\+/ /g' | sed 's/^ *//;s/ *$//')"
+  fi
+  jq -c --arg ipa "$P_IPA" '. + {ipa: $ipa}' <<<"$P_JSON"
+  exit 0
+fi
 
 #
 # =================== Script Start ===================
@@ -282,16 +338,28 @@ TS=$(date +%s)
 
 # 3. Get AI data (optional — never fatal)
 GEMINI_JSON=""
-if (( HAVE_GEMINI )); then
-  notify-send "Anki Rofi" "Asking Gemini for definitions and examples..." || true
-  GEMINI_JSON="$(get_gemini_data "$TEXT" "$FRONT_LANG_NAME" "$BACK_LANG_NAME" || true)"
-fi
-# Fall back rather than abort. Previously any Gemini failure — including
-# the permanent one of having no key at all — exited here and the card
-# was never created.
-if [[ -z "$GEMINI_JSON" ]] || ! jq -e . >/dev/null 2>&1 <<<"$GEMINI_JSON"; then
-  (( HAVE_GEMINI )) && notify-send "Anki Rofi" "Gemini unavailable — using translate-shell." || true
-  GEMINI_JSON="$(get_offline_data "$TEXT" "$BACK_LANG")"
+# A caller that already ran --preview (Anki.qml, the moment the front
+# field lost focus) showed this exact translation/synonyms/examples and
+# let the user edit it before clicking Add — "translation" present in the
+# answers file (any value, even "") means USE IT, not recompute it.
+# Recomputing here instead would mean the card that lands in Anki can
+# disagree with the one just shown on screen: get_gemini_data hits a live
+# LLM, and the same prompt is not guaranteed the same answer twice. See
+# the --preview flag's own header above for the rest of this reasoning.
+if [[ -n "$ANSWERS_FILE" ]] && jq -e 'has("translation")' "$ANSWERS_FILE" >/dev/null 2>&1; then
+  GEMINI_JSON="$(jq -c '{translation: (.translation // ""), synonyms: (.synonyms // []), examples: (.examples // [])}' "$ANSWERS_FILE")"
+else
+  if (( HAVE_GEMINI )); then
+    notify-send "Anki Rofi" "Asking Gemini for definitions and examples..." || true
+    GEMINI_JSON="$(get_gemini_data "$TEXT" "$FRONT_LANG_NAME" "$BACK_LANG_NAME" || true)"
+  fi
+  # Fall back rather than abort. Previously any Gemini failure — including
+  # the permanent one of having no key at all — exited here and the card
+  # was never created.
+  if [[ -z "$GEMINI_JSON" ]] || ! jq -e . >/dev/null 2>&1 <<<"$GEMINI_JSON"; then
+    (( HAVE_GEMINI )) && notify-send "Anki Rofi" "Gemini unavailable — using translate-shell." || true
+    GEMINI_JSON="$(get_offline_data "$TEXT" "$BACK_LANG")"
+  fi
 fi
 
 # `jq -r` prints the string "null" for a missing key and still exits 0,

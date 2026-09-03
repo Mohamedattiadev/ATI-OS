@@ -12,7 +12,7 @@ set -euo pipefail
 # readlink -f: this script is reached through a /usr/local/bin symlink, so
 # a plain $0 dirname resolves to the symlink's directory, not the repo.
 # shellcheck source=ati-rofi-common.sh
-source "$(dirname "$(readlink -f "$0")")/ati-rofi-common.sh"
+source "$(dirname "$(readlink -f "$0")")/../lib/ati-rofi-common.sh"
 
 STATE_FILE="$HOME/.cache/qtile/theme_mode"
 CURRENT="doomone"

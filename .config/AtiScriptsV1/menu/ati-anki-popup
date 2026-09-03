@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# ati-anki-popup — highlight a word or sentence, press the key, get the Anki
+# popup with it already in the front field.
+#
+# The keybind half of quickshell/ati-menu/plugins/anki/Anki.qml, built the
+# same way ati-translate-popup is built for the translate popup — see that
+# script's own header for the full reasoning (a payload FILE, not argv or
+# base64, because the selection is arbitrary user text and Quickshell IPC
+# args are whitespace-split). All this does is read the selection and hand
+# it to the resident ati-menu instance over IPC; the card logic itself
+# lives in rofi_anki --answers, unchanged.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=ati-rofi-common.sh
+source "$SCRIPT_DIR/../lib/ati-rofi-common.sh"
+
+read_sel() {
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-paste >/dev/null 2>&1; then
+        [[ "$1" == primary ]] && { wl-paste --primary --no-newline 2>/dev/null || true; } \
+                              || { wl-paste --no-newline 2>/dev/null || true; }
+    else
+        xclip -o -selection "$1" 2>/dev/null || true
+    fi
+}
+
+WORD="$(read_sel primary)"
+[[ -n "${WORD//[[:space:]]/}" ]] || WORD="$(read_sel clipboard)"
+# Trim, and collapse the internal runs — same reasoning ati-translate-popup
+# gives: a phrase dragged out of a rendered table arrives padded with the
+# table's own column spacing.
+WORD="$(printf '%s' "$WORD" | tr '\n\t' '  ' | sed 's/  */ /g;s/^ *//;s/ *$//')"
+
+# Capped — an Anki front is a word or a short phrase, and PRIMARY carries
+# over from whatever was last dragged across, not just what you meant to
+# card: an accidentally-still-selected paragraph (this terminal's own
+# scrollback, a doc page) has landed here before now, single-line into a
+# TextField that just scrolls to hide most of it ("the text out of
+# screen" — you cannot see that it is 400 characters long) and into
+# espeak-ng for an IPA reading of the whole thing, which comes back as
+# gibberish rather than a word's pronunciation. 200 chars is generous for
+# a real phrase and short of anything that reads as a paragraph.
+if [[ "${#WORD}" -gt 200 ]]; then
+    WORD="${WORD:0:200}…"
+    notify_safe "ati-anki-popup" "selection was long — truncated to 200 chars"
+fi
+
+# Empty is fine: the card opens with the front field focused and empty,
+# same as the translate popup with no selection.
+PAYLOAD="$ROFI_RUNTIME_DIR/ati-anki-word"
+printf '%s' "$WORD" > "$PAYLOAD" || exit 1
+
+IPC_BIN=qs
+command -v qsipc >/dev/null 2>&1 && IPC_BIN=qsipc
+MENU_CONFIG="$HOME/.config/quickshell/ati-menu"
+
+if ! "$IPC_BIN" -p "$MENU_CONFIG" ipc call anki openFile "$PAYLOAD" >/dev/null 2>&1; then
+    notify_safe "ati-anki-popup" "ati-menu is not running (start it, or check \`qs -p $MENU_CONFIG\`)"
+    exit 1
+fi

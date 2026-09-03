@@ -79,6 +79,7 @@ Item {
   readonly property color background: Color.menu.background
   readonly property color foreground: Color.menu.text
   readonly property color scrim: Color.menu.scrim
+  readonly property color accent: Color.accent
   readonly property var borderSpec: Border.localOrSurfaceSpec(
     "menu", "border", Color.menu.border, Color.menu.border, Style.normalBorderWidth)
 
@@ -387,7 +388,7 @@ Item {
           spacing: Style.spacing.sm
           Text {
             text: "Explanation"
-            color: Qt.darker(root.foreground, 1.5)
+            color: Qt.darker(root.foreground, 1.3)
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
           }
@@ -410,7 +411,7 @@ Item {
           spacing: Style.spacing.sm
           Text {
             text: "Example sentence"
-            color: Qt.darker(root.foreground, 1.5)
+            color: Qt.darker(root.foreground, 1.3)
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
           }
@@ -438,7 +439,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: parent.width - actions.width - Style.spacing.controlGap
             text: root.statusText
-            color: Qt.darker(root.foreground, 1.5)
+            color: Qt.darker(root.foreground, 1.3)
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
             elide: Text.ElideRight
@@ -452,11 +453,23 @@ Item {
 
             Button {
               text: root.busy ? "…" : "Translate"
+              // Idle Button is transparent/borderless by default (see
+              // Ui/Button.qml) — invisible until hovered, reported as "add
+              // button ui not good not visible" (also true of the Anki and
+              // Todo popups' own action buttons, fixed there too).
+              bordered: true
+              // Same token issue Todo.qml's/Anki.qml's own buttons and
+              // toggle switches hit: this theme's missing shell.toml means
+              // Button's border/fill default to plain foreground, not
+              // accent, so `bordered` alone was still grey.
+              foreground: root.accent
               enabled: !root.busy
               onClicked: root.lookup()
             }
             Button {
               text: "Save to notes"
+              bordered: true
+              foreground: root.accent
               enabled: root.word.trim() !== ""
               onClicked: root.save()
             }

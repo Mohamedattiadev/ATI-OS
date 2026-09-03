@@ -17,7 +17,7 @@ set -euo pipefail
 # readlink -f: reached through a /usr/local/bin symlink, so a plain $0
 # dirname resolves to the symlink's directory rather than the repo.
 # shellcheck source=ati-rofi-common.sh
-source "$(dirname "$(readlink -f "$0")")/ati-rofi-common.sh"
+source "$(dirname "$(readlink -f "$0")")/../lib/ati-rofi-common.sh"
 
 SCALE_FILE="$HOME/.cache/qtile/ui_scale"
 PIN_FILE="$HOME/.cache/qtile/ui_scale.pinned"
