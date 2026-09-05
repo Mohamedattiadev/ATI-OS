@@ -781,7 +781,8 @@ ShellRoot {
     // against this exact binary before wiring it up, same as the
     // recording-pidfile check above. `class`/`alt` carry the state word
     // ("idle" confirmed; "recording"/"transcribing" are the daemon's
-    // documented other states).
+    // documented other states — plus "stopped", which it emits transiently
+    // during its own startup/shutdown before the model is loaded).
     //
     // This is deliberately the SIMPLE half of the idea: a state-driven
     // wave, not a real microphone level meter — the full VoiceOverlay
@@ -791,7 +792,12 @@ ShellRoot {
     // OWN stat badges are still being sized by hand, would be solving the
     // same problem twice in two different places.
     property string voiceState: "idle"
-    readonly property bool voiceActive: demo.voiceState !== "" && demo.voiceState !== "idle"
+    // Only the two states that mean audio is actually being handled. The
+    // earlier `!== "idle"` test also caught voxtype's transient "stopped"
+    // (emitted on a cold boot while the daemon loads its Whisper model,
+    // before the bar's watcher has seen a single "idle"), which popped the
+    // centre pill reading "STOPPED ....." for a few seconds every login.
+    readonly property bool voiceActive: demo.voiceState === "recording" || demo.voiceState === "transcribing"
     Process {
         id: voiceWatch
         running: true
@@ -2454,9 +2460,10 @@ ShellRoot {
                     // plus the five-bar wave (see VoiceBar above); the bars
                     // only run their pulse animation while
                     // demo.voiceState === "recording", and just sit at their
-                    // resting height for transcribing/done/failed so the
-                    // face still reads as "something is happening" without
-                    // implying audio is still being captured.
+                    // resting height for "transcribing" so the face still
+                    // reads as "something is happening" without implying
+                    // audio is still being captured. The face only shows for
+                    // those two states now (see voiceActive above).
                     Row {
                         id: voiceFace
                         anchors.verticalCenter: parent.verticalCenter
