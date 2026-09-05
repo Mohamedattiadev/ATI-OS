@@ -104,6 +104,13 @@ packages:
                     # tool, replacing the old whisper.cpp-git/ati-voice-dictate
                     # pipeline. wtype (its Wayland typing backend) is already
                     # declared in wm.yaml for an unrelated feature.
+  - gtk4-layer-shell # voxtype-bin's on-screen recording OSD (voxtype-osd-gtk4)
+                     # dlopen's libgtk4-layer-shell.so.0 but the package does
+                     # NOT declare it as a dependency. Without this the daemon
+                     # still records and types, but the OSD child crash-loops
+                     # ('cannot open shared object file') and voxtype gives up
+                     # after 3 tries -- no recording indicator. Only the GTK3
+                     # gtk-layer-shell (wm.yaml) was present before.
   - yt-dlp
   - xdg-utils
   - stow
